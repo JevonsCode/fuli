@@ -1,0 +1,31 @@
+.mini-form {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 120px auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.space-tools {
+  color: #687168;
+}
+
+.pill {
+  border: 1px solid #d2d6cf;
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: #4f5a53;
+  font-size: 11px;
+}
+
+.candidate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.candidate-actions button {
+  background: #ffffff;
+  color: #171d1a;
+  padding: 6px 9px;
+}

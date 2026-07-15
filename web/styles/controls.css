@@ -1,0 +1,73 @@
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 2px solid #171d1a;
+  outline-offset: 2px;
+}
+
+button {
+  border: 1px solid #171d1a;
+  background: #171d1a;
+  color: #ffffff;
+  border-radius: 6px;
+  padding: 10px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+button:hover {
+  background: #2b332f;
+}
+
+button:disabled {
+  cursor: progress;
+  opacity: 0.65;
+}
+
+button.ghost {
+  background: transparent;
+  border-color: #d8dcd4;
+  color: #4f5a53;
+}
+
+button.ghost:hover {
+  background: #f6f7f7;
+  color: #171d1a;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid #d8dcd4;
+  background: #ffffff;
+  border-radius: 6px;
+  color: #171d1a;
+  padding: 10px 11px;
+}
+
+textarea {
+  min-height: 146px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.capture-options summary,
+.space-tools > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.capture-options summary::-webkit-details-marker,
+.space-tools > summary::-webkit-details-marker {
+  display: none;
+}

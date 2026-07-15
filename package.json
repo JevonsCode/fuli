@@ -1,0 +1,26 @@
+{
+  "name": "compound-interest-context",
+  "version": "0.1.0",
+  "description": "Local context growth system for personal and public work spaces.",
+  "type": "module",
+  "bin": {
+    "fuli": "./src/cli.js"
+  },
+  "scripts": {
+    "mcp": "node src/mcp-server.js",
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^12.11.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "linkedom": "^0.18.12"
+  }
+}

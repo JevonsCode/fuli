@@ -1,0 +1,5 @@
+.fuli/
+node_modules/
+output/
+.playwright-cli/
+.worktrees/

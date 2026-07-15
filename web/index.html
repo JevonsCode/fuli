@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>复利</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="brand">
+        <div>
+          <h1>复利</h1>
+          <p id="summary">正在连接</p>
+        </div>
+      </header>
+
+      <nav class="console-nav" aria-label="本地控制台">
+        <button type="button" data-view="overview" aria-pressed="true">概览</button>
+        <button type="button" data-view="memory" aria-pressed="false">记忆</button>
+        <button type="button" data-view="pending" aria-pressed="false">
+          待确认 <span id="pending-nav-count"></span>
+        </button>
+        <button type="button" data-view="connections" aria-pressed="false">连接</button>
+      </nav>
+
+      <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
+
+      <section class="view-panel" data-view-panel="overview">
+        <div class="status-line">
+          <span class="status-dot status-loading" aria-hidden="true"></span>
+          <strong id="runtime-status">正在连接</strong>
+        </div>
+        <div class="metric-grid">
+          <div><strong id="overview-memory-count">0</strong><span>条记忆</span></div>
+          <div><strong id="overview-pending-count">0</strong><span>待确认</span></div>
+          <div><strong id="overview-space-count">0</strong><span>个空间</span></div>
+          <div><strong id="overview-subscription-count">0</strong><span>个订阅</span></div>
+        </div>
+        <div class="section-heading compact-heading">
+          <h2>最近变化</h2>
+        </div>
+        <div id="recent-list" class="timeline"></div>
+      </section>
+
+      <section class="view-panel" data-view-panel="memory" hidden>
+        <div class="section-heading">
+          <h2>记忆</h2>
+          <select id="active-personal" class="context-select" aria-label="个人空间" hidden></select>
+        </div>
+        <div id="lens-list" class="lens-list"></div>
+        <details id="facts-section" class="data-section" hidden>
+          <summary>当前事实 <span id="fact-count"></span></summary>
+          <div id="facts-list" class="facts"></div>
+        </details>
+        <details id="timeline-section" class="data-section" hidden>
+          <summary>历史</summary>
+          <div id="timeline-list" class="timeline"></div>
+        </details>
+      </section>
+
+      <section class="view-panel" data-view-panel="pending" hidden>
+        <div class="section-heading">
+          <h2>待确认</h2>
+          <span id="candidate-count"></span>
+        </div>
+        <div class="tools-row">
+          <button id="observe-button" class="ghost" type="button">检查改动</button>
+          <button id="refresh-button" class="ghost" type="button">刷新</button>
+        </div>
+        <div id="candidates-list" class="compact-list"></div>
+      </section>
+
+      <section class="view-panel" data-view-panel="connections" hidden>
+        <div class="section-heading">
+          <h2>连接</h2>
+        </div>
+        <div id="spaces-list" class="compact-list"></div>
+        <details class="space-tools data-section">
+          <summary>管理空间</summary>
+          <form id="space-form" class="mini-form">
+            <input id="space-name" aria-label="空间名称" placeholder="名称" required />
+            <select id="space-kind" aria-label="空间类型">
+              <option value="personal">个人</option>
+              <option value="public">公共</option>
+            </select>
+            <button type="submit">新建</button>
+          </form>
+          <form id="subscription-form" class="mini-form">
+            <select id="subscription-personal" aria-label="个人空间"></select>
+            <select id="subscription-space" aria-label="工作空间"></select>
+            <button type="submit">订阅</button>
+          </form>
+        </details>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
