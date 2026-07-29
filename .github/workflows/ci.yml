@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npx --yes npm@11.18.0 audit --audit-level=low
+      - run: npm test
+      - run: npm run test:package
+
+  provider:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: graph-provider/pyproject.toml
+      - run: python -m pip install pytest ./graph-provider
+      - run: python -m pytest -q graph-provider/tests
+      - run: docker compose -f compose.graphiti.yml config --quiet

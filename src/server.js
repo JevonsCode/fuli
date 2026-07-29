@@ -7,7 +7,8 @@ import { mapHttpError } from './http/error-mapping.js';
 import { localServerAuthority, rejectDisallowedRequest } from './http/request-policy.js';
 import { sendJson } from './http/response.js';
 import { serveStatic } from './http/static-handler.js';
-import { resolveRuntimeOptions } from './runtime-options.js';
+import { DEFAULT_FULI_PORT } from './defaults.js';
+import { resolveGraphRuntimeOptions } from './graphiti/runtime-config.js';
 import { createServerApplication } from './server/application-lifecycle.js';
 import { listenServer } from './server/listen.js';
 
@@ -21,7 +22,7 @@ const FETCH_BLOCKED_PORTS = new Set([
 
 export async function createServer(options = {}) {
   const {
-    port = 5173,
+    port = DEFAULT_FULI_PORT,
     store,
     app,
     closeApplicationOnShutdown,
@@ -30,9 +31,10 @@ export async function createServer(options = {}) {
   if (Number(port) !== 0 && isBlockedPort(port)) {
     throw new Error(`Port ${port} is blocked for local fetch`);
   }
-  const localOptions = app || store
+  const legacyRuntime = app || store || Object.hasOwn(options, 'dbPath');
+  const localOptions = legacyRuntime
     ? { dbPath: options.dbPath, personalSpaceName: options.personalSpaceName ?? '我' }
-    : resolveServerRuntimeOptions(options);
+    : resolveServerGraphOptions(options);
   const runtime = createServerApplication({
     app,
     store,
@@ -78,15 +80,13 @@ export async function createServer(options = {}) {
   throw new Error('Could not find a fetchable local port');
 }
 
-function resolveServerRuntimeOptions(options) {
+function resolveServerGraphOptions(options) {
   const args = [];
-  if (Object.hasOwn(options, 'dbPath')) args.push('--db', options.dbPath);
-  if (Object.hasOwn(options, 'personalSpaceName')) {
-    args.push('--personal-space', options.personalSpaceName);
+  if (Object.hasOwn(options, 'runtimeConfigPath')) {
+    args.push('--runtime-config', options.runtimeConfigPath);
   }
-  return resolveRuntimeOptions(args, options.env ?? process.env, {
-    cwd: options.cwd ?? process.cwd(),
-    setupPaths: { homeDir: options.homeDir }
+  return resolveGraphRuntimeOptions(args, options.env ?? process.env, {
+    setupPaths: { homeDir: options.homeDir, cwd: options.cwd ?? process.cwd() }
   });
 }
 
@@ -108,8 +108,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
 }
 
 async function runProgram(args) {
-  const runtimeOptions = resolveRuntimeOptions(args, process.env);
-  const port = numberOption(args, '--port', 5173);
+  const runtimeOptions = resolveGraphRuntimeOptions(args, process.env);
+  const port = numberOption(args, '--port', DEFAULT_FULI_PORT);
   const { server, url } = await createServer({ ...runtimeOptions, port });
   const handlers = new Map();
   const close = () => server.close();

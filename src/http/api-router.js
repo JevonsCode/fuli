@@ -1,8 +1,22 @@
 import { readJson, sendJson } from './response.js';
 import { handleLensRequest } from './lens-route.js';
+import { handleGraphApiRequest } from './graph-api-router.js';
 
 export async function handleApiRequest({ request, response, app }) {
   const url = new URL(request.url, 'http://127.0.0.1');
+
+  if (url.pathname === '/api/health' && request.method === 'GET') {
+    sendJson(response, 200, {
+      status: 'ready',
+      service: 'fuli-local-console',
+      pid: process.pid
+    });
+    return true;
+  }
+
+  if (app.graphiti) {
+    return handleGraphApiRequest({ request, response, url, app });
+  }
 
   if (handleLensRequest({ request, response, url, app })) return true;
 

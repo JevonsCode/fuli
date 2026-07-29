@@ -17,6 +17,8 @@ const COMMANDS = Object.freeze({
   candidate
 });
 
+const LOCAL_RUNTIME_COMMANDS = new Set(['start', 'stop', 'restart', 'status', 'open']);
+
 export function dispatchCommand(app, command, args) {
   const handler = COMMANDS[command];
   if (!handler) throw new Error(`Unknown command: ${command}`);
@@ -24,20 +26,43 @@ export function dispatchCommand(app, command, args) {
 }
 
 export function isRegisteredCommand(command) {
-  return command === '--help' || command === '-h' || Object.hasOwn(COMMANDS, command);
+  return command === '--help' || command === '-h' ||
+    command === '--version' || command === '-v' ||
+    Object.hasOwn(COMMANDS, command);
 }
 
 export function isCliCommand(command) {
-  return command === 'setup' || command === 'migrate' || isRegisteredCommand(command);
+  return command === 'setup' || command === 'uninstall' || command === 'migrate' ||
+    LOCAL_RUNTIME_COMMANDS.has(command) || isRegisteredCommand(command);
+}
+
+export function isLocalRuntimeCommand(command) {
+  return LOCAL_RUNTIME_COMMANDS.has(command);
 }
 
 export function printHelp() {
-  console.log(`fuli [--db SQLITE_DB] [--personal-space 我] <command>
+  console.log(`fl <command>
 
-Global options must appear before the command.
+General:
+  --help, -h
+  --version, -v
+
+Local service:
+  start [--port 2727] [--open] [--rebuild] [--data-dir DIR]
+  stop [--data-dir DIR]
+  restart [--port 2727] [--open] [--rebuild] [--data-dir DIR]
+  status [--json] [--data-dir DIR]
+  open [--data-dir DIR]
+
+Install and Agent connection:
+  setup [--yes] [--codex-only] [--data-dir DIR] [--personal-space NAME] [--port PORT] [--skip-agents] [--no-start] [--with-dev-public]
+  uninstall [--yes] [--data-dir DIR]
+
+Legacy local knowledge commands:
+  fl [--db SQLITE_DB] [--personal-space 我] <command>
+  Global options must appear before the command.
 
 Commands:
-  setup [--yes] [--data-dir DIR] [--personal-space NAME] [--port PORT] [--skip-agents] [--no-start]
   space create NAME --kind personal|public
   subscribe PERSONAL_SPACE PUBLIC_SPACE
   remember PERSONAL_SPACE --target SPACE --source-kind prd --text TEXT

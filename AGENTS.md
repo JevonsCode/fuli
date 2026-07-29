@@ -16,6 +16,14 @@
 - Do not expose adapter internals to callers. Add behavior to the owning port instead.
 - File size is a warning signal, not a target. Readability and responsibility boundaries decide when to split.
 
+## Common and Agent-Specific Boundaries
+
+- Keep product behavior, knowledge routing, MCP contracts, and reusable Skills Agent-agnostic by default.
+- Do not add Agent-specific hooks, prompts, branches, or file formats to the common layer when the behavior applies to every supported Agent.
+- Put unavoidable Agent-specific integration under an explicit directory owned by that Agent, such as `*/agents/claude-code/*`, `*/agents/codex/*`, or `*/agents/cursor/*`.
+- Access Agent-specific implementations through a shared port or registry. Keep Agent ID branching in the adapter composition boundary instead of spreading it through domain or MCP code.
+- When a change introduces Agent-specific behavior, add focused tests in the same Agent-specific boundary and verify that common behavior remains unchanged.
+
 ## Delivery
 
 - Add focused tests for each behavior change and run the relevant suite before committing.

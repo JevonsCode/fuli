@@ -59,4 +59,6 @@ test('setup paths honor an explicit data directory and resolve runtime entries',
   assert.equal(paths.dataDir, resolve('T:/workspace/custom-data'));
   assert.equal(paths.serverPath, join(PACKAGE_ROOT, 'src', 'server.js'));
   assert.equal(paths.mcpServerPath, join(PACKAGE_ROOT, 'src', 'mcp-server.js'));
+  assert.equal(paths.sessionSkillPath, join(PACKAGE_ROOT, 'skills', 'capturing-session-knowledge'));
+  assert.equal(paths.projectSkillPath, join(PACKAGE_ROOT, 'skills', 'grilling-project'));
 });

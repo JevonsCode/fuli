@@ -1,8 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LENS_TOOL_DEFINITIONS } from '../src/agent-tools/lens-definitions.js';
-import { jsonSchemaToZod } from '../src/mcp/tool-schema.js';
 import { successToolResult } from '../src/mcp/tool-result.js';
 
 test('successful tool results bound structured JSON without splitting values', () => {
@@ -29,21 +27,22 @@ test('successful tool results bound structured JSON without splitting values', (
   assert.equal(json.includes('private'), false);
 });
 
-test('lens schemas enforce finite text and retrieval budgets at the MCP boundary', () => {
-  const byName = Object.fromEntries(
-    LENS_TOOL_DEFINITIONS.map((definition) => [definition.name, definition])
+test('a tool can opt into a larger bounded context result', () => {
+  const result = successToolResult({
+    effective_preferences: Array.from({ length: 8 }, (_, index) => ({
+      instruction: `Apply collaboration preference ${index}: ${'x'.repeat(160)}`,
+      preference_key: `preference-${index}`
+    }))
+  }, { limitBytes: 16 * 1024 });
+  const json = JSON.stringify(result.structuredContent);
+
+  assert.ok(Buffer.byteLength(json, 'utf8') > 1200);
+  assert.ok(Buffer.byteLength(json, 'utf8') <= 16 * 1024);
+  assert.equal(result.structuredContent.truncated, undefined);
+  assert.match(
+    result.structuredContent.effective_preferences.at(-1).instruction,
+    /preference 7/
   );
-  const lensSchema = byName.get_user_lens.inputSchema;
-  const rememberSchema = byName.remember_user_fact.inputSchema;
-
-  assert.equal(lensSchema.properties.task.maxLength, 2048);
-  assert.equal(lensSchema.properties.budget.maximum, 16384);
-  assert.equal(rememberSchema.properties.value.maxLength, 4096);
-  assert.equal(rememberSchema.properties.sourceText.maxLength, 16384);
-
-  const validateLens = jsonSchemaToZod(lensSchema);
-  assert.equal(validateLens.safeParse({ task: 'x'.repeat(2049), budget: 1200 }).success, false);
-  assert.equal(validateLens.safeParse({ task: 'bounded', budget: 16385 }).success, false);
 });
 
 function hasIsolatedSurrogate(text) {

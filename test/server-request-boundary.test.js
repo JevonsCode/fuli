@@ -83,6 +83,9 @@ test('exact local browser authority and requests without Origin keep working', a
   });
   const favicon = await fetch(`${url}/favicon.ico`);
   const index = await fetch(url);
+  const indexHtml = await index.text();
+  const entryPath = indexHtml.match(/<script[^>]+src="([^"]+\.js)"/)?.[1];
+  const entry = entryPath ? await fetch(new URL(entryPath, url)) : null;
 
   assert.equal(new URL(url).port, String(server.address().port));
   assert.equal(created.status, 200);
@@ -90,6 +93,10 @@ test('exact local browser authority and requests without Origin keep working', a
   assert.equal(favicon.status, 204);
   assert.equal(index.status, 200);
   assert.match(index.headers.get('content-type'), /^text\/html/);
+  assert.ok(entryPath);
+  assert.equal(entry.status, 200);
+  assert.match(entry.headers.get('content-type'), /^text\/javascript/);
+  assert.ok((await entry.text()).length > 100_000);
 });
 
 function rawStatus(url, options) {

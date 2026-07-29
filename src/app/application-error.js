@@ -1,4 +1,5 @@
 export const ApplicationErrorCode = Object.freeze({
+  AGENT_ACCESS_DISABLED: 'agent_access_disabled',
   NOT_FOUND: 'not_found',
   VALIDATION: 'validation'
 });

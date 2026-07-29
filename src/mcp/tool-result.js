@@ -15,13 +15,17 @@ const RESULT_DEPTH_LIMIT = 8;
 const MESSAGE_LIMIT = 240;
 const TRUNCATION_MARKER = '...[truncated]';
 
-export function successToolResult(value) {
+export function successToolResult(value, { limitBytes = RESULT_LIMIT_BYTES } = {}) {
   const state = { truncated: false };
   const sanitized = sanitize(value, state);
   const candidate = isObject(sanitized) && !Array.isArray(sanitized)
     ? sanitized
     : { result: sanitized };
-  const structuredContent = boundedStructuredContent(candidate, state.truncated);
+  const structuredContent = boundedStructuredContent(
+    candidate,
+    state.truncated,
+    limitBytes
+  );
   return {
     content: [{ type: 'text', text: JSON.stringify(structuredContent) }],
     structuredContent
@@ -82,9 +86,12 @@ function sanitize(value, state, seen = new WeakSet(), depth = 0) {
   return sanitized;
 }
 
-function boundedStructuredContent(value, alreadyTruncated) {
-  if (!alreadyTruncated && jsonBytes(value) <= RESULT_LIMIT_BYTES) return value;
-  return projectObject(value, RESULT_LIMIT_BYTES, 0, true);
+function boundedStructuredContent(value, alreadyTruncated, limitBytes) {
+  const budget = Number.isInteger(limitBytes) && limitBytes > 0
+    ? limitBytes
+    : RESULT_LIMIT_BYTES;
+  if (!alreadyTruncated && jsonBytes(value) <= budget) return value;
+  return projectObject(value, budget, 0, true);
 }
 
 function projectValue(value, budget, depth) {

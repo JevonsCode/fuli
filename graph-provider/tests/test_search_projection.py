@@ -1,0 +1,74 @@
+from datetime import UTC, datetime
+from types import SimpleNamespace
+
+from fuli_graph.search_projection import fact_result, is_default_retrievable
+
+
+def test_default_retrieval_uses_auditable_confirmation_not_discovery_quadrant():
+    assert is_default_retrievable({
+        'confirmation_status': 'confirmed',
+        'origin_quadrant': 'unknown_known',
+    })
+    assert not is_default_retrievable({
+        'confirmation_status': 'pending',
+        'origin_quadrant': 'known_known',
+    })
+    assert not is_default_retrievable({
+        'origin_quadrant': 'known_known',
+        'epistemic_status': 'confirmed',
+    })
+
+
+def test_fact_search_projection_includes_the_authorized_space_for_deep_links():
+    edge = SimpleNamespace(
+        uuid='relationship-1',
+        group_id='group-1',
+        source_node_uuid='source-1',
+        target_node_uuid='target-1',
+        name='IMPLEMENTS',
+        fact='来源标记打开对应知识',
+        valid_at=None,
+        invalid_at=None,
+        created_at=datetime.now(UTC),
+        episodes=['episode-1'],
+    )
+
+    result = fact_result(
+        edge,
+        {'source-1': '来源标记', 'target-1': '知识详情'},
+        'project-space',
+    )
+
+    assert result.space_id == 'project-space'
+
+
+def test_fact_search_projection_includes_human_change_review_state():
+    changed_at = datetime.now(UTC)
+    edge = SimpleNamespace(
+        uuid='relationship-1',
+        group_id='group-1',
+        source_node_uuid='source-1',
+        target_node_uuid='target-1',
+        name='IMPLEMENTS',
+        fact='人工调整后的关系',
+        valid_at=None,
+        invalid_at=None,
+        created_at=changed_at,
+        episodes=[],
+    )
+
+    result = fact_result(
+        edge,
+        {},
+        'personal-space',
+        {
+            'human_edited': True,
+            'human_change_status': 'unseen',
+            'human_change_version': 3,
+            'last_human_changed_at': changed_at,
+        },
+    )
+
+    assert result.human_edited is True
+    assert result.human_change_status == 'unseen'
+    assert result.human_change_version == 3

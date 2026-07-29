@@ -11,7 +11,7 @@ import {
 
 test('server knows ports that fetch refuses before making a request', () => {
   assert.equal(isFetchBlockedPort(6000), true);
-  assert.equal(isFetchBlockedPort(5173), false);
+  assert.equal(isFetchBlockedPort(2727), false);
 });
 
 test('web API works with a borrowed application and leaves it caller-owned', async () => {

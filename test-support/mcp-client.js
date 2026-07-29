@@ -9,8 +9,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
 const PROJECT_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
-export async function connectMcp(dbPath, {
-  personalSpaceName = '我',
+export async function connectMcp(runtimeConfigPath, {
   serverPath = 'src/mcp-server.js'
 } = {}) {
   const statusPath = join(mkdtempSync(join(tmpdir(), 'fuli-mcp-status-')), 'status.json');
@@ -20,8 +19,7 @@ export async function connectMcp(dbPath, {
       'test-support/mcp-process-probe.js',
       statusPath,
       serverPath,
-      '--db', dbPath,
-      '--personal-space', personalSpaceName
+      '--runtime-config', runtimeConfigPath
     ],
     cwd: PROJECT_ROOT,
     stderr: 'pipe'

@@ -2,22 +2,25 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
 import { callAgentTool, listAgentTools } from '../agent-tools.js';
+import { FULI_VERSION } from '../package-metadata.js';
 import { MCP_INSTRUCTIONS } from './instructions.js';
-import { registerLensSurfaces } from './register-lens-surfaces.js';
 import { annotationsFor } from './tool-annotations.js';
 import { errorToolResult, protocolErrorResult, successToolResult } from './tool-result.js';
 import { jsonSchemaToZod, openObjectSchema } from './tool-schema.js';
 
+const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
+  get_collaboration_preferences: 16 * 1024
+});
+
 export function createMcpServer(app) {
   const server = new McpServer(
-    { name: 'fuli', version: '0.1.0' },
+    { name: 'fuli', version: FULI_VERSION },
     { instructions: MCP_INSTRUCTIONS }
   );
 
   const tools = createToolMap(app);
   for (const tool of tools.values()) registerTool(server, tool);
   registerCallHandler(server, tools);
-  registerLensSurfaces(server, app);
   return server;
 }
 
@@ -51,7 +54,9 @@ function registerCallHandler(server, tools) {
 
 async function invokeTool(tool, input) {
   try {
-    return successToolResult(await tool.invoke(input));
+    return successToolResult(await tool.invoke(input), {
+      limitBytes: TOOL_RESULT_LIMIT_BYTES[tool.definition.name]
+    });
   } catch (error) {
     return errorToolResult(error);
   }

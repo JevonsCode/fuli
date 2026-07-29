@@ -1,0 +1,86 @@
+name: fuli-graphiti
+
+services:
+  personal-neo4j:
+    image: neo4j:5.26-community
+    environment:
+      NEO4J_AUTH: neo4j/${FULI_PERSONAL_NEO4J_PASSWORD}
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    ports:
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+    volumes:
+      - personal_neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$${NEO4J_AUTH#neo4j/}\" 'RETURN 1' >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  workspace-neo4j:
+    image: neo4j:5.26-community
+    environment:
+      NEO4J_AUTH: neo4j/${FULI_WORKSPACE_NEO4J_PASSWORD}
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    ports:
+      - "127.0.0.1:7475:7474"
+      - "127.0.0.1:7688:7687"
+    volumes:
+      - workspace_neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$${NEO4J_AUTH#neo4j/}\" 'RETURN 1' >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  personal-provider:
+    build:
+      context: ./graph-provider
+    environment:
+      FULI_PROVIDER_MODE: personal
+      FULI_PROVIDER_ID: local-personal
+      FULI_PROVIDER_NAME: Fuli Personal Provider
+      FULI_BOOTSTRAP_TOKEN: ${FULI_PERSONAL_BOOTSTRAP_TOKEN}
+      FULI_NEO4J_URI: bolt://personal-neo4j:7687
+      FULI_NEO4J_USER: neo4j
+      FULI_NEO4J_PASSWORD: ${FULI_PERSONAL_NEO4J_PASSWORD}
+      FULI_EMBEDDING_DIM: 384
+      EMBEDDING_DIM: 384
+      GRAPHITI_TELEMETRY_ENABLED: "false"
+    ports:
+      - "127.0.0.1:8787:8787"
+    depends_on:
+      personal-neo4j:
+        condition: service_healthy
+    restart: unless-stopped
+
+  workspace-provider:
+    build:
+      context: ./graph-provider
+    environment:
+      FULI_PROVIDER_MODE: workspace
+      FULI_PROVIDER_ID: development-workspace
+      FULI_PROVIDER_NAME: Fuli Workspace Provider
+      FULI_BOOTSTRAP_TOKEN: ${FULI_WORKSPACE_BOOTSTRAP_TOKEN}
+      FULI_NEO4J_URI: bolt://workspace-neo4j:7687
+      FULI_NEO4J_USER: neo4j
+      FULI_NEO4J_PASSWORD: ${FULI_WORKSPACE_NEO4J_PASSWORD}
+      FULI_EMBEDDING_DIM: 384
+      EMBEDDING_DIM: 384
+      GRAPHITI_TELEMETRY_ENABLED: "false"
+    ports:
+      - "127.0.0.1:8788:8787"
+    depends_on:
+      workspace-neo4j:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  personal_neo4j_data:
+  workspace_neo4j_data:

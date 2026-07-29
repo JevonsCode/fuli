@@ -8,6 +8,7 @@ export function jsonSchemaToZod(schema) {
   if (schema.type === 'boolean') return z.boolean();
   if (schema.type === 'number') return numberToZod(schema, false);
   if (schema.type === 'integer') return numberToZod(schema, true);
+  if (schema.type === 'array') return arrayToZod(schema);
   if (schema.type === 'null') return z.null();
   throw new TypeError(`Unsupported JSON schema type: ${schema.type}`);
 }
@@ -18,7 +19,9 @@ export function openObjectSchema() {
 
 function stringToZod(schema) {
   let converted = z.string();
+  if (schema.minLength !== undefined) converted = converted.min(schema.minLength);
   if (schema.maxLength !== undefined) converted = converted.max(schema.maxLength);
+  if (schema.pattern !== undefined) converted = converted.regex(new RegExp(schema.pattern));
   return converted;
 }
 
@@ -46,5 +49,12 @@ function numberToZod(schema, integer) {
   let converted = integer ? z.number().int() : z.number();
   if (schema.minimum !== undefined) converted = converted.min(schema.minimum);
   if (schema.maximum !== undefined) converted = converted.max(schema.maximum);
+  return converted;
+}
+
+function arrayToZod(schema) {
+  let converted = z.array(jsonSchemaToZod(schema.items));
+  if (schema.minItems !== undefined) converted = converted.min(schema.minItems);
+  if (schema.maxItems !== undefined) converted = converted.max(schema.maxItems);
   return converted;
 }

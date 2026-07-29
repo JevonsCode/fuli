@@ -34,9 +34,14 @@ test('CLI invocation preserves every token after the command', () => {
   });
 });
 
-test('CLI invocation recognizes help, setup, and migrate as command boundaries', () => {
+test('CLI invocation recognizes help, version, lifecycle, setup, uninstall, and migrate as command boundaries', () => {
   assert.equal(parseCliInvocation(['--db', 'a.db', '--help']).command, '--help');
+  assert.equal(parseCliInvocation(['--version']).command, '--version');
+  assert.equal(parseCliInvocation(['-v']).command, '-v');
+  assert.equal(parseCliInvocation(['start', '--open']).command, 'start');
+  assert.equal(parseCliInvocation(['status', '--json']).command, 'status');
   assert.equal(parseCliInvocation(['setup', '--yes']).command, 'setup');
+  assert.equal(parseCliInvocation(['uninstall', '--yes']).command, 'uninstall');
   assert.equal(parseCliInvocation(['--db', 'a.db', 'migrate', '--from', 'old.json']).command,
     'migrate');
 });

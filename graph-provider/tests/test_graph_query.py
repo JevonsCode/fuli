@@ -1,0 +1,128 @@
+from datetime import UTC, datetime
+
+from fuli_graph.graph_query import _graph_edge, _graph_node
+
+
+def test_graph_record_projection_parses_shared_json_attributes():
+    node = _graph_node(
+        {
+            'id': 'entity-1',
+            'name': 'Hotel Theme',
+            'type': 'Project',
+            'group_id': 'personal-group',
+            'summary': 'Hotel theme project',
+            'attributes_json': '{"projectId":"hotel-theme"}',
+            'replaced_by_item_id': 'entity-current',
+            'replaced_by_item_kind': 'entity',
+            'episodes': [],
+        },
+        {},
+        {},
+        {},
+        {},
+        {},
+    )
+    edge = _graph_edge(
+        {
+            'id': 'relationship-1',
+            'source': 'entity-1',
+            'target': 'entity-2',
+            'type': 'CONTAINS',
+            'fact': 'The project contains a campaign.',
+            'attributes_json': '{"weight":2}',
+            'episodes': [],
+        },
+        {},
+        {},
+        {},
+        {},
+        {},
+    )
+
+    assert node.attributes == {'projectId': 'hotel-theme'}
+    assert edge.attributes == {'weight': 2}
+    assert node.replaced_by_item_id == 'entity-current'
+    assert node.replaced_by_item_kind == 'entity'
+    assert node.epistemic_state_explicit is False
+    assert edge.epistemic_state_explicit is False
+    assert node.confirmation_status == 'pending'
+    assert edge.confirmation_status == 'pending'
+    assert node.confirmation_state_explicit is False
+
+
+def test_graph_record_projection_preserves_explicit_epistemic_state():
+    node = _graph_node(
+        {
+            'id': 'entity-1',
+            'name': 'Confirmed requirement',
+            'type': 'Requirement',
+            'group_id': 'personal-group',
+            'summary': 'The user explicitly confirmed this requirement.',
+            'origin_quadrant': 'known_known',
+            'current_quadrant': 'known_known',
+            'epistemic_status': 'confirmed',
+            'epistemic_state_explicit': True,
+            'confirmation_status': 'confirmed',
+            'confirmation_state_explicit': True,
+            'confirmation_basis_json': (
+                '{"existence_reason":"Explicit user decision",'
+                '"quadrant_reason":"Explicitly expressed",'
+                '"proposed_by":{"kind":"agent"},'
+                '"confirmed_by":{"kind":"user"},'
+                '"confirmed_at":"2026-07-21T10:00:00Z"}'
+            ),
+            'attributes_json': '{}',
+            'episodes': [],
+        },
+        {},
+        {},
+        {},
+        {},
+        {},
+    )
+
+    assert node.epistemic_state_explicit is True
+    assert node.confirmation_state_explicit is True
+    assert node.confirmation_status == 'confirmed'
+    assert node.confirmation_basis.confirmed_by.kind == 'user'
+
+
+def test_graph_projection_includes_human_change_state_and_permanent_audit_events():
+    changed_at = datetime.now(UTC)
+    node = _graph_node(
+        {
+            'id': 'entity-1',
+            'name': 'Human-edited requirement',
+            'type': 'Requirement',
+            'group_id': 'personal-group',
+            'summary': 'Waiting for Agent review.',
+            'human_edited': True,
+            'human_change_status': 'viewed',
+            'human_change_version': 2,
+            'last_human_changed_at': changed_at,
+            'last_agent_viewed_at': changed_at,
+            'attributes_json': '{}',
+            'episodes': [],
+        },
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+            'entity-1': [{
+                'id': 'audit-1',
+                'item_id': 'entity-1',
+                'item_kind': 'entity',
+                'action': 'agent_view',
+                'human_change_version': 2,
+                'reason': 'Agent viewed the current change.',
+                'created_at': changed_at,
+            }]
+        },
+    )
+
+    assert node.human_edited is True
+    assert node.human_change_status == 'viewed'
+    assert node.human_change_version == 2
+    assert node.audit_events[0].action == 'agent_view'

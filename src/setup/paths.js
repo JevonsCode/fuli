@@ -17,11 +17,18 @@ export function resolveSetupPaths({
   return {
     dataDir: resolvedDataDir,
     dbPath: join(resolvedDataDir, 'context.db'),
+    graphEnvPath: join(resolvedDataDir, 'graph-provider.env'),
+    graphRuntimeConfigPath: join(resolvedDataDir, 'graph-runtime.json'),
+    graphRuntimeStatePath: join(resolvedDataDir, 'graph-runtime-state.json'),
     backupDir: join(resolvedDataDir, 'backups', 'agents'),
     logPath: join(resolvedDataDir, 'logs', 'runtime.log'),
     statePath: join(resolvedDataDir, 'runtime.json'),
     serverPath: join(root, 'src', 'server.js'),
-    mcpServerPath: join(root, 'src', 'mcp-server.js')
+    mcpServerPath: join(root, 'src', 'mcp-server.js'),
+    graphSetupPath: join(root, 'src', 'graphiti', 'setup.js'),
+    graphComposePath: join(root, 'compose.graphiti.yml'),
+    sessionSkillPath: join(root, 'skills', 'capturing-session-knowledge'),
+    projectSkillPath: join(root, 'skills', 'grilling-project')
   };
 }
 

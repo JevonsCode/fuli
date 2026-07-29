@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 import { callAgentTool, listAgentTools } from './agent-tools.js';
 import { ApplicationError } from './app/application-error.js';
-import { openLocalApplication, runStdio } from './mcp/runtime.js';
+import { openFederatedGraphApplication } from './graphiti/federated-application.js';
+import {
+  GraphRuntimeConfigurationError,
+  resolveGraphRuntimeOptions
+} from './graphiti/runtime-config.js';
+import { runStdio } from './mcp/runtime.js';
 import { applicationErrorMessage } from './mcp/tool-result.js';
-import { resolveRuntimeOptions, RuntimeConfigurationError } from './runtime-options.js';
 
 await main(process.argv.slice(2)).catch((error) => {
   process.stderr.write(`${startupMessage(error)}\n`);
@@ -20,16 +24,16 @@ async function main(args) {
     return;
   }
 
-  const { dbPath, personalSpaceName } = resolveRuntimeOptions(args, process.env);
+  const { runtimeConfigPath } = resolveGraphRuntimeOptions(args, process.env);
   if (args.includes('--call')) {
-    await runCall({ args, dbPath, personalSpaceName });
+    await runCall({ args, runtimeConfigPath });
     return;
   }
-  await runStdio({ dbPath, personalSpaceName });
+  await runStdio({ runtimeConfigPath });
 }
 
-async function runCall({ args, dbPath, personalSpaceName }) {
-  const app = openLocalApplication({ dbPath, personalSpaceName });
+async function runCall({ args, runtimeConfigPath }) {
+  const app = openFederatedGraphApplication({ runtimeConfigPath });
   try {
     const result = await callAgentTool(
       app,
@@ -38,7 +42,7 @@ async function runCall({ args, dbPath, personalSpaceName }) {
     );
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } finally {
-    app.close();
+    await app.close();
   }
 }
 
@@ -60,12 +64,13 @@ function parseInput(args) {
 
 function startupMessage(error) {
   if (error instanceof ApplicationError) return applicationErrorMessage(error);
-  if (error instanceof RuntimeConfigurationError) return error.message;
+  if (error instanceof GraphRuntimeConfigurationError) return error.message;
   return 'MCP server failed to start';
 }
 
 function helpText() {
-  return 'Usage: node src/mcp-server.js [--db <sqlite.db>] [--personal-space <name>]\n' +
+  return 'Usage: node src/mcp-server.js [--runtime-config <graph-runtime.json>]\n' +
     '       node src/mcp-server.js --tools\n' +
-    '       node src/mcp-server.js --db <sqlite.db> --call <tool> [--input <json>]\n';
+    '       node src/mcp-server.js --runtime-config <graph-runtime.json> ' +
+    '--call <tool> [--input <json>]\n';
 }

@@ -1,6 +1,10 @@
 export const MCP_INSTRUCTIONS = [
-  'Query get_user_lens when personal context can materially affect the task.',
-  'Call remember_user_fact when the user explicitly states a durable preference during ordinary work.',
-  'Use submit_user_observation for inferred patterns; never confirm inferred observations yourself.',
-  'Query only when needed and never load the full context store into a prompt.'
+  "Each user task: call get_collaboration_preferences before other tools/answer; set projectPath=cwd. Apply all effective_preferences before answers/tools: personal-global everywhere plus only Fuli's matched project. Resolve relevant deferred_conflict via resolve_deferred_preference_conflict before use; ignore others. Exclude conflict/pending/invalid/ambiguous/unrelated; never guess personalProjectId. Writes must enforce preferences in the actual payload; final text is not compliance.",
+  'Before claiming a URL, route, requirement, prior decision, or runbook is unknown, call search_knowledge_graph; resolve IDs via list_knowledge_spaces/list_personal_projects.',
+  'Search only personal-global, exact personalProjectId, named contextPersonalProjectIds, and relevant subscribed public project IDs. On an obvious location miss, ask to widen this read-only lookup to all registered local personal projects; use all_local_confirmed only after explicit confirmation. It never expands public projects.',
+  'After a confirmed all-local miss, search current repository or workspace files with Grep or rg. Never scan user home, filesystem root, outside the workspace, credentials, browser data, or unrelated repositories. Require a safe root and deployment evidence for live URLs.',
+  'Changing/live: use monitoring or Git MCP.',
+  'Silently batch via capture_session_knowledge under personalProjectId. Never store credentials/transcripts/guesses. Preserve quadrant, confirmation basis, status; only auditable confirmed project knowledge enters public review. Final checkpoint: flush or retain nothing.',
+  'Reads record Agent access to human edits. For human_change_status unseen/viewed, inspect conflict, evidence, classification; call review_human_knowledge_change. Only no_conflict plus reasonable clears it.',
+  'Searches return terminal-safe Markdown. The final MUST begin with sourceMarker.leadMarkdown and append sourceMarker.markdown unchanged; without support use noMatchSourceMarker. Never wrap markers in HTML, rewrite them, or cite writes as reads. Keep bounded.'
 ].join(' ');

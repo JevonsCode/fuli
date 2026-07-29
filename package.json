@@ -1,26 +1,98 @@
 {
-  "name": "compound-interest-context",
-  "version": "0.1.0",
-  "description": "Local context growth system for personal and public work spaces.",
+  "name": "fuli-context",
+  "version": "0.2.0",
+  "description": "Local-first context graph for AI agents.",
   "type": "module",
+  "files": [
+    "npm-shrinkwrap.json",
+    "src/",
+    "dist/web/",
+    "graph-provider/Dockerfile",
+    "graph-provider/pyproject.toml",
+    "graph-provider/fuli_graph/*.py",
+    "graph-provider/fuli_graph/**/*.py",
+    "skills/",
+    "compose.graphiti.yml"
+  ],
   "bin": {
+    "fl": "./src/cli.js",
     "fuli": "./src/cli.js"
   },
+  "keywords": [
+    "ai-agent",
+    "mcp",
+    "context",
+    "knowledge-graph",
+    "local-first",
+    "codex",
+    "claude-code"
+  ],
   "scripts": {
     "mcp": "node src/mcp-server.js",
+    "dev": "run-p dev:server dev:web",
+    "dev:server": "node src/server.js",
+    "dev:web": "vite",
+    "build": "run-s typecheck:web build:web",
+    "build:web": "vite build",
+    "typecheck:web": "vue-tsc --noEmit -p tsconfig.app.json",
+    "test:node": "node --test",
+    "test:web": "vitest run --config vitest.config.ts",
+    "test:package": "node scripts/package-smoke.js",
     "start": "node src/server.js",
-    "test": "node --test"
+    "graph:setup": "node src/graphiti/setup.js",
+    "graph:up": "docker compose -f compose.graphiti.yml up -d --build",
+    "graph:down": "docker compose -f compose.graphiti.yml down",
+    "test:structure": "node --test test/source-structure.test.js",
+    "pretest": "npm run build:web",
+    "test": "run-s typecheck:web test:node test:web",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm test"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=24.12"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JevonsCode/fuli.git"
+  },
+  "homepage": "https://github.com/JevonsCode/fuli#readme",
+  "bugs": {
+    "url": "https://github.com/JevonsCode/fuli/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "license": "Apache-2.0",
   "dependencies": {
+    "@hono/node-server": "2.0.12",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^12.11.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "linkedom": "^0.18.12"
+    "@types/d3": "^7.4.3",
+    "@types/node": "^24.13.3",
+    "@vitejs/plugin-vue": "^6.0.8",
+    "@vue/test-utils": "^2.4.11",
+    "brace-expansion": "5.0.8",
+    "d3": "^7.9.0",
+    "gsap": "^3.15.0",
+    "jsdom": "^29.1.1",
+    "linkedom": "^0.18.12",
+    "npm-run-all2": "^9.0.2",
+    "pinia": "^4.0.2",
+    "typescript": "~6.0.0",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10",
+    "vue": "^3.5.40",
+    "vue-router": "^5.2.0",
+    "vue-tsc": "^3.3.8"
+  },
+  "overrides": {
+    "@modelcontextprotocol/sdk": {
+      "@hono/node-server": "2.0.12"
+    },
+    "brace-expansion": "$brace-expansion",
+    "fast-uri": "3.1.4"
   }
 }

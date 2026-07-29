@@ -1,12 +1,10 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
-import { openLocalApplication } from '../runtime-options.js';
+import { openFederatedGraphApplication } from '../graphiti/federated-application.js';
 import { createMcpServer } from './create-mcp-server.js';
 
-export { initializeLocalSpaces, openLocalApplication } from '../runtime-options.js';
-
-export async function runStdio({ dbPath, personalSpaceName = '我' }) {
-  const app = openLocalApplication({ dbPath, personalSpaceName });
+export async function runStdio({ runtimeConfigPath }) {
+  const app = openFederatedGraphApplication({ runtimeConfigPath });
   const server = createServerOrClose(app);
   const transport = new StdioServerTransport();
   const signalHandlers = new Map();
@@ -37,7 +35,7 @@ export function createServerOrClose(app, factory = createMcpServer) {
   try {
     return factory(app);
   } catch (error) {
-    app.close();
+    void app.close();
     throw error;
   }
 }

@@ -4,6 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+import { FULI_VERSION } from '../src/package-metadata.js';
 import { SqliteStore } from '../src/storage/sqlite-store.js';
 import { tmpdir } from 'node:os';
 
@@ -20,6 +21,11 @@ function runCliIn(cwd, dbPath, ...args) {
     encoding: 'utf8'
   });
 }
+
+test('CLI reports the package version', () => {
+  const output = execFileSync(NODE, [CLI, '--version'], { encoding: 'utf8' });
+  assert.equal(output.trim(), FULI_VERSION);
+});
 
 test('CLI can create spaces, subscribe, remember, and search', () => {
   const dbPath = join(mkdtempSync(join(tmpdir(), 'fuli-cli-')), 'fuli.db');
@@ -254,7 +260,14 @@ test('CLI uses the system SQLite path without --db', () => {
   const dataRoot = join(cwd, 'system-data');
   const dataEnv = process.platform === 'win32'
     ? { LOCALAPPDATA: dataRoot }
-    : { XDG_DATA_HOME: dataRoot };
+    : process.platform === 'darwin'
+      ? { HOME: dataRoot }
+      : { XDG_DATA_HOME: dataRoot };
+  const expectedDbPath = process.platform === 'win32'
+    ? join(dataRoot, 'Fuli', 'context.db')
+    : process.platform === 'darwin'
+      ? join(dataRoot, 'Library', 'Application Support', 'Fuli', 'context.db')
+      : join(dataRoot, 'fuli', 'context.db');
 
   const output = execFileSync(NODE, [CLI, 'search', '我', 'missing'], {
     cwd,
@@ -263,8 +276,7 @@ test('CLI uses the system SQLite path without --db', () => {
   });
 
   assert.match(output, /没有找到相关当前事实/);
-  const productDir = process.platform === 'win32' ? 'Fuli' : 'fuli';
-  assert.equal(existsSync(join(dataRoot, productDir, 'context.db')), true);
+  assert.equal(existsSync(expectedDbPath), true);
   assert.equal(existsSync(join(cwd, '.fuli', 'context.db')), false);
 });
 

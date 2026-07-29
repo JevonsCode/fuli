@@ -1,0 +1,171 @@
+#app {
+  height: 100%;
+}
+
+.primary-nav a {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 7px;
+  color: #505852;
+  background: transparent;
+  text-align: left;
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.primary-nav a:hover {
+  background: #e4e7e3;
+}
+
+.primary-nav a:focus-visible {
+  outline: 2px solid #91a398;
+  outline-offset: 1px;
+}
+
+.primary-nav a.is-active {
+  background: #dde4df;
+  color: #243b31;
+  font-weight: 650;
+}
+
+.primary-nav a.space-nav-button {
+  min-height: 52px;
+  padding-block: 8px;
+}
+
+.primary-nav a.personal-space-button.is-active {
+  background: #dde7e1;
+  color: #254234;
+}
+
+.primary-nav a.public-space-button.is-active {
+  background: #e0e6e9;
+  color: #2c414d;
+}
+
+.feedback-button {
+  width: auto;
+  text-align: left;
+  cursor: pointer;
+}
+
+.status-dot.idle {
+  background: #aeb5af;
+}
+
+.provider-row i.disconnected {
+  background: #aeb5af;
+}
+
+.provider-row i.error {
+  background: #b94e45;
+}
+
+.provider-row i.ready {
+  background: #3f8b64;
+}
+
+.view-loading {
+  min-height: 240px;
+  display: grid;
+  place-items: center;
+  color: #778079;
+  font-size: 12px;
+}
+
+.inline-error {
+  color: #8b3f38;
+}
+
+.inspector-meta > div {
+  min-width: 0;
+}
+
+.inspector-meta dd {
+  overflow-wrap: anywhere;
+}
+
+.inspector-placeholder {
+  color: #7b847e;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.feedback,
+.project-card,
+.knowledge-row,
+.personal-profile-row {
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.vue-personal-profile {
+  display: flex;
+  flex-direction: column;
+  padding: 18px 32px 20px;
+  overflow: hidden;
+}
+
+.vue-knowledge-view {
+  display: flex;
+  flex-direction: column;
+  padding: 18px 24px 20px;
+  overflow: hidden;
+}
+
+.vue-knowledge-view .knowledge-layout {
+  min-height: 0;
+  flex: 1;
+}
+
+.compact-relation-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr)) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 16px;
+}
+
+.compact-relation-form label {
+  display: grid;
+  gap: 5px;
+  color: #67716a;
+  font-size: 10px;
+}
+
+.compact-relation-form select {
+  min-width: 0;
+}
+
+.compact-relation-form .searchable-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.vue-dialog[open] {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  width: min(980px, calc(100vw - 64px));
+  max-height: calc(100vh - 64px);
+  margin: auto;
+}
+
+.knowledge-edit-dialog.vue-dialog {
+  width: min(1080px, calc(100vw - 64px));
+}
+
+.vue-dialog::backdrop {
+  background: rgba(23, 31, 27, 0.35);
+}
+
+@media (max-width: 1180px) {
+  .compact-relation-form {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+}

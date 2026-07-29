@@ -1,13 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { callAgentTool, listAgentTools } from '../src/agent-tools.js';
 import { LensQuery } from '../src/lens/lens-query.js';
 import { FactScope, SpaceKind } from '../src/models.js';
 import { FileStore, SqliteStore } from '../src/store.js';
 import { STORE_METHODS } from '../src/storage/store-port.js';
 
-const MCP_LIMIT = 20;
 const DOMAIN_LIMIT = 100;
 const LARGE_FIXTURE_FACTS = 300;
 
@@ -108,18 +106,7 @@ test('bounded fact search and correction lookup have FileStore and SQLite parity
   }
 });
 
-test('MCP declares and supplies its limit while the domain rejects unsafe limits', () => {
-  const definition = listAgentTools().find(({ name }) => name === 'search_user_context');
-  assert.deepEqual(definition.inputSchema.properties.limit, {
-    type: 'integer', minimum: 1, maximum: MCP_LIMIT
-  });
-  let received;
-  callAgentTool({
-    lens: { searchUserContext: (input) => { received = input; } },
-    requireActivePersonalSpace: () => ({ id: 'personal-1' })
-  }, 'search_user_context', { query: 'needle' });
-  assert.equal(received.limit, MCP_LIMIT);
-
+test('legacy Lens domain still rejects unsafe direct limits', () => {
   const store = new FileStore(':memory:');
   const personal = store.createSpace('domain-me', SpaceKind.PERSONAL);
   const query = new LensQuery(store);

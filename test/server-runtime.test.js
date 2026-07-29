@@ -1,85 +1,189 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import { createServer } from '../src/server.js';
-import { resolveSetupPaths } from '../src/setup/paths.js';
-import { closeServer, getJson, postJson } from '../test-support/server.js';
+import { closeServer, getJson, requestJson } from '../test-support/server.js';
 
-const CLI = resolve('src/cli.js');
-
-test('server uses the default SQLite database and bootstraps before serving', async () => {
-  const cwd = mkdtempSync(join(tmpdir(), 'fuli-server-default-'));
-  const dataRoot = join(cwd, 'system-data');
-  const env = process.platform === 'win32'
-    ? { ...process.env, LOCALAPPDATA: dataRoot, USERPROFILE: cwd }
-    : { ...process.env, XDG_DATA_HOME: dataRoot, HOME: cwd };
-  let server;
+test('Web server exposes the Graphiti facade and graph console', async () => {
+  const calls = [];
+  const app = graphApp(calls);
+  const { server, url } = await createServer({ app, port: 0 });
   try {
-    const created = await createServer({ port: 0, cwd, env, homeDir: cwd });
-    server = created.server;
-    const state = await getJson(`${created.url}/api/state`);
-    assert.deepEqual(state.spaces.map(({ name }) => name), ['我', '工作']);
-    assert.equal(existsSync(resolveSetupPaths({ env, homeDir: cwd }).dbPath), true);
-    assert.equal(existsSync(join(cwd, '.fuli', 'context.db')), false);
-  } finally {
-    if (server) await closeServer(server);
-  }
-});
+    const state = await getJson(`${url}/api/state`);
+    assert.equal(state.mode, 'graphiti');
 
-test('fresh server bootstrap honors the active personal space name', async () => {
-  const dbPath = join(mkdtempSync(join(tmpdir(), 'fuli-server-personal-')), 'context.db');
-  const { server, app } = await createServer({
-    dbPath,
-    personalSpaceName: 'Jevons',
-    port: 0
-  });
+    const policy = await requestJson(`${url}/api/capture-policy`, {
+      method: 'PATCH',
+      body: { enabled: false }
+    });
+    assert.equal(policy.status, 200);
+    assert.equal(policy.body.enabled, false);
+    assert.equal((await getJson(`${url}/api/capture-policy`)).enabled, false);
 
-  try {
-    assert.equal(app.activePersonalSpace().name, 'Jevons');
+    const agentAccess = await requestJson(`${url}/api/agent-access-policy`, {
+      method: 'PATCH',
+      body: { enabled: false }
+    });
+    assert.equal(agentAccess.status, 200);
+    assert.equal(agentAccess.body.enabled, false);
+    assert.equal(
+      (await getJson(`${url}/api/agent-access-policy`)).enabled,
+      false
+    );
+
+    const search = await getJson(
+      `${url}/api/search?personalSpaceId=personal-1&q=rule&projectId=project-1` +
+      '&personalProjectId=project-a&contextPersonalProjectId=project-b' +
+      '&contextPersonalProjectId=project-c'
+    );
+    assert.deepEqual(search, { query: 'rule', facts: [] });
+    const input = calls.find(([name]) => name === 'search')[1];
+    assert.deepEqual(input.projectIds, ['project-1']);
+    assert.equal(input.personalProjectId, 'project-a');
+    assert.deepEqual(input.contextPersonalProjectIds, ['project-b', 'project-c']);
+
+    const unsubscribe = await fetch(
+      `${url}/api/subscriptions/project-1?` + new URLSearchParams({
+        personalSpaceId: 'personal-1',
+        providerUrl: 'https://workspace.example'
+      }),
+      { method: 'DELETE' }
+    );
+    assert.equal(unsubscribe.status, 200);
+    assert.deepEqual(calls.find(([name]) => name === 'unsubscribe')[1], {
+      personalSpaceId: 'personal-1',
+      projectId: 'project-1',
+      providerUrl: 'https://workspace.example'
+    });
+
+    const batchInput = {
+      personalSpaceId: 'personal-1',
+      groupKind: 'source',
+      groupValue: 'episode-1',
+      reason: 'Reviewed the source group.',
+      confirmer: { kind: 'user' },
+      items: [{ itemId: 'a' }, { itemId: 'b' }]
+    };
+    const batch = await requestJson(`${url}/api/knowledge/batch-confirmation`, {
+      method: 'POST',
+      body: batchInput
+    });
+    assert.equal(batch.status, 200);
+    assert.deepEqual(
+      calls.find(([name]) => name === 'batch-confirm')[1],
+      { ...batchInput, operationActor: 'human' }
+    );
+
+    const queued = await getJson(
+      `${url}/api/preference-conflicts?personalSpaceId=personal-1&status=ai_pending`
+    );
+    assert.deepEqual(queued, []);
+    assert.deepEqual(
+      calls.find(([name]) => name === 'preference-conflicts')[1],
+      {
+        personalSpaceId: 'personal-1',
+        status: 'ai_pending',
+        limit: 500
+      }
+    );
+
+    const deferred = await requestJson(`${url}/api/preference-conflicts/defer`, {
+      method: 'POST',
+      body: {
+        personalSpaceId: 'personal-1',
+        conflictId: 'conflict-1',
+        preferenceKey: 'tone',
+        preferenceScope: 'global',
+        leftItemId: 'left',
+        leftItemKind: 'entity',
+        rightItemId: 'right',
+        rightItemKind: 'entity',
+        reason: '使用时交给 AI 判断。'
+      }
+    });
+    assert.equal(deferred.status, 200);
+    assert.equal(
+      calls.find(([name]) => name === 'defer-preference-conflict')[1].operationActor,
+      'human'
+    );
+
+    const completed = await requestJson(
+      `${url}/api/preference-conflicts/conflict-1/complete`,
+      {
+        method: 'POST',
+        body: {
+          personalSpaceId: 'personal-1',
+          resolution: 'merge',
+          reason: '用户已完成合并。'
+        }
+      }
+    );
+    assert.equal(completed.status, 200);
+    assert.equal(
+      calls.find(([name]) => name === 'complete-preference-conflict')[1].conflictId,
+      'conflict-1'
+    );
+
+    const html = await fetch(url).then((response) => response.text());
+    assert.match(html, /id="app"/);
+    assert.match(html, /\/assets\/.+\.js/);
+
+    const routedHtml = await fetch(`${url}/personal/personal-1/projects/graph`)
+      .then((response) => response.text());
+    assert.match(routedHtml, /id="app"/);
   } finally {
     await closeServer(server);
   }
 });
 
-test('server rejects JSON live paths without modifying the legacy file', async () => {
-  const dbPath = join(mkdtempSync(join(tmpdir(), 'fuli-server-json-')), 'context.JSON');
-  const original = '{"legacy":true}\n';
-  writeFileSync(dbPath, original, 'utf8');
-
-  await assert.rejects(() => createServer({ dbPath, port: 0 }), /node src\/cli\.js migrate/);
-  assert.equal(readFileSync(dbPath, 'utf8'), original);
-});
-
-test('CLI and Web persist changes through the same SQLite runtime', async () => {
-  const dbPath = join(mkdtempSync(join(tmpdir(), 'fuli-server-shared-')), 'context.db');
-  execFileSync(process.execPath, [
-    CLI, '--db', dbPath, 'remember', '我', '--target', '工作', '--source-kind', 'prd',
-    '--text', 'cli_url: https://cli.example.com'
-  ]);
-
-  const { server, url } = await createServer({ dbPath, port: 0 });
-  const state = await getJson(`${url}/api/state`);
-  const personal = state.spaces.find(({ name }) => name === '我');
-  const project = state.spaces.find(({ name }) => name === '工作');
-  const fromCli = await getJson(
-    `${url}/api/search?personalSpaceId=${personal.id}&q=cli_url`
-  );
-  assert.equal(fromCli.facts[0].object, 'https://cli.example.com');
-
-  await postJson(`${url}/api/remember`, {
-    personalSpaceId: personal.id,
-    targetSpaceId: project.id,
-    sourceKind: 'prd',
-    body: 'web_url: https://web.example.com'
-  });
-  await closeServer(server);
-
-  const fromWeb = execFileSync(process.execPath, [
-    CLI, '--db', dbPath, 'search', '我', 'web_url'
-  ], { encoding: 'utf8' });
-  assert.match(fromWeb, /https:\/\/web\.example\.com/);
-});
+function graphApp(calls) {
+  let capturePolicy = { enabled: true, updatedAt: null };
+  let agentAccessPolicy = { enabled: true, updatedAt: null };
+  return {
+    graphiti: true,
+    state: async () => ({ mode: 'graphiti', personalSpaces: [], projects: [], subscriptions: [] }),
+    searchKnowledge: async (input) => {
+      calls.push(['search', input]);
+      return { query: input.query, facts: [] };
+    },
+    getKnowledgeGraph: async () => ({ nodes: [], edges: [], truncated: false }),
+    captureSessionKnowledge: async () => ({}),
+    confirmKnowledgeBatch: async (input) => {
+      calls.push(['batch-confirm', input]);
+      return { confirmed_count: input.items.length };
+    },
+    listPreferenceConflicts: async (input) => {
+      calls.push(['preference-conflicts', input]);
+      return [];
+    },
+    deferPreferenceConflict: async (input) => {
+      calls.push(['defer-preference-conflict', input]);
+      return { id: input.conflictId, status: 'ai_pending' };
+    },
+    completePreferenceConflict: async (input) => {
+      calls.push(['complete-preference-conflict', input]);
+      return { id: input.conflictId, status: 'resolved' };
+    },
+    getCapturePolicy: () => capturePolicy,
+    updateCapturePolicy: ({ enabled }) => {
+      if (typeof enabled !== 'boolean') throw new TypeError('enabled must be a boolean');
+      capturePolicy = { enabled, updatedAt: '2026-07-22T10:00:00.000Z' };
+      return capturePolicy;
+    },
+    getAgentAccessPolicy: () => agentAccessPolicy,
+    updateAgentAccessPolicy: ({ enabled }) => {
+      if (typeof enabled !== 'boolean') throw new TypeError('enabled must be a boolean');
+      agentAccessPolicy = { enabled, updatedAt: '2026-07-28T10:00:00.000Z' };
+      return agentAccessPolicy;
+    },
+    subscribePublicProject: async () => ({}),
+    unsubscribePublicProject: async (input) => {
+      calls.push(['unsubscribe', input]);
+      return { project_id: input.projectId, deleted: true };
+    },
+    listReviewQueue: async () => ({ proposals: [] }),
+    reviewProposal: async () => ({}),
+    getGraphitiStatus: async () => ({ personal: {}, workspaces: [] }),
+    close: () => calls.push(['close'])
+  };
+}

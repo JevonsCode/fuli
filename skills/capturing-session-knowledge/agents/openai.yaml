@@ -1,0 +1,13 @@
+interface:
+  display_name: "Capturing Session Knowledge"
+  short_description: "Recall and retain durable personal and project context"
+  default_prompt: "Use $capturing-session-knowledge to load effective collaboration preferences, retrieve relevant durable context, and retain reusable knowledge in Fuli."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "fuli"
+      description: "Local Fuli Graphiti knowledge tools"
+
+policy:
+  allow_implicit_invocation: true

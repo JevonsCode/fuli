@@ -28,6 +28,10 @@ export function integerSchema(options = {}) {
   return { type: 'integer', ...options };
 }
 
+export function arraySchema(items, options = {}) {
+  return { type: 'array', items, ...options };
+}
+
 export function enumSchema(values) {
   return { type: 'string', enum: [...values] };
 }
