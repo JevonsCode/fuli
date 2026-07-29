@@ -24,6 +24,8 @@ test('Codex global instructions preserve unrelated guidance and keep a short boo
   assert.match(managed, /start of every user task/i);
   assert.match(managed, /before any other tool or answer/i);
   assert.match(managed, /get_collaboration_preferences/);
+  assert.match(managed, /call exactly.*get_collaboration_preferences/is);
+  assert.match(managed, /never substitute.*(?:project action|Fuli tool)/is);
   assert.match(managed, /projectPath.*current working directory/s);
   assert.match(managed, /all returned `effective_preferences`/);
   assert.match(managed, /write tools?.*actual payload/is);

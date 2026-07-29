@@ -76,4 +76,51 @@ describe('KnowledgeEditDialog', () => {
       },
     )
   })
+
+  it('establishes a legacy discovery quadrant once instead of rewriting current classification', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const item = knowledgeItemFromNode({
+      id: 'legacy-rule',
+      name: '旧规则',
+      type: 'Requirement',
+      summary: '缺少显式发现来源。',
+      confirmation_status: 'pending',
+      confirmation_state_explicit: true,
+      confirmation_basis: {
+        existence_reason: '由旧版本导入。',
+        quadrant_reason: '需要人工补录发现来源。',
+        proposed_by: { kind: 'import', label: '旧版本' },
+      },
+    })
+    const wrapper = mount(KnowledgeEditDialog, {
+      props: {
+        item,
+        personalSpaceId: 'space-1',
+        personalProjectId: null,
+        projects: [],
+        replacementItems: [item],
+      },
+      global: { plugins: [pinia] },
+    })
+
+    const quadrant = wrapper
+      .findAllComponents(SearchableSelect)
+      .find((component) => component.props('label') === '当前分类')
+    await quadrant!.get('[role="combobox"]').trigger('click')
+    await quadrant!
+      .findAll('.searchable-select-option')
+      .find((option) => option.text().includes('未知的已知'))!
+      .trigger('click')
+    const reason = wrapper
+      .findAll('label')
+      .find((label) => label.text().includes('纠正原因'))
+    await reason!.get('textarea').setValue('补录旧知识的发现来源。')
+    await wrapper.findAll('form')[0].trigger('submit')
+    await flushPromises()
+
+    const body = patchJson.mock.calls[0][1]
+    expect(body.originQuadrant).toBe('unknown_known')
+    expect(body.currentQuadrant).toBeUndefined()
+  })
 })

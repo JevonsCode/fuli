@@ -12,6 +12,7 @@ type ConflictResolution = 'defer' | 'keep_target' | 'use_source' | 'coexist'
 type RelationType =
   | 'RELATED_TO'
   | 'PART_OF'
+  | 'USES_KNOWLEDGE_FROM'
   | 'DEPENDS_ON'
   | 'PROVIDES_TO'
   | 'SHARES_CAPABILITY_WITH'
@@ -132,6 +133,7 @@ const relationLabels = computed<Record<RelationType, string>>(() => {
   return {
     RELATED_TO: `与${object}相关`,
     PART_OF: `${subject}属于${object}`,
+    USES_KNOWLEDGE_FROM: `${subject}从${object}继承共享知识`,
     DEPENDS_ON: `${subject}依赖${object}`,
     PROVIDES_TO: `${subject}向${object}提供能力`,
     SHARES_CAPABILITY_WITH: `与${object}共享能力`,

@@ -4,6 +4,7 @@ import { focusSearchableSelect, syncSearchableSelects } from './searchable-selec
 
 const RELATION_LABELS = Object.freeze({
   PART_OF: '属于',
+  USES_KNOWLEDGE_FROM: '使用其共享知识',
   DEPENDS_ON: '依赖',
   PROVIDES_TO: '提供能力',
   SHARES_CAPABILITY_WITH: '共享能力',

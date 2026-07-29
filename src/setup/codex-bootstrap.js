@@ -13,8 +13,9 @@ const BLOCK_START = '<!-- BEGIN FULI MANAGED INSTRUCTIONS -->';
 const BLOCK_END = '<!-- END FULI MANAGED INSTRUCTIONS -->';
 
 const GLOBAL_INSTRUCTIONS = `${BLOCK_START}
-At the start of every user task, before any other tool or answer, call
-\`get_collaboration_preferences\` using \`projectPath\` = current working directory.
+At the start of every user task, before any other tool or answer, call exactly
+\`get_collaboration_preferences\` with \`projectPath\`=current working directory. Never substitute
+project action or Fuli tool.
 Apply all returned \`effective_preferences\` before answers or tools. For write tools, enforce
 them in the actual payload; mentioning them later is not compliance.
 Before using a relevant \`deferred_conflict\`, call

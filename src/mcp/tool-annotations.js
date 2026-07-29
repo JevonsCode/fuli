@@ -14,6 +14,7 @@ const WRITE_TOOLS = new Set([
   'resolve_deferred_preference_conflict',
   'capture_session_knowledge',
   'search_knowledge_graph',
+  'record_knowledge_usage',
   'get_knowledge_graph',
   'search_human_knowledge_changes',
   'review_human_knowledge_change',
@@ -48,7 +49,8 @@ export function annotationsFor(name) {
     readOnlyHint: readOnly,
     destructiveHint: DESTRUCTIVE_TOOLS.has(name),
     idempotentHint: readOnly || name === 'upsert_personal_project' ||
-      name === 'publish_personal_project' || name === 'unsubscribe_public_project',
+      name === 'publish_personal_project' || name === 'unsubscribe_public_project' ||
+      name === 'record_knowledge_usage',
     openWorldHint: name === 'capture_session_knowledge' ||
       name === 'publish_personal_project' ||
       name === 'create_project_relation' ||

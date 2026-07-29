@@ -218,6 +218,42 @@ describe('knowledge model', () => {
     expect(classificationExplanation(item)).toContain('同时覆盖知识内容和象限归类')
   })
 
+  it('recognizes only policy-backed Agent confirmation and exposes its usage scores', () => {
+    const item = knowledgeItemFromNode({
+      id: 'agent-confirmed-runbook',
+      name: 'Deployment runbook',
+      type: 'Runbook',
+      origin_quadrant: 'known_known',
+      current_quadrant: 'known_known',
+      epistemic_state_explicit: true,
+      confirmation_status: 'agent_confirmed',
+      confirmation_state_explicit: true,
+      confirmation_basis: {
+        existence_reason: 'Repeated material use supported this runbook.',
+        quadrant_reason: 'It was explicitly expressed when captured.',
+        proposed_by: { kind: 'agent', label: 'Codex' },
+        confirmed_by: { kind: 'agent', label: 'Fuli usage policy' },
+        confirmed_at: '2026-07-29T03:00:00Z',
+        agent_policy_version: 'agent-usage-v1',
+      },
+      utility_score: 0.72,
+      confidence_score: 0.74,
+      qualified_use_count: 5,
+      distinct_task_count: 3,
+    })
+
+    expect(knowledgeReviewState(item)).toBe('agent_confirmed')
+    expect(reviewStateLabel(item)).toBe('Agent 已确认')
+    expect(item.utilityScore).toBe(0.72)
+    expect(item.confidenceScore).toBe(0.74)
+    expect(item.qualifiedUseCount).toBe(5)
+    expect(item.distinctTaskCount).toBe(3)
+    expect(classificationExplanation(item)).toContain('低于人工或权威来源确认')
+
+    item.confirmationBasis!.agent_policy_version = undefined
+    expect(knowledgeReviewState(item)).toBe('pending')
+  })
+
   it('groups only pending classified knowledge by exact source and session', () => {
     const evidence = {
       id: 'episode-1',

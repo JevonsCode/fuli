@@ -165,6 +165,34 @@ class GraphitiRuntime:
             'CREATE CONSTRAINT fuli_knowledge_conflict_id IF NOT EXISTS '
             'FOR (n:FuliKnowledgeConflict) REQUIRE n.id IS UNIQUE'
         )
+        await self.driver.execute_query(
+            'CREATE CONSTRAINT fuli_knowledge_audit_id IF NOT EXISTS '
+            'FOR (n:FuliKnowledgeAudit) REQUIRE n.id IS UNIQUE'
+        )
+        for query in (
+            'CREATE INDEX fuli_entity_confirmation IF NOT EXISTS '
+            'FOR (n:Entity) ON (n.group_id, n.fuli_confirmation_status)',
+            'CREATE INDEX fuli_entity_usage_score IF NOT EXISTS '
+            'FOR (n:Entity) ON (n.group_id, n.fuli_utility_score)',
+            'CREATE INDEX fuli_relationship_confirmation IF NOT EXISTS '
+            'FOR ()-[r:RELATES_TO]-() '
+            'ON (r.group_id, r.fuli_confirmation_status)',
+            'CREATE INDEX fuli_relationship_usage_score IF NOT EXISTS '
+            'FOR ()-[r:RELATES_TO]-() ON (r.group_id, r.fuli_utility_score)',
+            'CREATE INDEX fuli_knowledge_assignment_lookup IF NOT EXISTS '
+            'FOR (n:FuliKnowledgeAssignment) '
+            'ON (n.space_id, n.item_kind, n.item_id)',
+            'CREATE INDEX fuli_knowledge_reference_lookup IF NOT EXISTS '
+            'FOR (n:FuliKnowledgeProjectReference) '
+            'ON (n.space_id, n.item_kind, n.item_id)',
+            'CREATE INDEX fuli_knowledge_audit_lookup IF NOT EXISTS '
+            'FOR (n:FuliKnowledgeAudit) '
+            'ON (n.space_id, n.item_id, n.usage_generation)',
+            'CREATE INDEX fuli_personal_project_relation_type IF NOT EXISTS '
+            'FOR ()-[r:PERSONAL_PROJECT_RELATION]-() ON (r.relation_type)',
+        ):
+            await self.driver.execute_query(query)
+        await self._migrate_knowledge_lifecycle_defaults()
         await self._migrate_space_visibility_and_owners()
         await self._migrate_project_releases()
         await self._migrate_legacy_group_ids()
@@ -251,6 +279,72 @@ class GraphitiRuntime:
                     previous=previous,
                     current=current,
                 )
+
+    async def _migrate_knowledge_lifecycle_defaults(self) -> None:
+        await self.driver.execute_query(
+            '''
+            MATCH (item:Entity)
+            WHERE item.fuli_utility_score IS NULL
+               OR item.fuli_confidence_score IS NULL
+               OR item.fuli_qualified_use_count IS NULL
+               OR item.fuli_distinct_task_count IS NULL
+               OR item.fuli_usage_generation IS NULL
+               OR item.fuli_inheritance_mode IS NULL
+               OR item.fuli_inherited_project_ids IS NULL
+            SET item.fuli_utility_score =
+                  coalesce(item.fuli_utility_score, 0.0),
+                item.fuli_confidence_score = coalesce(
+                  item.fuli_confidence_score,
+                  CASE coalesce(item.fuli_confirmation_status, 'pending')
+                    WHEN 'confirmed' THEN 1.0
+                    WHEN 'agent_confirmed' THEN 0.75
+                    ELSE 0.5
+                  END
+                ),
+                item.fuli_qualified_use_count =
+                  coalesce(item.fuli_qualified_use_count, 0),
+                item.fuli_distinct_task_count =
+                  coalesce(item.fuli_distinct_task_count, 0),
+                item.fuli_usage_generation =
+                  coalesce(item.fuli_usage_generation, 1),
+                item.fuli_inheritance_mode =
+                  coalesce(item.fuli_inheritance_mode, 'local_only'),
+                item.fuli_inherited_project_ids =
+                  coalesce(item.fuli_inherited_project_ids, [])
+            '''
+        )
+        await self.driver.execute_query(
+            '''
+            MATCH ()-[item:RELATES_TO]->()
+            WHERE item.fuli_utility_score IS NULL
+               OR item.fuli_confidence_score IS NULL
+               OR item.fuli_qualified_use_count IS NULL
+               OR item.fuli_distinct_task_count IS NULL
+               OR item.fuli_usage_generation IS NULL
+               OR item.fuli_inheritance_mode IS NULL
+               OR item.fuli_inherited_project_ids IS NULL
+            SET item.fuli_utility_score =
+                  coalesce(item.fuli_utility_score, 0.0),
+                item.fuli_confidence_score = coalesce(
+                  item.fuli_confidence_score,
+                  CASE coalesce(item.fuli_confirmation_status, 'pending')
+                    WHEN 'confirmed' THEN 1.0
+                    WHEN 'agent_confirmed' THEN 0.75
+                    ELSE 0.5
+                  END
+                ),
+                item.fuli_qualified_use_count =
+                  coalesce(item.fuli_qualified_use_count, 0),
+                item.fuli_distinct_task_count =
+                  coalesce(item.fuli_distinct_task_count, 0),
+                item.fuli_usage_generation =
+                  coalesce(item.fuli_usage_generation, 1),
+                item.fuli_inheritance_mode =
+                  coalesce(item.fuli_inheritance_mode, 'local_only'),
+                item.fuli_inherited_project_ids =
+                  coalesce(item.fuli_inherited_project_ids, [])
+            '''
+        )
 
     async def close(self) -> None:
         await self.graphiti.close()

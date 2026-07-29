@@ -6,7 +6,6 @@ import KnowledgeBatchConfirmDialog from '@/features/knowledge/KnowledgeBatchConf
 import KnowledgeConfirmDialog from '@/features/knowledge/KnowledgeConfirmDialog.vue'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
 import KnowledgeInspector from '@/features/knowledge/KnowledgeInspector.vue'
-import KnowledgeQuadrantStage from '@/features/knowledge/KnowledgeQuadrantStage.vue'
 import {
   batchConfirmationGroups,
   confirmationBasisSummary,
@@ -45,6 +44,7 @@ const reviewChoices: Array<{
   hint: string
 }> = [
   { value: 'pending', label: '待确认', hint: '尚无有效的确认人和确认时间' },
+  { value: 'agent_confirmed', label: 'Agent 已确认', hint: '实际使用达到策略阈值，权重低于人工确认' },
   { value: 'confirmed', label: '已确认', hint: '内容与象限归类均已确认' },
 ]
 
@@ -164,23 +164,15 @@ function openReplacement(item: KnowledgeItem) {
 <template>
   <section
     class="view knowledge-organizer"
-    :class="{ 'has-active-quadrant': hasActiveQuadrant }"
   >
     <div class="organizer-head">
       <div class="organizer-principle">
         <p class="eyebrow">HOW CLASSIFICATION WORKS</p>
-        <h3>象限记录发现方式，确认依据解释来由，状态记录审核结果</h3>
+        <h3>先看知识和确认状态，四象限只保留发现来源</h3>
         <p>
-          四象限保留知识被发现时的分类；来源再多也不会自动变成“已确认”，必须留下确认人和确认时间。
+          待确认内容也可被 Agent 检索；实际使用达到阈值会标记为“Agent 已确认”，人工确认仍具有更高权重。
         </p>
       </div>
-
-      <KnowledgeQuadrantStage
-        :choices="quadrantChoices"
-        :counts="quadrantCounts"
-        :active-quadrant="activeQuadrant"
-        @select="selectQuadrant"
-      />
 
       <div class="organizer-attention">
         <strong>{{ attentionCount }}</strong>
@@ -189,17 +181,43 @@ function openReplacement(item: KnowledgeItem) {
       </div>
     </div>
 
-    <template v-if="hasActiveQuadrant">
+    <template>
       <div class="organizer-toolbar">
         <label class="organizer-search">
           <span>筛选知识</span>
           <input v-model="query" type="search" placeholder="搜索内容、类型或来源" />
         </label>
 
+        <div class="quadrant-filter" aria-label="发现来源筛选">
+          <span>发现来源</span>
+          <button
+            type="button"
+            data-quadrant="all"
+            :class="{ active: activeQuadrant === 'all' }"
+            :aria-pressed="activeQuadrant === 'all'"
+            @click="activeQuadrant = 'all'"
+          >
+            全部 <strong>{{ items.length }}</strong>
+          </button>
+          <button
+            v-for="choice in quadrantChoices"
+            :key="choice.value"
+            type="button"
+            :data-quadrant="choice.value"
+            :class="{ active: activeQuadrant === choice.value }"
+            :aria-pressed="activeQuadrant === choice.value"
+            :title="choice.coordinate"
+            @click="selectQuadrant(choice.value)"
+          >
+            {{ choice.short }} <strong>{{ quadrantCounts[choice.value] }}</strong>
+          </button>
+        </div>
+
         <div class="review-state-filter" aria-label="确认状态筛选">
           <span>确认状态</span>
           <button
             type="button"
+            data-review-state="all"
             :class="{ active: activeReviewState === 'all' }"
             :aria-pressed="activeReviewState === 'all'"
             @click="selectReviewState('all')"
@@ -210,6 +228,7 @@ function openReplacement(item: KnowledgeItem) {
             v-for="choice in reviewChoices"
             :key="choice.value"
             type="button"
+            :data-review-state="choice.value"
             :class="[
               `state-${choice.value}`,
               { active: activeReviewState === choice.value },
@@ -296,10 +315,6 @@ function openReplacement(item: KnowledgeItem) {
       </div>
     </template>
 
-    <div v-else-if="loading && !graph" class="organizer-loading-inline">
-      正在读取知识…
-    </div>
-
     <KnowledgeEditDialog
       :item="editingItem"
       :personal-space-id="store.activePersonalSpace?.id ?? ''"
@@ -361,10 +376,6 @@ function openReplacement(item: KnowledgeItem) {
   line-height: 1.55;
 }
 
-.organizer-head > .quadrant-stage {
-  grid-column: 1 / -1;
-}
-
 .organizer-attention {
   grid-column: 2;
   grid-row: 1;
@@ -398,31 +409,6 @@ function openReplacement(item: KnowledgeItem) {
   font-size: 8px;
 }
 
-.has-active-quadrant .organizer-head {
-  min-height: 86px;
-  grid-template-columns: minmax(230px, 1fr) minmax(340px, 500px) auto;
-  align-items: stretch;
-  gap: 14px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #dce1dc;
-}
-
-.has-active-quadrant .organizer-principle {
-  grid-column: 1;
-  grid-row: 1;
-}
-
-.has-active-quadrant .organizer-head > .quadrant-stage {
-  grid-column: 2;
-  grid-row: 1;
-}
-
-.has-active-quadrant .organizer-attention {
-  grid-column: 3;
-  grid-row: 1;
-  align-self: center;
-}
-
 .organizer-loading-inline {
   color: #7b847e;
   font-size: 10px;
@@ -454,7 +440,8 @@ function openReplacement(item: KnowledgeItem) {
   width: 100%;
 }
 
-.review-state-filter {
+.review-state-filter,
+.quadrant-filter {
   flex: 0 0 auto;
   height: 31px;
   display: flex;
@@ -467,14 +454,21 @@ function openReplacement(item: KnowledgeItem) {
   white-space: nowrap;
 }
 
-.review-state-filter > span {
+.quadrant-filter {
+  max-width: 470px;
+  overflow-x: auto;
+}
+
+.review-state-filter > span,
+.quadrant-filter > span {
   padding: 0 6px;
   color: #7a847d;
   font-size: 8px;
   font-weight: 650;
 }
 
-.review-state-filter button {
+.review-state-filter button,
+.quadrant-filter button {
   height: 25px;
   padding: 0 7px;
   border: 0;
@@ -485,12 +479,14 @@ function openReplacement(item: KnowledgeItem) {
   white-space: nowrap;
 }
 
-.review-state-filter button:hover {
+.review-state-filter button:hover,
+.quadrant-filter button:hover {
   color: #35473d;
   background: rgba(255, 255, 255, .66);
 }
 
-.review-state-filter button.active {
+.review-state-filter button.active,
+.quadrant-filter button.active {
   color: #30483a;
   background: #fff;
   box-shadow: 0 1px 3px rgba(47, 61, 52, .12);
@@ -500,11 +496,16 @@ function openReplacement(item: KnowledgeItem) {
   color: #765d2e;
 }
 
+.review-state-filter button.state-agent_confirmed.active {
+  color: #4d5f78;
+}
+
 .review-state-filter button.state-confirmed.active {
   color: #356047;
 }
 
-.review-state-filter button strong {
+.review-state-filter button strong,
+.quadrant-filter button strong {
   margin-left: 2px;
   font-size: 8px;
   font-weight: 720;
@@ -672,6 +673,11 @@ function openReplacement(item: KnowledgeItem) {
   background: #edf6f0;
 }
 
+.review-chip.state-agent_confirmed {
+  color: #4d5f78;
+  background: #eef2f7;
+}
+
 .review-chip.state-pending {
   color: #77602f;
   background: #f7f2e5;
@@ -682,16 +688,8 @@ function openReplacement(item: KnowledgeItem) {
 }
 
 @media (max-width: 1260px) {
-  .has-active-quadrant .organizer-head {
-    grid-template-columns: minmax(190px, 1fr) minmax(320px, 430px) auto;
-    gap: 10px;
-  }
-
-  .has-active-quadrant .organizer-principle > p:last-child {
-    display: none;
-  }
-
   .review-state-filter > span,
+  .quadrant-filter > span,
   .organizer-result-summary {
     display: none;
   }
@@ -704,22 +702,6 @@ function openReplacement(item: KnowledgeItem) {
 }
 
 @media (max-width: 1040px) {
-  .has-active-quadrant .organizer-head {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .has-active-quadrant .organizer-principle {
-    display: none;
-  }
-
-  .has-active-quadrant .organizer-head > .quadrant-stage {
-    grid-column: 1;
-  }
-
-  .has-active-quadrant .organizer-attention {
-    grid-column: 2;
-  }
-
   .organizer-layout.has-selection {
     grid-template-columns: minmax(0, 1fr) 280px;
   }

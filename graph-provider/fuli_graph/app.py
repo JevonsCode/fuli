@@ -5,12 +5,19 @@ from fastapi import Depends, FastAPI, Header, Query
 
 from .auth import matches_bootstrap_token
 from .config import Settings, get_settings
+from .graph_models import GraphResult
+from .knowledge_usage_models import KnowledgeUsageCreate, KnowledgeUsageResult
+from .project_action_models import (
+    KnowledgeProjectActionRequest,
+    KnowledgeProjectActionResult,
+    KnowledgeProjectPreviewRecord,
+    KnowledgeProjectPreviewRequest,
+)
 from .models import (
     BootstrapRequest,
     BootstrapResult,
     CollaborationContextResult,
     CommitResult,
-    GraphResult,
     KnowledgeAgentReviewCreate,
     KnowledgeAgentViewCreate,
     KnowledgeAgentViewResult,
@@ -20,10 +27,6 @@ from .models import (
     KnowledgeAssignmentRecord,
     KnowledgeBatchConfirmationCreate,
     KnowledgeBatchConfirmationResult,
-    KnowledgeProjectActionRequest,
-    KnowledgeProjectActionResult,
-    KnowledgeProjectPreviewRecord,
-    KnowledgeProjectPreviewRequest,
     PreferenceScopeChange,
     PreferenceConflictCompleteCreate,
     PreferenceConflictDeferCreate,
@@ -60,6 +63,7 @@ from .models import (
 )
 from .knowledge_audit import (
     record_agent_views,
+    record_knowledge_usage,
     review_human_change,
     search_human_changes,
 )
@@ -324,6 +328,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         actor: Actor,
     ) -> KnowledgeAgentViewResult:
         return await record_agent_views(store, actor, request)
+
+    @application.post(
+        '/v1/knowledge/usage',
+        response_model=KnowledgeUsageResult,
+    )
+    async def record_agent_knowledge_usage(
+        request: KnowledgeUsageCreate,
+        actor: Actor,
+    ) -> KnowledgeUsageResult:
+        return await record_knowledge_usage(store, actor, request)
 
     @application.post(
         '/v1/knowledge/items/{item_id}/agent-review',

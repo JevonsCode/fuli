@@ -1,8 +1,10 @@
 from .models import (
     KnowledgeAssignmentRecord,
+    KnowledgeRevisionRecord,
+)
+from .project_action_models import (
     KnowledgeConflictRecord,
     KnowledgeProjectReferenceRecord,
-    KnowledgeRevisionRecord,
 )
 from .provider_values import json_object, native_datetime
 

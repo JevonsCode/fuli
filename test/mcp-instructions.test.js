@@ -7,6 +7,8 @@ test('MCP instructions require task-scoped preference loading within the 2KB bud
   assert.ok(Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8') <= 2048);
   assert.match(MCP_INSTRUCTIONS, /each user task/i);
   assert.match(MCP_INSTRUCTIONS, /get_collaboration_preferences/);
+  assert.match(MCP_INSTRUCTIONS, /call exactly get_collaboration_preferences/i);
+  assert.match(MCP_INSTRUCTIONS, /never substitute.*project action/i);
   assert.match(MCP_INSTRUCTIONS, /before other tools\/answer/i);
   assert.match(MCP_INSTRUCTIONS, /projectPath=cwd/i);
   assert.match(MCP_INSTRUCTIONS, /all effective_preferences/i);

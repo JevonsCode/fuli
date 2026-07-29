@@ -160,7 +160,10 @@ describe('PersonalProfilePage', () => {
     await flushPromises()
 
     const summaryActions = wrapper.findAll('.personal-profile-summary > button')
-    expect(summaryActions).toHaveLength(3)
+    expect(summaryActions).toHaveLength(4)
+    expect(summaryActions.some(
+      (button) => button.attributes('aria-label') === '查看 0 条 Agent 已确认偏好',
+    )).toBe(true)
     const pendingAction = summaryActions.find(
       (button) => button.attributes('aria-label') === '查看并处理 1 条待确认偏好',
     )

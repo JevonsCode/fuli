@@ -13,14 +13,16 @@ from .knowledge_management import (
 )
 from .models import (
     KnowledgeAssignmentChange,
+    PersonalProjectUpsert,
+    ProjectProfile,
+    ProjectSource,
+)
+from .project_action_models import (
     KnowledgeProjectActionRequest,
     KnowledgeProjectActionResult,
     KnowledgeProjectMatch,
     KnowledgeProjectPreviewRecord,
     KnowledgeProjectPreviewRequest,
-    PersonalProjectUpsert,
-    ProjectProfile,
-    ProjectSource,
 )
 from .provider_values import (
     normalized_text as _normalized,
@@ -35,25 +37,37 @@ async def preview_knowledge_project_action(
     request: KnowledgeProjectPreviewRequest,
 ) -> KnowledgeProjectPreviewRecord:
     space, item = await _authorize_item(store, actor, item_id, request)
-    await authorize_personal_project(store, actor, space, request.target_project_id)
-    source_project_id = await _source_project_id(
-        store, space, item_id, request.item_kind
-    )
-    match = await _match_target_project(
-        store,
-        space,
-        item_id,
-        request.item_kind,
-        item,
-        request.target_project_id,
-        source_project_id,
-    )
+    if request.mode == 'create':
+        source_project_id = await _source_project_id(
+            store, space, item_id, request.item_kind
+        )
+        target_project_id = request.new_project_id
+        await _ensure_new_project_id(store, space, target_project_id)
+        match = KnowledgeProjectMatch(
+            kind='none',
+            reason='新项目标识可用，尚未执行创建。',
+        )
+    else:
+        target_project_id = request.target_project_id
+        await authorize_personal_project(store, actor, space, target_project_id)
+        source_project_id = await _source_project_id(
+            store, space, item_id, request.item_kind
+        )
+        match = await _match_target_project(
+            store,
+            space,
+            item_id,
+            request.item_kind,
+            item,
+            target_project_id,
+            source_project_id,
+        )
     return KnowledgeProjectPreviewRecord(
         item_id=item_id,
         item_name=item['name'],
         item_summary=item.get('summary') or '',
         source_project_id=source_project_id,
-        target_project_id=request.target_project_id,
+        target_project_id=target_project_id,
         match=match,
     )
 

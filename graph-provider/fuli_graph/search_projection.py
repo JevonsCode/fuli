@@ -1,11 +1,31 @@
 from graphiti_core.edges import EntityEdge
 
-from .models import ConfirmationBasis, FactResult
+from .models import (
+    ConfirmationBasis,
+    FactResult,
+    _validate_confirmation_state,
+)
 from .provider_values import json_object, native_datetime as _native_datetime
 
 
 def is_default_retrievable(metadata: dict) -> bool:
-    return metadata.get('confirmation_status', 'pending') == 'confirmed'
+    return effective_confirmation_status(metadata) in {
+        'confirmed',
+        'agent_confirmed',
+    }
+
+
+def effective_confirmation_status(metadata: dict) -> str:
+    status = metadata.get('confirmation_status', 'pending')
+    basis_data = json_object(metadata.get('confirmation_basis_json'))
+    if not basis_data:
+        return 'pending'
+    try:
+        basis = ConfirmationBasis.model_validate(basis_data)
+        _validate_confirmation_state(status, basis)
+    except ValueError:
+        return 'pending'
+    return status
 
 
 async def read_edge_epistemic_metadata(store, edge_ids: list[str]) -> dict[str, dict]:
@@ -28,6 +48,11 @@ async def read_edge_epistemic_metadata(store, edge_ids: list[str]) -> dict[str, 
                     ELSE coalesce(edge.fuli_preference_scope, 'global') END
                     AS preference_scope,
                edge.fuli_preference_project_id AS preference_project_id,
+               edge.fuli_key AS key,
+               coalesce(edge.fuli_inheritance_mode, 'local_only')
+                 AS inheritance_mode,
+               coalesce(edge.fuli_inherited_project_ids, [])
+                 AS inherited_project_ids,
                coalesce(edge.fuli_human_edited, false) AS human_edited,
                coalesce(edge.fuli_human_change_status, 'none')
                  AS human_change_status,
@@ -36,11 +61,29 @@ async def read_edge_epistemic_metadata(store, edge_ids: list[str]) -> dict[str, 
                edge.fuli_last_human_changed_at AS last_human_changed_at,
                edge.fuli_last_agent_viewed_at AS last_agent_viewed_at,
                edge.fuli_last_agent_reviewed_at AS last_agent_reviewed_at
+               ,coalesce(edge.fuli_utility_score, 0.0) AS utility_score
+               ,coalesce(edge.fuli_confidence_score, 0.5) AS confidence_score
+               ,coalesce(edge.fuli_qualified_use_count, 0)
+                 AS qualified_use_count
+               ,coalesce(edge.fuli_distinct_task_count, 0)
+                 AS distinct_task_count
+               ,edge.fuli_last_used_at AS last_used_at
         ''',
         edge_ids=edge_ids,
         routing_='r',
     )
-    return {record['id']: dict(record) for record in records}
+    result = {}
+    for record in records:
+        value = dict(record)
+        effective_status = effective_confirmation_status(value)
+        if effective_status != value.get('confirmation_status'):
+            value['confidence_score'] = min(
+                float(value.get('confidence_score') or 0.5),
+                0.5,
+            )
+        value['confirmation_status'] = effective_status
+        result[record['id']] = value
+    return result
 
 
 def fact_result(
@@ -73,6 +116,10 @@ def fact_result(
         profile_aspect=metadata.get('profile_aspect'),
         preference_scope=metadata.get('preference_scope'),
         preference_project_id=metadata.get('preference_project_id'),
+        key=metadata.get('key'),
+        defined_project_id=metadata.get('defined_project_id'),
+        inheritance_mode=metadata.get('inheritance_mode') or 'local_only',
+        inherited_project_ids=metadata.get('inherited_project_ids') or [],
         human_edited=metadata.get('human_edited') is True,
         human_change_status=metadata.get('human_change_status') or 'none',
         human_change_version=int(metadata.get('human_change_version') or 0),
@@ -85,9 +132,25 @@ def fact_result(
         last_agent_reviewed_at=_native_datetime(
             metadata.get('last_agent_reviewed_at')
         ),
+        utility_score=float(metadata.get('utility_score') or 0),
+        confidence_score=float(
+            metadata['confidence_score']
+            if metadata.get('confidence_score') is not None else 0.5
+        ),
+        qualified_use_count=int(metadata.get('qualified_use_count') or 0),
+        distinct_task_count=int(metadata.get('distinct_task_count') or 0),
+        last_used_at=_native_datetime(metadata.get('last_used_at')),
+        scope_distance=int(metadata.get('scope_distance') or 0),
+        inherited_from_project_id=metadata.get('inherited_from_project_id'),
+        scope_path=metadata.get('scope_path') or [],
     )
 
 
 def _confirmation_basis(value) -> ConfirmationBasis | None:
     data = json_object(value)
-    return ConfirmationBasis.model_validate(data) if data else None
+    if not data:
+        return None
+    try:
+        return ConfirmationBasis.model_validate(data)
+    except ValueError:
+        return None

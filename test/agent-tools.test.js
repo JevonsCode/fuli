@@ -8,6 +8,7 @@ const NAMES = [
   'resolve_deferred_preference_conflict',
   'capture_session_knowledge',
   'search_knowledge_graph',
+  'record_knowledge_usage',
   'get_knowledge_graph',
   'search_human_knowledge_changes',
   'review_human_knowledge_change',
@@ -67,12 +68,25 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
   assert.match(search.description, /required next action/i);
   assert.match(search.description, /current (?:repository|workspace).*files/i);
   assert.match(search.description, /read-only local file search/i);
+  assert.match(search.description, /PART_OF.*USES_KNOWLEDGE_FROM/i);
+  assert.match(search.description, /RELATED_TO.*never expand|never.*RELATED_TO/i);
   assert.deepEqual(search.inputSchema.properties.includePending, { type: 'boolean' });
   assert.equal(search.inputSchema.properties.includeExploratory, undefined);
   const capture = tools.find(({ name }) => name === 'capture_session_knowledge');
   assert.deepEqual(capture.inputSchema.properties.personalProjectId, {
     type: ['string', 'null']
   });
+  assert.deepEqual(
+    capture.inputSchema.properties.entities.items.properties.confirmationStatus.enum,
+    ['confirmed', 'pending']
+  );
+  const usage = tools.find(({ name }) => name === 'record_knowledge_usage');
+  assert.match(usage.description, /materially affected/i);
+  assert.match(usage.description, /idempotent/i);
+  assert.deepEqual(
+    usage.inputSchema.properties.items.items.properties.useKind.enum,
+    ['cited', 'applied']
+  );
   const preferences = tools.find(({ name }) => name === 'get_collaboration_preferences');
   assert.match(preferences.description, /start of every user task/i);
   assert.match(preferences.description, /before any other tool or answer/i);
@@ -109,6 +123,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       calls.push(['resolve-preference-conflict', input]),
     captureSessionKnowledge: async (input) => calls.push(['capture', input]),
     searchKnowledge: async (input) => calls.push(['search', input]),
+    recordKnowledgeUsage: async (input) => calls.push(['knowledge-usage', input]),
     getKnowledgeGraph: async (input) => calls.push(['graph', input]),
     searchHumanChanges: async (input) => calls.push(['human-changes', input]),
     reviewHumanChange: async (input) => calls.push(['review-human-change', input]),
@@ -137,7 +152,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
   for (const name of NAMES) await callAgentTool(app, name, { probe: name });
   assert.deepEqual(calls.map(([name]) => name), [
     'preferences', 'resolve-preference-conflict',
-    'capture', 'search', 'graph', 'human-changes', 'review-human-change',
+    'capture', 'search', 'knowledge-usage', 'graph', 'human-changes', 'review-human-change',
     'spaces', 'upsert-project', 'personal-projects',
     'revise-knowledge', 'reassign-knowledge', 'preference-scope', 'preview-project-action',
     'apply-project-action',

@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 
 import { patchJson, postJson } from '@/api/client'
 import SearchableSelect from '@/components/SearchableSelect.vue'
+import { quadrantLabel } from './model'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
 import type { KnowledgeEdge, KnowledgeItem, KnowledgeNode, PersonalProject } from '@/types'
@@ -30,12 +31,13 @@ const targetProjectId = ref('')
 const preferenceScope = ref('global')
 const preferenceProjectId = ref('')
 const preferenceReason = ref('')
+const inheritanceProjectId = ref('')
 const replacementItemKey = ref('')
 const form = reactive({
   name: '',
   summary: '',
   fact: '',
-  quadrant: '',
+  currentQuadrant: '',
   confirmationStatus: 'pending',
   existenceReason: '',
   quadrantReason: '',
@@ -44,6 +46,7 @@ const form = reactive({
   confirmedByKind: 'user',
   confirmedByLabel: '',
   profileAspect: 'none',
+  inheritanceMode: 'local_only',
   reason: '',
 })
 
@@ -67,6 +70,11 @@ const quadrantOptions = [
 const confirmationStatusOptions = [
   { value: 'pending', label: '待确认 · 尚未完成内容与象限审核' },
   { value: 'confirmed', label: '已确认 · 内容与象限归类均已确认' },
+]
+const inheritanceModeOptions = [
+  { value: 'local_only', label: '仅当前项目 · 不自动借给其他项目' },
+  { value: 'descendants', label: '子项目可继承 · 仅沿明确知识关系' },
+  { value: 'selected_projects', label: '仅指定项目可继承' },
 ]
 const proposerOptions = [
   { value: 'user', label: '用户' },
@@ -141,7 +149,9 @@ watch(
     form.fact = item.itemKind === 'relationship' ? ((raw as KnowledgeEdge).fact ?? '') : ''
     const basis = item.confirmationBasis
     const evidence = item.evidence.at(0)
-    form.quadrant = item.classificationExplicit ? raw.origin_quadrant ?? 'known_known' : ''
+    form.currentQuadrant = item.classificationExplicit
+      ? raw.current_quadrant ?? raw.origin_quadrant ?? 'known_known'
+      : ''
     form.confirmationStatus = item.confirmationStatus === 'confirmed' ? 'confirmed' : 'pending'
     form.existenceReason = basis?.existence_reason
       ?? evidence?.source_description
@@ -153,6 +163,12 @@ watch(
     form.confirmedByKind = basis?.confirmed_by?.kind ?? 'user'
     form.confirmedByLabel = basis?.confirmed_by?.label ?? ''
     form.profileAspect = raw.profile_aspect ?? 'none'
+    form.inheritanceMode = raw.profile_aspect
+      ? 'local_only'
+      : raw.inheritance_mode ?? 'local_only'
+    inheritanceProjectId.value = raw.inherited_project_ids?.at(0)
+      ?? props.projects[0]?.project_id
+      ?? ''
     form.reason = ''
     assignmentReason.value = ''
     targetProjectId.value = currentProjectId.value ?? props.projects[0]?.project_id ?? ''
@@ -173,8 +189,8 @@ async function saveCorrection() {
   if (!form.reason.trim()) return fail('请说明纠正原因')
   if (!relationship.value && !form.name.trim()) return fail('名称不能为空')
   if (relationship.value && !form.fact.trim()) return fail('关系事实不能为空')
-  if (!form.quadrant || !form.confirmationStatus) {
-    return fail('请先明确发现时象限与确认状态')
+  if (!form.currentQuadrant || !form.confirmationStatus) {
+    return fail('请先明确当前分类与确认状态')
   }
   if (!form.existenceReason.trim()) return fail('请说明为什么会有这条知识')
   if (!form.quadrantReason.trim()) return fail('请说明为什么被分到这个象限')
@@ -182,10 +198,13 @@ async function saveCorrection() {
   if (form.confirmationStatus === 'confirmed' && !form.confirmedByKind) {
     return fail('已确认状态必须记录确认者')
   }
+  if (
+    form.inheritanceMode === 'selected_projects'
+    && !inheritanceProjectId.value
+  ) return fail('请选择可以继承这条知识的项目')
 
   const body: Record<string, unknown> = {
     ...baseRevision('update'),
-    originQuadrant: form.quadrant,
     confirmationStatus: form.confirmationStatus,
     confirmationBasis: {
       existenceReason: form.existenceReason.trim(),
@@ -205,7 +224,19 @@ async function saveCorrection() {
         : null,
     },
     profileAspect: form.profileAspect,
+    inheritanceMode: form.profileAspect === 'none'
+      ? form.inheritanceMode
+      : 'local_only',
+    inheritedProjectIds: (
+      form.profileAspect === 'none'
+      && form.inheritanceMode === 'selected_projects'
+    ) ? [inheritanceProjectId.value] : [],
     reasoningSummary: form.quadrantReason.trim(),
+  }
+  if (props.item.classificationExplicit) {
+    body.currentQuadrant = form.currentQuadrant
+  } else {
+    body.originQuadrant = form.currentQuadrant
   }
   if (relationship.value) body.fact = form.fact.trim()
   else {
@@ -346,7 +377,7 @@ function fail(message: string) {
         <div>
           <p class="eyebrow">PERSONAL KNOWLEDGE</p>
           <h3>{{ invalid ? '查看和恢复知识' : '纠正知识' }}</h3>
-          <p>修改会新增修订历史；四象限记录发现方式，确认依据解释归类，确认状态记录审核结果。</p>
+          <p>修改会新增修订历史；发现时象限保持不变，当前分类可纠正，确认状态记录审核结果。</p>
         </div>
         <button class="secondary-action" type="button" @click="emit('close')">关闭</button>
       </header>
@@ -359,11 +390,11 @@ function fail(message: string) {
             <label v-if="!relationship">说明<textarea v-model="form.summary" maxlength="4096" rows="5" /></label>
             <label v-else>关系事实<textarea v-model="form.fact" maxlength="8192" rows="5" /></label>
             <div class="knowledge-taxonomy-fields">
-              <label>发现时象限
+              <label>当前分类
                 <SearchableSelect
-                  v-model="form.quadrant"
+                  v-model="form.currentQuadrant"
                   :options="quadrantOptions"
-                  label="发现时象限"
+                  label="当前分类"
                 />
               </label>
               <label>确认状态
@@ -381,6 +412,9 @@ function fail(message: string) {
                 />
               </label>
             </div>
+            <p class="knowledge-classification-warning">
+              发现时象限：{{ quadrantLabel(item.originQuadrant) }}。这是捕获来源标签，后续编辑不会覆盖。
+            </p>
             <p v-if="!item.classificationExplicit" class="knowledge-classification-warning">
               这条旧内容没有显式象限。保存前请人工选择，系统不会再自动补成“已知的已知”。
             </p>
@@ -417,7 +451,28 @@ function fail(message: string) {
                 </template>
               </div>
               <p>
-                Agent 可以提出和解释，但不能作为确认者；保存为“已确认”时会记录本次确认时间。
+                “Agent 已确认”只能由实际使用证据策略产生；人工在这里可保留待确认，或记录用户/权威来源确认。
+              </p>
+            </fieldset>
+            <fieldset v-if="!profilePreference" class="knowledge-replacement-fields">
+              <legend>跨项目知识继承</legend>
+              <label>继承范围
+                <SearchableSelect
+                  v-model="form.inheritanceMode"
+                  :options="inheritanceModeOptions"
+                  label="知识继承范围"
+                />
+              </label>
+              <label v-if="form.inheritanceMode === 'selected_projects'">可继承项目
+                <SearchableSelect
+                  v-model="inheritanceProjectId"
+                  :options="projectOptions"
+                  label="可继承项目"
+                  searchable
+                />
+              </label>
+              <p>
+                只有沿 PART_OF 或 USES_KNOWLEDGE_FROM 可达时才会继承；RELATED_TO 不扩展检索范围。
               </p>
             </fieldset>
             <fieldset class="knowledge-replacement-fields">

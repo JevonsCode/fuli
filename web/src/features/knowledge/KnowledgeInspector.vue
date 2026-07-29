@@ -134,6 +134,18 @@ function display(value: unknown) {
   if (typeof value === 'string') return value
   return JSON.stringify(value)
 }
+
+function percentage(value: number) {
+  return `${Math.round(value * 100)}%`
+}
+
+function inheritanceLabel(item: KnowledgeItem) {
+  if (item.inheritanceMode === 'descendants') return '允许子项目继承'
+  if (item.inheritanceMode === 'selected_projects') {
+    return `仅指定项目（${item.inheritedProjectIds.length}）`
+  }
+  return '仅当前项目'
+}
 </script>
 
 <template>
@@ -211,8 +223,18 @@ function display(value: unknown) {
       <dl class="inspector-meta">
         <div><dt>类型</dt><dd>{{ item.type }}</dd></div>
         <div v-if="!managementItem"><dt>发现时象限</dt><dd>{{ quadrantLabel(item.originQuadrant) }}</dd></div>
+        <div v-if="!managementItem"><dt>当前分类</dt><dd>{{ quadrantLabel(item.currentQuadrant) }}</dd></div>
         <div v-if="!managementItem"><dt>象限解释</dt><dd>{{ quadrantDescription(item.originQuadrant) }}</dd></div>
         <div v-if="!managementItem"><dt>确认状态</dt><dd>{{ reviewStateLabel(item) }}</dd></div>
+        <div v-if="!managementItem"><dt>置信分</dt><dd>{{ percentage(item.confidenceScore) }}</dd></div>
+        <div v-if="!managementItem"><dt>效用分</dt><dd>{{ percentage(item.utilityScore) }}</dd></div>
+        <div v-if="!managementItem">
+          <dt>有效使用</dt><dd>{{ item.qualifiedUseCount }} 次 / {{ item.distinctTaskCount }} 个任务</dd>
+        </div>
+        <div v-if="!managementItem"><dt>最近使用</dt><dd>{{ formatTime(item.lastUsedAt) }}</dd></div>
+        <div v-if="!managementItem && !item.profileAspect">
+          <dt>知识继承</dt><dd>{{ inheritanceLabel(item) }}</dd>
+        </div>
         <div v-if="!managementItem && item.profileAspect">
           <dt>协作偏好</dt><dd>{{ profileAspectLabel(item.profileAspect) }}</dd>
         </div>
@@ -235,6 +257,9 @@ function display(value: unknown) {
           <div><dt>提出者</dt><dd>{{ confirmationActorLabel(confirmationBasis.proposed_by) }}</dd></div>
           <div><dt>确认者</dt><dd>{{ confirmationActorLabel(confirmationBasis.confirmed_by) }}</dd></div>
           <div><dt>确认时间</dt><dd>{{ formatTime(confirmationBasis.confirmed_at) }}</dd></div>
+          <div v-if="confirmationBasis.agent_policy_version">
+            <dt>Agent 策略</dt><dd>{{ confirmationBasis.agent_policy_version }}</dd>
+          </div>
         </dl>
         <p v-else class="inspector-reasoning">
           旧数据没有结构化的确认依据，因此已放入待确认，不会自动作为已确认知识使用。

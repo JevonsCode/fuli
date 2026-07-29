@@ -38,6 +38,7 @@
     "test:node": "node --test",
     "test:web": "vitest run --config vitest.config.ts",
     "test:package": "node scripts/package-smoke.js",
+    "test:knowledge:live": "node acceptance/knowledge-live.js",
     "start": "node src/server.js",
     "graph:setup": "node src/graphiti/setup.js",
     "graph:up": "docker compose -f compose.graphiti.yml up -d --build",

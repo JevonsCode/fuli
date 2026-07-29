@@ -17,6 +17,7 @@ const HANDLERS = Object.freeze({
     agentInvocation: true,
     agentToolName: 'search_knowledge_graph'
   }),
+  record_knowledge_usage: (app, input) => app.recordKnowledgeUsage(input),
   get_knowledge_graph: (app, input) => app.getKnowledgeGraph({
     ...input,
     agentInvocation: true,
@@ -47,10 +48,13 @@ const HANDLERS = Object.freeze({
   }),
   preview_personal_project_action: (app, input) =>
     app.previewKnowledgeProjectAction(input),
-  apply_personal_project_action: (app, input) => app.applyKnowledgeProjectAction({
-    ...input,
-    operationActor: 'agent'
-  }),
+  apply_personal_project_action: (app, input) => {
+    const { previewToken: _previewToken, ...action } = input;
+    return app.applyKnowledgeProjectAction({
+      ...action,
+      operationActor: 'agent'
+    });
+  },
   publish_personal_project: (app, input) => app.publishPersonalProject(input),
   list_project_releases: (app, input) => app.listProjectReleases(input),
   create_project_relation: (app, input) => app.createProjectRelation(input),

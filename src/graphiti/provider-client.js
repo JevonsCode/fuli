@@ -128,6 +128,11 @@ export class GraphitiProviderClient {
       method: 'POST', body: input
     });
   }
+  recordKnowledgeUsage(input) {
+    return this.#request('/v1/knowledge/usage', {
+      method: 'POST', body: input
+    });
+  }
   reviewHumanChange(itemId, input) {
     return this.#request(
       `/v1/knowledge/items/${encodeURIComponent(itemId)}/agent-review`,
@@ -234,7 +239,13 @@ export class GraphitiProviderClient {
     const headers = { accept: 'application/json' };
     if (authenticated) headers.authorization = `Bearer ${this.accessToken}`;
     if (body !== undefined) headers['content-type'] = 'application/json';
-    const signal = AbortSignal.timeout(this.requestTimeoutMs);
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort(new Error('Graphiti provider request timed out'));
+    }, this.requestTimeoutMs);
+    const { signal } = controller;
     let response;
     let payload;
     try {
@@ -246,7 +257,6 @@ export class GraphitiProviderClient {
       });
       payload = await parseResponse(response);
     } catch (error) {
-      const timedOut = signal.aborted && signal.reason?.name === 'TimeoutError';
       throw new ProviderRequestError(
         timedOut
           ? 'Graphiti provider request timed out'
@@ -257,6 +267,8 @@ export class GraphitiProviderClient {
           details: timedOut ? null : error instanceof Error ? error.message : null
         }
       );
+    } finally {
+      clearTimeout(timeout);
     }
     if (!response.ok) {
       throw new ProviderRequestError(

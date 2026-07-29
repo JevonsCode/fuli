@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -15,7 +16,7 @@ from fuli_graph.models import (
     KnowledgeRevisionCreate,
     PreferenceScopeChange,
 )
-from fuli_graph.models import (
+from fuli_graph.project_action_models import (
     KnowledgeProjectActionRequest,
     KnowledgeProjectPreviewRequest,
 )
@@ -29,7 +30,26 @@ from fuli_graph.project_knowledge import (
 @pytest.mark.asyncio
 async def test_entity_correction_preserves_a_revision_record_before_updating_current_value():
     driver = SequentialDriver([
-        [{'name': 'Old name', 'summary': 'Old summary', 'invalid_at': None}],
+        [{
+            'name': 'Old name',
+            'summary': 'Old summary',
+            'invalid_at': None,
+            'confirmation_status': 'agent_confirmed',
+            'confirmation_basis_json': json.dumps({
+                'existence_reason': 'Repeated use supported the old content.',
+                'quadrant_reason': 'The item was explicitly expressed.',
+                'proposed_by': {'kind': 'agent'},
+                'confirmed_by': {'kind': 'agent'},
+                'confirmed_at': '2026-07-28T08:00:00Z',
+                'agent_policy_version': 'agent-usage-v1',
+            }),
+            'utility_score': 0.8,
+            'confidence_score': 0.8,
+            'qualified_use_count': 7,
+            'distinct_task_count': 4,
+            'last_used_at': datetime(2026, 7, 28, tzinfo=timezone.utc),
+            'usage_generation': 3,
+        }],
         [],
         [],
     ])
@@ -52,10 +72,79 @@ async def test_entity_correction_preserves_a_revision_record_before_updating_cur
     assert 'SET item.name = $name' in update_query
     assert update_parameters['name'] == 'Correct name'
     assert update_parameters['confirmation_status'] == 'pending'
-    assert '名称沉淀错误' in update_parameters['confirmation_basis_json']
+    assert update_parameters['usage_generation'] == 4
+    assert update_parameters['utility_score'] == 0
+    assert update_parameters['confidence_score'] == 0.5
+    assert update_parameters['qualified_use_count'] == 0
+    reset_basis = json.loads(update_parameters['confirmation_basis_json'])
+    assert reset_basis['confirmed_by'] is None
+    assert reset_basis['confirmed_at'] is None
+    assert 'agent_policy_version' not in reset_basis
     assert 'FuliKnowledgeRevision' in history_query
     assert history_parameters['previous_json'].find('Old name') > 0
     assert result.current['summary'] == 'Correct summary'
+
+
+@pytest.mark.asyncio
+async def test_legacy_item_can_establish_origin_once_but_cannot_rewrite_it_later():
+    legacy_driver = SequentialDriver([
+        [{
+            'name': 'Legacy rule',
+            'summary': 'Imported without a discovery label.',
+            'invalid_at': None,
+            'classification_state_explicit': False,
+            'origin_quadrant': 'known_known',
+            'current_quadrant': 'known_known',
+            'confirmation_status': 'pending',
+            'usage_generation': 1,
+        }],
+        [],
+        [],
+    ])
+    store = StoreStub(legacy_driver)
+
+    result = await revise_knowledge_item(
+        store,
+        {'id': 'principal-1'},
+        'entity-legacy',
+        KnowledgeRevisionCreate(
+            personal_space_id='personal-space',
+            item_kind='entity',
+            action='update',
+            reason='补录发现来源',
+            origin_quadrant='unknown_known',
+        ),
+    )
+
+    assert legacy_driver.calls[1][1]['origin_quadrant'] == 'unknown_known'
+    assert legacy_driver.calls[1][1]['current_quadrant'] == 'unknown_known'
+    assert result.current['classificationStateExplicit'] is True
+    assert result.current['usageGeneration'] == 2
+
+    explicit_driver = SequentialDriver([[
+        {
+            'name': 'Current rule',
+            'summary': 'Already classified.',
+            'invalid_at': None,
+            'classification_state_explicit': True,
+            'origin_quadrant': 'known_known',
+            'current_quadrant': 'known_known',
+            'confirmation_status': 'pending',
+        }
+    ]])
+    with pytest.raises(HTTPException, match='origin quadrant is immutable'):
+        await revise_knowledge_item(
+            StoreStub(explicit_driver),
+            {'id': 'principal-1'},
+            'entity-current',
+            KnowledgeRevisionCreate(
+                personal_space_id='personal-space',
+                item_kind='entity',
+                action='update',
+                reason='不应覆盖发现来源',
+                origin_quadrant='unknown_known',
+            ),
+        )
 
 
 @pytest.mark.asyncio
@@ -478,6 +567,50 @@ async def test_project_action_preview_reuses_an_exact_duplicate_in_the_target_pr
     assert result.source_project_id == 'project-b'
     assert result.match.kind == 'exact_duplicate'
     assert result.match.item_id == 'target-entity'
+
+
+@pytest.mark.asyncio
+async def test_project_creation_preview_validates_the_new_id_without_writing():
+    driver = SequentialDriver([
+        [{
+            'name': '酒店项目',
+            'type': 'ProjectKnowledge',
+            'summary': '酒店活动承接知识',
+            'invalid_at': None,
+            'current_quadrant': 'known_known',
+            'epistemic_status': 'confirmed',
+            'confirmation_status': 'confirmed',
+        }],
+        [],
+        [{'project_ids': ['activity-platform']}],
+        [],
+    ])
+    store = StoreStub(driver)
+
+    result = await preview_knowledge_project_action(
+        store,
+        {'id': 'principal-1'},
+        'source-entity',
+        KnowledgeProjectPreviewRequest(
+            personal_space_id='personal-space',
+            mode='create',
+            new_project_id='hotel',
+            new_project_name='酒店项目',
+            new_project_purpose='承接酒店活动',
+            keep_source_relation=True,
+            relation_type='PART_OF',
+            conflict_resolution='defer',
+            reason='先预览创建酒店子项目',
+        ),
+    )
+
+    assert result.source_project_id == 'activity-platform'
+    assert result.target_project_id == 'hotel'
+    assert result.match.kind == 'none'
+    assert '尚未执行创建' in result.match.reason
+    assert len(driver.calls) == 4
+    assert all('CREATE' not in query and 'MERGE' not in query
+               for query, _ in driver.calls)
 
 
 @pytest.mark.asyncio

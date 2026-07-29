@@ -740,7 +740,7 @@ select:focus, input:focus, textarea:focus { border-color: #6f8577; box-shadow: 0
   width: fit-content; border-radius: 999px; padding: 3px 7px;
   color: #59655e; background: #f0f2ef; font-size: 9px; font-weight: 650; white-space: nowrap;
 }
-.knowledge-review-state.state-confirmed { color: #356047; background: #edf6f0; }
+.knowledge-review-state.state-confirmed { color: #356047; background: #edf6f0; } .knowledge-review-state.state-agent_confirmed { color: #4d5f78; background: #eef2f7; }
 .knowledge-review-state.state-pending,
 .knowledge-review-state.state-needs_review { color: #77602f; background: #f7f2e5; }
 .knowledge-review-state.state-exploratory { color: #725d70; background: #f5eff4; }

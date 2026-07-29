@@ -1,7 +1,14 @@
+import asyncio
+import json
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
 
+from .knowledge_usage_models import (
+    KnowledgeUsageCreate,
+    KnowledgeUsageItemResult,
+    KnowledgeUsageResult,
+)
 from .models import (
     KnowledgeAgentReviewCreate,
     KnowledgeAgentViewCreate,
@@ -11,7 +18,17 @@ from .models import (
     KnowledgeHumanChangeSearchRequest,
     KnowledgeHumanChangeSearchResult,
 )
-from .provider_values import native_datetime, stable_uuid
+from .provider_values import json_object, native_datetime, stable_uuid
+
+
+AGENT_CONFIRMATION_POLICY_VERSION = 'agent-usage-v1'
+AGENT_CONFIRMATION_MIN_USES = 5
+AGENT_CONFIRMATION_MIN_TASKS = 3
+AGENT_CONFIRMATION_CONFIDENCE_CAP = 0.85
+USAGE_WEIGHTS = {
+    'cited': (0.12, 0.04),
+    'applied': (0.18, 0.06),
+}
 
 
 async def record_human_change(
@@ -95,6 +112,178 @@ async def record_agent_views(
     return KnowledgeAgentViewResult(
         recorded_count=len(recorded),
         item_keys=recorded,
+    )
+
+
+async def record_knowledge_usage(
+    store,
+    actor: dict,
+    request: KnowledgeUsageCreate,
+) -> KnowledgeUsageResult:
+    """Record material Agent use; retrieval and automatic preference injection do not call this."""
+    store._require_personal()
+    space = await store.authorize(actor, request.personal_space_id, 'maintainer')
+    if space['kind'] != 'personal':
+        raise HTTPException(status_code=422, detail='knowledge usage is personal-only')
+
+    lock = store._group_locks.setdefault(space['group_id'], asyncio.Lock())
+    results = []
+    async with lock:
+        for item in request.items:
+            results.append(
+                await _record_one_knowledge_use(
+                    store,
+                    actor,
+                    space,
+                    request,
+                    item,
+                )
+            )
+    return KnowledgeUsageResult(
+        recorded_count=sum(result.recorded for result in results),
+        duplicate_count=sum(not result.recorded for result in results),
+        promoted_count=sum(result.promoted for result in results),
+        items=results,
+    )
+
+
+async def _record_one_knowledge_use(store, actor, space, request, item):
+    state = await _read_usage_state(
+        store,
+        space,
+        item.item_id,
+        item.item_kind,
+    )
+    if state is None:
+        raise HTTPException(status_code=404, detail='knowledge item not found')
+    if state.get('invalid_at') is not None:
+        raise HTTPException(
+            status_code=409,
+            detail='historical knowledge cannot receive usage evidence',
+        )
+
+    generation = int(state.get('usage_generation') or 1)
+    used_at = datetime.now(timezone.utc)
+    audit_id = stable_uuid(
+        space['id'],
+        'knowledge-usage',
+        item.item_kind,
+        item.item_id,
+        str(generation),
+        request.task_id,
+        item.use_kind,
+    )
+    records, _, _ = await store.runtime.driver.execute_query(
+        _knowledge_use_query(item.item_kind),
+        space_id=space['id'],
+        group_id=space['group_id'],
+        item_id=item.item_id,
+        item_kind=item.item_kind,
+        audit_id=audit_id,
+        task_id=request.task_id,
+        session_id=request.session_id,
+        use_kind=item.use_kind,
+        usage_generation=generation,
+        reason=(
+            f'Agent materially {item.use_kind} this knowledge in task '
+            f'{request.task_id}.'
+        ),
+        tool_name=request.tool_name,
+        created_by=actor['id'],
+        used_at=used_at,
+    )
+    recorded = bool(records and records[0].get('recorded'))
+
+    aggregates, _, _ = await store.runtime.driver.execute_query(
+        '''
+        MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
+              [:HAS_KNOWLEDGE_AUDIT]->(audit:FuliKnowledgeAudit {
+                item_id: $item_id,
+                item_kind: $item_kind,
+                action: 'knowledge_used',
+                usage_generation: $usage_generation
+              })
+        RETURN count(audit) AS qualified_use_count,
+               count(DISTINCT audit.task_id) AS distinct_task_count,
+               sum(CASE audit.use_kind WHEN 'applied' THEN 1 ELSE 0 END)
+                 AS applied_count,
+               sum(CASE audit.use_kind WHEN 'cited' THEN 1 ELSE 0 END)
+                 AS cited_count,
+               max(audit.created_at) AS last_used_at
+        ''',
+        space_id=space['id'],
+        item_id=item.item_id,
+        item_kind=item.item_kind,
+        usage_generation=generation,
+        routing_='r',
+    )
+    aggregate = dict(aggregates[0]) if aggregates else {}
+    qualified_use_count = int(aggregate.get('qualified_use_count') or 0)
+    distinct_task_count = int(aggregate.get('distinct_task_count') or 0)
+    cited_count = int(aggregate.get('cited_count') or 0)
+    applied_count = int(aggregate.get('applied_count') or 0)
+    utility_score = min(
+        1.0,
+        cited_count * USAGE_WEIGHTS['cited'][0]
+        + applied_count * USAGE_WEIGHTS['applied'][0],
+    )
+    previous_status = state.get('confirmation_status') or 'pending'
+    if previous_status == 'confirmed':
+        confidence_score = 1.0
+    else:
+        confidence_score = min(
+            AGENT_CONFIRMATION_CONFIDENCE_CAP,
+            0.5
+            + cited_count * USAGE_WEIGHTS['cited'][1]
+            + applied_count * USAGE_WEIGHTS['applied'][1],
+        )
+    promoted = (
+        previous_status == 'pending'
+        and not state.get('has_open_conflict')
+        and qualified_use_count >= AGENT_CONFIRMATION_MIN_USES
+        and distinct_task_count >= AGENT_CONFIRMATION_MIN_TASKS
+    )
+    confirmation_status = (
+        'agent_confirmed' if promoted else previous_status
+    )
+    basis = json_object(state.get('confirmation_basis_json'))
+    if promoted:
+        basis = _agent_confirmation_basis(basis, used_at)
+
+    updated, _, _ = await store.runtime.driver.execute_query(
+        _usage_score_update_query(item.item_kind),
+        group_id=space['group_id'],
+        item_id=item.item_id,
+        usage_generation=generation,
+        utility_score=round(utility_score, 4),
+        confidence_score=round(confidence_score, 4),
+        qualified_use_count=qualified_use_count,
+        distinct_task_count=distinct_task_count,
+        last_used_at=native_datetime(aggregate.get('last_used_at')) or used_at,
+        confirmation_status=confirmation_status,
+        confirmation_basis_json=(
+            json.dumps(basis, ensure_ascii=False, sort_keys=True)
+            if basis else None
+        ),
+        promoted=promoted,
+        audit_id=audit_id,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=409,
+            detail='knowledge changed while usage evidence was recorded; retry',
+        )
+    return KnowledgeUsageItemResult(
+        item_id=item.item_id,
+        item_kind=item.item_kind,
+        recorded=recorded,
+        promoted=promoted,
+        confirmation_status=confirmation_status,
+        utility_score=round(utility_score, 4),
+        confidence_score=round(confidence_score, 4),
+        qualified_use_count=qualified_use_count,
+        distinct_task_count=distinct_task_count,
+        usage_generation=generation,
     )
 
 
@@ -275,9 +464,16 @@ def _audit_record(value: dict) -> KnowledgeAuditRecord:
         item_id=value['item_id'],
         item_kind=value['item_kind'],
         action=value['action'],
-        human_change_version=int(value['human_change_version']),
+        human_change_version=int(value.get('human_change_version') or 0),
         reason=value['reason'],
         tool_name=value.get('tool_name'),
+        task_id=value.get('task_id'),
+        session_id=value.get('session_id'),
+        use_kind=value.get('use_kind'),
+        usage_generation=(
+            int(value['usage_generation'])
+            if value.get('usage_generation') is not None else None
+        ),
         conflict_check=value.get('conflict_check'),
         classification_check=value.get('classification_check'),
         outcome=value.get('outcome'),
@@ -385,6 +581,121 @@ def _state_query(item_kind: str) -> str:
                coalesce(item.fuli_human_change_status, 'none')
                  AS human_change_status
     '''
+
+
+async def _read_usage_state(store, space, item_id, item_kind):
+    records, _, _ = await store.runtime.driver.execute_query(
+        f'''
+        MATCH (space:FuliSpace {{id: $space_id, kind: 'personal'}})
+        {_item_match(item_kind)}
+        RETURN coalesce(item.fuli_confirmation_status, 'pending')
+                 AS confirmation_status,
+               item.fuli_confirmation_basis_json AS confirmation_basis_json,
+               coalesce(item.fuli_usage_generation, 1) AS usage_generation,
+               {
+                 "item.fuli_invalid_at"
+                 if item_kind == "entity" else "item.invalid_at"
+               } AS invalid_at,
+               (
+                 EXISTS {{
+                   MATCH (space)-[:HAS_KNOWLEDGE_CONFLICT]->
+                         (knowledge_conflict:FuliKnowledgeConflict)
+                   WHERE knowledge_conflict.status = 'pending'
+                     AND (
+                       knowledge_conflict.item_id = $item_id
+                       OR knowledge_conflict.target_item_id = $item_id
+                     )
+                 }}
+                 OR EXISTS {{
+                   MATCH (space)-[:HAS_PREFERENCE_CONFLICT]->
+                         (preference_conflict:FuliPreferenceConflict)
+                   WHERE preference_conflict.status = 'ai_pending'
+                     AND (
+                       preference_conflict.left_item_id = $item_id
+                       OR preference_conflict.right_item_id = $item_id
+                     )
+                 }}
+               ) AS has_open_conflict
+        ''',
+        space_id=space['id'],
+        group_id=space['group_id'],
+        item_id=item_id,
+        routing_='r',
+    )
+    return dict(records[0]) if records else None
+
+
+def _knowledge_use_query(item_kind: str) -> str:
+    return f'''
+        MATCH (space:FuliSpace {{id: $space_id, kind: 'personal'}})
+        {_item_match(item_kind)}
+        WHERE coalesce(item.fuli_usage_generation, 1) = $usage_generation
+        MERGE (audit:FuliKnowledgeAudit {{id: $audit_id}})
+        ON CREATE SET audit.space_id = $space_id,
+                      audit.item_id = $item_id,
+                      audit.item_kind = $item_kind,
+                      audit.action = 'knowledge_used',
+                      audit.human_change_version = 0,
+                      audit.task_id = $task_id,
+                      audit.session_id = $session_id,
+                      audit.use_kind = $use_kind,
+                      audit.usage_generation = $usage_generation,
+                      audit.reason = $reason,
+                      audit.tool_name = $tool_name,
+                      audit.created_by = $created_by,
+                      audit.created_at = $used_at
+        MERGE (space)-[:HAS_KNOWLEDGE_AUDIT]->(audit)
+        RETURN audit.created_at = $used_at AS recorded
+    '''
+
+
+def _usage_score_update_query(item_kind: str) -> str:
+    return f'''
+        {_item_match(item_kind)}
+        WHERE coalesce(item.fuli_usage_generation, 1) = $usage_generation
+        SET item.fuli_utility_score = $utility_score,
+            item.fuli_confidence_score = $confidence_score,
+            item.fuli_qualified_use_count = $qualified_use_count,
+            item.fuli_distinct_task_count = $distinct_task_count,
+            item.fuli_last_used_at = $last_used_at,
+            item.fuli_confirmation_status = $confirmation_status,
+            item.fuli_confirmation_basis_json = $confirmation_basis_json,
+            item.fuli_epistemic_status =
+              CASE WHEN $confirmation_status = 'confirmed' THEN 'confirmed'
+                   WHEN item.fuli_origin_quadrant = 'unknown_unknown'
+                     THEN 'exploratory'
+                   ELSE 'observed' END
+        WITH item
+        OPTIONAL MATCH (audit:FuliKnowledgeAudit {{id: $audit_id}})
+        FOREACH (_ IN CASE WHEN $promoted AND audit IS NOT NULL THEN [1] ELSE [] END |
+          SET audit.outcome = 'agent_confirmed',
+              audit.promotion = true
+        )
+        RETURN item.fuli_confirmation_status AS confirmation_status
+    '''
+
+
+def _agent_confirmation_basis(value: dict, confirmed_at: datetime) -> dict:
+    return {
+        'existence_reason': value.get(
+            'existence_reason',
+            'The knowledge was retained from an earlier Agent proposal.',
+        ),
+        'quadrant_reason': value.get(
+            'quadrant_reason',
+            'The discovery quadrant remains the immutable capture-time label.',
+        ),
+        'proposed_by': value.get(
+            'proposed_by',
+            {'kind': 'agent', 'label': 'Fuli'},
+        ),
+        'confirmed_by': {
+            'kind': 'agent',
+            'label': 'Fuli usage evidence policy',
+        },
+        'confirmed_at': confirmed_at.isoformat(),
+        'agent_policy_version': AGENT_CONFIRMATION_POLICY_VERSION,
+    }
 
 
 _HUMAN_ENTITY_SEARCH = '''

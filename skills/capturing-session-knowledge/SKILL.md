@@ -17,7 +17,10 @@ personal project itself. Do not infer or guess `personalProjectId` in the Agent.
 Apply only `effective_preferences`. Personal-global preferences apply in every user task;
 project-scoped preferences layer on only for the exact selected project. Do not apply items
 listed as conflicts, and do not borrow preferences from a related, similarly named, or guessed
-project. Pending, invalid, and unrelated-project preferences are intentionally excluded.
+project. Human or authoritative-source confirmation outranks explicitly marked
+`agent_confirmed` preferences. Pending preferences remain search-only; invalid and
+unrelated-project preferences are intentionally excluded. Automatic preference injection is
+not usage evidence.
 When `get_collaboration_preferences` returns a `deferred_conflict`, leave it untouched unless
 the current task would use either side. Before using a relevant deferred conflict, compare both
 sides and call `resolve_deferred_preference_conflict`; apply only the successfully resolved
@@ -33,6 +36,10 @@ Fuli if it may have been learned earlier. Strong triggers include URLs, deployme
 requirements, terminology, architecture, prior decisions, runbooks, rationale, and remembered
 personal preferences. Do not search for a fully self-contained task or use Fuli as proof of live
 external state.
+
+Pending knowledge is eligible for on-demand retrieval and must remain visibly marked.
+`agent_confirmed` knowledge is usable but ranks below user or authoritative-source
+confirmation.
 
 Treat an obvious content-location request specially: examples include asking for a named page,
 URL, route, deployment, document, file, or where a durable artifact is located.
@@ -68,6 +75,25 @@ IDs; never search every personal project, every subscription, or the whole graph
 Use the current repository, the user's wording, and `list_knowledge_spaces` to resolve scope.
 Ask if the active project remains ambiguous.
 
+The active project may also retrieve only knowledge explicitly marked inheritable from projects
+reached through outgoing `PART_OF` or `USES_KNOWLEDGE_FROM` relations. Never inherit
+project-scoped personal preferences, never traverse `RELATED_TO`, stop after two hops, and retain
+the returned scope path. Exact active-project knowledge with the same stable key overrides an
+inherited item.
+
+After a retrieved personal item materially affects the final answer or a completed action, call
+`record_knowledge_usage` once for that task and item with `cited` or `applied`. Do not record
+retrieval, inspection, automatic preference injection, or unused context. Usage evidence can
+promote only to `agent_confirmed`; it never substitutes for human confirmation or makes an item
+eligible for public publication. Use the current user task's caller-stable identifier as
+`taskId` and reuse it on retries; never generate another ID to recount the same task.
+
+The current `agent-usage-v1` policy requires at least five idempotent material-use events across
+at least three distinct tasks in the current content generation, with no open knowledge or
+preference conflict. It maintains utility and confidence as separate scores and caps
+Agent-confirmed confidence below human/source confirmation. Agents report qualifying use; they
+do not calculate, override, or claim the promotion themselves.
+
 For “why was this code written?” questions, use stored evidence relationships and a separately configured Git MCP together. Never invent a commit, PRD link, or missing history. For “what errors happened today?” questions, obtain current data from a monitoring/log MCP; use Fuli only for runbooks, architecture, prior causes, and other durable context.
 
 Every `search_knowledge_graph` response provides two terminal-safe Markdown choices:
@@ -100,7 +126,7 @@ Every entity and relationship needs an `originQuadrant`, `confirmationBasis`, an
    not change merely because the item is later confirmed.
 2. `confirmationBasis` explains why the item exists, why it belongs to that quadrant,
    who proposed it, and—when confirmed—who confirmed it and when.
-3. `confirmationStatus` is only `pending` or `confirmed`.
+3. `confirmationStatus` is `pending`, `agent_confirmed`, or `confirmed`.
 
 Keep the canonical quadrant names:
 
@@ -119,20 +145,22 @@ Every `confirmationBasis` must contain:
   `authoritative_source`, or `import`;
 - `confirmedBy` and `confirmedAt` together when confirmed.
 
-An Agent may propose and explain knowledge but cannot confirm its own inference.
-`confirmedBy.kind` may only be `user` or `authoritative_source`. Confirmation covers both
-the content and its quadrant assignment. If either changes, return the item to `pending`
-unless the same revision explicitly records a new valid confirmer and confirmation time.
-Legacy items without that audit record are `pending`, even if an old `epistemicStatus`
-said `confirmed`.
+An Agent may propose and explain knowledge. A user or authoritative source creates
+`confirmed`; a deterministic Fuli usage policy may create only `agent_confirmed`, with an Agent
+confirmer, timestamp, and policy version. Agent confirmation is lower-authority, never
+public-eligible, and must not be produced by retrieval alone. Confirmation covers the content
+and its classification. If either changes, return the item to `pending` and start a new usage
+generation unless the same revision explicitly records a new valid human/source confirmer and
+confirmation time. Legacy items without that audit record are `pending`, even if an old
+`epistemicStatus` said `confirmed`.
 
 `currentQuadrant` and `epistemicStatus` are legacy compatibility fields. Do not use them
 for new product logic and do not treat them as confirmation evidence.
 
-Ordinary retrieval excludes pending items unless the caller explicitly asks to include
-exploratory or unreviewed knowledge. Confirmed project knowledge may enter public review
-regardless of how it was originally discovered; normal personal preview and Maintainer
-review gates still apply.
+Agent retrieval includes pending items on demand and returns their status so the caller can
+calibrate claims. Only user or authoritative-source `confirmed` project knowledge may enter
+public review, regardless of how it was originally discovered; normal personal preview and
+Maintainer review gates still apply.
 
 ## Grow The Personal Profile Separately
 
@@ -161,7 +189,7 @@ global decision without hiding unrelated preferences.
 - Route knowledge to `targetKind: project` only when the target is an explicitly selected subscribed public project. It becomes a team-shared Provider Proposal and must remain pending until a Maintainer reviews it.
 - Never treat a project as public merely because the current repository or conversation has a project name. Only an active subscription makes it eligible for public project routing.
 - Never omit `personalProjectId` when the current repository or conversation has already resolved one local personal project; doing so would leak project-specific facts into the personal-global scope.
-- Never add another personal project to `contextPersonalProjectIds` merely because it is related, similarly named, or referenced by the active project. Cross-project borrowing must come from an explicit user request or selection and applies only to the current search context.
+- Never add another personal project to `contextPersonalProjectIds` merely because it is related, similarly named, or referenced by the active project. Automatic borrowing is limited to item-level inheritable knowledge reached through `PART_OF` or `USES_KNOWLEDGE_FROM`; all other cross-project borrowing requires an explicit user request or selection and applies only to the current search context.
 - Never route project facts through the personal graph to bypass review.
 - Never auto-approve a project Proposal.
 - If ownership is genuinely ambiguous and changes who can see the knowledge, ask one concise question instead of guessing.

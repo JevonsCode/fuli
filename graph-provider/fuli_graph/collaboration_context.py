@@ -7,6 +7,7 @@ from .models import (
     CollaborationPreferenceConflict,
     CollaborationPreferenceItem,
     ConfirmationBasis,
+    _validate_confirmation_state,
 )
 from .personal_project_access import authorize_personal_project
 from .provider_values import json_object, native_datetime as _native_datetime
@@ -114,7 +115,7 @@ def _node_query() -> str:
         MATCH (node:Entity {group_id: $group_id})
         WHERE node.fuli_profile_aspect IS NOT NULL
           AND node.fuli_invalid_at IS NULL
-          AND node.fuli_confirmation_status = 'confirmed'
+          AND node.fuli_confirmation_status IN ['confirmed', 'agent_confirmed']
           AND (
                coalesce(node.fuli_preference_scope, 'global') = 'global'
             OR (
@@ -131,6 +132,7 @@ def _node_query() -> str:
                node.fuli_preference_project_id AS preference_project_id,
                node.fuli_attributes_json AS attributes_json,
                node.fuli_confirmation_basis_json AS confirmation_basis_json,
+               node.fuli_confirmation_status AS confirmation_status,
                node.created_at AS created_at
         ORDER BY node.created_at DESC
         LIMIT $limit
@@ -143,7 +145,7 @@ def _edge_query() -> str:
               (target:Entity)
         WHERE edge.fuli_profile_aspect IS NOT NULL
           AND edge.invalid_at IS NULL
-          AND edge.fuli_confirmation_status = 'confirmed'
+          AND edge.fuli_confirmation_status IN ['confirmed', 'agent_confirmed']
           AND (
                coalesce(edge.fuli_preference_scope, 'global') = 'global'
             OR (
@@ -163,6 +165,7 @@ def _edge_query() -> str:
                edge.fuli_preference_project_id AS preference_project_id,
                edge.fuli_attributes_json AS attributes_json,
                edge.fuli_confirmation_basis_json AS confirmation_basis_json,
+               edge.fuli_confirmation_status AS confirmation_status,
                edge.created_at AS created_at
         ORDER BY edge.created_at DESC
         LIMIT $limit
@@ -201,6 +204,8 @@ def _preference_item(
         return None
     try:
         basis = ConfirmationBasis.model_validate(basis_data)
+        confirmation_status = record.get('confirmation_status') or 'confirmed'
+        _validate_confirmation_state(confirmation_status, basis)
     except ValueError:
         return None
     if not basis.confirmed_by or not basis.confirmed_at:
@@ -223,6 +228,7 @@ def _preference_item(
         preference_scope=record['preference_scope'],
         preference_project_id=record.get('preference_project_id'),
         attributes=attributes,
+        confirmation_status=confirmation_status,
         confirmed_at=basis.confirmed_at,
         created_at=_native_datetime(record.get('created_at')),
     )
@@ -241,6 +247,15 @@ def _conflict_free(
     effective = []
     conflicts = []
     for preference_key, candidates in grouped.items():
+        strongest_status = (
+            'confirmed'
+            if any(item.confirmation_status == 'confirmed' for item in candidates)
+            else 'agent_confirmed'
+        )
+        candidates = [
+            item for item in candidates
+            if item.confirmation_status == strongest_status
+        ]
         instructions = {
             _normalize(item.instruction)
             for item in candidates
@@ -263,6 +278,7 @@ def _sort_key(item: CollaborationPreferenceItem) -> tuple:
     created = -item.created_at.timestamp() if item.created_at else 0
     return (
         0 if item.preference_scope == 'global' else 1,
+        0 if item.confirmation_status == 'confirmed' else 1,
         item.profile_aspect,
         item.preference_key,
         created,

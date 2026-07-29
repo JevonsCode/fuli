@@ -1,6 +1,7 @@
 from collections.abc import Iterable
 
-from .models import GraphEdge, GraphNode, ProjectProfile
+from .graph_models import GraphEdge, GraphNode
+from .models import ProjectProfile
 
 
 def management_projection(

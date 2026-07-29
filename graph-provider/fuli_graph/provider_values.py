@@ -27,6 +27,8 @@ def native_datetime(value):
 def json_object(value) -> dict:
     if not value:
         return {}
+    if isinstance(value, dict):
+        return value
     try:
         parsed = json.loads(value)
     except (TypeError, ValueError):

@@ -21,7 +21,7 @@ beforeEach(() => {
 })
 
 describe('KnowledgeOrganizerPage', () => {
-  it('keeps content controls hidden until a quadrant is selected', async () => {
+  it('keeps knowledge visible while quadrants act only as discovery-source filters', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
@@ -37,21 +37,21 @@ describe('KnowledgeOrganizerPage', () => {
       },
     })
 
-    expect(wrapper.find('.quadrant-stage').exists()).toBe(true)
-    expect(wrapper.find('.organizer-toolbar').exists()).toBe(false)
-    expect(wrapper.find('.organizer-layout').exists()).toBe(false)
+    expect(wrapper.find('.quadrant-stage').exists()).toBe(false)
+    expect(wrapper.find('.organizer-toolbar').exists()).toBe(true)
+    expect(wrapper.find('.organizer-layout').exists()).toBe(true)
+    expect(wrapper.findAll('.quadrant-filter button')).toHaveLength(5)
+    expect(wrapper.findAll('.review-state-filter button')).toHaveLength(4)
 
     await wrapper.get('[data-quadrant="known_known"]').trigger('click')
 
-    expect(wrapper.find('.quadrant-stage').classes()).toContain('is-focused')
-    expect(wrapper.find('.organizer-toolbar').exists()).toBe(true)
-    expect(wrapper.findAll('.review-state-filter button')).toHaveLength(3)
+    expect(wrapper.get('[data-quadrant="known_known"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.find('.organizer-layout').exists()).toBe(true)
 
-    await wrapper.get('.quadrant-reset').trigger('click')
+    await wrapper.get('[data-quadrant="all"]').trigger('click')
 
-    expect(wrapper.find('.organizer-toolbar').exists()).toBe(false)
-    expect(wrapper.find('.organizer-layout').exists()).toBe(false)
+    expect(wrapper.get('[data-quadrant="all"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('.organizer-layout').exists()).toBe(true)
     wrapper.unmount()
   })
 })

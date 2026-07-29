@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -6,9 +7,11 @@ from fastapi import HTTPException
 from fuli_graph.knowledge_audit import (
     record_agent_views,
     record_human_change,
+    record_knowledge_usage,
     review_human_change,
     search_human_changes,
 )
+from fuli_graph.knowledge_usage_models import KnowledgeUsageCreate
 from fuli_graph.models import (
     KnowledgeAgentReviewCreate,
     KnowledgeAgentViewCreate,
@@ -180,6 +183,106 @@ async def test_human_change_search_keeps_reviewed_history_discoverable():
     assert driver.calls[0][1]['search_query'] == '规则'
 
 
+@pytest.mark.asyncio
+async def test_five_material_uses_across_three_tasks_promote_only_to_agent_confirmed():
+    used_at = datetime(2026, 7, 29, 8, 0, tzinfo=timezone.utc)
+    driver = SequentialDriver([
+        [{
+            'confirmation_status': 'pending',
+            'confirmation_basis_json': json.dumps({
+                'existence_reason': 'Captured from a project discussion.',
+                'quadrant_reason': 'The user explicitly described the rule.',
+                'proposed_by': {'kind': 'agent', 'label': 'Codex'},
+            }),
+            'usage_generation': 2,
+            'invalid_at': None,
+            'has_open_conflict': False,
+        }],
+        [{'recorded': True}],
+        [{
+            'qualified_use_count': 5,
+            'distinct_task_count': 3,
+            'applied_count': 2,
+            'cited_count': 3,
+            'last_used_at': used_at,
+        }],
+        [{'confirmation_status': 'agent_confirmed'}],
+    ])
+    store = StoreStub(driver)
+
+    result = await record_knowledge_usage(
+        store,
+        {'id': 'principal-1'},
+        KnowledgeUsageCreate(
+            personal_space_id='personal-space',
+            task_id='task-5',
+            session_id='session-3',
+            tool_name='record_knowledge_usage',
+            items=[{
+                'item_id': 'entity-1',
+                'item_kind': 'entity',
+                'use_kind': 'applied',
+            }],
+        ),
+    )
+
+    state_query, _ = driver.calls[0]
+    _, usage_parameters = driver.calls[1]
+    _, update_parameters = driver.calls[3]
+    basis = json.loads(update_parameters['confirmation_basis_json'])
+    assert 'HAS_KNOWLEDGE_CONFLICT' in state_query
+    assert 'HAS_PREFERENCE_CONFLICT' in state_query
+    assert usage_parameters['usage_generation'] == 2
+    assert result.recorded_count == 1
+    assert result.promoted_count == 1
+    assert result.items[0].confirmation_status == 'agent_confirmed'
+    assert result.items[0].utility_score == 0.72
+    assert result.items[0].confidence_score == 0.74
+    assert basis['confirmed_by']['kind'] == 'agent'
+    assert basis['agent_policy_version'] == 'agent-usage-v1'
+
+
+@pytest.mark.asyncio
+async def test_open_conflict_blocks_agent_promotion_even_after_the_usage_threshold():
+    driver = SequentialDriver([
+        [{
+            'confirmation_status': 'pending',
+            'confirmation_basis_json': None,
+            'usage_generation': 1,
+            'invalid_at': None,
+            'has_open_conflict': True,
+        }],
+        [{'recorded': True}],
+        [{
+            'qualified_use_count': 8,
+            'distinct_task_count': 6,
+            'applied_count': 4,
+            'cited_count': 4,
+            'last_used_at': datetime(2026, 7, 29, 8, 0, tzinfo=timezone.utc),
+        }],
+        [{'confirmation_status': 'pending'}],
+    ])
+    store = StoreStub(driver)
+
+    result = await record_knowledge_usage(
+        store,
+        {'id': 'principal-1'},
+        KnowledgeUsageCreate(
+            personal_space_id='personal-space',
+            task_id='task-8',
+            items=[{
+                'item_id': 'entity-1',
+                'item_kind': 'entity',
+                'use_kind': 'cited',
+            }],
+        ),
+    )
+
+    assert result.promoted_count == 0
+    assert result.items[0].confirmation_status == 'pending'
+    assert driver.calls[3][1]['promoted'] is False
+
+
 def personal_space():
     return {
         'id': 'personal-space',
@@ -211,6 +314,7 @@ class StoreStub:
     def __init__(self, driver):
         self.runtime = RuntimeStub(driver)
         self.settings = SettingsStub()
+        self._group_locks = {}
 
     def _require_personal(self):
         return None

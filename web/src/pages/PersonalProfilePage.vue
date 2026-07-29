@@ -22,6 +22,7 @@ import {
   profileAspectLabel,
   quadrantLabel,
   reviewStateLabel,
+  type KnowledgeReviewState,
 } from '@/features/knowledge/model'
 import { useConsoleStore } from '@/stores/console'
 import type { KnowledgeGraph, KnowledgeItem } from '@/types'
@@ -31,7 +32,7 @@ const graph = ref<KnowledgeGraph | null>(null)
 const loading = ref(false)
 const activeAspect = ref('all')
 const activeScope = ref('all')
-const activeReviewState = ref<'all' | 'confirmed' | 'pending'>('all')
+const activeReviewState = ref<'all' | KnowledgeReviewState>('all')
 const conflictsOnly = ref(false)
 const selectedItem = ref<KnowledgeItem | null>(null)
 const confirmingItem = ref<KnowledgeItem | null>(null)
@@ -122,6 +123,11 @@ const confirmedCount = computed(
 const observedCount = computed(
   () => items.value.filter((item) => knowledgeReviewState(item) === 'pending').length,
 )
+const agentConfirmedCount = computed(
+  () => items.value.filter(
+    (item) => knowledgeReviewState(item) === 'agent_confirmed',
+  ).length,
+)
 const summaryGuidance = computed(() => {
   if (conflictsOnly.value) {
     return '正在成对查看疑似冲突；再次点击可返回全部偏好。'
@@ -131,6 +137,9 @@ const summaryGuidance = computed(() => {
   }
   if (activeReviewState.value === 'confirmed') {
     return '已筛出确认人和确认时间完整的偏好；再次点击可返回全部偏好。'
+  }
+  if (activeReviewState.value === 'agent_confirmed') {
+    return '已筛出由实际使用证据形成的 Agent 已确认偏好；它们仍低于人工确认。'
   }
   return '点击状态数字可筛选内容；疑似冲突会进入成对处理工作台。'
 })
@@ -239,7 +248,7 @@ function editConflictItem(item: KnowledgeItem) {
   editingItem.value = item
 }
 
-function toggleReviewState(state: 'confirmed' | 'pending') {
+function toggleReviewState(state: KnowledgeReviewState) {
   const nextState = !conflictsOnly.value && activeReviewState.value === state
     ? 'all'
     : state
@@ -304,6 +313,16 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
       >
         <strong>{{ confirmedCount }}</strong>已确认
         <small>查看记录</small>
+      </button>
+      <button
+        type="button"
+        class="profile-summary-action state-agent-confirmed"
+        :aria-label="`查看 ${agentConfirmedCount} 条 Agent 已确认偏好`"
+        :aria-pressed="!conflictsOnly && activeReviewState === 'agent_confirmed'"
+        @click="toggleReviewState('agent_confirmed')"
+      >
+        <strong>{{ agentConfirmedCount }}</strong>Agent 已确认
+        <small>低于人工确认</small>
       </button>
       <button
         type="button"

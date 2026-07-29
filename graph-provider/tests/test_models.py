@@ -89,6 +89,75 @@ def test_confirmation_requires_a_non_agent_confirmer_and_timestamp():
         StructuredEpisode.model_validate(value)
 
 
+def test_agent_confirmation_requires_policy_evidence_and_never_enters_public_review():
+    value = episode()
+    basis = {
+        'existence_reason': 'Repeated material use retained this knowledge.',
+        'quadrant_reason': 'The discovery-time quadrant remains unchanged.',
+        'proposed_by': {'kind': 'agent', 'label': 'Codex'},
+        'confirmed_by': {'kind': 'agent', 'label': 'Fuli usage policy'},
+        'confirmed_at': datetime(2026, 7, 29, tzinfo=timezone.utc),
+        'agent_policy_version': 'agent-usage-v1',
+    }
+    for item in [*value['entities'], *value['relationships']]:
+        item['confirmation_status'] = 'agent_confirmed'
+        item['confirmation_basis'] = basis
+
+    parsed = StructuredEpisode.model_validate(value)
+
+    assert parsed.entities[0].confirmation_status == 'agent_confirmed'
+    assert parsed.entities[0].confirmation_basis.agent_policy_version == (
+        'agent-usage-v1'
+    )
+    with pytest.raises(ValidationError, match='auditable confirmation'):
+        PublicationDraftCreate(
+            personal_space_id='personal-space',
+            target_project_id='project-a',
+            provider_url='https://provider.example',
+            episode=parsed,
+        )
+
+
+def test_agent_confirmed_cannot_be_written_through_the_revision_api():
+    with pytest.raises(ValidationError, match='knowledge usage policy'):
+        KnowledgeRevisionCreate(
+            personal_space_id='personal-space',
+            item_kind='entity',
+            action='update',
+            reason='Attempted manual Agent promotion.',
+            confirmation_status='agent_confirmed',
+            confirmation_basis={
+                'existence_reason': 'Repeated material use retained this knowledge.',
+                'quadrant_reason': 'The discovery-time quadrant remains unchanged.',
+                'proposed_by': {'kind': 'agent'},
+                'confirmed_by': {'kind': 'agent'},
+                'confirmed_at': datetime(2026, 7, 29, tzinfo=timezone.utc),
+                'agent_policy_version': 'agent-usage-v1',
+            },
+        )
+
+
+def test_selected_project_inheritance_is_explicit_and_preferences_never_inherit():
+    value = episode()
+    value['entities'][0]['inheritance_mode'] = 'selected_projects'
+    value['entities'][0]['inherited_project_ids'] = ['hotel-project']
+    parsed = StructuredEpisode.model_validate(value)
+    assert parsed.entities[0].inherited_project_ids == ['hotel-project']
+
+    value['entities'][0]['profile_aspect'] = 'taste'
+    with pytest.raises(ValidationError, match='preferences cannot inherit'):
+        StructuredEpisode.model_validate(value)
+
+    with pytest.raises(ValidationError, match='must be updated together'):
+        KnowledgeRevisionCreate(
+            personal_space_id='personal-space',
+            item_kind='entity',
+            action='update',
+            reason='Incomplete inheritance update.',
+            inheritance_mode='descendants',
+        )
+
+
 def test_single_confirmation_cannot_change_content_or_taxonomy():
     basis = {
         'existence_reason': 'The user stated the preference.',

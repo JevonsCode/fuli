@@ -19,7 +19,12 @@ const epistemicQuadrant = enumSchema([
   'known_known', 'known_unknown', 'unknown_known', 'unknown_unknown'
 ]);
 const epistemicStatus = enumSchema(['confirmed', 'observed', 'exploratory']);
+// Agent-confirmed is a read state created only by the usage policy. Agent write
+// tools may submit human/source-confirmed or pending knowledge, but cannot forge it.
 const confirmationStatus = enumSchema(['confirmed', 'pending']);
+const inheritanceMode = enumSchema([
+  'local_only', 'descendants', 'selected_projects'
+]);
 const confirmationActor = objectSchema({
   kind: enumSchema(['user', 'agent', 'authoritative_source', 'import']),
   label: nullableStringSchema()
@@ -29,14 +34,15 @@ const confirmationBasis = objectSchema({
   quadrantReason: boundedString(4096),
   proposedBy: confirmationActor,
   confirmedBy: { ...confirmationActor, type: ['object', 'null'] },
-  confirmedAt: nullableStringSchema()
+  confirmedAt: nullableStringSchema(),
+  agentPolicyVersion: nullableStringSchema()
 }, ['existenceReason', 'quadrantReason', 'proposedBy']);
 const knowledgeItemKind = enumSchema(['entity', 'relationship']);
 const humanChangeStatus = enumSchema([
   'all', 'human_changed', 'unseen', 'viewed', 'reviewed'
 ]);
 const projectRelationType = enumSchema([
-  'PART_OF', 'DEPENDS_ON', 'PROVIDES_TO', 'SHARES_CAPABILITY_WITH',
+  'PART_OF', 'USES_KNOWLEDGE_FROM', 'DEPENDS_ON', 'PROVIDES_TO', 'SHARES_CAPABILITY_WITH',
   'SUCCESSOR_OF', 'RELATED_TO'
 ]);
 const knowledgeConflictResolution = enumSchema([
@@ -57,7 +63,9 @@ const epistemicFields = {
   confirmationStatus,
   confirmationBasis,
   reasoningSummary: nullableStringSchema(),
-  profileAspect
+  profileAspect,
+  inheritanceMode,
+  inheritedProjectIds: arraySchema(id, { maxItems: 32 })
 };
 
 const entity = objectSchema({
@@ -130,10 +138,29 @@ const projectProfile = objectSchema({
   assessment: { ...projectAssessment, type: ['object', 'null'] }
 }, ['name']);
 
+const personalProjectActionIntent = {
+  personalSpaceId: id,
+  itemKind: enumSchema(['entity']),
+  itemId: id,
+  mode: enumSchema(['create', 'existing']),
+  targetProjectId: nullableStringSchema(),
+  newProjectId: nullableStringSchema(),
+  newProjectName: nullableStringSchema(),
+  newProjectPurpose: nullableStringSchema(),
+  keepSourceRelation: booleanSchema(),
+  relationType: projectRelationType,
+  conflictResolution: knowledgeConflictResolution,
+  reason: shortText
+};
+const personalProjectActionRequired = [
+  'personalSpaceId', 'itemKind', 'itemId', 'mode', 'reason'
+];
+
 export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'get_collaboration_preferences',
-    description: 'Call at the start of every user task before any other tool or answer. Pass projectPath as the current working directory; Fuli uses it transiently, never stores or returns it, and layers preferences only for one exact registered local project match. Returns effective_preferences plus deferred_conflicts intentionally queued for AI. Apply effective_preferences before answering or constructing tool arguments. If the current task would use a deferred conflict, call resolve_deferred_preference_conflict before applying either side; ignore unrelated deferred conflicts. For write tools, enforce preferences in the actual payload; mentioning them only in the final answer is not compliance. Personal-global preferences always apply; other conflicted, pending, invalid, ambiguous-project, and unrelated-project items never apply. personalProjectId remains an explicit compatibility override.',
+    title: 'READ FIRST · Load task collaboration preferences',
+    description: 'Call this exact tool name at the start of every user task before any other tool or answer; never substitute a project action tool. Pass projectPath as the current working directory; Fuli uses it transiently, never stores or returns it, and layers preferences only for one exact registered local project match. Returns effective_preferences plus deferred_conflicts intentionally queued for AI. Apply effective_preferences before answering or constructing tool arguments. Human-confirmed preferences outrank explicitly marked agent-confirmed preferences. If the current task would use a deferred conflict, call resolve_deferred_preference_conflict before applying either side; ignore unrelated deferred conflicts. For write tools, enforce preferences in the actual payload; mentioning them only in the final answer is not compliance. Personal-global preferences always apply; other conflicted, pending, invalid, ambiguous-project, and unrelated-project items never auto-apply. Automatic injection does not count as usage evidence. personalProjectId remains an explicit compatibility override.',
     inputSchema: objectSchema({
       projectPath: boundedString(4096),
       personalProjectId: nullableStringSchema(),
@@ -184,7 +211,8 @@ export const GRAPH_TOOL_DEFINITIONS = [
   },
   {
     name: 'search_knowledge_graph',
-    description: 'Search durable context before saying you do not know when a task may depend on remembered URLs, routes, requirements, architecture, prior decisions, runbooks, rationale, or personal preferences. The bounded scope includes the personal-global profile, exact active local project, explicitly selected additional personal projects, and selected subscribed team projects. Use all_local_confirmed only after explicit user confirmation; it searches registered local personal projects for this query and never expands public projects. If that still has no support, use read-only local file search in the current repository or workspace files within a safe root. The response includes sourceMarker for supporting results, noMatchSourceMarker when returned items do not support the answer, and retrievalGuidance with the required next action.',
+    title: 'READ · Search the scoped knowledge graph',
+    description: 'Search durable context before saying you do not know when a task may depend on remembered URLs, routes, requirements, architecture, prior decisions, runbooks, rationale, or personal preferences. Pending knowledge is searchable and explicitly marked; agent-confirmed knowledge ranks below human-confirmed knowledge. The bounded scope includes the personal-global profile, exact active local project, selectively inheritable knowledge reached through PART_OF or USES_KNOWLEDGE_FROM, explicitly selected additional personal projects, and selected subscribed team projects. Generic RELATED_TO links never expand scope. Use all_local_confirmed only after explicit user confirmation; it searches registered local personal projects for this query and never expands public projects. If that still has no support, use read-only local file search in the current repository or workspace files within a safe root. The response includes sourceMarker for supporting results, noMatchSourceMarker when returned items do not support the answer, and retrievalGuidance with the required next action.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       query: shortText,
@@ -196,6 +224,21 @@ export const GRAPH_TOOL_DEFINITIONS = [
       includeHistorical: booleanSchema(),
       includePending: booleanSchema()
     }, ['personalSpaceId', 'query'])
+  },
+  {
+    name: 'record_knowledge_usage',
+    description: 'Record that personal knowledge materially affected the Agent final answer or completed action. Call only after the use actually occurs: cited means the answer explicitly relies on the item; applied means the item changed an implementation or decision. Retrieval, inspection, automatic preference injection, and merely appearing in context do not qualify. taskId must be the caller-stable identifier for the current user task and must be reused on retries; do not generate a fresh ID to recount the same task. Events are idempotent per knowledge item, task, use kind, and content generation. Repeated qualified use may promote pending knowledge to agent_confirmed, never to human-confirmed or public-eligible.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      taskId: id,
+      sessionId: nullableStringSchema(),
+      toolName: nullableStringSchema(),
+      items: arraySchema(objectSchema({
+        itemId: id,
+        itemKind: knowledgeItemKind,
+        useKind: enumSchema(['cited', 'applied'])
+      }, ['itemId', 'itemKind', 'useKind']), { minItems: 1, maxItems: 200 })
+    }, ['personalSpaceId', 'taskId', 'items'])
   },
   {
     name: 'get_knowledge_graph',
@@ -271,7 +314,9 @@ export const GRAPH_TOOL_DEFINITIONS = [
       confirmationStatus,
       confirmationBasis,
       reasoningSummary: nullableStringSchema(),
-      profileAspect
+      profileAspect,
+      inheritanceMode,
+      inheritedProjectIds: arraySchema(id, { maxItems: 32 })
     }, ['personalSpaceId', 'itemKind', 'itemId', 'action', 'reason'])
   },
   {
@@ -299,31 +344,21 @@ export const GRAPH_TOOL_DEFINITIONS = [
   },
   {
     name: 'preview_personal_project_action',
-    description: 'Preview adding one personal entity to an existing personal project. Reports exact duplicates and confirmed same-name conflicts before any write.',
-    inputSchema: objectSchema({
-      personalSpaceId: id,
-      itemKind: enumSchema(['entity']),
-      itemId: id,
-      targetProjectId: boundedString(128)
-    }, ['personalSpaceId', 'itemKind', 'itemId', 'targetProjectId'])
+    title: 'PREVIEW · Authorize a personal project write',
+    description: 'Required authorization step before apply_personal_project_action. Submit the complete intended write. For an existing project, it reports exact duplicates and confirmed same-name conflicts. A successful preview returns a short-lived, one-time previewToken bound to the exact action.',
+    inputSchema: objectSchema(
+      personalProjectActionIntent,
+      personalProjectActionRequired
+    )
   },
   {
     name: 'apply_personal_project_action',
-    description: 'Create a private personal project from one entity or add the entity to an existing personal project. Existing ownership and evidence are preserved through references; duplicates are reused and conflicts follow the explicit resolution. When creating from a project-scoped node, directional relations run from the new extracted project to the original source project, so PART_OF creates the expected child-to-parent link. Agents can repeat this operation for source-backed related PRD or code entities.',
+    title: 'WRITE · Apply an authorized personal project action',
+    description: 'WRITE operation. Never call during preference loading, project detection, knowledge retrieval, or any read-only task. Create a private personal project from one entity or add the entity to an existing personal project only after preview_personal_project_action. Requires the matching, short-lived, one-time previewToken and rejects changed or replayed actions. Existing ownership and evidence are preserved through references; duplicates are reused and conflicts follow the explicit resolution.',
     inputSchema: objectSchema({
-      personalSpaceId: id,
-      itemKind: enumSchema(['entity']),
-      itemId: id,
-      mode: enumSchema(['create', 'existing']),
-      targetProjectId: nullableStringSchema(),
-      newProjectId: nullableStringSchema(),
-      newProjectName: nullableStringSchema(),
-      newProjectPurpose: nullableStringSchema(),
-      keepSourceRelation: booleanSchema(),
-      relationType: projectRelationType,
-      conflictResolution: knowledgeConflictResolution,
-      reason: shortText
-    }, ['personalSpaceId', 'itemKind', 'itemId', 'mode', 'reason'])
+      ...personalProjectActionIntent,
+      previewToken: boundedString(256)
+    }, [...personalProjectActionRequired, 'previewToken'])
   },
   {
     name: 'publish_personal_project',

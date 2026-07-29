@@ -63,6 +63,7 @@ const relationTargetOptions = computed(() =>
 )
 const relationTypeOptions = [
   { value: 'PART_OF', label: '属于' },
+  { value: 'USES_KNOWLEDGE_FROM', label: '使用其共享知识' },
   { value: 'DEPENDS_ON', label: '依赖' },
   { value: 'PROVIDES_TO', label: '提供能力' },
   { value: 'SHARES_CAPABILITY_WITH', label: '共享能力' },

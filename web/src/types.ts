@@ -121,7 +121,14 @@ export interface ConfirmationBasis {
   proposed_by: ConfirmationActor
   confirmed_by?: ConfirmationActor | null
   confirmed_at?: string | null
+  agent_policy_version?: string | null
 }
+
+export type ConfirmationStatus = 'pending' | 'agent_confirmed' | 'confirmed'
+export type KnowledgeInheritanceMode =
+  | 'local_only'
+  | 'descendants'
+  | 'selected_projects'
 
 export type HumanChangeStatus = 'none' | 'unseen' | 'viewed' | 'reviewed'
 
@@ -129,13 +136,17 @@ export interface KnowledgeAuditRecord {
   id: string
   item_id: string
   item_kind: 'entity' | 'relationship'
-  action: 'human_change' | 'agent_view' | 'agent_review'
+  action: 'human_change' | 'agent_view' | 'agent_review' | 'knowledge_used'
   human_change_version: number
   reason: string
   tool_name?: string | null
+  task_id?: string | null
+  session_id?: string | null
+  use_kind?: 'cited' | 'applied' | null
+  usage_generation?: number | null
   conflict_check?: 'no_conflict' | 'conflict' | null
   classification_check?: 'reasonable' | 'needs_change' | null
-  outcome?: 'pending_review' | 'requires_attention' | 'reviewed' | null
+  outcome?: 'pending_review' | 'requires_attention' | 'reviewed' | 'agent_confirmed' | null
   created_at: string
 }
 
@@ -157,12 +168,20 @@ export interface KnowledgeNode {
   profile_aspect?: string | null
   preference_scope?: string | null
   preference_project_id?: string | null
+  inheritance_mode?: KnowledgeInheritanceMode
+  inherited_project_ids?: string[]
   human_edited?: boolean
   human_change_status?: HumanChangeStatus
   human_change_version?: number
   last_human_changed_at?: string | null
   last_agent_viewed_at?: string | null
   last_agent_reviewed_at?: string | null
+  utility_score?: number
+  confidence_score?: number
+  qualified_use_count?: number
+  distinct_task_count?: number
+  last_used_at?: string | null
+  usage_generation?: number
   invalid_at?: string | null
   replaced_by_item_id?: string | null
   replaced_by_item_kind?: 'entity' | 'relationship' | null
@@ -194,12 +213,20 @@ export interface KnowledgeEdge {
   profile_aspect?: string | null
   preference_scope?: string | null
   preference_project_id?: string | null
+  inheritance_mode?: KnowledgeInheritanceMode
+  inherited_project_ids?: string[]
   human_edited?: boolean
   human_change_status?: HumanChangeStatus
   human_change_version?: number
   last_human_changed_at?: string | null
   last_agent_viewed_at?: string | null
   last_agent_reviewed_at?: string | null
+  utility_score?: number
+  confidence_score?: number
+  qualified_use_count?: number
+  distinct_task_count?: number
+  last_used_at?: string | null
+  usage_generation?: number
   valid_at?: string
   invalid_at?: string | null
   replaced_by_item_id?: string | null
@@ -232,19 +259,27 @@ export type KnowledgeItem = {
   currentQuadrant: string
   epistemicStatus: string
   classificationExplicit: boolean
-  confirmationStatus: string
+  confirmationStatus: ConfirmationStatus
   confirmationExplicit: boolean
   confirmationBasis: ConfirmationBasis | null
   reasoningSummary: string
   profileAspect: string | null
   preferenceScope: string | null
   preferenceProjectId: string | null
+  inheritanceMode: KnowledgeInheritanceMode
+  inheritedProjectIds: string[]
   humanEdited: boolean
   humanChangeStatus: HumanChangeStatus
   humanChangeVersion: number
   lastHumanChangedAt: string | null
   lastAgentViewedAt: string | null
   lastAgentReviewedAt: string | null
+  utilityScore: number
+  confidenceScore: number
+  qualifiedUseCount: number
+  distinctTaskCount: number
+  lastUsedAt: string | null
+  usageGeneration: number
   invalidAt?: string | null
   replacedByItemId: string | null
   replacedByItemKind: 'entity' | 'relationship' | null

@@ -38,6 +38,35 @@ async def revise_knowledge_item(store, actor: dict, item_id: str, request: Knowl
     if current is None:
         raise HTTPException(status_code=404, detail='knowledge item not found')
     previous = _snapshot(current, request.item_kind)
+    if (
+        request.action == 'update'
+        and request.origin_quadrant is not None
+        and previous.get('classificationStateExplicit')
+        and request.origin_quadrant != previous.get('originQuadrant')
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                'origin quadrant is immutable after capture; '
+                'update current_quadrant instead'
+            ),
+        )
+    next_profile_aspect = (
+        previous.get('profileAspect')
+        if request.profile_aspect is None
+        else None if request.profile_aspect == 'none'
+        else request.profile_aspect
+    )
+    next_inheritance_mode = (
+        request.inheritance_mode
+        if request.inheritance_mode is not None
+        else previous.get('inheritanceMode', 'local_only')
+    )
+    if next_profile_aspect and next_inheritance_mode != 'local_only':
+        raise HTTPException(
+            status_code=422,
+            detail='personal preferences cannot inherit across projects',
+        )
     if request.action == 'link_replacement' and not previous.get('invalidAt'):
         raise HTTPException(
             status_code=409,
@@ -349,6 +378,18 @@ async def _read_item(store, space: dict, item_id: str, item_kind: str):
                     ELSE coalesce(item.fuli_preference_scope, 'global') END
                     AS preference_scope,
                item.fuli_preference_project_id AS preference_project_id,
+               coalesce(item.fuli_inheritance_mode, 'local_only')
+                 AS inheritance_mode,
+               coalesce(item.fuli_inherited_project_ids, [])
+                 AS inherited_project_ids,
+               coalesce(item.fuli_utility_score, 0.0) AS utility_score,
+               coalesce(item.fuli_confidence_score, 0.5) AS confidence_score,
+               coalesce(item.fuli_qualified_use_count, 0)
+                 AS qualified_use_count,
+               coalesce(item.fuli_distinct_task_count, 0)
+                 AS distinct_task_count,
+               item.fuli_last_used_at AS last_used_at,
+               coalesce(item.fuli_usage_generation, 1) AS usage_generation,
                item.fuli_replaced_by_item_id AS replaced_by_item_id,
                item.fuli_replaced_by_item_kind AS replaced_by_item_kind
         '''
@@ -373,6 +414,18 @@ async def _read_item(store, space: dict, item_id: str, item_kind: str):
                     ELSE coalesce(item.fuli_preference_scope, 'global') END
                     AS preference_scope,
                item.fuli_preference_project_id AS preference_project_id,
+               coalesce(item.fuli_inheritance_mode, 'local_only')
+                 AS inheritance_mode,
+               coalesce(item.fuli_inherited_project_ids, [])
+                 AS inherited_project_ids,
+               coalesce(item.fuli_utility_score, 0.0) AS utility_score,
+               coalesce(item.fuli_confidence_score, 0.5) AS confidence_score,
+               coalesce(item.fuli_qualified_use_count, 0)
+                 AS qualified_use_count,
+               coalesce(item.fuli_distinct_task_count, 0)
+                 AS distinct_task_count,
+               item.fuli_last_used_at AS last_used_at,
+               coalesce(item.fuli_usage_generation, 1) AS usage_generation,
                item.fuli_replaced_by_item_id AS replaced_by_item_id,
                item.fuli_replaced_by_item_kind AS replaced_by_item_kind
         '''
@@ -464,6 +517,14 @@ def _snapshot(value: dict, item_kind: str) -> dict:
         'profileAspect': value.get('profile_aspect'),
         'preferenceScope': value.get('preference_scope'),
         'preferenceProjectId': value.get('preference_project_id'),
+        'inheritanceMode': value.get('inheritance_mode') or 'local_only',
+        'inheritedProjectIds': value.get('inherited_project_ids') or [],
+        'utilityScore': float(value.get('utility_score') or 0),
+        'confidenceScore': float(value.get('confidence_score') or 0.5),
+        'qualifiedUseCount': int(value.get('qualified_use_count') or 0),
+        'distinctTaskCount': int(value.get('distinct_task_count') or 0),
+        'lastUsedAt': _iso(value.get('last_used_at')),
+        'usageGeneration': int(value.get('usage_generation') or 1),
         'replacedByItemId': value.get('replaced_by_item_id'),
         'replacedByItemKind': value.get('replaced_by_item_kind'),
     }
@@ -491,6 +552,7 @@ def _next_snapshot(previous: dict, request: KnowledgeRevisionCreate, changed_at:
         value['confirmationStateExplicit'] = True
         value['confirmationBasis'] = basis
         value['epistemicStatus'] = 'confirmed'
+        value['confidenceScore'] = 1.0
     elif request.action == 'update':
         content_changed = False
         if request.item_kind == 'entity':
@@ -505,13 +567,22 @@ def _next_snapshot(previous: dict, request: KnowledgeRevisionCreate, changed_at:
         elif request.fact is not None:
             content_changed = request.fact != previous.get('fact')
             value['fact'] = request.fact
-        quadrant_changed = (
+        origin_established = (
             request.origin_quadrant is not None
-            and request.origin_quadrant != previous.get('originQuadrant')
+            and not previous.get('classificationStateExplicit')
+        )
+        classification_changed = origin_established or (
+            request.current_quadrant is not None
+            and request.current_quadrant != previous.get('currentQuadrant')
         )
         if request.origin_quadrant is not None:
-            value['originQuadrant'] = request.origin_quadrant
-            value['currentQuadrant'] = request.origin_quadrant
+            if previous.get('classificationStateExplicit'):
+                value['originQuadrant'] = previous.get('originQuadrant')
+            else:
+                value['originQuadrant'] = request.origin_quadrant
+                value['classificationStateExplicit'] = True
+                if request.current_quadrant is None:
+                    value['currentQuadrant'] = request.origin_quadrant
         if request.current_quadrant is not None:
             value['currentQuadrant'] = request.current_quadrant
         if request.epistemic_status is not None:
@@ -520,13 +591,25 @@ def _next_snapshot(previous: dict, request: KnowledgeRevisionCreate, changed_at:
             value['confirmationStatus'] = request.confirmation_status
             value['confirmationBasis'] = request.confirmation_basis.model_dump(mode='json')
             value['confirmationStateExplicit'] = True
-        elif content_changed or quadrant_changed:
+        elif content_changed or classification_changed:
             value['confirmationStatus'] = 'pending'
             value['confirmationBasis'] = _pending_confirmation_basis(
                 value.get('confirmationBasis'),
                 request.reason,
             )
             value['confirmationStateExplicit'] = True
+        trust_reset = (
+            request.confirmation_status == 'pending'
+            and previous.get('confirmationStatus') != 'pending'
+        )
+        if content_changed or classification_changed or trust_reset:
+            value['usageGeneration'] = int(
+                previous.get('usageGeneration') or 1
+            ) + 1
+            value['utilityScore'] = 0.0
+            value['qualifiedUseCount'] = 0
+            value['distinctTaskCount'] = 0
+            value['lastUsedAt'] = None
         if request.reasoning_summary is not None:
             value['reasoningSummary'] = request.reasoning_summary or None
         if request.profile_aspect is not None:
@@ -539,14 +622,27 @@ def _next_snapshot(previous: dict, request: KnowledgeRevisionCreate, changed_at:
             elif not previous.get('profileAspect'):
                 value['preferenceScope'] = 'global'
                 value['preferenceProjectId'] = None
+        if request.inheritance_mode is not None:
+            value['inheritanceMode'] = request.inheritance_mode
+        if request.inherited_project_ids is not None:
+            value['inheritedProjectIds'] = request.inherited_project_ids
         if value.get('confirmationStatus') == 'confirmed':
             value['epistemicStatus'] = 'confirmed'
+            value['confidenceScore'] = 1.0
+        elif value.get('confirmationStatus') == 'agent_confirmed':
+            value['epistemicStatus'] = 'observed'
+            value['confidenceScore'] = min(
+                float(value.get('confidenceScore') or 0.75),
+                0.85,
+            )
         else:
             value['epistemicStatus'] = (
                 'exploratory'
                 if value.get('originQuadrant') == 'unknown_unknown'
                 else 'observed'
             )
+            if content_changed or classification_changed or trust_reset:
+                value['confidenceScore'] = 0.5
     elif request.action == 'invalidate':
         value['invalidAt'] = changed_at.isoformat()
         value['replacedByItemId'] = request.replacement_item_id
@@ -587,6 +683,14 @@ async def _update_item(store, space, item_id, item_kind, value, embedding):
             item.fuli_profile_aspect = $profile_aspect,
             item.fuli_preference_scope = $preference_scope,
             item.fuli_preference_project_id = $preference_project_id,
+            item.fuli_inheritance_mode = $inheritance_mode,
+            item.fuli_inherited_project_ids = $inherited_project_ids,
+            item.fuli_utility_score = $utility_score,
+            item.fuli_confidence_score = $confidence_score,
+            item.fuli_qualified_use_count = $qualified_use_count,
+            item.fuli_distinct_task_count = $distinct_task_count,
+            item.fuli_last_used_at = $last_used_at,
+            item.fuli_usage_generation = $usage_generation,
             item.fuli_replaced_by_item_id = $replaced_by_item_id,
             item.fuli_replaced_by_item_kind = $replaced_by_item_kind,
             item.name_embedding = coalesce($embedding, item.name_embedding)
@@ -606,6 +710,14 @@ async def _update_item(store, space, item_id, item_kind, value, embedding):
             item.fuli_profile_aspect = $profile_aspect,
             item.fuli_preference_scope = $preference_scope,
             item.fuli_preference_project_id = $preference_project_id,
+            item.fuli_inheritance_mode = $inheritance_mode,
+            item.fuli_inherited_project_ids = $inherited_project_ids,
+            item.fuli_utility_score = $utility_score,
+            item.fuli_confidence_score = $confidence_score,
+            item.fuli_qualified_use_count = $qualified_use_count,
+            item.fuli_distinct_task_count = $distinct_task_count,
+            item.fuli_last_used_at = $last_used_at,
+            item.fuli_usage_generation = $usage_generation,
             item.fuli_replaced_by_item_id = $replaced_by_item_id,
             item.fuli_replaced_by_item_kind = $replaced_by_item_kind,
             item.fact_embedding = coalesce($embedding, item.fact_embedding)
@@ -632,6 +744,14 @@ async def _update_item(store, space, item_id, item_kind, value, embedding):
         profile_aspect=value.get('profileAspect'),
         preference_scope=value.get('preferenceScope'),
         preference_project_id=value.get('preferenceProjectId'),
+        inheritance_mode=value.get('inheritanceMode', 'local_only'),
+        inherited_project_ids=value.get('inheritedProjectIds') or [],
+        utility_score=float(value.get('utilityScore') or 0),
+        confidence_score=float(value.get('confidenceScore') or 0.5),
+        qualified_use_count=int(value.get('qualifiedUseCount') or 0),
+        distinct_task_count=int(value.get('distinctTaskCount') or 0),
+        last_used_at=_parse_datetime(value.get('lastUsedAt')),
+        usage_generation=int(value.get('usageGeneration') or 1),
         replaced_by_item_id=value.get('replacedByItemId'),
         replaced_by_item_kind=value.get('replacedByItemKind'),
         embedding=embedding,
@@ -654,6 +774,7 @@ def _pending_confirmation_basis(value, reason: str) -> dict:
     basis.setdefault('proposed_by', {'kind': 'user', 'label': '当前用户'})
     basis['confirmed_by'] = None
     basis['confirmed_at'] = None
+    basis.pop('agent_policy_version', None)
     return basis
 
 

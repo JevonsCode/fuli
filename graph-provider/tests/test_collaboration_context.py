@@ -131,6 +131,44 @@ async def test_collaboration_context_layers_exact_project_and_suppresses_conflic
     assert 'edge.fuli_preference_project_id = $project_id' in driver.calls[2][0]
 
 
+@pytest.mark.asyncio
+async def test_human_confirmed_preference_outranks_agent_confirmed_same_key():
+    driver = SequentialDriver([
+        [
+            preference_node(
+                'agent-density',
+                'agent-density',
+                'Agent density',
+                'Use compact density.',
+                preference_key='ui-density',
+                confirmation_status='agent_confirmed',
+            ),
+            preference_node(
+                'human-density',
+                'human-density',
+                'Human density',
+                'Use comfortable density.',
+                preference_key='ui-density',
+            ),
+        ],
+        [],
+    ])
+    store = StoreStub(driver)
+
+    result = await read_collaboration_context(
+        store,
+        {'id': 'principal-1'},
+        'personal-space',
+    )
+
+    assert {item.id for item in result.global_preferences} == {
+        'agent-density',
+        'human-density',
+    }
+    assert [item.id for item in result.effective_preferences] == ['human-density']
+    assert result.conflicts == []
+
+
 class StoreStub:
     def __init__(self, driver):
         self.runtime = SimpleNamespace(driver=driver)
@@ -166,6 +204,7 @@ def preference_node(
     scope='global',
     project_id=None,
     preference_key=None,
+    confirmation_status='confirmed',
 ):
     attributes = {'preferenceKey': preference_key} if preference_key else {}
     return {
@@ -177,16 +216,25 @@ def preference_node(
         'preference_scope': scope,
         'preference_project_id': project_id,
         'attributes_json': json.dumps(attributes),
-        'confirmation_basis_json': confirmation_basis(),
+        'confirmation_basis_json': confirmation_basis(confirmation_status),
+        'confirmation_status': confirmation_status,
         'created_at': datetime(2026, 7, 28, 8, 0, tzinfo=UTC),
     }
 
 
-def confirmation_basis():
+def confirmation_basis(status='confirmed'):
+    agent_confirmed = status == 'agent_confirmed'
     return json.dumps({
         'existence_reason': '用户明确表达了这条偏好。',
         'quadrant_reason': '偏好由用户直接表达。',
         'proposed_by': {'kind': 'user', 'label': '用户'},
-        'confirmed_by': {'kind': 'user', 'label': '用户'},
+        'confirmed_by': (
+            {'kind': 'agent', 'label': 'Fuli usage policy'}
+            if agent_confirmed else {'kind': 'user', 'label': '用户'}
+        ),
         'confirmed_at': '2026-07-28T08:00:00Z',
+        **(
+            {'agent_policy_version': 'agent-usage-v1'}
+            if agent_confirmed else {}
+        ),
     })

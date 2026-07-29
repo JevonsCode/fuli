@@ -15,6 +15,7 @@ import {
 } from './agent-access-policy.js';
 import {
   personalContextProjectIds,
+  personalProjectSearchBatches,
   scopedSearchItems
 } from './personal-context.js';
 import {
@@ -22,8 +23,6 @@ import {
   sourceConsoleUrl
 } from './source-marker.js';
 import { resolvePersonalProjectPath } from './project-path-context.js';
-
-const PERSONAL_PROJECT_SEARCH_BATCH_SIZE = 16;
 
 export function openFederatedGraphApplication({
   runtimeConfigPath,
@@ -168,7 +167,8 @@ export class FederatedGraphApplication {
         : 'No exact personal project matched; do not apply project-scoped preferences.',
       conflicts: 'Do not apply entries listed in conflicts until the user resolves them.',
       deferred_conflicts: 'If the current task would use a deferred_conflict, call resolve_deferred_preference_conflict before applying either side. Ignore unrelated deferred conflicts. The resolution must preserve the AI audit marker.',
-      pending: 'Pending, invalid, and unrelated-project preferences are excluded.'
+      authority: 'Human or authoritative-source confirmed preferences outrank agent-confirmed preferences. Agent-confirmed preferences are usable but lower priority and remain explicitly marked.',
+      pending: 'Pending preferences are available only through on-demand knowledge search; invalid and unrelated-project preferences are excluded. Automatic preference injection never counts as usage evidence.'
     };
     if (!agentInvocation) {
       return {
@@ -244,7 +244,7 @@ export class FederatedGraphApplication {
     personalProjectScope = 'bounded',
     limit = 12,
     includeHistorical = false,
-    includePending = false,
+    includePending = true,
     agentInvocation = false,
     agentToolName = 'search_knowledge_graph'
   }) {
@@ -277,6 +277,12 @@ export class FederatedGraphApplication {
         include_historical: includeHistorical,
         include_exploratory: includePending,
         personal_project_ids: personalProjectIds,
+        active_personal_project_id: (
+          personalProjectScope === 'bounded' &&
+          personalProjectId &&
+          personalProjectIds.includes(personalProjectId)
+        ) ? personalProjectId : null,
+        inherit_project_knowledge: personalProjectScope === 'bounded',
         include_personal_global: index === 0
       }));
     const grouped = groupSubscriptions(selectedSubscriptions);
@@ -398,6 +404,27 @@ export class FederatedGraphApplication {
     return this.#workspace(providerUrl).client.graph(spaceId, limit);
   }
 
+  async recordKnowledgeUsage({
+    personalSpaceId,
+    taskId,
+    sessionId = null,
+    toolName = null,
+    items
+  }) {
+    this.#assertActivePersonalSpace(personalSpaceId);
+    return this.personal.recordKnowledgeUsage({
+      personal_space_id: personalSpaceId,
+      task_id: taskId,
+      session_id: sessionId,
+      tool_name: toolName,
+      items: items.map((item) => ({
+        item_id: item.itemId,
+        item_kind: item.itemKind,
+        use_kind: item.useKind
+      }))
+    });
+  }
+
   async reviseKnowledgeItem(input) {
     this.#assertActivePersonalSpace(input.personalSpaceId);
     assertSafeKnowledgeMutation(input);
@@ -432,6 +459,12 @@ export class FederatedGraphApplication {
     }
     if (input.profileAspect !== undefined) {
       body.profile_aspect = input.profileAspect;
+    }
+    if (input.inheritanceMode !== undefined) {
+      body.inheritance_mode = input.inheritanceMode;
+    }
+    if (input.inheritedProjectIds !== undefined) {
+      body.inherited_project_ids = input.inheritedProjectIds;
     }
     if (input.replacementItemId !== undefined) {
       body.replacement_item_id = input.replacementItemId;
@@ -546,7 +579,15 @@ export class FederatedGraphApplication {
     return this.personal.previewKnowledgeProjectAction(input.itemId, {
       personal_space_id: input.personalSpaceId,
       item_kind: input.itemKind,
-      target_project_id: input.targetProjectId
+      mode: input.mode ?? 'existing',
+      target_project_id: input.targetProjectId ?? null,
+      new_project_id: input.newProjectId ?? null,
+      new_project_name: input.newProjectName ?? null,
+      new_project_purpose: input.newProjectPurpose ?? null,
+      keep_source_relation: input.keepSourceRelation ?? true,
+      relation_type: input.relationType ?? 'RELATED_TO',
+      conflict_resolution: input.conflictResolution ?? 'defer',
+      reason: input.reason ?? null
     });
   }
 
@@ -921,7 +962,8 @@ function agentCollaborationPreference(item) {
     preference_key: item.preference_key ?? item.key ?? item.id,
     title: item.title ?? item.preference_key ?? item.key ?? item.id,
     profile_aspect: item.profile_aspect ?? null,
-    preference_scope: item.preference_scope ?? 'global'
+    preference_scope: item.preference_scope ?? 'global',
+    confirmation_status: item.confirmation_status ?? 'confirmed'
   };
   if (item.preference_project_id) {
     preference.preference_project_id = item.preference_project_id;
@@ -1116,6 +1158,8 @@ function providerEpisode(input) {
       confirmation_basis: providerConfirmationBasis(entity.confirmationBasis),
       reasoning_summary: entity.reasoningSummary ?? null,
       profile_aspect: entity.profileAspect ?? null,
+      inheritance_mode: entity.inheritanceMode ?? 'local_only',
+      inherited_project_ids: entity.inheritedProjectIds ?? [],
       attributes: entity.attributes ?? {}
     })),
     relationships: input.relationships.map((relationship) => ({
@@ -1136,6 +1180,8 @@ function providerEpisode(input) {
       confirmation_basis: providerConfirmationBasis(relationship.confirmationBasis),
       reasoning_summary: relationship.reasoningSummary ?? null,
       profile_aspect: relationship.profileAspect ?? null,
+      inheritance_mode: relationship.inheritanceMode ?? 'local_only',
+      inherited_project_ids: relationship.inheritedProjectIds ?? [],
       attributes: relationship.attributes ?? {}
     }))
   };
@@ -1163,7 +1209,8 @@ function providerConfirmationBasis(basis) {
     quadrant_reason: basis.quadrantReason,
     proposed_by: providerConfirmationActor(basis.proposedBy),
     confirmed_by: providerConfirmationActor(basis.confirmedBy),
-    confirmed_at: basis.confirmedAt ?? null
+    confirmed_at: basis.confirmedAt ?? null,
+    agent_policy_version: basis.agentPolicyVersion ?? null
   };
 }
 
@@ -1206,15 +1253,6 @@ function sanitizeProjectAssessment(input) {
     analyzed_at: input.analyzed_at ?? input.analyzedAt
   };
   return assessment;
-}
-
-function personalProjectSearchBatches(projectIds) {
-  if (projectIds.length === 0) return [[]];
-  const batches = [];
-  for (let index = 0; index < projectIds.length; index += PERSONAL_PROJECT_SEARCH_BATCH_SIZE) {
-    batches.push(projectIds.slice(index, index + PERSONAL_PROJECT_SEARCH_BATCH_SIZE));
-  }
-  return batches;
 }
 
 function groupSubscriptions(subscriptions) {

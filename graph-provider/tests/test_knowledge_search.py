@@ -4,10 +4,14 @@ from types import SimpleNamespace
 import pytest
 
 from fuli_graph.knowledge_search import (
+    _dedupe_ranked_entities,
     _edge_relevance,
     _entity_search_result,
+    _item_scope_metadata,
+    _ranked_relevance,
     _relevance,
     personal_edge_ids,
+    personal_project_scopes,
     search_knowledge,
 )
 from fuli_graph.models import SearchRequest
@@ -33,6 +37,158 @@ async def test_personal_edge_scope_uses_assignments_references_and_global_episod
     assert 'project_id IS NULL' in query
     assert parameters['project_ids'] == ['project-a', 'project-b']
     assert parameters['include_personal_global'] is True
+
+
+@pytest.mark.asyncio
+async def test_project_inheritance_traverses_only_two_explicit_directional_hops():
+    driver = RecordingDriver([
+        {
+            'project_id': 'parent-project',
+            'scope_path': ['child-project', 'parent-project'],
+            'scope_distance': 1,
+        },
+        {
+            'project_id': 'cycle-project',
+            'scope_path': ['child-project', 'parent-project', 'child-project'],
+            'scope_distance': 2,
+        },
+    ])
+    store = SimpleNamespace(runtime=SimpleNamespace(driver=driver))
+    request = SearchRequest(
+        space_ids=['personal-space'],
+        query='如何部署',
+        personal_project_ids=['child-project'],
+        active_personal_project_id='child-project',
+    )
+
+    scopes = await personal_project_scopes(
+        store,
+        {'id': 'personal-space', 'group_id': 'personal-group'},
+        request,
+    )
+
+    query, parameters = driver.calls[0]
+    assert scopes == {
+        'child-project': {
+            'scope_distance': 0,
+            'scope_path': ['child-project'],
+            'inherited': False,
+        },
+        'parent-project': {
+            'scope_distance': 1,
+            'scope_path': ['child-project', 'parent-project'],
+            'inherited': True,
+        },
+    }
+    assert 'PERSONAL_PROJECT_RELATION*1..2' in query
+    assert "['PART_OF', 'USES_KNOWLEDGE_FROM']" in query
+    assert parameters['active_project_id'] == 'child-project'
+
+
+def test_item_level_inheritance_is_opt_in_and_never_applies_to_preferences():
+    request = SearchRequest(
+        space_ids=['personal-space'],
+        query='如何部署',
+        personal_project_ids=['child-project'],
+        active_personal_project_id='child-project',
+    )
+    scopes = {
+        'child-project': {
+            'scope_distance': 0,
+            'scope_path': ['child-project'],
+            'inherited': False,
+        },
+        'parent-project': {
+            'scope_distance': 1,
+            'scope_path': ['child-project', 'parent-project'],
+            'inherited': True,
+        },
+    }
+    parent_item = {
+        'profile_aspect': None,
+        'assignment_project_id': 'parent-project',
+        'episode_project_ids': [],
+        'reference_project_ids': [],
+        'has_global_episode': False,
+        'inheritance_mode': 'descendants',
+        'inherited_project_ids': [],
+    }
+
+    inherited = _item_scope_metadata(parent_item, request, scopes, True)
+
+    assert inherited == {
+        'defined_project_id': 'parent-project',
+        'scope_distance': 1,
+        'inherited_from_project_id': 'parent-project',
+        'scope_path': ['child-project', 'parent-project'],
+        'inherited': True,
+    }
+    assert _item_scope_metadata(
+        {**parent_item, 'inheritance_mode': 'local_only'},
+        request,
+        scopes,
+        True,
+    ) is None
+    assert _item_scope_metadata(
+        {
+            **parent_item,
+            'profile_aspect': 'taste',
+            'preference_scope': 'project',
+            'preference_project_id': 'parent-project',
+        },
+        request,
+        scopes,
+        True,
+    ) is None
+
+
+def test_exact_active_project_key_overrides_a_higher_scoring_inherited_item():
+    inherited = {
+        'id': 'parent-item',
+        'key': 'deployment.runbook',
+        'defined_project_id': 'parent-project',
+        'inherited_from_project_id': 'parent-project',
+        'scope_distance': 1,
+        'created_at': datetime(2026, 7, 29, tzinfo=timezone.utc),
+    }
+    local = {
+        'id': 'child-item',
+        'key': 'deployment.runbook',
+        'defined_project_id': 'child-project',
+        'inherited_from_project_id': None,
+        'scope_distance': 0,
+        'created_at': datetime(2026, 7, 28, tzinfo=timezone.utc),
+    }
+
+    ranked = _dedupe_ranked_entities(
+        [(inherited, 12.0), (local, 2.0)],
+        'child-project',
+    )
+
+    assert ranked == [(local, 2.0)]
+
+
+def test_confirmation_authority_affects_ranking_but_not_quadrants():
+    confirmed = _ranked_relevance(10, {
+        'confirmation_status': 'confirmed',
+        'confidence_score': 0.8,
+        'utility_score': 0.5,
+        'origin_quadrant': 'unknown_unknown',
+    })
+    agent_confirmed = _ranked_relevance(10, {
+        'confirmation_status': 'agent_confirmed',
+        'confidence_score': 0.8,
+        'utility_score': 0.5,
+        'origin_quadrant': 'known_known',
+    })
+    pending = _ranked_relevance(10, {
+        'confirmation_status': 'pending',
+        'confidence_score': 0.8,
+        'utility_score': 0.5,
+        'origin_quadrant': 'known_known',
+    })
+
+    assert confirmed > agent_confirmed > pending
 
 
 def test_entity_relevance_keeps_personal_profile_bounded_and_task_related():

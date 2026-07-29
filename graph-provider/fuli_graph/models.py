@@ -43,6 +43,7 @@ AssessmentLabel = Literal[
 ]
 ProjectRelationType = Literal[
     'PART_OF',
+    'USES_KNOWLEDGE_FROM',
     'DEPENDS_ON',
     'PROVIDES_TO',
     'SHARES_CAPABILITY_WITH',
@@ -53,7 +54,18 @@ ProjectRelationStatus = Literal['pending', 'active', 'rejected']
 KnowledgeItemKind = Literal['entity', 'relationship']
 KnowledgeOperationActor = Literal['human', 'agent']
 HumanChangeStatus = Literal['none', 'unseen', 'viewed', 'reviewed']
-KnowledgeAuditAction = Literal['human_change', 'agent_view', 'agent_review']
+KnowledgeAuditAction = Literal[
+    'human_change',
+    'agent_view',
+    'agent_review',
+    'knowledge_used',
+]
+KnowledgeUseKind = Literal['cited', 'applied']
+KnowledgeInheritanceMode = Literal[
+    'local_only',
+    'descendants',
+    'selected_projects',
+]
 KnowledgeRevisionAction = Literal[
     'confirm',
     'update',
@@ -71,25 +83,6 @@ KnowledgeContentRevisionAction = Literal[
     'restore',
 ]
 KnowledgeConfirmationGroupKind = Literal['source', 'session']
-KnowledgeProjectActionMode = Literal['create', 'existing']
-KnowledgeProjectReferenceStatus = Literal[
-    'active',
-    'pending_conflict',
-    'rejected',
-    'duplicate',
-]
-KnowledgeConflictResolution = Literal[
-    'defer',
-    'keep_target',
-    'use_source',
-    'coexist',
-]
-KnowledgeProjectMatchKind = Literal[
-    'none',
-    'already_linked',
-    'exact_duplicate',
-    'conflict',
-]
 EpistemicQuadrant = Literal[
     'known_known',
     'known_unknown',
@@ -97,7 +90,7 @@ EpistemicQuadrant = Literal[
     'unknown_unknown',
 ]
 EpistemicStatus = Literal['confirmed', 'observed', 'exploratory']
-ConfirmationStatus = Literal['confirmed', 'pending']
+ConfirmationStatus = Literal['confirmed', 'agent_confirmed', 'pending']
 ConfirmationActorKind = Literal['user', 'agent', 'authoritative_source', 'import']
 PersonalProfileAspect = Literal['taste', 'personality', 'judgment_preference']
 PreferenceScope = Literal['global', 'project']
@@ -114,6 +107,27 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
 
 
+def _validate_inheritance(
+    mode: KnowledgeInheritanceMode,
+    project_ids: list[str],
+    profile_aspect: PersonalProfileAspect | None,
+) -> None:
+    if len(set(project_ids)) != len(project_ids):
+        raise ValueError('inherited project ids must be unique')
+    if any(not item or len(item) > 128 for item in project_ids):
+        raise ValueError('inherited project ids must contain 1 to 128 characters')
+    if mode == 'selected_projects' and not project_ids:
+        raise ValueError(
+            'selected_projects inheritance requires at least one project id'
+        )
+    if mode != 'selected_projects' and project_ids:
+        raise ValueError(
+            'inherited project ids are only valid for selected_projects inheritance'
+        )
+    if profile_aspect and mode != 'local_only':
+        raise ValueError('personal preferences cannot inherit across projects')
+
+
 class ConfirmationActor(StrictModel):
     kind: ConfirmationActorKind
     label: str | None = Field(default=None, min_length=1, max_length=160)
@@ -125,15 +139,16 @@ class ConfirmationBasis(StrictModel):
     proposed_by: ConfirmationActor
     confirmed_by: ConfirmationActor | None = None
     confirmed_at: datetime | None = None
+    agent_policy_version: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+    )
 
     @model_validator(mode='after')
     def validate_confirmation_actor(self):
         if bool(self.confirmed_by) != bool(self.confirmed_at):
             raise ValueError('confirmed_by and confirmed_at must be recorded together')
-        if self.confirmed_by and self.confirmed_by.kind not in {
-            'user', 'authoritative_source'
-        }:
-            raise ValueError('an agent or import cannot confirm knowledge')
         return self
 
 
@@ -142,10 +157,32 @@ def _validate_confirmation_state(
     basis: ConfirmationBasis,
 ) -> None:
     has_confirmation = bool(basis.confirmed_by and basis.confirmed_at)
-    if status == 'confirmed' and not has_confirmation:
-        raise ValueError('confirmed knowledge requires a confirmer and confirmation time')
-    if status == 'pending' and has_confirmation:
-        raise ValueError('pending knowledge cannot retain a confirmer or confirmation time')
+    if status == 'pending':
+        if has_confirmation or basis.agent_policy_version:
+            raise ValueError(
+                'pending knowledge cannot retain a confirmer, confirmation time, '
+                'or agent policy'
+            )
+        return
+    if not has_confirmation:
+        raise ValueError(
+            f'{status} knowledge requires a confirmer and confirmation time'
+        )
+    if status == 'confirmed':
+        if basis.confirmed_by.kind not in {'user', 'authoritative_source'}:
+            raise ValueError(
+                'an agent or import cannot confirm human-confirmed knowledge; '
+                'a user or authoritative source is required'
+            )
+        if basis.agent_policy_version:
+            raise ValueError(
+                'human-confirmed knowledge cannot retain an agent policy version'
+            )
+        return
+    if basis.confirmed_by.kind != 'agent' or not basis.agent_policy_version:
+        raise ValueError(
+            'agent-confirmed knowledge requires an agent confirmer and policy version'
+        )
 
 
 def _legacy_epistemic_status(
@@ -386,6 +423,8 @@ class EntityInput(StrictModel):
     confirmation_basis: ConfirmationBasis | None = None
     reasoning_summary: str | None = Field(default=None, max_length=4096)
     profile_aspect: PersonalProfileAspect | None = None
+    inheritance_mode: KnowledgeInheritanceMode = 'local_only'
+    inherited_project_ids: list[str] = Field(default_factory=list, max_length=32)
     attributes: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator('attributes')
@@ -394,6 +433,15 @@ class EntityInput(StrictModel):
         if len(value) > 32:
             raise ValueError('an entity may contain at most 32 attributes')
         return value
+
+    @model_validator(mode='after')
+    def validate_inheritance(self):
+        _validate_inheritance(
+            self.inheritance_mode,
+            self.inherited_project_ids,
+            self.profile_aspect,
+        )
+        return self
 
     @model_validator(mode='after')
     def complete_epistemic_state(self):
@@ -424,6 +472,8 @@ class RelationshipInput(StrictModel):
     confirmation_basis: ConfirmationBasis | None = None
     reasoning_summary: str | None = Field(default=None, max_length=4096)
     profile_aspect: PersonalProfileAspect | None = None
+    inheritance_mode: KnowledgeInheritanceMode = 'local_only'
+    inherited_project_ids: list[str] = Field(default_factory=list, max_length=32)
     attributes: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode='after')
@@ -436,6 +486,11 @@ class RelationshipInput(StrictModel):
             epistemic_status=self.epistemic_status,
             reasoning_summary=self.reasoning_summary,
             profile_aspect=self.profile_aspect,
+        )
+        _validate_inheritance(
+            self.inheritance_mode,
+            self.inherited_project_ids,
+            self.profile_aspect,
         )
         return self
 
@@ -605,6 +660,12 @@ class SearchRequest(StrictModel):
         validation_alias=AliasChoices('include_pending', 'include_exploratory'),
     )
     personal_project_ids: list[str] = Field(default_factory=list, max_length=16)
+    active_personal_project_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+    )
+    inherit_project_knowledge: bool = True
     include_personal_global: bool = False
 
     @field_validator('personal_project_ids')
@@ -616,6 +677,17 @@ class SearchRequest(StrictModel):
         if len(set(normalized)) != len(normalized):
             raise ValueError('personal project ids must be unique')
         return normalized
+
+    @model_validator(mode='after')
+    def validate_active_personal_project(self):
+        if (
+            self.active_personal_project_id
+            and self.active_personal_project_id not in self.personal_project_ids
+        ):
+            raise ValueError(
+                'active personal project id must be present in personal project ids'
+            )
+        return self
 
 
 class EntitySearchResult(StrictModel):
@@ -635,12 +707,24 @@ class EntitySearchResult(StrictModel):
     profile_aspect: PersonalProfileAspect | None = None
     preference_scope: PreferenceScope | None = None
     preference_project_id: str | None = None
+    key: str | None = None
+    defined_project_id: str | None = None
+    inheritance_mode: KnowledgeInheritanceMode = 'local_only'
+    inherited_project_ids: list[str] = Field(default_factory=list, max_length=32)
     human_edited: bool = False
     human_change_status: HumanChangeStatus = 'none'
     human_change_version: int = Field(default=0, ge=0)
     last_human_changed_at: datetime | None = None
     last_agent_viewed_at: datetime | None = None
     last_agent_reviewed_at: datetime | None = None
+    utility_score: float = Field(default=0, ge=0, le=1)
+    confidence_score: float = Field(default=0.5, ge=0, le=1)
+    qualified_use_count: int = Field(default=0, ge=0)
+    distinct_task_count: int = Field(default=0, ge=0)
+    last_used_at: datetime | None = None
+    scope_distance: int = Field(default=0, ge=0, le=8)
+    inherited_from_project_id: str | None = None
+    scope_path: list[str] = Field(default_factory=list, max_length=9)
     score: float | None = None
 
 
@@ -665,12 +749,24 @@ class FactResult(StrictModel):
     profile_aspect: PersonalProfileAspect | None = None
     preference_scope: PreferenceScope | None = None
     preference_project_id: str | None = None
+    key: str | None = None
+    defined_project_id: str | None = None
+    inheritance_mode: KnowledgeInheritanceMode = 'local_only'
+    inherited_project_ids: list[str] = Field(default_factory=list, max_length=32)
     human_edited: bool = False
     human_change_status: HumanChangeStatus = 'none'
     human_change_version: int = Field(default=0, ge=0)
     last_human_changed_at: datetime | None = None
     last_agent_viewed_at: datetime | None = None
     last_agent_reviewed_at: datetime | None = None
+    utility_score: float = Field(default=0, ge=0, le=1)
+    confidence_score: float = Field(default=0.5, ge=0, le=1)
+    qualified_use_count: int = Field(default=0, ge=0)
+    distinct_task_count: int = Field(default=0, ge=0)
+    last_used_at: datetime | None = None
+    scope_distance: int = Field(default=0, ge=0, le=8)
+    inherited_from_project_id: str | None = None
+    scope_path: list[str] = Field(default_factory=list, max_length=9)
     score: float | None = None
 
 
@@ -690,6 +786,7 @@ class CollaborationPreferenceItem(StrictModel):
     preference_scope: PreferenceScope
     preference_project_id: str | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
+    confirmation_status: Literal['confirmed', 'agent_confirmed']
     confirmed_at: datetime
     created_at: datetime | None = None
 
@@ -821,6 +918,8 @@ class KnowledgeRevisionCreate(StrictModel):
     confirmation_basis: ConfirmationBasis | None = None
     reasoning_summary: str | None = Field(default=None, max_length=4096)
     profile_aspect: PersonalProfileAspect | Literal['none'] | None = None
+    inheritance_mode: KnowledgeInheritanceMode | None = None
+    inherited_project_ids: list[str] | None = Field(default=None, max_length=32)
     replacement_item_id: str | None = Field(default=None, min_length=1, max_length=256)
     replacement_item_kind: KnowledgeItemKind | None = None
     operation_actor: KnowledgeOperationActor = 'agent'
@@ -859,6 +958,8 @@ class KnowledgeRevisionCreate(StrictModel):
                 self.epistemic_status,
                 self.reasoning_summary,
                 self.profile_aspect,
+                self.inheritance_mode,
+                self.inherited_project_ids,
             )):
                 raise ValueError('confirmation cannot change knowledge content or taxonomy')
         if self.action == 'update':
@@ -870,6 +971,8 @@ class KnowledgeRevisionCreate(StrictModel):
                 self.confirmation_basis,
                 self.reasoning_summary,
                 self.profile_aspect,
+                self.inheritance_mode,
+                self.inherited_project_ids,
             ))
             if (
                 self.item_kind == 'entity'
@@ -881,11 +984,26 @@ class KnowledgeRevisionCreate(StrictModel):
             if self.item_kind == 'relationship' and self.fact is None and not taxonomy_changed:
                 raise ValueError('relationship update requires content or epistemic metadata')
         if self.confirmation_status is not None:
+            if self.confirmation_status == 'agent_confirmed':
+                raise ValueError(
+                    'agent-confirmed status can only be produced by the '
+                    'knowledge usage policy'
+                )
             if self.confirmation_basis is None:
                 raise ValueError('confirmation status requires a structured confirmation basis')
             _validate_confirmation_state(
                 self.confirmation_status,
                 self.confirmation_basis,
+            )
+        if (self.inheritance_mode is None) != (self.inherited_project_ids is None):
+            raise ValueError(
+                'inheritance mode and inherited project ids must be updated together'
+            )
+        if self.inheritance_mode is not None:
+            _validate_inheritance(
+                self.inheritance_mode,
+                self.inherited_project_ids,
+                None if self.profile_aspect in {None, 'none'} else self.profile_aspect,
             )
         reject_credentials(self, 'Knowledge revision')
         return self
@@ -976,12 +1094,21 @@ class KnowledgeAuditRecord(StrictModel):
     item_id: str
     item_kind: KnowledgeItemKind
     action: KnowledgeAuditAction
-    human_change_version: int = Field(ge=1)
+    human_change_version: int = Field(default=0, ge=0)
     reason: str
     tool_name: str | None = None
+    task_id: str | None = None
+    session_id: str | None = None
+    use_kind: KnowledgeUseKind | None = None
+    usage_generation: int | None = Field(default=None, ge=1)
     conflict_check: Literal['no_conflict', 'conflict'] | None = None
     classification_check: Literal['reasonable', 'needs_change'] | None = None
-    outcome: Literal['pending_review', 'requires_attention', 'reviewed'] | None = None
+    outcome: Literal[
+        'pending_review',
+        'requires_attention',
+        'reviewed',
+        'agent_confirmed',
+    ] | None = None
     created_at: datetime
 
 
@@ -1050,178 +1177,3 @@ class KnowledgeAssignmentRecord(StrictModel):
     reason: str
     created_at: datetime
     updated_at: datetime
-
-
-class KnowledgeProjectPreviewRequest(StrictModel):
-    personal_space_id: str = Field(min_length=1, max_length=128)
-    item_kind: Literal['entity'] = 'entity'
-    target_project_id: str = Field(min_length=1, max_length=128)
-
-
-class KnowledgeProjectActionRequest(StrictModel):
-    personal_space_id: str = Field(min_length=1, max_length=128)
-    item_kind: Literal['entity'] = 'entity'
-    mode: KnowledgeProjectActionMode
-    target_project_id: str | None = Field(default=None, min_length=1, max_length=128)
-    new_project_id: str | None = Field(default=None, min_length=1, max_length=128)
-    new_project_name: str | None = Field(default=None, min_length=1, max_length=160)
-    new_project_purpose: str | None = Field(default=None, max_length=4096)
-    keep_source_relation: bool = True
-    relation_type: ProjectRelationType = 'RELATED_TO'
-    conflict_resolution: KnowledgeConflictResolution = 'defer'
-    reason: str = Field(min_length=1, max_length=2000)
-    operation_actor: KnowledgeOperationActor = 'agent'
-
-    @model_validator(mode='after')
-    def validate_target(self):
-        if self.mode == 'existing' and not self.target_project_id:
-            raise ValueError('existing mode requires target_project_id')
-        if self.mode == 'create' and not (
-            self.new_project_id and self.new_project_name
-        ):
-            raise ValueError('create mode requires new project id and name')
-        return self
-
-
-class KnowledgeProjectMatch(StrictModel):
-    kind: KnowledgeProjectMatchKind
-    reason: str
-    item_id: str | None = None
-    item_name: str | None = None
-    item_summary: str | None = None
-
-
-class KnowledgeProjectPreviewRecord(StrictModel):
-    item_id: str
-    item_name: str
-    item_summary: str
-    source_project_id: str | None = None
-    target_project_id: str
-    match: KnowledgeProjectMatch
-    default_resolution: KnowledgeConflictResolution = 'defer'
-
-
-class KnowledgeProjectReferenceRecord(StrictModel):
-    id: str
-    item_id: str
-    item_kind: KnowledgeItemKind
-    project_id: str
-    source_project_id: str | None = None
-    status: KnowledgeProjectReferenceStatus
-    matched_item_id: str | None = None
-    reason: str
-    created_at: datetime
-    updated_at: datetime
-
-
-class KnowledgeConflictRecord(StrictModel):
-    id: str
-    item_id: str
-    target_item_id: str
-    source_project_id: str | None = None
-    target_project_id: str
-    status: Literal['pending', 'resolved']
-    resolution: KnowledgeConflictResolution
-    reason: str
-    created_at: datetime
-    updated_at: datetime
-
-
-class KnowledgeProjectActionResult(StrictModel):
-    status: Literal[
-        'created',
-        'linked',
-        'already_linked',
-        'duplicate_reused',
-        'conflict_pending',
-        'conflict_resolved',
-    ]
-    source_project_id: str | None = None
-    target_project_id: str
-    project_created: bool = False
-    project_relation_created: bool = False
-    match: KnowledgeProjectMatch
-    reference: KnowledgeProjectReferenceRecord | None = None
-    conflict: KnowledgeConflictRecord | None = None
-
-
-class GraphNode(StrictModel):
-    id: str
-    name: str
-    type: str
-    group_id: str
-    summary: str
-    origin_quadrant: EpistemicQuadrant = 'known_known'
-    current_quadrant: EpistemicQuadrant = 'known_known'
-    epistemic_status: EpistemicStatus = 'confirmed'
-    epistemic_state_explicit: bool = True
-    confirmation_status: ConfirmationStatus = 'pending'
-    confirmation_state_explicit: bool = False
-    confirmation_basis: ConfirmationBasis | None = None
-    reasoning_summary: str | None = None
-    profile_aspect: PersonalProfileAspect | None = None
-    preference_scope: PreferenceScope | None = None
-    preference_project_id: str | None = None
-    human_edited: bool = False
-    human_change_status: HumanChangeStatus = 'none'
-    human_change_version: int = Field(default=0, ge=0)
-    last_human_changed_at: datetime | None = None
-    last_agent_viewed_at: datetime | None = None
-    last_agent_reviewed_at: datetime | None = None
-    attributes: dict[str, Any] = Field(default_factory=dict)
-    evidence: list[GraphEvidence] = Field(default_factory=list)
-    created_at: datetime | None = None
-    invalid_at: datetime | None = None
-    replaced_by_item_id: str | None = None
-    replaced_by_item_kind: KnowledgeItemKind | None = None
-    revisions: list[KnowledgeRevisionRecord] = Field(default_factory=list)
-    assignments: list[KnowledgeAssignmentRecord] = Field(default_factory=list)
-    project_references: list[KnowledgeProjectReferenceRecord] = Field(default_factory=list)
-    conflicts: list[KnowledgeConflictRecord] = Field(default_factory=list)
-    audit_events: list[KnowledgeAuditRecord] = Field(default_factory=list)
-
-
-class GraphEdge(StrictModel):
-    id: str
-    source: str
-    target: str
-    type: str
-    fact: str
-    origin_quadrant: EpistemicQuadrant = 'known_known'
-    current_quadrant: EpistemicQuadrant = 'known_known'
-    epistemic_status: EpistemicStatus = 'confirmed'
-    epistemic_state_explicit: bool = True
-    confirmation_status: ConfirmationStatus = 'pending'
-    confirmation_state_explicit: bool = False
-    confirmation_basis: ConfirmationBasis | None = None
-    reasoning_summary: str | None = None
-    profile_aspect: PersonalProfileAspect | None = None
-    preference_scope: PreferenceScope | None = None
-    preference_project_id: str | None = None
-    human_edited: bool = False
-    human_change_status: HumanChangeStatus = 'none'
-    human_change_version: int = Field(default=0, ge=0)
-    last_human_changed_at: datetime | None = None
-    last_agent_viewed_at: datetime | None = None
-    last_agent_reviewed_at: datetime | None = None
-    valid_at: datetime | None
-    invalid_at: datetime | None
-    replaced_by_item_id: str | None = None
-    replaced_by_item_kind: KnowledgeItemKind | None = None
-    created_at: datetime | None = None
-    confidence: float | None = None
-    attributes: dict[str, Any] = Field(default_factory=dict)
-    episodes: list[str] = Field(default_factory=list)
-    evidence: list[GraphEvidence] = Field(default_factory=list)
-    revisions: list[KnowledgeRevisionRecord] = Field(default_factory=list)
-    assignments: list[KnowledgeAssignmentRecord] = Field(default_factory=list)
-    project_references: list[KnowledgeProjectReferenceRecord] = Field(default_factory=list)
-    conflicts: list[KnowledgeConflictRecord] = Field(default_factory=list)
-    audit_events: list[KnowledgeAuditRecord] = Field(default_factory=list)
-
-
-class GraphResult(StrictModel):
-    space_id: str
-    nodes: list[GraphNode]
-    edges: list[GraphEdge]
-    truncated: bool = False

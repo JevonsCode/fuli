@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { FULI_VERSION } from '../src/package-metadata.js';
 import { connectMcp } from '../test-support/mcp-client.js';
 
-test('stdio MCP exposes bounded Graphiti tools and silently routes personal capture', async (t) => {
+test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知识', async (t) => {
   const received = [];
   const personal = await provider((request) => {
     if (request.path === '/health') return { status: 'ready', providerId: 'personal' };
@@ -52,7 +52,10 @@ test('stdio MCP exposes bounded Graphiti tools and silently routes personal capt
           space_id: 'personal-1',
           name: 'Fuli 来源标记',
           type: 'ProductRequirement',
-          summary: '使用 Fuli 的回答必须提供可展开来源。'
+          summary: '使用 Fuli 的回答必须提供可展开来源。',
+          confirmation_status: 'pending',
+          confidence_score: 0.35,
+          utility_score: 0
         }]
       };
     }
@@ -97,7 +100,7 @@ test('stdio MCP exposes bounded Graphiti tools and silently routes personal capt
   const instructions = connection.client.getInstructions();
   assert.ok(
     Buffer.byteLength(instructions, 'utf8') <= 2048,
-    'Claude Code truncates MCP server instructions after 2KB'
+    'Claude Code 会裁剪超过 2 KiB 的 MCP 服务说明'
   );
   assert.match(instructions, /search_knowledge_graph/);
   assert.match(instructions, /get_collaboration_preferences/);
@@ -135,7 +138,8 @@ test('stdio MCP exposes bounded Graphiti tools and silently routes personal capt
   assert.deepEqual(listed.tools.map(({ name }) => name), [
     'get_collaboration_preferences',
     'resolve_deferred_preference_conflict',
-    'capture_session_knowledge', 'search_knowledge_graph', 'get_knowledge_graph',
+    'capture_session_knowledge', 'search_knowledge_graph', 'record_knowledge_usage',
+    'get_knowledge_graph',
     'search_human_knowledge_changes', 'review_human_knowledge_change',
     'list_knowledge_spaces', 'upsert_personal_project', 'list_personal_projects',
     'revise_personal_knowledge', 'reassign_personal_knowledge',
@@ -148,6 +152,21 @@ test('stdio MCP exposes bounded Graphiti tools and silently routes personal capt
     'list_project_review_queue', 'review_project_proposal',
     'get_graphiti_status'
   ]);
+  const preferencesTool = listed.tools.find(
+    ({ name }) => name === 'get_collaboration_preferences'
+  );
+  const previewProjectTool = listed.tools.find(
+    ({ name }) => name === 'preview_personal_project_action'
+  );
+  const applyProjectTool = listed.tools.find(
+    ({ name }) => name === 'apply_personal_project_action'
+  );
+  assert.equal(preferencesTool.title, 'READ FIRST · Load task collaboration preferences');
+  assert.equal(previewProjectTool.title, 'PREVIEW · Authorize a personal project write');
+  assert.equal(applyProjectTool.title, 'WRITE · Apply an authorized personal project action');
+  assert.match(preferencesTool.description, /exact tool name/i);
+  assert.match(applyProjectTool.description, /never call.*read-only task/i);
+  assert.match(applyProjectTool.description, /previewToken/i);
 
   const preferences = await connection.client.callTool({
     name: 'get_collaboration_preferences',
@@ -215,6 +234,16 @@ test('stdio MCP exposes bounded Graphiti tools and silently routes personal capt
     /#\/knowledge\/personal\/personal-1\/entity\/entity-1/
   );
   assert.doesNotMatch(searched.structuredContent.sourceMarker.markdown, /truncated/);
+  assert.equal(
+    searched.structuredContent.entities[0].summary,
+    '使用 Fuli 的回答必须提供可展开来源。'
+  );
+  assert.equal(searched.structuredContent.entities[0].confirmation_status, 'pending');
+  assert.equal(searched.structuredContent.entities[0].confidence_score, 0.35);
+  assert.ok(
+    Buffer.byteLength(searched.content[0].text, 'utf8') <= 32 * 1024,
+    '知识检索在保留模型可见证据的同时必须保持有界'
+  );
 
   const missed = await connection.client.callTool({
     name: 'search_knowledge_graph',
@@ -268,6 +297,119 @@ test('stdio MCP exposes bounded Graphiti tools and silently routes personal capt
 
   await assert.rejects(connection.client.listResources(), /Method not found/);
   await assert.rejects(connection.client.listPrompts(), /Method not found/);
+});
+
+test('Agent 项目写入必须使用匹配且一次性的预览授权', async (t) => {
+  let writes = 0;
+  const personal = await provider((request) => {
+    if (request.path === '/health') return { status: 'ready', providerId: 'personal' };
+    if (request.path === '/v1/subscriptions') return [];
+    if (request.path === '/v1/spaces') return [{ id: 'personal-1', kind: 'personal' }];
+    if (request.path === '/v1/knowledge/items/entity-1/project-action/preview') {
+      return {
+        item_id: 'entity-1',
+        item_name: '部署规则',
+        item_summary: '复用父项目部署规则。',
+        source_project_id: 'project-parent',
+        target_project_id: request.body.target_project_id,
+        match: { kind: 'none', reason: '目标项目尚未引用这条知识。' },
+        default_resolution: 'defer'
+      };
+    }
+    if (request.path === '/v1/knowledge/items/entity-1/project-action') {
+      writes += 1;
+      return {
+        status: 'linked',
+        source_project_id: 'project-parent',
+        target_project_id: request.body.target_project_id,
+        project_created: false,
+        project_relation_created: false,
+        match: { kind: 'none', reason: '目标项目尚未引用这条知识。' }
+      };
+    }
+    return [];
+  });
+  t.after(() => close(personal.server));
+
+  const runtimeConfigPath = join(
+    mkdtempSync(join(tmpdir(), 'fuli-mcp-project-action-')),
+    'runtime.json'
+  );
+  writeFileSync(runtimeConfigPath, JSON.stringify({
+    version: 1,
+    personal: {
+      providerUrl: personal.url,
+      accessToken: 'personal-access',
+      principalId: 'principal-personal',
+      spaceId: 'personal-1'
+    },
+    workspaces: []
+  }));
+  const connection = await connectMcp(runtimeConfigPath);
+  t.after(() => connection.close());
+
+  const action = {
+    personalSpaceId: 'personal-1',
+    itemKind: 'entity',
+    itemId: 'entity-1',
+    mode: 'existing',
+    targetProjectId: 'project-a',
+    newProjectId: null,
+    newProjectName: null,
+    newProjectPurpose: null,
+    keepSourceRelation: true,
+    relationType: 'RELATED_TO',
+    conflictResolution: 'defer',
+    reason: '让项目 A 复用这条部署规则'
+  };
+
+  const withoutPreview = await connection.client.callTool({
+    name: 'apply_personal_project_action',
+    arguments: action
+  });
+  assert.equal(withoutPreview.isError, true);
+  assert.equal(withoutPreview.structuredContent.error.code, 'validation');
+  assert.equal(writes, 0);
+
+  const preview = await connection.client.callTool({
+    name: 'preview_personal_project_action',
+    arguments: action
+  });
+  assert.equal(preview.isError, undefined);
+  assert.match(preview.structuredContent.previewToken, /^[A-Za-z0-9_-]{20,}$/);
+
+  const changedTarget = await connection.client.callTool({
+    name: 'apply_personal_project_action',
+    arguments: {
+      ...action,
+      targetProjectId: 'project-b',
+      previewToken: preview.structuredContent.previewToken
+    }
+  });
+  assert.equal(changedTarget.isError, true);
+  assert.equal(changedTarget.structuredContent.error.code, 'preview_mismatch');
+  assert.equal(writes, 0);
+
+  const applied = await connection.client.callTool({
+    name: 'apply_personal_project_action',
+    arguments: {
+      ...action,
+      previewToken: preview.structuredContent.previewToken
+    }
+  });
+  assert.equal(applied.isError, undefined);
+  assert.equal(writes, 1);
+
+  const replayed = await connection.client.callTool({
+    name: 'apply_personal_project_action',
+    arguments: {
+      ...action,
+      previewToken: preview.structuredContent.previewToken
+    }
+  });
+  assert.equal(replayed.isError, true);
+  assert.equal(replayed.structuredContent.error.code, 'preview_expired');
+  assert.equal(writes, 1);
 });
 
 function personalCapture() {

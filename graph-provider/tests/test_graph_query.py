@@ -87,6 +87,32 @@ def test_graph_record_projection_preserves_explicit_epistemic_state():
     assert node.confirmation_basis.confirmed_by.kind == 'user'
 
 
+def test_graph_projection_downgrades_legacy_confirmation_without_audit_basis():
+    node = _graph_node(
+        {
+            'id': 'legacy-confirmed',
+            'name': 'Legacy confirmed flag',
+            'type': 'Requirement',
+            'group_id': 'personal-group',
+            'summary': 'No confirmer or confirmation time was stored.',
+            'confirmation_status': 'confirmed',
+            'confirmation_state_explicit': False,
+            'confidence_score': 1.0,
+            'attributes_json': '{}',
+            'episodes': [],
+        },
+        {},
+        {},
+        {},
+        {},
+        {},
+    )
+
+    assert node.confirmation_status == 'pending'
+    assert node.confirmation_state_explicit is False
+    assert node.confidence_score == 0.5
+
+
 def test_graph_projection_includes_human_change_state_and_permanent_audit_events():
     changed_at = datetime.now(UTC)
     node = _graph_node(

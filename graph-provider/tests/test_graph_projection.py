@@ -4,7 +4,8 @@ from fuli_graph.graph_projection import (
     management_projection,
     personal_project_projection,
 )
-from fuli_graph.models import GraphEdge, GraphEvidence, GraphNode
+from fuli_graph.graph_models import GraphEdge, GraphNode
+from fuli_graph.models import GraphEvidence
 
 
 def test_public_project_space_is_visible_as_the_graph_root():

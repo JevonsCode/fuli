@@ -10,7 +10,11 @@ from fuli_graph.models import (
     StructuredEpisode,
 )
 from fuli_graph.store import GraphStore, graphiti_group_id, native_datetime
-from fuli_graph.store_knowledge import StoreKnowledge
+from fuli_graph.store_knowledge import (
+    StoreKnowledge,
+    _entity_id,
+    _relationship_id,
+)
 
 
 class Neo4jDateTimeStub:
@@ -63,7 +67,11 @@ async def test_structured_supersession_stores_the_exact_replacement_relationship
     })
 
     result = await store._commit_episode(
-        {'id': 'personal-space', 'group_id': 'personal-group'},
+        {
+            'id': 'personal-space',
+            'kind': 'personal',
+            'group_id': 'personal-group',
+        },
         episode,
         personal_project_id='project-a',
     )
@@ -79,10 +87,46 @@ async def test_structured_supersession_stores_the_exact_replacement_relationship
     ) in query
     assert parameters['space_id'] == 'personal-space'
     assert parameters['personal_project_id'] == 'project-a'
+    assert 'ON CREATE SET entity.group_id' in query
+    assert 'ON CREATE SET edge.group_id' in query
+    assert 'coalesce(edge.episodes, []) + $episode_id' in query
     assert parameters['superseded_relationships'] == [{
         'key': 'old-rule',
         'replacement_id': result.relationship_ids[0],
     }]
+
+
+def test_personal_project_scope_namespaces_stable_knowledge_ids():
+    parent_entity = _entity_id(
+        'personal-group', 'personal', 'parent-project', 'deployment.runbook'
+    )
+    child_entity = _entity_id(
+        'personal-group', 'personal', 'child-project', 'deployment.runbook'
+    )
+    parent_relationship = _relationship_id(
+        'personal-group',
+        'personal',
+        'parent-project',
+        'deployment.runbook',
+        'Use the shared deployment pipeline.',
+        '2026-07-29T08:00:00+00:00',
+    )
+    child_relationship = _relationship_id(
+        'personal-group',
+        'personal',
+        'child-project',
+        'deployment.runbook',
+        'Use the shared deployment pipeline.',
+        '2026-07-29T08:00:00+00:00',
+    )
+
+    assert parent_entity != child_entity
+    assert parent_relationship != child_relationship
+    assert _entity_id(
+        'workspace-group', 'project', None, 'deployment.runbook'
+    ) == _entity_id(
+        'workspace-group', 'project', 'ignored-local-project', 'deployment.runbook'
+    )
 
 
 @pytest.mark.asyncio

@@ -4,12 +4,12 @@ import json
 from fastapi import HTTPException
 
 from .collaboration_context import read_collaboration_context
+from .graph_models import GraphResult
 from .graph_query import read_graph
 from .knowledge_search import search_knowledge
 from .models import (
     CollaborationContextResult,
     CommitResult,
-    GraphResult,
     KnowledgeCommit,
     SearchRequest,
     SearchResult,
@@ -81,13 +81,19 @@ class StoreKnowledge:
                 routing_='r',
             )
             entity_ids = [
-                stable_uuid(group_id, 'entity', entity.key)
+                _entity_id(
+                    group_id,
+                    space['kind'],
+                    personal_project_id,
+                    entity.key,
+                )
                 for entity in episode.entities
             ]
             relationship_ids = [
-                stable_uuid(
+                _relationship_id(
                     group_id,
-                    'relationship',
+                    space['kind'],
+                    personal_project_id,
                     relationship.key,
                     relationship.fact,
                     (relationship.valid_at or episode.reference_time).isoformat(),
@@ -126,6 +132,10 @@ class StoreKnowledge:
                         'current_quadrant': entity.current_quadrant,
                         'epistemic_status': entity.epistemic_status,
                         'confirmation_status': entity.confirmation_status,
+                        'utility_score': 0.0,
+                        'confidence_score': _initial_confidence(
+                            entity.confirmation_status
+                        ),
                         'confirmation_basis_json': json.dumps(
                             entity.confirmation_basis.model_dump(mode='json'),
                             ensure_ascii=False,
@@ -133,6 +143,8 @@ class StoreKnowledge:
                         ),
                         'reasoning_summary': entity.reasoning_summary,
                         'profile_aspect': entity.profile_aspect,
+                        'inheritance_mode': entity.inheritance_mode,
+                        'inherited_project_ids': entity.inherited_project_ids,
                         'preference_scope': (
                             'project' if entity.profile_aspect and personal_project_id
                             else 'global' if entity.profile_aspect else None
@@ -174,6 +186,10 @@ class StoreKnowledge:
                         'current_quadrant': relationship.current_quadrant,
                         'epistemic_status': relationship.epistemic_status,
                         'confirmation_status': relationship.confirmation_status,
+                        'utility_score': 0.0,
+                        'confidence_score': _initial_confidence(
+                            relationship.confirmation_status
+                        ),
                         'confirmation_basis_json': json.dumps(
                             relationship.confirmation_basis.model_dump(mode='json'),
                             ensure_ascii=False,
@@ -181,6 +197,8 @@ class StoreKnowledge:
                         ),
                         'reasoning_summary': relationship.reasoning_summary,
                         'profile_aspect': relationship.profile_aspect,
+                        'inheritance_mode': relationship.inheritance_mode,
+                        'inherited_project_ids': relationship.inherited_project_ids,
                         'preference_scope': (
                             'project' if relationship.profile_aspect and personal_project_id
                             else 'global' if relationship.profile_aspect else None
@@ -199,7 +217,7 @@ class StoreKnowledge:
                 '''
                 UNWIND $entities AS row
                 MERGE (entity:Entity {uuid: row.uuid})
-                SET entity.group_id = $group_id,
+                ON CREATE SET entity.group_id = $group_id,
                     entity.name = row.name,
                     entity.name_embedding = row.embedding,
                     entity.summary = row.summary,
@@ -213,10 +231,27 @@ class StoreKnowledge:
                     entity.fuli_epistemic_status = row.epistemic_status,
                     entity.fuli_confirmation_status = row.confirmation_status,
                     entity.fuli_confirmation_basis_json = row.confirmation_basis_json,
+                    entity.fuli_utility_score = coalesce(
+                      entity.fuli_utility_score, row.utility_score
+                    ),
+                    entity.fuli_confidence_score = coalesce(
+                      entity.fuli_confidence_score, row.confidence_score
+                    ),
+                    entity.fuli_qualified_use_count = coalesce(
+                      entity.fuli_qualified_use_count, 0
+                    ),
+                    entity.fuli_distinct_task_count = coalesce(
+                      entity.fuli_distinct_task_count, 0
+                    ),
+                    entity.fuli_usage_generation = coalesce(
+                      entity.fuli_usage_generation, 1
+                    ),
                     entity.fuli_reasoning_summary = coalesce(
                       row.reasoning_summary, entity.fuli_reasoning_summary
                     ),
                     entity.fuli_profile_aspect = row.profile_aspect,
+                    entity.fuli_inheritance_mode = row.inheritance_mode,
+                    entity.fuli_inherited_project_ids = row.inherited_project_ids,
                     entity.fuli_preference_scope = row.preference_scope,
                     entity.fuli_preference_project_id = row.preference_project_id,
                     entity.fuli_attributes_json = row.attributes_json
@@ -252,7 +287,7 @@ class StoreKnowledge:
                 MATCH (source:Entity {uuid: row.source_uuid})
                 MATCH (target:Entity {uuid: row.target_uuid})
                 MERGE (source)-[edge:RELATES_TO {uuid: row.uuid}]->(target)
-                SET edge.group_id = $group_id,
+                ON CREATE SET edge.group_id = $group_id,
                     edge.name = row.name,
                     edge.fact = row.fact,
                     edge.fact_embedding = row.embedding,
@@ -268,11 +303,22 @@ class StoreKnowledge:
                     edge.fuli_epistemic_status = row.epistemic_status,
                     edge.fuli_confirmation_status = row.confirmation_status,
                     edge.fuli_confirmation_basis_json = row.confirmation_basis_json,
+                    edge.fuli_utility_score = row.utility_score,
+                    edge.fuli_confidence_score = row.confidence_score,
+                    edge.fuli_qualified_use_count = 0,
+                    edge.fuli_distinct_task_count = 0,
+                    edge.fuli_usage_generation = 1,
                     edge.fuli_reasoning_summary = row.reasoning_summary,
                     edge.fuli_profile_aspect = row.profile_aspect,
+                    edge.fuli_inheritance_mode = row.inheritance_mode,
+                    edge.fuli_inherited_project_ids = row.inherited_project_ids,
                     edge.fuli_preference_scope = row.preference_scope,
                     edge.fuli_preference_project_id = row.preference_project_id,
                     edge.fuli_attributes_json = row.attributes_json
+                SET edge.episodes =
+                  CASE WHEN $episode_id IN coalesce(edge.episodes, [])
+                       THEN edge.episodes
+                       ELSE coalesce(edge.episodes, []) + $episode_id END
                 WITH count(edge) AS edge_count
                 OPTIONAL MATCH ()-[old:RELATES_TO {group_id: $group_id}]->()
                 WHERE old.invalid_at IS NULL
@@ -360,3 +406,42 @@ class StoreKnowledge:
                 entity_ids=entity_ids,
                 relationship_ids=relationship_ids,
             )
+
+
+def _initial_confidence(status: str) -> float:
+    return {
+        'pending': 0.5,
+        'agent_confirmed': 0.75,
+        'confirmed': 1.0,
+    }[status]
+
+
+def _entity_id(
+    group_id: str,
+    space_kind: str,
+    personal_project_id: str | None,
+    key: str,
+) -> str:
+    if space_kind == 'personal' and personal_project_id:
+        return stable_uuid(
+            group_id,
+            'entity',
+            'personal-project',
+            personal_project_id,
+            key,
+        )
+    return stable_uuid(group_id, 'entity', key)
+
+
+def _relationship_id(
+    group_id: str,
+    space_kind: str,
+    personal_project_id: str | None,
+    key: str,
+    fact: str,
+    reference_time: str,
+) -> str:
+    parts = [group_id, 'relationship']
+    if space_kind == 'personal' and personal_project_id:
+        parts.extend(['personal-project', personal_project_id])
+    return stable_uuid(*parts, key, fact, reference_time)

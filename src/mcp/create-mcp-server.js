@@ -4,12 +4,14 @@ import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { callAgentTool, listAgentTools } from '../agent-tools.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { MCP_INSTRUCTIONS } from './instructions.js';
+import { createProjectActionPreviewTokens } from './project-action-preview-tokens.js';
 import { annotationsFor } from './tool-annotations.js';
 import { errorToolResult, protocolErrorResult, successToolResult } from './tool-result.js';
 import { jsonSchemaToZod, openObjectSchema } from './tool-schema.js';
 
 const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
-  get_collaboration_preferences: 16 * 1024
+  get_collaboration_preferences: 16 * 1024,
+  search_knowledge_graph: 32 * 1024
 });
 
 export function createMcpServer(app) {
@@ -18,23 +20,29 @@ export function createMcpServer(app) {
     { instructions: MCP_INSTRUCTIONS }
   );
 
-  const tools = createToolMap(app);
+  const tools = createToolMap(app, createProjectActionPreviewTokens());
   for (const tool of tools.values()) registerTool(server, tool);
   registerCallHandler(server, tools);
   return server;
 }
 
-function createToolMap(app) {
+function createToolMap(app, projectActionPreviews) {
   return new Map(listAgentTools().map((definition) => [definition.name, {
     definition,
     schema: jsonSchemaToZod(definition.inputSchema),
-    invoke: (input) => callAgentTool(app, definition.name, input)
+    invoke: (input) => invokeAgentTool(
+      app,
+      definition.name,
+      input,
+      projectActionPreviews
+    )
   }]));
 }
 
 function registerTool(server, tool) {
   const { definition, schema } = tool;
   server.registerTool(definition.name, {
+    title: definition.title,
     description: definition.description,
     inputSchema: schema,
     outputSchema: openObjectSchema(),
@@ -60,4 +68,18 @@ async function invokeTool(tool, input) {
   } catch (error) {
     return errorToolResult(error);
   }
+}
+
+async function invokeAgentTool(app, name, input, projectActionPreviews) {
+  if (name === 'preview_personal_project_action') {
+    const result = await callAgentTool(app, name, input);
+    return {
+      ...result,
+      previewToken: projectActionPreviews.issue(input)
+    };
+  }
+  if (name === 'apply_personal_project_action') {
+    projectActionPreviews.consume(input.previewToken, input);
+  }
+  return callAgentTool(app, name, input);
 }

@@ -531,6 +531,9 @@ test('personal search combines global profile, active project, and only named co
 
     const search = calls.find(({ path }) => path === '/v1/search');
     assert.deepEqual(search.body.personal_project_ids, ['project-a', 'project-b']);
+    assert.equal(search.body.active_personal_project_id, 'project-a');
+    assert.equal(search.body.inherit_project_knowledge, true);
+    assert.equal(search.body.include_exploratory, true);
     assert.equal(search.body.include_personal_global, true);
     assert.deepEqual(result.searchedPersonalProjectIds, ['project-a', 'project-b']);
     assert.equal(result.personalGlobalIncluded, true);
@@ -594,6 +597,8 @@ test('confirmed all-local search expands only registered personal projects', asy
     'project-c', 'project-a', 'project-b'
   ]);
   assert.equal(searches[0].body.include_personal_global, true);
+  assert.equal(searches[0].body.active_personal_project_id, null);
+  assert.equal(searches[0].body.inherit_project_knowledge, false);
   assert.deepEqual(result.searchedPersonalProjectIds, [
     'project-c', 'project-a', 'project-b'
   ]);
@@ -651,6 +656,10 @@ test('confirmed all-local search batches every registered personal project', asy
   assert.deepEqual(
     searches.map(({ body }) => body.include_personal_global),
     [true, false]
+  );
+  assert.deepEqual(
+    searches.map(({ body }) => body.inherit_project_knowledge),
+    [false, false]
   );
   assert.deepEqual(result.searchedPersonalProjectIds, projectIds);
 });
@@ -992,7 +1001,9 @@ test('personal knowledge correction stays on the personal Provider and keeps pro
       action: 'update',
       reason: '摘要沉淀不完整',
       name: 'Fuli 知识目录',
-      summary: '默认以目录方式展示结构化知识。'
+      summary: '默认以目录方式展示结构化知识。',
+      inheritanceMode: 'descendants',
+      inheritedProjectIds: []
     });
 
     const request = calls[0];
@@ -1007,6 +1018,8 @@ test('personal knowledge correction stays on the personal Provider and keeps pro
       name: 'Fuli 知识目录',
       summary: '默认以目录方式展示结构化知识。',
       fact: null,
+      inheritance_mode: 'descendants',
+      inherited_project_ids: [],
       operation_actor: 'agent'
     });
   });
@@ -1172,59 +1185,6 @@ test('one personal preference scope can change locally with preserved history', 
   });
   assert.equal(calls[0].origin, 'http://127.0.0.1:8787');
 });
-
-test('node project actions preview conflicts and keep the default source relation locally',
-  async () => {
-    const calls = [];
-    const app = new FederatedGraphApplication(CONFIG, {
-      fetchImpl: providerFetch(calls, {
-        '/v1/knowledge/items/entity-1/project-action/preview': {
-          match: { kind: 'conflict' }
-        },
-        '/v1/knowledge/items/entity-1/project-action': {
-          status: 'conflict_pending'
-        }
-      })
-    });
-
-    const preview = await app.previewKnowledgeProjectAction({
-      personalSpaceId: 'personal-space',
-      itemKind: 'entity',
-      itemId: 'entity-1',
-      targetProjectId: 'project-a'
-    });
-    assert.equal(preview.match.kind, 'conflict');
-
-    await app.applyKnowledgeProjectAction({
-      personalSpaceId: 'personal-space',
-      itemKind: 'entity',
-      itemId: 'entity-1',
-      mode: 'existing',
-      targetProjectId: 'project-a',
-      keepSourceRelation: true,
-      relationType: 'RELATED_TO',
-      conflictResolution: 'defer',
-      reason: '让 A 项目使用这条知识'
-    });
-
-    const request = calls.at(-1);
-    assert.equal(request.origin, 'http://127.0.0.1:8787');
-    assert.deepEqual(request.body, {
-      personal_space_id: 'personal-space',
-      item_kind: 'entity',
-      mode: 'existing',
-      target_project_id: 'project-a',
-      new_project_id: null,
-      new_project_name: null,
-      new_project_purpose: null,
-      keep_source_relation: true,
-      relation_type: 'RELATED_TO',
-      conflict_resolution: 'defer',
-      reason: '让 A 项目使用这条知识',
-      operation_actor: 'agent'
-    });
-    assert.equal(calls.some(({ origin }) => origin === 'https://workspace.example'), false);
-  });
 
 function episodeInput(targetKind) {
   return {

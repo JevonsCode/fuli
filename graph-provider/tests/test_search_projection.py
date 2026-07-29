@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -8,9 +9,32 @@ def test_default_retrieval_uses_auditable_confirmation_not_discovery_quadrant():
     assert is_default_retrievable({
         'confirmation_status': 'confirmed',
         'origin_quadrant': 'unknown_known',
+        'confirmation_basis_json': json.dumps({
+            'existence_reason': 'The user reviewed this item.',
+            'quadrant_reason': 'It was inferred before review.',
+            'proposed_by': {'kind': 'agent'},
+            'confirmed_by': {'kind': 'user'},
+            'confirmed_at': '2026-07-29T08:00:00Z',
+        }),
+    })
+    assert is_default_retrievable({
+        'confirmation_status': 'agent_confirmed',
+        'origin_quadrant': 'unknown_unknown',
+        'confirmation_basis_json': json.dumps({
+            'existence_reason': 'Repeated material use retained this item.',
+            'quadrant_reason': 'It surfaced during exploration.',
+            'proposed_by': {'kind': 'agent'},
+            'confirmed_by': {'kind': 'agent'},
+            'confirmed_at': '2026-07-29T08:00:00Z',
+            'agent_policy_version': 'agent-usage-v1',
+        }),
     })
     assert not is_default_retrievable({
         'confirmation_status': 'pending',
+        'origin_quadrant': 'known_known',
+    })
+    assert not is_default_retrievable({
+        'confirmation_status': 'confirmed',
         'origin_quadrant': 'known_known',
     })
     assert not is_default_retrievable({

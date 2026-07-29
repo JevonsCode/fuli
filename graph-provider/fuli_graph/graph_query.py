@@ -4,12 +4,10 @@ from .graph_projection import (
     management_projection,
     personal_project_projection,
 )
+from .graph_models import GraphEdge, GraphNode, GraphResult
 from .models import (
     ConfirmationBasis,
-    GraphEdge,
     GraphEvidence,
-    GraphNode,
-    GraphResult,
 )
 from .knowledge_audit import read_knowledge_audits
 from .knowledge_records import assignment_record, revision_record
@@ -20,6 +18,7 @@ from .project_knowledge import (
     read_personal_project_relations,
     read_project_references,
 )
+from .search_projection import effective_confirmation_status
 
 
 async def read_graph(
@@ -202,6 +201,10 @@ def _node_query(project_scoped: bool) -> str:
                     ELSE coalesce(node.fuli_preference_scope, 'global') END
                     AS preference_scope,
                node.fuli_preference_project_id AS preference_project_id,
+               coalesce(node.fuli_inheritance_mode, 'local_only')
+                 AS inheritance_mode,
+               coalesce(node.fuli_inherited_project_ids, [])
+                 AS inherited_project_ids,
                coalesce(node.fuli_human_edited, false) AS human_edited,
                coalesce(node.fuli_human_change_status, 'none')
                  AS human_change_status,
@@ -210,6 +213,14 @@ def _node_query(project_scoped: bool) -> str:
                node.fuli_last_human_changed_at AS last_human_changed_at,
                node.fuli_last_agent_viewed_at AS last_agent_viewed_at,
                node.fuli_last_agent_reviewed_at AS last_agent_reviewed_at,
+               coalesce(node.fuli_utility_score, 0.0) AS utility_score,
+               coalesce(node.fuli_confidence_score, 0.5) AS confidence_score,
+               coalesce(node.fuli_qualified_use_count, 0)
+                 AS qualified_use_count,
+               coalesce(node.fuli_distinct_task_count, 0)
+                 AS distinct_task_count,
+               node.fuli_last_used_at AS last_used_at,
+               coalesce(node.fuli_usage_generation, 1) AS usage_generation,
                coalesce(node.fuli_attributes_json, '{}') AS attributes_json,
                [episode IN episodes WHERE episode IS NOT NULL | episode.uuid] AS episodes,
                node.created_at AS created_at,
@@ -265,6 +276,10 @@ def _edge_query(project_scoped: bool) -> str:
                     ELSE coalesce(edge.fuli_preference_scope, 'global') END
                     AS preference_scope,
                edge.fuli_preference_project_id AS preference_project_id,
+               coalesce(edge.fuli_inheritance_mode, 'local_only')
+                 AS inheritance_mode,
+               coalesce(edge.fuli_inherited_project_ids, [])
+                 AS inherited_project_ids,
                coalesce(edge.fuli_human_edited, false) AS human_edited,
                coalesce(edge.fuli_human_change_status, 'none')
                  AS human_change_status,
@@ -273,6 +288,14 @@ def _edge_query(project_scoped: bool) -> str:
                edge.fuli_last_human_changed_at AS last_human_changed_at,
                edge.fuli_last_agent_viewed_at AS last_agent_viewed_at,
                edge.fuli_last_agent_reviewed_at AS last_agent_reviewed_at,
+               coalesce(edge.fuli_utility_score, 0.0) AS utility_score,
+               coalesce(edge.fuli_confidence_score, 0.5) AS confidence_score,
+               coalesce(edge.fuli_qualified_use_count, 0)
+                 AS qualified_use_count,
+               coalesce(edge.fuli_distinct_task_count, 0)
+                 AS distinct_task_count,
+               edge.fuli_last_used_at AS last_used_at,
+               coalesce(edge.fuli_usage_generation, 1) AS usage_generation,
                edge.valid_at AS valid_at, edge.invalid_at AS invalid_at,
                edge.fuli_replaced_by_item_id AS replaced_by_item_id,
                edge.fuli_replaced_by_item_kind AS replaced_by_item_kind,
@@ -384,6 +407,9 @@ def _graph_node(
     audits=None,
 ) -> GraphNode:
     episode_ids = record.get('episodes') or []
+    status, basis, confidence, confirmation_explicit = _confirmation_projection(
+        record
+    )
     return GraphNode(
         id=record['id'],
         name=record['name'],
@@ -394,13 +420,15 @@ def _graph_node(
         current_quadrant=record.get('current_quadrant') or 'known_known',
         epistemic_status=record.get('epistemic_status') or 'confirmed',
         epistemic_state_explicit=record.get('epistemic_state_explicit') is True,
-        confirmation_status=record.get('confirmation_status') or 'pending',
-        confirmation_state_explicit=record.get('confirmation_state_explicit') is True,
-        confirmation_basis=_confirmation_basis(record.get('confirmation_basis_json')),
+        confirmation_status=status,
+        confirmation_state_explicit=confirmation_explicit,
+        confirmation_basis=basis,
         reasoning_summary=record.get('reasoning_summary'),
         profile_aspect=record.get('profile_aspect'),
         preference_scope=record.get('preference_scope'),
         preference_project_id=record.get('preference_project_id'),
+        inheritance_mode=record.get('inheritance_mode') or 'local_only',
+        inherited_project_ids=record.get('inherited_project_ids') or [],
         human_edited=record.get('human_edited') is True,
         human_change_status=record.get('human_change_status') or 'none',
         human_change_version=int(record.get('human_change_version') or 0),
@@ -413,6 +441,12 @@ def _graph_node(
         last_agent_reviewed_at=_native_datetime(
             record.get('last_agent_reviewed_at')
         ),
+        utility_score=float(record.get('utility_score') or 0),
+        confidence_score=confidence,
+        qualified_use_count=int(record.get('qualified_use_count') or 0),
+        distinct_task_count=int(record.get('distinct_task_count') or 0),
+        last_used_at=_native_datetime(record.get('last_used_at')),
+        usage_generation=int(record.get('usage_generation') or 1),
         attributes=json_object(record.get('attributes_json')),
         evidence=[evidence[item] for item in episode_ids if item in evidence],
         created_at=_native_datetime(record.get('created_at')),
@@ -437,6 +471,9 @@ def _graph_edge(
     audits=None,
 ) -> GraphEdge:
     episode_ids = record.get('episodes') or []
+    status, basis, confidence, confirmation_explicit = _confirmation_projection(
+        record
+    )
     return GraphEdge(
         id=record['id'],
         source=record['source'],
@@ -447,13 +484,15 @@ def _graph_edge(
         current_quadrant=record.get('current_quadrant') or 'known_known',
         epistemic_status=record.get('epistemic_status') or 'confirmed',
         epistemic_state_explicit=record.get('epistemic_state_explicit') is True,
-        confirmation_status=record.get('confirmation_status') or 'pending',
-        confirmation_state_explicit=record.get('confirmation_state_explicit') is True,
-        confirmation_basis=_confirmation_basis(record.get('confirmation_basis_json')),
+        confirmation_status=status,
+        confirmation_state_explicit=confirmation_explicit,
+        confirmation_basis=basis,
         reasoning_summary=record.get('reasoning_summary'),
         profile_aspect=record.get('profile_aspect'),
         preference_scope=record.get('preference_scope'),
         preference_project_id=record.get('preference_project_id'),
+        inheritance_mode=record.get('inheritance_mode') or 'local_only',
+        inherited_project_ids=record.get('inherited_project_ids') or [],
         human_edited=record.get('human_edited') is True,
         human_change_status=record.get('human_change_status') or 'none',
         human_change_version=int(record.get('human_change_version') or 0),
@@ -466,6 +505,12 @@ def _graph_edge(
         last_agent_reviewed_at=_native_datetime(
             record.get('last_agent_reviewed_at')
         ),
+        utility_score=float(record.get('utility_score') or 0),
+        confidence_score=confidence,
+        qualified_use_count=int(record.get('qualified_use_count') or 0),
+        distinct_task_count=int(record.get('distinct_task_count') or 0),
+        last_used_at=_native_datetime(record.get('last_used_at')),
+        usage_generation=int(record.get('usage_generation') or 1),
         valid_at=_native_datetime(record.get('valid_at')),
         invalid_at=_native_datetime(record.get('invalid_at')),
         replaced_by_item_id=record.get('replaced_by_item_id'),
@@ -485,4 +530,32 @@ def _graph_edge(
 
 def _confirmation_basis(value) -> ConfirmationBasis | None:
     data = json_object(value)
-    return ConfirmationBasis.model_validate(data) if data else None
+    if not data:
+        return None
+    try:
+        return ConfirmationBasis.model_validate(data)
+    except ValueError:
+        return None
+
+
+def _confirmation_projection(record) -> tuple[
+    str,
+    ConfirmationBasis | None,
+    float,
+    bool,
+]:
+    raw_status = record.get('confirmation_status') or 'pending'
+    status = effective_confirmation_status(record)
+    confidence = float(
+        record['confidence_score']
+        if record.get('confidence_score') is not None else 0.5
+    )
+    if status != raw_status:
+        confidence = min(confidence, 0.5)
+    basis = _confirmation_basis(record.get('confirmation_basis_json'))
+    explicit = (
+        record.get('confirmation_state_explicit') is True
+        and status == raw_status
+        and basis is not None
+    )
+    return status, basis, confidence, explicit

@@ -1,5 +1,6 @@
 import type {
   ConfirmationActor,
+  ConfirmationStatus,
   EvidenceRecord,
   KnowledgeConfirmationGroup,
   KnowledgeEdge,
@@ -61,6 +62,7 @@ export const QUADRANT_DESCRIPTIONS: Record<string, string> = {
 
 export const REVIEW_STATE_LABELS: Record<KnowledgeReviewState, string> = {
   confirmed: '已确认',
+  agent_confirmed: 'Agent 已确认',
   pending: '待确认',
 }
 
@@ -98,6 +100,7 @@ export const KNOWLEDGE_AUDIT_ACTION_LABELS: Record<string, string> = {
   human_change: '人工修改',
   agent_view: 'Agent 查看',
   agent_review: 'Agent 审核',
+  knowledge_used: 'Agent 实际使用',
 }
 
 export function quadrantLabel(value?: string | null) {
@@ -331,15 +334,25 @@ export function formatTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN')
 }
 
-export type KnowledgeReviewState = 'confirmed' | 'pending'
+export type KnowledgeReviewState = 'confirmed' | 'agent_confirmed' | 'pending'
 
 export function knowledgeReviewState(item: KnowledgeItem): KnowledgeReviewState {
   const basis = item.confirmationBasis
-  return item.confirmationExplicit
-    && item.confirmationStatus === 'confirmed'
-    && Boolean(basis?.confirmed_by && basis.confirmed_at)
-    ? 'confirmed'
-    : 'pending'
+  if (
+    !item.confirmationExplicit
+    || !basis?.confirmed_by
+    || !basis.confirmed_at
+  ) return 'pending'
+  if (
+    item.confirmationStatus === 'confirmed'
+    && ['user', 'authoritative_source'].includes(basis.confirmed_by.kind)
+  ) return 'confirmed'
+  if (
+    item.confirmationStatus === 'agent_confirmed'
+    && basis.confirmed_by.kind === 'agent'
+    && Boolean(basis.agent_policy_version)
+  ) return 'agent_confirmed'
+  return 'pending'
 }
 
 export function reviewStateLabel(item: KnowledgeItem) {
@@ -354,7 +367,7 @@ export function batchConfirmationGroups(
     (item) =>
       !item.invalidAt
       && item.classificationExplicit
-      && knowledgeReviewState(item) === 'pending',
+      && knowledgeReviewState(item) !== 'confirmed',
   )
   for (const item of candidates) {
     for (const evidence of item.evidence) {
@@ -474,6 +487,11 @@ export function classificationExplanation(item: KnowledgeItem) {
       basis.confirmed_at,
     )} 确认；本次确认同时覆盖知识内容和象限归类。`
   }
+  if (knowledgeReviewState(item) === 'agent_confirmed' && basis) {
+    return `这条内容因跨任务实际使用达到策略阈值，于 ${formatTime(
+      basis.confirmed_at,
+    )} 标记为 Agent 已确认；它仍低于人工或权威来源确认。`
+  }
   if (basis) {
     return `${confirmationActorLabel(basis.proposed_by)}提出了这条内容，当前仍等待确认；来源证据不会自动升级为确认。`
   }
@@ -486,6 +504,9 @@ export function confirmationBasisSummary(item: KnowledgeItem) {
   if (knowledgeReviewState(item) === 'confirmed') {
     return `${confirmationActorLabel(basis.confirmed_by)} · ${formatTime(basis.confirmed_at)}`
   }
+  if (knowledgeReviewState(item) === 'agent_confirmed') {
+    return `Agent 使用策略 · ${formatTime(basis.confirmed_at)}`
+  }
   return `${confirmationActorLabel(basis.proposed_by)}提出 · ${basis.existence_reason}`
 }
 
@@ -497,19 +518,27 @@ function commonItem(item: KnowledgeNode | KnowledgeEdge) {
     currentQuadrant: classificationExplicit ? item.current_quadrant ?? 'known_known' : 'unclassified',
     epistemicStatus: classificationExplicit ? item.epistemic_status ?? 'confirmed' : 'unreviewed',
     classificationExplicit,
-    confirmationStatus: item.confirmation_status ?? 'pending',
+    confirmationStatus: normalizedConfirmationStatus(item.confirmation_status),
     confirmationExplicit,
     confirmationBasis: item.confirmation_basis ?? null,
     reasoningSummary: item.reasoning_summary ?? '',
     profileAspect: item.profile_aspect ?? null,
     preferenceScope: item.preference_scope ?? (item.profile_aspect ? 'global' : null),
     preferenceProjectId: item.preference_project_id ?? null,
+    inheritanceMode: item.inheritance_mode ?? 'local_only',
+    inheritedProjectIds: item.inherited_project_ids ?? [],
     humanEdited: item.human_edited === true,
     humanChangeStatus: item.human_change_status ?? 'none',
     humanChangeVersion: item.human_change_version ?? 0,
     lastHumanChangedAt: item.last_human_changed_at ?? null,
     lastAgentViewedAt: item.last_agent_viewed_at ?? null,
     lastAgentReviewedAt: item.last_agent_reviewed_at ?? null,
+    utilityScore: item.utility_score ?? 0,
+    confidenceScore: item.confidence_score ?? 0.5,
+    qualifiedUseCount: item.qualified_use_count ?? 0,
+    distinctTaskCount: item.distinct_task_count ?? 0,
+    lastUsedAt: item.last_used_at ?? null,
+    usageGeneration: item.usage_generation ?? 1,
     invalidAt: item.invalid_at,
     replacedByItemId: item.replaced_by_item_id ?? null,
     replacedByItemKind: item.replaced_by_item_kind ?? null,
@@ -521,6 +550,12 @@ function commonItem(item: KnowledgeNode | KnowledgeEdge) {
     conflicts: item.conflicts ?? [],
     auditEvents: item.audit_events ?? [],
   }
+}
+
+function normalizedConfirmationStatus(value?: string): ConfirmationStatus {
+  return value === 'confirmed' || value === 'agent_confirmed'
+    ? value
+    : 'pending'
 }
 
 function searchableText(item: KnowledgeItem) {
