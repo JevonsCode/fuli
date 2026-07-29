@@ -32,6 +32,6 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: graph-provider/pyproject.toml
-      - run: python -m pip install pytest ./graph-provider
+      - run: python -m pip install './graph-provider[dev]'
       - run: python -m pytest -q graph-provider/tests
       - run: docker compose -f compose.graphiti.yml config --quiet
