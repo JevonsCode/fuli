@@ -46,6 +46,7 @@ try {
     'npm-shrinkwrap.json',
     'package.json',
     'src/cli.js',
+    'src/cli/update-command.js',
     'dist/web/index.html',
     'graph-provider/fuli_graph/app.py',
     'skills/capturing-session-knowledge/SKILL.md'
@@ -77,11 +78,14 @@ try {
   assert.equal(installedManifest.name, manifest.name);
   assert.equal(installedManifest.version, manifest.version);
 
-  const fl = process.platform === 'win32'
-    ? join(prefix, 'fl.cmd')
-    : join(prefix, 'bin', 'fl');
+  const binDir = process.platform === 'win32' ? prefix : join(prefix, 'bin');
+  const extension = process.platform === 'win32' ? '.cmd' : '';
+  const fl = join(binDir, `fl${extension}`);
+  const fuli = join(binDir, `fuli${extension}`);
   assert.equal(run(fl, ['--version']).trim(), manifest.version);
-  assert.match(run(fl, ['--help']), /fl <command>/);
+  assert.equal(run(fuli, ['--version']).trim(), manifest.version);
+  assert.match(run(fuli, ['--help']), /fuli <command>/);
+  assert.match(run(fuli, ['--help']), /update \[setup options\]/);
 
   const { serveStatic } = await import(pathToFileURL(
     join(installedRoot, 'src', 'http', 'static-handler.js')
@@ -95,7 +99,7 @@ try {
     package: `${manifest.name}@${manifest.version}`,
     files: files.size,
     packedBytes: packed.size,
-    globalCommand: 'fl',
+    globalCommands: ['fuli', 'fl'],
     webUi: 'served'
   }, null, 2) + '\n');
 } finally {

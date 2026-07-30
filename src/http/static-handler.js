@@ -1,9 +1,10 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { extname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PROJECT_ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 export const WEB_ROOT = join(PROJECT_ROOT, 'dist', 'web');
+const FULI_LOGO_PATTERN = /^fuli-logo(?:-[A-Za-z0-9_-]+)?\.png$/;
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -18,8 +19,17 @@ const MIME_TYPES = {
 
 export function serveStatic(pathname, response) {
   if (pathname === '/favicon.ico') {
-    response.writeHead(204);
-    response.end();
+    const filePath = faviconFilePath();
+    if (!filePath) {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+    response.writeHead(200, {
+      'cache-control': 'public, max-age=86400',
+      'content-type': 'image/png'
+    });
+    response.end(readFileSync(filePath));
     return;
   }
 
@@ -48,6 +58,22 @@ export function serveStatic(pathname, response) {
     'content-type': MIME_TYPES[extname(filePath)] ?? 'application/octet-stream'
   });
   response.end(readFileSync(filePath));
+}
+
+function faviconFilePath() {
+  const directPath = join(WEB_ROOT, 'favicon.png');
+  if (existsSync(directPath)) return directPath;
+
+  const assetsPath = join(WEB_ROOT, 'assets');
+  if (!existsSync(assetsPath)) return null;
+  try {
+    const filename = readdirSync(assetsPath)
+      .sort()
+      .find((candidate) => FULI_LOGO_PATTERN.test(candidate));
+    return filename ? join(assetsPath, filename) : null;
+  } catch {
+    return null;
+  }
 }
 
 function shouldServeApplication(pathname) {

@@ -19,10 +19,10 @@ Cursor 在会话之间复用个人偏好、项目约束、历史决策与 Runboo
 
 ```bash
 npm install --global fuli-context
-fl setup
+fuli setup
 ```
 
-`fl setup` 会先展示即将进行的操作，再请求确认。它会检查容器运行时、初始化本机
+`fuli setup` 会先展示即将进行的操作，再请求确认。它会检查容器运行时、初始化本机
 Graphiti / Neo4j、创建个人空间、安装配套 Agent Skills，并为检测到的 Agent 注册
 `fuli` MCP。Codex 接入还会在用户级 `AGENTS.md` 中合并一段很短的 Bootstrap：每个
 用户任务开始时先调用协作偏好工具，并把当前工作目录作为 `projectPath` 传给 Fuli。
@@ -32,59 +32,152 @@ Provider。
 初始化完成后：
 
 ```bash
-fl open
+fuli open
 ```
 
 管理界面默认位于 `http://127.0.0.1:2727`。
 
-## 常用命令
+## CLI 使用
+
+全局安装会提供两个等价命令：
+
+- `fuli`：完整命令名，文档默认使用它；
+- `fl`：短别名，例如 `fl status` 与 `fuli status` 完全相同。
+
+查看版本和内置帮助：
 
 ```bash
-fl --version
-fl --help
-
-fl start
-fl start --open
-fl status
-fl status --json
-fl open
-fl restart
-fl restart --rebuild
-fl stop
+fuli --version
+fuli --help
 ```
 
-`fl stop` 只停止本机服务，不删除图谱数据。需要无人值守初始化时可以使用：
+### 本地服务与安装
+
+| 命令 | 用途 |
+| --- | --- |
+| `fuli setup [选项]` | 初始化 Provider、管理界面、Agent 接入和 Skills；可重复执行 |
+| `fuli start [选项]` | 启动本机服务 |
+| `fuli stop [--data-dir DIR]` | 安全停止本机服务并保留数据 |
+| `fuli restart [选项]` | 重启本机服务 |
+| `fuli status [--json]` | 查看服务状态；`--json` 输出机器可读结果 |
+| `fuli open` | 在浏览器中打开管理界面 |
+| `fuli update [setup 选项]` | 更新全局 npm 包，并用新版 CLI 刷新本机接入 |
+| `fuli uninstall [--yes]` | 清理 Agent 接入和服务，保留知识数据 |
+
+常用示例：
 
 ```bash
-fl setup --yes
+fuli start
+fuli start --open
+fuli status
+fuli status --json
+fuli restart
+fuli restart --rebuild
+fuli stop
+```
+
+`fuli stop` 只停止本机服务，不删除图谱数据。
+
+`start` 和 `restart` 可使用 `--data-dir DIR`、`--personal-space NAME`、`--port PORT`；
+`--open` 会在启动后打开管理界面，`--rebuild` 会重新构建本机 Provider 容器。
+
+### setup 选项
+
+| 选项 | 用途 |
+| --- | --- |
+| `--yes` | 跳过确认，适合无人值守执行 |
+| `--data-dir DIR` | 使用指定数据目录；后续命令应继续传入同一路径 |
+| `--personal-space NAME` | 设置首次初始化时的个人空间名称，默认是 `我` |
+| `--port PORT` | 设置管理界面端口，默认是 `2727` |
+| `--codex-only` | 只接入 Codex |
+| `--skip-agents` | 不修改 Agent 配置，也不刷新 Agent Skills |
+| `--no-start` | 初始化 Provider，但不启动管理界面 |
+| `--personal-only` | 只使用个人 Provider；这是默认模式 |
+| `--with-dev-public` | 同时启动本机开发用公共 Provider，仅用于开发或联调 |
+
+例如，无人值守地完成默认初始化：
+
+```bash
+fuli setup --yes
+```
+
+使用自定义数据目录和管理界面端口：
+
+```bash
+fuli setup --data-dir "./fuli-data" --port 3727
 ```
 
 只初始化 Provider、不启动管理界面：
 
 ```bash
-fl setup --no-start
+fuli setup --no-start
 ```
 
 ## 更新
 
 ```bash
-fl stop
-npm install --global fuli-context@latest
-fl setup --yes
+fuli update
 ```
 
-重复执行 setup 会保留既有知识数据，并刷新 Agent 接入和配套 Skills。
+`fuli update` 默认先展示更新计划并请求确认。需要无人值守执行时：
+
+```bash
+fuli update --yes
+```
+
+更新流程会先查询 npm 的 `latest` 版本；确认不会降级后，才安全停止旧版服务、安装当时
+的 `fuli-context@latest` 对应版本，再直接使用新安装版本的 CLI 执行 `setup --yes`。
+既有知识数据、配置备份和 Neo4j 数据卷不会删除；即使 npm 上已经是当前版本，也会刷新
+Agent 接入和配套 Skills。`update` 支持上表中的全部 setup 选项；使用过自定义数据目录、
+端口或 Provider 模式时，应在更新时重复传入相同选项。
+
+如果当前 CLI 来自尚未发布的工作区版本，并且版本号高于 npm `latest`，更新会在停止服务
+和安装包之前退出，避免把开发版本降级。
+
+如果当前已安装版本尚不识别 `update`，需要先手动升级一次到包含该命令的版本：
+
+```bash
+npm install --global fuli-context@latest
+fuli setup --yes
+```
+
+如果自动更新在 npm 安装或新版 setup 阶段失败，知识数据仍会保留。检查命令输出后可用
+上面两条命令恢复；使用过自定义 setup 选项时也要一并带上。
+
+## 兼容的本地知识命令
+
+以下命令面向旧版 SQLite 工作流和开发调试。`--db`、`--personal-space` 是全局选项，
+必须写在子命令之前：
+
+```bash
+fuli --db ./context.db --personal-space 我 search 我 "关键词"
+```
+
+| 命令 | 用途 |
+| --- | --- |
+| `space create NAME --kind personal\|public` | 创建个人或公共空间 |
+| `subscribe PERSONAL_SPACE PUBLIC_SPACE` | 订阅公共空间 |
+| `remember PERSONAL_SPACE --target SPACE --source-kind KIND --text TEXT` | 写入一段待归纳内容 |
+| `observe PERSONAL_SPACE --target SPACE` | 观察当前 Git 改动 |
+| `search PERSONAL_SPACE QUERY` | 搜索当前事实 |
+| `timeline SPACE SUBJECT` | 查看主题时间线 |
+| `rules SPACE` | 查看空间规则 |
+| `history SPACE PREDICATE` | 查看某个事实的修订历史 |
+| `context PERSONAL_SPACE SPACE QUERY` | 输出紧凑的 Agent 上下文包 |
+| `candidates PERSONAL_SPACE` | 列出待处理候选知识 |
+| `candidate ID sync\|personal_only\|ignore` | 处理候选知识 |
+| `migrate --from LEGACY_JSON --to SQLITE_DB` | 将旧 JSON 数据迁移到 SQLite |
 
 ## 卸载
 
 先清理 Agent 接入，再移除全局 npm 包：
 
 ```bash
-fl uninstall
+fuli uninstall
 npm uninstall --global fuli-context
 ```
 
-`fl uninstall` 会：
+`fuli uninstall` 会：
 
 - 停止本机 Fuli 服务；
 - 从 Codex、Claude Code 和 Cursor 中移除 Fuli MCP 接入；
@@ -170,8 +263,8 @@ docker compose -f compose.graphiti.yml config --quiet
 ```
 
 `npm run test:package` 会构建前端、生成真实 npm tarball、安装到隔离的全局前缀，并验证
-`fl`、版本号、帮助信息和已发布 Web UI。测试源码、QA 截图与内部设计文档都不会进入
-npm 包。
+`fuli` / `fl`、版本号、帮助信息和已发布 Web UI。测试源码、QA 截图与内部设计文档
+都不会进入 npm 包。
 
 ## License
 

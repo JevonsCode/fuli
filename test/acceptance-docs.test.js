@@ -67,6 +67,7 @@ test('时序图和流程图应使用完整的中文 Mermaid 图示', () => {
   assert.match(时序图, /达到五次且跨三个任务/);
   assert.match(时序图, /预览项目写入/);
   assert.match(时序图, /一次性预览令牌/);
+  assert.match(时序图, /未命中时只显示顶部标记，不重复页脚/);
 
   assert.equal((流程图.match(/^```mermaid$/gm) ?? []).length, 4);
   assert.equal((流程图.match(/^```$/gm) ?? []).length, 4);
@@ -85,4 +86,24 @@ test('中文验收口径应把误选写工具和项目写入授权纳入回归',
   assert.match(用例文档, /完整写入意图/);
   assert.match(用例文档, /预览令牌/);
   assert.match(用例文档, /重复使用.*拒绝/);
+});
+
+test('中文验收口径应覆盖运行来源、Claude Code 更新、未命中去重和 CLI 更新', () => {
+  const 索引 = 读取验收文件('README.md');
+  const 用例文档 = 读取验收文件('知识验收用例.md');
+  const 流程图 = 读取验收文件('知识检索与确认流程图.md');
+
+  assert.match(用例文档, /ENV-02：安装来源与当前运行来源可以明确区分/);
+  assert.match(用例文档, /npm 包名为 `fuli-context`/);
+  assert.match(用例文档, /CC-01：Claude Code 在真实验收前完成版本检查/);
+  assert.match(用例文档, /MCP-03：未命中来源标记只展示一次/);
+  assert.match(用例文档, /`noMatchSourceMarker\.markdown` 是空字符串/);
+  assert.match(用例文档, /CLI-01：`fuli update` 安全更新全局 npm 安装/);
+  assert.match(用例文档, /安装 `fuli-context@latest`/);
+  assert.match(用例文档, /当前 CLI 高于 npm `latest` 时拒绝降级/);
+  assert.match(用例文档, /WEB-01：使用包内浏览器小图标，不向回答插入大图/);
+  assert.match(用例文档, /Codex 自身渲染/);
+  assert.match(流程图, /未命中时只显示顶部标记/);
+  assert.match(索引, /test\/update-command\.test\.js/);
+  assert.match(索引, /npm run test:package/);
 });

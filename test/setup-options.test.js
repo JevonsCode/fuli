@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseSetupOptions, parseUninstallOptions } from '../src/setup/options.js';
+import {
+  parseSetupOptions,
+  parseUninstallOptions,
+  parseUpdateOptions
+} from '../src/setup/options.js';
 
 test('setup options have simple defaults', () => {
   assert.deepEqual(parseSetupOptions([]), {
@@ -54,6 +58,23 @@ test('setup options reject unknown, duplicate, missing, and invalid values', () 
     /Missing value for --personal-space/);
   assert.throws(() => parseSetupOptions(['--port', '0']), /--port must be between 1 and 65535/);
   assert.throws(() => parseSetupOptions(['--port', 'abc']), /--port must be between 1 and 65535/);
+});
+
+test('update accepts setup options and reports update-specific option errors', () => {
+  assert.deepEqual(
+    parseUpdateOptions(['--yes', '--data-dir', 'D:/Fuli', '--no-start']),
+    {
+      dataDir: 'D:/Fuli',
+      personalSpaceName: '我',
+      port: 2727,
+      yes: true,
+      codexOnly: false,
+      skipAgents: false,
+      personalOnly: true,
+      noStart: true
+    }
+  );
+  assert.throws(() => parseUpdateOptions(['--wat']), /Unknown update option: --wat/);
 });
 
 test('uninstall options are intentionally limited to confirmation and data location', () => {

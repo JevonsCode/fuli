@@ -105,8 +105,9 @@ For the chosen marker, the final answer must begin with its `leadMarkdown` uncha
 before any heading or prose, and append its `markdown` unchanged after the answer. If
 any search supports the answer, choose `sourceMarker` from one supporting search. If
 none do, choose `noMatchSourceMarker`. Never show either marker when no search was
-called. Never fabricate, rewrite, omit, or wrap markers in HTML. A capture or write
-result is not a read citation.
+called. For a no-match search, `noMatchSourceMarker.markdown` is intentionally empty:
+show only its `leadMarkdown` and do not synthesize a footer. Never fabricate, rewrite,
+omit, or wrap markers in HTML. A capture or write result is not a read citation.
 
 ## Decide What Persists
 

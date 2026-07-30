@@ -13,6 +13,7 @@ import { runLocalRuntimeCommand } from './cli/local-runtime-command.js';
 import { migrateLegacyJson } from './cli/migrate-command.js';
 import { runSetupCommand } from './cli/setup-command.js';
 import { runUninstallCommand } from './cli/uninstall-command.js';
+import { runUpdateCommand } from './cli/update-command.js';
 import { FULI_VERSION } from './package-metadata.js';
 import { assertSupportedNodeVersion } from './setup/node-runtime.js';
 import {
@@ -51,6 +52,13 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     }
     await runUninstallCommand(commandArgs, { env });
     return;
+  }
+  if (command === 'update') {
+    if (runtimeArgs.length) {
+      throw new TypeError('Update options must appear after the update command');
+    }
+    assertSupportedNodeVersion();
+    return runUpdateCommand(commandArgs, { env });
   }
   if (isLocalRuntimeCommand(command)) {
     if (runtimeArgs.length) {

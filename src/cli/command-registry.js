@@ -32,7 +32,8 @@ export function isRegisteredCommand(command) {
 }
 
 export function isCliCommand(command) {
-  return command === 'setup' || command === 'uninstall' || command === 'migrate' ||
+  return command === 'setup' || command === 'update' ||
+    command === 'uninstall' || command === 'migrate' ||
     LOCAL_RUNTIME_COMMANDS.has(command) || isRegisteredCommand(command);
 }
 
@@ -41,25 +42,26 @@ export function isLocalRuntimeCommand(command) {
 }
 
 export function printHelp() {
-  console.log(`fl <command>
+  console.log(`fuli <command>  (short alias: fl)
 
 General:
   --help, -h
   --version, -v
 
 Local service:
-  start [--port 2727] [--open] [--rebuild] [--data-dir DIR]
+  start [--port 2727] [--open] [--rebuild] [--data-dir DIR] [--personal-space NAME]
   stop [--data-dir DIR]
-  restart [--port 2727] [--open] [--rebuild] [--data-dir DIR]
+  restart [--port 2727] [--open] [--rebuild] [--data-dir DIR] [--personal-space NAME]
   status [--json] [--data-dir DIR]
   open [--data-dir DIR]
 
 Install and Agent connection:
-  setup [--yes] [--codex-only] [--data-dir DIR] [--personal-space NAME] [--port PORT] [--skip-agents] [--no-start] [--with-dev-public]
+  setup [--yes] [--codex-only] [--data-dir DIR] [--personal-space NAME] [--port PORT] [--skip-agents] [--no-start] [--personal-only|--with-dev-public]
+  update [setup options]
   uninstall [--yes] [--data-dir DIR]
 
 Legacy local knowledge commands:
-  fl [--db SQLITE_DB] [--personal-space 我] <command>
+  fuli [--db SQLITE_DB] [--personal-space 我] <command>
   Global options must appear before the command.
 
 Commands:

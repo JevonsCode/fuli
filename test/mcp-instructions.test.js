@@ -16,4 +16,5 @@ test('MCP instructions require task-scoped preference loading within the 2KB bud
   assert.match(MCP_INSTRUCTIONS, /writes?.*actual payload/i);
   assert.match(MCP_INSTRUCTIONS, /final text.*not compliance/i);
   assert.match(MCP_INSTRUCTIONS, /never guess personalProjectId/i);
+  assert.match(MCP_INSTRUCTIONS, /On miss.*noMatchSourceMarker.*leadMarkdown only.*empty markdown/i);
 });

@@ -79,14 +79,17 @@ test('web API can build context packs from space names', async (t) => {
   assert.equal(pack.matches[0].fact.object, 'https://name-pack.example.com');
 });
 
-test('web server handles favicon without console noise', async (t) => {
+test('web server exposes the packaged Fuli logo as its conventional favicon', async (t) => {
   const dbPath = join(mkdtempSync(join(tmpdir(), 'fuli-server-')), 'context.db');
   const { server, url } = await createServer({ dbPath, port: 0 });
   t.after(() => server.close());
 
   const response = await fetch(`${url}/favicon.ico`);
+  const image = Buffer.from(await response.arrayBuffer());
 
-  assert.equal(response.status, 204);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'image/png');
+  assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
 });
 
 test('web API bootstraps starter spaces for a fresh local user', async (t) => {

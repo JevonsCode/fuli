@@ -144,4 +144,8 @@ test('bundled session Skill gates all-local content lookup behind explicit conse
   assert.match(skill, /route string alone is not a live URL/i);
   assert.match(skill, /paths outside the root/i);
   assert.match(skill, /no supporting result.*noMatchSourceMarker/is);
+  assert.match(
+    skill,
+    /no-match search.*noMatchSourceMarker\.markdown.*intentionally empty.*leadMarkdown/is
+  );
 });

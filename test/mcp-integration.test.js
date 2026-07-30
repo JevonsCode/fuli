@@ -229,6 +229,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     searched.structuredContent.noMatchSourceMarker.markdown,
     /<\/?(?:details|summary)>/i
   );
+  assert.equal(searched.structuredContent.noMatchSourceMarker.markdown, '');
   assert.match(
     searched.structuredContent.sourceMarker.markdown,
     /#\/knowledge\/personal\/personal-1\/entity\/entity-1/
@@ -254,6 +255,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   });
   assert.equal(missed.structuredContent.sourceMarker.status, 'no_match');
   assert.equal(missed.structuredContent.noMatchSourceMarker.status, 'no_match');
+  assert.equal(missed.structuredContent.noMatchSourceMarker.markdown, '');
   assert.doesNotMatch(
     missed.structuredContent.noMatchSourceMarker.markdown,
     /<\/?(?:details|summary)>/i

@@ -363,6 +363,8 @@ test('CLI preserves runtime-looking tokens inside command arguments', () => {
 test('CLI help states that global runtime flags belong before the command', () => {
   const help = execFileSync(NODE, [CLI, '--help'], { encoding: 'utf8' });
 
+  assert.match(help, /fuli <command>  \(short alias: fl\)/);
+  assert.match(help, /update \[setup options\]/);
   assert.match(help, /Global options must appear before the command/);
 });
 

@@ -90,13 +90,7 @@ function sourceLeadMarkdown({ consoleUrl, citations }) {
 }
 
 function sourceMarkerMarkdown({ consoleUrl, citations }) {
-  if (!citations.length) {
-    return [
-      '**FULI 来源 · 未命中**',
-      '',
-      `- [打开 Fuli](${safeLoopbackOrigin(consoleUrl) ?? DEFAULT_CONSOLE_URL}/)`
-    ].join('\n');
-  }
+  if (!citations.length) return '';
   const shown = citations.slice(0, MAX_CITATIONS);
   const hidden = citations.length - shown.length;
   return [

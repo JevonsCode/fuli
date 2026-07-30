@@ -90,7 +90,8 @@ test('exact local browser authority and requests without Origin keep working', a
   assert.equal(new URL(url).port, String(server.address().port));
   assert.equal(created.status, 200);
   assert.equal(createSpaceCalls, 1);
-  assert.equal(favicon.status, 204);
+  assert.equal(favicon.status, 200);
+  assert.equal(favicon.headers.get('content-type'), 'image/png');
   assert.equal(index.status, 200);
   assert.match(index.headers.get('content-type'), /^text\/html/);
   assert.ok(entryPath);

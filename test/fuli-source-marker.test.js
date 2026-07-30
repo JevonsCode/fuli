@@ -42,7 +42,7 @@ test('matched Fuli source marker uses terminal-safe Markdown deep links', () => 
   assert.doesNotMatch(marker.markdown, /<\/?(?:details|summary)>/i);
 });
 
-test('empty Fuli search produces an explicit no-match marker without fake citations', () => {
+test('empty Fuli search keeps only the lead marker and omits a duplicate footer', () => {
   const marker = createFuliSourceMarker();
 
   assert.equal(marker.status, 'no_match');
@@ -51,11 +51,7 @@ test('empty Fuli search produces an explicit no-match marker without fake citati
     marker.leadMarkdown,
     '**[◇ FULI · 已检索，未命中](http://127.0.0.1:2727/)**'
   );
-  assert.equal(marker.markdown, [
-    '**FULI 来源 · 未命中**',
-    '',
-    '- [打开 Fuli](http://127.0.0.1:2727/)'
-  ].join('\n'));
+  assert.equal(marker.markdown, '');
   assert.doesNotMatch(marker.markdown, /<\/?(?:details|summary)>/i);
   assert.doesNotMatch(marker.markdown, /#\/knowledge\//);
 });

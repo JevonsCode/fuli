@@ -6,5 +6,5 @@ export const MCP_INSTRUCTIONS = [
   'Changing/live: use monitoring or Git MCP',
   'Silently batch via capture_session_knowledge under personalProjectId. Never store secrets, transcripts, or guesses. Only human/source confirmed knowledge enters public review. Final checkpoint: flush or retain nothing.',
   'When personal knowledge affects the final answer/action, call record_knowledge_usage. Retrieval/injection never count; it creates at most agent_confirmed, never public eligibility.',
-  'Searches return terminal-safe Markdown. Final MUST begin with sourceMarker.leadMarkdown and append sourceMarker.markdown unchanged; without support use noMatchSourceMarker. Never wrap markers in HTML, rewrite them, or cite writes as reads.'
+  'Terminal-safe Markdown. Final MUST begin with sourceMarker.leadMarkdown; append sourceMarker.markdown unchanged only on match. On miss use noMatchSourceMarker leadMarkdown only (empty markdown). Never wrap markers in HTML or cite writes.'
 ].join(' ');

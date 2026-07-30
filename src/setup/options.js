@@ -16,6 +16,14 @@ const BOOLEAN_OPTIONS = Object.freeze({
 const PROVIDER_MODE_OPTIONS = new Set(['--personal-only', '--with-dev-public']);
 
 export function parseSetupOptions(args = []) {
+  return parseSetupLikeOptions(args, 'setup');
+}
+
+export function parseUpdateOptions(args = []) {
+  return parseSetupLikeOptions(args, 'update');
+}
+
+function parseSetupLikeOptions(args, command) {
   const result = {
     dataDir: null,
     personalSpaceName: '我',
@@ -47,7 +55,7 @@ export function parseSetupOptions(args = []) {
       continue;
     }
     const valueKey = VALUE_OPTIONS[flag];
-    if (!valueKey) throw new TypeError(`Unknown setup option: ${flag}`);
+    if (!valueKey) throw new TypeError(`Unknown ${command} option: ${flag}`);
     const value = args[index + 1];
     if (typeof value !== 'string' || !value.trim() || value.startsWith('--')) {
       throw new TypeError(`Missing value for ${flag}`);
