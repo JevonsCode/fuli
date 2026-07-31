@@ -1,19 +1,162 @@
 # 复利（Fuli）
 
-复利是一个面向 AI Agent 的本地优先上下文图谱。它让 Codex、Claude Code 和
-Cursor 在会话之间复用个人偏好、项目约束、历史决策与 Runbook，同时保留来源和
-知识边界。
+[English](README.en.md)
 
-当前 npm 版本是个人版：个人知识与管理界面运行在本机。团队共享 Provider 是独立的
-服务部署单元，不作为第二个用户 npm 包发布。
+复利是一个面向 AI Agent 的本地优先协作上下文图谱。它把人与 AI 在项目中产生的、经得起
+复用的知识、经验、决策理由和偏好组织成有来源、有作用域、有时间关系的资产，让 Codex、
+Claude Code 和 Cursor 在后续任务中少重复学习一次。
+
+复利不是聊天记录仓库，也不试图建立一个替代人的“人格模型”。AI 负责检索、提醒、归纳和
+执行；人始终保留最终判断权。
+
+当前 npm 包是个人版：个人知识、图数据库和管理界面都运行在本机。团队共享 Provider 是
+独立部署的服务单元，不会把个人品味、个性或判断偏好发布到公共层。
+
+## 项目理念
+
+### 1. 衡量复用价值，而不是知识数量
+
+复利的核心问题是：
+
+> 如果没有 Fuli，Agent 是否需要重新学习一条已经确认、仍然有效且与当前任务相关的信息？
+
+节点数、对话数和图谱规模不是成功指标。真正需要验证的是：历史资产能否在正确的项目、时间
+和权威边界内被再次使用，并减少重复解释、修正和返工。
+
+### 2. 每个任务都检查价值，但不强迫每个任务沉淀
+
+一次任务可能产生：
+
+- 可复用知识：API 约定、Runbook、发布方式或项目约束；
+- 经验：为什么某个做法有效或失败；
+- 决策轨迹：候选方案、人的选择、理由和后续验证；
+- 判断辅助：偏好、原则、品味或个性倾向。
+
+也可能只有临时输出、猜测或一次性选择。此时正确结果是 `retain_nothing`。复利要求每个任务
+结束前做一次知识价值检查，并不是把每次聊天都变成长久记忆。
+
+### 3. 人的权威高于 Agent 的重复判断
+
+AI 可以发现候选、指出冲突、建议公共化，也可以在得到授权后处理延迟冲突；它不能仅凭语义
+相似、重复出现或自己的判断伪造人工确认。公共知识提升和有风险的项目写入必须先预览，再由
+明确的人类选择触发一次性、原子执行。
+
+### 4. 先组装上下文，再按需取证
+
+Fuli 不会在会话开始时把全部历史塞给模型。入口阶段只加载当前任务实际生效的个人全局偏好
+和精确项目偏好；详细知识由 Agent 根据任务按需检索。只有真正影响回答、实现或决策的知识
+才记录为一次使用，单纯检索不会增加权重。
+
+### 5. 保留知识演化，而不是覆盖历史
+
+旧方案可能在当时正确，后来因条件变化被替代。Fuli 保存来源、确认权威、时间、理由、修订、
+替代和负面证据，让 Agent 能解释“现在应该用什么”以及“为什么过去曾经不同”。负面反馈会
+降低相关内容的排序或触发复核，但不会静默抹掉历史。
+
+### 6. 公共知识归属上级，项目差异留在子项目
+
+例如，酒店和机票项目可以只保存自己的 PRD、配置和领域规则，把共同的本地运行、Mock、测试
+和发布方式收敛到活动平台项目：
+
+```text
+活动平台（父项目：共享 Runbook）
+├── 酒店项目（子项目：酒店 PRD / 配置 / 覆盖项）
+└── 机票项目（子项目：机票 PRD / 配置 / 覆盖项）
+```
+
+Agent 在酒店项目工作时先搜索酒店本地知识，再沿显式的 `PART_OF` 或
+`USES_KNOWLEDGE_FROM` 关系向上搜索允许继承的知识，最多两跳。同稳定键的子项目内容覆盖
+父项目内容；普通 `RELATED_TO` 关系不会扩大作用域，项目级个人偏好也不会向下继承。
+
+多个子项目中相似的内容只会形成公共化候选。当前聚类是词法启发式信号，不是语义等价证明；
+必须由人选择规范项、重复项、上级项目和理由后，才能原子提升。
+
+### 7. 本地优先，公开层不包含个人模型
+
+个人图谱默认留在本机。Fuli 保存结构化、可复用的知识，不保存整段会话、凭据、临时日志或
+原始命令输出。团队共享层只承载经过确认、具有上下文和来源的项目或领域知识，不包含个人的
+品味、个性和判断偏好。
+
+## Agent 交互时序
+
+下面是日常任务的简化时序。更完整的项目继承、使用计数、写入预览和来源标记流程见
+[智能体调用时序图](acceptance/智能体调用时序图.md)。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 用户
+    participant A as Agent
+    participant L as 生命周期接入
+    participant F as Fuli MCP
+    participant G as 本地图谱
+
+    U->>A: 在当前项目提交任务
+    alt Claude Code（Hook 强制）
+        L->>F: UserPromptSubmit → begin_task_context
+        F-->>A: 生效偏好、项目和任务令牌
+    else Codex / Cursor（Prompt fallback）
+        A->>F: get_collaboration_preferences(projectPath)
+        F-->>A: 生效偏好和精确项目
+    end
+
+    opt 任务依赖历史知识
+        A->>F: search_current_project_knowledge
+        F->>G: 先查子项目，再查获授权的上级
+        G-->>A: 有界正文、状态、来源和历史
+        opt 知识实际影响结果
+            A->>F: record_knowledge_usage
+        end
+    end
+
+    A->>A: 完成实现、验证或回答
+    opt 产生决策、反证或失效证据
+        A->>F: 记录理由或知识反馈
+    end
+    A->>F: checkpoint_task_knowledge
+    alt 有少量可复用候选
+        F->>G: capture_candidates
+    else 没有值得长期保留的内容
+        F-->>A: retain_nothing
+    end
+
+    alt Claude Code Stop Hook
+        L->>F: verify_task_checkpoint
+        F-->>L: 已检查才允许结束
+    else Prompt fallback Agent
+        Note over A,F: 遵循同一契约，但宿主不能确定性阻止漏检
+    end
+    A-->>U: 返回结果与实际使用的 Fuli 来源
+```
+
+## 当前能力与证据边界
+
+已经由实现和自动化测试覆盖的核心机制包括：
+
+- 本地个人空间、精确项目作用域和选择性上级继承；
+- 偏好确认、延迟冲突处理、修订历史和来源标记；
+- 任务入口、任务末尾知识检查，以及 Claude Code 的入口 / Stop Hook；
+- 决策选项、决策理由和首次记录时附带的验证结果；
+- 知识使用事件、负面反馈和内容代际隔离；
+- 公共知识候选发现，以及预览令牌保护的原子提升。
+
+仍需与“已经证明”区分的内容：
+
+- `FULI_ALIGNMENT_BENCHMARK.md` 中 A/B 阈值是验收约定；只有完成足量、同条件的真实配对任务
+  后，才能声称 Fuli 已降低重复解释或返工；
+- Benchmark 的测试项目和对话是明确标注的 **MOCK / 合成数据**，不是用户或生产数据；
+- 当前决策工具可在首次记录时附带验证，但还没有面向既有 `Decision` 单独追加不可变验证结果
+  的专用入口；
+- Claude Code 具备确定性的生命周期 Hook；Codex 和 Cursor 当前是 Prompt fallback，不能把两者
+  表述为同等强制能力。
 
 ## 安装
 
 准备：
 
-- Node.js 24.12 或更高版本
-- Docker Compose v2；Docker Desktop 或 Rancher Desktop 均可
-- 至少约 4 GB 可供容器使用的内存
+- Node.js 24.12 或更高版本；
+- Docker Compose v2；Docker Desktop 或 Rancher Desktop 均可；
+- 至少约 4 GB 可供容器使用的内存。
 
 全局安装并初始化：
 
@@ -22,12 +165,9 @@ npm install --global fuli-context
 fuli setup
 ```
 
-`fuli setup` 会先展示即将进行的操作，再请求确认。它会检查容器运行时、初始化本机
-Graphiti / Neo4j、创建个人空间、安装配套 Agent Skills，并为检测到的 Agent 注册
-`fuli` MCP。Codex 接入还会在用户级 `AGENTS.md` 中合并一段很短的 Bootstrap：每个
-用户任务开始时先调用协作偏好工具，并把当前工作目录作为 `projectPath` 传给 Fuli。
-偏好正文仍以 Fuli 为唯一来源，不会复制到 Codex 配置中。默认不会连接或模拟团队共享
-Provider。
+`fuli setup` 会先展示操作计划并请求确认，然后检查容器运行时、初始化本机
+Graphiti / Neo4j、创建个人空间、安装配套 Agent Skills，并为检测到的 Agent 注册 `fuli`
+MCP。默认只连接个人 Provider，不会模拟团队共享服务。
 
 初始化完成后：
 
@@ -37,179 +177,94 @@ fuli open
 
 管理界面默认位于 `http://127.0.0.1:2727`。
 
-## CLI 使用
+## CLI
 
-全局安装会提供两个等价命令：
-
-- `fuli`：完整命令名，文档默认使用它；
-- `fl`：短别名，例如 `fl status` 与 `fuli status` 完全相同。
-
-查看版本和内置帮助：
-
-```bash
-fuli --version
-fuli --help
-```
-
-### 本地服务与安装
+全局安装提供两个等价命令：`fuli` 和短别名 `fl`。
 
 | 命令 | 用途 |
 | --- | --- |
 | `fuli setup [选项]` | 初始化 Provider、管理界面、Agent 接入和 Skills；可重复执行 |
 | `fuli start [选项]` | 启动本机服务 |
-| `fuli stop [--data-dir DIR]` | 安全停止本机服务并保留数据 |
+| `fuli stop [--data-dir DIR]` | 停止服务并保留数据 |
 | `fuli restart [选项]` | 重启本机服务 |
-| `fuli status [--json]` | 查看服务状态；`--json` 输出机器可读结果 |
-| `fuli open` | 在浏览器中打开管理界面 |
-| `fuli update [setup 选项]` | 更新全局 npm 包，并用新版 CLI 刷新本机接入 |
+| `fuli status [--json]` | 查看服务状态 |
+| `fuli open` | 打开管理界面 |
+| `fuli update [setup 选项]` | 更新 npm 包并刷新本机接入 |
 | `fuli uninstall [--yes]` | 清理 Agent 接入和服务，保留知识数据 |
 
 常用示例：
 
 ```bash
-fuli start
-fuli start --open
+fuli --version
 fuli status
-fuli status --json
-fuli restart
 fuli restart --rebuild
 fuli stop
 ```
 
-`fuli stop` 只停止本机服务，不删除图谱数据。
-
-`start` 和 `restart` 可使用 `--data-dir DIR`、`--personal-space NAME`、`--port PORT`；
-`--open` 会在启动后打开管理界面，`--rebuild` 会重新构建本机 Provider 容器。
-
-### setup 选项
+`start`、`restart` 和 `setup` 支持 `--data-dir DIR`、`--personal-space NAME`、
+`--port PORT` 等选项。`setup` 还支持：
 
 | 选项 | 用途 |
 | --- | --- |
 | `--yes` | 跳过确认，适合无人值守执行 |
-| `--data-dir DIR` | 使用指定数据目录；后续命令应继续传入同一路径 |
-| `--personal-space NAME` | 设置首次初始化时的个人空间名称，默认是 `我` |
-| `--port PORT` | 设置管理界面端口，默认是 `2727` |
 | `--codex-only` | 只接入 Codex |
-| `--skip-agents` | 不修改 Agent 配置，也不刷新 Agent Skills |
+| `--skip-agents` | 不修改 Agent 配置或 Skills |
 | `--no-start` | 初始化 Provider，但不启动管理界面 |
-| `--personal-only` | 只使用个人 Provider；这是默认模式 |
-| `--with-dev-public` | 同时启动本机开发用公共 Provider，仅用于开发或联调 |
+| `--personal-only` | 只使用个人 Provider；默认模式 |
+| `--with-dev-public` | 同时启动开发用公共 Provider，仅用于开发或联调 |
 
-例如，无人值守地完成默认初始化：
-
-```bash
-fuli setup --yes
-```
-
-使用自定义数据目录和管理界面端口：
-
-```bash
-fuli setup --data-dir "./fuli-data" --port 3727
-```
-
-只初始化 Provider、不启动管理界面：
-
-```bash
-fuli setup --no-start
-```
-
-## 更新
+更新：
 
 ```bash
 fuli update
 ```
 
-`fuli update` 默认先展示更新计划并请求确认。需要无人值守执行时：
+更新会先确认不会降级，再停止旧服务、安装 `fuli-context@latest` 并刷新 Agent 接入。
+既有知识、配置备份和 Neo4j 数据卷会保留。使用过自定义 setup 选项时，更新时应继续传入
+相同选项。
 
-```bash
-fuli update --yes
-```
-
-更新流程会先查询 npm 的 `latest` 版本；确认不会降级后，才安全停止旧版服务、安装当时
-的 `fuli-context@latest` 对应版本，再直接使用新安装版本的 CLI 执行 `setup --yes`。
-既有知识数据、配置备份和 Neo4j 数据卷不会删除；即使 npm 上已经是当前版本，也会刷新
-Agent 接入和配套 Skills。`update` 支持上表中的全部 setup 选项；使用过自定义数据目录、
-端口或 Provider 模式时，应在更新时重复传入相同选项。
-
-如果当前 CLI 来自尚未发布的工作区版本，并且版本号高于 npm `latest`，更新会在停止服务
-和安装包之前退出，避免把开发版本降级。
-
-如果当前已安装版本尚不识别 `update`，需要先手动升级一次到包含该命令的版本：
-
-```bash
-npm install --global fuli-context@latest
-fuli setup --yes
-```
-
-如果自动更新在 npm 安装或新版 setup 阶段失败，知识数据仍会保留。检查命令输出后可用
-上面两条命令恢复；使用过自定义 setup 选项时也要一并带上。
-
-## 卸载
-
-先清理 Agent 接入，再移除全局 npm 包：
+卸载：
 
 ```bash
 fuli uninstall
 npm uninstall --global fuli-context
 ```
 
-`fuli uninstall` 会：
+自动卸载不会永久删除个人图谱，避免误删。重新安装后可以继续使用原数据。
 
-- 停止本机 Fuli 服务；
-- 从 Codex、Claude Code 和 Cursor 中移除 Fuli MCP 接入；
-- 只删除仍与当前安装包完全一致的 Fuli Skills，有本地修改的 Skill 会保留；
-- 保留个人图谱、配置备份与 Neo4j 数据卷。
+## Agent 接入与主要工具
 
-这样重新安装时可以继续使用原数据。数据永久删除不包含在自动卸载流程中，避免误删。
-
-## 个人版边界
-
-- 个人知识写入本机 Provider。
-- Agent 归纳结构化知识，不保存整段会话。
-- Token、Cookie、私钥、凭据、临时日志与原始命令输出不会写入图谱。
-- Graphiti 的远程 LLM 路径被禁用；当前嵌入在本机计算。
-- 搜索按个人空间和项目范围显式限定，不会默认混入所有项目。
-- Fuli 不是实时监控或 Git 服务；实时错误和代码状态应从对应的监控、日志或 Git
-  工具获取。
-
-团队共享能力将通过单独部署的 Provider 提供。个人版 npm 继续作为本地 CLI、管理界面
-和 Agent 接入客户端，避免用户同时安装两个容易混淆的全局命令包。
-
-## Agent 工作方式
-
-Fuli 为支持的 Agent 安装两个用户级 Skills：
-
-- `capturing-session-knowledge`：按稳定知识边界检索和静默沉淀上下文；
-- `grilling-project`：帮助用户审视和补全个人项目资料。
-
-Codex 的用户级 Bootstrap 要求 Agent 在每个用户任务开始时、调用其他工具或回答之前，
-调用 `get_collaboration_preferences`。调用只把当前工作目录作为瞬时 `projectPath`
-传给本机 Fuli；绝对路径不会写入图谱，也不会出现在工具结果中。Fuli 在 MCP 服务端
-完成匹配：个人全局的品味、个性与判断偏好始终生效；只有仓库根、Codex worktree 的
-原仓库，或工作区内唯一的精确子项目对应一个已登记个人项目时，才叠加该项目偏好。
-模糊、多项目、待确认、已失效、冲突或其他项目的偏好不会进入实际生效列表。首次写入
-或更新 Bootstrap 后，新建或重新打开一个 Codex 任务，让用户级 `AGENTS.md` 重新加载；
-此后偏好修改会在下一次用户任务中重新读取，不需要重启 Codex。
-
-疑似冲突既可以立即人工处理，也可以标记为“交给 AI，使用时处理”。后者不会提前覆盖
-任何一条记录；只有后续任务确实需要相关偏好时，Agent 才会先比较双方并调用专用解决
-工具。解决结果会保留修订历史，并标明该偏好曾发生冲突、由 AI 处理及其判断依据。
-协作偏好页顶部的“已确认”“待确认”“疑似冲突”均为可点击入口；“待确认”会筛出对应
-记录并打开首条详情，可继续确认、纠正或标记失效。
-
-主要 MCP 工具包括：
+Fuli 为支持的 Agent 安装 `capturing-session-knowledge` 和 `grilling-project` Skills。Claude
+Code 使用 `UserPromptSubmit` 和 `Stop` Hook 接入任务生命周期；Codex 的用户级
+`AGENTS.md` 与 Cursor 指令使用 Prompt fallback。偏好正文始终以本机 Fuli 为唯一来源，
+不会复制到 Agent 配置中。
 
 | 工具 | 用途 |
 | --- | --- |
-| `get_collaboration_preferences` | 获取当前会话实际生效的全局与项目级协作偏好 |
-| `resolve_deferred_preference_conflict` | 在相关任务首次使用前解决已交给 AI 的偏好冲突并留下审计标记 |
-| `capture_session_knowledge` | 批量写入个人知识或创建发布预审草稿 |
-| `search_knowledge_graph` | 在明确范围内查询个人偏好与项目知识 |
-| `get_knowledge_graph` | 获取有界节点—关系图 |
-| `list_knowledge_spaces` | 查看个人空间、项目与订阅 |
-| `upsert_personal_project` | 新建或更新个人项目资料 |
-| `revise_personal_knowledge` | 修正、失效或恢复个人知识 |
-| `get_graphiti_status` | 检查 Provider 与 Graphiti 状态 |
+| `begin_task_context` | Hook 入口：创建任务令牌并返回生效上下文 |
+| `get_collaboration_preferences` | Fallback 入口：读取全局与精确项目偏好 |
+| `search_current_project_knowledge` | 子项目优先、按授权关系向上检索 |
+| `search_knowledge_graph` | 在明确的有界范围内执行更通用的查询 |
+| `record_knowledge_usage` | 记录真正影响结果的引用或应用 |
+| `record_knowledge_feedback` | 保存拒绝、验证失败、冲突或过时证据 |
+| `record_decision_trace` | 保存选择、被拒方案、理由和可选初始验证 |
+| `capture_session_knowledge` | 批量写入少量、结构化的候选知识 |
+| `checkpoint_task_knowledge` | 以 `capture_candidates` 或 `retain_nothing` 结束知识检查 |
+| `discover_common_knowledge_candidates` | 只读发现可能属于上级项目的公共候选 |
+| `preview_common_knowledge_promotion` | 预览人类确认的公共知识提升 |
+| `apply_common_knowledge_promotion` | 使用一次性令牌原子执行提升 |
+| `resolve_deferred_preference_conflict` | 在实际需要时处理已授权给 AI 的冲突 |
+
+## 隐私与安全边界
+
+- 个人知识写入本机 Provider；
+- Agent 归纳结构化知识，不保存原始会话；
+- Token、Cookie、私钥、凭据、私人联系信息、临时日志和原始命令输出不得进入图谱；
+- Graphiti 远程 LLM 路径被禁用，当前嵌入在本机计算；
+- 搜索按个人空间和项目范围限定，不默认混入所有项目；
+- 公共提升需要可审计的人工确认，Agent 自己的使用证据最多晋级为
+  `agent_confirmed`；
+- Fuli 不是实时监控或 Git 服务，实时状态应从对应系统重新读取。
 
 ## 本机服务
 
@@ -219,10 +274,14 @@ Codex 的用户级 Bootstrap 要求 Agent 在每个用户任务开始时、调�
 | 个人 Provider | `127.0.0.1:8787` |
 | Fuli 管理界面 | `127.0.0.1:2727` |
 
-如果端口被占用、Docker Compose 不可用或容器引擎未启动，setup 会在修改 Agent 配置前
-停止，并给出对应错误。
+如果端口被占用、Docker Compose 不可用或容器引擎未启动，setup 会在修改 Agent 配置前停止
+并报告原因。
 
-## 源码开发
+## 验收与源码开发
+
+- [Alignment Benchmark](FULI_ALIGNMENT_BENCHMARK.md)
+- [中文验收索引](acceptance/README.md)
+- [知识检索与确认流程图](acceptance/知识检索与确认流程图.md)
 
 ```bash
 npm install
@@ -239,8 +298,8 @@ docker compose -f compose.graphiti.yml config --quiet
 ```
 
 `npm run test:package` 会构建前端、生成真实 npm tarball、安装到隔离的全局前缀，并验证
-`fuli` / `fl`、版本号、帮助信息和已发布 Web UI。测试源码、QA 截图与内部设计文档
-都不会进入 npm 包。
+`fuli` / `fl`、版本号、帮助信息和 Web UI。测试源码、QA 截图和内部设计文档不会进入 npm
+包。
 
 ## License
 

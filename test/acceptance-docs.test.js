@@ -3,10 +3,43 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const 验收目录 = new URL('../acceptance/', import.meta.url);
+const 仓库目录 = new URL('../', import.meta.url);
 
 function 读取验收文件(文件名) {
   return readFileSync(new URL(文件名, 验收目录), 'utf8');
 }
+
+function 读取仓库文件(文件名) {
+  return readFileSync(new URL(文件名, 仓库目录), 'utf8');
+}
+
+test('中英文 README 应完整表达项目理念、证据边界和 Agent 生命周期', () => {
+  const 中文 = 读取仓库文件('README.md');
+  const 英文 = 读取仓库文件('README.en.md');
+
+  assert.match(中文, /\[English\]\(README\.en\.md\)/);
+  assert.match(英文, /\[中文\]\(README\.md\)/);
+  assert.equal((中文.match(/^```mermaid$/gm) ?? []).length, 1);
+  assert.equal((英文.match(/^```mermaid$/gm) ?? []).length, 1);
+
+  assert.match(中文, /衡量复用价值，而不是知识数量/);
+  assert.match(中文, /每个任务都检查价值，但不强迫每个任务沉淀/);
+  assert.match(中文, /人始终保留最终判断权/);
+  assert.match(中文, /先搜索酒店本地知识，再沿显式的 `PART_OF`/);
+  assert.match(中文, /MOCK \/ 合成数据/);
+  assert.match(中文, /还没有面向既有 `Decision` 单独追加不可变验证结果/);
+  assert.match(中文, /Claude Code（Hook 强制）/);
+  assert.match(中文, /Codex \/ Cursor（Prompt fallback）/);
+
+  assert.match(英文, /Measure reuse value, not knowledge volume/);
+  assert.match(英文, /not every task must become stored knowledge/);
+  assert.match(英文, /humans retain final\s+authority/);
+  assert.match(英文, /searches hotel-local knowledge first/);
+  assert.match(英文, /MOCK \/ synthetic data/);
+  assert.match(英文, /does not yet expose a[\s\S]*dedicated operation/);
+  assert.match(英文, /Claude Code \(hook-enforced\)/);
+  assert.match(英文, /Codex \/ Cursor \(prompt fallback\)/);
+});
 
 test('中文验收索引应链接全部人工检查文件', () => {
   const 索引 = 读取验收文件('README.md');
@@ -68,6 +101,12 @@ test('时序图和流程图应使用完整的中文 Mermaid 图示', () => {
   assert.match(时序图, /预览项目写入/);
   assert.match(时序图, /一次性预览令牌/);
   assert.match(时序图, /未命中时只显示顶部标记，不重复页脚/);
+  assert.match(时序图, /UserPromptSubmit 调用 begin_task_context/);
+  assert.match(时序图, /checkpoint_task_knowledge/);
+  assert.match(时序图, /capture_candidates/);
+  assert.match(时序图, /retain_nothing/);
+  assert.match(时序图, /Prompt fallback/);
+  assert.match(时序图, /当前尚无针对既有 Decision 单独追加验证的专用入口/);
 
   assert.equal((流程图.match(/^```mermaid$/gm) ?? []).length, 4);
   assert.equal((流程图.match(/^```$/gm) ?? []).length, 4);

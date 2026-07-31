@@ -4,6 +4,7 @@
   "description": "Local-first context graph for AI agents.",
   "type": "module",
   "files": [
+    "README.en.md",
     "npm-shrinkwrap.json",
     "src/",
     "dist/web/",

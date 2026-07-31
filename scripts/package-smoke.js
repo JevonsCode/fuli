@@ -43,6 +43,7 @@ try {
   for (const required of [
     'LICENSE',
     'README.md',
+    'README.en.md',
     'npm-shrinkwrap.json',
     'package.json',
     'src/cli.js',
