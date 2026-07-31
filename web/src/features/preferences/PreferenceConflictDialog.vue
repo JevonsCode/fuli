@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import { patchJson, postJson } from '@/api/client'
 import { formatTime, latestItemValue } from '@/features/knowledge/model'
+import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { KnowledgeItem, PersonalProject } from '@/types'
 import {
@@ -48,25 +49,34 @@ const canSplit = computed(() => splitProjects.value.length > 0)
 const impactPreview = computed(() => {
   const conflict = props.conflict
   if (!conflict || !action.value) {
-    return '先选择处理方式；确认前不会写入任何更改。'
+    return t('preferences.dialog.impact.choose')
   }
   if (action.value === 'merge') {
     const target = mergeTarget.value === 'left' ? conflict.left : conflict.right
     const historical = mergeTarget.value === 'left' ? conflict.right : conflict.left
-    return `“${target.title}”将更新为合并后的规范内容并由你确认；“${historical.title}”转为历史记录，并链接到保留项。两条记录的修订与来源仍可追溯。`
+    return t('preferences.dialog.impact.merge', {
+      target: target.title,
+      historical: historical.title,
+    })
   }
   if (action.value === 'keep_left' || action.value === 'keep_right') {
     const kept = action.value === 'keep_left' ? conflict.left : conflict.right
     const historical = action.value === 'keep_left' ? conflict.right : conflict.left
-    return `“${kept.title}”继续生效；“${historical.title}”转为历史记录，并明确指向保留项。`
+    return t('preferences.dialog.impact.keep', {
+      kept: kept.title,
+      historical: historical.title,
+    })
   }
   const item = splitItem.value === 'left' ? conflict.left : conflict.right
   const project = splitProjects.value.find(
     ({ project_id: projectId }) => projectId === splitProjectId.value,
   )
   return project
-    ? `“${item.title}”将改为仅在“${project.profile.name}”生效；另一条保留原范围，两条内容不再争夺同一个生效位置。`
-    : '请选择一个不同的项目范围，系统才会执行拆分。'
+    ? t('preferences.dialog.impact.split', {
+        item: item.title,
+        project: project.profile.name,
+      })
+    : t('preferences.dialog.impact.chooseProject')
 })
 
 watch(
@@ -115,13 +125,17 @@ function setGeneratedReason(nextAction: PreferenceConflictAction | null) {
 
 async function resolveConflict() {
   const conflict = props.conflict
-  if (!conflict || !action.value) return fail('请选择一种处理方式')
-  if (!reason.value.trim()) return fail('请说明本次判断依据')
+  if (!conflict || !action.value) {
+    return fail(t('preferences.dialog.errors.actionRequired'))
+  }
+  if (!reason.value.trim()) {
+    return fail(t('preferences.dialog.errors.reasonRequired'))
+  }
   if (action.value === 'merge' && !mergedValue.value.trim()) {
-    return fail('合并后的规范内容不能为空')
+    return fail(t('preferences.dialog.errors.mergedValueRequired'))
   }
   if (action.value === 'split_scope' && !splitProjectId.value) {
-    return fail('请选择拆分后的项目范围')
+    return fail(t('preferences.dialog.errors.projectRequired'))
   }
 
   busy.value = true
@@ -140,11 +154,13 @@ async function resolveConflict() {
         },
       )
     }
-    store.notify('疑似冲突已处理，生效结果与历史记录均已更新。')
+    store.notify(t('preferences.dialog.resolved'))
     emit('resolved')
     emit('close')
   } catch (error) {
-    localError.value = error instanceof Error ? error.message : '冲突处理失败'
+    localError.value = error instanceof Error
+      ? error.message
+      : t('preferences.dialog.errors.failed')
     store.reportError(error)
   } finally {
     busy.value = false
@@ -170,14 +186,16 @@ async function mergeConflict(conflict: PreferenceConflict) {
     update.originQuadrant = target.originQuadrant
     update.confirmationStatus = 'confirmed'
     update.confirmationBasis = {
-      existenceReason: `由两条疑似冲突偏好合并：${conflict.reason}`,
+      existenceReason: t('preferences.dialog.audit.mergedFromConflict', {
+        reason: conflict.reason,
+      }),
       quadrantReason: target.confirmationBasis?.quadrant_reason
         || target.reasoningSummary
-        || '沿用保留记录的发现时分类。',
+        || t('preferences.dialog.audit.keepQuadrant'),
       proposedBy: target.confirmationBasis?.proposed_by
         ? actorInput(target.confirmationBasis.proposed_by)
-        : { kind: 'import', label: '历史记录' },
-      confirmedBy: { kind: 'user', label: '用户' },
+        : { kind: 'import', label: t('preferences.dialog.audit.historicalRecord') },
+      confirmedBy: { kind: 'user', label: t('preferences.dialog.audit.user') },
       confirmedAt: new Date().toISOString(),
     }
   }
@@ -240,15 +258,19 @@ function defaultReason(
   conflict: PreferenceConflict,
 ) {
   if (nextAction === 'merge') {
-    return '两条偏好描述同一规则且内容互补，合并为一条规范版本。'
+    return t('preferences.dialog.defaultReason.merge')
   }
   if (nextAction === 'keep_left') {
-    return `较早记录“${conflict.left.title}”仍是当前准确口径，另一条转为历史。`
+    return t('preferences.dialog.defaultReason.keepLeft', {
+      title: conflict.left.title,
+    })
   }
   if (nextAction === 'keep_right') {
-    return `较新记录“${conflict.right.title}”是当前准确口径，另一条转为历史。`
+    return t('preferences.dialog.defaultReason.keepRight', {
+      title: conflict.right.title,
+    })
   }
-  return '两条偏好适用于不同项目，拆分生效范围并同时保留。'
+  return t('preferences.dialog.defaultReason.split')
 }
 
 function fail(message: string) {
@@ -262,101 +284,131 @@ function fail(message: string) {
       <header class="project-dialog-header">
         <div>
           <p class="eyebrow">CONFLICT RESOLUTION</p>
-          <h3>比较并处理疑似冲突</h3>
-          <p>{{ conflict.reason }} 系统只提供证据和影响预览，最终决定由你确认。</p>
+          <h3>{{ t('preferences.dialog.title') }}</h3>
+          <p>{{ t('preferences.dialog.intro', { reason: conflict.reason }) }}</p>
         </div>
         <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">
-          关闭
+          {{ t('common.actions.close') }}
         </button>
       </header>
 
-      <section class="conflict-pair-context" aria-label="冲突判断依据">
-        <span>偏好键 <strong>{{ conflict.preferenceKey }}</strong></span>
-        <span>生效范围 <strong>{{ conflict.scopeLabel }}</strong></span>
+      <section
+        class="conflict-pair-context"
+        :aria-label="t('preferences.dialog.basisAria')"
+      >
         <span>
-          建议
+          {{ t('preferences.dialog.preferenceKey') }}
+          <strong>{{ conflict.preferenceKey }}</strong>
+        </span>
+        <span>
+          {{ t('preferences.dialog.effectiveScope') }}
+          <strong>{{ conflict.scopeLabel }}</strong>
+        </span>
+        <span>
+          {{ t('preferences.dialog.suggestion') }}
           <strong>
-            {{ conflict.recommendedAction === 'merge' ? '内容互补，优先合并' : '差异较大，先人工判断' }}
+            {{
+              conflict.recommendedAction === 'merge'
+                ? t('preferences.dialog.mergeSuggestion')
+                : t('preferences.dialog.reviewSuggestion')
+            }}
           </strong>
         </span>
       </section>
 
-      <section class="conflict-comparison" aria-label="冲突双方">
+      <section
+        class="conflict-comparison"
+        :aria-label="t('preferences.dialog.comparisonAria')"
+      >
         <article class="conflict-side conflict-side-left">
           <div class="conflict-side-heading">
-            <span>A · 较早记录</span>
+            <span>{{ t('preferences.dialog.older') }}</span>
             <time>{{ formatTime(latestItemValue(conflict.left)) }}</time>
           </div>
           <h4>{{ conflict.left.title }}</h4>
           <p>{{ preferenceValue(conflict.left) }}</p>
-          <small>{{ conflict.left.evidence.length }} 个来源 · {{ conflict.left.id }}</small>
+          <small>
+            {{ t('preferences.dialog.sourceCount', { count: conflict.left.evidence.length }) }}
+            · {{ conflict.left.id }}
+          </small>
           <button class="text-action" type="button" @click="emit('edit', conflict.left)">
-            单独纠正 A
+            {{ t('preferences.dialog.editA') }}
           </button>
         </article>
         <article class="conflict-side conflict-side-right">
           <div class="conflict-side-heading">
-            <span>B · 较新记录</span>
+            <span>{{ t('preferences.dialog.newer') }}</span>
             <time>{{ formatTime(latestItemValue(conflict.right)) }}</time>
           </div>
           <h4>{{ conflict.right.title }}</h4>
           <p>{{ preferenceValue(conflict.right) }}</p>
-          <small>{{ conflict.right.evidence.length }} 个来源 · {{ conflict.right.id }}</small>
+          <small>
+            {{ t('preferences.dialog.sourceCount', { count: conflict.right.evidence.length }) }}
+            · {{ conflict.right.id }}
+          </small>
           <button class="text-action" type="button" @click="emit('edit', conflict.right)">
-            单独纠正 B
+            {{ t('preferences.dialog.editB') }}
           </button>
         </article>
       </section>
 
-      <section class="conflict-difference" aria-label="差异摘要">
+      <section
+        class="conflict-difference"
+        :aria-label="t('preferences.dialog.differenceAria')"
+      >
         <div>
-          <span>双方共有</span>
+          <span>{{ t('preferences.dialog.shared') }}</span>
           <p v-if="conflict.difference.shared.length">
             <b v-for="value in conflict.difference.shared" :key="value">{{ value }}</b>
           </p>
-          <p v-else class="muted">没有检测到可以直接对齐的共同片段</p>
+          <p v-else class="muted">{{ t('preferences.dialog.noShared') }}</p>
         </div>
         <div>
-          <span>仅 A 有</span>
+          <span>{{ t('preferences.dialog.onlyA') }}</span>
           <p v-if="conflict.difference.leftOnly.length">
             <b v-for="value in conflict.difference.leftOnly" :key="value">{{ value }}</b>
           </p>
-          <p v-else class="muted">没有独有片段</p>
+          <p v-else class="muted">{{ t('preferences.dialog.noUnique') }}</p>
         </div>
         <div>
-          <span>仅 B 有</span>
+          <span>{{ t('preferences.dialog.onlyB') }}</span>
           <p v-if="conflict.difference.rightOnly.length">
             <b v-for="value in conflict.difference.rightOnly" :key="value">{{ value }}</b>
           </p>
-          <p v-else class="muted">没有独有片段</p>
+          <p v-else class="muted">{{ t('preferences.dialog.noUnique') }}</p>
         </div>
       </section>
 
-      <section class="conflict-resolution-options" aria-label="处理方式">
+      <section
+        class="conflict-resolution-options"
+        :aria-label="t('preferences.dialog.actionsAria')"
+      >
         <button
           type="button"
           :aria-pressed="action === 'merge'"
           @click="chooseAction('merge')"
         >
-          <strong>合并为规范版本</strong>
-          <span>保留双方独有信息；一条更新，一条转为历史。</span>
-          <em v-if="conflict.recommendedAction === 'merge'">推荐</em>
+          <strong>{{ t('preferences.dialog.actions.merge') }}</strong>
+          <span>{{ t('preferences.dialog.actions.mergeCopy') }}</span>
+          <em v-if="conflict.recommendedAction === 'merge'">
+            {{ t('preferences.dialog.actions.recommended') }}
+          </em>
         </button>
         <button
           type="button"
           :aria-pressed="action === 'keep_left'"
           @click="chooseAction('keep_left')"
         >
-          <strong>保留 A</strong>
-          <span>B 转为历史，并链接到 A。</span>
+          <strong>{{ t('preferences.dialog.actions.keepA') }}</strong>
+          <span>{{ t('preferences.dialog.actions.keepACopy') }}</span>
         </button>
         <button
           type="button"
           :aria-pressed="action === 'keep_right'"
           @click="chooseAction('keep_right')"
         >
-          <strong>保留 B</strong>
-          <span>A 转为历史，并链接到 B。</span>
+          <strong>{{ t('preferences.dialog.actions.keepB') }}</strong>
+          <span>{{ t('preferences.dialog.actions.keepBCopy') }}</span>
         </button>
         <button
           type="button"
@@ -364,30 +416,44 @@ function fail(message: string) {
           :aria-pressed="action === 'split_scope'"
           @click="chooseAction('split_scope')"
         >
-          <strong>拆分生效范围</strong>
-          <span>{{ canSplit ? '两条都保留，但不再作用于同一范围。' : '没有其他个人项目可选。' }}</span>
+          <strong>{{ t('preferences.dialog.actions.split') }}</strong>
+          <span>
+            {{
+              canSplit
+                ? t('preferences.dialog.actions.splitCopy')
+                : t('preferences.dialog.actions.noProjects')
+            }}
+          </span>
         </button>
       </section>
 
       <section v-if="action === 'merge'" class="conflict-resolution-detail">
-        <div class="conflict-inline-options" role="group" aria-label="合并后保留哪条记录">
-          <span>规范版本沿用</span>
+        <div
+          class="conflict-inline-options"
+          role="group"
+          :aria-label="t('preferences.dialog.mergeIdentityAria')"
+        >
+          <span>{{ t('preferences.dialog.canonicalIdentity') }}</span>
           <button type="button" :aria-pressed="mergeTarget === 'left'" @click="mergeTarget = 'left'">
-            A 的记录身份
+            {{ t('preferences.dialog.identityA') }}
           </button>
           <button type="button" :aria-pressed="mergeTarget === 'right'" @click="mergeTarget = 'right'">
-            B 的记录身份
+            {{ t('preferences.dialog.identityB') }}
           </button>
         </div>
         <label>
-          合并后的规范内容
+          {{ t('preferences.dialog.mergedContent') }}
           <textarea v-model="mergedValue" rows="4" maxlength="4096" />
         </label>
       </section>
 
       <section v-if="action === 'split_scope'" class="conflict-resolution-detail">
-        <div class="conflict-inline-options" role="group" aria-label="调整哪条记录">
-          <span>调整记录</span>
+        <div
+          class="conflict-inline-options"
+          role="group"
+          :aria-label="t('preferences.dialog.splitRecordAria')"
+        >
+          <span>{{ t('preferences.dialog.adjustRecord') }}</span>
           <button type="button" :aria-pressed="splitItem === 'left'" @click="splitItem = 'left'">
             A
           </button>
@@ -396,9 +462,9 @@ function fail(message: string) {
           </button>
         </div>
         <label>
-          改为仅在以下项目生效
+          {{ t('preferences.dialog.projectOnly') }}
           <select v-model="splitProjectId">
-            <option value="" disabled>请选择个人项目</option>
+            <option value="" disabled>{{ t('preferences.dialog.chooseProject') }}</option>
             <option
               v-for="project in splitProjects"
               :key="project.project_id"
@@ -411,21 +477,21 @@ function fail(message: string) {
       </section>
 
       <section class="conflict-impact-preview">
-        <span>确认后会发生什么</span>
+        <span>{{ t('preferences.dialog.impactTitle') }}</span>
         <p>{{ impactPreview }}</p>
       </section>
 
       <label class="conflict-resolution-reason">
-        本次判断依据
+        {{ t('preferences.dialog.reason') }}
         <textarea v-model="reason" rows="2" maxlength="2000" />
       </label>
       <p v-if="localError" class="dialog-error">{{ localError }}</p>
 
       <footer class="project-dialog-actions conflict-resolution-actions">
-        <span>暂不处理不会更改数据，这组记录会继续显示为疑似冲突。</span>
+        <span>{{ t('preferences.dialog.pendingCopy') }}</span>
         <div>
           <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">
-            暂不处理
+            {{ t('preferences.dialog.defer') }}
           </button>
           <button
             class="primary-action"
@@ -433,7 +499,11 @@ function fail(message: string) {
             :disabled="busy || !action"
             @click="resolveConflict"
           >
-            {{ busy ? '正在处理…' : '确认并执行' }}
+            {{
+              busy
+                ? t('preferences.dialog.processing')
+                : t('preferences.dialog.confirm')
+            }}
           </button>
         </div>
       </footer>

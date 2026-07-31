@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import KnowledgeInspector from './KnowledgeInspector.vue'
 import { knowledgeItemFromNode } from './model'
@@ -152,5 +152,47 @@ describe('KnowledgeInspector', () => {
 
     expect(wrapper.find('.inspector-replacement-link').exists()).toBe(false)
     expect(wrapper.get('.inspector-replacement').text()).toContain('不会根据文字猜测链接')
+  })
+
+  it('opens exact Codex evidence and copies non-Codex source identities', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const node = {
+      id: 'decision-1',
+      name: '发布需审核',
+      type: 'Decision',
+      evidence: [
+        {
+          id: 'codex-source',
+          source_application: 'codex',
+          source_kind: 'conversation',
+          session_id: '123e4567-e89b-42d3-a456-426614174000',
+        },
+        {
+          id: 'cursor-source',
+          source_application: 'cursor',
+          source_kind: 'conversation',
+          session_id: 'cursor-session-7',
+        },
+      ],
+    }
+    const wrapper = mount(KnowledgeInspector, {
+      props: {
+        item: knowledgeItemFromNode(node),
+        graph: { nodes: [node], edges: [] },
+      },
+    })
+
+    expect(wrapper.get('a.evidence-source-action').attributes('href'))
+      .toBe('codex://threads/123e4567-e89b-42d3-a456-426614174000')
+    expect(wrapper.text()).toContain('Codex · conversation')
+    expect(wrapper.text()).toContain('Cursor · conversation')
+
+    await wrapper.get('button.evidence-source-action').trigger('click')
+    expect(writeText).toHaveBeenCalledWith('cursor-session-7')
+    expect(wrapper.get('button.evidence-source-action').text()).toBe('已复制会话 ID')
   })
 })

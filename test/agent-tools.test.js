@@ -4,11 +4,20 @@ import test from 'node:test';
 import { callAgentTool, listAgentTools } from '../src/agent-tools.js';
 
 const NAMES = [
+  'begin_task_context',
+  'checkpoint_task_knowledge',
+  'verify_task_checkpoint',
   'get_collaboration_preferences',
   'resolve_deferred_preference_conflict',
   'capture_session_knowledge',
+  'record_decision_trace',
   'search_knowledge_graph',
   'record_knowledge_usage',
+  'record_knowledge_feedback',
+  'search_current_project_knowledge',
+  'discover_common_knowledge_candidates',
+  'preview_common_knowledge_promotion',
+  'apply_common_knowledge_promotion',
   'get_knowledge_graph',
   'search_human_knowledge_changes',
   'review_human_knowledge_change',
@@ -76,6 +85,14 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
   assert.deepEqual(capture.inputSchema.properties.personalProjectId, {
     type: ['string', 'null']
   });
+  assert.deepEqual(capture.inputSchema.properties.sourceUri, {
+    type: ['string', 'null'],
+    minLength: 1,
+    maxLength: 2048,
+    pattern: '^[Hh][Tt][Tt][Pp][Ss]?://\\S+$'
+  });
+  assert.match(capture.description, /sourceUri.*re-read.*refresh Fuli knowledge/i);
+  assert.match(search.description, /source_uris.*re-read.*refreshing Fuli knowledge/i);
   assert.deepEqual(
     capture.inputSchema.properties.entities.items.properties.confirmationStatus.enum,
     ['confirmed', 'pending']
@@ -118,12 +135,26 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
 test('Agent surface dispatches every tool through the Graphiti facade', async () => {
   const calls = [];
   const app = {
+    beginTaskContext: async (input) => calls.push(['begin-task', input]),
+    checkpointTaskKnowledge: async (input) => calls.push(['checkpoint-task', input]),
+    verifyTaskCheckpoint: async (input) => calls.push(['verify-task', input]),
     getCollaborationPreferences: async (input) => calls.push(['preferences', input]),
     resolveDeferredPreferenceConflict: async (input) =>
       calls.push(['resolve-preference-conflict', input]),
     captureSessionKnowledge: async (input) => calls.push(['capture', input]),
+    recordDecisionTrace: async (input) => calls.push(['decision-trace', input]),
     searchKnowledge: async (input) => calls.push(['search', input]),
     recordKnowledgeUsage: async (input) => calls.push(['knowledge-usage', input]),
+    recordKnowledgeFeedback: async (input) =>
+      calls.push(['knowledge-feedback', input]),
+    searchCurrentProjectKnowledge: async (input) =>
+      calls.push(['current-project-search', input]),
+    discoverCommonKnowledgeCandidates: async (input) =>
+      calls.push(['common-candidates', input]),
+    previewCommonKnowledgePromotion: async (input) =>
+      calls.push(['preview-common-promotion', input]),
+    applyCommonKnowledgePromotion: async (input) =>
+      calls.push(['apply-common-promotion', input]),
     getKnowledgeGraph: async (input) => calls.push(['graph', input]),
     searchHumanChanges: async (input) => calls.push(['human-changes', input]),
     reviewHumanChange: async (input) => calls.push(['review-human-change', input]),
@@ -151,8 +182,12 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
 
   for (const name of NAMES) await callAgentTool(app, name, { probe: name });
   assert.deepEqual(calls.map(([name]) => name), [
+    'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'resolve-preference-conflict',
-    'capture', 'search', 'knowledge-usage', 'graph', 'human-changes', 'review-human-change',
+    'capture', 'decision-trace', 'search', 'knowledge-usage', 'knowledge-feedback',
+    'current-project-search', 'common-candidates',
+    'preview-common-promotion', 'apply-common-promotion',
+    'graph', 'human-changes', 'review-human-change',
     'spaces', 'upsert-project', 'personal-projects',
     'revise-knowledge', 'reassign-knowledge', 'preference-scope', 'preview-project-action',
     'apply-project-action',

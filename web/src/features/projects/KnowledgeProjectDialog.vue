@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import { postJson } from '@/api/client'
 import SearchableSelect from '@/components/SearchableSelect.vue'
+import { t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
 import type { KnowledgeItem, KnowledgeNode, PersonalProject } from '@/types'
@@ -97,47 +98,62 @@ const selectedProject = computed(() =>
 const previewState = computed(() => {
   if (mode.value === 'create') {
     return {
-      label: '创建预览',
-      title: '将创建一个新的个人项目',
+      label: t('projects.knowledgeDialog.previews.create.label'),
+      title: t('projects.knowledgeDialog.previews.create.title'),
       copy: sourceProjectId.value
-        ? '当前节点继续由来源项目主要维护，新项目会引用它。'
-        : '当前节点会成为新项目的主要归属知识。',
+        ? t('projects.knowledgeDialog.previews.create.linkedCopy')
+        : t('projects.knowledgeDialog.previews.create.ownedCopy'),
     }
   }
   if (previewLoading.value) {
     return {
-      label: '正在检查',
-      title: '正在检查重复与冲突…',
-      copy: '只比较目标项目和当前节点。',
+      label: t('projects.knowledgeDialog.previews.checking.label'),
+      title: t('projects.knowledgeDialog.previews.checking.title'),
+      copy: t('projects.knowledgeDialog.previews.checking.copy'),
     }
   }
   if (!preview.value) {
     return {
-      label: '等待检查',
-      title: '请选择目标项目',
-      copy: '选择后会先检查重复与冲突。',
+      label: t('projects.knowledgeDialog.previews.waiting.label'),
+      title: t('projects.knowledgeDialog.previews.waiting.title'),
+      copy: t('projects.knowledgeDialog.previews.waiting.copy'),
     }
   }
-  const labels = {
-    none: ['可以加入', '未检测到重复或已确认的同名冲突'],
-    already_linked: ['已经加入', '目标项目已经在使用这条知识'],
-    exact_duplicate: ['发现重复', '将复用目标项目已有内容，不再创建副本'],
-    conflict: ['发现冲突', '两条已确认知识同名，但内容不同'],
-  } as const
+  const labels = Object.fromEntries(
+    ['none', 'already_linked', 'exact_duplicate', 'conflict'].map((kind) => [
+      kind,
+      [
+        t(`projects.knowledgeDialog.previews.outcomes.${kind}.title`),
+        t(`projects.knowledgeDialog.previews.outcomes.${kind}.copy`),
+      ],
+    ]),
+  ) as Record<ProjectActionPreview['match']['kind'], [string, string]>
   const [label, title] = labels[preview.value.match.kind] ?? labels.none
   return { label, title, copy: preview.value.match.reason }
 })
 const relationLabels = computed<Record<RelationType, string>>(() => {
-  const subject = mode.value === 'existing' ? '来源项目' : '新项目'
-  const object = mode.value === 'existing' ? '目标项目' : '来源项目'
+  const subject = mode.value === 'existing'
+    ? t('projects.knowledgeDialog.relationActors.sourceProject')
+    : t('projects.knowledgeDialog.relationActors.newProject')
+  const object = mode.value === 'existing'
+    ? t('projects.knowledgeDialog.relationActors.targetProject')
+    : t('projects.knowledgeDialog.relationActors.sourceProject')
   return {
-    RELATED_TO: `与${object}相关`,
-    PART_OF: `${subject}属于${object}`,
-    USES_KNOWLEDGE_FROM: `${subject}从${object}继承共享知识`,
-    DEPENDS_ON: `${subject}依赖${object}`,
-    PROVIDES_TO: `${subject}向${object}提供能力`,
-    SHARES_CAPABILITY_WITH: `与${object}共享能力`,
-    SUCCESSOR_OF: `${subject}是${object}的后继`,
+    RELATED_TO: t('projects.knowledgeDialog.relations.related', { object }),
+    PART_OF: t('projects.knowledgeDialog.relations.partOf', { subject, object }),
+    USES_KNOWLEDGE_FROM: t('projects.knowledgeDialog.relations.usesKnowledge', {
+      subject,
+      object,
+    }),
+    DEPENDS_ON: t('projects.knowledgeDialog.relations.dependsOn', { subject, object }),
+    PROVIDES_TO: t('projects.knowledgeDialog.relations.providesTo', { subject, object }),
+    SHARES_CAPABILITY_WITH: t('projects.knowledgeDialog.relations.sharesCapability', {
+      object,
+    }),
+    SUCCESSOR_OF: t('projects.knowledgeDialog.relations.successorOf', {
+      subject,
+      object,
+    }),
   }
 })
 const relationOptions = computed(() =>
@@ -145,9 +161,11 @@ const relationOptions = computed(() =>
     .map(([value, label]) => ({ value, label })),
 )
 const submitLabel = computed(() => {
-  if (busy.value) return '正在处理…'
-  if (mode.value === 'create') return '创建项目'
-  return preview.value?.match.kind === 'exact_duplicate' ? '复用现有内容' : '加入项目'
+  if (busy.value) return t('projects.knowledgeDialog.actions.processing')
+  if (mode.value === 'create') return t('projects.knowledgeDialog.actions.create')
+  return preview.value?.match.kind === 'exact_duplicate'
+    ? t('projects.knowledgeDialog.actions.reuse')
+    : t('projects.knowledgeDialog.actions.add')
 })
 const submitDisabled = computed(() =>
   busy.value
@@ -167,7 +185,9 @@ watch(
     newProjectName.value = node?.name ?? ''
     newProjectId.value = projectIdFrom(node?.name ?? '')
     newProjectPurpose.value = node?.summary ?? ''
-    reason.value = node ? `基于图谱节点“${node.name}”建立项目知识范围` : ''
+    reason.value = node
+      ? t('projects.knowledgeDialog.defaultReason', { name: node.name })
+      : ''
     keepSourceRelation.value = true
     relationType.value = 'RELATED_TO'
     conflictResolution.value = 'defer'
@@ -224,11 +244,15 @@ async function submit() {
   const item = props.item
   if (!item || item.itemKind !== 'entity') return
   if (mode.value === 'create' && (!newProjectName.value.trim() || !newProjectId.value.trim())) {
-    return fail('请填写项目名称和项目标识')
+    return fail(t('projects.knowledgeDialog.errors.projectIdentityRequired'))
   }
-  if (mode.value === 'existing' && !targetProjectId.value) return fail('请选择目标项目')
-  if (mode.value === 'existing' && !preview.value) return fail('请等待重复与冲突检查完成')
-  if (!reason.value.trim()) return fail('请填写操作说明')
+  if (mode.value === 'existing' && !targetProjectId.value) {
+    return fail(t('projects.knowledgeDialog.errors.targetRequired'))
+  }
+  if (mode.value === 'existing' && !preview.value) {
+    return fail(t('projects.knowledgeDialog.errors.previewRequired'))
+  }
+  if (!reason.value.trim()) return fail(t('projects.knowledgeDialog.errors.reasonRequired'))
 
   busy.value = true
   localError.value = ''
@@ -250,7 +274,8 @@ async function submit() {
     )
     const targetName = mode.value === 'create'
       ? newProjectName.value.trim()
-      : selectedProject.value?.profile.name ?? '目标项目'
+      : selectedProject.value?.profile.name
+        ?? t('projects.knowledgeDialog.relationActors.targetProject')
     emit('close')
     emit('saved', result, targetName)
   } catch (error) {
@@ -290,24 +315,24 @@ function fail(message: string) {
       <header class="project-dialog-header">
         <div>
           <p class="eyebrow">PERSONAL PROJECT</p>
-          <h3>建立项目知识范围</h3>
-          <p>从当前节点创建个人项目，或让已有项目引用这条知识。</p>
+          <h3>{{ t('projects.knowledgeDialog.title') }}</h3>
+          <p>{{ t('projects.knowledgeDialog.intro') }}</p>
         </div>
-        <button class="secondary-action" type="button" @click="emit('close')">关闭</button>
+        <button class="secondary-action" type="button" @click="emit('close')">{{ t('common.actions.close') }}</button>
       </header>
 
       <form class="knowledge-project-form" @submit.prevent="submit">
         <div class="knowledge-project-source">
-          <span>来源节点</span>
+          <span>{{ t('projects.knowledgeDialog.sourceNode') }}</span>
           <strong>{{ rawNode?.name }}</strong>
-          <p>{{ rawNode?.summary || '没有补充说明' }}</p>
+          <p>{{ rawNode?.summary || t('common.status.noDescription') }}</p>
         </div>
 
         <fieldset class="knowledge-project-mode">
-          <legend>选择操作</legend>
+          <legend>{{ t('projects.knowledgeDialog.chooseAction') }}</legend>
           <label>
             <input v-model="mode" type="radio" value="create" />
-            <span><strong>创建新项目</strong><small>以当前知识为起点建立独立范围</small></span>
+            <span><strong>{{ t('projects.knowledgeDialog.createNew') }}</strong><small>{{ t('projects.knowledgeDialog.createNewCopy') }}</small></span>
           </label>
           <label :class="{ disabled: availableProjects.length === 0 }">
             <input
@@ -316,15 +341,15 @@ function fail(message: string) {
               value="existing"
               :disabled="availableProjects.length === 0"
             />
-            <span><strong>加入已有项目</strong><small>先检查重复和已确认冲突</small></span>
+            <span><strong>{{ t('projects.knowledgeDialog.addExisting') }}</strong><small>{{ t('projects.knowledgeDialog.addExistingCopy') }}</small></span>
           </label>
         </fieldset>
 
         <section v-if="mode === 'create'" class="knowledge-project-fields">
-          <label>项目名称
+          <label>{{ t('projects.knowledgeDialog.projectName') }}
             <input v-model="newProjectName" maxlength="512" required />
           </label>
-          <label>项目标识
+          <label>{{ t('projects.knowledgeDialog.projectId') }}
             <input
               v-model="newProjectId"
               maxlength="128"
@@ -332,17 +357,17 @@ function fail(message: string) {
               @input="idTouched = true"
             />
           </label>
-          <label class="full-width">项目用途
+          <label class="full-width">{{ t('projects.knowledgeDialog.purpose') }}
             <textarea v-model="newProjectPurpose" maxlength="4096" rows="3" />
           </label>
         </section>
 
         <section v-else class="knowledge-project-fields">
-          <label class="full-width">目标个人项目
+          <label class="full-width">{{ t('projects.knowledgeDialog.targetPersonalProject') }}
             <SearchableSelect
               v-model="targetProjectId"
               :options="availableProjectOptions"
-              label="目标个人项目"
+              :label="t('projects.knowledgeDialog.targetPersonalProject')"
               searchable
               required
             />
@@ -353,15 +378,15 @@ function fail(message: string) {
           <label class="toggle-row">
             <input v-model="keepSourceRelation" type="checkbox" />
             <span>
-              <strong>保留与来源项目的关系</strong>
-              <small>当前知识的主要归属不会被覆盖</small>
+              <strong>{{ t('projects.knowledgeDialog.preserveRelation') }}</strong>
+              <small>{{ t('projects.knowledgeDialog.preserveRelationCopy') }}</small>
             </span>
           </label>
-          <label>项目关系
+          <label>{{ t('projects.knowledgeDialog.projectRelation') }}
             <SearchableSelect
               v-model="relationType"
               :options="relationOptions"
-              label="项目关系"
+              :label="t('projects.knowledgeDialog.projectRelation')"
               :disabled="!keepSourceRelation"
             />
           </label>
@@ -378,34 +403,34 @@ function fail(message: string) {
             class="knowledge-project-compare"
           >
             <article>
-              <span>当前节点</span>
+              <span>{{ t('projects.knowledgeDialog.currentNode') }}</span>
               <strong>{{ preview.item_name }}</strong>
-              <p>{{ preview.item_summary || '没有补充说明' }}</p>
+              <p>{{ preview.item_summary || t('common.status.noDescription') }}</p>
             </article>
             <article>
-              <span>目标项目已有内容</span>
-              <strong>{{ preview.match.item_name || '目标项目内容' }}</strong>
-              <p>{{ preview.match.item_summary || '没有补充说明' }}</p>
+              <span>{{ t('projects.knowledgeDialog.targetContent') }}</span>
+              <strong>{{ preview.match.item_name || t('projects.knowledgeDialog.targetContentFallback') }}</strong>
+              <p>{{ preview.match.item_summary || t('common.status.noDescription') }}</p>
             </article>
           </div>
           <fieldset
             v-if="preview?.match.kind === 'conflict'"
             class="knowledge-project-conflict-options"
           >
-            <legend>冲突处理</legend>
-            <label><input v-model="conflictResolution" type="radio" value="defer" /> 暂不采用，保留待处理记录</label>
-            <label><input v-model="conflictResolution" type="radio" value="keep_target" /> 保留目标项目现有内容</label>
-            <label><input v-model="conflictResolution" type="radio" value="use_source" /> 使用当前来源内容</label>
-            <label><input v-model="conflictResolution" type="radio" value="coexist" /> 允许两条内容并存</label>
+            <legend>{{ t('projects.knowledgeDialog.conflictResolution') }}</legend>
+            <label><input v-model="conflictResolution" type="radio" value="defer" /> {{ t('projects.knowledgeDialog.defer') }}</label>
+            <label><input v-model="conflictResolution" type="radio" value="keep_target" /> {{ t('projects.knowledgeDialog.keepTarget') }}</label>
+            <label><input v-model="conflictResolution" type="radio" value="use_source" /> {{ t('projects.knowledgeDialog.useSource') }}</label>
+            <label><input v-model="conflictResolution" type="radio" value="coexist" /> {{ t('projects.knowledgeDialog.coexist') }}</label>
           </fieldset>
         </section>
 
-        <label class="knowledge-project-reason">操作说明
+        <label class="knowledge-project-reason">{{ t('projects.knowledgeDialog.operationReason') }}
           <textarea v-model="reason" maxlength="2048" rows="3" required />
         </label>
         <p v-if="localError" class="publish-dialog-error" role="alert">{{ localError }}</p>
         <div class="knowledge-project-actions">
-          <button class="secondary-action" type="button" @click="emit('close')">取消</button>
+          <button class="secondary-action" type="button" @click="emit('close')">{{ t('common.actions.cancel') }}</button>
           <button class="primary-action" type="submit" :disabled="submitDisabled">
             {{ submitLabel }}
           </button>

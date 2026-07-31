@@ -1,4 +1,8 @@
 const READ_TOOLS = new Set([
+  'verify_task_checkpoint',
+  'search_current_project_knowledge',
+  'discover_common_knowledge_candidates',
+  'preview_common_knowledge_promotion',
   'list_knowledge_spaces',
   'list_personal_projects',
   'preview_personal_project_action',
@@ -10,11 +14,16 @@ const READ_TOOLS = new Set([
 ]);
 
 const WRITE_TOOLS = new Set([
+  'begin_task_context',
+  'checkpoint_task_knowledge',
   'get_collaboration_preferences',
   'resolve_deferred_preference_conflict',
   'capture_session_knowledge',
+  'record_decision_trace',
   'search_knowledge_graph',
   'record_knowledge_usage',
+  'record_knowledge_feedback',
+  'apply_common_knowledge_promotion',
   'get_knowledge_graph',
   'search_human_knowledge_changes',
   'review_human_knowledge_change',
@@ -34,6 +43,7 @@ const WRITE_TOOLS = new Set([
 
 const DESTRUCTIVE_TOOLS = new Set([
   'resolve_deferred_preference_conflict',
+  'apply_common_knowledge_promotion',
   'review_project_proposal',
   'review_project_relation',
   'review_personal_draft',
@@ -50,8 +60,13 @@ export function annotationsFor(name) {
     destructiveHint: DESTRUCTIVE_TOOLS.has(name),
     idempotentHint: readOnly || name === 'upsert_personal_project' ||
       name === 'publish_personal_project' || name === 'unsubscribe_public_project' ||
-      name === 'record_knowledge_usage',
+      name === 'record_knowledge_usage' || name === 'record_decision_trace' ||
+      name === 'record_knowledge_feedback' ||
+      name === 'checkpoint_task_knowledge',
     openWorldHint: name === 'capture_session_knowledge' ||
+      name === 'record_decision_trace' ||
+      name === 'record_knowledge_feedback' ||
+      name === 'checkpoint_task_knowledge' ||
       name === 'publish_personal_project' ||
       name === 'create_project_relation' ||
       name === 'review_project_relation' ||

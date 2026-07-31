@@ -60,6 +60,7 @@ def confirmed_episode(**overrides):
 
 def test_structured_episode_accepts_explicit_source_entities():
     parsed = StructuredEpisode.model_validate(episode(
+        source_uri='https://docs.example.invalid/project/requirements',
         source_application='codex',
         source_turn_id='turn-7',
         source_excerpt='The user confirmed the project boundary.',
@@ -67,6 +68,7 @@ def test_structured_episode_accepts_explicit_source_entities():
     assert parsed.entities[0].type == 'CodeSymbol'
     assert parsed.relationships[0].type == 'DEFINED_BY'
     assert parsed.source_application == 'codex'
+    assert parsed.source_uri == 'https://docs.example.invalid/project/requirements'
     assert parsed.source_turn_id == 'turn-7'
     assert parsed.entities[0].confirmation_status == 'pending'
     assert parsed.entities[0].confirmation_basis.proposed_by.kind == 'agent'
@@ -270,8 +272,35 @@ def test_batch_confirmation_requires_unique_items_and_a_human_or_authoritative_c
 
 
 def test_structured_episode_rejects_credentials_at_provider_boundary():
+    synthetic_credential = '='.join([
+        'api_key',
+        '-'.join(['sk', 'synthetic', 'credential', 'placeholder']),
+    ])
     with pytest.raises(ValidationError, match='contains credentials'):
-        StructuredEpisode.model_validate(episode(summary='api_key=sk-live-12345678901234567890'))
+        StructuredEpisode.model_validate(episode(summary=synthetic_credential))
+
+
+@pytest.mark.parametrize('source_uri', [
+    'ftp://docs.example.invalid/requirements',
+    'https://sample-user@docs.example.invalid/requirements',
+    'https://docs.example.invalid/bad path',
+])
+def test_structured_episode_requires_safe_absolute_online_source_uri(source_uri):
+    with pytest.raises(
+        ValidationError,
+        match=r'absolute HTTP\(S\) URI without credentials',
+    ):
+        StructuredEpisode.model_validate(episode(source_uri=source_uri))
+
+
+def test_structured_episode_rejects_credentials_inside_source_uri():
+    with pytest.raises(ValidationError, match='contains credentials'):
+        StructuredEpisode.model_validate(episode(
+            source_uri=(
+                'https://docs.example.invalid/requirements'
+                f"?access_token={'x' * 20}"
+            ),
+        ))
 
 
 def test_structured_episode_rejects_missing_relationship_entities():

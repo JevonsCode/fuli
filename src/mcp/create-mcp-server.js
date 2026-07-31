@@ -5,13 +5,23 @@ import { callAgentTool, listAgentTools } from '../agent-tools.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { MCP_INSTRUCTIONS } from './instructions.js';
 import { createProjectActionPreviewTokens } from './project-action-preview-tokens.js';
+import { createCommonKnowledgePreviewTokens } from './common-knowledge-preview-tokens.js';
+import { auditLifecycleTool } from './lifecycle-audit.js';
 import { annotationsFor } from './tool-annotations.js';
-import { errorToolResult, protocolErrorResult, successToolResult } from './tool-result.js';
+import {
+  errorToolResult,
+  hookAdditionalContextToolResult,
+  protocolErrorResult,
+  successToolResult
+} from './tool-result.js';
 import { jsonSchemaToZod, openObjectSchema } from './tool-schema.js';
 
 const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
+  begin_task_context: 16 * 1024,
   get_collaboration_preferences: 16 * 1024,
-  search_knowledge_graph: 32 * 1024
+  search_knowledge_graph: 32 * 1024,
+  search_current_project_knowledge: 64 * 1024,
+  discover_common_knowledge_candidates: 32 * 1024
 });
 
 export function createMcpServer(app) {
@@ -27,6 +37,7 @@ export function createMcpServer(app) {
 }
 
 function createToolMap(app, projectActionPreviews) {
+  const commonKnowledgePreviews = createCommonKnowledgePreviewTokens();
   return new Map(listAgentTools().map((definition) => [definition.name, {
     definition,
     schema: jsonSchemaToZod(definition.inputSchema),
@@ -34,7 +45,8 @@ function createToolMap(app, projectActionPreviews) {
       app,
       definition.name,
       input,
-      projectActionPreviews
+      projectActionPreviews,
+      commonKnowledgePreviews
     )
   }]));
 }
@@ -62,15 +74,29 @@ function registerCallHandler(server, tools) {
 
 async function invokeTool(tool, input) {
   try {
-    return successToolResult(await tool.invoke(input), {
-      limitBytes: TOOL_RESULT_LIMIT_BYTES[tool.definition.name]
-    });
+    const value = await tool.invoke(input);
+    auditLifecycleTool(tool.definition.name);
+    const limitBytes = TOOL_RESULT_LIMIT_BYTES[tool.definition.name];
+    if (tool.definition.name === 'begin_task_context') {
+      return hookAdditionalContextToolResult(value, {
+        hookEventName: 'UserPromptSubmit',
+        label: 'Fuli task context. Apply effective_preferences and use taskContextToken for the final checkpoint.',
+        limitBytes
+      });
+    }
+    return successToolResult(value, { limitBytes });
   } catch (error) {
     return errorToolResult(error);
   }
 }
 
-async function invokeAgentTool(app, name, input, projectActionPreviews) {
+async function invokeAgentTool(
+  app,
+  name,
+  input,
+  projectActionPreviews,
+  commonKnowledgePreviews
+) {
   if (name === 'preview_personal_project_action') {
     const result = await callAgentTool(app, name, input);
     return {
@@ -80,6 +106,16 @@ async function invokeAgentTool(app, name, input, projectActionPreviews) {
   }
   if (name === 'apply_personal_project_action') {
     projectActionPreviews.consume(input.previewToken, input);
+  }
+  if (name === 'preview_common_knowledge_promotion') {
+    const result = await callAgentTool(app, name, input);
+    return {
+      ...result,
+      previewToken: commonKnowledgePreviews.issue(input)
+    };
+  }
+  if (name === 'apply_common_knowledge_promotion') {
+    commonKnowledgePreviews.consume(input.previewToken, input);
   }
   return callAgentTool(app, name, input);
 }

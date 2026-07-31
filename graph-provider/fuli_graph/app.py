@@ -7,6 +7,15 @@ from .auth import matches_bootstrap_token
 from .config import Settings, get_settings
 from .graph_models import GraphResult
 from .knowledge_usage_models import KnowledgeUsageCreate, KnowledgeUsageResult
+from .knowledge_feedback_models import (
+    KnowledgeFeedbackCreate,
+    KnowledgeFeedbackResult,
+)
+from .common_knowledge_models import (
+    CommonKnowledgePromotionPreview,
+    CommonKnowledgePromotionRequest,
+    CommonKnowledgePromotionResult,
+)
 from .project_action_models import (
     KnowledgeProjectActionRequest,
     KnowledgeProjectActionResult,
@@ -63,11 +72,16 @@ from .models import (
 )
 from .knowledge_audit import (
     record_agent_views,
+    record_knowledge_feedback,
     record_knowledge_usage,
     review_human_change,
     search_human_changes,
 )
 from .knowledge_batch_confirmation import confirm_knowledge_batch
+from .common_knowledge import (
+    apply_common_knowledge_promotion,
+    preview_common_knowledge_promotion,
+)
 from .knowledge_management import (
     reassign_knowledge_item,
     revise_knowledge_item,
@@ -340,6 +354,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return await record_knowledge_usage(store, actor, request)
 
     @application.post(
+        '/v1/knowledge/feedback',
+        response_model=KnowledgeFeedbackResult,
+    )
+    async def record_negative_knowledge_evidence(
+        request: KnowledgeFeedbackCreate,
+        actor: Actor,
+    ) -> KnowledgeFeedbackResult:
+        return await record_knowledge_feedback(store, actor, request)
+
+    @application.post(
         '/v1/knowledge/items/{item_id}/agent-review',
         response_model=KnowledgeAuditRecord,
     )
@@ -391,6 +415,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         actor: Actor,
     ) -> KnowledgeRevisionRecord:
         return await set_preference_scope(store, actor, item_id, request)
+
+    @application.post(
+        '/v1/knowledge/common-promotions/preview',
+        response_model=CommonKnowledgePromotionPreview,
+    )
+    async def preview_common_promotion(
+        request: CommonKnowledgePromotionRequest,
+        actor: Actor,
+    ) -> CommonKnowledgePromotionPreview:
+        return await preview_common_knowledge_promotion(
+            store, actor, request
+        )
+
+    @application.post(
+        '/v1/knowledge/common-promotions',
+        response_model=CommonKnowledgePromotionResult,
+    )
+    async def apply_common_promotion(
+        request: CommonKnowledgePromotionRequest,
+        actor: Actor,
+    ) -> CommonKnowledgePromotionResult:
+        return await apply_common_knowledge_promotion(
+            store, actor, request
+        )
 
     @application.post(
         '/v1/preference-conflicts/defer',

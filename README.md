@@ -144,30 +144,6 @@ fuli setup --yes
 如果自动更新在 npm 安装或新版 setup 阶段失败，知识数据仍会保留。检查命令输出后可用
 上面两条命令恢复；使用过自定义 setup 选项时也要一并带上。
 
-## 兼容的本地知识命令
-
-以下命令面向旧版 SQLite 工作流和开发调试。`--db`、`--personal-space` 是全局选项，
-必须写在子命令之前：
-
-```bash
-fuli --db ./context.db --personal-space 我 search 我 "关键词"
-```
-
-| 命令 | 用途 |
-| --- | --- |
-| `space create NAME --kind personal\|public` | 创建个人或公共空间 |
-| `subscribe PERSONAL_SPACE PUBLIC_SPACE` | 订阅公共空间 |
-| `remember PERSONAL_SPACE --target SPACE --source-kind KIND --text TEXT` | 写入一段待归纳内容 |
-| `observe PERSONAL_SPACE --target SPACE` | 观察当前 Git 改动 |
-| `search PERSONAL_SPACE QUERY` | 搜索当前事实 |
-| `timeline SPACE SUBJECT` | 查看主题时间线 |
-| `rules SPACE` | 查看空间规则 |
-| `history SPACE PREDICATE` | 查看某个事实的修订历史 |
-| `context PERSONAL_SPACE SPACE QUERY` | 输出紧凑的 Agent 上下文包 |
-| `candidates PERSONAL_SPACE` | 列出待处理候选知识 |
-| `candidate ID sync\|personal_only\|ignore` | 处理候选知识 |
-| `migrate --from LEGACY_JSON --to SQLITE_DB` | 将旧 JSON 数据迁移到 SQLite |
-
 ## 卸载
 
 先清理 Agent 接入，再移除全局 npm 包：

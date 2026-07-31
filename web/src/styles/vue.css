@@ -146,6 +146,46 @@
   min-width: 0;
 }
 
+.compact-relation-preview {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 4px;
+  padding: 11px 12px;
+  border: 1px solid #dfe5e0;
+  border-radius: 8px;
+  background: #f8faf8;
+}
+
+.compact-relation-preview span {
+  color: #7f8982;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.compact-relation-preview strong {
+  color: #35483e;
+  font-size: 11px;
+}
+
+.compact-relation-preview p {
+  color: #717b74;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.project-delete-confirmation {
+  display: grid;
+  gap: 7px;
+  padding: 18px 0;
+  color: #6f5c59;
+  font-size: 10px;
+}
+
+.project-delete-confirmation strong {
+  color: #493c3a;
+}
+
 .vue-dialog[open] {
   position: fixed;
   inset: 0;
@@ -168,4 +208,37 @@
   .compact-relation-form {
     grid-template-columns: repeat(2, minmax(180px, 1fr));
   }
+}
+.locale-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid #d8ded9;
+  border-radius: 8px;
+  background: #f5f7f5;
+}
+
+.locale-switcher button {
+  min-width: 30px;
+  min-height: 26px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #6a746d;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.locale-switcher button:hover {
+  color: #2f5d49;
+}
+
+.locale-switcher button[aria-pressed='true'] {
+  background: #fff;
+  color: #2f5d49;
+  box-shadow: 0 1px 2px rgb(32 52 42 / 12%);
 }

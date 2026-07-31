@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t } from '@/i18n'
+
 defineProps<{
   focused: boolean
 }>()
@@ -16,12 +18,12 @@ defineProps<{
     </svg>
     <span class="quadrant-axis-arrow quadrant-axis-arrow-x" />
     <span class="quadrant-axis-arrow quadrant-axis-arrow-y" />
-    <span class="axis-caption axis-caption-x">掌握程度</span>
-    <span class="axis-caption axis-caption-y">意识程度</span>
-    <span class="axis-end axis-x-start">未掌握</span>
-    <span class="axis-end axis-x-end">已掌握</span>
-    <span class="axis-end axis-y-start">未意识</span>
-    <span class="axis-end axis-y-end">已意识</span>
+    <span class="axis-caption axis-caption-x">{{ t('knowledge.workspace.quadrant.axes.mastery') }}</span>
+    <span class="axis-caption axis-caption-y">{{ t('knowledge.workspace.quadrant.axes.awareness') }}</span>
+    <span class="axis-end axis-x-start">{{ t('knowledge.workspace.quadrant.axes.notMastered') }}</span>
+    <span class="axis-end axis-x-end">{{ t('knowledge.workspace.quadrant.axes.mastered') }}</span>
+    <span class="axis-end axis-y-start">{{ t('knowledge.workspace.quadrant.axes.unaware') }}</span>
+    <span class="axis-end axis-y-end">{{ t('knowledge.workspace.quadrant.axes.aware') }}</span>
   </div>
 </template>
 

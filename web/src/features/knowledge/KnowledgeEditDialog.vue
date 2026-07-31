@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 
 import { patchJson, postJson } from '@/api/client'
 import SearchableSelect from '@/components/SearchableSelect.vue'
+import { t } from '@/i18n'
 import { quadrantLabel } from './model'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
@@ -61,47 +62,63 @@ const projectOptions = computed(() =>
     search: identitySearchText(project.project_id),
   })),
 )
-const quadrantOptions = [
-  { value: 'known_known', label: '已知的已知 · 被明确表达的知识或结论' },
-  { value: 'known_unknown', label: '已知的未知 · 被明确提出的未解问题' },
-  { value: 'unknown_known', label: '未知的已知 · 从行为或反馈提炼的隐性知识' },
-  { value: 'unknown_unknown', label: '未知的未知 · 探索中发现的潜在盲点' },
-]
-const confirmationStatusOptions = [
-  { value: 'pending', label: '待确认 · 尚未完成内容与象限审核' },
-  { value: 'confirmed', label: '已确认 · 内容与象限归类均已确认' },
-]
-const inheritanceModeOptions = [
-  { value: 'local_only', label: '仅当前项目 · 不自动借给其他项目' },
-  { value: 'descendants', label: '子项目可继承 · 仅沿明确知识关系' },
-  { value: 'selected_projects', label: '仅指定项目可继承' },
-]
-const proposerOptions = [
-  { value: 'user', label: '用户' },
-  { value: 'agent', label: 'Agent' },
-  { value: 'authoritative_source', label: '权威来源' },
-  { value: 'import', label: '导入记录' },
-]
-const confirmerOptions = [
-  { value: 'user', label: '用户' },
-  { value: 'authoritative_source', label: '权威来源' },
-]
-const profileAspectOptions = [
-  { value: 'none', label: '不属于协作偏好' },
-  { value: 'taste', label: '品味' },
-  { value: 'personality', label: '个性' },
-  { value: 'judgment_preference', label: '判断偏好' },
-]
+const quadrantOptions = computed(() =>
+  ['known_known', 'known_unknown', 'unknown_known', 'unknown_unknown']
+    .map((value) => ({
+      value,
+      label: t(`knowledge.dialogs.edit.quadrants.${value}`),
+    })),
+)
+const confirmationStatusOptions = computed(() => [
+  {
+    value: 'pending',
+    label: t('knowledge.dialogs.edit.confirmationStates.pending'),
+  },
+  {
+    value: 'confirmed',
+    label: t('knowledge.dialogs.edit.confirmationStates.confirmed'),
+  },
+])
+const inheritanceModeOptions = computed(() => [
+  { value: 'local_only', label: t('knowledge.dialogs.edit.inheritance.local') },
+  {
+    value: 'descendants',
+    label: t('knowledge.dialogs.edit.inheritance.descendants'),
+  },
+  {
+    value: 'selected_projects',
+    label: t('knowledge.dialogs.edit.inheritance.selected'),
+  },
+])
+const proposerOptions = computed(() =>
+  ['user', 'agent', 'authoritative_source', 'import'].map((value) => ({
+    value,
+    label: t(`knowledge.domain.actors.${value}`),
+  })),
+)
+const confirmerOptions = computed(() =>
+  ['user', 'authoritative_source'].map((value) => ({
+    value,
+    label: t(`knowledge.domain.actors.${value}`),
+  })),
+)
+const profileAspectOptions = computed(() => [
+  { value: 'none', label: t('knowledge.dialogs.edit.profiles.none') },
+  ...['taste', 'personality', 'judgment_preference'].map((value) => ({
+    value,
+    label: t(`knowledge.domain.profiles.${value}`),
+  })),
+])
 const preferenceScopeOptions = computed(() => [
-  { value: 'global', label: '个人全局' },
+  { value: 'global', label: t('knowledge.dialogs.edit.scopes.global') },
   {
     value: 'project',
-    label: '指定个人项目',
+    label: t('knowledge.dialogs.edit.scopes.project'),
     disabled: props.projects.length === 0,
   },
 ])
 const replacementOptions = computed(() => [
-  { value: '', label: '没有明确的替代内容' },
+  { value: '', label: t('knowledge.dialogs.edit.replacementNone') },
   ...props.replacementItems
     .filter((candidate) =>
       !candidate.invalidAt
@@ -186,22 +203,30 @@ watch(
 async function saveCorrection() {
   const item = props.item
   if (!item) return
-  if (!form.reason.trim()) return fail('请说明纠正原因')
-  if (!relationship.value && !form.name.trim()) return fail('名称不能为空')
-  if (relationship.value && !form.fact.trim()) return fail('关系事实不能为空')
-  if (!form.currentQuadrant || !form.confirmationStatus) {
-    return fail('请先明确当前分类与确认状态')
+  if (!form.reason.trim()) return fail(t('knowledge.dialogs.edit.errors.reasonRequired'))
+  if (!relationship.value && !form.name.trim()) {
+    return fail(t('knowledge.dialogs.edit.errors.nameRequired'))
   }
-  if (!form.existenceReason.trim()) return fail('请说明为什么会有这条知识')
-  if (!form.quadrantReason.trim()) return fail('请说明为什么被分到这个象限')
-  if (!form.proposedByKind) return fail('请选择提出者')
+  if (relationship.value && !form.fact.trim()) {
+    return fail(t('knowledge.dialogs.edit.errors.factRequired'))
+  }
+  if (!form.currentQuadrant || !form.confirmationStatus) {
+    return fail(t('knowledge.dialogs.edit.errors.classificationRequired'))
+  }
+  if (!form.existenceReason.trim()) {
+    return fail(t('knowledge.dialogs.edit.errors.existenceRequired'))
+  }
+  if (!form.quadrantReason.trim()) {
+    return fail(t('knowledge.dialogs.edit.errors.quadrantRequired'))
+  }
+  if (!form.proposedByKind) return fail(t('knowledge.dialogs.edit.errors.proposerRequired'))
   if (form.confirmationStatus === 'confirmed' && !form.confirmedByKind) {
-    return fail('已确认状态必须记录确认者')
+    return fail(t('knowledge.dialogs.edit.errors.confirmerRequired'))
   }
   if (
     form.inheritanceMode === 'selected_projects'
     && !inheritanceProjectId.value
-  ) return fail('请选择可以继承这条知识的项目')
+  ) return fail(t('knowledge.dialogs.edit.errors.inheritedProjectsRequired'))
 
   const body: Record<string, unknown> = {
     ...baseRevision('update'),
@@ -245,7 +270,7 @@ async function saveCorrection() {
   }
   await execute(async () => {
     await patchJson(`/api/knowledge/${item.itemKind}/${encodeURIComponent(item.id)}`, body)
-    store.notify('知识已纠正，原始证据仍然保留。')
+    store.notify(t('knowledge.dialogs.edit.notices.corrected'))
   })
 }
 
@@ -253,7 +278,11 @@ async function changeStatus(action: 'invalidate' | 'restore') {
   const item = props.item
   if (!item) return
   if (!form.reason.trim()) {
-    return fail(action === 'invalidate' ? '请说明为什么这条知识已经失效' : '请说明为什么恢复有效')
+    return fail(
+      action === 'invalidate'
+        ? t('knowledge.dialogs.edit.errors.statusReasonRequired')
+        : t('knowledge.dialogs.edit.errors.restoreReasonRequired'),
+    )
   }
   await execute(async () => {
     const body: Record<string, unknown> = baseRevision(action)
@@ -268,9 +297,9 @@ async function changeStatus(action: 'invalidate' | 'restore') {
     store.notify(
       action === 'invalidate'
         ? selectedReplacement.value
-          ? '知识已标记为失效，并已关联替代内容。'
-          : '知识已标记为失效，历史记录已保留。'
-        : '知识已恢复为有效。',
+          ? t('knowledge.dialogs.edit.notices.invalidatedWithReplacement')
+          : t('knowledge.dialogs.edit.notices.invalidated')
+        : t('knowledge.dialogs.edit.notices.restored'),
     )
   })
 }
@@ -279,8 +308,10 @@ async function saveReplacement() {
   const item = props.item
   const replacement = selectedReplacement.value
   if (!item || !invalid.value) return
-  if (!replacement) return fail('请选择明确的替代内容')
-  if (!form.reason.trim()) return fail('请说明补充替代关联的依据')
+  if (!replacement) return fail(t('knowledge.dialogs.edit.errors.replacementRequired'))
+  if (!form.reason.trim()) {
+    return fail(t('knowledge.dialogs.edit.errors.replacementReasonRequired'))
+  }
   await execute(async () => {
     await patchJson(
       `/api/knowledge/${item.itemKind}/${encodeURIComponent(item.id)}`,
@@ -290,16 +321,20 @@ async function saveReplacement() {
         replacementItemKind: replacement.itemKind,
       },
     )
-    store.notify('替代关联已保存，现在可以从历史记录直接跳转。')
+    store.notify(t('knowledge.dialogs.edit.notices.replacementSaved'))
   })
 }
 
 async function saveAssignment() {
   const item = props.item
   if (!item) return
-  if (!targetProjectId.value) return fail('请选择目标个人项目')
-  if (!assignmentReason.value.trim()) return fail('请说明调整原因')
-  if (targetProjectId.value === currentProjectId.value) return fail('这条知识已经属于该项目')
+  if (!targetProjectId.value) return fail(t('knowledge.dialogs.edit.errors.projectRequired'))
+  if (!assignmentReason.value.trim()) {
+    return fail(t('knowledge.dialogs.edit.errors.assignmentReasonRequired'))
+  }
+  if (targetProjectId.value === currentProjectId.value) {
+    return fail(t('knowledge.dialogs.edit.errors.alreadyAssigned'))
+  }
   await execute(async () => {
     await postJson(
       `/api/knowledge/${item.itemKind}/${encodeURIComponent(item.id)}/assignment`,
@@ -309,7 +344,7 @@ async function saveAssignment() {
         reason: assignmentReason.value.trim(),
       },
     )
-    store.notify('项目归属已调整，来源会话和历史证据没有改变。')
+    store.notify(t('knowledge.dialogs.edit.notices.assignmentChanged'))
   })
 }
 
@@ -317,8 +352,12 @@ async function savePreferenceScope() {
   const item = props.item
   if (!item) return
   const projectId = preferenceScope.value === 'project' ? preferenceProjectId.value : null
-  if (preferenceScope.value === 'project' && !projectId) return fail('请选择生效的个人项目')
-  if (!preferenceReason.value.trim()) return fail('请说明为什么调整生效范围')
+  if (preferenceScope.value === 'project' && !projectId) {
+    return fail(t('knowledge.dialogs.edit.errors.preferenceProjectRequired'))
+  }
+  if (!preferenceReason.value.trim()) {
+    return fail(t('knowledge.dialogs.edit.errors.preferenceReasonRequired'))
+  }
   await execute(async () => {
     await postJson(
       `/api/knowledge/${item.itemKind}/${encodeURIComponent(item.id)}/preference-scope`,
@@ -331,8 +370,8 @@ async function savePreferenceScope() {
     )
     store.notify(
       preferenceScope.value === 'global'
-        ? '这条协作偏好现在对所有个人项目生效。'
-        : '这条协作偏好现在只对所选个人项目生效。',
+        ? t('knowledge.dialogs.edit.notices.preferenceGlobal')
+        : t('knowledge.dialogs.edit.notices.preferenceProject'),
     )
   })
 }
@@ -358,7 +397,9 @@ async function execute(operation: () => Promise<void>) {
     emit('close')
     emit('saved')
   } catch (error) {
-    localError.value = error instanceof Error ? error.message : '保存失败'
+    localError.value = error instanceof Error
+      ? error.message
+      : t('knowledge.dialogs.edit.errors.saveFailed')
     store.reportError(error)
   } finally {
     busy.value = false
@@ -376,173 +417,185 @@ function fail(message: string) {
       <header class="project-dialog-header">
         <div>
           <p class="eyebrow">PERSONAL KNOWLEDGE</p>
-          <h3>{{ invalid ? '查看和恢复知识' : '纠正知识' }}</h3>
-          <p>修改会新增修订历史；发现时象限保持不变，当前分类可纠正，确认状态记录审核结果。</p>
+          <h3>{{ invalid
+            ? t('knowledge.dialogs.edit.titleRestore')
+            : t('knowledge.dialogs.edit.titleCorrect') }}</h3>
+          <p>{{ t('knowledge.dialogs.edit.intro') }}</p>
         </div>
-        <button class="secondary-action" type="button" @click="emit('close')">关闭</button>
+        <button class="secondary-action" type="button" @click="emit('close')">{{ t('common.actions.close') }}</button>
       </header>
 
       <div class="knowledge-edit-columns">
         <section>
-          <h4>当前内容</h4>
+          <h4>{{ t('knowledge.dialogs.edit.currentContent') }}</h4>
           <form class="knowledge-editor-form" @submit.prevent="saveCorrection">
-            <label v-if="!relationship">名称<input v-model="form.name" maxlength="512" /></label>
-            <label v-if="!relationship">说明<textarea v-model="form.summary" maxlength="4096" rows="5" /></label>
-            <label v-else>关系事实<textarea v-model="form.fact" maxlength="8192" rows="5" /></label>
+            <label v-if="!relationship">{{ t('knowledge.dialogs.edit.name') }}<input v-model="form.name" maxlength="512" /></label>
+            <label v-if="!relationship">{{ t('knowledge.dialogs.edit.description') }}<textarea v-model="form.summary" maxlength="4096" rows="5" /></label>
+            <label v-else>{{ t('knowledge.dialogs.edit.fact') }}<textarea v-model="form.fact" maxlength="8192" rows="5" /></label>
             <div class="knowledge-taxonomy-fields">
-              <label>当前分类
+              <label>{{ t('knowledge.dialogs.edit.classification') }}
                 <SearchableSelect
                   v-model="form.currentQuadrant"
                   :options="quadrantOptions"
-                  label="当前分类"
+                  :label="t('knowledge.dialogs.edit.classification')"
                 />
               </label>
-              <label>确认状态
+              <label>{{ t('knowledge.dialogs.edit.confirmationStatus') }}
                 <SearchableSelect
                   v-model="form.confirmationStatus"
                   :options="confirmationStatusOptions"
-                  label="确认状态"
+                  :label="t('knowledge.dialogs.edit.confirmationStatus')"
                 />
               </label>
-              <label>协作偏好维度
+              <label>{{ t('knowledge.dialogs.edit.preferenceDimension') }}
                 <SearchableSelect
                   v-model="form.profileAspect"
                   :options="profileAspectOptions"
-                  label="协作偏好维度"
+                  :label="t('knowledge.dialogs.edit.preferenceDimension')"
                 />
               </label>
             </div>
             <p class="knowledge-classification-warning">
-              发现时象限：{{ quadrantLabel(item.originQuadrant) }}。这是捕获来源标签，后续编辑不会覆盖。
+              {{ t('knowledge.dialogs.edit.originQuadrant', {
+                quadrant: quadrantLabel(item.originQuadrant),
+              }) }}
             </p>
             <p v-if="!item.classificationExplicit" class="knowledge-classification-warning">
-              这条旧内容没有显式象限。保存前请人工选择，系统不会再自动补成“已知的已知”。
+              {{ t('knowledge.dialogs.edit.missingQuadrant') }}
             </p>
             <fieldset class="knowledge-confirmation-fields">
-              <legend>确认依据</legend>
-              <label>为什么会有这条知识
+              <legend>{{ t('knowledge.dialogs.edit.basis') }}</legend>
+              <label>{{ t('knowledge.dialogs.edit.whyExists') }}
                 <textarea v-model="form.existenceReason" maxlength="4096" rows="3" required />
               </label>
-              <label>为什么被分到这个象限
+              <label>{{ t('knowledge.dialogs.edit.whyQuadrant') }}
                 <textarea v-model="form.quadrantReason" maxlength="4096" rows="3" required />
               </label>
               <div class="knowledge-taxonomy-fields">
-                <label>提出者
+                <label>{{ t('knowledge.dialogs.edit.proposer') }}
                   <SearchableSelect
                     v-model="form.proposedByKind"
                     :options="proposerOptions"
-                    label="提出者"
+                    :label="t('knowledge.dialogs.edit.proposer')"
                   />
                 </label>
-                <label>提出者说明
-                  <input v-model="form.proposedByLabel" maxlength="160" placeholder="可选，例如 Codex" />
+                <label>{{ t('knowledge.dialogs.edit.proposerDescription') }}
+                  <input v-model="form.proposedByLabel" maxlength="160" :placeholder="t('knowledge.dialogs.edit.proposerPlaceholder')" />
                 </label>
                 <template v-if="form.confirmationStatus === 'confirmed'">
-                  <label>确认者
+                  <label>{{ t('knowledge.dialogs.edit.confirmer') }}
                     <SearchableSelect
                       v-model="form.confirmedByKind"
                       :options="confirmerOptions"
-                      label="确认者"
+                      :label="t('knowledge.dialogs.edit.confirmer')"
                     />
                   </label>
-                  <label>确认者说明
-                    <input v-model="form.confirmedByLabel" maxlength="160" placeholder="可选，例如当前用户" />
+                  <label>{{ t('knowledge.dialogs.edit.confirmerDescription') }}
+                    <input v-model="form.confirmedByLabel" maxlength="160" :placeholder="t('knowledge.dialogs.edit.confirmerPlaceholder')" />
                   </label>
                 </template>
               </div>
               <p>
-                “Agent 已确认”只能由实际使用证据策略产生；人工在这里可保留待确认，或记录用户/权威来源确认。
+                {{ t('knowledge.dialogs.edit.agentConfirmedBoundary') }}
               </p>
             </fieldset>
             <fieldset v-if="!profilePreference" class="knowledge-replacement-fields">
-              <legend>跨项目知识继承</legend>
-              <label>继承范围
+              <legend>{{ t('knowledge.dialogs.edit.crossProjectInheritance') }}</legend>
+              <label>{{ t('knowledge.dialogs.edit.inheritanceScope') }}
                 <SearchableSelect
                   v-model="form.inheritanceMode"
                   :options="inheritanceModeOptions"
-                  label="知识继承范围"
+                  :label="t('knowledge.dialogs.edit.inheritanceScope')"
                 />
               </label>
-              <label v-if="form.inheritanceMode === 'selected_projects'">可继承项目
+              <label v-if="form.inheritanceMode === 'selected_projects'">{{ t('knowledge.dialogs.edit.inheritedProjects') }}
                 <SearchableSelect
                   v-model="inheritanceProjectId"
                   :options="projectOptions"
-                  label="可继承项目"
+                  :label="t('knowledge.dialogs.edit.inheritedProjects')"
                   searchable
                 />
               </label>
               <p>
-                只有沿 PART_OF 或 USES_KNOWLEDGE_FROM 可达时才会继承；RELATED_TO 不扩展检索范围。
+                {{ t('knowledge.dialogs.edit.inheritanceBoundary') }}
               </p>
             </fieldset>
             <fieldset class="knowledge-replacement-fields">
-              <legend>{{ invalid ? '替代内容' : '失效时的替代内容（可选）' }}</legend>
-              <label>{{ invalid ? '这条历史记录被哪条内容取代' : '选择当前有效的内容' }}
+              <legend>{{ invalid
+                ? t('knowledge.dialogs.edit.replacement')
+                : t('knowledge.dialogs.edit.optionalReplacement') }}</legend>
+              <label>{{ invalid
+                ? t('knowledge.dialogs.edit.historicalReplacement')
+                : t('knowledge.dialogs.edit.activeReplacement') }}
                 <SearchableSelect
                   v-model="replacementItemKey"
                   :options="replacementOptions"
-                  label="替代内容"
+                  :label="t('knowledge.dialogs.edit.replacement')"
                   searchable
                 />
               </label>
               <p>
-                只有明确选择后才会建立可跳转的替代关联；系统不会根据失效原因自动猜测。
+                {{ t('knowledge.dialogs.edit.replacementBoundary') }}
               </p>
             </fieldset>
-            <label>纠正原因<textarea v-model="form.reason" maxlength="2000" rows="3" required /></label>
+            <label>{{ t('knowledge.dialogs.edit.correctionReason') }}<textarea v-model="form.reason" maxlength="2000" rows="3" required /></label>
             <p v-if="localError" class="publish-dialog-error" role="alert">{{ localError }}</p>
             <div class="knowledge-editor-actions">
-              <button v-if="!invalid" class="secondary-action" type="button" :disabled="busy" @click="changeStatus('invalidate')">标记为失效</button>
+              <button v-if="!invalid" class="secondary-action" type="button" :disabled="busy" @click="changeStatus('invalidate')">{{ t('knowledge.dialogs.edit.invalidate') }}</button>
               <template v-else>
-                <button class="secondary-action" type="button" :disabled="busy" @click="changeStatus('restore')">恢复为有效</button>
-                <button class="secondary-action" type="button" :disabled="busy" @click="saveReplacement">保存替代关联</button>
+                <button class="secondary-action" type="button" :disabled="busy" @click="changeStatus('restore')">{{ t('knowledge.dialogs.edit.restore') }}</button>
+                <button class="secondary-action" type="button" :disabled="busy" @click="saveReplacement">{{ t('knowledge.dialogs.edit.saveReplacement') }}</button>
               </template>
               <button class="primary-action" type="submit" :disabled="busy">
-                {{ busy ? '正在保存…' : form.confirmationStatus === 'confirmed' ? '保存并确认' : '保存为待确认' }}
+                {{ busy
+                  ? t('knowledge.dialogs.edit.saving')
+                  : form.confirmationStatus === 'confirmed'
+                    ? t('knowledge.dialogs.edit.saveConfirmed')
+                    : t('knowledge.dialogs.edit.savePending') }}
               </button>
             </div>
           </form>
         </section>
 
         <section v-if="!profilePreference">
-          <h4>项目归属</h4>
-          <p>只调整这条知识的项目归属，来源会话和历史证据保持不变。</p>
+          <h4>{{ t('knowledge.dialogs.edit.projectOwnership') }}</h4>
+          <p>{{ t('knowledge.dialogs.edit.ownershipCopy') }}</p>
           <form class="knowledge-editor-form" @submit.prevent="saveAssignment">
-            <label>目标个人项目
+            <label>{{ t('knowledge.dialogs.edit.targetProject') }}
               <SearchableSelect
                 v-model="targetProjectId"
                 :options="projectOptions"
-                label="目标个人项目"
+                :label="t('knowledge.dialogs.edit.targetProject')"
                 searchable
                 required
               />
             </label>
-            <label>调整原因<textarea v-model="assignmentReason" maxlength="2000" rows="3" required /></label>
-            <button class="primary-action" type="submit" :disabled="busy || projects.length === 0">调整归属</button>
+            <label>{{ t('knowledge.dialogs.edit.assignmentReason') }}<textarea v-model="assignmentReason" maxlength="2000" rows="3" required /></label>
+            <button class="primary-action" type="submit" :disabled="busy || projects.length === 0">{{ t('knowledge.dialogs.edit.adjustOwnership') }}</button>
           </form>
         </section>
 
         <section v-else>
-          <h4>偏好生效范围</h4>
-          <p>个人全局默认跨项目生效；项目范围只对明确选择的项目生效。</p>
+          <h4>{{ t('knowledge.dialogs.edit.preferenceScope') }}</h4>
+          <p>{{ t('knowledge.dialogs.edit.preferenceScopeCopy') }}</p>
           <form class="knowledge-editor-form" @submit.prevent="savePreferenceScope">
-            <label>生效范围
+            <label>{{ t('knowledge.dialogs.edit.effectiveScope') }}
               <SearchableSelect
                 v-model="preferenceScope"
                 :options="preferenceScopeOptions"
-                label="偏好生效范围"
+                :label="t('knowledge.dialogs.edit.preferenceScope')"
               />
             </label>
-            <label v-if="preferenceScope === 'project'">个人项目
+            <label v-if="preferenceScope === 'project'">{{ t('knowledge.dialogs.edit.personalProject') }}
               <SearchableSelect
                 v-model="preferenceProjectId"
                 :options="projectOptions"
-                label="偏好个人项目"
+                :label="t('knowledge.dialogs.edit.personalProject')"
                 searchable
               />
             </label>
-            <label>调整原因<textarea v-model="preferenceReason" maxlength="2000" rows="3" required /></label>
-            <button class="primary-action" type="submit" :disabled="busy">保存生效范围</button>
+            <label>{{ t('knowledge.dialogs.edit.assignmentReason') }}<textarea v-model="preferenceReason" maxlength="2000" rows="3" required /></label>
+            <button class="primary-action" type="submit" :disabled="busy">{{ t('knowledge.dialogs.edit.saveScope') }}</button>
           </form>
         </section>
       </div>

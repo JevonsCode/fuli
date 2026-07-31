@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
+import { t } from '@/i18n'
 import {
   classificationExplanation,
   confirmationActorLabel,
@@ -19,7 +20,18 @@ import {
   revisionActionLabel,
   reviewStateLabel,
 } from './model'
-import type { KnowledgeEdge, KnowledgeGraph, KnowledgeItem, KnowledgeNode } from '@/types'
+import {
+  copySourceSession,
+  sourceApplicationLabel,
+  sourceLinkForEvidence,
+} from './source-adapters'
+import type {
+  EvidenceRecord,
+  KnowledgeEdge,
+  KnowledgeGraph,
+  KnowledgeItem,
+  KnowledgeNode,
+} from '@/types'
 
 const props = defineProps<{
   item: KnowledgeItem | null
@@ -110,6 +122,7 @@ const classificationCopy = computed(() =>
   props.item ? classificationExplanation(props.item) : '',
 )
 const confirmationBasis = computed(() => props.item?.confirmationBasis ?? null)
+const copiedEvidenceKey = ref('')
 const replacementItem = computed(() => {
   const itemId = props.item?.replacedByItemId
   const itemKind = props.item?.replacedByItemKind
@@ -122,12 +135,12 @@ const humanAuditCopy = computed(() => {
   const item = props.item
   if (!item?.humanEdited) return ''
   if (item.humanChangeStatus === 'unseen') {
-    return '这次人工修改还没有被 Agent 调用查看，提醒会持续保留。'
+    return t('knowledge.workspace.inspector.humanReview.unseen')
   }
   if (item.humanChangeStatus === 'viewed') {
-    return 'Agent 已查看当前版本，但还没有同时完成冲突检查和分类合理性审核。'
+    return t('knowledge.workspace.inspector.humanReview.viewed')
   }
-  return 'Agent 已对当前人工修改版本完成无冲突与分类合理性审核；历史记录仍永久保留。'
+  return t('knowledge.workspace.inspector.humanReview.reviewed')
 })
 
 function display(value: unknown) {
@@ -140,11 +153,24 @@ function percentage(value: number) {
 }
 
 function inheritanceLabel(item: KnowledgeItem) {
-  if (item.inheritanceMode === 'descendants') return '允许子项目继承'
-  if (item.inheritanceMode === 'selected_projects') {
-    return `仅指定项目（${item.inheritedProjectIds.length}）`
+  if (item.inheritanceMode === 'descendants') {
+    return t('knowledge.workspace.inspector.inheritance.descendants')
   }
-  return '仅当前项目'
+  if (item.inheritanceMode === 'selected_projects') {
+    return t('knowledge.workspace.inspector.inheritance.selected', {
+      count: item.inheritedProjectIds.length,
+    })
+  }
+  return t('knowledge.workspace.inspector.inheritance.local')
+}
+
+function evidenceKey(evidence: EvidenceRecord, index: number) {
+  return String(evidence.id ?? evidence.session_id ?? index)
+}
+
+async function copyEvidenceSession(evidence: EvidenceRecord, index: number) {
+  if (!await copySourceSession(evidence)) return
+  copiedEvidenceKey.value = evidenceKey(evidence, index)
 }
 </script>
 
@@ -157,7 +183,11 @@ function inheritanceLabel(item: KnowledgeItem) {
       <h3>{{ item.itemKind === 'entity' ? item.title : rawEdge?.type }}</h3>
       <div class="inspector-identity">
         <span>
-          {{ managementItem ? '资料投影 ID' : item.itemKind === 'entity' ? '节点 ID' : '关系 ID' }}
+          {{ managementItem
+            ? t('knowledge.workspace.inspector.ids.projection')
+            : item.itemKind === 'entity'
+              ? t('knowledge.workspace.inspector.ids.node')
+              : t('knowledge.workspace.inspector.ids.relationship') }}
         </span>
         <code>{{ item.id }}</code>
       </div>
@@ -165,18 +195,15 @@ function inheritanceLabel(item: KnowledgeItem) {
 
       <section v-if="managementItem" class="inspector-project-material">
         <div>
-          <span>内容归属</span>
+          <span>{{ t('knowledge.workspace.inspector.ownership') }}</span>
           <strong>{{ projectMaterialTypeLabel(item) }}</strong>
         </div>
-        <p>
-          这是项目档案在关系图中的投影，不是可独立确认、失效或恢复的知识记录。
-          如需改变内容，请编辑项目资料。
-        </p>
+        <p>{{ t('knowledge.workspace.inspector.projectionCopy') }}</p>
       </section>
 
       <section v-else class="inspector-classification" :class="`state-${reviewState}`">
         <div>
-          <span>当前判定</span>
+          <span>{{ t('knowledge.workspace.inspector.currentJudgment') }}</span>
           <strong>{{ reviewStateLabel(item) }}</strong>
         </div>
         <p>{{ classificationCopy }}</p>
@@ -188,17 +215,19 @@ function inheritanceLabel(item: KnowledgeItem) {
         :class="`state-${item.humanChangeStatus}`"
       >
         <div>
-          <span>人工变更审核</span>
+          <span>{{ t('knowledge.workspace.inspector.humanReviewTitle') }}</span>
           <strong>{{ humanChangeStatusLabel(item.humanChangeStatus) }}</strong>
         </div>
         <p>{{ humanAuditCopy }}</p>
-        <small>人工变更版本 {{ item.humanChangeVersion }}</small>
+        <small>{{ t('knowledge.workspace.inspector.humanVersion', { version: item.humanChangeVersion }) }}</small>
       </section>
 
       <section v-if="!managementItem && item.invalidAt" class="inspector-replacement">
         <div class="inspector-replacement-heading">
-          <span>替代关系</span>
-          <strong>{{ replacementItem ? '已被以下内容取代' : '没有可跳转的替代内容' }}</strong>
+          <span>{{ t('knowledge.workspace.inspector.replacement') }}</span>
+          <strong>{{ replacementItem
+            ? t('knowledge.workspace.inspector.replacedBy')
+            : t('knowledge.workspace.inspector.noReplacement') }}</strong>
         </div>
         <button
           v-if="replacementItem"
@@ -210,64 +239,69 @@ function inheritanceLabel(item: KnowledgeItem) {
             <strong>{{ replacementItem.title }}</strong>
             <small>{{ replacementItem.body }}</small>
           </span>
-          <b>查看替代内容 →</b>
+          <b>{{ t('knowledge.workspace.inspector.viewReplacement') }}</b>
         </button>
         <p v-else-if="item.replacedByItemId">
-          已记录替代对象，但它不在当前查看范围内。
+          {{ t('knowledge.workspace.inspector.replacementOutOfScope') }}
         </p>
         <p v-else>
-          这条历史记录只有失效原因，没有记录明确的替代对象；系统不会根据文字猜测链接。
+          {{ t('knowledge.workspace.inspector.missingReplacement') }}
         </p>
       </section>
 
       <dl class="inspector-meta">
-        <div><dt>类型</dt><dd>{{ item.type }}</dd></div>
-        <div v-if="!managementItem"><dt>发现时象限</dt><dd>{{ quadrantLabel(item.originQuadrant) }}</dd></div>
-        <div v-if="!managementItem"><dt>当前分类</dt><dd>{{ quadrantLabel(item.currentQuadrant) }}</dd></div>
-        <div v-if="!managementItem"><dt>象限解释</dt><dd>{{ quadrantDescription(item.originQuadrant) }}</dd></div>
-        <div v-if="!managementItem"><dt>确认状态</dt><dd>{{ reviewStateLabel(item) }}</dd></div>
-        <div v-if="!managementItem"><dt>置信分</dt><dd>{{ percentage(item.confidenceScore) }}</dd></div>
-        <div v-if="!managementItem"><dt>效用分</dt><dd>{{ percentage(item.utilityScore) }}</dd></div>
+        <div><dt>{{ t('knowledge.workspace.inspector.fields.type') }}</dt><dd>{{ item.type }}</dd></div>
+        <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.originQuadrant') }}</dt><dd>{{ quadrantLabel(item.originQuadrant) }}</dd></div>
+        <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.currentQuadrant') }}</dt><dd>{{ quadrantLabel(item.currentQuadrant) }}</dd></div>
+        <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.quadrantExplanation') }}</dt><dd>{{ quadrantDescription(item.originQuadrant) }}</dd></div>
+        <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.confirmationStatus') }}</dt><dd>{{ reviewStateLabel(item) }}</dd></div>
+        <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.confidence') }}</dt><dd>{{ percentage(item.confidenceScore) }}</dd></div>
+        <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.utility') }}</dt><dd>{{ percentage(item.utilityScore) }}</dd></div>
         <div v-if="!managementItem">
-          <dt>有效使用</dt><dd>{{ item.qualifiedUseCount }} 次 / {{ item.distinctTaskCount }} 个任务</dd>
+          <dt>{{ t('knowledge.workspace.inspector.fields.materialUse') }}</dt><dd>{{ t('knowledge.workspace.inspector.useCount', {
+            uses: item.qualifiedUseCount,
+            tasks: item.distinctTaskCount,
+          }) }}</dd>
         </div>
-        <div v-if="!managementItem"><dt>最近使用</dt><dd>{{ formatTime(item.lastUsedAt) }}</dd></div>
+        <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.recentUse') }}</dt><dd>{{ formatTime(item.lastUsedAt) }}</dd></div>
         <div v-if="!managementItem && !item.profileAspect">
-          <dt>知识继承</dt><dd>{{ inheritanceLabel(item) }}</dd>
+          <dt>{{ t('knowledge.workspace.inspector.fields.inheritance') }}</dt><dd>{{ inheritanceLabel(item) }}</dd>
         </div>
         <div v-if="!managementItem && item.profileAspect">
-          <dt>协作偏好</dt><dd>{{ profileAspectLabel(item.profileAspect) }}</dd>
+          <dt>{{ t('knowledge.workspace.inspector.fields.preference') }}</dt><dd>{{ profileAspectLabel(item.profileAspect) }}</dd>
         </div>
         <div v-if="!managementItem && item.profileAspect">
-          <dt>生效范围</dt>
-          <dd>{{ item.preferenceScope === 'project' ? '指定项目' : '个人全局' }}</dd>
+          <dt>{{ t('knowledge.workspace.inspector.fields.effectiveScope') }}</dt>
+          <dd>{{ item.preferenceScope === 'project'
+            ? t('knowledge.workspace.inspector.selectedProject')
+            : t('knowledge.workspace.inspector.personalGlobal') }}</dd>
         </div>
         <template v-if="rawEdge">
-          <div><dt>来源</dt><dd>{{ names.get(endpointId(rawEdge.source)) ?? endpointId(rawEdge.source) }}</dd></div>
-          <div><dt>目标</dt><dd>{{ names.get(endpointId(rawEdge.target)) ?? endpointId(rawEdge.target) }}</dd></div>
+          <div><dt>{{ t('knowledge.workspace.inspector.fields.source') }}</dt><dd>{{ names.get(endpointId(rawEdge.source)) ?? endpointId(rawEdge.source) }}</dd></div>
+          <div><dt>{{ t('knowledge.workspace.inspector.fields.target') }}</dt><dd>{{ names.get(endpointId(rawEdge.target)) ?? endpointId(rawEdge.target) }}</dd></div>
         </template>
-        <div v-if="!managementItem"><dt>状态</dt><dd>{{ item.invalidAt ? '历史 · 已失效' : '当前有效' }}</dd></div>
+        <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.status') }}</dt><dd>{{ item.invalidAt
+          ? t('knowledge.workspace.inspector.historical')
+          : t('common.status.current') }}</dd></div>
       </dl>
 
       <template v-if="!managementItem">
-        <h4 class="inspector-subtitle">确认依据</h4>
+        <h4 class="inspector-subtitle">{{ t('knowledge.workspace.inspector.basisTitle') }}</h4>
         <dl v-if="confirmationBasis" class="inspector-meta inspector-confirmation-basis">
-          <div><dt>为什么会有</dt><dd>{{ confirmationBasis.existence_reason }}</dd></div>
-          <div><dt>为什么属于该象限</dt><dd>{{ confirmationBasis.quadrant_reason }}</dd></div>
-          <div><dt>提出者</dt><dd>{{ confirmationActorLabel(confirmationBasis.proposed_by) }}</dd></div>
-          <div><dt>确认者</dt><dd>{{ confirmationActorLabel(confirmationBasis.confirmed_by) }}</dd></div>
-          <div><dt>确认时间</dt><dd>{{ formatTime(confirmationBasis.confirmed_at) }}</dd></div>
+          <div><dt>{{ t('knowledge.workspace.inspector.basis.existence') }}</dt><dd>{{ confirmationBasis.existence_reason }}</dd></div>
+          <div><dt>{{ t('knowledge.workspace.inspector.basis.quadrant') }}</dt><dd>{{ confirmationBasis.quadrant_reason }}</dd></div>
+          <div><dt>{{ t('knowledge.workspace.inspector.basis.proposer') }}</dt><dd>{{ confirmationActorLabel(confirmationBasis.proposed_by) }}</dd></div>
+          <div><dt>{{ t('knowledge.workspace.inspector.basis.confirmer') }}</dt><dd>{{ confirmationActorLabel(confirmationBasis.confirmed_by) }}</dd></div>
+          <div><dt>{{ t('knowledge.workspace.inspector.basis.time') }}</dt><dd>{{ formatTime(confirmationBasis.confirmed_at) }}</dd></div>
           <div v-if="confirmationBasis.agent_policy_version">
-            <dt>Agent 策略</dt><dd>{{ confirmationBasis.agent_policy_version }}</dd>
+            <dt>{{ t('knowledge.workspace.inspector.basis.agentPolicy') }}</dt><dd>{{ confirmationBasis.agent_policy_version }}</dd>
           </div>
         </dl>
-        <p v-else class="inspector-reasoning">
-          旧数据没有结构化的确认依据，因此已放入待确认，不会自动作为已确认知识使用。
-        </p>
+        <p v-else class="inspector-reasoning">{{ t('knowledge.workspace.inspector.legacyBasis') }}</p>
       </template>
 
       <template v-if="attributes.length">
-        <h4 class="inspector-subtitle">内容详情</h4>
+        <h4 class="inspector-subtitle">{{ t('knowledge.workspace.inspector.contentDetails') }}</h4>
         <dl class="inspector-meta inspector-attributes">
           <div v-for="[key, value] in attributes" :key="key">
             <dt>{{ key }}</dt><dd>{{ display(value) }}</dd>
@@ -276,7 +310,7 @@ function inheritanceLabel(item: KnowledgeItem) {
       </template>
 
       <template v-if="item.reasoningSummary">
-        <h4 class="inspector-subtitle">形成过程</h4>
+        <h4 class="inspector-subtitle">{{ t('knowledge.workspace.inspector.formation') }}</h4>
         <p class="inspector-reasoning">{{ item.reasoningSummary }}</p>
       </template>
 
@@ -287,7 +321,9 @@ function inheritanceLabel(item: KnowledgeItem) {
           type="button"
           @click="emit('confirm', item)"
         >
-          {{ item.profileAspect ? '确认这条偏好' : '确认这条知识' }}
+          {{ item.profileAspect
+            ? t('knowledge.workspace.inspector.confirmPreference')
+            : t('knowledge.workspace.inspector.confirmKnowledge') }}
         </button>
         <button
           v-if="canManageProjectMaterial"
@@ -295,7 +331,7 @@ function inheritanceLabel(item: KnowledgeItem) {
           type="button"
           @click="emit('manageProject', item)"
         >
-          编辑项目资料
+          {{ t('knowledge.workspace.inspector.editMaterials') }}
         </button>
         <button
           v-if="mode === 'graph'"
@@ -303,7 +339,7 @@ function inheritanceLabel(item: KnowledgeItem) {
           type="button"
           @click="emit('openDirectory', item)"
         >
-          在内容目录中定位
+          {{ t('knowledge.workspace.inspector.locateDirectory') }}
         </button>
         <button
           v-if="mode === 'directory'"
@@ -311,7 +347,7 @@ function inheritanceLabel(item: KnowledgeItem) {
           type="button"
           @click="emit('openGraph', item)"
         >
-          在关系图中定位
+          {{ t('knowledge.workspace.inspector.locateGraph') }}
         </button>
         <button
           v-if="projectItem && personalProjectId && personalProjectId !== currentProjectId"
@@ -319,7 +355,7 @@ function inheritanceLabel(item: KnowledgeItem) {
           type="button"
           @click="emit('openProject', personalProjectId)"
         >
-          进入这个项目
+          {{ t('knowledge.workspace.inspector.enterProject') }}
         </button>
         <button
           v-if="projectItem && personalProjectId && canPublishProject"
@@ -327,7 +363,7 @@ function inheritanceLabel(item: KnowledgeItem) {
           type="button"
           @click="emit('publishProject', personalProjectId)"
         >
-          发布 / 同步到公共
+          {{ t('knowledge.workspace.inspector.publish') }}
         </button>
         <button
           v-if="canCreateProject"
@@ -335,7 +371,7 @@ function inheritanceLabel(item: KnowledgeItem) {
           type="button"
           @click="emit('createProject', item)"
         >
-          基于此创建项目
+          {{ t('knowledge.workspace.inspector.createProject') }}
         </button>
         <button
           v-if="canEdit"
@@ -343,45 +379,74 @@ function inheritanceLabel(item: KnowledgeItem) {
           type="button"
           @click="emit('edit', item)"
         >
-          {{ item.profileAspect ? '纠正这条偏好' : '纠正或调整归属' }}
+          {{ item.profileAspect
+            ? t('knowledge.workspace.inspector.correctPreference')
+            : t('knowledge.workspace.inspector.correctOrAssign') }}
         </button>
       </div>
 
       <template v-if="related.length">
-        <h4 class="inspector-subtitle">关联关系</h4>
+        <h4 class="inspector-subtitle">{{ t('knowledge.workspace.inspector.relations') }}</h4>
         <div class="inspector-relations">
           <div v-for="edge in related" :key="edge.id" class="inspector-relation">
             <strong class="relation-type">{{ edge.type }}</strong>
-            <p class="relation-target">{{ edge.fact || '关系' }}</p>
+            <p class="relation-target">{{ edge.fact || t('knowledge.workspace.inspector.relationshipFallback') }}</p>
           </div>
         </div>
       </template>
 
       <template v-if="item.evidence.length">
-        <h4 class="inspector-subtitle">证据与来源</h4>
+        <h4 class="inspector-subtitle">{{ t('knowledge.workspace.inspector.evidence') }}</h4>
         <div class="inspector-evidence">
-          <article v-for="(evidence, index) in item.evidence" :key="String(evidence.id ?? index)" class="evidence-card">
-            <strong>{{ evidence.name || evidence.source_description || '来源记录' }}</strong>
+          <article
+            v-for="(evidence, index) in item.evidence"
+            :key="evidenceKey(evidence, index)"
+            class="evidence-card"
+          >
+            <strong>{{ evidence.name || evidence.source_description || t('knowledge.workspace.inspector.sourceRecord') }}</strong>
             <p>{{ evidence.summary || evidence.source_description }}</p>
-            <span>{{ evidence.source_kind || '来源' }} · {{ formatTime(evidence.reference_time || evidence.created_at) }}</span>
+            <span>
+              {{ sourceApplicationLabel(evidence) }}
+              · {{ evidence.source_kind || t('knowledge.workspace.inspector.source') }}
+              · {{ formatTime(evidence.reference_time || evidence.created_at) }}
+            </span>
             <p v-if="evidence.source_excerpt" class="evidence-excerpt">{{ evidence.source_excerpt }}</p>
+            <a
+              v-if="sourceLinkForEvidence(evidence)"
+              class="evidence-source-action"
+              :href="sourceLinkForEvidence(evidence) ?? undefined"
+            >
+              {{ t('knowledge.workspace.inspector.openConversation') }}
+            </a>
+            <button
+              v-else-if="evidence.session_id"
+              class="evidence-source-action"
+              type="button"
+              @click="copyEvidenceSession(evidence, index)"
+            >
+              {{
+                copiedEvidenceKey === evidenceKey(evidence, index)
+                  ? t('knowledge.workspace.inspector.copiedSessionId')
+                  : t('knowledge.workspace.inspector.copySessionId')
+              }}
+            </button>
           </article>
         </div>
       </template>
 
       <template v-if="item.revisions.length">
-        <h4 class="inspector-subtitle">修订历史</h4>
+        <h4 class="inspector-subtitle">{{ t('knowledge.workspace.inspector.revisions') }}</h4>
         <div class="inspector-history">
           <article v-for="(revision, index) in item.revisions" :key="String(revision.id ?? index)" class="history-row">
             <strong>{{ revisionActionLabel(revision.action as string | undefined) }}</strong>
-            <p>{{ revision.reason ?? revision.summary ?? '未填写说明' }}</p>
+            <p>{{ revision.reason ?? revision.summary ?? t('knowledge.workspace.inspector.noRevisionCopy') }}</p>
             <span>{{ formatTime(revision.created_at as string | undefined) }}</span>
           </article>
         </div>
       </template>
 
       <template v-if="item.auditEvents.length">
-        <h4 class="inspector-subtitle">人工与 Agent 记录</h4>
+        <h4 class="inspector-subtitle">{{ t('knowledge.workspace.inspector.audit') }}</h4>
         <div class="inspector-history inspector-audit-history">
           <article
             v-for="event in item.auditEvents"
@@ -391,21 +456,27 @@ function inheritanceLabel(item: KnowledgeItem) {
             <strong>{{ knowledgeAuditActionLabel(event.action) }}</strong>
             <p>{{ event.reason }}</p>
             <span>
-              版本 {{ event.human_change_version }}
+              {{ t('knowledge.workspace.inspector.version', { version: event.human_change_version }) }}
               · {{ formatTime(event.created_at) }}
             </span>
             <small v-if="event.action === 'agent_review'">
-              冲突：{{ event.conflict_check === 'no_conflict' ? '无冲突' : '有冲突' }}
-              · 分类：{{ event.classification_check === 'reasonable' ? '合理' : '需调整' }}
+              {{ t('knowledge.workspace.inspector.conflictClassification', {
+                conflict: event.conflict_check === 'no_conflict'
+                  ? t('knowledge.workspace.inspector.conflictNone')
+                  : t('knowledge.workspace.inspector.conflictFound'),
+                classification: event.classification_check === 'reasonable'
+                  ? t('knowledge.workspace.inspector.classificationReasonable')
+                  : t('knowledge.workspace.inspector.classificationAdjust'),
+              }) }}
             </small>
           </article>
         </div>
       </template>
     </template>
     <template v-else>
-      <p class="eyebrow">内容详情</p>
-      <h3>选择一个节点或关系</h3>
-      <p class="inspector-placeholder">点击后查看完整说明、来源证据和关联关系。</p>
+      <p class="eyebrow">{{ t('knowledge.workspace.inspector.contentDetails') }}</p>
+      <h3>{{ t('knowledge.workspace.inspector.placeholderTitle') }}</h3>
+      <p class="inspector-placeholder">{{ t('knowledge.workspace.inspector.placeholderCopy') }}</p>
     </template>
   </aside>
 </template>

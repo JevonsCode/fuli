@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, watchEffect } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
 import fuliLogoUrl from '../../assets/brand/fuli-logo.png'
+import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
+import { t } from '@/i18n'
+import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { personalProjectsPath, knowledgePath } from '@/router/paths'
 import { useConsoleStore } from '@/stores/console'
 
@@ -12,19 +15,19 @@ const route = useRoute()
 const activeSpaceId = computed(() => store.activePersonalSpace?.id ?? 'current')
 const personalProjectsTo = computed(() => personalProjectsPath(activeSpaceId.value, 'graph'))
 const knowledgeTo = computed(() => knowledgePath('personal', activeSpaceId.value, 'directory'))
-const title = computed(() => String(route.meta.title ?? '概览'))
+const title = computed(() => routeMetaText(route.meta.title, 'routes.overview.title'))
 const eyebrow = computed(() => String(route.meta.eyebrow ?? 'LOCAL + FEDERATED'))
-const description = computed(() => String(route.meta.description ?? ''))
+const description = computed(() => routeMetaText(route.meta.description))
 const publicReady = computed(() => store.publicRuntimeStatus === 'ready')
 const publicRuntimeLabel = computed(() => {
-  if (store.publicRuntimeStatus === 'ready') return '公共服务已连接'
-  if (store.publicRuntimeStatus === 'error') return '公共服务连接异常'
-  return '公共服务未连接'
+  if (store.publicRuntimeStatus === 'ready') return t('console.services.publicReady')
+  if (store.publicRuntimeStatus === 'error') return t('console.services.publicError')
+  return t('console.services.publicOffline')
 })
 const publicRuntimeCopy = computed(() => {
-  if (store.publicRuntimeStatus === 'ready') return '公共项目与协作可用'
-  if (store.publicRuntimeStatus === 'error') return '本地知识库不受影响'
-  return '当前仅使用本机'
+  if (store.publicRuntimeStatus === 'ready') return t('console.services.publicAvailable')
+  if (store.publicRuntimeStatus === 'error') return t('console.services.localUnaffected')
+  return t('console.services.localOnly')
 })
 const captureEnabled = computed(() => store.state?.capturePolicy?.enabled !== false)
 const agentAccessEnabled = computed(() =>
@@ -38,6 +41,10 @@ const reviewVisible = computed(() => {
 
 onMounted(() => {
   if (store.runtimeStatus === 'idle') void store.refresh()
+})
+
+watchEffect(() => {
+  updateDocumentTitle(route.meta.title)
 })
 
 function toggleCapture(event: Event) {
@@ -57,64 +64,64 @@ function toggleAgentAccess(event: Event) {
       <div class="brand-block">
         <img class="brand-mark" :src="fuliLogoUrl" alt="" aria-hidden="true" />
         <div>
-          <h1>复利</h1>
+          <h1>{{ t('common.brand') }}</h1>
           <p>Context Graph</p>
         </div>
       </div>
 
-      <nav class="primary-nav" aria-label="主导航">
-        <p class="nav-section-label">工作台</p>
+      <nav class="primary-nav" :aria-label="t('console.navigation.aria')">
+        <p class="nav-section-label">{{ t('console.navigation.workspace') }}</p>
         <RouterLink to="/" exact-active-class="is-active">
           <span class="nav-icon nav-icon-overview" aria-hidden="true" />
-          <span class="nav-label">概览</span>
+          <span class="nav-label">{{ t('console.navigation.overview') }}</span>
         </RouterLink>
 
-        <p class="nav-section-label nav-space-label">个人空间</p>
+        <p class="nav-section-label nav-space-label">{{ t('console.navigation.personalSpace') }}</p>
         <RouterLink class="space-nav-button personal-profile-button" to="/preferences" active-class="is-active">
           <span class="nav-icon nav-icon-personal-profile" aria-hidden="true" />
-          <span class="nav-copy"><strong>协作偏好</strong><small>全局 / 项目 · 仅本机</small></span>
+          <span class="nav-copy"><strong>{{ t('console.navigation.preferences') }}</strong><small>{{ t('console.navigation.preferencesMeta') }}</small></span>
         </RouterLink>
         <RouterLink class="space-nav-button knowledge-organizer-button" to="/organize" active-class="is-active">
           <span class="nav-icon nav-icon-knowledge-organizer" aria-hidden="true" />
-          <span class="nav-copy"><strong>知识整理</strong><small>象限 · 依据 · 状态</small></span>
+          <span class="nav-copy"><strong>{{ t('console.navigation.organizer') }}</strong><small>{{ t('console.navigation.organizerMeta') }}</small></span>
         </RouterLink>
         <RouterLink class="space-nav-button personal-space-button" :to="personalProjectsTo" active-class="is-active">
           <span class="nav-icon nav-icon-personal-project" aria-hidden="true" />
-          <span class="nav-copy"><strong>个人项目</strong><small>本机 · 私有</small></span>
+          <span class="nav-copy"><strong>{{ t('console.navigation.personalProjects') }}</strong><small>{{ t('console.navigation.personalProjectsMeta') }}</small></span>
         </RouterLink>
 
         <template v-if="publicVisible">
-          <p class="nav-section-label nav-public-label">公共空间</p>
+          <p class="nav-section-label nav-public-label">{{ t('console.navigation.publicSpace') }}</p>
           <RouterLink class="space-nav-button public-space-button" to="/public-projects" active-class="is-active">
             <span class="nav-icon nav-icon-public-project" aria-hidden="true" />
-            <span class="nav-copy"><strong>公共项目</strong><small>发现 · 订阅 · 协作</small></span>
+            <span class="nav-copy"><strong>{{ t('console.navigation.publicProjects') }}</strong><small>{{ t('console.navigation.publicProjectsMeta') }}</small></span>
           </RouterLink>
         </template>
 
-        <p class="nav-section-label nav-tool-label">知识与治理</p>
+        <p class="nav-section-label nav-tool-label">{{ t('console.navigation.governance') }}</p>
         <RouterLink :to="knowledgeTo" active-class="is-active">
           <span class="nav-icon nav-icon-knowledge-graph" aria-hidden="true" />
-          <span class="nav-label">知识库</span>
+          <span class="nav-label">{{ t('console.navigation.knowledge') }}</span>
         </RouterLink>
         <RouterLink v-if="reviewVisible" to="/review" active-class="is-active">
           <span class="nav-icon nav-icon-review" aria-hidden="true" />
-          <span class="nav-label">发布审核</span>
+          <span class="nav-label">{{ t('console.navigation.review') }}</span>
         </RouterLink>
         <RouterLink to="/connections" active-class="is-active">
           <span class="nav-icon nav-icon-connections" aria-hidden="true" />
-          <span class="nav-label">服务连接</span>
+          <span class="nav-label">{{ t('console.navigation.connections') }}</span>
         </RouterLink>
       </nav>
 
       <div class="sidebar-foot">
-        <div class="service-runtime-list" aria-label="知识服务状态">
+        <div class="service-runtime-list" :aria-label="t('console.services.aria')">
           <div class="runtime-status">
             <span class="status-dot" :class="store.runtimeStatus" />
             <div>
               <strong>
-                {{ store.runtimeStatus === 'ready' ? '本地知识库已连接'
-                  : store.runtimeStatus === 'error' ? '本地知识库连接失败'
-                    : '正在连接本地知识库' }}
+                {{ store.runtimeStatus === 'ready' ? t('console.services.localReady')
+                  : store.runtimeStatus === 'error' ? t('console.services.localError')
+                    : t('console.services.localConnecting') }}
               </strong>
               <small>Graphiti / Neo4j</small>
             </div>
@@ -130,13 +137,13 @@ function toggleAgentAccess(event: Event) {
         <label
           class="capture-setting"
           :data-enabled="captureEnabled"
-          :title="captureEnabled ? '已开启自动沉淀' : '已关闭自动沉淀'"
+          :title="captureEnabled ? t('console.capture.enabledTitle') : t('console.capture.disabledTitle')"
         >
-          <span>自动沉淀</span>
+          <span>{{ t('console.capture.label') }}</span>
           <input
             type="checkbox"
             role="switch"
-            aria-label="自动沉淀会话内容"
+            :aria-label="t('console.capture.aria')"
             :aria-checked="captureEnabled"
             :checked="captureEnabled"
             :disabled="store.runtimeStatus !== 'ready'"
@@ -149,18 +156,18 @@ function toggleAgentAccess(event: Event) {
           :data-enabled="agentAccessEnabled"
           :title="
             agentAccessEnabled
-              ? '已允许 Agent 调用 FULI'
-              : '已禁止所有 Agent 调用 FULI'
+              ? t('console.agentAccess.enabledTitle')
+              : t('console.agentAccess.disabledTitle')
           "
         >
           <span>
-            <strong>Agent 使用</strong>
-            <small>{{ agentAccessEnabled ? '允许调用整个 FULI' : '所有调用已拦截' }}</small>
+            <strong>{{ t('console.agentAccess.label') }}</strong>
+            <small>{{ agentAccessEnabled ? t('console.agentAccess.enabledCopy') : t('console.agentAccess.disabledCopy') }}</small>
           </span>
           <input
             type="checkbox"
             role="switch"
-            aria-label="允许 Agent 调用 FULI"
+            :aria-label="t('console.agentAccess.aria')"
             :aria-checked="agentAccessEnabled"
             :checked="agentAccessEnabled"
             :disabled="store.runtimeStatus !== 'ready'"
@@ -179,8 +186,9 @@ function toggleAgentAccess(event: Event) {
           <p v-if="description" class="topbar-description">{{ description }}</p>
         </div>
         <div class="topbar-actions">
-          <span v-if="publicReady" class="mode-chip">Public ready</span>
-          <button class="quiet-button" type="button" @click="store.refresh">刷新</button>
+          <span v-if="publicReady" class="mode-chip">{{ t('console.publicReady') }}</span>
+          <LocaleSwitcher />
+          <button class="quiet-button" type="button" @click="store.refresh">{{ t('common.actions.refresh') }}</button>
         </div>
       </header>
 

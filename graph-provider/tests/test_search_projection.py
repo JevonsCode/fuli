@@ -61,9 +61,29 @@ def test_fact_search_projection_includes_the_authorized_space_for_deep_links():
         edge,
         {'source-1': '来源标记', 'target-1': '知识详情'},
         'project-space',
+        {
+            'source_references': [
+                {
+                    'uri': 'https://docs.example.invalid/project/requirements-v1',
+                    'reference_time': datetime(2026, 7, 20, tzinfo=UTC),
+                },
+                {
+                    'uri': 'https://docs.example.invalid/project/requirements-v2',
+                    'reference_time': datetime(2026, 7, 22, tzinfo=UTC),
+                },
+                {
+                    'uri': 'https://docs.example.invalid/project/requirements-v1',
+                    'reference_time': datetime(2026, 7, 21, tzinfo=UTC),
+                },
+            ],
+        },
     )
 
     assert result.space_id == 'project-space'
+    assert result.source_uris == [
+        'https://docs.example.invalid/project/requirements-v2',
+        'https://docs.example.invalid/project/requirements-v1',
+    ]
 
 
 def test_fact_search_projection_includes_human_change_review_state():

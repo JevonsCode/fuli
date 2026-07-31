@@ -7,11 +7,13 @@ from fastapi import HTTPException
 from fuli_graph.knowledge_audit import (
     record_agent_views,
     record_human_change,
+    record_knowledge_feedback,
     record_knowledge_usage,
     review_human_change,
     search_human_changes,
 )
 from fuli_graph.knowledge_usage_models import KnowledgeUsageCreate
+from fuli_graph.knowledge_feedback_models import KnowledgeFeedbackCreate
 from fuli_graph.models import (
     KnowledgeAgentReviewCreate,
     KnowledgeAgentViewCreate,
@@ -281,6 +283,118 @@ async def test_open_conflict_blocks_agent_promotion_even_after_the_usage_thresho
     assert result.promoted_count == 0
     assert result.items[0].confirmation_status == 'pending'
     assert driver.calls[3][1]['promoted'] is False
+
+
+@pytest.mark.asyncio
+async def test_negative_evidence_flags_human_confirmed_knowledge_without_overriding_authority():
+    driver = SequentialDriver([
+        [{
+            'confirmation_status': 'confirmed',
+            'confirmation_basis_json': json.dumps({
+                'existence_reason': 'The user confirmed the runbook.',
+                'quadrant_reason': 'It was explicitly stated.',
+                'proposed_by': {'kind': 'user'},
+                'confirmed_by': {'kind': 'user'},
+                'confirmed_at': '2026-07-30T08:00:00Z',
+            }),
+            'usage_generation': 2,
+            'invalid_at': None,
+            'utility_score': 0.8,
+            'confidence_score': 1.0,
+            'negative_evidence_count': 0,
+        }],
+        [{
+            'recorded': True,
+            'confirmation_status': 'confirmed',
+            'utility_score': 0.45,
+            'confidence_score': 0.7,
+            'negative_evidence_count': 1,
+            'requires_attention': True,
+        }],
+    ])
+    store = StoreStub(driver)
+
+    result = await record_knowledge_feedback(
+        store,
+        {'id': 'principal-1'},
+        KnowledgeFeedbackCreate(
+            personal_space_id='personal-space',
+            task_id='task-negative-1',
+            items=[{
+                'item_id': 'entity-1',
+                'item_kind': 'entity',
+                'feedback_kind': 'validation_failed',
+                'reason': 'The local validation command failed.',
+                'evidence_summary': 'Synthetic fixture: exit code 1.',
+                'reported_by_kind': 'agent',
+            }],
+        ),
+    )
+
+    query, parameters = driver.calls[1]
+    assert "action = 'knowledge_feedback'" in query
+    assert 'item.fuli_requires_attention = true' in query
+    assert parameters['next_confirmation_status'] == 'confirmed'
+    assert result.items[0].confirmation_status == 'confirmed'
+    assert result.items[0].requires_attention is True
+    assert result.items[0].negative_evidence_count == 1
+
+
+@pytest.mark.asyncio
+async def test_human_contradiction_demotes_only_agent_confirmed_knowledge_to_pending():
+    driver = SequentialDriver([
+        [{
+            'confirmation_status': 'agent_confirmed',
+            'confirmation_basis_json': json.dumps({
+                'existence_reason': 'Retained from an Agent proposal.',
+                'quadrant_reason': 'Observed in earlier tasks.',
+                'proposed_by': {'kind': 'agent'},
+                'confirmed_by': {'kind': 'agent'},
+                'confirmed_at': '2026-07-30T08:00:00Z',
+                'agent_policy_version': 'agent-usage-v1',
+            }),
+            'usage_generation': 3,
+            'invalid_at': None,
+            'utility_score': 0.7,
+            'confidence_score': 0.8,
+            'negative_evidence_count': 0,
+        }],
+        [{
+            'recorded': True,
+            'confirmation_status': 'pending',
+            'utility_score': 0.25,
+            'confidence_score': 0.4,
+            'negative_evidence_count': 1,
+            'requires_attention': True,
+        }],
+    ])
+    store = StoreStub(driver)
+
+    result = await record_knowledge_feedback(
+        store,
+        {'id': 'principal-1'},
+        KnowledgeFeedbackCreate(
+            personal_space_id='personal-space',
+            task_id='task-negative-2',
+            items=[{
+                'item_id': 'entity-2',
+                'item_kind': 'entity',
+                'feedback_kind': 'contradicted',
+                'reason': 'The user corrected the stored behavior.',
+                'evidence_summary': 'Synthetic fixture: expected output differs.',
+                'reported_by_kind': 'user',
+            }],
+        ),
+    )
+
+    assert driver.calls[1][1]['next_confirmation_status'] == 'pending'
+    pending_basis = json.loads(
+        driver.calls[1][1]['next_confirmation_basis_json']
+    )
+    assert pending_basis['confirmed_by'] is None
+    assert pending_basis['confirmed_at'] is None
+    assert 'agent_policy_version' not in pending_basis
+    assert result.items[0].confirmation_status == 'pending'
 
 
 def personal_space():

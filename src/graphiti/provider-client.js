@@ -133,6 +133,11 @@ export class GraphitiProviderClient {
       method: 'POST', body: input
     });
   }
+  recordKnowledgeFeedback(input) {
+    return this.#request('/v1/knowledge/feedback', {
+      method: 'POST', body: input
+    });
+  }
   reviewHumanChange(itemId, input) {
     return this.#request(
       `/v1/knowledge/items/${encodeURIComponent(itemId)}/agent-review`,
@@ -160,6 +165,16 @@ export class GraphitiProviderClient {
       `/v1/knowledge/items/${encodeURIComponent(itemId)}/preference-scope`,
       { method: 'POST', body: input }
     );
+  }
+  previewCommonKnowledgePromotion(input) {
+    return this.#request('/v1/knowledge/common-promotions/preview', {
+      method: 'POST', body: input
+    });
+  }
+  applyCommonKnowledgePromotion(input) {
+    return this.#request('/v1/knowledge/common-promotions', {
+      method: 'POST', body: input
+    });
   }
   deferPreferenceConflict(input) {
     return this.#request('/v1/preference-conflicts/defer', {

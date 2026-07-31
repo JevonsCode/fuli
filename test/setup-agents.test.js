@@ -33,6 +33,7 @@ test('agent discovery reports Codex, Claude Code, and Cursor without failing on 
   assert.equal(agents[0].skillPath, 'C:\\Users\\Test\\.agents\\skills\\capturing-session-knowledge');
   assert.equal(agents[0].projectSkillPath, 'C:\\Users\\Test\\.agents\\skills\\grilling-project');
   assert.equal(agents[1].configPath, 'C:\\Users\\Test\\.claude.json');
+  assert.match(agents[1].settingsPath, /\\\.claude\\settings\.json$/);
   assert.equal(agents[1].skillPath, 'C:\\Users\\Test\\.claude\\skills\\capturing-session-knowledge');
   assert.equal(agents[1].projectSkillPath, 'C:\\Users\\Test\\.claude\\skills\\grilling-project');
   assert.equal(agents[2].configPath, 'C:\\Users\\Test\\.cursor\\mcp.json');
@@ -64,24 +65,24 @@ test('Codex and Claude Code registrations use their native MCP CLI', () => {
   });
 });
 
-test('Claude connection tolerates a missing old registration and requires add success', () => {
+test('Claude connection delegates to its lifecycle-aware config connector', () => {
   const agent = discoverAgents({ commandExists: () => true })[1];
   const calls = [];
   const connected = connectAgent(agent, CONTEXT, {
-    runCommand(command, args) {
-      calls.push([command, args]);
-      return { status: calls.length === 1 ? 1 : 0, stderr: '' };
+    connectClaudeCodeConfig(selectedAgent, context) {
+      calls.push([selectedAgent, context]);
+      return {
+        id: selectedAgent.id,
+        label: selectedAgent.label,
+        status: 'connected',
+        newTaskRequired: true
+      };
     }
   });
 
   assert.equal(connected.status, 'connected');
-  assert.equal(calls.length, 2);
-
-  assert.throws(() => connectAgent(agent, CONTEXT, {
-    runCommand(command, args) {
-      return { status: args.includes('add') ? 2 : 0, stderr: 'private config detail' };
-    }
-  }), /Could not connect Claude Code to Fuli/);
+  assert.equal(connected.newTaskRequired, true);
+  assert.deepEqual(calls, [[agent, CONTEXT]]);
 });
 
 test('Codex connection delegates to its shared config connector', () => {
@@ -118,7 +119,7 @@ test('Claude disconnect removes only its Fuli JSON registration', () => {
   const claude = discoverAgents({ commandExists: () => true })[1];
   const calls = [];
   const result = disconnectAgent(claude, {
-    disconnectJsonConfig(agent) {
+    disconnectClaudeCodeConfig(agent) {
       calls.push(agent);
       return { id: agent.id, label: agent.label, status: 'disconnected' };
     }

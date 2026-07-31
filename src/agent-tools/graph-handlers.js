@@ -1,6 +1,10 @@
 import { ApplicationError } from '../app/application-error.js';
 
 const HANDLERS = Object.freeze({
+  begin_task_context: (app, input) => app.beginTaskContext(input),
+  checkpoint_task_knowledge: (app, input) =>
+    app.checkpointTaskKnowledge(input),
+  verify_task_checkpoint: (app, input) => app.verifyTaskCheckpoint(input),
   get_collaboration_preferences: (app, input) => app.getCollaborationPreferences({
     ...input,
     agentInvocation: true,
@@ -12,12 +16,27 @@ const HANDLERS = Object.freeze({
       operationActor: 'agent'
     }),
   capture_session_knowledge: (app, input) => app.captureSessionKnowledge(input),
+  record_decision_trace: (app, input) => app.recordDecisionTrace(input),
   search_knowledge_graph: (app, input) => app.searchKnowledge({
     ...input,
     agentInvocation: true,
     agentToolName: 'search_knowledge_graph'
   }),
   record_knowledge_usage: (app, input) => app.recordKnowledgeUsage(input),
+  record_knowledge_feedback: (app, input) => app.recordKnowledgeFeedback(input),
+  search_current_project_knowledge: (app, input) =>
+    app.searchCurrentProjectKnowledge(input),
+  discover_common_knowledge_candidates: (app, input) =>
+    app.discoverCommonKnowledgeCandidates(input),
+  preview_common_knowledge_promotion: (app, input) =>
+    app.previewCommonKnowledgePromotion(input),
+  apply_common_knowledge_promotion: (app, input) => {
+    const { previewToken: _previewToken, ...promotion } = input;
+    return app.applyCommonKnowledgePromotion({
+      ...promotion,
+      operationActor: 'agent'
+    });
+  },
   get_knowledge_graph: (app, input) => app.getKnowledgeGraph({
     ...input,
     agentInvocation: true,

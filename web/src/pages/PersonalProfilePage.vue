@@ -24,6 +24,7 @@ import {
   reviewStateLabel,
   type KnowledgeReviewState,
 } from '@/features/knowledge/model'
+import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { KnowledgeGraph, KnowledgeItem } from '@/types'
 
@@ -73,6 +74,12 @@ const visibleConflicts = computed(() =>
     ({ left, right }) => matchesActiveFilters(left) || matchesActiveFilters(right),
   ),
 )
+const aspectOptions = computed(() => [
+  ['all', t('preferences.profile.filters.all')],
+  ['taste', t('preferences.profile.filters.taste')],
+  ['personality', t('preferences.profile.filters.personality')],
+  ['judgment_preference', t('preferences.profile.filters.judgment')],
+] as const)
 const scopeOptions = computed(() => {
   const projectNames = new Map(
     (store.state?.personalProjects ?? []).map(
@@ -91,28 +98,34 @@ const scopeOptions = computed(() => {
   ].sort((left, right) =>
     (projectNames.get(left) ?? left).localeCompare(
       projectNames.get(right) ?? right,
-      'zh-CN',
+      currentLocale(),
     ),
   )
   return [
-    { value: 'all', label: '全部范围', meta: `${items.value.length} 条` },
+    {
+      value: 'all',
+      label: t('preferences.profile.scopes.all'),
+      meta: t('common.counts.items', { count: items.value.length }),
+    },
     {
       value: 'global',
-      label: '个人全局',
-      meta: `${
-        items.value.filter(({ preferenceScope }) => preferenceScope !== 'project').length
-      } 条`,
+      label: t('preferences.profile.scopes.global'),
+      meta: t('common.counts.items', {
+        count: items.value.filter(
+          ({ preferenceScope }) => preferenceScope !== 'project',
+        ).length,
+      }),
     },
     ...projectIds.map((projectId) => ({
       value: `project:${projectId}`,
       label: projectNames.get(projectId) ?? projectId,
-      meta: `${
-        items.value.filter(
+      meta: t('preferences.profile.scopes.projectMeta', {
+        count: items.value.filter(
           ({ preferenceScope, preferenceProjectId }) =>
             preferenceScope === 'project'
             && preferenceProjectId === projectId,
-        ).length
-      } 条项目偏好`,
+        ).length,
+      }),
       search: projectId,
     })),
   ]
@@ -130,18 +143,18 @@ const agentConfirmedCount = computed(
 )
 const summaryGuidance = computed(() => {
   if (conflictsOnly.value) {
-    return '正在成对查看疑似冲突；再次点击可返回全部偏好。'
+    return t('preferences.profile.summaryGuidance.conflicts')
   }
   if (activeReviewState.value === 'pending') {
-    return '已筛出待确认偏好。点击条目核对依据，再选择确认、纠正或标记失效。'
+    return t('preferences.profile.summaryGuidance.pending')
   }
   if (activeReviewState.value === 'confirmed') {
-    return '已筛出确认人和确认时间完整的偏好；再次点击可返回全部偏好。'
+    return t('preferences.profile.summaryGuidance.confirmed')
   }
   if (activeReviewState.value === 'agent_confirmed') {
-    return '已筛出由实际使用证据形成的 Agent 已确认偏好；它们仍低于人工确认。'
+    return t('preferences.profile.summaryGuidance.agentConfirmed')
   }
-  return '点击状态数字可筛选内容；疑似冲突会进入成对处理工作台。'
+  return t('preferences.profile.summaryGuidance.default')
 })
 
 watch(
@@ -201,18 +214,28 @@ function statusLabel(item: KnowledgeItem) {
   const conflict = conflicts.value.find(
     ({ left, right }) => left.id === item.id || right.id === item.id,
   )
-  if (conflict?.aiRecord) return `${label} · 待 AI 使用时判断`
-  if (conflict) return `${label} · 疑似冲突`
-  if (aiResolvedIds.value.has(item.id)) return `${label} · 曾冲突 / AI 已处理`
+  if (conflict?.aiRecord) {
+    return `${label} · ${t('preferences.profile.statusSuffix.aiPending')}`
+  }
+  if (conflict) {
+    return `${label} · ${t('preferences.profile.statusSuffix.conflict')}`
+  }
+  if (aiResolvedIds.value.has(item.id)) {
+    return `${label} · ${t('preferences.profile.statusSuffix.aiResolved')}`
+  }
   return label
 }
 
 function scopeLabel(item: KnowledgeItem) {
-  if (item.preferenceScope !== 'project' || !item.preferenceProjectId) return '个人全局'
+  if (item.preferenceScope !== 'project' || !item.preferenceProjectId) {
+    return t('preferences.shared.personalGlobal')
+  }
   const project = store.state?.personalProjects?.find(
     ({ project_id }) => project_id === item.preferenceProjectId,
   )
-  return `仅 ${project?.profile.name ?? item.preferenceProjectId}`
+  return t('preferences.shared.projectOnly', {
+    project: project?.profile.name ?? item.preferenceProjectId,
+  })
 }
 
 function matchesActiveFilters(item: KnowledgeItem) {
@@ -226,12 +249,14 @@ function matchesActiveFilters(item: KnowledgeItem) {
 }
 
 function conflictScopeLabel(conflict: PreferenceConflict) {
-  if (conflict.scopeKey === 'global') return '个人全局'
+  if (conflict.scopeKey === 'global') return t('preferences.shared.personalGlobal')
   const projectId = conflict.scopeKey.slice('project:'.length)
   const project = store.state?.personalProjects?.find(
     ({ project_id }) => project_id === projectId,
   )
-  return `仅 ${project?.profile.name ?? projectId}`
+  return t('preferences.shared.projectOnly', {
+    project: project?.profile.name ?? projectId,
+  })
 }
 
 function openReplacement(item: KnowledgeItem) {
@@ -285,14 +310,14 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
         leftItemKind: conflict.left.itemKind,
         rightItemId: conflict.right.id,
         rightItemKind: conflict.right.itemKind,
-        reason: '用户选择交给 AI，在首次相关使用前判断并处理。',
+        reason: t('preferences.profile.deferReason'),
       },
     )
     conflictRecords.value = [
       record,
       ...conflictRecords.value.filter(({ id }) => id !== record.id),
     ]
-    store.notify('已交给 AI：只有后续任务实际用到这组内容时，Agent 才会先判断并处理。')
+    store.notify(t('preferences.profile.deferNotice'))
   } catch (error) {
     store.reportError(error)
   } finally {
@@ -303,49 +328,58 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 
 <template>
   <section class="view vue-personal-profile">
-    <div class="personal-profile-summary" aria-label="协作偏好状态">
+    <div
+      class="personal-profile-summary"
+      :aria-label="t('preferences.profile.summaryAria')"
+    >
       <button
         type="button"
         class="profile-summary-action state-confirmed"
-        :aria-label="`查看 ${confirmedCount} 条已确认偏好`"
+        :aria-label="t('preferences.profile.summary.confirmedAria', { count: confirmedCount })"
         :aria-pressed="!conflictsOnly && activeReviewState === 'confirmed'"
         @click="toggleReviewState('confirmed')"
       >
-        <strong>{{ confirmedCount }}</strong>已确认
-        <small>查看记录</small>
+        <strong>{{ confirmedCount }}</strong>{{ t('preferences.profile.summary.confirmed') }}
+        <small>{{ t('preferences.profile.summary.viewRecords') }}</small>
       </button>
       <button
         type="button"
         class="profile-summary-action state-agent-confirmed"
-        :aria-label="`查看 ${agentConfirmedCount} 条 Agent 已确认偏好`"
+        :aria-label="t('preferences.profile.summary.agentConfirmedAria', { count: agentConfirmedCount })"
         :aria-pressed="!conflictsOnly && activeReviewState === 'agent_confirmed'"
         @click="toggleReviewState('agent_confirmed')"
       >
-        <strong>{{ agentConfirmedCount }}</strong>Agent 已确认
-        <small>低于人工确认</small>
+        <strong>{{ agentConfirmedCount }}</strong>{{ t('preferences.profile.summary.agentConfirmed') }}
+        <small>{{ t('preferences.profile.summary.belowHuman') }}</small>
       </button>
       <button
         type="button"
         class="profile-summary-action state-pending"
-        :aria-label="`查看并处理 ${observedCount} 条待确认偏好`"
+        :aria-label="t('preferences.profile.summary.pendingAria', { count: observedCount })"
         :aria-pressed="!conflictsOnly && activeReviewState === 'pending'"
         @click="toggleReviewState('pending')"
       >
-        <strong>{{ observedCount }}</strong>待确认
-        <small v-if="observedCount">查看并确认</small>
-        <small v-else>查看记录</small>
+        <strong>{{ observedCount }}</strong>{{ t('preferences.profile.summary.pending') }}
+        <small v-if="observedCount">{{ t('preferences.profile.summary.reviewAndConfirm') }}</small>
+        <small v-else>{{ t('preferences.profile.summary.viewRecords') }}</small>
       </button>
       <button
         type="button"
         class="profile-summary-action state-conflict"
         :aria-label="conflicts.length
-          ? `查看并处理 ${conflicts.length} 组疑似冲突`
-          : '当前没有疑似冲突'"
+          ? t('preferences.profile.summary.conflictAria', { count: conflicts.length })
+          : t('preferences.profile.summary.noConflictsAria')"
         :aria-pressed="conflictsOnly"
         @click="toggleConflictWorkbench()"
       >
-        <strong>{{ conflicts.length }}</strong>疑似冲突
-        <small>{{ conflicts.length ? '查看并处理' : '查看记录' }}</small>
+        <strong>{{ conflicts.length }}</strong>{{ t('preferences.profile.summary.conflicts') }}
+        <small>
+          {{
+            conflicts.length
+              ? t('preferences.profile.summary.reviewAndHandle')
+              : t('preferences.profile.summary.viewRecords')
+          }}
+        </small>
       </button>
       <p>{{ summaryGuidance }}</p>
     </div>
@@ -353,24 +387,28 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
     <section
       v-if="conflicts.length && !conflictsOnly && activeReviewState === 'all'"
       class="preference-conflict-alert"
-      aria-label="待处理的疑似冲突"
+      :aria-label="t('preferences.profile.alert.aria')"
     >
       <div class="preference-conflict-alert-icon" aria-hidden="true">!</div>
       <div>
-        <span>需要你判断</span>
-        <h2>发现 {{ conflicts.length }} 组疑似冲突</h2>
-        <p>你可以现在人工处理，也可以交给 AI，等后续任务真正用到相关内容时再先判断、处理并留下审计标记。</p>
+        <span>{{ t('preferences.profile.alert.kicker') }}</span>
+        <h2>{{ t('preferences.profile.alert.title', { count: conflicts.length }) }}</h2>
+        <p>{{ t('preferences.profile.alert.copy') }}</p>
       </div>
       <button class="primary-action" type="button" @click="toggleConflictWorkbench(true)">
-        查看冲突双方并处理
+        {{ t('preferences.profile.alert.action') }}
       </button>
     </section>
 
     <div class="personal-profile-toolbar">
       <div class="personal-profile-filter-groups">
-        <div class="personal-profile-filters" role="group" aria-label="协作偏好维度">
+        <div
+          class="personal-profile-filters"
+          role="group"
+          :aria-label="t('preferences.profile.filters.aspectAria')"
+        >
           <button
-            v-for="[value, label] in [['all', '全部'], ['taste', '品味'], ['personality', '个性'], ['judgment_preference', '判断偏好']]"
+            v-for="[value, label] in aspectOptions"
             :key="value"
             type="button"
             :aria-pressed="activeAspect === value"
@@ -383,36 +421,59 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
           v-model="activeScope"
           class="personal-profile-scope-filter"
           control-id="personal-profile-scope"
-          label="协作偏好生效范围"
+          :label="t('preferences.profile.filters.scopeLabel')"
           :options="scopeOptions"
-          search-placeholder="搜索项目名称或 ID"
+          :search-placeholder="t('preferences.profile.filters.scopeSearch')"
         />
       </div>
       <div class="personal-profile-toolbar-actions">
         <span v-if="conflictsOnly" class="muted">
-          显示 {{ visibleConflicts.length }} / {{ conflicts.length }} 组待判断
+          {{
+            t('preferences.profile.filters.conflictsCount', {
+              visible: visibleConflicts.length,
+              total: conflicts.length,
+            })
+          }}
         </span>
         <span v-else-if="activeReviewState !== 'all'" class="muted">
-          显示 {{ visibleItems.length }} 条{{ activeReviewState === 'pending' ? '待确认' : '已确认' }}偏好
+          {{
+            t('preferences.profile.filters.reviewCount', {
+              count: visibleItems.length,
+              status: activeReviewState === 'pending'
+                ? t('preferences.profile.summary.pending')
+                : activeReviewState === 'agent_confirmed'
+                  ? t('preferences.profile.summary.agentConfirmed')
+                  : t('preferences.profile.summary.confirmed'),
+            })
+          }}
         </span>
         <span v-else class="muted">
-          {{ visibleItems.length === items.length ? `${items.length} 条个人理解` : `显示 ${visibleItems.length} / ${items.length}` }}
+          {{
+            visibleItems.length === items.length
+              ? t('preferences.profile.filters.personalUnderstanding', { count: items.length })
+              : t('preferences.profile.filters.visibleCount', {
+                visible: visibleItems.length,
+                total: items.length,
+              })
+          }}
         </span>
-        <button class="toolbar-action" type="button" @click="load()">刷新</button>
+        <button class="toolbar-action" type="button" @click="load()">
+          {{ t('common.actions.refresh') }}
+        </button>
       </div>
     </div>
 
     <section
       v-if="conflictsOnly"
       class="preference-conflict-workbench"
-      aria-label="疑似冲突待判断组"
+      :aria-label="t('preferences.profile.workbench.aria')"
     >
       <header>
         <div>
           <p class="eyebrow">CONFLICT WORKBENCH</p>
-          <h2>逐组成对比较，再决定如何生效</h2>
+          <h2>{{ t('preferences.profile.workbench.title') }}</h2>
         </div>
-        <p>系统只根据“同一偏好键、同一生效范围、内容不同”提出疑似冲突，不会自动覆盖任何记录。</p>
+        <p>{{ t('preferences.profile.workbench.copy') }}</p>
       </header>
       <div class="preference-conflict-list">
         <article
@@ -422,7 +483,7 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
         >
           <div class="preference-conflict-card-heading">
             <div>
-              <span>待判断组 {{ index + 1 }}</span>
+              <span>{{ t('preferences.profile.workbench.group', { index: index + 1 }) }}</span>
               <h3>{{ conflict.preferenceKey }}</h3>
             </div>
             <div>
@@ -430,24 +491,24 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
               <strong>
                 {{
                   conflict.aiRecord
-                    ? '待 AI 使用时判断'
+                    ? t('preferences.profile.workbench.aiPending')
                     : conflict.recommendedAction === 'merge'
-                      ? '建议合并'
-                      : '需要人工判断'
+                      ? t('preferences.profile.workbench.mergeSuggested')
+                      : t('preferences.profile.workbench.humanReview')
                 }}
               </strong>
             </div>
           </div>
           <div class="preference-conflict-pair">
             <section>
-              <span>A · 较早记录</span>
+              <span>{{ t('preferences.profile.workbench.older') }}</span>
               <strong>{{ conflict.left.title }}</strong>
               <p>{{ preferenceValue(conflict.left) }}</p>
               <small>{{ formatTime(latestItemValue(conflict.left)) }}</small>
             </section>
             <i aria-hidden="true">↔</i>
             <section>
-              <span>B · 较新记录</span>
+              <span>{{ t('preferences.profile.workbench.newer') }}</span>
               <strong>{{ conflict.right.title }}</strong>
               <p>{{ preferenceValue(conflict.right) }}</p>
               <small>{{ formatTime(latestItemValue(conflict.right)) }}</small>
@@ -455,10 +516,14 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
           </div>
           <footer>
             <div>
-              <span>判断原因</span>
+              <span>{{ t('preferences.profile.workbench.reason') }}</span>
               <p>{{ conflict.reason }}</p>
               <small v-if="conflict.difference.rightOnly.length">
-                B 新增：{{ conflict.difference.rightOnly.join('、') }}
+                {{
+                  t('preferences.profile.workbench.additions', {
+                    values: conflict.difference.rightOnly.join('、'),
+                  })
+                }}
               </small>
             </div>
             <div class="preference-conflict-actions">
@@ -470,28 +535,40 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
               >
                 {{
                   conflict.aiRecord
-                    ? '已交给 AI'
+                    ? t('preferences.profile.workbench.deferred')
                     : deferringConflictId === conflict.id
-                      ? '正在交给 AI…'
-                      : '交给 AI，使用时处理'
+                      ? t('preferences.profile.workbench.deferring')
+                      : t('preferences.profile.workbench.defer')
                 }}
               </button>
               <button class="primary-action" type="button" @click="activeConflict = conflict">
-                现在人工处理
+                {{ t('preferences.profile.workbench.handleNow') }}
               </button>
             </div>
           </footer>
         </article>
       </div>
       <div v-if="loading || !visibleConflicts.length" class="empty-state">
-        {{ loading ? '正在检查疑似冲突…' : conflicts.length ? '当前筛选范围没有疑似冲突' : '当前没有需要处理的疑似冲突' }}
+        {{
+          loading
+            ? t('preferences.profile.workbench.loading')
+            : conflicts.length
+              ? t('preferences.profile.workbench.noFiltered')
+              : t('preferences.profile.workbench.empty')
+        }}
       </div>
     </section>
 
     <div v-else class="personal-profile-layout">
-      <section class="personal-profile-directory" aria-label="协作偏好内容">
+      <section
+        class="personal-profile-directory"
+        :aria-label="t('preferences.profile.directory.aria')"
+      >
         <div class="personal-profile-table-head" aria-hidden="true">
-          <span>维度</span><span>内容</span><span>状态、范围与来源</span><span>更新时间</span>
+          <span>{{ t('preferences.profile.directory.aspect') }}</span>
+          <span>{{ t('preferences.profile.directory.content') }}</span>
+          <span>{{ t('preferences.profile.directory.statusScopeSource') }}</span>
+          <span>{{ t('preferences.profile.directory.updated') }}</span>
         </div>
         <div class="personal-profile-list">
           <button
@@ -510,13 +587,22 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
             <span class="personal-profile-copy"><strong>{{ item.title }}</strong><small>{{ item.body }}</small></span>
             <span class="personal-profile-origin">
               <strong :class="{ 'has-conflict': conflictingIds.has(item.id) }">{{ statusLabel(item) }}</strong>
-              <small>{{ quadrantLabel(item.originQuadrant) }} · {{ scopeLabel(item) }} · {{ item.evidence.length }} 个来源</small>
+              <small>
+                {{ quadrantLabel(item.originQuadrant) }} · {{ scopeLabel(item) }} ·
+                {{ t('preferences.profile.directory.sourceCount', { count: item.evidence.length }) }}
+              </small>
             </span>
             <time>{{ formatTime(latestItemValue(item)) }}</time>
           </button>
         </div>
         <div v-if="loading || !visibleItems.length" class="empty-state">
-          {{ loading ? '正在读取协作偏好…' : items.length ? '当前维度和范围还没有内容' : '会话中出现稳定偏好后，会在这里形成可纠正的协作偏好。' }}
+          {{
+            loading
+              ? t('preferences.profile.directory.loading')
+              : items.length
+                ? t('preferences.profile.directory.noFiltered')
+                : t('preferences.profile.directory.empty')
+          }}
         </div>
       </section>
       <KnowledgeInspector

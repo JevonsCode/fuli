@@ -51,6 +51,7 @@ async def test_structured_supersession_stores_the_exact_replacement_relationship
         'name': 'Updated requirement',
         'source_kind': 'conversation',
         'source_description': 'A reviewed requirement replaces the prior relationship.',
+        'source_uri': 'https://docs.example.invalid/project/requirements',
         'reference_time': datetime(2026, 7, 28, tzinfo=timezone.utc),
         'entities': [
             {'key': 'source', 'name': 'Source', 'type': 'Requirement'},
@@ -87,6 +88,10 @@ async def test_structured_supersession_stores_the_exact_replacement_relationship
     ) in query
     assert parameters['space_id'] == 'personal-space'
     assert parameters['personal_project_id'] == 'project-a'
+    assert parameters['source_uri'] == (
+        'https://docs.example.invalid/project/requirements'
+    )
+    assert 'fuli_source_uri: $source_uri' in query
     assert 'ON CREATE SET entity.group_id' in query
     assert 'ON CREATE SET edge.group_id' in query
     assert 'coalesce(edge.episodes, []) + $episode_id' in query

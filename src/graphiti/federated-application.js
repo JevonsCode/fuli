@@ -23,6 +23,23 @@ import {
   sourceConsoleUrl
 } from './source-marker.js';
 import { resolvePersonalProjectPath } from './project-path-context.js';
+import { TaskContextRegistry } from '../mcp/task-context-registry.js';
+import {
+  agentProjectResolution,
+  beginTaskContext as beginTaskContextWorkflow,
+  checkpointTaskKnowledge as checkpointTaskKnowledgeWorkflow,
+  discoverCommonKnowledgeCandidates as discoverCommonKnowledgeCandidatesWorkflow,
+  providerCommonKnowledgePromotion,
+  recordDecisionTrace as recordDecisionTraceWorkflow,
+  recordKnowledgeFeedback as recordKnowledgeFeedbackWorkflow,
+  searchCurrentProjectKnowledge as searchCurrentProjectKnowledgeWorkflow
+} from './agent-knowledge-workflows.js';
+import {
+  assertPublicKnowledgeEligible,
+  providerConfirmationActor,
+  providerConfirmationBasis,
+  providerEpisode
+} from './knowledge-provider-mapping.js';
 
 export function openFederatedGraphApplication({
   runtimeConfigPath,
@@ -51,7 +68,9 @@ export class FederatedGraphApplication {
     capturePolicyStore = new CapturePolicyStore(),
     agentAccessPolicyStore = new AgentAccessPolicyStore(),
     consoleUrl = sourceConsoleUrl(null),
-    projectPathResolver = resolvePersonalProjectPath
+    projectPathResolver = resolvePersonalProjectPath,
+    taskContextRegistry = new TaskContextRegistry(),
+    providerRequestTimeoutMs = undefined
   } = {}) {
     this.graphiti = true;
     this.config = config;
@@ -59,10 +78,12 @@ export class FederatedGraphApplication {
     this.agentAccessPolicyStore = agentAccessPolicyStore;
     this.consoleUrl = consoleUrl;
     this.projectPathResolver = projectPathResolver;
+    this.taskContextRegistry = taskContextRegistry;
     this.personal = new GraphitiProviderClient({
       baseUrl: config.personal.providerUrl,
       accessToken: config.personal.accessToken,
-      fetchImpl
+      fetchImpl,
+      requestTimeoutMs: providerRequestTimeoutMs
     });
     this.workspaces = new Map(
       config.workspaces.map((workspace) => {
@@ -72,11 +93,29 @@ export class FederatedGraphApplication {
           client: new GraphitiProviderClient({
             baseUrl: url,
             accessToken: workspace.accessToken,
-            fetchImpl
+            fetchImpl,
+            requestTimeoutMs: providerRequestTimeoutMs
           })
         }];
       })
     );
+  }
+
+  async beginTaskContext(input) {
+    return beginTaskContextWorkflow(this, input);
+  }
+
+  async checkpointTaskKnowledge(input) {
+    return checkpointTaskKnowledgeWorkflow(this, input);
+  }
+
+  verifyTaskCheckpoint({ sessionId }) {
+    return this.taskContextRegistry.verify(sessionId);
+  }
+
+  async recordDecisionTrace(input) {
+    this.#assertActivePersonalSpace(input.personalSpaceId);
+    return recordDecisionTraceWorkflow(this, input);
   }
 
   async captureSessionKnowledge(input) {
@@ -377,6 +416,36 @@ export class FederatedGraphApplication {
     };
   }
 
+  async searchCurrentProjectKnowledge(input) {
+    const resolution = await this.#resolvePreferenceProject({
+      personalProjectId: null,
+      projectPath: input.projectPath
+    });
+    return searchCurrentProjectKnowledgeWorkflow(this, resolution, input);
+  }
+
+  async discoverCommonKnowledgeCandidates(input) {
+    this.#assertActivePersonalSpace(input.personalSpaceId);
+    return discoverCommonKnowledgeCandidatesWorkflow(this, input);
+  }
+
+  async previewCommonKnowledgePromotion(input) {
+    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertSafeKnowledgeMutation(input);
+    return this.personal.previewCommonKnowledgePromotion(
+      providerCommonKnowledgePromotion(input)
+    );
+  }
+
+  async applyCommonKnowledgePromotion(input) {
+    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertSafeKnowledgeMutation(input);
+    return this.personal.applyCommonKnowledgePromotion({
+      ...providerCommonKnowledgePromotion(input),
+      operation_actor: input.operationActor ?? 'agent'
+    });
+  }
+
   async getKnowledgeGraph({
     spaceId,
     providerUrl = null,
@@ -423,6 +492,17 @@ export class FederatedGraphApplication {
         use_kind: item.useKind
       }))
     });
+  }
+
+  async recordKnowledgeFeedback(input) {
+    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertSafeKnowledgeMutation({
+      items: input.items.map((item) => ({
+        existenceReason: item.reason,
+        quadrantReason: item.evidenceSummary
+      }))
+    });
+    return recordKnowledgeFeedbackWorkflow(this, input);
   }
 
   async reviseKnowledgeItem(input) {
@@ -1039,22 +1119,11 @@ function preferenceConflictPairKey(leftId, rightId) {
   return [leftId, rightId].sort().join('\u0000');
 }
 
-function agentProjectResolution(resolution) {
-  const result = {
-    status: resolution.status,
-    basis: resolution.basis,
-    personal_project_id: resolution.personalProjectId
-  };
-  if (resolution.candidateCount !== undefined) {
-    result.candidate_count = resolution.candidateCount;
-  }
-  return result;
-}
-
 function assertNoCredentials(input) {
   const content = JSON.stringify({
     name: input.name,
     sourceDescription: input.sourceDescription,
+    sourceUri: input.sourceUri,
     sourceExcerpt: input.sourceExcerpt,
     summary: input.summary,
     entities: input.entities,
@@ -1120,6 +1189,7 @@ function assertSafeKnowledgeMutation(input) {
     note: input.note,
     newProjectName: input.newProjectName,
     newProjectPurpose: input.newProjectPurpose,
+    humanConfirmationReason: input.humanConfirmationReason,
     batchItems: input.items?.map((item) => ({
       existenceReason: item.existenceReason,
       quadrantReason: item.quadrantReason
@@ -1131,95 +1201,6 @@ function assertSafeKnowledgeMutation(input) {
       'Knowledge revision contains credentials and cannot be stored'
     );
   }
-}
-
-function providerEpisode(input) {
-  return {
-    idempotency_key: input.idempotencyKey,
-    session_id: input.sessionId,
-    name: input.name,
-    source_kind: input.sourceKind,
-    source_description: input.sourceDescription,
-    source_application: input.sourceApplication ?? null,
-    source_turn_id: input.sourceTurnId ?? null,
-    source_excerpt: input.sourceExcerpt ?? null,
-    reference_time: input.referenceTime,
-    summary: input.summary ?? '',
-    sensitivity: input.sensitivity ?? 'normal',
-    entities: input.entities.map((entity) => ({
-      key: entity.key,
-      name: entity.name,
-      type: entity.type,
-      summary: entity.summary ?? '',
-      origin_quadrant: entity.originQuadrant ?? 'known_known',
-      current_quadrant: entity.currentQuadrant ?? entity.originQuadrant ?? 'known_known',
-      epistemic_status: entity.epistemicStatus ?? 'confirmed',
-      confirmation_status: entity.confirmationStatus,
-      confirmation_basis: providerConfirmationBasis(entity.confirmationBasis),
-      reasoning_summary: entity.reasoningSummary ?? null,
-      profile_aspect: entity.profileAspect ?? null,
-      inheritance_mode: entity.inheritanceMode ?? 'local_only',
-      inherited_project_ids: entity.inheritedProjectIds ?? [],
-      attributes: entity.attributes ?? {}
-    })),
-    relationships: input.relationships.map((relationship) => ({
-      key: relationship.key,
-      source: relationship.source,
-      target: relationship.target,
-      type: relationship.type,
-      fact: relationship.fact,
-      valid_at: relationship.validAt ?? null,
-      invalid_at: relationship.invalidAt ?? null,
-      supersedes: relationship.supersedes ?? [],
-      confidence: relationship.confidence ?? 1,
-      origin_quadrant: relationship.originQuadrant ?? 'known_known',
-      current_quadrant: relationship.currentQuadrant ??
-        relationship.originQuadrant ?? 'known_known',
-      epistemic_status: relationship.epistemicStatus ?? 'confirmed',
-      confirmation_status: relationship.confirmationStatus,
-      confirmation_basis: providerConfirmationBasis(relationship.confirmationBasis),
-      reasoning_summary: relationship.reasoningSummary ?? null,
-      profile_aspect: relationship.profileAspect ?? null,
-      inheritance_mode: relationship.inheritanceMode ?? 'local_only',
-      inherited_project_ids: relationship.inheritedProjectIds ?? [],
-      attributes: relationship.attributes ?? {}
-    }))
-  };
-}
-
-function assertPublicKnowledgeEligible(episode) {
-  const blocked = [...episode.entities, ...episode.relationships].find((item) =>
-    item.profile_aspect ||
-    item.confirmation_status !== 'confirmed' ||
-    !item.confirmation_basis?.confirmed_by ||
-    !item.confirmation_basis?.confirmed_at ||
-    !['user', 'authoritative_source'].includes(item.confirmation_basis.confirmed_by.kind)
-  );
-  if (blocked) {
-    throw new TypeError(
-      'Only knowledge with an auditable confirmation can enter public review'
-    );
-  }
-}
-
-function providerConfirmationBasis(basis) {
-  if (!basis) return undefined;
-  return {
-    existence_reason: basis.existenceReason,
-    quadrant_reason: basis.quadrantReason,
-    proposed_by: providerConfirmationActor(basis.proposedBy),
-    confirmed_by: providerConfirmationActor(basis.confirmedBy),
-    confirmed_at: basis.confirmedAt ?? null,
-    agent_policy_version: basis.agentPolicyVersion ?? null
-  };
-}
-
-function providerConfirmationActor(actor) {
-  if (!actor) return null;
-  return {
-    kind: actor.kind,
-    label: actor.label ?? null
-  };
 }
 
 function providerProjectProfile(profile) {

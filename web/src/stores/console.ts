@@ -2,6 +2,7 @@ import { computed, ref, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
 
 import { getJson, patchJson } from '@/api/client'
+import { t } from '@/i18n'
 import type {
   AgentAccessPolicy,
   CapabilityName,
@@ -48,8 +49,8 @@ export const useConsoleStore = defineStore('console', () => {
       if (state.value) state.value = { ...state.value, capturePolicy: policy }
       notify(
         enabled
-          ? '自动沉淀已开启；Agent 会继续把新的稳定会话知识写入本机。'
-          : '自动沉淀已关闭；已有知识仍可读取，但不会写入新的会话内容。',
+          ? t('console.captureNotices.enabled')
+          : t('console.captureNotices.disabled'),
       )
     } catch (error) {
       reportError(error)
@@ -65,8 +66,8 @@ export const useConsoleStore = defineStore('console', () => {
       if (state.value) state.value = { ...state.value, agentAccessPolicy: policy }
       notify(
         enabled
-          ? 'Agent 使用已开启；已连接的 Agent 可以调用 FULI。'
-          : 'Agent 使用已关闭；管理界面仍可使用，但所有 Agent 调用都会被拦截。',
+          ? t('console.agentAccess.enabledNotice')
+          : t('console.agentAccess.disabledNotice'),
       )
     } catch (error) {
       reportError(error)
@@ -83,7 +84,7 @@ export const useConsoleStore = defineStore('console', () => {
 
   function reportError(error: unknown) {
     feedback.value = {
-      message: error instanceof Error ? error.message : '操作失败',
+      message: error instanceof Error ? error.message : t('common.errors.operationFailed'),
       tone: 'error',
     }
   }

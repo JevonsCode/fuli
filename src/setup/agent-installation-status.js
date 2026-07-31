@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 
 import { replaceFuliTable } from './codex-config.js';
 import { isCodexBootstrapCurrent } from './codex-bootstrap.js';
+import { hasCurrentClaudeCodeHooks } from './claude-code-config.js';
 import { isSessionSkillCurrent } from './session-skill.js';
 import { readJsonFile } from '../storage/json-file.js';
 
@@ -27,9 +28,16 @@ export function inspectAgentInstallations(agents, context, {
       context,
       { fileExists, readText }
     );
+    const claudeLifecycleCurrent = agent.id !== 'claude-code' ||
+      hasCurrentClaudeCodeHooks(readJson(agent.settingsPath));
 
     let integrationStatus = 'not_connected';
-    if (registration.current && skillsCurrent && codexBootstrapCurrent) {
+    if (
+      registration.current
+      && skillsCurrent
+      && codexBootstrapCurrent
+      && claudeLifecycleCurrent
+    ) {
       integrationStatus = 'connected';
     }
     else if (registration.present || skillsPresent) integrationStatus = 'update_available';
@@ -42,6 +50,9 @@ export function inspectAgentInstallations(agents, context, {
         skills: skillsCurrent ? 'current' : skillsPresent ? 'outdated' : 'missing',
         ...(agent.id === 'codex'
           ? { bootstrap: codexBootstrapCurrent ? 'current' : 'outdated' }
+          : {}),
+        ...(agent.id === 'claude-code'
+          ? { lifecycleHooks: claudeLifecycleCurrent ? 'current' : 'outdated' }
           : {})
       }
     };
@@ -71,7 +82,8 @@ function inspectRegistration(agent, context, readers) {
       present,
       current: present &&
         server.command === expected.command &&
-        sameStrings(server.args, expected.args)
+        sameStrings(server.args, expected.args) &&
+        (agent.id !== 'claude-code' || server.alwaysLoad === true)
     };
   } catch {
     return { present: false, current: false };

@@ -112,6 +112,7 @@ def test_personal_project_identity_coalesces_graphiti_project_entity():
                 name='Project definition',
                 source_description='Confirmed project definition',
                 source_kind='conversation',
+                source_uri='https://docs.example.invalid/project/definition',
                 summary='Defines Fuli as a context graph tool',
                 source_application='codex',
                 source_turn_id='turn-7',
@@ -152,6 +153,9 @@ def test_personal_project_identity_coalesces_graphiti_project_entity():
     )
     assert [item.id for item in project_nodes[0].evidence] == ['episode-1']
     assert project_nodes[0].evidence[0].source_application == 'codex'
+    assert project_nodes[0].evidence[0].source_uri == (
+        'https://docs.example.invalid/project/definition'
+    )
     assert next(edge for edge in edges if edge.id == 'edge-1').source == project_nodes[0].id
 
 

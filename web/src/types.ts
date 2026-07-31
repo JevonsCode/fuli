@@ -100,6 +100,7 @@ export interface EvidenceRecord {
   summary?: string
   source_description?: string
   source_kind?: string
+  source_uri?: string
   source_application?: string
   source_excerpt?: string
   session_id?: string

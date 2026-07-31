@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 
 import { putJson } from '@/api/client'
+import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
 
 type SourceDraft = {
@@ -37,32 +38,44 @@ const scopeField = ref<HTMLTextAreaElement | null>(null)
 const boundariesField = ref<HTMLTextAreaElement | null>(null)
 const sourcesHeading = ref<HTMLElement | null>(null)
 
-const materialLabel = computed(() => ({
-  ProjectPurpose: '项目目标',
-  ProjectScope: '项目范围',
-  ProjectSource: '资料来源',
-  ProjectBoundary: '项目边界',
-  ProjectAssessment: '档案评估',
-  AssessmentDimension: '评估维度',
-  PersonalProject: '项目档案',
-  RelatedPersonalProject: '关联项目',
-}[props.materialType ?? ''] ?? '项目档案'))
+const materialTypes = new Set([
+  'ProjectPurpose',
+  'ProjectScope',
+  'ProjectSource',
+  'ProjectBoundary',
+  'ProjectAssessment',
+  'AssessmentDimension',
+  'PersonalProject',
+  'RelatedPersonalProject',
+])
+const materialLabel = computed(() => {
+  const type = props.materialType ?? ''
+  return materialTypes.has(type)
+    ? t(`projects.profileDialog.materialTypes.${type}`)
+    : t('projects.profileDialog.materialTypes.fallback')
+})
 
-const sourceKinds = [
-  ['prd', 'PRD'],
-  ['product_document', '产品文档'],
-  ['technical_document', '技术文档'],
-  ['frontend_repository', '前端仓库'],
-  ['backend_repository', '后端仓库'],
-  ['repository', '代码仓库'],
-  ['design', '设计稿'],
-  ['runbook', '运行手册'],
-  ['monitoring', '监控'],
-  ['issue_tracker', '事项追踪'],
-  ['other', '其他'],
+const SOURCE_KIND_VALUES = [
+  'prd',
+  'product_document',
+  'technical_document',
+  'frontend_repository',
+  'backend_repository',
+  'repository',
+  'design',
+  'runbook',
+  'monitoring',
+  'issue_tracker',
+  'other',
 ] as const
+const sourceKinds = computed(() =>
+  SOURCE_KIND_VALUES.map((value) => [
+    value,
+    value === 'prd' ? 'PRD' : t(`projects.profileDialog.sourceTypes.${value}`),
+  ] as const),
+)
 
-const sourceKindValues = new Set<string>(sourceKinds.map(([value]) => value))
+const sourceKindValues = new Set<string>(SOURCE_KIND_VALUES)
 const sensitivityValues = new Set(['normal', 'private', 'restricted'])
 
 watch(
@@ -140,11 +153,11 @@ async function save() {
   if (!props.project || busy.value) return
   const projectName = name.value.trim()
   if (!projectName) {
-    error.value = '请填写项目名称'
+    error.value = t('projects.profileDialog.errors.nameRequired')
     return
   }
   if (sources.value.some((source) => !source.title.trim())) {
-    error.value = '每条资料来源都需要名称'
+    error.value = t('projects.profileDialog.errors.sourceNameRequired')
     return
   }
   busy.value = true
@@ -174,7 +187,9 @@ async function save() {
     emit('saved', saved)
     emit('close')
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '项目资料保存失败'
+    error.value = cause instanceof Error
+      ? cause.message
+      : t('projects.profileDialog.errors.saveFailed')
   } finally {
     busy.value = false
   }
@@ -194,92 +209,90 @@ function focusRelevantField() {
       <header class="project-profile-dialog-header">
         <div>
           <p class="eyebrow">PROJECT MATERIAL</p>
-          <h3>编辑{{ materialLabel }}</h3>
-          <p>
-            这些字段属于项目档案；保存后会重新生成关系图中的项目资料节点。
-          </p>
+          <h3>{{ t('projects.profileDialog.title', { material: materialLabel }) }}</h3>
+          <p>{{ t('projects.profileDialog.intro') }}</p>
         </div>
         <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">
-          关闭
+          {{ t('common.actions.close') }}
         </button>
       </header>
 
       <div class="project-profile-fields">
         <label>
-          <span>项目名称</span>
+          <span>{{ t('projects.profileDialog.projectName') }}</span>
           <input v-model="name" name="project-name" maxlength="160" required />
         </label>
         <label>
-          <span>生命周期</span>
+          <span>{{ t('projects.profileDialog.lifecycle') }}</span>
           <select v-model="lifecycle" name="project-lifecycle">
-            <option value="planned">计划中</option>
-            <option value="active">进行中</option>
-            <option value="maintenance">维护中</option>
-            <option value="archived">已归档</option>
+            <option value="planned">{{ t('projects.profileDialog.lifecycles.planned') }}</option>
+            <option value="active">{{ t('projects.profileDialog.lifecycles.active') }}</option>
+            <option value="maintenance">{{ t('projects.profileDialog.lifecycles.maintenance') }}</option>
+            <option value="archived">{{ t('projects.profileDialog.lifecycles.archived') }}</option>
           </select>
         </label>
         <label class="project-profile-wide-field">
-          <span>项目目标</span>
+          <span>{{ t('projects.profileDialog.purpose') }}</span>
           <textarea
             ref="purposeField"
             v-model="purpose"
             name="project-purpose"
             maxlength="4096"
             rows="4"
-            placeholder="说明项目为什么存在、希望达成什么结果"
+            :placeholder="t('projects.profileDialog.purposePlaceholder')"
           />
         </label>
         <label class="project-profile-wide-field">
-          <span>项目范围</span>
+          <span>{{ t('projects.profileDialog.scope') }}</span>
           <textarea
             ref="scopeField"
             v-model="scope"
             name="project-scope"
             maxlength="4096"
             rows="4"
-            placeholder="说明项目包含的对象、流程或交付物"
+            :placeholder="t('projects.profileDialog.scopePlaceholder')"
           />
         </label>
         <label class="project-profile-wide-field">
-          <span>技术摘要</span>
+          <span>{{ t('projects.profileDialog.technicalSummary') }}</span>
           <textarea
             v-model="technicalSummary"
             name="project-technical-summary"
             maxlength="4096"
             rows="4"
-            placeholder="记录关键技术结构和运行方式"
+            :placeholder="t('projects.profileDialog.technicalPlaceholder')"
           />
         </label>
         <label class="project-profile-wide-field">
-          <span>项目边界</span>
+          <span>{{ t('projects.profileDialog.boundary') }}</span>
           <textarea
             ref="boundariesField"
             v-model="boundaries"
             name="project-boundaries"
             maxlength="8192"
             rows="5"
-            placeholder="每行一条明确不在本项目范围内的边界"
+            :placeholder="t('projects.profileDialog.boundaryPlaceholder')"
           />
-          <small>每行一条；重复内容会在保存时合并。</small>
+          <small>{{ t('projects.profileDialog.boundaryHint') }}</small>
         </label>
       </div>
 
       <section class="project-source-editor">
         <div ref="sourcesHeading" class="project-source-editor-heading" tabindex="-1">
           <div>
-            <h4>资料来源</h4>
-            <p>保留资料类型、地址和敏感级别；这些内容会投影为图中的资料来源节点。</p>
+            <h4>{{ t('projects.profileDialog.sources') }}</h4>
+            <p>{{ t('projects.profileDialog.sourcesCopy') }}</p>
           </div>
-          <button class="secondary-action" type="button" @click="addSource">添加来源</button>
+          <button class="secondary-action" type="button" @click="addSource">{{ t('projects.profileDialog.addSource') }}</button>
         </div>
         <div v-if="sources.length" class="project-source-list">
           <article v-for="(source, index) in sources" :key="source.key" class="project-source-row">
             <label>
-              <span>名称</span>
+              <span>{{ t('projects.profileDialog.sourceName') }}</span>
               <input v-model="source.title" maxlength="512" required />
             </label>
             <label>
-              <span>类型</span>
+              <span>{{ t('projects.profileDialog.sourceType') }}</span>
               <select v-model="source.kind">
                 <option v-for="[value, label] in sourceKinds" :key="value" :value="value">
                   {{ label }}
@@ -287,39 +300,39 @@ function focusRelevantField() {
               </select>
             </label>
             <label class="project-source-wide-field">
-              <span>地址</span>
-              <input v-model="source.uri" maxlength="2048" placeholder="可选，例如仓库或文档地址" />
+              <span>{{ t('projects.profileDialog.sourceUri') }}</span>
+              <input v-model="source.uri" maxlength="2048" :placeholder="t('projects.profileDialog.sourceUriPlaceholder')" />
             </label>
             <label class="project-source-wide-field">
-              <span>摘要</span>
+              <span>{{ t('projects.profileDialog.sourceSummary') }}</span>
               <textarea v-model="source.summary" maxlength="4096" rows="2" />
             </label>
             <label>
-              <span>敏感级别</span>
+              <span>{{ t('projects.profileDialog.sensitivity') }}</span>
               <select v-model="source.sensitivity">
-                <option value="normal">普通</option>
-                <option value="private">私有</option>
-                <option value="restricted">受限</option>
+                <option value="normal">{{ t('projects.profileDialog.sensitivities.normal') }}</option>
+                <option value="private">{{ t('projects.profileDialog.sensitivities.private') }}</option>
+                <option value="restricted">{{ t('projects.profileDialog.sensitivities.restricted') }}</option>
               </select>
             </label>
             <button class="text-action project-source-remove" type="button" @click="removeSource(index)">
-              移除
+              {{ t('common.actions.remove') }}
             </button>
           </article>
         </div>
-        <p v-else class="project-source-empty">还没有登记资料来源。</p>
+        <p v-else class="project-source-empty">{{ t('projects.profileDialog.noSources') }}</p>
       </section>
 
       <p class="project-profile-state-note">
-        项目资料不使用普通知识的“确认 / 失效 / 恢复”状态；要改变内容，请直接编辑档案。
+        {{ t('projects.profileDialog.stateBoundary') }}
       </p>
       <p v-if="error" class="project-profile-error" role="alert">{{ error }}</p>
       <footer class="project-profile-dialog-actions">
         <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">
-          取消
+          {{ t('common.actions.cancel') }}
         </button>
         <button class="primary-action" type="submit" :disabled="busy">
-          {{ busy ? '正在保存…' : '保存项目资料' }}
+          {{ busy ? t('projects.profileDialog.saving') : t('projects.profileDialog.save') }}
         </button>
       </footer>
     </form>

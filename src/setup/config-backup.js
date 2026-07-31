@@ -12,11 +12,26 @@ export function backupAgentConfig(agent, {
   makeDirectory = mkdirSync,
   copyFile = copyFileSync
 }) {
-  if (!fileExists(agent.configPath)) return null;
+  const sources = [
+    { path: agent.configPath, suffix: '' },
+    ...(agent.settingsPath
+      ? [{ path: agent.settingsPath, suffix: '-settings' }]
+      : [])
+  ].filter(({ path }) => path && fileExists(path));
+  if (sources.length === 0) return null;
   makeDirectory(backupDir, { recursive: true });
   const timestamp = now().toISOString().replaceAll(':', '-').replaceAll('.', '-');
-  const extension = extname(agent.configPath) || '.bak';
-  const backupPath = join(backupDir, `${agent.id}-${timestamp}${extension}`);
-  copyFile(agent.configPath, backupPath);
-  return backupPath;
+  const backups = sources.map(({ path, suffix }) => {
+    const extension = extname(path) || '.bak';
+    const backupPath = join(
+      backupDir,
+      `${agent.id}${suffix}-${timestamp}${extension}`
+    );
+    copyFile(path, backupPath);
+    return { path, backupPath };
+  });
+  return (
+    backups.find(({ path }) => path === agent.configPath)
+    ?? backups[0]
+  ).backupPath;
 }

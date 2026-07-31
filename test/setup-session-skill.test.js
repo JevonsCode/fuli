@@ -113,19 +113,25 @@ test('bundled session Skill advertises both retrieval and capture triggers', () 
   assert.ok(description.length <= 500);
 });
 
-test('bundled session Skill loads preferences for every task through projectPath', () => {
+test('bundled session Skill uses hook context with an exact preference fallback', () => {
   const skill = readFileSync(
     join(PROJECT_ROOT, 'skills', 'capturing-session-knowledge', 'SKILL.md'),
     'utf8'
   );
 
   assert.match(skill, /start of every user task/i);
+  assert.match(skill, /UserPromptSubmit.*begin_task_context/is);
+  assert.match(skill, /do not redundantly call `get_collaboration_preferences`/i);
+  assert.match(skill, /prompt-only fallback/i);
   assert.match(skill, /before any other tool or answer/i);
-  assert.match(skill, /projectPath.*current working directory/i);
+  assert.match(skill, /projectPath.*current working directory/is);
   assert.match(skill, /never stores or returns/i);
   assert.match(skill, /Do not infer or guess `personalProjectId`/i);
   assert.match(skill, /write tools?.*actual payload/is);
   assert.match(skill, /final answer.*not compliance/is);
+  assert.match(skill, /search_current_project_knowledge/);
+  assert.match(skill, /searches that child project first.*inheritable knowledge/is);
+  assert.match(skill, /checkpoint_task_knowledge.*capture_candidates.*retain_nothing/is);
 });
 
 test('bundled session Skill gates all-local content lookup behind explicit consent', () => {

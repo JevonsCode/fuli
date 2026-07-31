@@ -3,18 +3,27 @@ import test from 'node:test';
 
 import { MCP_INSTRUCTIONS } from '../src/mcp/instructions.js';
 
-test('MCP instructions require task-scoped preference loading within the 2KB budget', () => {
+test('MCP instructions support hook-provided task context and an exact fallback within 2KB', () => {
   assert.ok(Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8') <= 2048);
   assert.match(MCP_INSTRUCTIONS, /each user task/i);
+  assert.match(MCP_INSTRUCTIONS, /begin_task_context/i);
+  assert.match(MCP_INSTRUCTIONS, /hook-provided task context/i);
   assert.match(MCP_INSTRUCTIONS, /get_collaboration_preferences/);
-  assert.match(MCP_INSTRUCTIONS, /call exactly get_collaboration_preferences/i);
+  assert.match(MCP_INSTRUCTIONS, /otherwise.*call exactly get_collaboration_preferences/is);
   assert.match(MCP_INSTRUCTIONS, /never substitute.*project action/i);
-  assert.match(MCP_INSTRUCTIONS, /before other tools\/answer/i);
+  assert.match(MCP_INSTRUCTIONS, /before other tools\/answer.*fallback/is);
   assert.match(MCP_INSTRUCTIONS, /projectPath=cwd/i);
   assert.match(MCP_INSTRUCTIONS, /all effective_preferences/i);
   assert.match(MCP_INSTRUCTIONS, /personal-global everywhere/i);
   assert.match(MCP_INSTRUCTIONS, /writes?.*actual payload/i);
   assert.match(MCP_INSTRUCTIONS, /final text.*not compliance/i);
   assert.match(MCP_INSTRUCTIONS, /never guess personalProjectId/i);
+  assert.match(MCP_INSTRUCTIONS, /search_current_project_knowledge/i);
+  assert.match(MCP_INSTRUCTIONS, /search_knowledge_graph/i);
+  assert.match(MCP_INSTRUCTIONS, /active child.*inheritable parent/is);
+  assert.match(MCP_INSTRUCTIONS, /checkpoint_task_knowledge/i);
+  assert.match(MCP_INSTRUCTIONS, /capture_candidates.*retain_nothing/is);
+  assert.match(MCP_INSTRUCTIONS, /record_decision_trace/i);
+  assert.match(MCP_INSTRUCTIONS, /record_knowledge_feedback/i);
   assert.match(MCP_INSTRUCTIONS, /On miss.*noMatchSourceMarker.*leadMarkdown only.*empty markdown/i);
 });

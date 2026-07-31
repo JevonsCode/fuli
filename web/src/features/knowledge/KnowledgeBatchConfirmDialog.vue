@@ -7,6 +7,7 @@ import {
   batchConfirmationBasis,
   quadrantLabel,
 } from '@/features/knowledge/model'
+import { t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
 import type {
@@ -38,7 +39,12 @@ const groupOptions = computed(() =>
   props.groups.map((group) => ({
     value: group.key,
     label: group.label,
-    meta: `${group.kind === 'source' ? '同一来源' : '同一会话'} · ${group.items.length} 条`,
+    meta: t('knowledge.dialogs.batch.groupMeta', {
+      kind: group.kind === 'source'
+        ? t('knowledge.dialogs.batch.sameSource')
+        : t('knowledge.dialogs.batch.sameSession'),
+      count: group.items.length,
+    }),
     search: `${identitySearchText(group.value)} ${group.description}`,
   })),
 )
@@ -66,10 +72,13 @@ const canSubmit = computed(
       || Boolean(confirmerLabel.value.trim())
     ),
 )
-const confirmerOptions = [
-  { value: 'user', label: '用户' },
-  { value: 'authoritative_source', label: '权威来源' },
-]
+const confirmerOptions = computed(() => [
+  { value: 'user', label: t('knowledge.domain.actors.user') },
+  {
+    value: 'authoritative_source',
+    label: t('knowledge.domain.actors.authoritative_source'),
+  },
+])
 
 watch(
   () => props.groups,
@@ -105,13 +114,17 @@ function basisFor(item: KnowledgeItem) {
 
 async function confirmBatch() {
   const group = selectedGroup.value
-  if (!group) return fail('请选择一个来源或会话')
-  if (selectedItems.value.length < 2) return fail('批量确认至少需要选择两条知识')
-  if (!reason.value.trim()) return fail('请说明本次批量确认的依据')
-  if (confirmerKind.value === 'authoritative_source' && !confirmerLabel.value.trim()) {
-    return fail('请填写权威来源名称')
+  if (!group) return fail(t('knowledge.dialogs.batch.errors.groupRequired'))
+  if (selectedItems.value.length < 2) {
+    return fail(t('knowledge.dialogs.batch.errors.itemsRequired'))
   }
-  if (!acknowledged.value) return fail('请先确认已经核对内容与发现时象限')
+  if (!reason.value.trim()) return fail(t('knowledge.dialogs.batch.errors.reasonRequired'))
+  if (confirmerKind.value === 'authoritative_source' && !confirmerLabel.value.trim()) {
+    return fail(t('knowledge.dialogs.batch.errors.sourceNameRequired'))
+  }
+  if (!acknowledged.value) {
+    return fail(t('knowledge.dialogs.batch.errors.acknowledgmentRequired'))
+  }
 
   busy.value = true
   localError.value = ''
@@ -139,11 +152,15 @@ async function confirmBatch() {
         }),
       },
     )
-    store.notify(`已确认 ${result.confirmed_count} 条知识；每条都保留了确认依据与本次确认时间。`)
+    store.notify(t('knowledge.dialogs.batch.confirmed', {
+      count: result.confirmed_count,
+    }))
     emit('saved')
     emit('close')
   } catch (error) {
-    localError.value = error instanceof Error ? error.message : '批量确认失败'
+    localError.value = error instanceof Error
+      ? error.message
+      : t('knowledge.dialogs.batch.errors.failed')
     store.reportError(error)
   } finally {
     busy.value = false
@@ -161,71 +178,80 @@ function fail(message: string) {
       <header class="project-dialog-header">
         <div>
           <p class="eyebrow">BATCH CONFIRMATION</p>
-          <h3>按来源或会话批量确认</h3>
-          <p>一次确认会同时覆盖每条知识的内容与发现时象限，并为每条知识写入独立修订历史。</p>
+          <h3>{{ t('knowledge.dialogs.batch.title') }}</h3>
+          <p>{{ t('knowledge.dialogs.batch.intro') }}</p>
         </div>
-        <button class="secondary-action" type="button" @click="emit('close')">关闭</button>
+        <button class="secondary-action" type="button" @click="emit('close')">{{ t('common.actions.close') }}</button>
       </header>
 
       <form class="batch-confirm-form" @submit.prevent="confirmBatch">
         <section class="batch-confirm-controls">
-          <label>确认范围
+          <label>{{ t('knowledge.dialogs.batch.range') }}
             <SearchableSelect
               v-model="selectedGroupKey"
               :options="groupOptions"
-              label="批量确认范围"
+              :label="t('knowledge.dialogs.batch.rangeLabel')"
               searchable
             />
           </label>
           <div v-if="selectedGroup" class="batch-group-summary">
-            <span>{{ selectedGroup.kind === 'source' ? '同一来源' : '同一会话' }}</span>
+            <span>{{ selectedGroup.kind === 'source'
+              ? t('knowledge.dialogs.batch.sameSource')
+              : t('knowledge.dialogs.batch.sameSession') }}</span>
             <strong>{{ selectedGroup.label }}</strong>
             <p>{{ selectedGroup.description }}</p>
             <small>#{{ compactIdentity(selectedGroup.value, 28) }}</small>
           </div>
           <div class="batch-confirmer-fields">
-            <label>确认者
+            <label>{{ t('knowledge.dialogs.batch.confirmer') }}
               <SearchableSelect
                 v-model="confirmerKind"
                 :options="confirmerOptions"
-                label="批量确认者"
+                :label="t('knowledge.dialogs.batch.confirmerLabel')"
               />
             </label>
-            <label>确认者说明
+            <label>{{ t('knowledge.dialogs.batch.confirmerDescription') }}
               <input
                 v-model="confirmerLabel"
                 maxlength="160"
                 :required="confirmerKind === 'authoritative_source'"
-                :placeholder="confirmerKind === 'user' ? '可选，例如当前用户' : '必填，例如已批准的 PRD'"
+                :placeholder="confirmerKind === 'user'
+                  ? t('knowledge.dialogs.batch.userPlaceholder')
+                  : t('knowledge.dialogs.batch.sourcePlaceholder')"
               />
             </label>
           </div>
-          <label>批量确认依据
+          <label>{{ t('knowledge.dialogs.batch.basis') }}
             <textarea
               v-model="reason"
               maxlength="2000"
               rows="3"
               required
-              placeholder="例如：已按本次会话逐条核对内容及其发现时象限"
+              :placeholder="t('knowledge.dialogs.batch.basisPlaceholder')"
             />
           </label>
           <p class="batch-confirm-rule">
-            Agent 不能作为确认者。确认时间由服务端统一记录，后续修改内容或象限仍会自动回到待确认。
+            {{ t('knowledge.dialogs.batch.agentBoundary') }}
           </p>
         </section>
 
         <section class="batch-confirm-review">
           <div class="batch-review-heading">
             <div>
-              <h4>逐条核对</h4>
-              <p>已选择 {{ selectedItems.length }} / {{ reviewableItems.length }} 条</p>
+              <h4>{{ t('knowledge.dialogs.batch.itemReview') }}</h4>
+              <p>{{ t('knowledge.dialogs.batch.selected', {
+                selected: selectedItems.length,
+                total: reviewableItems.length,
+              }) }}</p>
             </div>
             <button class="secondary-action" type="button" @click="toggleAll">
-              {{ allSelected ? '全部取消' : '全部选择' }}
+              {{ allSelected
+                ? t('knowledge.dialogs.batch.clearAll')
+                : t('knowledge.dialogs.batch.selectAll') }}
             </button>
           </div>
           <p v-if="(selectedGroup?.items.length ?? 0) > 200" class="batch-limit-note">
-            单次最多确认 200 条；完成后可继续处理同一组剩余内容。
+            {{ t('knowledge.dialogs.batch.limit') }}
           </p>
           <div class="batch-review-list">
             <label
@@ -244,21 +270,23 @@ function fail(message: string) {
           </div>
           <label class="batch-confirm-acknowledgement">
             <input v-model="acknowledged" type="checkbox" />
-            <span>我已核对所选知识的内容与发现时象限，并确认上述依据可追溯。</span>
+            <span>{{ t('knowledge.dialogs.batch.acknowledgment') }}</span>
           </label>
         </section>
 
         <p v-if="localError" class="publish-dialog-error" role="alert">{{ localError }}</p>
         <div class="publish-dialog-actions">
           <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">
-            取消
+            {{ t('common.actions.cancel') }}
           </button>
           <button
             class="primary-action"
             type="submit"
             :disabled="!canSubmit"
           >
-            {{ busy ? '正在确认…' : `确认 ${selectedItems.length} 条知识` }}
+            {{ busy
+              ? t('knowledge.dialogs.batch.confirming')
+              : t('knowledge.dialogs.batch.confirmItems', { count: selectedItems.length }) }}
           </button>
         </div>
       </form>

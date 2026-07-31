@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from graphiti_core.edges import EntityEdge
 
 from .models import (
@@ -35,6 +37,9 @@ async def read_edge_epistemic_metadata(store, edge_ids: list[str]) -> dict[str, 
         '''
         MATCH ()-[edge:RELATES_TO]->()
         WHERE edge.uuid IN $edge_ids
+        OPTIONAL MATCH (episode:Episodic)
+        WHERE episode.uuid IN coalesce(edge.episodes, [])
+        WITH edge, collect(DISTINCT episode) AS episodes
         RETURN edge.uuid AS id,
                coalesce(edge.fuli_origin_quadrant, 'known_known') AS origin_quadrant,
                coalesce(edge.fuli_current_quadrant, 'known_known') AS current_quadrant,
@@ -68,6 +73,19 @@ async def read_edge_epistemic_metadata(store, edge_ids: list[str]) -> dict[str, 
                ,coalesce(edge.fuli_distinct_task_count, 0)
                  AS distinct_task_count
                ,edge.fuli_last_used_at AS last_used_at
+               ,coalesce(edge.fuli_negative_evidence_count, 0)
+                 AS negative_evidence_count
+               ,coalesce(edge.fuli_requires_attention, false)
+                 AS requires_attention
+               ,edge.fuli_last_feedback_kind AS last_feedback_kind
+               ,edge.fuli_last_feedback_at AS last_feedback_at
+               ,[episode IN episodes
+                 WHERE episode.fuli_source_uri IS NOT NULL |
+                 {
+                   uri: episode.fuli_source_uri,
+                   reference_time: episode.valid_at,
+                   created_at: episode.created_at
+                 }] AS source_references
         ''',
         edge_ids=edge_ids,
         routing_='r',
@@ -140,10 +158,51 @@ def fact_result(
         qualified_use_count=int(metadata.get('qualified_use_count') or 0),
         distinct_task_count=int(metadata.get('distinct_task_count') or 0),
         last_used_at=_native_datetime(metadata.get('last_used_at')),
+        negative_evidence_count=int(
+            metadata.get('negative_evidence_count') or 0
+        ),
+        requires_attention=metadata.get('requires_attention') is True,
+        last_feedback_kind=metadata.get('last_feedback_kind'),
+        last_feedback_at=_native_datetime(metadata.get('last_feedback_at')),
         scope_distance=int(metadata.get('scope_distance') or 0),
         inherited_from_project_id=metadata.get('inherited_from_project_id'),
         scope_path=metadata.get('scope_path') or [],
+        source_uris=source_uris_from_references(
+            metadata.get('source_references')
+        ),
     )
+
+
+def source_uris_from_references(references, limit: int = 20) -> list[str]:
+    ranked = sorted(
+        (
+            (reference, index)
+            for index, reference in enumerate(references or [])
+            if isinstance(reference, dict) and reference.get('uri')
+        ),
+        key=lambda item: (
+            _source_reference_timestamp(item[0]),
+            -item[1],
+        ),
+        reverse=True,
+    )
+    result = []
+    for reference, _ in ranked:
+        uri = reference['uri']
+        if uri in result:
+            continue
+        result.append(uri)
+        if len(result) == limit:
+            break
+    return result
+
+
+def _source_reference_timestamp(reference: dict) -> float:
+    for field in ('reference_time', 'created_at'):
+        value = _native_datetime(reference.get(field))
+        if isinstance(value, datetime):
+            return value.timestamp()
+    return 0.0
 
 
 def _confirmation_basis(value) -> ConfirmationBasis | None:

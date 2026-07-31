@@ -1,13 +1,19 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
 import { knowledgeItemFromNode } from '@/features/knowledge/model'
+import { setLocale } from '@/i18n'
 import {
   comparePreferenceValues,
   detectPreferenceConflicts,
   mergePreferenceValues,
+  preferenceValue,
 } from './preference-conflicts'
 
 describe('preference conflicts', () => {
+  beforeEach(() => {
+    setLocale('zh-CN', { persist: false })
+  })
+
   it('detects one chronological pair and explains the shared scope and key', () => {
     const older = preference(
       'older',
@@ -105,6 +111,18 @@ describe('preference conflicts', () => {
     }])
 
     expect(conflict.aiRecord?.id).toBe('deferred-1')
+  })
+
+  it('localizes generated explanations without translating stored preference data', () => {
+    setLocale('en-US', { persist: false })
+    const older = preference('older', 'Keep technical terms in English', '2026-07-24T00:04:00Z')
+    const newer = preference('newer', 'Keep product terms in English', '2026-07-24T00:18:00Z')
+
+    const [conflict] = detectPreferenceConflicts([older, newer])
+
+    expect(conflict.scopeLabel).toBe('Personal global')
+    expect(conflict.reason).toContain('Preference key “dashboard.layout”')
+    expect(preferenceValue(conflict.left)).toBe('Keep technical terms in English')
   })
 })
 

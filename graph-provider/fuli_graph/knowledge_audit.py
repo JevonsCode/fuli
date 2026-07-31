@@ -9,6 +9,11 @@ from .knowledge_usage_models import (
     KnowledgeUsageItemResult,
     KnowledgeUsageResult,
 )
+from .knowledge_feedback_models import (
+    KnowledgeFeedbackCreate,
+    KnowledgeFeedbackItemResult,
+    KnowledgeFeedbackResult,
+)
 from .models import (
     KnowledgeAgentReviewCreate,
     KnowledgeAgentViewCreate,
@@ -28,6 +33,12 @@ AGENT_CONFIRMATION_CONFIDENCE_CAP = 0.85
 USAGE_WEIGHTS = {
     'cited': (0.12, 0.04),
     'applied': (0.18, 0.06),
+}
+NEGATIVE_EVIDENCE_WEIGHTS = {
+    'rejected': (0.35, 0.25),
+    'validation_failed': (0.35, 0.30),
+    'contradicted': (0.45, 0.40),
+    'outdated': (0.20, 0.20),
 }
 
 
@@ -144,6 +155,130 @@ async def record_knowledge_usage(
         duplicate_count=sum(not result.recorded for result in results),
         promoted_count=sum(result.promoted for result in results),
         items=results,
+    )
+
+
+async def record_knowledge_feedback(
+    store,
+    actor: dict,
+    request: KnowledgeFeedbackCreate,
+) -> KnowledgeFeedbackResult:
+    """Record bounded negative evidence without overriding human authority."""
+    store._require_personal()
+    space = await store.authorize(actor, request.personal_space_id, 'maintainer')
+    if space['kind'] != 'personal':
+        raise HTTPException(status_code=422, detail='knowledge feedback is personal-only')
+
+    lock = store._group_locks.setdefault(space['group_id'], asyncio.Lock())
+    results = []
+    async with lock:
+        for item in request.items:
+            results.append(await _record_one_knowledge_feedback(
+                store, actor, space, request, item
+            ))
+    return KnowledgeFeedbackResult(
+        recorded_count=sum(result.recorded for result in results),
+        duplicate_count=sum(not result.recorded for result in results),
+        items=results,
+    )
+
+
+async def _record_one_knowledge_feedback(store, actor, space, request, item):
+    state = await _read_usage_state(
+        store, space, item.item_id, item.item_kind
+    )
+    if state is None:
+        raise HTTPException(status_code=404, detail='knowledge item not found')
+    if state.get('invalid_at') is not None:
+        raise HTTPException(
+            status_code=409,
+            detail='historical knowledge cannot receive new feedback evidence',
+        )
+    generation = int(state.get('usage_generation') or 1)
+    previous_status = state.get('confirmation_status') or 'pending'
+    trusted_reporter = item.reported_by_kind in {
+        'user', 'authoritative_source'
+    }
+    next_status = (
+        'pending'
+        if previous_status == 'agent_confirmed' and trusted_reporter
+        else previous_status
+    )
+    basis = json_object(state.get('confirmation_basis_json'))
+    if next_status == 'pending' and previous_status == 'agent_confirmed':
+        basis = _pending_feedback_basis(basis, item.reason)
+    utility_weight, confidence_weight = NEGATIVE_EVIDENCE_WEIGHTS[
+        item.feedback_kind
+    ]
+    utility_score = round(max(
+        0.0,
+        float(state.get('utility_score') or 0) - utility_weight,
+    ), 4)
+    confidence_score = round(max(
+        0.0,
+        float(
+            state['confidence_score']
+            if state.get('confidence_score') is not None else 0.5
+        ) - confidence_weight,
+    ), 4)
+    feedback_at = datetime.now(timezone.utc)
+    audit_id = stable_uuid(
+        space['id'],
+        'knowledge-feedback',
+        item.item_kind,
+        item.item_id,
+        str(generation),
+        request.task_id,
+        item.feedback_kind,
+    )
+    records, _, _ = await store.runtime.driver.execute_query(
+        _knowledge_feedback_query(item.item_kind),
+        space_id=space['id'],
+        group_id=space['group_id'],
+        item_id=item.item_id,
+        item_kind=item.item_kind,
+        audit_id=audit_id,
+        task_id=request.task_id,
+        session_id=request.session_id,
+        tool_name=request.tool_name,
+        feedback_kind=item.feedback_kind,
+        reported_by_kind=item.reported_by_kind,
+        reason=item.reason,
+        evidence_summary=item.evidence_summary,
+        source_uri=item.source_uri,
+        usage_generation=generation,
+        next_confirmation_status=next_status,
+        next_confirmation_basis_json=(
+            json.dumps(basis, ensure_ascii=False, sort_keys=True)
+            if basis else None
+        ),
+        utility_score=utility_score,
+        confidence_score=confidence_score,
+        created_by=actor['id'],
+        feedback_at=feedback_at,
+    )
+    if not records:
+        raise HTTPException(
+            status_code=409,
+            detail='knowledge changed while feedback evidence was recorded; retry',
+        )
+    record = dict(records[0])
+    return KnowledgeFeedbackItemResult(
+        item_id=item.item_id,
+        item_kind=item.item_kind,
+        feedback_kind=item.feedback_kind,
+        recorded=record.get('recorded') is True,
+        confirmation_status=record.get('confirmation_status') or next_status,
+        utility_score=float(record.get('utility_score') or 0),
+        confidence_score=float(
+            record['confidence_score']
+            if record.get('confidence_score') is not None else 0.5
+        ),
+        negative_evidence_count=int(
+            record.get('negative_evidence_count') or 0
+        ),
+        requires_attention=record.get('requires_attention') is True,
+        usage_generation=generation,
     )
 
 
@@ -470,6 +605,10 @@ def _audit_record(value: dict) -> KnowledgeAuditRecord:
         task_id=value.get('task_id'),
         session_id=value.get('session_id'),
         use_kind=value.get('use_kind'),
+        feedback_kind=value.get('feedback_kind'),
+        reported_by_kind=value.get('reported_by_kind'),
+        evidence_summary=value.get('evidence_summary'),
+        source_uri=value.get('source_uri'),
         usage_generation=(
             int(value['usage_generation'])
             if value.get('usage_generation') is not None else None
@@ -592,6 +731,10 @@ async def _read_usage_state(store, space, item_id, item_kind):
                  AS confirmation_status,
                item.fuli_confirmation_basis_json AS confirmation_basis_json,
                coalesce(item.fuli_usage_generation, 1) AS usage_generation,
+               coalesce(item.fuli_utility_score, 0.0) AS utility_score,
+               coalesce(item.fuli_confidence_score, 0.5) AS confidence_score,
+               coalesce(item.fuli_negative_evidence_count, 0)
+                 AS negative_evidence_count,
                {
                  "item.fuli_invalid_at"
                  if item_kind == "entity" else "item.invalid_at"
@@ -649,6 +792,60 @@ def _knowledge_use_query(item_kind: str) -> str:
     '''
 
 
+def _knowledge_feedback_query(item_kind: str) -> str:
+    return f'''
+        MATCH (space:FuliSpace {{id: $space_id, kind: 'personal'}})
+        {_item_match(item_kind)}
+        WHERE coalesce(item.fuli_usage_generation, 1) = $usage_generation
+        MERGE (audit:FuliKnowledgeAudit {{id: $audit_id}})
+        ON CREATE SET audit.space_id = $space_id,
+                      audit.item_id = $item_id,
+                      audit.item_kind = $item_kind,
+                      audit.action = 'knowledge_feedback',
+                      audit.human_change_version = 0,
+                      audit.task_id = $task_id,
+                      audit.session_id = $session_id,
+                      audit.tool_name = $tool_name,
+                      audit.feedback_kind = $feedback_kind,
+                      audit.reported_by_kind = $reported_by_kind,
+                      audit.reason = $reason,
+                      audit.evidence_summary = $evidence_summary,
+                      audit.source_uri = $source_uri,
+                      audit.usage_generation = $usage_generation,
+                      audit.outcome = 'requires_attention',
+                      audit.created_by = $created_by,
+                      audit.created_at = $feedback_at
+        MERGE (space)-[:HAS_KNOWLEDGE_AUDIT]->(audit)
+        WITH item, audit, audit.created_at = $feedback_at AS recorded
+        FOREACH (_ IN CASE WHEN recorded THEN [1] ELSE [] END |
+          SET item.fuli_utility_score = $utility_score,
+              item.fuli_confidence_score = $confidence_score,
+              item.fuli_confirmation_status = $next_confirmation_status,
+              item.fuli_confirmation_basis_json =
+                $next_confirmation_basis_json,
+              item.fuli_epistemic_status =
+                CASE WHEN $next_confirmation_status = 'confirmed'
+                     THEN 'confirmed'
+                     WHEN item.fuli_origin_quadrant = 'unknown_unknown'
+                     THEN 'exploratory'
+                     ELSE 'observed' END,
+              item.fuli_negative_evidence_count =
+                coalesce(item.fuli_negative_evidence_count, 0) + 1,
+              item.fuli_requires_attention = true,
+              item.fuli_last_feedback_kind = $feedback_kind,
+              item.fuli_last_feedback_at = $feedback_at
+        )
+        RETURN recorded,
+               item.fuli_confirmation_status AS confirmation_status,
+               coalesce(item.fuli_utility_score, 0.0) AS utility_score,
+               coalesce(item.fuli_confidence_score, 0.5) AS confidence_score,
+               coalesce(item.fuli_negative_evidence_count, 0)
+                 AS negative_evidence_count,
+               coalesce(item.fuli_requires_attention, false)
+                 AS requires_attention
+    '''
+
+
 def _usage_score_update_query(item_kind: str) -> str:
     return f'''
         {_item_match(item_kind)}
@@ -696,6 +893,20 @@ def _agent_confirmation_basis(value: dict, confirmed_at: datetime) -> dict:
         'confirmed_at': confirmed_at.isoformat(),
         'agent_policy_version': AGENT_CONFIRMATION_POLICY_VERSION,
     }
+
+
+def _pending_feedback_basis(value: dict, reason: str) -> dict:
+    result = dict(value or {})
+    result.setdefault('existence_reason', reason)
+    result.setdefault(
+        'quadrant_reason',
+        'The immutable discovery quadrant is unchanged by negative evidence.',
+    )
+    result.setdefault('proposed_by', {'kind': 'agent', 'label': 'Fuli'})
+    result['confirmed_by'] = None
+    result['confirmed_at'] = None
+    result.pop('agent_policy_version', None)
+    return result
 
 
 _HUMAN_ENTITY_SEARCH = '''

@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue'
 import { getJson, postJson } from '@/api/client'
 import SearchableSelect from '@/components/SearchableSelect.vue'
 import { formatTime } from '@/features/knowledge/model'
+import { t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
 
@@ -114,35 +115,35 @@ async function decideShared(proposal: Proposal, decision: string) {
 
 <template>
   <section class="view">
-    <div class="section-title"><h3>个人发布确认</h3><p>从会话提取的知识先由你决定保留在个人空间、忽略，或提交公共项目。</p></div>
+    <div class="section-title"><h3>{{ t('pages.review.personalTitle') }}</h3><p>{{ t('pages.review.personalCopy') }}</p></div>
     <div class="review-list">
       <article v-for="draft in personalDrafts" :key="draft.id" class="review-item review-item-detailed">
         <div>
-          <div class="review-stage">提交公共前确认</div>
+          <div class="review-stage">{{ t('pages.review.beforePublic') }}</div>
           <h4>{{ draft.episode.name }}</h4>
           <p>{{ draft.episode.summary || draft.episode.source_description }}</p>
           <div class="review-meta">
-            <span>{{ draft.episode.entities?.length ?? 0 }} 个实体</span>
-            <span>{{ draft.episode.relationships?.length ?? 0 }} 条关系</span>
+            <span>{{ t('common.counts.entities', { count: draft.episode.entities?.length ?? 0 }) }}</span>
+            <span>{{ t('common.counts.relationships', { count: draft.episode.relationships?.length ?? 0 }) }}</span>
             <span>{{ formatTime(draft.created_at) }}</span>
           </div>
         </div>
         <div class="review-actions stacked-actions">
-          <button class="secondary-action" type="button" @click="decidePersonal(draft, 'keep_personal')">仅保留个人</button>
-          <button class="reject" type="button" @click="decidePersonal(draft, 'ignore')">忽略</button>
-          <button v-if="store.state?.capabilities?.submitKnowledge" class="approve" type="button" @click="decidePersonal(draft, 'submit_public')">提交公共</button>
+          <button class="secondary-action" type="button" @click="decidePersonal(draft, 'keep_personal')">{{ t('pages.review.keepPersonal') }}</button>
+          <button class="reject" type="button" @click="decidePersonal(draft, 'ignore')">{{ t('pages.review.ignore') }}</button>
+          <button v-if="store.state?.capabilities?.submitKnowledge" class="approve" type="button" @click="decidePersonal(draft, 'submit_public')">{{ t('pages.review.submitPublic') }}</button>
         </div>
       </article>
-      <div v-if="!loading && !personalDrafts.length" class="empty-state">当前没有待个人确认的内容</div>
+      <div v-if="!loading && !personalDrafts.length" class="empty-state">{{ t('pages.review.noPersonalDrafts') }}</div>
     </div>
 
     <section v-if="store.state?.capabilities?.reviewProposals" class="project-section">
       <div class="section-toolbar">
-        <div><h3>公共项目维护审核</h3><p>Maintainer 只审核明确提交到项目的 Proposal。</p></div>
+        <div><h3>{{ t('pages.review.publicTitle') }}</h3><p>{{ t('pages.review.publicCopy') }}</p></div>
         <SearchableSelect
           v-model="reviewProjectId"
           :options="reviewProjectOptions"
-          label="审核项目"
+          :label="t('pages.review.projectLabel')"
           control-id="review-project"
           searchable
         />
@@ -150,17 +151,17 @@ async function decideShared(proposal: Proposal, decision: string) {
       <div class="review-list">
         <article v-for="proposal in proposals" :key="proposal.id" class="review-item">
           <div>
-            <div class="review-stage">共享 Maintainer 审核</div>
+            <div class="review-stage">{{ t('pages.review.maintainerReview') }}</div>
             <h4>{{ proposal.episode.name }}</h4>
             <p>{{ proposal.episode.summary || proposal.episode.source_description }}</p>
             <div class="review-meta"><span>{{ formatTime(proposal.created_at) }}</span></div>
           </div>
           <div class="review-actions">
-            <button class="reject" type="button" @click="decideShared(proposal, 'reject')">拒绝</button>
-            <button class="approve" type="button" @click="decideShared(proposal, 'approve')">通过</button>
+            <button class="reject" type="button" @click="decideShared(proposal, 'reject')">{{ t('pages.review.reject') }}</button>
+            <button class="approve" type="button" @click="decideShared(proposal, 'approve')">{{ t('pages.review.approve') }}</button>
           </div>
         </article>
-        <div v-if="!loading && !proposals.length" class="empty-state">当前没有待审核 Proposal</div>
+        <div v-if="!loading && !proposals.length" class="empty-state">{{ t('pages.review.noProposals') }}</div>
       </div>
     </section>
   </section>

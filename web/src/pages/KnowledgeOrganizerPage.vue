@@ -17,6 +17,7 @@ import {
   reviewStateLabel,
   type KnowledgeReviewState,
 } from '@/features/knowledge/model'
+import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { KnowledgeGraph, KnowledgeItem } from '@/types'
 
@@ -31,34 +32,62 @@ const confirmingItem = ref<KnowledgeItem | null>(null)
 const editingItem = ref<KnowledgeItem | null>(null)
 const batchDialogOpen = ref(false)
 
-const quadrantChoices = [
-  { value: 'known_unknown', short: '明确问题', coordinate: '已意识 · 未掌握' },
-  { value: 'known_known', short: '明确表达', coordinate: '已意识 · 已掌握' },
-  { value: 'unknown_unknown', short: '盲点探索', coordinate: '未意识 · 未掌握' },
-  { value: 'unknown_known', short: '隐性提炼', coordinate: '未意识 · 已掌握' },
-] as const
+const quadrantChoices = computed(() => [
+  {
+    value: 'known_unknown',
+    short: t('knowledge.workspace.organizer.quadrants.known_unknown.short'),
+    coordinate: t('knowledge.workspace.organizer.quadrants.known_unknown.coordinate'),
+  },
+  {
+    value: 'known_known',
+    short: t('knowledge.workspace.organizer.quadrants.known_known.short'),
+    coordinate: t('knowledge.workspace.organizer.quadrants.known_known.coordinate'),
+  },
+  {
+    value: 'unknown_unknown',
+    short: t('knowledge.workspace.organizer.quadrants.unknown_unknown.short'),
+    coordinate: t('knowledge.workspace.organizer.quadrants.unknown_unknown.coordinate'),
+  },
+  {
+    value: 'unknown_known',
+    short: t('knowledge.workspace.organizer.quadrants.unknown_known.short'),
+    coordinate: t('knowledge.workspace.organizer.quadrants.unknown_known.coordinate'),
+  },
+] as const)
 
-const reviewChoices: Array<{
+const reviewChoices = computed<Array<{
   value: KnowledgeReviewState
   label: string
   hint: string
-}> = [
-  { value: 'pending', label: '待确认', hint: '尚无有效的确认人和确认时间' },
-  { value: 'agent_confirmed', label: 'Agent 已确认', hint: '实际使用达到策略阈值，权重低于人工确认' },
-  { value: 'confirmed', label: '已确认', hint: '内容与象限归类均已确认' },
-]
+}>>(() => [
+  {
+    value: 'pending',
+    label: t('knowledge.domain.reviewStates.pending'),
+    hint: t('knowledge.workspace.organizer.review.pendingHint'),
+  },
+  {
+    value: 'agent_confirmed',
+    label: t('knowledge.domain.reviewStates.agent_confirmed'),
+    hint: t('knowledge.workspace.organizer.review.agentConfirmedHint'),
+  },
+  {
+    value: 'confirmed',
+    label: t('knowledge.domain.reviewStates.confirmed'),
+    hint: t('knowledge.workspace.organizer.review.confirmedHint'),
+  },
+])
 
 const items = computed(() => knowledgeItems(graph.value))
 const confirmationGroups = computed(() => batchConfirmationGroups(items.value))
 const quadrantCounts = computed(() =>
   Object.fromEntries(
-    [...quadrantChoices.map(({ value }) => value), 'unclassified']
+    [...quadrantChoices.value.map(({ value }) => value), 'unclassified']
       .map((value) => [value, items.value.filter((item) => item.originQuadrant === value).length]),
   ),
 )
 const reviewCounts = computed(() =>
   Object.fromEntries(
-    reviewChoices.map(({ value }) => [
+    reviewChoices.value.map(({ value }) => [
       value,
       items.value.filter((item) => knowledgeReviewState(item) === value).length,
     ]),
@@ -72,7 +101,7 @@ const activeQuadrantItems = computed(() =>
 )
 const activeReviewCounts = computed(() =>
   Object.fromEntries(
-    reviewChoices.map(({ value }) => [
+    reviewChoices.value.map(({ value }) => [
       value,
       activeQuadrantItems.value.filter((item) => knowledgeReviewState(item) === value).length,
     ]),
@@ -168,28 +197,26 @@ function openReplacement(item: KnowledgeItem) {
     <div class="organizer-head">
       <div class="organizer-principle">
         <p class="eyebrow">HOW CLASSIFICATION WORKS</p>
-        <h3>先看知识和确认状态，四象限只保留发现来源</h3>
-        <p>
-          待确认内容也可被 Agent 检索；实际使用达到阈值会标记为“Agent 已确认”，人工确认仍具有更高权重。
-        </p>
+        <h3>{{ t('knowledge.workspace.organizer.title') }}</h3>
+        <p>{{ t('knowledge.workspace.organizer.copy') }}</p>
       </div>
 
       <div class="organizer-attention">
         <strong>{{ attentionCount }}</strong>
-        <span>条需要你处理</span>
-        <small>旧数据缺少确认记录时也会进入这里</small>
+        <span>{{ t('knowledge.workspace.organizer.needsAttention') }}</span>
+        <small>{{ t('knowledge.workspace.organizer.legacyAttention') }}</small>
       </div>
     </div>
 
     <template>
       <div class="organizer-toolbar">
         <label class="organizer-search">
-          <span>筛选知识</span>
-          <input v-model="query" type="search" placeholder="搜索内容、类型或来源" />
+          <span>{{ t('knowledge.workspace.organizer.filterKnowledge') }}</span>
+          <input v-model="query" type="search" :placeholder="t('knowledge.workspace.organizer.searchPlaceholder')" />
         </label>
 
-        <div class="quadrant-filter" aria-label="发现来源筛选">
-          <span>发现来源</span>
+        <div class="quadrant-filter" :aria-label="t('knowledge.workspace.organizer.quadrantFilterAria')">
+          <span>{{ t('knowledge.workspace.organizer.discoverySource') }}</span>
           <button
             type="button"
             data-quadrant="all"
@@ -197,7 +224,7 @@ function openReplacement(item: KnowledgeItem) {
             :aria-pressed="activeQuadrant === 'all'"
             @click="activeQuadrant = 'all'"
           >
-            全部 <strong>{{ items.length }}</strong>
+            {{ t('common.status.all') }} <strong>{{ items.length }}</strong>
           </button>
           <button
             v-for="choice in quadrantChoices"
@@ -213,8 +240,8 @@ function openReplacement(item: KnowledgeItem) {
           </button>
         </div>
 
-        <div class="review-state-filter" aria-label="确认状态筛选">
-          <span>确认状态</span>
+        <div class="review-state-filter" :aria-label="t('knowledge.workspace.organizer.reviewFilterAria')">
+          <span>{{ t('knowledge.workspace.organizer.reviewStatus') }}</span>
           <button
             type="button"
             data-review-state="all"
@@ -222,7 +249,7 @@ function openReplacement(item: KnowledgeItem) {
             :aria-pressed="activeReviewState === 'all'"
             @click="selectReviewState('all')"
           >
-            全部 <strong>{{ activeQuadrantItems.length }}</strong>
+            {{ t('common.status.all') }} <strong>{{ activeQuadrantItems.length }}</strong>
           </button>
           <button
             v-for="choice in reviewChoices"
@@ -242,7 +269,10 @@ function openReplacement(item: KnowledgeItem) {
         </div>
 
         <p class="organizer-result-summary">
-          显示 {{ visibleItems.length }} / {{ activeQuadrantItems.length }} 条
+          {{ t('knowledge.workspace.organizer.showing', {
+            visible: visibleItems.length,
+            total: activeQuadrantItems.length,
+          }) }}
           <span v-if="activeReviewState !== 'all'">
             · {{ reviewChoices.find(({ value }) => value === activeReviewState)?.label }}
           </span>
@@ -253,28 +283,28 @@ function openReplacement(item: KnowledgeItem) {
           type="button"
           @click="batchDialogOpen = true"
         >
-          批量确认 · {{ confirmationGroups.length }} 组
+          {{ t('knowledge.workspace.organizer.batchConfirm', { count: confirmationGroups.length }) }}
         </button>
-        <button class="toolbar-action" type="button" @click="load()">刷新</button>
+        <button class="toolbar-action" type="button" @click="load()">{{ t('common.actions.refresh') }}</button>
       </div>
 
       <p v-if="graph?.truncated" class="organizer-truncated">
-        当前知识量超过单次读取上限；本页统计只覆盖本次读取到的内容。
+        {{ t('knowledge.workspace.organizer.truncated') }}
       </p>
 
-      <div v-if="loading && !graph" class="view-loading">正在读取知识…</div>
+      <div v-if="loading && !graph" class="view-loading">{{ t('common.status.loadingKnowledge') }}</div>
       <div
         v-else
         class="organizer-layout"
         :class="{ 'has-selection': selectedItem }"
       >
-        <section class="organizer-directory" aria-label="知识整理目录">
+        <section class="organizer-directory" :aria-label="t('knowledge.workspace.organizer.directoryAria')">
           <div class="organizer-table-head" aria-hidden="true">
-            <span>知识内容</span>
-            <span>发现时象限</span>
-            <span>确认状态</span>
-            <span>确认依据</span>
-            <span>更新时间</span>
+            <span>{{ t('knowledge.workspace.workspace.view.knowledgeContent') }}</span>
+            <span>{{ t('knowledge.workspace.workspace.view.columns.quadrant') }}</span>
+            <span>{{ t('knowledge.workspace.workspace.view.columns.review') }}</span>
+            <span>{{ t('knowledge.workspace.organizer.confirmationBasis') }}</span>
+            <span>{{ t('knowledge.workspace.organizer.updated') }}</span>
           </div>
           <div class="organizer-list">
             <button
@@ -300,7 +330,9 @@ function openReplacement(item: KnowledgeItem) {
             </button>
           </div>
           <div v-if="!visibleItems.length" class="empty-state">
-            {{ items.length ? '当前筛选条件下没有内容' : '个人空间还没有可整理的结构化知识' }}
+            {{ items.length
+              ? t('knowledge.workspace.organizer.noFilteredContent')
+              : t('knowledge.workspace.organizer.noContent') }}
           </div>
         </section>
 

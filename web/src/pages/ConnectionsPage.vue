@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 
 import { deleteJson, postJson } from '@/api/client'
 import SearchableSelect from '@/components/SearchableSelect.vue'
+import { t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
 import type { PublicProject, Subscription } from '@/types'
@@ -43,7 +44,7 @@ async function subscribe() {
       projectName: project.name,
     })
     selectedProjectKey.value = ''
-    store.notify(`已订阅“${project.name}”。`)
+    store.notify(t('pages.connections.subscribed', { name: project.name }))
     await store.refresh()
   } catch (error) {
     store.reportError(error)
@@ -57,7 +58,9 @@ async function unsubscribe(subscription: Subscription) {
       providerUrl: subscription.provider_url,
     })
     await deleteJson(`/api/subscriptions/${encodeURIComponent(subscription.project_id)}?${query}`)
-    store.notify(`已取消订阅“${subscription.project_name ?? subscription.project_id}”。`)
+    store.notify(t('pages.connections.unsubscribed', {
+      name: subscription.project_name ?? subscription.project_id,
+    }))
     await store.refresh()
   } catch (error) {
     store.reportError(error)
@@ -68,54 +71,54 @@ async function unsubscribe(subscription: Subscription) {
 <template>
   <section class="view connections-view">
     <div class="connection-intro">
-      <h3>服务连接与订阅</h3>
-      <p>本地知识库始终独立运行；公共能力只在连接共享 Provider 后开启。</p>
+      <h3>{{ t('pages.connections.title') }}</h3>
+      <p>{{ t('pages.connections.intro') }}</p>
     </div>
-    <div class="service-connection-grid" aria-label="知识服务连接状态">
+    <div class="service-connection-grid" :aria-label="t('pages.connections.statusAria')">
       <article class="service-connection-card" :data-status="personalReady ? 'ready' : 'error'">
         <header>
           <span class="service-connection-icon local" aria-hidden="true"><span class="nav-icon nav-icon-personal-project" /></span>
-          <div><p>LOCAL KNOWLEDGE</p><h3>本地 Graphiti</h3></div>
-          <span class="service-state">{{ personalReady ? '已连接' : '连接异常' }}</span>
+          <div><p>LOCAL KNOWLEDGE</p><h3>{{ t('pages.connections.localGraphiti') }}</h3></div>
+          <span class="service-state">{{ personalReady ? t('common.status.connected') : t('common.status.connectionError') }}</span>
         </header>
-        <p>{{ personalReady ? '个人项目、协作偏好和会话知识正在写入本机图谱。' : '本地知识库暂时无法使用，请检查 Graphiti 与 Neo4j。' }}</p>
-        <dl><div><dt>存储</dt><dd>Neo4j</dd></div><div><dt>用途</dt><dd>个人项目与协作偏好</dd></div></dl>
+        <p>{{ personalReady ? t('pages.connections.localReadyCopy') : t('pages.connections.localErrorCopy') }}</p>
+        <dl><div><dt>{{ t('pages.connections.storage') }}</dt><dd>Neo4j</dd></div><div><dt>{{ t('pages.connections.purpose') }}</dt><dd>{{ t('pages.connections.localPurpose') }}</dd></div></dl>
       </article>
 
       <article class="service-connection-card" :data-status="store.publicRuntimeStatus">
         <header>
           <span class="service-connection-icon public" aria-hidden="true"><span class="nav-icon nav-icon-public-project" /></span>
-          <div><p>PUBLIC PROVIDER</p><h3>公共服务</h3></div>
-          <span class="service-state">{{ store.publicRuntimeStatus === 'ready' ? '已连接' : store.publicRuntimeStatus === 'error' ? '连接异常' : '未连接' }}</span>
+          <div><p>PUBLIC PROVIDER</p><h3>{{ t('pages.connections.publicService') }}</h3></div>
+          <span class="service-state">{{ store.publicRuntimeStatus === 'ready' ? t('common.status.connected') : store.publicRuntimeStatus === 'error' ? t('common.status.connectionError') : t('common.status.notConnected') }}</span>
         </header>
-        <p>{{ store.publicRuntimeStatus === 'ready' ? '公共项目、订阅、发布与团队协作功能已经可以使用。' : store.publicRuntimeStatus === 'error' ? '公共服务已经配置，但当前无法访问；本地知识库仍可正常使用。' : '当前未连接公共服务；公共能力保持关闭。' }}</p>
+        <p>{{ store.publicRuntimeStatus === 'ready' ? t('pages.connections.publicReadyCopy') : store.publicRuntimeStatus === 'error' ? t('pages.connections.publicErrorCopy') : t('pages.connections.publicOfflineCopy') }}</p>
         <dl>
-          <div><dt>当前状态</dt><dd>{{ store.publicRuntimeStatus === 'ready' ? `${readyWorkspaces || workspaces.length} 个共享服务可用` : '尚未可用' }}</dd></div>
-          <div><dt>用途</dt><dd>发现、订阅、发布与协作</dd></div>
+          <div><dt>{{ t('pages.connections.currentStatus') }}</dt><dd>{{ store.publicRuntimeStatus === 'ready' ? t('pages.connections.sharedServicesReady', { count: readyWorkspaces || workspaces.length }) : t('pages.connections.notAvailable') }}</dd></div>
+          <div><dt>{{ t('pages.connections.purpose') }}</dt><dd>{{ t('pages.connections.publicPurpose') }}</dd></div>
         </dl>
       </article>
     </div>
 
     <section v-if="store.state?.capabilities?.subscribeProject" class="connection-subscriptions">
-      <div class="section-title"><h3>公共项目订阅</h3><p>只把你主动选择的公共项目加入个人检索范围。</p></div>
+      <div class="section-title"><h3>{{ t('pages.connections.subscriptionsTitle') }}</h3><p>{{ t('pages.connections.subscriptionsCopy') }}</p></div>
       <div class="subscription-list">
         <div v-for="subscription in subscriptions" :key="`${subscription.provider_url}:${subscription.project_id}`" class="subscription-row">
           <span>↗</span>
-          <div><strong>{{ subscription.project_name ?? subscription.project_id }}</strong><span>团队共享项目</span></div>
-          <button class="secondary-action subscription-action" type="button" @click="unsubscribe(subscription)">取消订阅</button>
+          <div><strong>{{ subscription.project_name ?? subscription.project_id }}</strong><span>{{ t('pages.connections.sharedProject') }}</span></div>
+          <button class="secondary-action subscription-action" type="button" @click="unsubscribe(subscription)">{{ t('pages.connections.unsubscribe') }}</button>
         </div>
-        <div v-if="!subscriptions.length" class="empty-state">尚未订阅团队共享项目</div>
+        <div v-if="!subscriptions.length" class="empty-state">{{ t('pages.connections.noSubscriptions') }}</div>
       </div>
       <form class="subscription-form" @submit.prevent="subscribe">
         <SearchableSelect
           v-model="selectedProjectKey"
           :options="availableProjectOptions"
-          label="团队共享项目"
-          placeholder="选择公共项目"
+          :label="t('pages.connections.sharedProjectLabel')"
+          :placeholder="t('pages.connections.choosePublicProject')"
           searchable
           required
         />
-        <button type="submit">订阅项目</button>
+        <button type="submit">{{ t('pages.connections.subscribe') }}</button>
       </form>
     </section>
   </section>

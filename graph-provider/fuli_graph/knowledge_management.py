@@ -390,6 +390,12 @@ async def _read_item(store, space: dict, item_id: str, item_kind: str):
                  AS distinct_task_count,
                item.fuli_last_used_at AS last_used_at,
                coalesce(item.fuli_usage_generation, 1) AS usage_generation,
+               coalesce(item.fuli_negative_evidence_count, 0)
+                 AS negative_evidence_count,
+               coalesce(item.fuli_requires_attention, false)
+                 AS requires_attention,
+               item.fuli_last_feedback_kind AS last_feedback_kind,
+               item.fuli_last_feedback_at AS last_feedback_at,
                item.fuli_replaced_by_item_id AS replaced_by_item_id,
                item.fuli_replaced_by_item_kind AS replaced_by_item_kind
         '''
@@ -426,6 +432,12 @@ async def _read_item(store, space: dict, item_id: str, item_kind: str):
                  AS distinct_task_count,
                item.fuli_last_used_at AS last_used_at,
                coalesce(item.fuli_usage_generation, 1) AS usage_generation,
+               coalesce(item.fuli_negative_evidence_count, 0)
+                 AS negative_evidence_count,
+               coalesce(item.fuli_requires_attention, false)
+                 AS requires_attention,
+               item.fuli_last_feedback_kind AS last_feedback_kind,
+               item.fuli_last_feedback_at AS last_feedback_at,
                item.fuli_replaced_by_item_id AS replaced_by_item_id,
                item.fuli_replaced_by_item_kind AS replaced_by_item_kind
         '''
@@ -525,6 +537,12 @@ def _snapshot(value: dict, item_kind: str) -> dict:
         'distinctTaskCount': int(value.get('distinct_task_count') or 0),
         'lastUsedAt': _iso(value.get('last_used_at')),
         'usageGeneration': int(value.get('usage_generation') or 1),
+        'negativeEvidenceCount': int(
+            value.get('negative_evidence_count') or 0
+        ),
+        'requiresAttention': value.get('requires_attention') is True,
+        'lastFeedbackKind': value.get('last_feedback_kind'),
+        'lastFeedbackAt': _iso(value.get('last_feedback_at')),
         'replacedByItemId': value.get('replaced_by_item_id'),
         'replacedByItemKind': value.get('replaced_by_item_kind'),
     }
@@ -610,6 +628,11 @@ def _next_snapshot(previous: dict, request: KnowledgeRevisionCreate, changed_at:
             value['qualifiedUseCount'] = 0
             value['distinctTaskCount'] = 0
             value['lastUsedAt'] = None
+        if content_changed or classification_changed:
+            value['negativeEvidenceCount'] = 0
+            value['requiresAttention'] = False
+            value['lastFeedbackKind'] = None
+            value['lastFeedbackAt'] = None
         if request.reasoning_summary is not None:
             value['reasoningSummary'] = request.reasoning_summary or None
         if request.profile_aspect is not None:
@@ -691,6 +714,10 @@ async def _update_item(store, space, item_id, item_kind, value, embedding):
             item.fuli_distinct_task_count = $distinct_task_count,
             item.fuli_last_used_at = $last_used_at,
             item.fuli_usage_generation = $usage_generation,
+            item.fuli_negative_evidence_count = $negative_evidence_count,
+            item.fuli_requires_attention = $requires_attention,
+            item.fuli_last_feedback_kind = $last_feedback_kind,
+            item.fuli_last_feedback_at = $last_feedback_at,
             item.fuli_replaced_by_item_id = $replaced_by_item_id,
             item.fuli_replaced_by_item_kind = $replaced_by_item_kind,
             item.name_embedding = coalesce($embedding, item.name_embedding)
@@ -718,6 +745,10 @@ async def _update_item(store, space, item_id, item_kind, value, embedding):
             item.fuli_distinct_task_count = $distinct_task_count,
             item.fuli_last_used_at = $last_used_at,
             item.fuli_usage_generation = $usage_generation,
+            item.fuli_negative_evidence_count = $negative_evidence_count,
+            item.fuli_requires_attention = $requires_attention,
+            item.fuli_last_feedback_kind = $last_feedback_kind,
+            item.fuli_last_feedback_at = $last_feedback_at,
             item.fuli_replaced_by_item_id = $replaced_by_item_id,
             item.fuli_replaced_by_item_kind = $replaced_by_item_kind,
             item.fact_embedding = coalesce($embedding, item.fact_embedding)
@@ -752,6 +783,12 @@ async def _update_item(store, space, item_id, item_kind, value, embedding):
         distinct_task_count=int(value.get('distinctTaskCount') or 0),
         last_used_at=_parse_datetime(value.get('lastUsedAt')),
         usage_generation=int(value.get('usageGeneration') or 1),
+        negative_evidence_count=int(
+            value.get('negativeEvidenceCount') or 0
+        ),
+        requires_attention=value.get('requiresAttention') is True,
+        last_feedback_kind=value.get('lastFeedbackKind'),
+        last_feedback_at=_parse_datetime(value.get('lastFeedbackAt')),
         replaced_by_item_id=value.get('replacedByItemId'),
         replaced_by_item_kind=value.get('replacedByItemKind'),
         embedding=embedding,

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 
 import { deleteJson, getJson, postJson } from '@/api/client'
 import SearchableSelect from '@/components/SearchableSelect.vue'
+import { currentLocale, t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { knowledgePath } from '@/router/paths'
 import { useConsoleStore } from '@/stores/console'
@@ -27,6 +28,10 @@ const relationOpen = ref(false)
 const relationSource = ref('')
 const relationTarget = ref('')
 const relationType = ref('RELATED_TO')
+const deletionProject = ref<PublicProject | null>(null)
+const deletionName = ref('')
+const deletionBusy = ref(false)
+const deletionError = ref('')
 
 const projects = computed(() => store.state?.projects ?? [])
 const subscribedKeys = computed(
@@ -61,15 +66,34 @@ const relationTargetOptions = computed(() =>
     search: identitySearchText(project.id),
   })),
 )
-const relationTypeOptions = [
-  { value: 'PART_OF', label: '属于' },
-  { value: 'USES_KNOWLEDGE_FROM', label: '使用其共享知识' },
-  { value: 'DEPENDS_ON', label: '依赖' },
-  { value: 'PROVIDES_TO', label: '提供能力' },
-  { value: 'SHARES_CAPABILITY_WITH', label: '共享能力' },
-  { value: 'SUCCESSOR_OF', label: '后继于' },
-  { value: 'RELATED_TO', label: '相关' },
-]
+const relationSourceProject = computed(
+  () => projects.value.find(({ id }) => id === relationSource.value) ?? null,
+)
+const relationTargetProject = computed(
+  () => projects.value.find(({ id }) => id === relationTarget.value) ?? null,
+)
+const relationTypeLabel = computed(
+  () => relationTypeOptions.value.find(({ value }) => value === relationType.value)?.label
+    ?? t('pages.publicProjects.relationLabels.relatedTo'),
+)
+const deletionMatches = computed(
+  () => Boolean(deletionProject.value && deletionName.value === deletionProject.value.name),
+)
+const relationTypeOptions = computed(() => [
+  { value: 'PART_OF', label: t('pages.publicProjects.relationLabels.partOf') },
+  {
+    value: 'USES_KNOWLEDGE_FROM',
+    label: t('pages.publicProjects.relationLabels.usesKnowledgeFrom'),
+  },
+  { value: 'DEPENDS_ON', label: t('pages.publicProjects.relationLabels.dependsOn') },
+  { value: 'PROVIDES_TO', label: t('pages.publicProjects.relationLabels.providesTo') },
+  {
+    value: 'SHARES_CAPABILITY_WITH',
+    label: t('pages.publicProjects.relationLabels.sharesCapabilityWith'),
+  },
+  { value: 'SUCCESSOR_OF', label: t('pages.publicProjects.relationLabels.successorOf') },
+  { value: 'RELATED_TO', label: t('pages.publicProjects.relationLabels.relatedTo') },
+])
 
 function projectKey(project: PublicProject) {
   return `${project.providerUrl}::${project.id}`
@@ -80,7 +104,7 @@ function projectPurpose(project: PublicProject) {
     || project.profile?.scope
     || project.profile?.technical_summary
     || project.description
-    || '公共项目'
+    || t('pages.publicProjects.fallbackDescription')
 }
 
 async function toggleSubscription(project: PublicProject) {
@@ -91,7 +115,7 @@ async function toggleSubscription(project: PublicProject) {
         providerUrl: project.providerUrl,
       })
       await deleteJson(`/api/subscriptions/${encodeURIComponent(project.id)}?${query}`)
-      store.notify(`已取消订阅“${project.name}”；公共项目内容没有被删除。`)
+      store.notify(t('pages.publicProjects.unsubscribed', { name: project.name }))
     } else {
       await postJson('/api/subscriptions', {
         personalSpaceId: store.activePersonalSpace?.id,
@@ -99,7 +123,7 @@ async function toggleSubscription(project: PublicProject) {
         providerUrl: project.providerUrl,
         projectName: project.name,
       })
-      store.notify(`已订阅“${project.name}”。`)
+      store.notify(t('pages.publicProjects.subscribed', { name: project.name }))
     }
     await store.refresh()
   } catch (error) {
@@ -139,16 +163,41 @@ async function openGraph(project: PublicProject) {
   await router.push(knowledgePath('public', project.id, 'graph'))
 }
 
-async function deleteProject(project: PublicProject) {
-  if (!window.confirm(`确认永久删除公共项目“${project.name}”？个人项目不会被删除。`)) return
+function openProjectDeletion(project: PublicProject) {
+  deletionProject.value = project
+  deletionName.value = ''
+  deletionError.value = ''
+}
+
+function closeProjectDeletion() {
+  if (deletionBusy.value) return
+  deletionProject.value = null
+  deletionName.value = ''
+  deletionError.value = ''
+}
+
+async function deleteProject() {
+  const project = deletionProject.value
+  if (!project || !deletionMatches.value) {
+    deletionError.value = t('pages.publicProjects.deleteNameRequired')
+    return
+  }
+  deletionBusy.value = true
+  deletionError.value = ''
   try {
     const query = new URLSearchParams({ providerUrl: project.providerUrl })
     await deleteJson(`/api/projects/${encodeURIComponent(project.id)}?${query}`)
     selectedProject.value = null
-    store.notify(`公共项目“${project.name}”已删除；本机个人项目仍保留。`)
+    deletionProject.value = null
+    store.notify(t('pages.publicProjects.deleted', { name: project.name }))
     await store.refresh()
   } catch (error) {
+    deletionError.value = error instanceof Error
+      ? error.message
+      : t('pages.publicProjects.deleteFailed')
     store.reportError(error)
+  } finally {
+    deletionBusy.value = false
   }
 }
 
@@ -156,7 +205,7 @@ async function createRelation() {
   const source = projects.value.find(({ id }) => id === relationSource.value)
   const target = projects.value.find(({ id }) => id === relationTarget.value)
   if (!source || !target) {
-    store.reportError(new Error('请选择来源项目和关联项目'))
+    store.reportError(new Error(t('pages.publicProjects.chooseRelationProjects')))
     return
   }
   try {
@@ -170,14 +219,20 @@ async function createRelation() {
     relationOpen.value = false
     relationSource.value = ''
     relationTarget.value = ''
-    store.notify(relationType.value === 'PART_OF' ? '关系已提交，等待父项目确认。' : '项目关系已建立。')
+    store.notify(
+      relationType.value === 'PART_OF'
+        ? t('pages.publicProjects.parentRelationSubmitted')
+        : t('pages.publicProjects.relationCreated'),
+    )
   } catch (error) {
     store.reportError(error)
   }
 }
 
 function formatDate(value?: string) {
-  return value ? new Date(value).toLocaleString('zh-CN') : '时间未记录'
+  return value
+    ? new Date(value).toLocaleString(currentLocale())
+    : t('pages.publicProjects.timeNotRecorded')
 }
 </script>
 
@@ -185,10 +240,10 @@ function formatDate(value?: string) {
   <section class="view">
     <div class="space-heading public-space-heading">
       <span class="space-heading-icon" aria-hidden="true"><span class="nav-icon nav-icon-public-project" /></span>
-      <div><p>浏览共享 Provider 上的项目，按需订阅。项目关系不会自动授予权限，也不会替你订阅。</p></div>
-      <div class="public-space-stats" aria-label="公共项目概览">
-        <span><strong>{{ projects.length }}</strong>可发现</span>
-        <span><strong>{{ store.state?.subscriptions.length ?? 0 }}</strong>已订阅</span>
+      <div><p>{{ t('pages.publicProjects.intro') }}</p></div>
+      <div class="public-space-stats" :aria-label="t('pages.publicProjects.overviewAria')">
+        <span><strong>{{ projects.length }}</strong>{{ t('pages.publicProjects.discoverable') }}</span>
+        <span><strong>{{ store.state?.subscriptions.length ?? 0 }}</strong>{{ t('pages.publicProjects.subscribedCount') }}</span>
       </div>
     </div>
 
@@ -197,21 +252,28 @@ function formatDate(value?: string) {
         <div class="project-card-heading">
           <div><p class="eyebrow">PUBLIC PROJECT</p><h4>{{ project.name }}</h4></div>
           <div class="project-card-heading-actions">
-            <button v-if="project.can_manage" class="management-action" type="button" @click="deleteProject(project)">管理项目</button>
+            <button
+              v-if="project.can_manage"
+              class="management-action"
+              type="button"
+              @click="openProjectDeletion(project)"
+            >
+              {{ t('pages.publicProjects.manage') }}
+            </button>
             <div class="completion-badge">
               <strong>{{ project.profile?.assessment?.score ?? '—' }}</strong>
-              <span>{{ project.profile?.assessment ? '资料覆盖' : '暂无摘要' }}</span>
+              <span>{{ project.profile?.assessment ? t('pages.publicProjects.coverage') : t('pages.publicProjects.noSummary') }}</span>
             </div>
           </div>
         </div>
         <p class="project-purpose">{{ projectPurpose(project) }}</p>
         <div class="evidence-row">
-          <span v-for="(source, index) in project.profile?.sources ?? []" :key="index" class="status-chip">{{ source.kind ?? '资料' }}</span>
-          <span v-if="!project.profile?.sources?.length" class="muted">暂无已登记资料</span>
+          <span v-for="(source, index) in project.profile?.sources ?? []" :key="index" class="status-chip">{{ source.kind ?? t('pages.publicProjects.material') }}</span>
+          <span v-if="!project.profile?.sources?.length" class="muted">{{ t('pages.publicProjects.noSources') }}</span>
         </div>
         <div class="project-access">
           <span class="status-chip" :class="{ owner: project.isOwner }">{{ project.isOwner ? 'Owner' : project.role ?? 'Reader' }}</span>
-          <span class="muted">{{ project.isOwner ? '你发布的项目' : '公共可发现' }}</span>
+          <span class="muted">{{ project.isOwner ? t('pages.publicProjects.publishedByYou') : t('pages.publicProjects.publiclyDiscoverable') }}</span>
           <span v-if="project.current_release" class="project-release-meta">
             <strong>{{ project.current_release.version }}</strong>
             <span>{{ formatDate(project.current_release.published_at) }}</span>
@@ -219,51 +281,63 @@ function formatDate(value?: string) {
         </div>
         <footer class="project-card-footer">
           <button class="secondary-action" type="button" @click="toggleSubscription(project)">
-            {{ subscribedKeys.has(projectKey(project)) ? '取消订阅' : '订阅项目' }}
+            {{ subscribedKeys.has(projectKey(project)) ? t('pages.publicProjects.unsubscribe') : t('pages.publicProjects.subscribe') }}
           </button>
-          <button class="primary-action" type="button" @click="openDetails(project)">查看详情</button>
+          <button class="primary-action" type="button" @click="openDetails(project)">{{ t('common.actions.viewDetails') }}</button>
         </footer>
       </article>
-      <div v-if="!projects.length" class="empty-state project-empty">暂无公共项目</div>
+      <div v-if="!projects.length" class="empty-state project-empty">{{ t('pages.publicProjects.noProjects') }}</div>
     </div>
 
     <section class="project-section">
       <div class="section-toolbar compact-toolbar relation-section-toolbar">
-        <div><p class="eyebrow">PROJECT RELATIONS</p><h3>项目关系</h3><p>只在同一个公共 Provider 内建立显式关系。</p></div>
+        <div><p class="eyebrow">PROJECT RELATIONS</p><h3>{{ t('pages.publicProjects.relationsTitle') }}</h3><p>{{ t('pages.publicProjects.relationsCopy') }}</p></div>
         <button class="primary-action" type="button" :disabled="!maintainable.length" @click="relationOpen = !relationOpen">
-          添加项目关系
+          {{ t('pages.publicProjects.addRelation') }}
         </button>
       </div>
       <form v-if="relationOpen" class="relation-composer relation-composer-form compact-relation-form" @submit.prevent="createRelation">
-        <label>来源项目
+        <label>{{ t('pages.publicProjects.sourceProject') }}
           <SearchableSelect
             v-model="relationSource"
             :options="maintainableOptions"
-            label="关系来源项目"
-            placeholder="选择项目"
+            :label="t('pages.publicProjects.sourceProjectLabel')"
+            :placeholder="t('pages.publicProjects.chooseProject')"
             searchable
             required
             @change="relationTarget = ''"
           />
         </label>
-        <label>关系
+        <label>{{ t('pages.publicProjects.relation') }}
           <SearchableSelect
             v-model="relationType"
             :options="relationTypeOptions"
-            label="项目关系类型"
+            :label="t('pages.publicProjects.relationTypeLabel')"
           />
         </label>
-        <label>关联项目
+        <label>{{ t('pages.publicProjects.targetProject') }}
           <SearchableSelect
             v-model="relationTarget"
             :options="relationTargetOptions"
-            label="关系目标项目"
-            placeholder="选择项目"
+            :label="t('pages.publicProjects.targetProjectLabel')"
+            :placeholder="t('pages.publicProjects.chooseProject')"
             searchable
             required
           />
         </label>
-        <button class="primary-action" type="submit">添加关系</button>
+        <div class="compact-relation-preview" aria-live="polite">
+          <span>{{ t('pages.publicProjects.preview') }}</span>
+          <strong>
+            {{ relationSourceProject?.name || t('pages.publicProjects.sourceProject') }}
+            {{ relationTypeLabel }}
+            {{ relationTargetProject?.name || t('pages.publicProjects.targetProject') }}
+          </strong>
+          <p v-if="relationType === 'PART_OF'">
+            {{ t('pages.publicProjects.parentConfirmation') }}
+          </p>
+          <p v-else>{{ t('pages.publicProjects.relationBoundary') }}</p>
+        </div>
+        <button class="primary-action" type="submit">{{ t('pages.publicProjects.addRelation') }}</button>
       </form>
     </section>
 
@@ -271,37 +345,79 @@ function formatDate(value?: string) {
       <div v-if="selectedProject" class="project-dialog-shell">
         <header class="project-dialog-header">
           <div><p class="eyebrow">PUBLIC PROJECT</p><h3>{{ selectedProject.name }}</h3><p>{{ projectPurpose(selectedProject) }}</p></div>
-          <button class="secondary-action" type="button" @click="selectedProject = null">关闭</button>
+          <button class="secondary-action" type="button" @click="selectedProject = null">{{ t('common.actions.close') }}</button>
         </header>
         <section class="project-latest-release">
           <p class="eyebrow">LATEST RELEASE</p>
-          <h4>最新发布</h4>
+          <h4>{{ t('pages.publicProjects.latestRelease') }}</h4>
           <p v-if="selectedProject.current_release">
             <strong>{{ selectedProject.current_release.version }}</strong>
             · {{ formatDate(selectedProject.current_release.published_at) }}
           </p>
-          <p v-else class="muted">这个项目还没有版本记录</p>
+          <p v-else class="muted">{{ t('pages.publicProjects.noRelease') }}</p>
         </section>
         <div class="project-detail-columns">
           <section>
-            <h4>版本记录</h4>
-            <p v-if="detailLoading" class="muted">正在读取…</p>
+            <h4>{{ t('pages.publicProjects.releaseHistory') }}</h4>
+            <p v-if="detailLoading" class="muted">{{ t('pages.publicProjects.loading') }}</p>
             <article v-for="release in releases" :key="release.version" class="project-release-item">
               <strong>{{ release.version }}</strong><p>{{ release.update_summary }}</p><small>{{ formatDate(release.published_at) }}</small>
             </article>
-            <p v-if="!detailLoading && !releases.length" class="muted">暂无版本记录</p>
+            <p v-if="!detailLoading && !releases.length" class="muted">{{ t('pages.publicProjects.noReleaseHistory') }}</p>
           </section>
           <section>
-            <h4>项目关系</h4>
+            <h4>{{ t('pages.publicProjects.relationsTitle') }}</h4>
             <article v-for="relation in relations" :key="relation.id" class="project-detail-relation">
               <strong>{{ relation.relation_type }}</strong><small>{{ relation.status ?? 'active' }}</small>
             </article>
-            <p v-if="!detailLoading && !relations.length" class="muted">暂无项目关系</p>
+            <p v-if="!detailLoading && !relations.length" class="muted">{{ t('pages.publicProjects.noRelations') }}</p>
           </section>
         </div>
         <footer class="project-dialog-actions">
-          <span>项目内容与管理操作已分开。</span>
-          <button class="primary-action" type="button" @click="openGraph(selectedProject)">查看知识图谱</button>
+          <span>{{ t('pages.publicProjects.contentManagementSeparated') }}</span>
+          <button class="primary-action" type="button" @click="openGraph(selectedProject)">{{ t('pages.publicProjects.viewGraph') }}</button>
+        </footer>
+      </div>
+    </dialog>
+
+    <dialog :open="Boolean(deletionProject)" class="project-dialog vue-dialog">
+      <div v-if="deletionProject" class="project-dialog-shell">
+        <header class="project-dialog-header">
+          <div>
+            <p class="eyebrow">DESTRUCTIVE ACTION</p>
+            <h3>{{ t('pages.publicProjects.deleteTitle') }}</h3>
+            <p>{{ t('pages.publicProjects.deleteCopy') }}</p>
+          </div>
+          <button
+            class="secondary-action"
+            type="button"
+            :disabled="deletionBusy"
+            @click="closeProjectDeletion"
+          >
+            {{ t('common.actions.close') }}
+          </button>
+        </header>
+        <label class="project-delete-confirmation">
+          {{ t('pages.publicProjects.enterFullName') }} <strong>{{ deletionProject.name }}</strong>
+          <input
+            v-model="deletionName"
+            autocomplete="off"
+            :disabled="deletionBusy"
+          />
+        </label>
+        <p v-if="deletionError" class="publish-dialog-error" role="alert">
+          {{ deletionError }}
+        </p>
+        <footer class="project-dialog-actions">
+          <span>{{ t('pages.publicProjects.deleteWarning') }}</span>
+          <button
+            class="reject"
+            type="button"
+            :disabled="!deletionMatches || deletionBusy"
+            @click="deleteProject"
+          >
+            {{ deletionBusy ? t('pages.publicProjects.deleting') : t('pages.publicProjects.deletePermanently') }}
+          </button>
         </footer>
       </div>
     </dialog>

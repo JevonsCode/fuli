@@ -72,4 +72,20 @@ describe('personal project search discovery', () => {
 
     expect(requests).toBeLessThan(projects.length)
   })
+
+  it('does not imply that unsearched projects were checked', () => {
+    expect(projectDiscoverySummary({
+      checked: 0,
+      total: 0,
+      failed: 0,
+      matches: [],
+    })).toBe('当前没有其他个人项目可继续检查。')
+
+    expect(projectDiscoverySummary({
+      checked: 12,
+      total: 20,
+      failed: 0,
+      matches: [],
+    })).toContain('已检查前 12 / 20 个其他个人项目')
+  })
 })

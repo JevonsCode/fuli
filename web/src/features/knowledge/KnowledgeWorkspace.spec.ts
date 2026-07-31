@@ -131,6 +131,95 @@ describe('KnowledgeWorkspace', () => {
     wrapper.unmount()
   })
 
+  it('shows the direct parent beside the graph instead of as a peer node', async () => {
+    getJson.mockResolvedValue({
+      nodes: [
+        ...graph.nodes,
+        {
+          id: 'personal-project-related:project-2',
+          name: '项目二',
+          type: 'RelatedPersonalProject',
+          summary: '上级项目档案',
+          attributes: { projectId: 'project-2' },
+        },
+      ],
+      edges: [
+        ...graph.edges,
+        {
+          id: 'personal-project-relation:parent',
+          source: 'personal-project:space-1:project-1',
+          target: 'personal-project-related:project-2',
+          type: 'PART_OF',
+          fact: '项目一属于项目二。',
+        },
+      ],
+    })
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.state = {
+      mode: 'personal_only',
+      activePersonalSpaceId: 'space-1',
+      personalSpaces: [{ id: 'space-1', name: '我' }],
+      personalProjects: [
+        {
+          personal_space_id: 'space-1',
+          project_id: 'project-1',
+          profile: { name: '项目一' },
+        },
+        {
+          personal_space_id: 'space-1',
+          project_id: 'project-2',
+          profile: { name: '项目二' },
+        },
+      ],
+      projects: [],
+      subscriptions: [],
+    }
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{
+        path: '/personal/:spaceId/projects/:projectId/:mode',
+        name: 'personal-project',
+        component: { template: '<div />' },
+      }],
+    })
+    await router.push('/personal/space-1/projects/project-1/graph')
+    await router.isReady()
+
+    const wrapper = mount(KnowledgeWorkspace, {
+      props: { personalProjectsOnly: true },
+      global: {
+        plugins: [pinia, router],
+        stubs: {
+          KnowledgeConfirmDialog: true,
+          KnowledgeEditDialog: true,
+          KnowledgeProjectDialog: true,
+          PersonalProjectProfileDialog: true,
+          PublishProjectDialog: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('.project-hierarchy-aside').text()).toContain('上级项目')
+    expect(wrapper.get('.project-parent-link').text()).toContain('项目二')
+    expect(wrapper.get('.project-parent-link').text()).toContain('项目一 属于此项目')
+    expect(wrapper.get('.project-parent-link').attributes('href'))
+      .toBe('/personal/space-1/projects/project-2/graph')
+
+    const renderedGraph = wrapper.findComponent({ name: 'GraphCanvasStub' })
+      .props('graph') as typeof graph
+    expect(renderedGraph.nodes.map(({ id }) => id))
+      .not.toContain('personal-project-related:project-2')
+    expect(renderedGraph.edges.map(({ id }) => id))
+      .not.toContain('personal-project-relation:parent')
+    expect(wrapper.get('.graph-relation-legend').text()).toContain('目标')
+    expect(wrapper.text()).not.toContain('PART_OF')
+    expect(wrapper.text()).not.toContain('HAS_PURPOSE')
+    wrapper.unmount()
+  })
+
   it('confirms personal-profile knowledge without narrowing the mutation to the active project', async () => {
     const preferenceId = 'preference-1'
     getJson.mockResolvedValue({

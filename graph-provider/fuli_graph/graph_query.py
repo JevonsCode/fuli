@@ -220,6 +220,12 @@ def _node_query(project_scoped: bool) -> str:
                coalesce(node.fuli_distinct_task_count, 0)
                  AS distinct_task_count,
                node.fuli_last_used_at AS last_used_at,
+               coalesce(node.fuli_negative_evidence_count, 0)
+                 AS negative_evidence_count,
+               coalesce(node.fuli_requires_attention, false)
+                 AS requires_attention,
+               node.fuli_last_feedback_kind AS last_feedback_kind,
+               node.fuli_last_feedback_at AS last_feedback_at,
                coalesce(node.fuli_usage_generation, 1) AS usage_generation,
                coalesce(node.fuli_attributes_json, '{}') AS attributes_json,
                [episode IN episodes WHERE episode IS NOT NULL | episode.uuid] AS episodes,
@@ -295,6 +301,12 @@ def _edge_query(project_scoped: bool) -> str:
                coalesce(edge.fuli_distinct_task_count, 0)
                  AS distinct_task_count,
                edge.fuli_last_used_at AS last_used_at,
+               coalesce(edge.fuli_negative_evidence_count, 0)
+                 AS negative_evidence_count,
+               coalesce(edge.fuli_requires_attention, false)
+                 AS requires_attention,
+               edge.fuli_last_feedback_kind AS last_feedback_kind,
+               edge.fuli_last_feedback_at AS last_feedback_at,
                coalesce(edge.fuli_usage_generation, 1) AS usage_generation,
                edge.valid_at AS valid_at, edge.invalid_at AS invalid_at,
                edge.fuli_replaced_by_item_id AS replaced_by_item_id,
@@ -331,6 +343,7 @@ async def _read_evidence(store, episode_ids: list[str]) -> dict[str, GraphEviden
         RETURN episode.uuid AS id, episode.name AS name,
                episode.source_description AS source_description,
                coalesce(episode.fuli_source_kind, 'unknown') AS source_kind,
+               episode.fuli_source_uri AS source_uri,
                coalesce(episode.fuli_summary, '') AS summary,
                episode.fuli_session_id AS session_id,
                episode.fuli_source_application AS source_application,
@@ -446,6 +459,12 @@ def _graph_node(
         qualified_use_count=int(record.get('qualified_use_count') or 0),
         distinct_task_count=int(record.get('distinct_task_count') or 0),
         last_used_at=_native_datetime(record.get('last_used_at')),
+        negative_evidence_count=int(
+            record.get('negative_evidence_count') or 0
+        ),
+        requires_attention=record.get('requires_attention') is True,
+        last_feedback_kind=record.get('last_feedback_kind'),
+        last_feedback_at=_native_datetime(record.get('last_feedback_at')),
         usage_generation=int(record.get('usage_generation') or 1),
         attributes=json_object(record.get('attributes_json')),
         evidence=[evidence[item] for item in episode_ids if item in evidence],
@@ -510,6 +529,12 @@ def _graph_edge(
         qualified_use_count=int(record.get('qualified_use_count') or 0),
         distinct_task_count=int(record.get('distinct_task_count') or 0),
         last_used_at=_native_datetime(record.get('last_used_at')),
+        negative_evidence_count=int(
+            record.get('negative_evidence_count') or 0
+        ),
+        requires_attention=record.get('requires_attention') is True,
+        last_feedback_kind=record.get('last_feedback_kind'),
+        last_feedback_at=_native_datetime(record.get('last_feedback_at')),
         usage_generation=int(record.get('usage_generation') or 1),
         valid_at=_native_datetime(record.get('valid_at')),
         invalid_at=_native_datetime(record.get('invalid_at')),

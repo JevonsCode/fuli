@@ -13,6 +13,7 @@ from .models import (
     KnowledgeAssignmentRecord,
     KnowledgeAuditRecord,
     KnowledgeInheritanceMode,
+    KnowledgeFeedbackKind,
     KnowledgeItemKind,
     KnowledgeRevisionRecord,
     PersonalProfileAspect,
@@ -55,6 +56,10 @@ class GraphNode(StrictModel):
     qualified_use_count: int = Field(default=0, ge=0)
     distinct_task_count: int = Field(default=0, ge=0)
     last_used_at: datetime | None = None
+    negative_evidence_count: int = Field(default=0, ge=0)
+    requires_attention: bool = False
+    last_feedback_kind: KnowledgeFeedbackKind | None = None
+    last_feedback_at: datetime | None = None
     usage_generation: int = Field(default=1, ge=1)
     attributes: dict[str, Any] = Field(default_factory=dict)
     evidence: list[GraphEvidence] = Field(default_factory=list)
@@ -99,6 +104,10 @@ class GraphEdge(StrictModel):
     qualified_use_count: int = Field(default=0, ge=0)
     distinct_task_count: int = Field(default=0, ge=0)
     last_used_at: datetime | None = None
+    negative_evidence_count: int = Field(default=0, ge=0)
+    requires_attention: bool = False
+    last_feedback_kind: KnowledgeFeedbackKind | None = None
+    last_feedback_at: datetime | None = None
     usage_generation: int = Field(default=1, ge=1)
     valid_at: datetime | None
     invalid_at: datetime | None

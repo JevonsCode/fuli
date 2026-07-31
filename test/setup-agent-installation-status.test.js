@@ -26,6 +26,7 @@ const AGENTS = Object.freeze([
     id: 'claude-code',
     label: 'Claude Code',
     configPath: 'C:/User/.claude.json',
+    settingsPath: 'C:/User/.claude/settings.json',
     skillPath: 'C:/User/.claude/skills/capturing-session-knowledge',
     projectSkillPath: 'C:/User/.claude/skills/grilling-project'
   },
@@ -101,6 +102,61 @@ test('a current JSON MCP registration and both current Skills count as connected
   });
 
   assert.equal(inspected.integrationStatus, 'connected');
+});
+
+test('Claude Code requires always-loaded Fuli plus task lifecycle hooks', () => {
+  const claude = AGENTS[1];
+  const desiredArgs = [
+    CONTEXT.mcpServerPath,
+    '--runtime-config',
+    CONTEXT.runtimeConfigPath
+  ];
+  const configs = new Map([
+    [claude.configPath, {
+      mcpServers: {
+        fuli: {
+          type: 'stdio',
+          command: CONTEXT.nodePath,
+          args: desiredArgs,
+          alwaysLoad: true
+        }
+      }
+    }],
+    [claude.settingsPath, {
+      hooks: {
+        UserPromptSubmit: [{
+          hooks: [{
+            type: 'mcp_tool',
+            server: 'fuli',
+            tool: 'begin_task_context'
+          }]
+        }],
+        Stop: [{
+          hooks: [{
+            type: 'mcp_tool',
+            server: 'fuli',
+            tool: 'verify_task_checkpoint'
+          }]
+        }]
+      }
+    }]
+  ]);
+  const [current] = inspectAgentInstallations([claude], CONTEXT, {
+    readJson: (path) => configs.get(path) ?? {},
+    fileExists: () => true,
+    skillCurrent: () => true
+  });
+  assert.equal(current.integrationStatus, 'connected');
+  assert.equal(current.integrationDetails.lifecycleHooks, 'current');
+
+  configs.set(claude.settingsPath, {});
+  const [outdated] = inspectAgentInstallations([claude], CONTEXT, {
+    readJson: (path) => configs.get(path) ?? {},
+    fileExists: () => true,
+    skillCurrent: () => true
+  });
+  assert.equal(outdated.integrationStatus, 'update_available');
+  assert.equal(outdated.integrationDetails.lifecycleHooks, 'outdated');
 });
 
 test('Codex requires a current global bootstrap in addition to MCP and Skills', () => {

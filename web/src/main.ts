@@ -1,16 +1,16 @@
-import * as d3 from 'd3'
 import { createPinia } from 'pinia'
 import { createApp } from 'vue'
 
 import App from './App.vue'
+import { i18n } from './i18n'
 import { router } from './router'
 import '../styles.css'
+import './styles/knowledge-graph.css'
 import './styles/vue.css'
-
-;(globalThis as typeof globalThis & { d3: typeof d3 }).d3 = d3
 
 const app = createApp(App)
 app.use(createPinia())
+app.use(i18n)
 app.use(router)
 
 await router.isReady()

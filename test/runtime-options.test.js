@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile, execSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -63,7 +63,7 @@ test('implicit default refuses to hide an unmigrated legacy JSON database', () =
 
   assert.throws(
     () => resolveRuntimeOptions([], {}, fsOptions),
-    /node src\/cli\.js migrate --from .*context\.json.* --to .*context\.db/
+    /retired legacy format.*no longer provides SQLite knowledge commands/
   );
 
   existing.add(dbPath);
@@ -111,7 +111,7 @@ test('duplicate runtime flags are rejected after validating every value', () => 
   }
 });
 
-test('JSON live paths are rejected with one migration command and left unchanged', () => {
+test('JSON live paths are rejected without advertising removed CLI commands', () => {
   const path = join(mkdtempSync(join(tmpdir(), 'fuli-runtime-json-')), 'legacy.json');
   const original = '{"legacy":true}\n';
   writeFileSync(path, original, 'utf8');
@@ -119,8 +119,9 @@ test('JSON live paths are rejected with one migration command and left unchanged
   assert.throws(
     () => resolveStore({ dbPath: path }),
     (error) => {
-      assert.equal((error.message.match(/node src\/cli\.js migrate/g) ?? []).length, 1);
-      assert.match(error.message, /--from .*legacy\.json["']? --to .*legacy\.db["']?/);
+      assert.match(error.message, /retired legacy format/);
+      assert.match(error.message, /no longer provides SQLite knowledge commands/);
+      assert.doesNotMatch(error.message, /node src\/cli\.js migrate|--from|--to/);
       return true;
     }
   );
@@ -128,30 +129,7 @@ test('JSON live paths are rejected with one migration command and left unchanged
 });
 
 test('JSON live-path rejection is case insensitive', () => {
-  assert.throws(() => resolveStore({ dbPath: 'CONTEXT.JsOn' }), /migrate/);
-});
-
-test('JSON rejection provides an executable migration command for paths with spaces', () => {
-  const root = mkdtempSync(join(tmpdir(), 'fuli runtime migrate '));
-  const directory = join(root, 'legacy data');
-  const source = join(directory, 'context source.json');
-  const destination = join(directory, 'context source.db');
-  mkdirSync(directory);
-  const original = JSON.stringify({
-    version: 1,
-    spaces: [], subscriptions: [], episodes: [], facts: [], candidates: [], outbox: []
-  });
-  writeFileSync(source, original, 'utf8');
-
-  let command;
-  assert.throws(() => resolveStore({ dbPath: source }), (error) => {
-    command = error.message.match(/Run once: (.+)$/)?.[1];
-    return Boolean(command);
-  });
-  execSync(command, { cwd: process.cwd(), stdio: 'pipe' });
-
-  assert.equal(existsSync(destination), true);
-  assert.equal(readFileSync(source, 'utf8'), original);
+  assert.throws(() => resolveStore({ dbPath: 'CONTEXT.JsOn' }), /retired legacy format/);
 });
 
 test('shell argument quoting follows Windows and POSIX path rules', () => {

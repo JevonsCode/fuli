@@ -248,6 +248,10 @@ def test_entity_search_projection_normalizes_temporal_fields_once():
         'last_agent_viewed_at': changed_at,
         'last_agent_reviewed_at': None,
         'confirmation_basis_json': None,
+        'source_references': [{
+            'uri': 'https://docs.example.invalid/project/test-strategy',
+            'reference_time': changed_at,
+        }],
     }
 
     result = _entity_search_result(record, 0.75, 'personal-space')
@@ -258,6 +262,9 @@ def test_entity_search_projection_normalizes_temporal_fields_once():
     assert result.last_human_changed_at == changed_at
     assert result.last_agent_viewed_at == changed_at
     assert result.last_agent_reviewed_at is None
+    assert result.source_uris == [
+        'https://docs.example.invalid/project/test-strategy'
+    ]
     assert result.score == 0.75
 
 

@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import (
     AliasChoices,
@@ -59,8 +60,15 @@ KnowledgeAuditAction = Literal[
     'agent_view',
     'agent_review',
     'knowledge_used',
+    'knowledge_feedback',
 ]
 KnowledgeUseKind = Literal['cited', 'applied']
+KnowledgeFeedbackKind = Literal[
+    'rejected',
+    'validation_failed',
+    'contradicted',
+    'outdated',
+]
 KnowledgeInheritanceMode = Literal[
     'local_only',
     'descendants',
@@ -74,6 +82,8 @@ KnowledgeRevisionAction = Literal[
     'restore',
     'scope_change',
     'batch_confirm',
+    'promote_common',
+    'replace_common_duplicate',
 ]
 KnowledgeContentRevisionAction = Literal[
     'confirm',
@@ -103,8 +113,37 @@ PreferenceConflictResolutionAction = Literal[
 ]
 SourceApplication = Literal['codex', 'claude_code', 'cursor', 'kiro', 'other']
 
+
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+
+
+def _validated_source_uri(value: str) -> str:
+    if any(
+        character.isspace() or ord(character) < 32 or ord(character) == 127
+        for character in value
+    ):
+        raise ValueError(
+            'source_uri must be an absolute HTTP(S) URI without credentials'
+        )
+    try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+    except ValueError as error:
+        raise ValueError(
+            'source_uri must be an absolute HTTP(S) URI without credentials'
+        ) from error
+    if (
+        parsed.scheme.casefold() not in {'http', 'https'}
+        or not parsed.netloc
+        or not hostname
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ValueError(
+            'source_uri must be an absolute HTTP(S) URI without credentials'
+        )
+    return value
 
 
 def _validate_inheritance(
@@ -501,6 +540,7 @@ class StructuredEpisode(StrictModel):
     name: str = Field(min_length=1, max_length=512)
     source_kind: str = Field(min_length=1, max_length=128)
     source_description: str = Field(min_length=1, max_length=1024)
+    source_uri: str | None = Field(default=None, min_length=1, max_length=2048)
     source_application: SourceApplication | None = None
     source_turn_id: str | None = Field(default=None, min_length=1, max_length=256)
     source_excerpt: str | None = Field(default=None, min_length=1, max_length=2048)
@@ -509,6 +549,11 @@ class StructuredEpisode(StrictModel):
     sensitivity: Sensitivity = 'normal'
     entities: list[EntityInput] = Field(min_length=1, max_length=128)
     relationships: list[RelationshipInput] = Field(default_factory=list, max_length=256)
+
+    @field_validator('source_uri')
+    @classmethod
+    def validate_source_uri(cls, value: str | None) -> str | None:
+        return _validated_source_uri(value) if value is not None else None
 
     @model_validator(mode='after')
     def complete_confirmation_state(self):
@@ -722,9 +767,14 @@ class EntitySearchResult(StrictModel):
     qualified_use_count: int = Field(default=0, ge=0)
     distinct_task_count: int = Field(default=0, ge=0)
     last_used_at: datetime | None = None
+    negative_evidence_count: int = Field(default=0, ge=0)
+    requires_attention: bool = False
+    last_feedback_kind: KnowledgeFeedbackKind | None = None
+    last_feedback_at: datetime | None = None
     scope_distance: int = Field(default=0, ge=0, le=8)
     inherited_from_project_id: str | None = None
     scope_path: list[str] = Field(default_factory=list, max_length=9)
+    source_uris: list[str] = Field(default_factory=list, max_length=20)
     score: float | None = None
 
 
@@ -764,9 +814,14 @@ class FactResult(StrictModel):
     qualified_use_count: int = Field(default=0, ge=0)
     distinct_task_count: int = Field(default=0, ge=0)
     last_used_at: datetime | None = None
+    negative_evidence_count: int = Field(default=0, ge=0)
+    requires_attention: bool = False
+    last_feedback_kind: KnowledgeFeedbackKind | None = None
+    last_feedback_at: datetime | None = None
     scope_distance: int = Field(default=0, ge=0, le=8)
     inherited_from_project_id: str | None = None
     scope_path: list[str] = Field(default_factory=list, max_length=9)
+    source_uris: list[str] = Field(default_factory=list, max_length=20)
     score: float | None = None
 
 
@@ -892,6 +947,7 @@ class GraphEvidence(StrictModel):
     name: str
     source_description: str
     source_kind: str
+    source_uri: str | None = Field(default=None, min_length=1, max_length=2048)
     summary: str
     session_id: str | None = None
     source_application: SourceApplication | None = None
@@ -900,6 +956,11 @@ class GraphEvidence(StrictModel):
     personal_project_id: str | None = None
     reference_time: datetime | None = None
     created_at: datetime | None = None
+
+    @field_validator('source_uri')
+    @classmethod
+    def validate_source_uri(cls, value: str | None) -> str | None:
+        return _validated_source_uri(value) if value is not None else None
 
 
 class KnowledgeRevisionCreate(StrictModel):
@@ -1100,6 +1161,14 @@ class KnowledgeAuditRecord(StrictModel):
     task_id: str | None = None
     session_id: str | None = None
     use_kind: KnowledgeUseKind | None = None
+    feedback_kind: KnowledgeFeedbackKind | None = None
+    reported_by_kind: Literal[
+        'user',
+        'agent',
+        'authoritative_source',
+    ] | None = None
+    evidence_summary: str | None = None
+    source_uri: str | None = None
     usage_generation: int | None = Field(default=None, ge=1)
     conflict_check: Literal['no_conflict', 'conflict'] | None = None
     classification_check: Literal['reasonable', 'needs_change'] | None = None

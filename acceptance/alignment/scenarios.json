@@ -1,0 +1,150 @@
+{
+  "version": "2.0",
+  "fixtureDisclosure": "All projects, facts, decisions, identifiers, dates, dialogue fragments, thresholds, and metric samples are synthetic acceptance data or Benchmark v2 conventions, not production facts.",
+  "projects": [
+    {
+      "id": "platform-a",
+      "role": "parent",
+      "purpose": "Shared activity platform, repository conventions, and runbooks."
+    },
+    {
+      "id": "hotel-b",
+      "role": "child",
+      "relation": "PART_OF platform-a",
+      "purpose": "Project-local PRD, configuration, and domain rules."
+    },
+    {
+      "id": "flight-c",
+      "role": "child",
+      "relation": "PART_OF platform-a",
+      "purpose": "Project-local flight campaign rules."
+    },
+    {
+      "id": "travel-d",
+      "role": "child",
+      "relation": "PART_OF platform-a",
+      "purpose": "Project-local travel bundle rules."
+    },
+    {
+      "id": "botany-e",
+      "role": "negative-control",
+      "relation": "RELATED_TO platform-a",
+      "purpose": "Unrelated botanical catalog."
+    }
+  ],
+  "cases": [
+    {
+      "id": "LIFECYCLE-01",
+      "category": "agent-entry",
+      "question": "Does a supported host deterministically begin Fuli task context before model work?"
+    },
+    {
+      "id": "LIFECYCLE-02",
+      "category": "agent-checkpoint",
+      "question": "Does the stop gate require capture_candidates or retain_nothing without forcing a write?"
+    },
+    {
+      "id": "SCOPE-01",
+      "category": "child-first-parent-inheritance",
+      "question": "Can a child retrieve local facts first and explicitly inheritable parent runbooks second?"
+    },
+    {
+      "id": "SCOPE-02",
+      "category": "isolation",
+      "question": "Are parent local-only facts blocked from children?"
+    },
+    {
+      "id": "SCOPE-03",
+      "category": "selective-inheritance",
+      "question": "Does a selected-project fact reach only the selected child?"
+    },
+    {
+      "id": "SCOPE-04",
+      "category": "negative-control",
+      "question": "Does RELATED_TO avoid expanding retrieval scope?"
+    },
+    {
+      "id": "SCOPE-05",
+      "category": "override",
+      "question": "Does a child's same-key rule override its parent?"
+    },
+    {
+      "id": "SCOPE-06",
+      "category": "path-ambiguity",
+      "question": "Does an ambiguous workspace path stop instead of guessing a child project?"
+    },
+    {
+      "id": "TIME-01",
+      "category": "knowledge-update",
+      "question": "Can current, superseded, reason, and time be distinguished?"
+    },
+    {
+      "id": "DECISION-01",
+      "category": "decision-rationale",
+      "question": "Are selection, rejected alternatives, reason, authority, and validation linked and retrievable?"
+    },
+    {
+      "id": "CONFLICT-01",
+      "category": "conflict",
+      "question": "Are equally authoritative conflicts withheld until context-relevant resolution?"
+    },
+    {
+      "id": "POLLUTION-01",
+      "category": "memory-pollution",
+      "question": "Does a one-off pending preference remain search-only?"
+    },
+    {
+      "id": "IDEMPOTENCY-01",
+      "category": "duplicate-control",
+      "question": "Does replaying the same episode avoid duplicate knowledge?"
+    },
+    {
+      "id": "CONVERGE-01",
+      "category": "common-candidate-discovery",
+      "question": "Can direct-child common candidates be found without a write or inherited-result contamination?"
+    },
+    {
+      "id": "CONVERGE-02",
+      "category": "common-promotion-preview",
+      "question": "Does preview require explicit human rationale and bind the exact intent?"
+    },
+    {
+      "id": "CONVERGE-03",
+      "category": "atomic-common-promotion",
+      "question": "Does one Provider mutation promote the canonical item and replace duplicates atomically?"
+    },
+    {
+      "id": "FEEDBACK-01",
+      "category": "negative-evidence",
+      "question": "Does bounded negative evidence lower ranking and flag attention without overriding human authority?"
+    },
+    {
+      "id": "AGENT-01",
+      "category": "claude-lifecycle",
+      "question": "Do real Claude Code entry and stop hooks execute in a clean session?"
+    },
+    {
+      "id": "AGENT-02",
+      "category": "fresh-session-retrieval",
+      "question": "Can a separate non-persistent session retrieve retained project and parent knowledge?"
+    },
+    {
+      "id": "AGENT-03",
+      "category": "cold-start-ab",
+      "question": "Does Fuli reduce paired collaboration cost without safety regression?"
+    },
+    {
+      "id": "AGENT-04",
+      "category": "agent-negative-control",
+      "question": "Does the Agent avoid unrelated-project leakage and stale knowledge after negative evidence?"
+    }
+  ],
+  "abConventions": {
+    "smokeRepetitionsPerScenario": 5,
+    "minimumPairedTasksForProductClaim": 30,
+    "minimumMedianContextReduction": 0.2,
+    "minimumMedianCorrectionReduction": 0.2,
+    "firstPassRateMayRegress": false,
+    "safetyRegressionAllowed": false
+  }
+}

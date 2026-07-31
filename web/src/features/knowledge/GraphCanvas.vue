@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import { currentLocale, t } from '@/i18n'
 import { renderKnowledgeGraph, type GraphController } from './graph-runtime'
 import type { KnowledgeEdge, KnowledgeGraph, KnowledgeNode } from '@/types'
 
@@ -22,6 +23,7 @@ let controller: GraphController | null = null
 
 onMounted(render)
 watch(() => props.graph, render, { deep: false })
+watch(() => currentLocale(), render)
 watch(
   [() => props.selectedItem?.itemKind, () => props.selectedItem?.id],
   applySelection,
@@ -60,5 +62,12 @@ function applySelection() {
 </script>
 
 <template>
-  <svg ref="svg" viewBox="0 0 1000 620" role="img" aria-label="知识关系图" />
+  <svg
+    id="knowledge-graph"
+    ref="svg"
+    class="knowledge-graph-canvas"
+    viewBox="0 0 1000 620"
+    role="img"
+    :aria-label="t('knowledge.workspace.graph.aria')"
+  />
 </template>

@@ -14,6 +14,12 @@ const label = boundedString(512);
 const shortText = boundedString(2048);
 const longText = boundedString(8192);
 const dateTime = { ...boundedString(64), format: 'date-time' };
+const sourceUri = {
+  type: ['string', 'null'],
+  minLength: 1,
+  maxLength: 2048,
+  pattern: '^[Hh][Tt][Tt][Pp][Ss]?://\\S+$'
+};
 const attributes = { type: 'object', additionalProperties: true };
 const epistemicQuadrant = enumSchema([
   'known_known', 'known_unknown', 'unknown_known', 'unknown_unknown'
@@ -27,6 +33,10 @@ const inheritanceMode = enumSchema([
 ]);
 const confirmationActor = objectSchema({
   kind: enumSchema(['user', 'agent', 'authoritative_source', 'import']),
+  label: nullableStringSchema()
+}, ['kind']);
+const decisionActor = objectSchema({
+  kind: enumSchema(['user', 'agent', 'authoritative_source']),
   label: nullableStringSchema()
 }, ['kind']);
 const confirmationBasis = objectSchema({
@@ -155,12 +165,70 @@ const personalProjectActionIntent = {
 const personalProjectActionRequired = [
   'personalSpaceId', 'itemKind', 'itemId', 'mode', 'reason'
 ];
+const commonKnowledgePromotionIntent = {
+  personalSpaceId: id,
+  parentProjectId: id,
+  itemKind: knowledgeItemKind,
+  canonicalItemId: id,
+  duplicateItemIds: arraySchema(id, { minItems: 1, maxItems: 31 }),
+  reason: boundedString(2000),
+  humanConfirmationReason: boundedString(2000)
+};
+const commonKnowledgePromotionRequired = [
+  'personalSpaceId', 'parentProjectId', 'itemKind', 'canonicalItemId',
+  'duplicateItemIds', 'reason', 'humanConfirmationReason'
+];
+const captureEpisodeFields = {
+  idempotencyKey: id,
+  name: label,
+  sourceKind: boundedString(128),
+  sourceDescription: boundedString(1024),
+  sourceUri,
+  sourceApplication,
+  sourceTurnId: { type: ['string', 'null'], minLength: 1, maxLength: 256 },
+  sourceExcerpt: { type: ['string', 'null'], minLength: 1, maxLength: 2048 },
+  referenceTime: dateTime,
+  summary: longText,
+  sensitivity: enumSchema(['normal', 'private', 'restricted']),
+  entities: arraySchema(entity, { minItems: 1, maxItems: 128 }),
+  relationships: arraySchema(relationship, { maxItems: 256 })
+};
+const captureEpisodeRequired = [
+  'idempotencyKey', 'name', 'sourceKind', 'sourceDescription',
+  'referenceTime', 'entities', 'relationships'
+];
 
 export const GRAPH_TOOL_DEFINITIONS = [
   {
+    name: 'begin_task_context',
+    title: 'LIFECYCLE · Begin a Fuli-aware task',
+    description: 'Lifecycle entry used by supported Agent hooks before the model processes a user prompt. It resolves the exact local project from projectPath, loads effective collaboration preferences, and returns an opaque taskContextToken. It never stores projectPath. Claude Code setup installs this as a deterministic UserPromptSubmit hook; manual Agent calls are a fallback.',
+    inputSchema: objectSchema({
+      sessionId: id,
+      projectPath: boundedString(4096)
+    }, ['sessionId', 'projectPath'])
+  },
+  {
+    name: 'checkpoint_task_knowledge',
+    title: 'LIFECYCLE · Finish knowledge review',
+    description: 'Complete exactly one end-of-task knowledge review. Use capture_candidates only for a small durable batch supported by the task; captured Agent proposals remain pending unless the payload contains valid human or authoritative-source confirmation. Use retain_nothing when the turn produced no reusable knowledge. Never store raw transcripts, guesses, temporary logs, credentials, or disposable output.',
+    inputSchema: objectSchema({
+      taskContextToken: id,
+      disposition: enumSchema(['capture_candidates', 'retain_nothing']),
+      reason: boundedString(2000),
+      capture: objectSchema(captureEpisodeFields, captureEpisodeRequired)
+    }, ['taskContextToken', 'disposition', 'reason'])
+  },
+  {
+    name: 'verify_task_checkpoint',
+    title: 'LIFECYCLE · Verify end-of-task review',
+    description: 'Hook-facing read that returns a Claude Code Stop decision. It blocks stopping only when begin_task_context succeeded for the session and checkpoint_task_knowledge has not yet recorded capture_candidates or retain_nothing.',
+    inputSchema: objectSchema({ sessionId: id }, ['sessionId'])
+  },
+  {
     name: 'get_collaboration_preferences',
     title: 'READ FIRST · Load task collaboration preferences',
-    description: 'Call this exact tool name at the start of every user task before any other tool or answer; never substitute a project action tool. Pass projectPath as the current working directory; Fuli uses it transiently, never stores or returns it, and layers preferences only for one exact registered local project match. Returns effective_preferences plus deferred_conflicts intentionally queued for AI. Apply effective_preferences before answering or constructing tool arguments. Human-confirmed preferences outrank explicitly marked agent-confirmed preferences. If the current task would use a deferred conflict, call resolve_deferred_preference_conflict before applying either side; ignore unrelated deferred conflicts. For write tools, enforce preferences in the actual payload; mentioning them only in the final answer is not compliance. Personal-global preferences always apply; other conflicted, pending, invalid, ambiguous-project, and unrelated-project items never auto-apply. Automatic injection does not count as usage evidence. personalProjectId remains an explicit compatibility override.',
+    description: 'Fallback for Agents or tasks without begin_task_context hook context. When no hook context was supplied, call this exact tool name at the start of every user task before any other tool or answer; never substitute a project action tool. Do not call it redundantly when the entry hook already supplied preferences. Pass projectPath as the current working directory; Fuli uses it transiently, never stores or returns it, and layers preferences only for one exact registered local project match. Returns effective_preferences plus deferred_conflicts intentionally queued for AI. Apply effective_preferences before answering or constructing tool arguments. Human-confirmed preferences outrank explicitly marked agent-confirmed preferences. If the current task would use a deferred conflict, call resolve_deferred_preference_conflict before applying either side; ignore unrelated deferred conflicts. For write tools, enforce preferences in the actual payload; mentioning them only in the final answer is not compliance. Personal-global preferences always apply; other conflicted, pending, invalid, ambiguous-project, and unrelated-project items never auto-apply. Automatic injection does not count as usage evidence. personalProjectId remains an explicit compatibility override.',
     inputSchema: objectSchema({
       projectPath: boundedString(4096),
       personalProjectId: nullableStringSchema(),
@@ -185,34 +253,64 @@ export const GRAPH_TOOL_DEFINITIONS = [
   },
   {
     name: 'capture_session_knowledge',
-    description: 'Silently batch durable session knowledge when the user-enabled capture policy allows it. Every item records its discovery quadrant, structured confirmation basis, and pending or confirmed state. A disabled policy returns capture_disabled without writing. Personal profile knowledge stays personal; only project knowledge with an auditable confirmation can enter public review.',
+    description: 'Silently batch durable session knowledge when the user-enabled capture policy allows it. When knowledge was read from an online source, sourceUri preserves the exact original HTTP(S) link so a capable Agent can re-read it later and refresh Fuli knowledge; it does not authorize source-document writeback. Every item records its discovery quadrant, structured confirmation basis, and pending or confirmed state. A disabled policy returns capture_disabled without writing. Personal profile knowledge stays personal; only project knowledge with an auditable confirmation can enter public review.',
     inputSchema: objectSchema({
       targetKind: enumSchema(['personal', 'project']),
       spaceId: id,
       personalProjectId: nullableStringSchema(),
       providerUrl: nullableStringSchema(),
-      idempotencyKey: id,
       sessionId: id,
-      name: label,
+      ...captureEpisodeFields
+    }, [
+      'targetKind', 'spaceId', 'sessionId', ...captureEpisodeRequired
+    ])
+  },
+  {
+    name: 'record_decision_trace',
+    title: 'WRITE · Store a decision with its rationale',
+    description: 'Store one bounded, searchable project decision as a linked Decision, selected and rejected DecisionOption nodes, a DecisionRationale, and optional ValidationResult nodes. reason is mandatory: do not store a bare conclusion. User or authoritative-source decisions are confirmed with their audit basis; Agent-only proposals remain pending. Do not copy raw transcripts, credentials, private contact details, or disposable deliberation.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      personalProjectId: nullableStringSchema(),
+      sessionId: id,
+      idempotencyKey: id,
+      decisionKey: id,
+      title: label,
+      question: shortText,
+      selectedOption: objectSchema({
+        key: id,
+        label,
+        summary: nullableStringSchema()
+      }, ['key', 'label']),
+      rejectedOptions: arraySchema(objectSchema({
+        key: id,
+        label,
+        summary: nullableStringSchema()
+      }, ['key', 'label']), { maxItems: 16 }),
+      reason: boundedString(4096),
+      validationResults: arraySchema(objectSchema({
+        key: id,
+        outcome: enumSchema(['pass', 'fail', 'inconclusive']),
+        summary: shortText
+      }, ['key', 'outcome', 'summary']), { maxItems: 16 }),
+      decidedBy: decisionActor,
+      referenceTime: dateTime,
       sourceKind: boundedString(128),
       sourceDescription: boundedString(1024),
+      sourceUri,
       sourceApplication,
       sourceTurnId: { type: ['string', 'null'], minLength: 1, maxLength: 256 },
-      sourceExcerpt: { type: ['string', 'null'], minLength: 1, maxLength: 2048 },
-      referenceTime: dateTime,
-      summary: longText,
-      sensitivity: enumSchema(['normal', 'private', 'restricted']),
-      entities: arraySchema(entity, { minItems: 1, maxItems: 128 }),
-      relationships: arraySchema(relationship, { maxItems: 256 })
+      sensitivity: enumSchema(['normal', 'private', 'restricted'])
     }, [
-      'targetKind', 'spaceId', 'idempotencyKey', 'sessionId', 'name',
-      'sourceKind', 'sourceDescription', 'referenceTime', 'entities', 'relationships'
+      'personalSpaceId', 'sessionId', 'idempotencyKey', 'decisionKey',
+      'title', 'question', 'selectedOption', 'reason', 'decidedBy',
+      'referenceTime', 'sourceKind', 'sourceDescription'
     ])
   },
   {
     name: 'search_knowledge_graph',
     title: 'READ · Search the scoped knowledge graph',
-    description: 'Search durable context before saying you do not know when a task may depend on remembered URLs, routes, requirements, architecture, prior decisions, runbooks, rationale, or personal preferences. Pending knowledge is searchable and explicitly marked; agent-confirmed knowledge ranks below human-confirmed knowledge. The bounded scope includes the personal-global profile, exact active local project, selectively inheritable knowledge reached through PART_OF or USES_KNOWLEDGE_FROM, explicitly selected additional personal projects, and selected subscribed team projects. Generic RELATED_TO links never expand scope. Use all_local_confirmed only after explicit user confirmation; it searches registered local personal projects for this query and never expands public projects. If that still has no support, use read-only local file search in the current repository or workspace files within a safe root. The response includes sourceMarker for supporting results, noMatchSourceMarker when returned items do not support the answer, and retrievalGuidance with the required next action.',
+    description: 'Search durable context before saying you do not know when a task may depend on remembered URLs, routes, requirements, architecture, prior decisions, runbooks, rationale, or personal preferences. Supporting facts and entities expose bounded source_uris when their evidence came from online sources, allowing a capable Agent to re-read the original source before refreshing Fuli knowledge. Pending knowledge is searchable and explicitly marked; agent-confirmed knowledge ranks below human-confirmed knowledge. The bounded scope includes the personal-global profile, exact active local project, selectively inheritable knowledge reached through PART_OF or USES_KNOWLEDGE_FROM, explicitly selected additional personal projects, and selected subscribed team projects. Generic RELATED_TO links never expand scope. Use all_local_confirmed only after explicit user confirmation; it searches registered local personal projects for this query and never expands public projects. If that still has no support, use read-only local file search in the current repository or workspace files within a safe root. The response includes sourceMarker for supporting results, noMatchSourceMarker when returned items do not support the answer, and retrievalGuidance with the required next action.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       query: shortText,
@@ -239,6 +337,76 @@ export const GRAPH_TOOL_DEFINITIONS = [
         useKind: enumSchema(['cited', 'applied'])
       }, ['itemId', 'itemKind', 'useKind']), { minItems: 1, maxItems: 200 })
     }, ['personalSpaceId', 'taskId', 'items'])
+  },
+  {
+    name: 'record_knowledge_feedback',
+    title: 'WRITE · Record negative knowledge evidence',
+    description: 'Record bounded negative evidence when retained knowledge is rejected, fails validation, is contradicted, or becomes outdated. Each event requires a reason and evidence summary and is idempotent per task, item, feedback kind, and content generation. It lowers ranking signals and marks the item requires_attention. It never deletes evidence or silently overrides human-confirmed authority; trusted human/source contradiction can return agent-confirmed knowledge to pending.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      taskId: id,
+      sessionId: nullableStringSchema(),
+      toolName: nullableStringSchema(),
+      items: arraySchema(objectSchema({
+        itemId: id,
+        itemKind: knowledgeItemKind,
+        feedbackKind: enumSchema([
+          'rejected', 'validation_failed', 'contradicted', 'outdated'
+        ]),
+        reason: boundedString(2000),
+        evidenceSummary: boundedString(4096),
+        reportedByKind: enumSchema([
+          'user', 'agent', 'authoritative_source'
+        ]),
+        sourceUri
+      }, [
+        'itemId', 'itemKind', 'feedbackKind', 'reason',
+        'evidenceSummary', 'reportedByKind'
+      ]), { minItems: 1, maxItems: 200 })
+    }, ['personalSpaceId', 'taskId', 'items'])
+  },
+  {
+    name: 'search_current_project_knowledge',
+    title: 'READ · Search current project and its knowledge sources',
+    description: 'High-level project search for normal Agent work. Pass projectPath plus one or more focused queries; Fuli resolves the exact local project, searches its local knowledge first, then follows outgoing PART_OF or USES_KNOWLEDGE_FROM relations to authorized parent/source knowledge. An exact current-project item with the same stable key overrides an inherited item. The tool never guesses an ambiguous project and never traverses RELATED_TO.',
+    inputSchema: objectSchema({
+      projectPath: boundedString(4096),
+      queries: arraySchema(shortText, { minItems: 1, maxItems: 10 }),
+      limitPerQuery: integerSchema({ minimum: 1, maximum: 50 }),
+      includeHistorical: booleanSchema(),
+      includePending: booleanSchema()
+    }, ['projectPath', 'queries'])
+  },
+  {
+    name: 'discover_common_knowledge_candidates',
+    title: 'READ · Find possible parent-project knowledge',
+    description: 'Read-only governance aid for one parent personal project. It searches each direct PART_OF child independently, excludes inherited and personal-global results, and groups lexically similar knowledge found in multiple children. Similarity is only an inferred candidate signal: the tool never merges, promotes, rewrites, or invalidates knowledge, and every candidate requires explicit human confirmation before a separate promotion action.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      parentProjectId: id,
+      query: shortText,
+      minChildProjects: integerSchema({ minimum: 2, maximum: 32 }),
+      similarityThreshold: numberSchema({ minimum: 0, maximum: 1 }),
+      limitPerProject: integerSchema({ minimum: 1, maximum: 50 })
+    }, ['personalSpaceId', 'parentProjectId', 'query'])
+  },
+  {
+    name: 'preview_common_knowledge_promotion',
+    title: 'CONFIRM · Preview parent-project promotion',
+    description: 'Validate the exact common-knowledge promotion after a human has explicitly chosen the canonical item, duplicates, parent project, and rationale. The preview is read-only, requires items from distinct direct PART_OF children, and returns a short-lived token binding the exact intent. Do not treat inferred lexical similarity as human confirmation.',
+    inputSchema: objectSchema(
+      commonKnowledgePromotionIntent,
+      commonKnowledgePromotionRequired
+    )
+  },
+  {
+    name: 'apply_common_knowledge_promotion',
+    title: 'WRITE · Atomically promote parent knowledge',
+    description: 'Apply one human-confirmed preview as a single Provider mutation. It moves the canonical item to the parent, enables descendants inheritance, invalidates selected child duplicates with replacement links, and stores both the scope reason and human-confirmation reason in permanent revision history. A valid one-time previewToken is mandatory.',
+    inputSchema: objectSchema({
+      ...commonKnowledgePromotionIntent,
+      previewToken: id
+    }, [...commonKnowledgePromotionRequired, 'previewToken'])
   },
   {
     name: 'get_knowledge_graph',

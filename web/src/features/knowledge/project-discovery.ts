@@ -1,4 +1,5 @@
 import { getJson } from '@/api/client'
+import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
 
 const PROJECT_DISCOVERY_LIMIT = 15
@@ -99,16 +100,22 @@ export async function discoverPersonalProjectResults({
 }
 
 export function projectDiscoverySummary(discovery: PersonalProjectDiscovery) {
-  const failure = discovery.failed ? `；${discovery.failed} 个项目暂时无法检查` : ''
+  const failure = discovery.failed
+    ? t('knowledge.domain.discovery.failedSuffix', { count: discovery.failed })
+    : ''
   if (discovery.matches.length) {
-    return `其他个人项目中有候选内容。当前结果不会混入其他项目，可进入项目查看完整命中${failure}。`
+    return t('knowledge.domain.discovery.matches', { failure })
   }
-  if (!discovery.total) return '当前没有其他个人项目可继续检查。'
-  if (discovery.failed === discovery.checked) return '其他个人项目暂时无法检查，请稍后重试。'
+  if (!discovery.total) return t('knowledge.domain.discovery.noOtherProjects')
+  if (discovery.failed === discovery.checked) return t('knowledge.domain.discovery.allFailed')
   if (discovery.checked < discovery.total) {
-    return `已检查前 ${discovery.checked} / ${discovery.total} 个其他个人项目，也没有发现候选内容${failure}。`
+    return t('knowledge.domain.discovery.checkedPartial', {
+      checked: discovery.checked,
+      total: discovery.total,
+      failure,
+    })
   }
-  return `已检查其他个人项目，也没有发现候选内容${failure}。`
+  return t('knowledge.domain.discovery.checkedAll', { failure })
 }
 
 function searchResultIds(result: KnowledgeSearchResult) {

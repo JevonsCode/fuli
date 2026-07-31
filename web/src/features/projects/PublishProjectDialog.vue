@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 
 import { postJson } from '@/api/client'
+import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { PersonalProject } from '@/types'
 
@@ -38,20 +39,21 @@ watch(
     summary.value = ''
     error.value = ''
   },
+  { immediate: true },
 )
 
 async function publish() {
   if (!props.project) return
   if (!providerUrl.value) {
-    error.value = '公共 Provider 当前不可用'
+    error.value = t('projects.publishDialog.errors.providerUnavailable')
     return
   }
   if (!version.value.trim()) {
-    error.value = '请填写发布版本'
+    error.value = t('projects.publishDialog.errors.versionRequired')
     return
   }
   if (!summary.value.trim()) {
-    error.value = '请填写本次更新内容'
+    error.value = t('projects.publishDialog.errors.summaryRequired')
     return
   }
   busy.value = true
@@ -64,12 +66,17 @@ async function publish() {
       releaseVersion: version.value.trim(),
       updateSummary: summary.value.trim(),
     })
-    store.notify(`“${props.project.profile.name}” ${version.value.trim()} 已发布并记录版本信息。`)
+    store.notify(t('projects.publishDialog.published', {
+      name: props.project.profile.name,
+      version: version.value.trim(),
+    }))
     await store.refresh()
     emit('close')
     emit('published')
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '发布失败'
+    error.value = cause instanceof Error
+      ? cause.message
+      : t('projects.publishDialog.errors.failed')
     store.reportError(cause)
   } finally {
     busy.value = false
@@ -88,24 +95,24 @@ function suggestedVersion(current: string | null) {
   <dialog v-if="project" open class="publish-dialog vue-dialog">
     <div class="publish-dialog-shell">
       <p class="eyebrow">PUBLICATION</p>
-      <h3>发布到公共空间？</h3>
+      <h3>{{ t('projects.publishDialog.title') }}</h3>
       <p class="publish-dialog-intro">
         <strong>{{ project.profile.name }}</strong>
-        <span>发布后会进入共享 Provider，不再只是本机可见。</span>
+        <span>{{ t('projects.publishDialog.warning') }}</span>
       </p>
       <div class="publish-release-fields">
-        <label><span>发布版本</span><input v-model="version" maxlength="64" placeholder="例如 v1.0.0" /><small>{{ currentVersion ? `当前版本 ${currentVersion}` : '首次发布' }}</small></label>
-        <label><span>更新内容</span><textarea v-model="summary" maxlength="4096" rows="4" placeholder="说明本次新增、调整或修复了什么" /></label>
+        <label><span>{{ t('projects.publishDialog.version') }}</span><input v-model="version" maxlength="64" :placeholder="t('projects.publishDialog.versionPlaceholder')" /><small>{{ currentVersion ? t('projects.publishDialog.currentVersion', { version: currentVersion }) : t('projects.publishDialog.firstRelease') }}</small></label>
+        <label><span>{{ t('projects.publishDialog.summary') }}</span><textarea v-model="summary" maxlength="4096" rows="4" :placeholder="t('projects.publishDialog.summaryPlaceholder')" /></label>
       </div>
-      <div class="publish-impact" aria-label="发布影响">
-        <div><strong>公开可发现</strong><span>连接这个公共服务的用户可以看到该项目。</span></div>
-        <div><strong>你成为 Owner</strong><span>系统会自动订阅项目，你可以继续维护项目资料。</span></div>
-        <div><strong>同步项目档案</strong><span>项目说明、资料摘要和已登记资料会复制到公共项目。</span></div>
+      <div class="publish-impact" :aria-label="t('projects.publishDialog.impactAria')">
+        <div><strong>{{ t('projects.publishDialog.discoverable') }}</strong><span>{{ t('projects.publishDialog.discoverableCopy') }}</span></div>
+        <div><strong>{{ t('projects.publishDialog.owner') }}</strong><span>{{ t('projects.publishDialog.ownerCopy') }}</span></div>
+        <div><strong>{{ t('projects.publishDialog.syncProfile') }}</strong><span>{{ t('projects.publishDialog.syncProfileCopy') }}</span></div>
       </div>
       <p v-if="error" class="publish-dialog-error" role="alert">{{ error }}</p>
       <div class="publish-dialog-actions">
-        <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">取消</button>
-        <button class="primary-action" type="button" :disabled="busy" @click="publish">{{ busy ? '正在发布…' : '确认发布' }}</button>
+        <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</button>
+        <button class="primary-action" type="button" :disabled="busy" @click="publish">{{ busy ? t('projects.publishDialog.publishing') : t('projects.publishDialog.confirm') }}</button>
       </div>
     </div>
   </dialog>

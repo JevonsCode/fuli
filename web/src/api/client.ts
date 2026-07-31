@@ -1,3 +1,5 @@
+import { t } from '@/i18n'
+
 export class ApiError extends Error {
   readonly status: number
 
@@ -11,7 +13,8 @@ export class ApiError extends Error {
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
   if (!response.ok) {
-    const message = (await response.text()).trim() || `请求失败 (${response.status})`
+    const message = (await response.text()).trim()
+      || t('common.errors.requestFailed', { status: response.status })
     throw new ApiError(message, response.status)
   }
   return response.json() as Promise<T>

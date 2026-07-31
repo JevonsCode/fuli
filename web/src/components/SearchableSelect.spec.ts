@@ -1,9 +1,14 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
+import { setLocale } from '@/i18n'
 import SearchableSelect from './SearchableSelect.vue'
 
 describe('SearchableSelect', () => {
+  beforeEach(() => {
+    setLocale('zh-CN', { persist: false })
+  })
+
   it('searches labels and IDs, then emits the selected value', async () => {
     const wrapper = mount(SearchableSelect, {
       attachTo: document.body,
@@ -65,5 +70,25 @@ describe('SearchableSelect', () => {
     await option.trigger('click')
     expect(wrapper.emitted('update:modelValue')).toEqual([['project-b']])
     wrapper.unmount()
+  })
+
+  it('localizes its built-in empty state and search affordance', async () => {
+    setLocale('en-US', { persist: false })
+    const wrapper = mount(SearchableSelect, {
+      props: {
+        modelValue: '',
+        label: 'Personal project',
+        searchable: true,
+        options: [{ value: 'project-a', label: 'Project Alpha' }],
+      },
+    })
+
+    await wrapper.get('[role="combobox"]').trigger('click')
+    const search = wrapper.get('input[type="search"]')
+    expect(search.attributes('placeholder')).toBe('Search name or ID')
+    expect(search.attributes('aria-label')).toBe('Search Personal project')
+
+    await search.setValue('missing')
+    expect(wrapper.text()).toContain('No matching options')
   })
 })

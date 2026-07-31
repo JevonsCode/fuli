@@ -25,7 +25,7 @@ export function resolveRuntimeOptions(args = [], env = process.env, {
   let defaultDbPath = systemDbPath;
   if (cliDbPath === null && envDbPath === null) {
     defaultDbPath = resolveDefaultDbPath({ cwd, existsSync, systemDbPath });
-    guardImplicitDefaultUpgrade({ cwd, existsSync, systemDbPath });
+    guardImplicitDefaultUpgrade({ cwd, existsSync });
   }
   return {
     dbPath: cliDbPath ?? envDbPath ?? defaultDbPath,
@@ -36,8 +36,7 @@ export function resolveRuntimeOptions(args = [], env = process.env, {
 
 export function resolveStore({ dbPath }) {
   if (extname(dbPath).toLowerCase() === '.json') {
-    const destination = dbPath.slice(0, -extname(dbPath).length) + '.db';
-    throw new RuntimeConfigurationError(migrationMessage(dbPath, destination));
+    throw new RuntimeConfigurationError(legacyJsonMessage(dbPath));
   }
   return openSqliteStore(dbPath);
 }
@@ -59,17 +58,17 @@ function resolveDefaultDbPath({ cwd, existsSync, systemDbPath }) {
   return systemDbPath;
 }
 
-function guardImplicitDefaultUpgrade({ cwd, existsSync, systemDbPath }) {
+function guardImplicitDefaultUpgrade({ cwd, existsSync }) {
   const legacyPath = resolve(cwd, '.fuli/context.json');
   const localDatabasePath = resolve(cwd, LEGACY_LOCAL_DB_PATH);
   if (existsSync(legacyPath) && !existsSync(localDatabasePath)) {
-    throw new RuntimeConfigurationError(migrationMessage(legacyPath, systemDbPath));
+    throw new RuntimeConfigurationError(legacyJsonMessage(legacyPath));
   }
 }
 
-function migrationMessage(source, destination) {
-  return 'JSON is a legacy import format. Run once: node src/cli.js migrate ' +
-    `--from ${quoteShellArgument(source)} --to ${quoteShellArgument(destination)}`;
+function legacyJsonMessage(source) {
+  return `JSON is a retired legacy format (${quoteShellArgument(source)}). ` +
+    'The current Fuli CLI no longer provides SQLite knowledge commands or JSON migration.';
 }
 
 export function openLocalApplication({ dbPath, personalSpaceName = DEFAULT_PERSONAL_SPACE }) {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createServer } from 'node:http';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -10,10 +10,14 @@ import { connectMcp } from '../test-support/mcp-client.js';
 
 test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知识', async (t) => {
   const received = [];
+  const searchRequests = [];
   const personal = await provider((request) => {
     if (request.path === '/health') return { status: 'ready', providerId: 'personal' };
     if (request.path === '/v1/subscriptions') return [];
     if (request.path === '/v1/spaces') return [{ id: 'personal-1', kind: 'personal' }];
+    if (request.path === '/v1/personal-projects') {
+      return [{ project_id: 'hotel-b', personal_space_id: 'personal-1' }];
+    }
     if (request.path === '/v1/collaboration-preferences') {
       const preference = {
         id: 'preference-1',
@@ -44,6 +48,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
       };
     }
     if (request.path === '/v1/search') {
+      searchRequests.push(request.body);
       if (request.body.query === 'missing page URL') return { facts: [], entities: [] };
       return {
         facts: [],
@@ -76,6 +81,8 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   t.after(() => Promise.all([close(personal.server), close(workspace.server)]));
 
   const runtimeConfigPath = join(mkdtempSync(join(tmpdir(), 'fuli-mcp-graph-')), 'runtime.json');
+  const hotelProjectPath = join(dirname(runtimeConfigPath), 'hotel-b');
+  mkdirSync(hotelProjectPath);
   writeFileSync(runtimeConfigPath, JSON.stringify({
     version: 1,
     personal: {
@@ -103,8 +110,15 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'Claude Code 会裁剪超过 2 KiB 的 MCP 服务说明'
   );
   assert.match(instructions, /search_knowledge_graph/);
+  assert.match(instructions, /search_current_project_knowledge/);
+  assert.match(instructions, /begin_task_context/);
+  assert.match(instructions, /hook-provided task context/i);
+  assert.match(instructions, /checkpoint_task_knowledge/);
+  assert.match(instructions, /capture_candidates.*retain_nothing/i);
+  assert.match(instructions, /record_decision_trace/);
+  assert.match(instructions, /record_knowledge_feedback/);
   assert.match(instructions, /get_collaboration_preferences/);
-  assert.match(instructions, /resolve_deferred_preference_conflict/);
+  assert.match(instructions, /deferred_conflict/);
   assert.match(instructions, /each user task/i);
   assert.match(instructions, /before other tools\/answer/i);
   assert.match(instructions, /projectPath=cwd/i);
@@ -112,33 +126,35 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   assert.match(instructions, /personal-global everywhere/i);
   assert.match(instructions, /only Fuli's matched project/i);
   assert.match(instructions, /before (?:saying|answering|claiming).*(?:do not know|don't know|unknown)/i);
-  assert.match(instructions, /URLs?.*routes?.*requirements?.*prior decisions?.*runbooks?/i);
-  assert.match(instructions, /list_knowledge_spaces/);
-  assert.match(instructions, /silently batch/i);
-  assert.match(instructions, /personal-global(?: profile)?/i);
-  assert.match(instructions, /(?:explicitly )?relevant subscribed public project IDs/i);
+  assert.match(instructions, /active child first.*inheritable parent/i);
+  assert.match(instructions, /exact IDs for extra projects/i);
+  assert.match(instructions, /Batch durable confirmed knowledge/i);
   assert.match(instructions, /writes?.*actual payload/i);
   assert.match(instructions, /final text.*not compliance/i);
-  assert.match(instructions, /monitoring or Git MCP/i);
+  assert.match(instructions, /monitoring\/Git MCP/i);
   assert.match(instructions, /sourceMarker\.leadMarkdown/);
   assert.match(instructions, /MUST begin/);
   assert.match(instructions, /sourceMarker\.markdown/);
   assert.match(instructions, /noMatchSourceMarker/);
   assert.match(instructions, /terminal-safe Markdown/i);
   assert.match(instructions, /never wrap.*HTML/i);
-  assert.match(instructions, /ask.*widen.*all registered local personal projects/i);
   assert.match(instructions, /all_local_confirmed/);
-  assert.match(instructions, /never expands public projects/i);
-  assert.match(instructions, /current repository or workspace files/i);
-  assert.match(instructions, /Grep|rg/);
-  assert.match(instructions, /user home.*filesystem root/i);
-  assert.match(instructions, /outside.*workspace/i);
+  assert.match(instructions, /only after consent/i);
+  assert.match(instructions, /safe current repo\/workspace/i);
+  assert.match(instructions, /Never scan outside it/i);
 
   const listed = await connection.client.listTools();
   assert.deepEqual(listed.tools.map(({ name }) => name), [
+    'begin_task_context',
+    'checkpoint_task_knowledge',
+    'verify_task_checkpoint',
     'get_collaboration_preferences',
     'resolve_deferred_preference_conflict',
-    'capture_session_knowledge', 'search_knowledge_graph', 'record_knowledge_usage',
+    'capture_session_knowledge', 'record_decision_trace',
+    'search_knowledge_graph', 'record_knowledge_usage', 'record_knowledge_feedback',
+    'search_current_project_knowledge',
+    'discover_common_knowledge_candidates',
+    'preview_common_knowledge_promotion', 'apply_common_knowledge_promotion',
     'get_knowledge_graph',
     'search_human_knowledge_changes', 'review_human_knowledge_change',
     'list_knowledge_spaces', 'upsert_personal_project', 'list_personal_projects',
@@ -168,6 +184,141 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   assert.match(applyProjectTool.description, /never call.*read-only task/i);
   assert.match(applyProjectTool.description, /previewToken/i);
 
+  const taskContext = await connection.client.callTool({
+    name: 'begin_task_context',
+    arguments: {
+      sessionId: 'mcp-lifecycle-session',
+      projectPath: dirname(runtimeConfigPath)
+    }
+  });
+  assert.equal(taskContext.isError, undefined);
+  assert.match(
+    taskContext.structuredContent.task_context_token,
+    /^fuli-task-/
+  );
+  assert.equal(
+    taskContext.structuredContent.taskContextToken,
+    taskContext.structuredContent.task_context_token
+  );
+  const taskHookOutput = JSON.parse(taskContext.content[0].text);
+  assert.equal(
+    taskHookOutput.hookSpecificOutput.hookEventName,
+    'UserPromptSubmit'
+  );
+  assert.match(
+    taskHookOutput.hookSpecificOutput.additionalContext,
+    /taskContextToken/
+  );
+  assert.equal(
+    taskContext.structuredContent.effective_preferences[0].instruction,
+    'Use direct, low-fluff writing.'
+  );
+
+  const pendingCheckpoint = await connection.client.callTool({
+    name: 'verify_task_checkpoint',
+    arguments: { sessionId: 'mcp-lifecycle-session' }
+  });
+  assert.equal(pendingCheckpoint.structuredContent.decision, 'block');
+  assert.match(
+    pendingCheckpoint.structuredContent.reason,
+    /checkpoint_task_knowledge/
+  );
+
+  const checkpoint = await connection.client.callTool({
+    name: 'checkpoint_task_knowledge',
+    arguments: {
+      taskContextToken: taskContext.structuredContent.task_context_token,
+      disposition: 'retain_nothing',
+      reason: 'This synthetic task produced no durable knowledge.'
+    }
+  });
+  assert.equal(checkpoint.structuredContent.status, 'checkpointed');
+  assert.equal(checkpoint.structuredContent.disposition, 'retain_nothing');
+
+  const completedCheckpoint = await connection.client.callTool({
+    name: 'verify_task_checkpoint',
+    arguments: { sessionId: 'mcp-lifecycle-session' }
+  });
+  assert.equal(completedCheckpoint.structuredContent.decision, undefined);
+  assert.equal(completedCheckpoint.structuredContent.status, 'checkpointed');
+
+  const projectTask = await connection.client.callTool({
+    name: 'begin_task_context',
+    arguments: {
+      sessionId: 'mcp-project-session',
+      projectPath: hotelProjectPath
+    }
+  });
+  assert.equal(projectTask.isError, undefined, JSON.stringify(projectTask));
+  assert.equal(
+    projectTask.structuredContent.context.personal_project_id,
+    'hotel-b'
+  );
+  const capturedCheckpoint = await connection.client.callTool({
+    name: 'checkpoint_task_knowledge',
+    arguments: {
+      taskContextToken: projectTask.structuredContent.task_context_token,
+      disposition: 'capture_candidates',
+      reason: 'The synthetic task produced one bounded pending candidate.',
+      capture: {
+        idempotencyKey: 'mcp-project-session-candidate-v1',
+        name: 'Synthetic task candidate',
+        sourceKind: 'synthetic_test',
+        sourceDescription: 'Synthetic MCP lifecycle acceptance evidence.',
+        sourceApplication: 'other',
+        referenceTime: '2026-07-31T00:00:00.000Z',
+        summary: 'Synthetic candidate only; not a production fact.',
+        sensitivity: 'private',
+        entities: [{
+          key: 'synthetic.lifecycle.candidate',
+          name: 'Synthetic lifecycle candidate',
+          type: 'TestKnowledge',
+          summary: 'Synthetic candidate only.',
+          originQuadrant: 'known_known',
+          confirmationStatus: 'pending',
+          confirmationBasis: {
+            existenceReason: 'Generated by a synthetic lifecycle test.',
+            quadrantReason: 'The fixture states the candidate directly.',
+            proposedBy: { kind: 'agent', label: 'MCP lifecycle test' }
+          },
+          inheritanceMode: 'local_only',
+          inheritedProjectIds: [],
+          attributes: {}
+        }],
+        relationships: []
+      }
+    }
+  });
+  assert.equal(capturedCheckpoint.structuredContent.status, 'checkpointed');
+  assert.equal(capturedCheckpoint.structuredContent.capture.status, 'committed');
+  assert.equal(received.at(-1).personal_project_id, 'hotel-b');
+  assert.equal(received.at(-1).episode.session_id, 'mcp-project-session');
+
+  const projectSearch = await connection.client.callTool({
+    name: 'search_current_project_knowledge',
+    arguments: {
+      projectPath: hotelProjectPath,
+      queries: ['how to run locally', 'how to validate'],
+      includeHistorical: false,
+      includePending: false,
+      limitPerQuery: 8
+    }
+  });
+  assert.equal(projectSearch.isError, undefined);
+  assert.equal(projectSearch.structuredContent.personal_project_id, 'hotel-b');
+  assert.equal(projectSearch.structuredContent.results.length, 2);
+  assert.deepEqual(
+    searchRequests.slice(-2).map((request) => ({
+      projects: request.personal_project_ids,
+      active: request.active_personal_project_id,
+      inherit: request.inherit_project_knowledge
+    })),
+    [
+      { projects: ['hotel-b'], active: 'hotel-b', inherit: true },
+      { projects: ['hotel-b'], active: 'hotel-b', inherit: true }
+    ]
+  );
+
   const preferences = await connection.client.callTool({
     name: 'get_collaboration_preferences',
     arguments: { projectPath: dirname(runtimeConfigPath) }
@@ -193,8 +344,12 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   });
   assert.equal(captured.isError, undefined);
   assert.equal(captured.structuredContent.route, 'personal');
-  assert.equal(received.length, 1);
-  assert.equal(received[0].episode.entities[0].type, 'DevelopmentRule');
+  assert.equal(received.length, 2);
+  assert.equal(received.at(-1).episode.entities[0].type, 'DevelopmentRule');
+  assert.equal(
+    received.at(-1).episode.source_uri,
+    'https://docs.example.invalid/project/shared-module-rule'
+  );
 
   const searched = await connection.client.callTool({
     name: 'search_knowledge_graph',
@@ -295,7 +450,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   });
   assert.equal(rejected.isError, true);
   assert.equal(JSON.stringify(rejected).includes(secret), false);
-  assert.equal(received.length, 1);
+  assert.equal(received.length, 2);
 
   await assert.rejects(connection.client.listResources(), /Method not found/);
   await assert.rejects(connection.client.listPrompts(), /Method not found/);
@@ -414,6 +569,119 @@ test('Agent 项目写入必须使用匹配且一次性的预览授权', async (t
   assert.equal(writes, 1);
 });
 
+test('公共知识上收必须使用匹配且一次性的人工确认预览', async (t) => {
+  let writes = 0;
+  const personal = await provider((request) => {
+    if (request.path === '/health') return { status: 'ready', providerId: 'personal' };
+    if (request.path === '/v1/subscriptions') return [];
+    if (request.path === '/v1/spaces') return [{ id: 'personal-1', kind: 'personal' }];
+    if (request.path === '/v1/knowledge/common-promotions/preview') {
+      return {
+        status: 'ready',
+        personal_space_id: 'personal-1',
+        parent_project_id: 'platform-a',
+        item_kind: 'entity',
+        canonical_item_id: 'canonical',
+        duplicate_item_ids: ['duplicate'],
+        source_project_ids: ['flight-c', 'hotel-b'],
+        inheritance_mode: 'descendants',
+        atomic: true,
+        requires_human_confirmation: true,
+        reason: request.body.reason,
+        human_confirmation_reason: request.body.human_confirmation_reason
+      };
+    }
+    if (request.path === '/v1/knowledge/common-promotions') {
+      writes += 1;
+      return {
+        status: 'promoted',
+        promotion_id: 'promotion-1',
+        personal_space_id: 'personal-1',
+        parent_project_id: 'platform-a',
+        item_kind: 'entity',
+        canonical_item_id: 'canonical',
+        invalidated_item_ids: ['duplicate'],
+        source_project_ids: ['flight-c', 'hotel-b'],
+        inheritance_mode: 'descendants',
+        revision_ids: ['revision-1', 'revision-2'],
+        reason: request.body.reason,
+        human_confirmation_reason: request.body.human_confirmation_reason
+      };
+    }
+    return [];
+  });
+  t.after(() => close(personal.server));
+
+  const runtimeConfigPath = join(
+    mkdtempSync(join(tmpdir(), 'fuli-mcp-common-promotion-')),
+    'runtime.json'
+  );
+  writeFileSync(runtimeConfigPath, JSON.stringify({
+    version: 1,
+    personal: {
+      providerUrl: personal.url,
+      accessToken: 'personal-access',
+      principalId: 'principal-personal',
+      spaceId: 'personal-1'
+    },
+    workspaces: []
+  }));
+  const connection = await connectMcp(runtimeConfigPath);
+  t.after(() => connection.close());
+
+  const promotion = {
+    personalSpaceId: 'personal-1',
+    parentProjectId: 'platform-a',
+    itemKind: 'entity',
+    canonicalItemId: 'canonical',
+    duplicateItemIds: ['duplicate'],
+    reason: 'Synthetic shared runbook evidence.',
+    humanConfirmationReason: 'The synthetic benchmark explicitly approved this exact intent.'
+  };
+
+  const preview = await connection.client.callTool({
+    name: 'preview_common_knowledge_promotion',
+    arguments: promotion
+  });
+  assert.equal(preview.isError, undefined);
+  assert.equal(preview.structuredContent.atomic, true);
+  assert.match(preview.structuredContent.previewToken, /^[A-Za-z0-9_-]{20,}$/);
+
+  const mismatched = await connection.client.callTool({
+    name: 'apply_common_knowledge_promotion',
+    arguments: {
+      ...promotion,
+      reason: 'Changed rationale.',
+      previewToken: preview.structuredContent.previewToken
+    }
+  });
+  assert.equal(mismatched.isError, true);
+  assert.equal(mismatched.structuredContent.error.code, 'preview_mismatch');
+  assert.equal(writes, 0);
+
+  const applied = await connection.client.callTool({
+    name: 'apply_common_knowledge_promotion',
+    arguments: {
+      ...promotion,
+      previewToken: preview.structuredContent.previewToken
+    }
+  });
+  assert.equal(applied.isError, undefined);
+  assert.equal(applied.structuredContent.status, 'promoted');
+  assert.equal(writes, 1);
+
+  const replayed = await connection.client.callTool({
+    name: 'apply_common_knowledge_promotion',
+    arguments: {
+      ...promotion,
+      previewToken: preview.structuredContent.previewToken
+    }
+  });
+  assert.equal(replayed.isError, true);
+  assert.equal(replayed.structuredContent.error.code, 'preview_expired');
+  assert.equal(writes, 1);
+});
+
 function personalCapture() {
   return {
     targetKind: 'personal',
@@ -424,6 +692,7 @@ function personalCapture() {
     name: 'Project-scoped personal rule',
     sourceKind: 'conversation',
     sourceDescription: 'Confirmed user instruction',
+    sourceUri: 'https://docs.example.invalid/project/shared-module-rule',
     referenceTime: '2026-07-21T10:00:00.000Z',
     summary: 'Ask before changing shared modules',
     sensitivity: 'normal',
@@ -450,8 +719,10 @@ function personalCapture() {
 async function provider(handler) {
   const server = createServer(async (request, response) => {
     const body = await readBody(request);
+    const url = new URL(request.url, 'http://localhost');
     const payload = handler({
-      path: new URL(request.url, 'http://localhost').pathname,
+      path: url.pathname,
+      query: Object.fromEntries(url.searchParams),
       method: request.method,
       body
     });

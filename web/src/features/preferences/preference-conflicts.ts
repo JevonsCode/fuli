@@ -1,4 +1,5 @@
 import { latestItemValue } from '@/features/knowledge/model'
+import { currentLocale, t } from '@/i18n'
 import type { KnowledgeItem } from '@/types'
 
 export type PreferenceConflictRelation = 'complementary' | 'review'
@@ -87,15 +88,18 @@ export function detectPreferenceConflicts(
         difference,
         relation,
         recommendedAction: relation === 'complementary' ? 'merge' : null,
-        reason: `偏好键“${preferenceKey(left)}”和生效范围相同，但当前内容不一致。`,
+        reason: t('preferences.shared.conflictReason', {
+          key: preferenceKey(left),
+        }),
         aiRecord,
       })
     }
   }
   return conflicts.sort((left, right) => {
-    const scopeOrder = left.scopeKey.localeCompare(right.scopeKey, 'zh-CN')
+    const locale = currentLocale()
+    const scopeOrder = left.scopeKey.localeCompare(right.scopeKey, locale)
     if (scopeOrder) return scopeOrder
-    return left.preferenceKey.localeCompare(right.preferenceKey, 'zh-CN')
+    return left.preferenceKey.localeCompare(right.preferenceKey, locale)
   })
 }
 
@@ -139,8 +143,8 @@ export function preferenceScopeKey(item: KnowledgeItem) {
 
 export function preferenceScopeLabel(item: KnowledgeItem) {
   return item.preferenceScope === 'project' && item.preferenceProjectId
-    ? `项目范围 · ${item.preferenceProjectId}`
-    : '个人全局'
+    ? t('preferences.shared.projectScope', { project: item.preferenceProjectId })
+    : t('preferences.shared.personalGlobal')
 }
 
 export function comparePreferenceValues(

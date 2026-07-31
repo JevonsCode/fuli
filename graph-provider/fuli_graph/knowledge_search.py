@@ -16,6 +16,7 @@ from .search_projection import (
     fact_result,
     is_default_retrievable,
     read_edge_epistemic_metadata,
+    source_uris_from_references,
 )
 
 MIN_TERM_COVERAGE = 0.25
@@ -390,7 +391,20 @@ async def _personal_entities(
                  AS qualified_use_count,
                coalesce(node.fuli_distinct_task_count, 0)
                  AS distinct_task_count,
-               node.fuli_last_used_at AS last_used_at
+               node.fuli_last_used_at AS last_used_at,
+               coalesce(node.fuli_negative_evidence_count, 0)
+                 AS negative_evidence_count,
+               coalesce(node.fuli_requires_attention, false)
+                 AS requires_attention,
+               node.fuli_last_feedback_kind AS last_feedback_kind,
+               node.fuli_last_feedback_at AS last_feedback_at,
+               [episode IN episodes
+                 WHERE episode.fuli_source_uri IS NOT NULL |
+                 {
+                   uri: episode.fuli_source_uri,
+                   reference_time: episode.valid_at,
+                   created_at: episode.created_at
+                 }] AS source_references
         ORDER BY node.name, node.uuid
         LIMIT $candidate_limit
         ''',
@@ -565,12 +579,14 @@ def _ranked_relevance(base_score: float, metadata) -> float:
     confidence_factor = 0.75 + min(max(confidence, 0), 1) * 0.25
     utility_factor = 0.95 + min(max(utility, 0), 1) * 0.1
     scope_factor = max(0.65, 1.0 - scope_distance * 0.15)
+    attention_factor = 0.6 if metadata.get('requires_attention') else 1.0
     return round(
         base_score
         * status_factor
         * confidence_factor
         * utility_factor
-        * scope_factor,
+        * scope_factor
+        * attention_factor,
         4,
     )
 
@@ -618,6 +634,7 @@ def _dedupe_ranked_entities(ranked, active_project_id):
 def _entity_search_result(record, score: float, space_id: str) -> EntitySearchResult:
     value = dict(record)
     basis = json_object(value.pop('confirmation_basis_json', None))
+    source_references = value.pop('source_references', [])
     created_at = _native_datetime(value.pop('created_at', None))
     last_human_changed_at = _native_datetime(
         value.pop('last_human_changed_at', None)
@@ -629,6 +646,9 @@ def _entity_search_result(record, score: float, space_id: str) -> EntitySearchRe
         value.pop('last_agent_reviewed_at', None)
     )
     last_used_at = _native_datetime(value.pop('last_used_at', None))
+    last_feedback_at = _native_datetime(
+        value.pop('last_feedback_at', None)
+    )
     for field in (
         'assignment_project_id',
         'episode_project_ids',
@@ -645,9 +665,11 @@ def _entity_search_result(record, score: float, space_id: str) -> EntitySearchRe
         last_agent_viewed_at=last_agent_viewed_at,
         last_agent_reviewed_at=last_agent_reviewed_at,
         last_used_at=last_used_at,
+        last_feedback_at=last_feedback_at,
         confirmation_basis=(
             ConfirmationBasis.model_validate(basis) if basis else None
         ),
+        source_uris=source_uris_from_references(source_references),
         score=score,
     )
 

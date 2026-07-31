@@ -3,6 +3,10 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
+import {
+  connectClaudeCode,
+  disconnectClaudeCode
+} from './claude-code-config.js';
 import { connectCursor, disconnectCursor } from './cursor-config.js';
 import { connectCodex, disconnectCodex } from './codex-config.js';
 
@@ -34,6 +38,7 @@ export function discoverAgents({
       label: 'Claude Code',
       command: 'claude',
       configPath: pathApi.join(homeDir, '.claude.json'),
+      settingsPath: pathApi.join(homeDir, '.claude', 'settings.json'),
       skillPath: pathApi.join(homeDir, '.claude', 'skills', skillName),
       projectSkillPath: pathApi.join(homeDir, '.claude', 'skills', projectSkillName),
       available: Boolean(commandExists('claude'))
@@ -75,9 +80,13 @@ export function buildAgentCommands(agent, context) {
 export function connectAgent(agent, context, {
   runCommand = defaultRunCommand,
   connectCodexConfig = connectCodex,
+  connectClaudeCodeConfig = connectClaudeCode,
   connectCursorConfig = connectCursor
 } = {}) {
   if (agent.id === 'codex') return connectCodexConfig(agent, context);
+  if (agent.id === 'claude-code') {
+    return connectClaudeCodeConfig(agent, context);
+  }
   if (agent.id === 'cursor') return connectCursorConfig(agent, context);
 
   const commands = buildAgentCommands(agent, context);
@@ -91,10 +100,12 @@ export function connectAgent(agent, context, {
 
 export function disconnectAgent(agent, {
   disconnectCodexConfig = disconnectCodex,
+  disconnectClaudeCodeConfig = disconnectClaudeCode,
   disconnectJsonConfig = disconnectCursor
 } = {}) {
   if (agent.id === 'codex') return disconnectCodexConfig(agent);
-  if (agent.id === 'cursor' || agent.id === 'claude-code') {
+  if (agent.id === 'claude-code') return disconnectClaudeCodeConfig(agent);
+  if (agent.id === 'cursor') {
     return disconnectJsonConfig(agent);
   }
   throw new TypeError(`Unsupported agent: ${agent.id}`);

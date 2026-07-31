@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import { legacyRouteFromUrl } from './legacy'
+import { updateDocumentTitle } from './meta'
 
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -9,7 +10,7 @@ export const router = createRouter({
       path: '/',
       name: 'overview',
       component: () => import('@/pages/OverviewPage.vue'),
-      meta: { eyebrow: 'LOCAL + FEDERATED', title: '概览' },
+      meta: { eyebrow: 'LOCAL + FEDERATED', title: 'routes.overview.title' },
     },
     {
       path: '/preferences',
@@ -17,8 +18,8 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProfilePage.vue'),
       meta: {
         eyebrow: 'PERSONAL LENS',
-        title: '协作偏好',
-        description: '个人全局与项目级的品味、个性和判断偏好，只保存在本机。',
+        title: 'routes.preferences.title',
+        description: 'routes.preferences.description',
       },
     },
     {
@@ -27,7 +28,7 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         eyebrow: 'PERSONAL PROJECT',
-        title: '个人项目',
+        title: 'routes.personalProjects.title',
       },
     },
     {
@@ -36,8 +37,8 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         eyebrow: 'PERSONAL PROJECTS',
-        title: '个人项目',
-        description: '本机私有项目、项目知识与按任务生效的协作偏好。',
+        title: 'routes.personalProjects.title',
+        description: 'routes.personalProjects.description',
       },
     },
     {
@@ -46,8 +47,8 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         eyebrow: 'PERSONAL PROJECTS',
-        title: '个人项目',
-        description: '本机私有项目、项目知识与按任务生效的协作偏好。',
+        title: 'routes.personalProjects.title',
+        description: 'routes.personalProjects.description',
       },
     },
     {
@@ -56,7 +57,7 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         eyebrow: 'PERSONAL PROJECT',
-        title: '个人项目',
+        title: 'routes.personalProjects.title',
       },
     },
     {
@@ -65,8 +66,8 @@ export const router = createRouter({
       component: () => import('@/pages/KnowledgeOrganizerPage.vue'),
       meta: {
         eyebrow: 'KNOWLEDGE CLASSIFICATION',
-        title: '知识整理',
-        description: '按发现时四象限、确认依据与确认状态整理个人空间里的全部知识。',
+        title: 'routes.organizer.title',
+        description: 'routes.organizer.description',
       },
     },
     {
@@ -75,39 +76,39 @@ export const router = createRouter({
       component: () => import('@/pages/PublicProjectsPage.vue'),
       meta: {
         eyebrow: 'PUBLIC PROJECTS',
-        title: '公共项目',
-        description: '发现、订阅和维护公共 Provider 上的项目。',
+        title: 'routes.publicProjects.title',
+        description: 'routes.publicProjects.description',
       },
     },
     {
       path: '/knowledge',
       name: 'knowledge-default',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { eyebrow: 'KNOWLEDGE BASE', title: '知识库' },
+      meta: { eyebrow: 'KNOWLEDGE BASE', title: 'routes.knowledge.title' },
     },
     {
       path: '/knowledge/:scope/:spaceId/:projectId/:mode/:itemKind/:itemId',
       name: 'project-knowledge-item',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { eyebrow: 'KNOWLEDGE BASE', title: '知识库' },
+      meta: { eyebrow: 'KNOWLEDGE BASE', title: 'routes.knowledge.title' },
     },
     {
       path: '/knowledge/:scope/:spaceId/:mode/:itemKind/:itemId',
       name: 'knowledge-item',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { eyebrow: 'KNOWLEDGE BASE', title: '知识库' },
+      meta: { eyebrow: 'KNOWLEDGE BASE', title: 'routes.knowledge.title' },
     },
     {
       path: '/knowledge/:scope/:spaceId/:projectId/:mode',
       name: 'project-knowledge',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { eyebrow: 'KNOWLEDGE BASE', title: '知识库' },
+      meta: { eyebrow: 'KNOWLEDGE BASE', title: 'routes.knowledge.title' },
     },
     {
       path: '/knowledge/:scope/:spaceId/:mode',
       name: 'knowledge',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { eyebrow: 'KNOWLEDGE BASE', title: '知识库' },
+      meta: { eyebrow: 'KNOWLEDGE BASE', title: 'routes.knowledge.title' },
     },
     {
       path: '/review',
@@ -115,8 +116,8 @@ export const router = createRouter({
       component: () => import('@/pages/ReviewPage.vue'),
       meta: {
         eyebrow: 'REVIEW WORKSPACE',
-        title: '发布审核',
-        description: '个人发布确认与公共项目 Maintainer 审核。',
+        title: 'routes.review.title',
+        description: 'routes.review.description',
       },
     },
     {
@@ -125,8 +126,8 @@ export const router = createRouter({
       component: () => import('@/pages/ConnectionsPage.vue'),
       meta: {
         eyebrow: 'SERVICE CONNECTIONS',
-        title: '服务连接',
-        description: '本地知识库状态、公共 Provider 与项目订阅。',
+        title: 'routes.connections.title',
+        description: 'routes.connections.description',
       },
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },
@@ -142,6 +143,5 @@ router.beforeEach(() => {
 })
 
 router.afterEach((route) => {
-  const title = String(route.meta.title ?? 'Context Graph')
-  document.title = `${title} · 复利`
+  updateDocumentTitle(route.meta.title)
 })

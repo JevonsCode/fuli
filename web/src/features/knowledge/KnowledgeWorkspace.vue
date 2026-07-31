@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import { getJson } from '@/api/client'
 import SearchableSelect from '@/components/SearchableSelect.vue'
+import { t } from '@/i18n'
 import { createDebouncedAction } from '@/lib/debounce'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { knowledgePath, personalProjectsPath, type KnowledgeMode, type KnowledgeScope } from '@/router/paths'
@@ -17,30 +18,23 @@ import type {
   PublicProject,
 } from '@/types'
 import GraphCanvas from './GraphCanvas.vue'
-import KnowledgeConfirmDialog from './KnowledgeConfirmDialog.vue'
-import KnowledgeEditDialog from './KnowledgeEditDialog.vue'
+import GraphRelationLegend from './GraphRelationLegend.vue'
+import KnowledgeDirectoryPanel from './KnowledgeDirectoryPanel.vue'
 import KnowledgeInspector from './KnowledgeInspector.vue'
-import KnowledgeProjectDialog from '@/features/projects/KnowledgeProjectDialog.vue'
-import PersonalProjectProfileDialog from '@/features/projects/PersonalProjectProfileDialog.vue'
-import PublishProjectDialog from '@/features/projects/PublishProjectDialog.vue'
+import KnowledgeWorkspaceDialogs from './KnowledgeWorkspaceDialogs.vue'
+import ProjectHierarchyAside from './ProjectHierarchyAside.vue'
 import {
   currentKnowledgeGraph,
   filterKnowledgeItems,
-  formatTime,
   isManagementKnowledgeItem,
   knowledgeItemFromEdge,
   knowledgeItemFromNode,
   knowledgeItems,
-  knowledgeReviewState,
-  humanChangeStatusLabel,
-  latestItemValue,
   managementKnowledgeItems,
   mergeKnowledgeGraphs,
   personalProjectIdForItem,
-  profileAspectLabel,
   projectMaterialTypeLabel,
   quadrantLabel,
-  reviewStateLabel,
 } from './model'
 import {
   discoverPersonalProjectResults,
@@ -48,6 +42,7 @@ import {
   type KnowledgeSearchResult,
   type PersonalProjectDiscovery,
 } from './project-discovery'
+import { separateParentProjects } from './project-hierarchy'
 
 const props = withDefaults(defineProps<{
   personalProjectsOnly?: boolean
@@ -139,28 +134,29 @@ const directorySection = computed<DirectorySection>(() => {
 })
 const typeOptions = computed(() => [...new Set(allItems.value.map(({ type }) => type))].sort())
 const typeSelectOptions = computed(() => [
-  { value: 'all', label: '全部类型' },
+  { value: 'all', label: t('knowledge.workspace.workspace.filters.allTypes') },
   ...typeOptions.value.map((type) => ({ value: type, label: type })),
 ])
-const quadrantSelectOptions = [
-  { value: 'all', label: '全部象限' },
-  { value: 'known_known', label: '已知的已知' },
-  { value: 'known_unknown', label: '已知的未知' },
-  { value: 'unknown_known', label: '未知的已知' },
-  { value: 'unknown_unknown', label: '未知的未知' },
-]
-const profileSelectOptions = [
-  { value: 'all', label: '全部知识' },
-  { value: 'profile', label: '协作偏好' },
-  { value: 'regular', label: '项目与通用知识' },
-]
-const humanChangeSelectOptions = [
-  { value: 'all', label: '全部人工状态' },
-  { value: 'human_changed', label: '人工改过（全部）' },
-  { value: 'unseen', label: 'Agent 未查看' },
-  { value: 'viewed', label: '已查看待审核' },
-  { value: 'reviewed', label: 'Agent 已审核' },
-]
+const quadrantSelectOptions = computed(() => [
+  { value: 'all', label: t('knowledge.workspace.workspace.filters.allQuadrants') },
+  ...['known_known', 'known_unknown', 'unknown_known', 'unknown_unknown']
+    .map((value) => ({ value, label: quadrantLabel(value) })),
+])
+const profileSelectOptions = computed(() => [
+  { value: 'all', label: t('knowledge.workspace.workspace.filters.allKnowledge') },
+  { value: 'profile', label: t('knowledge.workspace.workspace.filters.preferences') },
+  { value: 'regular', label: t('knowledge.workspace.workspace.filters.projectKnowledge') },
+])
+const humanChangeSelectOptions = computed(() => [
+  { value: 'all', label: t('knowledge.workspace.workspace.filters.allHumanStates') },
+  {
+    value: 'human_changed',
+    label: t('knowledge.workspace.workspace.filters.allHumanChanged'),
+  },
+  { value: 'unseen', label: t('knowledge.workspace.workspace.filters.agentUnseen') },
+  { value: 'viewed', label: t('knowledge.workspace.workspace.filters.viewedPending') },
+  { value: 'reviewed', label: t('knowledge.workspace.workspace.filters.agentReviewed') },
+])
 const contentStatus = computed<'current' | 'historical' | 'all'>(() => {
   const value = queryValue(route.query.status)
   return value === 'historical' || value === 'all' ? value : 'current'
@@ -182,27 +178,54 @@ const selectedStatusTotal = computed(() => {
   return allItems.value.length
 })
 const selectedStatusLabel = computed(() => {
-  if (contentStatus.value === 'current') return '当前有效'
-  if (contentStatus.value === 'historical') return '已失效'
-  return '全部状态'
+  if (contentStatus.value === 'current') return t('common.status.current')
+  if (contentStatus.value === 'historical') return t('common.status.invalid')
+  return t('knowledge.workspace.workspace.status.all')
 })
-const graphView = computed(() => graph.value ? currentKnowledgeGraph(graph.value) : null)
+const currentGraphView = computed(() => graph.value ? currentKnowledgeGraph(graph.value) : null)
+const projectHierarchy = computed(() =>
+  currentGraphView.value
+    ? separateParentProjects(currentGraphView.value, projectId.value)
+    : null,
+)
+const graphView = computed(() => projectHierarchy.value?.graph ?? null)
+const parentProjects = computed(() => projectHierarchy.value?.parents ?? [])
+const graphRelationTypes = computed(() =>
+  graphView.value?.edges.map(({ type }) => type) ?? [],
+)
 const countLabel = computed(() => {
-  if (!graph.value) return loading.value ? '正在读取知识…' : '尚未读取图谱'
+  if (!graph.value) {
+    return loading.value
+      ? t('common.status.loadingKnowledge')
+      : t('knowledge.workspace.workspace.status.graphUnread')
+  }
   if (mode.value === 'graph') {
     const value = graphView.value
-    return searchMessage.value || `${value?.nodes.length ?? 0} 个节点 · ${value?.edges.length ?? 0} 条当前关系`
+    return searchMessage.value || t('knowledge.workspace.workspace.counts.graph', {
+      nodes: value?.nodes.length ?? 0,
+      edges: value?.edges.length ?? 0,
+    })
   }
   if (directorySection.value === 'materials') {
     return visibleProjectMaterialItems.value.length === projectMaterialItems.value.length
-      ? `${projectMaterialItems.value.length} 条项目资料`
-      : `显示 ${visibleProjectMaterialItems.value.length} / ${projectMaterialItems.value.length} 条项目资料`
+      ? t('knowledge.workspace.workspace.counts.materials', {
+          count: projectMaterialItems.value.length,
+        })
+      : t('knowledge.workspace.workspace.counts.visibleMaterials', {
+          visible: visibleProjectMaterialItems.value.length,
+          total: projectMaterialItems.value.length,
+        })
   }
   const knowledgeCount = visibleItems.value.length === selectedStatusTotal.value
-    ? `${selectedStatusLabel.value} ${selectedStatusTotal.value} 条知识内容`
-    : `${selectedStatusLabel.value}：显示 ${visibleItems.value.length} / ${
-      selectedStatusTotal.value
-    } 条知识内容`
+    ? t('knowledge.workspace.workspace.counts.knowledge', {
+        status: selectedStatusLabel.value,
+        count: selectedStatusTotal.value,
+      })
+    : t('knowledge.workspace.workspace.counts.visibleKnowledge', {
+        status: selectedStatusLabel.value,
+        visible: visibleItems.value.length,
+        total: selectedStatusTotal.value,
+      })
   return knowledgeCount
 })
 const knowledgeTabCount = computed(() => String(allItems.value.length))
@@ -225,7 +248,9 @@ const spaceChoices = computed<SpaceChoice[]>(() => {
       spaceId: space.id,
       projectId: null,
       providerUrl: null,
-      label: `全部个人项目 · ${space.name}`,
+      label: t('knowledge.workspace.workspace.spaces.allPersonalProjects', {
+        name: space.name,
+      }),
     }
     const projects = (state.personalProjects ?? [])
       .filter(({ personal_space_id }) => personal_space_id === space.id)
@@ -235,7 +260,9 @@ const spaceChoices = computed<SpaceChoice[]>(() => {
         spaceId: space.id,
         projectId: project.project_id,
         providerUrl: null,
-        label: `个人项目 · ${project.profile.name}`,
+        label: t('knowledge.workspace.workspace.spaces.personalProject', {
+          name: project.profile.name,
+        }),
       }))
     return [aggregate, ...projects]
   })
@@ -246,7 +273,9 @@ const spaceChoices = computed<SpaceChoice[]>(() => {
     spaceId: project.id,
     projectId: null,
     providerUrl: project.providerUrl,
-    label: `公共项目 · ${project.name}`,
+    label: t('knowledge.workspace.workspace.spaces.publicProject', {
+      name: project.name,
+    }),
   }))
   return [...personal, ...publicProjects]
 })
@@ -272,10 +301,10 @@ const manageableSelectedProject = computed(() =>
 const projectDiscoveryCopy = computed(() => {
   if (!projectDiscovery.value) return ''
   if (projectDiscovery.value.checking) {
-    return '当前范围没有命中，正在检查其他个人项目…'
+    return t('knowledge.workspace.workspace.discovery.checking')
   }
   if (projectDiscovery.value.result) return projectDiscoverySummary(projectDiscovery.value.result)
-  return '当前范围没有找到可定位的内容，可以调整关键词后重试。'
+  return t('knowledge.workspace.workspace.discovery.retry')
 })
 
 const searchDebounce = createDebouncedAction(() => {
@@ -536,7 +565,7 @@ async function runGraphSearch(queryText: string) {
   const controller = new AbortController()
   searchAbortController = controller
   projectDiscovery.value = null
-  searchMessage.value = '正在搜索…'
+  searchMessage.value = t('knowledge.workspace.workspace.search.searching')
   const query = new URLSearchParams({ personalSpaceId, q: queryText, limit: '30' })
   if (projectId.value) query.set('personalProjectId', projectId.value)
   for (const id of contextIds.value) query.append('contextPersonalProjectId', id)
@@ -554,10 +583,14 @@ async function runGraphSearch(queryText: string) {
     ])
     const count = graphCanvas.value?.focusByNames(names, { searchMatch: true }) ?? 0
     if (count) {
-      searchMessage.value = `找到 ${result.entities?.length ?? 0} 个实体 · ${facts.length} 条关系 · 图中高亮 ${count} 个节点`
+      searchMessage.value = t('knowledge.workspace.workspace.search.results', {
+        entities: result.entities?.length ?? 0,
+        relationships: facts.length,
+        nodes: count,
+      })
       return
     }
-    searchMessage.value = '当前范围未检索到匹配结果'
+    searchMessage.value = t('knowledge.workspace.workspace.search.noResults')
     const canDiscoverProjects = scope.value === 'personal' && !projectId.value
     projectDiscovery.value = {
       query: queryText,
@@ -580,7 +613,7 @@ async function runGraphSearch(queryText: string) {
     }
   } catch (error) {
     if (controller.signal.aborted || sequence !== searchSequence) return
-    searchMessage.value = '搜索失败'
+    searchMessage.value = t('knowledge.workspace.workspace.search.failed')
     store.reportError(error)
   } finally {
     if (searchAbortController === controller) searchAbortController = null
@@ -724,7 +757,7 @@ async function openReplacement(item: KnowledgeItem) {
 function manageProjectMaterial(item: KnowledgeItem) {
   const project = projectForMaterial(item)
   if (!project) {
-    store.reportError(new Error('无法确定这条项目资料所属的个人项目'))
+    store.reportError(new Error(t('knowledge.workspace.workspace.errors.projectUnknown')))
     return
   }
   managingMaterialType.value = item.itemKind === 'entity' ? item.type : 'PersonalProject'
@@ -776,7 +809,9 @@ function projectForMaterial(item: KnowledgeItem | null) {
 async function completeProjectProfileUpdate(project: PersonalProject) {
   await store.refresh()
   await loadGraph()
-  store.notify(`“${project.profile.name}”的项目资料已更新。`)
+  store.notify(t('knowledge.workspace.workspace.notices.materialUpdated', {
+    name: project.profile.name,
+  }))
 }
 
 function publishPersonalProject(nextProjectId: string) {
@@ -791,23 +826,33 @@ async function completeProjectAction(
   targetName: string,
 ) {
   const messages: Record<string, string> = {
-    created: `个人项目“${targetName}”已创建。`,
-    linked: `这条知识已加入“${targetName}”，主要归属保持不变。`,
-    already_linked: `“${targetName}”已经在使用这条知识。`,
-    duplicate_reused: `“${targetName}”已有相同内容，已复用现有节点。`,
-    conflict_pending: `已保留项目操作；冲突内容暂不在“${targetName}”生效。`,
-    conflict_resolved: '冲突已按当前选择处理，并保留处理记录。',
+    created: t('knowledge.workspace.workspace.notices.projectCreated', { name: targetName }),
+    linked: t('knowledge.workspace.workspace.notices.linked', { name: targetName }),
+    already_linked: t('knowledge.workspace.workspace.notices.alreadyLinked', {
+      name: targetName,
+    }),
+    duplicate_reused: t('knowledge.workspace.workspace.notices.duplicateReused', {
+      name: targetName,
+    }),
+    conflict_pending: t('knowledge.workspace.workspace.notices.conflictPending', {
+      name: targetName,
+    }),
+    conflict_resolved: t('knowledge.workspace.workspace.notices.conflictResolved'),
   }
   await store.refresh()
   await loadGraph()
-  store.notify(messages[result.status] ?? '项目知识范围已更新。')
+  store.notify(messages[result.status] ?? t('knowledge.workspace.workspace.notices.scopeUpdated'))
 }
 
 function sourceLabel(item: KnowledgeItem) {
   if (item.profileAspect) {
-    return `${item.preferenceScope === 'project' ? '项目偏好' : '个人全局'} · ${
-      item.evidence.length ? `${item.evidence.length} 个来源` : '无来源记录'
-    }`
+    const scopeLabel = item.preferenceScope === 'project'
+      ? t('knowledge.workspace.workspace.source.projectPreference')
+      : t('knowledge.workspace.workspace.source.personalGlobal')
+    const evidenceLabel = item.evidence.length
+      ? t('common.counts.sources', { count: item.evidence.length })
+      : t('knowledge.workspace.workspace.source.noSources')
+    return `${scopeLabel} · ${evidenceLabel}`
   }
   const assignment = item.assignments.at(0) as { project_id?: string } | undefined
   const evidenceProject = item.evidence.find(({ personal_project_id }) => personal_project_id)
@@ -815,7 +860,10 @@ function sourceLabel(item: KnowledgeItem) {
   const id = assignment?.project_id ?? evidenceProject
   const name = store.state?.personalProjects?.find(({ project_id }) => project_id === id)
     ?.profile.name
-  return `${name ? `主要 ${name}` : '个人全局'} · ${item.evidence.length} 个来源`
+  const scopeLabel = name
+    ? t('knowledge.workspace.workspace.source.primaryProject', { name })
+    : t('knowledge.workspace.workspace.source.personalGlobal')
+  return `${scopeLabel} · ${t('common.counts.sources', { count: item.evidence.length })}`
 }
 
 function itemKey(item: Pick<KnowledgeItem, 'itemKind' | 'id'>) {
@@ -840,9 +888,9 @@ function queryValues(value: unknown) {
 <template>
   <section class="view graph-view vue-knowledge-view">
     <div class="knowledge-view-heading">
-      <div class="knowledge-mode-switch" role="tablist" aria-label="知识查看方式">
-        <button type="button" role="tab" :aria-selected="mode === 'directory'" @click="changeMode('directory')">内容目录</button>
-        <button type="button" role="tab" :aria-selected="mode === 'graph'" @click="changeMode('graph')">关系图谱</button>
+      <div class="knowledge-mode-switch" role="tablist" :aria-label="t('knowledge.workspace.workspace.view.modeAria')">
+        <button type="button" role="tab" :aria-selected="mode === 'directory'" @click="changeMode('directory')">{{ t('knowledge.workspace.workspace.view.directory') }}</button>
+        <button type="button" role="tab" :aria-selected="mode === 'graph'" @click="changeMode('graph')">{{ t('knowledge.workspace.workspace.view.graph') }}</button>
       </div>
       <span class="muted">{{ countLabel }}</span>
     </div>
@@ -851,7 +899,7 @@ function queryValues(value: unknown) {
       <SearchableSelect
         :model-value="selectedChoiceKey"
         :options="spaceSelectOptions"
-        label="图谱空间"
+        :label="t('knowledge.workspace.workspace.view.graphSpace')"
         control-id="graph-space"
         searchable
         @update:model-value="changeSpace"
@@ -859,13 +907,15 @@ function queryValues(value: unknown) {
 
       <details v-if="projectId && availableContexts.length" class="personal-context-picker">
         <summary>
-          借鉴其他项目
-          <span>{{ contextIds.length ? `已选 ${contextIds.length}` : '未选择' }}</span>
+          {{ t('knowledge.workspace.workspace.view.borrowProjects') }}
+          <span>{{ contextIds.length
+            ? t('knowledge.workspace.workspace.view.selectedContexts', { count: contextIds.length })
+            : t('knowledge.workspace.workspace.view.noneSelected') }}</span>
           <i class="searchable-select-arrow" aria-hidden="true" />
         </summary>
         <div class="personal-context-panel">
-          <strong>本次上下文</strong>
-          <p>只加入当前查看和查询，不改变知识归属。</p>
+          <strong>{{ t('knowledge.workspace.workspace.view.currentContext') }}</strong>
+          <p>{{ t('knowledge.workspace.workspace.view.contextCopy') }}</p>
           <div class="personal-context-list">
             <label v-for="project in availableContexts" :key="project.project_id" class="personal-context-option">
               <input
@@ -874,24 +924,24 @@ function queryValues(value: unknown) {
                 :checked="contextIds.includes(project.project_id)"
                 @change="toggleContext"
               />
-              <span><strong>{{ project.profile.name }}</strong><small>仅加入当前范围</small></span>
+              <span><strong>{{ project.profile.name }}</strong><small>{{ t('knowledge.workspace.workspace.view.currentScopeOnly') }}</small></span>
             </label>
           </div>
         </div>
       </details>
 
-      <form class="search-form" role="search" aria-label="知识搜索" @submit.prevent="submitSearch">
+      <form class="search-form" role="search" :aria-label="t('knowledge.workspace.workspace.search.aria')" @submit.prevent="submitSearch">
         <input
           type="search"
           :placeholder="
             mode === 'directory' && directorySection === 'materials'
-              ? '搜索项目资料'
-              : '搜索内容、来源或关系'
+              ? t('knowledge.workspace.workspace.search.materialsPlaceholder')
+              : t('knowledge.workspace.workspace.search.contentPlaceholder')
           "
           :aria-label="
             mode === 'directory' && directorySection === 'materials'
-              ? '搜索项目资料'
-              : '搜索知识内容'
+              ? t('knowledge.workspace.workspace.search.materialsPlaceholder')
+              : t('knowledge.workspace.workspace.search.knowledgeAria')
           "
           autocomplete="off"
           enterkeyhint="search"
@@ -904,28 +954,28 @@ function queryValues(value: unknown) {
         <SearchableSelect
           :model-value="filters.type"
           :options="typeSelectOptions"
-          label="内容类型"
+          :label="t('knowledge.workspace.workspace.view.contentType')"
           control-id="knowledge-type-filter"
           @update:model-value="updateQuery('type', $event)"
         />
         <SearchableSelect
           :model-value="filters.quadrant"
           :options="quadrantSelectOptions"
-          label="发现时象限"
+          :label="t('knowledge.workspace.workspace.view.discoveryQuadrant')"
           control-id="knowledge-quadrant-filter"
           @update:model-value="updateQuery('quadrant', $event)"
         />
         <SearchableSelect
           :model-value="filters.profile"
           :options="profileSelectOptions"
-          label="知识归类"
+          :label="t('knowledge.workspace.workspace.view.classification')"
           control-id="knowledge-profile-filter"
           @update:model-value="updateQuery('profile', $event)"
         />
         <SearchableSelect
           :model-value="filters.humanChange"
           :options="humanChangeSelectOptions"
-          label="人工变更状态"
+          :label="t('knowledge.workspace.workspace.view.humanChangeStatus')"
           control-id="knowledge-human-change-filter"
           @update:model-value="updateQuery('human', $event)"
         />
@@ -942,240 +992,94 @@ function queryValues(value: unknown) {
           type="button"
           @click="publishingProject = activePersonalProject"
         >
-          发布当前项目
+          {{ t('knowledge.workspace.workspace.view.publishProject') }}
         </button>
-        <div v-if="mode === 'graph'" class="graph-controls" role="group" aria-label="图谱视图控制">
-          <button class="toolbar-action" type="button" aria-label="缩小图谱" @click="graphCanvas?.zoomOut()">−</button>
-          <button class="toolbar-action" type="button" aria-label="放大图谱" @click="graphCanvas?.zoomIn()">＋</button>
-          <button class="toolbar-action" type="button" @click="graphCanvas?.fit()">适应</button>
-          <button class="toolbar-action" type="button" @click="graphCanvas?.reset()">重置</button>
+        <div v-if="mode === 'graph'" class="graph-controls" role="group" :aria-label="t('knowledge.workspace.workspace.view.graphControls')">
+          <button class="toolbar-action" type="button" :aria-label="t('knowledge.workspace.workspace.view.zoomOut')" @click="graphCanvas?.zoomOut()">−</button>
+          <button class="toolbar-action" type="button" :aria-label="t('knowledge.workspace.workspace.view.zoomIn')" @click="graphCanvas?.zoomIn()">＋</button>
+          <button class="toolbar-action" type="button" @click="graphCanvas?.fit()">{{ t('knowledge.workspace.workspace.view.fit') }}</button>
+          <button class="toolbar-action" type="button" @click="graphCanvas?.reset()">{{ t('knowledge.workspace.workspace.view.reset') }}</button>
         </div>
-        <button class="toolbar-action" type="button" @click="loadGraph">刷新</button>
+        <button class="toolbar-action" type="button" @click="loadGraph">{{ t('common.actions.refresh') }}</button>
       </div>
     </div>
 
-    <div v-if="loading && !graph" class="view-loading">正在读取知识…</div>
+    <div v-if="loading && !graph" class="view-loading">{{ t('common.status.loadingKnowledge') }}</div>
     <div v-else class="knowledge-layout">
-      <section
+      <KnowledgeDirectoryPanel
         v-if="mode === 'directory'"
-        class="knowledge-directory-panel"
-        :class="{ 'has-directory-tabs': personalProjectsOnly }"
-        :aria-label="directorySection === 'materials' ? '项目资料目录' : '知识内容目录'"
+        :personal-projects-only="personalProjectsOnly"
+        :directory-section="directorySection"
+        :knowledge-tab-count="knowledgeTabCount"
+        :material-tab-count="materialTabCount"
+        :content-status="contentStatus"
+        :current-item-count="currentItemCount"
+        :historical-item-count="historicalItemCount"
+        :all-items="allItems"
+        :visible-items="visibleItems"
+        :project-material-items="projectMaterialItems"
+        :visible-project-material-items="visibleProjectMaterialItems"
+        :selected-item="selectedItem"
+        :source-label="sourceLabel"
+        @change-section="changeDirectorySection"
+        @update-status="updateQuery('status', $event)"
+        @select-item="selectItem"
+      />
+
+      <div
+        v-else
+        class="graph-stage"
+        :class="{ 'has-parent-projects': parentProjects.length }"
       >
-        <div
-          v-if="personalProjectsOnly"
-          class="directory-kind-tabs"
-          role="tablist"
-          aria-label="目录内容类型"
-        >
-          <button
-            id="directory-tab-knowledge"
-            class="directory-kind-tab"
-            type="button"
-            role="tab"
-            aria-controls="directory-panel-knowledge"
-            :aria-selected="directorySection === 'knowledge'"
-            @click="changeDirectorySection('knowledge')"
-          >
-            <span>知识内容</span>
-            <small>{{ knowledgeTabCount }}</small>
-          </button>
-          <button
-            id="directory-tab-materials"
-            class="directory-kind-tab"
-            type="button"
-            role="tab"
-            aria-controls="directory-panel-materials"
-            :aria-selected="directorySection === 'materials'"
-            @click="changeDirectorySection('materials')"
-          >
-            <span>项目资料</span>
-            <small>{{ materialTabCount }}</small>
-          </button>
-        </div>
-
-        <div
-          v-if="directorySection === 'knowledge'"
-          id="directory-panel-knowledge"
-          class="directory-tab-panel"
-          role="tabpanel"
-          aria-labelledby="directory-tab-knowledge"
-        >
-          <header class="directory-section-heading">
-            <div class="directory-section-copy">
-              <strong>知识内容</strong>
-              <span>可确认、纠正、失效或恢复的知识记录。</span>
-            </div>
-            <div class="knowledge-status-filter" role="group" aria-label="知识内容状态">
-              <button
-                class="knowledge-status-option"
-                data-status="current"
-                type="button"
-                :aria-pressed="contentStatus === 'current'"
-                @click="updateQuery('status', 'current')"
-              >
-                当前有效 <span>{{ currentItemCount }}</span>
-              </button>
-              <button
-                class="knowledge-status-option"
-                data-status="historical"
-                type="button"
-                :aria-pressed="contentStatus === 'historical'"
-                @click="updateQuery('status', 'historical')"
-              >
-                已失效 <span>{{ historicalItemCount }}</span>
-              </button>
-              <button
-                class="knowledge-status-option"
-                data-status="all"
-                type="button"
-                :aria-pressed="contentStatus === 'all'"
-                @click="updateQuery('status', 'all')"
-              >
-                全部 <span>{{ allItems.length }}</span>
-              </button>
-            </div>
-            <small class="directory-section-count">{{ visibleItems.length }} 条</small>
-          </header>
-          <div class="knowledge-table-head" aria-hidden="true">
-            <span class="knowledge-column-content">内容</span>
-            <span class="knowledge-column-quadrant">发现时象限</span>
-            <span class="knowledge-column-review">确认状态</span>
-            <span class="knowledge-column-type">类型</span>
-            <span class="knowledge-column-source">来源</span>
-            <span class="knowledge-column-time">更新时间</span>
-            <span class="knowledge-column-validity">有效性</span>
-          </div>
-          <div class="knowledge-directory-list">
-            <button
-              v-for="item in visibleItems"
-              :key="`${item.itemKind}:${item.id}`"
-              class="knowledge-row"
-              :class="{
-                selected: selectedItem?.itemKind === item.itemKind
-                  && selectedItem?.id === item.id,
-              }"
-              type="button"
-              :data-item-key="itemKey(item)"
-              @click="selectItem(item)"
-            >
-              <span class="knowledge-row-content">
-                <span class="knowledge-row-title">
-                  <strong>{{ item.title }}</strong>
-                  <em
-                    v-if="
-                      item.humanChangeStatus === 'unseen'
-                      || item.humanChangeStatus === 'viewed'
-                    "
-                    class="human-change-badge"
-                    :class="`state-${item.humanChangeStatus}`"
-                  >
-                    {{ humanChangeStatusLabel(item.humanChangeStatus) }}
-                  </em>
-                </span>
-                <small>{{ item.profileAspect ? `${profileAspectLabel(item.profileAspect)} · ${item.body}` : item.body }}</small>
-              </span>
-              <span class="knowledge-row-quadrant" :class="item.originQuadrant">{{ quadrantLabel(item.originQuadrant) }}</span>
-              <span class="knowledge-review-state" :class="`state-${knowledgeReviewState(item)}`">{{ reviewStateLabel(item) }}</span>
-              <span class="knowledge-row-type">{{ item.type }}</span>
-              <span class="knowledge-row-source">{{ sourceLabel(item) }}</span>
-              <span class="knowledge-row-time">{{ formatTime(latestItemValue(item)) }}</span>
-              <span class="knowledge-status" :class="item.invalidAt ? 'historical' : 'current'">{{ item.invalidAt ? '已失效' : '有效' }}</span>
-            </button>
-          </div>
-          <div v-if="!visibleItems.length" class="empty-state">
-            {{
-              allItems.length
-                ? '当前筛选条件下没有知识内容'
-                : '这个项目还没有可确认或翻转状态的知识内容'
-            }}
-          </div>
-        </div>
-
-        <div
-          v-else
-          id="directory-panel-materials"
-          class="directory-tab-panel"
-          role="tabpanel"
-          aria-labelledby="directory-tab-materials"
-        >
-          <header class="directory-section-heading">
-            <div class="directory-section-copy">
-              <strong>项目资料</strong>
-              <span>项目目标、范围和结构关系；通过“编辑项目资料”修改。</span>
-            </div>
-            <small class="directory-section-count">{{ visibleProjectMaterialItems.length }} 条</small>
-          </header>
-          <div class="project-material-list">
-            <button
-              v-for="item in visibleProjectMaterialItems"
-              :key="itemKey(item)"
-              class="project-material-row"
-              :class="{
-                selected: selectedItem?.itemKind === item.itemKind
-                  && selectedItem?.id === item.id,
-              }"
-              type="button"
-              :data-item-key="itemKey(item)"
-              @click="selectItem(item)"
-            >
-              <span class="project-material-copy">
-                <strong>{{ item.itemKind === 'entity' ? item.title : item.type }}</strong>
-                <small>{{ item.body }}</small>
-              </span>
-              <span class="project-material-type">{{ projectMaterialTypeLabel(item) }}</span>
-              <span class="project-material-link">查看详情 →</span>
-            </button>
-          </div>
-          <div v-if="!visibleProjectMaterialItems.length" class="empty-state">
-            {{
-              projectMaterialItems.length
-                ? '当前搜索条件下没有项目资料'
-                : '这个项目还没有项目资料'
-            }}
-          </div>
-        </div>
-      </section>
-
-      <div v-else class="graph-stage">
-        <aside v-if="projectDiscovery" class="graph-search-status" aria-live="polite">
-          <span class="graph-search-status-kicker">当前范围未命中</span>
-          <strong class="graph-search-status-title">没有检索到“{{ projectDiscovery.query }}”</strong>
-          <p class="graph-search-status-copy">{{ projectDiscoveryCopy }}</p>
-          <div
-            v-if="projectDiscovery.result?.matches.length"
-            class="graph-search-suggestions"
-          >
-            <RouterLink
-              v-for="match in projectDiscovery.result.matches.slice(0, 5)"
-              :key="match.project.project_id"
-              class="graph-search-suggestion"
-              :to="{
-                path: personalProjectsPath(
-                  spaceId,
-                  'graph',
-                  match.project.project_id,
-                ),
-                query: { q: projectDiscovery.query },
-              }"
-            >
-              <span>
-                <strong>{{ match.project.profile.name }}</strong>
-                <small>{{ match.count }} 条候选内容</small>
-              </span>
-              <b>进入项目搜索 →</b>
-            </RouterLink>
-          </div>
-        </aside>
-        <GraphCanvas
-          v-if="graphView?.nodes.length"
-          ref="graphCanvas"
-          :graph="graphView"
-          :selected-item="selectedItem"
-          @select-node="selectNode"
-          @select-edge="selectEdge"
+        <ProjectHierarchyAside
+          :parents="parentProjects"
+          :active-project-name="activePersonalProject?.profile.name"
+          :space-id="spaceId"
         />
-        <div v-else class="graph-empty">{{ loading ? '正在读取知识…' : '这个空间还没有可展示的关系图' }}</div>
+
+        <div class="graph-canvas-panel">
+          <aside v-if="projectDiscovery" class="graph-search-status" aria-live="polite">
+            <span class="graph-search-status-kicker">{{ t('knowledge.workspace.workspace.discovery.noHitKicker') }}</span>
+            <strong class="graph-search-status-title">{{ t('knowledge.workspace.workspace.discovery.noResults', { query: projectDiscovery.query }) }}</strong>
+            <p class="graph-search-status-copy">{{ projectDiscoveryCopy }}</p>
+            <div
+              v-if="projectDiscovery.result?.matches.length"
+              class="graph-search-suggestions"
+            >
+              <RouterLink
+                v-for="match in projectDiscovery.result.matches.slice(0, 5)"
+                :key="match.project.project_id"
+                class="graph-search-suggestion"
+                :to="{
+                  path: personalProjectsPath(
+                    spaceId,
+                    'graph',
+                    match.project.project_id,
+                  ),
+                  query: { q: projectDiscovery.query },
+                }"
+              >
+                <span>
+                  <strong>{{ match.project.profile.name }}</strong>
+                  <small>{{ t('knowledge.workspace.workspace.discovery.candidateCount', { count: match.count }) }}</small>
+                </span>
+                <b>{{ t('knowledge.workspace.workspace.discovery.enterProject') }}</b>
+              </RouterLink>
+            </div>
+          </aside>
+          <GraphRelationLegend :relation-types="graphRelationTypes" />
+          <GraphCanvas
+            v-if="graphView?.nodes.length"
+            ref="graphCanvas"
+            :graph="graphView"
+            :selected-item="selectedItem"
+            @select-node="selectNode"
+            @select-edge="selectEdge"
+          />
+          <div v-else class="graph-empty">{{ loading
+            ? t('common.status.loadingKnowledge')
+            : t('knowledge.workspace.workspace.view.noGraph') }}</div>
+        </div>
       </div>
 
       <KnowledgeInspector
@@ -1197,42 +1101,29 @@ function queryValues(value: unknown) {
         @manage-project="manageProjectMaterial"
       />
     </div>
-    <p v-if="mode === 'graph'" class="graph-hint">滚轮缩放 · 拖动画布 · 点击查看详情 · 悬停显示节点短 ID</p>
+    <p v-if="mode === 'graph'" class="graph-hint">{{ t('knowledge.workspace.workspace.view.graphHint') }}</p>
 
-    <KnowledgeEditDialog
-      :item="editingItem"
+    <KnowledgeWorkspaceDialogs
+      :editing-item="editingItem"
+      :confirming-item="confirmingItem"
+      :project-action-item="projectActionItem"
+      :publishing-project="publishingProject"
+      :managing-project="managingProject"
+      :managing-material-type="managingMaterialType"
       :personal-space-id="store.activePersonalSpace?.id ?? spaceId"
-      :personal-project-id="knowledgeMutationProjectId(editingItem)"
+      :editing-project-id="knowledgeMutationProjectId(editingItem)"
+      :confirming-project-id="knowledgeMutationProjectId(confirmingItem)"
+      :current-project-id="projectId"
       :projects="store.state?.personalProjects ?? []"
       :replacement-items="allItems"
-      @close="editingItem = null"
-      @saved="loadGraph"
-    />
-    <KnowledgeConfirmDialog
-      :item="confirmingItem"
-      :personal-space-id="store.activePersonalSpace?.id ?? spaceId"
-      :personal-project-id="knowledgeMutationProjectId(confirmingItem)"
-      @close="confirmingItem = null"
-      @saved="loadGraph"
-    />
-    <KnowledgeProjectDialog
-      :item="projectActionItem"
-      :personal-space-id="store.activePersonalSpace?.id ?? spaceId"
-      :personal-project-id="projectId"
-      :projects="store.state?.personalProjects ?? []"
-      @close="projectActionItem = null"
-      @saved="completeProjectAction"
-    />
-    <PublishProjectDialog
-      :project="publishingProject"
-      @close="publishingProject = null"
-      @published="loadGraph"
-    />
-    <PersonalProjectProfileDialog
-      :project="managingProject"
-      :material-type="managingMaterialType"
-      @close="managingProject = null"
-      @saved="completeProjectProfileUpdate"
+      @close-edit="editingItem = null"
+      @close-confirm="confirmingItem = null"
+      @close-project-action="projectActionItem = null"
+      @close-publish="publishingProject = null"
+      @close-profile="managingProject = null"
+      @refresh="loadGraph"
+      @project-saved="completeProjectAction"
+      @profile-saved="completeProjectProfileUpdate"
     />
   </section>
 </template>

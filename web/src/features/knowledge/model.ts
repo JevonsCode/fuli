@@ -1,3 +1,4 @@
+import { currentLocale, t } from '@/i18n'
 import type {
   ConfirmationActor,
   ConfirmationStatus,
@@ -9,6 +10,8 @@ import type {
   KnowledgeNode,
   HumanChangeStatus,
 } from '@/types'
+
+export type KnowledgeReviewState = 'confirmed' | 'agent_confirmed' | 'pending'
 
 const MANAGEMENT_TYPES = new Set([
   'ProjectSpace',
@@ -23,114 +26,99 @@ const MANAGEMENT_TYPES = new Set([
   'RelatedPersonalProject',
 ])
 
-const PROJECT_MATERIAL_TYPE_LABELS: Record<string, string> = {
-  ProjectSpace: '项目空间',
-  PersonalSpace: '个人空间',
-  PersonalProject: '项目档案',
-  ProjectPurpose: '项目目标',
-  ProjectScope: '项目范围',
-  TechnicalSummary: '技术说明',
-  ProjectSource: '资料来源',
-  ProjectBoundary: '项目边界',
-  ProjectAssessment: '档案评估',
-  AssessmentDimension: '评估维度',
-  RelatedPersonalProject: '关联项目',
-}
+const PROJECT_MATERIAL_TYPES = new Set([
+  'ProjectSpace',
+  'PersonalSpace',
+  'PersonalProject',
+  'ProjectPurpose',
+  'ProjectScope',
+  'TechnicalSummary',
+  'ProjectSource',
+  'ProjectBoundary',
+  'ProjectAssessment',
+  'AssessmentDimension',
+  'RelatedPersonalProject',
+])
 
-export const QUADRANT_LABELS: Record<string, string> = {
-  known_known: '已知的已知',
-  known_unknown: '已知的未知',
-  unknown_known: '未知的已知',
-  unknown_unknown: '未知的未知',
-  unclassified: '待分类',
-}
+const QUADRANTS = new Set([
+  'known_known',
+  'known_unknown',
+  'unknown_known',
+  'unknown_unknown',
+  'unclassified',
+])
 
-export const EPISTEMIC_LABELS: Record<string, string> = {
-  confirmed: '旧版确认标记',
-  observed: '旧版观察标记',
-  exploratory: '旧版探索标记',
-  unreviewed: '待复核',
-}
-
-export const QUADRANT_DESCRIPTIONS: Record<string, string> = {
-  known_known: '被明确表达出来的知识或结论。',
-  known_unknown: '被明确提出、但仍在等待答案的问题。',
-  unknown_known: '从行为、案例、反馈或反应中提炼出的隐性知识。',
-  unknown_unknown: '在探索过程中发现、仍需判断的潜在盲点。',
-  unclassified: '旧内容还没有明确记录发现时所属象限。',
-}
-
-export const REVIEW_STATE_LABELS: Record<KnowledgeReviewState, string> = {
-  confirmed: '已确认',
-  agent_confirmed: 'Agent 已确认',
-  pending: '待确认',
-}
-
-export const CONFIRMATION_ACTOR_LABELS: Record<string, string> = {
-  user: '用户',
-  agent: 'Agent',
-  authoritative_source: '权威来源',
-  import: '导入记录',
-}
-
-export const PROFILE_LABELS: Record<string, string> = {
-  taste: '品味',
-  personality: '个性',
-  judgment_preference: '判断偏好',
-}
-
-export const REVISION_ACTION_LABELS: Record<string, string> = {
-  confirm: '确认',
-  update: '内容纠正',
-  invalidate: '标记失效',
-  link_replacement: '补充替代关联',
-  restore: '恢复有效',
-  scope_change: '调整生效范围',
-  batch_confirm: '批量确认',
-}
-
-export const HUMAN_CHANGE_STATUS_LABELS: Record<HumanChangeStatus, string> = {
-  none: '没有人工变更',
-  unseen: '人工改动 · Agent 未查看',
-  viewed: 'Agent 已查看 · 待审核',
-  reviewed: 'Agent 已审核',
-}
-
-export const KNOWLEDGE_AUDIT_ACTION_LABELS: Record<string, string> = {
-  human_change: '人工修改',
-  agent_view: 'Agent 查看',
-  agent_review: 'Agent 审核',
-  knowledge_used: 'Agent 实际使用',
-}
+const PROFILE_ASPECTS = new Set(['taste', 'personality', 'judgment_preference'])
+const REVISION_ACTIONS = new Set([
+  'confirm',
+  'update',
+  'invalidate',
+  'link_replacement',
+  'restore',
+  'scope_change',
+  'batch_confirm',
+])
+const KNOWLEDGE_AUDIT_ACTIONS = new Set([
+  'human_change',
+  'agent_view',
+  'agent_review',
+  'knowledge_used',
+])
+const CONFIRMATION_ACTORS = new Set([
+  'user',
+  'agent',
+  'authoritative_source',
+  'import',
+])
 
 export function quadrantLabel(value?: string | null) {
-  return QUADRANT_LABELS[value ?? 'unclassified'] ?? value ?? QUADRANT_LABELS.unclassified
+  const normalized = value ?? 'unclassified'
+  return QUADRANTS.has(normalized)
+    ? t(`knowledge.domain.quadrants.${normalized}`)
+    : normalized
 }
 
 export function quadrantDescription(value?: string | null) {
-  return QUADRANT_DESCRIPTIONS[value ?? 'unclassified']
-    ?? '这是一个自定义认知阶段；请结合形成过程与来源判断。'
+  const normalized = value ?? 'unclassified'
+  return QUADRANTS.has(normalized)
+    ? t(`knowledge.domain.quadrants.descriptions.${normalized}`)
+    : t('knowledge.domain.quadrants.customDescription')
 }
 
 export function profileAspectLabel(value?: string | null) {
-  return PROFILE_LABELS[value ?? ''] ?? value ?? ''
+  const normalized = value ?? ''
+  return PROFILE_ASPECTS.has(normalized)
+    ? t(`knowledge.domain.profiles.${normalized}`)
+    : normalized
 }
 
 export function revisionActionLabel(value?: string | null) {
-  return REVISION_ACTION_LABELS[value ?? ''] ?? value ?? '修订'
+  const normalized = value ?? ''
+  if (REVISION_ACTIONS.has(normalized)) {
+    return t(`knowledge.domain.revisions.${normalized}`)
+  }
+  return normalized || t('knowledge.domain.revisions.fallback')
 }
 
 export function humanChangeStatusLabel(value?: HumanChangeStatus | null) {
-  return HUMAN_CHANGE_STATUS_LABELS[value ?? 'none']
+  return t(`knowledge.domain.humanChanges.${value ?? 'none'}`)
 }
 
 export function knowledgeAuditActionLabel(value?: string | null) {
-  return KNOWLEDGE_AUDIT_ACTION_LABELS[value ?? ''] ?? value ?? '审计记录'
+  const normalized = value ?? ''
+  if (KNOWLEDGE_AUDIT_ACTIONS.has(normalized)) {
+    return t(`knowledge.domain.auditActions.${normalized}`)
+  }
+  return normalized || t('knowledge.domain.auditActions.fallback')
 }
 
 export function confirmationActorLabel(actor?: ConfirmationActor | null) {
-  if (!actor) return '尚未记录'
-  return actor.label || CONFIRMATION_ACTOR_LABELS[actor.kind] || actor.kind
+  if (!actor) return t('knowledge.domain.actors.notRecorded')
+  return actor.label || (
+    CONFIRMATION_ACTORS.has(actor.kind)
+      ? t(`knowledge.domain.actors.${actor.kind}`)
+      : actor.kind
+  )
 }
 
 export function endpointId(endpoint: string | KnowledgeNode) {
@@ -178,7 +166,7 @@ export function knowledgeItemFromNode(node: KnowledgeNode): KnowledgeItem {
     id: node.id,
     itemKind: 'entity',
     title: node.name,
-    body: node.summary || '没有补充说明',
+    body: node.summary || t('common.status.noDescription'),
     type: node.type,
     ...commonItem(node),
     raw: node,
@@ -192,11 +180,11 @@ export function knowledgeItemFromEdge(
   return {
     id: edge.id,
     itemKind: 'relationship',
-    title: `${names.get(endpointId(edge.source)) ?? '未知实体'} → ${
-      names.get(endpointId(edge.target)) ?? '未知实体'
+    title: `${names.get(endpointId(edge.source)) ?? t('knowledge.domain.items.unknownEntity')} → ${
+      names.get(endpointId(edge.target)) ?? t('knowledge.domain.items.unknownEntity')
     }`,
-    body: edge.fact || '没有关系说明',
-    type: `关系 · ${edge.type}`,
+    body: edge.fact || t('knowledge.domain.items.noRelationDescription'),
+    type: t('knowledge.domain.items.relationshipType', { type: edge.type }),
     ...commonItem(edge),
     raw: edge,
   }
@@ -209,8 +197,12 @@ export function isManagementKnowledgeItem(item: KnowledgeItem | null) {
 }
 
 export function projectMaterialTypeLabel(item: KnowledgeItem) {
-  if (item.itemKind === 'relationship') return '项目资料关系'
-  return PROJECT_MATERIAL_TYPE_LABELS[item.type] ?? item.type
+  if (item.itemKind === 'relationship') {
+    return t('knowledge.domain.materialTypes.relationship')
+  }
+  return PROJECT_MATERIAL_TYPES.has(item.type)
+    ? t(`knowledge.domain.materialTypes.${item.type}`)
+    : item.type
 }
 
 export function personalProjectIdForItem(item: KnowledgeItem | null) {
@@ -329,12 +321,10 @@ export function latestItemValue(item: KnowledgeItem) {
 }
 
 export function formatTime(value?: string | null) {
-  if (!value) return '未记录'
+  if (!value) return t('knowledge.domain.items.notRecorded')
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN')
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(currentLocale())
 }
-
-export type KnowledgeReviewState = 'confirmed' | 'agent_confirmed' | 'pending'
 
 export function knowledgeReviewState(item: KnowledgeItem): KnowledgeReviewState {
   const basis = item.confirmationBasis
@@ -356,7 +346,7 @@ export function knowledgeReviewState(item: KnowledgeItem): KnowledgeReviewState 
 }
 
 export function reviewStateLabel(item: KnowledgeItem) {
-  return REVIEW_STATE_LABELS[knowledgeReviewState(item)]
+  return t(`knowledge.domain.reviewStates.${knowledgeReviewState(item)}`)
 }
 
 export function batchConfirmationGroups(
@@ -376,7 +366,9 @@ export function batchConfirmationGroups(
           kind: 'source',
           value: evidence.id,
           label: evidenceLabel(evidence),
-          description: evidence.source_description || evidence.summary || '同一条来源记录',
+          description: evidence.source_description
+            || evidence.summary
+            || t('knowledge.domain.confirmation.sameSource'),
         }, item)
       }
       if (evidence.session_id) {
@@ -384,7 +376,9 @@ export function batchConfirmationGroups(
           kind: 'session',
           value: evidence.session_id,
           label: sessionLabel(evidence),
-          description: evidence.source_description || evidence.summary || '同一次来源会话',
+          description: evidence.source_description
+            || evidence.summary
+            || t('knowledge.domain.confirmation.sameSession'),
         }, item)
       }
     }
@@ -394,7 +388,7 @@ export function batchConfirmationGroups(
     .sort(
       (left, right) =>
         right.items.length - left.items.length
-        || left.label.localeCompare(right.label, 'zh-CN'),
+        || left.label.localeCompare(right.label, currentLocale()),
     )
 }
 
@@ -412,12 +406,13 @@ export function batchConfirmationBasis(
     existenceReason: existing?.existence_reason
       || evidence?.source_description
       || evidence?.summary
-      || `该内容由来源“${group.label}”支持。`,
+      || t('knowledge.domain.confirmation.sourceSupports', { label: group.label }),
     quadrantReason: existing?.quadrant_reason
       || item.reasoningSummary
-      || `该内容在发现时符合“${quadrantLabel(item.originQuadrant)}”：${
-        quadrantDescription(item.originQuadrant)
-      }`,
+      || t('knowledge.domain.confirmation.quadrantReason', {
+        quadrant: quadrantLabel(item.originQuadrant),
+        description: quadrantDescription(item.originQuadrant),
+      }),
     proposedBy: existing?.proposed_by || proposedByFromEvidence(evidence),
   }
 }
@@ -448,7 +443,7 @@ function evidenceLabel(evidence: EvidenceRecord) {
   return evidence.name
     || evidence.source_description
     || evidence.summary
-    || '来源记录'
+    || t('knowledge.domain.confirmation.sourceRecord')
 }
 
 function sessionLabel(evidence: EvidenceRecord) {
@@ -457,11 +452,11 @@ function sessionLabel(evidence: EvidenceRecord) {
     claude_code: 'Claude Code',
     cursor: 'Cursor',
     kiro: 'Kiro',
-    other: '其他来源',
+    other: t('knowledge.domain.confirmation.otherSource'),
   }[evidence.source_application ?? '']
   return application
-    ? `${application} · ${evidence.name || evidence.source_kind || '会话'}`
-    : evidence.name || evidence.source_kind || '来源会话'
+    ? `${application} · ${evidence.name || evidence.source_kind || t('knowledge.domain.confirmation.session')}`
+    : evidence.name || evidence.source_kind || t('knowledge.domain.confirmation.sourceSession')
 }
 
 function proposedByFromEvidence(evidence?: EvidenceRecord) {
@@ -470,44 +465,52 @@ function proposedByFromEvidence(evidence?: EvidenceRecord) {
     claude_code: 'Claude Code',
     cursor: 'Cursor',
     kiro: 'Kiro',
-    other: '其他 Agent',
+    other: t('knowledge.domain.actors.otherAgent'),
   }[evidence?.source_application ?? '']
   return application
     ? { kind: 'agent', label: application }
-    : { kind: 'import', label: '历史记录' }
+    : { kind: 'import', label: t('knowledge.domain.actors.historicalRecord') }
 }
 
 export function classificationExplanation(item: KnowledgeItem) {
   if (!item.classificationExplicit) {
-    return '这条旧内容没有显式记录发现时象限；保存前需要人工补充，系统不会自动归入“已知的已知”。'
+    return t('knowledge.domain.confirmation.legacyUnclassified')
   }
   const basis = item.confirmationBasis
   if (knowledgeReviewState(item) === 'confirmed' && basis) {
-    return `${confirmationActorLabel(basis.confirmed_by)}于 ${formatTime(
-      basis.confirmed_at,
-    )} 确认；本次确认同时覆盖知识内容和象限归类。`
+    return t('knowledge.domain.confirmation.confirmed', {
+      actor: confirmationActorLabel(basis.confirmed_by),
+      time: formatTime(basis.confirmed_at),
+    })
   }
   if (knowledgeReviewState(item) === 'agent_confirmed' && basis) {
-    return `这条内容因跨任务实际使用达到策略阈值，于 ${formatTime(
-      basis.confirmed_at,
-    )} 标记为 Agent 已确认；它仍低于人工或权威来源确认。`
+    return t('knowledge.domain.confirmation.agentConfirmed', {
+      time: formatTime(basis.confirmed_at),
+    })
   }
   if (basis) {
-    return `${confirmationActorLabel(basis.proposed_by)}提出了这条内容，当前仍等待确认；来源证据不会自动升级为确认。`
+    return t('knowledge.domain.confirmation.pending', {
+      actor: confirmationActorLabel(basis.proposed_by),
+    })
   }
-  return '旧数据没有结构化的确认人和确认时间，已统一列入“待确认”，不会继续显示为已确认。'
+  return t('knowledge.domain.confirmation.legacyPending')
 }
 
 export function confirmationBasisSummary(item: KnowledgeItem) {
   const basis = item.confirmationBasis
-  if (!basis) return '旧数据 · 确认人和时间缺失'
+  if (!basis) return t('knowledge.domain.confirmation.legacyBasisMissing')
   if (knowledgeReviewState(item) === 'confirmed') {
     return `${confirmationActorLabel(basis.confirmed_by)} · ${formatTime(basis.confirmed_at)}`
   }
   if (knowledgeReviewState(item) === 'agent_confirmed') {
-    return `Agent 使用策略 · ${formatTime(basis.confirmed_at)}`
+    return t('knowledge.domain.confirmation.agentPolicy', {
+      time: formatTime(basis.confirmed_at),
+    })
   }
-  return `${confirmationActorLabel(basis.proposed_by)}提出 · ${basis.existence_reason}`
+  return t('knowledge.domain.confirmation.proposed', {
+    actor: confirmationActorLabel(basis.proposed_by),
+    reason: basis.existence_reason,
+  })
 }
 
 function commonItem(item: KnowledgeNode | KnowledgeEdge) {

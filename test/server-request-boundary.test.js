@@ -86,6 +86,7 @@ test('exact local browser authority and requests without Origin keep working', a
   const indexHtml = await index.text();
   const entryPath = indexHtml.match(/<script[^>]+src="([^"]+\.js)"/)?.[1];
   const entry = entryPath ? await fetch(new URL(entryPath, url)) : null;
+  const entrySource = entry ? await entry.text() : '';
 
   assert.equal(new URL(url).port, String(server.address().port));
   assert.equal(created.status, 200);
@@ -97,7 +98,7 @@ test('exact local browser authority and requests without Origin keep working', a
   assert.ok(entryPath);
   assert.equal(entry.status, 200);
   assert.match(entry.headers.get('content-type'), /^text\/javascript/);
-  assert.ok((await entry.text()).length > 100_000);
+  assert.match(entrySource, /#app/);
 });
 
 function rawStatus(url, options) {

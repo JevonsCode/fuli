@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 
+import { currentLocale, t } from '@/i18n'
+
 export type SearchableSelectOption = {
   value: string
   label: string
@@ -22,8 +24,8 @@ const props = withDefaults(defineProps<{
   name?: string
 }>(), {
   controlId: undefined,
-  placeholder: '请选择',
-  searchPlaceholder: '搜索名称或 ID',
+  placeholder: undefined,
+  searchPlaceholder: undefined,
   searchable: undefined,
   disabled: false,
   required: false,
@@ -44,19 +46,26 @@ const openUp = ref(false)
 const query = ref('')
 const generatedId = useId().replace(/[^A-Za-z0-9_-]/g, '')
 const accessibleLabel = computed(() => props.label)
+const resolvedPlaceholder = computed(
+  () => props.placeholder ?? t('common.searchableSelect.placeholder'),
+)
+const resolvedSearchPlaceholder = computed(
+  () => props.searchPlaceholder ?? t('common.searchableSelect.searchPlaceholder'),
+)
 const listId = computed(() => `${props.controlId || `searchable-select-${generatedId}`}-options`)
 const selectedOption = computed(() =>
   props.options.find(({ value }) => value === props.modelValue) ?? null,
 )
 const showSearch = computed(() => props.searchable ?? props.options.length > 5)
 const filteredOptions = computed(() => {
-  const needle = query.value.trim().toLocaleLowerCase('zh-CN')
+  const locale = currentLocale()
+  const needle = query.value.trim().toLocaleLowerCase(locale)
   if (!needle) return props.options
   return props.options.filter((option) =>
     [option.label, option.value, option.meta, option.search]
       .filter(Boolean)
       .join(' ')
-      .toLocaleLowerCase('zh-CN')
+      .toLocaleLowerCase(locale)
       .includes(needle),
   )
 })
@@ -228,7 +237,7 @@ function positionPanel() {
     >
       <span class="searchable-select-current">
         <span class="searchable-select-current-label">
-          {{ selectedOption?.label || placeholder }}
+          {{ selectedOption?.label || resolvedPlaceholder }}
         </span>
         <small v-if="selectedOption?.meta" class="searchable-select-current-meta">
           {{ selectedOption.meta }}
@@ -244,8 +253,8 @@ function positionPanel() {
           v-model="query"
           type="search"
           autocomplete="off"
-          :placeholder="searchPlaceholder"
-          :aria-label="`搜索${accessibleLabel}`"
+          :placeholder="resolvedSearchPlaceholder"
+          :aria-label="t('common.searchableSelect.searchAria', { label: accessibleLabel })"
           @keydown="onSearchKeydown"
         />
       </div>
@@ -270,7 +279,7 @@ function positionPanel() {
         </button>
       </div>
       <p v-if="filteredOptions.length === 0" class="searchable-select-empty">
-        没有匹配项
+        {{ t('common.searchableSelect.noMatches') }}
       </p>
     </div>
   </div>

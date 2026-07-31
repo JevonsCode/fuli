@@ -2,6 +2,7 @@
 import { gsap } from 'gsap'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import { t } from '@/i18n'
 import KnowledgeQuadrantAxisSystem from './KnowledgeQuadrantAxisSystem.vue'
 
 import {
@@ -235,30 +236,30 @@ function runStageTween(
     ref="stage"
     class="quadrant-stage"
     :class="{ 'is-focused': focused }"
-    aria-label="知识发现四象限"
+    :aria-label="t('knowledge.workspace.quadrant.aria')"
   >
     <div class="quadrant-stage-header">
       <div class="quadrant-stage-copy" aria-live="polite">
         <span>{{ focused ? 'FOCUS MODE' : 'DISCOVERY MAP' }}</span>
         <strong v-if="focusedChoice">
-          正在查看 {{ quadrantLabel(focusedChoice.value) }}
+          {{ t('knowledge.workspace.quadrant.viewing', { quadrant: quadrantLabel(focusedChoice.value) }) }}
         </strong>
-        <strong v-else>点击一个象限，进入聚焦整理</strong>
+        <strong v-else>{{ t('knowledge.workspace.quadrant.focusPrompt') }}</strong>
         <small>
           {{ focused
-            ? '选择其他象限可直接切换；再次点击当前象限返回全局。'
-            : '横轴表示是否掌握，纵轴表示是否意识到。' }}
+            ? t('knowledge.workspace.quadrant.focusedHint')
+            : t('knowledge.workspace.quadrant.globalHint') }}
         </small>
       </div>
       <button
         v-if="focusedChoice"
         class="quadrant-reset"
         type="button"
-        aria-label="返回四象限"
-        title="返回四象限"
+        :aria-label="t('knowledge.workspace.quadrant.backAria')"
+        :title="t('knowledge.workspace.quadrant.backAria')"
         @click="selectQuadrant(focusedChoice.value)"
       >
-        全局
+        {{ t('knowledge.workspace.quadrant.global') }}
       </button>
     </div>
 
@@ -305,7 +306,9 @@ function runStageTween(
             {{ quadrantDescription(choice.value) }}
           </span>
           <span class="quadrant-card-action">
-            {{ activeQuadrant === choice.value ? '再次点击返回全局' : '点击聚焦' }}
+            {{ activeQuadrant === choice.value
+              ? t('knowledge.workspace.quadrant.returnGlobal')
+              : t('knowledge.workspace.quadrant.clickToFocus') }}
             <i aria-hidden="true">↗</i>
           </span>
         </span>

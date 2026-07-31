@@ -19,6 +19,19 @@ const CONFIG = {
   }]
 };
 
+test('federated app can extend Provider request timeouts for isolated ingestion', () => {
+  const app = new FederatedGraphApplication(CONFIG, {
+    fetchImpl: providerFetch([], {}),
+    providerRequestTimeoutMs: 120_000
+  });
+
+  assert.equal(app.personal.requestTimeoutMs, 120_000);
+  assert.equal(
+    [...app.workspaces.values()][0].client.requestTimeoutMs,
+    120_000
+  );
+});
+
 test('silent capture commits personal knowledge directly', async () => {
   const calls = [];
   const app = new FederatedGraphApplication(CONFIG, {
@@ -299,24 +312,55 @@ test('collaboration context always layers global preferences with one exact loca
     ]);
   });
 
-test('capture preserves source application, turn, and the bounded relevant excerpt', async () => {
+test(
+  'capture preserves source URI, application, turn, and the bounded relevant excerpt',
+  async () => {
+    const calls = [];
+    const app = new FederatedGraphApplication(CONFIG, {
+      fetchImpl: providerFetch(calls, {
+        '/v1/knowledge/commits': { status: 'committed', episode_id: 'episode-source' }
+      })
+    });
+
+    await app.captureSessionKnowledge({
+      ...episodeInput('personal'),
+      sourceUri: 'https://docs.example.invalid/product/requirements?view=latest#scope',
+      sourceApplication: 'codex',
+      sourceTurnId: 'turn-7',
+      sourceExcerpt: '用户明确要求默认全局生效，也可以限制到一个项目。'
+    });
+
+    assert.equal(
+      calls[0].body.episode.source_uri,
+      'https://docs.example.invalid/product/requirements?view=latest#scope'
+    );
+    assert.equal(calls[0].body.episode.source_application, 'codex');
+    assert.equal(calls[0].body.episode.source_turn_id, 'turn-7');
+    assert.match(calls[0].body.episode.source_excerpt, /默认全局/);
+  }
+);
+
+test('source URI must be an absolute HTTP(S) link without embedded credentials', async () => {
   const calls = [];
   const app = new FederatedGraphApplication(CONFIG, {
-    fetchImpl: providerFetch(calls, {
-      '/v1/knowledge/commits': { status: 'committed', episode_id: 'episode-source' }
-    })
+    fetchImpl: providerFetch(calls, {})
   });
 
-  await app.captureSessionKnowledge({
-    ...episodeInput('personal'),
-    sourceApplication: 'codex',
-    sourceTurnId: 'turn-7',
-    sourceExcerpt: '用户明确要求默认全局生效，也可以限制到一个项目。'
-  });
-
-  assert.equal(calls[0].body.episode.source_application, 'codex');
-  assert.equal(calls[0].body.episode.source_turn_id, 'turn-7');
-  assert.match(calls[0].body.episode.source_excerpt, /默认全局/);
+  await assert.rejects(
+    app.captureSessionKnowledge({
+      ...episodeInput('personal'),
+      sourceUri: 'ftp://docs.example.invalid/requirements'
+    }),
+    /absolute HTTP\(S\) URI/
+  );
+  await assert.rejects(
+    app.captureSessionKnowledge({
+      ...episodeInput('personal'),
+      sourceUri: 'https://sample-user@docs.example.invalid/requirements'
+    }),
+    /absolute HTTP\(S\) URI/
+  );
+  assert.deepEqual(calls, []);
 });
 
 test('pending knowledge stays outside public review regardless of its quadrant', async () => {
@@ -352,6 +396,13 @@ test('credentials are rejected before either provider receives them', async () =
     app.captureSessionKnowledge({
       ...episodeInput('personal'),
       summary: 'api_key=sk-live-12345678901234567890'
+    }),
+    /contains credentials/
+  );
+  await assert.rejects(
+    app.captureSessionKnowledge({
+      ...episodeInput('personal'),
+      sourceUri: `https://docs.example.invalid/prd?access_token=${'x'.repeat(20)}`
     }),
     /contains credentials/
   );
@@ -396,13 +447,15 @@ test('Agent search records returned human-edited personal items as viewed', asyn
           source_entity: 'A',
           target_entity: 'B',
           relationship: 'USES',
-          fact: 'A uses B'
+          fact: 'A uses B',
+          source_uris: ['https://docs.example.invalid/project/decision']
         }],
         entities: [{
           id: 'entity-1',
           name: 'A',
           type: 'Decision',
-          summary: 'A reviewed decision'
+          summary: 'A reviewed decision',
+          source_uris: ['https://docs.example.invalid/project/decision']
         }]
       },
       '/v1/knowledge/agent-views': {
@@ -412,13 +465,19 @@ test('Agent search records returned human-edited personal items as viewed', asyn
     })
   });
 
-  await app.searchKnowledge({
+  const result = await app.searchKnowledge({
     personalSpaceId: 'personal-space',
     query: 'A',
     agentInvocation: true,
     agentToolName: 'search_knowledge_graph'
   });
 
+  assert.deepEqual(result.facts[0].source_uris, [
+    'https://docs.example.invalid/project/decision'
+  ]);
+  assert.deepEqual(result.entities[0].source_uris, [
+    'https://docs.example.invalid/project/decision'
+  ]);
   const audit = calls.find(({ path }) => path === '/v1/knowledge/agent-views');
   assert.equal(audit.body.tool_name, 'search_knowledge_graph');
   assert.deepEqual(audit.body.items, [

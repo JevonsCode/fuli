@@ -101,6 +101,11 @@ scratch/
 *.heapprofile
 *.prof
 
+# Local Alignment benchmark run artifacts
+/FULI_ALIGNMENT_REPORT.md
+/FULI_CLAUDE_CODE_ALIGNMENT_REPORT.md
+/acceptance/alignment/results/
+
 # Generated Python packaging output
 graph-provider/build/
 *.py[cod]

@@ -32,6 +32,30 @@ export function successToolResult(value, { limitBytes = RESULT_LIMIT_BYTES } = {
   };
 }
 
+export function hookAdditionalContextToolResult(
+  value,
+  {
+    hookEventName,
+    label,
+    limitBytes = RESULT_LIMIT_BYTES
+  }
+) {
+  const result = successToolResult(value, { limitBytes });
+  const additionalContext = `${label}\n${JSON.stringify(result.structuredContent)}`;
+  return {
+    ...result,
+    content: [{
+      type: 'text',
+      text: JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName,
+          additionalContext
+        }
+      })
+    }]
+  };
+}
+
 export function errorToolResult(error) {
   const controlled = error instanceof ApplicationError;
   const code = controlled ? error.code : 'internal_error';

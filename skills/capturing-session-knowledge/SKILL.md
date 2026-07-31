@@ -7,12 +7,19 @@ description: Use when Fuli tools are available and a task may depend on remember
 
 Accumulate reusable knowledge without interrupting the user's normal work. Keep an internal session buffer and flush focused batches at a natural task boundary or before the session ends.
 
-## Load Collaboration Preferences
+## Establish Task Context
 
-At the start of every user task, before any other tool or answer, call
-`get_collaboration_preferences`. Pass `projectPath` as the current working directory. Fuli uses
-that path only for this local MCP call, never stores or returns it, and resolves the exact local
-personal project itself. Do not infer or guess `personalProjectId` in the Agent.
+At the start of every user task, first use the lifecycle context supplied by the host when one
+exists. A Claude Code `UserPromptSubmit` hook calls `begin_task_context`, which already loads
+collaboration preferences and resolves the exact local personal project from the current working
+directory. Apply that returned context and retain its opaque task token for the final checkpoint;
+do not redundantly call `get_collaboration_preferences`.
+
+When the host has not supplied lifecycle context, call exactly
+`get_collaboration_preferences` before any other tool or answer. Pass `projectPath` as the current
+working directory. This is the prompt-only fallback for Agents without an equivalent lifecycle
+hook. Fuli uses the path only for this local MCP call, never stores or returns it, and resolves the
+exact local personal project itself. Do not infer or guess `personalProjectId` in the Agent.
 
 Apply only `effective_preferences`. Personal-global preferences apply in every user task;
 project-scoped preferences layer on only for the exact selected project. Do not apply items
@@ -30,7 +37,13 @@ Mentioning a preference only in the final answer is not compliance.
 
 ## Retrieve Context
 
-Call `search_knowledge_graph` when prior durable context can materially improve the task.
+For facts about the current local project, call `search_current_project_knowledge` with the
+current working directory. It resolves the exact active project without requiring the Agent to
+copy an ID, searches that child project first, and then includes only inheritable knowledge from
+authorized parents or shared-source projects. Use `search_knowledge_graph` for personal-global
+context, explicitly named extra projects, subscribed public projects, or advanced scoped queries.
+
+Search when prior durable context can materially improve the task.
 Before saying that a stable fact is unknown or asking the user to provide it again, search
 Fuli if it may have been learned earlier. Strong triggers include URLs, deployment routes,
 requirements, terminology, architecture, prior decisions, runbooks, rationale, and remembered
@@ -75,11 +88,13 @@ IDs; never search every personal project, every subscription, or the whole graph
 Use the current repository, the user's wording, and `list_knowledge_spaces` to resolve scope.
 Ask if the active project remains ambiguous.
 
-The active project may also retrieve only knowledge explicitly marked inheritable from projects
-reached through outgoing `PART_OF` or `USES_KNOWLEDGE_FROM` relations. Never inherit
-project-scoped personal preferences, never traverse `RELATED_TO`, stop after two hops, and retain
-the returned scope path. Exact active-project knowledge with the same stable key overrides an
-inherited item.
+The active child project may also retrieve only knowledge explicitly marked inheritable from
+projects reached through its outgoing `PART_OF` or `USES_KNOWLEDGE_FROM` relations. This means
+project-specific PRDs, configuration IDs, and debugging notes remain in the child, while a parent
+may own shared run, validation, and test runbooks. Search the child first, then authorized parents.
+Never inherit project-scoped personal preferences, never traverse `RELATED_TO`, stop after two
+hops, and retain the returned scope path. Exact active-project knowledge with the same stable key
+overrides an inherited item.
 
 After a retrieved personal item materially affects the final answer or a completed action, call
 `record_knowledge_usage` once for that task and item with `cited` or `applied`. Do not record
@@ -96,6 +111,27 @@ do not calculate, override, or claim the promotion themselves.
 
 For “why was this code written?” questions, use stored evidence relationships and a separately configured Git MCP together. Never invent a commit, PRD link, or missing history. For “what errors happened today?” questions, obtain current data from a monitoring/log MCP; use Fuli only for runbooks, architecture, prior causes, and other durable context.
 
+## Preserve Online Sources For Knowledge Refresh
+
+When the user provides an online project or document link and the current Agent has a connector
+or tool that can read it:
+
+1. Read the current source with the Agent's available capability. Fuli does not implement or
+   pretend to provide source-specific reading.
+2. Distill only durable knowledge, then pass the exact stable original HTTP(S) link as
+   `sourceUri` to `capture_session_knowledge`. Do not substitute a temporary download URL,
+   fabricate a link, or put credentials in the URI.
+3. Route confidential or internal sources to personal knowledge with `private` or `restricted`
+   sensitivity. The runtime may retain the source URI; never copy a real internal URI into Git
+   project files, fixtures, examples, logs, or public project evidence.
+4. When the user later asks to refresh the knowledge, search the relevant scope, use the returned
+   `source_uris` from supporting facts or entities, re-read the source with the current Agent,
+   and revise or supersede the corresponding Fuli knowledge while preserving history.
+
+This workflow refreshes knowledge stored in Fuli. It does not imply or require writing back to
+the original online document. If the current Agent cannot read the source, report that limitation
+and never invent source-derived knowledge.
+
 Every `search_knowledge_graph` response provides two terminal-safe Markdown choices:
 `sourceMarker` for returned items that support the answer, and `noMatchSourceMarker`
 for a search with no supporting result. A tool-labelled match that is irrelevant to
@@ -111,12 +147,27 @@ omit, or wrap markers in HTML. A capture or write result is not a read citation.
 
 ## Decide What Persists
 
+Evaluate every completed task for reusable value, but do not force every collaboration to become
+knowledge. `retain_nothing` is the correct result for temporary output, already-known material,
+unsupported inference, or a task with no durable value.
+
 Capture confirmed, stable information:
 
 - Personal: the user's enduring preferences, boundaries, habits, and working methods. Project-specific personal rules must explicitly link to that project instead of becoming global defaults.
 - Project: PRD facts, requirements, terminology, decisions, constraints, architecture, routes, APIs, metrics, and document-derived knowledge.
 
 Do not capture credentials, tokens, cookies, private keys, raw transcripts, temporary logs, command output, speculative conclusions, or disposable implementation details. Treat a correction as a replacement, not an additional conflicting fact.
+
+For a confirmed project decision, prefer `record_decision_trace` over a flat note. Preserve the
+selected option, materially considered rejected options, the human/source-confirmed rationale,
+and any validation evidence. The rationale must explain the tradeoff rather than merely repeat
+the selected option.
+
+When retained knowledge is later rejected, contradicted, found outdated, or fails validation,
+call `record_knowledge_feedback` with a concise reason and available evidence. Negative evidence
+lowers ranking and marks the item for attention without deleting its history. Agent-only feedback
+must not demote human/source-confirmed knowledge; authoritative contradiction may require review
+or demotion under the Provider policy.
 
 ## Classify Knowledge State
 
@@ -195,6 +246,21 @@ global decision without hiding unrelated preferences.
 - Never auto-approve a project Proposal.
 - If ownership is genuinely ambiguous and changes who can see the knowledge, ask one concise question instead of guessing.
 
+## Converge Shared Child Knowledge
+
+When multiple direct children of one parent independently contain substantially equivalent
+runbooks, conventions, or architecture facts, call `discover_common_knowledge_candidates`.
+Discovery is read-only and must compare child-local knowledge with inheritance disabled so a
+parent item cannot manufacture its own promotion candidate.
+
+Never promote automatically. Preview a candidate with
+`preview_common_knowledge_promotion`, show the proposed parent ownership, descendants inheritance
+mode, selected duplicates, and scope rationale, then require a human confirmation reason. Apply
+with `apply_common_knowledge_promotion` only using the one-time intent-bound preview token. The
+Provider must atomically create or move the canonical parent item, mark descendants inheritance,
+supersede child duplicates, and record the promotion audit. Child-specific exceptions stay in
+their child projects.
+
 ## Resolve Or Create The Local Project
 
 Before the first project-scoped capture in a repository:
@@ -214,7 +280,7 @@ Use `capture_session_knowledge` with a small, coherent batch:
 1. List spaces when the target IDs are not already known.
 2. Summarize the durable facts; do not submit the entire source document or conversation.
 3. Create stable entity keys, typed entities, and explicit uppercase relationships. When relevant, model `GitCommit`, `CodeSymbol`, `PRDSection`, `Runbook`, and `Incident` entities and connect them with relationships such as `IMPLEMENTED_IN`, `DEFINED_BY`, `MOTIVATED_BY`, `APPLIES_TO`, and `INVESTIGATED_WITH`.
-4. Include source kind, source application, a non-sensitive source description, reference time, session ID, and a retry-safe idempotency key. When available, include a stable source turn ID and only the smallest relevant excerpt needed to understand the evidence; never include a full transcript.
+4. Include source kind, source application, a non-sensitive source description, reference time, session ID, and a retry-safe idempotency key. When an online source was actually read, also include its exact stable `sourceUri`. When available, include a stable source turn ID and only the smallest relevant excerpt needed to understand the evidence; never include a full transcript.
 5. Use `supersedes` when replacing a known relationship and set confidence below `1` only when the source itself expresses uncertainty.
 6. Flush silently at the boundary. Continue the user's task without narrating routine capture.
 
@@ -222,6 +288,10 @@ If `capture_session_knowledge` or automatic project creation returns `capture_di
 user has disabled automatic capture. Do not retry, do not create a fallback record elsewhere,
 and do not describe the skipped batch as stored. Existing knowledge may still be queried.
 
-Before sending the final response, perform one checkpoint: either flush the durable batch or determine that this turn produced no reusable knowledge. Do not finish a reusable project decision with an unflushed batch.
+Before sending the final response, perform one checkpoint. For a hook-managed task, call
+`checkpoint_task_knowledge` exactly once with either `capture_candidates` and the bounded durable
+batch, or `retain_nothing`. For a prompt-only Agent, either flush the durable batch directly or
+determine that the turn produced no reusable knowledge. Do not finish a reusable project decision
+with an unflushed batch.
 
 Only notify the user when capture fails, conflicts with existing knowledge, or requires an ownership decision. If project knowledge was proposed successfully, do not interrupt merely to announce the pending review item.

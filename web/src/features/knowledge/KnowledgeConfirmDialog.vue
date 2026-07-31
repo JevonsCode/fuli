@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 
 import { patchJson } from '@/api/client'
+import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { ConfirmationActor, EvidenceRecord, KnowledgeItem } from '@/types'
 import { quadrantDescription, quadrantLabel } from './model'
@@ -24,10 +25,15 @@ const confirmationReason = ref('')
 const acknowledged = ref(false)
 const busy = ref(false)
 const localError = ref('')
-const proposedBy = ref<ConfirmationActor>({ kind: 'import', label: '历史记录' })
+const proposedBy = ref<ConfirmationActor>({
+  kind: 'import',
+  label: t('knowledge.domain.actors.historicalRecord'),
+})
 
 const subjectLabel = computed(() =>
-  props.item?.profileAspect ? '这条偏好' : '这条知识',
+  props.item?.profileAspect
+    ? t('knowledge.dialogs.confirm.preferenceSubject')
+    : t('knowledge.dialogs.confirm.knowledgeSubject'),
 )
 
 watch(
@@ -39,14 +45,15 @@ watch(
     existenceReason.value = basis?.existence_reason
       || evidence?.source_description
       || evidence?.summary
-      || '该内容由已保留的来源记录支持。'
+      || t('knowledge.dialogs.confirm.sourceSupport')
     quadrantReason.value = basis?.quadrant_reason
       || item.reasoningSummary
-      || `该内容在发现时符合“${quadrantLabel(item.originQuadrant)}”：${
-        quadrantDescription(item.originQuadrant)
-      }`
+      || t('knowledge.dialogs.confirm.quadrantReason', {
+        quadrant: quadrantLabel(item.originQuadrant),
+        description: quadrantDescription(item.originQuadrant),
+      })
     proposedBy.value = basis?.proposed_by ?? proposedByFromEvidence(evidence)
-    confirmationReason.value = '已核对内容与发现时象限，确认无误。'
+    confirmationReason.value = t('knowledge.dialogs.confirm.confirmationReason')
     acknowledged.value = false
     localError.value = ''
   },
@@ -57,12 +64,20 @@ async function confirmKnowledge() {
   const item = props.item
   if (!item || busy.value) return
   if (!item.classificationExplicit) {
-    return fail('请先补充发现时象限，再确认这条知识')
+    return fail(t('knowledge.dialogs.confirm.errors.quadrantRequired'))
   }
-  if (!existenceReason.value.trim()) return fail('请说明为什么会有这条知识')
-  if (!quadrantReason.value.trim()) return fail('请说明为什么属于当前象限')
-  if (!confirmationReason.value.trim()) return fail('请填写确认说明')
-  if (!acknowledged.value) return fail('请先确认已经核对内容与发现时象限')
+  if (!existenceReason.value.trim()) {
+    return fail(t('knowledge.dialogs.confirm.errors.existenceRequired'))
+  }
+  if (!quadrantReason.value.trim()) {
+    return fail(t('knowledge.dialogs.confirm.errors.quadrantReasonRequired'))
+  }
+  if (!confirmationReason.value.trim()) {
+    return fail(t('knowledge.dialogs.confirm.errors.confirmationReasonRequired'))
+  }
+  if (!acknowledged.value) {
+    return fail(t('knowledge.dialogs.confirm.errors.acknowledgmentRequired'))
+  }
 
   busy.value = true
   localError.value = ''
@@ -81,17 +96,21 @@ async function confirmKnowledge() {
           proposedBy: proposedBy.value,
           confirmedBy: {
             kind: 'user',
-            label: '当前用户',
+            label: t('knowledge.domain.actors.currentUser'),
           },
           confirmedAt: new Date().toISOString(),
         },
       },
     )
-    store.notify(`${subjectLabel.value}已确认，并记录了确认人和确认时间。`)
+    store.notify(t('knowledge.dialogs.confirm.confirmed', {
+      subject: subjectLabel.value,
+    }))
     emit('saved')
     emit('close')
   } catch (error) {
-    localError.value = error instanceof Error ? error.message : '确认失败'
+    localError.value = error instanceof Error
+      ? error.message
+      : t('knowledge.dialogs.confirm.errors.failed')
     store.reportError(error)
   } finally {
     busy.value = false
@@ -104,11 +123,11 @@ function proposedByFromEvidence(evidence?: EvidenceRecord): ConfirmationActor {
     claude_code: 'Claude Code',
     cursor: 'Cursor',
     kiro: 'Kiro',
-    other: '其他 Agent',
+    other: t('knowledge.domain.actors.otherAgent'),
   }[evidence?.source_application ?? '']
   return application
     ? { kind: 'agent', label: application }
-    : { kind: 'import', label: '历史记录' }
+    : { kind: 'import', label: t('knowledge.domain.actors.historicalRecord') }
 }
 
 function fail(message: string) {
@@ -122,24 +141,28 @@ function fail(message: string) {
       <header class="project-dialog-header">
         <div>
           <p class="eyebrow">KNOWLEDGE CONFIRMATION</p>
-          <h3>确认{{ subjectLabel }}</h3>
-          <p>确认表示你已核对内容与发现时象限；系统会记录当前用户和确认时间。</p>
+          <h3>{{ t('knowledge.dialogs.confirm.title', { subject: subjectLabel }) }}</h3>
+          <p>{{ t('knowledge.dialogs.confirm.intro') }}</p>
         </div>
         <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">
-          关闭
+          {{ t('common.actions.close') }}
         </button>
       </header>
 
       <section class="knowledge-confirm-summary">
-        <span>{{ item.profileAspect ? '协作偏好' : '知识内容' }}</span>
+        <span>{{ item.profileAspect
+          ? t('knowledge.dialogs.confirm.preference')
+          : t('knowledge.dialogs.confirm.knowledge') }}</span>
         <strong>{{ item.title }}</strong>
         <p>{{ item.body }}</p>
-        <small>发现时象限 · {{ quadrantLabel(item.originQuadrant) }}</small>
+        <small>{{ t('knowledge.dialogs.confirm.quadrant', {
+          quadrant: quadrantLabel(item.originQuadrant),
+        }) }}</small>
       </section>
 
       <div class="knowledge-confirm-fields">
         <label>
-          <span>为什么会有这条知识</span>
+          <span>{{ t('knowledge.dialogs.confirm.whyExists') }}</span>
           <textarea
             v-model="existenceReason"
             name="confirmation-existence-reason"
@@ -149,7 +172,7 @@ function fail(message: string) {
           />
         </label>
         <label>
-          <span>为什么属于当前象限</span>
+          <span>{{ t('knowledge.dialogs.confirm.whyQuadrant') }}</span>
           <textarea
             v-model="quadrantReason"
             name="confirmation-quadrant-reason"
@@ -159,7 +182,7 @@ function fail(message: string) {
           />
         </label>
         <label>
-          <span>确认说明</span>
+          <span>{{ t('knowledge.dialogs.confirm.confirmationCopy') }}</span>
           <textarea
             v-model="confirmationReason"
             name="confirmation-reason"
@@ -172,20 +195,22 @@ function fail(message: string) {
 
       <label class="knowledge-confirm-acknowledgement">
         <input v-model="acknowledged" name="confirmation-acknowledged" type="checkbox" />
-        <span>我已核对这条内容及其发现时象限，并确认上述依据准确。</span>
+        <span>{{ t('knowledge.dialogs.confirm.acknowledgment') }}</span>
       </label>
 
       <p v-if="localError" class="publish-dialog-error" role="alert">{{ localError }}</p>
       <footer class="project-profile-dialog-actions">
         <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">
-          取消
+          {{ t('common.actions.cancel') }}
         </button>
         <button
           class="primary-action"
           type="submit"
           :disabled="busy || !acknowledged"
         >
-          {{ busy ? '正在确认…' : `确认${subjectLabel}` }}
+          {{ busy
+            ? t('knowledge.dialogs.confirm.confirming')
+            : t('knowledge.dialogs.confirm.confirmSubject', { subject: subjectLabel }) }}
         </button>
       </footer>
     </form>
