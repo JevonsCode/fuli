@@ -70,6 +70,10 @@ const RELATION_VISUALS: Record<string, RelationVisualDefinition> = {
     messageKey: 'USES_KNOWLEDGE_FROM',
     iconPath: ICONS.transfer,
   },
+  USES_EXTERNAL_KNOWLEDGE: {
+    messageKey: 'USES_EXTERNAL_KNOWLEDGE',
+    iconPath: ICONS.transfer,
+  },
   DEPENDS_ON: {
     messageKey: 'DEPENDS_ON',
     iconPath: ICONS.link,

@@ -14,7 +14,7 @@ export async function runUninstallCommand(args, dependencies = {}) {
   write(formatUninstallPreview(plan));
 
   if (!options.yes && !await confirm()) {
-    write('已取消，没有修改任何内容。');
+    write('Cancelled. No changes were made.');
     return { status: 'cancelled' };
   }
 
@@ -24,30 +24,32 @@ export async function runUninstallCommand(args, dependencies = {}) {
 }
 
 export function formatUninstallPreview(plan) {
-  const labels = plan.agents.map(({ label }) => label).join('、') || '无';
+  const labels = plan.agents.map(({ label }) => label).join(', ') || 'none';
   return [
-    '准备清理复利的本机接入',
-    '本地服务：停止',
-    `Agent 接入：${labels}`,
-    'Skills：仅删除与当前安装包完全一致的副本；有本地修改的会保留',
-    `数据：保留 ${plan.paths.dataDir}`,
-    'Neo4j 数据卷：保留'
+    'Ready to remove local Fuli integrations',
+    'Local services: stop',
+    `Agent integrations: ${labels}`,
+    'Skills: remove only copies identical to this package; preserve locally modified copies',
+    `Data: preserve ${plan.paths.dataDir}`,
+    'Neo4j volumes: preserve'
   ].join('\n');
 }
 
 export function formatUninstallResult(result) {
   const lines = [
-    result.status === 'ready' ? '复利本机接入已清理。' : '复利本机接入未完全清理。',
-    `数据已保留：${result.data.path}`,
-    `最后移除全局命令：npm uninstall --global ${FULI_PACKAGE_NAME}`
+    result.status === 'ready'
+      ? 'Local Fuli integrations were removed.'
+      : 'Some local Fuli integrations could not be removed.',
+    `Data preserved: ${result.data.path}`,
+    `Finally, remove the global command: npm uninstall --global ${FULI_PACKAGE_NAME}`
   ];
   if (result.runtime.status !== 'stopped') {
-    lines.push(`本地服务：${result.runtime.message ?? '未能安全确认已停止'}`);
+    lines.push(`Local services: ${result.runtime.message ?? 'could not safely confirm they stopped'}`);
   }
   for (const agent of result.agents) {
     const modified = agent.skills.some(({ status }) => status === 'preserved_modified');
-    if (modified) lines.push(`${agent.label}：保留了有本地修改的 Skill`);
-    if (agent.errors?.length) lines.push(`${agent.label}：${agent.errors.join('；')}`);
+    if (modified) lines.push(`${agent.label}: preserved a locally modified Skill`);
+    if (agent.errors?.length) lines.push(`${agent.label}: ${agent.errors.join('; ')}`);
   }
   return lines.join('\n');
 }
@@ -55,7 +57,7 @@ export function formatUninstallResult(result) {
 async function confirmInTerminal() {
   const input = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const answer = (await input.question('继续清理本机接入？[y/N] ')).trim().toLowerCase();
+    const answer = (await input.question('Remove local integrations? [y/N] ')).trim().toLowerCase();
     return answer === 'y' || answer === 'yes';
   } finally {
     input.close();

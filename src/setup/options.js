@@ -1,5 +1,3 @@
-import { DEFAULT_FULI_PORT } from '../defaults.js';
-
 const VALUE_OPTIONS = Object.freeze({
   '--data-dir': 'dataDir',
   '--personal-space': 'personalSpaceName',
@@ -26,8 +24,8 @@ export function parseUpdateOptions(args = []) {
 function parseSetupLikeOptions(args, command) {
   const result = {
     dataDir: null,
-    personalSpaceName: '我',
-    port: DEFAULT_FULI_PORT,
+    personalSpaceName: 'Personal',
+    port: null,
     yes: false,
     codexOnly: false,
     skipAgents: false,

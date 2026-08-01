@@ -12,10 +12,10 @@ General:
   --version, -v
 
 Local service:
-  start [--port 2727] [--open] [--lan] [--rebuild] [--data-dir DIR] [--personal-space NAME]
+  start [--port PORT] [--open] [--lan|--no-lan] [--rebuild] [--data-dir DIR] [--personal-space NAME]
   stop [--data-dir DIR]
-  restart [--port 2727] [--open] [--lan] [--rebuild] [--data-dir DIR] [--personal-space NAME]
-  status [--json] [--data-dir DIR]
+  restart [--port PORT] [--open] [--lan|--no-lan] [--rebuild] [--data-dir DIR] [--personal-space NAME]
+  status [--json] [--data-dir DIR] [--port PORT]
   open [--data-dir DIR]
 
 Install and Agent connection:

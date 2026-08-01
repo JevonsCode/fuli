@@ -4,6 +4,7 @@ const OMITTED_KEYS = new Set([
   'store',
   'dbpath',
   'databasepath',
+  'privatepath',
   'snapshot',
   'fullsnapshot'
 ]);

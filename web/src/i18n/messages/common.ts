@@ -22,6 +22,7 @@ export const commonMessages = {
       searchPlaceholder: '搜索名称或 ID',
       searchAria: '搜索{label}',
       noMatches: '没有匹配项',
+      selectedCount: '已选 {count} 个项目',
     },
     errors: {
       requestFailed: '请求失败 ({status})',
@@ -40,6 +41,7 @@ export const commonMessages = {
     },
     counts: {
       items: '{count} 条',
+      listPosition: '第 {current} 条，共 {total} 条',
       entities: '{count} 个实体',
       relationships: '{count} 条关系',
       sources: '{count} 个来源',
@@ -70,6 +72,7 @@ export const commonMessages = {
       searchPlaceholder: 'Search name or ID',
       searchAria: 'Search {label}',
       noMatches: 'No matching options',
+      selectedCount: '{count} projects selected',
     },
     errors: {
       requestFailed: 'Request failed ({status})',
@@ -88,6 +91,7 @@ export const commonMessages = {
     },
     counts: {
       items: '{count} item | {count} items',
+      listPosition: 'Item {current} of {total}',
       entities: '{count} entity | {count} entities',
       relationships: '{count} relationship | {count} relationships',
       sources: '{count} source | {count} sources',

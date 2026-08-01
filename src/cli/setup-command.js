@@ -7,6 +7,10 @@ import {
 } from './setup-agent-selection.js';
 import { parseSetupOptions } from '../setup/options.js';
 import { applyLocalSetup, planLocalSetup } from '../setup/setup.js';
+import {
+  DEFAULT_RUNTIME_SETTINGS,
+  runtimeSettingsWithOverrides
+} from '../system/runtime-settings.js';
 
 export async function runSetupCommand(args, dependencies = {}) {
   const options = parseSetupOptions(args);
@@ -23,7 +27,7 @@ export async function runSetupCommand(args, dependencies = {}) {
   write(formatSetupPreview(plan, options));
 
   if (!options.yes && !await confirm()) {
-    write('已取消，没有修改任何内容。');
+    write('Cancelled. No changes were made.');
     return { status: 'cancelled' };
   }
 
@@ -39,33 +43,50 @@ export function formatSetupPreview(plan, options) {
   const available = plan.agents.filter(({ available }) => available);
   const selected = available.filter(({ selected }) => selected !== false);
   const agentSummary = options.skipAgents || (available.length > 0 && selected.length === 0)
-    ? '跳过接入'
-    : selected.map(({ label }) => label).join('、') || '未检测到';
+    ? 'skipped'
+    : selected.map(({ label }) => label).join(', ') || 'none detected';
+  const runtimeSettings = plan.runtimeSettings ?? runtimeSettingsWithOverrides(
+    DEFAULT_RUNTIME_SETTINGS,
+    { consolePort: options.port }
+  );
   return [
-    '准备设置复利',
+    'Ready to set up Fuli',
     options.personalOnly
-      ? '存储：仅个人：本机 Graphiti / Neo4j'
-      : '存储：本机 Graphiti / Neo4j + 团队共享项目 Provider',
-    '容器运行时：自动检测；已安装但未运行时会自动启动',
-    `公共服务：${options.personalOnly ? '暂不连接' : '连接本机开发 Provider'}`,
-    `个人空间：${options.personalSpaceName}`,
-    `本地控制台：${options.noStart ? '暂不启动' : `http://127.0.0.1:${options.port}`}`,
-    `Agent：${agentSummary}`
+      ? 'Storage: personal only, using local Graphiti / Neo4j'
+      : 'Storage: local Graphiti / Neo4j plus a development shared-project Provider',
+    'Container runtime: detected automatically; an installed desktop runtime starts if needed',
+    `Shared services: ${options.personalOnly ? 'not connected' : 'local development Provider'}`,
+    `Personal space: ${options.personalSpaceName}`,
+    `Management UI: ${options.noStart
+      ? 'will not start'
+      : `http://127.0.0.1:${runtimeSettings.ports.console}`}`,
+    `Agents: ${agentSummary}`
   ].join('\n');
 }
 
 export function formatSetupResult(result, plan) {
-  const lines = [result.status === 'ready' ? '复利已准备好。' : '复利已启动，但有 Agent 未连接。'];
-  if (result.runtime.url) lines.push(`打开：${result.runtime.url}`);
-  lines.push('知识存储：Graphiti / Neo4j');
+  const lines = [result.status === 'ready'
+    ? 'Fuli is ready.'
+    : 'Fuli started, but one or more Agents are not connected.'];
+  if (result.runtime.url) lines.push(`Open: ${result.runtime.url}`);
+  if (result.runtime.lan === true) {
+    lines.push(
+      'LAN URLs:',
+      ...result.runtime.lanUrls.map((url) => `  ${url}`),
+      `Username: ${result.runtime.lanAccess.username}`,
+      `Temporary access code: ${result.runtime.lanAccess.accessCode}`,
+      'Use only on trusted Wi-Fi. Restarting LAN mode rotates the access code.'
+    );
+  }
+  lines.push('Knowledge storage: Graphiti / Neo4j');
   for (const agent of result.agents) {
     if (agent.status !== 'connected') {
-      lines.push(`${agent.label}：连接失败，请稍后重试 setup`);
+      lines.push(`${agent.label}: connection failed; retry setup later`);
       continue;
     }
     lines.push(agent.newTaskRequired
-      ? `${agent.label}：已连接；请新建或重新打开一个任务以加载新配置`
-      : `${agent.label}：已连接`);
+      ? `${agent.label}: connected; create or reopen a task to load the new configuration`
+      : `${agent.label}: connected`);
   }
   return lines.join('\n');
 }
@@ -73,7 +94,9 @@ export function formatSetupResult(result, plan) {
 async function confirmInTerminal() {
   const input = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const answer = (await input.question('只会修改以上内容，继续？[Y/n] ')).trim().toLowerCase();
+    const answer = (await input.question('Only the items above will change. Continue? [Y/n] '))
+      .trim()
+      .toLowerCase();
     return answer === '' || answer === 'y' || answer === 'yes';
   } finally {
     input.close();

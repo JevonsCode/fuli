@@ -11,6 +11,15 @@ from .knowledge_feedback_models import (
     KnowledgeFeedbackCreate,
     KnowledgeFeedbackResult,
 )
+from .knowledge_review_models import (
+    KnowledgeReviewCandidatePage,
+    KnowledgeReviewCandidateRequest,
+    KnowledgeReviewDecision,
+    KnowledgeReviewFinish,
+    KnowledgeReviewProgress,
+    KnowledgeReviewRun,
+    KnowledgeReviewStart,
+)
 from .common_knowledge_models import (
     CommonKnowledgePromotionPreview,
     CommonKnowledgePromotionRequest,
@@ -78,6 +87,12 @@ from .knowledge_audit import (
     search_human_changes,
 )
 from .knowledge_batch_confirmation import confirm_knowledge_batch
+from .knowledge_review import (
+    finish_knowledge_review,
+    list_knowledge_review_candidates,
+    record_knowledge_review_progress,
+    start_knowledge_review,
+)
 from .common_knowledge import (
     apply_common_knowledge_promotion,
     preview_common_knowledge_promotion,
@@ -321,6 +336,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.post('/v1/knowledge/commits', response_model=CommitResult)
     async def commit_personal(request: KnowledgeCommit, actor: Actor) -> CommitResult:
         return await store.commit_personal(actor, request)
+
+    @application.post(
+        '/v1/knowledge/reviews/start',
+        response_model=KnowledgeReviewRun,
+    )
+    async def start_review(
+        request: KnowledgeReviewStart,
+        actor: Actor,
+    ) -> KnowledgeReviewRun:
+        return await start_knowledge_review(store, actor, request)
+
+    @application.post(
+        '/v1/knowledge/reviews/candidates',
+        response_model=KnowledgeReviewCandidatePage,
+    )
+    async def review_candidates(
+        request: KnowledgeReviewCandidateRequest,
+        actor: Actor,
+    ) -> KnowledgeReviewCandidatePage:
+        return await list_knowledge_review_candidates(store, actor, request)
+
+    @application.post(
+        '/v1/knowledge/reviews/progress',
+        response_model=KnowledgeReviewDecision,
+    )
+    async def record_review_progress(
+        request: KnowledgeReviewProgress,
+        actor: Actor,
+    ) -> KnowledgeReviewDecision:
+        return await record_knowledge_review_progress(store, actor, request)
+
+    @application.post(
+        '/v1/knowledge/reviews/finish',
+        response_model=KnowledgeReviewRun,
+    )
+    async def finish_review(
+        request: KnowledgeReviewFinish,
+        actor: Actor,
+    ) -> KnowledgeReviewRun:
+        return await finish_knowledge_review(store, actor, request)
 
     @application.patch(
         '/v1/knowledge/items/{item_id}',
@@ -586,8 +641,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         actor: Actor,
         limit: Annotated[int | None, Query(ge=1, le=2000)] = None,
         personal_project_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
+        offset: Annotated[int | None, Query(ge=0)] = None,
     ) -> GraphResult:
-        return await store.graph(actor, space_id, limit, personal_project_id)
+        return await store.graph(actor, space_id, limit, personal_project_id, offset)
 
     return application
 

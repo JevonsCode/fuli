@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import { getJson, postJson } from '@/api/client'
 import SearchableSelect from '@/components/SearchableSelect.vue'
+import VirtualDirectoryList from '@/components/VirtualDirectoryList.vue'
 import KnowledgeConfirmDialog from '@/features/knowledge/KnowledgeConfirmDialog.vue'
 import KnowledgeInspector from '@/features/knowledge/KnowledgeInspector.vue'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
@@ -68,6 +69,17 @@ const visibleItems = computed(() =>
         || knowledgeReviewState(item) === activeReviewState.value
       ),
   ),
+)
+const profileListResetKey = computed(() => JSON.stringify([
+  activeAspect.value,
+  activeScope.value,
+  activeReviewState.value,
+  conflictsOnly.value,
+]))
+const selectedItemIndex = computed(() => selectedItem.value
+  ? visibleItems.value.findIndex(({ id, itemKind }) =>
+      id === selectedItem.value?.id && itemKind === selectedItem.value?.itemKind)
+  : -1,
 )
 const visibleConflicts = computed(() =>
   conflicts.value.filter(
@@ -224,6 +236,10 @@ function statusLabel(item: KnowledgeItem) {
     return `${label} · ${t('preferences.profile.statusSuffix.aiResolved')}`
   }
   return label
+}
+
+function itemKey(item: Pick<KnowledgeItem, 'itemKind' | 'id'>) {
+  return `${item.itemKind}:${item.id}`
 }
 
 function scopeLabel(item: KnowledgeItem) {
@@ -560,20 +576,27 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
     </section>
 
     <div v-else class="personal-profile-layout">
-      <section
+      <!-- @vue-generic {import('@/types').KnowledgeItem} -->
+      <VirtualDirectoryList
         class="personal-profile-directory"
-        :aria-label="t('preferences.profile.directory.aria')"
+        :items="visibleItems"
+        :row-height="76"
+        :active-index="selectedItemIndex"
+        :reset-key="profileListResetKey"
+        :item-key="itemKey"
+        :label="t('preferences.profile.directory.aria')"
       >
-        <div class="personal-profile-table-head" aria-hidden="true">
-          <span>{{ t('preferences.profile.directory.aspect') }}</span>
-          <span>{{ t('preferences.profile.directory.content') }}</span>
-          <span>{{ t('preferences.profile.directory.statusScopeSource') }}</span>
-          <span>{{ t('preferences.profile.directory.updated') }}</span>
-        </div>
-        <div class="personal-profile-list">
+        <template #header>
+          <div class="personal-profile-table-head" aria-hidden="true">
+            <span>{{ t('preferences.profile.directory.aspect') }}</span>
+            <span>{{ t('preferences.profile.directory.content') }}</span>
+            <span>{{ t('preferences.profile.directory.statusScopeSource') }}</span>
+            <span>{{ t('preferences.profile.directory.updated') }}</span>
+          </div>
+        </template>
+
+        <template #default="{ item }">
           <button
-            v-for="item in visibleItems"
-            :key="`${item.itemKind}:${item.id}`"
             class="personal-profile-row"
             :class="{
               selected: selectedItem?.id === item.id,
@@ -594,17 +617,26 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
             </span>
             <time>{{ formatTime(latestItemValue(item)) }}</time>
           </button>
-        </div>
-        <div v-if="loading || !visibleItems.length" class="empty-state">
-          {{
-            loading
-              ? t('preferences.profile.directory.loading')
-              : items.length
-                ? t('preferences.profile.directory.noFiltered')
-                : t('preferences.profile.directory.empty')
-          }}
-        </div>
-      </section>
+        </template>
+
+        <template #empty>
+          <div class="empty-state">
+            {{
+              loading
+                ? t('preferences.profile.directory.loading')
+                : items.length
+                  ? t('preferences.profile.directory.noFiltered')
+                  : t('preferences.profile.directory.empty')
+            }}
+          </div>
+        </template>
+
+        <template #footer>
+          <div v-if="loading" class="empty-state">
+            {{ t('preferences.profile.directory.loading') }}
+          </div>
+        </template>
+      </VirtualDirectoryList>
       <KnowledgeInspector
         class="personal-profile-inspector"
         :item="selectedItem"

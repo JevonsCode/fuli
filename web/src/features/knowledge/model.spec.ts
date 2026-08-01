@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  appendKnowledgeGraphPage,
   batchConfirmationBasis,
   batchConfirmationGroups,
   classificationExplanation,
@@ -65,6 +66,27 @@ describe('knowledge model', () => {
     expect(merged.nodes[0].evidence).toHaveLength(1)
   })
 
+  it('appends graph pages while taking pagination state from the latest page', () => {
+    const merged = appendKnowledgeGraphPage(
+      {
+        nodes: [{ id: 'a', name: 'First', type: 'Decision' }],
+        edges: [],
+        truncated: true,
+        next_offset: 100,
+      },
+      {
+        nodes: [{ id: 'b', name: 'Second', type: 'Decision' }],
+        edges: [],
+        truncated: false,
+        next_offset: null,
+      },
+    )
+
+    expect(merged.nodes.map(({ id }) => id)).toEqual(['a', 'b'])
+    expect(merged.truncated).toBe(false)
+    expect(merged.next_offset).toBeNull()
+  })
+
   it('keeps project nodes out of the directory but available to graph actions', () => {
     const node = {
       id: 'personal-project:space-1:project-1',
@@ -113,6 +135,31 @@ describe('knowledge model', () => {
     expect(projectMaterialTypeLabel(managementKnowledgeItems(graph)[0])).toBe('项目目标')
     expect(projectMaterialTypeLabel(managementKnowledgeItems(graph)[1])).toBe('技术说明')
     expect(projectMaterialTypeLabel(managementKnowledgeItems(graph)[2])).toBe('项目资料关系')
+  })
+
+  it('keeps external source nodes and assignment edges in project materials', () => {
+    const graph = {
+      nodes: [{
+        id: 'external-knowledge-source:binding-1',
+        name: 'LLM Wiki',
+        type: 'ExternalKnowledgeSource',
+      }],
+      edges: [{
+        id: 'external-knowledge-binding:binding-1:target-1',
+        source: 'personal-project:space-1:project-1',
+        target: 'external-knowledge-source:binding-1',
+        type: 'USES_EXTERNAL_KNOWLEDGE',
+        fact: '项目使用 LLM Wiki。',
+      }],
+    }
+
+    expect(knowledgeItems(graph)).toEqual([])
+    const materials = managementKnowledgeItems(graph)
+    expect(materials.map(({ id }) => id)).toEqual([
+      'external-knowledge-source:binding-1',
+      'external-knowledge-binding:binding-1:target-1',
+    ])
+    expect(projectMaterialTypeLabel(materials[0])).toBe('外部知识源')
   })
 
   it('does not present legacy missing metadata as confirmed known knowledge', () => {

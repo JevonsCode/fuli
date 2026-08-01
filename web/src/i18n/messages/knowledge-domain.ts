@@ -12,6 +12,7 @@ export const knowledgeDomainMessages = {
       ProjectAssessment: '档案评估',
       AssessmentDimension: '评估维度',
       RelatedPersonalProject: '关联项目',
+      ExternalKnowledgeSource: '外部知识源',
       relationship: '项目资料关系',
     },
     quadrants: {
@@ -143,6 +144,10 @@ export const knowledgeDomainMessages = {
         label: '借鉴',
         description: '从另一个项目借鉴知识',
       },
+      USES_EXTERNAL_KNOWLEDGE: {
+        label: '使用外部知识',
+        description: '项目绑定的只读外部知识源',
+      },
       DEPENDS_ON: {
         label: '依赖',
         description: '依赖另一个项目或能力',
@@ -200,6 +205,7 @@ export const knowledgeDomainMessages = {
       ProjectAssessment: 'Profile assessment',
       AssessmentDimension: 'Assessment dimension',
       RelatedPersonalProject: 'Related project',
+      ExternalKnowledgeSource: 'External knowledge source',
       relationship: 'Project material relationship',
     },
     quadrants: {
@@ -330,6 +336,10 @@ export const knowledgeDomainMessages = {
       USES_KNOWLEDGE_FROM: {
         label: 'Borrows from',
         description: 'Borrows knowledge from another project',
+      },
+      USES_EXTERNAL_KNOWLEDGE: {
+        label: 'Uses external knowledge',
+        description: 'A read-only external knowledge source bound to the project',
       },
       DEPENDS_ON: {
         label: 'Depends on',

@@ -12,6 +12,7 @@ const NAMES = [
   'capture_session_knowledge',
   'record_decision_trace',
   'search_knowledge_graph',
+  'search_connected_knowledge',
   'record_knowledge_usage',
   'record_knowledge_feedback',
   'search_current_project_knowledge',
@@ -24,6 +25,10 @@ const NAMES = [
   'list_knowledge_spaces',
   'upsert_personal_project',
   'list_personal_projects',
+  'start_knowledge_review',
+  'list_knowledge_review_candidates',
+  'record_knowledge_review_progress',
+  'finish_knowledge_review',
   'revise_personal_knowledge',
   'reassign_personal_knowledge',
   'set_personal_preference_scope',
@@ -49,6 +54,20 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
   assert.equal(tools.every(({ inputSchema }) =>
     inputSchema.type === 'object' && inputSchema.additionalProperties === false
   ), true);
+
+  const begin = tools.find(({ name }) => name === 'begin_task_context');
+  const preferenceEntry = tools.find(({ name }) =>
+    name === 'get_collaboration_preferences'
+  );
+  assert.deepEqual(begin.inputSchema.properties.taskPrompt, {
+    type: 'string', minLength: 1, maxLength: 8192
+  });
+  assert.deepEqual(preferenceEntry.inputSchema.properties.taskPrompt, {
+    type: 'string', minLength: 1, maxLength: 8192
+  });
+  assert.match(begin.description, /bounded automatic recall/i);
+  assert.match(preferenceEntry.description, /task_knowledge_recall/);
+  assert.match(preferenceEntry.description, /never use the full conversational request/i);
 
   const search = tools.find(({ name }) => name === 'search_knowledge_graph');
   assert.deepEqual(search.inputSchema.properties.projectIds, {
@@ -97,6 +116,23 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
     capture.inputSchema.properties.entities.items.properties.confirmationStatus.enum,
     ['confirmed', 'pending']
   );
+  assert.deepEqual(
+    capture.inputSchema.properties.entities.items.properties.attributes
+      .properties.searchTerms,
+    {
+      type: 'array',
+      items: { type: 'string', minLength: 1, maxLength: 256 },
+      minItems: 1,
+      maxItems: 32
+    }
+  );
+  const connected = tools.find(({ name }) => name === 'search_connected_knowledge');
+  assert.deepEqual(connected.inputSchema.required, [
+    'personalSpaceId', 'personalProjectId', 'query'
+  ]);
+  assert.match(connected.description, /personal.*public.*third-party/is);
+  assert.match(connected.description, /conflict policy/i);
+  assert.match(connected.description, /never.*rewrite|does not.*rewrite/i);
   const usage = tools.find(({ name }) => name === 'record_knowledge_usage');
   assert.match(usage.description, /materially affected/i);
   assert.match(usage.description, /idempotent/i);
@@ -144,6 +180,9 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     captureSessionKnowledge: async (input) => calls.push(['capture', input]),
     recordDecisionTrace: async (input) => calls.push(['decision-trace', input]),
     searchKnowledge: async (input) => calls.push(['search', input]),
+    connectedKnowledge: {
+      query: async (input) => calls.push(['connected-search', input])
+    },
     recordKnowledgeUsage: async (input) => calls.push(['knowledge-usage', input]),
     recordKnowledgeFeedback: async (input) =>
       calls.push(['knowledge-feedback', input]),
@@ -161,6 +200,12 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     listKnowledgeSpaces: async () => calls.push(['spaces']),
     upsertPersonalProject: async (input) => calls.push(['upsert-project', input]),
     listPersonalProjects: async (input) => calls.push(['personal-projects', input]),
+    startKnowledgeReview: async (input) => calls.push(['start-knowledge-review', input]),
+    listKnowledgeReviewCandidates: async (input) =>
+      calls.push(['knowledge-review-candidates', input]),
+    recordKnowledgeReviewProgress: async (input) =>
+      calls.push(['knowledge-review-progress', input]),
+    finishKnowledgeReview: async (input) => calls.push(['finish-knowledge-review', input]),
     reviseKnowledgeItem: async (input) => calls.push(['revise-knowledge', input]),
     reassignKnowledgeItem: async (input) => calls.push(['reassign-knowledge', input]),
     setPersonalPreferenceScope: async (input) => calls.push(['preference-scope', input]),
@@ -184,11 +229,14 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
   assert.deepEqual(calls.map(([name]) => name), [
     'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'resolve-preference-conflict',
-    'capture', 'decision-trace', 'search', 'knowledge-usage', 'knowledge-feedback',
+    'capture', 'decision-trace', 'search', 'connected-search',
+    'knowledge-usage', 'knowledge-feedback',
     'current-project-search', 'common-candidates',
     'preview-common-promotion', 'apply-common-promotion',
     'graph', 'human-changes', 'review-human-change',
     'spaces', 'upsert-project', 'personal-projects',
+    'start-knowledge-review', 'knowledge-review-candidates',
+    'knowledge-review-progress', 'finish-knowledge-review',
     'revise-knowledge', 'reassign-knowledge', 'preference-scope', 'preview-project-action',
     'apply-project-action',
     'publish-project', 'project-releases', 'create-relation', 'relations', 'review-relation',

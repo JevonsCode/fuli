@@ -100,7 +100,9 @@ const canConfirm = computed(() =>
   && reviewState.value === 'pending',
 )
 const canManageProjectMaterial = computed(() =>
-  managementItem.value && props.canManageProject,
+  managementItem.value
+  && props.canManageProject
+  && props.item?.type !== 'ExternalKnowledgeSource',
 )
 const hasActions = computed(() =>
   canCreateProject.value
@@ -277,8 +279,8 @@ async function copyEvidenceSession(evidence: EvidenceRecord, index: number) {
             : t('knowledge.workspace.inspector.personalGlobal') }}</dd>
         </div>
         <template v-if="rawEdge">
-          <div><dt>{{ t('knowledge.workspace.inspector.fields.source') }}</dt><dd>{{ names.get(endpointId(rawEdge.source)) ?? endpointId(rawEdge.source) }}</dd></div>
-          <div><dt>{{ t('knowledge.workspace.inspector.fields.target') }}</dt><dd>{{ names.get(endpointId(rawEdge.target)) ?? endpointId(rawEdge.target) }}</dd></div>
+          <div><dt>{{ t('knowledge.workspace.inspector.fields.source') }}</dt><dd>{{ names.get(endpointId(rawEdge.source)) ?? rawEdge.source_name ?? endpointId(rawEdge.source) }}</dd></div>
+          <div><dt>{{ t('knowledge.workspace.inspector.fields.target') }}</dt><dd>{{ names.get(endpointId(rawEdge.target)) ?? rawEdge.target_name ?? endpointId(rawEdge.target) }}</dd></div>
         </template>
         <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.status') }}</dt><dd>{{ item.invalidAt
           ? t('knowledge.workspace.inspector.historical')

@@ -1,13 +1,14 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { useConsoleStore } from '@/stores/console'
+import { FULI_VERSION } from '@/version'
 import ConsoleLayout from './ConsoleLayout.vue'
 
 describe('ConsoleLayout', () => {
-  it('derives public destinations and policy switches from current capabilities', async () => {
+  it('derives public destinations and settings navigation from current capabilities', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = useConsoleStore()
@@ -27,14 +28,17 @@ describe('ConsoleLayout', () => {
         reviewProposals: false,
       },
     }
-    const updateCapturePolicy = vi.spyOn(store, 'updateCapturePolicy')
-      .mockResolvedValue(undefined)
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [{
         path: '/',
         component: { template: '<div />' },
         meta: { title: '概览' },
+      }, {
+        path: '/settings',
+        name: 'settings',
+        component: { template: '<form id="settings-form"></form>' },
+        meta: { title: '设置' },
       }, {
         path: '/:pathMatch(.*)*',
         component: { template: '<div />' },
@@ -45,14 +49,12 @@ describe('ConsoleLayout', () => {
 
     const wrapper = mount(ConsoleLayout, { global: { plugins: [pinia, router] } })
 
+    expect(wrapper.get('.brand-version').text()).toBe(`v${FULI_VERSION}`)
+    expect(wrapper.get('.nav-about-label').text()).toBe('关于')
+    expect(wrapper.get('.nav-about-label + a').attributes('href')).toBe('/settings')
+    expect(wrapper.get('a[href="/about"]').attributes('href')).toBe('/about')
     expect(wrapper.find('a[href="/public-projects"]').exists()).toBe(false)
     expect(wrapper.find('a[href="/review"]').exists()).toBe(false)
-    expect(wrapper.get('[aria-label="自动沉淀会话内容"]').attributes('aria-checked'))
-      .toBe('false')
-
-    await wrapper.get('[aria-label="自动沉淀会话内容"]').setValue(true)
-    expect(updateCapturePolicy).toHaveBeenCalledWith(true)
-
     store.state = {
       ...store.state,
       mode: 'connected',
@@ -67,6 +69,11 @@ describe('ConsoleLayout', () => {
     expect(wrapper.find('a[href="/public-projects"]').exists()).toBe(true)
     expect(wrapper.find('a[href="/review"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('公共服务已连接')
+
+    await router.push('/settings')
+    await flushPromises()
+    expect(wrapper.get('.settings-save-button').text()).toContain('保存设置')
+    expect(wrapper.get('.settings-save-button').attributes('form')).toBe('settings-form')
     wrapper.unmount()
   })
 })

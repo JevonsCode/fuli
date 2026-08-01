@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-import { legacyRouteFromUrl } from './legacy'
 import { updateDocumentTitle } from './meta'
 
 export const router = createRouter({
@@ -67,7 +66,6 @@ export const router = createRouter({
       meta: {
         eyebrow: 'KNOWLEDGE CLASSIFICATION',
         title: 'routes.organizer.title',
-        description: 'routes.organizer.description',
       },
     },
     {
@@ -130,16 +128,27 @@ export const router = createRouter({
         description: 'routes.connections.description',
       },
     },
+    {
+      path: '/settings',
+      name: 'settings',
+      component: () => import('@/pages/SettingsPage.vue'),
+      meta: {
+        eyebrow: '',
+        title: 'routes.settings.title',
+      },
+    },
+    {
+      path: '/about',
+      name: 'about',
+      component: () => import('@/pages/AboutPage.vue'),
+      meta: {
+        eyebrow: 'FULI',
+        title: 'routes.about.title',
+      },
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior: () => ({ top: 0 }),
-})
-
-let migratedInitialLocation = false
-router.beforeEach(() => {
-  if (migratedInitialLocation || typeof window === 'undefined') return true
-  migratedInitialLocation = true
-  return legacyRouteFromUrl(new URL(window.location.href)) ?? true
 })
 
 router.afterEach((route) => {

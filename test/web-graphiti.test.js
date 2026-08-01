@@ -9,9 +9,9 @@ const graphRuntime = readFileSync(
   'utf8'
 );
 const layout = readFileSync('web/src/layouts/ConsoleLayout.vue', 'utf8');
+const settings = readFileSync('web/src/pages/SettingsPage.vue', 'utf8');
 const routes = readFileSync('web/src/router/index.ts', 'utf8');
 const routePaths = readFileSync('web/src/router/paths.ts', 'utf8');
-const legacyRoutes = readFileSync('web/src/router/legacy.ts', 'utf8');
 const store = readFileSync('web/src/stores/console.ts', 'utf8');
 const workspace = readFileSync(
   'web/src/features/knowledge/KnowledgeWorkspace.vue',
@@ -74,8 +74,6 @@ test('Vue Router owns primary navigation and addressable knowledge state', () =>
   assert.match(layout, /RouterLink/);
   assert.match(routePaths, /personalProjectsPath/);
   assert.match(routePaths, /knowledgePath/);
-  assert.match(legacyRoutes, /view.*personal-projects/s);
-  assert.match(legacyRoutes, /legacyKnowledgeHash/);
   assert.doesNotMatch(layout, /pushState|popstate|URLSearchParams/);
 });
 
@@ -84,9 +82,10 @@ test('state and API effects live outside page templates', () => {
   assert.match(store, /getJson<ConsoleState>\('\/api\/state'\)/);
   assert.match(store, /\/api\/capture-policy/);
   assert.match(store, /\/api\/agent-access-policy/);
-  assert.match(layout, /t\('console\.capture\.label'\)/);
-  assert.match(layout, /t\('console\.agentAccess\.label'\)/);
-  assert.match(layout, /t\('console\.agentAccess\.aria'\)/);
+  assert.match(settings, /updateCapturePolicy/);
+  assert.match(settings, /updateAgentAccessPolicy/);
+  assert.match(settings, /\/api\/system\/settings/);
+  assert.match(settings, /\/api\/system\/resources/);
   assert.match(consoleMessages, /label: '自动沉淀'/);
   assert.match(consoleMessages, /label: 'Agent 使用'/);
   assert.match(consoleMessages, /aria: '允许 Agent 调用 FULI'/);
@@ -156,7 +155,13 @@ test('all existing workspace areas have Vue pages and API actions', () => {
   assert.match(pageMessages, /unsubscribe: '取消订阅'/);
 });
 
-test('the migrated UI keeps the restrained visual system and routed anchor states', () => {
+test('connection forms use the shared custom controls', () => {
+  assert.match(connections, /<SearchableSelect/);
+  assert.match(connections, /<TextField/);
+  assert.doesNotMatch(connections, /<(?:input|select|textarea)\b/);
+});
+
+test('the UI keeps the restrained visual system and routed anchor states', () => {
   assert.match(css, /background:\s*#f4f5f3/);
   assert.match(css, /html, body \{ height: 100%; overflow: hidden; \}/);
   assert.match(vueCss, /\.primary-nav a\.is-active/);

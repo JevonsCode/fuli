@@ -12,14 +12,17 @@ Accumulate reusable knowledge without interrupting the user's normal work. Keep 
 At the start of every user task, first use the lifecycle context supplied by the host when one
 exists. A Claude Code `UserPromptSubmit` hook calls `begin_task_context`, which already loads
 collaboration preferences and resolves the exact local personal project from the current working
-directory. Apply that returned context and retain its opaque task token for the final checkpoint;
+directory. It also uses the submitted prompt transiently for bounded automatic project-memory
+recall and never stores or returns that prompt. Apply the returned `task_knowledge_recall` and
+preferences, then retain the opaque task token for the final checkpoint;
 do not redundantly call `get_collaboration_preferences`.
 
 When the host has not supplied lifecycle context, call exactly
 `get_collaboration_preferences` before any other tool or answer. Pass `projectPath` as the current
-working directory. This is the prompt-only fallback for Agents without an equivalent lifecycle
-hook. Fuli uses the path only for this local MCP call, never stores or returns it, and resolves the
-exact local personal project itself. Do not infer or guess `personalProjectId` in the Agent.
+working directory and `taskPrompt` as the current user request. This is the prompt-only fallback
+for Agents without an equivalent lifecycle hook. Fuli uses both only for this local MCP call,
+never stores or returns them, and resolves the exact local personal project itself. Do not infer
+or guess `personalProjectId` in the Agent.
 
 Apply only `effective_preferences`. Personal-global preferences apply in every user task;
 project-scoped preferences layer on only for the exact selected project. Do not apply items
@@ -42,6 +45,9 @@ current working directory. It resolves the exact active project without requirin
 copy an ID, searches that child project first, and then includes only inheritable knowledge from
 authorized parents or shared-source projects. Use `search_knowledge_graph` for personal-global
 context, explicitly named extra projects, subscribed public projects, or advanced scoped queries.
+Use `search_connected_knowledge` for a project-bound third-party source or explicitly selected
+public project. Keep its source sets separate and obey the project's conflict policy;
+`agent_decide` affects only the current response and never mutates or confirms a source.
 
 Search when prior durable context can materially improve the task.
 Before saying that a stable fact is unknown or asking the user to provide it again, search
@@ -49,6 +55,15 @@ Fuli if it may have been learned earlier. Strong triggers include URLs, deployme
 requirements, terminology, architecture, prior decisions, runbooks, rationale, and remembered
 personal preferences. Do not search for a fully self-contained task or use Fuli as proof of live
 external state.
+
+First inspect `task_knowledge_recall` returned by the lifecycle or preference tool. Its automatic
+query plan is deliberately bounded and based on implementation trigger categories, not on a
+claim that every returned candidate supports the task. If it misses or its candidates are
+irrelevant while durable context may still matter, call `search_current_project_knowledge`
+yourself. Derive one to four focused queries from the action, artifact, target system, distinctive
+identifier, and likely runbook category. Never pass the full conversational request as the sole
+query. For example, a version-release request should search release/publish and push/commit
+runbook concepts separately instead of searching the entire sentence.
 
 Pending knowledge is eligible for on-demand retrieval and must remain visibly marked.
 `agent_confirmed` knowledge is usable but ranks below user or authoritative-source
@@ -155,6 +170,11 @@ Capture confirmed, stable information:
 
 - Personal: the user's enduring preferences, boundaries, habits, and working methods. Project-specific personal rules must explicitly link to that project instead of becoming global defaults.
 - Project: PRD facts, requirements, terminology, decisions, constraints, architecture, routes, APIs, metrics, and document-derived knowledge.
+
+For a runbook, decision, route, or other item likely to be recalled from shorthand, add a bounded
+`attributes.searchTerms` string array containing only neutral retrieval phrases supported by the
+item and observed task vocabulary. Search terms are retrieval metadata, not new factual claims;
+do not add speculative synonyms, credentials, or unrelated product names.
 
 Do not capture credentials, tokens, cookies, private keys, raw transcripts, temporary logs, command output, speculative conclusions, or disposable implementation details. Treat a correction as a replacement, not an additional conflicting fact.
 

@@ -56,6 +56,138 @@ test('empty Fuli search keeps only the lead marker and omits a duplicate footer'
   assert.doesNotMatch(marker.markdown, /#\/knowledge\//);
 });
 
+test('source marker boosts exact-project knowledge over a nearby personal-global match', () => {
+  const marker = createFuliSourceMarker({
+    facts: [{
+      id: 'global-fact',
+      scope: 'personal',
+      space_id: 'personal-space',
+      source_entity: 'Other project',
+      target_entity: 'Release note',
+      defined_project_id: null,
+      score: 1.4
+    }],
+    entities: [{
+      id: 'local-runbook',
+      scope: 'personal',
+      space_id: 'personal-space',
+      name: 'Current project release runbook',
+      defined_project_id: 'current-project',
+      scope_distance: 0,
+      score: 1
+    }]
+  });
+
+  assert.match(marker.leadMarkdown, /\/entity\/local-runbook/);
+  assert.match(marker.markdown, /Current project release runbook/);
+  assert.doesNotMatch(marker.markdown, /Other project/);
+});
+
+test('source marker keeps substantially stronger global evidence ahead of weak local noise', () => {
+  const marker = createFuliSourceMarker({
+    facts: [{
+      id: 'strong-global-fact',
+      scope: 'personal',
+      space_id: 'personal-space',
+      source_entity: 'Exact global preference',
+      target_entity: 'Current answer',
+      defined_project_id: null,
+      score: 9
+    }],
+    entities: [{
+      id: 'weak-local-item',
+      scope: 'personal',
+      space_id: 'personal-space',
+      name: 'Weak local candidate',
+      defined_project_id: 'current-project',
+      score: 1
+    }]
+  });
+
+  assert.match(marker.leadMarkdown, /\/relationship\/strong-global-fact/);
+});
+
+test('strict project priority keeps project knowledge ahead for automatic task recall', () => {
+  const marker = createFuliSourceMarker({
+    projectScopePriority: 'strict',
+    facts: [{
+      id: 'strong-global-fact',
+      scope: 'personal',
+      space_id: 'personal-space',
+      source_entity: 'Global release note',
+      target_entity: 'Current answer',
+      defined_project_id: null,
+      score: 9
+    }],
+    entities: [{
+      id: 'local-runbook',
+      scope: 'personal',
+      space_id: 'personal-space',
+      name: 'Current project release runbook',
+      defined_project_id: 'current-project',
+      score: 1
+    }]
+  });
+
+  assert.match(marker.leadMarkdown, /\/entity\/local-runbook/);
+});
+
+test('strict project priority keeps the exact project ahead of inherited knowledge', () => {
+  const marker = createFuliSourceMarker({
+    projectScopePriority: 'strict',
+    facts: [{
+      id: 'inherited-runbook',
+      scope: 'personal',
+      space_id: 'personal-space',
+      source_entity: 'Parent project',
+      target_entity: 'Release runbook',
+      defined_project_id: 'parent-project',
+      scope_distance: 1,
+      score: 9
+    }],
+    entities: [{
+      id: 'exact-runbook',
+      scope: 'personal',
+      space_id: 'personal-space',
+      name: 'Exact project release runbook',
+      defined_project_id: 'current-project',
+      scope_distance: 0,
+      score: 1
+    }]
+  });
+
+  assert.match(marker.leadMarkdown, /\/entity\/exact-runbook/);
+});
+
+test('strict task priority keeps primary knowledge ahead of validation metadata', () => {
+  const marker = createFuliSourceMarker({
+    projectScopePriority: 'strict',
+    facts: [{
+      id: 'validation-edge',
+      scope: 'personal',
+      space_id: 'personal-space',
+      source_entity: 'Recall decision',
+      target_entity: 'Release validation',
+      relationship: 'VALIDATED_BY',
+      defined_project_id: 'current-project',
+      scope_distance: 0,
+      score: 12
+    }],
+    entities: [{
+      id: 'release-runbook',
+      scope: 'personal',
+      space_id: 'personal-space',
+      name: 'Current project release runbook',
+      type: 'Runbook',
+      defined_project_id: 'current-project',
+      scope_distance: 0,
+      score: 1
+    }]
+  });
+
+  assert.match(marker.leadMarkdown, /\/entity\/release-runbook/);
+});
+
 test('source marker uses the configured local console origin and rejects non-loopback URLs', () => {
   const configured = sourceConsoleUrl('/data/graph-runtime.json', {
     readText: () => JSON.stringify({ url: 'http://localhost:3838/ignored/path' })

@@ -1,7 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { MINIMUM_LOADING_DISPLAY_MS } from '@/composables/useMinimumLoadingDisplay'
 
 const getJson = vi.hoisted(() => vi.fn())
 const graphCalls = vi.hoisted(() => ({
@@ -68,10 +70,16 @@ const graph = {
 
 describe('KnowledgeWorkspace', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(0)
     getJson.mockReset()
     getJson.mockResolvedValue(graph)
     graphCalls.clearSelection.mockClear()
     graphCalls.selectItem.mockClear()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('restores graph highlighting after a deep-linked directory item returns to the graph', async () => {
@@ -116,7 +124,7 @@ describe('KnowledgeWorkspace', () => {
         },
       },
     })
-    await flushPromises()
+    await finishInitialLoading()
 
     expect(wrapper.get('#directory-tab-materials').attributes('aria-selected')).toBe('true')
     expect(wrapper.findAll('.project-material-row')).toHaveLength(3)
@@ -200,7 +208,7 @@ describe('KnowledgeWorkspace', () => {
         },
       },
     })
-    await flushPromises()
+    await finishInitialLoading()
 
     expect(wrapper.get('.project-hierarchy-aside').text()).toContain('上级项目')
     expect(wrapper.get('.project-parent-link').text()).toContain('项目二')
@@ -287,7 +295,7 @@ describe('KnowledgeWorkspace', () => {
         },
       },
     })
-    await flushPromises()
+    await finishInitialLoading()
 
     await wrapper.get('.inspector-confirm-action').trigger('click')
     await flushPromises()
@@ -344,13 +352,15 @@ describe('KnowledgeWorkspace', () => {
         },
       },
     })
-    await flushPromises()
+    await finishInitialLoading()
 
     expect(wrapper.get('#directory-tab-knowledge').attributes('aria-selected')).toBe('true')
     expect(wrapper.get('#directory-tab-knowledge').text()).toContain('1')
     expect(wrapper.get('#directory-tab-materials').text()).toContain('3')
     expect(wrapper.findAll('.knowledge-row')).toHaveLength(1)
     expect(wrapper.find('.project-material-row').exists()).toBe(false)
+    expect(wrapper.get('.virtual-directory-list__watermark').text()).toBe('#001')
+    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001/ 001')
     expect(getJson.mock.calls.map(([url]) => String(url)).filter((url) => (
       url.startsWith('/api/graph?')
     ))).toEqual([
@@ -363,6 +373,8 @@ describe('KnowledgeWorkspace', () => {
     expect(router.currentRoute.value.query.section).toBe('materials')
     expect(wrapper.get('#directory-tab-materials').attributes('aria-selected')).toBe('true')
     expect(wrapper.findAll('.project-material-row')).toHaveLength(3)
+    expect(wrapper.get('.virtual-directory-list__watermark').text()).toBe('#001')
+    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001/ 003')
     expect(wrapper.find('.knowledge-table-head').exists()).toBe(false)
     expect(wrapper.get('.search-form input').attributes('aria-label')).toBe('搜索项目资料')
 
@@ -432,7 +444,7 @@ describe('KnowledgeWorkspace', () => {
         },
       },
     })
-    await flushPromises()
+    await finishInitialLoading()
 
     expect(wrapper.get('#directory-tab-knowledge').text()).toContain('知识内容2')
     expect(wrapper.get('#directory-tab-knowledge').text()).not.toContain('/')
@@ -537,7 +549,7 @@ describe('KnowledgeWorkspace', () => {
         },
       },
     })
-    await flushPromises()
+    await finishInitialLoading()
 
     await wrapper.get('.inspector-replacement-link').trigger('click')
     await flushPromises()
@@ -599,7 +611,7 @@ describe('KnowledgeWorkspace', () => {
         },
       },
     })
-    await flushPromises()
+    await finishInitialLoading()
 
     expect(getJson.mock.calls.map(([url]) => String(url)).filter((url) => (
       url.startsWith('/api/graph?')
@@ -614,3 +626,9 @@ describe('KnowledgeWorkspace', () => {
     wrapper.unmount()
   })
 })
+
+async function finishInitialLoading() {
+  await vi.advanceTimersByTimeAsync(MINIMUM_LOADING_DISPLAY_MS)
+  vi.useRealTimers()
+  await flushPromises()
+}

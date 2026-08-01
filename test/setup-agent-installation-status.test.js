@@ -9,7 +9,8 @@ const CONTEXT = Object.freeze({
   mcpServerPath: 'C:/Fuli/src/mcp-server.js',
   runtimeConfigPath: 'C:/Data/Fuli/graph-runtime.json',
   sessionSkillPath: 'C:/Fuli/skills/capturing-session-knowledge',
-  projectSkillPath: 'C:/Fuli/skills/grilling-project'
+  projectSkillPath: 'C:/Fuli/skills/grilling-project',
+  reviewSkillPath: 'C:/Fuli/skills/flreview'
 });
 
 const AGENTS = Object.freeze([
@@ -20,7 +21,8 @@ const AGENTS = Object.freeze([
     globalInstructionsPath: 'C:/User/.codex/AGENTS.md',
     globalInstructionsOverridePath: 'C:/User/.codex/AGENTS.override.md',
     skillPath: 'C:/User/.agents/skills/capturing-session-knowledge',
-    projectSkillPath: 'C:/User/.agents/skills/grilling-project'
+    projectSkillPath: 'C:/User/.agents/skills/grilling-project',
+    reviewSkillPath: 'C:/User/.agents/skills/flreview'
   },
   {
     id: 'claude-code',
@@ -28,14 +30,16 @@ const AGENTS = Object.freeze([
     configPath: 'C:/User/.claude.json',
     settingsPath: 'C:/User/.claude/settings.json',
     skillPath: 'C:/User/.claude/skills/capturing-session-knowledge',
-    projectSkillPath: 'C:/User/.claude/skills/grilling-project'
+    projectSkillPath: 'C:/User/.claude/skills/grilling-project',
+    reviewSkillPath: 'C:/User/.claude/skills/flreview'
   },
   {
     id: 'cursor',
     label: 'Cursor',
     configPath: 'C:/User/.cursor/mcp.json',
     skillPath: 'C:/User/.cursor/skills/capturing-session-knowledge',
-    projectSkillPath: 'C:/User/.cursor/skills/grilling-project'
+    projectSkillPath: 'C:/User/.cursor/skills/grilling-project',
+    reviewSkillPath: 'C:/User/.cursor/skills/flreview'
   }
 ]);
 
@@ -63,6 +67,7 @@ test('setup distinguishes current, outdated, and missing Agent integrations', ()
   const currentSkills = new Set([
     AGENTS[0].skillPath,
     AGENTS[0].projectSkillPath,
+    AGENTS[0].reviewSkillPath,
     AGENTS[1].skillPath
   ]);
   const presentSkills = new Set(currentSkills);

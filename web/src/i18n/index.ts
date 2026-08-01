@@ -5,10 +5,12 @@ import { consoleMessages } from './messages/console'
 import { knowledgeDomainMessages } from './messages/knowledge-domain'
 import { knowledgeDialogMessages } from './messages/knowledge-dialogs'
 import { knowledgeWorkspaceMessages } from './messages/knowledge-workspace'
+import { aboutMessages } from './messages/about'
 import { pageMessages } from './messages/pages'
 import { preferenceMessages } from './messages/preferences'
 import { projectMessages } from './messages/projects'
 import { routeMessages } from './messages/routes'
+import { settingsMessages } from './messages/settings'
 
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const
 export type AppLocale = typeof SUPPORTED_LOCALES[number]
@@ -20,8 +22,16 @@ export function isAppLocale(value: unknown): value is AppLocale {
     && SUPPORTED_LOCALES.includes(value as AppLocale)
 }
 
-export function resolveInitialLocale(storedLocale?: string | null): AppLocale {
-  return isAppLocale(storedLocale) ? storedLocale : 'zh-CN'
+export function resolveInitialLocale(
+  storedLocale?: string | null,
+  preferredLanguages: readonly string[] = [],
+): AppLocale {
+  if (isAppLocale(storedLocale)) return storedLocale
+  for (const language of preferredLanguages) {
+    const locale = localeForLanguage(language)
+    if (locale) return locale
+  }
+  return 'en-US'
 }
 
 function readStoredLocale() {
@@ -33,8 +43,22 @@ function readStoredLocale() {
   }
 }
 
+function readPreferredLanguages(): readonly string[] {
+  if (typeof navigator === 'undefined') return []
+  if (navigator.languages.length > 0) return navigator.languages
+  return navigator.language ? [navigator.language] : []
+}
+
+function localeForLanguage(language: string): AppLocale | null {
+  const primaryLanguage = language.trim().toLowerCase().split(/[-_]/, 1)[0]
+  if (primaryLanguage === 'zh') return 'zh-CN'
+  if (primaryLanguage === 'en') return 'en-US'
+  return null
+}
+
 export const messages = {
   'zh-CN': {
+    about: aboutMessages['zh-CN'],
     common: commonMessages['zh-CN'],
     console: consoleMessages['zh-CN'],
     knowledge: {
@@ -46,8 +70,10 @@ export const messages = {
     preferences: preferenceMessages['zh-CN'],
     projects: projectMessages['zh-CN'],
     routes: routeMessages['zh-CN'],
+    settings: settingsMessages['zh-CN'],
   },
   'en-US': {
+    about: aboutMessages['en-US'],
     common: commonMessages['en-US'],
     console: consoleMessages['en-US'],
     knowledge: {
@@ -59,13 +85,14 @@ export const messages = {
     preferences: preferenceMessages['en-US'],
     projects: projectMessages['en-US'],
     routes: routeMessages['en-US'],
+    settings: settingsMessages['en-US'],
   },
 } as const
 
 export const i18n = createI18n({
   legacy: false,
   globalInjection: true,
-  locale: resolveInitialLocale(readStoredLocale()),
+  locale: resolveInitialLocale(readStoredLocale(), readPreferredLanguages()),
   fallbackLocale: 'zh-CN',
   messages,
 })

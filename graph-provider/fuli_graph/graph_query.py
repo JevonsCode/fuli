@@ -27,21 +27,25 @@ async def read_graph(
     space_id: str,
     limit: int | None = None,
     personal_project_id: str | None = None,
+    offset: int | None = None,
 ) -> GraphResult:
     space = await store.authorize(actor, space_id, 'reader')
     project = None
     if personal_project_id:
         project = await authorize_personal_project(store, actor, space, personal_project_id)
     bounded_limit = min(limit or store.settings.graph_limit, store.settings.graph_limit)
+    paginated = offset is not None
+    page_offset = offset or 0
     node_records, _, _ = await store.runtime.driver.execute_query(
-        _node_query(bool(project)),
+        _node_query(bool(project), paginated),
         space_id=space_id,
         group_id=space['group_id'],
         project_id=personal_project_id,
         limit=bounded_limit + 1,
+        offset=page_offset,
         routing_='r',
     )
-    truncated = len(node_records) > bounded_limit
+    nodes_truncated = len(node_records) > bounded_limit
     node_records = node_records[:bounded_limit]
     node_ids = [record['id'] for record in node_records]
     episode_ids = list({
@@ -50,15 +54,20 @@ async def read_graph(
         for episode_id in (record.get('episodes') or [])
     })
     edge_records, _, _ = await store.runtime.driver.execute_query(
-        _edge_query(bool(project)),
+        _edge_query(bool(project), paginated),
         space_id=space_id,
         group_id=space['group_id'],
         project_id=personal_project_id,
         node_ids=node_ids,
         episode_ids=episode_ids,
-        limit=bounded_limit,
+        limit=bounded_limit + 1 if paginated else bounded_limit,
+        offset=page_offset,
         routing_='r',
     )
+    edges_truncated = paginated and len(edge_records) > bounded_limit
+    if paginated:
+        edge_records = edge_records[:bounded_limit]
+    truncated = nodes_truncated or edges_truncated
     all_episode_ids = list({
         *episode_ids,
         *(episode_id for record in edge_records for episode_id in (record.get('episodes') or [])),
@@ -127,10 +136,11 @@ async def read_graph(
         nodes=graph_nodes,
         edges=graph_edges,
         truncated=truncated,
+        next_offset=(page_offset + bounded_limit) if paginated and truncated else None,
     )
 
 
-def _node_query(project_scoped: bool) -> str:
+def _node_query(project_scoped: bool, paginated: bool = False) -> str:
     if project_scoped:
         match = '''
         MATCH (node:Entity {group_id: $group_id})
@@ -181,6 +191,7 @@ def _node_query(project_scoped: bool) -> str:
         OPTIONAL MATCH (episode:Episodic {group_id: $group_id})-[:MENTIONS]->(node)
         WITH node, collect(DISTINCT episode) AS episodes
         '''
+    pagination = 'SKIP $offset LIMIT $limit' if paginated else 'LIMIT $limit'
     return match + '''
         RETURN node.uuid AS id, node.name AS name, node.group_id AS group_id,
                coalesce(node.fuli_type, 'Entity') AS type,
@@ -233,12 +244,46 @@ def _node_query(project_scoped: bool) -> str:
                node.fuli_invalid_at AS invalid_at,
                node.fuli_replaced_by_item_id AS replaced_by_item_id,
                node.fuli_replaced_by_item_kind AS replaced_by_item_kind
-        ORDER BY created_at DESC LIMIT $limit
-    '''
+        ORDER BY created_at DESC, id DESC
+    ''' + pagination
 
 
-def _edge_query(project_scoped: bool) -> str:
-    project_filter = '''
+def _edge_query(project_scoped: bool, paginated: bool = False) -> str:
+    if paginated:
+        match = '''
+        MATCH (source:Entity)-[edge:RELATES_TO {group_id: $group_id}]->(target:Entity)
+        '''
+        project_filter = '''
+        OPTIONAL MATCH (assignment:FuliKnowledgeAssignment {
+          space_id: $space_id,
+          item_kind: 'relationship',
+          item_id: edge.uuid
+        })
+        OPTIONAL MATCH (episode:Episodic {group_id: $group_id})
+        WHERE episode.uuid IN coalesce(edge.episodes, [])
+        WITH source, edge, target, assignment,
+             collect(DISTINCT episode) AS knowledge_episodes
+        WHERE (
+          edge.fuli_profile_aspect IS NOT NULL
+          AND edge.fuli_preference_scope = 'project'
+          AND edge.fuli_preference_project_id = $project_id
+        ) OR (
+          edge.fuli_profile_aspect IS NULL
+          AND (
+               (assignment.project_id IS NOT NULL AND assignment.project_id = $project_id)
+            OR (assignment.project_id IS NULL AND any(
+                 episode IN knowledge_episodes
+                 WHERE episode.fuli_personal_project_id = $project_id
+               ))
+          )
+        )
+        ''' if project_scoped else ''
+    else:
+        match = '''
+        MATCH (source:Entity)-[edge:RELATES_TO {group_id: $group_id}]->(target:Entity)
+        WHERE source.uuid IN $node_ids AND target.uuid IN $node_ids
+        '''
+        project_filter = '''
         OPTIONAL MATCH (assignment:FuliKnowledgeAssignment {
           space_id: $space_id,
           item_kind: 'relationship',
@@ -259,12 +304,11 @@ def _edge_query(project_scoped: bool) -> str:
                ))
           )
         )
-    ''' if project_scoped else ''
-    return '''
-        MATCH (source:Entity)-[edge:RELATES_TO {group_id: $group_id}]->(target:Entity)
-        WHERE source.uuid IN $node_ids AND target.uuid IN $node_ids
-    ''' + project_filter + '''
+        ''' if project_scoped else ''
+    pagination = 'SKIP $offset LIMIT $limit' if paginated else 'LIMIT $limit'
+    return match + project_filter + '''
         RETURN edge.uuid AS id, source.uuid AS source, target.uuid AS target,
+               source.name AS source_name, target.name AS target_name,
                edge.name AS type, edge.fact AS fact,
                coalesce(edge.fuli_origin_quadrant, 'known_known') AS origin_quadrant,
                coalesce(edge.fuli_current_quadrant, 'known_known') AS current_quadrant,
@@ -315,8 +359,8 @@ def _edge_query(project_scoped: bool) -> str:
                edge.fuli_confidence AS confidence,
                coalesce(edge.fuli_attributes_json, '{}') AS attributes_json,
                coalesce(edge.episodes, []) AS episodes
-        ORDER BY edge.created_at DESC LIMIT $limit
-    '''
+        ORDER BY created_at DESC, id DESC
+    ''' + pagination
 
 
 async def _personal_projects(store, space: dict) -> list[dict]:
@@ -497,6 +541,8 @@ def _graph_edge(
         id=record['id'],
         source=record['source'],
         target=record['target'],
+        source_name=record.get('source_name'),
+        target_name=record.get('target_name'),
         type=record['type'],
         fact=record['fact'],
         origin_quadrant=record.get('origin_quadrant') or 'known_known',

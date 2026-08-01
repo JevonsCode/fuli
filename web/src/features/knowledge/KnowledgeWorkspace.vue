@@ -3,7 +3,12 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import { getJson } from '@/api/client'
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import SearchableSelect from '@/components/SearchableSelect.vue'
+import {
+  isLoadingPreviewEnabled,
+  useMinimumLoadingDisplay,
+} from '@/composables/useMinimumLoadingDisplay'
 import { t } from '@/i18n'
 import { createDebouncedAction } from '@/lib/debounce'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
@@ -66,6 +71,10 @@ const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
 const graph = ref<KnowledgeGraph | null>(null)
+const loadingPreview = isLoadingPreviewEnabled()
+const showInitialLoading = useMinimumLoadingDisplay(computed(() =>
+  loadingPreview || (loading.value && !graph.value),
+))
 const selectedItem = ref<KnowledgeItem | null>(null)
 const graphCanvas = ref<GraphCanvasApi | null>(null)
 const searchDraft = ref(queryValue(route.query.q))
@@ -169,6 +178,10 @@ const filters = computed(() => ({
   status: contentStatus.value,
   humanChange: queryValue(route.query.human) || 'all',
 }))
+const directoryListResetKey = computed(() => JSON.stringify([
+  directorySection.value,
+  filters.value,
+]))
 const visibleItems = computed(() => filterKnowledgeItems(allItems.value, filters.value))
 const currentItemCount = computed(() => allItems.value.filter(({ invalidAt }) => !invalidAt).length)
 const historicalItemCount = computed(() => allItems.value.length - currentItemCount.value)
@@ -1004,7 +1017,10 @@ function queryValues(value: unknown) {
       </div>
     </div>
 
-    <div v-if="loading && !graph" class="view-loading">{{ t('common.status.loadingKnowledge') }}</div>
+    <GrowthLoading
+      v-if="showInitialLoading"
+      :label="t('common.status.loadingKnowledge')"
+    />
     <div v-else class="knowledge-layout">
       <KnowledgeDirectoryPanel
         v-if="mode === 'directory'"
@@ -1020,6 +1036,7 @@ function queryValues(value: unknown) {
         :project-material-items="projectMaterialItems"
         :visible-project-material-items="visibleProjectMaterialItems"
         :selected-item="selectedItem"
+        :list-reset-key="directoryListResetKey"
         :source-label="sourceLabel"
         @change-section="changeDirectorySection"
         @update-status="updateQuery('status', $event)"

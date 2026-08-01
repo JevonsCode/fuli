@@ -151,13 +151,16 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'get_collaboration_preferences',
     'resolve_deferred_preference_conflict',
     'capture_session_knowledge', 'record_decision_trace',
-    'search_knowledge_graph', 'record_knowledge_usage', 'record_knowledge_feedback',
+    'search_knowledge_graph', 'search_connected_knowledge',
+    'record_knowledge_usage', 'record_knowledge_feedback',
     'search_current_project_knowledge',
     'discover_common_knowledge_candidates',
     'preview_common_knowledge_promotion', 'apply_common_knowledge_promotion',
     'get_knowledge_graph',
     'search_human_knowledge_changes', 'review_human_knowledge_change',
     'list_knowledge_spaces', 'upsert_personal_project', 'list_personal_projects',
+    'start_knowledge_review', 'list_knowledge_review_candidates',
+    'record_knowledge_review_progress', 'finish_knowledge_review',
     'revise_personal_knowledge', 'reassign_personal_knowledge',
     'set_personal_preference_scope',
     'preview_personal_project_action', 'apply_personal_project_action',
@@ -181,6 +184,9 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   assert.equal(previewProjectTool.title, 'PREVIEW · Authorize a personal project write');
   assert.equal(applyProjectTool.title, 'WRITE · Apply an authorized personal project action');
   assert.match(preferencesTool.description, /exact tool name/i);
+  assert.match(preferencesTool.description, /taskPrompt/);
+  assert.match(preferencesTool.description, /task_knowledge_recall/);
+  assert.match(preferencesTool.description, /focused action, artifact, target-system/i);
   assert.match(applyProjectTool.description, /never call.*read-only task/i);
   assert.match(applyProjectTool.description, /previewToken/i);
 

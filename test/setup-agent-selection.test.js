@@ -38,10 +38,11 @@ test('checkbox selection starts with every detected agent selected', () => {
     'claude-code',
     'cursor'
   ]);
-  assert.match(formatAgentCheckboxSelection(AGENTS, state), /❯ \[x\] Codex +已接入/);
-  assert.match(formatAgentCheckboxSelection(AGENTS, state), /  \[x\] Claude Code +需更新/);
-  assert.match(formatAgentCheckboxSelection(AGENTS, state), /  \[x\] Cursor +未接入/);
-  assert.match(formatAgentCheckboxSelection(AGENTS, state), /空格切换/);
+  assert.match(formatAgentCheckboxSelection(AGENTS, state), /❯ \[x\] Codex +connected/);
+  assert.match(formatAgentCheckboxSelection(AGENTS, state),
+    /  \[x\] Claude Code +update available/);
+  assert.match(formatAgentCheckboxSelection(AGENTS, state), /  \[x\] Cursor +not connected/);
+  assert.match(formatAgentCheckboxSelection(AGENTS, state), /Space Toggle/);
 });
 
 test('checkbox selection uses arrows, space, and A without losing display order', () => {
@@ -74,12 +75,12 @@ test('agent selection accepts multiple numbers and preserves display order', () 
 
 test('agent selection uses zero to skip every detected agent', () => {
   assert.deepEqual(parseAgentSelection('0', AGENTS), []);
-  assert.throws(() => parseAgentSelection('0,1', AGENTS), /不能与其他编号同时使用/);
+  assert.throws(() => parseAgentSelection('0,1', AGENTS), /cannot be combined/);
 });
 
 test('agent selection rejects unknown or out-of-range choices', () => {
-  assert.throws(() => parseAgentSelection('agent', AGENTS), /请输入编号/);
-  assert.throws(() => parseAgentSelection('4', AGENTS), /可选范围是 1-3/);
+  assert.throws(() => parseAgentSelection('agent', AGENTS), /Enter numbers/);
+  assert.throws(() => parseAgentSelection('4', AGENTS), /number from 1-3/);
 });
 
 test('interactive setup prompts only when multiple agents can be chosen', () => {

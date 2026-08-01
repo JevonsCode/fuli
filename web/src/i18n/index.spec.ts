@@ -15,9 +15,20 @@ describe('i18n', () => {
     setLocale('zh-CN', { persist: false })
   })
 
-  it('keeps Chinese as the compatibility default', () => {
-    expect(resolveInitialLocale(null)).toBe('zh-CN')
-    expect(resolveInitialLocale('fr-FR')).toBe('zh-CN')
+  it('uses the saved locale before browser language preferences', () => {
+    expect(resolveInitialLocale('zh-CN', ['en-US'])).toBe('zh-CN')
+    expect(resolveInitialLocale('en-US', ['zh-CN'])).toBe('en-US')
+  })
+
+  it('maps browser language preferences to the supported locales', () => {
+    expect(resolveInitialLocale(null, ['zh-Hant-TW'])).toBe('zh-CN')
+    expect(resolveInitialLocale(null, ['en-GB'])).toBe('en-US')
+    expect(resolveInitialLocale(null, ['fr-FR', 'zh-CN'])).toBe('zh-CN')
+  })
+
+  it('uses English when the browser has no supported language', () => {
+    expect(resolveInitialLocale(null)).toBe('en-US')
+    expect(resolveInitialLocale('fr-FR', ['fr-FR'])).toBe('en-US')
   })
 
   it('switches between the two supported locales and interpolates values', () => {

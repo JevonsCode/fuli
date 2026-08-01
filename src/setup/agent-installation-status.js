@@ -17,7 +17,8 @@ export function inspectAgentInstallations(agents, context, {
     const registration = inspectRegistration(agent, context, { readText, readJson });
     const skillPairs = [
       [context.sessionSkillPath, agent.skillPath],
-      [context.projectSkillPath, agent.projectSkillPath]
+      [context.projectSkillPath, agent.projectSkillPath],
+      [context.reviewSkillPath, agent.reviewSkillPath]
     ];
     const skillsPresent = skillPairs.some(([, targetPath]) => fileExists(targetPath));
     const skillsCurrent = skillPairs.every(

@@ -5,6 +5,7 @@ const READ_TOOLS = new Set([
   'preview_common_knowledge_promotion',
   'list_knowledge_spaces',
   'list_personal_projects',
+  'list_knowledge_review_candidates',
   'preview_personal_project_action',
   'list_project_releases',
   'list_project_relations',
@@ -21,6 +22,7 @@ const WRITE_TOOLS = new Set([
   'capture_session_knowledge',
   'record_decision_trace',
   'search_knowledge_graph',
+  'search_connected_knowledge',
   'record_knowledge_usage',
   'record_knowledge_feedback',
   'apply_common_knowledge_promotion',
@@ -28,6 +30,9 @@ const WRITE_TOOLS = new Set([
   'search_human_knowledge_changes',
   'review_human_knowledge_change',
   'upsert_personal_project',
+  'start_knowledge_review',
+  'record_knowledge_review_progress',
+  'finish_knowledge_review',
   'revise_personal_knowledge',
   'reassign_personal_knowledge',
   'set_personal_preference_scope',
@@ -64,6 +69,7 @@ export function annotationsFor(name) {
       name === 'record_knowledge_feedback' ||
       name === 'checkpoint_task_knowledge',
     openWorldHint: name === 'capture_session_knowledge' ||
+      name === 'search_connected_knowledge' ||
       name === 'record_decision_trace' ||
       name === 'record_knowledge_feedback' ||
       name === 'checkpoint_task_knowledge' ||

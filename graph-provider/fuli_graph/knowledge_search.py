@@ -358,6 +358,7 @@ async def _personal_entities(
                  AS confirmation_status,
                node.fuli_confirmation_basis_json AS confirmation_basis_json,
                node.fuli_reasoning_summary AS reasoning_summary,
+               node.fuli_attributes_json AS attributes_json,
                node.fuli_profile_aspect AS profile_aspect,
                CASE WHEN node.fuli_profile_aspect IS NULL THEN NULL
                     ELSE coalesce(node.fuli_preference_scope, 'global') END
@@ -650,6 +651,7 @@ def _entity_search_result(record, score: float, space_id: str) -> EntitySearchRe
         value.pop('last_feedback_at', None)
     )
     for field in (
+        'attributes_json',
         'assignment_project_id',
         'episode_project_ids',
         'has_global_episode',
@@ -699,6 +701,7 @@ def _relevance(query: str, record) -> float:
     if not needle:
         return 0.0
     score = 8.0 if needle in haystack else 0.0
+    score = max(score, _alias_relevance(needle, _retrieval_aliases(record)))
     terms = _terms(needle)
     if terms:
         coverage = len(terms & _terms(haystack)) / len(terms)
@@ -733,11 +736,55 @@ def _terms(value: str) -> set[str]:
         term for term in re.findall(r'[a-z0-9_]+', value)
         if term not in LATIN_QUERY_FILLERS
     }
-    chinese = ''.join(re.findall(r'[\u4e00-\u9fff]', value))
-    for filler in CHINESE_QUERY_FILLERS:
-        chinese = chinese.replace(filler, '')
-    grams = {chinese[index:index + 2] for index in range(max(0, len(chinese) - 1))}
+    chinese_segments = re.findall(r'[\u4e00-\u9fff]+', value)
+    grams = set()
+    for chinese in chinese_segments:
+        for filler in CHINESE_QUERY_FILLERS:
+            chinese = chinese.replace(filler, '')
+        grams.update(
+            chinese[index:index + 2]
+            for index in range(max(0, len(chinese) - 1))
+        )
     return latin | grams
+
+
+def _retrieval_aliases(record) -> list[str]:
+    attributes = record.get('attributes')
+    if not isinstance(attributes, dict):
+        attributes = json_object(record.get('attributes_json'))
+    values = (
+        attributes.get('searchTerms')
+        or attributes.get('search_terms')
+        or []
+    )
+    if isinstance(values, str):
+        values = [values]
+    if not isinstance(values, list):
+        return []
+    return [
+        value.strip()
+        for value in values[:32]
+        if isinstance(value, str) and 0 < len(value.strip()) <= 256
+    ]
+
+
+def _alias_relevance(query: str, aliases: list[str]) -> float:
+    query_terms = _terms(query)
+    best = 0.0
+    for alias in aliases:
+        normalized_alias = _normalized(alias)
+        if not normalized_alias:
+            continue
+        if normalized_alias in query:
+            best = max(best, 8.0)
+            continue
+        alias_terms = _terms(normalized_alias)
+        if len(alias_terms) < 2:
+            continue
+        coverage = len(alias_terms & query_terms) / len(alias_terms)
+        if coverage >= 0.75:
+            best = max(best, 6.0 + coverage * 2.0)
+    return round(best, 4)
 
 
 def _timestamp(value) -> float:

@@ -7,11 +7,14 @@ import { join } from 'node:path';
 import { connectMcp } from '../test-support/mcp-client.js';
 
 test('connectMcp closes client, transport, and probe after startup failure', async () => {
-  const dbPath = join(mkdtempSync(join(tmpdir(), 'fuli-mcp-failed-connect-')), 'context.db');
+  const runtimeConfigPath = join(
+    mkdtempSync(join(tmpdir(), 'fuli-mcp-failed-connect-')),
+    'runtime.json'
+  );
   let connection;
   let failure;
   try {
-    connection = await connectMcp(dbPath, {
+    connection = await connectMcp(runtimeConfigPath, {
       serverPath: 'test-support/does-not-exist.js'
     });
     assert.fail('connectMcp unexpectedly connected');

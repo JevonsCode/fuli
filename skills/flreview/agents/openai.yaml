@@ -1,0 +1,6 @@
+interface:
+  display_name: "Fuli Knowledge Review"
+  short_description: "Review personal preferences and local project knowledge"
+  default_prompt: "Use $flreview to review my Fuli knowledge."
+policy:
+  allow_implicit_invocation: true

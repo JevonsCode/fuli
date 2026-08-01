@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { createApplication } from '../src/app/create-application.js';
 import { createServer } from '../src/server.js';
-import { STORE_METHODS } from '../src/storage/store-port.js';
-import { FileStore } from '../src/store.js';
 
 export async function postJson(url, body) {
   const response = await requestJson(url, { method: 'POST', body });
@@ -26,29 +23,9 @@ export async function requestJson(url, options = {}) {
   return { status: response.status, body: await response.json() };
 }
 
-export function hideAdapterInternals(store) {
-  return Object.fromEntries(
-    STORE_METHODS.map((method) => [method, (...args) => store[method](...args)])
-  );
-}
-
-export function overrideStore(store, overrides) {
-  return Object.fromEntries(
-    STORE_METHODS.map((method) => [
-      method,
-      overrides[method] ?? ((...args) => store[method](...args))
-    ])
-  );
-}
-
 export function trackedApplication() {
-  const app = createApplication({ store: new FileStore(':memory:') });
-  const close = app.close;
   let calls = 0;
-  app.close = () => {
-    calls += 1;
-    return close();
-  };
+  const app = { graphiti: true, close: () => { calls += 1; } };
   return { app, closeCalls: () => calls };
 }
 

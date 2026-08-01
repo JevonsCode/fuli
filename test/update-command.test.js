@@ -29,7 +29,7 @@ test('update cancellation has no side effects', async () => {
   assert.equal(stopped, false);
   assert.equal(spawned, false);
   assert.match(output[0], /fuli-context@latest/);
-  assert.match(output.at(-1), /没有修改任何内容/);
+  assert.match(output.at(-1), /No changes were made/);
 });
 
 test('update installs latest globally and runs setup from the newly installed package',
@@ -115,8 +115,9 @@ test('update installs latest globally and runs setup from the newly installed pa
       previousVersion: FULI_VERSION,
       version: '9.8.7'
     });
-    assert.match(output.join('\n'), /由新版 setup 刷新/);
+    assert.match(output.join('\n'), /refresh through setup in the new version/);
     assert.match(output.at(-1), /9\.8\.7/);
+    assert.doesNotMatch(output.join('\n'), /[\p{Script=Han}]/u);
   });
 
 test('update aborts before npm when the old console identity cannot be verified',
@@ -132,7 +133,7 @@ test('update aborts before npm when the old console identity cannot be verified'
       resolveLatestVersion: () => FULI_VERSION,
       write: () => {}
       }),
-      /更新尚未开始/
+      /update did not start/
     );
     assert.equal(spawned, false);
   });
@@ -245,7 +246,7 @@ test('update refuses to downgrade a workspace CLI newer than npm latest', async 
   });
   assert.equal(stopped, false);
   assert.equal(spawned, false);
-  assert.match(output.at(-1), /避免降级/);
+  assert.match(output.at(-1), /avoid a downgrade/);
 });
 
 test('update checks npm latest before stopping the local service', async () => {
@@ -259,7 +260,7 @@ test('update checks npm latest before stopping the local service', async () => {
       },
       write: () => {}
     }),
-    /本地服务尚未停止/
+    /Local services were not stopped/
   );
   assert.equal(stopped, false);
 });

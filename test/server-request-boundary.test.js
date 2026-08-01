@@ -42,41 +42,41 @@ for (const attack of [
   }
 ]) {
   test(`${attack.name} cannot mutate the API`, async (t) => {
-    let createSpaceCalls = 0;
+    let captureCalls = 0;
     const app = {
-      createSpace() {
-        createSpaceCalls += 1;
-        return { id: 'space-1' };
+      captureSessionKnowledge() {
+        captureCalls += 1;
+        return { status: 'captured' };
       }
     };
     const { server, url } = await createServer({ app, port: 0 });
     t.after(() => closeServer(server));
 
-    const response = await fetch(`${url}/api/spaces`, {
+    const response = await fetch(`${url}/api/capture`, {
       method: 'POST',
       headers: attack.headers,
       body: JSON.stringify({ name: 'Owned', kind: 'public' })
     });
 
     assert.deepEqual(
-      { status: response.status, createSpaceCalls },
-      { status: attack.status ?? 403, createSpaceCalls: 0 }
+      { status: response.status, captureCalls },
+      { status: attack.status ?? 403, captureCalls: 0 }
     );
   });
 }
 
 test('exact local browser authority and requests without Origin keep working', async (t) => {
-  let createSpaceCalls = 0;
+  let captureCalls = 0;
   const app = {
-    createSpace(name, kind) {
-      createSpaceCalls += 1;
-      return { id: 'space-1', name, kind };
+    captureSessionKnowledge(input) {
+      captureCalls += 1;
+      return { status: 'captured', input };
     }
   };
   const { server, url } = await createServer({ app, port: 0 });
   t.after(() => closeServer(server));
 
-  const created = await fetch(`${url}/api/spaces`, {
+  const captured = await fetch(`${url}/api/capture`, {
     method: 'POST',
     headers: { origin: url, 'content-type': 'application/json' },
     body: JSON.stringify({ name: 'Local', kind: 'public' })
@@ -89,8 +89,8 @@ test('exact local browser authority and requests without Origin keep working', a
   const entrySource = entry ? await entry.text() : '';
 
   assert.equal(new URL(url).port, String(server.address().port));
-  assert.equal(created.status, 200);
-  assert.equal(createSpaceCalls, 1);
+  assert.equal(captured.status, 200);
+  assert.equal(captureCalls, 1);
   assert.equal(favicon.status, 200);
   assert.equal(favicon.headers.get('content-type'), 'image/png');
   assert.equal(index.status, 200);
@@ -99,6 +99,41 @@ test('exact local browser authority and requests without Origin keep working', a
   assert.equal(entry.status, 200);
   assert.match(entry.headers.get('content-type'), /^text\/javascript/);
   assert.match(entrySource, /#app/);
+});
+
+test('non-JSON PUT and PATCH requests cannot mutate the API', async (t) => {
+  let policyCalls = 0;
+  let settingsCalls = 0;
+  const app = {
+    updateCapturePolicy() {
+      policyCalls += 1;
+      return { enabled: false };
+    }
+  };
+  const system = {
+    updateSettings() {
+      settingsCalls += 1;
+      return {};
+    }
+  };
+  const { server, url } = await createServer({ app, system, port: 0 });
+  t.after(() => closeServer(server));
+
+  const patch = await fetch(`${url}/api/capture-policy`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'text/plain' },
+    body: JSON.stringify({ enabled: false })
+  });
+  const put = await fetch(`${url}/api/system/settings`, {
+    method: 'PUT',
+    headers: { 'content-type': 'text/plain' },
+    body: JSON.stringify({ version: 1 })
+  });
+
+  assert.deepEqual(
+    { patch: patch.status, put: put.status, policyCalls, settingsCalls },
+    { patch: 415, put: 415, policyCalls: 0, settingsCalls: 0 }
+  );
 });
 
 test('LAN mode binds a protected authority while loopback health remains available', async (t) => {

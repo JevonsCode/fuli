@@ -1,13 +1,15 @@
 {
   "name": "fuli-context",
-  "version": "0.5.0",
+  "version": "0.7.2",
   "description": "Local-first context graph for AI agents.",
   "type": "module",
   "files": [
-    "README.en.md",
+    "README.zh-CN.md",
     "npm-shrinkwrap.json",
     "src/",
     "dist/web/",
+    "docs/external-knowledge-architecture.md",
+    "examples/external-knowledge/markdown-folder.mjs",
     "graph-provider/Dockerfile",
     "graph-provider/pyproject.toml",
     "graph-provider/fuli_graph/*.py",
@@ -16,8 +18,8 @@
     "compose.graphiti.yml"
   ],
   "bin": {
-    "fl": "./src/cli.js",
-    "fuli": "./src/cli.js"
+    "fl": "src/cli.js",
+    "fuli": "src/cli.js"
   },
   "keywords": [
     "ai-agent",
@@ -40,6 +42,7 @@
     "test:web": "vitest run --config vitest.config.ts",
     "test:package": "node scripts/package-smoke.js",
     "test:knowledge:live": "node acceptance/knowledge-live.js",
+    "test:external-knowledge:live": "node scripts/validate-external-knowledge-live.js",
     "start": "node src/server.js",
     "graph:setup": "node src/graphiti/setup.js",
     "graph:up": "docker compose -f compose.graphiti.yml up -d --build",
@@ -68,7 +71,6 @@
   "dependencies": {
     "@hono/node-server": "2.0.12",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "better-sqlite3": "^12.11.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

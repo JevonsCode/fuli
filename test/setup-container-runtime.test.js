@@ -40,7 +40,7 @@ test('container runtime inspection reports a missing runtime before setup writes
 
   assert.equal(runtime.status, 'missing');
   assert.match(containerRuntimeError(runtime, 'darwin').message, /Rancher Desktop/);
-  assert.match(containerRuntimeError(runtime, 'darwin').message, /重新运行 fl setup/);
+  assert.match(containerRuntimeError(runtime, 'darwin').message, /run fl setup again/);
 });
 
 test('macOS inspection recognizes Rancher Desktop and its user-scoped Docker socket', () => {
@@ -111,7 +111,7 @@ test('setup launches an installed desktop runtime and waits until Docker is read
   assert.equal(result.status, 'ready');
   assert.deepEqual(launched, ['rancher-desktop']);
   assert.equal(progress.length, 1);
-  assert.match(progress[0], /正在启动 Rancher Desktop/);
+  assert.match(progress[0], /Starting Rancher Desktop/);
 });
 
 test('an explicit unavailable Docker target is never replaced by a local desktop runtime',
@@ -130,7 +130,7 @@ test('an explicit unavailable Docker target is never replaced by a local desktop
           launched = true;
         }
       }),
-      /DOCKER_HOST 或 DOCKER_CONTEXT/
+      /DOCKER_HOST or DOCKER_CONTEXT/
     );
     assert.equal(launched, false);
   });
@@ -161,7 +161,7 @@ test('Compose failures preserve useful diagnostics while redacting local and sec
     error = caught;
   }
 
-  assert.match(error.message, /本地端口已被占用/);
+  assert.match(error.message, /local port required by Fuli is already in use/);
   assert.match(error.message, /~\/Fuli/);
   assert.doesNotMatch(error.message, /do-not-print/);
   assert.match(error.message, /password=\[redacted\]/);
@@ -178,7 +178,7 @@ test('Compose reports a daemon disconnect instead of a generic provider error', 
     () => runDockerCompose(['compose', 'up'], runtime, {
       run: () => failed('error during connect: unexpected EOF')
     }),
-    /容器运行时在启动 Fuli Provider 时失去连接/
+    /container runtime disconnected while starting the Fuli Provider/
   );
 });
 

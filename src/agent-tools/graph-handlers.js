@@ -22,6 +22,12 @@ const HANDLERS = Object.freeze({
     agentInvocation: true,
     agentToolName: 'search_knowledge_graph'
   }),
+  search_connected_knowledge: (app, input) => {
+    if (!app.connectedKnowledge) {
+      throw new Error('Connected knowledge runtime is unavailable');
+    }
+    return app.connectedKnowledge.query(input);
+  },
   record_knowledge_usage: (app, input) => app.recordKnowledgeUsage(input),
   record_knowledge_feedback: (app, input) => app.recordKnowledgeFeedback(input),
   search_current_project_knowledge: (app, input) =>
@@ -53,6 +59,12 @@ const HANDLERS = Object.freeze({
     app.upsertPersonalProject(input)
   ),
   list_personal_projects: (app, input) => app.listPersonalProjects(input),
+  start_knowledge_review: (app, input) => app.startKnowledgeReview(input),
+  list_knowledge_review_candidates: (app, input) =>
+    app.listKnowledgeReviewCandidates(input),
+  record_knowledge_review_progress: (app, input) =>
+    app.recordKnowledgeReviewProgress(input),
+  finish_knowledge_review: (app, input) => app.finishKnowledgeReview(input),
   revise_personal_knowledge: (app, input) => app.reviseKnowledgeItem({
     ...input,
     operationActor: 'agent'

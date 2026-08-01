@@ -44,7 +44,8 @@ export async function handleGraphApiRequest({ request, response, url, app }) {
       spaceId: url.searchParams.get('spaceId'),
       providerUrl: url.searchParams.get('providerUrl'),
       personalProjectId: url.searchParams.get('personalProjectId'),
-      limit: numberParam(url, 'limit', 500)
+      limit: numberParam(url, 'limit', 500),
+      offset: nonNegativeNumberParam(url, 'offset', null)
     }));
     return true;
   }
@@ -252,6 +253,16 @@ function numberParam(url, name, fallback) {
   const value = Number(raw);
   if (!Number.isInteger(value) || value <= 0) {
     throw new TypeError(`${name} must be a positive integer`);
+  }
+  return value;
+}
+
+function nonNegativeNumberParam(url, name, fallback) {
+  const raw = url.searchParams.get(name);
+  if (raw === null) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0) {
+    throw new TypeError(`${name} must be a non-negative integer`);
   }
   return value;
 }

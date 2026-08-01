@@ -9,18 +9,23 @@ import {
 } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 
+import { codexReviewCommandBridge } from './review-skill-adapters.js';
+
 const BLOCK_START = '<!-- BEGIN FULI MANAGED INSTRUCTIONS -->';
 const BLOCK_END = '<!-- END FULI MANAGED INSTRUCTIONS -->';
 
 const GLOBAL_INSTRUCTIONS = `${BLOCK_START}
 At the start of every user task, before any other tool or answer, call exactly
-\`get_collaboration_preferences\` with \`projectPath\`=current working directory. Never substitute
-project action or Fuli tool.
-Apply all returned \`effective_preferences\` before answers or tools. For write tools, enforce
-them in the actual payload; mentioning them later is not compliance.
-Before using a relevant \`deferred_conflict\`, call
-\`resolve_deferred_preference_conflict\`; ignore unrelated ones.
-The current request wins on conflict.
+\`get_collaboration_preferences\` with \`projectPath\`=current working directory and
+\`taskPrompt\`=current user request; never substitute a project action/Fuli tool. Fuli uses both
+transiently and never stores or returns them. Apply all returned \`effective_preferences\`.
+Before asking the user to repeat a stable project fact or method, inspect
+\`task_knowledge_recall\`. On miss call \`search_current_project_knowledge\` with 1-4 focused
+action/artifact/target/identifier queries; never use the full request as the only query.
+For write tools enforce them in the actual payload; mentioning them later is not compliance.
+Relevant \`deferred_conflict\`: call \`resolve_deferred_preference_conflict\` first; ignore others.
+Current request wins.
+${codexReviewCommandBridge()}
 ${BLOCK_END}`;
 
 export function installCodexBootstrap(agent, _context, {

@@ -43,23 +43,32 @@ try {
   for (const required of [
     'LICENSE',
     'README.md',
-    'README.en.md',
+    'README.zh-CN.md',
     'npm-shrinkwrap.json',
     'package.json',
     'src/cli.js',
     'src/cli/update-command.js',
     'dist/web/index.html',
+    'docs/external-knowledge-architecture.md',
+    'examples/external-knowledge/markdown-folder.mjs',
     'graph-provider/fuli_graph/app.py',
-    'skills/capturing-session-knowledge/SKILL.md'
+    'skills/capturing-session-knowledge/SKILL.md',
+    'skills/flreview/SKILL.md',
+    'skills/flreview/agents/openai.yaml'
   ]) {
     assert.ok(files.has(required), `published package is missing ${required}`);
   }
   for (const path of files) {
-    assert.doesNotMatch(path, /^(?:test|docs|scripts|web\/src)\//);
+    assert.doesNotMatch(path, /^(?:test|scripts|web\/src)\//);
+    if (path.startsWith('docs/')) {
+      assert.equal(path, 'docs/external-knowledge-architecture.md');
+    }
     assert.doesNotMatch(path, /^(?:AGENTS|CLAUDE)\.md$/);
     assert.doesNotMatch(path, /(?:^|\/)__pycache__(?:\/|$)/);
     assert.doesNotMatch(path, /\.(?:map|pyc)$/);
+    assert.doesNotMatch(path, /(?:^|\/)(?:better-)?sqlite/i);
   }
+  assert.equal(Object.hasOwn(manifest.dependencies ?? {}, 'better-sqlite3'), false);
 
   const tarball = join(packDir, packed.filename);
   runNpm([

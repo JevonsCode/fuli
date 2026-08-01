@@ -15,10 +15,21 @@ test('setup paths use LocalAppData on Windows', () => {
   });
 
   assert.equal(paths.dataDir, resolve('C:/Users/Test/AppData/Local/Fuli'));
-  assert.equal(paths.dbPath, join(paths.dataDir, 'context.db'));
+  assert.equal(paths.runtimeSettingsPath, join(paths.dataDir, 'runtime-settings.json'));
+  assert.equal(
+    paths.externalKnowledgeRegistryPath,
+    join(paths.dataDir, 'external-knowledge', 'bindings.json')
+  );
+  assert.equal(
+    paths.externalKnowledgeConflictPolicyPath,
+    join(paths.dataDir, 'external-knowledge', 'conflict-policies.json')
+  );
+  assert.equal(
+    paths.externalKnowledgeConnectorDir,
+    join(paths.dataDir, 'external-knowledge', 'connectors')
+  );
   assert.equal(paths.backupDir, join(paths.dataDir, 'backups', 'agents'));
   assert.equal(paths.logPath, join(paths.dataDir, 'logs', 'runtime.log'));
-  assert.equal(paths.statePath, join(paths.dataDir, 'runtime.json'));
 });
 
 test('setup paths use the platform data convention on macOS and Linux', () => {
@@ -61,4 +72,5 @@ test('setup paths honor an explicit data directory and resolve runtime entries',
   assert.equal(paths.mcpServerPath, join(PACKAGE_ROOT, 'src', 'mcp-server.js'));
   assert.equal(paths.sessionSkillPath, join(PACKAGE_ROOT, 'skills', 'capturing-session-knowledge'));
   assert.equal(paths.projectSkillPath, join(PACKAGE_ROOT, 'skills', 'grilling-project'));
+  assert.equal(paths.reviewSkillPath, join(PACKAGE_ROOT, 'skills', 'flreview'));
 });

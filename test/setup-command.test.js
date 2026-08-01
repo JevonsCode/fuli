@@ -6,13 +6,27 @@ import { applyLocalSetup, planLocalSetup } from '../src/setup/setup.js';
 
 const OPTIONS = Object.freeze({
   dataDir: null,
-  personalSpaceName: '我',
+  personalSpaceName: 'Personal',
   port: 2727,
   yes: false,
   codexOnly: false,
   skipAgents: false,
   personalOnly: true,
   noStart: false
+});
+const SAVED_RUNTIME_SETTINGS = Object.freeze({
+  version: 1,
+  ports: {
+    console: 3030,
+    personalProvider: 18787,
+    personalNeo4jHttp: 17474,
+    personalNeo4jBolt: 17687,
+    workspaceProvider: 18788,
+    workspaceNeo4jHttp: 17475,
+    workspaceNeo4jBolt: 17688
+  },
+  lanAccess: true,
+  resourceRefreshSeconds: 10
 });
 
 test('personal-only preview explains that public controls stay disconnected', () => {
@@ -22,21 +36,22 @@ test('personal-only preview explains that public controls stay disconnected', ()
     confirm: async () => false,
     write: (line) => output.push(line)
   }).then(() => {
-    assert.match(output[0], /仅个人：本机 Graphiti \/ Neo4j/);
-    assert.match(output[0], /容器运行时：自动检测/);
-    assert.match(output[0], /公共服务：暂不连接/);
+    assert.match(output[0], /Storage: personal only, using local Graphiti \/ Neo4j/);
+    assert.match(output[0], /Container runtime: detected automatically/);
+    assert.match(output[0], /Shared services: not connected/);
   });
 });
 
 test('local setup planning is side-effect free and describes detected agents', () => {
   let mutated = false;
-  const plan = planLocalSetup(OPTIONS, {
+  const plan = planLocalSetup({ ...OPTIONS, port: null }, {
     resolvePaths: () => ({
       dataDir: 'C:/Fuli',
-      dbPath: 'C:/Fuli/context.db',
       backupDir: 'C:/Fuli/backups/agents',
-      mcpServerPath: 'C:/Package/src/mcp-server.js'
+      mcpServerPath: 'C:/Package/src/mcp-server.js',
+      runtimeSettingsPath: 'C:/Fuli/runtime-settings.json'
     }),
+    readSettings: () => SAVED_RUNTIME_SETTINGS,
     discover: () => [
       { id: 'codex', label: 'Codex', available: true, configPath: 'C:/Codex/config.toml' },
       { id: 'claude-code', label: 'Claude Code', available: false, configPath: 'C:/x' }
@@ -46,7 +61,10 @@ test('local setup planning is side-effect free and describes detected agents', (
   });
 
   assert.equal(mutated, false);
-  assert.equal(plan.paths.dbPath, 'C:/Fuli/context.db');
+  assert.equal(plan.paths.dataDir, 'C:/Fuli');
+  assert.equal(plan.runtimeSettings.ports.console, 3030);
+  assert.equal(plan.runtimeSettings.ports.personalProvider, 18787);
+  assert.equal(plan.runtimeSettings.lanAccess, true);
   assert.deepEqual(plan.agents.map(({ label, available }) => ({ label, available })), [
     { label: 'Codex', available: true },
     { label: 'Claude Code', available: false }
@@ -85,7 +103,8 @@ test('applying setup starts the runtime, backs up configs, and connects availabl
       'backup:codex',
       'connect:codex',
       'skill:codex:capturing-session-knowledge',
-      'skill:codex:grilling-project'
+      'skill:codex:grilling-project',
+      'skill:codex:flreview'
     ]);
     assert.equal(runtimeInput.personalOnly, true);
     assert.equal(result.status, 'ready');
@@ -104,6 +123,11 @@ test('applying setup starts the runtime, backs up configs, and connects availabl
         {
           status: 'installed',
           path: 'C:/Users/Test/.agents/skills/grilling-project',
+          backupPath: null
+        },
+        {
+          status: 'installed',
+          path: 'C:/Users/Test/.agents/skills/flreview',
           backupPath: null
         }
       ]
@@ -184,7 +208,7 @@ test('interactive setup lets the user choose multiple detected agents before con
       appliedPlan.agents.filter(({ selected }) => selected).map(({ id }) => id),
       ['claude-code', 'cursor']
     );
-    assert.match(output[0], /Agent：Claude Code、Cursor/);
+    assert.match(output[0], /Agents: Claude Code, Cursor/);
     assert.doesNotMatch(output[0], /Agent：.*Codex/);
   });
 
@@ -205,7 +229,9 @@ test('setup command shows one preview and cancellation performs no writes', asyn
   assert.equal(confirmations, 1);
   assert.equal(applied, false);
   assert.equal(result.status, 'cancelled');
-  assert.equal(output.filter((line) => line.includes('存储：仅个人：本机 Graphiti / Neo4j')).length, 1);
+  assert.equal(output.filter((line) => line.includes(
+    'Storage: personal only, using local Graphiti / Neo4j'
+  )).length, 1);
 });
 
 test('setup command --yes applies without asking and prints a concise ready result', async () => {
@@ -230,21 +256,49 @@ test('setup command --yes applies without asking and prints a concise ready resu
 
   assert.equal(confirmations, 0);
   assert.equal(result.status, 'ready');
-  assert.match(output.join('\n'), /复利已准备好/);
+  assert.match(output.join('\n'), /Fuli is ready/);
   assert.match(output.join('\n'), /http:\/\/127\.0\.0\.1:2727/);
-  assert.match(output.join('\n'), /新建或重新打开一个任务/);
+  assert.match(output.join('\n'), /create or reopen a task/);
+  assert.doesNotMatch(output.join('\n'), /[\p{Script=Han}]/u);
+});
+
+test('setup prints the temporary LAN access code when saved settings enable LAN', async () => {
+  const output = [];
+  await runSetupCommand(['--yes'], {
+    planSetup: () => ({
+      ...samplePlan(),
+      runtimeSettings: SAVED_RUNTIME_SETTINGS
+    }),
+    applySetup: async () => ({
+      status: 'ready',
+      runtime: {
+        status: 'started',
+        url: 'http://127.0.0.1:3030',
+        pid: 3030,
+        lan: true,
+        lanUrls: ['http://192.168.31.8:3030'],
+        lanAccess: { username: 'fuli', accessCode: 'temporary-access-code' }
+      },
+      agents: []
+    }),
+    write: (line) => output.push(line)
+  });
+
+  assert.match(output.join('\n'), /http:\/\/192\.168\.31\.8:3030/);
+  assert.match(output.join('\n'), /Username: fuli/);
+  assert.match(output.join('\n'), /Temporary access code: temporary-access-code/);
 });
 
 function samplePlan() {
   return {
     paths: {
       dataDir: 'C:/Fuli',
-      dbPath: 'C:/Fuli/context.db',
       backupDir: 'C:/Fuli/backups/agents',
       mcpServerPath: 'C:/Package/src/mcp-server.js',
       graphRuntimeConfigPath: 'C:/Fuli/graph-runtime.json',
       sessionSkillPath: 'C:/Package/skills/capturing-session-knowledge',
-      projectSkillPath: 'C:/Package/skills/grilling-project'
+      projectSkillPath: 'C:/Package/skills/grilling-project',
+      reviewSkillPath: 'C:/Package/skills/flreview'
     },
     agents: [
       {
@@ -253,7 +307,8 @@ function samplePlan() {
         available: true,
         configPath: 'C:/Codex/config.toml',
         skillPath: 'C:/Users/Test/.agents/skills/capturing-session-knowledge',
-        projectSkillPath: 'C:/Users/Test/.agents/skills/grilling-project'
+        projectSkillPath: 'C:/Users/Test/.agents/skills/grilling-project',
+        reviewSkillPath: 'C:/Users/Test/.agents/skills/flreview'
       },
       { id: 'claude-code', label: 'Claude Code', available: false, configPath: 'C:/x' }
     ]
@@ -269,7 +324,8 @@ function multiAgentPlan() {
       selected: false,
       configPath: 'C:/Codex/config.toml',
       skillPath: 'C:/Users/Test/.agents/skills/capturing-session-knowledge',
-      projectSkillPath: 'C:/Users/Test/.agents/skills/grilling-project'
+      projectSkillPath: 'C:/Users/Test/.agents/skills/grilling-project',
+      reviewSkillPath: 'C:/Users/Test/.agents/skills/flreview'
     },
     {
       id: 'claude-code',
@@ -278,7 +334,8 @@ function multiAgentPlan() {
       selected: true,
       configPath: 'C:/Users/Test/.claude.json',
       skillPath: 'C:/Users/Test/.claude/skills/capturing-session-knowledge',
-      projectSkillPath: 'C:/Users/Test/.claude/skills/grilling-project'
+      projectSkillPath: 'C:/Users/Test/.claude/skills/grilling-project',
+      reviewSkillPath: 'C:/Users/Test/.claude/skills/flreview'
     },
     {
       id: 'cursor',
@@ -287,7 +344,8 @@ function multiAgentPlan() {
       selected: true,
       configPath: 'C:/Users/Test/.cursor/mcp.json',
       skillPath: 'C:/Users/Test/.cursor/skills/capturing-session-knowledge',
-      projectSkillPath: 'C:/Users/Test/.cursor/skills/grilling-project'
+      projectSkillPath: 'C:/Users/Test/.cursor/skills/grilling-project',
+      reviewSkillPath: 'C:/Users/Test/.cursor/skills/flreview'
     }
   ];
 }

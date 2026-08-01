@@ -14,11 +14,15 @@ function 读取仓库文件(文件名) {
 }
 
 test('中英文 README 应完整表达项目理念、证据边界和 Agent 生命周期', () => {
-  const 中文 = 读取仓库文件('README.md');
-  const 英文 = 读取仓库文件('README.en.md');
+  const 中文 = 读取仓库文件('README.zh-CN.md');
+  const 英文 = 读取仓库文件('README.md');
 
-  assert.match(中文, /\[English\]\(README\.en\.md\)/);
-  assert.match(英文, /\[中文\]\(README\.md\)/);
+  assert.match(中文, /href="README\.md">English/);
+  assert.match(英文, /href="README\.zh-CN\.md">简体中文/);
+  assert.match(中文, /width="72"/);
+  assert.match(英文, /img\.shields\.io\/npm\/v\/fuli-context/);
+  assert.match(中文, /Fuli Server npm 包 \| 开发中/);
+  assert.match(英文, /Fuli Server npm package \| In development/);
   assert.equal((中文.match(/^```mermaid$/gm) ?? []).length, 1);
   assert.equal((英文.match(/^```mermaid$/gm) ?? []).length, 1);
 
@@ -30,6 +34,17 @@ test('中英文 README 应完整表达项目理念、证据边界和 Agent 生�
   assert.match(中文, /还没有面向既有 `Decision` 单独追加不可变验证结果/);
   assert.match(中文, /Claude Code（Hook 强制）/);
   assert.match(中文, /Codex \/ Cursor（Prompt fallback）/);
+  assert.match(中文, /外部知识库只读接入/);
+  assert.match(中文, /id="connect-external-knowledge"/);
+  assert.match(中文, /同一个个人项目可以拥有多个独立知识库绑定，同一个知识库连接也可以绑定多个个人项目/);
+  assert.match(中文, /id="external-knowledge-conflict-policy"/);
+  assert.match(中文, /“允许 AI 本次判断”允许 Agent 为当前回答/);
+  assert.match(中文, /search_connected_knowledge/);
+  assert.match(中文, /公共项目聚合目前是 \*\*Beta\*\*/);
+  assert.match(中文, /get_collaboration_preferences\(projectPath, taskPrompt\)/);
+  assert.match(中文, /检查 task_knowledge_recall/);
+  assert.match(中文, /127\.0\.0\.1:8788/);
+  assert.match(中文, /python -m pip install "\.\/graph-provider\[dev\]"/);
 
   assert.match(英文, /Measure reuse value, not knowledge volume/);
   assert.match(英文, /not every task must become stored knowledge/);
@@ -39,6 +54,17 @@ test('中英文 README 应完整表达项目理念、证据边界和 Agent 生�
   assert.match(英文, /does not yet expose a[\s\S]*dedicated operation/);
   assert.match(英文, /Claude Code \(hook-enforced\)/);
   assert.match(英文, /Codex \/ Cursor \(prompt fallback\)/);
+  assert.match(英文, /Read-only external knowledge/);
+  assert.match(英文, /id="connect-external-knowledge"/);
+  assert.match(英文, /One personal project can have multiple knowledge connections, and one connection can target[s\n]+multiple personal projects/);
+  assert.match(英文, /id="external-knowledge-conflict-policy"/);
+  assert.match(英文, /Allow an Agent decision lets the Agent select/);
+  assert.match(英文, /search_connected_knowledge/);
+  assert.match(英文, /Public-project aggregation is \*\*Beta\*\*/);
+  assert.match(英文, /get_collaboration_preferences\(projectPath, taskPrompt\)/);
+  assert.match(英文, /Inspect task_knowledge_recall/);
+  assert.match(英文, /127\.0\.0\.1:8788/);
+  assert.match(英文, /python -m pip install "\.\/graph-provider\[dev\]"/);
 });
 
 test('中文验收索引应链接全部人工检查文件', () => {
@@ -107,6 +133,9 @@ test('时序图和流程图应使用完整的中文 Mermaid 图示', () => {
   assert.match(时序图, /retain_nothing/);
   assert.match(时序图, /Prompt fallback/);
   assert.match(时序图, /当前尚无针对既有 Decision 单独追加验证的专用入口/);
+  assert.match(时序图, /三方知识库（只读）/);
+  assert.match(时序图, /不确认、不失效、不改写任何来源/);
+  assert.match(时序图, /TODO：外部绑定直接指向公共空间/);
 
   assert.equal((流程图.match(/^```mermaid$/gm) ?? []).length, 4);
   assert.equal((流程图.match(/^```$/gm) ?? []).length, 4);
@@ -115,6 +144,33 @@ test('时序图和流程图应使用完整的中文 Mermaid 图示', () => {
   assert.match(流程图, /作用域距离是否不超过两跳/);
   assert.match(流程图, /状态：智能体已确认/);
   assert.match(流程图, /不使用原始象限作为个人知识权重/);
+  assert.match(流程图, /绑定模式是什么/);
+  assert.match(流程图, /公共项目（Beta）/);
+  assert.match(流程图, /Agent 本次判断/);
+});
+
+test('外部知识架构文档应区分已实现、Beta、TODO 和真实联网验证', () => {
+  const 架构 = 读取仓库文件('docs/external-knowledge-architecture.md');
+  const 包清单 = JSON.parse(读取仓库文件('package.json'));
+
+  assert.match(架构, /第三方知识源（只读）/);
+  assert.match(架构, /🟢 已实现/);
+  assert.match(架构, /🟠 Beta/);
+  assert.match(架构, /⚪ TODO/);
+  assert.match(架构, /可信本地自定义连接器[\s\S]*不是进程沙箱/);
+  assert.match(架构, /1 至 32 个已经存在的个人项目目标/);
+  assert.match(架构, /ExternalKnowledgeSource/);
+  assert.match(架构, /retrieval_api/);
+  assert.match(架构, /默认测试使用显式标注的 fixture \/ mock/);
+  assert.match(架构, /Model Context Protocol specification and documentation/);
+  assert.match(架构, /Official Notion JavaScript client documentation/);
+  assert.match(架构, /finally/);
+  assert.equal(
+    包清单.scripts['test:external-knowledge:live'],
+    'node scripts/validate-external-knowledge-live.js'
+  );
+  assert.ok(包清单.files.includes('docs/external-knowledge-architecture.md'));
+  assert.ok(包清单.files.includes('examples/external-knowledge/markdown-folder.mjs'));
 });
 
 test('中文验收口径应把误选写工具和项目写入授权纳入回归', () => {

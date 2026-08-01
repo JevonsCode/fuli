@@ -1,5 +1,3 @@
-import { DEFAULT_FULI_PORT } from '../defaults.js';
-
 const VALUE_OPTIONS = Object.freeze({
   '--data-dir': 'dataDir',
   '--personal-space': 'personalSpaceName',
@@ -9,15 +7,16 @@ const VALUE_OPTIONS = Object.freeze({
 const BOOLEAN_OPTIONS = Object.freeze({
   '--open': 'open',
   '--rebuild': 'rebuild',
-  '--lan': 'lan',
   '--json': 'json'
 });
 
 const ALLOWED_BY_COMMAND = Object.freeze({
-  start: new Set(['--data-dir', '--personal-space', '--port', '--open', '--rebuild', '--lan']),
+  start: new Set([
+    '--data-dir', '--personal-space', '--port', '--open', '--rebuild', '--lan', '--no-lan'
+  ]),
   stop: new Set(['--data-dir']),
   restart: new Set([
-    '--data-dir', '--personal-space', '--port', '--open', '--rebuild', '--lan'
+    '--data-dir', '--personal-space', '--port', '--open', '--rebuild', '--lan', '--no-lan'
   ]),
   status: new Set(['--data-dir', '--port', '--json']),
   open: new Set(['--data-dir'])
@@ -28,11 +27,11 @@ export function parseLocalRuntimeOptions(command, args = []) {
   if (!allowed) throw new TypeError(`Unknown local runtime command: ${command}`);
   const result = {
     dataDir: null,
-    personalSpaceName: '我',
-    port: DEFAULT_FULI_PORT,
+    personalSpaceName: 'Personal',
+    port: null,
     open: false,
     rebuild: false,
-    lan: false,
+    lan: null,
     json: false
   };
   const seen = new Set();
@@ -42,6 +41,13 @@ export function parseLocalRuntimeOptions(command, args = []) {
     if (!allowed.has(flag)) throw new TypeError(`Unknown ${command} option: ${flag}`);
     if (seen.has(flag)) throw new TypeError(`Duplicate ${flag}`);
     seen.add(flag);
+
+    if (flag === '--lan' || flag === '--no-lan') {
+      const conflicting = flag === '--lan' ? '--no-lan' : '--lan';
+      if (seen.has(conflicting)) throw new TypeError('--lan and --no-lan cannot be combined');
+      result.lan = flag === '--lan';
+      continue;
+    }
 
     const booleanKey = BOOLEAN_OPTIONS[flag];
     if (booleanKey) {

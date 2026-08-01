@@ -54,6 +54,8 @@ describe('PersonalProfilePage', () => {
     await flushPromises()
 
     expect(wrapper.findAll('.personal-profile-row')).toHaveLength(3)
+    expect(wrapper.get('.virtual-directory-list__watermark').text()).toBe('#001')
+    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001/ 003')
     const scope = wrapper.getComponent(SearchableSelect)
     expect(scope.props('options')).toEqual(expect.arrayContaining([
       expect.objectContaining({ value: 'all', label: '全部范围' }),
@@ -72,6 +74,7 @@ describe('PersonalProfilePage', () => {
 
     await chooseScope('项目 A')
     expect(wrapper.findAll('.personal-profile-row')).toHaveLength(1)
+    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001/ 001')
     expect(wrapper.text()).toContain('A 项目判断')
     expect(wrapper.text()).not.toContain('B 项目个性')
     expect(wrapper.text()).not.toContain('全局品味')
@@ -80,6 +83,53 @@ describe('PersonalProfilePage', () => {
     expect(wrapper.findAll('.personal-profile-row')).toHaveLength(1)
     expect(wrapper.text()).toContain('全局品味')
     expect(wrapper.text()).not.toContain('A 项目判断')
+  })
+
+  it('virtualizes a large collaboration-preference directory with shared indexing', async () => {
+    const largeGraph = profileGraph()
+    largeGraph.nodes = Array.from({ length: 101 }, (_, index) =>
+      preferenceNode(`preference-${index}`, `偏好 ${index + 1}`, 'taste'),
+    )
+    getJson.mockImplementation((url: string) =>
+      url.startsWith('/api/preference-conflicts')
+        ? Promise.resolve([])
+        : Promise.resolve(largeGraph),
+    )
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.state = {
+      mode: 'personal_only',
+      activePersonalSpaceId: 'personal-space',
+      personalSpaces: [{ id: 'personal-space', name: '我' }],
+      personalProjects: [],
+      projects: [],
+      subscriptions: [],
+    }
+
+    const wrapper = mount(PersonalProfilePage, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          KnowledgeEditDialog: true,
+          KnowledgeInspector: true,
+          PreferenceConflictDialog: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.findAll('.personal-profile-row').length).toBeLessThan(101)
+    expect(wrapper.get('.virtual-directory-list__canvas').attributes('style'))
+      .toContain('height: 7676px')
+    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001/ 101')
+
+    const scroller = wrapper.get('.virtual-directory-list__scroller')
+    scroller.element.scrollTop = 76 * 50
+    await scroller.trigger('scroll')
+
+    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('051/ 101')
   })
 
   it('treats a project preference as an override instead of a global conflict', async () => {

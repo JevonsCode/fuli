@@ -78,6 +78,8 @@ class GraphEdge(StrictModel):
     id: str
     source: str
     target: str
+    source_name: str | None = None
+    target_name: str | None = None
     type: str
     fact: str
     origin_quadrant: EpistemicQuadrant = 'known_known'
@@ -130,3 +132,4 @@ class GraphResult(StrictModel):
     nodes: list[GraphNode]
     edges: list[GraphEdge]
     truncated: bool = False
+    next_offset: int | None = Field(default=None, ge=0)

@@ -24,6 +24,7 @@ const MANAGEMENT_TYPES = new Set([
   'ProjectAssessment',
   'AssessmentDimension',
   'RelatedPersonalProject',
+  'ExternalKnowledgeSource',
 ])
 
 const PROJECT_MATERIAL_TYPES = new Set([
@@ -38,6 +39,7 @@ const PROJECT_MATERIAL_TYPES = new Set([
   'ProjectAssessment',
   'AssessmentDimension',
   'RelatedPersonalProject',
+  'ExternalKnowledgeSource',
 ])
 
 const QUADRANTS = new Set([
@@ -177,11 +179,13 @@ export function knowledgeItemFromEdge(
   edge: KnowledgeEdge,
   names: Map<string, string>,
 ): KnowledgeItem {
+  const sourceName = names.get(endpointId(edge.source)) ?? edge.source_name
+  const targetName = names.get(endpointId(edge.target)) ?? edge.target_name
   return {
     id: edge.id,
     itemKind: 'relationship',
-    title: `${names.get(endpointId(edge.source)) ?? t('knowledge.domain.items.unknownEntity')} → ${
-      names.get(endpointId(edge.target)) ?? t('knowledge.domain.items.unknownEntity')
+    title: `${sourceName ?? t('knowledge.domain.items.unknownEntity')} → ${
+      targetName ?? t('knowledge.domain.items.unknownEntity')
     }`,
     body: edge.fact || t('knowledge.domain.items.noRelationDescription'),
     type: t('knowledge.domain.items.relationshipType', { type: edge.type }),
@@ -225,6 +229,7 @@ function isManagementId(id: string) {
     || String(id).startsWith('project-profile-edge:')
     || String(id).startsWith('space-edge:')
     || String(id).startsWith('personal-project-relation:')
+    || String(id).startsWith('external-knowledge-binding:')
 }
 
 export function filterKnowledgeItems(
@@ -307,6 +312,19 @@ export function mergeKnowledgeGraphs(graphs: Array<KnowledgeGraph | null>): Know
     nodes: mergeItems(available.flatMap((graph) => graph.nodes)),
     edges: mergeItems(available.flatMap((graph) => graph.edges)),
     truncated: available.some(({ truncated }) => truncated),
+  }
+}
+
+export function appendKnowledgeGraphPage(
+  current: KnowledgeGraph | null,
+  page: KnowledgeGraph,
+): KnowledgeGraph {
+  const merged = mergeKnowledgeGraphs([current, page])
+  return {
+    ...merged,
+    space_id: page.space_id ?? merged.space_id,
+    truncated: page.truncated,
+    next_offset: page.next_offset ?? null,
   }
 }
 

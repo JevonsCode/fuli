@@ -2,8 +2,10 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import { DEFAULT_FULI_PORT } from '../defaults.js';
+import { knowledgeItemRole } from './knowledge-item-role.js';
 
 const MAX_CITATIONS = 1;
+const PROJECT_SCOPE_PRIORITY_BOOST = 1;
 const DEFAULT_CONSOLE_URL = `http://127.0.0.1:${DEFAULT_FULI_PORT}`;
 
 export function sourceConsoleUrl(runtimeConfigPath, {
@@ -22,12 +24,16 @@ export function sourceConsoleUrl(runtimeConfigPath, {
 export function createFuliSourceMarker({
   consoleUrl = DEFAULT_CONSOLE_URL,
   facts = [],
-  entities = []
+  entities = [],
+  projectScopePriority = 'balanced'
 } = {}) {
+  const comparePriority = projectScopePriority === 'strict'
+    ? compareStrictProjectCitationPriority
+    : compareCitationPriority;
   const citations = uniqueCitations([
     ...facts.map(factCitation),
     ...entities.map(entityCitation)
-  ].filter(Boolean));
+  ].filter(Boolean)).sort(comparePriority);
   const status = citations.length ? 'matched' : 'no_match';
   return {
     required: true,
@@ -45,6 +51,10 @@ function factCitation(fact) {
     spaceId: fact.spaceId ?? fact.space_id,
     itemKind: 'relationship',
     itemId: fact.id,
+    definedProjectId: fact.defined_project_id,
+    scopeDistance: fact.scope_distance,
+    score: fact.score,
+    role: knowledgeItemRole(fact),
     title: [fact.source_entity, fact.target_entity].filter(Boolean).join(' → ') ||
       fact.fact || '关系知识'
   });
@@ -56,19 +66,60 @@ function entityCitation(entity) {
     spaceId: entity.spaceId ?? entity.space_id,
     itemKind: 'entity',
     itemId: entity.id,
+    definedProjectId: entity.defined_project_id,
+    scopeDistance: entity.scope_distance,
+    score: entity.score,
+    role: knowledgeItemRole(entity),
     title: entity.name || entity.summary || '实体知识'
   });
 }
 
-function citation({ scope, spaceId, itemKind, itemId, title }) {
+function citation({
+  scope,
+  spaceId,
+  itemKind,
+  itemId,
+  definedProjectId,
+  scopeDistance,
+  score,
+  role,
+  title
+}) {
   if (!['personal', 'project'].includes(scope) || !spaceId || !itemId) return null;
   return {
     scope,
     spaceId: String(spaceId),
     itemKind,
     itemId: String(itemId),
+    projectScoped: Boolean(definedProjectId),
+    scopeDistance: Number(scopeDistance ?? 0),
+    score: Number(score ?? 0),
+    role,
     title: singleLine(title)
   };
+}
+
+function compareCitationPriority(left, right) {
+  return citationPriority(right) - citationPriority(left);
+}
+
+function compareStrictProjectCitationPriority(left, right) {
+  if (left.projectScoped !== right.projectScoped) {
+    return Number(right.projectScoped) - Number(left.projectScoped);
+  }
+  if (left.projectScoped && left.scopeDistance !== right.scopeDistance) {
+    return left.scopeDistance - right.scopeDistance;
+  }
+  if (left.role !== right.role) {
+    return left.role === 'primary' ? -1 : 1;
+  }
+  return compareCitationPriority(left, right);
+}
+
+function citationPriority(value) {
+  const projectBoost = value.projectScoped ? PROJECT_SCOPE_PRIORITY_BOOST : 0;
+  const distancePenalty = Math.min(Math.max(value.scopeDistance, 0), 8) * 0.15;
+  return value.score + projectBoost - distancePenalty;
 }
 
 function uniqueCitations(citations) {

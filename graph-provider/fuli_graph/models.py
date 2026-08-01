@@ -471,6 +471,25 @@ class EntityInput(StrictModel):
     def bound_attributes(cls, value: dict[str, Any]) -> dict[str, Any]:
         if len(value) > 32:
             raise ValueError('an entity may contain at most 32 attributes')
+        for key in ('searchTerms', 'search_terms'):
+            if key not in value:
+                continue
+            terms = value[key]
+            if (
+                not isinstance(terms, list)
+                or not terms
+                or len(terms) > 32
+                or any(
+                    not isinstance(term, str)
+                    or not term.strip()
+                    or len(term) > 256
+                    for term in terms
+                )
+            ):
+                raise ValueError(
+                    'entity search terms must be 1 to 32 non-empty strings '
+                    'of at most 256 characters'
+                )
         return value
 
     @model_validator(mode='after')

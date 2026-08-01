@@ -232,6 +232,44 @@ def test_relevance_rejects_generic_overlap_in_a_specific_fact_lookup():
     assert generic == 0
 
 
+def test_relevance_uses_explicit_search_terms_for_long_conversational_requests():
+    query = '检查一下代码，有问题暂停和我讨论，没问题发布一个新版本 0.7.0'
+    runbook = _relevance(query, {
+        'name': 'FULI GitHub Connector 提交 Runbook',
+        'type': 'Runbook',
+        'summary': '使用已连接的 GitHub Connector 提交。',
+        'reasoning_summary': None,
+        'profile_aspect': None,
+        'attributes_json': '{"searchTerms":["发布新版本","推送 GitHub"]}',
+    })
+    unrelated = _relevance(query, {
+        'name': '日志排查方式',
+        'type': 'Runbook',
+        'summary': '先查询线上错误日志。',
+        'reasoning_summary': None,
+        'profile_aspect': None,
+        'attributes_json': '{"searchTerms":["日志错误"]}',
+    })
+
+    assert runbook > 0
+    assert unrelated == 0
+
+
+def test_relevance_keeps_spaced_chinese_query_terms_separate():
+    score = _relevance(
+        '推送 提交 push commit GitHub Connector runbook',
+        {
+            'name': 'FULI GitHub Connector 提交 Runbook',
+            'type': 'Runbook',
+            'summary': '通过 GitHub Connector 推送提交。',
+            'reasoning_summary': None,
+            'profile_aspect': None,
+        },
+    )
+
+    assert score > 0
+
+
 def test_entity_search_projection_normalizes_temporal_fields_once():
     changed_at = datetime(2026, 7, 23, 10, 30, tzinfo=timezone.utc)
     record = {

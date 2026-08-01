@@ -1,0 +1,448 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/JevonsCode/fuli/main/web/assets/brand/fuli-logo.png" alt="Fuli Logo" width="72" />
+</p>
+
+<h1 align="center">复利（Fuli）</h1>
+
+<p align="center">
+  <a href="README.md">English</a> · 简体中文
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/fuli-context"><img src="https://img.shields.io/npm/v/fuli-context?style=flat&logo=npm&label=fuli-context" alt="npm 版本" /></a>
+  <a href="https://www.npmjs.com/package/fuli-context"><img src="https://img.shields.io/npm/dm/fuli-context?style=flat" alt="npm 月下载量" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="许可证" /></a>
+</p>
+
+复利是一个面向 AI Agent 的本地优先协作上下文图谱。它把人与 AI 在项目中产生的、经得起
+复用的知识、经验、决策理由和偏好组织成有来源、有作用域、有时间关系的资产，让 Codex、
+Claude Code 和 Cursor 在后续任务中少重复学习一次。
+
+复利不是聊天记录仓库，也不试图建立一个替代人的“人格模型”。AI 负责检索、提醒、归纳和
+执行；人始终保留最终判断权。
+
+## npm 包
+
+| 包 | 状态 | 用途 |
+| --- | --- | --- |
+| [`fuli-context`](https://www.npmjs.com/package/fuli-context) | 已发布 | 个人版；个人知识、图数据库和管理界面都在本机运行 |
+| Fuli Server npm 包 | 开发中 | 面向团队共享场景的独立服务端；目前尚未发布 |
+
+目前唯一可用的 npm 包是个人版 `fuli-context`。团队共享层不会包含个人品味、个性或判断偏好。
+
+## 项目理念
+
+### 1. 衡量复用价值，而不是知识数量
+
+复利的核心问题是：
+
+> 如果没有 Fuli，Agent 是否需要重新学习一条已经确认、仍然有效且与当前任务相关的信息？
+
+节点数、对话数和图谱规模不是成功指标。真正需要验证的是：历史资产能否在正确的项目、时间
+和权威边界内被再次使用，并减少重复解释、修正和返工。
+
+### 2. 每个任务都检查价值，但不强迫每个任务沉淀
+
+一次任务可能产生：
+
+- 可复用知识：API 约定、Runbook、发布方式或项目约束；
+- 经验：为什么某个做法有效或失败；
+- 决策轨迹：候选方案、人的选择、理由和后续验证；
+- 判断辅助：偏好、原则、品味或个性倾向。
+
+也可能只有临时输出、猜测或一次性选择。此时正确结果是 `retain_nothing`。复利要求每个任务
+结束前做一次知识价值检查，并不是把每次聊天都变成长久记忆。
+
+### 3. 人的权威高于 Agent 的重复判断
+
+AI 可以发现候选、指出冲突、建议公共化，也可以在得到授权后处理延迟冲突；它不能仅凭语义
+相似、重复出现或自己的判断伪造人工确认。公共知识提升和有风险的项目写入必须先预览，再由
+明确的人类选择触发一次性、原子执行。
+
+### 4. 先组装上下文，再按需取证
+
+Fuli 不会在会话开始时把全部历史塞给模型。入口阶段始终加载当前任务实际生效的个人全局偏好
+和精确项目偏好；当任务信号表明可能需要稳定的历史事实、方法、网址、决策、发布、部署或认证
+Runbook 时，同一步骤还会在精确项目及其获授权知识来源中执行一次小规模、有界的自动召回。
+需要更多证据时，Agent 再使用聚焦查询按需检索。只有真正影响回答、实现或决策的知识才记录为
+一次使用，单纯检索不会增加权重。
+
+### 5. 保留知识演化，而不是覆盖历史
+
+旧方案可能在当时正确，后来因条件变化被替代。Fuli 保存来源、确认权威、时间、理由、修订、
+替代和负面证据，让 Agent 能解释“现在应该用什么”以及“为什么过去曾经不同”。负面反馈会
+降低相关内容的排序或触发复核，但不会静默抹掉历史。
+
+### 6. 公共知识归属上级，项目差异留在子项目
+
+例如，酒店和机票项目可以只保存自己的 PRD、配置和领域规则，把共同的本地运行、Mock、测试
+和发布方式收敛到活动平台项目：
+
+```text
+活动平台（父项目：共享 Runbook）
+├── 酒店项目（子项目：酒店 PRD / 配置 / 覆盖项）
+└── 机票项目（子项目：机票 PRD / 配置 / 覆盖项）
+```
+
+Agent 在酒店项目工作时先搜索酒店本地知识，再沿显式的 `PART_OF` 或
+`USES_KNOWLEDGE_FROM` 关系向上搜索允许继承的知识，最多两跳。同稳定键的子项目内容覆盖
+父项目内容；普通 `RELATED_TO` 关系不会扩大作用域，项目级个人偏好也不会向下继承。
+
+多个子项目中相似的内容只会形成公共化候选。当前聚类是词法启发式信号，不是语义等价证明；
+必须由人选择规范项、重复项、上级项目和理由后，才能原子提升。
+
+### 7. 本地优先，公开层不包含个人模型
+
+个人图谱默认留在本机。Fuli 保存结构化、可复用的知识，不保存整段会话、凭据、临时日志或
+原始命令输出。团队共享层只承载经过确认、具有上下文和来源的项目或领域知识，不包含个人的
+品味、个性和判断偏好。
+
+## Agent 交互时序
+
+下面是日常任务的简化时序。更完整的项目继承、使用计数、写入预览和来源标记流程见
+[智能体调用时序图](acceptance/智能体调用时序图.md)。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 用户
+    participant A as Agent
+    participant L as 生命周期接入
+    participant F as Fuli MCP
+    participant G as 本地图谱
+
+    U->>A: 在当前项目提交任务
+    alt Claude Code（Hook 强制）
+        L->>F: begin_task_context(projectPath, taskPrompt)
+        F-->>A: 生效偏好、精确项目、有界召回和任务令牌
+    else Codex / Cursor（Prompt fallback）
+        A->>F: get_collaboration_preferences(projectPath, taskPrompt)
+        F-->>A: 生效偏好、精确项目和有界召回
+    end
+
+    A->>A: 检查 task_knowledge_recall
+    opt 仍需历史上下文且自动召回未回答
+        A->>F: 使用聚焦查询调用 search_current_project_knowledge
+        F->>G: 先查子项目，再查获授权的上级
+        G-->>A: 有界正文、状态、来源和历史
+        opt 知识实际影响结果
+            A->>F: record_knowledge_usage
+        end
+    end
+
+    A->>A: 完成实现、验证或回答
+    opt 产生决策、反证或失效证据
+        A->>F: 记录理由或知识反馈
+    end
+    A->>F: checkpoint_task_knowledge
+    alt 有少量可复用候选
+        F->>G: capture_candidates
+    else 没有值得长期保留的内容
+        F-->>A: retain_nothing
+    end
+
+    alt Claude Code Stop Hook
+        L->>F: verify_task_checkpoint
+        F-->>L: 已检查才允许结束
+    else Prompt fallback Agent
+        Note over A,F: 遵循同一契约，但宿主不能确定性阻止漏检
+    end
+    A-->>U: 返回结果与实际使用的 Fuli 来源
+```
+
+## 外部知识库只读接入
+
+一个第三方知识库连接可以同时绑定到一个或多个已经存在的个人项目，不需要授予 Fuli 对源系统
+的写权限。每个目标项目独立保存检索模式、同步游标和错误状态；连接页支持多选绑定、连通性
+检查、手动同步、解绑，以及按项目设置冲突处理开关。
+
+| 连接器 | 读取路径 | 当前边界 |
+| --- | --- | --- |
+| MCP | Resources `list/read`；可配置 `search` / `fetch` 工具 | 默认方式；HTTPS、回环 HTTP 或 stdio |
+| Notion | 页面 Markdown 与 Data Source 查询 | 当前 `2026-03-11` API；必须明确页面或数据源 ID |
+| 飞书 / Lark | Wiki 节点、搜索与 Docx 纯文本 | 当前只提取 Docx；搜索可能需要 user access token |
+| RAG Retrieval API | Dify 外部知识库兼容检索协议 | 仅实时；适合 Dify 兼容端点或适配后的 RAGFlow 等系统 |
+| 可信自定义代码 | 本地 ESM `sync` / `retrieve` 契约 | 用户显式安装的可信代码，不是沙箱 |
+
+<a id="connect-external-knowledge"></a>
+
+### 给项目连接一个或多个知识库
+
+同一个个人项目可以拥有多个独立知识库绑定，同一个知识库连接也可以绑定多个个人项目。每次
+提交表单都会新增一个连接，不会覆盖已有连接；连接来源只保存一次，项目目标分别保存检索模式、
+同步状态和错误。已有连接可用“绑定项目”继续增删目标。
+
+1. 先在“个人项目”中创建或确认目标项目。
+2. 如果来源需要令牌，在启动 Fuli 的环境中设置令牌，再启动或重启服务。连接配置只填写
+   环境变量名，例如先执行 `export PROJECT_KB_TOKEN='...'`，再执行 `fl restart`。
+3. 打开 `http://127.0.0.1:2727/connections`，在“外部知识库”中填写连接名称、连接器、
+   绑定项目（可多选）和检索模式。
+4. MCP HTTP 填写服务 URL 和可选的令牌环境变量名；MCP stdio 填写命令与参数；Notion
+   填写令牌环境变量名以及 Page IDs 或 Data Source IDs；飞书 / Lark 填写令牌环境变量名、
+   区域和明确的 Space ID、根节点 Token 或 Node Tokens；RAG Retrieval API 填写 Dify 兼容
+   端点、知识库 ID 和可选令牌环境变量名；自定义连接器填写受信任本地 ESM 模块与来源 JSON。
+5. 点击“添加连接”，再点击“检查”。`mirror` 或 `hybrid` 绑定检查成功后可点击“同步”；
+   `live` 绑定直接在 Agent 查询时读取来源。
+6. 连接建立后可点击“绑定项目”，多选增删项目并为每个项目设置检索模式。
+
+绑定后，项目图谱会显示一个“外部知识源”节点以及“使用外部知识”关系。这个节点是连接配置的
+只读投影；实时正文仍只在 Agent 调用 `search_connected_knowledge` 时按当前项目检索，不会因
+显示在图谱里而被复制到本地。
+
+三种检索模式的差异：
+
+- `live`（仅实时）：查询时直接读取第三方，不在 Fuli 中保存正文镜像；依赖来源在线。
+- `mirror`（仅同步）：手动把只读正文镜像到绑定的个人项目，Agent 查询本地图谱。
+- `hybrid`（同步 + 实时）：同时使用本地镜像和来源实时结果；连接器同时具备两种能力时推荐。
+
+绑定支持 `live`、`mirror` 和 `hybrid`。镜像正文只写入绑定的个人项目，并统一标记为
+`observed`、`pending`、`restricted`、`local_only`。配置只保存环境变量名称，不保存明文凭据；
+连接器契约中不存在第三方源写入。疑似包含凭据的单个文档会被跳过并返回数量，不进入图谱或
+Agent 上下文。
+
+<a id="external-knowledge-conflict-policy"></a>
+
+### 冲突策略
+
+冲突策略按个人项目设置，对该项目的个人图谱、全部外部绑定和明确选择的公共项目统一生效：
+
+- “在 Agent 对话中询问”是默认值。Agent 并列展示相互冲突的正文、来源和作用域，由用户选择。
+- “允许 AI 本次判断”允许 Agent 为当前回答选择更可信或更新的来源，但必须说明判断依据；它
+  不会确认、失效、覆盖或写回任何知识。
+
+在项目目录中可以直接要求 Agent：`结合当前项目和已连接知识库查找支付回调规范；如果来源冲突，分别列出并让我决定。`
+
+`search_connected_knowledge` 分开返回个人图谱、每个外部绑定和调用方明确选择的公共项目，
+不会先压成无来源正文。公共项目聚合目前是 **Beta**。Agent 发现实质冲突时，默认在对话中
+展示并询问用户；可选的“Agent 判断”只对本次回答生效，不能确认、失效或改写任何来源。
+外部知识直接绑定到公共空间或经审核提升到公共空间、后台定时同步、Webhook 和完整删除对账仍是 **TODO**。
+
+完整边界见[外部知识库只读接入架构](docs/external-knowledge-architecture.md)。
+
+## 当前能力与证据边界
+
+已经由实现和自动化测试覆盖的核心机制包括：
+
+- 本地个人空间、精确项目作用域和选择性上级继承；
+- 偏好确认、延迟冲突处理、修订历史和来源标记；
+- 有界的任务提示自动召回、聚焦的按需检索和实际使用审计；
+- 任务入口、任务末尾知识检查，以及 Claude Code 的入口 / Stop Hook；
+- 决策选项、决策理由和首次记录时附带的验证结果；
+- 知识使用事件、负面反馈和内容代际隔离；
+- 支持暂停、恢复和水位线的持久化分范围知识复核；
+- 公共知识候选发现，以及预览令牌保护的原子提升；
+- MCP、Notion、飞书 / Lark、Dify 兼容 RAG Retrieval API 和可信自定义代码的只读多项目绑定与聚合检索。
+
+仍需与“已经证明”区分的内容：
+
+- `FULI_ALIGNMENT_BENCHMARK.md` 中 A/B 阈值是验收约定；只有完成足量、同条件的真实配对任务
+  后，才能声称 Fuli 已降低重复解释或返工；
+- Benchmark 的测试项目和对话是明确标注的 **MOCK / 合成数据**，不是用户或生产数据；
+- 当前决策工具可在首次记录时附带验证，但还没有面向既有 `Decision` 单独追加不可变验证结果
+  的专用入口；
+- Claude Code 具备确定性的生命周期 Hook；Codex 和 Cursor 当前是 Prompt fallback，不能把两者
+  表述为同等强制能力；
+- 聚合检索中的选定公共项目仍是 Beta；外部知识提升到公共空间和后台增量同步尚未实现。
+
+## 安装
+
+准备：
+
+- Node.js 24.12 或更高版本；
+- Docker Compose v2；Docker Desktop 或 Rancher Desktop 均可；
+- 至少约 4 GB 可供容器使用的内存。
+
+全局安装并初始化：
+
+```bash
+npm install --global fuli-context
+fuli setup
+```
+
+`fuli setup` 会先展示操作计划并请求确认，然后检查容器运行时、初始化本机
+Graphiti / Neo4j、创建个人空间、安装配套 Agent Skills，并为检测到的 Agent 注册 `fuli`
+MCP。默认只连接个人 Provider，不会模拟团队共享服务。
+
+初始化完成后：
+
+```bash
+fuli open
+```
+
+管理界面默认位于 `http://127.0.0.1:2727`。
+
+“设置”页集中管理 Fuli 使用的 7 个本机端口、局域网访问、自动沉淀、Agent 使用、界面语言和
+资源刷新频率。端口或局域网设置保存后执行 `fuli restart` 生效；资源刷新频率立即生效。
+同页按设定间隔采集管理服务、Provider、Neo4j、应用文件和本机数据的真实内存/磁盘占用；
+内存每次重采，磁盘最多每分钟重采一次，并分别显示采样时间。
+无法取得容器数据时会明确显示为不完整，不使用模拟值。浏览器标签页内存和共享容器虚拟机
+开销不计入 Fuli 合计。
+
+## CLI
+
+全局安装提供两个等价命令：`fuli` 和短别名 `fl`。
+CLI 的帮助、交互提示、状态和错误信息固定使用英文，不跟随网页或系统语言；路径、空间名等
+用户数据会按原值显示。
+
+| 命令 | 用途 |
+| --- | --- |
+| `fuli --help` / `fuli -h` | 显示所有公开命令及其可用参数 |
+| `fuli --version` / `fuli -v` | 显示当前安装的 Fuli CLI 版本 |
+| `fuli setup [选项]` | 初始化 Provider、管理界面、Agent 接入和 Skills；可重复执行 |
+| `fuli start [选项]` | 启动 Provider 和管理界面；可选择启动后打开浏览器、重建容器或启用 LAN 访问 |
+| `fuli stop [--data-dir DIR]` | 停止服务并保留数据 |
+| `fuli restart [选项]` | 使用与 `start` 相同的运行参数重启本机服务 |
+| `fuli status [--json] [--data-dir DIR] [--port PORT]` | 查看管理界面、个人图谱和公共服务状态；`--json` 输出机器可读结果 |
+| `fuli open [--data-dir DIR]` | 在默认浏览器中打开当前管理界面 |
+| `fuli update [setup 选项]` | 更新 npm 包并刷新本机接入 |
+| `fuli uninstall [--yes] [--data-dir DIR]` | 清理 Agent 接入和服务，保留知识数据和 Neo4j 数据卷 |
+
+常用示例：
+
+```bash
+fuli --version
+fuli status
+fuli restart --rebuild
+fuli start --lan
+fuli stop
+```
+
+`start` 和 `restart` 支持 `--data-dir DIR`、`--personal-space NAME`、`--port PORT`、
+`--open`、`--rebuild`、`--lan` 和 `--no-lan`。未显式传入端口或局域网参数时会使用“设置”
+页保存的值。其中 `--lan` 会让管理界面监听
+私有 IPv4 局域网地址，并在终端输出可访问地址、用户名 `fuli` 和本次启动生成的临时访问
+口令。默认启动仍只监听 `127.0.0.1`；内部 Provider、Neo4j Browser 和 Bolt 不会随
+`--lan` 开放。局域网模式使用 HTTP Basic Auth，只适合可信家庭或办公 Wi-Fi，不等同于
+HTTPS 公网部署。
+
+`setup` 和 `update` 支持：
+
+| 选项 | 用途 |
+| --- | --- |
+| `--yes` | 跳过确认，适合无人值守执行 |
+| `--codex-only` | 只接入 Codex |
+| `--data-dir DIR` | 使用指定的数据与配置目录 |
+| `--personal-space NAME` | 设置个人空间名称；默认是 `Personal` |
+| `--port PORT` | 设置管理界面端口；默认是 `2727` |
+| `--skip-agents` | 不修改 Agent 配置或 Skills |
+| `--no-start` | 初始化 Provider，但不启动管理界面 |
+| `--personal-only` | 只使用个人 Provider；默认模式 |
+| `--with-dev-public` | 同时启动开发用公共 Provider，仅用于开发或联调 |
+
+更新：
+
+```bash
+fuli update
+```
+
+更新会先确认不会降级，再停止旧服务、安装 `fuli-context@latest` 并刷新 Agent 接入。
+既有知识、配置备份和 Neo4j 数据卷会保留。使用过自定义 setup 选项时，更新时应继续传入
+相同选项。
+
+卸载：
+
+```bash
+fuli uninstall
+npm uninstall --global fuli-context
+```
+
+自动卸载不会永久删除个人图谱，避免误删。重新安装后可以继续使用原数据。
+
+## Agent 接入与主要工具
+
+Fuli 为支持的 Agent 安装 `capturing-session-knowledge`、`grilling-project` 和 `flreview`
+Skills。输入 `/flreview` 后可选择全部、个人偏好或个人项目；若用户表示完全没耐心，流程会
+跳过心情、时间和 token 询问，只处理少量最高优先级问题。Claude
+Code 使用 `UserPromptSubmit` 和 `Stop` Hook 接入任务生命周期；Codex 的用户级
+`AGENTS.md` 与 Cursor 指令使用 Prompt fallback。偏好正文始终以本机 Fuli 为唯一来源，
+不会复制到 Agent 配置中。
+
+| 工具 | 用途 |
+| --- | --- |
+| `begin_task_context` | Hook 入口：解析任务、在命中信号时执行有界召回并创建任务令牌 |
+| `get_collaboration_preferences` | Fallback 入口：读取生效偏好和有界任务召回 |
+| `search_current_project_knowledge` | 子项目优先、按授权关系向上检索 |
+| `search_knowledge_graph` | 在明确的有界范围内执行更通用的查询 |
+| `search_connected_knowledge` | 分开检索图谱、项目绑定的只读来源和选定公共项目，保留来源边界 |
+| `record_knowledge_usage` | 记录真正影响结果的引用或应用 |
+| `record_knowledge_feedback` | 保存拒绝、验证失败、冲突或过时证据 |
+| `record_decision_trace` | 保存选择、被拒方案、理由和可选初始验证 |
+| `capture_session_knowledge` | 批量写入少量、结构化的候选知识 |
+| `checkpoint_task_knowledge` | 以 `capture_candidates` 或 `retain_nothing` 结束知识检查 |
+| `discover_common_knowledge_candidates` | 只读发现可能属于上级项目的公共候选 |
+| `preview_common_knowledge_promotion` | 预览人类确认的公共知识提升 |
+| `apply_common_knowledge_promotion` | 使用一次性令牌原子执行提升 |
+| `resolve_deferred_preference_conflict` | 在实际需要时处理已授权给 AI 的冲突 |
+| `start_knowledge_review` | 启动或恢复精确范围的个人知识回顾 |
+| `list_knowledge_review_candidates` | 按时间、冲突、权重和跨会话重复顺序列出候选 |
+| `record_knowledge_review_progress` | 保存确认、修改、失效、跳过或稍后处理结果 |
+| `finish_knowledge_review` | 暂停回顾，或完成并推进下次回顾水位线 |
+
+## 隐私与安全边界
+
+- 个人知识写入本机 Provider；
+- Agent 归纳结构化知识，不保存原始会话；
+- Token、Cookie、私钥、凭据、私人联系信息、临时日志和原始命令输出不得进入图谱；
+- Graphiti 远程 LLM 路径被禁用，当前嵌入在本机计算；
+- 搜索按个人空间和项目范围限定，不默认混入所有项目；
+- 外部连接器从不写入第三方源，绑定配置拒绝保存明文凭据；
+- 公共提升需要可审计的人工确认，Agent 自己的使用证据最多晋级为
+  `agent_confirmed`；
+- Fuli 不是实时监控或 Git 服务，实时状态应从对应系统重新读取。
+
+## 本机服务
+
+| 服务 | 默认回环地址 | 启用条件 |
+| --- | --- | --- |
+| Fuli 管理界面 | `127.0.0.1:2727` | 始终启用 |
+| 个人 Provider | `127.0.0.1:8787` | 始终启用 |
+| 个人 Neo4j Browser / Bolt | `127.0.0.1:8060` / `127.0.0.1:7687` | 始终启用 |
+| 开发公共 Provider | `127.0.0.1:8788` | 仅 `--with-dev-public` |
+| 开发公共 Neo4j Browser / Bolt | `127.0.0.1:7475` / `127.0.0.1:7688` | 仅 `--with-dev-public` |
+
+以上共 7 个端口均可在“设置”页修改。即使管理界面以 LAN 模式启动，Provider 和 Neo4j 仍只
+绑定回环地址。
+
+需要同一 Wi-Fi 下的其他设备访问时，执行 `fuli start --lan`。若当前已经以本机模式运行，
+命令会安全重启管理界面并保持 Provider 与图谱数据不变。退出局域网模式可在设置页关闭后
+执行 `fuli restart`，或直接执行 `fuli restart --no-lan`；再次进入局域网模式会更换临时访问
+口令。
+
+如果端口被占用、Docker Compose 不可用或容器引擎未启动，setup 会在修改 Agent 配置前停止
+并报告原因。
+
+## 验收与源码开发
+
+- [Alignment Benchmark](FULI_ALIGNMENT_BENCHMARK.md)
+- [中文验收索引](acceptance/README.md)
+- [知识检索与确认流程图](acceptance/知识检索与确认流程图.md)
+- [外部知识库只读接入架构](docs/external-knowledge-architecture.md)
+
+```bash
+npm install
+npm test
+npm run test:package
+npm run test:external-knowledge:live
+```
+
+外部知识联网测试会临时下载两个公开官方文档仓库，验证只读同步和检索后删除整个临时目录。
+该测试依赖网络，不属于默认测试套件。
+
+Provider 验证：
+
+```bash
+python3.12 -m venv .venv
+. .venv/bin/activate
+python -m pip install "./graph-provider[dev]"
+python -m compileall -q graph-provider/fuli_graph
+python -m pytest -q graph-provider/tests
+docker compose -f compose.graphiti.yml config --quiet
+```
+
+`npm run test:package` 会构建前端、生成真实 npm tarball、安装到隔离的全局前缀，并验证
+`fuli` / `fl`、版本号、帮助信息和 Web UI。测试源码、QA 截图和内部设计文档不会进入 npm
+包。
+
+## License
+
+[Apache-2.0](LICENSE)

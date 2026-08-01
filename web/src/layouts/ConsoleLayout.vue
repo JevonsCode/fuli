@@ -2,7 +2,7 @@
 import { computed, onMounted, watchEffect } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
-import fuliLogoUrl from '../../assets/brand/fuli-logo.png'
+import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import { t } from '@/i18n'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
@@ -29,10 +29,6 @@ const publicRuntimeCopy = computed(() => {
   if (store.publicRuntimeStatus === 'error') return t('console.services.localUnaffected')
   return t('console.services.localOnly')
 })
-const captureEnabled = computed(() => store.state?.capturePolicy?.enabled !== false)
-const agentAccessEnabled = computed(() =>
-  store.state?.agentAccessPolicy?.enabled !== false,
-)
 const publicVisible = computed(() => store.state?.capabilities?.browsePublicProjects !== false)
 const reviewVisible = computed(() => {
   const capabilities = store.state?.capabilities
@@ -47,27 +43,12 @@ watchEffect(() => {
   updateDocumentTitle(route.meta.title)
 })
 
-function toggleCapture(event: Event) {
-  const input = event.currentTarget as HTMLInputElement
-  void store.updateCapturePolicy(input.checked)
-}
-
-function toggleAgentAccess(event: Event) {
-  const input = event.currentTarget as HTMLInputElement
-  void store.updateAgentAccessPolicy(input.checked)
-}
 </script>
 
 <template>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="brand-block">
-        <img class="brand-mark" :src="fuliLogoUrl" alt="" aria-hidden="true" />
-        <div>
-          <h1>{{ t('common.brand') }}</h1>
-          <p>Context Graph</p>
-        </div>
-      </div>
+      <BrandEasterEgg />
 
       <nav class="primary-nav" :aria-label="t('console.navigation.aria')">
         <p class="nav-section-label">{{ t('console.navigation.workspace') }}</p>
@@ -111,6 +92,16 @@ function toggleAgentAccess(event: Event) {
           <span class="nav-icon nav-icon-connections" aria-hidden="true" />
           <span class="nav-label">{{ t('console.navigation.connections') }}</span>
         </RouterLink>
+
+        <p class="nav-section-label nav-about-label">{{ t('console.navigation.aboutSection') }}</p>
+        <RouterLink to="/settings" active-class="is-active">
+          <span class="nav-icon nav-icon-settings" aria-hidden="true" />
+          <span class="nav-label">{{ t('console.navigation.settings') }}</span>
+        </RouterLink>
+        <RouterLink to="/about" active-class="is-active">
+          <span class="nav-icon nav-icon-about" aria-hidden="true" />
+          <span class="nav-label">{{ t('console.navigation.about') }}</span>
+        </RouterLink>
       </nav>
 
       <div class="sidebar-foot">
@@ -134,59 +125,26 @@ function toggleAgentAccess(event: Event) {
             </div>
           </div>
         </div>
-        <label
-          class="capture-setting"
-          :data-enabled="captureEnabled"
-          :title="captureEnabled ? t('console.capture.enabledTitle') : t('console.capture.disabledTitle')"
-        >
-          <span>{{ t('console.capture.label') }}</span>
-          <input
-            type="checkbox"
-            role="switch"
-            :aria-label="t('console.capture.aria')"
-            :aria-checked="captureEnabled"
-            :checked="captureEnabled"
-            :disabled="store.runtimeStatus !== 'ready'"
-            @change="toggleCapture"
-          />
-          <i aria-hidden="true" />
-        </label>
-        <label
-          class="capture-setting agent-access-setting"
-          :data-enabled="agentAccessEnabled"
-          :title="
-            agentAccessEnabled
-              ? t('console.agentAccess.enabledTitle')
-              : t('console.agentAccess.disabledTitle')
-          "
-        >
-          <span>
-            <strong>{{ t('console.agentAccess.label') }}</strong>
-            <small>{{ agentAccessEnabled ? t('console.agentAccess.enabledCopy') : t('console.agentAccess.disabledCopy') }}</small>
-          </span>
-          <input
-            type="checkbox"
-            role="switch"
-            :aria-label="t('console.agentAccess.aria')"
-            :aria-checked="agentAccessEnabled"
-            :checked="agentAccessEnabled"
-            :disabled="store.runtimeStatus !== 'ready'"
-            @change="toggleAgentAccess"
-          />
-          <i aria-hidden="true" />
-        </label>
       </div>
     </aside>
 
     <main class="workspace">
       <header class="topbar">
         <div class="topbar-heading">
-          <p class="eyebrow">{{ eyebrow }}</p>
+          <p v-if="eyebrow" class="eyebrow">{{ eyebrow }}</p>
           <h2>{{ title }}</h2>
           <p v-if="description" class="topbar-description">{{ description }}</p>
         </div>
         <div class="topbar-actions">
           <span v-if="publicReady" class="mode-chip">{{ t('console.publicReady') }}</span>
+          <button
+            v-if="route.name === 'settings'"
+            class="settings-save-button"
+            form="settings-form"
+            type="submit"
+          >
+            {{ t('settings.save') }}
+          </button>
           <LocaleSwitcher />
           <button class="quiet-button" type="button" @click="store.refresh">{{ t('common.actions.refresh') }}</button>
         </div>

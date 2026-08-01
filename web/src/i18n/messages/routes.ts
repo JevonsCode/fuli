@@ -13,7 +13,6 @@ export const routeMessages = {
     },
     organizer: {
       title: '知识整理',
-      description: '按发现时四象限、确认依据与确认状态整理个人空间里的全部知识。',
     },
     publicProjects: {
       title: '公共项目',
@@ -21,6 +20,12 @@ export const routeMessages = {
     },
     knowledge: {
       title: '知识库',
+    },
+    about: {
+      title: '说明',
+    },
+    settings: {
+      title: '设置',
     },
     review: {
       title: '发布审核',
@@ -45,7 +50,6 @@ export const routeMessages = {
     },
     organizer: {
       title: 'Knowledge organizer',
-      description: 'Organize personal knowledge by discovery quadrant, confirmation basis, and confirmation status.',
     },
     publicProjects: {
       title: 'Public projects',
@@ -53,6 +57,12 @@ export const routeMessages = {
     },
     knowledge: {
       title: 'Knowledge base',
+    },
+    about: {
+      title: 'About',
+    },
+    settings: {
+      title: 'Settings',
     },
     review: {
       title: 'Publishing review',

@@ -71,6 +71,55 @@ export interface Subscription {
   [key: string]: unknown
 }
 
+export interface ExternalKnowledgeConnector {
+  type: 'mcp' | 'notion' | 'feishu' | 'custom' | string
+  name: string
+  capabilities: string[]
+  status?: string
+  trust?: string
+  description?: string
+  limitations?: string[]
+}
+
+export type ExternalKnowledgeMode = 'hybrid' | 'live' | 'mirror'
+
+export interface ExternalKnowledgeBindingTarget {
+  id: string
+  personalSpaceId: string
+  personalProjectId: string
+  mode: ExternalKnowledgeMode
+  status: string
+  sync?: {
+    lastSyncedAt?: string | null
+    error?: string | null
+    skippedCredentials?: number
+  }
+}
+
+export interface ExternalKnowledgeBinding {
+  id: string
+  name: string
+  connectorType: string
+  mode: ExternalKnowledgeMode
+  status: string
+  target: {
+    personalSpaceId: string
+    personalProjectId: string
+  }
+  targets: ExternalKnowledgeBindingTarget[]
+  sync?: {
+    lastSyncedAt?: string | null
+    error?: string | null
+    skippedCredentials?: number
+  }
+}
+
+export interface KnowledgeConflictPolicy {
+  personalProjectId: string
+  mode: 'ask_human' | 'agent_decide'
+  updatedAt?: string | null
+}
+
 export interface ProviderStatus {
   status: string
   providerUrl?: string
@@ -92,6 +141,56 @@ export interface ConsoleState {
     personal?: ProviderStatus
     workspaces?: ProviderStatus[]
   }
+}
+
+export interface RuntimePorts {
+  console: number
+  personalProvider: number
+  personalNeo4jHttp: number
+  personalNeo4jBolt: number
+  workspaceProvider: number
+  workspaceNeo4jHttp: number
+  workspaceNeo4jBolt: number
+}
+
+export interface RuntimeSettings {
+  version: 1
+  ports: RuntimePorts
+  lanAccess: boolean
+  resourceRefreshSeconds: 5 | 10 | 30 | 60
+}
+
+export interface SystemSettingsResult {
+  configured: RuntimeSettings
+  active: RuntimeSettings
+  restartRequired: boolean
+}
+
+export interface ResourceComponent {
+  id: string
+  label: string
+  kind?: 'process' | 'container'
+  status: string
+  bytes: number
+}
+
+export interface ResourceMeasure {
+  usedBytes: number
+  hostTotalBytes: number | null
+  hostFreeBytes: number | null
+  complete: boolean
+  components: ResourceComponent[]
+}
+
+export interface ResourceSnapshot {
+  sampledAt: string
+  status: 'ready' | 'partial'
+  memory: ResourceMeasure
+  disk: ResourceMeasure & {
+    measuredAt: string
+    temporaryBytes: number | null
+  }
+  exclusions: string[]
 }
 
 export interface EvidenceRecord {
@@ -200,6 +299,8 @@ export interface KnowledgeEdge {
   id: string
   source: string | KnowledgeNode
   target: string | KnowledgeNode
+  source_name?: string | null
+  target_name?: string | null
   type: string
   fact?: string
   attributes?: Record<string, unknown>
@@ -248,6 +349,7 @@ export interface KnowledgeGraph {
   nodes: KnowledgeNode[]
   edges: KnowledgeEdge[]
   truncated?: boolean
+  next_offset?: number | null
 }
 
 export type KnowledgeItem = {

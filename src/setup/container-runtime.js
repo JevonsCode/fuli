@@ -86,7 +86,7 @@ export async function ensureContainerRuntime(options = {}, dependencies = {}) {
     throw containerRuntimeError(runtime, options.platform ?? process.platform);
   }
 
-  onProgress(`正在启动 ${runtime.desktop.label}，首次启动可能需要几分钟…`);
+  onProgress(`Starting ${runtime.desktop.label}; the first launch may take a few minutes...`);
   await launch(runtime.desktop, dependencies);
 
   const attempts = Math.max(1, Math.ceil(maxWaitMs / pollIntervalMs));
@@ -100,9 +100,9 @@ export async function ensureContainerRuntime(options = {}, dependencies = {}) {
   }
 
   throw new Error(
-    `${runtime.desktop?.label ?? runtime.label} 已启动，但容器引擎未在 ` +
-    `${Math.ceil(maxWaitMs / 1000)} 秒内就绪。请打开该应用查看错误，确认 docker info ` +
-    `可以成功后重新运行 fl setup。${detailSuffix(runtime.detail)}`
+    `${runtime.desktop?.label ?? runtime.label} started, but the container engine was not ready ` +
+    `within ${Math.ceil(maxWaitMs / 1000)} seconds. Open the application to inspect errors, ` +
+    `confirm that docker info succeeds, then run fl setup again.${detailSuffix(runtime.detail)}`
   );
 }
 
@@ -124,12 +124,14 @@ export function runDockerCompose(args, runtime = null, {
 
   const detail = safeProcessDetail(result, homeDir);
   if (/port is already allocated|address already in use|bind.+failed/i.test(detail)) {
-    throw new Error(`Fuli 需要的本地端口已被占用。${detailSuffix(detail)}`);
+    throw new Error(`A local port required by Fuli is already in use.${detailSuffix(detail)}`);
   }
   if (/cannot connect|connection refused|error during connect|docker daemon|\bEOF\b/i.test(detail)) {
-    throw new Error(`容器运行时在启动 Fuli Provider 时失去连接。${detailSuffix(detail)}`);
+    throw new Error(
+      `The container runtime disconnected while starting the Fuli Provider.${detailSuffix(detail)}`
+    );
   }
-  throw new Error(`Docker Compose 无法启动 Fuli Provider。${detailSuffix(detail)}`);
+  throw new Error(`Docker Compose could not start the Fuli Provider.${detailSuffix(detail)}`);
 }
 
 export function selectDockerEnvironment({
@@ -161,19 +163,21 @@ export function containerRuntimeError(runtime, platform = process.platform) {
   }
   if (runtime.status === 'missing-compose') {
     return new Error(
-      `已找到 Docker，但缺少 Docker Compose v2。请安装 Compose v2 后重新运行 fl setup。` +
+      'Docker was found, but Docker Compose v2 is missing. Install Compose v2, then run ' +
+      'fl setup again.' +
       detailSuffix(runtime.detail)
     );
   }
   if (runtime.explicitTarget) {
     return new Error(
-      `DOCKER_HOST 或 DOCKER_CONTEXT 指向的容器引擎不可用。请修复该配置并确认 ` +
-      `docker info 可以成功后重新运行 fl setup。${detailSuffix(runtime.detail)}`
+      'The container engine selected by DOCKER_HOST or DOCKER_CONTEXT is unavailable. Fix the ' +
+      `configuration, confirm that docker info succeeds, then run fl setup again.${detailSuffix(runtime.detail)}`
     );
   }
   return new Error(
-    `已找到 Docker 和 Compose，但容器引擎没有运行。请启动 Docker Desktop、` +
-    `Rancher Desktop 或当前 Docker 服务，确认 docker info 可以成功后重新运行 fl setup。` +
+    'Docker and Compose were found, but the container engine is not running. Start Docker ' +
+    'Desktop, Rancher Desktop, or the current Docker service; confirm that docker info succeeds; ' +
+    'then run fl setup again.' +
     detailSuffix(runtime.detail)
   );
 }
@@ -330,17 +334,17 @@ async function launchDesktopRuntime(desktop, { spawnProcess = spawn } = {}) {
 
 function missingRuntimeMessage(platform) {
   if (platform === 'darwin') {
-    return `未检测到可用的 Docker Compose 容器运行时。请安装并首次打开 Rancher Desktop ` +
-      `(${RANCHER_DOWNLOAD_URL}) 或 Docker Desktop (${DOCKER_DOWNLOAD_URL})，` +
-      `然后重新运行 fl setup。`;
+    return 'No usable Docker Compose container runtime was detected. Install and open Rancher ' +
+      `Desktop (${RANCHER_DOWNLOAD_URL}) or Docker Desktop (${DOCKER_DOWNLOAD_URL}), then run ` +
+      'fl setup again.';
   }
   if (platform === 'win32') {
-    return `未检测到可用的 Docker Compose 容器运行时。请先启用 WSL 2，再安装并首次打开 ` +
-      `Rancher Desktop (${RANCHER_DOWNLOAD_URL}) 或 Docker Desktop ` +
-      `(${DOCKER_DOWNLOAD_URL})，然后重新运行 fl setup。`;
+    return 'No usable Docker Compose container runtime was detected. Enable WSL 2, then install ' +
+      `and open Rancher Desktop (${RANCHER_DOWNLOAD_URL}) or Docker Desktop ` +
+      `(${DOCKER_DOWNLOAD_URL}), and run fl setup again.`;
   }
-  return `未检测到可用的 Docker Compose 容器运行时。请安装 Docker Engine + Compose v2，` +
-    `或 Rancher Desktop (${RANCHER_DOWNLOAD_URL})，然后重新运行 fl setup。`;
+  return 'No usable Docker Compose container runtime was detected. Install Docker Engine with ' +
+    `Compose v2, or Rancher Desktop (${RANCHER_DOWNLOAD_URL}), then run fl setup again.`;
 }
 
 function defaultDockerAvailable(env) {
@@ -372,7 +376,7 @@ function safeProcessDetail(result, homeDir) {
 }
 
 function detailSuffix(detail) {
-  return nonEmpty(detail) ? ` Docker 返回：${detail}` : '';
+  return nonEmpty(detail) ? ` Docker returned: ${detail}` : '';
 }
 
 function processSucceeded(result) {

@@ -35,16 +35,16 @@ test('every POST route under /api/ requires application/json', async (t) => {
 });
 
 test('malformed JSON remains a controlled bad request', async (t) => {
-  let createSpaceCalls = 0;
+  let captureCalls = 0;
   const app = {
-    createSpace() {
-      createSpaceCalls += 1;
+    captureSessionKnowledge() {
+      captureCalls += 1;
     }
   };
   const { server, url } = await createServer({ app, port: 0 });
   t.after(() => closeServer(server));
 
-  const response = await fetch(`${url}/api/spaces`, {
+  const response = await fetch(`${url}/api/capture`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: '{'
@@ -52,15 +52,15 @@ test('malformed JSON remains a controlled bad request', async (t) => {
 
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: 'Malformed JSON' });
-  assert.equal(createSpaceCalls, 0);
+  assert.equal(captureCalls, 0);
 });
 
 test('JSON bodies are bounded at 64 KiB for chunked requests', async (t) => {
-  let createSpaceCalls = 0;
+  let captureCalls = 0;
   const app = {
-    createSpace() {
-      createSpaceCalls += 1;
-      return { id: `space-${createSpaceCalls}` };
+    captureSessionKnowledge() {
+      captureCalls += 1;
+      return { id: `capture-${captureCalls}` };
     }
   };
   const { server, url } = await createServer({ app, port: 0 });
@@ -68,8 +68,8 @@ test('JSON bodies are bounded at 64 KiB for chunked requests', async (t) => {
   const acceptedBody = jsonBodyOfSize(JSON_BODY_LIMIT);
   const rejectedBody = jsonBodyOfSize(JSON_BODY_LIMIT + 1, 'private-body-marker');
 
-  const accepted = await chunkedJsonRequest(`${url}/api/spaces`, [acceptedBody]);
-  const rejected = await chunkedJsonRequest(`${url}/api/spaces`, [
+  const accepted = await chunkedJsonRequest(`${url}/api/capture`, [acceptedBody]);
+  const rejected = await chunkedJsonRequest(`${url}/api/capture`, [
     rejectedBody.slice(0, JSON_BODY_LIMIT),
     rejectedBody.slice(JSON_BODY_LIMIT)
   ]);
@@ -79,7 +79,7 @@ test('JSON bodies are bounded at 64 KiB for chunked requests', async (t) => {
     status: 413,
     body: { error: 'Request body too large' }
   });
-  assert.equal(createSpaceCalls, 1);
+  assert.equal(captureCalls, 1);
   assert.doesNotMatch(JSON.stringify(rejected.body), /private-body-marker/);
 });
 

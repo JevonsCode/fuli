@@ -27,15 +27,15 @@ export function parseAgentSelection(value, agents) {
 
   const tokens = answer.split(/[\s,，]+/).filter(Boolean);
   if (tokens.includes('0')) {
-    throw new TypeError('0 不能与其他编号同时使用');
+    throw new TypeError('0 cannot be combined with another number');
   }
   if (tokens.some((token) => !/^\d+$/.test(token))) {
-    throw new TypeError('请输入编号，不要输入 Agent 名称');
+    throw new TypeError('Enter numbers, not Agent names');
   }
 
   const positions = new Set(tokens.map(Number));
   if ([...positions].some((position) => position < 1 || position > agents.length)) {
-    throw new RangeError(`可选范围是 1-${agents.length}`);
+    throw new RangeError(`Choose a number from 1-${agents.length}`);
   }
   return agents
     .filter((_, index) => positions.has(index + 1))
@@ -86,21 +86,21 @@ export function selectedAgentIds(agents, state) {
 
 export function formatAgentCheckboxSelection(agents, state) {
   return [
-    '检测到多个可接入的 Agent：',
+    'Multiple supported Agents were detected:',
     ...agents.map((agent, index) => {
       const pointer = index === state.activeIndex ? '❯' : ' ';
       const checkbox = state.selected[index] ? '[x]' : '[ ]';
       const status = integrationStatusLabel(agent.integrationStatus);
       return `${pointer} ${checkbox} ${agent.label}${status ? `  ${status}` : ''}`;
     }),
-    '↑/↓ 移动 · 空格切换 · A 全选/清空 · 回车确认'
+    '↑/↓ Move · Space Toggle · A Select/Clear all · Enter Confirm'
   ].join('\n');
 }
 
 function integrationStatusLabel(status) {
-  if (status === 'connected') return '已接入';
-  if (status === 'update_available') return '需更新';
-  if (status === 'not_connected') return '未接入';
+  if (status === 'connected') return 'connected';
+  if (status === 'update_available') return 'update available';
+  if (status === 'not_connected') return 'not connected';
   return '';
 }
 
@@ -147,7 +147,7 @@ async function promptCheckboxAgentSelection(agents, { input, output }) {
         return;
       }
       if (result.action === 'cancel') {
-        finish(() => reject(new Error('Setup 已取消')));
+        finish(() => reject(new Error('Setup cancelled')));
         return;
       }
       if (result.action === 'update') {
@@ -161,7 +161,7 @@ async function promptCheckboxAgentSelection(agents, { input, output }) {
 
 async function promptTextAgentSelection(agents, { input, output }) {
   const terminal = createInterface({ input, output });
-  output.write('检测到多个可接入的 Agent：\n');
+  output.write('Multiple supported Agents were detected:\n');
   for (const [index, agent] of agents.entries()) {
     output.write(`  ${index + 1}. ${agent.label}\n`);
   }
@@ -169,12 +169,12 @@ async function promptTextAgentSelection(agents, { input, output }) {
   try {
     while (true) {
       const answer = await terminal.question(
-        '选择要接入的 Agent（编号以逗号分隔，回车全选，0 跳过）[全部] '
+        'Select Agents (comma-separated numbers, Enter for all, 0 to skip) [all] '
       );
       try {
         return parseAgentSelection(answer, agents);
       } catch (error) {
-        output.write(`选择无效：${error.message}\n`);
+        output.write(`Invalid selection: ${error.message}\n`);
       }
     }
   } finally {

@@ -74,6 +74,34 @@ def test_structured_episode_accepts_explicit_source_entities():
     assert parsed.entities[0].confirmation_basis.proposed_by.kind == 'agent'
 
 
+def test_entity_search_terms_are_bounded_retrieval_metadata():
+    value = episode()
+    value['entities'][0]['attributes'] = {
+        'searchTerms': ['发布新版本', '推送 GitHub'],
+    }
+
+    parsed = StructuredEpisode.model_validate(value)
+
+    assert parsed.entities[0].attributes['searchTerms'] == [
+        '发布新版本', '推送 GitHub'
+    ]
+
+
+@pytest.mark.parametrize('terms', [
+    '发布新版本',
+    [],
+    [''],
+    ['x' * 257],
+    ['term'] * 33,
+])
+def test_entity_search_terms_reject_malformed_or_unbounded_values(terms):
+    value = episode()
+    value['entities'][0]['attributes'] = {'searchTerms': terms}
+
+    with pytest.raises(ValidationError, match='search terms'):
+        StructuredEpisode.model_validate(value)
+
+
 def test_confirmation_requires_a_non_agent_confirmer_and_timestamp():
     value = episode()
     value['entities'][0] |= {

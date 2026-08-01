@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { setLocale } from '@/i18n'
@@ -38,6 +39,58 @@ describe('SearchableSelect', () => {
     await options[0].trigger('click')
     expect(wrapper.emitted('update:modelValue')).toEqual([['project-b-2026']])
     expect(wrapper.emitted('change')).toEqual([['project-b-2026']])
+    wrapper.unmount()
+  })
+
+  it('closes when the trigger is clicked a second time', async () => {
+    const wrapper = mount(SearchableSelect, {
+      attachTo: document.body,
+      props: {
+        modelValue: 'project-a',
+        label: '个人项目',
+        options: [
+          { value: 'project-a', label: '项目 Alpha' },
+          { value: 'project-b', label: '项目 Beta' },
+        ],
+      },
+    })
+
+    const trigger = wrapper.get('[role="combobox"]')
+    await trigger.trigger('click')
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+
+    await trigger.trigger('click')
+    expect(trigger.attributes('aria-expanded')).toBe('false')
+    wrapper.unmount()
+  })
+
+  it('keeps the panel open when focus moves between controls inside the component', async () => {
+    const wrapper = mount(SearchableSelect, {
+      attachTo: document.body,
+      props: {
+        modelValue: 'project-a',
+        label: '个人项目',
+        options: [
+          { value: 'project-a', label: '项目 Alpha' },
+          { value: 'project-b', label: '项目 Beta' },
+        ],
+      },
+    })
+
+    const trigger = wrapper.get('[role="combobox"]')
+    await trigger.trigger('click')
+    const option = wrapper.get('[role="option"]')
+    const outside = document.createElement('button')
+    document.body.append(outside)
+    outside.focus()
+    option.element.dispatchEvent(new FocusEvent('focusout', {
+      bubbles: true,
+      relatedTarget: trigger.element,
+    }))
+    await nextTick()
+
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+    outside.remove()
     wrapper.unmount()
   })
 

@@ -21,6 +21,13 @@ const sourceUri = {
   pattern: '^[Hh][Tt][Tt][Pp][Ss]?://\\S+$'
 };
 const attributes = { type: 'object', additionalProperties: true };
+const entityAttributes = {
+  type: 'object',
+  properties: {
+    searchTerms: arraySchema(boundedString(256), { minItems: 1, maxItems: 32 })
+  },
+  additionalProperties: true
+};
 const epistemicQuadrant = enumSchema([
   'known_known', 'known_unknown', 'unknown_known', 'unknown_unknown'
 ]);
@@ -48,6 +55,9 @@ const confirmationBasis = objectSchema({
   agentPolicyVersion: nullableStringSchema()
 }, ['existenceReason', 'quadrantReason', 'proposedBy']);
 const knowledgeItemKind = enumSchema(['entity', 'relationship']);
+const knowledgeReviewScope = enumSchema([
+  'all', 'preferences_global', 'preferences_project', 'projects_all', 'project'
+]);
 const humanChangeStatus = enumSchema([
   'all', 'human_changed', 'unseen', 'viewed', 'reviewed'
 ]);
@@ -84,7 +94,7 @@ const entity = objectSchema({
   type: { ...boundedString(64), pattern: '^[A-Za-z][A-Za-z0-9_]*$' },
   summary: boundedString(4096),
   ...epistemicFields,
-  attributes
+  attributes: entityAttributes
 }, [
   'key', 'name', 'type', 'originQuadrant',
   'confirmationStatus', 'confirmationBasis'
@@ -202,10 +212,11 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'begin_task_context',
     title: 'LIFECYCLE · Begin a Fuli-aware task',
-    description: 'Lifecycle entry used by supported Agent hooks before the model processes a user prompt. It resolves the exact local project from projectPath, loads effective collaboration preferences, and returns an opaque taskContextToken. It never stores projectPath. Claude Code setup installs this as a deterministic UserPromptSubmit hook; manual Agent calls are a fallback.',
+    description: 'Lifecycle entry used by supported Agent hooks before the model processes a user prompt. It resolves the exact local project from projectPath, loads effective collaboration preferences, and uses taskPrompt transiently for bounded automatic recall when the request signals a stable prior fact, runbook, URL, decision, release, deployment, or authentication method. It never stores or returns projectPath or taskPrompt. Inspect task_knowledge_recall before asking the user to repeat stable context. Returns an opaque taskContextToken. Claude Code setup installs this as a deterministic UserPromptSubmit hook; manual Agent calls are a fallback.',
     inputSchema: objectSchema({
       sessionId: id,
-      projectPath: boundedString(4096)
+      projectPath: boundedString(4096),
+      taskPrompt: boundedString(8192)
     }, ['sessionId', 'projectPath'])
   },
   {
@@ -228,9 +239,10 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'get_collaboration_preferences',
     title: 'READ FIRST · Load task collaboration preferences',
-    description: 'Fallback for Agents or tasks without begin_task_context hook context. When no hook context was supplied, call this exact tool name at the start of every user task before any other tool or answer; never substitute a project action tool. Do not call it redundantly when the entry hook already supplied preferences. Pass projectPath as the current working directory; Fuli uses it transiently, never stores or returns it, and layers preferences only for one exact registered local project match. Returns effective_preferences plus deferred_conflicts intentionally queued for AI. Apply effective_preferences before answering or constructing tool arguments. Human-confirmed preferences outrank explicitly marked agent-confirmed preferences. If the current task would use a deferred conflict, call resolve_deferred_preference_conflict before applying either side; ignore unrelated deferred conflicts. For write tools, enforce preferences in the actual payload; mentioning them only in the final answer is not compliance. Personal-global preferences always apply; other conflicted, pending, invalid, ambiguous-project, and unrelated-project items never auto-apply. Automatic injection does not count as usage evidence. personalProjectId remains an explicit compatibility override.',
+    description: 'Fallback for Agents or tasks without begin_task_context hook context. When no hook context was supplied, call this exact tool name at the start of every user task before any other tool or answer; never substitute a project action tool. Do not call it redundantly when the entry hook already supplied preferences. Pass projectPath as the current working directory and taskPrompt as the current user request. Fuli uses both transiently, never stores or returns them, resolves one exact registered local project, and performs bounded automatic recall only when the request signals stable prior context. Inspect task_knowledge_recall before asking the user to repeat a project fact or method. On a miss, search_current_project_knowledge with one to four focused action, artifact, target-system, or identifier queries; never use the full conversational request as the only query. Apply effective_preferences before answering or constructing tool arguments. Resolve only relevant deferred_conflicts first. For write tools, enforce preferences in the actual payload; the final answer is not compliance. Personal-global preferences always apply; conflicted, pending, invalid, ambiguous-project, and unrelated-project items never auto-apply. Automatic injection does not count as usage evidence. personalProjectId remains an explicit compatibility override.',
     inputSchema: objectSchema({
       projectPath: boundedString(4096),
+      taskPrompt: boundedString(8192),
       personalProjectId: nullableStringSchema(),
       limit: integerSchema({ minimum: 1, maximum: 200 })
     }, ['projectPath'])
@@ -322,6 +334,22 @@ export const GRAPH_TOOL_DEFINITIONS = [
       includeHistorical: booleanSchema(),
       includePending: booleanSchema()
     }, ['personalSpaceId', 'query'])
+  },
+  {
+    name: 'search_connected_knowledge',
+    title: 'READ · Search personal, public, and third-party knowledge',
+    description: 'Search the exact personal project, explicitly selected subscribed public projects, and live read-only third-party bindings in one request. Use all_local_confirmed only after explicit user confirmation. Results remain separated by source and preserve provenance; public-space integration is Beta. The response includes the project conflict policy. Under ask_human, surface a material conflict in the Agent conversation and ask the user before selecting durable truth. Under agent_decide, the Agent may choose for the current response only, but must explain its basis and sources. This tool never rewrites, confirms, invalidates, or publishes underlying knowledge.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      personalProjectId: id,
+      query: shortText,
+      contextPersonalProjectIds: arraySchema(id, { maxItems: 15 }),
+      personalProjectScope: enumSchema(['bounded', 'all_local_confirmed']),
+      projectIds: arraySchema(id, { maxItems: 32 }),
+      limit: integerSchema({ minimum: 1, maximum: 100 }),
+      includeHistorical: booleanSchema(),
+      includePending: booleanSchema()
+    }, ['personalSpaceId', 'personalProjectId', 'query'])
   },
   {
     name: 'record_knowledge_usage',
@@ -462,6 +490,53 @@ export const GRAPH_TOOL_DEFINITIONS = [
     name: 'list_personal_projects',
     description: 'List local personal project profiles and their current evidence-backed coverage summaries.',
     inputSchema: objectSchema({ personalSpaceId: id })
+  },
+  {
+    name: 'start_knowledge_review',
+    title: 'REVIEW · Start or resume personal knowledge review',
+    description: 'Start or resume the exact selected /flreview scope. A first review has no watermark and scans all in-scope history. A later review uses only the last completed run as its watermark; paused runs never advance it. Project scopes accept only local personal project IDs.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      scope: knowledgeReviewScope,
+      personalProjectId: nullableStringSchema()
+    }, ['personalSpaceId', 'scope'])
+  },
+  {
+    name: 'list_knowledge_review_candidates',
+    title: 'REVIEW · List ranked personal knowledge candidates',
+    description: 'List one bounded page for an active or paused review. Provider policy ranks new/changed knowledge, conflicts or attention, low-weight knowledge, then repeated cross-session patterns. Already decided items stay out of the current run. The page limit is not a total-question cap.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      reviewId: id,
+      limit: integerSchema({ minimum: 1, maximum: 50 })
+    }, ['personalSpaceId', 'reviewId'])
+  },
+  {
+    name: 'record_knowledge_review_progress',
+    title: 'WRITE · Record one review outcome',
+    description: 'Record one user-authorized candidate outcome after any required knowledge mutation succeeds. confirmed keeps the item, updated/invalidated follow successful writes, skipped suppresses it only in this run, and deferred intentionally returns it in the next run.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      reviewId: id,
+      candidateKey: {
+        ...boundedString(520),
+        pattern: '^(entity|relationship):.+'
+      },
+      outcome: enumSchema([
+        'confirmed', 'updated', 'invalidated', 'skipped', 'deferred'
+      ]),
+      note: nullableStringSchema()
+    }, ['personalSpaceId', 'reviewId', 'candidateKey', 'outcome'])
+  },
+  {
+    name: 'finish_knowledge_review',
+    title: 'WRITE · Pause or complete knowledge review',
+    description: 'Pause a review without moving its watermark, or complete it and establish the next run watermark. Use completed only when the selected scope is exhausted or the user explicitly finishes it.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      reviewId: id,
+      disposition: enumSchema(['paused', 'completed'])
+    }, ['personalSpaceId', 'reviewId', 'disposition'])
   },
   {
     name: 'revise_personal_knowledge',

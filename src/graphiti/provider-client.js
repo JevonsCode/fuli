@@ -118,6 +118,26 @@ export class GraphitiProviderClient {
   commit(input) {
     return this.#request('/v1/knowledge/commits', { method: 'POST', body: input });
   }
+  startKnowledgeReview(input) {
+    return this.#request('/v1/knowledge/reviews/start', {
+      method: 'POST', body: input
+    });
+  }
+  listKnowledgeReviewCandidates(input) {
+    return this.#request('/v1/knowledge/reviews/candidates', {
+      method: 'POST', body: input
+    });
+  }
+  recordKnowledgeReviewProgress(input) {
+    return this.#request('/v1/knowledge/reviews/progress', {
+      method: 'POST', body: input
+    });
+  }
+  finishKnowledgeReview(input) {
+    return this.#request('/v1/knowledge/reviews/finish', {
+      method: 'POST', body: input
+    });
+  }
   reviseKnowledgeItem(itemId, input) {
     return this.#request(`/v1/knowledge/items/${encodeURIComponent(itemId)}`, {
       method: 'PATCH', body: input
@@ -240,9 +260,10 @@ export class GraphitiProviderClient {
     if (personalProjectId) query.set('personal_project_id', personalProjectId);
     return this.#request(`/v1/collaboration-preferences?${query}`);
   }
-  graph(spaceId, limit = 500, personalProjectId = null) {
+  graph(spaceId, limit = 500, personalProjectId = null, offset = null) {
     const query = new URLSearchParams({ limit: String(limit) });
     if (personalProjectId) query.set('personal_project_id', personalProjectId);
+    if (offset !== null) query.set('offset', String(offset));
     return this.#request(`/v1/spaces/${encodeURIComponent(spaceId)}/graph?${query}`);
   }
 

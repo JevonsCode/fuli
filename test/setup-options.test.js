@@ -10,8 +10,8 @@ import {
 test('setup options have simple defaults', () => {
   assert.deepEqual(parseSetupOptions([]), {
     dataDir: null,
-    personalSpaceName: '我',
-    port: 2727,
+    personalSpaceName: 'Personal',
+    port: null,
     yes: false,
     codexOnly: false,
     skipAgents: false,
@@ -65,8 +65,8 @@ test('update accepts setup options and reports update-specific option errors', (
     parseUpdateOptions(['--yes', '--data-dir', 'D:/Fuli', '--no-start']),
     {
       dataDir: 'D:/Fuli',
-      personalSpaceName: '我',
-      port: 2727,
+      personalSpaceName: 'Personal',
+      port: null,
       yes: true,
       codexOnly: false,
       skipAgents: false,

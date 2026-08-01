@@ -9,7 +9,8 @@ const PLAN = Object.freeze({
     dataDir: 'C:/Fuli',
     backupDir: 'C:/Fuli/backups/agents',
     sessionSkillPath: 'C:/Package/skills/capturing-session-knowledge',
-    projectSkillPath: 'C:/Package/skills/grilling-project'
+    projectSkillPath: 'C:/Package/skills/grilling-project',
+    reviewSkillPath: 'C:/Package/skills/flreview'
   },
   agents: [{
     id: 'codex',
@@ -17,7 +18,8 @@ const PLAN = Object.freeze({
     available: true,
     configPath: 'C:/Codex/config.toml',
     skillPath: 'C:/Skills/capturing-session-knowledge',
-    projectSkillPath: 'C:/Skills/grilling-project'
+    projectSkillPath: 'C:/Skills/grilling-project',
+    reviewSkillPath: 'C:/Skills/flreview'
   }]
 });
 
@@ -32,7 +34,8 @@ test('uninstall planning is side-effect free and finds installed integration art
         available: false,
         configPath: 'C:/Cursor/mcp.json',
         skillPath: 'C:/Cursor/skills/session',
-        projectSkillPath: 'C:/Cursor/skills/project'
+        projectSkillPath: 'C:/Cursor/skills/project',
+        reviewSkillPath: 'C:/Cursor/skills/flreview'
       }
     ],
     fileExists: (path) => path === 'C:/Cursor/mcp.json'
@@ -65,7 +68,8 @@ test('uninstall disconnects integrations, removes only bundled Skills, and prese
     'backup:codex',
     'disconnect:codex',
     'skill:capturing-session-knowledge',
-    'skill:grilling-project'
+    'skill:grilling-project',
+    'skill:flreview'
   ]);
 });
 
@@ -99,6 +103,7 @@ test('fl uninstall previews preserved data and --yes skips confirmation', async 
 
   assert.equal(confirmations, 0);
   assert.equal(result.status, 'ready');
-  assert.match(output[0], /数据：保留 C:\/Fuli/);
+  assert.match(output[0], /Data: preserve C:\/Fuli/);
   assert.match(output.at(-1), /npm uninstall --global fuli-context/);
+  assert.doesNotMatch(output.join('\n'), /[\p{Script=Han}]/u);
 });

@@ -5,6 +5,7 @@ import App from './App.vue'
 import { i18n } from './i18n'
 import { router } from './router'
 import '../styles.css'
+import './styles/connections.css'
 import './styles/knowledge-graph.css'
 import './styles/vue.css'
 

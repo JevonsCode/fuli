@@ -125,8 +125,14 @@ test('bundled session Skill uses hook context with an exact preference fallback'
   assert.match(skill, /prompt-only fallback/i);
   assert.match(skill, /before any other tool or answer/i);
   assert.match(skill, /projectPath.*current working directory/is);
+  assert.match(skill, /taskPrompt.*current user request/is);
+  assert.match(skill, /task_knowledge_recall/);
+  assert.match(skill, /one to four focused queries/is);
+  assert.match(skill, /never pass the full conversational request as the sole\s+query/i);
+  assert.match(skill, /attributes\.searchTerms/);
+  assert.match(skill, /retrieval metadata, not new factual claims/i);
   assert.match(skill, /never stores or returns/i);
-  assert.match(skill, /Do not infer or guess `personalProjectId`/i);
+  assert.match(skill, /Do not infer\s+or guess `personalProjectId`/i);
   assert.match(skill, /write tools?.*actual payload/is);
   assert.match(skill, /final answer.*not compliance/is);
   assert.match(skill, /search_current_project_knowledge/);

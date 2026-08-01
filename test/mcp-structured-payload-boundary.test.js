@@ -5,7 +5,7 @@ import { successToolResult } from '../src/mcp/tool-result.js';
 
 test('successful tool results bound structured JSON without splitting values', () => {
   const result = successToolResult({
-    dbPath: 'T:\\private\\context.db',
+    privatePath: 'T:\\private\\runtime.json',
     store: { secret: true },
     snapshot: { facts: ['private'] },
     summary: 'kept',
@@ -23,7 +23,7 @@ test('successful tool results bound structured JSON without splitting values', (
   assert.equal(result.structuredContent.facts[0].id, 'fact-1');
   assert.equal(result.structuredContent.truncated, true);
   assert.equal(hasIsolatedSurrogate(result.structuredContent.facts[0].value), false);
-  assert.equal(json.includes('context.db'), false);
+  assert.equal(json.includes('runtime.json'), false);
   assert.equal(json.includes('private'), false);
 });
 

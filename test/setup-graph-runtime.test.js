@@ -13,8 +13,7 @@ const PATHS = Object.freeze({
   graphComposePath: 'C:/Package/compose.graphiti.yml',
   graphRuntimeConfigPath: 'C:/Fuli/graph-runtime.json',
   graphRuntimeStatePath: 'C:/Fuli/graph-runtime-state.json',
-  dbPath: 'C:/Fuli/context.db',
-  statePath: 'C:/Fuli/runtime.json'
+  runtimeSettingsPath: 'C:/Fuli/runtime-settings.json'
 });
 const CONTAINER_RUNTIME = Object.freeze({
   status: 'ready',
@@ -70,7 +69,7 @@ test('LAN setup fails before runtime side effects when no private IPv4 address e
         sideEffects.push('providers');
       }
     }),
-    /局域网地址/
+    /LAN address/
   );
   assert.deepEqual(sideEffects, []);
 });
@@ -78,7 +77,6 @@ test('LAN setup fails before runtime side effects when no private IPv4 address e
 test('personal-only setup starts and bootstraps only the local Provider', async () => {
   const started = [];
   const requestedUrls = [];
-  const removedFiles = [];
   let writtenConfig = null;
 
   const result = await ensureGraphRuntime({
@@ -88,13 +86,7 @@ test('personal-only setup starts and bootstraps only the local Provider', async 
     port: 2727,
     noStart: true
   }, dependencies({
-    fileExists(path) {
-      return path === PATHS.graphEnvPath ||
-        [PATHS.dbPath, `${PATHS.dbPath}-wal`, `${PATHS.dbPath}-shm`].includes(path);
-    },
-    unlink(path) {
-      removedFiles.push(path);
-    },
+    fileExists(path) { return path === PATHS.graphEnvPath; },
     startProviders(paths, envPath, options) {
       started.push({ paths, envPath, options });
     },
@@ -136,7 +128,57 @@ test('personal-only setup starts and bootstraps only the local Provider', async 
     workspaces: []
   });
   assert.deepEqual(result, { status: 'initialized', url: null, pid: null });
-  assert.deepEqual(removedFiles, [], 'setup must preserve every existing local database file');
+});
+
+test('setup applies every configured service port to Provider URLs and Compose environment', async () => {
+  const runtimeSettings = {
+    version: 1,
+    ports: {
+      console: 3030,
+      personalProvider: 18787,
+      personalNeo4jHttp: 17474,
+      personalNeo4jBolt: 17687,
+      workspaceProvider: 18788,
+      workspaceNeo4jHttp: 17475,
+      workspaceNeo4jBolt: 17688
+    },
+    lanAccess: false,
+    resourceRefreshSeconds: 10
+  };
+  let environment = '';
+  let savedSettings = null;
+  let writtenConfig = null;
+  await ensureGraphRuntime({
+    paths: PATHS,
+    personalSpaceName: '我',
+    personalOnly: true,
+    runtimeSettings,
+    noStart: true
+  }, dependencies({
+    writeText(_path, value) { environment = value; },
+    writeRuntimeSettings(_path, value) { savedSettings = value; },
+    async fetch(url, options = {}) {
+      if (url === 'http://127.0.0.1:18787/health') return response({ status: 'ready' });
+      if (url.endsWith('/v1/bootstrap')) {
+        return response({ access_token: 'personal-token', principal_id: 'personal-user' });
+      }
+      if (url.endsWith('/v1/spaces') && !options.method) return response([]);
+      if (url.endsWith('/v1/spaces') && options.method === 'POST') {
+        return response({ id: 'personal-space', name: '我', kind: 'personal' });
+      }
+      throw new Error(`Unexpected Provider request: ${url}`);
+    },
+    writeConfig(_path, value) { writtenConfig = value; }
+  }));
+
+  assert.match(environment, /FULI_PERSONAL_NEO4J_HTTP_PORT=17474/);
+  assert.match(environment, /FULI_PERSONAL_NEO4J_BOLT_PORT=17687/);
+  assert.match(environment, /FULI_WORKSPACE_NEO4J_HTTP_PORT=17475/);
+  assert.match(environment, /FULI_WORKSPACE_NEO4J_BOLT_PORT=17688/);
+  assert.match(environment, /FULI_PERSONAL_PROVIDER_PORT=18787/);
+  assert.match(environment, /FULI_WORKSPACE_PROVIDER_PORT=18788/);
+  assert.deepEqual(savedSettings, runtimeSettings);
+  assert.equal(writtenConfig.personal.providerUrl, 'http://127.0.0.1:18787');
 });
 
 test('Docker setup falls back to Rancher Desktop when the default daemon is unavailable', () => {
@@ -198,7 +240,7 @@ test('setup restarts a healthy console when the configured port changes', async 
     port: 2727,
     noStart: false
   }, dependencies({
-    readConfig() { return { version: 1 }; },
+    readConfig: configuredGraph,
     readState() {
       return {
         version: 2,
@@ -250,7 +292,7 @@ test('setup starts an authenticated LAN console and secures its runtime state', 
   }, dependencies({
     discoverLanAddresses: () => ['192.168.31.8'],
     createLanAccessToken: () => 'temporary-access-code',
-    readConfig: () => ({ version: 1 }),
+    readConfig: configuredGraph,
     async fetch(url) {
       if (url.endsWith('/health')) return response({ status: 'ready' });
       throw new Error(`Unexpected Provider request: ${url}`);
@@ -273,7 +315,7 @@ test('setup starts an authenticated LAN console and secures its runtime state', 
   assert.equal(spawnedInput.lanAccessToken, 'temporary-access-code');
   assert.deepEqual(writtenState.lanUrls, ['http://192.168.31.8:2727']);
   assert.equal(Object.hasOwn(writtenState, 'lanAccessToken'), false);
-  assert.deepEqual(secured, [PATHS.graphRuntimeStatePath]);
+  assert.deepEqual(secured, [PATHS.graphEnvPath, PATHS.graphRuntimeStatePath]);
   assert.deepEqual(result, {
     status: 'started',
     url: 'http://127.0.0.1:2727',
@@ -308,7 +350,7 @@ test('repeating LAN start restarts the console and rotates its in-memory access 
   }, dependencies({
     discoverLanAddresses: () => ['192.168.31.8'],
     createLanAccessToken: () => 'rotated-access-code',
-    readConfig: () => ({ version: 1 }),
+    readConfig: configuredGraph,
     readState: () => existing,
     async fetch(url) {
       if (url.endsWith('/health')) return response({ status: 'ready' });
@@ -345,16 +387,29 @@ function dependencies(overrides = {}) {
         'FULI_WORKSPACE_BOOTSTRAP_TOKEN=workspace-bootstrap'
       ].join('\n');
     },
+    writeText() {},
     secureFile() {},
     ensureContainerRuntime: async () => CONTAINER_RUNTIME,
     startProviders() {},
     readConfig() { return null; },
     writeConfig() {},
+    writeRuntimeSettings() {},
     readState() { return null; },
     waitForExit: async () => true,
-    stopLegacyService() {},
-    unlink() {},
     ...overrides
+  };
+}
+
+function configuredGraph() {
+  return {
+    version: 1,
+    personal: {
+      providerUrl: 'http://127.0.0.1:8787',
+      accessToken: 'personal-token',
+      principalId: 'personal-user',
+      spaceId: 'personal-space'
+    },
+    workspaces: []
   };
 }
 

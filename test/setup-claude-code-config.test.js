@@ -68,7 +68,8 @@ test('Claude Code connection keeps unrelated config and installs deterministic t
       tool: 'begin_task_context',
       input: {
         sessionId: '${session_id}',
-        projectPath: '${cwd}'
+        projectPath: '${cwd}',
+        taskPrompt: '${prompt}'
       },
       timeout: 30,
       statusMessage: 'Loading Fuli task context'

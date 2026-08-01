@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from fuli_graph.graph_query import _graph_edge, _graph_node
+from fuli_graph.graph_query import _edge_query, _graph_edge, _graph_node, _node_query
 
 
 def test_graph_record_projection_parses_shared_json_attributes():
@@ -27,6 +27,8 @@ def test_graph_record_projection_parses_shared_json_attributes():
             'id': 'relationship-1',
             'source': 'entity-1',
             'target': 'entity-2',
+            'source_name': 'Hotel Theme',
+            'target_name': 'Campaign',
             'type': 'CONTAINS',
             'fact': 'The project contains a campaign.',
             'attributes_json': '{"weight":2}',
@@ -41,6 +43,8 @@ def test_graph_record_projection_parses_shared_json_attributes():
 
     assert node.attributes == {'projectId': 'hotel-theme'}
     assert edge.attributes == {'weight': 2}
+    assert edge.source_name == 'Hotel Theme'
+    assert edge.target_name == 'Campaign'
     assert node.replaced_by_item_id == 'entity-current'
     assert node.replaced_by_item_kind == 'entity'
     assert node.epistemic_state_explicit is False
@@ -152,3 +156,22 @@ def test_graph_projection_includes_human_change_state_and_permanent_audit_events
     assert node.human_change_status == 'viewed'
     assert node.human_change_version == 2
     assert node.audit_events[0].action == 'agent_view'
+
+
+def test_paginated_graph_queries_page_entities_and_relationships_independently():
+    node_query = _node_query(project_scoped=False, paginated=True)
+    edge_query = _edge_query(project_scoped=False, paginated=True)
+
+    assert 'ORDER BY created_at DESC, id DESC' in node_query
+    assert 'SKIP $offset LIMIT $limit' in node_query
+    assert 'WHERE source.uuid IN $node_ids' not in edge_query
+    assert 'source.name AS source_name' in edge_query
+    assert 'target.name AS target_name' in edge_query
+    assert 'SKIP $offset LIMIT $limit' in edge_query
+
+
+def test_bounded_graph_query_keeps_edges_inside_the_returned_node_set():
+    edge_query = _edge_query(project_scoped=False)
+
+    assert 'WHERE source.uuid IN $node_ids AND target.uuid IN $node_ids' in edge_query
+    assert 'SKIP $offset' not in edge_query

@@ -38,6 +38,38 @@ test('provider client maps controlled provider errors', async () => {
   );
 });
 
+test('provider client maps every persistent knowledge review endpoint', async () => {
+  const calls = [];
+  const client = new GraphitiProviderClient({
+    baseUrl: 'http://127.0.0.1:8787',
+    accessToken: 'local-test-token',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse(200, {});
+    }
+  });
+
+  await client.startKnowledgeReview({ personal_space_id: 'personal-1', scope: 'all' });
+  await client.listKnowledgeReviewCandidates({
+    personal_space_id: 'personal-1', review_id: 'review-1', limit: 3
+  });
+  await client.recordKnowledgeReviewProgress({
+    personal_space_id: 'personal-1', review_id: 'review-1',
+    candidate_key: 'entity:one', outcome: 'skipped'
+  });
+  await client.finishKnowledgeReview({
+    personal_space_id: 'personal-1', review_id: 'review-1', disposition: 'paused'
+  });
+
+  assert.deepEqual(calls.map(({ url }) => new URL(url).pathname), [
+    '/v1/knowledge/reviews/start',
+    '/v1/knowledge/reviews/candidates',
+    '/v1/knowledge/reviews/progress',
+    '/v1/knowledge/reviews/finish'
+  ]);
+  assert.equal(calls.every(({ options }) => options.method === 'POST'), true);
+});
+
 test('provider client reports network failures without exposing credentials', async () => {
   const client = new GraphitiProviderClient({
     baseUrl: 'http://127.0.0.1:8787',

@@ -42,6 +42,15 @@ test('Web server exposes the Graphiti facade and graph console', async () => {
     assert.equal(input.personalProjectId, 'project-a');
     assert.deepEqual(input.contextPersonalProjectIds, ['project-b', 'project-c']);
 
+    await getJson(`${url}/api/graph?spaceId=personal-1&limit=100&offset=0`);
+    assert.deepEqual(calls.find(([name]) => name === 'graph')[1], {
+      spaceId: 'personal-1',
+      providerUrl: null,
+      personalProjectId: null,
+      limit: 100,
+      offset: 0
+    });
+
     const unsubscribe = await fetch(
       `${url}/api/subscriptions/project-1?` + new URLSearchParams({
         personalSpaceId: 'personal-1',
@@ -146,7 +155,10 @@ function graphApp(calls) {
       calls.push(['search', input]);
       return { query: input.query, facts: [] };
     },
-    getKnowledgeGraph: async () => ({ nodes: [], edges: [], truncated: false }),
+    getKnowledgeGraph: async (input) => {
+      calls.push(['graph', input]);
+      return { nodes: [], edges: [], truncated: false };
+    },
     captureSessionKnowledge: async () => ({}),
     confirmKnowledgeBatch: async (input) => {
       calls.push(['batch-confirm', input]);

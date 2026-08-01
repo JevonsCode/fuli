@@ -2,9 +2,14 @@ import { createHash } from 'node:crypto';
 
 import { onlineSourceUri } from './source-uri.js';
 
-export async function beginTaskContext(application, { sessionId, projectPath }) {
+export async function beginTaskContext(application, {
+  sessionId,
+  projectPath,
+  taskPrompt = null
+}) {
   const preferences = await application.getCollaborationPreferences({
     projectPath,
+    taskPrompt,
     agentInvocation: true,
     agentToolName: 'begin_task_context'
   });
@@ -19,7 +24,7 @@ export async function beginTaskContext(application, { sessionId, projectPath }) 
     previous_checkpoint_missing: task.previousCheckpointMissing,
     ...preferences,
     task_guidance: {
-      retrieval: 'Use search_current_project_knowledge for project work; it resolves the current project and inherited parent knowledge without copying IDs.',
+      retrieval: 'Inspect task_knowledge_recall before asking for a stable project fact or method again. On a miss, use search_current_project_knowledge with focused action, artifact, target-system, or identifier queries; never use the full conversational request as the only query.',
       checkpoint: 'Before finishing, call checkpoint_task_knowledge with capture_candidates or retain_nothing.'
     }
   };

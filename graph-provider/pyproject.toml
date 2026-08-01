@@ -1,6 +1,6 @@
 [project]
 name = "fuli-graph-provider"
-version = "0.5.0"
+version = "0.7.2"
 description = "Graphiti-backed personal and shared project provider for Fuli."
 requires-python = ">=3.12"
 dependencies = [

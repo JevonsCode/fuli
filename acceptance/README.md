@@ -16,6 +16,8 @@ CLI 分发更新和真实智能体调用流程。验收连接真实的 Graphiti/
    - 描述偏好作用域、项目继承范围和知识确认状态如何流转。
 4. [可执行验收脚本](./knowledge-live.js)
    - 把文档中的 `KAC-01` 至 `KAC-09` 固化成可重复运行的真实数据库验收。
+5. [外部知识库只读接入架构](../docs/external-knowledge-architecture.md)
+   - 说明 MCP、Notion、飞书、自定义连接器、项目绑定、冲突策略和公共空间 Beta / TODO 边界。
 
 以上文档的说明文字均使用中文。代码中仍会出现英文内容，但只限于以下不能随意翻译的
 技术标识：
@@ -49,13 +51,31 @@ node --test test/mcp-integration.test.js
 这个测试防止出现“图数据库已经命中，但智能体只能看到来源标题”的回归。模型可见结果必须
 保留知识正文摘要、确认状态和判断分数，同时保持明确的 32 KiB 上限。
 
+## 运行外部知识库验收
+
+默认自动化使用明确标记的 fixture / mock 响应，不把样例数据当作运行事实：
+
+```sh
+node --test test/external-knowledge-*.test.js test/server-external-knowledge-api.test.js
+```
+
+联网验收会浅克隆 MCP 和 Notion 的两个公开官方文档仓库，在系统临时目录中执行自定义只读
+连接器同步与检索，然后无论成功或失败都删除下载内容：
+
+```sh
+npm run test:external-knowledge:live
+```
+
+联网结果依赖 GitHub 可用性，不放入默认持续集成。通过条件不固定文档数量，但必须从两个
+来源都命中，并确认映射保持 `observed`、`pending`、`restricted`。
+
 ## 运行本轮新增的分发与界面边界验收
 
 ```sh
 node --test \
   test/acceptance-docs.test.js \
   test/fuli-source-marker.test.js \
-  test/server-context-api.test.js \
+  test/server-request-boundary.test.js \
   test/update-command.test.js
 npm run test:package
 ```

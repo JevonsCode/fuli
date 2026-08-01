@@ -9,6 +9,7 @@ import {
 } from './claude-code-config.js';
 import { connectCursor, disconnectCursor } from './cursor-config.js';
 import { connectCodex, disconnectCodex } from './codex-config.js';
+import { adaptAgentForReviewSkill } from './review-skill-adapters.js';
 
 export function discoverAgents({
   platform = process.platform,
@@ -52,7 +53,7 @@ export function discoverAgents({
       projectSkillPath: pathApi.join(homeDir, '.cursor', 'skills', projectSkillName),
       available: Boolean(commandExists('cursor'))
     }
-  ];
+  ].map((agent) => adaptAgentForReviewSkill(agent, { homeDir, pathApi }));
 }
 
 export function buildAgentCommands(agent, context) {

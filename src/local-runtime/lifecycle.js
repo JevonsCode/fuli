@@ -4,16 +4,22 @@ import { existsSync, unlinkSync } from 'node:fs';
 import {
   checkLocalConsoleHealth,
   ensureGraphRuntime,
-  MANAGED_PERSONAL_PROVIDER_URL,
-  MANAGED_WORKSPACE_PROVIDER_URL,
   stopGraphProviders
 } from '../setup/graph-runtime.js';
 import { readJsonFile } from '../storage/json-file.js';
+import {
+  DEFAULT_RUNTIME_SETTINGS,
+  managedProviderUrls
+} from '../system/runtime-settings.js';
 
 export async function startLocalRuntime(input, dependencies = {}) {
   const deps = lifecycleDependencies(dependencies);
+  const runtimeSettings = input.runtimeSettings ?? DEFAULT_RUNTIME_SETTINGS;
   const config = deps.readConfig(input.paths.graphRuntimeConfigPath);
-  const managesDevelopmentWorkspace = hasManagedDevelopmentWorkspace(config);
+  const managesDevelopmentWorkspace = hasManagedDevelopmentWorkspace(
+    config,
+    runtimeSettings
+  );
   const buildProviders = input.rebuild === true || !config ||
     !deps.fileExists(input.paths.graphEnvPath);
   const runtime = await deps.ensureRuntime({
@@ -21,6 +27,7 @@ export async function startLocalRuntime(input, dependencies = {}) {
     personalSpaceName: input.personalSpaceName,
     port: input.port,
     lan: input.lan === true,
+    runtimeSettings,
     personalOnly: !managesDevelopmentWorkspace,
     buildProviders,
     noStart: false,
@@ -37,12 +44,13 @@ export async function startLocalRuntime(input, dependencies = {}) {
 
 export async function stopLocalRuntime(input, dependencies = {}) {
   const deps = lifecycleDependencies(dependencies);
+  const runtimeSettings = input.runtimeSettings ?? DEFAULT_RUNTIME_SETTINGS;
   const config = deps.readConfig(input.paths.graphRuntimeConfigPath);
   const state = deps.readState(input.paths.graphRuntimeStatePath);
   const consoleResult = await stopRecordedConsole(state, input.paths, deps);
   const managesDevelopmentWorkspace = state?.managedProviders?.includes(
     'development-workspace'
-  ) || hasManagedDevelopmentWorkspace(config);
+  ) || hasManagedDevelopmentWorkspace(config, runtimeSettings);
 
   let providers = 'not_initialized';
   if (deps.fileExists(input.paths.graphEnvPath)) {
@@ -64,7 +72,7 @@ export async function stopLocalRuntime(input, dependencies = {}) {
 export async function restartLocalRuntime(input, dependencies = {}) {
   const stopped = await stopLocalRuntime(input, dependencies);
   if (stopped.status === 'partial') {
-    throw new Error('无法安全确认原本地界面的进程身份，已拒绝重启。');
+    throw new Error('Could not safely verify the existing local UI process; restart was refused.');
   }
   const started = await startLocalRuntime(input, dependencies);
   return { stopped, ...started, status: 'restarted' };
@@ -72,6 +80,7 @@ export async function restartLocalRuntime(input, dependencies = {}) {
 
 export async function inspectLocalRuntime(input, dependencies = {}) {
   const deps = lifecycleDependencies(dependencies);
+  const runtimeSettings = input.runtimeSettings ?? DEFAULT_RUNTIME_SETTINGS;
   const config = deps.readConfig(input.paths.graphRuntimeConfigPath);
   const state = deps.readState(input.paths.graphRuntimeStatePath);
   const stateLooksOwned = isRuntimeState(state) && isLoopbackConsoleUrl(state.url);
@@ -81,13 +90,14 @@ export async function inspectLocalRuntime(input, dependencies = {}) {
     state.pid,
     state.version
   );
-  const personalUrl = config?.personal?.providerUrl ?? MANAGED_PERSONAL_PROVIDER_URL;
+  const managedUrls = managedProviderUrls(runtimeSettings);
+  const personalUrl = config?.personal?.providerUrl ?? managedUrls.personal;
   const personal = config
     ? await deps.providerHealth(personalUrl)
     : { url: personalUrl, status: 'not_configured' };
   const workspaces = await Promise.all((config?.workspaces ?? []).map(async (workspace) => ({
     ...(await deps.providerHealth(workspace.providerUrl)),
-    managedDevelopment: isManagedDevelopmentUrl(workspace.providerUrl)
+    managedDevelopment: isManagedDevelopmentUrl(workspace, runtimeSettings)
   })));
 
   let status = 'stopped';
@@ -120,7 +130,7 @@ export async function openLocalConsole(input, dependencies = {}) {
   if (!isRuntimeState(state) || !isLoopbackConsoleUrl(state.url) ||
       !deps.isProcessAlive(state.pid) ||
       !await deps.consoleHealth(state.url, state.pid, state.version)) {
-    throw new Error('本地界面尚未运行，请先执行 fl start。');
+    throw new Error('The local UI is not running. Run fl start first.');
   }
   await deps.openExternal(state.url);
   return { status: 'opened', url: state.url };
@@ -201,17 +211,18 @@ export function externalOpenInvocation(url, platform = process.platform) {
   return { command: 'xdg-open', args: [url] };
 }
 
-function hasManagedDevelopmentWorkspace(config) {
-  return (config?.workspaces ?? []).some(({ providerUrl }) =>
-    isManagedDevelopmentUrl(providerUrl));
+function hasManagedDevelopmentWorkspace(config, runtimeSettings) {
+  return (config?.workspaces ?? []).some((workspace) =>
+    isManagedDevelopmentUrl(workspace, runtimeSettings));
 }
 
-function isManagedDevelopmentUrl(value) {
+function isManagedDevelopmentUrl(workspace, runtimeSettings) {
+  if (workspace?.managedDevelopment === true) return true;
   try {
-    const url = new URL(value);
+    const url = new URL(workspace?.providerUrl);
     return url.protocol === 'http:' &&
       ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname) &&
-      url.port === new URL(MANAGED_WORKSPACE_PROVIDER_URL).port;
+      [8788, runtimeSettings.ports.workspaceProvider].includes(Number(url.port));
   } catch {
     return false;
   }
@@ -237,7 +248,7 @@ function publicProviderStatus(workspaces) {
 }
 
 function isRuntimeState(state) {
-  return (state?.version === 2 || state?.version === 3) &&
+  return (state?.version === 2 || state?.version === 3 || state?.version === 4) &&
     Number.isInteger(state.pid) && typeof state.url === 'string';
 }
 

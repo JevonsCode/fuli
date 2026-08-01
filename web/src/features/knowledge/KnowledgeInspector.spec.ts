@@ -69,6 +69,29 @@ describe('KnowledgeInspector', () => {
     expect(wrapper.emitted('openDirectory')).toEqual([[item]])
   })
 
+  it('shows projected external sources as read-only project material', () => {
+    const node = {
+      id: 'external-knowledge-source:binding-1',
+      name: 'LLM Wiki',
+      type: 'ExternalKnowledgeSource',
+      summary: 'Read-only MCP knowledge source.',
+    }
+    const wrapper = mount(KnowledgeInspector, {
+      props: {
+        item: knowledgeItemFromNode(node),
+        graph: { nodes: [node], edges: [] },
+        editable: true,
+        currentProjectId: 'project-1',
+        canManageProject: true,
+        mode: 'graph',
+      },
+    })
+
+    const actions = wrapper.findAll('.inspector-actions button').map((button) => button.text())
+    expect(actions).not.toContain('编辑项目资料')
+    expect(actions).toContain('在内容目录中定位')
+  })
+
   it('presents each related edge as a title followed by full-width content', () => {
     const node = {
       id: 'project-1',

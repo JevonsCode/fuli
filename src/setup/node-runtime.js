@@ -4,14 +4,14 @@ export function assertSupportedNodeVersion(version = process.versions.node) {
   const parsed = parseNodeVersion(version);
   if (compareVersions(parsed, MINIMUM_NODE_VERSION) >= 0) return;
   throw new Error(
-    `fl setup 需要 Node.js 24.12 或更高版本；当前为 ${version}。` +
-    `请升级 Node.js 后重新运行 fl setup。`
+    `fl setup requires Node.js 24.12 or later; the current version is ${version}. ` +
+    'Upgrade Node.js, then run fl setup again.'
   );
 }
 
 function parseNodeVersion(value) {
   const match = String(value).match(/^v?(\d+)\.(\d+)\.(\d+)/);
-  if (!match) throw new Error(`无法识别 Node.js 版本：${value}`);
+  if (!match) throw new Error(`Could not parse Node.js version: ${value}`);
   return match.slice(1).map(Number);
 }
 

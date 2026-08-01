@@ -115,7 +115,8 @@ function withManagedHooks(settings) {
     ...(hooks.UserPromptSubmit ?? []),
     managedHookGroup('begin_task_context', {
       sessionId: '${session_id}',
-      projectPath: '${cwd}'
+      projectPath: '${cwd}',
+      taskPrompt: '${prompt}'
     }, 'Loading Fuli task context')
   ];
   hooks.Stop = [

@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
   chmodSync,
@@ -21,42 +21,55 @@ import {
   lanConsoleUrls
 } from '../server/lan-access.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import {
+  DEFAULT_RUNTIME_SETTINGS,
+  managedProviderUrls,
+  normalizeRuntimeSettings,
+  runtimeSettingsWithOverrides,
+  writeRuntimeSettings
+} from '../system/runtime-settings.js';
 
 export {
   dockerInfoIndicatesDaemon,
   selectDockerEnvironment
 } from './container-runtime.js';
 
-const PERSONAL_PROVIDER_URL = 'http://127.0.0.1:8787';
-const WORKSPACE_PROVIDER_URL = 'http://127.0.0.1:8788';
-
-export const MANAGED_PERSONAL_PROVIDER_URL = PERSONAL_PROVIDER_URL;
-export const MANAGED_WORKSPACE_PROVIDER_URL = WORKSPACE_PROVIDER_URL;
-
 export async function ensureGraphRuntime(input, dependencies = {}) {
   const deps = graphDependencies(dependencies);
-  const lan = input.lan === true;
+  const runtimeSettings = normalizeRuntimeSettings(input.runtimeSettings ??
+    runtimeSettingsWithOverrides(DEFAULT_RUNTIME_SETTINGS, {
+      consolePort: input.port,
+      lanAccess: input.lan === true
+    }));
+  const urls = managedProviderUrls(runtimeSettings);
+  const lan = runtimeSettings.lanAccess;
   const lanAddresses = lan ? deps.discoverLanAddresses() : [];
   if (lan && lanAddresses.length === 0) {
-    throw new Error('未发现可用的私有 IPv4 局域网地址，无法启动 LAN 模式。');
+    throw new Error('No private IPv4 LAN address is available, so LAN mode cannot start.');
   }
   const containerRuntime = await deps.ensureContainerRuntime({
     env: input.env ?? process.env,
     onProgress: input.onProgress
   });
   deps.ensureDirectory(input.paths.dataDir);
-  const secrets = ensureProviderSecrets(input.paths.graphEnvPath, deps);
+  const secrets = ensureProviderEnvironment(
+    input.paths.graphEnvPath,
+    runtimeSettings,
+    deps
+  );
+  deps.writeRuntimeSettings(input.paths.runtimeSettingsPath, runtimeSettings);
   deps.startProviders(input.paths, input.paths.graphEnvPath, {
     personalOnly: input.personalOnly === true,
     containerRuntime,
     ...(input.buildProviders === false ? { build: false } : {})
   });
-  await waitForProvider(PERSONAL_PROVIDER_URL, deps.fetch);
-  if (!input.personalOnly) await waitForProvider(WORKSPACE_PROVIDER_URL, deps.fetch);
+  await waitForProvider(urls.personal, deps.fetch);
+  if (!input.personalOnly) await waitForProvider(urls.workspace, deps.fetch);
 
   let config = deps.readConfig(input.paths.graphRuntimeConfigPath);
   if (!config) {
     config = await bootstrapGraph({
+      urls,
       personalSpaceName: input.personalSpaceName,
       secrets,
       personalOnly: input.personalOnly === true,
@@ -64,8 +77,22 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     });
     deps.writeConfig(input.paths.graphRuntimeConfigPath, config);
     deps.secureFile(input.paths.graphRuntimeConfigPath);
+  } else {
+    const synchronized = synchronizeManagedProviderUrls(config, urls, {
+      personalOnly: input.personalOnly === true
+    });
+    if (synchronized.changed) {
+      await reconcileManagedWorkspaceSubscriptions({
+        previousConfig: config,
+        nextConfig: synchronized.config,
+        personalUrl: urls.personal,
+        fetchImpl: deps.fetch
+      });
+      config = synchronized.config;
+      deps.writeConfig(input.paths.graphRuntimeConfigPath, config);
+      deps.secureFile(input.paths.graphRuntimeConfigPath);
+    }
   }
-  stopOwnedLegacyRuntime(input.paths, deps);
 
   if (input.noStart) return { status: 'initialized', url: null, pid: null };
   const existing = deps.readState(input.paths.graphRuntimeStatePath);
@@ -73,7 +100,7 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     const healthy = await deps.webHealth(existing.url, existing.pid, existing.version);
     if (
       healthy &&
-      existing.port === input.port &&
+      existing.port === runtimeSettings.ports.console &&
       exposureMatches(existing, { lan, lanAddresses })
     ) {
       return runtimeResult('running', existing);
@@ -88,25 +115,26 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   const child = deps.spawnWebRuntime({
     paths: input.paths,
     nodePath: process.execPath,
-    port: input.port,
+    port: runtimeSettings.ports.console,
     lan,
     lanAccessToken,
     env: input.env ?? process.env
   });
-  const url = `http://127.0.0.1:${input.port}`;
+  const url = `http://127.0.0.1:${runtimeSettings.ports.console}`;
   if (!Number.isInteger(child.pid) || !await waitForWeb(url, child.pid, deps)) {
     if (Number.isInteger(child.pid)) deps.stopProcess(child.pid);
     throw new Error('Fuli Graphiti console could not start');
   }
   const state = {
-    version: 3,
+    version: 4,
     pid: child.pid,
     url,
-    port: input.port,
+    port: runtimeSettings.ports.console,
+    runtimeSettings,
     ...(lan
       ? {
           lan: true,
-          lanUrls: lanConsoleUrls(lanAddresses, input.port)
+          lanUrls: lanConsoleUrls(lanAddresses, runtimeSettings.ports.console)
         }
       : {}),
     managedProviders: input.personalOnly
@@ -119,28 +147,35 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   return runtimeResult('started', state, lanAccessToken);
 }
 
-function ensureProviderSecrets(path, deps) {
-  if (deps.fileExists(path)) return parseEnv(deps.readText(path));
+function ensureProviderEnvironment(path, settings, deps) {
+  const previous = deps.fileExists(path) ? parseEnv(deps.readText(path)) : {};
   const values = {
-    FULI_PERSONAL_NEO4J_PASSWORD: secret(),
-    FULI_WORKSPACE_NEO4J_PASSWORD: secret(),
-    FULI_PERSONAL_BOOTSTRAP_TOKEN: secret(),
-    FULI_WORKSPACE_BOOTSTRAP_TOKEN: secret()
+    ...previous,
+    FULI_PERSONAL_NEO4J_PASSWORD: previous.FULI_PERSONAL_NEO4J_PASSWORD ?? secret(),
+    FULI_WORKSPACE_NEO4J_PASSWORD: previous.FULI_WORKSPACE_NEO4J_PASSWORD ?? secret(),
+    FULI_PERSONAL_BOOTSTRAP_TOKEN: previous.FULI_PERSONAL_BOOTSTRAP_TOKEN ?? secret(),
+    FULI_WORKSPACE_BOOTSTRAP_TOKEN: previous.FULI_WORKSPACE_BOOTSTRAP_TOKEN ?? secret(),
+    FULI_PERSONAL_NEO4J_HTTP_PORT: String(settings.ports.personalNeo4jHttp),
+    FULI_PERSONAL_NEO4J_BOLT_PORT: String(settings.ports.personalNeo4jBolt),
+    FULI_WORKSPACE_NEO4J_HTTP_PORT: String(settings.ports.workspaceNeo4jHttp),
+    FULI_WORKSPACE_NEO4J_BOLT_PORT: String(settings.ports.workspaceNeo4jBolt),
+    FULI_PERSONAL_PROVIDER_PORT: String(settings.ports.personalProvider),
+    FULI_WORKSPACE_PROVIDER_PORT: String(settings.ports.workspaceProvider)
   };
   const body = Object.entries(values).map(([key, value]) => `${key}=${value}`).join('\n') + '\n';
-  deps.writeText(path, body);
+  if (!deps.fileExists(path) || deps.readText(path) !== body) deps.writeText(path, body);
   deps.secureFile(path);
   return values;
 }
 
-async function bootstrapGraph({ personalSpaceName, secrets, personalOnly, fetchImpl }) {
+async function bootstrapGraph({ urls, personalSpaceName, secrets, personalOnly, fetchImpl }) {
   const personalIdentity = await bootstrapProvider(
-    PERSONAL_PROVIDER_URL,
+    urls.personal,
     secrets.FULI_PERSONAL_BOOTSTRAP_TOKEN,
     personalSpaceName,
     fetchImpl
   );
-  const personalSpace = await findOrCreateSpace(PERSONAL_PROVIDER_URL, {
+  const personalSpace = await findOrCreateSpace(urls.personal, {
     token: personalIdentity.access_token,
     name: personalSpaceName,
     kind: 'personal',
@@ -149,7 +184,7 @@ async function bootstrapGraph({ personalSpaceName, secrets, personalOnly, fetchI
   const config = {
     version: 1,
     personal: {
-      providerUrl: PERSONAL_PROVIDER_URL,
+      providerUrl: urls.personal,
       accessToken: personalIdentity.access_token,
       principalId: personalIdentity.principal_id,
       spaceId: personalSpace.id
@@ -159,33 +194,106 @@ async function bootstrapGraph({ personalSpaceName, secrets, personalOnly, fetchI
   if (personalOnly) return config;
 
   const workspaceIdentity = await bootstrapProvider(
-    WORKSPACE_PROVIDER_URL,
+    urls.workspace,
     secrets.FULI_WORKSPACE_BOOTSTRAP_TOKEN,
     personalSpaceName,
     fetchImpl
   );
-  const project = await findOrCreateSpace(WORKSPACE_PROVIDER_URL, {
+  const project = await findOrCreateSpace(urls.workspace, {
     token: workspaceIdentity.access_token,
     name: '工作',
     kind: 'project',
     fetchImpl
   });
-  await providerRequest(PERSONAL_PROVIDER_URL, '/v1/subscriptions', {
+  await providerRequest(urls.personal, '/v1/subscriptions', {
     token: personalIdentity.access_token,
     body: {
       personal_space_id: personalSpace.id,
       project_id: project.id,
-      provider_url: WORKSPACE_PROVIDER_URL,
+      provider_url: urls.workspace,
       project_name: project.name
     },
     fetchImpl
   });
   config.workspaces.push({
-      providerUrl: WORKSPACE_PROVIDER_URL,
-      accessToken: workspaceIdentity.access_token,
-      principalId: workspaceIdentity.principal_id
+    providerUrl: urls.workspace,
+    accessToken: workspaceIdentity.access_token,
+    principalId: workspaceIdentity.principal_id,
+    managedDevelopment: true
   });
   return config;
+}
+
+export function synchronizeManagedProviderUrls(config, urls, { personalOnly = true } = {}) {
+  const next = structuredClone(config);
+  let changed = next.personal?.providerUrl !== urls.personal;
+  next.personal.providerUrl = urls.personal;
+  if (!personalOnly) {
+    for (const workspace of next.workspaces ?? []) {
+      if (!isManagedWorkspace(workspace)) continue;
+      if (workspace.providerUrl !== urls.workspace || workspace.managedDevelopment !== true) {
+        changed = true;
+      }
+      workspace.providerUrl = urls.workspace;
+      workspace.managedDevelopment = true;
+    }
+  }
+  return { config: next, changed };
+}
+
+async function reconcileManagedWorkspaceSubscriptions({
+  previousConfig,
+  nextConfig,
+  personalUrl,
+  fetchImpl
+}) {
+  const previous = (previousConfig.workspaces ?? []).find(isManagedWorkspace);
+  const next = (nextConfig.workspaces ?? []).find(isManagedWorkspace);
+  if (!previous || !next || previous.providerUrl === next.providerUrl) return;
+  const query = new URLSearchParams({ personal_space_id: nextConfig.personal.spaceId });
+  const response = await fetchImpl(`${personalUrl}/v1/subscriptions?${query}`, {
+    headers: { authorization: `Bearer ${nextConfig.personal.accessToken}` }
+  });
+  if (!response.ok) throw new Error('Could not reconcile managed workspace subscriptions');
+  const subscriptions = await response.json();
+  for (const subscription of subscriptions.filter(
+    (item) => item.provider_url === previous.providerUrl
+  )) {
+    const removal = new URLSearchParams({
+      personal_space_id: nextConfig.personal.spaceId,
+      provider_url: previous.providerUrl
+    });
+    const removed = await fetchImpl(
+      `${personalUrl}/v1/subscriptions/${encodeURIComponent(subscription.project_id)}?${removal}`,
+      {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${nextConfig.personal.accessToken}` }
+      }
+    );
+    if (!removed.ok) throw new Error('Could not remove the previous managed workspace port');
+    await providerRequest(personalUrl, '/v1/subscriptions', {
+      token: nextConfig.personal.accessToken,
+      body: {
+        personal_space_id: nextConfig.personal.spaceId,
+        project_id: subscription.project_id,
+        provider_url: next.providerUrl,
+        project_name: subscription.project_name
+      },
+      fetchImpl
+    });
+  }
+}
+
+function isManagedWorkspace(workspace) {
+  if (workspace?.managedDevelopment === true) return true;
+  try {
+    const url = new URL(workspace?.providerUrl);
+    return url.protocol === 'http:' &&
+      ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname) &&
+      url.port === '8788';
+  } catch {
+    return false;
+  }
 }
 
 async function bootstrapProvider(url, bootstrapToken, principalName, fetchImpl) {
@@ -246,7 +354,7 @@ async function waitForProvider(url, fetchImpl) {
 async function waitForWeb(url, pid, deps) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     if (!deps.isProcessAlive(pid)) return false;
-    if (await deps.webHealth(url, pid, 3)) return true;
+    if (await deps.webHealth(url, pid, 4)) return true;
     await delay(100);
   }
   return false;
@@ -300,13 +408,6 @@ function spawnWebRuntime(input) {
   }
 }
 
-function stopOwnedLegacyRuntime(paths, deps) {
-  deps.stopLegacyService();
-  const state = deps.readState(paths.statePath);
-  if (state?.version !== 1 || state.dbPath !== paths.dbPath || !Number.isInteger(state.pid)) return;
-  if (deps.isProcessAlive(state.pid)) deps.stopProcess(state.pid);
-}
-
 function graphDependencies(overrides) {
   return {
     fetch: globalThis.fetch,
@@ -317,6 +418,7 @@ function graphDependencies(overrides) {
     ensureDirectory: (path) => mkdirSync(path, { recursive: true }),
     readConfig: (path) => readJsonFile(path, null),
     writeConfig: writeJsonFileAtomic,
+    writeRuntimeSettings,
     readState: (path) => readJsonFile(path, null),
     writeState: writeJsonFileAtomic,
     ensureContainerRuntime,
@@ -324,7 +426,6 @@ function graphDependencies(overrides) {
     spawnWebRuntime,
     isProcessAlive,
     stopProcess,
-    stopLegacyService,
     webHealth: checkLocalConsoleHealth,
     discoverLanAddresses,
     createLanAccessToken: secret,
@@ -356,7 +457,7 @@ export async function checkLocalConsoleHealth(url, expectedPid, stateVersion = 3
 }
 
 function isGraphRuntimeState(state) {
-  return (state?.version === 2 || state?.version === 3) &&
+  return (state?.version === 2 || state?.version === 3 || state?.version === 4) &&
     Number.isInteger(state.pid) && typeof state.url === 'string';
 }
 
@@ -382,15 +483,6 @@ function runtimeResult(status, state, lanAccessToken = null) {
       accessCode: lanAccessToken
     }
   };
-}
-
-function stopLegacyService() {
-  if (process.platform !== 'darwin') return;
-  spawnSync('launchctl', ['remove', 'dev.jevonscode.fuli.local'], {
-    encoding: 'utf8',
-    windowsHide: true,
-    stdio: 'ignore'
-  });
 }
 
 function parseEnv(body) {

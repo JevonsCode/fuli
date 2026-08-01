@@ -62,6 +62,7 @@ function sampleValue(schema) {
     return schema.format === 'date-time' ? '2026-07-21T10:00:00.000Z' :
       schema.pattern === '^[A-Z][A-Z0-9_]*$' ? 'RELATES_TO' :
         schema.pattern === '^[A-Za-z][A-Za-z0-9_]*$' ? 'Entity' :
+          schema.pattern === '^(entity|relationship):.+' ? 'entity:valid-value' :
           'valid-value';
   }
   if (schema.type === 'boolean') return false;

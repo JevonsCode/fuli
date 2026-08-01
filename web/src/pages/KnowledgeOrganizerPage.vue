@@ -1,12 +1,19 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import { getJson } from '@/api/client'
+import GrowthLoading from '@/components/GrowthLoading.vue'
+import VirtualDirectoryList from '@/components/VirtualDirectoryList.vue'
+import {
+  isLoadingPreviewEnabled,
+  useMinimumLoadingDisplay,
+} from '@/composables/useMinimumLoadingDisplay'
 import KnowledgeBatchConfirmDialog from '@/features/knowledge/KnowledgeBatchConfirmDialog.vue'
 import KnowledgeConfirmDialog from '@/features/knowledge/KnowledgeConfirmDialog.vue'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
 import KnowledgeInspector from '@/features/knowledge/KnowledgeInspector.vue'
 import {
+  appendKnowledgeGraphPage,
   batchConfirmationGroups,
   confirmationBasisSummary,
   formatTime,
@@ -24,6 +31,7 @@ import type { KnowledgeGraph, KnowledgeItem } from '@/types'
 const store = useConsoleStore()
 const graph = ref<KnowledgeGraph | null>(null)
 const loading = ref(false)
+const loadingMore = ref(false)
 const query = ref('')
 const activeQuadrant = ref('all')
 const activeReviewState = ref<'all' | KnowledgeReviewState>('all')
@@ -31,6 +39,14 @@ const selectedItem = ref<KnowledgeItem | null>(null)
 const confirmingItem = ref<KnowledgeItem | null>(null)
 const editingItem = ref<KnowledgeItem | null>(null)
 const batchDialogOpen = ref(false)
+const loadingPreview = isLoadingPreviewEnabled()
+const showInitialLoading = useMinimumLoadingDisplay(computed(() =>
+  loadingPreview || (loading.value && !graph.value),
+))
+
+const PAGE_SIZE = 100
+const ROW_HEIGHT = 68
+let loadVersion = 0
 
 const quadrantChoices = computed(() => [
   {
@@ -85,14 +101,6 @@ const quadrantCounts = computed(() =>
       .map((value) => [value, items.value.filter((item) => item.originQuadrant === value).length]),
   ),
 )
-const reviewCounts = computed(() =>
-  Object.fromEntries(
-    reviewChoices.value.map(({ value }) => [
-      value,
-      items.value.filter((item) => knowledgeReviewState(item) === value).length,
-    ]),
-  ) as Record<KnowledgeReviewState, number>,
-)
 const hasActiveQuadrant = computed(() => activeQuadrant.value !== 'all')
 const activeQuadrantItems = computed(() =>
   hasActiveQuadrant.value
@@ -106,9 +114,6 @@ const activeReviewCounts = computed(() =>
       activeQuadrantItems.value.filter((item) => knowledgeReviewState(item) === value).length,
     ]),
   ) as Record<KnowledgeReviewState, number>,
-)
-const attentionCount = computed(() =>
-  reviewCounts.value.pending,
 )
 const visibleItems = computed(() => {
   const needle = query.value.trim().toLocaleLowerCase()
@@ -137,6 +142,14 @@ const visibleItems = computed(() => {
       .includes(needle)
   })
 })
+const virtualListResetKey = computed(() =>
+  `${query.value}\u0000${activeQuadrant.value}\u0000${activeReviewState.value}`,
+)
+const selectedItemIndex = computed(() => selectedItem.value
+  ? visibleItems.value.findIndex(({ id, itemKind }) =>
+      id === selectedItem.value?.id && itemKind === selectedItem.value?.itemKind)
+  : -1,
+)
 
 watch(
   () => store.activePersonalSpace?.id,
@@ -156,21 +169,55 @@ watch(visibleItems, (visible) => {
   }
 })
 
+onBeforeUnmount(() => {
+  loadVersion += 1
+})
+
 async function load(spaceId = store.activePersonalSpace?.id) {
   if (!spaceId) return
+  const version = ++loadVersion
   loading.value = true
+  loadingMore.value = false
+  let receivedPage = false
   try {
-    const params = new URLSearchParams({ spaceId, limit: '500' })
-    graph.value = await getJson<KnowledgeGraph>(`/api/graph?${params}`)
-    if (selectedItem.value) {
-      selectedItem.value = items.value.find(({ id }) => id === selectedItem.value?.id) ?? null
+    let offset = 0
+    while (version === loadVersion) {
+      const params = new URLSearchParams({
+        spaceId,
+        limit: String(PAGE_SIZE),
+        offset: String(offset),
+      })
+      const page = await getJson<KnowledgeGraph>(`/api/graph?${params}`)
+      if (version !== loadVersion) return
+      graph.value = receivedPage ? appendKnowledgeGraphPage(graph.value, page) : page
+      receivedPage = true
+      if (selectedItem.value) {
+        selectedItem.value = items.value.find(({ id, itemKind }) =>
+          id === selectedItem.value?.id && itemKind === selectedItem.value?.itemKind) ?? null
+      }
+      loading.value = false
+      if (!page.truncated) break
+      const nextOffset = page.next_offset
+      if (!Number.isInteger(nextOffset) || (nextOffset as number) <= offset) {
+        throw new Error(t('knowledge.workspace.organizer.paginationError'))
+      }
+      offset = nextOffset as number
+      loadingMore.value = true
+      await nextTick()
     }
   } catch (error) {
-    graph.value = null
+    if (!receivedPage) graph.value = null
     store.reportError(error)
   } finally {
-    loading.value = false
+    if (version === loadVersion) {
+      loading.value = false
+      loadingMore.value = false
+    }
   }
+}
+
+function itemKey(item: Pick<KnowledgeItem, 'itemKind' | 'id'>) {
+  return `${item.itemKind}:${item.id}`
 }
 
 function selectQuadrant(value: string) {
@@ -194,20 +241,6 @@ function openReplacement(item: KnowledgeItem) {
   <section
     class="view knowledge-organizer"
   >
-    <div class="organizer-head">
-      <div class="organizer-principle">
-        <p class="eyebrow">HOW CLASSIFICATION WORKS</p>
-        <h3>{{ t('knowledge.workspace.organizer.title') }}</h3>
-        <p>{{ t('knowledge.workspace.organizer.copy') }}</p>
-      </div>
-
-      <div class="organizer-attention">
-        <strong>{{ attentionCount }}</strong>
-        <span>{{ t('knowledge.workspace.organizer.needsAttention') }}</span>
-        <small>{{ t('knowledge.workspace.organizer.legacyAttention') }}</small>
-      </div>
-    </div>
-
     <div class="organizer-toolbar">
       <label class="organizer-search">
         <span>{{ t('knowledge.workspace.organizer.filterKnowledge') }}</span>
@@ -267,48 +300,60 @@ function openReplacement(item: KnowledgeItem) {
         </button>
       </div>
 
-      <p class="organizer-result-summary">
-        {{ t('knowledge.workspace.organizer.showing', {
-          visible: visibleItems.length,
-          total: activeQuadrantItems.length,
-        }) }}
-        <span v-if="activeReviewState !== 'all'">
-          · {{ reviewChoices.find(({ value }) => value === activeReviewState)?.label }}
-        </span>
-      </p>
-      <button
-        v-if="confirmationGroups.length"
-        class="toolbar-action batch-confirm-action"
-        type="button"
-        @click="batchDialogOpen = true"
-      >
-        {{ t('knowledge.workspace.organizer.batchConfirm', { count: confirmationGroups.length }) }}
-      </button>
-      <button class="toolbar-action" type="button" @click="load()">{{ t('common.actions.refresh') }}</button>
+      <div class="organizer-toolbar-actions">
+        <p class="organizer-result-summary">
+          {{ t('knowledge.workspace.organizer.showing', {
+            visible: visibleItems.length,
+            total: activeQuadrantItems.length,
+          }) }}
+          <span v-if="activeReviewState !== 'all'">
+            · {{ reviewChoices.find(({ value }) => value === activeReviewState)?.label }}
+          </span>
+        </p>
+        <button
+          v-if="confirmationGroups.length"
+          class="toolbar-action batch-confirm-action"
+          type="button"
+          @click="batchDialogOpen = true"
+        >
+          {{ t('knowledge.workspace.organizer.batchConfirm', { count: confirmationGroups.length }) }}
+        </button>
+        <button class="toolbar-action" type="button" @click="load()">{{ t('common.actions.refresh') }}</button>
+      </div>
     </div>
 
-    <p v-if="graph?.truncated" class="organizer-truncated">
-      {{ t('knowledge.workspace.organizer.truncated') }}
-    </p>
-
-    <div v-if="loading && !graph" class="view-loading">{{ t('common.status.loadingKnowledge') }}</div>
+    <GrowthLoading
+      v-if="showInitialLoading"
+      :label="t('common.status.loadingKnowledge')"
+    />
     <div
       v-else
       class="organizer-layout"
       :class="{ 'has-selection': selectedItem }"
     >
-      <section class="organizer-directory" :aria-label="t('knowledge.workspace.organizer.directoryAria')">
-        <div class="organizer-table-head" aria-hidden="true">
-          <span>{{ t('knowledge.workspace.workspace.view.knowledgeContent') }}</span>
-          <span>{{ t('knowledge.workspace.workspace.view.columns.quadrant') }}</span>
-          <span>{{ t('knowledge.workspace.workspace.view.columns.review') }}</span>
-          <span>{{ t('knowledge.workspace.organizer.confirmationBasis') }}</span>
-          <span>{{ t('knowledge.workspace.organizer.updated') }}</span>
-        </div>
-        <div class="organizer-list">
+      <!-- @vue-generic {import('@/types').KnowledgeItem} -->
+      <VirtualDirectoryList
+        class="organizer-directory"
+        :items="visibleItems"
+        :row-height="ROW_HEIGHT"
+        :active-index="selectedItemIndex"
+        :reset-key="virtualListResetKey"
+        :item-key="itemKey"
+        min-width="var(--organizer-list-min-width)"
+        :label="t('knowledge.workspace.organizer.directoryAria')"
+      >
+        <template #header>
+          <div class="organizer-table-head" aria-hidden="true">
+            <span>{{ t('knowledge.workspace.workspace.view.knowledgeContent') }}</span>
+            <span>{{ t('knowledge.workspace.workspace.view.columns.quadrant') }}</span>
+            <span>{{ t('knowledge.workspace.workspace.view.columns.review') }}</span>
+            <span>{{ t('knowledge.workspace.organizer.confirmationBasis') }}</span>
+            <span>{{ t('knowledge.workspace.organizer.updated') }}</span>
+          </div>
+        </template>
+
+        <template #default="{ item }">
           <button
-            v-for="item in visibleItems"
-            :key="`${item.itemKind}:${item.id}`"
             type="button"
             class="organizer-row"
             :class="{ selected: selectedItem?.id === item.id }"
@@ -327,13 +372,22 @@ function openReplacement(item: KnowledgeItem) {
             <span class="organizer-basis">{{ confirmationBasisSummary(item) }}</span>
             <time>{{ formatTime(latestItemValue(item)) }}</time>
           </button>
-        </div>
-        <div v-if="!visibleItems.length" class="empty-state">
-          {{ items.length
-            ? t('knowledge.workspace.organizer.noFilteredContent')
-            : t('knowledge.workspace.organizer.noContent') }}
-        </div>
-      </section>
+        </template>
+
+        <template #footer>
+          <div v-if="loadingMore" class="organizer-loading-inline">
+            {{ t('knowledge.workspace.organizer.loadingMore') }}
+          </div>
+        </template>
+
+        <template #empty>
+          <div class="empty-state">
+            {{ items.length
+              ? t('knowledge.workspace.organizer.noFilteredContent')
+              : t('knowledge.workspace.organizer.noContent') }}
+          </div>
+        </template>
+      </VirtualDirectoryList>
 
       <KnowledgeInspector
         :item="selectedItem"
@@ -380,76 +434,14 @@ function openReplacement(item: KnowledgeItem) {
   overflow: hidden;
 }
 
-.organizer-head {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px 24px;
-}
-
-.organizer-principle {
-  min-width: 0;
-  align-self: center;
-  padding: 0 2px;
-}
-
-.organizer-principle h3 {
-  font-size: 16px;
-}
-
-.organizer-principle > p:last-child {
-  max-width: 760px;
-  margin-top: 5px;
-  color: #6e7771;
-  font-size: 11px;
-  line-height: 1.55;
-}
-
-.organizer-attention {
-  grid-column: 2;
-  grid-row: 1;
-  min-width: 152px;
-  padding-left: 20px;
-  border-left: 1px solid #dde2de;
-  text-align: right;
-}
-
-.organizer-attention strong,
-.organizer-attention span,
-.organizer-attention small {
-  display: block;
-}
-
-.organizer-attention strong {
-  color: #6f582b;
-  font-size: 23px;
-  font-weight: 620;
-}
-
-.organizer-attention span {
-  color: #5f675f;
-  font-size: 10px;
-  font-weight: 650;
-}
-
-.organizer-attention small {
-  margin-top: 2px;
-  color: #8a918b;
-  font-size: 8px;
-}
-
-.organizer-loading-inline {
-  color: #7b847e;
-  font-size: 10px;
-  text-align: center;
-}
-
 .organizer-toolbar {
+  min-width: 0;
   min-height: 34px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  align-content: center;
+  gap: 6px 8px;
 }
 
 .organizer-search {
@@ -472,7 +464,9 @@ function openReplacement(item: KnowledgeItem) {
 
 .review-state-filter,
 .quadrant-filter {
-  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 auto;
   height: 31px;
   display: flex;
   align-items: center;
@@ -481,6 +475,8 @@ function openReplacement(item: KnowledgeItem) {
   border: 1px solid #d7ddd8;
   border-radius: 7px;
   background: #f1f4f1;
+  overflow-x: auto;
+  overflow-y: hidden;
   white-space: nowrap;
 }
 
@@ -548,18 +544,19 @@ function openReplacement(item: KnowledgeItem) {
   white-space: nowrap;
 }
 
-.organizer-toolbar .batch-confirm-action {
+.organizer-toolbar-actions {
+  min-width: 0;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
+  white-space: nowrap;
 }
 
-.organizer-toolbar .toolbar-action + .toolbar-action {
-  margin-left: 0;
-}
-
-.organizer-truncated {
-  margin: -4px 0 0;
-  color: #806536;
-  font-size: 9px;
+.organizer-toolbar-actions .toolbar-action {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .organizer-layout {
@@ -582,14 +579,14 @@ function openReplacement(item: KnowledgeItem) {
 }
 
 .organizer-directory {
+  --organizer-list-min-width: 920px;
+
   min-width: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
+  min-height: 0;
 }
 
 .organizer-table-head,
 .organizer-row {
-  min-width: 920px;
   display: grid;
   grid-template-columns: minmax(230px, 1.35fr) 114px 130px minmax(160px, .8fr) 118px;
   align-items: center;
@@ -597,9 +594,6 @@ function openReplacement(item: KnowledgeItem) {
 }
 
 .organizer-table-head {
-  position: sticky;
-  z-index: 2;
-  top: 0;
   padding: 10px 15px;
   border-bottom: 1px solid #e0e4e0;
   color: #8b938d;
@@ -610,7 +604,8 @@ function openReplacement(item: KnowledgeItem) {
 
 .organizer-row {
   width: 100%;
-  min-height: 68px;
+  height: 100%;
+  overflow: hidden;
   padding: 11px 15px;
   border: 0;
   border-bottom: 1px solid #e8ebe8;
@@ -714,7 +709,19 @@ function openReplacement(item: KnowledgeItem) {
 }
 
 .organizer-basis {
+  display: -webkit-box;
   overflow-wrap: anywhere;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.organizer-loading-inline {
+  min-width: 100%;
+  padding: 10px 15px;
+  color: #7b847e;
+  font-size: 9px;
+  text-align: center;
 }
 
 @media (max-width: 1260px) {
@@ -726,20 +733,41 @@ function openReplacement(item: KnowledgeItem) {
 
   .organizer-table-head,
   .organizer-row {
-    min-width: 760px;
     grid-template-columns: minmax(210px, 1fr) 108px 104px minmax(140px, .8fr) 104px;
+  }
+
+  .organizer-directory {
+    --organizer-list-min-width: 760px;
   }
 }
 
 @media (max-width: 1040px) {
+  .organizer-search {
+    max-width: none;
+    flex-basis: 100%;
+  }
+
+  .review-state-filter,
+  .quadrant-filter {
+    flex: 1 1 auto;
+  }
+
+  .organizer-toolbar-actions {
+    flex: 1 0 100%;
+    justify-content: flex-end;
+  }
+
   .organizer-layout.has-selection {
     grid-template-columns: minmax(0, 1fr) 280px;
   }
 
   .organizer-table-head,
   .organizer-row {
-    min-width: 470px;
     grid-template-columns: minmax(210px, 1fr) 108px 104px;
+  }
+
+  .organizer-directory {
+    --organizer-list-min-width: 470px;
   }
 
   .organizer-table-head > :nth-child(n + 4),
@@ -748,11 +776,13 @@ function openReplacement(item: KnowledgeItem) {
     display: none;
   }
 
-  .batch-confirm-action {
-    overflow: hidden;
-    max-width: 108px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .review-state-filter,
+  .quadrant-filter {
+    width: 100%;
+    flex-basis: 100%;
   }
 }
 </style>

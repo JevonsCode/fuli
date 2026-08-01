@@ -161,7 +161,9 @@ function onDocumentPointerDown(event: PointerEvent) {
   if (open.value && !root.value?.contains(event.target as Node)) close()
 }
 
-function onFocusout() {
+function onFocusout(event: FocusEvent) {
+  const nextTarget = event.relatedTarget as Node | null
+  if (nextTarget && root.value?.contains(nextTarget)) return
   queueMicrotask(() => {
     if (open.value && !root.value?.contains(document.activeElement)) close()
   })
@@ -232,7 +234,8 @@ function positionPanel() {
       :aria-controls="listId"
       :aria-label="accessibleLabel"
       :disabled="disabled"
-      @click="toggle"
+      @pointerdown.stop
+      @click.stop="toggle"
       @keydown="onTriggerKeydown"
     >
       <span class="searchable-select-current">

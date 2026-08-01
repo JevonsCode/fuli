@@ -20,6 +20,7 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   begin_task_context: 16 * 1024,
   get_collaboration_preferences: 16 * 1024,
   search_knowledge_graph: 32 * 1024,
+  search_connected_knowledge: 64 * 1024,
   search_current_project_knowledge: 64 * 1024,
   discover_common_knowledge_candidates: 32 * 1024
 });

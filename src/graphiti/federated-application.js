@@ -1,3 +1,5 @@
+import { dirname } from 'node:path';
+
 import { GraphitiProviderClient } from './provider-client.js';
 import {
   canonicalProviderUrl,
@@ -22,8 +24,15 @@ import {
   createFuliSourceMarker,
   sourceConsoleUrl
 } from './source-marker.js';
+import {
+  recallTaskKnowledge,
+  TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE
+} from './task-knowledge-recall.js';
 import { resolvePersonalProjectPath } from './project-path-context.js';
+import { mergeExternalKnowledgeProjection } from '../external-knowledge/graph-projection.js';
 import { TaskContextRegistry } from '../mcp/task-context-registry.js';
+import { attachExternalKnowledgeRuntime } from '../external-knowledge/runtime.js';
+import { resolveSetupPaths } from '../setup/paths.js';
 import {
   agentProjectResolution,
   beginTaskContext as beginTaskContextWorkflow,
@@ -40,19 +49,27 @@ import {
   providerConfirmationBasis,
   providerEpisode
 } from './knowledge-provider-mapping.js';
+import { providerProjectProfile } from './project-profile-mapping.js';
+import {
+  finishKnowledgeReview as finishKnowledgeReviewWorkflow,
+  listKnowledgeReviewCandidates as listKnowledgeReviewCandidatesWorkflow,
+  recordKnowledgeReviewProgress as recordKnowledgeReviewProgressWorkflow,
+  startKnowledgeReview as startKnowledgeReviewWorkflow
+} from './knowledge-review.js';
 
 export function openFederatedGraphApplication({
   runtimeConfigPath,
   config,
   capturePolicyStore,
   agentAccessPolicyStore,
-  fetchImpl = globalThis.fetch
+  fetchImpl = globalThis.fetch,
+  env = process.env
 }) {
   const resolved = config ?? readGraphRuntimeConfig(runtimeConfigPath);
   const policyStore = capturePolicyStore ?? new CapturePolicyStore(
     capturePolicyPathForRuntime(runtimeConfigPath)
   );
-  return new FederatedGraphApplication(resolved, {
+  const app = new FederatedGraphApplication(resolved, {
     fetchImpl,
     capturePolicyStore: policyStore,
     agentAccessPolicyStore: agentAccessPolicyStore ?? new AgentAccessPolicyStore(
@@ -60,6 +77,14 @@ export function openFederatedGraphApplication({
     ),
     consoleUrl: sourceConsoleUrl(runtimeConfigPath)
   });
+  if (typeof runtimeConfigPath === 'string' && runtimeConfigPath) {
+    attachExternalKnowledgeRuntime(app, {
+      paths: resolveSetupPaths({ dataDir: dirname(runtimeConfigPath) }),
+      env,
+      fetchImpl
+    });
+  }
+  return app;
 }
 
 export class FederatedGraphApplication {
@@ -163,6 +188,7 @@ export class FederatedGraphApplication {
   async getCollaborationPreferences({
     personalProjectId = null,
     projectPath = null,
+    taskPrompt = null,
     limit = 100,
     agentInvocation = false,
     agentToolName = 'get_collaboration_preferences'
@@ -188,6 +214,9 @@ export class FederatedGraphApplication {
       result,
       queuedConflicts
     );
+    const taskKnowledgeRecall = taskPrompt === null
+      ? null
+      : await recallTaskKnowledge(this, projectResolution, taskPrompt);
     if (agentInvocation) {
       const items = [
         ...(result.global_preferences ?? []),
@@ -207,14 +236,16 @@ export class FederatedGraphApplication {
       conflicts: 'Do not apply entries listed in conflicts until the user resolves them.',
       deferred_conflicts: 'If the current task would use a deferred_conflict, call resolve_deferred_preference_conflict before applying either side. Ignore unrelated deferred conflicts. The resolution must preserve the AI audit marker.',
       authority: 'Human or authoritative-source confirmed preferences outrank agent-confirmed preferences. Agent-confirmed preferences are usable but lower priority and remain explicitly marked.',
-      pending: 'Pending preferences are available only through on-demand knowledge search; invalid and unrelated-project preferences are excluded. Automatic preference injection never counts as usage evidence.'
+      pending: 'Pending preferences are available only through on-demand knowledge search; invalid and unrelated-project preferences are excluded. Automatic preference injection never counts as usage evidence.',
+      knowledge_retrieval: TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE
     };
     if (!agentInvocation) {
       return {
         ...result,
         deferred_conflicts: deferredConflicts,
         application_guidance: applicationGuidance,
-        project_resolution: agentProjectResolution(projectResolution)
+        project_resolution: agentProjectResolution(projectResolution),
+        ...(taskKnowledgeRecall ? { task_knowledge_recall: taskKnowledgeRecall } : {})
       };
     }
     return {
@@ -222,6 +253,7 @@ export class FederatedGraphApplication {
         .map(agentCollaborationPreference),
       deferred_conflicts: deferredConflicts.map(agentDeferredPreferenceConflict),
       application_guidance: applicationGuidance,
+      ...(taskKnowledgeRecall ? { task_knowledge_recall: taskKnowledgeRecall } : {}),
       context: {
         personal_space_id: result.personal_space_id,
         personal_project_id: result.personal_project_id,
@@ -293,7 +325,9 @@ export class FederatedGraphApplication {
     if (!['bounded', 'all_local_confirmed'].includes(personalProjectScope)) {
       throw new TypeError('Unknown personal project search scope');
     }
-    const subscriptions = await this.personal.listSubscriptions(personalSpaceId);
+    const subscriptions = projectIds.length
+      ? await this.personal.listSubscriptions(personalSpaceId)
+      : [];
     const requestedProjects = new Set(projectIds);
     const selectedSubscriptions = subscriptions.filter(({ project_id: projectId }) =>
       requestedProjects.has(projectId)
@@ -451,6 +485,7 @@ export class FederatedGraphApplication {
     providerUrl = null,
     personalProjectId = null,
     limit = 500,
+    offset = null,
     agentInvocation = false,
     agentToolName = 'get_knowledge_graph'
   }) {
@@ -458,19 +493,42 @@ export class FederatedGraphApplication {
       if (spaceId !== this.config.personal.spaceId) {
         throw new TypeError('A configured providerUrl is required for a team-shared project graph');
       }
-      const result = await this.personal.graph(spaceId, limit, personalProjectId);
+      const result = await this.personal.graph(
+        spaceId,
+        limit,
+        personalProjectId,
+        offset
+      );
       if (agentInvocation) {
         await this.#recordAgentViews([
           ...result.nodes.map(({ id }) => ({ item_id: id, item_kind: 'entity' })),
           ...result.edges.map(({ id }) => ({ item_id: id, item_kind: 'relationship' }))
         ], agentToolName);
       }
-      return result;
+      return mergeExternalKnowledgeProjection(
+        this.externalKnowledge, result, spaceId, personalProjectId
+      );
     }
     if (personalProjectId) {
       throw new TypeError('Personal project scope cannot be used with a team-shared provider');
     }
-    return this.#workspace(providerUrl).client.graph(spaceId, limit);
+    return this.#workspace(providerUrl).client.graph(spaceId, limit, null, offset);
+  }
+
+  async startKnowledgeReview(input) {
+    return startKnowledgeReviewWorkflow(this, input);
+  }
+
+  async listKnowledgeReviewCandidates(input) {
+    return listKnowledgeReviewCandidatesWorkflow(this, input);
+  }
+
+  async recordKnowledgeReviewProgress(input) {
+    return recordKnowledgeReviewProgressWorkflow(this, input);
+  }
+
+  async finishKnowledgeReview(input) {
+    return finishKnowledgeReviewWorkflow(this, input);
   }
 
   async recordKnowledgeUsage({
@@ -1201,39 +1259,6 @@ function assertSafeKnowledgeMutation(input) {
       'Knowledge revision contains credentials and cannot be stored'
     );
   }
-}
-
-function providerProjectProfile(profile) {
-  if (!profile || typeof profile !== 'object') throw new TypeError('Project profile is required');
-  const assessment = profile.assessment ? sanitizeProjectAssessment(profile.assessment) : null;
-  return {
-    name: profile.name,
-    purpose: profile.purpose ?? null,
-    scope: profile.scope ?? null,
-    technical_summary: profile.technical_summary ?? profile.technicalSummary ?? null,
-    lifecycle: profile.lifecycle ?? 'planned',
-    sources: profile.sources ?? [],
-    boundaries: profile.boundaries ?? [],
-    assessment
-  };
-}
-
-function sanitizeProjectAssessment(input) {
-  const assessment = {
-    score: input.score,
-    label: input.label,
-    confirmed: input.confirmed ?? [],
-    inferred: input.inferred ?? [],
-    dimensions: (input.dimensions ?? []).map((dimension) => ({
-      key: dimension.key,
-      label: dimension.label,
-      score: dimension.score,
-      state: dimension.state === 'missing' ? 'inferred' : dimension.state,
-      evidence: dimension.evidence ?? []
-    })),
-    analyzed_at: input.analyzed_at ?? input.analyzedAt
-  };
-  return assessment;
 }
 
 function groupSubscriptions(subscriptions) {

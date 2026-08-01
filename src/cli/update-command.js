@@ -7,7 +7,7 @@ import {
   FULI_PACKAGE_NAME,
   FULI_VERSION
 } from '../package-metadata.js';
-import { quoteShellArgument } from '../runtime-options.js';
+import { quoteShellArgument } from './shell-argument.js';
 import { parseUpdateOptions } from '../setup/options.js';
 import { runLocalRuntimeCommand } from './local-runtime-command.js';
 
@@ -31,7 +31,7 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
 
   write(formatUpdatePreview(options));
   if (!options.yes && !await confirm()) {
-    write('已取消，没有修改任何内容。');
+    write('Cancelled. No changes were made.');
     return { status: 'cancelled' };
   }
 
@@ -51,13 +51,13 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
   const stopped = await stopRuntime('stop', stopArgs, { env, write });
   if (stopped.status === 'partial') {
     throw new Error([
-      '无法安全确认旧版界面进程已停止，更新尚未开始。',
-      '请先运行 fuli status 检查本地状态，再重试 fuli update。'
+      'Could not safely confirm that the previous UI process stopped. The update did not start.',
+      'Run fuli status to inspect the local state, then retry fuli update.'
     ].join('\n'));
   }
 
   const selectedPackage = `${FULI_PACKAGE_NAME}@${latestVersion}`;
-  write(`正在安装 ${selectedPackage}（npm latest）…`);
+  write(`Installing ${selectedPackage} (npm latest)...`);
   const installed = runInherited(npmCommand, [
     'install',
     '--global',
@@ -67,15 +67,16 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
   ], { env });
   if (!processSucceeded(installed)) {
     throw new Error([
-      `全局包安装失败（${describeProcessFailure(installed)}）。知识数据未删除。`,
-      `请先运行 npm install --global ${LATEST_PACKAGE}，再运行 fuli setup --yes。`
+      `Global package installation failed (${describeProcessFailure(installed)}). ` +
+        'Knowledge data was not deleted.',
+      `Run npm install --global ${LATEST_PACKAGE}, then run fuli setup --yes.`
     ].join('\n'));
   }
 
   const globalRootResult = runCaptured(npmCommand, ['root', '--global'], { env });
   if (!processSucceeded(globalRootResult)) {
     throw postInstallError(
-      `无法定位 npm 全局安装目录（${describeProcessFailure(globalRootResult)}）`,
+      `Could not locate the global npm directory (${describeProcessFailure(globalRootResult)})`,
       args,
       platform
     );
@@ -83,33 +84,35 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
   const globalRoot = String(globalRootResult.stdout ?? '').trim();
   const cliPath = resolveGlobalCliPath(globalRoot, platform);
   if (!cliPath || !fileExists(cliPath)) {
-    throw postInstallError('新版 CLI 文件不存在，请重新安装全局包', args, platform);
+    throw postInstallError('The new CLI file is missing; reinstall the global package', args, platform);
   }
 
   const versionResult = runCaptured(nodePath, [cliPath, '--version'], { env });
   if (!processSucceeded(versionResult)) {
     throw postInstallError(
-      `新版 CLI 无法启动（${describeProcessFailure(versionResult)}）`,
+      `The new CLI could not start (${describeProcessFailure(versionResult)})`,
       args,
       platform
     );
   }
   const version = String(versionResult.stdout ?? '').trim();
-  if (!version) throw postInstallError('新版 CLI 未返回版本号', args, platform);
+  if (!version) throw postInstallError('The new CLI returned no version', args, platform);
   if (compareSemanticVersions(version, latestVersion) !== 0) {
     throw postInstallError(
-      `新版 CLI 版本 ${version} 与更新前确认的 npm latest ${latestVersion} 不一致`,
+      `The new CLI version ${version} does not match the npm latest version ${latestVersion} ` +
+        'confirmed before the update',
       args,
       platform
     );
   }
 
-  write('正在使用新版 CLI 刷新本机服务、Agent 接入和 Skills…');
+  write('Refreshing local services, Agent integrations, and Skills with the new CLI...');
   const setupArgs = ['setup', '--yes', ...args.filter((arg) => arg !== '--yes')];
   const setupResult = runInherited(nodePath, [cliPath, ...setupArgs], { env });
   if (!processSucceeded(setupResult)) {
     throw postInstallError(
-      `新版已安装，但 setup 未完成（${describeProcessFailure(setupResult)}）`,
+      `The new version was installed, but setup did not complete ` +
+        `(${describeProcessFailure(setupResult)})`,
       args,
       platform
     );
@@ -126,27 +129,32 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
 
 export function formatUpdatePreview(options) {
   return [
-    '准备更新复利',
-    `npm 包：${LATEST_PACKAGE}`,
+    'Ready to update Fuli',
+    `npm package: ${LATEST_PACKAGE}`,
     options.noStart
-      ? '本地界面：安全停止；更新后保持关闭'
-      : '本地服务：安全停止；更新后由新版重新启动',
-    options.dataDir ? `数据：保留 ${options.dataDir}` : '数据：保留当前默认数据目录',
-    `Agent 接入与 Skills：${options.skipAgents ? '按参数跳过刷新' : '由新版 setup 刷新'}`
+      ? 'Local UI: stop safely and keep stopped after the update'
+      : 'Local services: stop safely and restart with the new version',
+    options.dataDir
+      ? `Data: preserve ${options.dataDir}`
+      : 'Data: preserve the current default data directory',
+    `Agent integrations and Skills: ${options.skipAgents
+      ? 'skip refresh as requested'
+      : 'refresh through setup in the new version'}`
   ].join('\n');
 }
 
 export function formatUpdateResult(result) {
   if (result.status === 'ahead') {
     return [
-      `当前 CLI 版本 ${result.version} 高于 npm latest ${result.latestVersion}；`,
-      '为避免降级，未停止服务、未安装包，也未修改 Agent 接入。'
+      `The current CLI version ${result.version} is newer than npm latest ${result.latestVersion}. `,
+      'To avoid a downgrade, services were not stopped, no package was installed, and Agent ' +
+        'integrations were not changed.'
     ].join('');
   }
   if (result.status === 'current') {
-    return `复利已是最新版本 ${result.version}；本机接入已刷新。`;
+    return `Fuli is already at the latest version (${result.version}); local integrations refreshed.`;
   }
-  return `复利已从 ${result.previousVersion} 更新到 ${result.version}。`;
+  return `Fuli updated from ${result.previousVersion} to ${result.version}.`;
 }
 
 export function compareSemanticVersions(left, right) {
@@ -185,8 +193,8 @@ export function resolveGlobalCliPath(globalRoot, platform = process.platform) {
 
 function postInstallError(message, args, platform) {
   return new Error([
-    `${message}。知识数据未删除。`,
-    `请重新运行：${formatSetupRecoveryCommand(args, platform)}`
+    `${message}. Knowledge data was not deleted.`,
+    `Run again: ${formatSetupRecoveryCommand(args, platform)}`
   ].join('\n'));
 }
 
@@ -198,8 +206,8 @@ function queryLatestVersion(npmCommand, runCaptured, env) {
   );
   if (!processSucceeded(result)) {
     throw new Error([
-      `无法检查 ${LATEST_PACKAGE}（${describeProcessFailure(result)}）。`,
-      '本地服务尚未停止，也没有安装或修改任何包。'
+      `Could not check ${LATEST_PACKAGE} (${describeProcessFailure(result)}).`,
+      'Local services were not stopped, and no package was installed or changed.'
     ].join('\n'));
   }
   const raw = String(result.stdout ?? '').trim();
@@ -244,7 +252,7 @@ function formatCommandArgument(value, platform) {
   try {
     return quoteShellArgument(value, platform);
   } catch {
-    return '<复用原参数>';
+    return '<reuse-original-argument>';
   }
 }
 
@@ -279,7 +287,7 @@ function spawnCaptured(command, args, { env }) {
 async function confirmInTerminal() {
   const input = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const answer = (await input.question('将修改全局 npm 安装，继续？[Y/n] '))
+    const answer = (await input.question('This will modify the global npm installation. Continue? [Y/n] '))
       .trim()
       .toLowerCase();
     return answer === '' || answer === 'y' || answer === 'yes';

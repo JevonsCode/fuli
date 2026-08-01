@@ -65,7 +65,7 @@ function isLoopbackAddress(address) {
 }
 
 function requiresJson(request) {
-  if (request.method !== 'POST') return false;
+  if (!['PATCH', 'POST', 'PUT'].includes(request.method)) return false;
   const pathname = new URL(request.url, 'http://127.0.0.1').pathname;
   return pathname.startsWith('/api/');
 }

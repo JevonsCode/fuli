@@ -169,6 +169,18 @@ class GraphitiRuntime:
             'CREATE CONSTRAINT fuli_knowledge_audit_id IF NOT EXISTS '
             'FOR (n:FuliKnowledgeAudit) REQUIRE n.id IS UNIQUE'
         )
+        await self.driver.execute_query(
+            'CREATE CONSTRAINT fuli_knowledge_review_id IF NOT EXISTS '
+            'FOR (n:FuliKnowledgeReviewRun) REQUIRE n.id IS UNIQUE'
+        )
+        await self.driver.execute_query(
+            'CREATE CONSTRAINT fuli_knowledge_review_active IF NOT EXISTS '
+            'FOR (n:FuliKnowledgeReviewRun) REQUIRE n.active_key IS UNIQUE'
+        )
+        await self.driver.execute_query(
+            'CREATE CONSTRAINT fuli_knowledge_review_decision_id IF NOT EXISTS '
+            'FOR (n:FuliKnowledgeReviewDecision) REQUIRE n.id IS UNIQUE'
+        )
         for query in (
             'CREATE INDEX fuli_entity_confirmation IF NOT EXISTS '
             'FOR (n:Entity) ON (n.group_id, n.fuli_confirmation_status)',
@@ -188,6 +200,9 @@ class GraphitiRuntime:
             'CREATE INDEX fuli_knowledge_audit_lookup IF NOT EXISTS '
             'FOR (n:FuliKnowledgeAudit) '
             'ON (n.space_id, n.item_id, n.usage_generation)',
+            'CREATE INDEX fuli_knowledge_review_scope IF NOT EXISTS '
+            'FOR (n:FuliKnowledgeReviewRun) '
+            'ON (n.personal_space_id, n.scope_key, n.status)',
             'CREATE INDEX fuli_personal_project_relation_type IF NOT EXISTS '
             'FOR ()-[r:PERSONAL_PROJECT_RELATION]-() ON (r.relation_type)',
         ):

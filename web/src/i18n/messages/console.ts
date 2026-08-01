@@ -18,6 +18,12 @@ export const consoleMessages = {
       knowledge: '知识库',
       review: '发布审核',
       connections: '服务连接',
+      aboutSection: '关于',
+      settings: '设置',
+      about: '说明',
+    },
+    brandEffect: {
+      aria: '复利，触发品牌光效',
     },
     services: {
       aria: '知识服务状态',
@@ -72,6 +78,12 @@ export const consoleMessages = {
       knowledge: 'Knowledge base',
       review: 'Publishing review',
       connections: 'Service connections',
+      aboutSection: 'About',
+      settings: 'Settings',
+      about: 'About',
+    },
+    brandEffect: {
+      aria: 'FULI, play the brand light effect',
     },
     services: {
       aria: 'Knowledge service status',
