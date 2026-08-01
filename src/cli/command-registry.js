@@ -12,9 +12,9 @@ General:
   --version, -v
 
 Local service:
-  start [--port 2727] [--open] [--rebuild] [--data-dir DIR] [--personal-space NAME]
+  start [--port 2727] [--open] [--lan] [--rebuild] [--data-dir DIR] [--personal-space NAME]
   stop [--data-dir DIR]
-  restart [--port 2727] [--open] [--rebuild] [--data-dir DIR] [--personal-space NAME]
+  restart [--port 2727] [--open] [--lan] [--rebuild] [--data-dir DIR] [--personal-space NAME]
   status [--json] [--data-dir DIR]
   open [--data-dir DIR]
 

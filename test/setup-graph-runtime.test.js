@@ -51,6 +51,30 @@ test('container runtime preflight fails before setup writes Fuli data', async ()
   assert.deepEqual(sideEffects, []);
 });
 
+test('LAN setup fails before runtime side effects when no private IPv4 address exists', async () => {
+  const sideEffects = [];
+  await assert.rejects(
+    ensureGraphRuntime({
+      paths: PATHS,
+      personalSpaceName: '我',
+      personalOnly: true,
+      port: 2727,
+      lan: true,
+      noStart: false
+    }, {
+      discoverLanAddresses: () => [],
+      ensureContainerRuntime() {
+        sideEffects.push('runtime');
+      },
+      startProviders() {
+        sideEffects.push('providers');
+      }
+    }),
+    /局域网地址/
+  );
+  assert.deepEqual(sideEffects, []);
+});
+
 test('personal-only setup starts and bootstraps only the local Provider', async () => {
   const started = [];
   const requestedUrls = [];
@@ -211,6 +235,104 @@ test('setup restarts a healthy console when the configured port changes', async 
   });
 });
 
+test('setup starts an authenticated LAN console and secures its runtime state', async () => {
+  let spawnedInput = null;
+  let writtenState = null;
+  const secured = [];
+  const result = await ensureGraphRuntime({
+    paths: PATHS,
+    personalSpaceName: '我',
+    personalOnly: true,
+    port: 2727,
+    lan: true,
+    noStart: false,
+    env: { PATH: '/usr/bin' }
+  }, dependencies({
+    discoverLanAddresses: () => ['192.168.31.8'],
+    createLanAccessToken: () => 'temporary-access-code',
+    readConfig: () => ({ version: 1 }),
+    async fetch(url) {
+      if (url.endsWith('/health')) return response({ status: 'ready' });
+      throw new Error(`Unexpected Provider request: ${url}`);
+    },
+    isProcessAlive: (pid) => pid === 2727,
+    webHealth: async (url) => url === 'http://127.0.0.1:2727',
+    spawnWebRuntime(input) {
+      spawnedInput = input;
+      return { pid: 2727 };
+    },
+    writeState(_path, state) {
+      writtenState = state;
+    },
+    secureFile(path) {
+      secured.push(path);
+    }
+  }));
+
+  assert.equal(spawnedInput.lan, true);
+  assert.equal(spawnedInput.lanAccessToken, 'temporary-access-code');
+  assert.deepEqual(writtenState.lanUrls, ['http://192.168.31.8:2727']);
+  assert.equal(Object.hasOwn(writtenState, 'lanAccessToken'), false);
+  assert.deepEqual(secured, [PATHS.graphRuntimeStatePath]);
+  assert.deepEqual(result, {
+    status: 'started',
+    url: 'http://127.0.0.1:2727',
+    pid: 2727,
+    lan: true,
+    lanUrls: ['http://192.168.31.8:2727'],
+    lanAccess: {
+      username: 'fuli',
+      accessCode: 'temporary-access-code'
+    }
+  });
+});
+
+test('repeating LAN start restarts the console and rotates its in-memory access code', async () => {
+  let spawnedInput = null;
+  const stopped = [];
+  const existing = {
+    version: 3,
+    pid: 2727,
+    url: 'http://127.0.0.1:2727',
+    port: 2727,
+    lan: true,
+    lanUrls: ['http://192.168.31.8:2727']
+  };
+  const result = await ensureGraphRuntime({
+    paths: PATHS,
+    personalSpaceName: '我',
+    personalOnly: true,
+    port: 2727,
+    lan: true,
+    noStart: false
+  }, dependencies({
+    discoverLanAddresses: () => ['192.168.31.8'],
+    createLanAccessToken: () => 'rotated-access-code',
+    readConfig: () => ({ version: 1 }),
+    readState: () => existing,
+    async fetch(url) {
+      if (url.endsWith('/health')) return response({ status: 'ready' });
+      throw new Error(`Unexpected Provider request: ${url}`);
+    },
+    stopProcess: (pid) => stopped.push(pid),
+    waitForExit: async () => true,
+    spawnWebRuntime(input) {
+      spawnedInput = input;
+      return { pid: 2728 };
+    },
+    webHealth: async (url, pid) =>
+      (url === existing.url && pid === 2727) ||
+      (url === 'http://127.0.0.1:2727' && pid === 2728),
+    isProcessAlive: (pid) => pid === 2727 || pid === 2728,
+    writeState() {}
+  }));
+
+  assert.deepEqual(stopped, [2727]);
+  assert.equal(spawnedInput.lanAccessToken, 'rotated-access-code');
+  assert.equal(result.status, 'started');
+  assert.equal(result.lanAccess.accessCode, 'rotated-access-code');
+});
+
 function dependencies(overrides = {}) {
   return {
     ensureDirectory() {},
@@ -229,6 +351,7 @@ function dependencies(overrides = {}) {
     readConfig() { return null; },
     writeConfig() {},
     readState() { return null; },
+    waitForExit: async () => true,
     stopLegacyService() {},
     unlink() {},
     ...overrides

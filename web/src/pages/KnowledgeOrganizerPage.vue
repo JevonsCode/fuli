@@ -208,144 +208,142 @@ function openReplacement(item: KnowledgeItem) {
       </div>
     </div>
 
-    <template>
-      <div class="organizer-toolbar">
-        <label class="organizer-search">
-          <span>{{ t('knowledge.workspace.organizer.filterKnowledge') }}</span>
-          <input v-model="query" type="search" :placeholder="t('knowledge.workspace.organizer.searchPlaceholder')" />
-        </label>
+    <div class="organizer-toolbar">
+      <label class="organizer-search">
+        <span>{{ t('knowledge.workspace.organizer.filterKnowledge') }}</span>
+        <input v-model="query" type="search" :placeholder="t('knowledge.workspace.organizer.searchPlaceholder')" />
+      </label>
 
-        <div class="quadrant-filter" :aria-label="t('knowledge.workspace.organizer.quadrantFilterAria')">
-          <span>{{ t('knowledge.workspace.organizer.discoverySource') }}</span>
-          <button
-            type="button"
-            data-quadrant="all"
-            :class="{ active: activeQuadrant === 'all' }"
-            :aria-pressed="activeQuadrant === 'all'"
-            @click="activeQuadrant = 'all'"
-          >
-            {{ t('common.status.all') }} <strong>{{ items.length }}</strong>
-          </button>
-          <button
-            v-for="choice in quadrantChoices"
-            :key="choice.value"
-            type="button"
-            :data-quadrant="choice.value"
-            :class="{ active: activeQuadrant === choice.value }"
-            :aria-pressed="activeQuadrant === choice.value"
-            :title="choice.coordinate"
-            @click="selectQuadrant(choice.value)"
-          >
-            {{ choice.short }} <strong>{{ quadrantCounts[choice.value] }}</strong>
-          </button>
-        </div>
-
-        <div class="review-state-filter" :aria-label="t('knowledge.workspace.organizer.reviewFilterAria')">
-          <span>{{ t('knowledge.workspace.organizer.reviewStatus') }}</span>
-          <button
-            type="button"
-            data-review-state="all"
-            :class="{ active: activeReviewState === 'all' }"
-            :aria-pressed="activeReviewState === 'all'"
-            @click="selectReviewState('all')"
-          >
-            {{ t('common.status.all') }} <strong>{{ activeQuadrantItems.length }}</strong>
-          </button>
-          <button
-            v-for="choice in reviewChoices"
-            :key="choice.value"
-            type="button"
-            :data-review-state="choice.value"
-            :class="[
-              `state-${choice.value}`,
-              { active: activeReviewState === choice.value },
-            ]"
-            :aria-pressed="activeReviewState === choice.value"
-            :title="choice.hint"
-            @click="selectReviewState(choice.value)"
-          >
-            {{ choice.label }} <strong>{{ activeReviewCounts[choice.value] }}</strong>
-          </button>
-        </div>
-
-        <p class="organizer-result-summary">
-          {{ t('knowledge.workspace.organizer.showing', {
-            visible: visibleItems.length,
-            total: activeQuadrantItems.length,
-          }) }}
-          <span v-if="activeReviewState !== 'all'">
-            · {{ reviewChoices.find(({ value }) => value === activeReviewState)?.label }}
-          </span>
-        </p>
+      <div class="quadrant-filter" :aria-label="t('knowledge.workspace.organizer.quadrantFilterAria')">
+        <span>{{ t('knowledge.workspace.organizer.discoverySource') }}</span>
         <button
-          v-if="confirmationGroups.length"
-          class="toolbar-action batch-confirm-action"
           type="button"
-          @click="batchDialogOpen = true"
+          data-quadrant="all"
+          :class="{ active: activeQuadrant === 'all' }"
+          :aria-pressed="activeQuadrant === 'all'"
+          @click="activeQuadrant = 'all'"
         >
-          {{ t('knowledge.workspace.organizer.batchConfirm', { count: confirmationGroups.length }) }}
+          {{ t('common.status.all') }} <strong>{{ items.length }}</strong>
         </button>
-        <button class="toolbar-action" type="button" @click="load()">{{ t('common.actions.refresh') }}</button>
+        <button
+          v-for="choice in quadrantChoices"
+          :key="choice.value"
+          type="button"
+          :data-quadrant="choice.value"
+          :class="{ active: activeQuadrant === choice.value }"
+          :aria-pressed="activeQuadrant === choice.value"
+          :title="choice.coordinate"
+          @click="selectQuadrant(choice.value)"
+        >
+          {{ choice.short }} <strong>{{ quadrantCounts[choice.value] }}</strong>
+        </button>
       </div>
 
-      <p v-if="graph?.truncated" class="organizer-truncated">
-        {{ t('knowledge.workspace.organizer.truncated') }}
+      <div class="review-state-filter" :aria-label="t('knowledge.workspace.organizer.reviewFilterAria')">
+        <span>{{ t('knowledge.workspace.organizer.reviewStatus') }}</span>
+        <button
+          type="button"
+          data-review-state="all"
+          :class="{ active: activeReviewState === 'all' }"
+          :aria-pressed="activeReviewState === 'all'"
+          @click="selectReviewState('all')"
+        >
+          {{ t('common.status.all') }} <strong>{{ activeQuadrantItems.length }}</strong>
+        </button>
+        <button
+          v-for="choice in reviewChoices"
+          :key="choice.value"
+          type="button"
+          :data-review-state="choice.value"
+          :class="[
+            `state-${choice.value}`,
+            { active: activeReviewState === choice.value },
+          ]"
+          :aria-pressed="activeReviewState === choice.value"
+          :title="choice.hint"
+          @click="selectReviewState(choice.value)"
+        >
+          {{ choice.label }} <strong>{{ activeReviewCounts[choice.value] }}</strong>
+        </button>
+      </div>
+
+      <p class="organizer-result-summary">
+        {{ t('knowledge.workspace.organizer.showing', {
+          visible: visibleItems.length,
+          total: activeQuadrantItems.length,
+        }) }}
+        <span v-if="activeReviewState !== 'all'">
+          · {{ reviewChoices.find(({ value }) => value === activeReviewState)?.label }}
+        </span>
       </p>
-
-      <div v-if="loading && !graph" class="view-loading">{{ t('common.status.loadingKnowledge') }}</div>
-      <div
-        v-else
-        class="organizer-layout"
-        :class="{ 'has-selection': selectedItem }"
+      <button
+        v-if="confirmationGroups.length"
+        class="toolbar-action batch-confirm-action"
+        type="button"
+        @click="batchDialogOpen = true"
       >
-        <section class="organizer-directory" :aria-label="t('knowledge.workspace.organizer.directoryAria')">
-          <div class="organizer-table-head" aria-hidden="true">
-            <span>{{ t('knowledge.workspace.workspace.view.knowledgeContent') }}</span>
-            <span>{{ t('knowledge.workspace.workspace.view.columns.quadrant') }}</span>
-            <span>{{ t('knowledge.workspace.workspace.view.columns.review') }}</span>
-            <span>{{ t('knowledge.workspace.organizer.confirmationBasis') }}</span>
-            <span>{{ t('knowledge.workspace.organizer.updated') }}</span>
-          </div>
-          <div class="organizer-list">
-            <button
-              v-for="item in visibleItems"
-              :key="`${item.itemKind}:${item.id}`"
-              type="button"
-              class="organizer-row"
-              :class="{ selected: selectedItem?.id === item.id }"
-              @click="selectedItem = item"
-            >
-              <span class="organizer-item-copy">
-                <strong>{{ item.title }}</strong>
-                <small>{{ item.body }}</small>
-              </span>
-              <span class="quadrant-chip" :class="item.originQuadrant">
-                {{ quadrantLabel(item.originQuadrant) }}
-              </span>
-              <span class="review-chip" :class="`state-${knowledgeReviewState(item)}`">
-                {{ reviewStateLabel(item) }}
-              </span>
-              <span class="organizer-basis">{{ confirmationBasisSummary(item) }}</span>
-              <time>{{ formatTime(latestItemValue(item)) }}</time>
-            </button>
-          </div>
-          <div v-if="!visibleItems.length" class="empty-state">
-            {{ items.length
-              ? t('knowledge.workspace.organizer.noFilteredContent')
-              : t('knowledge.workspace.organizer.noContent') }}
-          </div>
-        </section>
+        {{ t('knowledge.workspace.organizer.batchConfirm', { count: confirmationGroups.length }) }}
+      </button>
+      <button class="toolbar-action" type="button" @click="load()">{{ t('common.actions.refresh') }}</button>
+    </div>
 
-        <KnowledgeInspector
-          :item="selectedItem"
-          :graph="graph"
-          editable
-          @confirm="confirmingItem = $event"
-          @edit="editingItem = $event"
-          @open-replacement="openReplacement"
-        />
-      </div>
-    </template>
+    <p v-if="graph?.truncated" class="organizer-truncated">
+      {{ t('knowledge.workspace.organizer.truncated') }}
+    </p>
+
+    <div v-if="loading && !graph" class="view-loading">{{ t('common.status.loadingKnowledge') }}</div>
+    <div
+      v-else
+      class="organizer-layout"
+      :class="{ 'has-selection': selectedItem }"
+    >
+      <section class="organizer-directory" :aria-label="t('knowledge.workspace.organizer.directoryAria')">
+        <div class="organizer-table-head" aria-hidden="true">
+          <span>{{ t('knowledge.workspace.workspace.view.knowledgeContent') }}</span>
+          <span>{{ t('knowledge.workspace.workspace.view.columns.quadrant') }}</span>
+          <span>{{ t('knowledge.workspace.workspace.view.columns.review') }}</span>
+          <span>{{ t('knowledge.workspace.organizer.confirmationBasis') }}</span>
+          <span>{{ t('knowledge.workspace.organizer.updated') }}</span>
+        </div>
+        <div class="organizer-list">
+          <button
+            v-for="item in visibleItems"
+            :key="`${item.itemKind}:${item.id}`"
+            type="button"
+            class="organizer-row"
+            :class="{ selected: selectedItem?.id === item.id }"
+            @click="selectedItem = item"
+          >
+            <span class="organizer-item-copy">
+              <strong>{{ item.title }}</strong>
+              <small>{{ item.body }}</small>
+            </span>
+            <span class="quadrant-chip" :class="item.originQuadrant">
+              {{ quadrantLabel(item.originQuadrant) }}
+            </span>
+            <span class="review-chip" :class="`state-${knowledgeReviewState(item)}`">
+              {{ reviewStateLabel(item) }}
+            </span>
+            <span class="organizer-basis">{{ confirmationBasisSummary(item) }}</span>
+            <time>{{ formatTime(latestItemValue(item)) }}</time>
+          </button>
+        </div>
+        <div v-if="!visibleItems.length" class="empty-state">
+          {{ items.length
+            ? t('knowledge.workspace.organizer.noFilteredContent')
+            : t('knowledge.workspace.organizer.noContent') }}
+        </div>
+      </section>
+
+      <KnowledgeInspector
+        :item="selectedItem"
+        :graph="graph"
+        editable
+        @confirm="confirmingItem = $event"
+        @edit="editingItem = $event"
+        @open-replacement="openReplacement"
+      />
+    </div>
 
     <KnowledgeEditDialog
       :item="editingItem"

@@ -28,7 +28,30 @@ test('fl start initializes only the personal Provider on a fresh machine', async
 
   assert.equal(runtimeInput.personalOnly, true);
   assert.equal(runtimeInput.buildProviders, true);
+  assert.equal(runtimeInput.lan, false);
   assert.equal(result.managesDevelopmentWorkspace, false);
+});
+
+test('fl start forwards the explicit LAN exposure mode without changing Provider scope', async () => {
+  let runtimeInput = null;
+  await startLocalRuntime(input({ lan: true }), {
+    readConfig: () => null,
+    fileExists: () => true,
+    ensureRuntime: async (value) => {
+      runtimeInput = value;
+      return {
+        status: 'started',
+        url: 'http://127.0.0.1:2727',
+        pid: 27,
+        lan: true,
+        lanUrls: ['http://192.168.31.8:2727'],
+        lanAccess: { username: 'fuli', accessCode: 'temporary-access-code' }
+      };
+    }
+  });
+
+  assert.equal(runtimeInput.lan, true);
+  assert.equal(runtimeInput.personalOnly, true);
 });
 
 test('fl start preserves an explicitly configured local development public Provider', async () => {
@@ -108,7 +131,14 @@ test('fl status keeps Provider credentials out of its result', async () => {
         accessToken: 'public-secret'
       }]
     }),
-    readState: () => ({ version: 3, pid: 27, url: 'http://127.0.0.1:2727' }),
+    readState: () => ({
+      version: 3,
+      pid: 27,
+      url: 'http://127.0.0.1:2727',
+      lan: true,
+      lanUrls: ['http://192.168.31.8:2727'],
+      lanAccessToken: 'lan-secret'
+    }),
     isProcessAlive: () => true,
     consoleHealth: async () => true,
     providerHealth: async (url) => ({ url, status: 'ready' })
@@ -116,7 +146,8 @@ test('fl status keeps Provider credentials out of its result', async () => {
 
   assert.equal(result.status, 'running');
   assert.equal(result.public.status, 'ready');
-  assert.doesNotMatch(JSON.stringify(result), /personal-secret|public-secret/);
+  assert.deepEqual(result.console.lanUrls, ['http://192.168.31.8:2727']);
+  assert.doesNotMatch(JSON.stringify(result), /personal-secret|public-secret|lan-secret/);
 });
 
 test('fl status reports multiple public Providers as degraded when only some are reachable',
@@ -159,6 +190,7 @@ function input(overrides = {}) {
     port: 2727,
     rebuild: false,
     open: false,
+    lan: false,
     ...overrides
   };
 }

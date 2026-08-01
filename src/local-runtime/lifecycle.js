@@ -20,6 +20,7 @@ export async function startLocalRuntime(input, dependencies = {}) {
     paths: input.paths,
     personalSpaceName: input.personalSpaceName,
     port: input.port,
+    lan: input.lan === true,
     personalOnly: !managesDevelopmentWorkspace,
     buildProviders,
     noStart: false,
@@ -99,7 +100,10 @@ export async function inspectLocalRuntime(input, dependencies = {}) {
     console: {
       status: consoleReady ? 'ready' : processAlive ? 'unverified' : 'stopped',
       url: stateLooksOwned ? state.url : `http://127.0.0.1:${input.port}`,
-      pid: processAlive ? state.pid : null
+      pid: processAlive ? state.pid : null,
+      ...(stateLooksOwned && state.lan === true
+        ? { lan: true, lanUrls: safeLanUrls(state.lanUrls) }
+        : {})
     },
     personal,
     public: {
@@ -235,6 +239,12 @@ function publicProviderStatus(workspaces) {
 function isRuntimeState(state) {
   return (state?.version === 2 || state?.version === 3) &&
     Number.isInteger(state.pid) && typeof state.url === 'string';
+}
+
+function safeLanUrls(value) {
+  return Array.isArray(value)
+    ? value.filter((url) => typeof url === 'string' && url.startsWith('http://'))
+    : [];
 }
 
 function isProcessAlive(pid) {

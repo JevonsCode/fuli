@@ -1,3 +1,5 @@
+import { timingSafeEqual } from 'node:crypto';
+
 import { sendJson } from './response.js';
 
 export function localServerAuthority(address) {
@@ -9,15 +11,35 @@ export function localServerAuthority(address) {
 }
 
 export function rejectDisallowedRequest({ request, response, authority }) {
+  return rejectRequestOutsidePolicy({ request, response, authority });
+}
+
+export function rejectRequestOutsidePolicy({
+  request,
+  response,
+  authority,
+  lanAuthorities = [],
+  lanAccessToken = null
+}) {
   const origin = request.headers.origin;
   const fetchSite = request.headers['sec-fetch-site'];
+  const requestAuthority = request.headers.host;
+  const lanRequest = lanAuthorities.includes(requestAuthority);
+  const loopbackRequest = requestAuthority === authority;
   if (
     !authority ||
-    request.headers.host !== authority ||
-    (origin !== undefined && origin !== `http://${authority}`) ||
+    (requestAuthority !== authority && !lanRequest) ||
+    (lanAuthorities.length > 0 && loopbackRequest && !isLoopbackAddress(request.socket?.remoteAddress)) ||
+    (origin !== undefined && origin !== `http://${requestAuthority}`) ||
     (typeof fetchSite === 'string' && fetchSite.toLowerCase() === 'cross-site')
   ) {
     sendJson(response, 403, { error: 'Forbidden' });
+    return true;
+  }
+
+  if (lanRequest && !hasLanAccess(request.headers.authorization, lanAccessToken)) {
+    response.setHeader('www-authenticate', 'Basic realm="FULI LAN", charset="UTF-8"');
+    sendJson(response, 401, { error: 'LAN access code required' });
     return true;
   }
 
@@ -27,6 +49,19 @@ export function rejectDisallowedRequest({ request, response, authority }) {
   }
 
   return false;
+}
+
+function hasLanAccess(authorization, accessToken) {
+  if (typeof accessToken !== 'string' || !accessToken) return false;
+  const expected = `Basic ${Buffer.from(`fuli:${accessToken}`).toString('base64')}`;
+  if (typeof authorization !== 'string' || authorization.length !== expected.length) {
+    return false;
+  }
+  return timingSafeEqual(Buffer.from(authorization), Buffer.from(expected));
+}
+
+function isLoopbackAddress(address) {
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
 }
 
 function requiresJson(request) {

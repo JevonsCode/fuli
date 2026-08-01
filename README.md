@@ -198,11 +198,18 @@ fuli open
 fuli --version
 fuli status
 fuli restart --rebuild
+fuli start --lan
 fuli stop
 ```
 
 `start`、`restart` 和 `setup` 支持 `--data-dir DIR`、`--personal-space NAME`、
-`--port PORT` 等选项。`setup` 还支持：
+`--port PORT` 等选项。`start` 和 `restart` 还支持显式的 `--lan`：管理界面会监听
+私有 IPv4 局域网地址，并在终端输出可访问地址、用户名 `fuli` 和本次启动生成的临时访问
+口令。默认启动仍只监听 `127.0.0.1`；内部 Provider、Neo4j Browser 和 Bolt 不会随
+`--lan` 开放。局域网模式使用 HTTP Basic Auth，只适合可信家庭或办公 Wi-Fi，不等同于
+HTTPS 公网部署。
+
+`setup` 还支持：
 
 | 选项 | 用途 |
 | --- | --- |
@@ -273,6 +280,10 @@ Code 使用 `UserPromptSubmit` 和 `Stop` Hook 接入任务生命周期；Codex 
 | 个人 Neo4j Browser / Bolt | `127.0.0.1:7474` / `127.0.0.1:7687` |
 | 个人 Provider | `127.0.0.1:8787` |
 | Fuli 管理界面 | `127.0.0.1:2727` |
+
+需要同一 Wi-Fi 下的其他设备访问时，执行 `fuli start --lan`。若当前已经以本机模式运行，
+命令会安全重启管理界面并保持 Provider 与图谱数据不变。退出局域网模式可执行
+`fuli restart`；再次进入局域网模式会更换临时访问口令。
 
 如果端口被占用、Docker Compose 不可用或容器引擎未启动，setup 会在修改 Agent 配置前停止
 并报告原因。

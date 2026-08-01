@@ -9,13 +9,16 @@ const VALUE_OPTIONS = Object.freeze({
 const BOOLEAN_OPTIONS = Object.freeze({
   '--open': 'open',
   '--rebuild': 'rebuild',
+  '--lan': 'lan',
   '--json': 'json'
 });
 
 const ALLOWED_BY_COMMAND = Object.freeze({
-  start: new Set(['--data-dir', '--personal-space', '--port', '--open', '--rebuild']),
+  start: new Set(['--data-dir', '--personal-space', '--port', '--open', '--rebuild', '--lan']),
   stop: new Set(['--data-dir']),
-  restart: new Set(['--data-dir', '--personal-space', '--port', '--open', '--rebuild']),
+  restart: new Set([
+    '--data-dir', '--personal-space', '--port', '--open', '--rebuild', '--lan'
+  ]),
   status: new Set(['--data-dir', '--port', '--json']),
   open: new Set(['--data-dir'])
 });
@@ -29,6 +32,7 @@ export function parseLocalRuntimeOptions(command, args = []) {
     port: DEFAULT_FULI_PORT,
     open: false,
     rebuild: false,
+    lan: false,
     json: false
   };
   const seen = new Set();

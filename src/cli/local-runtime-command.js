@@ -40,10 +40,10 @@ export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
 export function formatLocalRuntimeResult(command, result) {
   if (command === 'start') {
     const verb = result.status === 'running' ? '已经在运行' : '已启动';
-    return [`Fuli 本地服务${verb}。`, `管理界面：${result.url}`].join('\n');
+    return formatStartedRuntime(`Fuli 本地服务${verb}。`, result);
   }
   if (command === 'restart') {
-    return [`Fuli 本地服务已重启。`, `管理界面：${result.url}`].join('\n');
+    return formatStartedRuntime('Fuli 本地服务已重启。', result);
   }
   if (command === 'stop') {
     if (result.status === 'partial') {
@@ -59,6 +59,20 @@ export function formatLocalRuntimeResult(command, result) {
   if (command === 'open') return `已打开：${result.url}`;
   if (command === 'status') return formatStatus(result);
   throw new TypeError(`Unknown local runtime command: ${command}`);
+}
+
+function formatStartedRuntime(title, result) {
+  const lines = [title, `管理界面：${result.url}`];
+  if (result.lan === true) {
+    lines.push(
+      '局域网界面：',
+      ...result.lanUrls.map((url) => `  ${url}`),
+      `访问用户名：${result.lanAccess.username}`,
+      `临时访问口令：${result.lanAccess.accessCode}`,
+      '仅在可信 Wi-Fi 中使用；重新启动局域网模式会更换口令。'
+    );
+  }
+  return lines.join('\n');
 }
 
 function formatStatus(result) {

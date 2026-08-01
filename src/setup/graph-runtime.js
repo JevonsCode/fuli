@@ -15,6 +15,11 @@ import {
   ensureContainerRuntime,
   runDockerCompose
 } from './container-runtime.js';
+import {
+  discoverLanAddresses,
+  LAN_ACCESS_USERNAME,
+  lanConsoleUrls
+} from '../server/lan-access.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 
 export {
@@ -30,6 +35,11 @@ export const MANAGED_WORKSPACE_PROVIDER_URL = WORKSPACE_PROVIDER_URL;
 
 export async function ensureGraphRuntime(input, dependencies = {}) {
   const deps = graphDependencies(dependencies);
+  const lan = input.lan === true;
+  const lanAddresses = lan ? deps.discoverLanAddresses() : [];
+  if (lan && lanAddresses.length === 0) {
+    throw new Error('未发现可用的私有 IPv4 局域网地址，无法启动 LAN 模式。');
+  }
   const containerRuntime = await deps.ensureContainerRuntime({
     env: input.env ?? process.env,
     onProgress: input.onProgress
@@ -61,33 +71,52 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   const existing = deps.readState(input.paths.graphRuntimeStatePath);
   if (isGraphRuntimeState(existing) && deps.isProcessAlive(existing.pid)) {
     const healthy = await deps.webHealth(existing.url, existing.pid, existing.version);
-    if (healthy && existing.port === input.port) {
-      return { status: 'running', url: existing.url, pid: existing.pid };
+    if (
+      healthy &&
+      existing.port === input.port &&
+      exposureMatches(existing, { lan, lanAddresses })
+    ) {
+      return runtimeResult('running', existing);
     }
     if (!healthy) throw new Error('Recorded Fuli Graphiti runtime is not healthy');
     deps.stopProcess(existing.pid);
+    if (!await deps.waitForExit(existing.pid)) {
+      throw new Error('Fuli Graphiti console did not stop before changing exposure mode');
+    }
   }
+  const lanAccessToken = lan ? deps.createLanAccessToken() : null;
   const child = deps.spawnWebRuntime({
     paths: input.paths,
     nodePath: process.execPath,
-    port: input.port
+    port: input.port,
+    lan,
+    lanAccessToken,
+    env: input.env ?? process.env
   });
   const url = `http://127.0.0.1:${input.port}`;
   if (!Number.isInteger(child.pid) || !await waitForWeb(url, child.pid, deps)) {
     if (Number.isInteger(child.pid)) deps.stopProcess(child.pid);
     throw new Error('Fuli Graphiti console could not start');
   }
-  deps.writeState(input.paths.graphRuntimeStatePath, {
+  const state = {
     version: 3,
     pid: child.pid,
     url,
     port: input.port,
+    ...(lan
+      ? {
+          lan: true,
+          lanUrls: lanConsoleUrls(lanAddresses, input.port)
+        }
+      : {}),
     managedProviders: input.personalOnly
       ? ['personal']
       : ['personal', 'development-workspace'],
     startedAt: new Date().toISOString()
-  });
-  return { status: 'started', url, pid: child.pid };
+  };
+  deps.writeState(input.paths.graphRuntimeStatePath, state);
+  deps.secureFile(input.paths.graphRuntimeStatePath);
+  return runtimeResult('started', state, lanAccessToken);
 }
 
 function ensureProviderSecrets(path, deps) {
@@ -250,14 +279,19 @@ function spawnWebRuntime(input) {
   mkdirSync(dirname(input.paths.logPath), { recursive: true });
   const log = openSync(input.paths.logPath, 'a');
   try {
-    const child = spawn(input.nodePath, [
+    const args = [
       input.paths.serverPath,
       '--runtime-config', input.paths.graphRuntimeConfigPath,
       '--port', String(input.port)
-    ], {
+    ];
+    if (input.lan) args.push('--lan');
+    const child = spawn(input.nodePath, args, {
       detached: true,
       windowsHide: true,
-      stdio: ['ignore', log, log]
+      stdio: ['ignore', log, log],
+      env: input.lan
+        ? { ...input.env, FULI_LAN_ACCESS_TOKEN: input.lanAccessToken }
+        : input.env
     });
     child.unref();
     return child;
@@ -292,6 +326,9 @@ function graphDependencies(overrides) {
     stopProcess,
     stopLegacyService,
     webHealth: checkLocalConsoleHealth,
+    discoverLanAddresses,
+    createLanAccessToken: secret,
+    waitForExit: waitForProcessExit,
     ...overrides
   };
 }
@@ -321,6 +358,30 @@ export async function checkLocalConsoleHealth(url, expectedPid, stateVersion = 3
 function isGraphRuntimeState(state) {
   return (state?.version === 2 || state?.version === 3) &&
     Number.isInteger(state.pid) && typeof state.url === 'string';
+}
+
+function exposureMatches(state, { lan }) {
+  if ((state.lan === true) !== lan) return false;
+  if (!lan) return true;
+  // A repeated explicit LAN start rotates the in-memory access code.
+  return false;
+}
+
+function runtimeResult(status, state, lanAccessToken = null) {
+  const result = { status, url: state.url, pid: state.pid };
+  if (state.lan !== true) return result;
+  if (typeof lanAccessToken !== 'string' || lanAccessToken.length < 16) {
+    throw new Error('LAN runtime started without a valid access code');
+  }
+  return {
+    ...result,
+    lan: true,
+    lanUrls: [...state.lanUrls],
+    lanAccess: {
+      username: LAN_ACCESS_USERNAME,
+      accessCode: lanAccessToken
+    }
+  };
 }
 
 function stopLegacyService() {
@@ -353,6 +414,14 @@ function isProcessAlive(pid) {
 
 function stopProcess(pid) {
   try { process.kill(pid, 'SIGTERM'); } catch { /* already stopped */ }
+}
+
+async function waitForProcessExit(pid) {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (!isProcessAlive(pid)) return true;
+    await delay(100);
+  }
+  return false;
 }
 
 function delay(ms) {

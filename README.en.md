@@ -213,11 +213,18 @@ Common commands:
 fuli --version
 fuli status
 fuli restart --rebuild
+fuli start --lan
 fuli stop
 ```
 
 `start`, `restart`, and `setup` accept options such as `--data-dir DIR`,
-`--personal-space NAME`, and `--port PORT`. Additional setup options include:
+`--personal-space NAME`, and `--port PORT`. `start` and `restart` also accept the explicit
+`--lan` flag. LAN mode listens on private IPv4 addresses and prints the reachable URLs, the
+`fuli` username, and a temporary access code generated for that start. The default remains
+loopback-only; internal Providers and Neo4j ports are never exposed by `--lan`. LAN mode uses
+HTTP Basic Auth and is intended only for trusted home or office Wi-Fi, not public deployment.
+
+Additional setup options include:
 
 | Option | Purpose |
 | --- | --- |
@@ -291,6 +298,11 @@ the single source of truth and is not copied into agent configuration.
 | Personal Neo4j Browser / Bolt | `127.0.0.1:7474` / `127.0.0.1:7687` |
 | Personal Provider | `127.0.0.1:8787` |
 | Fuli management UI | `127.0.0.1:2727` |
+
+To access the UI from another device on the same Wi-Fi, run `fuli start --lan`. Starting LAN mode
+from a loopback-only runtime safely restarts only the management UI and preserves Provider and
+graph data. Run `fuli restart` to return to loopback-only mode. Starting LAN mode again rotates
+the temporary access code.
 
 If a port is occupied, Docker Compose is unavailable, or the container runtime is not running,
 setup stops before modifying agent configuration and reports the cause.

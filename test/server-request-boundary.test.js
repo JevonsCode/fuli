@@ -101,6 +101,43 @@ test('exact local browser authority and requests without Origin keep working', a
   assert.match(entrySource, /#app/);
 });
 
+test('LAN mode binds a protected authority while loopback health remains available', async (t) => {
+  let stateCalls = 0;
+  const app = {
+    state() {
+      stateCalls += 1;
+      return { private: true };
+    }
+  };
+  const accessCode = 'temporary-access-code';
+  const { server, url, lanUrls } = await createServer({
+    app,
+    port: 0,
+    lan: true,
+    lanAccessToken: accessCode,
+    lanAddresses: ['192.168.31.8']
+  });
+  t.after(() => closeServer(server));
+  const port = server.address().port;
+  const lanAuthority = `192.168.31.8:${port}`;
+
+  assert.deepEqual(lanUrls, [`http://${lanAuthority}`]);
+  assert.equal(await rawStatus(`${url}/api/state`, {
+    headers: { host: lanAuthority }
+  }), 401);
+  assert.equal(stateCalls, 0);
+
+  assert.equal(await rawStatus(`${url}/api/state`, {
+    headers: {
+      host: lanAuthority,
+      authorization: `Basic ${Buffer.from(`fuli:${accessCode}`).toString('base64')}`
+    }
+  }), 200);
+  assert.equal(stateCalls, 1);
+
+  assert.equal((await fetch(`${url}/api/health`)).status, 200);
+});
+
 function rawStatus(url, options) {
   return new Promise((resolve, reject) => {
     const request = httpRequest(url, options, (response) => {

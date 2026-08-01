@@ -40,6 +40,8 @@ describe('KnowledgeOrganizerPage', () => {
     expect(wrapper.find('.quadrant-stage').exists()).toBe(false)
     expect(wrapper.find('.organizer-toolbar').exists()).toBe(true)
     expect(wrapper.find('.organizer-layout').exists()).toBe(true)
+    expect(wrapper.get('.organizer-toolbar').element.closest('template')).toBeNull()
+    expect(wrapper.get('.organizer-layout').element.closest('template')).toBeNull()
     expect(wrapper.findAll('.quadrant-filter button')).toHaveLength(5)
     expect(wrapper.findAll('.review-state-filter button')).toHaveLength(4)
 
