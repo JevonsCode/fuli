@@ -159,6 +159,12 @@ async def list_knowledge_review_candidates(
         review_id=run.review_id,
         routing_='r',
     )
+    deferred_rows, _, _ = await store.runtime.driver.execute_query(
+        _DEFERRED_ITEM_QUERY,
+        space_id=space['id'],
+        review_id=run.review_id,
+        routing_='r',
+    )
     candidates = build_review_candidates(
         [dict(row) for row in [*entity_rows, *relationship_rows]],
         scope=run.scope,
@@ -173,6 +179,12 @@ async def list_knowledge_review_candidates(
         },
         decided_candidate_keys={
             row['candidate_key'] for row in decision_rows
+        },
+        deferred_candidate_keys={
+            key
+            for row in deferred_rows
+            for key in row.get('candidate_keys', [])
+            if key
         },
     )
     selected = candidates[:request.limit]
@@ -272,7 +284,9 @@ def build_review_candidates(
     review_cutoff_at: datetime | None = None,
     conflict_item_keys: set[str],
     decided_candidate_keys: set[str],
+    deferred_candidate_keys: set[str] | None = None,
 ) -> list[KnowledgeReviewCandidate]:
+    deferred_candidate_keys = deferred_candidate_keys or set()
     prepared = []
     for row in rows:
         candidate_key = f"{row['item_kind']}:{row['item_id']}"
@@ -328,6 +342,7 @@ def build_review_candidates(
             normalized,
             previous_completed_at,
             candidate_key in conflict_item_keys,
+            candidate_key in deferred_candidate_keys,
         )
         if not reasons:
             continue
@@ -426,6 +441,7 @@ def _normalize_item_row(row: dict[str, Any]) -> dict[str, Any]:
         'preference_project_id': row.get('preference_project_id'),
         'project_ids': project_ids,
         'confirmation_status': row.get('confirmation_status') or 'pending',
+        'current_quadrant': row.get('current_quadrant') or 'known_known',
         'utility_score': _float_or_default(row.get('utility_score'), 0),
         'confidence_score': _float_or_default(row.get('confidence_score'), 0.5),
         'qualified_use_count': int(row.get('qualified_use_count') or 0),
@@ -471,12 +487,15 @@ def _candidate_reasons(
     item: dict,
     previous_completed_at: datetime | None,
     has_conflict: bool,
+    was_deferred: bool,
 ) -> list[str]:
     reasons = []
     if previous_completed_at is None or (
         item['changed_at'] is not None and item['changed_at'] > previous_completed_at
     ):
         reasons.append('changed_since_last')
+    if was_deferred:
+        reasons.append('deferred_from_previous')
     if (
         has_conflict
         or item['requires_attention']
@@ -496,6 +515,7 @@ def _candidate_reasons(
 def _reason_priority(reason: str) -> int:
     return {
         'changed_since_last': 1,
+        'deferred_from_previous': 1,
         'conflict_or_attention': 2,
         'low_weight': 3,
         'repeated_cross_session': 4,
@@ -539,6 +559,11 @@ RETURN item.uuid AS item_id,
        item.fuli_profile_aspect AS profile_aspect,
        item.fuli_preference_scope AS preference_scope,
        item.fuli_preference_project_id AS preference_project_id,
+       coalesce(
+         item.fuli_current_quadrant,
+         item.fuli_origin_quadrant,
+         'known_known'
+       ) AS current_quadrant,
        collect(DISTINCT assignment.project_id) AS assigned_project_ids,
        collect(DISTINCT episode.fuli_personal_project_id) AS evidence_project_ids,
        collect(DISTINCT episode.fuli_session_id) AS session_ids,
@@ -576,6 +601,11 @@ RETURN item.uuid AS item_id,
        item.fuli_profile_aspect AS profile_aspect,
        item.fuli_preference_scope AS preference_scope,
        item.fuli_preference_project_id AS preference_project_id,
+       coalesce(
+         item.fuli_current_quadrant,
+         item.fuli_origin_quadrant,
+         'known_known'
+       ) AS current_quadrant,
        collect(DISTINCT assignment.project_id) AS assigned_project_ids,
        collect(DISTINCT episode.fuli_personal_project_id) AS evidence_project_ids,
        collect(DISTINCT episode.fuli_session_id) AS session_ids,
@@ -605,8 +635,23 @@ WITH space, collect(DISTINCT 'entity:' + knowledge.item_id) +
      AS knowledge_keys
 OPTIONAL MATCH (space)-[:HAS_PREFERENCE_CONFLICT]->
               (preference:FuliPreferenceConflict {status: 'ai_pending'})
-RETURN knowledge_keys +
-       collect(DISTINCT preference.left_item_kind + ':' + preference.left_item_id) +
-       collect(DISTINCT preference.right_item_kind + ':' + preference.right_item_id)
-       AS candidate_keys
+WITH knowledge_keys,
+     collect(DISTINCT preference.left_item_kind + ':' + preference.left_item_id) +
+     collect(DISTINCT preference.right_item_kind + ':' + preference.right_item_id)
+     AS preference_keys
+RETURN knowledge_keys + preference_keys AS candidate_keys
+'''
+
+
+_DEFERRED_ITEM_QUERY = '''
+MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
+      [:HAS_KNOWLEDGE_REVIEW]->(past_run:FuliKnowledgeReviewRun)
+WHERE past_run.id <> $review_id
+MATCH (past_run)-[:HAS_REVIEW_DECISION]->
+      (decision:FuliKnowledgeReviewDecision)
+WITH decision.candidate_key AS candidate_key, decision
+ORDER BY decision.updated_at DESC, decision.id DESC
+WITH candidate_key, collect(decision)[0] AS latest_decision
+WHERE latest_decision.outcome = 'deferred'
+RETURN collect(candidate_key) AS candidate_keys
 '''

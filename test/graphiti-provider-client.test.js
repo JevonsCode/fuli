@@ -55,7 +55,7 @@ test('provider client maps every persistent knowledge review endpoint', async ()
   });
   await client.recordKnowledgeReviewProgress({
     personal_space_id: 'personal-1', review_id: 'review-1',
-    candidate_key: 'entity:one', outcome: 'skipped'
+    candidate_key: 'entity:one', outcome: 'delegated_to_ai'
   });
   await client.finishKnowledgeReview({
     personal_space_id: 'personal-1', review_id: 'review-1', disposition: 'paused'

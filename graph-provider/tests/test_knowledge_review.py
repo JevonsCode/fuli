@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
 
 import pytest
+from pydantic import ValidationError
 
 from fuli_graph.knowledge_review import (
     _CONFLICT_ITEM_QUERY,
+    _DEFERRED_ITEM_QUERY,
     LOW_CONFIDENCE_SCORE,
     LOW_UTILITY_SCORE,
     REPEATED_SESSION_COUNT,
@@ -12,7 +14,9 @@ from fuli_graph.knowledge_review import (
     start_knowledge_review,
 )
 from fuli_graph.knowledge_review_models import (
+    KnowledgeReviewCandidate,
     KnowledgeReviewFinish,
+    KnowledgeReviewProgress,
     KnowledgeReviewStart,
 )
 
@@ -114,6 +118,29 @@ def test_repeated_pattern_is_combined_across_distinct_session_items():
     assert candidates[0].distinct_session_count == REPEATED_SESSION_COUNT
 
 
+def test_deferred_item_returns_even_when_no_fixed_ranking_threshold_still_matches():
+    watermark = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    rows = [item_row(
+        'deferred',
+        created_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        project_ids=['project-a'],
+    )]
+
+    candidates = build_review_candidates(
+        rows,
+        scope='project',
+        personal_project_id='project-a',
+        previous_completed_at=watermark,
+        conflict_item_keys=set(),
+        decided_candidate_keys=set(),
+        deferred_candidate_keys={'entity:deferred'},
+    )
+
+    assert [candidate.item_id for candidate in candidates] == ['deferred']
+    assert candidates[0].reasons == ['deferred_from_previous']
+    assert candidates[0].priority == 1
+
+
 def test_review_cutoff_leaves_concurrent_changes_for_the_next_run():
     candidates = build_review_candidates(
         [item_row(
@@ -137,6 +164,62 @@ def test_conflict_lookup_covers_entities_and_relationships():
     assert "'relationship:' + knowledge.item_id" in _CONFLICT_ITEM_QUERY
     assert "'entity:' + knowledge.target_item_id" in _CONFLICT_ITEM_QUERY
     assert "'relationship:' + knowledge.target_item_id" in _CONFLICT_ITEM_QUERY
+
+
+def test_conflict_lookup_uses_explicit_neo4j_aggregation_grouping():
+    assert 'WITH knowledge_keys,' in _CONFLICT_ITEM_QUERY
+    assert 'AS preference_keys' in _CONFLICT_ITEM_QUERY
+    assert 'RETURN knowledge_keys + preference_keys AS candidate_keys' in (
+        _CONFLICT_ITEM_QUERY
+    )
+
+
+def test_deferred_lookup_uses_the_latest_past_review_decision():
+    assert 'past_run.id <> $review_id' in _DEFERRED_ITEM_QUERY
+    assert 'ORDER BY decision.updated_at DESC' in _DEFERRED_ITEM_QUERY
+    assert "latest_decision.outcome = 'deferred'" in _DEFERRED_ITEM_QUERY
+
+
+def test_candidate_wire_order_keeps_review_reasons_before_optional_metadata():
+    fields = list(KnowledgeReviewCandidate.model_fields)
+
+    assert fields.index('reasons') < fields.index('profile_aspect')
+    assert fields.index('confirmation_status') < fields.index('profile_aspect')
+
+
+def test_candidate_exposes_the_mutable_current_quadrant():
+    candidate = build_review_candidates(
+        [item_row(
+            'blind-spot',
+            project_ids=['project-a'],
+            current_quadrant='unknown_unknown',
+        )],
+        scope='project',
+        personal_project_id='project-a',
+        previous_completed_at=None,
+        conflict_item_keys=set(),
+        decided_candidate_keys=set(),
+    )[0]
+
+    assert candidate.current_quadrant == 'unknown_unknown'
+
+
+def test_review_progress_supports_ai_delegation_and_rejects_retired_skip():
+    progress = KnowledgeReviewProgress(
+        personal_space_id='personal-space',
+        review_id='review-1',
+        candidate_key='entity:item-1',
+        outcome='delegated_to_ai',
+    )
+
+    assert progress.outcome == 'delegated_to_ai'
+    with pytest.raises(ValidationError):
+        KnowledgeReviewProgress(
+            personal_space_id='personal-space',
+            review_id='review-1',
+            candidate_key='entity:item-1',
+            outcome='skipped',
+        )
 
 
 @pytest.mark.asyncio
@@ -226,6 +309,7 @@ def item_row(item_id, **overrides):
         'project_ids': [],
         'session_ids': [],
         'confirmation_status': 'confirmed',
+        'current_quadrant': 'known_known',
         'utility_score': 0.7,
         'confidence_score': 0.8,
         'qualified_use_count': 1,

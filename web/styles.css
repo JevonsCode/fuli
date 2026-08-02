@@ -144,16 +144,45 @@ h3 { font-size: 15px; }
 .view[data-view-panel="personal-profile"] {
   display: flex; flex-direction: column; padding: 18px 32px 20px; overflow: hidden;
 }
-.intro-row, .section-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
-.intro-row h3 { font-size: 19px; margin-bottom: 7px; }
-.intro-row p, .section-toolbar p { color: #68716a; font-size: 13px; line-height: 1.55; }
+.section-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+.section-toolbar p { color: #68716a; font-size: 13px; line-height: 1.55; }
 .mode-chip { border: 1px solid #c8d3cb; border-radius: 999px; padding: 5px 9px; color: #426352; background: #f5f8f6; font-size: 11px; }
 
-.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: 28px 0 34px; border: 1px solid #dfe3de; border-radius: 9px; background: #fff; }
-.metrics article { padding: 20px 22px; border-right: 1px solid #e7e9e6; }
-.metrics article:last-child { border-right: 0; }
-.metrics strong { display: block; font-size: 27px; font-weight: 620; color: #27352e; }
-.metrics span { color: #747c76; font-size: 12px; }
+.overview-summary {
+  display: grid; grid-template-columns: minmax(220px, 1.15fr) minmax(170px, .8fr) minmax(220px, 1fr);
+  margin: 0 0 34px; overflow: hidden; border: 1px solid #dce1dc; border-radius: 9px; background: #fff;
+}
+.overview-summary-card {
+  position: relative; min-width: 0; min-height: 166px; display: flex; flex-direction: column;
+  padding: 21px 23px 18px; border-right: 1px solid #e5e8e5; color: inherit; text-decoration: none;
+  transition: background-color .15s ease, box-shadow .15s ease;
+}
+.overview-summary-card:last-child { border-right: 0; }
+.overview-summary-card:hover { background: #f7f9f7; }
+.overview-summary-card:focus-visible { z-index: 1; outline: 2px solid #7f9b8a; outline-offset: -3px; }
+.overview-space-card { background: #fbfcfb; }
+.overview-summary-label { color: #737c76; font-size: 11px; font-weight: 650; }
+.overview-summary-name, .overview-summary-value {
+  display: block; margin-top: 10px; overflow: hidden; color: #26372e; font-size: 28px;
+  font-weight: 620; line-height: 1.15; letter-spacing: -.025em; text-overflow: ellipsis; white-space: nowrap;
+}
+.overview-summary-name { font-size: 25px; }
+.overview-shared-value { font-size: 24px; }
+.overview-summary-meta {
+  min-height: 18px; display: flex; align-items: center; gap: 7px; margin-top: 7px;
+  color: #78817a; font-size: 11px; line-height: 1.45;
+}
+.overview-status-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #aeb5af; }
+.overview-status-dot.ready { background: #3f8b64; }
+.overview-status-dot.error { background: #b94e45; }
+.overview-summary-action {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: auto;
+  padding-top: 18px; color: #315b46; font-size: 11px; font-weight: 680;
+}
+.overview-summary-action > span { color: #789083; font-size: 15px; transition: transform .15s ease; }
+.overview-summary-card:hover .overview-summary-action > span { transform: translateX(2px); }
+.overview-shared-projects-card.is-disconnected .overview-summary-value { color: #67716a; }
+.overview-shared-projects-card.is-error .overview-summary-value { color: #8b4b43; }
 .two-column { display: grid; grid-template-columns: 1.15fr .85fr; gap: 24px; }
 .section-block { border-top: 1px solid #cfd5cf; padding-top: 14px; }
 .section-title { margin-bottom: 14px; }
@@ -1250,7 +1279,7 @@ select:focus, input:focus, textarea:focus { border-color: #6f8577; box-shadow: 0
   body { min-width: 920px; }
   .app-shell { grid-template-columns: 210px 1fr; }
   .two-column { grid-template-columns: 1fr; }
-  .metrics article { padding-inline: 16px; }
+  .overview-summary-card { padding-inline: 18px; }
   .relation-builder { grid-template-columns: 1fr 1.6fr; }
   .relation-target-step { grid-column: 1 / -1; padding-left: 0; border-left: 0; border-top: 1px solid #e4e8e4; }
   .relation-preview { grid-template-columns: minmax(150px, 1fr) minmax(110px, .6fr) minmax(150px, 1fr); }

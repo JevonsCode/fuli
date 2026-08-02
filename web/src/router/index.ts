@@ -9,7 +9,7 @@ export const router = createRouter({
       path: '/',
       name: 'overview',
       component: () => import('@/pages/OverviewPage.vue'),
-      meta: { eyebrow: 'LOCAL + FEDERATED', title: 'routes.overview.title' },
+      meta: { eyebrow: '', title: 'routes.overview.title' },
     },
     {
       path: '/preferences',

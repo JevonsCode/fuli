@@ -514,7 +514,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'record_knowledge_review_progress',
     title: 'WRITE · Record one review outcome',
-    description: 'Record one user-authorized candidate outcome after any required knowledge mutation succeeds. confirmed keeps the item, updated/invalidated follow successful writes, skipped suppresses it only in this run, and deferred intentionally returns it in the next run.',
+    description: 'Record one user-authorized candidate outcome after any required knowledge mutation succeeds. confirmed keeps the item, updated/invalidated follow successful writes, deferred carries it into the next review, and delegated_to_ai follows a successful current-quadrant change to unknown_unknown.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       reviewId: id,
@@ -523,7 +523,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
         pattern: '^(entity|relationship):.+'
       },
       outcome: enumSchema([
-        'confirmed', 'updated', 'invalidated', 'skipped', 'deferred'
+        'confirmed', 'updated', 'invalidated', 'deferred', 'delegated_to_ai'
       ]),
       note: nullableStringSchema()
     }, ['personalSpaceId', 'reviewId', 'candidateKey', 'outcome'])
@@ -540,13 +540,13 @@ export const GRAPH_TOOL_DEFINITIONS = [
   },
   {
     name: 'revise_personal_knowledge',
-    description: 'Correct, invalidate, or restore one personal entity or relationship while preserving revision history and original evidence. This is the same personal-only operation used by the management UI.',
+    description: 'Confirm, correct, invalidate, or restore one personal entity or relationship while preserving revision history and original evidence. This is the same personal-only operation used by the management UI.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectId: nullableStringSchema(),
       itemKind: knowledgeItemKind,
       itemId: id,
-      action: enumSchema(['update', 'invalidate', 'restore']),
+      action: enumSchema(['confirm', 'update', 'invalidate', 'restore']),
       reason: shortText,
       name: nullableStringSchema(),
       summary: nullableStringSchema(),

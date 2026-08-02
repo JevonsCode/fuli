@@ -16,7 +16,18 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     if (request.path === '/v1/subscriptions') return [];
     if (request.path === '/v1/spaces') return [{ id: 'personal-1', kind: 'personal' }];
     if (request.path === '/v1/personal-projects') {
-      return [{ project_id: 'hotel-b', personal_space_id: 'personal-1' }];
+      return [
+        {
+          project_id: 'hotel-b',
+          personal_space_id: 'personal-1',
+          profile: { name: 'Hotel', purpose: `Hotel context ${'h'.repeat(900)}` }
+        },
+        {
+          project_id: 'inbound',
+          personal_space_id: 'personal-1',
+          profile: { name: 'Inbound', purpose: `Inbound context ${'i'.repeat(900)}` }
+        }
+      ];
     }
     if (request.path === '/v1/collaboration-preferences') {
       const preference = {
@@ -69,6 +80,50 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
       return {
         status: 'committed', space_id: 'personal-1', episode_id: 'episode-1',
         entity_ids: ['entity-1'], relationship_ids: []
+      };
+    }
+    if (request.path === '/v1/knowledge/reviews/candidates') {
+      return {
+        review: {
+          review_id: 'review-1',
+          personal_space_id: 'personal-1',
+          scope: 'all',
+          personal_project_id: null,
+          scope_key: 'all',
+          status: 'active',
+          previous_completed_at: null,
+          review_cutoff_at: '2026-08-02T08:00:00.000Z',
+          started_at: '2026-08-02T08:00:00.000Z',
+          updated_at: '2026-08-02T08:00:00.000Z',
+          completed_at: null,
+          resumed: false
+        },
+        candidates: [{
+          candidate_key: 'entity:review-candidate-1',
+          item_id: 'review-candidate-1',
+          item_kind: 'entity',
+          title: 'Knowledge review candidate',
+          content: `Detailed review content ${'x'.repeat(900)}`,
+          profile_aspect: null,
+          preference_scope: null,
+          preference_project_id: null,
+          project_ids: ['hotel-b'],
+          confirmation_status: 'pending',
+          current_quadrant: 'known_known',
+          utility_score: 0,
+          confidence_score: 0.5,
+          qualified_use_count: 0,
+          distinct_task_count: 0,
+          negative_evidence_count: 1,
+          requires_attention: true,
+          last_feedback_kind: 'contradicted',
+          distinct_session_count: 1,
+          changed_at: '2026-08-01T08:00:00.000Z',
+          priority: 1,
+          reasons: ['changed_since_last', 'conflict_or_attention']
+        }],
+        total_candidate_count: 1,
+        remaining_candidate_count: 0
       };
     }
     return [];
@@ -189,6 +244,35 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   assert.match(preferencesTool.description, /focused action, artifact, target-system/i);
   assert.match(applyProjectTool.description, /never call.*read-only task/i);
   assert.match(applyProjectTool.description, /previewToken/i);
+
+  const personalProjects = await connection.client.callTool({
+    name: 'list_personal_projects',
+    arguments: { personalSpaceId: 'personal-1' }
+  });
+  assert.equal(personalProjects.structuredContent.truncated, undefined);
+  assert.deepEqual(
+    personalProjects.structuredContent.result.map(({ project_id }) => project_id),
+    ['hotel-b', 'inbound']
+  );
+
+  const reviewCandidates = await connection.client.callTool({
+    name: 'list_knowledge_review_candidates',
+    arguments: {
+      personalSpaceId: 'personal-1',
+      reviewId: 'review-1',
+      limit: 1
+    }
+  });
+  assert.equal(reviewCandidates.structuredContent.truncated, undefined);
+  assert.deepEqual(
+    reviewCandidates.structuredContent.candidates[0].reasons,
+    ['changed_since_last', 'conflict_or_attention']
+  );
+  assert.equal(reviewCandidates.structuredContent.total_candidate_count, 1);
+  assert.equal(
+    reviewCandidates.structuredContent.candidates[0].current_quadrant,
+    'known_known'
+  );
 
   const taskContext = await connection.client.callTool({
     name: 'begin_task_context',

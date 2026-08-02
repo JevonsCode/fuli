@@ -27,6 +27,10 @@ describe('localized route metadata', () => {
     expect(router.resolve('/organize').meta.description).toBeUndefined()
   })
 
+  it('keeps the overview header concise', () => {
+    expect(router.resolve('/').meta.eyebrow).toBe('')
+  })
+
   it('registers the about page', () => {
     expect(router.resolve('/about').name).toBe('about')
     expect(routeMetaText(router.resolve('/about').meta.title)).toBe('说明')

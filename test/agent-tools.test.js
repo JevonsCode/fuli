@@ -69,6 +69,21 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
   assert.match(preferenceEntry.description, /task_knowledge_recall/);
   assert.match(preferenceEntry.description, /never use the full conversational request/i);
 
+  const reviewProgress = tools.find(({ name }) =>
+    name === 'record_knowledge_review_progress'
+  );
+  assert.deepEqual(reviewProgress.inputSchema.properties.outcome.enum, [
+    'confirmed', 'updated', 'invalidated', 'deferred', 'delegated_to_ai'
+  ]);
+  assert.match(reviewProgress.description, /delegated_to_ai.*unknown_unknown/i);
+  assert.doesNotMatch(reviewProgress.description, /skipped/i);
+  const reviseKnowledge = tools.find(({ name }) =>
+    name === 'revise_personal_knowledge'
+  );
+  assert.deepEqual(reviseKnowledge.inputSchema.properties.action.enum, [
+    'confirm', 'update', 'invalidate', 'restore'
+  ]);
+
   const search = tools.find(({ name }) => name === 'search_knowledge_graph');
   assert.deepEqual(search.inputSchema.properties.projectIds, {
     type: 'array',

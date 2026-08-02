@@ -383,9 +383,9 @@ reuse the same data.
 ## Agent integrations and primary tools
 
 Fuli installs the `capturing-session-knowledge`, `grilling-project`, and `flreview` Skills for
-supported agents. `/flreview` offers all knowledge, personal preferences, or personal-project
-scope. If the user has no patience, it skips mood, time, and token questions and reviews only a
-small number of highest-priority items.
+supported agents. `/flreview` asks FULI for ranked candidates, then the invoking Agent generates a
+fresh interactive review artifact. FULI remains the durable source of truth and write surface; no
+permanent review tab or one-question-at-a-time chat flow is required.
 Claude Code uses `UserPromptSubmit` and `Stop` hooks for the task lifecycle. Codex's user-level
 `AGENTS.md` and Cursor instructions use prompt fallback. Preference content remains in local Fuli as
 the single source of truth and is not copied into agent configuration.

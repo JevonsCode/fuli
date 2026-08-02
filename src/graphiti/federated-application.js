@@ -789,7 +789,7 @@ export class FederatedGraphApplication {
   }
 
   async listKnowledgeSpaces() {
-    const [personalSpaces, personalProjects, subscriptions, ...workspaceSpaces] = await Promise.all([
+    const [availablePersonalSpaces, personalProjects, subscriptions, ...workspaceSpaces] = await Promise.all([
       this.personal.listSpaces(),
       this.personal.listPersonalProjects(this.config.personal.spaceId),
       this.personal.listSubscriptions(this.config.personal.spaceId),
@@ -799,6 +799,7 @@ export class FederatedGraphApplication {
         spaces: await safely(() => workspace.client.listSpaces(), [])
       }))
     ]);
+    const personalSpaces = availablePersonalSpaces.filter(({ id }) => id === this.config.personal.spaceId);
     return {
       activePersonalSpaceId: this.config.personal.spaceId,
       personalSpaces,

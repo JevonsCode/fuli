@@ -5,69 +5,96 @@ description: Use when the user explicitly enters /flreview or explicitly asks to
 
 # Fuli Knowledge Review
 
-Review personal preferences and local personal-project knowledge with the user as the authority. Never silently rewrite, invalidate, promote, or globalize knowledge.
+The invoking Agent owns each review session. FULI supplies durable knowledge, deterministic candidate ranking, and write tools; the Agent generates a fresh interactive review page for this invocation. There is no permanent **知识回顾** tab to open.
 
-## Select Scope
+## Start The Session
 
-For every `/flreview`, first offer exactly these top-level choices:
+For every exact `/flreview` invocation or explicit request to run the Fuli knowledge review:
 
-1. **全部** — review personal-global preferences plus every local personal project. Each project includes its project knowledge and project-scoped personal preferences.
-2. **个人偏好** — then choose **全局偏好** or the preferences for **某一个本地个人项目**.
-3. **个人项目** — then choose **一个本地个人项目** or **全部本地个人项目**. Each selected project includes both project knowledge and project-scoped personal preferences.
+1. Use `list_knowledge_spaces` to identify the active personal space, then call `list_personal_projects` so every project choice uses a real local personal project.
+2. Use the `visualize` Skill to render an inline setup page in the current task. Collect scope and review depth in that page, not as serial chat questions. Ask patience first. If the user selects **完全没耐心**, hide mood, available-time, and token-budget fields and use a small highest-priority batch. Otherwise collect mood, available time, and token comfort together on the same setup page. These answers control only batch size and explanation depth, never Provider ranking. If the user's request already gives an exact scope and depth, skip setup.
+3. On the setup page's explicit start action, call `start_knowledge_review` with the selected scope. Then call `list_knowledge_review_candidates` with a bounded page size matching the selected depth.
+4. Generate all candidates from that batch on the same interactive page. Show all candidates at once; do not reveal them one at a time.
 
-Use `list_personal_projects` only when a branch needs a project choice. Never include subscribed or public projects. Do not infer the current directory as the selected project and do not invent another command variant.
+The setup scope tree is:
 
-## Calibrate Depth
+- **全部** — global preferences plus every local personal project's knowledge and project-scoped preferences.
+- **个人偏好** — global preferences or one selected local personal project's preferences.
+- **个人项目** — one selected local personal project or all local personal projects. A project includes its knowledge and project-scoped preferences.
 
-After scope selection, first ask how much patience the user has for this review.
+Never infer the current directory as the selected project. Never include subscribed or public projects.
 
-交互硬规则：先询问用户有没有耐心；如果用户表示完全没耐心，不要再询问心情、时间或 token，只问少量最高优先级的关键问题。
+A bounded page limit is a batch size, not a fixed total-question cap.
 
-- If the user says they are **完全没耐心**, immediately take the short path. Do not ask about mood, available time, or token budget. Ask only a small number of the highest-priority critical questions, one at a time, and make stopping easy.
-- Otherwise ask, concisely, about current mood, available time, and whether token budget is comfortable. Use the answers plus explicit requests such as “少问一点”, “多问一点”, or “直接开始” to choose page size and explanation depth.
-- Do not impose a fixed total-question cap. A tool page limit controls only one retrieval batch, not the length of the review.
+## Generated Review Page
 
-## Start Or Resume
+Follow the `visualize` Skill's inline-artifact rules. The artifact must not use `fetch`, XHR, WebSocket, or a direct FULI API. Every submitted action must call:
 
-Call `start_knowledge_review` with the exact selected scope and project ID when required. Reuse a returned active or paused run. Then call `list_knowledge_review_candidates` in bounded pages.
+```js
+await window.openai.sendFollowUpMessage({ prompt, title })
+```
 
-If there is no previous completed review for that exact scope, review all historical in-scope knowledge. Otherwise present candidates in this order:
+The setup action envelope contains only `action`, `personal_space_id`, scope, optional project, and depth inputs. It must not invent a `review_id`, `candidate_key`, `item_id`, or `item_kind`. Every candidate action envelope contains `personal_space_id`, `review_id`, `candidate_key`, `item_id`, and `item_kind`, plus only the fields needed for that action. Treat a valid envelope as a continuation of the active review, not as a new `/flreview` invocation.
 
-没有上次完成记录时扫描全部历史。
+Each candidate card shows its content, current scope and source projects, confirmation state, `current_quadrant`, selection reasons, relevant evidence counts, utility, and confidence. Provider order is authoritative; do not invent a second score. Render these actions:
 
-1. Knowledge created or changed since the last completed review.
-2. Current or older conflicts, negative evidence, or items marked `requires_attention`.
-3. Low-weight knowledge, using the Provider's returned utility/confidence reasons.
-4. The same durable pattern repeated across multiple sessions that may deserve a personal-global attribute.
+- **确认保留**
+- **修改**
+- **调整范围**
+- **失效**
+- **稍后处理**
+- **交给 AI 判断**
 
-Treat ranking thresholds as Provider policy, not user requirements. Do not calculate a second conflicting score in the Agent.
+Do not present the review as one candidate at a time in chat. Chat may contain only a concise status and the generated interactive artifact.
 
-## Review One Candidate
+## Action Semantics
 
-Show the content, scope, confirmation state, relevant evidence summary, weights, and why the item was selected. Ask for one outcome:
+Do not mutate knowledge until the user submits an explicit visualization action. After any mutation, call `record_knowledge_review_progress` only after the write succeeds. If progress recording fails after a successful write, retry only progress; never repeat the mutation.
 
-- **确认保留** — keep it; if it is pending and the user explicitly confirms the content and classification, use the normal Fuli confirmation operation first.
-- **修改** — obtain the exact replacement text, apply `revise_personal_knowledge`, then record progress.
-- **失效** — reconfirm the exact target, apply `revise_personal_knowledge` with `invalidate`, then record progress.
-- **跳过** — do not ask again in this run; it may return in a later review.
-- **稍后处理** — do not ask again in this run; intentionally return it in the next review.
+### 确认保留
 
-After a successful mutation—or immediately for keep, skip, or later—call `record_knowledge_review_progress`. Never record a mutation outcome before its write succeeds.
+If the candidate is already confirmed, record `confirmed`. If it is pending, first call `revise_personal_knowledge` with `action: confirm`, an auditable user confirmation basis, and no content or taxonomy changes; then record `confirmed`.
 
-For repeated cross-session patterns, ask whether the user wants a personal-global attribute, a project-scoped preference, or no promotion. Never auto-promote. Use `set_personal_preference_scope` only after explicit confirmation and only for an actual preference item.
+### 修改
 
-## Pause Or Complete
+Collect the exact replacement content and a reason in the card. Call `revise_personal_knowledge` with `action: update`, then record `updated`.
 
-If the user stops before the selected queue is exhausted, call `finish_knowledge_review` with `paused`. Resume that run next time. Only call it with `completed` after the user explicitly finishes the selected scope or no candidates remain.
+### 调整范围
 
-Only a completed run advances the last-completed review time. Paused runs do not. A “稍后处理” item returns in the next run; a “跳过” item stays out only for the current run.
+- For a global preference with exactly one source project, offer a one-click move to that source project. With multiple source projects, require a project selection. Call `set_personal_preference_scope` with `scope: project` and the selected source project.
+- For a project-scoped preference, offer promotion to global and call `set_personal_preference_scope` with `scope: global`.
+- Ordinary project knowledge is not a personal preference. Never offer to turn ordinary project knowledge into a global preference.
 
-只有完成回顾才推进上次回顾时间；暂停不能推进。
+After a successful scope write, record `updated`. Never change scope automatically.
+
+### 失效
+
+Offer these preset reasons and a custom reason field:
+
+- 不应该沉淀为一条复利知识
+- 不知所云
+- 过期了
+- 只在当时生效
+
+Selecting a preset or entering a non-empty custom reason is sufficient authorization. There is no second confirmation and no confirmation checkbox. Call `revise_personal_knowledge` with `action: invalidate`, then record `invalidated` with the exact reason.
+
+### 稍后处理
+
+Do not mutate the knowledge. Record `deferred` and remove it from the current page. FULI carries it into the next review as `deferred_from_previous` even if no other ranking threshold still matches.
+
+### 交给 AI 判断
+
+This action means the user cannot responsibly classify the item now. Call `revise_personal_knowledge` with `action: update`, `currentQuadrant: unknown_unknown`, and a short `reasoningSummary` stating that the user delegated judgment during knowledge review. Never send `originQuadrant`: discovery classification is immutable evidence. The required order is `revise_personal_knowledge` before `record_knowledge_review_progress`. After that write succeeds, record `delegated_to_ai` and remove the item from the current page.
+
+## Continue, Pause, Or Complete
+
+After each successful action, refresh the current review's remaining candidates and regenerate the interactive page. Load the next bounded batch when the current batch is exhausted.
+
+Call `finish_knowledge_review` with `paused` when the user explicitly pauses. Call it with `completed` only when no candidates remain or the user explicitly finishes the selected scope. Only completion advances the last-completed watermark.
 
 ## Guardrails
 
-- Keep the user authoritative. Explain conflicts; do not resolve them silently.
-- Preserve original evidence and revision history.
-- Never include raw transcripts, credentials, secrets, temporary logs, or unsupported inference.
-- Do not turn repeated project facts into global personal attributes without explicit approval.
-- If a required Fuli review tool is unavailable, state that the installed integration needs updating; do not simulate persistence in prose.
+- FULI-saved knowledge is the only candidate source. Never fabricate, mock, or supplement candidates from ordinary search.
+- Keep original evidence and revision history intact.
+- Never silently resolve conflicts, invalidate knowledge, or change scope.
+- If a required FULI or visualization capability is unavailable, report the exact missing capability and stop safely.

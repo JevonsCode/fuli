@@ -730,7 +730,10 @@ test('state stays fully usable in personal-only mode without a public Provider',
       '/health': {
         status: 'ready', providerId: 'local-personal', mode: 'personal', storage: 'graphiti-neo4j'
       },
-      '/v1/spaces': [{ id: 'personal-space', name: '我', kind: 'personal' }],
+      '/v1/spaces': [
+        { id: 'personal-space', name: '我', kind: 'personal' },
+        { id: 'acceptance-space', name: '验收隔离空间', kind: 'personal' }
+      ],
       '/v1/subscriptions': []
     })
   });
@@ -746,7 +749,7 @@ test('state stays fully usable in personal-only mode without a public Provider',
     subscribeProject: false,
     reviewProposals: false
   });
-  assert.equal(state.personalSpaces.length, 1);
+  assert.deepEqual(state.personalSpaces, [{ id: 'personal-space', name: '我', kind: 'personal' }]);
   assert.deepEqual(state.agentAccessPolicy, { enabled: true, updatedAt: null });
   assert.deepEqual(state.projects, []);
   assert.deepEqual(state.providers.workspaces, []);

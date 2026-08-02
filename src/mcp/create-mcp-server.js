@@ -22,7 +22,9 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   search_knowledge_graph: 32 * 1024,
   search_connected_knowledge: 64 * 1024,
   search_current_project_knowledge: 64 * 1024,
-  discover_common_knowledge_candidates: 32 * 1024
+  discover_common_knowledge_candidates: 32 * 1024,
+  list_personal_projects: 32 * 1024,
+  list_knowledge_review_candidates: 32 * 1024
 });
 
 export function createMcpServer(app) {

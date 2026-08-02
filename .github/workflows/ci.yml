@@ -19,7 +19,7 @@ jobs:
           node-version: "24"
           cache: npm
       - run: npm ci
-      - run: npx --yes npm@11.18.0 audit --audit-level=low
+      - run: npx --yes npm@11.13.0 audit --audit-level=low
       - run: npm test
       - run: npm run test:package
 

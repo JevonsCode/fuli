@@ -5,6 +5,7 @@ from pydantic import Field, model_validator
 
 from .models import (
     ConfirmationStatus,
+    EpistemicQuadrant,
     KnowledgeFeedbackKind,
     KnowledgeItemKind,
     PersonalProfileAspect,
@@ -22,10 +23,11 @@ KnowledgeReviewScope = Literal[
 KnowledgeReviewStatus = Literal['active', 'paused', 'completed']
 KnowledgeReviewDisposition = Literal['paused', 'completed']
 KnowledgeReviewOutcome = Literal[
-    'confirmed', 'updated', 'invalidated', 'skipped', 'deferred'
+    'confirmed', 'updated', 'invalidated', 'deferred', 'delegated_to_ai'
 ]
 KnowledgeReviewReason = Literal[
     'changed_since_last',
+    'deferred_from_previous',
     'conflict_or_attention',
     'low_weight',
     'repeated_cross_session',
@@ -68,11 +70,17 @@ class KnowledgeReviewCandidate(StrictModel):
     item_kind: KnowledgeItemKind
     title: str
     content: str
+    # Keep the decision-critical ranking context near the front of the wire
+    # payload. Older MCP clients may project a bounded prefix of the Provider
+    # response, and the user must still see why a candidate was selected.
+    priority: int = Field(ge=1, le=4)
+    reasons: list[KnowledgeReviewReason]
+    confirmation_status: ConfirmationStatus
+    current_quadrant: EpistemicQuadrant
+    project_ids: list[str] = Field(default_factory=list)
     profile_aspect: PersonalProfileAspect | None = None
     preference_scope: PreferenceScope | None = None
     preference_project_id: str | None = None
-    project_ids: list[str] = Field(default_factory=list)
-    confirmation_status: ConfirmationStatus
     utility_score: float = Field(ge=0, le=1)
     confidence_score: float = Field(ge=0, le=1)
     qualified_use_count: int = Field(ge=0)
@@ -82,8 +90,6 @@ class KnowledgeReviewCandidate(StrictModel):
     last_feedback_kind: KnowledgeFeedbackKind | None = None
     distinct_session_count: int = Field(ge=0)
     changed_at: datetime | None = None
-    priority: int = Field(ge=1, le=4)
-    reasons: list[KnowledgeReviewReason]
 
 
 class KnowledgeReviewCandidateRequest(StrictModel):
