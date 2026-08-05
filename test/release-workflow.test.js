@@ -26,6 +26,16 @@ test('release validates the tag before publishing the package', () => {
   assert.match(releaseWorkflow, /GITHUB_REF_NAME.*\('v'\+p\.version\)/);
 });
 
+test('release publishes prereleases without moving the stable latest dist-tag', () => {
+  const distTag = releaseWorkflow.indexOf('Resolve npm dist-tag');
+  const publish = releaseWorkflow.indexOf('publish --access public');
+
+  assert.ok(distTag >= 0);
+  assert.ok(publish > distTag);
+  assert.match(releaseWorkflow, /const tag=prerelease\?prerelease\.split\('\.'\)\[0\]:'latest'/);
+  assert.match(releaseWorkflow, /publish --access public --tag "\$\{\{ steps\.npm-dist-tag\.outputs\.tag \}\}"/);
+});
+
 function npmPins(workflow) {
   return [...workflow.matchAll(/npm@(\d+\.\d+\.\d+)/g)].map((match) => match[1]);
 }

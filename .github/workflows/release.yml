@@ -39,4 +39,8 @@ jobs:
       - run: docker compose -f compose.graphiti.yml config --quiet
       - name: Verify release tag matches package version
         run: node -e "const p=require('./package.json');if(process.env.GITHUB_REF_NAME!==('v'+p.version))throw new Error('Release tag must be v'+p.version)"
-      - run: npx --yes npm@11.13.0 publish --access public
+      - name: Resolve npm dist-tag
+        id: npm-dist-tag
+        run: >-
+          node -e "const p=require('./package.json');const prerelease=p.version.split('-')[1];const tag=prerelease?prerelease.split('.')[0]:'latest';if(!/^[a-z][a-z0-9-]*$/i.test(tag))throw new Error('Invalid npm dist-tag');require('node:fs').appendFileSync(process.env.GITHUB_OUTPUT,'tag='+tag+'\n')"
+      - run: npx --yes npm@11.13.0 publish --access public --tag "${{ steps.npm-dist-tag.outputs.tag }}"
