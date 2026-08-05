@@ -53,8 +53,14 @@ test('flreview renders the agreed fixed actions and no skip action', () => {
 test('flreview defines scope, invalidation, and AI-delegation semantics', () => {
   const skill = readFileSync(SKILL_PATH, 'utf8');
 
-  assert.match(skill, /global preference.*source project.*set_personal_preference_scope/is);
-  assert.match(skill, /project-scoped preference.*global/is);
+  assert.doesNotMatch(skill, /set_personal_preference_scope/);
+  assert.match(skill, /Agent.*must not.*direct scope write/is);
+  assert.match(skill, /global preference.*safe narrowing.*exact project/is);
+  assert.match(skill, /trusted local.*human-review UI/is);
+  assert.match(
+    skill,
+    /project-scoped preference.*parent.*personal global.*convergence.*HumanReviewer/is
+  );
   assert.match(skill, /ordinary project knowledge.*never.*global preference/is);
   for (const reason of [
     '不应该沉淀为一条复利知识', '不知所云', '过期了', '只在当时生效'

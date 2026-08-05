@@ -101,6 +101,34 @@ test('exact local browser authority and requests without Origin keep working', a
   assert.match(entrySource, /#app/);
 });
 
+test('loopback HTTP never proxies the independent human-review credential', async (t) => {
+  let reviewCalls = 0;
+  const humanReview = {
+    previewWorkflowCandidateReview() {
+      reviewCalls += 1;
+      return { approval_token: 'must-not-be-issued' };
+    }
+  };
+  const { server, url } = await createServer({
+    app: { close() {} },
+    humanReview,
+    port: 0
+  });
+  t.after(() => closeServer(server));
+
+  const response = await fetch(
+    `${url}/api/human-review/workflow-candidates/candidate-1/review-preview`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ decision: 'approve' })
+    }
+  );
+
+  assert.equal(response.status, 404);
+  assert.equal(reviewCalls, 0);
+});
+
 test('non-JSON PUT and PATCH requests cannot mutate the API', async (t) => {
   let policyCalls = 0;
   let settingsCalls = 0;

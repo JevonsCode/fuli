@@ -7,7 +7,11 @@ from .models import (
     FactResult,
     _validate_confirmation_state,
 )
-from .provider_values import json_object, native_datetime as _native_datetime
+from .provider_values import (
+    json_object,
+    native_datetime as _native_datetime,
+    preference_qualifiers,
+)
 
 
 def is_default_retrievable(metadata: dict) -> bool:
@@ -54,6 +58,7 @@ async def read_edge_epistemic_metadata(store, edge_ids: list[str]) -> dict[str, 
                     AS preference_scope,
                edge.fuli_preference_project_id AS preference_project_id,
                edge.fuli_key AS key,
+               edge.fuli_attributes_json AS attributes_json,
                coalesce(edge.fuli_inheritance_mode, 'local_only')
                  AS inheritance_mode,
                coalesce(edge.fuli_inherited_project_ids, [])
@@ -111,6 +116,7 @@ def fact_result(
     epistemic: dict | None = None,
 ) -> FactResult:
     metadata = epistemic or {}
+    attributes = json_object(metadata.get('attributes_json'))
     return FactResult(
         id=edge.uuid,
         space_id=space_id,
@@ -135,6 +141,13 @@ def fact_result(
         preference_scope=metadata.get('preference_scope'),
         preference_project_id=metadata.get('preference_project_id'),
         key=metadata.get('key'),
+        preference_key=(
+            attributes.get('preferenceKey')
+            or attributes.get('preference_key')
+            or metadata.get('key')
+            or edge.uuid
+        ),
+        preference_qualifiers=preference_qualifiers(attributes),
         defined_project_id=metadata.get('defined_project_id'),
         inheritance_mode=metadata.get('inheritance_mode') or 'local_only',
         inherited_project_ids=metadata.get('inherited_project_ids') or [],

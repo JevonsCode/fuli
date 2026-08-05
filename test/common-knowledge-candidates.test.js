@@ -31,12 +31,22 @@ test('parent candidate discovery reads direct children without injecting or writ
             projectNode('node-a', 'platform-a'),
             projectNode('node-b', 'hotel-b'),
             projectNode('node-c', 'flight-c'),
-            projectNode('node-d', 'travel-d')
+            projectNode('node-d', 'travel-d'),
+            projectNode('node-e', 'pending-e'),
+            projectNode('node-f', 'agent-f')
           ],
           edges: [
             projectRelation('b-a', 'node-b', 'node-a', 'PART_OF'),
             projectRelation('c-a', 'node-c', 'node-a', 'PART_OF'),
-            projectRelation('d-a', 'node-d', 'node-a', 'PART_OF')
+            projectRelation('d-a', 'node-d', 'node-a', 'PART_OF'),
+            projectRelation('e-a', 'node-e', 'node-a', 'PART_OF', {
+              status: 'pending',
+              authority: null
+            }),
+            projectRelation('f-a', 'node-f', 'node-a', 'PART_OF', {
+              status: 'active',
+              authority: 'agent_policy'
+            })
           ]
         });
       }
@@ -44,17 +54,33 @@ test('parent candidate discovery reads direct children without injecting or writ
         const projectId = body.active_personal_project_id;
         return response({
           facts: [],
-          entities: [{
-            id: `item-${projectId}`,
-            space_id: 'personal-1',
-            group_id: 'personal-group',
-            name: `${projectId} retry rule`,
-            type: 'ProjectKnowledge',
-            summary: summaries[projectId],
-            confirmation_status: 'confirmed',
-            defined_project_id: projectId,
-            key: `${projectId}.retry`
-          }]
+          entities: [
+            {
+              id: `item-${projectId}`,
+              space_id: 'personal-1',
+              group_id: 'personal-group',
+              name: `${projectId} retry rule`,
+              type: 'ProjectKnowledge',
+              summary: summaries[projectId],
+              confirmation_status: 'confirmed',
+              defined_project_id: projectId,
+              key: `${projectId}.retry`
+            },
+            {
+              id: `preference-${projectId}`,
+              space_id: 'personal-1',
+              group_id: 'personal-group',
+              name: `${projectId} personal preference`,
+              type: 'PersonalPreference',
+              summary: summaries[projectId],
+              confirmation_status: 'confirmed',
+              profile_aspect: 'judgment_preference',
+              preference_scope: 'project',
+              preference_project_id: projectId,
+              defined_project_id: projectId,
+              key: `${projectId}.preference`
+            }
+          ]
         });
       }
       throw new Error(`Unexpected request: ${parsed.pathname}`);
@@ -75,6 +101,10 @@ test('parent candidate discovery reads direct children without injecting or writ
     'flight-c', 'hotel-b', 'travel-d'
   ]);
   assert.equal(result.candidates.length, 1);
+  assert.equal(
+    result.candidates[0].items.some(({ profile_aspect: aspect }) => aspect),
+    false
+  );
   assert.deepEqual(
     result.candidates[0].items.map(({ defined_project_id: id }) => id).sort(),
     ['flight-c', 'hotel-b', 'travel-d']
@@ -107,7 +137,10 @@ function projectNode(id, projectId) {
   };
 }
 
-function projectRelation(id, source, target, type) {
+function projectRelation(id, source, target, type, {
+  status = 'active',
+  authority = 'human_review'
+} = {}) {
   return {
     id,
     source,
@@ -115,7 +148,11 @@ function projectRelation(id, source, target, type) {
     type,
     fact: `${source} ${type} ${target}`,
     valid_at: null,
-    invalid_at: null
+    invalid_at: null,
+    attributes: {
+      status,
+      confirmationAuthority: authority
+    }
   };
 }
 

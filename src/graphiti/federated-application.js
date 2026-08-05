@@ -5,7 +5,7 @@ import {
   canonicalProviderUrl,
   readGraphRuntimeConfig
 } from './runtime-config.js';
-import { ApplicationError } from '../app/application-error.js';
+import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { detectSensitiveContent } from '../security/sensitive-content.js';
 import {
   CapturePolicyStore,
@@ -38,10 +38,16 @@ import {
   beginTaskContext as beginTaskContextWorkflow,
   checkpointTaskKnowledge as checkpointTaskKnowledgeWorkflow,
   discoverCommonKnowledgeCandidates as discoverCommonKnowledgeCandidatesWorkflow,
+  discoverPersonalGlobalPreferenceCandidates as
+    discoverPersonalGlobalPreferenceCandidatesWorkflow,
+  applyPersonalGlobalPreferenceDecision as
+    applyPersonalGlobalPreferenceDecisionWorkflow,
   providerCommonKnowledgePromotion,
   recordDecisionTrace as recordDecisionTraceWorkflow,
   recordKnowledgeFeedback as recordKnowledgeFeedbackWorkflow,
-  searchCurrentProjectKnowledge as searchCurrentProjectKnowledgeWorkflow
+  searchCurrentProjectKnowledge as searchCurrentProjectKnowledgeWorkflow,
+  previewPersonalGlobalPreferenceDecision as
+    previewPersonalGlobalPreferenceDecisionWorkflow
 } from './agent-knowledge-workflows.js';
 import {
   assertPublicKnowledgeEligible,
@@ -56,6 +62,29 @@ import {
   recordKnowledgeReviewProgress as recordKnowledgeReviewProgressWorkflow,
   startKnowledgeReview as startKnowledgeReviewWorkflow
 } from './knowledge-review.js';
+import {
+  providerWorkflowCandidateSearch,
+  workflowCandidatePage
+} from './workflow-candidate-mapping.js';
+import {
+  providerWorkflowTransitionObservation
+} from './workflow-observation.js';
+import {
+  relatedProjectGuidance
+} from './related-project-suggestions.js';
+import {
+  agentCollaborationPreference,
+  agentDeferredPreferenceConflict,
+  deferredPreferenceConflicts
+} from './collaboration-preference-projection.js';
+import { buildUserTasteSkill } from './user-taste-skill.js';
+import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
+import {
+  groupSubscriptions,
+  loadSearchRelatedProjectSuggestions,
+  rankedSearchItems,
+  retrievalGuidanceForScope
+} from './federated-search-support.js';
 
 export function openFederatedGraphApplication({
   runtimeConfigPath,
@@ -75,7 +104,8 @@ export function openFederatedGraphApplication({
     agentAccessPolicyStore: agentAccessPolicyStore ?? new AgentAccessPolicyStore(
       agentAccessPolicyPathForRuntime(runtimeConfigPath)
     ),
-    consoleUrl: sourceConsoleUrl(runtimeConfigPath)
+    consoleUrl: sourceConsoleUrl(runtimeConfigPath),
+    providerRequestTimeoutMs: providerRequestTimeoutFromEnv(env)
   });
   if (typeof runtimeConfigPath === 'string' && runtimeConfigPath) {
     attachExternalKnowledgeRuntime(app, {
@@ -85,6 +115,18 @@ export function openFederatedGraphApplication({
     });
   }
   return app;
+}
+
+function providerRequestTimeoutFromEnv(env) {
+  const value = env?.FULI_PROVIDER_REQUEST_TIMEOUT_MS;
+  if (value === undefined || value === null || value === '') return undefined;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 2_147_483_647) {
+    throw new TypeError(
+      'FULI_PROVIDER_REQUEST_TIMEOUT_MS must be a positive safe integer'
+    );
+  }
+  return parsed;
 }
 
 export class FederatedGraphApplication {
@@ -107,6 +149,7 @@ export class FederatedGraphApplication {
     this.personal = new GraphitiProviderClient({
       baseUrl: config.personal.providerUrl,
       accessToken: config.personal.accessToken,
+      workflowObservationToken: config.personal.workflowObservationToken ?? null,
       fetchImpl,
       requestTimeoutMs: providerRequestTimeoutMs
     });
@@ -156,7 +199,10 @@ export class FederatedGraphApplication {
     const episode = providerEpisode(input);
     if (input.targetKind === 'personal') {
       if (input.spaceId !== this.config.personal.spaceId) {
-        throw new TypeError('Personal capture target must be the active personal space');
+        throw new ApplicationError(
+          ApplicationErrorCode.VALIDATION,
+          'Personal capture target must be the active personal space'
+        );
       }
       const result = await this.personal.commit({
         space_id: input.spaceId,
@@ -166,7 +212,10 @@ export class FederatedGraphApplication {
       return { route: 'personal', ...result };
     }
     if (episode.sensitivity !== 'normal') {
-      throw new TypeError('Private or restricted knowledge cannot enter a team-shared project queue');
+      throw new ApplicationError(
+        ApplicationErrorCode.VALIDATION,
+        'Private or restricted knowledge cannot enter a team-shared project queue. Use targetKind "personal" with personalProjectId to keep it in the personal graph'
+      );
     }
     assertPublicKnowledgeEligible(episode);
     const workspace = this.#workspace(input.providerUrl);
@@ -183,6 +232,23 @@ export class FederatedGraphApplication {
       projectId: input.spaceId,
       providerUrl: workspace.providerUrl
     };
+  }
+
+  async recordWorkflowTransitionObservation(input) {
+    this.#assertActivePersonalSpace(input.personalSpaceId);
+    const capturePolicy = this.getCapturePolicy();
+    if (!capturePolicy.enabled) {
+      return {
+        route: 'disabled',
+        status: 'capture_disabled',
+        capturePolicy
+      };
+    }
+    assertNoCredentials(input);
+    const result = await this.personal.recordWorkflowObservation(
+      providerWorkflowTransitionObservation(input)
+    );
+    return { route: 'personal', ...result };
   }
 
   async getCollaborationPreferences({
@@ -231,8 +297,10 @@ export class FederatedGraphApplication {
       apply: 'effective_preferences',
       global_scope: 'Apply personal-global preferences in every user task.',
       project_scope: resolvedProjectId
-        ? `Also apply preferences scoped to the matched personal project ${resolvedProjectId}.`
+        ? `Also apply preferences scoped to ${resolvedProjectId} and confirmed ancestor preferences whose descendants or selected-projects mode explicitly reaches it.`
         : 'No exact personal project matched; do not apply project-scoped preferences.',
+      inheritance: 'Project preference inheritance follows only PART_OF or USES_KNOWLEDGE_FROM for at most two hops. Preserve inherited_from_project_id, scope_path, and scope_distance. An exact item wins only after confirmation authority is compared; weight never expands scope or resolves a conflict.',
+      related_projects: 'RELATED_TO preferences never auto-apply. Use structured related-project suggestions to ask before a one-time read-only expansion.',
       conflicts: 'Do not apply entries listed in conflicts until the user resolves them.',
       deferred_conflicts: 'If the current task would use a deferred_conflict, call resolve_deferred_preference_conflict before applying either side. Ignore unrelated deferred conflicts. The resolution must preserve the AI audit marker.',
       authority: 'Human or authoritative-source confirmed preferences outrank agent-confirmed preferences. Agent-confirmed preferences are usable but lower priority and remain explicitly marked.',
@@ -259,6 +327,9 @@ export class FederatedGraphApplication {
         personal_project_id: result.personal_project_id,
         global_preference_count: (result.global_preferences ?? []).length,
         project_preference_count: (result.project_preferences ?? []).length,
+        inherited_project_preference_count: (result.project_preferences ?? [])
+          .filter(({ inherited_from_project_id: projectId }) => Boolean(projectId))
+          .length,
         conflict_count: (result.conflicts ?? []).length,
         ai_deferred_conflict_count: deferredConflicts.length,
         overridden_global_count: (result.overridden_global_ids ?? []).length,
@@ -266,6 +337,43 @@ export class FederatedGraphApplication {
         project_resolution: agentProjectResolution(projectResolution)
       }
     };
+  }
+
+  async getUserTasteSkill({
+    personalProjectId = null,
+    projectPath = null,
+    taskPrompt = null,
+    limit = 100
+  } = {}) {
+    const context = await this.getCollaborationPreferences({
+      personalProjectId,
+      projectPath,
+      taskPrompt,
+      limit,
+      agentInvocation: true,
+      agentToolName: 'get_user_taste_skill'
+    });
+    const skill = buildUserTasteSkill({
+      preferences: context.effective_preferences,
+      taskPrompt,
+      personalSpaceId: context.context.personal_space_id,
+      personalProjectId: context.context.personal_project_id
+    });
+    return {
+      status: 'generated',
+      ...skill,
+      ...(context.task_knowledge_recall
+        ? { task_knowledge_recall: context.task_knowledge_recall }
+        : {}),
+      application_guidance: context.application_guidance,
+      deferred_conflicts: context.deferred_conflicts,
+      context: context.context
+    };
+  }
+
+  async getWritingTasteProfile(input = {}) {
+    this.#assertActivePersonalSpace(input.personalSpaceId);
+    return getWritingTasteProfileWorkflow(this, input);
   }
 
   async #resolvePreferenceProject({ personalProjectId, projectPath }) {
@@ -432,6 +540,10 @@ export class FederatedGraphApplication {
           .map(({ id }) => ({ item_id: id, item_kind: 'entity' }))
       ], agentToolName);
     }
+    const relatedProjects = await loadSearchRelatedProjectSuggestions(
+      this,
+      { facts, entities }
+    );
     return {
       query,
       sourceMarker,
@@ -446,7 +558,10 @@ export class FederatedGraphApplication {
       searchedProjectIds,
       failedProjectIds: unavailableProjectIds,
       partial: unavailableProjectIds.length > 0,
-      subscriptions: selectedSubscriptions
+      subscriptions: selectedSubscriptions,
+      relatedProjectSuggestions: relatedProjects.suggestions,
+      relatedProjectSuggestionsStatus: relatedProjects.status,
+      relatedProjectGuidance: relatedProjectGuidance(relatedProjects.suggestions)
     };
   }
 
@@ -461,6 +576,23 @@ export class FederatedGraphApplication {
   async discoverCommonKnowledgeCandidates(input) {
     this.#assertActivePersonalSpace(input.personalSpaceId);
     return discoverCommonKnowledgeCandidatesWorkflow(this, input);
+  }
+
+  async discoverPersonalGlobalPreferenceCandidates(input) {
+    this.#assertActivePersonalSpace(input.personalSpaceId);
+    return discoverPersonalGlobalPreferenceCandidatesWorkflow(this, input);
+  }
+
+  async previewPersonalGlobalPreferenceDecision(input) {
+    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertSafeKnowledgeMutation(input);
+    return previewPersonalGlobalPreferenceDecisionWorkflow(this, input);
+  }
+
+  async applyPersonalGlobalPreferenceDecision(input) {
+    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertSafeKnowledgeMutation(input);
+    return applyPersonalGlobalPreferenceDecisionWorkflow(this, input);
   }
 
   async previewCommonKnowledgePromotion(input) {
@@ -529,6 +661,22 @@ export class FederatedGraphApplication {
 
   async finishKnowledgeReview(input) {
     return finishKnowledgeReviewWorkflow(this, input);
+  }
+
+  async listWorkflowCandidates(input) {
+    this.#assertActivePersonalSpace(input.personalSpaceId);
+    const result = await this.personal.searchWorkflowCandidates(
+      providerWorkflowCandidateSearch(input)
+    );
+    return workflowCandidatePage(result);
+  }
+
+  async recommendNextWorkflowSteps(input) {
+    this.#assertActivePersonalSpace(input.personalSpaceId);
+    const result = await this.personal.recommendWorkflowCandidates(
+      providerWorkflowCandidateSearch(input)
+    );
+    return workflowCandidatePage(result);
   }
 
   async recordKnowledgeUsage({
@@ -1095,89 +1243,6 @@ export class FederatedGraphApplication {
   }
 }
 
-function agentCollaborationPreference(item) {
-  const preference = {
-    instruction: item.instruction ?? '',
-    preference_key: item.preference_key ?? item.key ?? item.id,
-    title: item.title ?? item.preference_key ?? item.key ?? item.id,
-    profile_aspect: item.profile_aspect ?? null,
-    preference_scope: item.preference_scope ?? 'global',
-    confirmation_status: item.confirmation_status ?? 'confirmed'
-  };
-  if (item.preference_project_id) {
-    preference.preference_project_id = item.preference_project_id;
-  }
-  return preference;
-}
-
-function deferredPreferenceConflicts(result, queuedConflicts) {
-  const items = [
-    ...(result.global_preferences ?? []),
-    ...(result.project_preferences ?? [])
-  ];
-  const itemById = new Map(items.map((item) => [item.id, item]));
-  const activeConflictPairs = new Set(
-    (result.conflicts ?? []).flatMap((conflict) => {
-      const ids = conflict.item_ids ?? [];
-      const pairs = [];
-      for (let left = 0; left < ids.length; left += 1) {
-        for (let right = left + 1; right < ids.length; right += 1) {
-          pairs.push(preferenceConflictPairKey(ids[left], ids[right]));
-        }
-      }
-      return pairs;
-    })
-  );
-  return (queuedConflicts ?? [])
-    .filter((conflict) =>
-      conflict.status === 'ai_pending' &&
-      activeConflictPairs.has(preferenceConflictPairKey(
-        conflict.left_item_id,
-        conflict.right_item_id
-      )) &&
-      itemById.has(conflict.left_item_id) &&
-      itemById.has(conflict.right_item_id)
-    )
-    .map((conflict) => ({
-      ...conflict,
-      left: itemById.get(conflict.left_item_id),
-      right: itemById.get(conflict.right_item_id)
-    }));
-}
-
-function agentDeferredPreferenceConflict(conflict) {
-  return {
-    id: conflict.id,
-    preference_key: conflict.preference_key,
-    preference_scope: conflict.preference_scope,
-    ...(conflict.preference_project_id
-      ? { preference_project_id: conflict.preference_project_id }
-      : {}),
-    status: conflict.status,
-    deferred_at: conflict.deferred_at,
-    reason: conflict.reason,
-    left: agentConflictPreference(conflict.left),
-    right: agentConflictPreference(conflict.right),
-    required_action: 'Resolve this conflict before using either side when it is relevant to the current task.',
-    resolution_options: ['merge', 'keep_left', 'keep_right', 'split_scope']
-  };
-}
-
-function agentConflictPreference(item) {
-  return {
-    item_id: item.id,
-    item_kind: item.item_kind,
-    title: item.title,
-    instruction: item.instruction,
-    confirmed_at: item.confirmed_at,
-    attributes: item.attributes ?? {}
-  };
-}
-
-function preferenceConflictPairKey(leftId, rightId) {
-  return [leftId, rightId].sort().join('\u0000');
-}
-
 function assertNoCredentials(input) {
   const content = JSON.stringify({
     name: input.name,
@@ -1194,49 +1259,6 @@ function assertNoCredentials(input) {
       'Structured knowledge contains credentials and cannot be stored'
     );
   }
-}
-
-function retrievalGuidanceForScope(personalProjectScope) {
-  if (personalProjectScope === 'all_local_confirmed') {
-    return {
-      currentPersonalProjectScope: 'all_local_confirmed',
-      markerToUseIfNoSupportingEvidence: 'noMatchSourceMarker',
-      requiredNextActionIfNoSupportingEvidence:
-        'search_current_workspace_files_or_ask_for_safe_root',
-      workspaceFileSearch: {
-        available: true,
-        consentSource: 'bounded_expansion_confirmation',
-        rootBoundary: 'current_working_directory',
-        requiresSafeProjectOrWorkspaceRoot: true,
-        forbiddenBroadRoots: ['user_home', 'filesystem_root'],
-        readOnly: true,
-        includesPublicProjects: false
-      },
-      instruction: 'Use read-only local file search in the current repository or explicit ' +
-        'workspace root, preserving exact names first. If the working directory is the user ' +
-        'home, filesystem root, or otherwise too broad, ask for a safe root. Never search ' +
-        'outside that root or inspect credential stores; if no evidence supports the answer, ' +
-        'ask for a source clue.'
-    };
-  }
-  return {
-    currentPersonalProjectScope: 'bounded',
-    markerToUseIfNoSupportingEvidence: 'noMatchSourceMarker',
-    requiredNextActionIfNoSupportingEvidence:
-      'ask_user_to_confirm_all_local_and_workspace_search',
-    expansion: {
-      available: true,
-      requiresExplicitUserConfirmation: true,
-      input: { personalProjectScope: 'all_local_confirmed' },
-      readOnly: true,
-      oneQueryOnly: true,
-      includesPublicProjects: false,
-      includesCurrentWorkspaceFiles: true
-    },
-    instruction: 'Ask whether to widen this one read-only lookup to all registered local ' +
-      'personal projects and, if still unresolved, current repository or workspace files. ' +
-      'Exclude public projects and paths outside the current workspace; then stop and wait.'
-  };
 }
 
 function assertSafeKnowledgeMutation(input) {
@@ -1260,34 +1282,6 @@ function assertSafeKnowledgeMutation(input) {
       'Knowledge revision contains credentials and cannot be stored'
     );
   }
-}
-
-function groupSubscriptions(subscriptions) {
-  const grouped = new Map();
-  for (const subscription of subscriptions) {
-    const url = canonicalProviderUrl(subscription.provider_url);
-    if (!grouped.has(url)) grouped.set(url, []);
-    grouped.get(url).push(subscription);
-  }
-  return grouped;
-}
-
-function rankedSearchItems(searchResults, key, limit) {
-  return searchResults
-    .flatMap((result) => result[key])
-    .map((item, index) => ({ item, index }))
-    .sort((left, right) =>
-      searchItemScore(right.item) - searchItemScore(left.item) ||
-      left.index - right.index
-    )
-    .slice(0, limit)
-    .map(({ item }) => item);
-}
-
-function searchItemScore(item) {
-  return typeof item?.score === 'number' && Number.isFinite(item.score)
-    ? item.score
-    : 0;
 }
 
 async function safely(operation, fallback) {

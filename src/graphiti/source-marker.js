@@ -156,9 +156,9 @@ function sourceMarkerMarkdown({ consoleUrl, citations }) {
 
 function knowledgeUrl(consoleUrl, { scope, spaceId, itemKind, itemId }) {
   const origin = safeLoopbackOrigin(consoleUrl) ?? DEFAULT_CONSOLE_URL;
-  const segments = ['knowledge', scope, spaceId, itemKind, itemId]
+  const segments = ['knowledge', scope, spaceId, 'directory', itemKind, itemId]
     .map((segment) => encodeURIComponent(segment));
-  return `${origin}/#/${segments.join('/')}`;
+  return `${origin}/${segments.join('/')}`;
 }
 
 function safeLoopbackOrigin(value) {

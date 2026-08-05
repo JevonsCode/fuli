@@ -18,6 +18,8 @@ test('MCP instructions support hook-provided task context and an exact fallback 
   assert.match(MCP_INSTRUCTIONS, /personal-global everywhere/i);
   assert.match(MCP_INSTRUCTIONS, /writes?.*actual payload/i);
   assert.match(MCP_INSTRUCTIONS, /final text.*not compliance/i);
+  assert.match(MCP_INSTRUCTIONS, /get_user_taste_skill/);
+  assert.match(MCP_INSTRUCTIONS, /never replaces a user-authored Skill/i);
   assert.match(MCP_INSTRUCTIONS, /never guess personalProjectId/i);
   assert.match(MCP_INSTRUCTIONS, /search_current_project_knowledge/i);
   assert.match(MCP_INSTRUCTIONS, /task_knowledge_recall/i);

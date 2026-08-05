@@ -10,12 +10,15 @@ const HANDLERS = Object.freeze({
     agentInvocation: true,
     agentToolName: 'get_collaboration_preferences'
   }),
+  get_user_taste_skill: (app, input) => app.getUserTasteSkill(input),
   resolve_deferred_preference_conflict: (app, input) =>
     app.resolveDeferredPreferenceConflict({
       ...input,
       operationActor: 'agent'
     }),
   capture_session_knowledge: (app, input) => app.captureSessionKnowledge(input),
+  record_workflow_transition_observation: (app, input) =>
+    app.recordWorkflowTransitionObservation(input),
   record_decision_trace: (app, input) => app.recordDecisionTrace(input),
   search_knowledge_graph: (app, input) => app.searchKnowledge({
     ...input,
@@ -34,6 +37,10 @@ const HANDLERS = Object.freeze({
     app.searchCurrentProjectKnowledge(input),
   discover_common_knowledge_candidates: (app, input) =>
     app.discoverCommonKnowledgeCandidates(input),
+  discover_personal_global_preference_candidates: (app, input) =>
+    app.discoverPersonalGlobalPreferenceCandidates(input),
+  preview_personal_global_preference_decision: (app, input) =>
+    app.previewPersonalGlobalPreferenceDecision(input),
   preview_common_knowledge_promotion: (app, input) =>
     app.previewCommonKnowledgePromotion(input),
   apply_common_knowledge_promotion: (app, input) => {
@@ -65,15 +72,14 @@ const HANDLERS = Object.freeze({
   record_knowledge_review_progress: (app, input) =>
     app.recordKnowledgeReviewProgress(input),
   finish_knowledge_review: (app, input) => app.finishKnowledgeReview(input),
+  list_workflow_candidates: (app, input) => app.listWorkflowCandidates(input),
+  recommend_next_workflow_steps: (app, input) =>
+    app.recommendNextWorkflowSteps(input),
   revise_personal_knowledge: (app, input) => app.reviseKnowledgeItem({
     ...input,
     operationActor: 'agent'
   }),
   reassign_personal_knowledge: (app, input) => app.reassignKnowledgeItem({
-    ...input,
-    operationActor: 'agent'
-  }),
-  set_personal_preference_scope: (app, input) => app.setPersonalPreferenceScope({
     ...input,
     operationActor: 'agent'
   }),

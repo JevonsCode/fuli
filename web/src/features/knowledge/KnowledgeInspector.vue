@@ -24,8 +24,11 @@ import {
   copySourceSession,
   sourceApplicationLabel,
   sourceLinkForEvidence,
+  sourceLauncherAppName,
 } from './source-adapters'
+import { useConversationLauncherConfiguration } from './conversation-launcher-settings'
 import type {
+  ConversationLauncherConfiguration,
   EvidenceRecord,
   KnowledgeEdge,
   KnowledgeGraph,
@@ -41,6 +44,7 @@ const props = defineProps<{
   canPublishProject?: boolean
   canManageProject?: boolean
   mode?: 'directory' | 'graph'
+  conversationLaunchers?: ConversationLauncherConfiguration
 }>()
 
 const emit = defineEmits<{
@@ -125,6 +129,10 @@ const classificationCopy = computed(() =>
 )
 const confirmationBasis = computed(() => props.item?.confirmationBasis ?? null)
 const copiedEvidenceKey = ref('')
+const storedConversationLaunchers = useConversationLauncherConfiguration()
+const conversationLaunchers = computed(
+  () => props.conversationLaunchers ?? storedConversationLaunchers.value,
+)
 const replacementItem = computed(() => {
   const itemId = props.item?.replacedByItemId
   const itemKind = props.item?.replacedByItemKind
@@ -164,6 +172,28 @@ function inheritanceLabel(item: KnowledgeItem) {
     })
   }
   return t('knowledge.workspace.inspector.inheritance.local')
+}
+
+function preferenceScopeLabel(item: KnowledgeItem) {
+  if (item.preferenceScope !== 'project' || !item.preferenceProjectId) {
+    return t('knowledge.workspace.inspector.personalGlobal')
+  }
+  const projectId = item.preferenceProjectId
+  const projectName = props.graph?.nodes.find((node) =>
+    node.attributes?.projectId === projectId,
+  )?.name
+  const project = projectName && projectName.toLocaleLowerCase() !== projectId.toLocaleLowerCase()
+    ? `${projectName} (${projectId})`
+    : projectId
+  return t('knowledge.workspace.inspector.selectedProject', { project })
+}
+
+function conversationLink(evidence: EvidenceRecord) {
+  return sourceLinkForEvidence(evidence, conversationLaunchers.value)
+}
+
+function conversationAppName(evidence: EvidenceRecord) {
+  return sourceLauncherAppName(evidence, conversationLaunchers.value)
 }
 
 function evidenceKey(evidence: EvidenceRecord, index: number) {
@@ -274,9 +304,7 @@ async function copyEvidenceSession(evidence: EvidenceRecord, index: number) {
         </div>
         <div v-if="!managementItem && item.profileAspect">
           <dt>{{ t('knowledge.workspace.inspector.fields.effectiveScope') }}</dt>
-          <dd>{{ item.preferenceScope === 'project'
-            ? t('knowledge.workspace.inspector.selectedProject')
-            : t('knowledge.workspace.inspector.personalGlobal') }}</dd>
+          <dd>{{ preferenceScopeLabel(item) }}</dd>
         </div>
         <template v-if="rawEdge">
           <div><dt>{{ t('knowledge.workspace.inspector.fields.source') }}</dt><dd>{{ names.get(endpointId(rawEdge.source)) ?? rawEdge.source_name ?? endpointId(rawEdge.source) }}</dd></div>
@@ -413,25 +441,29 @@ async function copyEvidenceSession(evidence: EvidenceRecord, index: number) {
               · {{ formatTime(evidence.reference_time || evidence.created_at) }}
             </span>
             <p v-if="evidence.source_excerpt" class="evidence-excerpt">{{ evidence.source_excerpt }}</p>
-            <a
-              v-if="sourceLinkForEvidence(evidence)"
-              class="evidence-source-action"
-              :href="sourceLinkForEvidence(evidence) ?? undefined"
-            >
-              {{ t('knowledge.workspace.inspector.openConversation') }}
-            </a>
-            <button
-              v-else-if="evidence.session_id"
-              class="evidence-source-action"
-              type="button"
-              @click="copyEvidenceSession(evidence, index)"
-            >
-              {{
-                copiedEvidenceKey === evidenceKey(evidence, index)
-                  ? t('knowledge.workspace.inspector.copiedSessionId')
-                  : t('knowledge.workspace.inspector.copySessionId')
-              }}
-            </button>
+            <div v-if="evidence.session_id" class="evidence-source-actions">
+              <button
+                class="evidence-source-action"
+                type="button"
+                @click="copyEvidenceSession(evidence, index)"
+              >
+                {{
+                  copiedEvidenceKey === evidenceKey(evidence, index)
+                    ? t('knowledge.workspace.inspector.copiedSessionId')
+                    : t('knowledge.workspace.inspector.copySessionId')
+                }}
+              </button>
+              <a
+                v-if="conversationLink(evidence)"
+                class="evidence-source-action"
+                :href="conversationLink(evidence) ?? undefined"
+                :title="t('knowledge.workspace.inspector.openConversationWith', {
+                  app: conversationAppName(evidence) ?? sourceApplicationLabel(evidence),
+                })"
+              >
+                {{ t('knowledge.workspace.inspector.openConversation') }}
+              </a>
+            </div>
           </article>
         </div>
       </template>

@@ -36,5 +36,29 @@ def json_object(value) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
+_PREFERENCE_QUALIFIER_EXCLUSIONS = frozenset({
+    'preferenceKey',
+    'preference_key',
+    'searchTerms',
+    'search_terms',
+    'weight',
+})
+
+
+def preference_qualifiers(value) -> dict:
+    """Project content qualifiers safe to expose and bind to review state.
+
+    Retrieval aliases, ranking hints, and the separately projected semantic key
+    are intentionally omitted. Remaining JSON attributes preserve source-level
+    qualifications such as language, audience, conditions, and rationale.
+    """
+    attributes = json_object(value)
+    return {
+        str(key): attributes[key]
+        for key in sorted(attributes, key=str)
+        if key not in _PREFERENCE_QUALIFIER_EXCLUSIONS
+    }
+
+
 def normalized_text(value) -> str:
     return ' '.join(str(value or '').strip().casefold().split())

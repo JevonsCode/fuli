@@ -32,6 +32,9 @@ class GraphNode(StrictModel):
     type: str
     group_id: str
     summary: str
+    key: str | None = None
+    preference_key: str | None = None
+    preference_qualifiers: dict[str, Any] = Field(default_factory=dict)
     origin_quadrant: EpistemicQuadrant = 'known_known'
     current_quadrant: EpistemicQuadrant = 'known_known'
     epistemic_status: EpistemicStatus = 'confirmed'
@@ -82,6 +85,9 @@ class GraphEdge(StrictModel):
     target_name: str | None = None
     type: str
     fact: str
+    key: str | None = None
+    preference_key: str | None = None
+    preference_qualifiers: dict[str, Any] = Field(default_factory=dict)
     origin_quadrant: EpistemicQuadrant = 'known_known'
     current_quadrant: EpistemicQuadrant = 'known_known'
     epistemic_status: EpistemicStatus = 'confirmed'

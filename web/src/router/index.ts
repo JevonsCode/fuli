@@ -2,6 +2,17 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 import { updateDocumentTitle } from './meta'
 
+export function legacyKnowledgeHashPath(hash: string) {
+  const match = hash.match(
+    /^#\/knowledge\/([^/?#]+)\/([^/?#]+)\/(entity|relationship)\/([^/?#]+)(?:\?([^#]*))?$/,
+  )
+  if (!match) return null
+  const [, scope, spaceId, itemKind, itemId, query] = match
+  return `/knowledge/${scope}/${spaceId}/directory/${itemKind}/${itemId}${
+    query ? `?${query}` : ''
+  }`
+}
+
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -20,6 +31,12 @@ export const router = createRouter({
         title: 'routes.preferences.title',
         description: 'routes.preferences.description',
       },
+    },
+    {
+      path: '/preferences/writing',
+      name: 'writing-taste',
+      component: () => import('@/pages/WritingTastePage.vue'),
+      meta: { eyebrow: '', title: 'routes.writingTaste.title' },
     },
     {
       path: '/personal/:spaceId/projects/:projectId/:mode/:itemKind/:itemId',
@@ -149,6 +166,12 @@ export const router = createRouter({
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior: () => ({ top: 0 }),
+})
+
+router.beforeEach((to) => {
+  if (to.path !== '/' || typeof window === 'undefined') return true
+  const legacyPath = legacyKnowledgeHashPath(window.location.hash)
+  return legacyPath ?? true
 })
 
 router.afterEach((route) => {

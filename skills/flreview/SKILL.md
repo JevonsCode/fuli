@@ -61,11 +61,12 @@ Collect the exact replacement content and a reason in the card. Call `revise_per
 
 ### 调整范围
 
-- For a global preference with exactly one source project, offer a one-click move to that source project. With multiple source projects, require a project selection. Call `set_personal_preference_scope` with `scope: project` and the selected source project.
-- For a project-scoped preference, offer promotion to global and call `set_personal_preference_scope` with `scope: global`.
+- The Agent must not perform a direct scope write. Scope mutation is not an Agent or MCP capability.
+- For a global preference, the only direct operation is safe narrowing to one exact project. With one source project, offer that exact project; with multiple source projects, require an explicit selection. Hand the exact item and project to a trusted local FULI human-review UI with a real user-presence gate.
+- For a project-scoped preference, never offer direct promotion. A broader parent-project or personal global scope must use the independently reviewed preference-convergence flow: discover the candidate, preserve every source and qualifier, require an explicit `target_scope` and `target_project_id`, and let only the Provider `HumanReviewer` channel apply the decision through the trusted local human-review UI.
 - Ordinary project knowledge is not a personal preference. Never offer to turn ordinary project knowledge into a global preference.
 
-After a successful scope write, record `updated`. Never change scope automatically.
+If the trusted local human-review UI is unavailable, report that exact missing capability and leave the candidate unchanged. After that trusted flow reports a successful scope write, record `updated`. Never change scope automatically.
 
 ### 失效
 

@@ -2,26 +2,48 @@ import { ApplicationError } from '../app/application-error.js';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
+const MAX_PROVIDER_VALIDATION_ERRORS = 5;
 
 export class ProviderRequestError extends ApplicationError {
-  constructor(message, { status = 0, code = 'provider_error', details = null } = {}) {
+  constructor(message, {
+    status = 0,
+    code = 'provider_error',
+    details = null,
+    diagnostic = null,
+    validationErrors = []
+  } = {}) {
     super(code, message);
     this.name = 'ProviderRequestError';
     this.status = status;
     this.code = code;
     this.details = details;
+    this.diagnostic = diagnostic;
+    this.validationErrors = Array.isArray(validationErrors)
+      ? validationErrors.slice(0, MAX_PROVIDER_VALIDATION_ERRORS)
+      : [];
   }
 }
 
 export class GraphitiProviderClient {
+  #workflowObservationToken;
+
   constructor({
     baseUrl,
     accessToken,
+    workflowObservationToken = null,
     fetchImpl = globalThis.fetch,
     requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS
   }) {
     if (!baseUrl) throw new TypeError('Graphiti provider baseUrl is required');
     if (!accessToken) throw new TypeError('Graphiti provider accessToken is required');
+    if (workflowObservationToken !== null && (
+      typeof workflowObservationToken !== 'string' ||
+      workflowObservationToken.trim().length < 32
+    )) {
+      throw new TypeError(
+        'MCP host workflow observation credential must contain at least 32 characters'
+      );
+    }
     if (typeof fetchImpl !== 'function') throw new TypeError('fetch implementation is required');
     if (!Number.isSafeInteger(requestTimeoutMs) ||
         requestTimeoutMs < 1 ||
@@ -30,6 +52,7 @@ export class GraphitiProviderClient {
     }
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.accessToken = accessToken;
+    this.#workflowObservationToken = workflowObservationToken?.trim() ?? null;
     this.fetch = fetchImpl;
     this.requestTimeoutMs = requestTimeoutMs;
   }
@@ -118,6 +141,14 @@ export class GraphitiProviderClient {
   commit(input) {
     return this.#request('/v1/knowledge/commits', { method: 'POST', body: input });
   }
+  recordWorkflowObservation(input) {
+    if (!this.#workflowObservationToken) {
+      throw new TypeError('MCP host workflow observation credential is not configured');
+    }
+    return this.#request('/v1/workflow-observations', {
+      method: 'POST', body: input, workflowObservation: true
+    });
+  }
   startKnowledgeReview(input) {
     return this.#request('/v1/knowledge/reviews/start', {
       method: 'POST', body: input
@@ -135,6 +166,16 @@ export class GraphitiProviderClient {
   }
   finishKnowledgeReview(input) {
     return this.#request('/v1/knowledge/reviews/finish', {
+      method: 'POST', body: input
+    });
+  }
+  searchWorkflowCandidates(input) {
+    return this.#request('/v1/workflow-candidates/search', {
+      method: 'POST', body: input
+    });
+  }
+  recommendWorkflowCandidates(input) {
+    return this.#request('/v1/workflow-candidates/recommendations', {
       method: 'POST', body: input
     });
   }
@@ -195,6 +236,33 @@ export class GraphitiProviderClient {
     return this.#request('/v1/knowledge/common-promotions', {
       method: 'POST', body: input
     });
+  }
+  personalGlobalPreferenceDecisionStatus(input) {
+    return this.#request(
+      '/v1/personal-global-preference-candidates/decision-status',
+      { method: 'POST', body: input }
+    );
+  }
+  personalGlobalPreferenceScopeOptions(candidateId, input) {
+    return this.#request(
+      '/v1/personal-global-preference-candidates/' +
+      `${encodeURIComponent(candidateId)}/scope-options`,
+      { method: 'POST', body: input }
+    );
+  }
+  inspectPersonalGlobalPreferenceDecision(candidateId, input) {
+    return this.#request(
+      '/v1/personal-global-preference-candidates/' +
+      `${encodeURIComponent(candidateId)}/decision-inspection`,
+      { method: 'POST', body: input }
+    );
+  }
+  applyPersonalGlobalPreferenceDecision(candidateId, input) {
+    return this.#request(
+      '/v1/personal-global-preference-candidates/' +
+      `${encodeURIComponent(candidateId)}/decision`,
+      { method: 'POST', body: input }
+    );
   }
   deferPreferenceConflict(input) {
     return this.#request('/v1/preference-conflicts/defer', {
@@ -270,10 +338,14 @@ export class GraphitiProviderClient {
   async #request(path, {
     method = 'GET',
     body,
-    authenticated = true
+    authenticated = true,
+    workflowObservation = false
   } = {}) {
     const headers = { accept: 'application/json' };
     if (authenticated) headers.authorization = `Bearer ${this.accessToken}`;
+    if (workflowObservation) {
+      headers['x-fuli-workflow-observation-token'] = this.#workflowObservationToken;
+    }
     if (body !== undefined) headers['content-type'] = 'application/json';
     const controller = new AbortController();
     let timedOut = false;
@@ -293,23 +365,36 @@ export class GraphitiProviderClient {
       });
       payload = await parseResponse(response);
     } catch (error) {
+      const diagnostic = {
+        category: timedOut ? 'provider_timeout' : 'provider_unavailable',
+        status: timedOut ? 504 : 0,
+        detail: timedOut
+          ? 'Graphiti provider request timed out.'
+          : 'Graphiti provider is unavailable.'
+      };
       throw new ProviderRequestError(
-        timedOut
-          ? 'Graphiti provider request timed out'
-          : 'Graphiti provider is unavailable',
+        diagnostic.detail,
         {
-          status: timedOut ? 504 : 0,
-          code: timedOut ? 'provider_timeout' : 'provider_unavailable',
-          details: timedOut ? null : error instanceof Error ? error.message : null
+          status: diagnostic.status,
+          code: diagnostic.category,
+          details: timedOut ? null : diagnostic,
+          diagnostic
         }
       );
     } finally {
       clearTimeout(timeout);
     }
     if (!response.ok) {
+      const diagnostic = providerErrorDiagnostic(response.status, payload);
       throw new ProviderRequestError(
-        typeof payload?.detail === 'string' ? payload.detail : 'Graphiti provider request failed',
-        { status: response.status, details: payload }
+        diagnostic.detail,
+        {
+          status: response.status,
+          code: diagnostic.category,
+          details: diagnostic,
+          diagnostic,
+          validationErrors: diagnostic.validationErrors
+        }
       );
     }
     return payload;
@@ -321,4 +406,71 @@ async function parseResponse(response) {
   if (type.includes('application/json')) return response.json();
   const text = await response.text();
   return text ? { detail: text } : null;
+}
+
+function providerErrorDiagnostic(status, payload) {
+  const category = status >= 500 && status <= 599
+    ? 'provider_http_5xx'
+    : 'provider_error';
+  if (category === 'provider_http_5xx') {
+    return {
+      category,
+      status,
+      detail: `Graphiti provider returned HTTP ${status}.`
+    };
+  }
+  const validationErrors = providerValidationErrors(payload);
+  return {
+    category,
+    status,
+    detail: sanitizeProviderDetail(providerErrorMessage(payload, validationErrors)),
+    validationErrors
+  };
+}
+
+function providerErrorMessage(payload, validationErrors = providerValidationErrors(payload)) {
+  if (typeof payload?.detail === 'string') return payload.detail;
+  if (!validationErrors.length) return 'Graphiti provider request failed';
+  const messages = validationErrors.map(({ field, message }) => (
+    field ? `${field} — ${message}` : message
+  ));
+  return `Graphiti provider rejected the request — ${messages.join('; ')}`;
+}
+
+function sanitizeProviderDetail(value) {
+  return String(value ?? 'Graphiti provider request failed')
+    .replace(/Bearer\s+\S+/gi, 'Bearer <redacted>')
+    .replace(/(?:token|secret|password|api[_-]?key)\s*[:=]\s*\S+/gi, '$1=<redacted>')
+    .replace(/(?:\/Users\/|\/home\/|\/private\/|\/tmp\/)[^\s"']+/g, '<path>')
+    .replace(/https?:\/\/[^\s"']+/gi, '<url>')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replaceAll(':', ' —')
+    .slice(0, 320) || 'Graphiti provider request failed';
+}
+
+// Issue source: WZ.
+// Provider validation failures must expose the field and actionable reason
+// without echoing FastAPI's submitted input payload.
+function providerValidationErrors(payload) {
+  if (!Array.isArray(payload?.detail)) return [];
+  return payload.detail
+    .filter((item) => item && typeof item.msg === 'string' && item.msg.trim())
+    .slice(0, MAX_PROVIDER_VALIDATION_ERRORS)
+    .map((item) => ({
+      field: validationLocation(item.loc),
+      message: sanitizeProviderDetail(item.msg.trim())
+    }));
+}
+
+function validationLocation(loc) {
+  if (!Array.isArray(loc)) return '';
+  return loc
+    .filter((segment) => segment !== 'body')
+    .reduce((path, segment) => {
+      if (typeof segment === 'number') return `${path}[${segment}]`;
+      if (typeof segment !== 'string' || !segment) return path;
+      return path ? `${path}.${segment}` : segment;
+    }, '');
 }

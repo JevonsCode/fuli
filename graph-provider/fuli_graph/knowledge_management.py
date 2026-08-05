@@ -280,6 +280,21 @@ async def set_preference_scope(
             detail='only personal profile knowledge has a preference scope',
         )
 
+    current_scope = current.get('preference_scope') or 'global'
+    if not (
+        current_scope == 'global'
+        and request.scope == 'project'
+        and request.project_id
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                'direct preference scope changes may only narrow a global '
+                'preference to one project; broader or lateral scope changes '
+                'require the independently reviewed convergence workflow'
+            ),
+        )
+
     previous = _snapshot(current, request.item_kind)
     next_value = {
         **previous,
@@ -332,7 +347,10 @@ async def set_preference_scope(
         created_by=actor['id'],
         created_at=created_at,
     )
-    if request.operation_actor == 'human':
+    if (
+        request.operation_actor == 'human'
+        and actor.get('_human_review_verified') is True
+    ):
         await record_human_change(
             store,
             actor,

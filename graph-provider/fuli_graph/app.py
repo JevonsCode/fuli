@@ -1,9 +1,13 @@
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 
-from .auth import matches_bootstrap_token
+from .auth import (
+    matches_bootstrap_token,
+    matches_human_review_token,
+    matches_workflow_observation_token,
+)
 from .config import Settings, get_settings
 from .graph_models import GraphResult
 from .knowledge_usage_models import KnowledgeUsageCreate, KnowledgeUsageResult
@@ -30,7 +34,30 @@ from .project_action_models import (
     KnowledgeProjectActionResult,
     KnowledgeProjectPreviewRecord,
     KnowledgeProjectPreviewRequest,
+    PersonalProjectRelationReviewRecord,
+    PersonalProjectRelationReviewRequest,
 )
+from .personal_global_preference_models import (
+    PersonalGlobalPreferenceDecisionApply,
+    PersonalGlobalPreferenceDecisionInspection,
+    PersonalGlobalPreferenceDecisionIntent,
+    PersonalGlobalPreferenceDecisionPreview,
+    PersonalGlobalPreferenceDecisionRecord,
+    PersonalGlobalPreferenceDecisionStatusRequest,
+    PersonalGlobalPreferenceDecisionStatusResult,
+    PersonalGlobalPreferenceScopeOptions,
+    PersonalGlobalPreferenceScopeOptionsRequest,
+)
+from .workflow_candidate_models import (
+    WorkflowCandidate,
+    WorkflowCandidatePage,
+    WorkflowCandidateReview,
+    WorkflowCandidateReviewIntent,
+    WorkflowCandidateReviewPreview,
+    WorkflowCandidateSearch,
+    WorkflowRecommendationPage,
+)
+from .workflow_observation_models import WorkflowTransitionObservation
 from .models import (
     BootstrapRequest,
     BootstrapResult,
@@ -105,6 +132,7 @@ from .knowledge_management import (
 from .project_knowledge import (
     apply_knowledge_project_action,
     preview_knowledge_project_action,
+    review_personal_project_relation,
 )
 from .preference_conflicts import (
     complete_preference_conflict,
@@ -112,6 +140,20 @@ from .preference_conflicts import (
     list_preference_conflicts,
     resolve_preference_conflict,
 )
+from .personal_global_preferences import (
+    apply_personal_global_preference_decision,
+    inspect_personal_global_preference_decision,
+    personal_global_preference_decision_status,
+    personal_global_preference_scope_options,
+    preview_personal_global_preference_decision,
+)
+from .workflow_candidates import (
+    preview_workflow_candidate_review,
+    recommend_workflow_candidates,
+    review_workflow_candidate,
+    search_workflow_candidates,
+)
+from .workflow_observations import record_workflow_transition_observation
 from .runtime import GraphitiRuntime
 from .store import GraphStore
 
@@ -146,6 +188,51 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return await store.authenticate(authorization[len(prefix) :])
 
     Actor = Annotated[dict, Depends(current_actor)]
+
+    async def current_human_reviewer(
+        actor: Actor,
+        x_fuli_human_review_token: Annotated[str | None, Header()] = None,
+    ) -> dict:
+        if not resolved_settings.human_review_token:
+            raise HTTPException(
+                status_code=503,
+                detail='human workflow review channel is not configured',
+            )
+        if not matches_human_review_token(
+            x_fuli_human_review_token,
+            resolved_settings.human_review_token,
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail='independent human review proof required',
+            )
+        return {**actor, '_human_review_verified': True}
+
+    HumanReviewer = Annotated[dict, Depends(current_human_reviewer)]
+
+    async def current_workflow_observer(
+        actor: Actor,
+        x_fuli_workflow_observation_token: Annotated[
+            str | None,
+            Header(),
+        ] = None,
+    ) -> dict:
+        if not resolved_settings.workflow_observation_token:
+            raise HTTPException(
+                status_code=503,
+                detail='MCP host workflow observation channel is not configured',
+            )
+        if not matches_workflow_observation_token(
+            x_fuli_workflow_observation_token,
+            resolved_settings.workflow_observation_token,
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail='independent MCP host observation proof required',
+            )
+        return actor
+
+    WorkflowObserver = Annotated[dict, Depends(current_workflow_observer)]
 
     @application.get('/health')
     async def health() -> dict:
@@ -336,6 +423,137 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.post('/v1/knowledge/commits', response_model=CommitResult)
     async def commit_personal(request: KnowledgeCommit, actor: Actor) -> CommitResult:
         return await store.commit_personal(actor, request)
+
+    @application.post('/v1/workflow-observations', response_model=CommitResult)
+    async def record_workflow_observation(
+        request: WorkflowTransitionObservation,
+        actor: WorkflowObserver,
+    ) -> CommitResult:
+        return await record_workflow_transition_observation(store, actor, request)
+
+    @application.post(
+        '/v1/personal-global-preference-candidates/decision-status',
+        response_model=PersonalGlobalPreferenceDecisionStatusResult,
+    )
+    async def personal_global_preference_status(
+        request: PersonalGlobalPreferenceDecisionStatusRequest,
+        actor: Actor,
+    ) -> PersonalGlobalPreferenceDecisionStatusResult:
+        return await personal_global_preference_decision_status(
+            store,
+            actor,
+            request,
+        )
+
+    @application.post(
+        '/v1/personal-global-preference-candidates/{candidate_id}/scope-options',
+        response_model=PersonalGlobalPreferenceScopeOptions,
+    )
+    async def personal_global_preference_scopes(
+        candidate_id: str,
+        request: PersonalGlobalPreferenceScopeOptionsRequest,
+        actor: Actor,
+    ) -> PersonalGlobalPreferenceScopeOptions:
+        return await personal_global_preference_scope_options(
+            store,
+            actor,
+            candidate_id,
+            request,
+        )
+
+    @application.post(
+        '/v1/personal-global-preference-candidates/{candidate_id}/decision-inspection',
+        response_model=PersonalGlobalPreferenceDecisionInspection,
+    )
+    async def inspect_personal_global_preference(
+        candidate_id: str,
+        request: PersonalGlobalPreferenceDecisionIntent,
+        actor: Actor,
+    ) -> PersonalGlobalPreferenceDecisionInspection:
+        return await inspect_personal_global_preference_decision(
+            store,
+            actor,
+            candidate_id,
+            request,
+        )
+
+    @application.post(
+        '/v1/personal-global-preference-candidates/{candidate_id}/decision-preview',
+        response_model=PersonalGlobalPreferenceDecisionPreview,
+    )
+    async def preview_personal_global_preference(
+        candidate_id: str,
+        request: PersonalGlobalPreferenceDecisionIntent,
+        actor: HumanReviewer,
+    ) -> PersonalGlobalPreferenceDecisionPreview:
+        return await preview_personal_global_preference_decision(
+            store,
+            actor,
+            candidate_id,
+            request,
+        )
+
+    @application.post(
+        '/v1/personal-global-preference-candidates/{candidate_id}/decision',
+        response_model=PersonalGlobalPreferenceDecisionRecord,
+    )
+    async def apply_personal_global_preference(
+        candidate_id: str,
+        request: PersonalGlobalPreferenceDecisionApply,
+        actor: HumanReviewer,
+    ) -> PersonalGlobalPreferenceDecisionRecord:
+        return await apply_personal_global_preference_decision(
+            store,
+            actor,
+            candidate_id,
+            request,
+        )
+
+    @application.post(
+        '/v1/workflow-candidates/recommendations',
+        response_model=WorkflowRecommendationPage,
+    )
+    async def workflow_candidate_recommendations(
+        request: WorkflowCandidateSearch,
+        actor: Actor,
+    ) -> WorkflowRecommendationPage:
+        return await recommend_workflow_candidates(store, actor, request)
+
+    @application.post(
+        '/v1/workflow-candidates/search',
+        response_model=WorkflowCandidatePage,
+    )
+    async def workflow_candidate_search(
+        request: WorkflowCandidateSearch,
+        actor: Actor,
+    ) -> WorkflowCandidatePage:
+        return await search_workflow_candidates(store, actor, request)
+
+    @application.post(
+        '/v1/workflow-candidates/{candidate_id}/review-preview',
+        response_model=WorkflowCandidateReviewPreview,
+    )
+    async def preview_workflow_review(
+        candidate_id: str,
+        request: WorkflowCandidateReviewIntent,
+        actor: HumanReviewer,
+    ) -> WorkflowCandidateReviewPreview:
+        return await preview_workflow_candidate_review(
+            store, actor, candidate_id, request
+        )
+
+    @application.post(
+        '/v1/workflow-candidates/{candidate_id}/review',
+        response_model=WorkflowCandidate,
+    )
+    async def review_workflow(
+        candidate_id: str,
+        request: WorkflowCandidateReview,
+        actor: HumanReviewer,
+    ) -> WorkflowCandidate:
+        return await review_workflow_candidate(
+            store, actor, candidate_id, request
+        )
 
     @application.post(
         '/v1/knowledge/reviews/start',
@@ -576,6 +794,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         actor: Actor,
     ) -> KnowledgeProjectActionResult:
         return await apply_knowledge_project_action(store, actor, item_id, request)
+
+    @application.post(
+        '/v1/personal-spaces/{space_id}/project-relations/{relation_id}/review',
+        response_model=PersonalProjectRelationReviewRecord,
+    )
+    async def review_local_project_relation(
+        space_id: str,
+        relation_id: str,
+        request: PersonalProjectRelationReviewRequest,
+        actor: HumanReviewer,
+    ) -> PersonalProjectRelationReviewRecord:
+        return await review_personal_project_relation(
+            store,
+            actor,
+            space_id,
+            relation_id,
+            request,
+        )
 
     @application.post(
         '/v1/projects/{project_id}/proposals',

@@ -87,6 +87,29 @@ test('Claude Code connection keeps unrelated config and installs deterministic t
   });
 });
 
+test('Claude Code hook timeout can be increased by an isolated acceptance runtime', () => {
+  const writes = new Map();
+  connectClaudeCode(AGENT, CONTEXT, {
+    readConfig: (filePath) => filePath === AGENT.configPath
+      ? {}
+      : {},
+    writeConfig: (filePath, value) => writes.set(filePath, value)
+  });
+  connectClaudeCode(AGENT, { ...CONTEXT, hookTimeoutSec: 240 }, {
+    readConfig: (filePath) => filePath === AGENT.configPath
+      ? writes.get(filePath) ?? {}
+      : writes.get(filePath) ?? {},
+    writeConfig: (filePath, value) => writes.set(filePath, value)
+  });
+
+  const settings = writes.get(AGENT.settingsPath);
+  assert.equal(
+    settings.hooks.UserPromptSubmit.at(-1).hooks[0].timeout,
+    240
+  );
+  assert.equal(settings.hooks.Stop.at(-1).hooks[0].timeout, 240);
+});
+
 test('Claude Code connection is idempotent and disconnect removes only Fuli entries', () => {
   const files = new Map([
     [AGENT.configPath, {}],

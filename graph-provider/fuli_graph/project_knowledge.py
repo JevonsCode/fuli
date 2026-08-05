@@ -23,8 +23,11 @@ from .project_action_models import (
     KnowledgeProjectMatch,
     KnowledgeProjectPreviewRecord,
     KnowledgeProjectPreviewRequest,
+    PersonalProjectRelationReviewRecord,
+    PersonalProjectRelationReviewRequest,
 )
 from .provider_values import (
+    native_datetime as _native_datetime,
     normalized_text as _normalized,
     stable_uuid as _stable_uuid,
 )
@@ -209,7 +212,10 @@ async def _record_project_action_if_human(
     item_id,
     request,
 ):
-    if request.operation_actor != 'human':
+    if (
+        request.operation_actor != 'human'
+        or actor.get('_human_review_verified') is not True
+    ):
         return
     await record_human_change(
         store,
@@ -293,6 +299,70 @@ async def read_personal_project_relations(store, space_id: str) -> list[dict]:
         }
         for record in records
     ]
+
+
+async def review_personal_project_relation(
+    store,
+    actor: dict,
+    space_id: str,
+    relation_id: str,
+    request: PersonalProjectRelationReviewRequest,
+) -> PersonalProjectRelationReviewRecord:
+    store._require_personal()
+    space = await store.authorize(actor, space_id, 'maintainer')
+    if space['kind'] != 'personal':
+        raise HTTPException(
+            status_code=422,
+            detail='personal project relation review is personal-only',
+        )
+    reviewed_at = datetime.now(timezone.utc)
+    next_revision = request.decision_revision + 1
+    status = 'active' if request.decision == 'activate' else 'rejected'
+    review_event_id = _stable_uuid(
+        space_id,
+        'personal-project-relation-review',
+        relation_id,
+        str(next_revision),
+        request.decision,
+    )
+    records, _, _ = await store.runtime.driver.execute_query(
+        _REVIEW_PERSONAL_PROJECT_RELATION_QUERY,
+        space_id=space_id,
+        relation_id=relation_id,
+        expected_revision=request.decision_revision,
+        next_revision=next_revision,
+        status=status,
+        confirmation_authority=(
+            'human_review' if status == 'active' else None
+        ),
+        reviewed_by=actor['id'],
+        reviewed_at=reviewed_at,
+        review_reason=request.reason,
+        review_event_id=review_event_id,
+    )
+    if not records:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                'personal project relation is missing or its review revision '
+                'changed; refresh before deciding'
+            ),
+        )
+    value = dict(records[0])
+    return PersonalProjectRelationReviewRecord(
+        relation_id=value['relation_id'],
+        personal_space_id=space_id,
+        source_project_id=value['source_project_id'],
+        target_project_id=value['target_project_id'],
+        relation_type=value['relation_type'],
+        status=value['status'],
+        confirmation_authority=value.get('confirmation_authority'),
+        decision_revision=int(value['decision_revision']),
+        reviewed_by=value['reviewed_by'],
+        reviewed_at=_native_datetime(value['reviewed_at']),
+        review_reason=value['review_reason'],
+        review_event_id=value['review_event_id'],
+    )
 
 
 async def _authorize_item(store, actor, item_id, request):
@@ -631,7 +701,13 @@ async def _maybe_create_project_relation(
           relation_type: $relation_type
         }]->(target)
         ON CREATE SET relation.created_at = $changed_at,
-                      relation.created_by = $created_by
+                      relation.created_by = $created_by,
+                      relation.status = 'pending',
+                      relation.confirmation_authority = null,
+                      relation.decision_revision = 0,
+                      relation.reviewed_by = null,
+                      relation.reviewed_at = null,
+                      relation.review_reason = null
         SET relation.updated_at = $changed_at
         RETURN relation.id AS id
         ''',
@@ -644,6 +720,49 @@ async def _maybe_create_project_relation(
         changed_at=changed_at,
     )
     return bool(records)
+
+
+_REVIEW_PERSONAL_PROJECT_RELATION_QUERY = '''
+/* fuli:review-personal-project-relation */
+MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})-
+      [:CONTAINS_PROJECT]->
+      (source:FuliPersonalProject)-
+      [relation:PERSONAL_PROJECT_RELATION {id: $relation_id}]->
+      (target:FuliPersonalProject)
+SET relation.cas_lock = coalesce(relation.cas_lock, 0) + 1
+WITH space, source, target, relation
+WHERE coalesce(relation.decision_revision, 0) = $expected_revision
+SET relation.status = $status,
+    relation.confirmation_authority = $confirmation_authority,
+    relation.decision_revision = $next_revision,
+    relation.reviewed_by = $reviewed_by,
+    relation.reviewed_at = $reviewed_at,
+    relation.review_reason = $review_reason,
+    relation.updated_at = $reviewed_at
+CREATE (review:FuliPersonalProjectRelationReview {
+  id: $review_event_id,
+  space_id: $space_id,
+  relation_id: $relation_id,
+  decision_revision: $next_revision,
+  decision: $status,
+  confirmation_authority: 'human_review',
+  reason: $review_reason,
+  reviewed_by: $reviewed_by,
+  reviewed_at: $reviewed_at
+})
+MERGE (space)-[:HAS_PERSONAL_PROJECT_RELATION_REVIEW]->(review)
+RETURN relation.id AS relation_id,
+       source.project_id AS source_project_id,
+       target.project_id AS target_project_id,
+       relation.relation_type AS relation_type,
+       relation.status AS status,
+       relation.confirmation_authority AS confirmation_authority,
+       relation.decision_revision AS decision_revision,
+       relation.reviewed_by AS reviewed_by,
+       relation.reviewed_at AS reviewed_at,
+       relation.review_reason AS review_reason,
+       review.id AS review_event_id
+'''
 
 
 def _relation_endpoints(source_project_id, target_project_id, request):

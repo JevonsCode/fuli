@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -278,6 +279,10 @@ def test_entity_search_projection_normalizes_temporal_fields_once():
         'name': '回归测试策略',
         'type': 'EngineeringDecision',
         'summary': '核心检索必须覆盖实体结果投影。',
+        'key': 'alignment:network:preference:c',
+        'attributes_json': json.dumps({
+            'preferenceKey': 'alignment.comments.explain-function',
+        }),
         'created_at': changed_at,
         'human_edited': True,
         'human_change_status': 'viewed',
@@ -303,6 +308,9 @@ def test_entity_search_projection_normalizes_temporal_fields_once():
     assert result.source_uris == [
         'https://docs.example.invalid/project/test-strategy'
     ]
+    assert result.key == 'alignment:network:preference:c'
+    assert result.preference_key == 'alignment.comments.explain-function'
+    assert 'attributes' not in result.model_dump()
     assert result.score == 0.75
 
 

@@ -11,6 +11,7 @@ from fuli_graph.collaboration_context import read_collaboration_context
 async def test_collaboration_context_layers_exact_project_and_suppresses_conflicts():
     driver = SequentialDriver([
         [{'project': {'project_id': 'project-a'}}],
+        [],
         [
             preference_node(
                 'global-density',
@@ -127,8 +128,8 @@ async def test_collaboration_context_layers_exact_project_and_suppresses_conflic
     assert set(conflicts['tone'].item_ids) == {'tone-a', 'tone-b'}
     assert set(conflicts['risk'].item_ids) == {'project-risk-a', 'project-risk-b'}
     assert result.truncated is False
-    assert 'node.fuli_preference_project_id = $project_id' in driver.calls[1][0]
-    assert 'edge.fuli_preference_project_id = $project_id' in driver.calls[2][0]
+    assert 'node.fuli_preference_project_id = $project_id' in driver.calls[2][0]
+    assert 'edge.fuli_preference_project_id = $project_id' in driver.calls[3][0]
 
 
 @pytest.mark.asyncio

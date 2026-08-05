@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { useConsoleStore } from '@/stores/console'
+import { DEFAULT_CONVERSATION_LAUNCHERS } from '@/features/knowledge/source-adapters'
 import SettingsPage from './SettingsPage.vue'
 
 const configured = {
@@ -18,6 +19,7 @@ const configured = {
   },
   lanAccess: false,
   resourceRefreshSeconds: 5 as const,
+  conversationLaunchers: structuredClone(DEFAULT_CONVERSATION_LAUNCHERS),
 }
 
 describe('SettingsPage', () => {
@@ -93,6 +95,17 @@ describe('SettingsPage', () => {
     expect(wrapper.find('.save-bar').exists()).toBe(false)
     expect(wrapper.findAll('.select-row > select')).toHaveLength(0)
     expect(wrapper.findAll('.settings-select [role="combobox"]')).toHaveLength(2)
+    expect(wrapper.findAll('.conversation-launcher-row')).toHaveLength(6)
+    expect(wrapper.get('.conversation-launcher-card').text()).toContain('会话打开方式')
+
+    const cursorLauncher = wrapper
+      .findAll('.conversation-launcher-row')
+      .find((row) => row.text().includes('Cursor'))
+    expect(cursorLauncher).toBeDefined()
+    await cursorLauncher?.get('input[role="switch"]').setValue(true)
+    const cursorInputs = cursorLauncher?.findAll('input[type="text"]') ?? []
+    expect(cursorInputs).toHaveLength(2)
+    await cursorInputs[1]?.setValue('cursor://conversation/{id}')
 
     const refreshSelect = wrapper.get('[data-select-id="settings-refresh-interval"]')
     await refreshSelect.get('[role="combobox"]').trigger('click')
@@ -109,6 +122,12 @@ describe('SettingsPage', () => {
     const savedRequest = requests.find(({ init }) => init?.method === 'PUT')
     expect(JSON.parse(String(savedRequest?.init?.body)).ports.console).toBe(3030)
     expect(JSON.parse(String(savedRequest?.init?.body)).resourceRefreshSeconds).toBe(10)
+    expect(JSON.parse(String(savedRequest?.init?.body)).conversationLaunchers.cursor).toEqual({
+      enabled: true,
+      idFormat: 'any',
+      appName: 'Cursor',
+      urlTemplate: 'cursor://conversation/{id}',
+    })
     expect(wrapper.get('.settings-top-status').text()).toContain('设置已保存')
     expect(wrapper.text()).toContain('需要重启')
     wrapper.unmount()

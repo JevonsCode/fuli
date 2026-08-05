@@ -12,7 +12,7 @@ General:
   --version, -v
 
 Local service:
-  start [--port PORT] [--open] [--lan|--no-lan] [--rebuild] [--data-dir DIR] [--personal-space NAME]
+  start [--port PORT] [--open] [--lan|--no-lan] [--rebuild] [--data-dir DIR] [--personal-space NAME]  (checks Agent setup)
   stop [--data-dir DIR]
   restart [--port PORT] [--open] [--lan|--no-lan] [--rebuild] [--data-dir DIR] [--personal-space NAME]
   status [--json] [--data-dir DIR] [--port PORT]

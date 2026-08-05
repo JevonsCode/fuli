@@ -3,8 +3,10 @@ import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 
 const [statusPath, ...serverArgs] = process.argv.slice(2);
+const { CODEX_THREAD_ID: _codexThreadId, ...testEnvironment } = process.env;
 const child = spawn(process.execPath, serverArgs, {
   cwd: process.cwd(),
+  env: testEnvironment,
   stdio: ['pipe', 'pipe', 'pipe'],
   windowsHide: true
 });

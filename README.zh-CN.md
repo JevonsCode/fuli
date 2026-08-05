@@ -14,12 +14,13 @@
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="许可证" /></a>
 </p>
 
-复利是一个面向 AI Agent 的本地优先协作上下文图谱。它把人与 AI 在项目中产生的、经得起
-复用的知识、经验、决策理由和偏好组织成有来源、有作用域、有时间关系的资产，让 Codex、
-Claude Code 和 Cursor 在后续任务中少重复学习一次。
+复利是一个面向 AI Agent 的本地优先协作关系图谱。人与 Agent 的持续对话会逐步形成项目、
+人物、决定、偏好、行为步骤和证据之间的关系；关系节点可以指向 Fuli 本地内容，也可以连接
+外部知识库或其他数据源。Codex、Claude Code 和 Cursor 因而能在后续任务中复用已经形成的
+品味、个性、判断偏好与协作方法。
 
-复利不是聊天记录仓库，也不试图建立一个替代人的“人格模型”。AI 负责检索、提醒、归纳和
-执行；人始终保留最终判断权。
+复利不是聊天记录仓库，也不是以“收集更多文档”为目标的知识库，更不试图建立一个替代人的
+“人格模型”。AI 负责检索、提醒、归纳和执行；人始终保留最终判断权。
 
 ## npm 包
 
@@ -61,9 +62,10 @@ AI 可以发现候选、指出冲突、建议公共化，也可以在得到授�
 
 ### 4. 先组装上下文，再按需取证
 
-Fuli 不会在会话开始时把全部历史塞给模型。入口阶段始终加载当前任务实际生效的个人全局偏好
-和精确项目偏好；当任务信号表明可能需要稳定的历史事实、方法、网址、决策、发布、部署或认证
-Runbook 时，同一步骤还会在精确项目及其获授权知识来源中执行一次小规模、有界的自动召回。
+Fuli 不会在会话开始时把全部历史塞给模型。入口阶段始终加载当前任务实际生效的个人全局偏好、
+精确项目偏好和显式允许传播的上级项目偏好；当任务信号表明可能需要稳定的历史事实、方法、
+网址、决策、发布、部署或认证 Runbook 时，同一步骤还会在精确项目及其获授权知识来源中执行
+一次小规模、有界的自动召回。
 需要更多证据时，Agent 再使用聚焦查询按需检索。只有真正影响回答、实现或决策的知识才记录为
 一次使用，单纯检索不会增加权重。
 
@@ -86,16 +88,135 @@ Runbook 时，同一步骤还会在精确项目及其获授权知识来源中执
 
 Agent 在酒店项目工作时先搜索酒店本地知识，再沿显式的 `PART_OF` 或
 `USES_KNOWLEDGE_FROM` 关系向上搜索允许继承的知识，最多两跳。同稳定键的子项目内容覆盖
-父项目内容；普通 `RELATED_TO` 关系不会扩大作用域，项目级个人偏好也不会向下继承。
+父项目内容。项目级个人偏好默认只在精确项目生效；只有显式设置为 `descendants` 或
+`selected_projects` 的偏好才可沿同样的授权关系传播，并返回来源项目、路径和距离。多个同层
+父项目冲突时必须交给人判断，不能靠权重选胜者。普通 `RELATED_TO` 不会自动扩大作用域；
+搜索结果只返回一次性只读扩展建议，由 Agent 先询问用户。
 
-多个子项目中相似的内容只会形成公共化候选。当前聚类是词法启发式信号，不是语义等价证明；
-必须由人选择规范项、重复项、上级项目和理由后，才能原子提升。
+多个子项目中相似的内容只会形成公共化候选。跨无共同父级项目出现的共同偏好也只能形成个人
+全局候选，并完整保留每个项目的原文、限定词和来源。当前聚类是词法启发式信号，不是语义
+等价证明；必须由人选择内容、作用域和理由后，才能生效。
 
 ### 7. 本地优先，公开层不包含个人模型
 
 个人图谱默认留在本机。Fuli 保存结构化、可复用的知识，不保存整段会话、凭据、临时日志或
 原始命令输出。团队共享层只承载经过确认、具有上下文和来源的项目或领域知识，不包含个人的
 品味、个性和判断偏好。
+
+## 实际怎么用：分类、作用域、项目识别与取回
+
+### 先判断存什么，再判断存在哪里
+
+“内容类型”和“生效范围”是两个独立维度。前三类是个人协作偏好，会带有
+`profileAspect`；项目事实不带 `profileAspect`，也不会出现在“个人偏好”页中。
+
+| 类型 | 应该存什么 | 例子 |
+| --- | --- | --- |
+| 品味 `taste` | 用户明确喜欢或排斥的结果、风格与质量方向，适用于界面、文案、产品、架构和工程结果 | “页面少用大渐变，不要卡片套卡片” |
+| 个性 `personality` | 用户明确自我描述、并且预计长期稳定的工作或协作特点 | “我习惯直接沟通，希望 Agent 主动推进” |
+| 判断偏好 `judgment_preference` | 面对取舍时的决策条件、优先级、风险倾向和操作边界 | “方向性歧义先讨论；未明确时禁止 `git push`” |
+| 项目知识 | 可复用的客观项目事实、术语、需求、路由、API、架构、决策理由和 Runbook | “Fuli 的 npm 发布由 GitHub Release 触发” |
+
+可以用四个问题快速分类：它描述的是“想要什么结果”时存品味；描述“我是怎样长期协作的”时
+存个性；描述“遇到取舍时怎么决定”时存判断偏好；描述“这个系统客观上如何工作”时存项目
+知识。一次性命令、临时输出、未经验证的猜测、原始聊天和凭据都不沉淀。
+
+“个性”不是所有个人信息的兜底分类。只有用户明确给出的稳定自我描述可以直接带着人工依据
+确认；Agent 仅从一次行为推断出的个性必须先保持 `pending`，不能伪装成人工确认。因此
+`/preferences` 的“个性”为空，通常表示当前范围内还没有符合这个标准的条目，而不是沉淀
+失败。像“文案简洁”更可能是品味，“未授权不推送”更可能是判断偏好。需要明确沉淀时，可以
+直接说：`这是我的长期协作个性，请作为个人全局偏好保存：我习惯直接沟通。` Agent 推断的
+候选可在 `/preferences` 或 `/flreview` 中由用户确认、纠正或失效。
+
+### 全局、项目级和公共层
+
+| 范围 | 何时使用 | 写入关键字段 | 取回规则 |
+| --- | --- | --- | --- |
+| 个人全局偏好 | 在无关项目中也应该保持不变 | `targetKind: "personal"`，不传 `personalProjectId`，设置 `profileAspect` | 每个任务都加载 |
+| 项目级个人偏好 | 协作方式属于一个项目或项目族 | 同上，同时传精确的 `personalProjectId`；默认 `local_only`，不向子项目继承；需传播时显式使用 `descendants` 或 `selected_projects` | 精确项目优先；仅按显式继承模式沿获授权关系传播，冲突不按分数自动裁决 |
+| 项目知识 | 事实只属于一个项目，或应由某个上级项目统一维护 | `targetKind: "personal"`，传 `personalProjectId`，不设置 `profileAspect` | 先查当前项目，再沿获授权的 `PART_OF` / `USES_KNOWLEDGE_FROM` 最多向上两跳 |
+| 团队公共知识 | 经人工确认、确实需要共享的项目或领域知识 | `targetKind: "project"`，并经过预览/审核 | 只有明确订阅或选择的公共项目可见；个人偏好永不进入这一层 |
+
+判断作用域时问一句：**换到完全无关的项目，这条协作偏好还应该改变 Agent 的行为吗？**
+“是”就存个人全局；“否，只在 Fuli 项目或项目族”就存项目级偏好，并明确是否允许向子项目
+传播。客观项目事实不要因为多个项目都可能用到就改存个人全局；应放在明确的上级或知识源
+项目，再建立有方向的授权关系。全局和项目级存在同一 `attributes.preferenceKey` 时，
+确认权威必须先裁决；权威相同时才由精确项目版本覆盖全局版本。
+
+### Fuli 怎么识别当前项目
+
+Fuli 只匹配已经登记在“个人项目”中的稳定 `project_id`，不根据目录内容做模糊猜测。通常让
+`project_id` 与仓库目录名一致，例如仓库 `/workspace/fuli` 对应项目 `fuli`。标准调用只传
+当前工作目录，解析顺序如下：
+
+1. 向上找到最近的 Git 仓库根；仓库目录名与已登记 `project_id` 完全相同时命中。
+2. 如果当前目录是 Codex worktree，从 `.git` 指向的原始仓库恢复项目 ID。
+3. 当前目录名与已登记项目 ID 完全相同时命中。
+4. 如果当前目录是工作区根，并且正好只有一个已登记的直接子目录带 `.git`、`package.json`、
+   `pyproject.toml`、`Cargo.toml` 或 `go.mod`，命中这个唯一子项目。
+5. 多个候选返回 `ambiguous`，没有候选返回 `unmatched`；两种情况都不会应用项目级偏好，也
+   不会猜一个项目。
+
+第一次进入尚未登记、但身份明确的仓库时，已安装的沉淀 Skill 可以在首次项目级写入前通过
+`upsert_personal_project` 创建最小的本机私有项目；它不会自动创建或订阅公共项目。若工作区
+有多个候选，应进入精确项目目录运行 Agent，或先在“个人项目”中明确选择和登记。
+
+### Agent 什么时候调用什么
+
+正常使用时，不需要手工调用 MCP 工具：在项目目录中向 Agent 提任务即可。Claude Code Hook
+调用 `begin_task_context`；Codex 和 Cursor 的 Prompt fallback 在每个任务开始调用一次：
+
+```json
+{
+  "tool": "get_collaboration_preferences",
+  "arguments": {
+    "projectPath": "/workspace/fuli",
+    "taskPrompt": "修复 npm 发布流程，并沿用这个项目已有的发布约定"
+  }
+}
+```
+
+命中后，返回值中的关键部分类似：
+
+```json
+{
+  "context": {
+    "personal_project_id": "fuli",
+    "project_resolution": {
+      "status": "matched",
+      "basis": "repository_root",
+      "personal_project_id": "fuli"
+    }
+  },
+  "effective_preferences": ["个人全局偏好 + fuli 的精确项目偏好"]
+}
+```
+
+入口返回的 `task_knowledge_recall` 没有回答稳定项目事实时，再用 1 至 4 条面向动作、产物、目标
+系统或标识符的短查询检索；不要把整段用户请求原样当成唯一查询：
+
+```json
+{
+  "tool": "search_current_project_knowledge",
+  "arguments": {
+    "projectPath": "/workspace/fuli",
+    "queries": ["npm 发布 Runbook", "GitHub Release 触发条件"],
+    "includePending": false
+  }
+}
+```
+
+任务结束时，Hook 模式调用 `checkpoint_task_knowledge`：只有少量、可复用且有证据的内容才用
+`capture_candidates`；否则使用 `retain_nothing`。Prompt fallback Agent 遵守相同判断标准，并
+通过 `capture_session_knowledge` 写入。写个人偏好时设置正确的 `profileAspect` 和稳定的
+`attributes.preferenceKey`；写项目事实时不设置 `profileAspect`。如果“设置”中的自动沉淀已
+关闭，写入会返回 `capture_disabled`，不会产生任何类别的条目。
+
+本地可先运行下面两个契约测试，验证 README 说明和项目路径解析仍与实现一致：
+
+```bash
+npm run test:node -- test/acceptance-docs.test.js test/project-path-context.test.js
+```
 
 ## Agent 交互时序
 
@@ -289,7 +410,7 @@ CLI 的帮助、交互提示、状态和错误信息固定使用英文，不跟�
 | `fuli --help` / `fuli -h` | 显示所有公开命令及其可用参数 |
 | `fuli --version` / `fuli -v` | 显示当前安装的 Fuli CLI 版本 |
 | `fuli setup [选项]` | 初始化 Provider、管理界面、Agent 接入和 Skills；可重复执行 |
-| `fuli start [选项]` | 启动 Provider 和管理界面；可选择启动后打开浏览器、重建容器或启用 LAN 访问 |
+| `fuli start [选项]` | 检查 Agent 接入后启动 Provider 和管理界面；可选择启动后打开浏览器、重建容器或启用 LAN 访问 |
 | `fuli stop [--data-dir DIR]` | 停止服务并保留数据 |
 | `fuli restart [选项]` | 使用与 `start` 相同的运行参数重启本机服务 |
 | `fuli status [--json] [--data-dir DIR] [--port PORT]` | 查看管理界面、个人图谱和公共服务状态；`--json` 输出机器可读结果 |
@@ -314,6 +435,9 @@ fuli stop
 口令。默认启动仍只监听 `127.0.0.1`；内部 Provider、Neo4j Browser 和 Bolt 不会随
 `--lan` 开放。局域网模式使用 HTTP Basic Auth，只适合可信家庭或办公 Wi-Fi，不等同于
 HTTPS 公网部署。
+`fuli start` 启动前会只读检查已检测到的 Agent 的 MCP、Skill、Codex bootstrap 和 Claude
+生命周期接入。如果有缺失或过期，它仍会启动本机服务，但会提示执行 `fuli setup`；不会在
+后台隐式修改接入配置。
 
 `setup` 和 `update` 支持：
 
@@ -357,10 +481,20 @@ Code 使用 `UserPromptSubmit` 和 `Stop` Hook 接入任务生命周期；Codex 
 `AGENTS.md` 与 Cursor 指令使用 Prompt fallback。偏好正文始终以本机 Fuli 为唯一来源，
 不会复制到 Agent 配置中。
 
+FULI MCP 还提供只读的 `fuli://` resources：每个本地个人项目和“全局品味”各有一个可选条目。
+支持 MCP mention 的 Agent 可以在 `@` 选择器里选中它们；项目条目只代表一个精确项目，
+不会因为选择而自动扩大到其他项目或 `RELATED_TO` 项目。
+
+当任务需要品味或判断建议时，`get_user_taste_skill` 会根据当前生效的个人档案和历史任务
+数据生成一份有界、只读的 `user-taste` Skill 结论。它会标注证据状态与作用域，返回与当前
+任务匹配的推荐，并在偏好新增或修订后重新生成；不会覆盖用户自己编写的 taste Skill，持久
+图谱仍是唯一来源。
+
 | 工具 | 用途 |
 | --- | --- |
 | `begin_task_context` | Hook 入口：解析任务、在命中信号时执行有界召回并创建任务令牌 |
 | `get_collaboration_preferences` | Fallback 入口：读取生效偏好和有界任务召回 |
+| `get_user_taste_skill` | 生成当前带证据状态的 taste Skill 结论和任务推荐 |
 | `search_current_project_knowledge` | 子项目优先、按授权关系向上检索 |
 | `search_knowledge_graph` | 在明确的有界范围内执行更通用的查询 |
 | `search_connected_knowledge` | 分开检索图谱、项目绑定的只读来源和选定公共项目，保留来源边界 |

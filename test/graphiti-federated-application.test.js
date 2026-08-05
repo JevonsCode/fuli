@@ -621,7 +621,7 @@ test('personal search combines global profile, active project, and only named co
     });
     assert.match(
       result.sourceMarker.markdown,
-      /#\/knowledge\/personal\/personal-space\/entity\/taste-1/
+      /\/knowledge\/personal\/personal-space\/directory\/entity\/taste-1/
     );
   });
 

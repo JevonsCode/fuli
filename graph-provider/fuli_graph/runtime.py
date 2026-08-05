@@ -181,6 +181,60 @@ class GraphitiRuntime:
             'CREATE CONSTRAINT fuli_knowledge_review_decision_id IF NOT EXISTS '
             'FOR (n:FuliKnowledgeReviewDecision) REQUIRE n.id IS UNIQUE'
         )
+        await self.driver.execute_query(
+            'CREATE CONSTRAINT fuli_workflow_candidate_id IF NOT EXISTS '
+            'FOR (n:FuliWorkflowCandidate) REQUIRE n.id IS UNIQUE'
+        )
+        await self.driver.execute_query(
+            'CREATE CONSTRAINT fuli_workflow_review_event_id IF NOT EXISTS '
+            'FOR (n:FuliWorkflowReviewEvent) REQUIRE n.id IS UNIQUE'
+        )
+        await self.driver.execute_query(
+            'CREATE CONSTRAINT fuli_workflow_review_preview_id IF NOT EXISTS '
+            'FOR (n:FuliWorkflowReviewPreview) REQUIRE n.id IS UNIQUE'
+        )
+        await self.driver.execute_query(
+            'CREATE CONSTRAINT fuli_workflow_review_preview_token IF NOT EXISTS '
+            'FOR (n:FuliWorkflowReviewPreview) REQUIRE n.token_hash IS UNIQUE'
+        )
+        await self.driver.execute_query(
+            'CREATE CONSTRAINT fuli_workflow_rule_id IF NOT EXISTS '
+            'FOR (n:FuliWorkflowRule) REQUIRE n.id IS UNIQUE'
+        )
+        await self.driver.execute_query(
+            'CREATE CONSTRAINT fuli_workflow_authorization_id IF NOT EXISTS '
+            'FOR (n:FuliWorkflowAuthorization) REQUIRE n.id IS UNIQUE'
+        )
+        await self.driver.execute_query(
+            'CREATE CONSTRAINT fuli_personal_global_preference_decision '
+            'IF NOT EXISTS '
+            'FOR (n:FuliPersonalGlobalPreferenceDecision) '
+            'REQUIRE (n.space_id, n.candidate_id) IS UNIQUE'
+        )
+        await self.driver.execute_query(
+            'CREATE CONSTRAINT fuli_personal_global_preference_event '
+            'IF NOT EXISTS '
+            'FOR (n:FuliPersonalGlobalPreferenceDecisionEvent) '
+            'REQUIRE n.id IS UNIQUE'
+        )
+        await self.driver.execute_query(
+            'CREATE CONSTRAINT fuli_personal_global_preference_preview '
+            'IF NOT EXISTS '
+            'FOR (n:FuliPersonalGlobalPreferenceDecisionPreview) '
+            'REQUIRE n.id IS UNIQUE'
+        )
+        await self.driver.execute_query(
+            'CREATE CONSTRAINT fuli_personal_global_preference_preview_token '
+            'IF NOT EXISTS '
+            'FOR (n:FuliPersonalGlobalPreferenceDecisionPreview) '
+            'REQUIRE n.token_hash IS UNIQUE'
+        )
+        await self.driver.execute_query(
+            'CREATE CONSTRAINT fuli_personal_project_relation_review '
+            'IF NOT EXISTS '
+            'FOR (n:FuliPersonalProjectRelationReview) '
+            'REQUIRE n.id IS UNIQUE'
+        )
         for query in (
             'CREATE INDEX fuli_entity_confirmation IF NOT EXISTS '
             'FOR (n:Entity) ON (n.group_id, n.fuli_confirmation_status)',
@@ -208,9 +262,33 @@ class GraphitiRuntime:
         ):
             await self.driver.execute_query(query)
         await self._migrate_knowledge_lifecycle_defaults()
+        await self._migrate_personal_project_relation_review_defaults()
         await self._migrate_space_visibility_and_owners()
         await self._migrate_project_releases()
         await self._migrate_legacy_group_ids()
+
+    async def _migrate_personal_project_relation_review_defaults(self) -> None:
+        await self.driver.execute_query(
+            '''
+            MATCH ()-[relation:PERSONAL_PROJECT_RELATION]->()
+            WHERE relation.status IS NULL
+               OR relation.decision_revision IS NULL
+               OR relation.confirmation_authority IS NULL
+            SET relation.status = CASE
+                  WHEN relation.status IN ['active', 'rejected']
+                    THEN relation.status
+                  ELSE 'pending'
+                END,
+                relation.decision_revision =
+                  coalesce(relation.decision_revision, 0),
+                relation.confirmation_authority = CASE
+                  WHEN relation.status = 'active'
+                    AND relation.confirmation_authority = 'human_review'
+                    THEN 'human_review'
+                  ELSE null
+                END
+            '''
+        )
 
     async def _migrate_space_visibility_and_owners(self) -> None:
         await self.driver.execute_query(

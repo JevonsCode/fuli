@@ -163,8 +163,6 @@ def _validate_inheritance(
         raise ValueError(
             'inherited project ids are only valid for selected_projects inheritance'
         )
-    if profile_aspect and mode != 'local_only':
-        raise ValueError('personal preferences cannot inherit across projects')
 
 
 class ConfirmationActor(StrictModel):
@@ -772,6 +770,8 @@ class EntitySearchResult(StrictModel):
     preference_scope: PreferenceScope | None = None
     preference_project_id: str | None = None
     key: str | None = None
+    preference_key: str | None = None
+    preference_qualifiers: dict[str, Any] = Field(default_factory=dict)
     defined_project_id: str | None = None
     inheritance_mode: KnowledgeInheritanceMode = 'local_only'
     inherited_project_ids: list[str] = Field(default_factory=list, max_length=32)
@@ -819,6 +819,8 @@ class FactResult(StrictModel):
     preference_scope: PreferenceScope | None = None
     preference_project_id: str | None = None
     key: str | None = None
+    preference_key: str | None = None
+    preference_qualifiers: dict[str, Any] = Field(default_factory=dict)
     defined_project_id: str | None = None
     inheritance_mode: KnowledgeInheritanceMode = 'local_only'
     inherited_project_ids: list[str] = Field(default_factory=list, max_length=32)
@@ -860,9 +862,18 @@ class CollaborationPreferenceItem(StrictModel):
     preference_scope: PreferenceScope
     preference_project_id: str | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
+    weight: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+    reason: str | None = None
+    confirmation_basis: ConfirmationBasis
+    reasoning_summary: str | None = None
+    inheritance_mode: KnowledgeInheritanceMode = 'local_only'
+    inherited_project_ids: list[str] = Field(default_factory=list, max_length=32)
     confirmation_status: Literal['confirmed', 'agent_confirmed']
     confirmed_at: datetime
     created_at: datetime | None = None
+    scope_distance: int = Field(default=0, ge=0, le=2)
+    inherited_from_project_id: str | None = None
+    scope_path: list[str] = Field(default_factory=list, max_length=3)
 
 
 class CollaborationPreferenceConflict(StrictModel):
@@ -880,6 +891,8 @@ class CollaborationContextResult(StrictModel):
     effective_preferences: list[CollaborationPreferenceItem] = Field(default_factory=list)
     conflicts: list[CollaborationPreferenceConflict] = Field(default_factory=list)
     overridden_global_ids: list[str] = Field(default_factory=list)
+    overridden_inherited_ids: list[str] = Field(default_factory=list)
+    overridden_lower_authority_ids: list[str] = Field(default_factory=list)
     truncated: bool = False
 
 

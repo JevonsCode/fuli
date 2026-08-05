@@ -1,6 +1,11 @@
 import { readJson, sendJson } from './response.js';
 
-export async function handleGraphApiRequest({ request, response, url, app }) {
+export async function handleGraphApiRequest({
+  request,
+  response,
+  url,
+  app
+}) {
   if (url.pathname === '/api/state' && request.method === 'GET') {
     sendJson(response, 200, await app.state());
     return true;
@@ -49,6 +54,14 @@ export async function handleGraphApiRequest({ request, response, url, app }) {
     }));
     return true;
   }
+  if (url.pathname === '/api/writing-taste-profile' && request.method === 'GET') {
+    sendJson(response, 200, await app.getWritingTasteProfile({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('personalProjectId'),
+      limit: numberParam(url, 'limit', 500)
+    }));
+    return true;
+  }
   if (url.pathname === '/api/preference-conflicts' && request.method === 'GET') {
     sendJson(response, 200, await app.listPreferenceConflicts({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
@@ -63,7 +76,7 @@ export async function handleGraphApiRequest({ request, response, url, app }) {
   ) {
     sendJson(response, 200, await app.deferPreferenceConflict({
       ...(await readJson(request)),
-      operationActor: 'human'
+      operationActor: 'agent'
     }));
     return true;
   }

@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     provider_id: str = 'local-personal'
     provider_name: str = 'Fuli Personal Provider'
     bootstrap_token: str = Field(min_length=24)
+    human_review_token: str | None = Field(default=None, min_length=32)
+    workflow_observation_token: str | None = Field(
+        default=None,
+        min_length=32,
+    )
     neo4j_uri: str = 'bolt://neo4j:7687'
     neo4j_user: str = 'neo4j'
     neo4j_password: str = Field(min_length=8)

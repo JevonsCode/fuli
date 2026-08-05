@@ -11,6 +11,7 @@ import { preferenceMessages } from './messages/preferences'
 import { projectMessages } from './messages/projects'
 import { routeMessages } from './messages/routes'
 import { settingsMessages } from './messages/settings'
+import { writingTasteMessages } from './messages/writing-taste'
 
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const
 export type AppLocale = typeof SUPPORTED_LOCALES[number]
@@ -71,6 +72,7 @@ export const messages = {
     projects: projectMessages['zh-CN'],
     routes: routeMessages['zh-CN'],
     settings: settingsMessages['zh-CN'],
+    writingTaste: writingTasteMessages['zh-CN'],
   },
   'en-US': {
     about: aboutMessages['en-US'],
@@ -86,6 +88,7 @@ export const messages = {
     projects: projectMessages['en-US'],
     routes: routeMessages['en-US'],
     settings: settingsMessages['en-US'],
+    writingTaste: writingTasteMessages['en-US'],
   },
 } as const
 

@@ -1,6 +1,9 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { config, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent } from 'vue'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { MINIMUM_LOADING_DISPLAY_MS } from '@/composables/useMinimumLoadingDisplay'
 
 const getJson = vi.hoisted(() => vi.fn())
 const postJson = vi.hoisted(() => vi.fn())
@@ -16,14 +19,148 @@ import SearchableSelect from '@/components/SearchableSelect.vue'
 import { useConsoleStore } from '@/stores/console'
 import PersonalProfilePage from './PersonalProfilePage.vue'
 
+const RouterLinkStub = defineComponent({
+  props: { to: { type: String, required: true } },
+  template: '<a class="router-link-stub" :href="to"><slot /></a>',
+})
+
 describe('PersonalProfilePage', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
+    config.global.stubs = {
+      ...config.global.stubs,
+      RouterLink: RouterLinkStub,
+    }
     getJson.mockReset()
     getJson.mockResolvedValue(profileGraph())
     postJson.mockReset()
     postJson.mockResolvedValue({})
     patchJson.mockReset()
     patchJson.mockResolvedValue({})
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    if (!Array.isArray(config.global.stubs)) delete config.global.stubs.RouterLink
+  })
+
+  it('shows one animated loading state while the initial profile requests are pending', async () => {
+    const resolvers: Array<(value: unknown) => void> = []
+    getJson.mockImplementation(() => new Promise((resolve) => {
+      resolvers.push(resolve)
+    }))
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.state = {
+      mode: 'personal_only',
+      activePersonalSpaceId: 'personal-space',
+      personalSpaces: [{ id: 'personal-space', name: '我' }],
+      personalProjects: [],
+      projects: [],
+      subscriptions: [],
+    }
+
+    const wrapper = mount(PersonalProfilePage, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          KnowledgeEditDialog: true,
+          KnowledgeInspector: true,
+          PreferenceConflictDialog: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.findAll('.growth-loading')).toHaveLength(1)
+    expect(wrapper.findAll('.virtual-directory-list')).toHaveLength(0)
+    expect(wrapper.findAll('.virtual-directory-list__empty')).toHaveLength(0)
+
+    resolvers[0]?.(profileGraph())
+    resolvers[1]?.([])
+    resolvers[2]?.(writingTasteProfile('collecting'))
+    await finishProfileLoading()
+
+    expect(wrapper.findAll('.growth-loading')).toHaveLength(0)
+    expect(wrapper.findAll('.virtual-directory-list')).toHaveLength(1)
+  })
+
+  it('reveals the writing-taste page entry only when its profile is ready', async () => {
+    getJson.mockImplementation((url: string) => {
+      if (url.startsWith('/api/preference-conflicts')) return Promise.resolve([])
+      if (url.startsWith('/api/writing-taste-profile')) {
+        return Promise.resolve(writingTasteProfile('preview_ready'))
+      }
+      return Promise.resolve(profileGraph())
+    })
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.state = {
+      mode: 'personal_only',
+      activePersonalSpaceId: 'personal-space',
+      personalSpaces: [{ id: 'personal-space', name: '我' }],
+      personalProjects: [],
+      projects: [],
+      subscriptions: [],
+    }
+
+    const wrapper = mount(PersonalProfilePage, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          KnowledgeEditDialog: true,
+          KnowledgeInspector: true,
+          PreferenceConflictDialog: true,
+        },
+      },
+    })
+    await finishProfileLoading()
+
+    expect(wrapper.get('.writing-taste-milestone').text())
+      .toContain('你的写作偏好初稿已形成')
+    expect(wrapper.get('.writing-taste-milestone__action').attributes('href'))
+      .toBe('/preferences/writing')
+  })
+
+  it('keeps collaboration preferences usable when the optional taste projection is unavailable', async () => {
+    getJson.mockImplementation((url: string) => {
+      if (url.startsWith('/api/preference-conflicts')) return Promise.resolve([])
+      if (url.startsWith('/api/writing-taste-profile')) {
+        return Promise.reject(new Error('projection unavailable'))
+      }
+      return Promise.resolve(profileGraph())
+    })
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.state = {
+      mode: 'personal_only',
+      activePersonalSpaceId: 'personal-space',
+      personalSpaces: [{ id: 'personal-space', name: '我' }],
+      personalProjects: [],
+      projects: [],
+      subscriptions: [],
+    }
+
+    const wrapper = mount(PersonalProfilePage, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          KnowledgeEditDialog: true,
+          KnowledgeInspector: true,
+          PreferenceConflictDialog: true,
+        },
+      },
+    })
+    await finishProfileLoading()
+
+    expect(wrapper.findAll('.personal-profile-row')).toHaveLength(3)
+    expect(wrapper.find('.writing-taste-milestone').exists()).toBe(false)
   })
 
   it('filters collaboration preferences by global or one exact personal project', async () => {
@@ -51,7 +188,7 @@ describe('PersonalProfilePage', () => {
         },
       },
     })
-    await flushPromises()
+    await finishProfileLoading()
 
     expect(wrapper.findAll('.personal-profile-row')).toHaveLength(3)
     expect(wrapper.get('.virtual-directory-list__watermark').text()).toBe('#001')
@@ -118,7 +255,7 @@ describe('PersonalProfilePage', () => {
         },
       },
     })
-    await flushPromises()
+    await finishProfileLoading()
 
     expect(wrapper.findAll('.personal-profile-row').length).toBeLessThan(101)
     expect(wrapper.get('.virtual-directory-list__canvas').attributes('style'))
@@ -161,7 +298,7 @@ describe('PersonalProfilePage', () => {
         },
       },
     })
-    await flushPromises()
+    await finishProfileLoading()
 
     const conflictAction = wrapper
       .findAll('.personal-profile-summary > button')
@@ -207,7 +344,7 @@ describe('PersonalProfilePage', () => {
         },
       },
     })
-    await flushPromises()
+    await finishProfileLoading()
 
     const summaryActions = wrapper.findAll('.personal-profile-summary > button')
     expect(summaryActions).toHaveLength(4)
@@ -279,7 +416,7 @@ describe('PersonalProfilePage', () => {
         },
       },
     })
-    await flushPromises()
+    await finishProfileLoading()
 
     expect(wrapper.get('.personal-profile-row').text()).toContain(
       '曾冲突 / AI 已处理',
@@ -333,7 +470,7 @@ describe('PersonalProfilePage', () => {
         },
       },
     })
-    await flushPromises()
+    await finishProfileLoading()
 
     expect(wrapper.get('.preference-conflict-alert').text()).toContain(
       '发现 1 组疑似冲突',
@@ -371,7 +508,7 @@ describe('PersonalProfilePage', () => {
       updated_at: '2026-07-29T01:00:00Z',
     })
     await wrapper.get('.preference-conflict-card .secondary-action').trigger('click')
-    await flushPromises()
+    await finishProfileLoading()
 
     expect(postJson).toHaveBeenCalledWith(
       '/api/preference-conflicts/defer',
@@ -388,6 +525,12 @@ describe('PersonalProfilePage', () => {
     expect(wrapper.text()).toContain('待 AI 使用时判断')
   })
 })
+
+async function finishProfileLoading() {
+  await flushPromises()
+  await vi.advanceTimersByTimeAsync(MINIMUM_LOADING_DISPLAY_MS)
+  await flushPromises()
+}
 
 function profileGraph() {
   return {
@@ -431,5 +574,42 @@ function preferenceNode(
     },
     created_at: createdAt,
     evidence: [],
+  }
+}
+
+function writingTasteProfile(status: 'collecting' | 'preview_ready' | 'active') {
+  const ready = status !== 'collecting'
+  return {
+    status,
+    ready,
+    generated_at: '2026-08-05T00:00:00.000Z',
+    generated_from: 'personal_profile_graph',
+    scope: { personal_space_id: 'personal-space', personal_project_id: null },
+    readiness: {
+      rule_count: ready ? 3 : 1,
+      evidence_count: ready ? 6 : 1,
+      session_count: ready ? 3 : 1,
+      observation_day_count: ready ? 3 : 1,
+      confirmed_rule_count: status === 'active' ? 3 : 0,
+      observed_rule_count: status === 'preview_ready' ? 3 : 0,
+      working_hypothesis_count: status === 'collecting' ? 1 : 0,
+      conflict_count: 0,
+      standard_path_ready: status === 'preview_ready',
+      confirmed_path_ready: status === 'active',
+      thresholds: {
+        rule_count: 3,
+        evidence_count: 6,
+        session_count: 3,
+        observation_day_count: 3,
+        confirmed_rule_count: 3,
+      },
+      criteria: [],
+    },
+    conflicts: [],
+    rules: [],
+    skill_name: ready ? 'user-writing-taste' : null,
+    skill_version: ready ? 'v1:test' : null,
+    profile_markdown: ready ? '# User Writing Taste' : null,
+    agent_markdown: ready ? '# Agent View' : null,
   }
 }

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { setLocale } from '@/i18n'
-import { router } from './index'
+import { legacyKnowledgeHashPath, router } from './index'
 import { routeMetaText, updateDocumentTitle } from './meta'
 
 describe('localized route metadata', () => {
@@ -31,6 +31,13 @@ describe('localized route metadata', () => {
     expect(router.resolve('/').meta.eyebrow).toBe('')
   })
 
+  it('registers writing taste as a concise child of collaboration preferences', () => {
+    const route = router.resolve('/preferences/writing')
+    expect(route.name).toBe('writing-taste')
+    expect(route.meta.eyebrow).toBe('')
+    expect(routeMetaText(route.meta.title)).toBe('写作偏好')
+  })
+
   it('registers the about page', () => {
     expect(router.resolve('/about').name).toBe('about')
     expect(routeMetaText(router.resolve('/about').meta.title)).toBe('说明')
@@ -39,5 +46,15 @@ describe('localized route metadata', () => {
   it('registers settings as a separate page beside about', () => {
     expect(router.resolve('/settings').name).toBe('settings')
     expect(routeMetaText(router.resolve('/settings').meta.title)).toBe('设置')
+  })
+
+  it('resolves source marker links and upgrades legacy hash links', () => {
+    expect(router.resolve(
+      '/knowledge/personal/personal-space/directory/entity/knowledge-1',
+    ).name).toBe('knowledge-item')
+    expect(legacyKnowledgeHashPath(
+      '#/knowledge/personal/personal-space/entity/knowledge-1',
+    )).toBe('/knowledge/personal/personal-space/directory/entity/knowledge-1')
+    expect(legacyKnowledgeHashPath('#/preferences')).toBeNull()
   })
 })

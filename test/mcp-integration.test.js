@@ -10,6 +10,8 @@ import { connectMcp } from '../test-support/mcp-client.js';
 
 test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知识', async (t) => {
   const received = [];
+  const workflowObservations = [];
+  const workflowObservationProofs = [];
   const searchRequests = [];
   const personal = await provider((request) => {
     if (request.path === '/health') return { status: 'ready', providerId: 'personal' };
@@ -82,6 +84,20 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
         entity_ids: ['entity-1'], relationship_ids: []
       };
     }
+    if (request.path === '/v1/workflow-observations') {
+      workflowObservations.push(request.body);
+      workflowObservationProofs.push(
+        request.headers['x-fuli-workflow-observation-token']
+      );
+      return {
+        status: 'committed', space_id: 'personal-1',
+        episode_id: request.body.observation_id,
+        entity_ids: ['step-x', 'step-y'], relationship_ids: ['transition']
+      };
+    }
+    if (request.path === '/v1/workflow-candidates/recommendations') {
+      return approvedWorkflowCandidatePage();
+    }
     if (request.path === '/v1/knowledge/reviews/candidates') {
       return {
         review: {
@@ -143,6 +159,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     personal: {
       providerUrl: personal.url,
       accessToken: 'personal-access',
+      workflowObservationToken: 'mcp-host-workflow-observation-token-123456',
       principalId: 'principal-personal',
       spaceId: 'personal-1'
     },
@@ -179,7 +196,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   assert.match(instructions, /projectPath=cwd/i);
   assert.match(instructions, /effective_preferences/);
   assert.match(instructions, /personal-global everywhere/i);
-  assert.match(instructions, /only Fuli's matched project/i);
+  assert.match(instructions, /matched project.*authorized inheritable parent/i);
   assert.match(instructions, /before (?:saying|answering|claiming).*(?:do not know|don't know|unknown)/i);
   assert.match(instructions, /active child first.*inheritable parent/i);
   assert.match(instructions, /exact IDs for extra projects/i);
@@ -204,20 +221,24 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'checkpoint_task_knowledge',
     'verify_task_checkpoint',
     'get_collaboration_preferences',
+    'get_user_taste_skill',
     'resolve_deferred_preference_conflict',
-    'capture_session_knowledge', 'record_decision_trace',
+    'capture_session_knowledge',
+    'record_workflow_transition_observation', 'record_decision_trace',
     'search_knowledge_graph', 'search_connected_knowledge',
     'record_knowledge_usage', 'record_knowledge_feedback',
     'search_current_project_knowledge',
     'discover_common_knowledge_candidates',
+    'discover_personal_global_preference_candidates',
+    'preview_personal_global_preference_decision',
     'preview_common_knowledge_promotion', 'apply_common_knowledge_promotion',
     'get_knowledge_graph',
     'search_human_knowledge_changes', 'review_human_knowledge_change',
     'list_knowledge_spaces', 'upsert_personal_project', 'list_personal_projects',
     'start_knowledge_review', 'list_knowledge_review_candidates',
     'record_knowledge_review_progress', 'finish_knowledge_review',
+    'list_workflow_candidates', 'recommend_next_workflow_steps',
     'revise_personal_knowledge', 'reassign_personal_knowledge',
-    'set_personal_preference_scope',
     'preview_personal_project_action', 'apply_personal_project_action',
     'publish_personal_project', 'list_project_releases',
     'create_project_relation', 'list_project_relations',
@@ -274,6 +295,30 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'known_known'
   );
 
+  const workflowRecommendation = await connection.client.callTool({
+    name: 'recommend_next_workflow_steps',
+    arguments: {
+      personalSpaceId: 'personal-1',
+      personalProjectId: 'hotel-b',
+      afterStepKey: 'step-x'
+    }
+  });
+  assert.equal(workflowRecommendation.structuredContent.truncated, undefined);
+  assert.equal(
+    workflowRecommendation.structuredContent.candidates[0].targetStepName,
+    'Check links · NETWORK-STEP-Y-707'
+  );
+  assert.equal(
+    workflowRecommendation.structuredContent.candidates[0]
+      .authorization.highRiskPerCallApprovalRequired,
+    true
+  );
+  assert.deepEqual(
+    workflowRecommendation.structuredContent.candidates[0]
+      .authorization.highRiskActionCategories,
+    ['send', 'delete', 'publish', 'payment', 'external_write']
+  );
+
   const taskContext = await connection.client.callTool({
     name: 'begin_task_context',
     arguments: {
@@ -303,6 +348,47 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     taskContext.structuredContent.effective_preferences[0].instruction,
     'Use direct, low-fluff writing.'
   );
+
+  const observationArguments = {
+    personalSpaceId: 'personal-1',
+    personalProjectId: 'hotel-b',
+    fromStep: {
+      actionId: 'generate-release-notes',
+      name: 'Generate release notes'
+    },
+    toStep: { actionId: 'check-links', name: 'Check links' },
+    workflowKey: 'release-notes-link-check',
+    condition: { releaseChannel: 'final' },
+    evidenceSummary: 'Completed release notes were followed by link checks.',
+    sourceApplication: 'other'
+  };
+  for (let occurrence = 0; occurrence < 3; occurrence += 1) {
+    const observed = await connection.client.callTool({
+      name: 'record_workflow_transition_observation',
+      arguments: observationArguments
+    });
+    assert.equal(observed.isError, undefined, JSON.stringify(observed));
+  }
+  assert.equal(workflowObservations.length, 3);
+  assert.deepEqual(
+    workflowObservationProofs,
+    Array(3).fill('mcp-host-workflow-observation-token-123456')
+  );
+  assert.equal(new Set(
+    workflowObservations.map(({ host_session_id: sessionId }) => sessionId)
+  ).size, 1);
+  assert.equal(new Set(
+    workflowObservations.map(({ observation_id: observationId }) => observationId)
+  ).size, 1);
+  assert.equal(workflowObservations[0].observed_at > '2026-01-01', true);
+  assert.equal('session_id' in workflowObservations[0], false);
+  assert.equal('occurrence_count' in workflowObservations[0], false);
+  const forgedSession = await connection.client.callTool({
+    name: 'record_workflow_transition_observation',
+    arguments: { ...observationArguments, sessionId: 'forged-session' }
+  });
+  assert.equal(forgedSession.isError, true);
+  assert.equal(workflowObservations.length, 3);
 
   const pendingCheckpoint = await connection.client.callTool({
     name: 'verify_task_checkpoint',
@@ -394,7 +480,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
       limitPerQuery: 8
     }
   });
-  assert.equal(projectSearch.isError, undefined);
+  assert.equal(projectSearch.isError, undefined, JSON.stringify(projectSearch));
   assert.equal(projectSearch.structuredContent.personal_project_id, 'hotel-b');
   assert.equal(projectSearch.structuredContent.results.length, 2);
   assert.deepEqual(
@@ -426,6 +512,21 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   assert.equal(
     preferences.structuredContent.application_guidance.apply,
     'effective_preferences'
+  );
+
+  const tasteSkill = await connection.client.callTool({
+    name: 'get_user_taste_skill',
+    arguments: {
+      projectPath: dirname(runtimeConfigPath),
+      taskPrompt: 'Recommend a clear UI writing direction.'
+    }
+  });
+  assert.equal(tasteSkill.isError, undefined);
+  assert.equal(tasteSkill.structuredContent.status, 'generated');
+  assert.match(tasteSkill.structuredContent.markdown, /user-taste/i);
+  assert.equal(
+    tasteSkill.structuredContent.recommendations[0].preference_key,
+    'writing.direct'
   );
 
   const captured = await connection.client.callTool({
@@ -477,7 +578,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   assert.equal(searched.structuredContent.noMatchSourceMarker.markdown, '');
   assert.match(
     searched.structuredContent.sourceMarker.markdown,
-    /#\/knowledge\/personal\/personal-1\/entity\/entity-1/
+    /\/knowledge\/personal\/personal-1\/directory\/entity\/entity-1/
   );
   assert.doesNotMatch(searched.structuredContent.sourceMarker.markdown, /truncated/);
   assert.equal(
@@ -542,7 +643,34 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   assert.equal(JSON.stringify(rejected).includes(secret), false);
   assert.equal(received.length, 2);
 
-  await assert.rejects(connection.client.listResources(), /Method not found/);
+  const resources = await connection.client.listResources();
+  assert.deepEqual(
+    resources.resources.map(({ uri }) => uri).sort(),
+    ['fuli://projects/hotel-b', 'fuli://projects/inbound', 'fuli://taste/global']
+  );
+  assert.equal(
+    resources.resources.find(({ uri }) => uri === 'fuli://taste/global').name,
+    'FULI global taste'
+  );
+  assert.equal(
+    resources.resources.find(({ uri }) => uri === 'fuli://projects/hotel-b').title,
+    '@fuli/hotel-b'
+  );
+  const resourceTemplates = await connection.client.listResourceTemplates();
+  assert.deepEqual(
+    resourceTemplates.resourceTemplates.map(({ uriTemplate }) => uriTemplate),
+    ['fuli://projects/{projectId}']
+  );
+  const projectResource = await connection.client.readResource({
+    uri: 'fuli://projects/hotel-b'
+  });
+  assert.match(projectResource.contents[0].text, /personal_project_id: `hotel-b`/);
+  assert.match(projectResource.contents[0].text, /Hotel context/);
+  const tasteResource = await connection.client.readResource({
+    uri: 'fuli://taste/global'
+  });
+  assert.match(tasteResource.contents[0].text, /FULI global taste selection/);
+  assert.match(tasteResource.contents[0].text, /writing\.direct/);
   await assert.rejects(connection.client.listPrompts(), /Method not found/);
 });
 
@@ -772,6 +900,77 @@ test('公共知识上收必须使用匹配且一次性的人工确认预览', as
   assert.equal(writes, 1);
 });
 
+function approvedWorkflowCandidatePage() {
+  return {
+    policy: {
+      minimum_occurrences: 3,
+      minimum_distinct_sessions: 3,
+      recommendation_threshold: 0.7,
+      weights: {
+        occurrences: 0.3,
+        distinct_sessions: 0.3,
+        recency: 0.2,
+        confirmation_authority: 0.2
+      },
+      decline_penalty: 0.1,
+      negative_evidence_penalty: 0.1
+    },
+    candidates: [{
+      candidate_id: 'candidate-1',
+      candidate_version: 1,
+      evidence_revision: 4,
+      decision_revision: 1,
+      rule_fingerprint: 'rule-fingerprint-1',
+      workflow_key: 'release-notes-link-check',
+      condition: { releaseChannel: 'final' },
+      personal_space_id: 'personal-1',
+      personal_project_id: 'hotel-b',
+      source_step_id: 'step-x-id',
+      source_step_key: 'step-x',
+      source_step_name: 'Generate release notes',
+      target_step_id: 'step-y-id',
+      target_step_key: 'step-y',
+      target_step_name: 'Check links · NETWORK-STEP-Y-707',
+      status: 'approved',
+      occurrence_count: 4,
+      distinct_session_count: 4,
+      recency: {
+        first_observed_at: '2026-08-01T08:00:00Z',
+        last_observed_at: '2026-08-03T08:00:00Z',
+        age_days: 0,
+        score: 1
+      },
+      confirmation_authority: 'human_review',
+      negative_evidence_count: 0,
+      decline_count: 0,
+      reviewed_at: '2026-08-03T08:10:00Z',
+      review_reason: 'Approved by the user.',
+      recommendation: {
+        recommended: true,
+        score: 1,
+        threshold: 0.7,
+        action: 'authorized_low_risk_only'
+      },
+      execution_authorized: true,
+      authorization: {
+        authorization_id: 'authorization-1',
+        candidate_id: 'candidate-1',
+        candidate_version: 1,
+        rule_id: 'rule-1',
+        rule_fingerprint: 'rule-fingerprint-1',
+        scope: { personalProjectId: 'hotel-b' },
+        active: true,
+        authority: { kind: 'user', label: 'Current user' },
+        created_at: '2026-08-03T08:10:00Z',
+        high_risk_per_call_approval_required: true,
+        high_risk_action_categories: [
+          'send', 'delete', 'publish', 'payment', 'external_write'
+        ]
+      }
+    }]
+  };
+}
+
 function personalCapture() {
   return {
     targetKind: 'personal',
@@ -814,7 +1013,8 @@ async function provider(handler) {
       path: url.pathname,
       query: Object.fromEntries(url.searchParams),
       method: request.method,
-      body
+      body,
+      headers: request.headers
     });
     response.writeHead(200, { 'content-type': 'application/json' });
     response.end(JSON.stringify(payload));

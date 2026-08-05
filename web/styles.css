@@ -1016,11 +1016,13 @@ select:focus, input:focus, textarea:focus { border-color: #6f8577; box-shadow: 0
   margin-top: 8px; padding: 8px; border-radius: 5px; color: #59635d; background: #f1f4f1;
   white-space: pre-wrap;
 }
+.evidence-source-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 8px; }
 .evidence-source-action {
-  display: inline-flex; margin-top: 8px; padding: 0; border: 0; color: #446755;
+  display: inline-flex; margin: 0; padding: 0; border: 0; color: #446755;
   background: transparent; font-size: 10px; font-weight: 650; text-decoration: none;
 }
 .evidence-source-action:hover { color: #294c3a; text-decoration: underline; }
+.evidence-source-action:disabled { color: #a3aaa5; cursor: not-allowed; text-decoration: none; }
 .conflict-title { color: #806338; }
 .suspected-conflicts .history-row strong { color: #775b31; }
 .inspector-edit-button { width: 100%; margin-top: 16px; }

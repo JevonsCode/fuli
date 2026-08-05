@@ -2,12 +2,15 @@
 import { computed, ref, watch } from 'vue'
 
 import { getJson, postJson } from '@/api/client'
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import SearchableSelect from '@/components/SearchableSelect.vue'
 import VirtualDirectoryList from '@/components/VirtualDirectoryList.vue'
+import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay'
 import KnowledgeConfirmDialog from '@/features/knowledge/KnowledgeConfirmDialog.vue'
 import KnowledgeInspector from '@/features/knowledge/KnowledgeInspector.vue'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
 import PreferenceConflictDialog from '@/features/preferences/PreferenceConflictDialog.vue'
+import WritingTasteMilestone from '@/features/preferences/WritingTasteMilestone.vue'
 import {
   detectPreferenceConflicts,
   preferenceConflictRecordItemIds,
@@ -27,11 +30,15 @@ import {
 } from '@/features/knowledge/model'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
-import type { KnowledgeGraph, KnowledgeItem } from '@/types'
+import type { KnowledgeGraph, KnowledgeItem, WritingTasteProfile } from '@/types'
 
 const store = useConsoleStore()
 const graph = ref<KnowledgeGraph | null>(null)
+const writingTaste = ref<WritingTasteProfile | null>(null)
 const loading = ref(false)
+const showInitialLoading = useMinimumLoadingDisplay(computed(() =>
+  loading.value && !graph.value,
+))
 const activeAspect = ref('all')
 const activeScope = ref('all')
 const activeReviewState = ref<'all' | KnowledgeReviewState>('all')
@@ -200,25 +207,44 @@ async function load(spaceId = store.activePersonalSpace?.id) {
       personalSpaceId: spaceId,
       limit: '500',
     })
-    const [nextGraph, nextConflictRecords] = await Promise.all([
+    const writingTasteQuery = new URLSearchParams({
+      personalSpaceId: spaceId,
+      limit: '500',
+    })
+    const [nextGraph, nextConflictRecords, nextWritingTaste] = await Promise.all([
       getJson<KnowledgeGraph>(`/api/graph?${query}`),
       getJson<PreferenceConflictRecord[]>(
         `/api/preference-conflicts?${conflictQuery}`,
       ),
+      getJson<WritingTasteProfile>(
+        `/api/writing-taste-profile?${writingTasteQuery}`,
+      ).catch(() => null),
     ])
     graph.value = nextGraph
     conflictRecords.value = Array.isArray(nextConflictRecords)
       ? nextConflictRecords
       : []
+    writingTaste.value = isWritingTasteProfile(nextWritingTaste)
+      ? nextWritingTaste
+      : null
     if (selectedItem.value) {
       selectedItem.value = items.value.find(({ id }) => id === selectedItem.value?.id) ?? null
     }
   } catch (error) {
     graph.value = null
+    writingTaste.value = null
     store.reportError(error)
   } finally {
     loading.value = false
   }
+}
+
+function isWritingTasteProfile(value: unknown): value is WritingTasteProfile {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<WritingTasteProfile>
+  return ['collecting', 'preview_ready', 'active'].includes(candidate.status ?? '')
+    && Boolean(candidate.readiness)
+    && Array.isArray(candidate.rules)
 }
 
 function statusLabel(item: KnowledgeItem) {
@@ -400,6 +426,8 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
       <p>{{ summaryGuidance }}</p>
     </div>
 
+    <WritingTasteMilestone :profile="writingTaste" />
+
     <section
       v-if="conflicts.length && !conflictsOnly && activeReviewState === 'all'"
       class="preference-conflict-alert"
@@ -479,8 +507,12 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
       </div>
     </div>
 
+    <GrowthLoading
+      v-if="showInitialLoading"
+      :label="t('preferences.profile.directory.loading')"
+    />
     <section
-      v-if="conflictsOnly"
+      v-else-if="conflictsOnly"
       class="preference-conflict-workbench"
       :aria-label="t('preferences.profile.workbench.aria')"
     >
@@ -622,18 +654,10 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
         <template #empty>
           <div class="empty-state">
             {{
-              loading
-                ? t('preferences.profile.directory.loading')
-                : items.length
-                  ? t('preferences.profile.directory.noFiltered')
-                  : t('preferences.profile.directory.empty')
+              items.length
+                ? t('preferences.profile.directory.noFiltered')
+                : t('preferences.profile.directory.empty')
             }}
-          </div>
-        </template>
-
-        <template #footer>
-          <div v-if="loading" class="empty-state">
-            {{ t('preferences.profile.directory.loading') }}
           </div>
         </template>
       </VirtualDirectoryList>

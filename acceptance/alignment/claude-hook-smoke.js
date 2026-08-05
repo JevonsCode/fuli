@@ -9,13 +9,17 @@ import {
   writeFileSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { connectClaudeCode } from '../../src/setup/claude-code-config.js';
+import {
+  resolveAlignmentTimeouts,
+  summarizeClaudeExecutionError,
+  summarizeMcpToolResultError
+} from './benchmark-policy.js';
 
 const directory = dirname(fileURLToPath(import.meta.url));
-const repositoryRoot = resolve(directory, '../..');
 const temporaryRoot = mkdtempSync(join(tmpdir(), 'fuli-hook-smoke-'));
 const workspace = join(temporaryRoot, 'hotel-b');
 const mcpConfigPath = join(temporaryRoot, 'claude-mcp.json');
@@ -23,6 +27,7 @@ const settingsPath = join(temporaryRoot, 'claude-settings.json');
 const auditPath = join(temporaryRoot, 'hook-audit.jsonl');
 const resultsDirectory = join(directory, 'results');
 const resultPath = join(resultsDirectory, 'hook-smoke-latest.json');
+const timeouts = resolveAlignmentTimeouts();
 
 try {
   mkdirSync(workspace);
@@ -41,11 +46,13 @@ try {
   }, {
     nodePath: process.execPath,
     mcpServerPath: join(directory, 'hook-smoke-mcp.js'),
-    runtimeConfigPath: join(temporaryRoot, 'unused-runtime.json')
+    runtimeConfigPath: join(temporaryRoot, 'unused-runtime.json'),
+    hookTimeoutSec: timeouts.hookTimeoutSec
   });
   const mcpConfig = JSON.parse(readFileSync(mcpConfigPath, 'utf8'));
   mcpConfig.mcpServers.fuli.env = {
-    FULI_ACCEPTANCE_LIFECYCLE_AUDIT_PATH: auditPath
+    FULI_ACCEPTANCE_LIFECYCLE_AUDIT_PATH: auditPath,
+    FULI_PROVIDER_REQUEST_TIMEOUT_MS: String(timeouts.providerRequestTimeoutMs)
   };
   writeFileSync(
     mcpConfigPath,
@@ -93,7 +100,10 @@ async function runClaude(cwd, mcpConfig, settings) {
     '--allowedTools',
     'mcp__fuli__search_current_project_knowledge,mcp__fuli__checkpoint_task_knowledge'
   ];
-  return run('claude', args, { cwd, timeoutMs: 120_000 });
+  return run('claude', args, {
+    cwd,
+    timeoutMs: timeouts.hookSmokeTimeoutMs
+  });
 }
 
 function run(command, args, { cwd, timeoutMs }) {
@@ -113,19 +123,21 @@ function run(command, args, { cwd, timeoutMs }) {
       setTimeout(() => child.kill('SIGKILL'), 2000).unref();
     }, timeoutMs);
     child.once('error', rejectPromise);
-    child.once('close', (code) => {
+    child.once('close', (code, signal) => {
       clearTimeout(timeout);
       resolvePromise({
         code,
+        signal,
         timedOut,
+        timeoutMs,
         stdout,
-        stderr: stderr.slice(-800)
+        stderr
       });
     });
   });
 }
 
-function summarize({ code, timedOut, stdout, stderr }, auditEvents) {
+function summarize({ code, signal, timedOut, timeoutMs, stdout }, auditEvents) {
   const events = stdout.split(/\r?\n/)
     .filter(Boolean)
     .flatMap((line) => {
@@ -140,8 +152,53 @@ function summarize({ code, timedOut, stdout, stderr }, auditEvents) {
     .flatMap((event) => event.message?.content ?? [])
     .filter((block) => block.type === 'tool_use')
     .map((block) => block.name);
+  const toolUseNames = new Map(events
+    .filter((event) => event.type === 'assistant')
+    .flatMap((event) => event.message?.content ?? [])
+    .filter((block) => block.type === 'tool_use' && block.id)
+    .map((block) => [block.id, block.name]));
+  const toolResults = events
+    .filter((event) => event.type === 'user')
+    .flatMap((event) => event.message?.content ?? [])
+    .filter((block) => block.type === 'tool_result')
+    .map((block) => ({
+      name: toolUseNames.get(block.tool_use_id) ?? 'unknown',
+      isError: block.is_error === true,
+      summary: summarizeToolContent(block.content)
+    }));
   const result = events.findLast((event) => event.type === 'result');
   const answer = typeof result?.result === 'string' ? result.result : '';
+  const diagnostics = [];
+  if (timedOut) {
+    diagnostics.push({
+      category: 'hook_timeout',
+      detail: `Claude hook smoke timed out after ${timeoutMs}ms.`
+    });
+  } else if (code !== 0) {
+    diagnostics.push({
+      category: 'claude_process_exit',
+      detail: `Claude hook smoke exited without a usable result` +
+        (Number.isInteger(code) ? ` (code ${code})` : signal ? ` (${signal})` : '') +
+        '.'
+    });
+  }
+  if (!result) {
+    diagnostics.push({
+      category: 'claude_no_result',
+      detail: 'Claude produced no result event.'
+    });
+  } else if (result.is_error) {
+    const detail = summarizeClaudeExecutionError(
+      result.result ?? 'Claude result reported an error.'
+    );
+    diagnostics.push({ category: 'claude_result_error', detail });
+  }
+  const toolErrors = toolResults
+    .filter(({ isError }) => isError)
+    .map(summarizeMcpToolResultError);
+  for (const detail of toolErrors) {
+    diagnostics.push({ category: 'mcp_tool_result_error', detail });
+  }
   const signals = {
     entryHook: auditEvents.includes('begin_task_context'),
     stopHook: auditEvents.includes('verify_task_checkpoint'),
@@ -151,28 +208,39 @@ function summarize({ code, timedOut, stdout, stderr }, auditEvents) {
   };
   const lifecyclePass = code === 0
     && !timedOut
-    && !result?.is_error
+    && diagnostics.length === 0
     && signals.entryHook
     && signals.stopHook
     && signals.searched
     && signals.checkpointed;
   return {
     pass: lifecyclePass && signals.markerReturned,
+    status: diagnostics.length > 0
+      ? 'ERROR'
+      : lifecyclePass && signals.markerReturned ? 'PASS' : 'FAIL',
     lifecyclePass,
     retrievalAnswerPass: signals.markerReturned,
     exitCode: code,
     timedOut,
+    timeoutMs,
     signals,
     toolCalls,
+    toolErrors,
     auditEvents,
-    error: stderr
-      ? stderr
-        .replaceAll(repositoryRoot, '<repository>')
-        .replaceAll(temporaryRoot, '<temporary>')
-      : null,
+    diagnostics,
+    error: diagnostics.map(({ detail }) => detail).join('; ') || null,
     rawTranscriptPersisted: false,
     dataClassification: 'synthetic_hook_protocol_smoke'
   };
+}
+
+function summarizeToolContent(content) {
+  const text = typeof content === 'string'
+    ? content
+    : Array.isArray(content)
+      ? content.map((item) => typeof item === 'string' ? item : item?.text ?? '').join(' ')
+      : JSON.stringify(content ?? '');
+  return text.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400);
 }
 
 function readAuditEvents(path) {

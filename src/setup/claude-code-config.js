@@ -38,7 +38,9 @@ export function connectClaudeCode(agent, context, {
       }
     }
   };
-  const nextSettings = withManagedHooks(settings);
+  const nextSettings = withManagedHooks(settings, {
+    hookTimeoutSec: context.hookTimeoutSec
+  });
   const registrationChanged = !sameJson(current, next);
   const hooksChanged = !sameJson(settings, nextSettings);
   if (registrationChanged) writeConfig(agent.configPath, next);
@@ -108,7 +110,8 @@ export function hasCurrentClaudeCodeHooks(settings) {
   ));
 }
 
-function withManagedHooks(settings) {
+function withManagedHooks(settings, { hookTimeoutSec = 30 } = {}) {
+  const normalizedHookTimeoutSec = positiveHookTimeout(hookTimeoutSec);
   const clean = withoutManagedHooks(settings);
   const hooks = { ...(clean.hooks ?? {}) };
   hooks.UserPromptSubmit = [
@@ -117,14 +120,15 @@ function withManagedHooks(settings) {
       sessionId: '${session_id}',
       projectPath: '${cwd}',
       taskPrompt: '${prompt}'
-    }, 'Loading Fuli task context')
+    }, 'Loading Fuli task context', normalizedHookTimeoutSec)
   ];
   hooks.Stop = [
     ...(hooks.Stop ?? []),
     managedHookGroup(
       'verify_task_checkpoint',
       { sessionId: '${session_id}' },
-      'Checking Fuli task checkpoint'
+      'Checking Fuli task checkpoint',
+      normalizedHookTimeoutSec
     )
   ];
   return { ...clean, hooks };
@@ -149,17 +153,24 @@ function withoutManagedHooks(settings) {
   return { ...settings, hooks };
 }
 
-function managedHookGroup(tool, input, statusMessage) {
+function managedHookGroup(tool, input, statusMessage, timeout) {
   return {
     hooks: [{
       type: 'mcp_tool',
       server: FULI_SERVER,
       tool,
       input,
-      timeout: 30,
+      timeout,
       statusMessage
     }]
   };
+}
+
+function positiveHookTimeout(value) {
+  if (!Number.isSafeInteger(value) || value < 1 || value > 2_147_483_647) {
+    throw new TypeError('Claude Code hook timeout must be a positive safe integer');
+  }
+  return value;
 }
 
 function isManagedHook(hook, tool = null) {

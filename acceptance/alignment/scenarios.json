@@ -1,6 +1,6 @@
 {
   "version": "2.0",
-  "fixtureDisclosure": "All projects, facts, decisions, identifiers, dates, dialogue fragments, thresholds, and metric samples are synthetic acceptance data or Benchmark v2 conventions, not production facts.",
+  "fixtureDisclosure": "All projects, facts, decisions, identifiers, dates, dialogue fragments, thresholds, and metric samples are MOCK acceptance data or Benchmark v2 conventions, not production facts.",
   "projects": [
     {
       "id": "platform-a",
@@ -22,8 +22,25 @@
     {
       "id": "travel-d",
       "role": "child",
-      "relation": "PART_OF platform-a",
+      "relation": "PART_OF platform-a and platform-b",
       "purpose": "Project-local travel bundle rules."
+    },
+    {
+      "id": "platform-b",
+      "role": "secondary-parent",
+      "purpose": "Second parent context used to verify bounded multi-parent inheritance."
+    },
+    {
+      "id": "preference-e",
+      "role": "child",
+      "relation": "PART_OF platform-a",
+      "purpose": "Project-local preference variant used for common-core discovery."
+    },
+    {
+      "id": "related-c",
+      "role": "related-project",
+      "relation": "RELATED_TO travel-d",
+      "purpose": "Advisory relation that must not expand retrieval automatically."
     },
     {
       "id": "botany-e",
@@ -117,6 +134,86 @@
       "id": "FEEDBACK-01",
       "category": "negative-evidence",
       "question": "Does bounded negative evidence lower ranking and flag attention without overriding human authority?"
+    },
+    {
+      "id": "NETWORK-CODEX-01",
+      "category": "codex-capture",
+      "question": "Can Codex turn MOCK dialogue artifacts into scoped context, preferences, and a pending workflow relation?"
+    },
+    {
+      "id": "NETWORK-SCOPE-01",
+      "category": "multi-parent-inheritance",
+      "question": "Can D retrieve independently authorized context from both A and B with provenance?"
+    },
+    {
+      "id": "NETWORK-SCOPE-02",
+      "category": "related-project-boundary",
+      "question": "Does C keep RELATED_TO advisory instead of silently inheriting D?"
+    },
+    {
+      "id": "NETWORK-SCOPE-03",
+      "category": "single-parent-inheritance",
+      "question": "Can E retrieve explicitly inheritable context from A?"
+    },
+    {
+      "id": "NETWORK-SCOPE-04",
+      "category": "global-related-project-suggestion",
+      "question": "When a confirmed all-local search matches C, does Fuli offer an exact one-time D follow-up without relation-driven expansion?"
+    },
+    {
+      "id": "NETWORK-PREFERENCE-01",
+      "category": "parent-preference-inheritance",
+      "question": "Do parent collaboration preferences enter child effective or suggested preference context?"
+    },
+    {
+      "id": "NETWORK-PREFERENCE-02",
+      "category": "parent-preference-human-decision",
+      "question": "Can the D/E common core become a candidate and, only after a candidate-bound human decision, create an A descendants preference without promoting E's Chinese-only qualifier?"
+    },
+    {
+      "id": "NETWORK-PREFERENCE-03",
+      "category": "global-preference-convergence",
+      "question": "Can repeated ideas across unrelated projects become a personal-global candidate for human scope judgment?"
+    },
+    {
+      "id": "NETWORK-PREFERENCE-04",
+      "category": "global-preference-human-decision",
+      "question": "Can a candidate-bound human decision create a new global assertion while preserving every local source and qualifier?"
+    },
+    {
+      "id": "NETWORK-PREFERENCE-05",
+      "category": "advisory-related-preference",
+      "question": "Can a high-relevance RELATED_TO preference be inspected after consent without entering the effective preference packet?"
+    },
+    {
+      "id": "NETWORK-WORKFLOW-00",
+      "category": "workflow-session-attestation",
+      "question": "Do three retries inside one MCP host session remain one observation instead of satisfying the three-session gate?"
+    },
+    {
+      "id": "NETWORK-WORKFLOW-01",
+      "category": "workflow-sequence-capture",
+      "question": "Can repeated X-to-Y behavior remain a pending recommendation with an explicit approval gate?"
+    },
+    {
+      "id": "NETWORK-WORKFLOW-02",
+      "category": "workflow-sequence-learning",
+      "question": "Can Fuli detect repeated sequences and ask before converting them into a durable automatic rule?"
+    },
+    {
+      "id": "NETWORK-CURSOR-01",
+      "category": "cursor-retrieval",
+      "question": "Can Cursor retrieve Codex-captured multi-parent context and pending workflow guidance?"
+    },
+    {
+      "id": "NETWORK-CLAUDE-01",
+      "category": "claude-retrieval",
+      "question": "Can Claude Code retrieve the same graph and preserve the human confirmation gate?"
+    },
+    {
+      "id": "NETWORK-CLAUDE-02",
+      "category": "claude-fresh-session-authorization",
+      "question": "Can a second fresh Claude Code session read a durable low-risk authorization while retaining per-call approval for high-risk actions?"
     },
     {
       "id": "AGENT-01",

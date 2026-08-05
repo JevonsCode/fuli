@@ -3,9 +3,15 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { getJson, putJson } from '@/api/client'
 import SearchableSelect from '@/components/SearchableSelect.vue'
+import { setConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
+import {
+  CONVERSATION_SOURCE_APPLICATIONS,
+  sourceApplicationName,
+} from '@/features/knowledge/source-adapters'
 import { currentLocale, setLocale, t, type AppLocale } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type {
+  ConversationSourceApplication,
   ResourceComponent,
   ResourceSnapshot,
   RuntimePorts,
@@ -36,6 +42,7 @@ const locale = computed({
   set: (value: AppLocale) => setLocale(value),
 })
 const refreshIntervals = [5, 10, 30, 60] as const
+const conversationApplications = CONVERSATION_SOURCE_APPLICATIONS
 const localeOptions = computed(() => [
   { value: 'zh-CN', label: t('settings.behavior.zh') },
   { value: 'en-US', label: t('settings.behavior.en') },
@@ -44,6 +51,10 @@ const refreshOptions = computed(() => refreshIntervals.map((seconds) => ({
   value: String(seconds),
   label: t('settings.resources.refreshUnit', { seconds }),
 })))
+const conversationIdFormatOptions = computed(() => [
+  { value: 'any', label: t('settings.conversationLaunchers.idFormats.any') },
+  { value: 'uuid', label: t('settings.conversationLaunchers.idFormats.uuid') },
+])
 const captureEnabled = computed(() => store.state?.capturePolicy?.enabled !== false)
 const agentAccessEnabled = computed(() =>
   store.state?.agentAccessPolicy?.enabled !== false,
@@ -75,6 +86,7 @@ async function loadSettings() {
     const result = await getJson<SystemSettingsResult>('/api/system/settings')
     settings.value = result
     form.value = structuredClone(result.configured)
+    setConversationLauncherConfiguration(result.configured.conversationLaunchers)
     loadError.value = ''
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : t('settings.loadError')
@@ -104,6 +116,7 @@ async function saveSettings() {
     const result = await putJson<SystemSettingsResult>('/api/system/settings', form.value)
     settings.value = result
     form.value = structuredClone(result.configured)
+    setConversationLauncherConfiguration(result.configured.conversationLaunchers)
     saved.value = true
     loadError.value = ''
     window.setTimeout(() => { saved.value = false }, 2400)
@@ -142,6 +155,13 @@ function updateRefreshInterval(value: string) {
   const seconds = refreshIntervals.find((option) => String(option) === value)
   if (seconds === undefined || !form.value) return
   form.value.resourceRefreshSeconds = seconds
+}
+
+function conversationApplicationLabel(application: ConversationSourceApplication) {
+  const translated = t(`settings.conversationLaunchers.applications.${application}`)
+  return translated === `settings.conversationLaunchers.applications.${application}`
+    ? sourceApplicationName(application)
+    : translated
 }
 
 function activePort(key: keyof RuntimePorts) {
@@ -266,6 +286,75 @@ function formatTime(value: string | undefined) {
               <span>{{ t('settings.ports.developing') }}</span>
             </div>
             <p>{{ t('settings.ports.developmentMeta') }}</p>
+          </div>
+        </section>
+
+        <section id="conversation-launchers" class="settings-card conversation-launcher-card">
+          <h3>{{ t('settings.conversationLaunchers.title') }}</h3>
+          <div class="conversation-launcher-list">
+            <article
+              v-for="application in conversationApplications"
+              :key="application"
+              class="conversation-launcher-row"
+            >
+              <div class="conversation-launcher-heading">
+                <span>
+                  <strong>{{ conversationApplicationLabel(application) }}</strong>
+                  <small>{{ t('settings.conversationLaunchers.sourceId', { id: application }) }}</small>
+                </span>
+                <label class="conversation-launcher-switch">
+                  <span>{{ t('settings.conversationLaunchers.enabled') }}</span>
+                  <input
+                    v-model="form.conversationLaunchers[application].enabled"
+                    type="checkbox"
+                    role="switch"
+                  />
+                </label>
+              </div>
+              <small
+                v-if="form.conversationLaunchers[application].enabled && application === 'codex'"
+                class="conversation-launcher-note"
+              >
+                {{ t('settings.conversationLaunchers.idFormatMeta') }}
+              </small>
+              <div
+                v-if="form.conversationLaunchers[application].enabled"
+                class="conversation-launcher-fields"
+              >
+                <label>
+                  <span>{{ t('settings.conversationLaunchers.idFormat') }}</span>
+                  <SearchableSelect
+                    v-model="form.conversationLaunchers[application].idFormat"
+                    class="launcher-select"
+                    :control-id="`settings-conversation-${application}-id-format`"
+                    :options="conversationIdFormatOptions"
+                    :label="t('settings.conversationLaunchers.idFormat')"
+                  />
+                </label>
+                <label>
+                  <span>{{ t('settings.conversationLaunchers.appName') }}</span>
+                  <input
+                    v-model.trim="form.conversationLaunchers[application].appName"
+                    type="text"
+                    maxlength="64"
+                    required
+                  />
+                </label>
+                <label class="conversation-launcher-template">
+                  <span>
+                    {{ t('settings.conversationLaunchers.urlTemplate') }}
+                    <small><code>{id}</code></small>
+                  </span>
+                  <input
+                    v-model.trim="form.conversationLaunchers[application].urlTemplate"
+                    type="text"
+                    maxlength="1024"
+                    spellcheck="false"
+                    required
+                  />
+                </label>
+              </div>
+            </article>
           </div>
         </section>
 
@@ -444,6 +533,48 @@ function formatTime(value: string | undefined) {
 .port-grid small { color: #9aa29d; font-size: 9px; }
 
 .behavior-card > h3 { margin-bottom: 14px; }
+.conversation-launcher-card > h3 { margin-bottom: 14px; }
+.conversation-launcher-list { display: grid; }
+.conversation-launcher-row { padding: 16px 0; border-top: 1px solid #edf0ed; }
+.conversation-launcher-row:first-child { border-top: 0; }
+.conversation-launcher-heading {
+  min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 20px;
+}
+.conversation-launcher-heading > span { display: grid; gap: 4px; }
+.conversation-launcher-heading strong { color: #354239; font-size: 12px; }
+.conversation-launcher-heading small { color: #8b948e; font-size: 9px; }
+.conversation-launcher-switch { display: flex; align-items: center; gap: 9px; color: #667169; font-size: 10px; }
+.conversation-launcher-switch input[role='switch'] { margin: 0; }
+.conversation-launcher-note {
+  display: block; max-width: 760px; margin-top: 9px; color: #8b948e; font-size: 9px; line-height: 1.45;
+}
+.conversation-launcher-fields {
+  display: grid; align-items: start;
+  grid-template-columns: minmax(150px, .7fr) minmax(160px, .8fr) minmax(280px, 1.5fr);
+  gap: 12px; margin-top: 14px;
+}
+.conversation-launcher-fields > label {
+  min-width: 0; display: grid; grid-template-rows: 18px 40px; align-content: start;
+  gap: 7px; color: #59655e; font-size: 10px;
+}
+.conversation-launcher-fields > label > span {
+  min-width: 0; display: block; overflow: hidden; line-height: 18px; text-overflow: ellipsis; white-space: nowrap;
+}
+.conversation-launcher-fields code { color: #7b857e; font-size: 9px; }
+.conversation-launcher-fields :deep(.launcher-select) { width: 100%; height: 40px; min-width: 0; }
+.conversation-launcher-fields input,
+.conversation-launcher-fields :deep(.launcher-select .searchable-select-trigger) {
+  width: 100%; height: 40px; min-height: 40px; box-sizing: border-box;
+  border: 1px solid #ccd4ce; border-radius: 8px;
+  background: #fbfcfb; color: #2f3d34; font: inherit; line-height: 1.2; padding: 0 11px; outline: none;
+}
+.conversation-launcher-fields input:focus,
+.conversation-launcher-fields :deep(.launcher-select .searchable-select-trigger:focus-visible) {
+  border-color: #6f8f79; box-shadow: 0 0 0 3px rgb(111 143 121 / 12%);
+}
+.conversation-launcher-fields :deep(.launcher-select .searchable-select-current) { align-items: center; }
+.conversation-launcher-fields :deep(.launcher-select .searchable-select-current-label) { font-weight: 500; }
+.conversation-launcher-fields :deep(.launcher-select .searchable-select-panel) { width: 100%; min-width: 0; }
 .setting-list { display: grid; }
 .setting-row {
   min-height: 64px;
@@ -458,7 +589,8 @@ function formatTime(value: string | undefined) {
 .setting-row > span { display: grid; gap: 4px; }
 .setting-row strong { color: #354239; font-size: 12px; }
 .setting-row small { color: #8b948e; font-size: 10px; }
-.setting-row input[role='switch'] {
+.setting-row input[role='switch'],
+.conversation-launcher-switch input[role='switch'] {
   width: 38px;
   height: 21px;
   appearance: none;
@@ -481,8 +613,23 @@ function formatTime(value: string | undefined) {
   transform: translateY(-50%);
   transition: transform .18s ease;
 }
-.setting-row input[role='switch']:checked { background: #688b73; }
+.conversation-launcher-switch input[role='switch']::after {
+  content: '';
+  position: absolute;
+  width: 17px;
+  height: 17px;
+  top: 50%;
+  left: 2px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 4px rgb(0 0 0 / 18%);
+  transform: translateY(-50%);
+  transition: transform .18s ease;
+}
+.setting-row input[role='switch']:checked,
+.conversation-launcher-switch input[role='switch']:checked { background: #688b73; }
 .setting-row input[role='switch']:checked::after { transform: translate(17px, -50%); }
+.conversation-launcher-switch input[role='switch']:checked::after { transform: translate(17px, -50%); }
 .select-row .settings-select { width: 180px; min-width: 0; }
 .select-row :deep(.settings-select .searchable-select-trigger) {
   padding: 0 14px 0 11px;
@@ -513,11 +660,14 @@ function formatTime(value: string | undefined) {
 
 @media (max-width: 900px) {
   .port-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .conversation-launcher-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .conversation-launcher-template { grid-column: 1 / -1; }
 }
 
 @media (max-width: 680px) {
   .settings-card { padding: 20px; }
-  .resource-totals, .resource-breakdowns, .port-grid { grid-template-columns: 1fr; }
+  .resource-totals, .resource-breakdowns, .port-grid, .conversation-launcher-fields { grid-template-columns: 1fr; }
+  .conversation-launcher-template { grid-column: auto; }
   .select-row { align-items: flex-start; flex-direction: column; padding: 14px 0; }
   .select-row .settings-select { width: 100%; }
 }

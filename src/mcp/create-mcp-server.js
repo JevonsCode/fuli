@@ -7,6 +7,7 @@ import { MCP_INSTRUCTIONS } from './instructions.js';
 import { createProjectActionPreviewTokens } from './project-action-preview-tokens.js';
 import { createCommonKnowledgePreviewTokens } from './common-knowledge-preview-tokens.js';
 import { auditLifecycleTool } from './lifecycle-audit.js';
+import { registerFuliContextResources } from './context-resources.js';
 import { annotationsFor } from './tool-annotations.js';
 import {
   errorToolResult,
@@ -15,31 +16,58 @@ import {
   successToolResult
 } from './tool-result.js';
 import { jsonSchemaToZod, openObjectSchema } from './tool-schema.js';
+import {
+  mcpHostSessionId,
+  nativeCodexThreadId,
+  normalizeAgentSessionInput
+} from './session-id.js';
 
 const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   begin_task_context: 16 * 1024,
   get_collaboration_preferences: 16 * 1024,
+  get_user_taste_skill: 32 * 1024,
   search_knowledge_graph: 32 * 1024,
   search_connected_knowledge: 64 * 1024,
   search_current_project_knowledge: 64 * 1024,
   discover_common_knowledge_candidates: 32 * 1024,
+  discover_personal_global_preference_candidates: 32 * 1024,
+  preview_personal_global_preference_decision: 32 * 1024,
   list_personal_projects: 32 * 1024,
-  list_knowledge_review_candidates: 32 * 1024
+  list_knowledge_review_candidates: 32 * 1024,
+  list_workflow_candidates: 32 * 1024,
+  recommend_next_workflow_steps: 32 * 1024
 });
 
-export function createMcpServer(app) {
+export function createMcpServer(
+  app,
+  { env = process.env, clock = () => new Date() } = {}
+) {
   const server = new McpServer(
     { name: 'fuli', version: FULI_VERSION },
     { instructions: MCP_INSTRUCTIONS }
   );
 
-  const tools = createToolMap(app, createProjectActionPreviewTokens());
+  const nativeThreadId = nativeCodexThreadId(env);
+  const tools = createToolMap(
+    app,
+    createProjectActionPreviewTokens(),
+    nativeThreadId,
+    mcpHostSessionId(env),
+    clock
+  );
   for (const tool of tools.values()) registerTool(server, tool);
+  registerFuliContextResources(server, app);
   registerCallHandler(server, tools);
   return server;
 }
 
-function createToolMap(app, projectActionPreviews) {
+function createToolMap(
+  app,
+  projectActionPreviews,
+  nativeThreadId,
+  hostSessionId,
+  clock
+) {
   const commonKnowledgePreviews = createCommonKnowledgePreviewTokens();
   return new Map(listAgentTools().map((definition) => [definition.name, {
     definition,
@@ -47,7 +75,13 @@ function createToolMap(app, projectActionPreviews) {
     invoke: (input) => invokeAgentTool(
       app,
       definition.name,
-      input,
+      normalizeAgentSessionInput(
+        definition.name,
+        input,
+        nativeThreadId,
+        hostSessionId,
+        clock
+      ),
       projectActionPreviews,
       commonKnowledgePreviews
     )

@@ -140,6 +140,18 @@ test('bundled session Skill uses hook context with an exact preference fallback'
   assert.match(skill, /checkpoint_task_knowledge.*capture_candidates.*retain_nothing/is);
 });
 
+test('bundled session Skill never gives the Agent a direct scope-expansion path', () => {
+  const skill = readFileSync(
+    join(PROJECT_ROOT, 'skills', 'capturing-session-knowledge', 'SKILL.md'),
+    'utf8'
+  );
+
+  assert.doesNotMatch(skill, /set_personal_preference_scope/);
+  assert.match(skill, /safe\s+narrowing.*global.*exact project/is);
+  assert.match(skill, /broader.*parent.*personal global.*convergence/is);
+  assert.match(skill, /HumanReviewer.*trusted local.*user-presence/is);
+});
+
 test('bundled session Skill gates all-local content lookup behind explicit consent', () => {
   const skill = readFileSync(
     join(PROJECT_ROOT, 'skills', 'capturing-session-knowledge', 'SKILL.md'),

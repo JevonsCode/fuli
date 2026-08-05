@@ -17,6 +17,7 @@ from .models import (
 )
 from .personal_project_access import authorize_personal_project
 from .provider_values import now_utc, stable_uuid
+from .workflow_candidates import materialize_workflow_candidates
 
 
 class StoreKnowledge:
@@ -33,6 +34,29 @@ class StoreKnowledge:
             space,
             request.episode,
             personal_project_id=request.personal_project_id,
+        )
+
+    async def commit_workflow_observation(
+        self,
+        actor: dict,
+        request: KnowledgeCommit,
+    ) -> CommitResult:
+        self._require_personal()
+        space = await self.authorize(actor, request.space_id, 'maintainer')
+        if space['kind'] != 'personal':
+            raise HTTPException(
+                status_code=422,
+                detail='workflow observations are personal-only',
+            )
+        if request.personal_project_id:
+            await authorize_personal_project(
+                self, actor, space, request.personal_project_id
+            )
+        return await self._commit_episode(
+            space,
+            request.episode,
+            personal_project_id=request.personal_project_id,
+            workflow_session_authority='mcp_host',
         )
 
     async def search(self, actor: dict, request: SearchRequest) -> SearchResult:
@@ -71,6 +95,7 @@ class StoreKnowledge:
         episode: StructuredEpisode,
         *,
         personal_project_id: str | None = None,
+        workflow_session_authority: str | None = None,
     ) -> CommitResult:
         group_id = space['group_id']
         lock = self._group_locks.setdefault(group_id, asyncio.Lock())
@@ -90,6 +115,12 @@ class StoreKnowledge:
                 )
                 for entity in episode.entities
             ]
+            entity_id_by_key = {
+                entity.key: entity_id
+                for entity, entity_id in zip(
+                    episode.entities, entity_ids, strict=True
+                )
+            }
             relationship_ids = [
                 _relationship_id(
                     group_id,
@@ -98,10 +129,40 @@ class StoreKnowledge:
                     relationship.key,
                     relationship.fact,
                     (relationship.valid_at or episode.reference_time).isoformat(),
+                    workflow_session_authority=workflow_session_authority,
                 )
                 for relationship in episode.relationships
             ]
+            entity_input_by_key = {
+                entity.key: entity for entity in episode.entities
+            }
+            workflow_pairs = [
+                {
+                    'workflow_key': relationship.key,
+                    'source_step_id': entity_id_by_key[relationship.source],
+                    'source_step_key': relationship.source,
+                    'source_step_name': (
+                        entity_input_by_key[relationship.source].name
+                    ),
+                    'target_step_id': entity_id_by_key[relationship.target],
+                    'target_step_key': relationship.target,
+                    'target_step_name': (
+                        entity_input_by_key[relationship.target].name
+                    ),
+                    'condition_json': _workflow_condition_json(
+                        relationship.attributes
+                    ),
+                }
+                for relationship in episode.relationships
+                if relationship.type == 'RECOMMENDS_NEXT'
+            ]
             if existing:
+                await materialize_workflow_candidates(
+                    self,
+                    space,
+                    personal_project_id=personal_project_id,
+                    pairs=workflow_pairs,
+                )
                 return CommitResult(
                     status='duplicate',
                     space_id=space['id'],
@@ -210,6 +271,15 @@ class StoreKnowledge:
                         'attributes_json': json.dumps(
                             relationship.attributes, ensure_ascii=False, sort_keys=True
                         ),
+                        'workflow_condition_json': _workflow_condition_json(
+                            relationship.attributes
+                        ),
+                        'workflow_confirmation_authority': (
+                            _workflow_confirmation_authority(relationship)
+                        ),
+                        'workflow_session_authority': (
+                            workflow_session_authority
+                        ),
                     }
                 )
 
@@ -276,7 +346,9 @@ class StoreKnowledge:
                   fuli_summary: $summary,
                   fuli_sensitivity: $sensitivity,
                   fuli_personal_project_id: $personal_project_id,
-                  fuli_idempotency_key: $idempotency_key
+                  fuli_idempotency_key: $idempotency_key,
+                  fuli_workflow_session_authority:
+                    $workflow_session_authority
                 })
                 WITH episode
                 UNWIND $entities AS row
@@ -316,7 +388,13 @@ class StoreKnowledge:
                     edge.fuli_inherited_project_ids = row.inherited_project_ids,
                     edge.fuli_preference_scope = row.preference_scope,
                     edge.fuli_preference_project_id = row.preference_project_id,
-                    edge.fuli_attributes_json = row.attributes_json
+                    edge.fuli_attributes_json = row.attributes_json,
+                    edge.fuli_workflow_condition_json =
+                      row.workflow_condition_json,
+                    edge.fuli_workflow_confirmation_authority =
+                      row.workflow_confirmation_authority,
+                    edge.fuli_workflow_session_authority =
+                      row.workflow_session_authority
                 SET edge.episodes =
                   CASE WHEN $episode_id IN coalesce(edge.episodes, [])
                        THEN edge.episodes
@@ -400,7 +478,14 @@ class StoreKnowledge:
                 summary=episode.summary,
                 sensitivity=episode.sensitivity,
                 personal_project_id=personal_project_id,
+                workflow_session_authority=workflow_session_authority,
                 idempotency_key=episode.idempotency_key,
+            )
+            await materialize_workflow_candidates(
+                self,
+                space,
+                personal_project_id=personal_project_id,
+                pairs=workflow_pairs,
             )
             return CommitResult(
                 status='committed',
@@ -417,6 +502,28 @@ def _initial_confidence(status: str) -> float:
         'agent_confirmed': 0.75,
         'confirmed': 1.0,
     }[status]
+
+
+def _workflow_condition_json(attributes: dict) -> str:
+    condition = attributes.get(
+        'workflowCondition',
+        attributes.get('workflow_condition', {}),
+    )
+    if not isinstance(condition, dict):
+        condition = {}
+    return json.dumps(condition, ensure_ascii=False, sort_keys=True)
+
+
+def _workflow_confirmation_authority(relationship) -> str:
+    basis = relationship.confirmation_basis
+    if relationship.confirmation_status == 'confirmed' and basis.confirmed_by:
+        return basis.confirmed_by.kind
+    return {
+        'agent': 'agent_proposed',
+        'import': 'import_proposed',
+        'user': 'user',
+        'authoritative_source': 'authoritative_source',
+    }[basis.proposed_by.kind]
 
 
 def _entity_id(
@@ -443,8 +550,15 @@ def _relationship_id(
     key: str,
     fact: str,
     reference_time: str,
+    *,
+    workflow_session_authority: str | None = None,
 ) -> str:
     parts = [group_id, 'relationship']
     if space_kind == 'personal' and personal_project_id:
         parts.extend(['personal-project', personal_project_id])
+    if workflow_session_authority:
+        parts.extend([
+            'workflow-session-authority',
+            workflow_session_authority,
+        ])
     return stable_uuid(*parts, key, fact, reference_time)

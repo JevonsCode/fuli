@@ -224,8 +224,10 @@ async def _direct_child_project_ids(store, space_id, parent_project_id):
         '''
         MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
               [:CONTAINS_PROJECT]->(child:FuliPersonalProject)-
-              [:PERSONAL_PROJECT_RELATION {relation_type: 'PART_OF'}]->
+              [relation:PERSONAL_PROJECT_RELATION {relation_type: 'PART_OF'}]->
               (parent:FuliPersonalProject {project_id: $parent_project_id})
+        WHERE relation.status = 'active'
+          AND relation.confirmation_authority = 'human_review'
         RETURN child.project_id AS child_project_id
         ORDER BY child.project_id
         ''',
@@ -315,8 +317,10 @@ def _promotion_query(item_kind):
         UNWIND $source_project_ids AS source_project_id
         MATCH (space)-[:CONTAINS_PROJECT]->
               (child:FuliPersonalProject {{project_id: source_project_id}})-
-              [:PERSONAL_PROJECT_RELATION {{relation_type: 'PART_OF'}}]->
+              [relation:PERSONAL_PROJECT_RELATION {{relation_type: 'PART_OF'}}]->
               (parent)
+        WHERE relation.status = 'active'
+          AND relation.confirmation_authority = 'human_review'
         WITH space, parent, collect(DISTINCT child.project_id) AS direct_children
         WHERE size(direct_children) = size($source_project_ids)
         {canonical_match}

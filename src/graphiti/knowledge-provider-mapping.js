@@ -1,6 +1,9 @@
+import { ApplicationError } from '../app/application-error.js';
 import { onlineSourceUri } from './source-uri.js';
 
 export function providerEpisode(input) {
+  assertReasoningSummaries(input.entities, 'entities');
+  assertReasoningSummaries(input.relationships, 'relationships');
   return {
     idempotency_key: input.idempotencyKey,
     session_id: input.sessionId,
@@ -53,6 +56,18 @@ export function providerEpisode(input) {
       attributes: relationship.attributes ?? {}
     }))
   };
+}
+
+function assertReasoningSummaries(items, collectionName) {
+  items.forEach((item, index) => {
+    const originQuadrant = item.originQuadrant ?? 'known_known';
+    if (originQuadrant === 'known_known' || item.reasoningSummary?.trim()) return;
+    throw new ApplicationError(
+      'validation',
+      `${collectionName}[${index}].reasoningSummary is required when ` +
+      `originQuadrant is ${originQuadrant}`
+    );
+  });
 }
 
 export function assertPublicKnowledgeEligible(episode) {

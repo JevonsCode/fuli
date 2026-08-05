@@ -29,6 +29,7 @@ KnowledgeProjectMatchKind = Literal[
     'exact_duplicate',
     'conflict',
 ]
+PersonalProjectRelationStatus = Literal['pending', 'active', 'rejected']
 
 
 class KnowledgeProjectPreviewRequest(StrictModel):
@@ -140,3 +141,24 @@ class KnowledgeProjectActionResult(StrictModel):
     match: KnowledgeProjectMatch
     reference: KnowledgeProjectReferenceRecord | None = None
     conflict: KnowledgeConflictRecord | None = None
+
+
+class PersonalProjectRelationReviewRequest(StrictModel):
+    decision: Literal['activate', 'reject']
+    decision_revision: int = Field(ge=0)
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class PersonalProjectRelationReviewRecord(StrictModel):
+    relation_id: str
+    personal_space_id: str
+    source_project_id: str
+    target_project_id: str
+    relation_type: ProjectRelationType
+    status: PersonalProjectRelationStatus
+    confirmation_authority: Literal['human_review'] | None = None
+    decision_revision: int = Field(ge=1)
+    reviewed_by: str
+    reviewed_at: datetime
+    review_reason: str
+    review_event_id: str

@@ -5,7 +5,7 @@ Graphiti/Neo4j 验证知识沉淀、搜索、项目继承和公共知识收敛�
 
 ## 数据披露
 
-`fixtures/` 下的项目、规则、决策、时间、编号和对话片段全部是**合成验收数据**，
+`fixtures/` 下的项目、规则、决策、时间、编号和对话片段全部是 **MOCK（合成）验收数据**，
 不是生产事实，也不来自真实用户。文档中的稳定标记只用于自动判分，不是凭据。
 
 公开数据集只用于设计题型：
@@ -53,6 +53,26 @@ node acceptance/alignment/run.js
 node acceptance/alignment/run.js --skip-claude
 ```
 
+运行 A/B/C/D/E 多项目关系网、Codex 沉淀、Cursor 与 Claude Code 跨客户端检索验收：
+
+```sh
+nvm use 24.16.0
+node acceptance/alignment/run.js \
+  --multi-agent-network \
+  --allow-codex-synthetic-writes
+```
+
+该模式使用完全 MOCK（合成）文档和一次性 Graphiti/Neo4j。`--allow-codex-synthetic-writes`
+会让非交互 Codex 跳过 MCP 写入确认，只应在这类受控、可丢弃的验收环境中使用；不要对
+真实工作区或不受控文档启用。Cursor 真机用例还要求先执行 `cursor-agent login`，或在调用
+环境中提供 `CURSOR_API_KEY`；缺少认证会被记为外部环境 `ERROR`，不是 Fuli 产品 `FAIL`。
+
+只根据最近一次结构化结果重新生成报告，不启动容器或 Agent：
+
+```sh
+node acceptance/alignment/run.js --multi-agent-network --render-only
+```
+
 当本机 Docker 不可用时，可单独验证真实 Claude Code 的入口 Hook、知识检索、
 checkpoint 与 Stop Hook 协议：
 
@@ -60,7 +80,7 @@ checkpoint 与 Stop Hook 协议：
 node acceptance/alignment/claude-hook-smoke.js
 ```
 
-该烟测使用生产 MCP 服务器装配代码和完全合成的内存数据，但不经过
+该烟测使用生产 MCP 服务器装配代码和完全 MOCK（合成）的内存数据，但不经过
 Graphiti/Neo4j，因此只能证明 Claude Code Hook 协议链路，不能替代完整 Benchmark。
 
 输出：
@@ -68,6 +88,8 @@ Graphiti/Neo4j，因此只能证明 Claude Code Hook 协议链路，不能替代
 - `FULI_CLAUDE_CODE_ALIGNMENT_REPORT.md`：面向人的结论；
 - `acceptance/alignment/results/latest.json`：经过脱敏的结构化用例结果。
 - `acceptance/alignment/results/hook-smoke-latest.json`：轻量 Hook 烟测的标签级结果。
+- `FULI_MULTI_AGENT_NETWORK_REPORT.md`：多项目、多 Agent 关系网结论；
+- `acceptance/alignment/results/multi-agent-network-latest.json`：多 Agent 脱敏结构化结果。
 
 ## 关键判定
 
@@ -82,5 +104,10 @@ Graphiti/Neo4j，因此只能证明 Claude Code Hook 协议链路，不能替代
 - **原子上收**：确认后在一个 Provider 事务中完成归属、继承、失效、替代和修订审计。
 - **决策理由**：选择、未选方案、理由和验证结果形成可检索链。
 - **负面证据**：失败、反驳、过期和拒绝会降权并标记需关注，但不越过人工确认权威。
+- **偏好作用域**：项目偏好默认只在本项目生效；只有显式 `descendants` 或
+  `selected_projects` 才能沿两跳内的 `PART_OF` / `USES_KNOWLEDGE_FROM` 传播。
+- **权威硬门**：人的确认权威先于项目距离和相似度；分数只负责排序，不能扩大作用域或消解冲突。
+- **行为证据**：`X → Y` 的次数由独立 episode 与 session 聚合，Agent 自报计数不进入候选分数。
+- **授权分层**：建议、长期低风险授权和高风险逐次确认是三个不同状态；一次性预览必须绑定候选版本与精确决定。
 
 Benchmark v2 的 5 次行为重复只属于冒烟层；至少 30 个配对任务才允许形成协作成本产品结论。

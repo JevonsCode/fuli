@@ -1,6 +1,15 @@
 import { randomUUID } from 'node:crypto';
 
+import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
+
 const MAX_ACTIVE_SESSIONS = 256;
+
+function unknownTokenError() {
+  return new ApplicationError(
+    ApplicationErrorCode.NOT_FOUND,
+    'Fuli task context token is unknown or superseded. Call begin_task_context for the current session and use the token it returns.'
+  );
+}
 
 export class TaskContextRegistry {
   constructor({ tokenFactory = () => `fuli-task-${randomUUID()}` } = {}) {
@@ -33,10 +42,13 @@ export class TaskContextRegistry {
   checkpoint(token, checkpoint) {
     assertNonEmpty(token, 'taskContextToken');
     const task = this.tokens.get(token);
-    if (!task) throw new TypeError('Unknown or expired Fuli task context token');
+    if (!task) throw unknownTokenError();
     if (task.checkpoint) {
       if (sameCheckpoint(task.checkpoint, checkpoint)) return task;
-      throw new TypeError('Fuli task context has already been checkpointed');
+      throw new ApplicationError(
+        ApplicationErrorCode.VALIDATION,
+        'Fuli task context has already been checkpointed with a different disposition'
+      );
     }
     task.checkpoint = Object.freeze({ ...checkpoint });
     return task;
@@ -45,7 +57,7 @@ export class TaskContextRegistry {
   context(token) {
     assertNonEmpty(token, 'taskContextToken');
     const task = this.tokens.get(token);
-    if (!task) throw new TypeError('Unknown or expired Fuli task context token');
+    if (!task) throw unknownTokenError();
     return task;
   }
 

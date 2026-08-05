@@ -153,11 +153,34 @@ export interface RuntimePorts {
   workspaceNeo4jBolt: number
 }
 
+export type ConversationSourceApplication =
+  | 'codex'
+  | 'claude_code'
+  | 'cursor'
+  | 'gemini_cli'
+  | 'kiro'
+  | 'other'
+
+export type ConversationIdFormat = 'any' | 'uuid'
+
+export interface ConversationLauncherRule {
+  enabled: boolean
+  idFormat: ConversationIdFormat
+  appName: string
+  urlTemplate: string
+}
+
+export type ConversationLauncherConfiguration = Record<
+  ConversationSourceApplication,
+  ConversationLauncherRule
+>
+
 export interface RuntimeSettings {
   version: 1
   ports: RuntimePorts
   lanAccess: boolean
   resourceRefreshSeconds: 5 | 10 | 30 | 60
+  conversationLaunchers: ConversationLauncherConfiguration
 }
 
 export interface SystemSettingsResult {
@@ -405,4 +428,77 @@ export interface KnowledgeConfirmationGroup {
   label: string
   description: string
   items: KnowledgeItem[]
+}
+
+export type WritingTasteProfileStatus = 'collecting' | 'preview_ready' | 'active'
+export type WritingTasteEvidenceStatus = 'Confirmed' | 'Observed' | 'Working hypothesis'
+
+export interface WritingTasteRule {
+  item_id: string
+  item_kind: 'entity' | 'relationship'
+  preference_key: string
+  title: string
+  instruction: string
+  reason: string
+  evidence_status: WritingTasteEvidenceStatus
+  confirmation_status: ConfirmationStatus
+  preference_scope: 'global' | 'project'
+  preference_project_id: string | null
+  contexts: string[]
+  evidence: EvidenceRecord[]
+  evidence_count: number
+  session_count: number
+  confirmed_at: string | null
+  updated_at: string | null
+  origin_quadrant: string
+  has_conflict: boolean
+}
+
+export interface WritingTasteReadinessCriterion {
+  key: 'rules' | 'evidence' | 'sessions' | 'days' | 'confirmed' | 'conflicts'
+  current: number
+  target: number
+  met: boolean
+}
+
+export interface WritingTasteProfile {
+  status: WritingTasteProfileStatus
+  ready: boolean
+  generated_at: string
+  generated_from: 'personal_profile_graph'
+  scope: {
+    personal_space_id: string | null
+    personal_project_id: string | null
+  }
+  readiness: {
+    rule_count: number
+    evidence_count: number
+    session_count: number
+    observation_day_count: number
+    confirmed_rule_count: number
+    observed_rule_count: number
+    working_hypothesis_count: number
+    conflict_count: number
+    standard_path_ready: boolean
+    confirmed_path_ready: boolean
+    thresholds: {
+      rule_count: number
+      evidence_count: number
+      session_count: number
+      observation_day_count: number
+      confirmed_rule_count: number
+    }
+    criteria: WritingTasteReadinessCriterion[]
+  }
+  conflicts: Array<{
+    id: string
+    preference_key: string | null
+    item_ids: string[]
+    source: 'recorded' | 'same_key'
+  }>
+  rules: WritingTasteRule[]
+  skill_name: 'user-writing-taste' | null
+  skill_version: string | null
+  profile_markdown: string | null
+  agent_markdown: string | null
 }

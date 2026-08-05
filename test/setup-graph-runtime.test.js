@@ -6,6 +6,7 @@ import {
   ensureGraphRuntime,
   selectDockerEnvironment
 } from '../src/setup/graph-runtime.js';
+import { DEFAULT_CONVERSATION_LAUNCHERS } from '../src/system/runtime-settings.js';
 
 const PATHS = Object.freeze({
   dataDir: 'C:/Fuli',
@@ -122,6 +123,7 @@ test('personal-only setup starts and bootstraps only the local Provider', async 
     personal: {
       providerUrl: 'http://127.0.0.1:8787',
       accessToken: 'personal-token',
+      workflowObservationToken: 'personal-workflow-observation-token-123456',
       principalId: 'personal-user',
       spaceId: 'personal-space'
     },
@@ -143,7 +145,8 @@ test('setup applies every configured service port to Provider URLs and Compose e
       workspaceNeo4jBolt: 17688
     },
     lanAccess: false,
-    resourceRefreshSeconds: 10
+    resourceRefreshSeconds: 10,
+    conversationLaunchers: DEFAULT_CONVERSATION_LAUNCHERS
   };
   let environment = '';
   let savedSettings = null;
@@ -176,9 +179,47 @@ test('setup applies every configured service port to Provider URLs and Compose e
   assert.match(environment, /FULI_WORKSPACE_NEO4J_HTTP_PORT=17475/);
   assert.match(environment, /FULI_WORKSPACE_NEO4J_BOLT_PORT=17688/);
   assert.match(environment, /FULI_PERSONAL_PROVIDER_PORT=18787/);
+  assert.match(
+    environment,
+    /FULI_PERSONAL_WORKFLOW_OBSERVATION_TOKEN=/
+  );
+  assert.match(environment, /FULI_PERSONAL_HUMAN_REVIEW_TOKEN=/);
   assert.match(environment, /FULI_WORKSPACE_PROVIDER_PORT=18788/);
   assert.deepEqual(savedSettings, runtimeSettings);
   assert.equal(writtenConfig.personal.providerUrl, 'http://127.0.0.1:18787');
+});
+
+test('setup migrates an existing personal runtime onto the host observation capability', async () => {
+  let writtenConfig = null;
+  const secured = [];
+  await ensureGraphRuntime({
+    paths: PATHS,
+    personalSpaceName: '我',
+    personalOnly: true,
+    port: 2727,
+    noStart: true
+  }, dependencies({
+    readConfig() {
+      const old = configuredGraph();
+      delete old.personal.workflowObservationToken;
+      return old;
+    },
+    async fetch(url) {
+      if (url.endsWith('/health')) return response({ status: 'ready' });
+      throw new Error(`Unexpected Provider request: ${url}`);
+    },
+    writeConfig(_path, value) { writtenConfig = value; },
+    secureFile(path) { secured.push(path); }
+  }));
+
+  assert.equal(
+    writtenConfig.personal.workflowObservationToken,
+    'personal-workflow-observation-token-123456'
+  );
+  assert.deepEqual(secured, [
+    PATHS.graphEnvPath,
+    PATHS.graphRuntimeConfigPath
+  ]);
 });
 
 test('Docker setup falls back to Rancher Desktop when the default daemon is unavailable', () => {
@@ -384,6 +425,8 @@ function dependencies(overrides = {}) {
         'FULI_PERSONAL_NEO4J_PASSWORD=personal-db',
         'FULI_WORKSPACE_NEO4J_PASSWORD=workspace-db',
         'FULI_PERSONAL_BOOTSTRAP_TOKEN=personal-bootstrap',
+        'FULI_PERSONAL_HUMAN_REVIEW_TOKEN=personal-human-review-token-123456789',
+        'FULI_PERSONAL_WORKFLOW_OBSERVATION_TOKEN=personal-workflow-observation-token-123456',
         'FULI_WORKSPACE_BOOTSTRAP_TOKEN=workspace-bootstrap'
       ].join('\n');
     },
@@ -406,6 +449,7 @@ function configuredGraph() {
     personal: {
       providerUrl: 'http://127.0.0.1:8787',
       accessToken: 'personal-token',
+      workflowObservationToken: 'personal-workflow-observation-token-123456',
       principalId: 'personal-user',
       spaceId: 'personal-space'
     },

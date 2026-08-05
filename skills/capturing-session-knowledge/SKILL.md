@@ -103,13 +103,23 @@ IDs; never search every personal project, every subscription, or the whole graph
 Use the current repository, the user's wording, and `list_knowledge_spaces` to resolve scope.
 Ask if the active project remains ambiguous.
 
+FULI exposes read-only MCP resources for this selection flow. When the Agent host offers a FULI
+project or the global taste resource in its `@` mention picker and the user selects it, treat the
+resource's exact identifiers as explicit scope for the current task. Use the selected
+`personal_project_id` for project retrieval, or apply the global taste resource as a
+personal-global profile. A selected resource never authorizes searching another project,
+following `RELATED_TO`, or performing a write.
+
 The active child project may also retrieve only knowledge explicitly marked inheritable from
 projects reached through its outgoing `PART_OF` or `USES_KNOWLEDGE_FROM` relations. This means
 project-specific PRDs, configuration IDs, and debugging notes remain in the child, while a parent
 may own shared run, validation, and test runbooks. Search the child first, then authorized parents.
-Never inherit project-scoped personal preferences, never traverse `RELATED_TO`, stop after two
-hops, and retain the returned scope path. Exact active-project knowledge with the same stable key
-overrides an inherited item.
+Project-scoped personal preferences may enter the child context only when the preference is
+explicitly marked `descendants`, or `selected_projects` includes that exact active child, and the
+parent is reached through `PART_OF` or `USES_KNOWLEDGE_FROM`. Never inherit `local_only`, never
+traverse `RELATED_TO`, stop after two hops, and retain the returned scope path. Confirmation
+authority is a hard gate before scope distance; within the same authority layer the nearest scope
+wins, while equal-layer conflicting instructions remain deferred and weight cannot choose a winner.
 
 After a retrieved personal item materially affects the final answer or a completed action, call
 `record_knowledge_usage` once for that task and item with `cited` or `applied`. Do not record
@@ -117,6 +127,20 @@ retrieval, inspection, automatic preference injection, or unused context. Usage 
 promote only to `agent_confirmed`; it never substitutes for human confirmation or makes an item
 eligible for public publication. Use the current user task's caller-stable identifier as
 `taskId` and reuse it on retries; never generate another ID to recount the same task.
+
+## Use the Generated Taste Skill
+
+When a UI, writing, product, architecture, code, or other judgment call would benefit from the
+person's established taste, call `get_user_taste_skill` with the current working directory and
+current task prompt. It returns a bounded, read-only `user-taste` Skill projection built from
+effective personal preferences and task-matched recommendations. Apply the current request and
+authoritative constraints first; treat `Confirmed` and `Observed` evidence differently; preserve
+project scope; and explain the matching preference and material tradeoff when recommending.
+
+The projection is regenerated from the durable graph as preferences are added or revised, so it
+can grow over time without copying or overwriting a user-authored `user-taste/SKILL.md`. Never
+promote a pending inference in the generated Skill and never treat the projection itself as new
+knowledge to capture.
 
 The current `agent-usage-v1` policy requires at least five idempotent material-use events across
 at least three distinct tasks in the current content generation, with no open knowledge or
@@ -248,8 +272,11 @@ the personal-global graph without `personalProjectId`:
 
 When the user explicitly limits one preference to a project, keep `profileAspect` and capture
 it with that exact `personalProjectId`; this makes the preference project-scoped without
-turning it into public project knowledge. Use `set_personal_preference_scope` when the user
-later changes the scope. Never put any personal-profile item into a public proposal.
+turning it into public project knowledge. The Agent has no direct scope-write tool. Safe
+narrowing from global to one exact project belongs to a trusted local UI; any broader parent or
+personal global scope must use preference convergence, with an explicit target and a Provider
+`HumanReviewer` channel behind trusted local user-presence. Never put any personal-profile item
+into a public proposal.
 For a preference that may have both global and project-specific forms, store a stable
 `attributes.preferenceKey` on each form so the project value can explicitly override the same
 global decision without hiding unrelated preferences.

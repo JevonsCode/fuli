@@ -5,6 +5,8 @@ import {
   startLocalRuntime,
   stopLocalRuntime
 } from '../local-runtime/lifecycle.js';
+import { discoverAgents } from '../setup/agents.js';
+import { inspectAgentInstallations } from '../setup/agent-installation-status.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import {
   DEFAULT_RUNTIME_SETTINGS,
@@ -43,15 +45,28 @@ export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
     status: dependencies.inspect ?? inspectLocalRuntime,
     open: dependencies.openConsole ?? openLocalConsole
   };
+  const agentSetupCheck = command === 'start'
+    ? checkAgentSetup({
+      paths,
+      env,
+      nodePath: dependencies.nodePath ?? process.execPath,
+      discover: dependencies.discoverAgents ?? discoverAgents,
+      inspect: dependencies.inspectAgentInstallations ?? inspectAgentInstallations
+    })
+    : null;
   const result = await handlers[command](input, dependencies.lifecycleDependencies);
+  const outputResult = agentSetupCheck
+    ? { ...result, agentSetupCheck }
+    : result;
 
   if (command === 'status' && options.json) {
-    write(JSON.stringify(result, null, 2));
+    write(JSON.stringify(outputResult, null, 2));
   } else {
-    write(formatLocalRuntimeResult(command, result));
+    write(formatLocalRuntimeResult(command, outputResult));
   }
   return {
     ...result,
+    ...(agentSetupCheck ? { agentSetupCheck } : {}),
     exitCode: command === 'status' && result.status !== 'running'
       ? 1
       : result.status === 'partial' ? 1 : 0
@@ -86,6 +101,8 @@ export function formatLocalRuntimeResult(command, result) {
 
 function formatStartedRuntime(title, result) {
   const lines = [title, `Management UI: ${result.url}`];
+  const agentSetupNotice = formatAgentSetupNotice(result.agentSetupCheck);
+  if (agentSetupNotice) lines.push(agentSetupNotice);
   if (result.lan === true) {
     lines.push(
       'LAN URLs:',
@@ -96,6 +113,56 @@ function formatStartedRuntime(title, result) {
     );
   }
   return lines.join('\n');
+}
+
+function checkAgentSetup({ paths, env, nodePath, discover, inspect }) {
+  try {
+    const agents = discover({ env }).filter(({ available }) => available);
+    if (!agents.length) return { status: 'checked', agents: [] };
+    const inspected = inspect(agents, {
+      nodePath,
+      mcpServerPath: paths.mcpServerPath,
+      runtimeConfigPath: paths.graphRuntimeConfigPath,
+      sessionSkillPath: paths.sessionSkillPath,
+      projectSkillPath: paths.projectSkillPath,
+      reviewSkillPath: paths.reviewSkillPath
+    });
+    return {
+      status: 'checked',
+      agents: inspected.filter(({ integrationStatus }) => integrationStatus !== 'connected')
+    };
+  } catch {
+    return { status: 'unavailable', agents: [] };
+  }
+}
+
+function formatAgentSetupNotice(check) {
+  if (!check) return null;
+  if (check.status === 'unavailable') {
+    return [
+      'Could not verify Agent integrations.',
+      'Run `fuli setup` to verify and update them.'
+    ].join('\n');
+  }
+  if (!check.agents.length) return null;
+  return [
+    'Agent setup required:',
+    ...check.agents.map((agent) => `  ${agent.label}: ${agentNeedsSetup(agent)}`),
+    'Run `fuli setup` to install or update them.'
+  ].join('\n');
+}
+
+function agentNeedsSetup(agent) {
+  const detailLabels = {
+    mcp: 'MCP',
+    skills: 'Skills',
+    bootstrap: 'Bootstrap',
+    lifecycleHooks: 'Lifecycle hooks'
+  };
+  const outdated = Object.entries(agent.integrationDetails ?? {})
+    .filter(([, status]) => status !== 'current')
+    .map(([key, status]) => `${detailLabels[key] ?? key}: ${status}`);
+  return outdated.join(', ') || 'integration update available';
 }
 
 function formatStatus(result) {

@@ -12,7 +12,11 @@ from .models import (
 from .knowledge_audit import read_knowledge_audits
 from .knowledge_records import assignment_record, revision_record
 from .personal_project_access import authorize_personal_project
-from .provider_values import json_object, native_datetime as _native_datetime
+from .provider_values import (
+    json_object,
+    native_datetime as _native_datetime,
+    preference_qualifiers,
+)
 from .project_knowledge import (
     read_knowledge_conflicts,
     read_personal_project_relations,
@@ -239,6 +243,7 @@ def _node_query(project_scoped: bool, paginated: bool = False) -> str:
                node.fuli_last_feedback_at AS last_feedback_at,
                coalesce(node.fuli_usage_generation, 1) AS usage_generation,
                coalesce(node.fuli_attributes_json, '{}') AS attributes_json,
+               coalesce(node.fuli_key, node.uuid) AS key,
                [episode IN episodes WHERE episode IS NOT NULL | episode.uuid] AS episodes,
                node.created_at AS created_at,
                node.fuli_invalid_at AS invalid_at,
@@ -358,6 +363,7 @@ def _edge_query(project_scoped: bool, paginated: bool = False) -> str:
                edge.created_at AS created_at,
                edge.fuli_confidence AS confidence,
                coalesce(edge.fuli_attributes_json, '{}') AS attributes_json,
+               coalesce(edge.fuli_key, edge.uuid) AS key,
                coalesce(edge.episodes, []) AS episodes
         ORDER BY created_at DESC, id DESC
     ''' + pagination
@@ -467,12 +473,21 @@ def _graph_node(
     status, basis, confidence, confirmation_explicit = _confirmation_projection(
         record
     )
+    attributes = json_object(record.get('attributes_json'))
     return GraphNode(
         id=record['id'],
         name=record['name'],
         type=record['type'],
         group_id=record['group_id'],
         summary=record['summary'],
+        key=record.get('key') or record['id'],
+        preference_key=(
+            attributes.get('preferenceKey')
+            or attributes.get('preference_key')
+            or record.get('key')
+            or record['id']
+        ),
+        preference_qualifiers=preference_qualifiers(attributes),
         origin_quadrant=record.get('origin_quadrant') or 'known_known',
         current_quadrant=record.get('current_quadrant') or 'known_known',
         epistemic_status=record.get('epistemic_status') or 'confirmed',
@@ -510,7 +525,7 @@ def _graph_node(
         last_feedback_kind=record.get('last_feedback_kind'),
         last_feedback_at=_native_datetime(record.get('last_feedback_at')),
         usage_generation=int(record.get('usage_generation') or 1),
-        attributes=json_object(record.get('attributes_json')),
+        attributes=attributes,
         evidence=[evidence[item] for item in episode_ids if item in evidence],
         created_at=_native_datetime(record.get('created_at')),
         invalid_at=_native_datetime(record.get('invalid_at')),
@@ -537,6 +552,7 @@ def _graph_edge(
     status, basis, confidence, confirmation_explicit = _confirmation_projection(
         record
     )
+    attributes = json_object(record.get('attributes_json'))
     return GraphEdge(
         id=record['id'],
         source=record['source'],
@@ -545,6 +561,14 @@ def _graph_edge(
         target_name=record.get('target_name'),
         type=record['type'],
         fact=record['fact'],
+        key=record.get('key') or record['id'],
+        preference_key=(
+            attributes.get('preferenceKey')
+            or attributes.get('preference_key')
+            or record.get('key')
+            or record['id']
+        ),
+        preference_qualifiers=preference_qualifiers(attributes),
         origin_quadrant=record.get('origin_quadrant') or 'known_known',
         current_quadrant=record.get('current_quadrant') or 'known_known',
         epistemic_status=record.get('epistemic_status') or 'confirmed',
@@ -588,7 +612,7 @@ def _graph_edge(
         replaced_by_item_kind=record.get('replaced_by_item_kind'),
         created_at=_native_datetime(record.get('created_at')),
         confidence=record.get('confidence'),
-        attributes=json_object(record.get('attributes_json')),
+        attributes=attributes,
         episodes=episode_ids,
         evidence=[evidence[item] for item in episode_ids if item in evidence],
         revisions=revisions.get(record['id'], []),

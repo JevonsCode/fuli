@@ -10,6 +10,7 @@ from .provider_values import (
     json_object,
     native_datetime as _native_datetime,
     normalized_text as _normalized,
+    preference_qualifiers,
 )
 from .search_projection import (
     effective_confirmation_status,
@@ -255,6 +256,8 @@ async def personal_project_scopes(
         WHERE all(
           relation IN relationships(path)
           WHERE relation.relation_type IN ['PART_OF', 'USES_KNOWLEDGE_FROM']
+            AND relation.status = 'active'
+            AND relation.confirmation_authority = 'human_review'
         )
           AND EXISTS {
             MATCH (space)-[:CONTAINS_PROJECT]->(source)
@@ -634,6 +637,14 @@ def _dedupe_ranked_entities(ranked, active_project_id):
 
 def _entity_search_result(record, score: float, space_id: str) -> EntitySearchResult:
     value = dict(record)
+    attributes = json_object(value.get('attributes_json'))
+    value['preference_key'] = (
+        attributes.get('preferenceKey')
+        or attributes.get('preference_key')
+        or value.get('key')
+        or value.get('id')
+    )
+    value['preference_qualifiers'] = preference_qualifiers(attributes)
     basis = json_object(value.pop('confirmation_basis_json', None))
     source_references = value.pop('source_references', [])
     created_at = _native_datetime(value.pop('created_at', None))

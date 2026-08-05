@@ -7,6 +7,9 @@ export const routeMessages = {
       title: '协作偏好',
       description: '个人全局与项目级的品味、个性和判断偏好，只保存在本机。',
     },
+    writingTaste: {
+      title: '写作偏好',
+    },
     personalProjects: {
       title: '个人项目',
       description: '本机私有项目、项目知识与按任务生效的协作偏好。',
@@ -43,6 +46,9 @@ export const routeMessages = {
     preferences: {
       title: 'Collaboration preferences',
       description: 'Global and project-specific taste, personality, and judgment preferences stored only on this device.',
+    },
+    writingTaste: {
+      title: 'Writing taste',
     },
     personalProjects: {
       title: 'Personal projects',

@@ -14,14 +14,15 @@
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="license" /></a>
 </p>
 
-Fuli is a local-first collaboration context graph for AI agents. It turns reusable knowledge,
-experience, decision rationale, and preferences from human–AI project work into assets with
-provenance, scope, authority, and temporal history. Codex, Claude Code, and Cursor can then reuse
-those assets in later tasks instead of relearning the same context.
+Fuli is a local-first collaboration relationship graph for AI agents. Continued human–Agent
+dialogue gradually connects projects, people, decisions, preferences, workflow steps, and evidence.
+Those nodes may point to Fuli-local content, an external knowledge base, or another data source.
+Codex, Claude Code, and Cursor can then reuse the taste, personality, judgment preferences, and
+working methods formed through that collaboration.
 
-Fuli is not a transcript archive, and it is not an attempt to build a personality model that
-replaces human judgment. AI retrieves, summarizes, warns, and executes; humans retain final
-authority.
+Fuli is not a transcript archive or a knowledge base whose goal is to collect more documents, and
+it is not an attempt to build a personality model that replaces human judgment. AI retrieves,
+summarizes, warns, and executes; humans retain final authority.
 
 ## npm packages
 
@@ -69,10 +70,11 @@ preview followed by an explicit, one-time, atomic action.
 ### 4. Assemble context, then retrieve evidence on demand
 
 Fuli does not inject the complete history at session start. The entry step always loads effective
-personal-global preferences and preferences from one exactly matched project. When the current task
-signals that a stable prior fact, method, URL, decision, release, deployment, or authentication
-runbook may matter, the same step also performs a small bounded recall from that project and its
-authorized knowledge sources. The agent uses focused on-demand search when more evidence is needed.
+personal-global preferences, preferences from one exactly matched project, and explicitly
+propagating preferences from authorized parent projects. When the current task signals that a
+stable prior fact, method, URL, decision, release, deployment, or authentication runbook may matter,
+the same step also performs a small bounded recall from that project and its authorized knowledge
+sources. The agent uses focused on-demand search when more evidence is needed.
 Retrieval alone is not usage; a usage event is recorded only when an item materially affects an
 answer, implementation, or decision.
 
@@ -96,12 +98,18 @@ Activity platform (parent: shared runbooks)
 
 When an agent works in the hotel project, it searches hotel-local knowledge first, then follows
 explicit outgoing `PART_OF` or `USES_KNOWLEDGE_FROM` relationships to authorized sources, up to two
-hops. A child item with the same stable key overrides an inherited item. Generic `RELATED_TO`
-relationships do not expand scope, and project-scoped personal preferences are not inherited.
+hops. A child item with the same stable key overrides an inherited item. Project-scoped personal
+preferences remain exact by default; only preferences explicitly marked `descendants` or
+`selected_projects` may propagate over the same authorized relationships, with origin project,
+path, and distance preserved. Equally near parent conflicts require human judgment and are never
+resolved by weight. Generic `RELATED_TO` relationships do not expand scope automatically; search
+returns only a one-time read-only expansion suggestion that the Agent must ask the user to approve.
 
-Similar items from multiple children create only a common-knowledge candidate. Current clustering
-is a lexical heuristic, not proof of semantic equivalence. A human must select the canonical item,
-duplicates, parent project, and rationale before an atomic promotion can occur.
+Similar items from multiple children create only a common-knowledge candidate. A shared preference
+across projects without one common parent likewise creates only a personal-global candidate while
+preserving each source text, qualifier, and provenance. Current clustering is a lexical heuristic,
+not proof of semantic equivalence. A human must choose the content, scope, and rationale before it
+can apply.
 
 ### 7. Local first; no personal model in the shared layer
 
@@ -109,6 +117,136 @@ The personal graph stays local by default. Fuli stores structured reusable knowl
 transcripts, credentials, temporary logs, or command output. The team-shared layer contains only
 confirmed project or domain knowledge with context and provenance—not personal taste, personality,
 or judgment preferences.
+
+## Practical use: classification, scope, project resolution, and retrieval
+
+### Decide what to store before deciding where to store it
+
+Content type and effective scope are independent dimensions. The first three rows are personal
+collaboration preferences and carry a `profileAspect`. Project facts have no `profileAspect` and do
+not appear on the Personal preferences page.
+
+| Type | What belongs here | Example |
+| --- | --- | --- |
+| Taste (`taste`) | Outcomes, styles, and quality directions the user explicitly likes or rejects across UI, writing, product, architecture, or engineering work | “Use fewer large gradients and avoid cards nested inside cards.” |
+| Personality (`personality`) | A stable working or collaboration trait explicitly described by the user | “I communicate directly and want the Agent to move work forward proactively.” |
+| Judgment preference (`judgment_preference`) | Decision conditions, priorities, risk posture, and operational boundaries used when making trade-offs | “Discuss directional ambiguity first; never `git push` without explicit authorization.” |
+| Project knowledge | Reusable objective facts, terminology, requirements, routes, APIs, architecture, rationale, and runbooks | “A GitHub Release triggers Fuli's npm publication.” |
+
+Four questions provide a quick classifier: “What outcome do I want?” is taste; “How do I work over
+the long term?” is personality; “How do I decide under a trade-off?” is judgment preference; and
+“How does this system objectively work?” is project knowledge. One-off commands, temporary output,
+unverified guesses, raw chat, and credentials are not retained.
+
+Personality is not a catch-all category for everything learned about a person. Only an explicit,
+stable self-description can be confirmed with a human basis. A personality inferred by an Agent
+from one behavior must remain `pending`; it cannot masquerade as human-confirmed. An empty
+Personality filter on `/preferences` therefore usually means there is no qualifying item in the
+selected scope, not that capture failed. “Keep copy concise” is more likely taste, while “do not
+push without authorization” is more likely a judgment preference. To make the intent explicit,
+say: `This is a long-term collaboration trait; save it as a personal-global personality preference: I communicate directly.` An Agent-inferred candidate can be confirmed, corrected, or invalidated
+by the user from `/preferences` or `/flreview`.
+
+### Personal-global, project-scoped, and shared
+
+| Scope | When to use it | Key write fields | Retrieval rule |
+| --- | --- | --- | --- |
+| Personal-global preference | The behavior should remain the same in unrelated projects | `targetKind: "personal"`; omit `personalProjectId`; set `profileAspect` | Loaded for every task |
+| Project-scoped personal preference | The collaboration behavior belongs to one project or project family | Same fields plus the exact `personalProjectId`; default to `local_only` and never inherited by child projects; explicitly use `descendants` or `selected_projects` when propagation is intended | Exact project wins; propagation follows only the explicit inheritance mode and authorized relationships, and score never resolves a conflict automatically |
+| Project knowledge | A fact belongs to one project or to a designated parent/source project | `targetKind: "personal"`; set `personalProjectId`; omit `profileAspect` | Search the current project first, then authorized `PART_OF` / `USES_KNOWLEDGE_FROM` sources up to two hops |
+| Team-shared knowledge | Human-confirmed project or domain knowledge genuinely needed by a team | `targetKind: "project"` after preview/review | Visible only from explicitly selected or subscribed public projects; personal preferences never enter this layer |
+
+To choose a preference scope, ask: **Should this change the Agent's behavior in a completely
+unrelated project?** If yes, use personal-global. If it applies only to Fuli, use a project-scoped
+preference. If it applies to a project family, keep it project-scoped and explicitly choose whether
+it may propagate to descendants. Do not turn an objective project fact into a personal-global item
+merely because more than one project may reuse it. Put it in an explicit parent or knowledge-source
+project and add a directional authorization relation. When global and project-scoped variants have
+the same stable `attributes.preferenceKey`, human/source confirmation authority is resolved first;
+at equal authority, the exact project variant overrides the global one.
+
+### How Fuli identifies the current project
+
+Fuli matches only stable `project_id` values already registered under Personal projects; it does
+not guess from fuzzy directory similarity. Normally the `project_id` matches the repository
+directory name, so `/workspace/fuli` maps to `fuli`. Standard calls pass only the current working
+directory, and resolution follows this order:
+
+1. Find the nearest Git repository root and match its directory name exactly to a registered
+   `project_id`.
+2. For a Codex worktree, recover the original repository ID from its `.git` pointer.
+3. Match the current directory name exactly to a registered project ID.
+4. At a workspace root, match one registered direct child only when exactly one child contains
+   `.git`, `package.json`, `pyproject.toml`, `Cargo.toml`, or `go.mod`.
+5. Multiple candidates return `ambiguous`; no candidate returns `unmatched`. Neither state applies
+   project preferences or guesses a project.
+
+For an unregistered repository with an unambiguous identity, the installed capture skill may call
+`upsert_personal_project` before the first project-scoped write to create a minimal local private
+project. It never creates or subscribes to a public project automatically. If a workspace has
+multiple candidates, run the Agent from the exact project directory or explicitly register and
+select the project first.
+
+### Which tool the Agent calls and when
+
+Normal use does not require manual MCP calls: submit a task to the Agent from the project directory.
+The Claude Code hook calls `begin_task_context`; Codex and Cursor prompt fallback call the following
+once at the start of each task:
+
+```json
+{
+  "tool": "get_collaboration_preferences",
+  "arguments": {
+    "projectPath": "/workspace/fuli",
+    "taskPrompt": "Fix npm publishing and reuse this project's existing release conventions."
+  }
+}
+```
+
+The important part of a matched response resembles:
+
+```json
+{
+  "context": {
+    "personal_project_id": "fuli",
+    "project_resolution": {
+      "status": "matched",
+      "basis": "repository_root",
+      "personal_project_id": "fuli"
+    }
+  },
+  "effective_preferences": ["personal-global preferences + exact fuli preferences"]
+}
+```
+
+If entry-time `task_knowledge_recall` did not answer a stable project fact, search with one to four
+short queries centered on an action, artifact, target system, or identifier. Do not use the full
+user request verbatim as the only query:
+
+```json
+{
+  "tool": "search_current_project_knowledge",
+  "arguments": {
+    "projectPath": "/workspace/fuli",
+    "queries": ["npm publication runbook", "GitHub Release trigger"],
+    "includePending": false
+  }
+}
+```
+
+At task end, hook mode calls `checkpoint_task_knowledge`: use `capture_candidates` only for a small,
+durable, evidence-backed batch; otherwise use `retain_nothing`. A prompt-fallback Agent applies the
+same rule and writes through `capture_session_knowledge`. Personal preferences set the correct
+`profileAspect` and stable `attributes.preferenceKey`; project facts omit `profileAspect`. If
+automatic capture is disabled under Settings, writes return `capture_disabled` and no category is
+created.
+
+Run these local contract tests to check that the README and project-path behavior still match the
+implementation:
+
+```bash
+npm run test:node -- test/acceptance-docs.test.js test/project-path-context.test.js
+```
 
 ## Agent interaction sequence
 
@@ -321,7 +459,7 @@ system locale. User data such as paths and space names is displayed unchanged.
 | `fuli --help` / `fuli -h` | List every public command and its available options |
 | `fuli --version` / `fuli -v` | Print the installed Fuli CLI version |
 | `fuli setup [options]` | Initialize the Provider, UI, agent integrations, and Skills; safe to rerun |
-| `fuli start [options]` | Start the Provider and UI, optionally opening a browser, rebuilding containers, or enabling LAN access |
+| `fuli start [options]` | Check Agent integrations, then start the Provider and UI; optionally open a browser, rebuild containers, or enable LAN access |
 | `fuli stop [--data-dir DIR]` | Stop services without deleting data |
 | `fuli restart [options]` | Restart local services using the same runtime options as `start` |
 | `fuli status [--json] [--data-dir DIR] [--port PORT]` | Show UI, personal graph, and shared-service status; `--json` emits machine-readable output |
@@ -345,6 +483,9 @@ are used. LAN mode listens on private IPv4 addresses and prints the reachable UR
 `fuli` username, and a temporary access code generated for that start. The default remains
 loopback-only; internal Providers and Neo4j ports are never exposed by `--lan`. LAN mode uses
 HTTP Basic Auth and is intended only for trusted home or office Wi-Fi, not public deployment.
+Before starting, `fuli start` performs a read-only check of detected Agent MCP, Skill, Codex bootstrap,
+and Claude lifecycle integrations. If any are missing or outdated, it still starts the local services
+and tells you to run `fuli setup`; it never applies setup changes implicitly.
 
 `setup` and `update` accept:
 
@@ -390,10 +531,21 @@ Claude Code uses `UserPromptSubmit` and `Stop` hooks for the task lifecycle. Cod
 `AGENTS.md` and Cursor instructions use prompt fallback. Preference content remains in local Fuli as
 the single source of truth and is not copied into agent configuration.
 
+FULI also exposes read-only `fuli://` resources for each local personal project and for global taste.
+Agents with MCP mention support can select them from the `@` picker; a project resource selects one
+exact project and never expands the search to other projects or `RELATED_TO` projects.
+
+When a task needs a taste or judgment recommendation, `get_user_taste_skill` generates a bounded,
+read-only `user-taste` Skill projection from the effective personal profile and prior task data.
+The projection labels evidence status and scope, returns task-matched recommendations, and is
+regenerated as preferences are added or revised. It never overwrites a user-authored taste Skill;
+the durable graph remains the source of truth.
+
 | Tool | Purpose |
 | --- | --- |
 | `begin_task_context` | Hook entry: resolve the task, run bounded recall when signaled, and create a task token |
 | `get_collaboration_preferences` | Fallback entry: read effective preferences and bounded task recall |
+| `get_user_taste_skill` | Generate the current evidence-labeled taste Skill projection and task recommendations |
 | `search_current_project_knowledge` | Search the child first, then authorized knowledge sources |
 | `search_knowledge_graph` | Run a general query within an explicit bounded scope |
 | `search_connected_knowledge` | Search the graph, project-bound read-only sources, and selected public projects without merging provenance |

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { runLocalRuntimeCommand } from '../src/cli/local-runtime-command.js';
 import { parseLocalRuntimeOptions } from '../src/cli/local-runtime-options.js';
+import { DEFAULT_CONVERSATION_LAUNCHERS } from '../src/system/runtime-settings.js';
 
 test('local runtime options leave persisted port and LAN defaults unresolved', () => {
   assert.deepEqual(parseLocalRuntimeOptions('start', ['--open']), {
@@ -46,6 +47,7 @@ test('fl start prints one stable local console address', async () => {
   const output = [];
   await runLocalRuntimeCommand('start', [], {
     resolvePaths: () => ({ dataDir: 'C:/Fuli' }),
+    discoverAgents: () => [],
     start: async () => ({
       status: 'started',
       url: 'http://127.0.0.1:2727',
@@ -58,6 +60,42 @@ test('fl start prints one stable local console address', async () => {
   assert.match(output[0], /Fuli local services started/);
   assert.match(output[0], /http:\/\/127\.0\.0\.1:2727/);
   assert.doesNotMatch(output[0], /[\p{Script=Han}]/u);
+});
+
+test('fl start tells the user to run setup when an Agent integration is outdated', async () => {
+  const output = [];
+  const result = await runLocalRuntimeCommand('start', [], {
+    resolvePaths: () => ({
+      dataDir: 'C:/Fuli',
+      mcpServerPath: 'C:/Package/src/mcp-server.js',
+      graphRuntimeConfigPath: 'C:/Fuli/graph-runtime.json',
+      sessionSkillPath: 'C:/Package/skills/capturing-session-knowledge',
+      projectSkillPath: 'C:/Package/skills/grilling-project',
+      reviewSkillPath: 'C:/Package/skills/flreview'
+    }),
+    discoverAgents: () => [{ id: 'codex', label: 'Codex', available: true }],
+    inspectAgentInstallations: () => [{
+      id: 'codex',
+      label: 'Codex',
+      integrationStatus: 'update_available',
+      integrationDetails: {
+        mcp: 'outdated',
+        skills: 'current',
+        bootstrap: 'outdated'
+      }
+    }],
+    start: async () => ({
+      status: 'started',
+      url: 'http://127.0.0.1:2727',
+      pid: 27
+    }),
+    write: (line) => output.push(line)
+  });
+
+  assert.equal(result.agentSetupCheck.status, 'checked');
+  assert.match(output[0], /Agent setup required/);
+  assert.match(output[0], /Codex: MCP: outdated, Bootstrap: outdated/);
+  assert.match(output[0], /Run `fuli setup` to install or update them/);
 });
 
 test('fl restart applies persisted ports and LAN settings when CLI overrides are absent', async () => {
@@ -74,7 +112,8 @@ test('fl restart applies persisted ports and LAN settings when CLI overrides are
       workspaceNeo4jBolt: 17688
     },
     lanAccess: true,
-    resourceRefreshSeconds: 10
+    resourceRefreshSeconds: 10,
+    conversationLaunchers: DEFAULT_CONVERSATION_LAUNCHERS
   };
   await runLocalRuntimeCommand('restart', [], {
     resolvePaths: () => ({
@@ -108,6 +147,7 @@ test('fl start --lan prints protected LAN addresses and the temporary access cod
   const output = [];
   await runLocalRuntimeCommand('start', ['--lan'], {
     resolvePaths: () => ({ dataDir: 'C:/Fuli' }),
+    discoverAgents: () => [],
     start: async (input) => {
       assert.equal(input.lan, true);
       return {

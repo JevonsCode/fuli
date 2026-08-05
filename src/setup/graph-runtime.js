@@ -79,7 +79,9 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     deps.secureFile(input.paths.graphRuntimeConfigPath);
   } else {
     const synchronized = synchronizeManagedProviderUrls(config, urls, {
-      personalOnly: input.personalOnly === true
+      personalOnly: input.personalOnly === true,
+      workflowObservationToken:
+        secrets.FULI_PERSONAL_WORKFLOW_OBSERVATION_TOKEN
     });
     if (synchronized.changed) {
       await reconcileManagedWorkspaceSubscriptions({
@@ -154,6 +156,10 @@ function ensureProviderEnvironment(path, settings, deps) {
     FULI_PERSONAL_NEO4J_PASSWORD: previous.FULI_PERSONAL_NEO4J_PASSWORD ?? secret(),
     FULI_WORKSPACE_NEO4J_PASSWORD: previous.FULI_WORKSPACE_NEO4J_PASSWORD ?? secret(),
     FULI_PERSONAL_BOOTSTRAP_TOKEN: previous.FULI_PERSONAL_BOOTSTRAP_TOKEN ?? secret(),
+    FULI_PERSONAL_HUMAN_REVIEW_TOKEN:
+      previous.FULI_PERSONAL_HUMAN_REVIEW_TOKEN ?? secret(),
+    FULI_PERSONAL_WORKFLOW_OBSERVATION_TOKEN:
+      previous.FULI_PERSONAL_WORKFLOW_OBSERVATION_TOKEN ?? secret(),
     FULI_WORKSPACE_BOOTSTRAP_TOKEN: previous.FULI_WORKSPACE_BOOTSTRAP_TOKEN ?? secret(),
     FULI_PERSONAL_NEO4J_HTTP_PORT: String(settings.ports.personalNeo4jHttp),
     FULI_PERSONAL_NEO4J_BOLT_PORT: String(settings.ports.personalNeo4jBolt),
@@ -186,6 +192,8 @@ async function bootstrapGraph({ urls, personalSpaceName, secrets, personalOnly, 
     personal: {
       providerUrl: urls.personal,
       accessToken: personalIdentity.access_token,
+      workflowObservationToken:
+        secrets.FULI_PERSONAL_WORKFLOW_OBSERVATION_TOKEN,
       principalId: personalIdentity.principal_id,
       spaceId: personalSpace.id
     },
@@ -224,10 +232,20 @@ async function bootstrapGraph({ urls, personalSpaceName, secrets, personalOnly, 
   return config;
 }
 
-export function synchronizeManagedProviderUrls(config, urls, { personalOnly = true } = {}) {
+export function synchronizeManagedProviderUrls(config, urls, {
+  personalOnly = true,
+  workflowObservationToken = null
+} = {}) {
   const next = structuredClone(config);
   let changed = next.personal?.providerUrl !== urls.personal;
   next.personal.providerUrl = urls.personal;
+  if (
+    nonEmpty(workflowObservationToken) &&
+    next.personal.workflowObservationToken !== workflowObservationToken
+  ) {
+    next.personal.workflowObservationToken = workflowObservationToken;
+    changed = true;
+  }
   if (!personalOnly) {
     for (const workspace of next.workspaces ?? []) {
       if (!isManagedWorkspace(workspace)) continue;

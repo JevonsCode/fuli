@@ -6,7 +6,7 @@ import {
   sourceConsoleUrl
 } from '../src/graphiti/source-marker.js';
 
-test('matched Fuli source marker uses terminal-safe Markdown deep links', () => {
+test('matched Fuli source marker uses terminal-safe history deep links', () => {
   const marker = createFuliSourceMarker({
     consoleUrl: 'http://127.0.0.1:4545',
     facts: [{
@@ -30,13 +30,13 @@ test('matched Fuli source marker uses terminal-safe Markdown deep links', () => 
   assert.match(marker.leadMarkdown, /^\*\*\[🌠 FULI · 知识增强\]/);
   assert.match(
     marker.leadMarkdown,
-    /http:\/\/127\.0\.0\.1:4545\/#\/knowledge\/personal\/personal-space\/relationship\/relationship-1/
+    /http:\/\/127\.0\.0\.1:4545\/knowledge\/personal\/personal-space\/directory\/relationship\/relationship-1/
   );
   assert.equal(marker.markdown, [
     '**FULI 来源 · 2 条**',
     '',
-    '- [需求 → 实现](http://127.0.0.1:4545/#/knowledge/personal/' +
-      'personal-space/relationship/relationship-1)',
+    '- [需求 → 实现](http://127.0.0.1:4545/knowledge/personal/' +
+      'personal-space/directory/relationship/relationship-1)',
     '- 另有 1 条命中，可在 Fuli 中查看'
   ].join('\n'));
   assert.doesNotMatch(marker.markdown, /<\/?(?:details|summary)>/i);

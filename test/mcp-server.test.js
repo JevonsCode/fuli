@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 
+import { ApplicationError } from '../src/app/application-error.js';
 import { listAgentTools } from '../src/agent-tools.js';
 import { annotationsFor } from '../src/mcp/tool-annotations.js';
 import { jsonSchemaToZod } from '../src/mcp/tool-schema.js';
+import { errorToolResult } from '../src/mcp/tool-result.js';
 import { createCloseOnce } from '../src/mcp/runtime.js';
 
 test('--tools lists the Graphiti registry without requiring a runtime config', () => {
@@ -45,6 +47,18 @@ test('MCP annotations distinguish reads, writes, and review decisions', () => {
   assert.equal(annotationsFor('review_project_proposal').destructiveHint, true);
 });
 
+test('controlled Provider validation errors keep the actionable reason', () => {
+  const result = errorToolResult(new ApplicationError(
+    'provider_error',
+    'body.episode.entities[0]: non-known-known knowledge requires a reasoning summary'
+  ));
+
+  assert.equal(result.structuredContent.error.message,
+    'body.episode.entities[0]: ' +
+    'non-known-known knowledge requires a reasoning summary');
+  assert.equal(result.isError, true);
+});
+
 test('close-once runtime closes MCP before the graph facade exactly once', async () => {
   const calls = [];
   const close = createCloseOnce({
@@ -62,6 +76,10 @@ function sampleValue(schema) {
     return schema.format === 'date-time' ? '2026-07-21T10:00:00.000Z' :
       schema.pattern === '^[A-Z][A-Z0-9_]*$' ? 'RELATES_TO' :
         schema.pattern === '^[A-Za-z][A-Za-z0-9_]*$' ? 'Entity' :
+          schema.pattern === '^personal-global-[a-f0-9]{20}$' ?
+            'personal-global-0123456789abcdef0123' :
+            schema.pattern === '^v1:[a-f0-9]{24}$' ?
+              'v1:0123456789abcdef01234567' :
           schema.pattern === '^(entity|relationship):.+' ? 'entity:valid-value' :
           'valid-value';
   }

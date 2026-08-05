@@ -48,6 +48,20 @@ test('system settings distinguish immediately applied refresh changes from resta
   });
   assert.equal(refreshOnly.restartRequired, false);
 
+  const launcherOnly = service.updateSettings({
+    ...configured,
+    conversationLaunchers: {
+      ...configured.conversationLaunchers,
+      cursor: {
+        enabled: true,
+        idFormat: 'any',
+        appName: 'Cursor',
+        urlTemplate: 'cursor://conversation/{id}'
+      }
+    }
+  });
+  assert.equal(launcherOnly.restartRequired, false);
+
   const changedPort = service.updateSettings({
     ...configured,
     ports: { ...configured.ports, console: 3030 }

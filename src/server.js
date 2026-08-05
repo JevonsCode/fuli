@@ -66,7 +66,6 @@ export async function createServer(options = {}) {
         activeLan: lanEnabled
       })
     : null);
-
   for (let attempt = 0; attempt < 20; attempt += 1) {
     let authority = null;
     let allowedLanAuthorities = [];

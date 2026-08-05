@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from fuli_graph.graph_projection import (
     coalesce_personal_project_identities,
     coalesce_personal_project_identity,
@@ -48,6 +50,64 @@ def test_personal_projects_are_connected_to_the_personal_space_root():
     assert edges[0].target == 'personal-project:project-node-1'
     assert edges[0].type == 'CONTAINS_PROJECT'
     assert nodes[1].attributes['projectId'] == 'hotel-theme'
+
+
+def test_personal_relation_projection_exposes_review_status_and_authority():
+    reviewed_at = datetime(2026, 8, 3, tzinfo=UTC)
+
+    class DriverDateTime:
+        def to_native(self):
+            return reviewed_at
+
+    _, edges = management_projection(
+        {
+            'id': 'personal-1',
+            'name': 'Me',
+            'kind': 'personal',
+            'group_id': 'personal-group',
+            'description': None,
+        },
+        [
+            {
+                'id': 'project-node-a',
+                'project_id': 'project-a',
+                'publication_key': None,
+                'name': 'A',
+                'profile_json': '{"name":"A","sources":[],"boundaries":[]}',
+            },
+            {
+                'id': 'project-node-b',
+                'project_id': 'project-b',
+                'publication_key': None,
+                'name': 'B',
+                'profile_json': '{"name":"B","sources":[],"boundaries":[]}',
+            },
+        ],
+        [{
+            'id': 'relation-a-b',
+            'source_project_id': 'project-a',
+            'source_name': 'A',
+            'target_project_id': 'project-b',
+            'target_name': 'B',
+            'relation_type': 'PART_OF',
+            'status': 'active',
+            'confirmation_authority': 'human_review',
+            'decision_revision': 3,
+            'review_reason': '用户确认层级关系。',
+            'reviewed_by': 'principal-1',
+            'reviewed_at': DriverDateTime(),
+        }],
+    )
+
+    relation = next(edge for edge in edges if edge.type == 'PART_OF')
+    assert relation.attributes == {
+        'status': 'active',
+        'confirmationAuthority': 'human_review',
+        'decisionRevision': 3,
+        'reviewReason': '用户确认层级关系。',
+        'reviewedBy': 'principal-1',
+        'reviewedAt': reviewed_at,
+    }
 
 
 def test_personal_project_projection_expands_profile_without_personal_space_siblings():

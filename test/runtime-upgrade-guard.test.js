@@ -40,6 +40,7 @@ test('Graphiti runtime config validates identities and preserves tokens in memor
     personal: {
       providerUrl: 'http://localhost:8787/',
       accessToken: 'personal-token',
+      workflowObservationToken: 'mcp-host-workflow-observation-token-123456',
       principalId: 'principal-1',
       spaceId: 'space-1'
     },
@@ -48,5 +49,30 @@ test('Graphiti runtime config validates identities and preserves tokens in memor
   const config = readGraphRuntimeConfig(path);
   assert.equal(config.personal.providerUrl, 'http://localhost:8787');
   assert.equal(config.personal.accessToken, 'personal-token');
+  assert.equal(
+    config.personal.workflowObservationToken,
+    'mcp-host-workflow-observation-token-123456'
+  );
   assert.equal(resolveGraphRuntimeOptions(['--runtime-config', path]).runtimeConfigPath, path);
+});
+
+test('Graphiti runtime rejects a malformed workflow observation capability', () => {
+  const root = mkdtempSync(join(tmpdir(), 'fuli-graph-config-'));
+  const path = join(root, 'runtime.json');
+  writeFileSync(path, JSON.stringify({
+    version: 1,
+    personal: {
+      providerUrl: 'http://localhost:8787',
+      accessToken: 'personal-token',
+      workflowObservationToken: 'too-short',
+      principalId: 'principal-1',
+      spaceId: 'space-1'
+    },
+    workspaces: []
+  }));
+
+  assert.throws(
+    () => readGraphRuntimeConfig(path),
+    /workflowObservationToken/
+  );
 });

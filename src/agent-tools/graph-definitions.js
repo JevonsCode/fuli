@@ -82,7 +82,10 @@ const epistemicFields = {
   epistemicStatus,
   confirmationStatus,
   confirmationBasis,
-  reasoningSummary: nullableStringSchema(),
+  reasoningSummary: {
+    ...nullableStringSchema(),
+    description: 'Required and nonempty whenever originQuadrant is not known_known. Explain how the item became known; omitting it rejects the whole batch.'
+  },
   profileAspect,
   inheritanceMode,
   inheritedProjectIds: arraySchema(id, { maxItems: 32 })
@@ -188,6 +191,40 @@ const commonKnowledgePromotionRequired = [
   'personalSpaceId', 'parentProjectId', 'itemKind', 'canonicalItemId',
   'duplicateItemIds', 'reason', 'humanConfirmationReason'
 ];
+const personalGlobalPreferenceDecisionIntent = {
+  personalSpaceId: id,
+  candidateId: {
+    ...boundedString(64),
+    pattern: '^personal-global-[a-f0-9]{20}$'
+  },
+  candidateVersion: {
+    ...boundedString(32),
+    pattern: '^v1:[a-f0-9]{24}$'
+  },
+  decisionRevision: integerSchema({ minimum: 0 }),
+  decision: enumSchema(['approve', 'reject']),
+  sourceItems: arraySchema(objectSchema({
+    itemId: id,
+    itemKind: knowledgeItemKind,
+    projectId: id
+  }, ['itemId', 'itemKind', 'projectId']), { minItems: 2, maxItems: 32 }),
+  preferenceKey: boundedString(512),
+  targetScope: enumSchema(['parent_project', 'personal_global']),
+  targetProjectId: nullableStringSchema(),
+  profileAspect,
+  globalTitle: { type: ['string', 'null'], minLength: 1, maxLength: 512 },
+  globalInstruction: { type: ['string', 'null'], minLength: 1, maxLength: 8192 },
+  humanConfirmationReason: boundedString(4096),
+  confirmedAt: dateTime,
+  sessionId: id,
+  idempotencyKey: id
+};
+const personalGlobalPreferenceDecisionRequired = [
+  'personalSpaceId', 'candidateId', 'candidateVersion', 'decisionRevision',
+  'decision', 'sourceItems', 'preferenceKey', 'targetScope',
+  'targetProjectId', 'humanConfirmationReason',
+  'confirmedAt', 'sessionId', 'idempotencyKey'
+];
 const captureEpisodeFields = {
   idempotencyKey: id,
   name: label,
@@ -207,6 +244,11 @@ const captureEpisodeRequired = [
   'idempotencyKey', 'name', 'sourceKind', 'sourceDescription',
   'referenceTime', 'entities', 'relationships'
 ];
+const workflowObservedStep = objectSchema({
+  actionId: id,
+  name: label,
+  summary: nullableStringSchema()
+}, ['actionId', 'name']);
 
 export const GRAPH_TOOL_DEFINITIONS = [
   {
@@ -248,6 +290,17 @@ export const GRAPH_TOOL_DEFINITIONS = [
     }, ['projectPath'])
   },
   {
+    name: 'get_user_taste_skill',
+    title: 'READ · Generate the current user-taste Skill',
+    description: 'Generate a bounded, read-only user-taste Skill projection from the effective personal preferences for the exact active project. It uses prior confirmed and explicitly agent-confirmed preference data to provide task-specific recommendations, labels evidence status and scope, preserves the current-request and authoritative-constraint precedence, and never overwrites a user-authored taste Skill or promotes a pending inference. Call it when a UI, writing, product, architecture, code, or other judgment call would benefit from the user\'s established taste.',
+    inputSchema: objectSchema({
+      projectPath: boundedString(4096),
+      taskPrompt: boundedString(8192),
+      personalProjectId: nullableStringSchema(),
+      limit: integerSchema({ minimum: 1, maximum: 200 })
+    }, ['projectPath'])
+  },
+  {
     name: 'resolve_deferred_preference_conflict',
     description: 'Resolve one AI-deferred collaboration-preference conflict returned by get_collaboration_preferences when, and only when, the current task needs that preference. Compare both confirmed sides against their evidence and the current context before choosing. The operation updates the effective knowledge, preserves revision history, and permanently marks the conflict as previously conflicted and resolved by AI. Use merge with a canonical item and merged instruction, keep_left or keep_right to retain one side, or split_scope to move one side to an exact personal project.',
     inputSchema: objectSchema({
@@ -265,16 +318,47 @@ export const GRAPH_TOOL_DEFINITIONS = [
   },
   {
     name: 'capture_session_knowledge',
-    description: 'Silently batch durable session knowledge when the user-enabled capture policy allows it. When knowledge was read from an online source, sourceUri preserves the exact original HTTP(S) link so a capable Agent can re-read it later and refresh Fuli knowledge; it does not authorize source-document writeback. Every item records its discovery quadrant, structured confirmation basis, and pending or confirmed state. A disabled policy returns capture_disabled without writing. Personal profile knowledge stays personal; only project knowledge with an auditable confirmation can enter public review.',
+    description: 'Silently batch durable session knowledge when the user-enabled capture policy allows it. When knowledge was read from an online source, sourceUri preserves the exact original HTTP(S) link so a capable Agent can re-read it later and refresh Fuli knowledge; it does not authorize source-document writeback. Every item records its discovery quadrant, structured confirmation basis, and pending or confirmed state. reasoningSummary is required for every entity or relationship whose originQuadrant is not known_known. A disabled policy returns capture_disabled without writing. Personal profile knowledge stays personal; only project knowledge with an auditable confirmation can enter public review.',
     inputSchema: objectSchema({
-      targetKind: enumSchema(['personal', 'project']),
-      spaceId: id,
-      personalProjectId: nullableStringSchema(),
-      providerUrl: nullableStringSchema(),
+      targetKind: {
+        ...enumSchema(['personal', 'project']),
+        description: 'Use "personal" for the personal graph, including knowledge scoped to a local personal project via personalProjectId. Use "project" only for a team-shared project queued for public review.'
+      },
+      spaceId: {
+        ...id,
+        description: 'With targetKind "personal", the active personal space id. With targetKind "project", the team-shared project id.'
+      },
+      personalProjectId: {
+        ...nullableStringSchema(),
+        description: 'Local personal project scope. Only meaningful with targetKind "personal".'
+      },
+      providerUrl: {
+        ...nullableStringSchema(),
+        description: 'Required with targetKind "project" and ignored for "personal".'
+      },
       sessionId: id,
       ...captureEpisodeFields
     }, [
       'targetKind', 'spaceId', 'sessionId', ...captureEpisodeRequired
+    ])
+  },
+  {
+    name: 'record_workflow_transition_observation',
+    title: 'WRITE · Observe one completed workflow transition',
+    description: 'Record one Agent-reported completed X-to-Y action transition in the personal Provider. One call submits one observation; calls for the same project, X/Y, workflow key, condition, and MCP-host session deduplicate to one Episodic node. The Provider derives occurrence and distinct-session counts from persisted episodes. The MCP host attests session, time, and observation identity, not the truth of the reported actions. The tool does not accept aggregate counts, confirmation authority, approval, or durable-consent claims. Every observation remains pending behavioral evidence and is not user consent or execution authorization. Call it only after both actions completed successfully. This is an Agent/adapter observation seam, not automatic telemetry for arbitrary host tools.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      personalProjectId: nullableStringSchema(),
+      fromStep: workflowObservedStep,
+      toStep: workflowObservedStep,
+      workflowKey: id,
+      condition: attributes,
+      evidenceSummary: shortText,
+      sourceApplication,
+      sourceTurnId: { type: ['string', 'null'], minLength: 1, maxLength: 256 },
+      sensitivity: enumSchema(['normal', 'private', 'restricted'])
+    }, [
+      'personalSpaceId', 'fromStep', 'toStep', 'workflowKey', 'evidenceSummary'
     ])
   },
   {
@@ -322,7 +406,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'search_knowledge_graph',
     title: 'READ · Search the scoped knowledge graph',
-    description: 'Search durable context before saying you do not know when a task may depend on remembered URLs, routes, requirements, architecture, prior decisions, runbooks, rationale, or personal preferences. Supporting facts and entities expose bounded source_uris when their evidence came from online sources, allowing a capable Agent to re-read the original source before refreshing Fuli knowledge. Pending knowledge is searchable and explicitly marked; agent-confirmed knowledge ranks below human-confirmed knowledge. The bounded scope includes the personal-global profile, exact active local project, selectively inheritable knowledge reached through PART_OF or USES_KNOWLEDGE_FROM, explicitly selected additional personal projects, and selected subscribed team projects. Generic RELATED_TO links never expand scope. Use all_local_confirmed only after explicit user confirmation; it searches registered local personal projects for this query and never expands public projects. If that still has no support, use read-only local file search in the current repository or workspace files within a safe root. The response includes sourceMarker for supporting results, noMatchSourceMarker when returned items do not support the answer, and retrievalGuidance with the required next action.',
+    description: 'Search durable context before saying you do not know when a task may depend on remembered URLs, routes, requirements, architecture, prior decisions, runbooks, rationale, or personal preferences. Supporting facts and entities expose bounded source_uris when their evidence came from online sources, allowing a capable Agent to re-read the original source before refreshing Fuli knowledge. Pending knowledge is searchable and explicitly marked; agent-confirmed knowledge ranks below human-confirmed knowledge. The bounded scope includes the personal-global profile, exact active local project, selectively inheritable knowledge reached through PART_OF or USES_KNOWLEDGE_FROM, explicitly selected additional personal projects, and selected subscribed team projects. Generic RELATED_TO links never expand scope. A result may instead include one-time read-only relatedProjectSuggestions only for active human-authorized RELATED_TO edges; ask the user before running the supplied exact-project follow-up query, and never silently add that project to future scope. Use all_local_confirmed only after explicit user confirmation; it searches registered local personal projects for this query and never expands public projects. If that still has no support, use read-only local file search in the current repository or workspace files within a safe root. The response includes sourceMarker for supporting results, noMatchSourceMarker when returned items do not support the answer, and retrievalGuidance with the required next action.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       query: shortText,
@@ -396,7 +480,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'search_current_project_knowledge',
     title: 'READ · Search current project and its knowledge sources',
-    description: 'High-level project search for normal Agent work. Pass projectPath plus one or more focused queries; Fuli resolves the exact local project, searches its local knowledge first, then follows outgoing PART_OF or USES_KNOWLEDGE_FROM relations to authorized parent/source knowledge. An exact current-project item with the same stable key overrides an inherited item. The tool never guesses an ambiguous project and never traverses RELATED_TO.',
+    description: 'High-level project search for normal Agent work. Pass projectPath plus one or more focused queries; Fuli resolves the exact local project, searches its local knowledge first, then follows outgoing PART_OF or USES_KNOWLEDGE_FROM relations to authorized parent/source knowledge. An exact current-project item with the same stable key overrides an inherited item. The tool never guesses an ambiguous project and never traverses RELATED_TO. Instead it returns structured related_project_suggestions so the Agent can ask whether to add exactly one related project to this read-only search; explicit human confirmation is required before any expansion.',
     inputSchema: objectSchema({
       projectPath: boundedString(4096),
       queries: arraySchema(shortText, { minItems: 1, maxItems: 10 }),
@@ -417,6 +501,28 @@ export const GRAPH_TOOL_DEFINITIONS = [
       similarityThreshold: numberSchema({ minimum: 0, maximum: 1 }),
       limitPerProject: integerSchema({ minimum: 1, maximum: 50 })
     }, ['personalSpaceId', 'parentProjectId', 'query'])
+  },
+  {
+    name: 'discover_personal_global_preference_candidates',
+    title: 'READ · Find possible personal-global preferences',
+    description: 'Read-only scope-governance aid across two or more explicitly selected personal projects. It searches each exact project independently, excludes inherited and existing personal-global results, preserves every original preference text, qualifier, project source, and source URI, and exposes any shared lexical core only as a non-authoritative derived candidate. Similarity and weight never apply or promote a preference. Every candidate requires explicit human scope judgment through the candidate-bound review workflow.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      personalProjectIds: arraySchema(id, { minItems: 2, maxItems: 32 }),
+      query: shortText,
+      minProjects: integerSchema({ minimum: 2, maximum: 32 }),
+      similarityThreshold: numberSchema({ minimum: 0, maximum: 1 }),
+      limitPerProject: integerSchema({ minimum: 1, maximum: 50 })
+    }, ['personalSpaceId', 'personalProjectIds', 'query'])
+  },
+  {
+    name: 'preview_personal_global_preference_decision',
+    title: 'READ · Inspect a version-bound scope decision',
+    description: 'Read-only inspection for one exact personal-global preference candidate and decision revision. It revalidates every selected local source in the Provider and returns the preserved snapshots plus an exact payload fingerprint. It deliberately does not mint an approval token: an independent human-review client must confirm that fingerprint and mint the short-lived, one-time capability. The Agent cannot claim human authority through this tool.',
+    inputSchema: objectSchema(
+      personalGlobalPreferenceDecisionIntent,
+      personalGlobalPreferenceDecisionRequired
+    )
   },
   {
     name: 'preview_common_knowledge_promotion',
@@ -539,6 +645,28 @@ export const GRAPH_TOOL_DEFINITIONS = [
     }, ['personalSpaceId', 'reviewId', 'disposition'])
   },
   {
+    name: 'list_workflow_candidates',
+    title: 'READ · List learned workflow candidates',
+    description: 'Read persisted X-to-Y workflow candidates and their condition, explainable occurrence count, distinct-session count, recency, confirmation authority, negative evidence, declines, review status, and durable authorization. candidateVersion changes only when the rule definition changes; evidenceRevision tracks added or changed evidence; decisionRevision tracks review/authorization state transitions, including reset after a rule change. Rejected candidates and evidence remain in history. This read never executes a step or grants authority.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      personalProjectId: nullableStringSchema(),
+      afterStepKey: nullableStringSchema(),
+      limit: integerSchema({ minimum: 1, maximum: 100 })
+    }, ['personalSpaceId'])
+  },
+  {
+    name: 'recommend_next_workflow_steps',
+    title: 'READ · Recommend what to ask after a workflow step',
+    description: 'Read persisted candidates matching the completed source step. Provider weights only decide whether a candidate crosses the recommendation threshold; they never grant execution authority. A recommended but unapproved candidate returns ask_user and must not execute Y. Even a durable authorization never replaces per-call approval for high-risk send, delete, publish, payment, or external-write tools.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      personalProjectId: nullableStringSchema(),
+      afterStepKey: id,
+      limit: integerSchema({ minimum: 1, maximum: 100 })
+    }, ['personalSpaceId', 'afterStepKey'])
+  },
+  {
     name: 'revise_personal_knowledge',
     description: 'Confirm, correct, invalidate, or restore one personal entity or relationship while preserving revision history and original evidence. This is the same personal-only operation used by the management UI.',
     inputSchema: objectSchema({
@@ -572,18 +700,6 @@ export const GRAPH_TOOL_DEFINITIONS = [
       targetProjectId: boundedString(128),
       reason: shortText
     }, ['personalSpaceId', 'itemKind', 'itemId', 'targetProjectId', 'reason'])
-  },
-  {
-    name: 'set_personal_preference_scope',
-    description: 'Change one taste, personality, or judgment preference between the default personal-global scope and one exact personal project. The source evidence remains unchanged and the scope change is recorded in revision history.',
-    inputSchema: objectSchema({
-      personalSpaceId: id,
-      itemKind: knowledgeItemKind,
-      itemId: id,
-      scope: enumSchema(['global', 'project']),
-      projectId: nullableStringSchema(),
-      reason: shortText
-    }, ['personalSpaceId', 'itemKind', 'itemId', 'scope', 'reason'])
   },
   {
     name: 'preview_personal_project_action',

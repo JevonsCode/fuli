@@ -15,6 +15,7 @@ const RESULT_PROPERTY_LIMIT = 64;
 const RESULT_DEPTH_LIMIT = 8;
 const MESSAGE_LIMIT = 240;
 const TRUNCATION_MARKER = '...[truncated]';
+const VALIDATION_ERROR_LIMIT = 5;
 
 export function successToolResult(value, { limitBytes = RESULT_LIMIT_BYTES } = {}) {
   const state = { truncated: false };
@@ -63,17 +64,40 @@ export function errorToolResult(error) {
   const message = controlled
     ? applicationErrorMessage(error)
     : 'Tool execution failed';
-  const structuredContent = { error: { code, message } };
+  const validationErrors = controlled ? reportedValidationErrors(error) : [];
+  const structuredContent = {
+    error: {
+      code,
+      message,
+      ...(validationErrors.length ? { validationErrors } : {})
+    }
+  };
+  const detail = validationErrors
+    .map(({ field, message: reason }) => (field ? `${field} — ${reason}` : reason))
+    .join('; ');
   return {
-    content: [{ type: 'text', text: `${code}: ${message}` }],
+    content: [{
+      type: 'text',
+      text: detail ? `${code}: ${message}\n${detail}` : `${code}: ${message}`
+    }],
     structuredContent,
     isError: true
   };
 }
 
+function reportedValidationErrors(error) {
+  if (!Array.isArray(error?.validationErrors)) return [];
+  return error.validationErrors
+    .filter((entry) => entry && typeof entry.message === 'string' && entry.message.trim())
+    .slice(0, VALIDATION_ERROR_LIMIT)
+    .map(({ field, message }) => ({
+      field: typeof field === 'string' ? boundedMessage(field) : '',
+      message: boundedMessage(message)
+    }));
+}
+
 export function applicationErrorMessage(error) {
-  const stableMessage = String(error.message).split(':', 1)[0];
-  return boundedMessage(stableMessage);
+  return boundedMessage(String(error.message));
 }
 
 export function protocolErrorResult(message) {

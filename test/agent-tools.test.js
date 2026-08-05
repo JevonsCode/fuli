@@ -8,8 +8,10 @@ const NAMES = [
   'checkpoint_task_knowledge',
   'verify_task_checkpoint',
   'get_collaboration_preferences',
+  'get_user_taste_skill',
   'resolve_deferred_preference_conflict',
   'capture_session_knowledge',
+  'record_workflow_transition_observation',
   'record_decision_trace',
   'search_knowledge_graph',
   'search_connected_knowledge',
@@ -17,6 +19,8 @@ const NAMES = [
   'record_knowledge_feedback',
   'search_current_project_knowledge',
   'discover_common_knowledge_candidates',
+  'discover_personal_global_preference_candidates',
+  'preview_personal_global_preference_decision',
   'preview_common_knowledge_promotion',
   'apply_common_knowledge_promotion',
   'get_knowledge_graph',
@@ -29,9 +33,10 @@ const NAMES = [
   'list_knowledge_review_candidates',
   'record_knowledge_review_progress',
   'finish_knowledge_review',
+  'list_workflow_candidates',
+  'recommend_next_workflow_steps',
   'revise_personal_knowledge',
   'reassign_personal_knowledge',
-  'set_personal_preference_scope',
   'preview_personal_project_action',
   'apply_personal_project_action',
   'publish_personal_project',
@@ -116,9 +121,17 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
   assert.deepEqual(search.inputSchema.properties.includePending, { type: 'boolean' });
   assert.equal(search.inputSchema.properties.includeExploratory, undefined);
   const capture = tools.find(({ name }) => name === 'capture_session_knowledge');
-  assert.deepEqual(capture.inputSchema.properties.personalProjectId, {
-    type: ['string', 'null']
-  });
+  assert.deepEqual(capture.inputSchema.properties.personalProjectId.type, ['string', 'null']);
+  assert.match(capture.inputSchema.properties.targetKind.description, /team-shared project/i);
+  assert.match(capture.inputSchema.properties.spaceId.description, /active personal space/i);
+  assert.match(
+    capture.inputSchema.properties.personalProjectId.description,
+    /targetKind "personal"/
+  );
+  assert.match(
+    capture.inputSchema.properties.providerUrl.description,
+    /required with targetKind "project"/i
+  );
   assert.deepEqual(capture.inputSchema.properties.sourceUri, {
     type: ['string', 'null'],
     minLength: 1,
@@ -126,11 +139,32 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
     pattern: '^[Hh][Tt][Tt][Pp][Ss]?://\\S+$'
   });
   assert.match(capture.description, /sourceUri.*re-read.*refresh Fuli knowledge/i);
+  assert.match(
+    capture.description,
+    /reasoningSummary.*required.*originQuadrant.*not known_known/i
+  );
+  assert.match(
+    capture.inputSchema.properties.entities.items.properties.reasoningSummary.description,
+    /nonempty.*originQuadrant.*not known_known/i
+  );
   assert.match(search.description, /source_uris.*re-read.*refreshing Fuli knowledge/i);
   assert.deepEqual(
     capture.inputSchema.properties.entities.items.properties.confirmationStatus.enum,
     ['confirmed', 'pending']
   );
+  const workflowObservation = tools.find(({ name }) =>
+    name === 'record_workflow_transition_observation'
+  );
+  assert.match(workflowObservation.description, /one call.*one observation/i);
+  assert.match(workflowObservation.description, /pending.*not.*authorization/i);
+  assert.equal(
+    workflowObservation.inputSchema.properties.occurrenceCount,
+    undefined
+  );
+  assert.equal(workflowObservation.inputSchema.properties.sessionId, undefined);
+  assert.equal(workflowObservation.inputSchema.properties.idempotencyKey, undefined);
+  assert.equal(workflowObservation.inputSchema.properties.observedAt, undefined);
+  assert.equal(workflowObservation.inputSchema.properties.authority, undefined);
   assert.deepEqual(
     capture.inputSchema.properties.entities.items.properties.attributes
       .properties.searchTerms,
@@ -163,6 +197,10 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
   assert.match(preferences.description, /effective_preferences/);
   assert.match(preferences.description, /write tools?.*actual payload/i);
   assert.match(preferences.description, /final answer.*not compliance/i);
+  const tasteSkill = tools.find(({ name }) => name === 'get_user_taste_skill');
+  assert.match(tasteSkill.description, /read-only.*user-taste.*Skill projection/i);
+  assert.match(tasteSkill.description, /never overwrites.*user-authored/i);
+  assert.deepEqual(tasteSkill.inputSchema.required, ['projectPath']);
   assert.deepEqual(preferences.inputSchema.properties.projectPath, {
     type: 'string',
     minLength: 1,
@@ -190,9 +228,12 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     checkpointTaskKnowledge: async (input) => calls.push(['checkpoint-task', input]),
     verifyTaskCheckpoint: async (input) => calls.push(['verify-task', input]),
     getCollaborationPreferences: async (input) => calls.push(['preferences', input]),
+    getUserTasteSkill: async (input) => calls.push(['taste-skill', input]),
     resolveDeferredPreferenceConflict: async (input) =>
       calls.push(['resolve-preference-conflict', input]),
     captureSessionKnowledge: async (input) => calls.push(['capture', input]),
+    recordWorkflowTransitionObservation: async (input) =>
+      calls.push(['workflow-observation', input]),
     recordDecisionTrace: async (input) => calls.push(['decision-trace', input]),
     searchKnowledge: async (input) => calls.push(['search', input]),
     connectedKnowledge: {
@@ -205,6 +246,10 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       calls.push(['current-project-search', input]),
     discoverCommonKnowledgeCandidates: async (input) =>
       calls.push(['common-candidates', input]),
+    discoverPersonalGlobalPreferenceCandidates: async (input) =>
+      calls.push(['personal-global-candidates', input]),
+    previewPersonalGlobalPreferenceDecision: async (input) =>
+      calls.push(['preview-personal-global-decision', input]),
     previewCommonKnowledgePromotion: async (input) =>
       calls.push(['preview-common-promotion', input]),
     applyCommonKnowledgePromotion: async (input) =>
@@ -221,9 +266,11 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     recordKnowledgeReviewProgress: async (input) =>
       calls.push(['knowledge-review-progress', input]),
     finishKnowledgeReview: async (input) => calls.push(['finish-knowledge-review', input]),
+    listWorkflowCandidates: async (input) => calls.push(['workflow-candidates', input]),
+    recommendNextWorkflowSteps: async (input) =>
+      calls.push(['workflow-recommendations', input]),
     reviseKnowledgeItem: async (input) => calls.push(['revise-knowledge', input]),
     reassignKnowledgeItem: async (input) => calls.push(['reassign-knowledge', input]),
-    setPersonalPreferenceScope: async (input) => calls.push(['preference-scope', input]),
     previewKnowledgeProjectAction: async (input) => calls.push(['preview-project-action', input]),
     applyKnowledgeProjectAction: async (input) => calls.push(['apply-project-action', input]),
     publishPersonalProject: async (input) => calls.push(['publish-project', input]),
@@ -243,16 +290,18 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
   for (const name of NAMES) await callAgentTool(app, name, { probe: name });
   assert.deepEqual(calls.map(([name]) => name), [
     'begin-task', 'checkpoint-task', 'verify-task',
-    'preferences', 'resolve-preference-conflict',
-    'capture', 'decision-trace', 'search', 'connected-search',
+    'preferences', 'taste-skill', 'resolve-preference-conflict',
+    'capture', 'workflow-observation', 'decision-trace', 'search', 'connected-search',
     'knowledge-usage', 'knowledge-feedback',
-    'current-project-search', 'common-candidates',
+    'current-project-search', 'common-candidates', 'personal-global-candidates',
+    'preview-personal-global-decision',
     'preview-common-promotion', 'apply-common-promotion',
     'graph', 'human-changes', 'review-human-change',
     'spaces', 'upsert-project', 'personal-projects',
     'start-knowledge-review', 'knowledge-review-candidates',
     'knowledge-review-progress', 'finish-knowledge-review',
-    'revise-knowledge', 'reassign-knowledge', 'preference-scope', 'preview-project-action',
+    'workflow-candidates', 'workflow-recommendations',
+    'revise-knowledge', 'reassign-knowledge', 'preview-project-action',
     'apply-project-action',
     'publish-project', 'project-releases', 'create-relation', 'relations', 'review-relation',
     'personal-review', 'review-draft',
@@ -262,6 +311,10 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
 
 test('Agent surface rejects removed SQLite and unknown tools', () => {
   assert.throws(() => callAgentTool({}, 'remember_episode', {}), /Unknown agent tool/);
+  assert.throws(
+    () => callAgentTool({}, 'set_personal_preference_scope', {}),
+    /Unknown agent tool/
+  );
   assert.throws(() => callAgentTool({}, 'unknown', {}), /Unknown agent tool/);
 });
 

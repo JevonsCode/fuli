@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  DEFAULT_CONVERSATION_LAUNCHERS,
   DEFAULT_RUNTIME_SETTINGS,
   managedProviderUrls,
   normalizeRuntimeSettings,
@@ -17,6 +18,12 @@ test('runtime settings validate unique ports and browser-safe console ports', ()
   });
   assert.equal(custom.ports.console, 3030);
   assert.equal(custom.lanAccess, true);
+  assert.deepEqual(custom.conversationLaunchers.codex, {
+    enabled: true,
+    idFormat: 'uuid',
+    appName: 'Codex',
+    urlTemplate: 'codex://threads/{id}'
+  });
   assert.deepEqual(managedProviderUrls(custom), {
     personal: 'http://127.0.0.1:8787',
     workspace: 'http://127.0.0.1:8788'
@@ -45,6 +52,39 @@ test('runtime settings validate unique ports and browser-safe console ports', ()
       ports: { ...custom.ports, console: true }
     }),
     /integer/
+  );
+  const cursorLauncher = normalizeRuntimeSettings({
+    ...custom,
+    conversationLaunchers: {
+      ...structuredClone(DEFAULT_CONVERSATION_LAUNCHERS),
+      cursor: {
+        enabled: true,
+        idFormat: 'uuid',
+        appName: 'Cursor',
+        urlTemplate: 'cursor://conversation/{id}'
+      }
+    }
+  });
+  assert.deepEqual(cursorLauncher.conversationLaunchers.cursor, {
+    enabled: true,
+    idFormat: 'uuid',
+    appName: 'Cursor',
+    urlTemplate: 'cursor://conversation/{id}'
+  });
+  assert.throws(
+    () => normalizeRuntimeSettings({
+      ...custom,
+      conversationLaunchers: {
+        ...structuredClone(DEFAULT_CONVERSATION_LAUNCHERS),
+        codex: {
+          enabled: true,
+          idFormat: 'any',
+          appName: 'Browser',
+          urlTemplate: 'javascript:alert({id})'
+        }
+      }
+    }),
+    /safe URL scheme/
   );
 });
 

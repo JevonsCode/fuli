@@ -167,7 +167,7 @@ def test_agent_confirmed_cannot_be_written_through_the_revision_api():
         )
 
 
-def test_selected_project_inheritance_is_explicit_and_preferences_never_inherit():
+def test_selected_project_inheritance_is_explicit_for_knowledge_and_preferences():
     value = episode()
     value['entities'][0]['inheritance_mode'] = 'selected_projects'
     value['entities'][0]['inherited_project_ids'] = ['hotel-project']
@@ -175,8 +175,10 @@ def test_selected_project_inheritance_is_explicit_and_preferences_never_inherit(
     assert parsed.entities[0].inherited_project_ids == ['hotel-project']
 
     value['entities'][0]['profile_aspect'] = 'taste'
-    with pytest.raises(ValidationError, match='preferences cannot inherit'):
-        StructuredEpisode.model_validate(value)
+    preference = StructuredEpisode.model_validate(value)
+    assert preference.entities[0].profile_aspect == 'taste'
+    assert preference.entities[0].inheritance_mode == 'selected_projects'
+    assert preference.entities[0].inherited_project_ids == ['hotel-project']
 
     with pytest.raises(ValidationError, match='must be updated together'):
         KnowledgeRevisionCreate(

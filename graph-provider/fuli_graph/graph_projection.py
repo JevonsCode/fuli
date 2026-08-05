@@ -2,6 +2,7 @@ from collections.abc import Iterable
 
 from .graph_models import GraphEdge, GraphNode
 from .models import ProjectProfile
+from .provider_values import native_datetime
 
 
 def management_projection(
@@ -58,6 +59,7 @@ def management_projection(
             target=target_id,
             type=relation['relation_type'],
             fact=_relation_fact(relation),
+            attributes=_relation_attributes(relation),
             valid_at=None,
             invalid_at=None,
         ))
@@ -118,6 +120,7 @@ def personal_project_projection(
             target=related_id if current_is_source else root_id,
             type=relation['relation_type'],
             fact=_relation_fact(relation),
+            attributes=_relation_attributes(relation),
             valid_at=None,
             invalid_at=None,
         ))
@@ -181,6 +184,17 @@ def personal_project_projection(
             )
 
     return nodes, edges
+
+
+def _relation_attributes(relation: dict) -> dict:
+    return {
+        'status': relation.get('status') or 'pending',
+        'confirmationAuthority': relation.get('confirmation_authority'),
+        'decisionRevision': int(relation.get('decision_revision') or 0),
+        'reviewReason': relation.get('review_reason'),
+        'reviewedBy': relation.get('reviewed_by'),
+        'reviewedAt': native_datetime(relation.get('reviewed_at')),
+    }
 
 
 def coalesce_personal_project_identity(

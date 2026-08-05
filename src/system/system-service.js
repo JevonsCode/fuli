@@ -86,7 +86,11 @@ function settingsResult(configured, active) {
     configured,
     active,
     restartRequired: !runtimeSettingsEqual(
-      { ...configured, resourceRefreshSeconds: active.resourceRefreshSeconds },
+      {
+        ...configured,
+        resourceRefreshSeconds: active.resourceRefreshSeconds,
+        conversationLaunchers: active.conversationLaunchers
+      },
       active
     )
   };

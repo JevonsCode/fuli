@@ -51,6 +51,16 @@ test('Web server exposes the Graphiti facade and graph console', async () => {
       offset: 0
     });
 
+    const writingTaste = await getJson(
+      `${url}/api/writing-taste-profile?personalSpaceId=personal-1&limit=120`
+    );
+    assert.equal(writingTaste.status, 'collecting');
+    assert.deepEqual(calls.find(([name]) => name === 'writing-taste')[1], {
+      personalSpaceId: 'personal-1',
+      personalProjectId: null,
+      limit: 120
+    });
+
     const unsubscribe = await fetch(
       `${url}/api/subscriptions/project-1?` + new URLSearchParams({
         personalSpaceId: 'personal-1',
@@ -113,7 +123,7 @@ test('Web server exposes the Graphiti facade and graph console', async () => {
     assert.equal(deferred.status, 200);
     assert.equal(
       calls.find(([name]) => name === 'defer-preference-conflict')[1].operationActor,
-      'human'
+      'agent'
     );
 
     const completed = await requestJson(
@@ -158,6 +168,10 @@ function graphApp(calls) {
     getKnowledgeGraph: async (input) => {
       calls.push(['graph', input]);
       return { nodes: [], edges: [], truncated: false };
+    },
+    getWritingTasteProfile: async (input) => {
+      calls.push(['writing-taste', input]);
+      return { status: 'collecting', ready: false, rules: [] };
     },
     captureSessionKnowledge: async () => ({}),
     confirmKnowledgeBatch: async (input) => {

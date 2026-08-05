@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import KnowledgeInspector from './KnowledgeInspector.vue'
 import { knowledgeItemFromNode } from './model'
+import { DEFAULT_CONVERSATION_LAUNCHERS } from './source-adapters'
 
 describe('KnowledgeInspector', () => {
   it('exposes confirmation as the primary action for pending knowledge', async () => {
@@ -126,6 +127,32 @@ describe('KnowledgeInspector', () => {
     wrapper.unmount()
   })
 
+  it('names the exact project in a project-scoped preference detail', () => {
+    const preference = {
+      id: 'preference-project-scope',
+      name: '隐藏局部操作时不保留装饰分隔线',
+      type: 'DesignTaste',
+      summary: '不保留孤立分隔线。',
+      profile_aspect: 'taste',
+      preference_scope: 'project',
+      preference_project_id: 'fuli',
+    }
+    const project = {
+      id: 'personal-project:space-1:fuli',
+      name: '复利（Fuli）',
+      type: 'PersonalProject',
+      attributes: { projectId: 'fuli' },
+    }
+    const wrapper = mount(KnowledgeInspector, {
+      props: {
+        item: knowledgeItemFromNode(preference),
+        graph: { nodes: [preference, project], edges: [] },
+      },
+    })
+
+    expect(wrapper.text()).toContain('指定项目 · 复利（Fuli） (fuli)')
+  })
+
   it('shows the exact replacement for historical knowledge and emits a direct jump', async () => {
     const replacement = {
       id: 'requirement-current',
@@ -198,9 +225,51 @@ describe('KnowledgeInspector', () => {
           id: 'cursor-source',
           source_application: 'cursor',
           source_kind: 'conversation',
-          session_id: 'cursor-session-7',
+          session_id: 'cursor-session/7',
         },
       ],
+    }
+    const conversationLaunchers = structuredClone(DEFAULT_CONVERSATION_LAUNCHERS)
+    conversationLaunchers.cursor = {
+      enabled: true,
+      idFormat: 'any',
+      appName: 'Cursor',
+      urlTemplate: 'cursor://conversation/{id}',
+    }
+    const wrapper = mount(KnowledgeInspector, {
+      props: {
+        item: knowledgeItemFromNode(node),
+        graph: { nodes: [node], edges: [] },
+        conversationLaunchers,
+      },
+    })
+
+    const links = wrapper.findAll('a.evidence-source-action')
+    expect(links.map((link) => link.attributes('href'))).toEqual([
+      'codex://threads/123e4567-e89b-42d3-a456-426614174000',
+      'cursor://conversation/cursor-session%2F7',
+    ])
+    expect(wrapper.text()).toContain('Codex · conversation')
+    expect(wrapper.text()).toContain('Cursor · conversation')
+    expect(wrapper.findAll('.evidence-source-actions')).toHaveLength(2)
+    expect(wrapper.findAll('button.evidence-source-action')).toHaveLength(2)
+
+    await wrapper.findAll('button.evidence-source-action')[1]?.trigger('click')
+    expect(writeText).toHaveBeenCalledWith('cursor-session/7')
+    expect(wrapper.findAll('button.evidence-source-action')[1]?.text()).toBe('已复制会话 ID')
+  })
+
+  it('does not render a dead Codex link for a non-native session ID', () => {
+    const node = {
+      id: 'decision-unsupported-codex',
+      name: '无法定位的会话',
+      type: 'Decision',
+      evidence: [{
+        id: 'codex-source',
+        source_application: 'codex',
+        source_kind: 'conversation',
+        session_id: 'codex-fuli-ui-status-dedup-20260723',
+      }],
     }
     const wrapper = mount(KnowledgeInspector, {
       props: {
@@ -209,13 +278,29 @@ describe('KnowledgeInspector', () => {
       },
     })
 
-    expect(wrapper.get('a.evidence-source-action').attributes('href'))
-      .toBe('codex://threads/123e4567-e89b-42d3-a456-426614174000')
-    expect(wrapper.text()).toContain('Codex · conversation')
-    expect(wrapper.text()).toContain('Cursor · conversation')
+    expect(wrapper.find('a.evidence-source-action').exists()).toBe(false)
+    expect(wrapper.findAll('button.evidence-source-action')).toHaveLength(1)
+    expect(wrapper.findAll('button.evidence-source-action')[0]?.text()).toBe('复制会话 ID')
+  })
 
-    await wrapper.get('button.evidence-source-action').trigger('click')
-    expect(writeText).toHaveBeenCalledWith('cursor-session-7')
-    expect(wrapper.get('button.evidence-source-action').text()).toBe('已复制会话 ID')
+  it('does not render source actions when evidence has no stored session ID', () => {
+    const node = {
+      id: 'decision-without-session-id',
+      name: '没有会话 ID 的证据',
+      type: 'Decision',
+      evidence: [{
+        id: 'source-without-session-id',
+        source_application: 'codex',
+        source_kind: 'conversation',
+      }],
+    }
+    const wrapper = mount(KnowledgeInspector, {
+      props: {
+        item: knowledgeItemFromNode(node),
+        graph: { nodes: [node], edges: [] },
+      },
+    })
+
+    expect(wrapper.find('.evidence-source-actions').exists()).toBe(false)
   })
 })

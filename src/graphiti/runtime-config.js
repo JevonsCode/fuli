@@ -30,6 +30,11 @@ export function readGraphRuntimeConfig(path) {
 function validateConfig(config) {
   if (config?.version !== 1) fail('unsupported graph runtime config version');
   provider(config.personal, 'personal');
+  optionalSecret(
+    config.personal,
+    'workflowObservationToken',
+    'personal.workflowObservationToken'
+  );
   if (!config.personal.spaceId) fail('personal.spaceId is required');
   if (!Array.isArray(config.workspaces)) fail('workspaces must be an array');
   for (const [index, workspace] of config.workspaces.entries()) {
@@ -43,6 +48,15 @@ function provider(value, label) {
     if (!nonEmpty(value[property])) fail(`${label}.${property} is required`);
   }
   value.providerUrl = canonicalProviderUrl(value.providerUrl);
+}
+
+function optionalSecret(value, property, label) {
+  if (value[property] === undefined) return;
+  const normalized = nonEmpty(value[property]);
+  if (!normalized || normalized.length < 32) {
+    fail(`${label} must contain at least 32 characters`);
+  }
+  value[property] = normalized;
 }
 
 export function canonicalProviderUrl(value) {
