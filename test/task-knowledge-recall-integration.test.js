@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
+import { successToolResult } from '../src/mcp/tool-result.js';
 
 const CONFIG = {
   version: 1,
@@ -74,6 +75,15 @@ test('preference entry performs bounded project recall from the current task pro
   assert.match(
     result.task_knowledge_recall.sourceMarker.leadMarkdown,
     /\/entity\/submit-runbook/
+  );
+  const toolResult = successToolResult(result, { limitBytes: 16 * 1024 });
+  assert.equal(
+    typeof toolResult.structuredContent.task_knowledge_recall.guidance,
+    'object'
+  );
+  assert.match(
+    toolResult.structuredContent.task_knowledge_recall.guidance.candidate_selection,
+    /candidates.*materially support.*noMatchSourceMarker/i
   );
   assert.equal(JSON.stringify(result).includes(prompt), false);
   assert.equal(JSON.stringify(result).includes('/workspace/fuli'), false);

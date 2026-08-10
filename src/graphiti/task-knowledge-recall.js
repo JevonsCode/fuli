@@ -32,7 +32,7 @@ const RECALL_INTENTS = Object.freeze([
   },
   {
     category: 'runbook_method',
-    pattern: /(?:方法|方式|流程|步骤|怎么做|如何做|runbook|workflow|procedure|how to)/iu,
+    pattern: /(?:怎么(?:做|办|处理|操作|走)?|如何(?:做|处理|操作|进行)?|怎样(?:做|处理|操作)?|(?:什么|哪(?:个|种)|有没有|是否有|给我|提供|使用|采用|遵循|按照|沿用|走).{0,16}(?:方法|方式|流程|步骤)|(?:方法|方式|流程|步骤).{0,16}(?:是什么|有哪些|怎么|如何|怎样|吗|呢|？|\?)|\brunbook\b|\bprocedure\b|\bhow\s+to\b|(?:what|which|show|give|use|follow|existing|documented).{0,24}\bworkflow\b)/iu,
     queries: ['方法 方式 流程 步骤 runbook workflow procedure']
   },
   {
@@ -48,7 +48,9 @@ export const TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE = Object.freeze({
   focused_queries:
     'Use one to four focused action, artifact, target-system, or identifier queries; never use the full conversational request as the only query.',
   scope:
-    'Search only the exact active personal project, its explicitly inheritable knowledge, and the bounded personal-global profile.'
+    'Search only the exact active personal project, its explicitly inheritable knowledge, and the bounded personal-global profile.',
+  candidate_selection:
+    'Treat automatic matches as candidates. Cite only items that materially support the task; if all are irrelevant, use noMatchSourceMarker.'
 });
 
 export function planTaskKnowledgeRecall(taskPrompt) {
@@ -67,9 +69,9 @@ export function planTaskKnowledgeRecall(taskPrompt) {
   if (!matched.length) {
     return { status: 'not_needed', trigger_categories: [], queries: [] };
   }
-  const queries = unique(matched.flatMap(({ queries: values }) => values));
-  const distinctive = distinctivePromptQuery(prompt);
-  if (distinctive) queries.push(distinctive);
+  const focus = distinctivePromptTerms(prompt).join(' ').slice(0, 180);
+  const queries = unique(matched.flatMap(({ queries: values }) => values)
+    .map((query) => focus ? `${focus} ${query}` : query));
   return {
     status: 'planned',
     trigger_categories: matched.map(({ category }) => category),
@@ -85,7 +87,7 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt) {
       status: 'project_unresolved',
       trigger_categories: plan.trigger_categories,
       query_count: plan.queries.length,
-      guidance: TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE,
+      guidance: taskKnowledgeRetrievalGuidance(),
       facts: [],
       entities: []
     };
@@ -107,12 +109,19 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt) {
     .filter(({ status }) => status === 'fulfilled')
     .map(({ value }) => value);
   const failedQueryCount = settlements.length - results.length;
+  const focusTerms = distinctivePromptTerms(singleLine(taskPrompt).slice(0, 8192));
   const facts = rankedUnique(
-    results.flatMap(({ facts = [] }) => facts),
+    filterRecallCandidates(
+      results.flatMap(({ facts = [] }) => facts),
+      focusTerms
+    ),
     'relationship'
   ).slice(0, MAX_ITEMS_PER_KIND).map(compactFact);
   const entities = rankedUnique(
-    results.flatMap(({ entities = [] }) => entities),
+    filterRecallCandidates(
+      results.flatMap(({ entities = [] }) => entities),
+      focusTerms
+    ),
     'entity'
   ).slice(0, MAX_ITEMS_PER_KIND).map(compactEntity);
   const sourceMarker = createFuliSourceMarker({
@@ -130,7 +139,7 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt) {
     failed_query_count: failedQueryCount,
     trigger_categories: plan.trigger_categories,
     query_count: plan.queries.length,
-    guidance: TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE,
+    guidance: taskKnowledgeRetrievalGuidance(),
     ...(searched ? {
       sourceMarker,
       noMatchSourceMarker: createFuliSourceMarker({
@@ -147,10 +156,14 @@ function recallWithoutSearch(status, plan) {
     status,
     trigger_categories: plan.trigger_categories,
     query_count: plan.queries.length,
-    guidance: TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE,
+    guidance: taskKnowledgeRetrievalGuidance(),
     facts: [],
     entities: []
   };
+}
+
+function taskKnowledgeRetrievalGuidance() {
+  return { ...TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE };
 }
 
 function rankedUnique(items, itemKind) {
@@ -209,9 +222,13 @@ function compactItem(item, content) {
   };
 }
 
-function distinctivePromptQuery(prompt) {
+function distinctivePromptTerms(prompt) {
   const quoted = [...prompt.matchAll(/[“”"']([^“”"']{2,80})[“”"']/gu)]
     .map((match) => match[1]);
+  const productPhrases = prompt.match(
+    /\b[A-Z][A-Za-z0-9]*(?:[ \t]+[A-Z][A-Za-z0-9]*){1,5}\b/gu
+  ) ?? [];
+  const acronyms = prompt.match(/\b[A-Z]{2,}[A-Z0-9]*\b/gu) ?? [];
   const versions = prompt.match(
     /\bv?\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?\b/gu
   ) ?? [];
@@ -221,10 +238,44 @@ function distinctivePromptQuery(prompt) {
   const urls = [...prompt.matchAll(/https?:\/\/[^\s<>()]+/gu)]
     .map((match) => safeUrlSearchTerm(match[0]))
     .filter(Boolean);
-  return unique([...quoted, ...versions, ...identifiers, ...urls])
-    .slice(0, 4)
-    .join(' ')
-    .slice(0, 180);
+  return unique([
+    ...quoted,
+    ...productPhrases,
+    ...acronyms,
+    ...identifiers,
+    ...urls,
+    ...versions
+  ]).slice(0, 4);
+}
+
+function filterRecallCandidates(items, focusTerms) {
+  const focusTokens = recallFocusTokens(focusTerms);
+  if (!focusTokens.length) return items;
+  return items.filter((item) =>
+    Boolean(item?.defined_project_id) || recallItemMatchesFocus(item, focusTokens));
+}
+
+function recallItemMatchesFocus(item, focusTokens) {
+  const text = singleLine([
+    item?.key,
+    item?.source_entity,
+    item?.target_entity,
+    item?.relationship,
+    item?.fact,
+    item?.name,
+    item?.type,
+    item?.summary,
+    ...(Array.isArray(item?.source_uris) ? item.source_uris : [])
+  ].filter(Boolean).join(' ')).toLocaleLowerCase('en-US');
+  return focusTokens.some((token) => text.includes(token));
+}
+
+function recallFocusTokens(terms) {
+  return unique(terms.flatMap((term) => [
+    ...(term.match(/[\p{Script=Han}]{2,}/gu) ?? []),
+    ...(term.match(/[A-Za-z][A-Za-z0-9_-]{2,}/gu) ?? [])
+  ]).map((term) => term.toLocaleLowerCase('en-US'))
+    .filter((term) => !['http', 'https', 'www', 'version'].includes(term)));
 }
 
 function safeUrlSearchTerm(value) {

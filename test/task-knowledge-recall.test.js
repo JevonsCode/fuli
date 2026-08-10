@@ -35,6 +35,28 @@ test('self-contained tasks without durable-context signals skip automatic recall
   });
 });
 
+test('self-contained workflow optimization does not trigger generic runbook recall', () => {
+  const prompt = '分析并优化 Analytics Dashboard Builder 的搭建、局部修改与询问速度和流程，测试 model-k3 可行性；禁止提交代码。';
+  const plan = planTaskKnowledgeRecall(prompt);
+
+  assert.deepEqual(plan, {
+    status: 'not_needed',
+    trigger_categories: [],
+    queries: []
+  });
+});
+
+test('explicit workflow questions keep the named target in every recall query', () => {
+  const plan = planTaskKnowledgeRecall(
+    'Analytics Dashboard Builder 应该按什么流程搭建？'
+  );
+
+  assert.equal(plan.status, 'planned');
+  assert.deepEqual(plan.trigger_categories, ['runbook_method']);
+  assert.ok(plan.queries.length > 0);
+  assert.ok(plan.queries.every((query) => /Analytics Dashboard Builder/i.test(query)));
+});
+
 test('synthetic credential fixtures suppress automatic prompt recall', async () => {
   const syntheticCredential = 'synthetic-credential-value';
   const prompt = `用之前的方法发布，token=${syntheticCredential}`;
@@ -113,6 +135,51 @@ test('automatic recall returns a compact exact-project runbook without echoing t
     assert.ok(calls.every((call) => call.personalProjectId === 'fuli'));
     assert.ok(calls.every((call) => call.agentToolName ===
       'automatic_task_knowledge_recall'));
+  });
+
+test('automatic recall filters unrelated personal-global workflow matches by target',
+  async () => {
+    const application = {
+      config: { personal: { spaceId: 'personal-space' } },
+      consoleUrl: 'http://127.0.0.1:2727',
+      async searchKnowledge() {
+        return {
+          facts: [{
+            id: 'unrelated-workflow-failure',
+            space_id: 'personal-space',
+            scope: 'personal',
+            source_entity: '旧数据接口持续重置连接',
+            target_entity: 'Update Dataset workflow',
+            relationship: 'AFFECTS',
+            fact: '接口连接重置导致抓取步骤失败。',
+            defined_project_id: null,
+            score: 99
+          }],
+          entities: [{
+            id: 'analytics-dashboard-runbook',
+            space_id: 'personal-space',
+            scope: 'personal',
+            name: 'Analytics Dashboard Builder 搭建 Runbook',
+            type: 'Runbook',
+            summary: 'Build an analytics dashboard from a confirmed definition.',
+            defined_project_id: null,
+            score: 1
+          }]
+        };
+      }
+    };
+
+    const recall = await recallTaskKnowledge(
+      application,
+      { personalProjectId: 'active-project' },
+      'Analytics Dashboard Builder 应该按什么流程搭建？'
+    );
+
+    assert.equal(recall.status, 'matched');
+    assert.deepEqual(recall.facts, []);
+    assert.equal(recall.entities[0].id, 'analytics-dashboard-runbook');
+    assert.match(recall.sourceMarker.leadMarkdown, /analytics-dashboard-runbook/);
+    assert.doesNotMatch(recall.sourceMarker.markdown, /旧数据接口/);
   });
 
 test('automatic recall failure stays non-blocking and does not claim a completed search',

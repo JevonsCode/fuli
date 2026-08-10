@@ -34,5 +34,15 @@ test('MCP instructions support hook-provided task context and an exact fallback 
   assert.match(MCP_INSTRUCTIONS, /capture_candidates.*retain_nothing/is);
   assert.match(MCP_INSTRUCTIONS, /record_decision_trace/i);
   assert.match(MCP_INSTRUCTIONS, /record_knowledge_feedback/i);
-  assert.match(MCP_INSTRUCTIONS, /On miss.*noMatchSourceMarker.*leadMarkdown only.*empty markdown/i);
+  assert.match(MCP_INSTRUCTIONS, /match.*candidate only/i);
+  assert.match(
+    MCP_INSTRUCTIONS,
+    /supports the answer.*sourceMarker.*otherwise.*noMatchSourceMarker/is
+  );
+  assert.match(
+    MCP_INSTRUCTIONS,
+    /MUST begin.*sourceMarker\.leadMarkdown.*append.*sourceMarker\.markdown/is
+  );
+  assert.match(MCP_INSTRUCTIONS, /noMatchSourceMarker.*empty/is);
+  assert.match(MCP_INSTRUCTIONS, /Keep unchanged/i);
 });
