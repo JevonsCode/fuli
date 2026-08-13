@@ -25,7 +25,15 @@ const publicRuntimeLabel = computed(() => {
   return t('console.services.publicOffline')
 })
 const publicRuntimeCopy = computed(() => {
-  if (store.publicRuntimeStatus === 'ready') return t('console.services.publicAvailable')
+  if (store.publicRuntimeStatus === 'ready') {
+    const capabilities = store.state?.capabilities
+    if (capabilities?.browsePublicProjects && capabilities?.subscribeProject
+        && !capabilities?.publishProject && !capabilities?.submitKnowledge
+        && !capabilities?.reviewProposals) {
+      return t('console.services.publicBrowseSubscribe')
+    }
+    return t('console.services.publicAvailable')
+  }
   if (store.publicRuntimeStatus === 'error') return t('console.services.localUnaffected')
   return t('console.services.localOnly')
 })

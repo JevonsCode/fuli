@@ -63,6 +63,19 @@ const form = reactive({
 const personalReady = computed(() => store.state?.providers?.personal?.status === 'ready')
 const workspaces = computed(() => store.state?.providers?.workspaces ?? [])
 const readyWorkspaces = computed(() => workspaces.value.filter(({ status }) => status === 'ready').length)
+const publicPurpose = computed(() => {
+  const capabilities = store.state?.capabilities
+  const labels = [
+    capabilities?.browsePublicProjects ? t('pages.connections.publicCapability.discovery') : null,
+    capabilities?.subscribeProject ? t('pages.connections.publicCapability.subscription') : null,
+    capabilities?.publishProject ? t('pages.connections.publicCapability.publishing') : null,
+    capabilities?.submitKnowledge ? t('pages.connections.publicCapability.contribution') : null,
+    capabilities?.reviewProposals ? t('pages.connections.publicCapability.review') : null,
+  ].filter((label): label is string => Boolean(label))
+  return labels.length
+    ? new Intl.ListFormat(currentLocale(), { style: 'long', type: 'conjunction' }).format(labels)
+    : t('pages.connections.notAvailable')
+})
 const subscriptions = computed(() => store.state?.subscriptions ?? [])
 const personalProjects = computed(() => store.state?.personalProjects ?? [])
 const externalKnowledgeHelpUrl = computed(() => readmeHelpUrl('connect-external-knowledge'))
@@ -531,7 +544,7 @@ function readmeHelpUrl(fragment: string) {
         </header>
         <dl>
           <div><dt>{{ t('pages.connections.currentStatus') }}</dt><dd>{{ store.publicRuntimeStatus === 'ready' ? t('pages.connections.sharedServicesReady', { count: readyWorkspaces || workspaces.length }) : t('pages.connections.notAvailable') }}</dd></div>
-          <div><dt>{{ t('pages.connections.purpose') }}</dt><dd>{{ t('pages.connections.publicPurpose') }}</dd></div>
+          <div><dt>{{ t('pages.connections.purpose') }}</dt><dd>{{ publicPurpose }}</dd></div>
         </dl>
       </article>
     </div>

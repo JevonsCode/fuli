@@ -338,7 +338,7 @@ Agent 上下文。
 展示并询问用户；可选的“Agent 判断”只对本次回答生效，不能确认、失效或改写任何来源。
 外部知识直接绑定到公共空间或经审核提升到公共空间、后台定时同步、Webhook 和完整删除对账仍是 **TODO**。
 
-完整边界见[外部知识库只读接入架构](docs/external-knowledge-architecture.md)。
+完整边界见[外部知识库只读接入架构](docs/external-knowledge-architecture.md)，公共空间与个人图谱的联动见[公共空间与个人图谱联动架构](docs/public-personal-architecture.md)。
 
 ## 当前能力与证据边界
 
@@ -427,6 +427,20 @@ fuli restart --rebuild
 fuli start --lan
 fuli stop
 ```
+
+连接已部署的 `fuli-workspace` 服务：
+
+```bash
+fuli connect-workspace \
+  --url http://127.0.0.1:8789 \
+  --token-file /path/to/private-token
+fuli restart
+```
+
+连接命令会先验证服务发现、协议版本和令牌作用域，再以 `0600` 权限原子更新本机运行配置；
+它不会在输出中显示令牌、令牌文件路径或远端 principal ID。非本机服务必须使用 HTTPS。
+当前 `fuli-workspace-v1` 适配器开放发现、显式订阅和查询；发布、投稿、审核只会在相应协议映射
+真正实现后才显示为可用。
 
 `start` 和 `restart` 支持 `--data-dir DIR`、`--personal-space NAME`、`--port PORT`、
 `--open`、`--rebuild`、`--lan` 和 `--no-lan`。未显式传入端口或局域网参数时会使用“设置”

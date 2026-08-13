@@ -10,6 +10,7 @@ import { runLocalRuntimeCommand } from './cli/local-runtime-command.js';
 import { runSetupCommand } from './cli/setup-command.js';
 import { runUninstallCommand } from './cli/uninstall-command.js';
 import { runUpdateCommand } from './cli/update-command.js';
+import { runWorkspaceConnectionCommand } from './cli/workspace-connection-command.js';
 import { FULI_VERSION } from './package-metadata.js';
 import { assertSupportedNodeVersion } from './setup/node-runtime.js';
 
@@ -27,6 +28,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     assertSupportedNodeVersion();
     await runSetupCommand(commandArgs, { env });
     return;
+  }
+  if (command === 'connect-workspace') {
+    assertSupportedNodeVersion();
+    return runWorkspaceConnectionCommand(commandArgs, { env });
   }
   if (command === 'uninstall') {
     await runUninstallCommand(commandArgs, { env });

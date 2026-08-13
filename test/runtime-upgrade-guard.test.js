@@ -76,3 +76,48 @@ test('Graphiti runtime rejects a malformed workflow observation capability', () 
     /workflowObservationToken/
   );
 });
+test('Graphiti runtime accepts the explicit fuli-workspace-v1 discriminator', () => {
+  const root = mkdtempSync(join(tmpdir(), 'fuli-workspace-config-'));
+  const path = join(root, 'runtime.json');
+  writeFileSync(path, JSON.stringify({
+    version: 1,
+    personal: {
+      providerUrl: 'http://localhost:8787',
+      accessToken: 'personal-token',
+      principalId: 'principal-1',
+      spaceId: 'space-1'
+    },
+    workspaces: [{
+      protocol: 'fuli-workspace-v1',
+      providerUrl: 'http://127.0.0.1:8789/',
+      accessToken: 'workspace-token',
+      principalId: 'principal-2'
+    }]
+  }));
+
+  const config = readGraphRuntimeConfig(path);
+  assert.equal(config.workspaces[0].protocol, 'fuli-workspace-v1');
+  assert.equal(config.workspaces[0].providerUrl, 'http://127.0.0.1:8789');
+});
+
+test('Graphiti runtime rejects an unknown workspace protocol', () => {
+  const root = mkdtempSync(join(tmpdir(), 'fuli-workspace-config-'));
+  const path = join(root, 'runtime.json');
+  writeFileSync(path, JSON.stringify({
+    version: 1,
+    personal: {
+      providerUrl: 'http://localhost:8787',
+      accessToken: 'personal-token',
+      principalId: 'principal-1',
+      spaceId: 'space-1'
+    },
+    workspaces: [{
+      protocol: 'unknown-v1',
+      providerUrl: 'https://workspace.example',
+      accessToken: 'workspace-token',
+      principalId: 'principal-2'
+    }]
+  }));
+
+  assert.throws(() => readGraphRuntimeConfig(path), /protocol is unsupported/);
+});

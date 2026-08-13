@@ -2,6 +2,10 @@ import { dirname } from 'node:path';
 
 import { GraphitiProviderClient } from './provider-client.js';
 import {
+  aggregatePublicCapabilities,
+  createWorkspaceProvider
+} from './workspace-provider-client.js';
+import {
   canonicalProviderUrl,
   readGraphRuntimeConfig
 } from './runtime-config.js';
@@ -153,20 +157,12 @@ export class FederatedGraphApplication {
       fetchImpl,
       requestTimeoutMs: providerRequestTimeoutMs
     });
-    this.workspaces = new Map(
-      config.workspaces.map((workspace) => {
-        const url = canonicalProviderUrl(workspace.providerUrl);
-        return [url, {
-          ...workspace,
-          client: new GraphitiProviderClient({
-            baseUrl: url,
-            accessToken: workspace.accessToken,
-            fetchImpl,
-            requestTimeoutMs: providerRequestTimeoutMs
-          })
-        }];
-      })
-    );
+    this.workspaces = new Map(config.workspaces.map((workspace) => {
+      const provider = createWorkspaceProvider(workspace, {
+        fetchImpl, requestTimeoutMs: providerRequestTimeoutMs
+      });
+      return [provider.providerUrl, provider];
+    }));
   }
 
   async beginTaskContext(input) {
@@ -1159,10 +1155,17 @@ export class FederatedGraphApplication {
         try {
           return {
             providerUrl: workspace.providerUrl,
+            protocol: workspace.protocol,
+            capabilities: workspace.capabilities,
             ...(await workspace.client.health())
           };
         } catch {
-          return { providerUrl: workspace.providerUrl, status: 'unavailable' };
+          return {
+            providerUrl: workspace.providerUrl,
+            protocol: workspace.protocol,
+            capabilities: workspace.capabilities,
+            status: 'unavailable'
+          };
         }
       })
     ]);
@@ -1200,13 +1203,9 @@ export class FederatedGraphApplication {
       capturePolicy: this.getCapturePolicy(),
       agentAccessPolicy: this.getAgentAccessPolicy(),
       publicProvider: { configured, status: publicStatus },
-      capabilities: {
-        browsePublicProjects: connected,
-        publishProject: connected,
-        submitKnowledge: connected,
-        subscribeProject: connected,
-        reviewProposals: connected && spaces.projects.some(({ role }) => role === 'maintainer')
-      }
+      capabilities: aggregatePublicCapabilities(
+        this.workspaces, providers.workspaces, spaces.projects
+      )
     };
   }
 

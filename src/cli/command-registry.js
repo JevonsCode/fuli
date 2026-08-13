@@ -20,6 +20,7 @@ Local service:
 
 Install and Agent connection:
   setup [--yes] [--codex-only] [--data-dir DIR] [--personal-space NAME] [--port PORT] [--skip-agents] [--no-start] [--personal-only|--with-dev-public]
+  connect-workspace --url URL --token-file FILE [--data-dir DIR]
   update [setup options]
   uninstall [--yes] [--data-dir DIR]`);
 }

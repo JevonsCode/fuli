@@ -40,7 +40,13 @@ describe('ConnectionsPage', () => {
         personal: { status: 'ready' },
         workspaces: [{ status: 'ready', providerUrl: 'https://provider.example' }],
       },
-      capabilities: { subscribeProject: true },
+      capabilities: {
+        browsePublicProjects: true,
+        subscribeProject: true,
+        publishProject: false,
+        submitKnowledge: false,
+        reviewProposals: false,
+      },
       projects: [
         {
           id: 'project-a',
@@ -72,6 +78,10 @@ describe('ConnectionsPage', () => {
     expect(cards[0].text()).toContain('已连接')
     expect(cards[1].text()).toContain('公共服务')
     expect(cards[1].text()).toContain('1 个共享服务可用')
+    expect(cards[1].text()).toContain('发现和订阅')
+    expect(cards[1].text()).not.toContain('发布')
+    expect(cards[1].text()).not.toContain('投稿')
+    expect(cards[1].text()).not.toContain('审核')
 
     await wrapper.get('[aria-label="团队共享项目"]').setValue(
       'https://provider.example::project-b',

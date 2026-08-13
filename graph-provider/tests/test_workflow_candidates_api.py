@@ -1,5 +1,5 @@
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import httpx
@@ -24,11 +24,12 @@ HUMAN_REVIEW_TOKEN = 'test-human-review-token-not-shared-with-agents'
 WORKFLOW_OBSERVATION_TOKEN = (
     'test-workflow-observation-token-for-mcp-host-only'
 )
+RECENT_OBSERVED_AT = datetime.now(UTC).replace(microsecond=0)
 
 
 @pytest.mark.asyncio
 async def test_recommendation_explains_three_observations_without_authorizing_execution():
-    observed_at = datetime(2026, 8, 3, 8, 0, tzinfo=UTC)
+    observed_at = RECENT_OBSERVED_AT
     driver = SequentialDriver([[
         {
             'candidate_id': 'workflow-candidate-1',
@@ -969,7 +970,9 @@ def workflow_episode(
     relationship_key='step-x-recommends-step-y',
     session_id=None,
 ):
-    observed_at = observed_at or f'2026-08-{occurrence + 1:02d}T08:00:00Z'
+    observed_at = observed_at or (
+        RECENT_OBSERVED_AT - timedelta(days=occurrence)
+    ).isoformat().replace('+00:00', 'Z')
     basis = {
         'existence_reason': 'Observed in one bounded MOCK session.',
         'quadrant_reason': 'The step order is behavioral evidence, not consent.',
@@ -1053,7 +1056,9 @@ def workflow_observation_input(
         'workflow_key': workflow_key,
         'condition': condition or {},
         'observed_at': (
-            observed_at or f'2026-08-{occurrence + 1:02d}T08:00:00Z'
+        observed_at or (
+            RECENT_OBSERVED_AT - timedelta(days=occurrence)
+        ).isoformat().replace('+00:00', 'Z')
         ),
         'evidence_summary': 'Step X completed and was followed by step Y.',
         'source_application': 'other',
@@ -1083,7 +1088,7 @@ def async_result(value):
 
 class WorkflowReviewDriver:
     def __init__(self):
-        observed_at = datetime(2026, 8, 3, 8, 0, tzinfo=UTC)
+        observed_at = RECENT_OBSERVED_AT
         self.candidate = {
             'candidate_id': 'workflow-candidate-1',
             'candidate_version': 1,

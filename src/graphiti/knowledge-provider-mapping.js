@@ -71,7 +71,8 @@ function assertReasoningSummaries(items, collectionName) {
 }
 
 export function assertPublicKnowledgeEligible(episode) {
-  const blocked = [...episode.entities, ...episode.relationships].find((item) =>
+  const items = [...episode.entities, ...episode.relationships];
+  const blocked = items.find((item) =>
     item.profile_aspect ||
     item.confirmation_status !== 'confirmed' ||
     !item.confirmation_basis?.confirmed_by ||
@@ -81,6 +82,11 @@ export function assertPublicKnowledgeEligible(episode) {
   if (blocked) {
     throw new TypeError(
       'Only knowledge with an auditable confirmation can enter public review'
+    );
+  }
+  if (items.some((item) => (item.origin_quadrant ?? 'known_known') !== 'known_known')) {
+    throw new TypeError(
+      'Only knowledge originally captured as known-known can enter public review'
     );
   }
 }

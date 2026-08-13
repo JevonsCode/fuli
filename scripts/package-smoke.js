@@ -50,6 +50,7 @@ try {
     'src/cli/update-command.js',
     'dist/web/index.html',
     'docs/external-knowledge-architecture.md',
+    'docs/public-personal-architecture.md',
     'examples/external-knowledge/markdown-folder.mjs',
     'graph-provider/fuli_graph/app.py',
     'skills/capturing-session-knowledge/SKILL.md',
@@ -61,7 +62,10 @@ try {
   for (const path of files) {
     assert.doesNotMatch(path, /^(?:test|scripts|web\/src)\//);
     if (path.startsWith('docs/')) {
-      assert.equal(path, 'docs/external-knowledge-architecture.md');
+      assert.ok([
+        'docs/external-knowledge-architecture.md',
+        'docs/public-personal-architecture.md'
+      ].includes(path), `unexpected published documentation file ${path}`);
     }
     assert.doesNotMatch(path, /^(?:AGENTS|CLAUDE)\.md$/);
     assert.doesNotMatch(path, /(?:^|\/)__pycache__(?:\/|$)/);

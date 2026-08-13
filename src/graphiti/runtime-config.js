@@ -38,7 +38,12 @@ function validateConfig(config) {
   if (!config.personal.spaceId) fail('personal.spaceId is required');
   if (!Array.isArray(config.workspaces)) fail('workspaces must be an array');
   for (const [index, workspace] of config.workspaces.entries()) {
-    provider(workspace, `workspaces[${index}]`);
+    const label = `workspaces[${index}]`;
+    provider(workspace, label);
+    if (workspace.protocol !== undefined &&
+        !['graphiti-v1', 'fuli-workspace-v1'].includes(workspace.protocol)) {
+      fail(`${label}.protocol is unsupported`);
+    }
   }
 }
 

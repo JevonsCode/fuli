@@ -70,6 +70,19 @@ describe('ConsoleLayout', () => {
     expect(wrapper.find('a[href="/review"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('公共服务已连接')
 
+    store.state = {
+      ...store.state,
+      capabilities: {
+        browsePublicProjects: true,
+        subscribeProject: true,
+        publishProject: false,
+        submitKnowledge: false,
+        reviewProposals: false,
+      },
+    }
+    await flushPromises()
+    expect(wrapper.text()).toContain('公共项目发现与订阅可用')
+
     await router.push('/settings')
     await flushPromises()
     expect(wrapper.get('.settings-save-button').text()).toContain('保存设置')

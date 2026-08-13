@@ -383,7 +383,7 @@ user; the optional Agent-decision policy applies to the current response only an
 invalidate, or rewrite any source. Direct external-to-public binding, reviewed public promotion,
 scheduled sync, webhooks, and full deletion reconciliation remain **TODO**.
 
-See the [external-knowledge architecture and connector contract](docs/external-knowledge-architecture.md).
+See the [external-knowledge architecture and connector contract](docs/external-knowledge-architecture.md), and the [public-workspace and personal-graph architecture](docs/public-personal-architecture.md).
 
 ## Current capabilities and evidence boundaries
 
@@ -476,6 +476,21 @@ fuli restart --rebuild
 fuli start --lan
 fuli stop
 ```
+
+Connect a deployed `fuli-workspace` service:
+
+```bash
+fuli connect-workspace \
+  --url http://127.0.0.1:8789 \
+  --token-file /path/to/private-token
+fuli restart
+```
+
+The command verifies discovery, protocol version, and token scope before atomically updating the
+local runtime configuration with mode `0600`. It never prints the token, token-file path, or remote
+principal ID. Non-loopback services must use HTTPS. The current `fuli-workspace-v1` adapter enables
+discovery, explicit subscriptions, and queries; publishing, contributions, and review remain off
+until those protocol mappings are implemented.
 
 `start` and `restart` accept `--data-dir DIR`, `--personal-space NAME`, `--port PORT`, `--open`,
 `--rebuild`, `--lan`, and `--no-lan`. When port or LAN flags are omitted, the saved Settings values

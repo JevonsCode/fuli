@@ -56,3 +56,7 @@ def require_public_eligible_episode(episode: Any) -> None:
         raise ValueError(
             'Only knowledge with an auditable confirmation can enter public review'
         )
+    if any(item.origin_quadrant != 'known_known' for item in items):
+        raise ValueError(
+            'Only knowledge originally captured as known-known can enter public review'
+        )

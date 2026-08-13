@@ -254,8 +254,10 @@ confirmation time. Legacy items without that audit record are `pending`, even if
 for new product logic and do not treat them as confirmation evidence.
 
 Agent retrieval includes pending items on demand and returns their status so the caller can
-calibrate claims. Only user or authoritative-source `confirmed` project knowledge may enter
-public review, regardless of how it was originally discovered; normal personal preview and
+calibrate claims. Only project knowledge whose immutable discovery-time `originQuadrant` is
+`known_known` and whose status is user or authoritative-source `confirmed` may enter public
+review. Knowledge first discovered as `known_unknown`, `unknown_known`, or `unknown_unknown`
+remains in the personal graph even if it is later confirmed; normal personal preview and
 Maintainer review gates still apply.
 
 ## Grow The Personal Profile Separately
