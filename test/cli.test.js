@@ -20,6 +20,8 @@ test('CLI help exposes only installation and local service commands', () => {
 
   assert.match(help, /fuli <command>  \(short alias: fl\)/);
   assert.match(help, /update \[setup options\]/);
+  assert.match(help, /graph export --output DIR/);
+  assert.match(help, /graph import --input DIR/);
   assert.doesNotMatch(help, /[\p{Script=Han}]/u);
   assert.doesNotMatch(help, /Legacy local knowledge|space create|migrate --from|--db SQLITE_DB/);
 });

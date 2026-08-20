@@ -22,7 +22,13 @@ export function connectCodex(agent, context, {
   const current = readConfig(agent.configPath);
   const next = replaceFuliTable(current, {
     command: context.nodePath,
-    args: [context.mcpServerPath, '--runtime-config', context.runtimeConfigPath]
+    args: [
+      context.mcpServerPath,
+      '--runtime-config',
+      context.runtimeConfigPath,
+      '--source-application',
+      'codex'
+    ]
   });
   const bootstrap = installBootstrap(agent, context);
   const registrationChanged = next !== current;

@@ -7,6 +7,19 @@ const READ_TOOLS = new Set([
   'preview_common_knowledge_promotion',
   'list_knowledge_spaces',
   'list_personal_projects',
+  'list_project_agents',
+  'get_project_agent',
+  'list_project_agent_assignments',
+  'get_project_agent_context',
+  'view_project_agent_task',
+  'view_project_agent_activity',
+  'get_project_agent_recruitment_policy',
+  'list_project_agent_recruitments',
+  'list_executors',
+  'get_executor',
+  'list_executor_routing_rules',
+  'get_executor_routing_rule',
+  'list_project_agent_routing_learning',
   'list_knowledge_review_candidates',
   'list_workflow_candidates',
   'recommend_next_workflow_steps',
@@ -36,6 +49,32 @@ const WRITE_TOOLS = new Set([
   'search_human_knowledge_changes',
   'review_human_knowledge_change',
   'upsert_personal_project',
+  'upsert_project_agent',
+  'delete_project_agent',
+  'cleanup_test_project_agents',
+  'create_project_agent_assignment',
+  'end_project_agent_assignment',
+  'replace_project_agent_assignment',
+  'coordinate_project_agent_task',
+  'acquire_runtime_lease',
+  'refresh_runtime_lease',
+  'release_runtime_lease',
+  'submit_project_agent_task',
+  'record_project_agent_task_activity',
+  'update_project_agent_recruitment_policy',
+  'decide_project_agent_recruitment',
+  'upsert_executor',
+  'delete_executor',
+  'preflight_executor',
+  'authorize_executor',
+  'report_executor_health',
+  'upsert_executor_routing_rule',
+  'update_executor_routing_rule',
+  'delete_executor_routing_rule',
+  'record_project_agent_task_outcome',
+  'record_project_agent_executor_actual',
+  'ignore_project_agent_routing_learning',
+  'reset_project_agent_routing_learning',
   'start_knowledge_review',
   'record_knowledge_review_progress',
   'finish_knowledge_review',
@@ -69,12 +108,42 @@ export function annotationsFor(name) {
     readOnlyHint: readOnly,
     destructiveHint: DESTRUCTIVE_TOOLS.has(name),
     idempotentHint: readOnly || name === 'upsert_personal_project' ||
+      name === 'upsert_project_agent' ||
+      name === 'delete_project_agent' ||
+      name === 'cleanup_test_project_agents' ||
+      name === 'create_project_agent_assignment' ||
+      name === 'coordinate_project_agent_task' ||
+      name === 'refresh_runtime_lease' ||
+      name === 'release_runtime_lease' ||
+      name === 'submit_project_agent_task' ||
+      name === 'record_project_agent_task_activity' ||
+      name === 'record_project_agent_task_outcome' ||
+      name === 'record_project_agent_executor_actual' ||
+      name === 'upsert_executor' ||
+      name === 'preflight_executor' ||
+      name === 'authorize_executor' ||
+      name === 'report_executor_health' ||
+      name === 'upsert_executor_routing_rule' ||
+      name === 'update_executor_routing_rule' ||
       name === 'publish_personal_project' || name === 'unsubscribe_public_project' ||
       name === 'record_knowledge_usage' || name === 'record_decision_trace' ||
       name === 'record_knowledge_feedback' ||
       name === 'record_workflow_transition_observation' ||
       name === 'checkpoint_task_knowledge',
     openWorldHint: name === 'capture_session_knowledge' ||
+      name === 'coordinate_project_agent_task' ||
+      name === 'submit_project_agent_task' ||
+      name === 'record_project_agent_task_activity' ||
+      name === 'preflight_executor' ||
+      name === 'record_project_agent_task_outcome' ||
+      name === 'record_project_agent_executor_actual' ||
+      name === 'upsert_executor' ||
+      name === 'delete_executor' ||
+      name === 'authorize_executor' ||
+      name === 'report_executor_health' ||
+      name === 'upsert_executor_routing_rule' ||
+      name === 'update_executor_routing_rule' ||
+      name === 'delete_executor_routing_rule' ||
       name === 'record_workflow_transition_observation' ||
       name === 'search_connected_knowledge' ||
       name === 'record_decision_trace' ||

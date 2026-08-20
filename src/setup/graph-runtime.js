@@ -16,6 +16,10 @@ import {
   runDockerCompose
 } from './container-runtime.js';
 import {
+  createNativeGraphServices,
+  ensureNativeRuntime
+} from '../native-runtime/runtime.js';
+import {
   discoverLanAddresses,
   LAN_ACCESS_USERNAME,
   lanConsoleUrls
@@ -28,6 +32,20 @@ import {
   runtimeSettingsWithOverrides,
   writeRuntimeSettings
 } from '../system/runtime-settings.js';
+import {
+  neo4jMemoryEnvironment,
+  resolveNeo4jMemoryProfile
+} from './neo4j-memory-profile.js';
+import {
+  DEFAULT_ADAPTIVE_RUNTIME_SETTINGS,
+  normalizeAdaptiveRuntimeSettings,
+  readAdaptiveRuntimeSettings,
+  writeAdaptiveRuntimeSettings
+} from '../adaptive-runtime/settings.js';
+import {
+  initialAdaptiveRuntimeState,
+  writeAdaptiveRuntimeState
+} from '../adaptive-runtime/state.js';
 
 export {
   dockerInfoIndicatesDaemon,
@@ -42,31 +60,79 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
       lanAccess: input.lan === true
     }));
   const urls = managedProviderUrls(runtimeSettings);
+  const adaptiveRuntimeSettings = normalizeAdaptiveRuntimeSettings(
+    input.adaptiveRuntimeSettings ?? (input.paths.adaptiveRuntimeSettingsPath
+      ? deps.readAdaptiveSettings(input.paths.adaptiveRuntimeSettingsPath)
+      : DEFAULT_ADAPTIVE_RUNTIME_SETTINGS)
+  );
   const lan = runtimeSettings.lanAccess;
+  const runtimeMode = input.runtimeMode ?? runtimeSettings.graphRuntimeMode;
+  const activeRuntimeState = deps.readState(input.paths.graphRuntimeStatePath);
+  const previousRuntimeMode = input.previousRuntimeMode ??
+    activeRuntimeState?.runtimeSettings?.graphRuntimeMode ?? runtimeMode;
   const lanAddresses = lan ? deps.discoverLanAddresses() : [];
   if (lan && lanAddresses.length === 0) {
     throw new Error('No private IPv4 LAN address is available, so LAN mode cannot start.');
   }
-  const containerRuntime = await deps.ensureContainerRuntime({
-    env: input.env ?? process.env,
-    onProgress: input.onProgress
-  });
+  const selectedGraphRuntime = runtimeMode === 'native'
+    ? await deps.ensureNativeRuntime({
+        paths: input.paths,
+        env: input.env ?? process.env,
+        runtimeSettings,
+        memoryProfile: input.memoryProfile,
+        personalOnly: input.personalOnly === true,
+        onProgress: input.onProgress
+      })
+    : await deps.ensureContainerRuntime({
+        env: input.env ?? process.env,
+        onProgress: input.onProgress
+      });
   deps.ensureDirectory(input.paths.dataDir);
+  const configSelection = selectRuntimeConfig({
+    paths: input.paths,
+    previousRuntimeMode,
+    runtimeMode,
+    deps
+  });
+  if (input.paths.adaptiveRuntimeSettingsPath) {
+    deps.writeAdaptiveSettings(
+      input.paths.adaptiveRuntimeSettingsPath,
+      adaptiveRuntimeSettings
+    );
+  }
   const secrets = ensureProviderEnvironment(
     input.paths.graphEnvPath,
     runtimeSettings,
+    input.memoryProfile,
     deps
   );
   deps.writeRuntimeSettings(input.paths.runtimeSettingsPath, runtimeSettings);
-  deps.startProviders(input.paths, input.paths.graphEnvPath, {
-    personalOnly: input.personalOnly === true,
-    containerRuntime,
-    ...(input.buildProviders === false ? { build: false } : {})
-  });
+  if (runtimeMode === 'native') {
+    await deps.startNativeProviders(input.paths, input.paths.graphEnvPath, {
+      personalOnly: input.personalOnly === true,
+      nativeRuntime: selectedGraphRuntime
+    });
+  } else {
+    deps.startProviders(input.paths, input.paths.graphEnvPath, {
+      personalOnly: input.personalOnly === true,
+      containerRuntime: selectedGraphRuntime,
+      ...(input.buildProviders === false ? { build: false } : {})
+    });
+  }
   await waitForProvider(urls.personal, deps.fetch);
   if (!input.personalOnly) await waitForProvider(urls.workspace, deps.fetch);
+  if (input.paths.adaptiveRuntimeStatePath) {
+    deps.writeAdaptiveState(
+      input.paths.adaptiveRuntimeStatePath,
+      initialAdaptiveRuntimeState({ enabled: adaptiveRuntimeSettings.enabled })
+    );
+  }
 
-  let config = deps.readConfig(input.paths.graphRuntimeConfigPath);
+  let config = configSelection.config;
+  if (configSelection.switched && config) {
+    deps.writeConfig(input.paths.graphRuntimeConfigPath, config);
+    deps.secureFile(input.paths.graphRuntimeConfigPath);
+  }
   if (!config) {
     config = await bootstrapGraph({
       urls,
@@ -95,9 +161,16 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
       deps.secureFile(input.paths.graphRuntimeConfigPath);
     }
   }
+  const activeProfilePath = configSelection.switched
+    ? graphConfigProfilePath(input.paths, runtimeMode)
+    : null;
+  if (activeProfilePath) {
+    deps.writeConfig(activeProfilePath, config);
+    deps.secureFile(activeProfilePath);
+  }
 
   if (input.noStart) return { status: 'initialized', url: null, pid: null };
-  const existing = deps.readState(input.paths.graphRuntimeStatePath);
+  const existing = activeRuntimeState;
   if (isGraphRuntimeState(existing) && deps.isProcessAlive(existing.pid)) {
     const healthy = await deps.webHealth(existing.url, existing.pid, existing.version);
     if (
@@ -105,6 +178,9 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
       existing.port === runtimeSettings.ports.console &&
       exposureMatches(existing, { lan, lanAddresses })
     ) {
+      if (adaptiveRuntimeSettings.enabled) {
+        await notifyAdaptiveRuntime(existing.url, deps.fetch);
+      }
       return runtimeResult('running', existing);
     }
     if (!healthy) throw new Error('Recorded Fuli Graphiti runtime is not healthy');
@@ -149,10 +225,38 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   return runtimeResult('started', state, lanAccessToken);
 }
 
-function ensureProviderEnvironment(path, settings, deps) {
+function selectRuntimeConfig({ paths, previousRuntimeMode, runtimeMode, deps }) {
+  const current = deps.readConfig(paths.graphRuntimeConfigPath);
+  const switched = previousRuntimeMode !== runtimeMode;
+  if (!switched) return { switched: false, config: current };
+
+  const previousProfilePath = graphConfigProfilePath(paths, previousRuntimeMode);
+  if (current && previousProfilePath) {
+    deps.writeConfig(previousProfilePath, current);
+    deps.secureFile(previousProfilePath);
+  }
+  const targetProfilePath = graphConfigProfilePath(paths, runtimeMode);
+  return {
+    switched: true,
+    config: targetProfilePath ? deps.readConfig(targetProfilePath) : null
+  };
+}
+
+function graphConfigProfilePath(paths, mode) {
+  if (mode === 'native') return paths.nativeGraphConfigProfilePath ?? null;
+  if (mode === 'container') return paths.containerGraphConfigProfilePath ?? null;
+  return null;
+}
+
+function ensureProviderEnvironment(path, settings, requestedMemoryProfile, deps) {
   const previous = deps.fileExists(path) ? parseEnv(deps.readText(path)) : {};
+  const memoryProfile = resolveNeo4jMemoryProfile(
+    requestedMemoryProfile,
+    previous.FULI_NEO4J_MEMORY_PROFILE
+  );
   const values = {
     ...previous,
+    ...neo4jMemoryEnvironment(memoryProfile),
     FULI_PERSONAL_NEO4J_PASSWORD: previous.FULI_PERSONAL_NEO4J_PASSWORD ?? secret(),
     FULI_WORKSPACE_NEO4J_PASSWORD: previous.FULI_WORKSPACE_NEO4J_PASSWORD ?? secret(),
     FULI_PERSONAL_BOOTSTRAP_TOKEN: previous.FULI_PERSONAL_BOOTSTRAP_TOKEN ?? secret(),
@@ -390,7 +494,14 @@ export function startGraphProviders(paths, envPath, options = {}) {
   runDockerCompose(args, options.containerRuntime);
 }
 
-export function stopGraphProviders(paths, envPath, options = {}) {
+export async function stopGraphProviders(paths, envPath, options = {}) {
+  if (options.runtimeMode === 'native') {
+    await createNativeGraphServices({
+      paths,
+      personalOnly: options.personalOnly === true
+    }).stopDatabases();
+    return;
+  }
   const args = [
     'compose',
     '--env-file', envPath,
@@ -437,10 +548,19 @@ function graphDependencies(overrides) {
     readConfig: (path) => readJsonFile(path, null),
     writeConfig: writeJsonFileAtomic,
     writeRuntimeSettings,
+    readAdaptiveSettings: readAdaptiveRuntimeSettings,
+    writeAdaptiveSettings: writeAdaptiveRuntimeSettings,
+    writeAdaptiveState: writeAdaptiveRuntimeState,
     readState: (path) => readJsonFile(path, null),
     writeState: writeJsonFileAtomic,
     ensureContainerRuntime,
+    ensureNativeRuntime,
     startProviders: startGraphProviders,
+    startNativeProviders: (paths, _envPath, options) => createNativeGraphServices({
+      paths,
+      runtimeDescriptor: options.nativeRuntime,
+      personalOnly: options.personalOnly
+    }).start(),
     spawnWebRuntime,
     isProcessAlive,
     stopProcess,
@@ -450,6 +570,31 @@ function graphDependencies(overrides) {
     waitForExit: waitForProcessExit,
     ...overrides
   };
+}
+
+async function notifyAdaptiveRuntime(url, fetchImpl) {
+  let leaseId = null;
+  try {
+    const acquired = await fetchImpl(`${url}/api/system/runtime/leases`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'graph', owner: 'setup' }),
+      signal: AbortSignal.timeout(180_000)
+    });
+    if (!acquired.ok) return;
+    leaseId = (await acquired.json())?.leaseId ?? null;
+  } catch {
+    return;
+  }
+  if (!leaseId) return;
+  try {
+    await fetchImpl(`${url}/api/system/runtime/leases/${encodeURIComponent(leaseId)}`, {
+      method: 'DELETE',
+      signal: AbortSignal.timeout(10_000)
+    });
+  } catch {
+    // Lease expiry remains the safety net if setup cannot release explicitly.
+  }
 }
 
 export async function checkLocalConsoleHealth(url, expectedPid, stateVersion = 3) {

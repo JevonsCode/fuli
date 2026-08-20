@@ -37,6 +37,8 @@ test('Codex global instructions preserve unrelated guidance and keep a short boo
   assert.match(managed, /all returned `effective_preferences`/);
   assert.match(managed, /write tools?.*actual payload/is);
   assert.match(managed, /mentioning.*later.*not compliance/is);
+  assert.match(managed, /coordinate_project_agent_task/);
+  assert.match(managed, /release_runtime_lease.*finally/is);
   assert.ok(Buffer.byteLength(managed, 'utf8') < 1000);
   assert.equal(removeFuliGlobalInstructions(first), source);
 });

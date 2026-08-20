@@ -51,6 +51,10 @@ const refreshOptions = computed(() => refreshIntervals.map((seconds) => ({
   value: String(seconds),
   label: t('settings.resources.refreshUnit', { seconds }),
 })))
+const runtimeModeOptions = computed(() => [
+  { value: 'native', label: t('settings.behavior.runtimeModes.native') },
+  { value: 'container', label: t('settings.behavior.runtimeModes.container') },
+])
 const conversationIdFormatOptions = computed(() => [
   { value: 'any', label: t('settings.conversationLaunchers.idFormats.any') },
   { value: 'uuid', label: t('settings.conversationLaunchers.idFormats.uuid') },
@@ -67,6 +71,11 @@ const diskMax = computed(() => Math.max(
   1,
   ...(resources.value?.disk.components.map(({ bytes }) => bytes) ?? [1]),
 ))
+const recommendsNativeRuntime = computed(() =>
+  form.value?.graphRuntimeMode === 'container'
+  && Number.isFinite(resources.value?.memory.hostTotalBytes)
+  && Number(resources.value?.memory.hostTotalBytes) <= 16 * 1024 ** 3,
+)
 
 onMounted(async () => {
   if (store.runtimeStatus === 'idle') void store.refresh()
@@ -155,6 +164,11 @@ function updateRefreshInterval(value: string) {
   const seconds = refreshIntervals.find((option) => String(option) === value)
   if (seconds === undefined || !form.value) return
   form.value.resourceRefreshSeconds = seconds
+}
+
+function updateRuntimeMode(value: string) {
+  if (!form.value || (value !== 'native' && value !== 'container')) return
+  form.value.graphRuntimeMode = value
 }
 
 function conversationApplicationLabel(application: ConversationSourceApplication) {
@@ -256,7 +270,9 @@ function formatTime(value: string | undefined) {
             <span>{{ t('settings.resources.diskMeasuredAt', { time: formatTime(resources.disk.measuredAt) }) }}</span>
             <span v-if="resources.status === 'partial'">{{ t('settings.resources.partial') }}</span>
             <span v-if="resources.disk.temporaryBytes">{{ t('settings.resources.temporary', { value: formatBytes(resources.disk.temporaryBytes) }) }}</span>
-            <span>{{ t('settings.resources.exclusions') }}</span>
+            <span>{{ t(resources.exclusions.includes('shared-container-vm-overhead')
+              ? 'settings.resources.exclusionsContainer'
+              : 'settings.resources.exclusionsNative') }}</span>
           </div>
         </template>
         <div v-else class="settings-skeleton" aria-hidden="true" />
@@ -373,6 +389,24 @@ function formatTime(value: string | undefined) {
               <span><strong>{{ t('settings.behavior.lanAccess') }}</strong><small>{{ t('settings.behavior.lanAccessMeta') }}</small></span>
               <input v-model="form.lanAccess" type="checkbox" role="switch" />
             </label>
+            <div class="setting-row select-row">
+              <span>
+                <strong>{{ t('settings.behavior.runtimeMode') }}</strong>
+                <small>{{ recommendsNativeRuntime
+                  ? t('settings.behavior.runtimeRecommendation')
+                  : t('settings.behavior.runtimeModeMeta', {
+                    mode: t(`settings.behavior.runtimeModes.${settings?.active.graphRuntimeMode ?? form.graphRuntimeMode}`),
+                  }) }}</small>
+              </span>
+              <SearchableSelect
+                class="settings-select"
+                control-id="settings-runtime-mode"
+                :model-value="form.graphRuntimeMode"
+                :options="runtimeModeOptions"
+                :label="t('settings.behavior.runtimeMode')"
+                @update:model-value="updateRuntimeMode"
+              />
+            </div>
             <div class="setting-row select-row">
               <span><strong>{{ t('settings.behavior.language') }}</strong></span>
               <SearchableSelect

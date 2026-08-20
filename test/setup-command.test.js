@@ -8,6 +8,9 @@ const OPTIONS = Object.freeze({
   dataDir: null,
   personalSpaceName: 'Personal',
   port: 2727,
+  memoryProfile: null,
+  runtimeMode: null,
+  adaptiveMemory: null,
   yes: false,
   codexOnly: false,
   skipAgents: false,
@@ -37,9 +40,29 @@ test('personal-only preview explains that public controls stay disconnected', ()
     write: (line) => output.push(line)
   }).then(() => {
     assert.match(output[0], /Storage: personal only, using local Graphiti \/ Neo4j/);
-    assert.match(output[0], /Container runtime: detected automatically/);
+    assert.match(output[0], /Graph runtime: container; Docker or Rancher Desktop/);
     assert.match(output[0], /Shared services: not connected/);
+    assert.match(output[0], /Neo4j memory: saved profile or balanced default/);
+    assert.match(output[0], /Adaptive memory: disabled/);
   });
+});
+
+test('setup preview recommends native processes on a low-memory Mac', async () => {
+  const output = [];
+  const plan = samplePlan();
+  plan.runtimeModeRecommendation = {
+    recommendedMode: 'native',
+    reason: 'low-memory-mac',
+    hostTotalBytes: 16 * 1024 ** 3
+  };
+  await runSetupCommand(['--personal-only'], {
+    planSetup: () => plan,
+    confirm: async () => false,
+    write: (line) => output.push(line)
+  });
+
+  assert.match(output[0], /Recommendation: native mode avoids shared VM memory/);
+  assert.match(output[0], /--runtime-mode native/);
 });
 
 test('local setup planning is side-effect free and describes detected agents', () => {
@@ -71,12 +94,42 @@ test('local setup planning is side-effect free and describes detected agents', (
   ]);
 });
 
+test('local setup recommends native mode on a low-memory Mac without overriding the choice', () => {
+  const dependencies = {
+    resolvePaths: () => ({
+      dataDir: 'C:/Fuli',
+      runtimeSettingsPath: null,
+      adaptiveRuntimeSettingsPath: null,
+      mcpServerPath: 'C:/Package/src/mcp-server.js'
+    }),
+    discover: () => [],
+    inspectInstallations: (agents) => agents,
+    platform: 'darwin',
+    hostTotalMemory: () => 16 * 1024 ** 3
+  };
+
+  const recommended = planLocalSetup({ ...OPTIONS, port: null }, dependencies);
+  assert.equal(recommended.runtimeSettings.graphRuntimeMode, 'container');
+  assert.deepEqual(recommended.runtimeModeRecommendation, {
+    recommendedMode: 'native',
+    reason: 'low-memory-mac',
+    hostTotalBytes: 16 * 1024 ** 3
+  });
+
+  const selected = planLocalSetup({
+    ...OPTIONS,
+    port: null,
+    runtimeMode: 'native'
+  }, dependencies);
+  assert.equal(selected.runtimeSettings.graphRuntimeMode, 'native');
+});
+
 test('applying setup starts the runtime, backs up configs, and connects available agents',
   async () => {
     const calls = [];
     let runtimeInput = null;
     const plan = samplePlan();
-    const result = await applyLocalSetup(plan, OPTIONS, {
+    const result = await applyLocalSetup(plan, { ...OPTIONS, memoryProfile: 'low' }, {
       ensureRuntime: async (input) => {
         runtimeInput = input;
         return ({
@@ -107,6 +160,8 @@ test('applying setup starts the runtime, backs up configs, and connects availabl
       'skill:codex:flreview'
     ]);
     assert.equal(runtimeInput.personalOnly, true);
+    assert.equal(runtimeInput.memoryProfile, 'low');
+    assert.equal(runtimeInput.adaptiveRuntimeSettings, undefined);
     assert.equal(result.status, 'ready');
     assert.equal(result.runtime.status, 'started');
     assert.deepEqual(result.agents, [{
@@ -133,6 +188,25 @@ test('applying setup starts the runtime, backs up configs, and connects availabl
       ]
     }]);
   });
+
+test('applying setup forwards the selected graph runtime mode', async () => {
+  let runtimeInput = null;
+  await applyLocalSetup({
+    ...samplePlan(),
+    runtimeSettings: {
+      ...SAVED_RUNTIME_SETTINGS,
+      graphRuntimeMode: 'native'
+    },
+    agents: []
+  }, { ...OPTIONS, runtimeMode: 'native' }, {
+    ensureRuntime: async (input) => {
+      runtimeInput = input;
+      return { status: 'started', url: null, pid: 1 };
+    }
+  });
+
+  assert.equal(runtimeInput.runtimeMode, 'native');
+});
 
 test('an agent failure is isolated and reported without blocking the local runtime', async () => {
   const result = await applyLocalSetup(samplePlan(), OPTIONS, {

@@ -63,7 +63,8 @@ export async function createServer(options = {}) {
         }),
         packageRoot: PACKAGE_ROOT,
         activePort: port,
-        activeLan: lanEnabled
+        activeLan: lanEnabled,
+        executorAdapters: options.executorAdapters
       })
     : null);
   for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -109,7 +110,10 @@ export async function createServer(options = {}) {
       throw new Error('Server did not bind to a valid local authority');
     }
 
-    server.once('close', runtime.close);
+    server.once('close', () => {
+      system?.close?.();
+      runtime.close();
+    });
     return {
       server,
       url: `http://${authority}`,

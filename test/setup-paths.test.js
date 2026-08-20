@@ -29,7 +29,25 @@ test('setup paths use LocalAppData on Windows', () => {
     join(paths.dataDir, 'external-knowledge', 'connectors')
   );
   assert.equal(paths.backupDir, join(paths.dataDir, 'backups', 'agents'));
+  assert.equal(paths.graphBackupDir, join(paths.dataDir, 'backups', 'graph'));
   assert.equal(paths.logPath, join(paths.dataDir, 'logs', 'runtime.log'));
+  assert.equal(paths.nativeRuntimeDir, join(paths.dataDir, 'native-runtime'));
+  assert.equal(paths.nativeRuntimeManifestPath,
+    join(paths.dataDir, 'native-runtime', 'manifest.json'));
+  assert.equal(paths.nativeProcessStatePath,
+    join(paths.dataDir, 'native-runtime', 'processes.json'));
+  assert.equal(paths.nativeNeo4jHome,
+    join(paths.dataDir, 'native-runtime', 'neo4j-community-5.26.28'));
+  assert.equal(paths.nativeProviderVenvPath,
+    join(paths.dataDir, 'native-runtime', 'provider-venv'));
+  assert.equal(paths.nativePersonalDir,
+    join(paths.dataDir, 'native-runtime', 'personal'));
+  assert.equal(paths.nativeWorkspaceDir,
+    join(paths.dataDir, 'native-runtime', 'workspace'));
+  assert.equal(paths.containerGraphConfigProfilePath,
+    join(paths.dataDir, 'runtime-configs', 'container.json'));
+  assert.equal(paths.nativeGraphConfigProfilePath,
+    join(paths.dataDir, 'runtime-configs', 'native.json'));
 });
 
 test('setup paths use the platform data convention on macOS and Linux', () => {

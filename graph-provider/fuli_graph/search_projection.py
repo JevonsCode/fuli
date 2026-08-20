@@ -57,6 +57,7 @@ async def read_edge_epistemic_metadata(store, edge_ids: list[str]) -> dict[str, 
                     ELSE coalesce(edge.fuli_preference_scope, 'global') END
                     AS preference_scope,
                edge.fuli_preference_project_id AS preference_project_id,
+               edge.fuli_preference_agent_id AS preference_agent_id,
                edge.fuli_key AS key,
                edge.fuli_attributes_json AS attributes_json,
                coalesce(edge.fuli_inheritance_mode, 'local_only')
@@ -140,6 +141,7 @@ def fact_result(
         profile_aspect=metadata.get('profile_aspect'),
         preference_scope=metadata.get('preference_scope'),
         preference_project_id=metadata.get('preference_project_id'),
+        preference_agent_id=metadata.get('preference_agent_id'),
         key=metadata.get('key'),
         preference_key=(
             attributes.get('preferenceKey')
@@ -149,6 +151,7 @@ def fact_result(
         ),
         preference_qualifiers=preference_qualifiers(attributes),
         defined_project_id=metadata.get('defined_project_id'),
+        project_agent_id=metadata.get('project_agent_id'),
         inheritance_mode=metadata.get('inheritance_mode') or 'local_only',
         inherited_project_ids=metadata.get('inherited_project_ids') or [],
         human_edited=metadata.get('human_edited') is True,

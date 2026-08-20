@@ -40,6 +40,7 @@ test('update installs latest globally and runs setup from the newly installed pa
       '--yes',
       '--data-dir', 'D:/Fuli Data',
       '--port', '3199',
+      '--memory-profile', 'low',
       '--no-start'
     ];
     const result = await runUpdateCommand(args, {
@@ -106,6 +107,7 @@ test('update installs latest globally and runs setup from the newly installed pa
           '--yes',
           '--data-dir', 'D:/Fuli Data',
           '--port', '3199',
+          '--memory-profile', 'low',
           '--no-start'
         ]
       }
@@ -116,6 +118,7 @@ test('update installs latest globally and runs setup from the newly installed pa
       version: '9.8.7'
     });
     assert.match(output.join('\n'), /refresh through setup in the new version/);
+    assert.match(output.join('\n'), /Neo4j memory: low/);
     assert.match(output.at(-1), /9\.8\.7/);
     assert.doesNotMatch(output.join('\n'), /[\p{Script=Han}]/u);
   });

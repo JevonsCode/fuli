@@ -1,4 +1,5 @@
 import { backupAgentConfig } from './config-backup.js';
+import { totalmem } from 'node:os';
 import { inspectAgentInstallations } from './agent-installation-status.js';
 import { connectAgent, discoverAgents } from './agents.js';
 import { resolveSetupPaths } from './paths.js';
@@ -9,6 +10,11 @@ import {
   readRuntimeSettings,
   runtimeSettingsWithOverrides
 } from '../system/runtime-settings.js';
+import {
+  DEFAULT_ADAPTIVE_RUNTIME_SETTINGS,
+  adaptiveRuntimeSettingsWithOverrides,
+  readAdaptiveRuntimeSettings
+} from '../adaptive-runtime/settings.js';
 
 export function planLocalSetup(options, {
   env = process.env,
@@ -16,6 +22,9 @@ export function planLocalSetup(options, {
   discover = discoverAgents,
   inspectInstallations = inspectAgentInstallations,
   readSettings = readRuntimeSettings,
+  readAdaptiveSettings = readAdaptiveRuntimeSettings,
+  platform = process.platform,
+  hostTotalMemory = totalmem,
   nodePath = process.execPath
 } = {}) {
   const paths = resolvePaths({ dataDir: options.dataDir, env });
@@ -23,8 +32,16 @@ export function planLocalSetup(options, {
     ? readSettings(paths.runtimeSettingsPath)
     : DEFAULT_RUNTIME_SETTINGS;
   const runtimeSettings = runtimeSettingsWithOverrides(savedRuntimeSettings, {
-    consolePort: options.port
+    consolePort: options.port,
+    graphRuntimeMode: options.runtimeMode
   });
+  const savedAdaptiveRuntimeSettings = paths.adaptiveRuntimeSettingsPath
+    ? readAdaptiveSettings(paths.adaptiveRuntimeSettingsPath)
+    : DEFAULT_ADAPTIVE_RUNTIME_SETTINGS;
+  const adaptiveRuntimeSettings = adaptiveRuntimeSettingsWithOverrides(
+    savedAdaptiveRuntimeSettings,
+    { enabled: options.adaptiveMemory ?? null }
+  );
   const discovered = options.skipAgents ? [] : discover({ env });
   const agents = options.codexOnly
     ? discovered.filter(({ id }) => id === 'codex')
@@ -32,6 +49,11 @@ export function planLocalSetup(options, {
   return {
     paths,
     runtimeSettings,
+    runtimeModeRecommendation: graphRuntimeModeRecommendation({
+      platform,
+      hostTotalBytes: hostTotalMemory()
+    }),
+    adaptiveRuntimeSettings,
     agents: inspectInstallations(agents, {
       nodePath,
       mcpServerPath: paths.mcpServerPath,
@@ -40,6 +62,17 @@ export function planLocalSetup(options, {
       projectSkillPath: paths.projectSkillPath,
       reviewSkillPath: paths.reviewSkillPath
     })
+  };
+}
+
+function graphRuntimeModeRecommendation({ platform, hostTotalBytes }) {
+  const lowMemoryMac = platform === 'darwin' &&
+    Number.isFinite(hostTotalBytes) &&
+    hostTotalBytes <= 16 * 1024 ** 3;
+  return {
+    recommendedMode: lowMemoryMac ? 'native' : 'container',
+    reason: lowMemoryMac ? 'low-memory-mac' : 'default',
+    hostTotalBytes
   };
 }
 
@@ -58,7 +91,10 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
     port: runtimeSettings.ports.console,
     lan: runtimeSettings.lanAccess,
     runtimeSettings,
+    runtimeMode: runtimeSettings.graphRuntimeMode,
     personalOnly: options.personalOnly,
+    memoryProfile: options.memoryProfile,
+    adaptiveRuntimeSettings: plan.adaptiveRuntimeSettings,
     noStart: options.noStart,
     env: dependencies.env ?? process.env,
     onProgress: dependencies.onProgress

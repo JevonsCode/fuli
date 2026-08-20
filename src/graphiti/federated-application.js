@@ -28,17 +28,12 @@ import {
   createFuliSourceMarker,
   sourceConsoleUrl
 } from './source-marker.js';
-import {
-  recallTaskKnowledge,
-  TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE
-} from './task-knowledge-recall.js';
 import { resolvePersonalProjectPath } from './project-path-context.js';
 import { mergeExternalKnowledgeProjection } from '../external-knowledge/graph-projection.js';
 import { TaskContextRegistry } from '../mcp/task-context-registry.js';
 import { attachExternalKnowledgeRuntime } from '../external-knowledge/runtime.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import {
-  agentProjectResolution,
   beginTaskContext as beginTaskContextWorkflow,
   checkpointTaskKnowledge as checkpointTaskKnowledgeWorkflow,
   discoverCommonKnowledgeCandidates as discoverCommonKnowledgeCandidatesWorkflow,
@@ -61,6 +56,10 @@ import {
 } from './knowledge-provider-mapping.js';
 import { providerProjectProfile } from './project-profile-mapping.js';
 import {
+  ProjectAgentControlPlaneApplication,
+  projectAgentControlPlaneHooks
+} from './project-agent-control-plane.js';
+import {
   finishKnowledgeReview as finishKnowledgeReviewWorkflow,
   listKnowledgeReviewCandidates as listKnowledgeReviewCandidatesWorkflow,
   recordKnowledgeReviewProgress as recordKnowledgeReviewProgressWorkflow,
@@ -77,10 +76,8 @@ import {
   relatedProjectGuidance
 } from './related-project-suggestions.js';
 import {
-  agentCollaborationPreference,
-  agentDeferredPreferenceConflict,
-  deferredPreferenceConflicts
-} from './collaboration-preference-projection.js';
+  getCollaborationPreferences as getCollaborationPreferencesWorkflow
+} from './collaboration-preference-workflow.js';
 import { buildUserTasteSkill } from './user-taste-skill.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
 import {
@@ -133,7 +130,7 @@ function providerRequestTimeoutFromEnv(env) {
   return parsed;
 }
 
-export class FederatedGraphApplication {
+export class FederatedGraphApplication extends ProjectAgentControlPlaneApplication {
   constructor(config, {
     fetchImpl = globalThis.fetch,
     capturePolicyStore = new CapturePolicyStore(),
@@ -143,6 +140,7 @@ export class FederatedGraphApplication {
     taskContextRegistry = new TaskContextRegistry(),
     providerRequestTimeoutMs = undefined
   } = {}) {
+    super();
     this.graphiti = true;
     this.config = config;
     this.capturePolicyStore = capturePolicyStore;
@@ -203,9 +201,16 @@ export class FederatedGraphApplication {
       const result = await this.personal.commit({
         space_id: input.spaceId,
         personal_project_id: input.personalProjectId ?? null,
+        project_agent_id: input.projectAgentId ?? null,
         episode
       });
       return { route: 'personal', ...result };
+    }
+    if (input.projectAgentId) {
+      throw new ApplicationError(
+        ApplicationErrorCode.VALIDATION,
+        'Project Agent knowledge can only be captured in the personal graph'
+      );
     }
     if (episode.sensitivity !== 'normal') {
       throw new ApplicationError(
@@ -249,6 +254,7 @@ export class FederatedGraphApplication {
 
   async getCollaborationPreferences({
     personalProjectId = null,
+    projectAgentId = null,
     projectPath = null,
     taskPrompt = null,
     limit = 100,
@@ -259,80 +265,18 @@ export class FederatedGraphApplication {
       personalProjectId,
       projectPath
     });
-    const resolvedProjectId = projectResolution.personalProjectId;
-    const [result, queuedConflicts] = await Promise.all([
-      this.personal.collaborationPreferences(
-        this.config.personal.spaceId,
-        resolvedProjectId,
-        limit
-      ),
-      this.personal.listPreferenceConflicts(
-        this.config.personal.spaceId,
-        'ai_pending',
-        limit
-      )
-    ]);
-    const deferredConflicts = deferredPreferenceConflicts(
-      result,
-      queuedConflicts
+    return getCollaborationPreferencesWorkflow(
+      this,
+      projectResolution,
+      {
+        projectAgentId,
+        taskPrompt,
+        limit,
+        agentInvocation,
+        agentToolName
+      },
+      (items, toolName) => this.#recordAgentViews(items, toolName)
     );
-    const taskKnowledgeRecall = taskPrompt === null
-      ? null
-      : await recallTaskKnowledge(this, projectResolution, taskPrompt);
-    if (agentInvocation) {
-      const items = [
-        ...(result.global_preferences ?? []),
-        ...(result.project_preferences ?? [])
-      ];
-      await this.#recordAgentViews(items.map(({ id, item_kind: itemKind }) => ({
-        item_id: id,
-        item_kind: itemKind
-      })), agentToolName);
-    }
-    const applicationGuidance = {
-      apply: 'effective_preferences',
-      global_scope: 'Apply personal-global preferences in every user task.',
-      project_scope: resolvedProjectId
-        ? `Also apply preferences scoped to ${resolvedProjectId} and confirmed ancestor preferences whose descendants or selected-projects mode explicitly reaches it.`
-        : 'No exact personal project matched; do not apply project-scoped preferences.',
-      inheritance: 'Project preference inheritance follows only PART_OF or USES_KNOWLEDGE_FROM for at most two hops. Preserve inherited_from_project_id, scope_path, and scope_distance. An exact item wins only after confirmation authority is compared; weight never expands scope or resolves a conflict.',
-      related_projects: 'RELATED_TO preferences never auto-apply. Use structured related-project suggestions to ask before a one-time read-only expansion.',
-      conflicts: 'Do not apply entries listed in conflicts until the user resolves them.',
-      deferred_conflicts: 'If the current task would use a deferred_conflict, call resolve_deferred_preference_conflict before applying either side. Ignore unrelated deferred conflicts. The resolution must preserve the AI audit marker.',
-      authority: 'Human or authoritative-source confirmed preferences outrank agent-confirmed preferences. Agent-confirmed preferences are usable but lower priority and remain explicitly marked.',
-      pending: 'Pending preferences are available only through on-demand knowledge search; invalid and unrelated-project preferences are excluded. Automatic preference injection never counts as usage evidence.',
-      knowledge_retrieval: TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE
-    };
-    if (!agentInvocation) {
-      return {
-        ...result,
-        deferred_conflicts: deferredConflicts,
-        application_guidance: applicationGuidance,
-        project_resolution: agentProjectResolution(projectResolution),
-        ...(taskKnowledgeRecall ? { task_knowledge_recall: taskKnowledgeRecall } : {})
-      };
-    }
-    return {
-      effective_preferences: (result.effective_preferences ?? [])
-        .map(agentCollaborationPreference),
-      deferred_conflicts: deferredConflicts.map(agentDeferredPreferenceConflict),
-      application_guidance: applicationGuidance,
-      ...(taskKnowledgeRecall ? { task_knowledge_recall: taskKnowledgeRecall } : {}),
-      context: {
-        personal_space_id: result.personal_space_id,
-        personal_project_id: result.personal_project_id,
-        global_preference_count: (result.global_preferences ?? []).length,
-        project_preference_count: (result.project_preferences ?? []).length,
-        inherited_project_preference_count: (result.project_preferences ?? [])
-          .filter(({ inherited_from_project_id: projectId }) => Boolean(projectId))
-          .length,
-        conflict_count: (result.conflicts ?? []).length,
-        ai_deferred_conflict_count: deferredConflicts.length,
-        overridden_global_count: (result.overridden_global_ids ?? []).length,
-        source_truncated: result.truncated === true,
-        project_resolution: agentProjectResolution(projectResolution)
-      }
-    };
   }
 
   async getUserTasteSkill({
@@ -415,6 +359,7 @@ export class FederatedGraphApplication {
     query,
     projectIds = [],
     personalProjectId = null,
+    projectAgentId = null,
     contextPersonalProjectIds = [],
     personalProjectScope = 'bounded',
     limit = 12,
@@ -428,6 +373,11 @@ export class FederatedGraphApplication {
     }
     if (!['bounded', 'all_local_confirmed'].includes(personalProjectScope)) {
       throw new TypeError('Unknown personal project search scope');
+    }
+    if (projectAgentId && (!personalProjectId || personalProjectScope !== 'bounded')) {
+      throw new TypeError(
+        'Project Agent search requires one bounded active personal project'
+      );
     }
     const subscriptions = projectIds.length
       ? await this.personal.listSubscriptions(personalSpaceId)
@@ -447,21 +397,25 @@ export class FederatedGraphApplication {
       )
       : personalContextProjectIds(personalProjectId, contextPersonalProjectIds);
     const personalSearches = personalProjectSearchBatches(selectedPersonalProjectIds)
-      .map((personalProjectIds, index) => this.personal.search({
+      .map((personalProjectIds, index) => {
+        const activePersonalProjectId = (
+          personalProjectScope === 'bounded' &&
+          personalProjectId &&
+          personalProjectIds.includes(personalProjectId)
+        ) ? personalProjectId : null;
+        return this.personal.search({
         space_ids: [personalSpaceId],
         query,
         limit,
         include_historical: includeHistorical,
         include_exploratory: includePending,
         personal_project_ids: personalProjectIds,
-        active_personal_project_id: (
-          personalProjectScope === 'bounded' &&
-          personalProjectId &&
-          personalProjectIds.includes(personalProjectId)
-        ) ? personalProjectId : null,
+        active_personal_project_id: activePersonalProjectId,
+        project_agent_id: activePersonalProjectId ? projectAgentId : null,
         inherit_project_knowledge: personalProjectScope === 'bounded',
         include_personal_global: index === 0
-      }));
+        });
+      });
     const grouped = groupSubscriptions(selectedSubscriptions);
     const workspaceSearches = [...grouped.entries()].map(([providerUrl, items]) => {
       const projectIdsForProvider = items.map(({ project_id: projectId }) => projectId);
@@ -549,6 +503,7 @@ export class FederatedGraphApplication {
       entities,
       personalGlobalIncluded: true,
       personalProjectScope,
+      projectAgentId,
       searchedPersonalProjectIds: selectedPersonalProjectIds,
       requestedProjectIds,
       searchedProjectIds,
@@ -1230,6 +1185,14 @@ export class FederatedGraphApplication {
     if (personalSpaceId !== this.config.personal.spaceId) {
       throw new TypeError('Knowledge changes must use the active personal space');
     }
+  }
+
+  [projectAgentControlPlaneHooks.assertActivePersonalSpace](personalSpaceId) {
+    this.#assertActivePersonalSpace(personalSpaceId);
+  }
+
+  async [projectAgentControlPlaneHooks.resolvePreferenceProject](input) {
+    return this.#resolvePreferenceProject(input);
   }
 
   #workspace(providerUrl) {

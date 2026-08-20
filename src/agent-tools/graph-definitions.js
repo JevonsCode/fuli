@@ -8,11 +8,35 @@ import {
   objectSchema,
   stringSchema
 } from './schema.js';
+import {
+  executorActualReportInput,
+  executorAuthorizationStatus,
+  executorHealthStatus,
+  executorModel,
+  executorProfile,
+  executorRoutingRuleInput,
+  nullableProjectAgentStatus,
+  projectAgentAssignmentEndInput,
+  projectAgentAssignmentInput,
+  projectAgentAssignmentReplaceInput,
+  projectAgentAssignmentStatus,
+  projectAgentModelStrategy,
+  projectAgentProfile,
+  projectAgentTaskActivityInput,
+  projectAgentTaskCoordinateInput,
+  projectAgentTaskOutcomeInput,
+  projectAgentTaskSubmitInput,
+  recruitmentConfirmationMode,
+  recruitmentDecision,
+  recruitmentStatus,
+  routingRuleScope
+} from './project-agent-definitions.js';
 
 const id = boundedString(256);
 const label = boundedString(512);
 const shortText = boundedString(2048);
 const longText = boundedString(8192);
+const idempotencyKey = { ...boundedString(256), minLength: 8 };
 const dateTime = { ...boundedString(64), format: 'date-time' };
 const sourceUri = {
   type: ['string', 'null'],
@@ -161,6 +185,7 @@ const projectProfile = objectSchema({
   assessment: { ...projectAssessment, type: ['object', 'null'] }
 }, ['name']);
 
+
 const personalProjectActionIntent = {
   personalSpaceId: id,
   itemKind: enumSchema(['entity']),
@@ -286,6 +311,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
       projectPath: boundedString(4096),
       taskPrompt: boundedString(8192),
       personalProjectId: nullableStringSchema(),
+      projectAgentId: nullableStringSchema(),
       limit: integerSchema({ minimum: 1, maximum: 200 })
     }, ['projectPath'])
   },
@@ -331,6 +357,10 @@ export const GRAPH_TOOL_DEFINITIONS = [
       personalProjectId: {
         ...nullableStringSchema(),
         description: 'Local personal project scope. Only meaningful with targetKind "personal".'
+      },
+      projectAgentId: {
+        ...nullableStringSchema(),
+        description: 'Optional project Agent owner for this knowledge. Requires targetKind "personal" and personalProjectId. Agent-scoped preferences and memory are excluded from every other Agent and from ordinary project-only retrieval.'
       },
       providerUrl: {
         ...nullableStringSchema(),
@@ -411,6 +441,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
       personalSpaceId: id,
       query: shortText,
       personalProjectId: nullableStringSchema(),
+      projectAgentId: nullableStringSchema(),
       contextPersonalProjectIds: arraySchema(id, { maxItems: 15 }),
       personalProjectScope: enumSchema(['bounded', 'all_local_confirmed']),
       projectIds: arraySchema(id, { maxItems: 32 }),
@@ -596,6 +627,371 @@ export const GRAPH_TOOL_DEFINITIONS = [
     name: 'list_personal_projects',
     description: 'List local personal project profiles and their current evidence-backed coverage summaries.',
     inputSchema: objectSchema({ personalSpaceId: id })
+  },
+  {
+    name: 'upsert_project_agent',
+    title: 'WRITE · Create or update a project Agent',
+    description: 'Create or update one model-independent long-lived Agent bound to an existing local personal project. The profile is a lightweight project directory record: name, responsibility, capabilities, initial preferences, and status. This does not start a model or copy project knowledge into the Agent.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      personalProjectId: nullableStringSchema(),
+      agentId: boundedString(128),
+      profile: projectAgentProfile
+    }, ['personalSpaceId', 'agentId', 'profile'])
+  },
+  {
+    name: 'list_project_agents',
+    title: 'READ · Find project Agents by responsibility',
+    description: 'Resolve the exact local project from projectPath and return its lightweight Agent directory. Optionally filter active/inactive/archived records or find Agents whose capabilities or responsibility match a capability query. This never loads another Agent\'s private memory.',
+    inputSchema: objectSchema({
+      projectPath: boundedString(4096),
+      status: nullableProjectAgentStatus,
+      capability: nullableStringSchema()
+    }, ['projectPath'])
+  },
+  {
+    name: 'get_project_agent_context',
+    title: 'READ · Assemble one project Agent context',
+    description: 'Resolve one active project Agent and assemble only the context needed for the task: personal-global rules, exact and authorized inherited project knowledge, this Agent\'s preferences and memory, and focused query results. It excludes every other project Agent. Fuli remains a control layer; the calling host Agent performs reasoning and execution.',
+    inputSchema: objectSchema({
+      projectPath: boundedString(4096),
+      agentId: boundedString(128),
+      queries: arraySchema(shortText, { minItems: 1, maxItems: 10 }),
+      limitPerQuery: integerSchema({ minimum: 1, maximum: 50 }),
+      includePending: booleanSchema()
+    }, ['projectPath', 'agentId', 'queries'])
+  },
+  {
+    name: 'get_project_agent',
+    title: 'READ · Get one space-level Agent',
+    description: 'Read one FULI space-level Agent identity, assignments, recruitment source, memory boundary, configured status, observed clients, and actual task state. Configured status is not a connection or online claim.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      personalProjectId: nullableStringSchema(),
+      agentId: id
+    }, ['personalSpaceId', 'agentId'])
+  },
+  {
+    name: 'delete_project_agent',
+    title: 'WRITE · Archive one Agent identity',
+    description: 'Archive one space-level Agent identity through the Provider after an explicit reason. Active assignments end, but task history, recruitment records, and routing audit remain preserved; the system coordinator cannot be archived.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      agentId: id,
+      reason: shortText
+    }, ['personalSpaceId', 'agentId', 'reason'])
+  },
+  {
+    name: 'cleanup_test_project_agents',
+    title: 'WRITE · Archive test Agent roles',
+    description: 'Archive only test-marked Project Agents for one explicit test source through the Provider. Durable production identities are not touched; the result reports the number archived for cleanup verification.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      testSource: boundedString(256)
+    }, ['personalSpaceId', 'testSource'])
+  },
+  {
+    name: 'create_project_agent_assignment',
+    title: 'WRITE · Assign an Agent to a project',
+    description: 'Create one project-specific Agent assignment. The same space-level Agent may have many assignments; responsibility, capabilities, model override, and memory boundary stay project-scoped.',
+    inputSchema: projectAgentAssignmentInput
+  },
+  {
+    name: 'list_project_agent_assignments',
+    title: 'READ · List Agent assignments',
+    description: 'List project-Agent assignments and their full active/ended history. Never infer a runtime connection from assignment status.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      personalProjectId: nullableStringSchema(),
+      agentId: nullableStringSchema(),
+      status: { ...projectAgentAssignmentStatus, type: ['string', 'null'] }
+    }, ['personalSpaceId'])
+  },
+  {
+    name: 'end_project_agent_assignment',
+    title: 'WRITE · End an Agent assignment',
+    description: 'End one project-Agent assignment with an expected revision. Stale revisions are rejected; the Agent and task history remain intact.',
+    inputSchema: projectAgentAssignmentEndInput
+  },
+  {
+    name: 'replace_project_agent_assignment',
+    title: 'WRITE · Replace an Agent assignment',
+    description: 'Atomically end one assignment and create its replacement, preserving replacement history and explicit reason.',
+    inputSchema: projectAgentAssignmentReplaceInput
+  },
+  {
+    name: 'coordinate_project_agent_task',
+    title: 'WRITE · Prepare a host-executed Agent team',
+    description: 'Resolve the exact local project, let the Provider coordinator route one durable task, and assemble an isolated context bundle for every selected lead/collaborator. The result is a truthful host execution plan: Fuli persists identity, staffing, and memory scope, while the calling host must start real workers, report their concrete worker/executor evidence, and finish their lifecycle. This tool never claims that a selected Agent is online or that a worker was started.',
+    inputSchema: projectAgentTaskCoordinateInput
+  },
+  {
+    name: 'acquire_runtime_lease',
+    title: 'WRITE · Keep adaptive runtime awake',
+    description: 'Acquire a host-held local adaptive-runtime lease before starting real project Agent workers. The MCP process heartbeats the lease until release; disabled adaptive mode returns a safe no-op handle. Use graph for Provider/database work and executor only for an executor managed by Fuli.',
+    inputSchema: objectSchema({
+      kind: enumSchema(['graph', 'executor']),
+      executorId: nullableStringSchema(),
+      owner: boundedString(256)
+    }, ['kind', 'owner'])
+  },
+  {
+    name: 'refresh_runtime_lease',
+    title: 'WRITE · Refresh adaptive runtime lease',
+    description: 'Explicitly refresh one lease owned by this MCP process. Automatic heartbeat normally makes this unnecessary; a missing or expired handle returns refreshed=false.',
+    inputSchema: objectSchema({ leaseId: id }, ['leaseId'])
+  },
+  {
+    name: 'release_runtime_lease',
+    title: 'WRITE · Release adaptive runtime lease',
+    description: 'Stop the heartbeat and release one host-held adaptive-runtime lease in a finally path. Repeated release is safe and returns released=false.',
+    inputSchema: objectSchema({ leaseId: id }, ['leaseId'])
+  },
+  {
+    name: 'submit_project_agent_task',
+    title: 'WRITE · Submit a routed Agent task',
+    description: 'Submit one durable task to the FULI control plane. Existing matching durable Agents are preferred; no anonymous temporary Agent is created. The Agent locked executor policy outranks task, assignment, project, and space rules; explicit user priority is never lowered for token savings. The space coordinator, complexity, model strategy, routing decision, boundaries, actual executor/model/rule/fallback audit fields, and any HR disclosure are persisted by the Provider.',
+    inputSchema: projectAgentTaskSubmitInput
+  },
+  {
+    name: 'view_project_agent_task',
+    title: 'READ · View task, routing, and events',
+    description: 'View one task with lead/collaborator assignments, routing decision, effective model strategy, source client/session, event history, actual executor/model, routing rule, and fallback audit. Missing connected state is not synthesized.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      taskId: id,
+      includeEvents: booleanSchema()
+    }, ['personalSpaceId', 'taskId'])
+  },
+  {
+    name: 'record_project_agent_task_activity',
+    title: 'WRITE · Record task activity',
+    description: 'Record one explicit task event, including real terminal activity and actual executor/model/client attribution. Terminal activity is the only source for per-Agent activity summaries.',
+    inputSchema: projectAgentTaskActivityInput
+  },
+  {
+    name: 'view_project_agent_activity',
+    title: 'READ · View Agent terminal activity',
+    description: 'Return actual per-Agent daily completed/failed/cancelled activity and verifiable summaries. No history is fabricated and configured Agent status is not treated as running state.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      agentId: id,
+      fromDate: nullableStringSchema(),
+      toDate: nullableStringSchema()
+    }, ['personalSpaceId', 'agentId'])
+  },
+  {
+    name: 'get_project_agent_recruitment_policy',
+    title: 'READ · Get recruitment policy',
+    description: 'Read the persisted recruitment confirmation mode. The default is automatic; require_confirmation creates only a pending recruitment event.',
+    inputSchema: objectSchema({ personalSpaceId: id }, ['personalSpaceId'])
+  },
+  {
+    name: 'update_project_agent_recruitment_policy',
+    title: 'WRITE · Set recruitment policy',
+    description: 'Persist automatic or require_confirmation recruitment authorization. This changes policy only; it does not create an Agent or recruitment record by itself.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      confirmationMode: recruitmentConfirmationMode
+    }, ['personalSpaceId', 'confirmationMode'])
+  },
+  {
+    name: 'list_project_agent_recruitments',
+    title: 'READ · List recruitment records',
+    description: 'List auditable HR recruitment records with trigger client/session, role, capabilities, position kind, reason, status, and created/recruited Agent.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      personalProjectId: nullableStringSchema(),
+      taskId: nullableStringSchema(),
+      status: { ...recruitmentStatus, type: ['string', 'null'] }
+    }, ['personalSpaceId'])
+  },
+  {
+    name: 'decide_project_agent_recruitment',
+    title: 'WRITE · Approve or cancel recruitment',
+    description: 'Approve or cancel one pending HR recruitment event with an expected revision. Approval creates only the declared durable or bounded temporary role through the Provider.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      personalProjectId: id,
+      recruitmentId: id,
+      expectedRevision: integerSchema({ minimum: 0 }),
+      decision: recruitmentDecision,
+      reason: shortText
+    }, ['personalSpaceId', 'personalProjectId', 'recruitmentId', 'expectedRevision', 'decision', 'reason'])
+  },
+  {
+    name: 'upsert_executor',
+    title: 'WRITE · Register executor',
+    description: 'Create or update one provider-neutral executor directory entry. Registration is configuration and authorization metadata; it does not claim the executor is connected or running.',
+    inputSchema: executorProfile
+  },
+  {
+    name: 'list_executors',
+    title: 'READ · List executors',
+    description: 'List executor directory entries with separate registration, permission, preflight, and health states. A connected field is returned only when the Provider has evidence; missing connected evidence stays absent.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      capability: nullableStringSchema(),
+      availableOnly: booleanSchema()
+    }, ['personalSpaceId'])
+  },
+  {
+    name: 'get_executor',
+    title: 'READ · Get executor',
+    description: 'Inspect one executor directory entry and its preflight/audit fields without probing or fabricating a live connection.',
+    inputSchema: objectSchema({ personalSpaceId: id, executorId: id }, ['personalSpaceId', 'executorId'])
+  },
+  {
+    name: 'delete_executor',
+    title: 'WRITE · Archive executor',
+    description: 'Archive one executor directory entry through the Provider while retaining routing and outcome audit history.',
+    inputSchema: objectSchema({ personalSpaceId: id, executorId: id }, ['personalSpaceId', 'executorId'])
+  },
+  {
+    name: 'preflight_executor',
+    title: 'WRITE · Report executor preflight',
+    description: 'Record a real executor preflight report. The Provider verifies workspace permission and at least one advertised model before marking preflight passed; this tool never invokes work or fabricates availability.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      executorId: id,
+      status: enumSchema(['passed', 'failed']),
+      workspacePermission: booleanSchema(),
+      capabilities: arraySchema(boundedString(512), { maxItems: 64 }),
+      availableModels: arraySchema(executorModel, { maxItems: 64 }),
+      reason: nullableStringSchema(),
+      checkedAt: dateTime,
+      idempotencyKey,
+      sourceApplication,
+      sourceSessionId: nullableStringSchema()
+    }, ['personalSpaceId', 'executorId', 'status', 'workspacePermission', 'idempotencyKey', 'checkedAt'])
+  },
+  {
+    name: 'authorize_executor',
+    title: 'WRITE · Authorize executor workspace',
+    description: 'Persist an explicit executor permission decision. Authorization is auditable metadata and does not claim the executor is connected or healthy.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      executorId: id,
+      status: executorAuthorizationStatus,
+      reason: shortText,
+      expectedRevision: integerSchema({ minimum: 0 }),
+      idempotencyKey
+    }, ['personalSpaceId', 'executorId', 'status', 'reason', 'idempotencyKey'])
+  },
+  {
+    name: 'report_executor_health',
+    title: 'WRITE · Report executor health',
+    description: 'Record a real executor health observation with its timestamp and source. This does not fabricate a connection or execute work.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      executorId: id,
+      status: executorHealthStatus,
+      reason: nullableStringSchema(),
+      checkedAt: dateTime,
+      idempotencyKey,
+      sourceApplication,
+      sourceSessionId: nullableStringSchema()
+    }, ['personalSpaceId', 'executorId', 'status', 'checkedAt', 'idempotencyKey'])
+  },
+  {
+    name: 'record_project_agent_executor_actual',
+    title: 'WRITE · Report actual executor use',
+    description: 'Record one real executor/model report after execution. The Provider rejects reports unless the executor is registered and the model was available in a passing preflight; Agent locked policy is checked before the report is accepted. Provider/model/client attribution is retained as audit evidence.',
+    inputSchema: executorActualReportInput
+  },
+  {
+    name: 'upsert_executor_routing_rule',
+    title: 'WRITE · Configure executor routing rule',
+    description: 'Create or update one explicit space, project, or task routing rule. Agent locked allow-lists outrank all other rules; user rules outrank coordinator rules; the default rule set is empty and no work-kind mapping is hardcoded.',
+    inputSchema: executorRoutingRuleInput
+  },
+  {
+    name: 'update_executor_routing_rule',
+    title: 'WRITE · Update executor routing rule',
+    description: 'Update one routing rule status with an expected revision. Existing task decisions and outcome evidence remain immutable.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      ruleId: id,
+      expectedRevision: integerSchema({ minimum: 0 }),
+      status: enumSchema(['active', 'disabled', 'ended']),
+      reason: shortText,
+      idempotencyKey
+    }, ['personalSpaceId', 'ruleId', 'expectedRevision', 'status', 'reason', 'idempotencyKey'])
+  },
+  {
+    name: 'list_executor_routing_rules',
+    title: 'READ · List executor routing rules',
+    description: 'List routing rules in explicit space → project → task scope order. Agent locked allow-lists outrank every scope; explicit user priority outranks coordinator defaults. The result includes source owner and actual fallback audit.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      scope: { ...routingRuleScope, type: ['string', 'null'] },
+      personalProjectId: nullableStringSchema(),
+      taskId: nullableStringSchema(),
+      status: {
+        type: ['string', 'null'],
+        enum: ['active', 'disabled', 'ended', null]
+      }
+    }, ['personalSpaceId'])
+  },
+  {
+    name: 'get_executor_routing_rule',
+    title: 'READ · Get routing rule',
+    description: 'Read one routing rule and its audit metadata without applying it locally.',
+    inputSchema: objectSchema({ personalSpaceId: id, ruleId: id }, ['personalSpaceId', 'ruleId'])
+  },
+  {
+    name: 'delete_executor_routing_rule',
+    title: 'WRITE · Remove routing rule',
+    description: 'Remove one explicit routing rule. Existing task decisions and outcome evidence remain immutable history.',
+    inputSchema: objectSchema({ personalSpaceId: id, ruleId: id }, ['personalSpaceId', 'ruleId'])
+  },
+  {
+    name: 'record_project_agent_task_outcome',
+    title: 'WRITE · Record explicit routing outcome evidence',
+    description: 'Record only explicit acceptance/satisfaction evidence such as rework_requested, repeated_negative_feedback, explicit_praise, test/acceptance pass or fail, or an explicit rating. Natural-language text is never used to infer satisfaction.',
+    inputSchema: projectAgentTaskOutcomeInput
+  },
+  {
+    name: 'list_project_agent_routing_learning',
+    title: 'READ · View routing-learning evidence',
+    description: 'List routing-learning evidence and flexible same-level tie-break weights with contribution, asOf, halfLife, and neutral/ignored status. Agent locked policy and explicit task/assignment/project/space priority always win; learning never overrides them or turns missing evidence into a preference.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      personalProjectId: nullableStringSchema(),
+      workKind: nullableStringSchema(),
+      agentId: nullableStringSchema(),
+      executorId: nullableStringSchema()
+    }, ['personalSpaceId'])
+  },
+  {
+    name: 'ignore_project_agent_routing_learning',
+    title: 'WRITE · Ignore routing-learning evidence',
+    description: 'Mark one routing-learning item ignored with an explicit reason; it remains auditable and cannot silently rewrite task history.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      personalProjectId: id,
+      agentId: id,
+      evidenceId: id,
+      idempotencyKey,
+      reason: shortText
+    }, ['personalSpaceId', 'personalProjectId', 'agentId', 'evidenceId', 'idempotencyKey', 'reason'])
+  },
+  {
+    name: 'reset_project_agent_routing_learning',
+    title: 'WRITE · Reset routing-learning weights',
+    description: 'Reset selected routing-learning evidence or scope through the Provider. Reset records remain auditable and do not change historical routing decisions.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      personalProjectId: id,
+      workKind: boundedString(128),
+      agentId: id,
+      executorId: id,
+      modelStrategy: projectAgentModelStrategy,
+      modelStrategyKey: nullableStringSchema(),
+      idempotencyKey,
+      resetAt: dateTime,
+      reason: shortText
+    }, ['personalSpaceId', 'personalProjectId', 'workKind', 'agentId', 'executorId', 'idempotencyKey', 'resetAt', 'reason'])
   },
   {
     name: 'start_knowledge_review',

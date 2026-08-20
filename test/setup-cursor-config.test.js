@@ -36,7 +36,9 @@ test('Cursor config preserves existing servers and registers Fuli', () => {
         args: [
           CONTEXT.mcpServerPath,
           '--runtime-config',
-          CONTEXT.runtimeConfigPath
+          CONTEXT.runtimeConfigPath,
+          '--source-application',
+          'cursor'
         ]
       }
     }

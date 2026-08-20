@@ -5,6 +5,7 @@ import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 
 export const RUNTIME_SETTINGS_VERSION = 1;
 export const RESOURCE_REFRESH_OPTIONS = Object.freeze([5, 10, 30, 60]);
+export const GRAPH_RUNTIME_MODES = Object.freeze(['container', 'native']);
 export const CONVERSATION_LAUNCHER_APPLICATIONS = Object.freeze([
   'codex',
   'claude_code',
@@ -65,6 +66,7 @@ export const DEFAULT_CONVERSATION_LAUNCHERS = deepFreeze({
 
 export const DEFAULT_RUNTIME_SETTINGS = deepFreeze({
   version: RUNTIME_SETTINGS_VERSION,
+  graphRuntimeMode: 'container',
   ports: {
     console: 2727,
     personalProvider: 8787,
@@ -126,6 +128,10 @@ export function normalizeRuntimeSettings(input, {
 
   const lanAccess = input.lanAccess ?? base.lanAccess;
   if (typeof lanAccess !== 'boolean') throw new TypeError('lanAccess must be a boolean');
+  const graphRuntimeMode = input.graphRuntimeMode ?? base.graphRuntimeMode ?? 'container';
+  if (!GRAPH_RUNTIME_MODES.includes(graphRuntimeMode)) {
+    throw new TypeError('graphRuntimeMode must be container or native');
+  }
   const resourceRefreshSeconds = input.resourceRefreshSeconds ?? base.resourceRefreshSeconds;
   if (!RESOURCE_REFRESH_OPTIONS.includes(resourceRefreshSeconds)) {
     throw new TypeError('resourceRefreshSeconds must be 5, 10, 30, or 60');
@@ -136,6 +142,7 @@ export function normalizeRuntimeSettings(input, {
   );
   return {
     version: RUNTIME_SETTINGS_VERSION,
+    graphRuntimeMode,
     ports,
     lanAccess,
     resourceRefreshSeconds,
@@ -195,10 +202,12 @@ export function normalizeConversationLaunchers(input, {
 
 export function runtimeSettingsWithOverrides(settings, {
   consolePort = null,
-  lanAccess = null
+  lanAccess = null,
+  graphRuntimeMode = null
 } = {}) {
   return normalizeRuntimeSettings({
     ...settings,
+    ...(graphRuntimeMode === null ? {} : { graphRuntimeMode }),
     ports: {
       ...settings.ports,
       ...(consolePort === null ? {} : { console: consolePort })

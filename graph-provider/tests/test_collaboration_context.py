@@ -170,6 +170,63 @@ async def test_human_confirmed_preference_outranks_agent_confirmed_same_key():
     assert result.conflicts == []
 
 
+@pytest.mark.asyncio
+async def test_selected_project_agent_preference_overrides_project_and_global_layers():
+    driver = SequentialDriver([
+        [{'project': {'project_id': 'project-a'}}],
+        [{'project': {'project_id': 'project-a'}}],
+        [{'agent': {'agent_id': 'agent-a', 'status': 'active'}}],
+        [],
+        [
+            preference_node(
+                'global-format',
+                'global-format',
+                '全局格式',
+                '使用全局格式。',
+                preference_key='delivery-format',
+            ),
+            preference_node(
+                'project-format',
+                'project-format',
+                '项目格式',
+                '使用项目格式。',
+                scope='project',
+                project_id='project-a',
+                preference_key='delivery-format',
+            ),
+            preference_node(
+                'agent-format',
+                'agent-format',
+                'Agent 格式',
+                '使用该 Agent 的活动复盘格式。',
+                scope='agent',
+                project_id='project-a',
+                agent_id='agent-a',
+                preference_key='delivery-format',
+            ),
+        ],
+        [],
+    ])
+    store = StoreStub(driver)
+
+    result = await read_collaboration_context(
+        store,
+        {'id': 'principal-1'},
+        'personal-space',
+        'project-a',
+        100,
+        'agent-a',
+    )
+
+    assert [item.id for item in result.agent_preferences] == ['agent-format']
+    assert [item.id for item in result.effective_preferences] == ['agent-format']
+    assert result.overridden_global_ids == ['global-format']
+    assert result.overridden_project_ids == ['project-format']
+    assert result.project_agent_id == 'agent-a'
+    assert 'node.fuli_preference_agent_id = $project_agent_id' in driver.calls[4][0]
+    assert driver.calls[4][1]['project_agent_id'] == 'agent-a'
+
+
 class StoreStub:
     def __init__(self, driver):
         self.runtime = SimpleNamespace(driver=driver)
@@ -204,6 +261,7 @@ def preference_node(
     *,
     scope='global',
     project_id=None,
+    agent_id=None,
     preference_key=None,
     confirmation_status='confirmed',
 ):
@@ -216,6 +274,7 @@ def preference_node(
         'profile_aspect': 'taste',
         'preference_scope': scope,
         'preference_project_id': project_id,
+        'preference_agent_id': agent_id,
         'attributes_json': json.dumps(attributes),
         'confirmation_basis_json': confirmation_basis(confirmation_status),
         'confirmation_status': confirmation_status,

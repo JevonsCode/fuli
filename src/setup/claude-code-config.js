@@ -32,7 +32,9 @@ export function connectClaudeCode(agent, context, {
         args: [
           context.mcpServerPath,
           '--runtime-config',
-          context.runtimeConfigPath
+          context.runtimeConfigPath,
+          '--source-application',
+          'claude_code'
         ],
         alwaysLoad: true
       }

@@ -417,8 +417,10 @@ The following must not be presented as already proven:
 Requirements:
 
 - Node.js 24.12 or later;
-- Docker Compose v2 through Docker Desktop, Rancher Desktop, or another compatible runtime;
-- approximately 4 GB of memory available to the containers.
+- the default container mode needs Docker Compose v2 through Docker Desktop, Rancher Desktop, or a compatible runtime;
+- macOS and Linux can use native mode without a VM; it requires Java 21 and `uv` (Python 3.12);
+- on a memory-constrained Mac, use
+  `fuli setup --runtime-mode native --memory-profile low --adaptive-memory`. Container mode remains the compatibility default and is never changed automatically.
 
 Install globally and initialize:
 
@@ -440,13 +442,14 @@ fuli open
 
 The default URL is `http://127.0.0.1:2727`.
 
-The Settings page manages all seven local Fuli ports, LAN access, automatic capture, Agent access,
-UI language, and the resource refresh interval. Run `fuli restart` after saving port or LAN changes;
+The Settings page manages all seven local Fuli ports, graph runtime mode, LAN access, automatic capture,
+Agent access, UI language, and the resource refresh interval. Run `fuli restart` after saving port,
+runtime, or LAN changes;
 the refresh interval applies immediately. The same page polls real memory and disk usage for the
 management service, Providers, Neo4j, application files, and local data. Memory is sampled on every
 poll; disk usage is sampled at most once per minute, with separate timestamps. Missing container metrics
-are shown as partial instead of being replaced with mock values. Browser-tab memory and shared
-container-VM overhead are excluded from the Fuli total.
+are shown as partial instead of being replaced with mock values. Native Provider and Neo4j processes
+are included. Browser-tab memory is excluded; shared container-VM overhead is excluded in container mode.
 
 ## CLI
 
@@ -464,6 +467,8 @@ system locale. User data such as paths and space names is displayed unchanged.
 | `fuli restart [options]` | Restart local services using the same runtime options as `start` |
 | `fuli status [--json] [--data-dir DIR] [--port PORT]` | Show UI, personal graph, and shared-service status; `--json` emits machine-readable output |
 | `fuli open [--data-dir DIR]` | Open the current management UI in the default browser |
+| `fuli graph export --output DIR [--mode container\|native]` | Export graph data as a checksummed, copyable offline bundle |
+| `fuli graph import --input DIR [--target-mode container\|native] [--yes]` | Verify and replace target graph data, preserving an automatic pre-import rollback bundle |
 | `fuli update [setup options]` | Update the npm package and refresh local integrations |
 | `fuli uninstall [--yes] [--data-dir DIR]` | Remove agent integrations and services while preserving knowledge data and Neo4j volumes |
 
@@ -474,6 +479,7 @@ fuli --version
 fuli status
 fuli restart --rebuild
 fuli start --lan
+fuli graph export --output "$HOME/Backups/fuli-graph"
 fuli stop
 ```
 
@@ -511,10 +517,75 @@ and tells you to run `fuli setup`; it never applies setup changes implicitly.
 | `--data-dir DIR` | Use a specific data and configuration directory |
 | `--personal-space NAME` | Set the personal-space name; defaults to `Personal` |
 | `--port PORT` | Set the management UI port; defaults to `2727` |
+| `--runtime-mode container\|native` | Select containers or native processes; defaults to `container`, with native mode currently on macOS/Linux |
+| `--memory-profile low\|balanced` | Select Neo4j's memory budget; fresh installs default to `balanced` |
+| `--adaptive-memory` | Enable on-demand wake and staged idle sleep, coordinated by the management service |
+| `--no-adaptive-memory` | Disable idle sleep and keep graph services running |
 | `--skip-agents` | Do not change agent configuration or Skills |
 | `--no-start` | Initialize the Provider without starting the UI |
 | `--personal-only` | Use only the personal Provider; this is the default |
 | `--with-dev-public` | Start a development shared Provider for local integration work only |
+
+The `low` profile uses a 128 MiB initial heap, 256 MiB maximum heap, and 64 MiB page cache.
+`balanced` uses 256 MiB, 512 MiB, and 256 MiB respectively. The low profile does not add a hard
+container memory limit: it lowers steady memory use while leaving room for Neo4j's native memory.
+It may cause more garbage collection and disk reads under bulk writes, large traversals, or high
+concurrency, but it does not change transaction semantics, storage format, or data volumes. If those
+workloads become slow or fail for lack of heap, run `fuli setup --memory-profile balanced --yes`.
+The selected profile is saved and reused by later setup, update, start, and restart commands.
+
+Adaptive memory is a lifecycle policy independent of the Neo4j memory profile. When enabled, the
+lightweight management service stays available. Real MCP tools, MCP resources, and graph requests
+acquire a runtime lease and wake services on demand. After the final lease is released, the personal
+Provider stops after 60 idle seconds by default and Neo4j stops after 180 idle seconds. Volumes are
+preserved and the next request restores the same data. Active calls renew their leases and cannot be
+interrupted by idle timers; a crashed client lease expires after at most 180 seconds. These durations
+are current product defaults, not measured hardware thresholds.
+
+This mode trades idle memory for first-request cold-start latency and additional disk reads. Health,
+runtime-status, and resource polling do not wake the graph, and `fuli status` treats intentional sleep
+as healthy. The management service must remain running to wake graph services, so `--no-start` only
+saves the policy for a later start. In container mode the policy stops only Fuli Provider and Neo4j
+containers; it does not shut down Rancher Desktop, Docker Desktop, Kubernetes, or the container VM
+itself. Native mode directly stops the corresponding Provider and Neo4j processes, so no shared VM
+overhead remains while idle.
+
+Project Agent identities remain control-plane records rather than one resident process per identity.
+Physical executors share leases by executor ID. Fuli starts and stops only executors with an explicitly
+injected managed lifecycle adapter; host-owned external executors such as Codex are never started or
+killed implicitly. The current minimum-memory combination is:
+
+```bash
+fuli setup --yes --runtime-mode native --memory-profile low --adaptive-memory
+```
+
+The two modes use separate data directories. Switching preserves the old mode's data and never
+merges changes in the background. To migrate, export while the source mode is still active, then
+install or switch to the target mode and import:
+
+```bash
+# Rancher / Docker -> native
+fuli graph export --mode container --output "$HOME/Backups/fuli-container"
+fuli setup --yes --runtime-mode native --memory-profile low --adaptive-memory
+fuli graph import --target-mode native --input "$HOME/Backups/fuli-container" --yes
+```
+
+Swap `container` and `native` for the reverse direction. Export briefly stops the source database
+and resumes only services that were actually running beforehand. Import validates the manifest and
+every dump's SHA-256 before stopping the target. It preserves the old target under `backups/graph`
+inside the data directory and attempts an immediate rollback if loading fails. Let active Agent graph
+writes finish before either operation.
+
+After loading, Fuli uses the target installation's bootstrap token to rotate local Provider access
+credentials and atomically updates the runtime configuration; plaintext access tokens are never added
+to the bundle. Unmanaged external Workspace connections are preserved for a same-device migration.
+Reconnect their credentials separately after moving the bundle to another device.
+
+The bundle is a directory containing `manifest.json`, `personal.dump`, and an optional
+`workspace.dump`; it can be copied to another disk or machine. Container mode transfers files through
+the Docker API, so the backup location does not need to be shared with Rancher. Dumps use the pinned
+Neo4j 5.26 format and are intended for the two Fuli runtime modes or a compatible Neo4j 5.26 setup;
+they are not a generic CSV/JSON interchange format for arbitrary databases.
 
 Update:
 

@@ -180,16 +180,30 @@ function formatStatus(result) {
   const publicSummary = result.public.configured
     ? `${labels[result.public.status] ?? result.public.status} (${result.public.providers.length} Providers)`
     : labels.not_connected;
-  return [
+  const lines = [
     `Fuli local status: ${labels[result.status] ?? result.status}`,
     `Management UI: ${labels[result.console.status] ?? result.console.status} · ${result.console.url}`,
     `Personal graph: ${providerLabel(result.personal.status, labels)}`,
     `Shared services: ${publicSummary}`
-  ].join('\n');
+  ];
+  if (result.adaptiveRuntime?.enabled) {
+    const stages = {
+      awake: 'awake',
+      'provider-sleeping': 'Provider sleeping',
+      sleeping: 'Provider and database sleeping',
+      waking: 'waking',
+      degraded: 'degraded',
+      unknown: 'unknown'
+    };
+    lines.push(`Adaptive memory: ${stages[result.adaptiveRuntime.stage] ??
+      result.adaptiveRuntime.stage}`);
+  }
+  return lines.join('\n');
 }
 
 function providerLabel(status, labels) {
   if (status === 'not_configured') return labels.not_configured_provider;
+  if (status === 'sleeping') return 'sleeping on purpose';
   return labels[status] ?? status;
 }
 

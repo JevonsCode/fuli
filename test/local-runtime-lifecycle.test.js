@@ -4,13 +4,17 @@ import assert from 'node:assert/strict';
 import {
   externalOpenInvocation,
   inspectLocalRuntime,
+  restartLocalRuntime,
   startLocalRuntime,
   stopLocalRuntime
 } from '../src/local-runtime/lifecycle.js';
+import { DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
 
 const PATHS = Object.freeze({
   graphRuntimeConfigPath: 'C:/Fuli/graph-runtime.json',
   graphRuntimeStatePath: 'C:/Fuli/graph-runtime-state.json',
+  adaptiveRuntimeSettingsPath: 'C:/Fuli/adaptive-runtime-settings.json',
+  adaptiveRuntimeStatePath: 'C:/Fuli/adaptive-runtime-state.json',
   graphEnvPath: 'C:/Fuli/graph-provider.env',
   graphComposePath: 'C:/Package/compose.graphiti.yml'
 });
@@ -103,6 +107,54 @@ test('fl stop verifies the console identity and preserves graph volumes', async 
   });
 });
 
+test('fl stop uses the active native lifecycle even when configured mode changed', async () => {
+  let stoppedMode = null;
+  await stopLocalRuntime(input({
+    runtimeSettings: { ...DEFAULT_RUNTIME_SETTINGS, graphRuntimeMode: 'container' }
+  }), {
+    readConfig: () => ({ workspaces: [] }),
+    readState: () => ({
+      version: 4,
+      pid: 27,
+      url: 'http://127.0.0.1:2727',
+      runtimeSettings: { ...DEFAULT_RUNTIME_SETTINGS, graphRuntimeMode: 'native' }
+    }),
+    fileExists: () => true,
+    isProcessAlive: () => false,
+    removeState: () => {},
+    stopProviders: async (_paths, _env, options) => {
+      stoppedMode = options.runtimeMode;
+    }
+  });
+
+  assert.equal(stoppedMode, 'native');
+});
+
+test('fl restart tells setup which credential profile was active before a mode switch',
+  async () => {
+    let runtimeInput = null;
+    await restartLocalRuntime(input({
+      runtimeSettings: { ...DEFAULT_RUNTIME_SETTINGS, graphRuntimeMode: 'native' }
+    }), {
+      readConfig: () => null,
+      readState: () => ({
+        version: 4,
+        pid: 27,
+        url: 'http://127.0.0.1:2727',
+        runtimeSettings: { ...DEFAULT_RUNTIME_SETTINGS, graphRuntimeMode: 'container' }
+      }),
+      fileExists: () => false,
+      isProcessAlive: () => false,
+      removeState: () => {},
+      ensureRuntime: async (value) => {
+        runtimeInput = value;
+        return { status: 'started', url: 'http://127.0.0.1:2727', pid: 28 };
+      }
+    });
+
+    assert.equal(runtimeInput.previousRuntimeMode, 'container');
+  });
+
 test('fl stop refuses to kill a reused or unverifiable PID', async () => {
   let killed = false;
   const result = await stopLocalRuntime(input(), {
@@ -170,6 +222,28 @@ test('fl status reports multiple public Providers as degraded when only some are
     });
 
     assert.equal(result.public.status, 'degraded');
+  });
+
+test('fl status treats adaptive graph sleep as healthy and does not probe the sleeping Provider',
+  async () => {
+    let providerProbes = 0;
+    const result = await inspectLocalRuntime(input(), {
+      readConfig: () => ({
+        personal: { providerUrl: 'http://127.0.0.1:8787' },
+        workspaces: []
+      }),
+      readState: () => ({ version: 4, pid: 27, url: 'http://127.0.0.1:2727' }),
+      readAdaptiveSettings: () => ({ enabled: true }),
+      readAdaptiveState: () => ({ stage: 'sleeping' }),
+      isProcessAlive: () => true,
+      consoleHealth: async () => true,
+      providerHealth: async () => { providerProbes += 1; return { status: 'unavailable' }; }
+    });
+
+    assert.equal(result.status, 'running');
+    assert.equal(result.personal.status, 'sleeping');
+    assert.equal(result.adaptiveRuntime.stage, 'sleeping');
+    assert.equal(providerProbes, 0);
   });
 
 test('console opening only targets a loopback Fuli URL', () => {

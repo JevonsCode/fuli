@@ -47,7 +47,9 @@ test('setup distinguishes current, outdated, and missing Agent integrations', ()
   const desiredArgs = [
     CONTEXT.mcpServerPath,
     '--runtime-config',
-    CONTEXT.runtimeConfigPath
+    CONTEXT.runtimeConfigPath,
+    '--source-application',
+    'codex'
   ];
   const currentCodex = replaceFuliTable('', {
     command: CONTEXT.nodePath,
@@ -90,7 +92,9 @@ test('a current JSON MCP registration and both current Skills count as connected
   const desiredArgs = [
     CONTEXT.mcpServerPath,
     '--runtime-config',
-    CONTEXT.runtimeConfigPath
+    CONTEXT.runtimeConfigPath,
+    '--source-application',
+    'cursor'
   ];
   const cursor = AGENTS[2];
   const [inspected] = inspectAgentInstallations([cursor], CONTEXT, {
@@ -114,7 +118,9 @@ test('Claude Code requires always-loaded Fuli plus task lifecycle hooks', () => 
   const desiredArgs = [
     CONTEXT.mcpServerPath,
     '--runtime-config',
-    CONTEXT.runtimeConfigPath
+    CONTEXT.runtimeConfigPath,
+    '--source-application',
+    'claude_code'
   ];
   const configs = new Map([
     [claude.configPath, {
@@ -171,7 +177,9 @@ test('Codex requires a current global bootstrap in addition to MCP and Skills', 
     args: [
       CONTEXT.mcpServerPath,
       '--runtime-config',
-      CONTEXT.runtimeConfigPath
+      CONTEXT.runtimeConfigPath,
+      '--source-application',
+      'codex'
     ]
   });
   const [inspected] = inspectAgentInstallations([codex], CONTEXT, {

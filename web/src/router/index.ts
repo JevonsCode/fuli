@@ -86,6 +86,12 @@ export const router = createRouter({
       },
     },
     {
+      path: '/project-agents',
+      name: 'project-agents',
+      component: () => import('@/pages/ProjectAgentsPage.vue'),
+      meta: { eyebrow: '', title: 'routes.projectAgents.title' },
+    },
+    {
       path: '/public-projects',
       name: 'public-projects',
       component: () => import('@/pages/PublicProjectsPage.vue'),

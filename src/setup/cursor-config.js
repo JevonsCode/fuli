@@ -21,7 +21,9 @@ export function connectCursor(agent, context, {
         args: [
           context.mcpServerPath,
           '--runtime-config',
-          context.runtimeConfigPath
+          context.runtimeConfigPath,
+          '--source-application',
+          'cursor'
         ]
       }
     }

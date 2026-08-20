@@ -19,8 +19,12 @@ Local service:
   open [--data-dir DIR]
 
 Install and Agent connection:
-  setup [--yes] [--codex-only] [--data-dir DIR] [--personal-space NAME] [--port PORT] [--skip-agents] [--no-start] [--personal-only|--with-dev-public]
+  setup [--yes] [--codex-only] [--data-dir DIR] [--personal-space NAME] [--port PORT] [--runtime-mode container|native] [--memory-profile low|balanced] [--adaptive-memory|--no-adaptive-memory] [--skip-agents] [--no-start] [--personal-only|--with-dev-public]
   connect-workspace --url URL --token-file FILE [--data-dir DIR]
   update [setup options]
-  uninstall [--yes] [--data-dir DIR]`);
+  uninstall [--yes] [--data-dir DIR]
+
+Graph data portability:
+  graph export --output DIR [--mode container|native] [--data-dir DIR]
+  graph import --input DIR [--target-mode container|native] [--yes] [--data-dir DIR]`);
 }

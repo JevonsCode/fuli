@@ -66,6 +66,7 @@ h3 { font-size: 15px; }
 .nav-icon-personal-profile { --icon: url('./assets/icons/personal-profile.svg'); }
 .nav-icon-knowledge-organizer { --icon: url('./assets/icons/knowledge-graph.svg'); }
 .nav-icon-personal-project { --icon: url('./assets/icons/personal-project.svg'); }
+.nav-icon-project-agent { --icon: url('./assets/icons/project-agent.svg'); }
 .nav-icon-public-project { --icon: url('./assets/icons/public-project.svg'); }
 .nav-icon-knowledge-graph { --icon: url('./assets/icons/knowledge-graph.svg'); }
 .nav-icon-about { --icon: url('./assets/icons/about.svg'); }

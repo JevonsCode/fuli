@@ -1,16 +1,28 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
+import {
+  bindRuntimeLeaseAgentTools,
+  createRuntimeLeaseClient
+} from '../adaptive-runtime/lease-client.js';
 import { openFederatedGraphApplication } from '../graphiti/federated-application.js';
 import { createMcpServer } from './create-mcp-server.js';
 
-export async function runStdio({ runtimeConfigPath }) {
+export async function runStdio({ runtimeConfigPath, sourceApplication }) {
   const app = openFederatedGraphApplication({ runtimeConfigPath });
-  const server = createServerOrClose(app);
+  const leaseClient = createRuntimeLeaseClient({ runtimeConfigPath });
+  bindRuntimeLeaseAgentTools(app, leaseClient);
+  const server = createServerOrClose(app, createMcpServer, {
+    sourceApplication,
+    withRuntimeLease: leaseClient.withGraphLease
+  });
   const transport = new StdioServerTransport();
   const signalHandlers = new Map();
   const close = createCloseOnce({
     closeServer: () => server.close(),
-    closeApplication: () => app.close(),
+    closeApplication: async () => {
+      await leaseClient.close();
+      return app.close();
+    },
     afterClose: () => removeHandlers(signalHandlers)
   });
   const quietClose = createQuietCloser(close, () => { process.exitCode = 1; });
@@ -31,9 +43,9 @@ export async function runStdio({ runtimeConfigPath }) {
   }
 }
 
-export function createServerOrClose(app, factory = createMcpServer) {
+export function createServerOrClose(app, factory = createMcpServer, options) {
   try {
-    return factory(app);
+    return factory(app, options);
   } catch (error) {
     void app.close();
     throw error;

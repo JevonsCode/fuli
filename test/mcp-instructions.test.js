@@ -45,4 +45,13 @@ test('MCP instructions support hook-provided task context and an exact fallback 
   );
   assert.match(MCP_INSTRUCTIONS, /noMatchSourceMarker.*empty/is);
   assert.match(MCP_INSTRUCTIONS, /Keep unchanged/i);
+  assert.match(MCP_INSTRUCTIONS, /executionSummary/);
+  assert.match(MCP_INSTRUCTIONS, /one .*row.*worker|one .*line.*worker/i);
+  assert.match(MCP_INSTRUCTIONS, /occupation.*emoji/i);
+  assert.match(MCP_INSTRUCTIONS, /actual.*executor.*sourceApplication|sourceApplication.*actual/i);
+  assert.match(MCP_INSTRUCTIONS, /configured.*(?:allowed|available).*not.*evidence/i);
+  assert.match(MCP_INSTRUCTIONS, /empty.*executionSummary.*omit|omit.*empty.*executionSummary/i);
+  assert.match(MCP_INSTRUCTIONS, /coordinate_project_agent_task/);
+  assert.match(MCP_INSTRUCTIONS, /Fuli never spawns/i);
+  assert.match(MCP_INSTRUCTIONS, /release_runtime_lease.*finally/i);
 });

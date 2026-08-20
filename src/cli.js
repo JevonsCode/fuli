@@ -7,6 +7,7 @@ import {
   printHelp
 } from './cli/command-registry.js';
 import { runLocalRuntimeCommand } from './cli/local-runtime-command.js';
+import { runGraphDataCommand } from './cli/graph-data-command.js';
 import { runSetupCommand } from './cli/setup-command.js';
 import { runUninstallCommand } from './cli/uninstall-command.js';
 import { runUpdateCommand } from './cli/update-command.js';
@@ -28,6 +29,11 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     assertSupportedNodeVersion();
     await runSetupCommand(commandArgs, { env });
     return;
+  }
+  if (command === 'graph') {
+    assertSupportedNodeVersion();
+    const [action, ...graphArgs] = commandArgs;
+    return runGraphDataCommand(action, graphArgs, { env });
   }
   if (command === 'connect-workspace') {
     assertSupportedNodeVersion();

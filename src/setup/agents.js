@@ -60,7 +60,9 @@ export function buildAgentCommands(agent, context) {
   const serverArgs = [
     context.mcpServerPath,
     '--runtime-config',
-    context.runtimeConfigPath
+    context.runtimeConfigPath,
+    '--source-application',
+    agent.id === 'claude-code' ? 'claude_code' : agent.id
   ];
   const mcpArgs = [context.nodePath, ...serverArgs];
   if (agent.id === 'codex') {

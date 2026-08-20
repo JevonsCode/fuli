@@ -178,6 +178,284 @@ export async function handleGraphApiRequest({
     sendJson(response, 200, await app.upsertPersonalProject(await readJson(request)));
     return true;
   }
+  if (url.pathname === '/api/project-agents' && request.method === 'GET') {
+    sendJson(response, 200, await app.listProjectAgents({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('personalProjectId'),
+      status: url.searchParams.get('status'),
+      capability: url.searchParams.get('capability')
+    }));
+    return true;
+  }
+  if (url.pathname === '/api/project-agents' && request.method === 'PUT') {
+    sendJson(response, 200, await app.upsertProjectAgent(await readJson(request)));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-context' && request.method === 'POST') {
+    sendJson(response, 200, await app.getProjectAgentContext(await readJson(request)));
+    return true;
+  }
+  const projectAgentPath = url.pathname.match(/^\/api\/project-agents\/([^/]+)$/);
+  if (projectAgentPath && request.method === 'GET') {
+    sendJson(response, 200, await app.getProjectAgent({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('personalProjectId'),
+      agentId: decodeURIComponent(projectAgentPath[1])
+    }));
+    return true;
+  }
+  if (projectAgentPath && request.method === 'DELETE') {
+    sendJson(response, 200, await app.deleteProjectAgent({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      agentId: decodeURIComponent(projectAgentPath[1]),
+      reason: url.searchParams.get('reason') ?? 'archived by user'
+    }));
+    return true;
+  }
+  if (url.pathname === '/api/project-agents/test-cleanup' && request.method === 'POST') {
+    sendJson(response, 200, await app.cleanupProjectAgentTestRoles({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      testSource: url.searchParams.get('testSource')
+    }));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-assignments' && request.method === 'GET') {
+    sendJson(response, 200, await app.listProjectAgentAssignments({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('personalProjectId'),
+      agentId: url.searchParams.get('agentId'),
+      status: url.searchParams.get('status')
+    }));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-assignments' && request.method === 'POST') {
+    sendJson(response, 200, await app.createProjectAgentAssignment(await readJson(request)));
+    return true;
+  }
+  const projectAgentAssignmentPath = url.pathname.match(
+    /^\/api\/project-agent-assignments\/([^/]+)\/(end|replace)$/
+  );
+  if (projectAgentAssignmentPath && request.method === 'POST') {
+    const body = await readJson(request);
+    const input = {
+      ...body,
+      assignmentId: decodeURIComponent(projectAgentAssignmentPath[1])
+    };
+    const result = projectAgentAssignmentPath[2] === 'end'
+      ? await app.endProjectAgentAssignment(input)
+      : await app.replaceProjectAgentAssignment(input);
+    sendJson(response, 200, result);
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-tasks' && request.method === 'GET') {
+    sendJson(response, 200, await app.listProjectAgentTasks({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('personalProjectId'),
+      agentId: url.searchParams.get('agentId'),
+      status: url.searchParams.get('status'),
+      limit: numberParam(url, 'limit', null)
+    }));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-tasks' && request.method === 'POST') {
+    sendJson(response, 200, await app.submitProjectAgentTask(await readJson(request)));
+    return true;
+  }
+  const projectAgentTaskPath = url.pathname.match(/^\/api\/project-agent-tasks\/([^/]+)$/);
+  if (projectAgentTaskPath && request.method === 'GET') {
+    sendJson(response, 200, await app.viewProjectAgentTask({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      taskId: decodeURIComponent(projectAgentTaskPath[1]),
+      includeEvents: url.searchParams.get('includeEvents') !== 'false'
+    }));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-activity' && request.method === 'GET') {
+    sendJson(response, 200, await app.viewProjectAgentActivity({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      agentId: url.searchParams.get('agentId'),
+      fromDate: url.searchParams.get('fromDate'),
+      toDate: url.searchParams.get('toDate')
+    }));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-activity' && request.method === 'POST') {
+    sendJson(response, 200, await app.recordProjectAgentTaskActivity(await readJson(request)));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-recruitment-policy' && request.method === 'GET') {
+    sendJson(response, 200, await app.getProjectAgentRecruitmentPolicy({
+      personalSpaceId: url.searchParams.get('personalSpaceId')
+    }));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-recruitment-policy' &&
+      (request.method === 'PUT' || request.method === 'PATCH')) {
+    sendJson(response, 200, await app.updateProjectAgentRecruitmentPolicy(await readJson(request)));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-recruitments' && request.method === 'GET') {
+    sendJson(response, 200, await app.listProjectAgentRecruitments({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('personalProjectId'),
+      taskId: url.searchParams.get('taskId'),
+      status: url.searchParams.get('status')
+    }));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-recruitments/decision' && request.method === 'POST') {
+    sendJson(response, 200, await app.decideProjectAgentRecruitment(await readJson(request)));
+    return true;
+  }
+  if (url.pathname === '/api/executors' && request.method === 'GET') {
+    sendJson(response, 200, await app.listExecutors({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      capability: url.searchParams.get('capability'),
+      availableOnly: url.searchParams.get('availableOnly') === 'true'
+    }));
+    return true;
+  }
+  if (url.pathname === '/api/executors' && request.method === 'PUT') {
+    sendJson(response, 200, await app.upsertExecutor(await readJson(request)));
+    return true;
+  }
+  const executorPath = url.pathname.match(/^\/api\/executors\/([^/]+)$/);
+  if (executorPath && request.method === 'GET') {
+    sendJson(response, 200, await app.getExecutor({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      executorId: decodeURIComponent(executorPath[1])
+    }));
+    return true;
+  }
+  if (executorPath && request.method === 'DELETE') {
+    sendJson(response, 200, await app.deleteExecutor({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      executorId: decodeURIComponent(executorPath[1])
+    }));
+    return true;
+  }
+  if (url.pathname === '/api/executors/preflight' && request.method === 'POST') {
+    sendJson(response, 200, await app.preflightExecutor(await readJson(request)));
+    return true;
+  }
+  if (url.pathname === '/api/executors/authorization' && request.method === 'POST') {
+    sendJson(response, 200, await app.authorizeExecutor(await readJson(request)));
+    return true;
+  }
+  if (url.pathname === '/api/executors/health' && request.method === 'POST') {
+    sendJson(response, 200, await app.reportExecutorHealth(await readJson(request)));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-executor-actuals' && request.method === 'POST') {
+    sendJson(response, 200, await app.recordProjectAgentExecutorActual(await readJson(request)));
+    return true;
+  }
+  if (url.pathname === '/api/executor-routing-rules' && request.method === 'GET') {
+    sendJson(response, 200, await app.listExecutorRoutingRules({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      scope: url.searchParams.get('scope'),
+      personalProjectId: url.searchParams.get('personalProjectId'),
+      taskId: url.searchParams.get('taskId'),
+      status: url.searchParams.get('status')
+    }));
+    return true;
+  }
+  if (url.pathname === '/api/executor-routing-rules' && request.method === 'PUT') {
+    sendJson(response, 200, await app.upsertExecutorRoutingRule(await readJson(request)));
+    return true;
+  }
+  const executorRoutingRulePath = url.pathname.match(
+    /^\/api\/executor-routing-rules\/([^/]+)$/
+  );
+  if (executorRoutingRulePath && request.method === 'GET') {
+    sendJson(response, 200, await app.getExecutorRoutingRule({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      ruleId: decodeURIComponent(executorRoutingRulePath[1])
+    }));
+    return true;
+  }
+  if (executorRoutingRulePath && request.method === 'PATCH') {
+    const body = await readJson(request);
+    sendJson(response, 200, await app.updateExecutorRoutingRule({
+      ...body,
+      personalSpaceId: body.personalSpaceId ?? url.searchParams.get('personalSpaceId'),
+      ruleId: decodeURIComponent(executorRoutingRulePath[1])
+    }));
+    return true;
+  }
+  if (executorRoutingRulePath && request.method === 'DELETE') {
+    sendJson(response, 200, await app.deleteExecutorRoutingRule({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      ruleId: decodeURIComponent(executorRoutingRulePath[1])
+    }));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-routing-learning' && request.method === 'GET') {
+    sendJson(response, 200, await app.listProjectAgentRoutingLearning({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('personalProjectId'),
+      workKind: url.searchParams.get('workKind'),
+      agentId: url.searchParams.get('agentId'),
+      executorId: url.searchParams.get('executorId')
+    }));
+    return true;
+  }
+  const projectAgentLearningPath = url.pathname.match(
+    /^\/api\/project-agent-learning\/([^/]+)$/
+  );
+  if (projectAgentLearningPath && request.method === 'PATCH') {
+    const body = await readJson(request);
+    const evidenceId = decodeURIComponent(projectAgentLearningPath[1]);
+    const action = body.action;
+    if (!['ignore', 'reset'].includes(action)) {
+      throw new TypeError('Project Agent learning action must be ignore or reset');
+    }
+    const personalSpaceId = body.personalSpaceId ??
+      url.searchParams.get('personalSpaceId') ?? app.config?.personal?.spaceId;
+    const personalProjectId = body.personalProjectId ??
+      url.searchParams.get('personalProjectId');
+    const agentId = body.agentId ?? url.searchParams.get('agentId');
+    if (!personalSpaceId || !personalProjectId || !agentId) {
+      throw new TypeError(
+        'Project Agent learning updates require personalSpaceId, personalProjectId, and agentId'
+      );
+    }
+    const idempotencyKey = body.idempotencyKey ??
+      `console-learning:${evidenceId}:${action}`;
+    const reason = body.reason ?? `Console requested ${action} for explicit evidence`;
+    const input = {
+      ...body,
+      personalSpaceId,
+      personalProjectId,
+      agentId,
+      evidenceId,
+      idempotencyKey,
+      reason
+    };
+    if (action === 'ignore') {
+      sendJson(response, 200, await app.ignoreProjectAgentRoutingLearning(input));
+      return true;
+    }
+    if (!input.workKind || !input.executorId || !input.resetAt) {
+      throw new TypeError(
+        'Project Agent learning reset requires workKind, executorId, and resetAt'
+      );
+    }
+    sendJson(response, 200, await app.resetProjectAgentRoutingLearning(input));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-routing-learning/ignore' && request.method === 'POST') {
+    sendJson(response, 200, await app.ignoreProjectAgentRoutingLearning(await readJson(request)));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-routing-learning/reset' && request.method === 'POST') {
+    sendJson(response, 200, await app.resetProjectAgentRoutingLearning(await readJson(request)));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-routing-outcomes' && request.method === 'POST') {
+    sendJson(response, 200, await app.recordProjectAgentTaskOutcome(await readJson(request)));
+    return true;
+  }
   if (url.pathname === '/api/projects/publish' && request.method === 'POST') {
     sendJson(response, 200, await app.publishPersonalProject(await readJson(request)));
     return true;

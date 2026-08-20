@@ -6,7 +6,9 @@ const RESOURCE_MIME_TYPE = 'text/markdown';
 const MAX_PROJECT_PURPOSE_LENGTH = 240;
 const MAX_RESOURCE_TEXT_BYTES = 32 * 1024;
 
-export function registerFuliContextResources(server, app) {
+export function registerFuliContextResources(server, app, {
+  withRuntimeLease = (_owner, operation) => operation()
+} = {}) {
   server.registerResource(
     'FULI global taste',
     GLOBAL_TASTE_RESOURCE_URI,
@@ -15,13 +17,17 @@ export function registerFuliContextResources(server, app) {
       description: 'The user\'s current evidence-backed global taste and working preferences.',
       mimeType: RESOURCE_MIME_TYPE
     },
-    (uri) => readGlobalTasteResource(app, uri)
+    (uri) => withRuntimeLease(
+      'mcp-resource:global-taste',
+      () => readGlobalTasteResource(app, uri)
+    )
   );
 
   const projectResources = new ResourceTemplate(PROJECT_RESOURCE_TEMPLATE, {
-    list: async () => ({
-      resources: await listPersonalProjectResources(app)
-    })
+    list: () => withRuntimeLease(
+      'mcp-resource:list-projects',
+      async () => ({ resources: await listPersonalProjectResources(app) })
+    )
   });
   server.registerResource(
     'fuli-personal-project',
@@ -31,7 +37,10 @@ export function registerFuliContextResources(server, app) {
       description: 'Select one exact local FULI personal project for this task.',
       mimeType: RESOURCE_MIME_TYPE
     },
-    (uri, variables) => readPersonalProjectResource(app, uri, variables)
+    (uri, variables) => withRuntimeLease(
+      'mcp-resource:project',
+      () => readPersonalProjectResource(app, uri, variables)
+    )
   );
 }
 

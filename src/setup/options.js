@@ -1,7 +1,11 @@
+import { normalizeNeo4jMemoryProfile } from './neo4j-memory-profile.js';
+
 const VALUE_OPTIONS = Object.freeze({
   '--data-dir': 'dataDir',
   '--personal-space': 'personalSpaceName',
-  '--port': 'port'
+  '--port': 'port',
+  '--memory-profile': 'memoryProfile',
+  '--runtime-mode': 'runtimeMode'
 });
 
 const BOOLEAN_OPTIONS = Object.freeze({
@@ -9,6 +13,11 @@ const BOOLEAN_OPTIONS = Object.freeze({
   '--codex-only': 'codexOnly',
   '--skip-agents': 'skipAgents',
   '--no-start': 'noStart'
+});
+
+const ADAPTIVE_MEMORY_OPTIONS = Object.freeze({
+  '--adaptive-memory': true,
+  '--no-adaptive-memory': false
 });
 
 const PROVIDER_MODE_OPTIONS = new Set(['--personal-only', '--with-dev-public']);
@@ -26,6 +35,9 @@ function parseSetupLikeOptions(args, command) {
     dataDir: null,
     personalSpaceName: 'Personal',
     port: null,
+    memoryProfile: null,
+    runtimeMode: null,
+    adaptiveMemory: null,
     yes: false,
     codexOnly: false,
     skipAgents: false,
@@ -37,6 +49,17 @@ function parseSetupLikeOptions(args, command) {
   for (let index = 0; index < args.length; index += 1) {
     const flag = args[index];
     if (seen.has(flag)) throw new TypeError(`Duplicate ${flag}`);
+    if (Object.hasOwn(ADAPTIVE_MEMORY_OPTIONS, flag)) {
+      const conflicting = flag === '--adaptive-memory'
+        ? '--no-adaptive-memory'
+        : '--adaptive-memory';
+      if (seen.has(conflicting)) {
+        throw new TypeError('--adaptive-memory and --no-adaptive-memory cannot be combined');
+      }
+      result.adaptiveMemory = ADAPTIVE_MEMORY_OPTIONS[flag];
+      seen.add(flag);
+      continue;
+    }
     if (PROVIDER_MODE_OPTIONS.has(flag)) {
       const conflicting = flag === '--personal-only' ? '--with-dev-public' : '--personal-only';
       if (seen.has(conflicting)) {
@@ -58,7 +81,7 @@ function parseSetupLikeOptions(args, command) {
     if (typeof value !== 'string' || !value.trim() || value.startsWith('--')) {
       throw new TypeError(`Missing value for ${flag}`);
     }
-    result[valueKey] = valueKey === 'port' ? parsePort(value) : value.trim();
+    result[valueKey] = parseValue(valueKey, value);
     seen.add(flag);
     index += 1;
   }
@@ -94,4 +117,17 @@ function parsePort(value) {
     throw new TypeError('--port must be between 1 and 65535');
   }
   return port;
+}
+
+function parseValue(key, value) {
+  if (key === 'port') return parsePort(value);
+  if (key === 'memoryProfile') return normalizeNeo4jMemoryProfile(value);
+  if (key === 'runtimeMode') {
+    const mode = value.trim();
+    if (!['container', 'native'].includes(mode)) {
+      throw new TypeError('Runtime mode must be "container" or "native"');
+    }
+    return mode;
+  }
+  return value.trim();
 }

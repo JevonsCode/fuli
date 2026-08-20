@@ -66,6 +66,67 @@ const HANDLERS = Object.freeze({
     app.upsertPersonalProject(input)
   ),
   list_personal_projects: (app, input) => app.listPersonalProjects(input),
+  upsert_project_agent: (app, input) => captureGuard(app, () =>
+    app.upsertProjectAgent(input)
+  ),
+  list_project_agents: (app, input) => app.listCurrentProjectAgents(input),
+  get_project_agent: (app, input) => app.getProjectAgent(input),
+  delete_project_agent: (app, input) => app.deleteProjectAgent(input),
+  cleanup_test_project_agents: (app, input) => app.cleanupProjectAgentTestRoles(input),
+  create_project_agent_assignment: (app, input) =>
+    app.createProjectAgentAssignment(input),
+  list_project_agent_assignments: (app, input) =>
+    app.listProjectAgentAssignments(input),
+  end_project_agent_assignment: (app, input) =>
+    app.endProjectAgentAssignment(input),
+  replace_project_agent_assignment: (app, input) =>
+    app.replaceProjectAgentAssignment(input),
+  get_project_agent_context: (app, input) => app.getProjectAgentContext(input),
+  coordinate_project_agent_task: (app, input) =>
+    app.coordinateProjectAgentTask(input),
+  acquire_runtime_lease: (app, input) => app.acquireRuntimeLease(input),
+  refresh_runtime_lease: (app, input) => app.refreshRuntimeLease(input),
+  release_runtime_lease: (app, input) => app.releaseRuntimeLease(input),
+  submit_project_agent_task: (app, input) => app.submitProjectAgentTask(input),
+  view_project_agent_task: (app, input) => app.viewProjectAgentTask(input),
+  record_project_agent_task_activity: (app, input) =>
+    app.recordProjectAgentTaskActivity(input),
+  view_project_agent_activity: (app, input) => app.viewProjectAgentActivity(input),
+  get_project_agent_recruitment_policy: (app, input) =>
+    app.getProjectAgentRecruitmentPolicy(input),
+  update_project_agent_recruitment_policy: (app, input) =>
+    app.updateProjectAgentRecruitmentPolicy(input),
+  list_project_agent_recruitments: (app, input) =>
+    app.listProjectAgentRecruitments(input),
+  decide_project_agent_recruitment: (app, input) =>
+    app.decideProjectAgentRecruitment(input),
+  upsert_executor: (app, input) => app.upsertExecutor(input),
+  list_executors: (app, input) => app.listExecutors(input),
+  get_executor: (app, input) => app.getExecutor(input),
+  delete_executor: (app, input) => app.deleteExecutor(input),
+  preflight_executor: (app, input) => app.preflightExecutor(input),
+  authorize_executor: (app, input) => app.authorizeExecutor(input),
+  report_executor_health: (app, input) => app.reportExecutorHealth(input),
+  record_project_agent_executor_actual: (app, input) =>
+    app.recordProjectAgentExecutorActual(input),
+  upsert_executor_routing_rule: (app, input) =>
+    app.upsertExecutorRoutingRule(input),
+  update_executor_routing_rule: (app, input) =>
+    app.updateExecutorRoutingRule(input),
+  list_executor_routing_rules: (app, input) =>
+    app.listExecutorRoutingRules(input),
+  get_executor_routing_rule: (app, input) =>
+    app.getExecutorRoutingRule(input),
+  delete_executor_routing_rule: (app, input) =>
+    app.deleteExecutorRoutingRule(input),
+  record_project_agent_task_outcome: (app, input) =>
+    app.recordProjectAgentTaskOutcome(input),
+  list_project_agent_routing_learning: (app, input) =>
+    app.listProjectAgentRoutingLearning(input),
+  ignore_project_agent_routing_learning: (app, input) =>
+    app.ignoreProjectAgentRoutingLearning(input),
+  reset_project_agent_routing_learning: (app, input) =>
+    app.resetProjectAgentRoutingLearning(input),
   start_knowledge_review: (app, input) => app.startKnowledgeReview(input),
   list_knowledge_review_candidates: (app, input) =>
     app.listKnowledgeReviewCandidates(input),

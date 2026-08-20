@@ -61,6 +61,184 @@ test('Web server exposes the Graphiti facade and graph console', async () => {
       limit: 120
     });
 
+    await getJson(
+      `${url}/api/project-agents?personalSpaceId=personal-1&status=active`
+    );
+    assert.deepEqual(calls.find(([name]) => name === 'project-agent-list')[1], {
+      personalSpaceId: 'personal-1',
+      personalProjectId: null,
+      status: 'active',
+      capability: null
+    });
+
+    const agentInput = {
+      personalSpaceId: 'personal-1',
+      personalProjectId: 'project-a',
+      agentId: 'activity-agent',
+      profile: {
+        name: '活动 Agent',
+        responsibility: '负责活动方案与复盘。',
+        capabilities: ['活动策划'],
+        initialPreferences: [],
+        status: 'active'
+      }
+    };
+    await requestJson(`${url}/api/project-agents`, {
+      method: 'PUT',
+      body: agentInput
+    });
+    assert.deepEqual(
+      calls.find(([name]) => name === 'project-agent-upsert')[1],
+      agentInput
+    );
+
+    const tasks = await getJson(
+      `${url}/api/project-agent-tasks?personalSpaceId=personal-1&agentId=activity-agent` +
+      '&status=completed&limit=25'
+    );
+    assert.deepEqual(tasks, []);
+    assert.deepEqual(calls.find(([name]) => name === 'project-agent-task-list')[1], {
+      personalSpaceId: 'personal-1',
+      personalProjectId: null,
+      agentId: 'activity-agent',
+      status: 'completed',
+      limit: 25
+    });
+
+    const contextInput = {
+      projectPath: '/project',
+      agentId: 'activity-agent',
+      queries: ['活动复盘']
+    };
+    await requestJson(`${url}/api/project-agent-context`, {
+      method: 'POST',
+      body: contextInput
+    });
+    assert.deepEqual(
+      calls.find(([name]) => name === 'project-agent-context')[1],
+      contextInput
+    );
+
+    const agentArchive = await fetch(
+      `${url}/api/project-agents/activity-agent?personalSpaceId=personal-1&reason=retired`,
+      { method: 'DELETE' }
+    );
+    assert.equal(agentArchive.status, 200);
+    assert.deepEqual(calls.find(([name]) => name === 'project-agent-delete')[1], {
+      personalSpaceId: 'personal-1',
+      agentId: 'activity-agent',
+      reason: 'retired'
+    });
+    const cleanup = await requestJson(
+      `${url}/api/project-agents/test-cleanup?personalSpaceId=personal-1&testSource=e2e-1`,
+      { method: 'POST', body: {} }
+    );
+    assert.equal(cleanup.status, 200);
+    assert.deepEqual(calls.find(([name]) => name === 'project-agent-test-cleanup')[1], {
+      personalSpaceId: 'personal-1',
+      testSource: 'e2e-1'
+    });
+    const unsupportedTaskUpdate = await fetch(
+      `${url}/api/project-agent-tasks/task-1?personalSpaceId=personal-1`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'running' })
+      }
+    );
+    assert.equal(unsupportedTaskUpdate.status, 404);
+
+    const learningUpdate = await requestJson(
+      `${url}/api/project-agent-learning/evidence-1`,
+      {
+        method: 'PATCH',
+        body: {
+          action: 'ignore',
+          personalSpaceId: 'personal-1',
+          personalProjectId: 'project-a',
+          agentId: 'activity-agent',
+          idempotencyKey: 'learning-ignore-1',
+          reason: 'Explicit test evidence review'
+        }
+      }
+    );
+    assert.equal(learningUpdate.status, 200);
+    assert.deepEqual(
+      calls.find(([name]) => name === 'project-agent-learning-ignore')[1],
+      {
+        action: 'ignore',
+        personalSpaceId: 'personal-1',
+        personalProjectId: 'project-a',
+        agentId: 'activity-agent',
+        evidenceId: 'evidence-1',
+        idempotencyKey: 'learning-ignore-1',
+        reason: 'Explicit test evidence review'
+      }
+    );
+
+    const actualReport = await requestJson(
+      `${url}/api/project-agent-executor-actuals`,
+      {
+        method: 'POST',
+        body: {
+          personalSpaceId: 'personal-1',
+          personalProjectId: 'project-a',
+          taskId: 'task-1',
+          runId: 'run-1',
+          agentId: 'activity-agent',
+          executorId: 'executor-1',
+          provider: 'openai',
+          model: 'model-x',
+          idempotencyKey: 'actual-report-1',
+          occurredAt: '2026-08-17T00:00:00Z'
+        }
+      }
+    );
+    assert.equal(actualReport.status, 200);
+    assert.equal(
+      calls.find(([name]) => name === 'project-agent-executor-actual')[1].executorId,
+      'executor-1'
+    );
+
+    const authorization = await requestJson(
+      `${url}/api/executors/authorization`,
+      {
+        method: 'POST',
+        body: {
+          personalSpaceId: 'personal-1',
+          executorId: 'executor-1',
+          status: 'authorized',
+          reason: 'Approved for this workspace.',
+          idempotencyKey: 'authorization-1'
+        }
+      }
+    );
+    assert.equal(authorization.status, 200);
+    assert.equal(
+      calls.find(([name]) => name === 'executor-authorization')[1].executorId,
+      'executor-1'
+    );
+
+    const health = await requestJson(
+      `${url}/api/executors/health`,
+      {
+        method: 'POST',
+        body: {
+          personalSpaceId: 'personal-1',
+          executorId: 'executor-1',
+          status: 'healthy',
+          checkedAt: '2026-08-17T00:00:00Z',
+          idempotencyKey: 'health-report-1',
+          sourceApplication: 'codex'
+        }
+      }
+    );
+    assert.equal(health.status, 200);
+    assert.equal(
+      calls.find(([name]) => name === 'executor-health')[1].status,
+      'healthy'
+    );
+
     const unsubscribe = await fetch(
       `${url}/api/subscriptions/project-1?` + new URLSearchParams({
         personalSpaceId: 'personal-1',
@@ -172,6 +350,50 @@ function graphApp(calls) {
     getWritingTasteProfile: async (input) => {
       calls.push(['writing-taste', input]);
       return { status: 'collecting', ready: false, rules: [] };
+    },
+    listProjectAgents: async (input) => {
+      calls.push(['project-agent-list', input]);
+      return [];
+    },
+    upsertProjectAgent: async (input) => {
+      calls.push(['project-agent-upsert', input]);
+      return input;
+    },
+    getProjectAgentContext: async (input) => {
+      calls.push(['project-agent-context', input]);
+      return { status: 'ready' };
+    },
+    deleteProjectAgent: async (input) => {
+      calls.push(['project-agent-delete', input]);
+      return input;
+    },
+    cleanupProjectAgentTestRoles: async (input) => {
+      calls.push(['project-agent-test-cleanup', input]);
+      return { archivedCount: 1 };
+    },
+    listProjectAgentTasks: async (input) => {
+      calls.push(['project-agent-task-list', input]);
+      return [];
+    },
+    ignoreProjectAgentRoutingLearning: async (input) => {
+      calls.push(['project-agent-learning-ignore', input]);
+      return input;
+    },
+    resetProjectAgentRoutingLearning: async (input) => {
+      calls.push(['project-agent-learning-reset', input]);
+      return input;
+    },
+    recordProjectAgentExecutorActual: async (input) => {
+      calls.push(['project-agent-executor-actual', input]);
+      return input;
+    },
+    authorizeExecutor: async (input) => {
+      calls.push(['executor-authorization', input]);
+      return input;
+    },
+    reportExecutorHealth: async (input) => {
+      calls.push(['executor-health', input]);
+      return input;
     },
     captureSessionKnowledge: async () => ({}),
     confirmKnowledgeBatch: async (input) => {

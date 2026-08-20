@@ -104,6 +104,7 @@ ConfirmationStatus = Literal['confirmed', 'agent_confirmed', 'pending']
 ConfirmationActorKind = Literal['user', 'agent', 'authoritative_source', 'import']
 PersonalProfileAspect = Literal['taste', 'personality', 'judgment_preference']
 PreferenceScope = Literal['global', 'project']
+ScopedPreferenceScope = Literal['global', 'project', 'agent']
 PreferenceConflictQueueStatus = Literal['ai_pending', 'resolved']
 PreferenceConflictResolutionAction = Literal[
     'merge',
@@ -671,11 +672,17 @@ class PublicationDraftDecision(StrictModel):
         if self.decision != 'submit_public' and self.shared_proposal_id:
             raise ValueError('shared_proposal_id is only valid for public submission')
         return self
-
 class KnowledgeCommit(StrictModel):
     space_id: str = Field(min_length=1, max_length=128)
     personal_project_id: str | None = Field(default=None, min_length=1, max_length=128)
+    project_agent_id: str | None = Field(default=None, min_length=1, max_length=128)
     episode: StructuredEpisode
+
+    @model_validator(mode='after')
+    def validate_project_agent_scope(self):
+        if self.project_agent_id and not self.personal_project_id:
+            raise ValueError('project Agent knowledge requires personal_project_id')
+        return self
 
 
 class CommitResult(StrictModel):
@@ -727,6 +734,7 @@ class SearchRequest(StrictModel):
         min_length=1,
         max_length=128,
     )
+    project_agent_id: str | None = Field(default=None, min_length=1, max_length=128)
     inherit_project_knowledge: bool = True
     include_personal_global: bool = False
 
@@ -749,6 +757,8 @@ class SearchRequest(StrictModel):
             raise ValueError(
                 'active personal project id must be present in personal project ids'
             )
+        if self.project_agent_id and not self.active_personal_project_id:
+            raise ValueError('project Agent search requires active_personal_project_id')
         return self
 
 
@@ -767,12 +777,14 @@ class EntitySearchResult(StrictModel):
     confirmation_basis: ConfirmationBasis | None = None
     reasoning_summary: str | None = None
     profile_aspect: PersonalProfileAspect | None = None
-    preference_scope: PreferenceScope | None = None
+    preference_scope: ScopedPreferenceScope | None = None
     preference_project_id: str | None = None
+    preference_agent_id: str | None = None
     key: str | None = None
     preference_key: str | None = None
     preference_qualifiers: dict[str, Any] = Field(default_factory=dict)
     defined_project_id: str | None = None
+    project_agent_id: str | None = None
     inheritance_mode: KnowledgeInheritanceMode = 'local_only'
     inherited_project_ids: list[str] = Field(default_factory=list, max_length=32)
     human_edited: bool = False
@@ -816,12 +828,14 @@ class FactResult(StrictModel):
     confirmation_basis: ConfirmationBasis | None = None
     reasoning_summary: str | None = None
     profile_aspect: PersonalProfileAspect | None = None
-    preference_scope: PreferenceScope | None = None
+    preference_scope: ScopedPreferenceScope | None = None
     preference_project_id: str | None = None
+    preference_agent_id: str | None = None
     key: str | None = None
     preference_key: str | None = None
     preference_qualifiers: dict[str, Any] = Field(default_factory=dict)
     defined_project_id: str | None = None
+    project_agent_id: str | None = None
     inheritance_mode: KnowledgeInheritanceMode = 'local_only'
     inherited_project_ids: list[str] = Field(default_factory=list, max_length=32)
     human_edited: bool = False
@@ -859,8 +873,9 @@ class CollaborationPreferenceItem(StrictModel):
     title: str
     instruction: str
     profile_aspect: PersonalProfileAspect
-    preference_scope: PreferenceScope
+    preference_scope: ScopedPreferenceScope
     preference_project_id: str | None = None
+    preference_agent_id: str | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
     weight: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
     reason: str | None = None
@@ -878,20 +893,24 @@ class CollaborationPreferenceItem(StrictModel):
 
 class CollaborationPreferenceConflict(StrictModel):
     preference_key: str
-    preference_scope: PreferenceScope
+    preference_scope: ScopedPreferenceScope
     preference_project_id: str | None = None
+    preference_agent_id: str | None = None
     item_ids: list[str] = Field(min_length=2)
 
 
 class CollaborationContextResult(StrictModel):
     personal_space_id: str
     personal_project_id: str | None = None
+    project_agent_id: str | None = None
     global_preferences: list[CollaborationPreferenceItem] = Field(default_factory=list)
     project_preferences: list[CollaborationPreferenceItem] = Field(default_factory=list)
+    agent_preferences: list[CollaborationPreferenceItem] = Field(default_factory=list)
     effective_preferences: list[CollaborationPreferenceItem] = Field(default_factory=list)
     conflicts: list[CollaborationPreferenceConflict] = Field(default_factory=list)
     overridden_global_ids: list[str] = Field(default_factory=list)
     overridden_inherited_ids: list[str] = Field(default_factory=list)
+    overridden_project_ids: list[str] = Field(default_factory=list)
     overridden_lower_authority_ids: list[str] = Field(default_factory=list)
     truncated: bool = False
 

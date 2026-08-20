@@ -19,7 +19,8 @@ import { jsonSchemaToZod, openObjectSchema } from './tool-schema.js';
 import {
   mcpHostSessionId,
   nativeCodexThreadId,
-  normalizeAgentSessionInput
+  normalizeAgentSessionInput,
+  normalizeMcpSourceApplication
 } from './session-id.js';
 
 const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
@@ -33,6 +34,24 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   discover_personal_global_preference_candidates: 32 * 1024,
   preview_personal_global_preference_decision: 32 * 1024,
   list_personal_projects: 32 * 1024,
+  list_project_agents: 32 * 1024,
+  get_project_agent: 32 * 1024,
+  list_project_agent_assignments: 32 * 1024,
+  get_project_agent_context: 64 * 1024,
+  coordinate_project_agent_task: 256 * 1024,
+  acquire_runtime_lease: 4 * 1024,
+  refresh_runtime_lease: 4 * 1024,
+  release_runtime_lease: 4 * 1024,
+  view_project_agent_task: 64 * 1024,
+  view_project_agent_activity: 64 * 1024,
+  list_project_agent_recruitments: 32 * 1024,
+  list_executors: 32 * 1024,
+  get_executor: 32 * 1024,
+  preflight_executor: 32 * 1024,
+  record_project_agent_executor_actual: 32 * 1024,
+  list_executor_routing_rules: 32 * 1024,
+  get_executor_routing_rule: 32 * 1024,
+  list_project_agent_routing_learning: 64 * 1024,
   list_knowledge_review_candidates: 32 * 1024,
   list_workflow_candidates: 32 * 1024,
   recommend_next_workflow_steps: 32 * 1024
@@ -40,7 +59,12 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
 
 export function createMcpServer(
   app,
-  { env = process.env, clock = () => new Date() } = {}
+  {
+    env = process.env,
+    clock = () => new Date(),
+    sourceApplication = nativeCodexThreadId(env) ? 'codex' : 'other',
+    withRuntimeLease = (_owner, operation) => operation()
+  } = {}
 ) {
   const server = new McpServer(
     { name: 'fuli', version: FULI_VERSION },
@@ -48,15 +72,20 @@ export function createMcpServer(
   );
 
   const nativeThreadId = nativeCodexThreadId(env);
+  const authoritativeSourceApplication = normalizeMcpSourceApplication(
+    sourceApplication
+  );
   const tools = createToolMap(
     app,
     createProjectActionPreviewTokens(),
     nativeThreadId,
     mcpHostSessionId(env),
-    clock
+    clock,
+    authoritativeSourceApplication,
+    withRuntimeLease
   );
   for (const tool of tools.values()) registerTool(server, tool);
-  registerFuliContextResources(server, app);
+  registerFuliContextResources(server, app, { withRuntimeLease });
   registerCallHandler(server, tools);
   return server;
 }
@@ -66,24 +95,30 @@ function createToolMap(
   projectActionPreviews,
   nativeThreadId,
   hostSessionId,
-  clock
+  clock,
+  sourceApplication,
+  withRuntimeLease
 ) {
   const commonKnowledgePreviews = createCommonKnowledgePreviewTokens();
   return new Map(listAgentTools().map((definition) => [definition.name, {
     definition,
     schema: jsonSchemaToZod(definition.inputSchema),
-    invoke: (input) => invokeAgentTool(
-      app,
-      definition.name,
-      normalizeAgentSessionInput(
+    invoke: (input) => withRuntimeLease(
+      `mcp-tool:${definition.name}`,
+      () => invokeAgentTool(
+        app,
         definition.name,
-        input,
-        nativeThreadId,
-        hostSessionId,
-        clock
-      ),
-      projectActionPreviews,
-      commonKnowledgePreviews
+        normalizeAgentSessionInput(
+          definition.name,
+          input,
+          nativeThreadId,
+          hostSessionId,
+          clock,
+          sourceApplication
+        ),
+        projectActionPreviews,
+        commonKnowledgePreviews
+      )
     )
   }]));
 }

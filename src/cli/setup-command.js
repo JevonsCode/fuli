@@ -49,19 +49,35 @@ export function formatSetupPreview(plan, options) {
     DEFAULT_RUNTIME_SETTINGS,
     { consolePort: options.port }
   );
-  return [
+  const runtimeMode = runtimeSettings.graphRuntimeMode;
+  const lines = [
     'Ready to set up Fuli',
     options.personalOnly
       ? 'Storage: personal only, using local Graphiti / Neo4j'
       : 'Storage: local Graphiti / Neo4j plus a development shared-project Provider',
-    'Container runtime: detected automatically; an installed desktop runtime starts if needed',
+    runtimeMode === 'native'
+      ? 'Graph runtime: native processes; no Docker VM required'
+      : 'Graph runtime: container; Docker or Rancher Desktop starts if needed',
     `Shared services: ${options.personalOnly ? 'not connected' : 'local development Provider'}`,
     `Personal space: ${options.personalSpaceName}`,
+    `Neo4j memory: ${options.memoryProfile ?? 'saved profile or balanced default'}`,
+    `Adaptive memory: ${plan.adaptiveRuntimeSettings?.enabled ?
+      'enabled; Provider and database sleep after idle time' :
+      'disabled; graph services stay running'}`,
     `Management UI: ${options.noStart
       ? 'will not start'
       : `http://127.0.0.1:${runtimeSettings.ports.console}`}`,
     `Agents: ${agentSummary}`
-  ].join('\n');
+  ];
+  if (
+    runtimeMode !== 'native' &&
+    plan.runtimeModeRecommendation?.recommendedMode === 'native'
+  ) {
+    lines.splice(3, 0,
+      'Recommendation: native mode avoids shared VM memory on this low-memory Mac; ' +
+      'select it with --runtime-mode native');
+  }
+  return lines.join('\n');
 }
 
 export function formatSetupResult(result, plan) {

@@ -137,6 +137,10 @@ export function formatUpdatePreview(options) {
     options.dataDir
       ? `Data: preserve ${options.dataDir}`
       : 'Data: preserve the current default data directory',
+    `Neo4j memory: ${options.memoryProfile ?? 'keep saved profile or use balanced by default'}`,
+    `Adaptive memory: ${options.adaptiveMemory === null
+      ? 'keep saved setting'
+      : options.adaptiveMemory ? 'enable' : 'disable'}`,
     `Agent integrations and Skills: ${options.skipAgents
       ? 'skip refresh as requested'
       : 'refresh through setup in the new version'}`

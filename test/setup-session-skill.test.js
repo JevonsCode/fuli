@@ -173,3 +173,19 @@ test('bundled session Skill gates all-local content lookup behind explicit conse
     /no-match search.*noMatchSourceMarker\.markdown.*intentionally empty.*leadMarkdown/is
   );
 });
+
+test('bundled session Skill reports only provider-reported worker execution summaries', () => {
+  const skill = readFileSync(
+    join(PROJECT_ROOT, 'skills', 'capturing-session-knowledge', 'SKILL.md'),
+    'utf8'
+  );
+
+  assert.match(skill, /executionSummary/);
+  assert.match(skill, /one .*row.*worker|one .*line.*worker/i);
+  assert.match(skill, /occupation.*emoji/i);
+  assert.match(skill, /actual.*executor.*sourceApplication|sourceApplication.*actual/i);
+  assert.match(skill, /work.*summary|summary.*work/i);
+  assert.match(skill, /workerStatus|terminal.*status/i);
+  assert.match(skill, /configured.*(?:allowed|available).*not.*evidence/i);
+  assert.match(skill, /empty.*executionSummary.*omit|omit.*empty.*executionSummary/i);
+});

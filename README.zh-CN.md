@@ -370,8 +370,10 @@ Agent 上下文。
 准备：
 
 - Node.js 24.12 或更高版本；
-- Docker Compose v2；Docker Desktop 或 Rancher Desktop 均可；
-- 至少约 4 GB 可供容器使用的内存。
+- 默认容器模式需要 Docker Compose v2，Docker Desktop 或 Rancher Desktop 均可；
+- macOS / Linux 可选择不使用虚拟机的原生模式；它需要 Java 21 和 `uv`（Python 3.12）；
+- 内存紧张的 Mac 推荐
+  `fuli setup --runtime-mode native --memory-profile low --adaptive-memory`。默认仍是兼容性更高的容器模式，不会自动强制切换。
 
 全局安装并初始化：
 
@@ -392,12 +394,13 @@ fuli open
 
 管理界面默认位于 `http://127.0.0.1:2727`。
 
-“设置”页集中管理 Fuli 使用的 7 个本机端口、局域网访问、自动沉淀、Agent 使用、界面语言和
-资源刷新频率。端口或局域网设置保存后执行 `fuli restart` 生效；资源刷新频率立即生效。
+“设置”页集中管理 Fuli 使用的 7 个本机端口、图数据库运行方式、局域网访问、自动沉淀、
+Agent 使用、界面语言和资源刷新频率。端口、运行方式或局域网设置保存后执行 `fuli restart`
+生效；资源刷新频率立即生效。
 同页按设定间隔采集管理服务、Provider、Neo4j、应用文件和本机数据的真实内存/磁盘占用；
 内存每次重采，磁盘最多每分钟重采一次，并分别显示采样时间。
-无法取得容器数据时会明确显示为不完整，不使用模拟值。浏览器标签页内存和共享容器虚拟机
-开销不计入 Fuli 合计。
+无法取得运行进程数据时会明确显示为不完整，不使用模拟值。原生模式会计入 Provider 和
+Neo4j 进程；容器模式不把共享容器虚拟机开销计入 Fuli 合计。两种模式都不含浏览器标签页。
 
 ## CLI
 
@@ -415,6 +418,8 @@ CLI 的帮助、交互提示、状态和错误信息固定使用英文，不跟�
 | `fuli restart [选项]` | 使用与 `start` 相同的运行参数重启本机服务 |
 | `fuli status [--json] [--data-dir DIR] [--port PORT]` | 查看管理界面、个人图谱和公共服务状态；`--json` 输出机器可读结果 |
 | `fuli open [--data-dir DIR]` | 在默认浏览器中打开当前管理界面 |
+| `fuli graph export --output DIR [--mode container\|native]` | 把当前图数据导出为可校验、可复制的离线备份包 |
+| `fuli graph import --input DIR [--target-mode container\|native] [--yes]` | 校验备份并替换目标图数据；导入前自动保留回滚包 |
 | `fuli update [setup 选项]` | 更新 npm 包并刷新本机接入 |
 | `fuli uninstall [--yes] [--data-dir DIR]` | 清理 Agent 接入和服务，保留知识数据和 Neo4j 数据卷 |
 
@@ -425,6 +430,7 @@ fuli --version
 fuli status
 fuli restart --rebuild
 fuli start --lan
+fuli graph export --output "$HOME/Backups/fuli-graph"
 fuli stop
 ```
 
@@ -462,10 +468,67 @@ HTTPS 公网部署。
 | `--data-dir DIR` | 使用指定的数据与配置目录 |
 | `--personal-space NAME` | 设置个人空间名称；默认是 `Personal` |
 | `--port PORT` | 设置管理界面端口；默认是 `2727` |
+| `--runtime-mode container\|native` | 选择容器或原生进程；默认 `container`，原生模式当前支持 macOS / Linux |
+| `--memory-profile low\|balanced` | 选择 Neo4j 内存档位；首次安装默认使用 `balanced` |
+| `--adaptive-memory` | 启用按需唤醒和分阶段休眠；保存后由管理服务协调 |
+| `--no-adaptive-memory` | 关闭按需休眠，让图服务保持运行 |
 | `--skip-agents` | 不修改 Agent 配置或 Skills |
 | `--no-start` | 初始化 Provider，但不启动管理界面 |
 | `--personal-only` | 只使用个人 Provider；默认模式 |
 | `--with-dev-public` | 同时启动开发用公共 Provider，仅用于开发或联调 |
+
+`low` 档使用 128 MiB 初始堆、256 MiB 最大堆和 64 MiB 页缓存；`balanced` 档分别使用
+256 MiB、512 MiB 和 256 MiB。低内存档不会设置容器硬内存上限，会在降低常驻内存的同时
+为 Neo4j 原生内存留出余量。批量写入、大范围图遍历或高并发时，垃圾回收和磁盘读取可能
+增多，但事务语义、存储格式和数据卷不变。如果这些负载变慢或因堆不足而失败，可执行
+`fuli setup --memory-profile balanced --yes` 回退。选择的档位会被保存，后续 setup、update、
+start 和 restart 会继续沿用。
+
+自适应内存模式是独立于 Neo4j 内存档位的生命周期策略。启用后，管理服务保持轻量常驻：
+实际 MCP 工具、MCP 资源或管理界面的图谱请求会先取得运行租约并按需唤醒服务；最后一个
+租约释放后，个人 Provider 默认空闲 60 秒停止，Neo4j 默认空闲 180 秒停止。数据卷不会被
+删除，下一次请求会自动恢复同一份数据。运行中的调用会持续续租，不会被空闲计时器中断；
+客户端异常退出后，租约最多 180 秒自动过期，避免服务永久被占住。这些秒数是当前产品默认值，
+不是硬件实测阈值。
+
+这种模式把空闲内存换成首次请求的冷启动等待和更多磁盘读取。管理界面的健康、运行状态和资源
+采样不会唤醒图服务；`fuli status` 会把主动休眠报告为正常状态。管理服务必须保持运行才能自动
+唤醒，所以 `--no-start` 只会保存策略，不会在本次运行中提供按需唤醒。容器模式下，该策略只
+停止 Fuli 的 Provider / Neo4j 容器，不会自行关闭 Rancher Desktop、Docker Desktop、
+Kubernetes 或整台容器虚拟机；原生模式会直接停止对应 Provider 和 Neo4j 进程，因此空闲时
+不再保留共享虚拟机开销。
+
+Project Agent 身份仍是控制面记录，不会每个身份常驻一个进程。实际执行器按 ID 共用租约：
+只有显式注入受管生命周期适配器的执行器才由 Fuli 启停；Codex 等宿主自己拥有的外部执行器
+不会被 Fuli 擅自启动或终止。当前可用的最小内存组合是：
+
+```bash
+fuli setup --yes --runtime-mode native --memory-profile low --adaptive-memory
+```
+
+两种模式使用彼此独立的数据目录，切换不会删除原模式的数据，也不会在后台自动合并两边的
+新增内容。需要迁移时，先在来源模式仍处于启用状态时导出，再安装或切换目标模式并导入：
+
+```bash
+# Rancher / Docker -> 原生
+fuli graph export --mode container --output "$HOME/Backups/fuli-container"
+fuli setup --yes --runtime-mode native --memory-profile low --adaptive-memory
+fuli graph import --target-mode native --input "$HOME/Backups/fuli-container" --yes
+```
+
+反向迁移只需交换 `container` 和 `native`。导出会短暂停止来源数据库，完成后只恢复导出前
+确实在运行的服务；导入会先校验清单和每个 dump 的 SHA-256，再停止目标数据库。替换前的
+目标数据会自动保存在数据目录下的 `backups/graph`，导入失败时会立即尝试回滚。执行前应让
+正在写图数据的 Agent 请求结束。
+
+导入完成后会使用目标安装自己的 bootstrap token 重新签发本机 Provider 访问令牌，并原子
+更新运行配置；明文访问令牌不会写入迁移包。同一台机器迁移时，非受管的外部 Workspace
+连接配置会继续保留；换到另一台机器后，外部服务凭据需要单独重新连接。
+
+备份是一个含 `manifest.json`、`personal.dump` 和可选 `workspace.dump` 的目录，可以复制到
+其他磁盘或机器。容器模式通过 Docker API 复制文件，不要求 Rancher 共享备份所在目录。
+dump 使用项目固定的 Neo4j 5.26 格式，适合在 Fuli 两种运行模式或兼容的 Neo4j 5.26 环境间
+迁移；它不是面向任意数据库的 CSV / JSON 通用交换格式。
 
 更新：
 

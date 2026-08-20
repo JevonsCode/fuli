@@ -10,6 +10,9 @@ export function agentCollaborationPreference(item) {
   if (item.preference_project_id) {
     preference.preference_project_id = item.preference_project_id;
   }
+  if (item.preference_agent_id) {
+    preference.preference_agent_id = item.preference_agent_id;
+  }
   for (const field of [
     'attributes',
     'weight',
@@ -27,10 +30,31 @@ export function agentCollaborationPreference(item) {
   return preference;
 }
 
+export function activePreferenceConflicts(result) {
+  const items = [
+    ...(result.global_preferences ?? []),
+    ...(result.project_preferences ?? []),
+    ...(result.agent_preferences ?? [])
+  ];
+  const itemById = new Map(items.map((item) => [item.id, item]));
+  return (result.conflicts ?? []).map((conflict) => ({
+    preference_key: conflict.preference_key,
+    preference_scope: conflict.preference_scope,
+    preference_project_id: conflict.preference_project_id ?? null,
+    preference_agent_id: conflict.preference_agent_id ?? null,
+    alternatives: (conflict.item_ids ?? [])
+      .map((id) => itemById.get(id))
+      .filter(Boolean)
+      .map(agentCollaborationPreference),
+    required_action: 'Do not apply any alternative until the conflict is resolved.'
+  }));
+}
+
 export function deferredPreferenceConflicts(result, queuedConflicts) {
   const items = [
     ...(result.global_preferences ?? []),
-    ...(result.project_preferences ?? [])
+    ...(result.project_preferences ?? []),
+    ...(result.agent_preferences ?? [])
   ];
   const itemById = new Map(items.map((item) => [item.id, item]));
   const activeConflictPairs = new Set(
@@ -121,6 +145,9 @@ export function agentDeferredPreferenceConflict(conflict) {
     ...(conflict.preference_project_id
       ? { preference_project_id: conflict.preference_project_id }
       : {}),
+    ...(conflict.preference_agent_id
+      ? { preference_agent_id: conflict.preference_agent_id }
+      : {}),
     status: conflict.status,
     deferred_at: conflict.deferred_at,
     reason: conflict.reason,
@@ -142,6 +169,7 @@ function agentConflictPreference(item) {
   };
   for (const field of [
     'preference_project_id',
+    'preference_agent_id',
     'inherited_from_project_id',
     'scope_distance',
     'scope_path',

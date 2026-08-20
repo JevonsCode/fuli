@@ -14,6 +14,9 @@ export const routeMessages = {
       title: '个人项目',
       description: '本机私有项目、项目知识与按任务生效的协作偏好。',
     },
+    projectAgents: {
+      title: '项目 Agent',
+    },
     organizer: {
       title: '知识整理',
     },
@@ -53,6 +56,9 @@ export const routeMessages = {
     personalProjects: {
       title: 'Personal projects',
       description: 'Private local projects, project knowledge, and task-scoped collaboration preferences.',
+    },
+    projectAgents: {
+      title: 'Project Agents',
     },
     organizer: {
       title: 'Knowledge organizer',

@@ -134,6 +134,7 @@ from .project_knowledge import (
     preview_knowledge_project_action,
     review_personal_project_relation,
 )
+from .project_agent_routes import register_project_agent_routes
 from .preference_conflicts import (
     complete_preference_conflict,
     defer_preference_conflict,
@@ -309,6 +310,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
     ) -> PersonalProjectRecord:
         return await store.get_personal_project(actor, personal_space_id, project_id)
+
+    register_project_agent_routes(application, store, Actor)
 
     @application.post('/v1/publication-drafts', response_model=PublicationDraftRecord)
     async def create_publication_draft(
@@ -862,6 +865,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             str | None,
             Query(min_length=1, max_length=128),
         ] = None,
+        project_agent_id: Annotated[
+            str | None,
+            Query(min_length=1, max_length=128),
+        ] = None,
         limit: Annotated[int, Query(ge=1, le=200)] = 100,
     ) -> CollaborationContextResult:
         return await store.collaboration_context(
@@ -869,6 +876,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             personal_space_id,
             personal_project_id,
             limit,
+            project_agent_id,
         )
 
     @application.get('/v1/spaces/{space_id}/graph', response_model=GraphResult)

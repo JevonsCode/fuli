@@ -79,6 +79,269 @@ export class GraphitiProviderClient {
       `/v1/personal-projects/${encodeURIComponent(projectId)}?${query}`
     );
   }
+  upsertProjectAgent(input) {
+    return this.#request('/v1/project-agents', { method: 'PUT', body: input });
+  }
+  listProjectAgents(
+    personalSpaceId,
+    personalProjectId = null,
+    { status = null, capability = null } = {}
+  ) {
+    const query = new URLSearchParams({
+      personal_space_id: personalSpaceId
+    });
+    if (personalProjectId) query.set('personal_project_id', personalProjectId);
+    if (status) query.set('status', status);
+    if (capability) query.set('capability', capability);
+    return this.#request(`/v1/project-agents?${query}`);
+  }
+  getProjectAgent(personalSpaceId, personalProjectId, agentId) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    if (personalProjectId) query.set('personal_project_id', personalProjectId);
+    return this.#request(
+      `/v1/project-agents/${encodeURIComponent(agentId)}?${query}`
+    );
+  }
+  deleteProjectAgent(personalSpaceId, agentId, reason = 'archived by user') {
+    const query = new URLSearchParams({
+      personal_space_id: personalSpaceId,
+      reason
+    });
+    return this.#request(
+      `/v1/project-agents/${encodeURIComponent(agentId)}?${query}`,
+      { method: 'DELETE' }
+    );
+  }
+  cleanupProjectAgentTestRoles(personalSpaceId, testSource) {
+    const query = new URLSearchParams({
+      personal_space_id: personalSpaceId,
+      test_source: testSource
+    });
+    return this.#request(`/v1/project-agents/test-cleanup?${query}`, {
+      method: 'POST'
+    });
+  }
+  createProjectAgentAssignment(input) {
+    return this.#request('/v1/project-agent-assignments', {
+      method: 'POST', body: input
+    });
+  }
+  listProjectAgentAssignments({
+    personalSpaceId,
+    personalProjectId = null,
+    agentId = null,
+    status = null
+  }) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    if (personalProjectId) query.set('personal_project_id', personalProjectId);
+    if (agentId) query.set('agent_id', agentId);
+    if (status) query.set('status', status);
+    return this.#request(`/v1/project-agent-assignments?${query}`);
+  }
+  endProjectAgentAssignment(input) {
+    return this.#request('/v1/project-agent-assignments/end', {
+      method: 'POST', body: input
+    });
+  }
+  replaceProjectAgentAssignment(input) {
+    return this.#request('/v1/project-agent-assignments/replace', {
+      method: 'POST', body: input
+    });
+  }
+  submitProjectAgentTask(input) {
+    return this.#request('/v1/project-agent-tasks', {
+      method: 'POST', body: input
+    });
+  }
+  listProjectAgentTasks({
+    personalSpaceId,
+    personalProjectId = null,
+    agentId = null,
+    status = null,
+    limit = null
+  }) {
+    const query = new URLSearchParams({
+      personal_space_id: personalSpaceId
+    });
+    if (personalProjectId) query.set('personal_project_id', personalProjectId);
+    if (agentId) query.set('agent_id', agentId);
+    if (status) query.set('status', status);
+    if (limit !== null && limit !== undefined) query.set('limit', String(limit));
+    return this.#request(`/v1/project-agent-tasks?${query}`);
+  }
+  viewProjectAgentTask(personalSpaceId, taskId, { includeEvents = true } = {}) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    query.set('include_events', String(includeEvents));
+    return this.#request(
+      `/v1/project-agent-tasks/${encodeURIComponent(taskId)}?${query}`
+    );
+  }
+  recordProjectAgentTaskActivity(input) {
+    return this.#request(
+      `/v1/project-agent-tasks/${encodeURIComponent(input.task_id ?? input.taskId)}/events`,
+      {
+        method: 'POST', body: input
+      }
+    );
+  }
+  listProjectAgentActivity({
+    personalSpaceId,
+    agentId,
+    fromDate = null,
+    toDate = null
+  }) {
+    const today = new Date().toISOString().slice(0, 10);
+    const query = new URLSearchParams({
+      personal_space_id: personalSpaceId,
+      from: fromDate ?? toDate ?? today,
+      to: toDate ?? fromDate ?? today
+    });
+    return this.#request(
+      `/v1/project-agents/${encodeURIComponent(agentId)}/activity?${query}`
+    );
+  }
+  getProjectAgentRecruitmentPolicy(personalSpaceId) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    return this.#request(`/v1/project-agent-recruitment-policy?${query}`);
+  }
+  updateProjectAgentRecruitmentPolicy(input) {
+    return this.#request('/v1/project-agent-recruitment-policy', {
+      method: 'PUT', body: input
+    });
+  }
+  listProjectAgentRecruitments({
+    personalSpaceId,
+    personalProjectId = null,
+    taskId = null,
+    status = null
+  }) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    if (personalProjectId) query.set('personal_project_id', personalProjectId);
+    if (taskId) query.set('task_id', taskId);
+    if (status) query.set('status', status);
+    return this.#request(`/v1/project-agent-recruitments?${query}`);
+  }
+  decideProjectAgentRecruitment(input) {
+    return this.#request(
+      `/v1/project-agent-recruitments/${encodeURIComponent(
+        input.recruitment_id ?? input.recruitmentId
+      )}/decision`,
+      { method: 'POST', body: input }
+    );
+  }
+  upsertExecutor(input) {
+    return this.#request('/v1/executors', { method: 'PUT', body: input });
+  }
+  listExecutors(
+    personalSpaceId,
+    { capability = null, availableOnly = false } = {}
+  ) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    if (capability) query.set('capability', capability);
+    if (availableOnly) query.set('available_only', 'true');
+    return this.#request(`/v1/executors?${query}`);
+  }
+  getExecutor(personalSpaceId, executorId) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    return this.#request(`/v1/executors/${encodeURIComponent(executorId)}?${query}`);
+  }
+  deleteExecutor(personalSpaceId, executorId) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    return this.#request(`/v1/executors/${encodeURIComponent(executorId)}?${query}`, {
+      method: 'DELETE'
+    });
+  }
+  preflightExecutor(input) {
+    return this.#request('/v1/executors/preflight', { method: 'POST', body: input });
+  }
+  authorizeExecutor(input) {
+    return this.#request('/v1/executors/authorization', {
+      method: 'POST', body: input
+    });
+  }
+  reportExecutorHealth(input) {
+    return this.#request('/v1/executors/health', {
+      method: 'POST', body: input
+    });
+  }
+  recordProjectAgentExecutorActual(input) {
+    return this.#request('/v1/project-agent-executor-actuals', {
+      method: 'POST', body: input
+    });
+  }
+  upsertExecutorRoutingRule(input) {
+    return this.#request('/v1/executor-routing-rules', {
+      method: 'PUT', body: input
+    });
+  }
+  updateExecutorRoutingRule(input) {
+    return this.#request(
+      `/v1/executor-routing-rules/${encodeURIComponent(
+        input.rule_id ?? input.ruleId
+      )}`,
+      { method: 'PATCH', body: input }
+    );
+  }
+  listExecutorRoutingRules({
+    personalSpaceId,
+    scope = null,
+    personalProjectId = null,
+    taskId = null,
+    status = null,
+    enabled = null
+  }) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    if (scope) query.set('scope', scope);
+    if (personalProjectId) query.set('personal_project_id', personalProjectId);
+    if (taskId) query.set('task_id', taskId);
+    if (status) query.set('status', status);
+    else if (enabled !== null && enabled !== undefined) {
+      query.set('status', enabled ? 'active' : 'disabled');
+    }
+    return this.#request(`/v1/executor-routing-rules?${query}`);
+  }
+  getExecutorRoutingRule(personalSpaceId, ruleId) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    return this.#request(
+      `/v1/executor-routing-rules/${encodeURIComponent(ruleId)}?${query}`
+    );
+  }
+  deleteExecutorRoutingRule(personalSpaceId, ruleId) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    return this.#request(
+      `/v1/executor-routing-rules/${encodeURIComponent(ruleId)}?${query}`,
+      { method: 'DELETE' }
+    );
+  }
+  recordProjectAgentTaskOutcome(input) {
+    return this.#request('/v1/project-agent-routing-outcomes', {
+      method: 'POST', body: input
+    });
+  }
+  listProjectAgentRoutingLearning({
+    personalSpaceId,
+    personalProjectId = null,
+    workKind = null,
+    agentId = null,
+    executorId = null
+  }) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    if (personalProjectId) query.set('personal_project_id', personalProjectId);
+    if (workKind) query.set('work_kind', workKind);
+    if (agentId) query.set('agent_id', agentId);
+    if (executorId) query.set('executor_id', executorId);
+    return this.#request(`/v1/project-agent-routing-learning?${query}`);
+  }
+  ignoreProjectAgentRoutingLearning(input) {
+    return this.#request('/v1/project-agent-routing-learning/ignore', {
+      method: 'POST', body: input
+    });
+  }
+  resetProjectAgentRoutingLearning(input) {
+    return this.#request('/v1/project-agent-routing-learning/reset', {
+      method: 'POST', body: input
+    });
+  }
   createPublicationDraft(input) {
     return this.#request('/v1/publication-drafts', { method: 'POST', body: input });
   }
@@ -320,12 +583,18 @@ export class GraphitiProviderClient {
     );
   }
   search(input) { return this.#request('/v1/search', { method: 'POST', body: input }); }
-  collaborationPreferences(personalSpaceId, personalProjectId = null, limit = 100) {
+  collaborationPreferences(
+    personalSpaceId,
+    personalProjectId = null,
+    limit = 100,
+    projectAgentId = null
+  ) {
     const query = new URLSearchParams({
       personal_space_id: personalSpaceId,
       limit: String(limit)
     });
     if (personalProjectId) query.set('personal_project_id', personalProjectId);
+    if (projectAgentId) query.set('project_agent_id', projectAgentId);
     return this.#request(`/v1/collaboration-preferences?${query}`);
   }
   graph(spaceId, limit = 500, personalProjectId = null, offset = null) {

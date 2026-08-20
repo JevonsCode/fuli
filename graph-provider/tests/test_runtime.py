@@ -10,6 +10,9 @@ from fuli_graph.runtime import (
     LocalHashEmbedder,
     LocalLexicalReranker,
 )
+from fuli_graph.store_project_agent_executor_learning import (
+    project_agent_executor_outcome_bucket_id,
+)
 
 
 def test_local_hash_embedder_rejects_dimensions_that_are_too_small():
@@ -110,10 +113,140 @@ async def test_legacy_group_id_migration_rolls_back_when_one_update_fails():
     assert driver.rolled_back == 1
 
 
+@pytest.mark.asyncio
+async def test_learning_bucket_migration_is_space_scoped_deterministic_and_idempotent():
+    strategy_key = 'a' * 64
+    aggregate_buckets = [
+        learning_bucket('space-a', strategy_key),
+        learning_bucket('space-b', strategy_key),
+    ]
+    reset_buckets = [learning_bucket('space-a', strategy_key)]
+    driver = LearningMigrationDriver(aggregate_buckets, reset_buckets)
+    runtime = runtime_with_driver(driver)
+    runtime.settings = SimpleNamespace(provider_id='provider-1')
+
+    await runtime._migrate_project_agent_executor_learning_buckets()
+    await runtime._migrate_project_agent_executor_learning_buckets()
+
+    aggregate_calls = [
+        call for call in driver.mutation_calls
+        if 'OutcomeAggregate' in call[0]
+    ]
+    reset_calls = [
+        call for call in driver.mutation_calls
+        if 'OutcomeReset' in call[0]
+    ]
+    assert len(aggregate_calls) == 4
+    assert len(reset_calls) == 2
+    assert aggregate_calls[0][1]['bucket_id'] == aggregate_calls[2][1]['bucket_id']
+    assert aggregate_calls[0][1]['bucket_id'] != aggregate_calls[1][1]['bucket_id']
+    assert aggregate_calls[0][1]['bucket_id'] == (
+        project_agent_executor_outcome_bucket_id(
+            'provider-1',
+            'space-a',
+            'project-1',
+            'review',
+            'agent-1',
+            'executor-1',
+            strategy_key,
+            bucket_kind='aggregate',
+        )
+    )
+    assert 'bucket.as_of' in aggregate_calls[0][0]
+    assert 'bucket.reset_at' in reset_calls[0][0]
+    assert 'tail(buckets) AS duplicates' in aggregate_calls[0][0]
+    assert 'DETACH DELETE duplicate' in aggregate_calls[0][0]
+    assert 'OutcomeEvidence' not in ''.join(
+        query for query, _ in driver.mutation_calls
+    )
+
+
+@pytest.mark.asyncio
+async def test_initialize_adds_learning_id_constraints_after_legacy_deduplication():
+    driver = InitializationDriver()
+    runtime = runtime_with_driver(driver)
+    runtime.settings = SimpleNamespace(provider_id='provider-1')
+    runtime.graphiti.build_indices_and_constraints = driver.build_indices_and_constraints
+    for method_name in (
+        '_migrate_project_agent_control_plane',
+        '_migrate_knowledge_lifecycle_defaults',
+        '_migrate_personal_project_relation_review_defaults',
+        '_migrate_space_visibility_and_owners',
+        '_migrate_project_releases',
+        '_migrate_legacy_group_ids',
+    ):
+        setattr(runtime, method_name, driver.noop_migration)
+
+    await runtime.initialize()
+
+    queries = [query for query, _ in driver.calls]
+    aggregate_constraint = next(
+        index for index, query in enumerate(queries)
+        if 'outcome_aggregate_id' in query
+    )
+    reset_constraint = next(
+        index for index, query in enumerate(queries)
+        if 'outcome_reset_id' in query
+    )
+    aggregate_discovery = next(
+        index for index, query in enumerate(queries)
+        if 'MATCH (bucket:FuliProjectAgentExecutorOutcomeAggregate)' in query
+    )
+    reset_discovery = next(
+        index for index, query in enumerate(queries)
+        if 'MATCH (bucket:FuliProjectAgentExecutorOutcomeReset)' in query
+    )
+    assert aggregate_discovery < aggregate_constraint
+    assert reset_discovery < reset_constraint
+    assert 'REQUIRE n.id IS UNIQUE' in queries[aggregate_constraint]
+    assert 'REQUIRE n.id IS UNIQUE' in queries[reset_constraint]
+
+
 def runtime_with_driver(driver):
     runtime = GraphitiRuntime.__new__(GraphitiRuntime)
     runtime.graphiti = SimpleNamespace(driver=driver)
     return runtime
+
+
+def learning_bucket(space_id, strategy_key):
+    return {
+        'personal_space_id': space_id,
+        'personal_project_id': 'project-1',
+        'work_kind': 'review',
+        'agent_id': 'agent-1',
+        'executor_id': 'executor-1',
+        'model_strategy_key': strategy_key,
+    }
+
+
+class LearningMigrationDriver:
+    def __init__(self, aggregate_buckets, reset_buckets):
+        self.aggregate_buckets = aggregate_buckets
+        self.reset_buckets = reset_buckets
+        self.mutation_calls = []
+
+    async def execute_query(self, query, **parameters):
+        if 'RETURN DISTINCT' in query and 'OutcomeAggregate' in query:
+            return self.aggregate_buckets, None, None
+        if 'RETURN DISTINCT' in query and 'OutcomeReset' in query:
+            return self.reset_buckets, None, None
+        self.mutation_calls.append((query, parameters))
+        return [{'removed_count': 1}], None, None
+
+
+class InitializationDriver:
+    def __init__(self):
+        self.calls = []
+
+    async def build_indices_and_constraints(self):
+        return None
+
+    async def noop_migration(self):
+        return None
+
+    async def execute_query(self, query, **parameters):
+        self.calls.append((query, parameters))
+        return [], None, None
 
 
 class MigrationDriver:

@@ -213,6 +213,45 @@ lowers ranking and marks the item for attention without deleting its history. Ag
 must not demote human/source-confirmed knowledge; authoritative contradiction may require review
 or demotion under the Provider policy.
 
+## Coordinate Project Agents
+
+Use a project Agent team only when the user requests delegation or the host's active delegation
+policy authorizes it and the task has independently verifiable work. Keep one primary coordinator
+responsible for decisions, integration, and final verification. Do not split a small or tightly
+coupled task merely to create more workers.
+
+For an eligible task, call `coordinate_project_agent_task` once with the exact current
+`projectPath`, one stable idempotency key, an explicit complexity hint when known, and focused
+context queries. Enable its parallel plan only when there are at least two conflict-free
+workstreams with independent verification; state each workstream boundary. The Provider chooses
+the lead and collaborators from active project assignments, preferring Agents with relevant
+project history. Explicit user-selected Agents and locked policies remain higher priority.
+
+Treat the returned durable Agent identity and a host worker as different things. A durable Agent
+keeps its project assignment, preferences, task history, and Agent-scoped graph memory while idle;
+the host creates an execution process only when needed. Start only entries in `worker_plan`, give
+each worker only its returned isolated `context`, role, and workstream boundary, and never expose
+another Agent's private context. Fuli is the control plane and does not itself prove that a native
+worker started.
+
+The host adapter must keep an adaptive-runtime graph lease for the whole worker run, and an
+executor lease when Fuli manages that executor. Call `acquire_runtime_lease` before starting
+workers; its MCP process keeps the heartbeat alive. Call `release_runtime_lease` in a `finally`
+path after all results and terminal events are recorded. Record queued/running and terminal state
+with `record_project_agent_task_activity`,
+including concrete worker identity. Call `record_project_agent_executor_actual` only after real
+executor/model use. If the host cannot start a worker, report the task as blocked or failed and do
+not fabricate an execution-summary row. The Provider's `executionSummary` remains authoritative.
+
+## Report Actual Worker Execution
+
+When a FULI task or task view returns a non-empty Provider `executionSummary`, append one row per worker.
+Include the worker label and occupation emoji, actual executor and `sourceApplication` environment,
+work summary, and `workerStatus`/terminal status. This applies only to Provider-reported actual workers.
+When empty `executionSummary` is returned, omit rows; an absent `executionSummary` also omits rows.
+Configured, allowed, or available clients/executors are not evidence of actual use. Keep this
+Agent-agnostic; client-specific details and work-kind routing remain at adapter boundaries.
+
 ## Classify Knowledge State
 
 Every entity and relationship needs an `originQuadrant`, `confirmationBasis`, and

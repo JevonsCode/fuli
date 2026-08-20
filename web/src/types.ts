@@ -44,6 +44,422 @@ export interface PersonalProject {
   profile: ProjectProfile
 }
 
+export type ProjectAgentStatus = 'active' | 'inactive' | 'archived'
+
+export type ProjectAgentType = 'coordinator' | 'durable' | 'hr' | 'temporary'
+
+export type ProjectAgentWorkStatus =
+  | 'idle'
+  | 'awaiting_recruitment'
+  | 'queued'
+  | 'running'
+  | 'paused'
+  | 'failed'
+  | 'awaiting_review'
+  | 'blocked'
+  | 'ended'
+
+export type ProjectAgentTaskStatus =
+  | 'awaiting_recruitment'
+  | 'queued'
+  | 'running'
+  | 'paused'
+  | 'failed'
+  | 'awaiting_review'
+  | 'blocked'
+  | 'completed'
+  | 'cancelled'
+
+export type ProjectAgentModelMode = 'adaptive' | 'fast' | 'balanced' | 'deep'
+export type ProjectAgentReasoningEffort = 'default' | 'low' | 'medium' | 'high'
+export type ProjectAgentModelSelectionMode = 'flexible' | 'locked'
+
+export interface ProjectAgentExecutorModel {
+  provider: string
+  model: string
+  capabilities?: string[]
+  available?: boolean
+  strategyModes?: string[]
+  reasoningEfforts?: string[]
+  observedAt?: string | null
+  unavailableReason?: string | null
+}
+
+export interface ProjectAgentExecutorRef {
+  executorId: string
+  label?: string | null
+  provider?: string | null
+  model?: string | null
+  client?: ConversationSourceApplication | null
+  availabilityStatus?: string | null
+  actualUse?: {
+    count: number
+    lastUsedAt: string | null
+  } | null
+  personalSpaceId?: string | null
+  displayName?: string | null
+  executorKind?: string | null
+  capabilities?: string[]
+  globalPriority?: number | null
+  healthRequired?: boolean
+  registrationStatus?: string | null
+  permissionStatus?: string | null
+  preflightStatus?: string | null
+  healthStatus?: string | null
+  workspacePermission?: boolean | null
+  revision?: number
+  permissionRevision?: number
+  registeredAt?: string | null
+  updatedAt?: string | null
+  testSource?: string | null
+  cleanupEligible?: boolean
+  advertisedModels?: ProjectAgentExecutorModel[]
+  availableModels?: ProjectAgentExecutorModel[]
+}
+
+export interface ProjectAgentModelStrategy {
+  /** Provider-neutral intent; no provider/model is inferred from this field. */
+  mode?: ProjectAgentModelMode | null
+  reasoningEffort?: ProjectAgentReasoningEffort | null
+  capabilityHints?: string[]
+}
+
+export interface ProjectAgentExecutorPolicy {
+  mode: ProjectAgentModelSelectionMode
+  lockedExecutorIds?: string[]
+  preferredExecutorIds?: string[]
+  /** Resolved directory entries used for display; API stores the ID arrays above. */
+  allowList?: ProjectAgentExecutorRef[]
+}
+
+export interface ProjectAgentActualExecution {
+  executor?: string | null
+  provider?: string | null
+  model?: string | null
+  client?: ConversationSourceApplication | null
+  rule?: string | null
+  fallback?: string | null
+  reportedAt?: string | null
+}
+
+export interface ProjectAgentProfile {
+  name: string
+  responsibility: string
+  capabilities: string[]
+  initialPreferences: string[]
+  status: ProjectAgentStatus
+  occupationEmoji?: string | null
+  agentType?: ProjectAgentType
+  workKinds?: string[]
+  defaultModelStrategy?: ProjectAgentModelStrategy | null
+  executorPolicy?: ProjectAgentExecutorPolicy | null
+  allowedClients?: ConversationSourceApplication[]
+  testSource?: string | null
+  cleanupEligible?: boolean
+}
+
+export type ProjectAgentAssignmentStatus =
+  | 'active'
+  | 'ended'
+  | 'unassigned'
+  | 'replaced'
+
+export interface ProjectAgentAssignmentRecord {
+  assignmentId: string
+  personalSpaceId: string
+  personalProjectId: string
+  agentId: string
+  responsibility: string
+  scope?: string | null
+  workKinds?: string[]
+  capabilities?: string[]
+  modelStrategyOverride?: ProjectAgentModelStrategy | null
+  executorPolicyOverride?: ProjectAgentExecutorPolicy | null
+  reason?: string | null
+  status: ProjectAgentAssignmentStatus
+  revision?: number
+  sourceApplication?: ConversationSourceApplication | null
+  sourceSessionId?: string | null
+  assignedAt: string
+  updatedAt: string
+  endedAt?: string | null
+  endReason?: string | null
+  replacedByAssignmentId?: string | null
+}
+
+export interface ProjectAgentTaskParticipant {
+  agentId: string
+  assignmentId?: string | null
+  role: 'lead' | 'collaborator' | string
+  status: ProjectAgentTaskStatus
+  assignmentSummary?: string | null
+  joinedAt?: string | null
+  updatedAt?: string | null
+  endedAt?: string | null
+}
+
+export interface ProjectAgentTaskExecutionSummary {
+  agentId?: string | null
+  agentName?: string | null
+  occupationEmoji?: string | null
+  workerId?: string | null
+  workerLabel?: string | null
+  workerOccupationEmoji?: string | null
+  participantRole?: string | null
+  executor?: string | null
+  executorId?: string | null
+  sourceApplication?: ConversationSourceApplication | null
+  actualModelProvider?: string | null
+  actualModel?: string | null
+  workSummary?: string | null
+  status?: string | null
+}
+
+export interface ProjectAgentParallelPlan {
+  enabled?: boolean | null
+  independentVerification?: boolean | null
+  conflictFreeScopes?: boolean | null
+  reason?: string | null
+  workstreamBoundaries?: string[]
+}
+
+export interface ProjectAgentTaskEvent {
+  eventId: string
+  taskId: string
+  agentId?: string | null
+  status: ProjectAgentTaskStatus
+  actorKind?: 'agent' | 'human' | 'system' | 'hr' | string
+  summary: string
+  sourceApplication?: ConversationSourceApplication | null
+  sourceSessionId?: string | null
+  actualExecution?: ProjectAgentActualExecution | null
+  actualModelProvider?: string | null
+  actualModel?: string | null
+  workerId?: string | null
+  workerLabel?: string | null
+  workerOccupationEmoji?: string | null
+  workerStatus?: ProjectAgentTaskStatus | string | null
+  createdAt: string
+}
+
+export interface ProjectAgentRoutingDecision {
+  decisionId?: string
+  taskId?: string
+  coordinatorAgentId?: string | null
+  complexity?: string | number | null
+  complexityBasis?: string[]
+  outcome?: string | null
+  reason?: string | null
+  matchBasis?: string[]
+  candidateAgentIds?: string[]
+  optimizationPriority?: string[]
+  parallelPlan?: ProjectAgentParallelPlan | null
+  selectedModelStrategy?: ProjectAgentModelStrategy | null
+  modelStrategySource?: 'agent' | 'assignment' | 'task' | 'coordinator' | string
+  ruleId?: string | null
+  fallback?: string | null
+}
+
+export interface ProjectAgentTaskRecord {
+  taskId: string
+  personalSpaceId?: string
+  personalProjectId?: string | null
+  title: string
+  objective?: string | null
+  workKind?: string | null
+  status: ProjectAgentTaskStatus
+  runId?: string | null
+  executionId?: string | null
+  ownerAgentId?: string | null
+  leadAgentId?: string | null
+  coordinatorAgentId?: string | null
+  hrAgentId?: string | null
+  recruitmentId?: string | null
+  participants: ProjectAgentTaskParticipant[]
+  sourceApplication?: ConversationSourceApplication | null
+  sourceSessionId?: string | null
+  resultSummary?: string | null
+  failureReason?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+  completedAt?: string | null
+  staffingIntent?: string | null
+  routingOutcome?: string | null
+  routingReason?: string | null
+  routingExplanation?: string | null
+  matchBasis?: string[]
+  complexity?: string | number | null
+  complexityBasis?: string[]
+  effectiveModelStrategy?: ProjectAgentModelStrategy | null
+  effectiveExecutorPolicy?: ProjectAgentExecutorPolicy | null
+  modelStrategySource?: 'agent' | 'assignment' | 'task' | 'coordinator' | string
+  actualExecution?: ProjectAgentActualExecution | null
+  executionSummary?: ProjectAgentTaskExecutionSummary[]
+  routingDecision?: ProjectAgentRoutingDecision | null
+  events?: ProjectAgentTaskEvent[]
+}
+
+export interface ProjectAgentActivityTask {
+  taskId: string
+  title: string
+  status: 'completed' | 'failed' | 'cancelled'
+  summary: string
+  occurredAt: string
+  personalProjectId?: string | null
+  assignmentId?: string | null
+  collaborators?: ProjectAgentTaskParticipant[]
+  sourceApplication?: ConversationSourceApplication | null
+  actualExecution?: ProjectAgentActualExecution | null
+  actualModelProvider?: string | null
+  actualModel?: string | null
+}
+
+export interface ProjectAgentActivityDay {
+  date: string
+  completed: number
+  failed: number
+  cancelled: number
+  total: number
+  tasks?: ProjectAgentActivityTask[]
+}
+
+export interface ProjectAgentActivityResult {
+  agentId: string
+  personalSpaceId: string
+  fromDate?: string
+  toDate?: string
+  days: ProjectAgentActivityDay[]
+}
+
+export type ProjectAgentRecruitmentPositionKind = 'durable' | 'temporary'
+
+export interface ProjectAgentRecruitmentRecord {
+  recruitmentId: string
+  personalSpaceId: string
+  personalProjectId: string
+  taskId: string
+  coordinatorAgentId: string
+  hrAgentId?: string | null
+  positionKind: ProjectAgentRecruitmentPositionKind | string
+  workKind: string
+  requiredCapabilities: string[]
+  reasonCode: string
+  reason: string
+  status: string
+  confirmationMode?: string | null
+  proposedAgentId: string
+  revision?: number
+  recruitedAgentId?: string | null
+  triggerSourceApplication?: ConversationSourceApplication | null
+  triggerSourceSessionId?: string | null
+  testSource?: string | null
+  cleanupEligible?: boolean
+  createdAt: string
+  updatedAt: string
+  fulfilledAt?: string | null
+}
+
+export interface ProjectAgentClientEvidence {
+  client: ConversationSourceApplication
+  allowed: boolean
+  integrationStatus?: 'connected' | 'update_available' | 'not_connected' | 'unknown' | string
+  actualUse?: {
+    count: number
+    lastUsedAt: string | null
+  } | null
+}
+
+export type ProjectAgentRoutingRuleScope = 'global' | 'space' | 'project' | 'task'
+
+export interface ProjectAgentRoutingRule {
+  ruleId: string
+  scope: ProjectAgentRoutingRuleScope
+  priority: number
+  personalProjectId?: string | null
+  taskId?: string | null
+  workKind?: string | null
+  agentId?: string | null
+  enabled: boolean
+  description?: string | null
+  executorIds?: string[]
+  requiredCapabilities?: string[]
+  modelStrategy?: ProjectAgentModelStrategy | null
+  reason?: string | null
+  revision?: number
+  status?: string
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export type ProjectAgentRecruitmentConfirmationMode = 'automatic' | 'require_confirmation'
+
+export interface ProjectAgentRecruitmentPolicy {
+  personalSpaceId?: string | null
+  confirmationMode: ProjectAgentRecruitmentConfirmationMode
+  updatedAt?: string | null
+}
+
+export interface ProjectAgentLearningEvidence {
+  learningKey?: string
+  evidenceId?: string
+  personalProjectId?: string | null
+  workKind?: string | null
+  executor?: string | null
+  model?: string | null
+  modelStrategy?: ProjectAgentModelStrategy | null
+  modelStrategyKey?: string | null
+  sampleCount: number
+  recentWeightedSamples?: number | null
+  decayBasis?: string | null
+  updatedAt?: string | null
+  outcomes?: {
+    success?: number
+    rework?: number
+    failure?: number
+    explicitPraise?: number
+    testOrAcceptance?: number
+    scoreCount?: number
+  }
+  evidence?: Array<{
+    evidenceId?: string
+    kind: 'rework' | 'negative' | 'praise' | 'test' | 'acceptance' | 'score' | string
+    count?: number
+    summary?: string | null
+    occurredAt?: string | null
+  }>
+  score?: number | null
+  neutral?: boolean
+}
+
+export interface ProjectAgentRecord {
+  agentId: string
+  personalSpaceId: string
+  personalProjectId?: string | null
+  profile: ProjectAgentProfile
+  createdAt: string
+  updatedAt: string
+  memoryScope?: 'reviewed_agent' | 'task_only' | string
+  assignments?: ProjectAgentAssignmentRecord[]
+  recruitmentId?: string | null
+  temporaryTaskId?: string | null
+  workStatus?: ProjectAgentWorkStatus
+  openTaskCount?: number
+  currentTaskId?: string | null
+  observedClients?: ConversationSourceApplication[]
+  recruitedAt?: string | null
+  recruitmentReason?: string | null
+  recruitmentSourceApplication?: ConversationSourceApplication | null
+  tasks?: ProjectAgentTaskRecord[]
+  recruitments?: ProjectAgentRecruitmentRecord[]
+  recruitmentPolicy?: ProjectAgentRecruitmentPolicy | null
+  activity?: ProjectAgentActivityResult | null
+  clientEvidence?: ProjectAgentClientEvidence[]
+  routingRules?: ProjectAgentRoutingRule[]
+  learningEvidence?: Record<string, ProjectAgentLearningEvidence>
+  isTestRole?: boolean
+  executorDirectory?: ProjectAgentExecutorRef[]
+}
+
 export interface ProjectRelease {
   version: string
   publisher_name?: string
@@ -177,6 +593,7 @@ export type ConversationLauncherConfiguration = Record<
 
 export interface RuntimeSettings {
   version: 1
+  graphRuntimeMode: 'container' | 'native'
   ports: RuntimePorts
   lanAccess: boolean
   resourceRefreshSeconds: 5 | 10 | 30 | 60

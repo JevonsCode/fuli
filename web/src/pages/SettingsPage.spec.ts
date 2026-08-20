@@ -8,6 +8,7 @@ import SettingsPage from './SettingsPage.vue'
 
 const configured = {
   version: 1 as const,
+  graphRuntimeMode: 'container' as const,
   ports: {
     console: 2727,
     personalProvider: 8787,
@@ -94,7 +95,7 @@ describe('SettingsPage', () => {
     expect(wrapper.get('.development-section').text()).toContain('fuli-server')
     expect(wrapper.find('.save-bar').exists()).toBe(false)
     expect(wrapper.findAll('.select-row > select')).toHaveLength(0)
-    expect(wrapper.findAll('.settings-select [role="combobox"]')).toHaveLength(2)
+    expect(wrapper.findAll('.settings-select [role="combobox"]')).toHaveLength(3)
     expect(wrapper.findAll('.conversation-launcher-row')).toHaveLength(6)
     expect(wrapper.get('.conversation-launcher-card').text()).toContain('会话打开方式')
 
@@ -115,6 +116,15 @@ describe('SettingsPage', () => {
     expect(tenSecondOption).toBeDefined()
     await tenSecondOption?.trigger('click')
 
+    expect(wrapper.text()).toContain('推荐原生模式')
+    const runtimeSelect = wrapper.get('[data-select-id="settings-runtime-mode"]')
+    await runtimeSelect.get('[role="combobox"]').trigger('click')
+    const nativeOption = runtimeSelect
+      .findAll('[role="option"]')
+      .find((option) => option.text() === '原生（低内存）')
+    expect(nativeOption).toBeDefined()
+    await nativeOption?.trigger('click')
+
     await wrapper.get('input[type="number"]').setValue(3030)
     await wrapper.get('form').trigger('submit')
     await flushPromises()
@@ -122,6 +132,7 @@ describe('SettingsPage', () => {
     const savedRequest = requests.find(({ init }) => init?.method === 'PUT')
     expect(JSON.parse(String(savedRequest?.init?.body)).ports.console).toBe(3030)
     expect(JSON.parse(String(savedRequest?.init?.body)).resourceRefreshSeconds).toBe(10)
+    expect(JSON.parse(String(savedRequest?.init?.body)).graphRuntimeMode).toBe('native')
     expect(JSON.parse(String(savedRequest?.init?.body)).conversationLaunchers.cursor).toEqual({
       enabled: true,
       idFormat: 'any',

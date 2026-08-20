@@ -11,6 +11,7 @@ from .models import (
     _validate_confirmation_state,
 )
 from .personal_project_access import authorize_personal_project
+from .project_agent_access import authorize_project_agent
 from .provider_values import json_object, native_datetime as _native_datetime
 
 
@@ -20,6 +21,7 @@ async def read_collaboration_context(
     space_id: str,
     personal_project_id: str | None = None,
     limit: int = 100,
+    project_agent_id: str | None = None,
 ) -> CollaborationContextResult:
     space = await store.authorize(actor, space_id, 'reader')
     if space['kind'] != 'personal':
@@ -33,6 +35,20 @@ async def read_collaboration_context(
             actor,
             space,
             personal_project_id,
+        )
+    if project_agent_id:
+        if not personal_project_id:
+            raise HTTPException(
+                status_code=422,
+                detail='project Agent preferences require a personal project',
+            )
+        await authorize_project_agent(
+            store,
+            actor,
+            space,
+            personal_project_id,
+            project_agent_id,
+            require_memory=True,
         )
     project_scopes = await _project_scopes(
         store,
@@ -50,6 +66,7 @@ async def read_collaboration_context(
         _node_query(),
         group_id=space['group_id'],
         project_id=personal_project_id,
+        project_agent_id=project_agent_id,
         inherited_project_ids=inherited_project_ids,
         limit=candidate_limit + 1,
         routing_='r',
@@ -58,6 +75,7 @@ async def read_collaboration_context(
         _edge_query(),
         group_id=space['group_id'],
         project_id=personal_project_id,
+        project_agent_id=project_agent_id,
         inherited_project_ids=inherited_project_ids,
         limit=candidate_limit + 1,
         routing_='r',
@@ -97,17 +115,26 @@ async def read_collaboration_context(
     project_preferences = [
         item for item in items if item.preference_scope == 'project'
     ]
+    agent_preferences = [
+        item for item in items if item.preference_scope == 'agent'
+    ]
     (
         authoritative_global,
         authoritative_project,
+        authoritative_agent,
         cross_scope_lower_authority_ids,
-    ) = _highest_authority_by_key(global_preferences, project_preferences)
+    ) = _highest_authority_by_key(
+        global_preferences,
+        project_preferences,
+        agent_preferences,
+    )
     (
         project_effective,
         project_conflicts,
         overridden_inherited_ids,
         overridden_lower_authority_ids,
     ) = _scope_conflict_free(authoritative_project)
+    agent_effective, agent_conflicts = _conflict_free(authoritative_agent)
     overridden_lower_authority_ids = sorted({
         *cross_scope_lower_authority_ids,
         *overridden_lower_authority_ids,
@@ -115,27 +142,45 @@ async def read_collaboration_context(
     # Any authoritative project-layer claim blocks global fallback for that
     # semantic key. A same-layer project conflict must remain deferred instead
     # of silently reviving a global value as effective.
+    agent_keys = {item.preference_key for item in authoritative_agent}
     project_keys = {item.preference_key for item in authoritative_project}
+    overridden_project_ids = sorted([
+        item.id
+        for item in authoritative_project
+        if item.preference_key in agent_keys
+    ])
     overridden_global_ids = sorted([
         item.id
         for item in authoritative_global
-        if item.preference_key in project_keys
+        if item.preference_key in project_keys or item.preference_key in agent_keys
     ])
     global_effective, global_conflicts = _conflict_free([
         item for item in authoritative_global
         if item.preference_key not in project_keys
+        and item.preference_key not in agent_keys
     ])
-    effective_preferences = [*global_effective, *project_effective]
+    project_effective = [
+        item for item in project_effective
+        if item.preference_key not in agent_keys
+    ]
+    effective_preferences = [
+        *global_effective,
+        *project_effective,
+        *agent_effective,
+    ]
 
     return CollaborationContextResult(
         personal_space_id=space_id,
         personal_project_id=personal_project_id,
+        project_agent_id=project_agent_id,
         global_preferences=global_preferences,
         project_preferences=project_preferences,
+        agent_preferences=agent_preferences,
         effective_preferences=effective_preferences,
-        conflicts=[*global_conflicts, *project_conflicts],
+        conflicts=[*global_conflicts, *project_conflicts, *agent_conflicts],
         overridden_global_ids=overridden_global_ids,
         overridden_inherited_ids=overridden_inherited_ids,
+        overridden_project_ids=overridden_project_ids,
         overridden_lower_authority_ids=overridden_lower_authority_ids,
         truncated=truncated,
     )
@@ -220,6 +265,11 @@ def _node_query() -> str:
                 )
               )
             )
+            OR (
+              node.fuli_preference_scope = 'agent'
+              AND node.fuli_preference_project_id = $project_id
+              AND node.fuli_preference_agent_id = $project_agent_id
+            )
           )
         RETURN node.uuid AS id,
                coalesce(node.fuli_key, node.uuid) AS key,
@@ -228,6 +278,7 @@ def _node_query() -> str:
                node.fuli_profile_aspect AS profile_aspect,
                coalesce(node.fuli_preference_scope, 'global') AS preference_scope,
                node.fuli_preference_project_id AS preference_project_id,
+               node.fuli_preference_agent_id AS preference_agent_id,
                node.fuli_attributes_json AS attributes_json,
                node.fuli_confirmation_basis_json AS confirmation_basis_json,
                node.fuli_reasoning_summary AS reasoning_summary,
@@ -265,6 +316,11 @@ def _edge_query() -> str:
                 )
               )
             )
+            OR (
+              edge.fuli_preference_scope = 'agent'
+              AND edge.fuli_preference_project_id = $project_id
+              AND edge.fuli_preference_agent_id = $project_agent_id
+            )
           )
         RETURN edge.uuid AS id,
                coalesce(edge.fuli_key, edge.uuid) AS key,
@@ -276,6 +332,7 @@ def _edge_query() -> str:
                edge.fuli_profile_aspect AS profile_aspect,
                coalesce(edge.fuli_preference_scope, 'global') AS preference_scope,
                edge.fuli_preference_project_id AS preference_project_id,
+               edge.fuli_preference_agent_id AS preference_agent_id,
                edge.fuli_attributes_json AS attributes_json,
                edge.fuli_confirmation_basis_json AS confirmation_basis_json,
                edge.fuli_reasoning_summary AS reasoning_summary,
@@ -337,6 +394,7 @@ def _preference_item(
         or key
     )
     project_id = record.get('preference_project_id')
+    agent_id = record.get('preference_agent_id')
     scope = project_scopes.get(project_id, {
         'scope_distance': 0,
         'scope_path': [],
@@ -375,6 +433,7 @@ def _preference_item(
         profile_aspect=record['profile_aspect'],
         preference_scope=record['preference_scope'],
         preference_project_id=project_id,
+        preference_agent_id=agent_id,
         attributes=attributes,
         weight=weight,
         reason=reason,
@@ -425,6 +484,7 @@ def _conflict_free(
             preference_key=preference_key,
             preference_scope=first.preference_scope,
             preference_project_id=first.preference_project_id,
+            preference_agent_id=first.preference_agent_id,
             item_ids=[item.id for item in candidates],
         ))
     effective.sort(key=_sort_key)
@@ -481,13 +541,15 @@ def _scope_conflict_free(
 def _highest_authority_by_key(
     global_items: list[CollaborationPreferenceItem],
     project_items: list[CollaborationPreferenceItem],
+    agent_items: list[CollaborationPreferenceItem],
 ) -> tuple[
+    list[CollaborationPreferenceItem],
     list[CollaborationPreferenceItem],
     list[CollaborationPreferenceItem],
     list[str],
 ]:
     grouped: dict[str, list[CollaborationPreferenceItem]] = defaultdict(list)
-    for item in [*global_items, *project_items]:
+    for item in [*global_items, *project_items, *agent_items]:
         grouped[item.preference_key].append(item)
     selected_ids = set()
     lower_authority_ids = []
@@ -505,6 +567,7 @@ def _highest_authority_by_key(
     return (
         [item for item in global_items if item.id in selected_ids],
         [item for item in project_items if item.id in selected_ids],
+        [item for item in agent_items if item.id in selected_ids],
         sorted(lower_authority_ids),
     )
 
@@ -512,7 +575,7 @@ def _highest_authority_by_key(
 def _sort_key(item: CollaborationPreferenceItem) -> tuple:
     created = -item.created_at.timestamp() if item.created_at else 0
     return (
-        0 if item.preference_scope == 'global' else 1,
+        {'global': 0, 'project': 1, 'agent': 2}[item.preference_scope],
         0 if item.confirmation_status == 'confirmed' else 1,
         item.profile_aspect,
         item.preference_key,

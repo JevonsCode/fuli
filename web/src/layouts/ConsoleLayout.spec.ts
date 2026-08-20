@@ -47,12 +47,29 @@ describe('ConsoleLayout', () => {
     await router.push('/')
     await router.isReady()
 
-    const wrapper = mount(ConsoleLayout, { global: { plugins: [pinia, router] } })
+    const wrapper = mount(ConsoleLayout, {
+      attachTo: document.body,
+      global: { plugins: [pinia, router] },
+    })
+
+    const mobileMenu = wrapper.get('.mobile-nav-toggle')
+    expect(mobileMenu.attributes('aria-expanded')).toBe('false')
+    await mobileMenu.trigger('click')
+    await flushPromises()
+    expect(mobileMenu.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('#console-primary-sidebar').classes()).toContain('is-mobile-open')
+    expect(document.activeElement).toBe(wrapper.get('.mobile-nav-close').element)
+    await wrapper.get('.mobile-nav-close').trigger('click')
+    await flushPromises()
+    expect(mobileMenu.attributes('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(mobileMenu.element)
+    expect(wrapper.find('a[href="/project-agents"]').exists()).toBe(true)
 
     expect(wrapper.get('.brand-version').text()).toBe(`v${FULI_VERSION}`)
     expect(wrapper.get('.nav-about-label').text()).toBe('关于')
     expect(wrapper.get('.nav-about-label + a').attributes('href')).toBe('/settings')
     expect(wrapper.get('a[href="/about"]').attributes('href')).toBe('/about')
+    expect(wrapper.get('a[href="/project-agents"]').text()).toContain('项目 Agent')
     expect(wrapper.find('a[href="/public-projects"]').exists()).toBe(false)
     expect(wrapper.find('a[href="/review"]').exists()).toBe(false)
     store.state = {

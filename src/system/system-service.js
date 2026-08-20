@@ -7,6 +7,8 @@ import {
   writeRuntimeSettings
 } from './runtime-settings.js';
 import { createResourceMonitor } from './resource-monitor.js';
+import { createAdaptiveRuntimeBroker } from '../adaptive-runtime/runtime-broker.js';
+import { readAdaptiveRuntimeSettings } from '../adaptive-runtime/settings.js';
 
 export function createSystemService({
   paths,
@@ -16,9 +18,19 @@ export function createSystemService({
   readJson = readJsonFile,
   readSettings = readRuntimeSettings,
   writeSettings = writeRuntimeSettings,
+  executorAdapters = new Map(),
+  runtimeBroker = createAdaptiveRuntimeBroker({
+    paths,
+    settings: readAdaptiveRuntimeSettings(paths.adaptiveRuntimeSettingsPath),
+    executorAdapters
+  }),
   resourceMonitor = createResourceMonitor({
     dataDir: paths.dataDir,
-    packageRoot
+    packageRoot,
+    runtimeMode: readSettings(paths.runtimeSettingsPath).graphRuntimeMode,
+    nativeProcessStatePath: paths.nativeProcessStatePath,
+    nativePersonalDir: paths.nativePersonalDir,
+    nativeWorkspaceDir: paths.nativeWorkspaceDir
   })
 }) {
   function activeSettings() {
@@ -46,7 +58,20 @@ export function createSystemService({
   return {
     getSettings,
     updateSettings,
-    resources: () => resourceMonitor.sample()
+    resources: () => resourceMonitor.sample(),
+    runtimeStatus: () => runtimeBroker.status(),
+    acquireRuntimeLease: (input) => runtimeBroker.acquire(input),
+    refreshRuntimeLease: (leaseId) => runtimeBroker.refresh(leaseId),
+    releaseRuntimeLease: (leaseId) => runtimeBroker.release(leaseId),
+    withGraphRuntimeLease: (owner, operation) => runtimeBroker.withLease(
+      { kind: 'graph', owner },
+      operation
+    ),
+    withExecutorRuntimeLease: (executorId, owner, operation) => runtimeBroker.withLease(
+      { kind: 'executor', executorId, owner },
+      operation
+    ),
+    close: () => runtimeBroker.close()
   };
 }
 

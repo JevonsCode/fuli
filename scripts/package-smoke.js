@@ -48,6 +48,7 @@ try {
     'package.json',
     'src/cli.js',
     'src/cli/update-command.js',
+    'src/setup/neo4j-memory-profile.js',
     'dist/web/index.html',
     'docs/external-knowledge-architecture.md',
     'docs/public-personal-architecture.md',

@@ -104,7 +104,11 @@ scratch/
 # Local Alignment benchmark run artifacts
 /FULI_ALIGNMENT_REPORT.md
 /FULI_CLAUDE_CODE_ALIGNMENT_REPORT.md
+/FULI_MULTI_AGENT_NETWORK_REPORT.md
 /acceptance/alignment/results/
+
+# Local Python environment lock (CI and release install from pyproject.toml)
+/graph-provider/uv.lock
 
 # Generated Python packaging output
 graph-provider/build/

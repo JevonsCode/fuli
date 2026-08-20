@@ -14,12 +14,25 @@ export function resolveSetupPaths({
 } = {}) {
   const resolvedDataDir = resolve(cwd, dataDir ?? defaultDataDir({ platform, env, homeDir }));
   const root = resolve(packageRoot);
+  const nativeRuntimeDir = join(resolvedDataDir, 'native-runtime');
+  const runtimeConfigDir = join(resolvedDataDir, 'runtime-configs');
   return {
     dataDir: resolvedDataDir,
     graphEnvPath: join(resolvedDataDir, 'graph-provider.env'),
     graphRuntimeConfigPath: join(resolvedDataDir, 'graph-runtime.json'),
     graphRuntimeStatePath: join(resolvedDataDir, 'graph-runtime-state.json'),
+    adaptiveRuntimeSettingsPath: join(resolvedDataDir, 'adaptive-runtime-settings.json'),
+    adaptiveRuntimeStatePath: join(resolvedDataDir, 'adaptive-runtime-state.json'),
     runtimeSettingsPath: join(resolvedDataDir, 'runtime-settings.json'),
+    nativeRuntimeDir,
+    nativeRuntimeManifestPath: join(nativeRuntimeDir, 'manifest.json'),
+    nativeProcessStatePath: join(nativeRuntimeDir, 'processes.json'),
+    nativeNeo4jHome: join(nativeRuntimeDir, 'neo4j-community-5.26.28'),
+    nativeProviderVenvPath: join(nativeRuntimeDir, 'provider-venv'),
+    nativePersonalDir: join(nativeRuntimeDir, 'personal'),
+    nativeWorkspaceDir: join(nativeRuntimeDir, 'workspace'),
+    containerGraphConfigProfilePath: join(runtimeConfigDir, 'container.json'),
+    nativeGraphConfigProfilePath: join(runtimeConfigDir, 'native.json'),
     externalKnowledgeRegistryPath: join(
       resolvedDataDir,
       'external-knowledge',
@@ -36,6 +49,7 @@ export function resolveSetupPaths({
       'connectors'
     ),
     backupDir: join(resolvedDataDir, 'backups', 'agents'),
+    graphBackupDir: join(resolvedDataDir, 'backups', 'graph'),
     logPath: join(resolvedDataDir, 'logs', 'runtime.log'),
     serverPath: join(root, 'src', 'server.js'),
     mcpServerPath: join(root, 'src', 'mcp-server.js'),

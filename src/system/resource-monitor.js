@@ -1,9 +1,10 @@
 import { execFile } from 'node:child_process';
-import { readdir, lstat, statfs } from 'node:fs/promises';
+import { readFile, readdir, lstat, statfs } from 'node:fs/promises';
 import { freemem, totalmem } from 'node:os';
 import { join } from 'node:path';
 
 import { inspectContainerRuntime } from '../setup/container-runtime.js';
+import { readJsonFile } from '../storage/json-file.js';
 
 const COMPOSE_PROJECT = 'fuli-graphiti';
 const DISK_CACHE_MS = 60_000;
@@ -20,7 +21,14 @@ export function createResourceMonitor({
   packageRoot,
   now = () => new Date(),
   processMemory = () => process.memoryUsage(),
-  hostMemory = () => ({ totalBytes: totalmem(), freeBytes: freemem() }),
+  hostMemory = null,
+  platform = process.platform,
+  runtimeMode = 'container',
+  nativeProcessStatePath = null,
+  nativePersonalDir = null,
+  nativeWorkspaceDir = null,
+  readJson = (path) => readJsonFile(path, null),
+  readText = readOptionalText,
   containerRuntime = null,
   inspectRuntime = inspectContainerRuntime,
   run = runCommand,
@@ -29,13 +37,28 @@ export function createResourceMonitor({
 }) {
   let resolvedRuntime = containerRuntime;
   let diskCache = null;
+  let hostMemoryCache = null;
 
   async function sample() {
     const sampledAt = now().toISOString();
-    const runtime = resolvedRuntime ??= inspectRuntime();
-    const containers = await containerMemory(runtime, run);
+    const runtime = runtimeMode === 'container'
+      ? (resolvedRuntime ??= inspectRuntime())
+      : null;
+    const managedMemory = runtimeMode === 'native'
+      ? await nativeMemory({
+          nativeProcessStatePath,
+          nativePersonalDir,
+          nativeWorkspaceDir,
+          readJson,
+          readText,
+          run
+        })
+      : await containerMemory(runtime, run);
     const localMemory = processMemory();
-    const host = hostMemory();
+    const host = hostMemory
+      ? await hostMemory()
+      : await cachedHostMemory({ platform, run, now, cache: hostMemoryCache });
+    if (!hostMemory) hostMemoryCache = host.cache;
     const disk = await diskSample({
       runtime,
       run,
@@ -43,6 +66,7 @@ export function createResourceMonitor({
       packageRoot,
       directorySize,
       filesystemStats,
+      runtimeMode,
       now,
       cache: diskCache
     });
@@ -54,23 +78,53 @@ export function createResourceMonitor({
       kind: 'process',
       status: 'ready',
       bytes: localMemory.rss
-    }, ...containers.components];
+    }, ...managedMemory.components];
     return {
       sampledAt,
-      status: containers.complete && disk.value.complete ? 'ready' : 'partial',
+      status: managedMemory.complete && disk.value.complete ? 'ready' : 'partial',
       memory: {
         usedBytes: sumBytes(memoryComponents),
-        hostTotalBytes: host.totalBytes,
-        hostFreeBytes: host.freeBytes,
-        complete: containers.complete,
+        hostTotalBytes: host.value?.totalBytes ?? host.totalBytes,
+        hostFreeBytes: host.value?.freeBytes ?? host.freeBytes,
+        complete: managedMemory.complete,
         components: memoryComponents
       },
       disk: disk.value,
-      exclusions: ['browser-tab-memory', 'shared-container-vm-overhead']
+      exclusions: runtimeMode === 'native'
+        ? ['browser-tab-memory']
+        : ['browser-tab-memory', 'shared-container-vm-overhead']
     };
   }
 
   return { sample };
+}
+
+async function cachedHostMemory({ platform, run, now, cache }) {
+  const timestamp = now().getTime();
+  if (cache && timestamp - cache.timestamp < 4_000) {
+    return { value: cache.value, cache };
+  }
+  const totalBytes = totalmem();
+  let freeBytes = freemem();
+  if (platform === 'darwin') {
+    try {
+      freeBytes = parseDarwinAvailableMemory(
+        await run('memory_pressure', ['-Q']),
+        totalBytes
+      ) ?? freeBytes;
+    } catch {
+      // Fall back to strictly free pages when memory_pressure is unavailable.
+    }
+  }
+  const value = { totalBytes, freeBytes };
+  return { value, cache: { timestamp, value } };
+}
+
+export function parseDarwinAvailableMemory(output, totalBytes) {
+  const match = String(output).match(/memory free percentage:\s*(\d+(?:\.\d+)?)%/i);
+  const percentage = Number(match?.[1]);
+  if (!Number.isFinite(percentage) || percentage < 0 || percentage > 100) return null;
+  return Math.round(totalBytes * percentage / 100);
 }
 
 async function containerMemory(runtime, run) {
@@ -101,30 +155,133 @@ async function containerMemory(runtime, run) {
   }
 }
 
+async function nativeMemory(input) {
+  if (!input.nativeProcessStatePath) return { complete: false, components: [] };
+  const state = input.readJson(input.nativeProcessStatePath);
+  if (!state || state.mode !== 'native') return { complete: false, components: [] };
+  const candidates = [];
+  for (const [id, entry] of Object.entries(state.providers ?? {})) {
+    if (Number.isInteger(entry?.pid)) {
+      candidates.push({
+        id: `${id}-provider`,
+        label: id === 'personal' ? 'Personal Provider' : 'Workspace Provider',
+        kind: 'process',
+        pid: entry.pid
+      });
+    }
+  }
+  const recordedDatabases = new Set();
+  for (const [id, entry] of Object.entries(state.databases ?? {})) {
+    if (Number.isInteger(entry?.pid)) {
+      recordedDatabases.add(id);
+      candidates.push({
+        id: `${id}-neo4j`,
+        label: id === 'personal' ? 'Personal Neo4j' : 'Workspace Neo4j',
+        kind: 'process',
+        pid: entry.pid
+      });
+    }
+  }
+  for (const [id, root] of [
+    ['personal', input.nativePersonalDir],
+    ['workspace', input.nativeWorkspaceDir]
+  ]) {
+    if (!root || recordedDatabases.has(id)) continue;
+    const value = await input.readText(join(root, 'run', 'neo4j.pid'));
+    const pid = Number(String(value ?? '').trim());
+    if (Number.isInteger(pid) && pid > 0) {
+      candidates.push({
+        id: `${id}-neo4j`,
+        label: id === 'personal' ? 'Personal Neo4j' : 'Workspace Neo4j',
+        kind: 'process',
+        pid
+      });
+    }
+  }
+  const components = [];
+  let processRows;
+  try {
+    processRows = parseProcessTable(await input.run('ps', ['-axo', 'pid=,ppid=,rss=']));
+  } catch {
+    return { complete: false, components };
+  }
+  const claimed = new Set();
+  for (const candidate of candidates) {
+    if (!processRows.has(candidate.pid)) return { complete: false, components };
+    const pids = processTreePids(candidate.pid, processRows);
+    const kib = [...pids].reduce((total, pid) => {
+      if (claimed.has(pid)) return total;
+      claimed.add(pid);
+      return total + processRows.get(pid).rssKib;
+    }, 0);
+    components.push({
+      id: candidate.id,
+      label: candidate.label,
+      kind: candidate.kind,
+      status: 'ready',
+      bytes: kib * 1024
+    });
+  }
+  return { complete: true, components };
+}
+
+function parseProcessTable(output) {
+  const rows = new Map();
+  for (const line of parseLines(output)) {
+    const [pidText, parentText, rssText] = line.trim().split(/\s+/, 3);
+    const pid = Number(pidText);
+    const parentPid = Number(parentText);
+    const rssKib = Number(rssText);
+    if (
+      Number.isInteger(pid) && pid > 0 &&
+      Number.isInteger(parentPid) && parentPid >= 0 &&
+      Number.isFinite(rssKib) && rssKib >= 0
+    ) rows.set(pid, { parentPid, rssKib });
+  }
+  return rows;
+}
+
+function processTreePids(rootPid, rows) {
+  const selected = new Set([rootPid]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [pid, row] of rows) {
+      if (!selected.has(pid) && selected.has(row.parentPid)) {
+        selected.add(pid);
+        changed = true;
+      }
+    }
+  }
+  return selected;
+}
+
 async function diskSample(input) {
   const timestamp = input.now().getTime();
   if (input.cache && timestamp - input.cache.timestamp < DISK_CACHE_MS) {
     return { value: input.cache.value, cache: input.cache };
   }
-  const [applicationBytes, localDataBytes, filesystem, docker] = await Promise.all([
+  const [applicationBytes, localDataBytes, filesystem, runtimeDisk] = await Promise.all([
     input.directorySize(input.packageRoot),
     input.directorySize(input.dataDir),
     input.filesystemStats(input.dataDir),
-    dockerDisk(input.runtime, input.run)
+    input.runtimeMode === 'native'
+      ? Promise.resolve({ complete: true, components: [], temporaryBytes: null })
+      : dockerDisk(input.runtime, input.run)
   ]);
   const components = [
     diskComponent('application', 'Application files', applicationBytes),
     diskComponent('localData', 'Local runtime data', localDataBytes),
-    ...docker.components
+    ...runtimeDisk.components
   ].filter(Boolean);
   const value = {
     usedBytes: sumBytes(components),
     hostTotalBytes: filesystem.totalBytes,
     hostFreeBytes: filesystem.freeBytes,
-    complete: docker.complete && Number.isFinite(filesystem.totalBytes) &&
+    complete: runtimeDisk.complete && Number.isFinite(filesystem.totalBytes) &&
       Number.isFinite(filesystem.freeBytes),
     measuredAt: input.now().toISOString(),
-    temporaryBytes: docker.temporaryBytes,
+    temporaryBytes: runtimeDisk.temporaryBytes,
     components
   };
   return { value, cache: { timestamp, value } };
@@ -314,4 +471,12 @@ function nonNegativeNumber(value) {
 
 function parseLines(value) {
   return String(value).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+async function readOptionalText(path) {
+  try {
+    return await readFile(path, 'utf8');
+  } catch {
+    return null;
+  }
 }

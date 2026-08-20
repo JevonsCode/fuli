@@ -86,6 +86,9 @@ async def test_structured_supersession_stores_the_exact_replacement_relationship
         'old_episode.fuli_personal_project_id =\n'
         '                              $personal_project_id'
     ) in query
+    assert (
+        'agent_episode.fuli_project_agent_id = $project_agent_id'
+    ) in query
     assert parameters['space_id'] == 'personal-space'
     assert parameters['personal_project_id'] == 'project-a'
     assert parameters['source_uri'] == (
@@ -132,6 +135,47 @@ def test_personal_project_scope_namespaces_stable_knowledge_ids():
     ) == _entity_id(
         'workspace-group', 'project', 'ignored-local-project', 'deployment.runbook'
     )
+
+
+def test_project_agent_scope_namespaces_stable_knowledge_ids():
+    agent_a_entity = _entity_id(
+        'personal-group',
+        'personal',
+        'project-a',
+        'deployment.runbook',
+        project_agent_id='agent-a',
+    )
+    agent_b_entity = _entity_id(
+        'personal-group',
+        'personal',
+        'project-a',
+        'deployment.runbook',
+        project_agent_id='agent-b',
+    )
+    project_entity = _entity_id(
+        'personal-group', 'personal', 'project-a', 'deployment.runbook'
+    )
+    agent_a_relationship = _relationship_id(
+        'personal-group',
+        'personal',
+        'project-a',
+        'deployment.runbook',
+        'Use the shared deployment pipeline.',
+        '2026-07-29T08:00:00+00:00',
+        project_agent_id='agent-a',
+    )
+    agent_b_relationship = _relationship_id(
+        'personal-group',
+        'personal',
+        'project-a',
+        'deployment.runbook',
+        'Use the shared deployment pipeline.',
+        '2026-07-29T08:00:00+00:00',
+        project_agent_id='agent-b',
+    )
+
+    assert len({project_entity, agent_a_entity, agent_b_entity}) == 3
+    assert agent_a_relationship != agent_b_relationship
 
 
 @pytest.mark.asyncio

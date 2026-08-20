@@ -16,6 +16,7 @@ from .models import (
     StructuredEpisode,
 )
 from .personal_project_access import authorize_personal_project
+from .project_agent_access import authorize_project_agent
 from .provider_values import now_utc, stable_uuid
 from .workflow_candidates import materialize_workflow_candidates
 
@@ -30,10 +31,21 @@ class StoreKnowledge:
             await authorize_personal_project(
                 self, actor, space, request.personal_project_id
             )
+        if request.project_agent_id:
+            await authorize_project_agent(
+                self,
+                actor,
+                space,
+                request.personal_project_id,
+                request.project_agent_id,
+                require_active=True,
+                require_memory=True,
+            )
         return await self._commit_episode(
             space,
             request.episode,
             personal_project_id=request.personal_project_id,
+            project_agent_id=request.project_agent_id,
         )
 
     async def commit_workflow_observation(
@@ -52,10 +64,21 @@ class StoreKnowledge:
             await authorize_personal_project(
                 self, actor, space, request.personal_project_id
             )
+        if request.project_agent_id:
+            await authorize_project_agent(
+                self,
+                actor,
+                space,
+                request.personal_project_id,
+                request.project_agent_id,
+                require_active=True,
+                require_memory=True,
+            )
         return await self._commit_episode(
             space,
             request.episode,
             personal_project_id=request.personal_project_id,
+            project_agent_id=request.project_agent_id,
             workflow_session_authority='mcp_host',
         )
 
@@ -80,6 +103,7 @@ class StoreKnowledge:
         space_id: str,
         personal_project_id: str | None = None,
         limit: int = 100,
+        project_agent_id: str | None = None,
     ) -> CollaborationContextResult:
         return await read_collaboration_context(
             self,
@@ -87,6 +111,7 @@ class StoreKnowledge:
             space_id,
             personal_project_id,
             limit,
+            project_agent_id,
         )
 
     async def _commit_episode(
@@ -95,6 +120,7 @@ class StoreKnowledge:
         episode: StructuredEpisode,
         *,
         personal_project_id: str | None = None,
+        project_agent_id: str | None = None,
         workflow_session_authority: str | None = None,
     ) -> CommitResult:
         group_id = space['group_id']
@@ -112,6 +138,7 @@ class StoreKnowledge:
                     space['kind'],
                     personal_project_id,
                     entity.key,
+                    project_agent_id=project_agent_id,
                 )
                 for entity in episode.entities
             ]
@@ -129,6 +156,7 @@ class StoreKnowledge:
                     relationship.key,
                     relationship.fact,
                     (relationship.valid_at or episode.reference_time).isoformat(),
+                    project_agent_id=project_agent_id,
                     workflow_session_authority=workflow_session_authority,
                 )
                 for relationship in episode.relationships
@@ -208,11 +236,15 @@ class StoreKnowledge:
                         'inheritance_mode': entity.inheritance_mode,
                         'inherited_project_ids': entity.inherited_project_ids,
                         'preference_scope': (
-                            'project' if entity.profile_aspect and personal_project_id
+                            'agent' if entity.profile_aspect and project_agent_id
+                            else 'project' if entity.profile_aspect and personal_project_id
                             else 'global' if entity.profile_aspect else None
                         ),
                         'preference_project_id': (
                             personal_project_id if entity.profile_aspect else None
+                        ),
+                        'preference_agent_id': (
+                            project_agent_id if entity.profile_aspect else None
                         ),
                         'attributes_json': json.dumps(
                             entity.attributes, ensure_ascii=False, sort_keys=True
@@ -262,11 +294,15 @@ class StoreKnowledge:
                         'inheritance_mode': relationship.inheritance_mode,
                         'inherited_project_ids': relationship.inherited_project_ids,
                         'preference_scope': (
-                            'project' if relationship.profile_aspect and personal_project_id
+                            'agent' if relationship.profile_aspect and project_agent_id
+                            else 'project' if relationship.profile_aspect and personal_project_id
                             else 'global' if relationship.profile_aspect else None
                         ),
                         'preference_project_id': (
                             personal_project_id if relationship.profile_aspect else None
+                        ),
+                        'preference_agent_id': (
+                            project_agent_id if relationship.profile_aspect else None
                         ),
                         'attributes_json': json.dumps(
                             relationship.attributes, ensure_ascii=False, sort_keys=True
@@ -325,6 +361,7 @@ class StoreKnowledge:
                     entity.fuli_inherited_project_ids = row.inherited_project_ids,
                     entity.fuli_preference_scope = row.preference_scope,
                     entity.fuli_preference_project_id = row.preference_project_id,
+                    entity.fuli_preference_agent_id = row.preference_agent_id,
                     entity.fuli_attributes_json = row.attributes_json
                 WITH count(entity) AS entity_count
                 CREATE (episode:Episodic {
@@ -346,6 +383,7 @@ class StoreKnowledge:
                   fuli_summary: $summary,
                   fuli_sensitivity: $sensitivity,
                   fuli_personal_project_id: $personal_project_id,
+                  fuli_project_agent_id: $project_agent_id,
                   fuli_idempotency_key: $idempotency_key,
                   fuli_workflow_session_authority:
                     $workflow_session_authority
@@ -388,6 +426,7 @@ class StoreKnowledge:
                     edge.fuli_inherited_project_ids = row.inherited_project_ids,
                     edge.fuli_preference_scope = row.preference_scope,
                     edge.fuli_preference_project_id = row.preference_project_id,
+                    edge.fuli_preference_agent_id = row.preference_agent_id,
                     edge.fuli_attributes_json = row.attributes_json,
                     edge.fuli_workflow_condition_json =
                       row.workflow_condition_json,
@@ -436,6 +475,17 @@ class StoreKnowledge:
                       }
                     )
                   )
+                  AND EXISTS {
+                    MATCH (agent_episode:Episodic {group_id: $group_id})
+                    WHERE agent_episode.uuid IN coalesce(old.episodes, [])
+                      AND (
+                        agent_episode.fuli_project_agent_id = $project_agent_id
+                        OR (
+                          agent_episode.fuli_project_agent_id IS NULL
+                          AND $project_agent_id IS NULL
+                        )
+                      )
+                  }
                   AND any(
                     replacement IN $superseded_relationships
                     WHERE replacement.key = old.fuli_key
@@ -478,6 +528,7 @@ class StoreKnowledge:
                 summary=episode.summary,
                 sensitivity=episode.sensitivity,
                 personal_project_id=personal_project_id,
+                project_agent_id=project_agent_id,
                 workflow_session_authority=workflow_session_authority,
                 idempotency_key=episode.idempotency_key,
             )
@@ -531,15 +582,14 @@ def _entity_id(
     space_kind: str,
     personal_project_id: str | None,
     key: str,
+    *,
+    project_agent_id: str | None = None,
 ) -> str:
     if space_kind == 'personal' and personal_project_id:
-        return stable_uuid(
-            group_id,
-            'entity',
-            'personal-project',
-            personal_project_id,
-            key,
-        )
+        parts = [group_id, 'entity', 'personal-project', personal_project_id]
+        if project_agent_id:
+            parts.extend(['project-agent', project_agent_id])
+        return stable_uuid(*parts, key)
     return stable_uuid(group_id, 'entity', key)
 
 
@@ -551,11 +601,14 @@ def _relationship_id(
     fact: str,
     reference_time: str,
     *,
+    project_agent_id: str | None = None,
     workflow_session_authority: str | None = None,
 ) -> str:
     parts = [group_id, 'relationship']
     if space_kind == 'personal' and personal_project_id:
         parts.extend(['personal-project', personal_project_id])
+        if project_agent_id:
+            parts.extend(['project-agent', project_agent_id])
     if workflow_session_authority:
         parts.extend([
             'workflow-session-authority',

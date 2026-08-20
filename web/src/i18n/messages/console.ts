@@ -2,6 +2,8 @@ export const consoleMessages = {
   'zh-CN': {
     navigation: {
       aria: '主导航',
+      openMenu: '打开导航',
+      closeMenu: '关闭导航',
       workspace: '工作台',
       overview: '概览',
       personalSpace: '个人空间',
@@ -11,6 +13,8 @@ export const consoleMessages = {
       organizerMeta: '象限 · 依据 · 状态',
       personalProjects: '个人项目',
       personalProjectsMeta: '本机 · 私有',
+      projectAgents: '项目 Agent',
+      projectAgentsMeta: '分工 · 记忆边界',
       publicSpace: '公共空间',
       publicProjects: '公共项目',
       publicProjectsMeta: '发现 · 订阅 · 协作',
@@ -63,6 +67,8 @@ export const consoleMessages = {
   'en-US': {
     navigation: {
       aria: 'Primary navigation',
+      openMenu: 'Open navigation',
+      closeMenu: 'Close navigation',
       workspace: 'Workspace',
       overview: 'Overview',
       personalSpace: 'Personal space',
@@ -72,6 +78,8 @@ export const consoleMessages = {
       organizerMeta: 'Quadrant · basis · status',
       personalProjects: 'Personal projects',
       personalProjectsMeta: 'Local · private',
+      projectAgents: 'Project Agents',
+      projectAgentsMeta: 'Roles · memory scope',
       publicSpace: 'Public space',
       publicProjects: 'Public projects',
       publicProjectsMeta: 'Discover · subscribe · collaborate',

@@ -12,6 +12,7 @@ import {
 
 test('runtime settings validate unique ports and browser-safe console ports', () => {
   assert.equal(DEFAULT_RUNTIME_SETTINGS.ports.personalNeo4jHttp, 8060);
+  assert.equal(DEFAULT_RUNTIME_SETTINGS.graphRuntimeMode, 'container');
   const custom = runtimeSettingsWithOverrides(DEFAULT_RUNTIME_SETTINGS, {
     consolePort: 3030,
     lanAccess: true
@@ -28,6 +29,14 @@ test('runtime settings validate unique ports and browser-safe console ports', ()
     personal: 'http://127.0.0.1:8787',
     workspace: 'http://127.0.0.1:8788'
   });
+  assert.equal(normalizeRuntimeSettings({
+    ...custom,
+    graphRuntimeMode: 'native'
+  }).graphRuntimeMode, 'native');
+  assert.throws(
+    () => normalizeRuntimeSettings({ ...custom, graphRuntimeMode: 'virtual-machine' }),
+    /graphRuntimeMode must be container or native/
+  );
   assert.throws(
     () => normalizeRuntimeSettings({
       ...custom,

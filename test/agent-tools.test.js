@@ -29,6 +29,45 @@ const NAMES = [
   'list_knowledge_spaces',
   'upsert_personal_project',
   'list_personal_projects',
+  'upsert_project_agent',
+  'list_project_agents',
+  'get_project_agent_context',
+  'get_project_agent',
+  'delete_project_agent',
+  'cleanup_test_project_agents',
+  'create_project_agent_assignment',
+  'list_project_agent_assignments',
+  'end_project_agent_assignment',
+  'replace_project_agent_assignment',
+  'coordinate_project_agent_task',
+  'acquire_runtime_lease',
+  'refresh_runtime_lease',
+  'release_runtime_lease',
+  'submit_project_agent_task',
+  'view_project_agent_task',
+  'record_project_agent_task_activity',
+  'view_project_agent_activity',
+  'get_project_agent_recruitment_policy',
+  'update_project_agent_recruitment_policy',
+  'list_project_agent_recruitments',
+  'decide_project_agent_recruitment',
+  'upsert_executor',
+  'list_executors',
+  'get_executor',
+  'delete_executor',
+  'preflight_executor',
+  'authorize_executor',
+  'report_executor_health',
+  'record_project_agent_executor_actual',
+  'upsert_executor_routing_rule',
+  'update_executor_routing_rule',
+  'list_executor_routing_rules',
+  'get_executor_routing_rule',
+  'delete_executor_routing_rule',
+  'record_project_agent_task_outcome',
+  'list_project_agent_routing_learning',
+  'ignore_project_agent_routing_learning',
+  'reset_project_agent_routing_learning',
   'start_knowledge_review',
   'list_knowledge_review_candidates',
   'record_knowledge_review_progress',
@@ -122,12 +161,25 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
   assert.equal(search.inputSchema.properties.includeExploratory, undefined);
   const capture = tools.find(({ name }) => name === 'capture_session_knowledge');
   assert.deepEqual(capture.inputSchema.properties.personalProjectId.type, ['string', 'null']);
+  assert.deepEqual(capture.inputSchema.properties.projectAgentId.type, ['string', 'null']);
   assert.match(capture.inputSchema.properties.targetKind.description, /team-shared project/i);
   assert.match(capture.inputSchema.properties.spaceId.description, /active personal space/i);
   assert.match(
     capture.inputSchema.properties.personalProjectId.description,
     /targetKind "personal"/
   );
+  assert.match(
+    capture.inputSchema.properties.projectAgentId.description,
+    /excluded from every other Agent/i
+  );
+  assert.deepEqual(search.inputSchema.properties.projectAgentId, {
+    type: ['string', 'null']
+  });
+  const projectAgentContext = tools.find(
+    ({ name }) => name === 'get_project_agent_context'
+  );
+  assert.match(projectAgentContext.description, /excludes every other project Agent/i);
+  assert.match(projectAgentContext.description, /control layer/i);
   assert.match(
     capture.inputSchema.properties.providerUrl.description,
     /required with targetKind "project"/i
@@ -260,6 +312,62 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     listKnowledgeSpaces: async () => calls.push(['spaces']),
     upsertPersonalProject: async (input) => calls.push(['upsert-project', input]),
     listPersonalProjects: async (input) => calls.push(['personal-projects', input]),
+    upsertProjectAgent: async (input) => calls.push(['upsert-project-agent', input]),
+    listCurrentProjectAgents: async (input) => calls.push(['project-agents', input]),
+    getProjectAgentContext: async (input) => calls.push(['project-agent-context', input]),
+    getProjectAgent: async (input) => calls.push(['get-project-agent', input]),
+    deleteProjectAgent: async (input) => calls.push(['delete-project-agent', input]),
+    cleanupProjectAgentTestRoles: async (input) =>
+      calls.push(['cleanup-test-project-agents', input]),
+    createProjectAgentAssignment: async (input) =>
+      calls.push(['create-project-agent-assignment', input]),
+    listProjectAgentAssignments: async (input) =>
+      calls.push(['list-project-agent-assignments', input]),
+    endProjectAgentAssignment: async (input) =>
+      calls.push(['end-project-agent-assignment', input]),
+    replaceProjectAgentAssignment: async (input) =>
+      calls.push(['replace-project-agent-assignment', input]),
+    coordinateProjectAgentTask: async (input) =>
+      calls.push(['coordinate-project-agent-task', input]),
+    acquireRuntimeLease: async (input) => calls.push(['acquire-runtime-lease', input]),
+    refreshRuntimeLease: async (input) => calls.push(['refresh-runtime-lease', input]),
+    releaseRuntimeLease: async (input) => calls.push(['release-runtime-lease', input]),
+    submitProjectAgentTask: async (input) => calls.push(['submit-project-agent-task', input]),
+    viewProjectAgentTask: async (input) => calls.push(['view-project-agent-task', input]),
+    recordProjectAgentTaskActivity: async (input) =>
+      calls.push(['record-project-agent-task-activity', input]),
+    viewProjectAgentActivity: async (input) =>
+      calls.push(['view-project-agent-activity', input]),
+    getProjectAgentRecruitmentPolicy: async (input) =>
+      calls.push(['get-project-agent-recruitment-policy', input]),
+    updateProjectAgentRecruitmentPolicy: async (input) =>
+      calls.push(['update-project-agent-recruitment-policy', input]),
+    listProjectAgentRecruitments: async (input) =>
+      calls.push(['list-project-agent-recruitments', input]),
+    decideProjectAgentRecruitment: async (input) =>
+      calls.push(['decide-project-agent-recruitment', input]),
+    upsertExecutor: async (input) => calls.push(['upsert-executor', input]),
+    listExecutors: async (input) => calls.push(['list-executors', input]),
+    getExecutor: async (input) => calls.push(['get-executor', input]),
+    deleteExecutor: async (input) => calls.push(['delete-executor', input]),
+    preflightExecutor: async (input) => calls.push(['preflight-executor', input]),
+    authorizeExecutor: async (input) => calls.push(['authorize-executor', input]),
+    reportExecutorHealth: async (input) => calls.push(['report-executor-health', input]),
+    recordProjectAgentExecutorActual: async (input) =>
+      calls.push(['record-project-agent-executor-actual', input]),
+    upsertExecutorRoutingRule: async (input) => calls.push(['upsert-executor-routing-rule', input]),
+    updateExecutorRoutingRule: async (input) => calls.push(['update-executor-routing-rule', input]),
+    listExecutorRoutingRules: async (input) => calls.push(['list-executor-routing-rules', input]),
+    getExecutorRoutingRule: async (input) => calls.push(['get-executor-routing-rule', input]),
+    deleteExecutorRoutingRule: async (input) => calls.push(['delete-executor-routing-rule', input]),
+    recordProjectAgentTaskOutcome: async (input) =>
+      calls.push(['record-project-agent-task-outcome', input]),
+    listProjectAgentRoutingLearning: async (input) =>
+      calls.push(['list-project-agent-routing-learning', input]),
+    ignoreProjectAgentRoutingLearning: async (input) =>
+      calls.push(['ignore-project-agent-routing-learning', input]),
+    resetProjectAgentRoutingLearning: async (input) =>
+      calls.push(['reset-project-agent-routing-learning', input]),
     startKnowledgeReview: async (input) => calls.push(['start-knowledge-review', input]),
     listKnowledgeReviewCandidates: async (input) =>
       calls.push(['knowledge-review-candidates', input]),
@@ -298,6 +406,24 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'preview-common-promotion', 'apply-common-promotion',
     'graph', 'human-changes', 'review-human-change',
     'spaces', 'upsert-project', 'personal-projects',
+    'upsert-project-agent', 'project-agents', 'project-agent-context',
+    'get-project-agent', 'delete-project-agent', 'cleanup-test-project-agents',
+    'create-project-agent-assignment', 'list-project-agent-assignments',
+    'end-project-agent-assignment', 'replace-project-agent-assignment',
+    'coordinate-project-agent-task',
+    'acquire-runtime-lease', 'refresh-runtime-lease', 'release-runtime-lease',
+    'submit-project-agent-task', 'view-project-agent-task',
+    'record-project-agent-task-activity', 'view-project-agent-activity',
+    'get-project-agent-recruitment-policy', 'update-project-agent-recruitment-policy',
+    'list-project-agent-recruitments', 'decide-project-agent-recruitment',
+    'upsert-executor', 'list-executors', 'get-executor', 'delete-executor',
+    'preflight-executor', 'authorize-executor', 'report-executor-health',
+    'record-project-agent-executor-actual',
+    'upsert-executor-routing-rule', 'update-executor-routing-rule',
+    'list-executor-routing-rules', 'get-executor-routing-rule',
+    'delete-executor-routing-rule', 'record-project-agent-task-outcome',
+    'list-project-agent-routing-learning', 'ignore-project-agent-routing-learning',
+    'reset-project-agent-routing-learning',
     'start-knowledge-review', 'knowledge-review-candidates',
     'knowledge-review-progress', 'finish-knowledge-review',
     'workflow-candidates', 'workflow-recommendations',

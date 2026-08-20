@@ -56,14 +56,16 @@ test('Codex and Claude Code registrations use their native MCP CLI', () => {
     remove: ['codex', ['mcp', 'remove', 'fuli']],
     add: ['codex', [
       'mcp', 'add', 'fuli', '--', CONTEXT.nodePath, CONTEXT.mcpServerPath,
-      '--runtime-config', CONTEXT.runtimeConfigPath
+      '--runtime-config', CONTEXT.runtimeConfigPath,
+      '--source-application', 'codex'
     ]]
   });
   assert.deepEqual(buildAgentCommands(claude, CONTEXT), {
     remove: ['claude', ['mcp', 'remove', '--scope', 'user', 'fuli']],
     add: ['claude', [
       'mcp', 'add', '--scope', 'user', 'fuli', '--', CONTEXT.nodePath,
-      CONTEXT.mcpServerPath, '--runtime-config', CONTEXT.runtimeConfigPath
+      CONTEXT.mcpServerPath, '--runtime-config', CONTEXT.runtimeConfigPath,
+      '--source-application', 'claude_code'
     ]]
   });
 });

@@ -50,7 +50,9 @@ test('Claude Code connection keeps unrelated config and installs deterministic t
         args: [
           CONTEXT.mcpServerPath,
           '--runtime-config',
-          CONTEXT.runtimeConfigPath
+          CONTEXT.runtimeConfigPath,
+          '--source-application',
+          'claude_code'
         ],
         alwaysLoad: true
       }

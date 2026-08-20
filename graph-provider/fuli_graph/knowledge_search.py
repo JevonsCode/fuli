@@ -6,6 +6,7 @@ from graphiti_core.edges import EntityEdge
 
 from .models import ConfirmationBasis, EntitySearchResult, SearchRequest, SearchResult
 from .personal_project_access import authorize_personal_project
+from .project_agent_access import authorize_project_agent
 from .provider_values import (
     json_object,
     native_datetime as _native_datetime,
@@ -103,6 +104,7 @@ async def search_knowledge(store, actor: dict, request: SearchRequest) -> Search
             ranked_edges,
             epistemic,
             request.active_personal_project_id,
+            request.project_agent_id,
         )
     ranked_edges = ranked_edges[: request.limit]
     entities = (
@@ -193,10 +195,14 @@ async def personal_edge_scopes(
                coalesce(edge.fuli_preference_scope, 'global')
                  AS preference_scope,
                edge.fuli_preference_project_id AS preference_project_id,
+               edge.fuli_preference_agent_id AS preference_agent_id,
                assignment.project_id AS assignment_project_id,
                [episode IN episodes
                  WHERE episode.fuli_personal_project_id IS NOT NULL |
                  episode.fuli_personal_project_id] AS episode_project_ids,
+               [episode IN episodes
+                 WHERE episode.fuli_project_agent_id IS NOT NULL |
+                 episode.fuli_project_agent_id] AS episode_project_agent_ids,
                any(episode IN episodes
                    WHERE episode.fuli_personal_project_id IS NULL)
                  AS has_global_episode,
@@ -310,6 +316,16 @@ async def _personal_search_space(store, actor, spaces, request):
     space = personal_spaces[0]
     for project_id in request.personal_project_ids:
         await authorize_personal_project(store, actor, space, project_id)
+    if request.project_agent_id:
+        await authorize_project_agent(
+            store,
+            actor,
+            space,
+            request.active_personal_project_id,
+            request.project_agent_id,
+            require_active=True,
+            require_memory=True,
+        )
     return space
 
 
@@ -367,11 +383,15 @@ async def _personal_entities(
                     ELSE coalesce(node.fuli_preference_scope, 'global') END
                     AS preference_scope,
                node.fuli_preference_project_id AS preference_project_id,
+               node.fuli_preference_agent_id AS preference_agent_id,
                coalesce(node.fuli_key, node.uuid) AS key,
                assignment.project_id AS assignment_project_id,
                [episode IN episodes
                  WHERE episode.fuli_personal_project_id IS NOT NULL |
                  episode.fuli_personal_project_id] AS episode_project_ids,
+               [episode IN episodes
+                 WHERE episode.fuli_project_agent_id IS NOT NULL |
+                 episode.fuli_project_agent_id] AS episode_project_agent_ids,
                any(episode IN episodes
                    WHERE episode.fuli_personal_project_id IS NULL)
                  AS has_global_episode,
@@ -461,6 +481,7 @@ async def _personal_entities(
     ranked = _dedupe_ranked_entities(
         ranked,
         request.active_personal_project_id,
+        request.project_agent_id,
     )[: request.limit]
     return [
         _entity_search_result(record, score, space['id'])
@@ -478,8 +499,10 @@ def _item_scope_metadata(
         field in record
         for field in (
             'profile_aspect',
+            'preference_agent_id',
             'assignment_project_id',
             'episode_project_ids',
+            'episode_project_agent_ids',
             'reference_project_ids',
             'has_global_episode',
         )
@@ -497,10 +520,38 @@ def _item_scope_metadata(
         project_id = record.get('preference_project_id')
         if project_id not in request.personal_project_ids:
             return None
+        if preference_scope == 'agent':
+            agent_id = record.get('preference_agent_id')
+            if (
+                not request.project_agent_id
+                or agent_id != request.project_agent_id
+                or project_id != request.active_personal_project_id
+            ):
+                return None
+            return _agent_scope_metadata(
+                project_id,
+                project_scopes[project_id],
+                agent_id,
+            )
         return _project_scope_metadata(project_id, project_scopes[project_id])
 
     assignment_project_id = record.get('assignment_project_id')
     episode_project_ids = list(record.get('episode_project_ids') or [])
+    episode_project_agent_ids = list(
+        record.get('episode_project_agent_ids') or []
+    )
+    if episode_project_agent_ids:
+        if (
+            not request.project_agent_id
+            or request.project_agent_id not in episode_project_agent_ids
+            or request.active_personal_project_id not in episode_project_ids
+        ):
+            return None
+        return _agent_scope_metadata(
+            request.active_personal_project_id,
+            project_scopes[request.active_personal_project_id],
+            request.project_agent_id,
+        )
     reference_project_ids = list(record.get('reference_project_ids') or [])
     project_ids = (
         [assignment_project_id]
@@ -566,6 +617,17 @@ def _project_scope_metadata(project_id: str, scope: dict) -> dict:
     }
 
 
+def _agent_scope_metadata(project_id: str, scope: dict, agent_id: str) -> dict:
+    return {
+        **_project_scope_metadata(project_id, scope),
+        'project_agent_id': agent_id,
+        'inherited_from_project_id': None,
+        'scope_distance': 0,
+        'scope_path': [project_id],
+        'inherited': False,
+    }
+
+
 def _ranked_relevance(base_score: float, metadata) -> float:
     if base_score <= 0:
         return 0.0
@@ -595,21 +657,34 @@ def _ranked_relevance(base_score: float, metadata) -> float:
     )
 
 
-def _scope_precedence(metadata, active_project_id: str | None) -> tuple:
+def _scope_precedence(
+    metadata,
+    active_project_id: str | None,
+    project_agent_id: str | None = None,
+) -> tuple:
     project_id = metadata.get('defined_project_id')
     return (
+        0 if project_agent_id and metadata.get('project_agent_id') == project_agent_id else 1,
         0 if active_project_id and project_id == active_project_id else 1,
         1 if metadata.get('inherited_from_project_id') else 0,
         int(metadata.get('scope_distance') or 0),
     )
 
 
-def _dedupe_ranked_edges(ranked, metadata_by_id, active_project_id):
+def _dedupe_ranked_edges(
+    ranked,
+    metadata_by_id,
+    active_project_id,
+    project_agent_id=None,
+):
     selected = {}
     for score, edge in ranked:
         metadata = metadata_by_id.get(edge.uuid, {})
         key = metadata.get('key') or edge.uuid
-        quality = (_scope_precedence(metadata, active_project_id), -score)
+        quality = (
+            _scope_precedence(metadata, active_project_id, project_agent_id),
+            -score,
+        )
         current = selected.get(key)
         if current is None or quality < current[0]:
             selected[key] = (quality, score, edge)
@@ -620,11 +695,14 @@ def _dedupe_ranked_edges(ranked, metadata_by_id, active_project_id):
     )
 
 
-def _dedupe_ranked_entities(ranked, active_project_id):
+def _dedupe_ranked_entities(ranked, active_project_id, project_agent_id=None):
     selected = {}
     for record, score in ranked:
         key = record.get('key') or record.get('id')
-        quality = (_scope_precedence(record, active_project_id), -score)
+        quality = (
+            _scope_precedence(record, active_project_id, project_agent_id),
+            -score,
+        )
         current = selected.get(key)
         if current is None or quality < current[0]:
             selected[key] = (quality, record, score)
@@ -665,6 +743,7 @@ def _entity_search_result(record, score: float, space_id: str) -> EntitySearchRe
         'attributes_json',
         'assignment_project_id',
         'episode_project_ids',
+        'episode_project_agent_ids',
         'has_global_episode',
         'reference_project_ids',
         'inherited',

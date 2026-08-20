@@ -60,12 +60,19 @@ test('Codex connector writes the merged user config', () => {
   assert.equal(write.path, AGENT.configPath);
   assert.match(write.value, /approval_policy = "on-request"/);
   assert.match(write.value, /command = "\/runtime\/node"/);
+  assert.match(write.value, /"--source-application", "codex"/);
 });
 
 test('Codex connector avoids rewriting a current config and reports no reload', () => {
   const current = replaceFuliTable('', {
     command: CONTEXT.nodePath,
-    args: [CONTEXT.mcpServerPath, '--runtime-config', CONTEXT.runtimeConfigPath]
+    args: [
+      CONTEXT.mcpServerPath,
+      '--runtime-config',
+      CONTEXT.runtimeConfigPath,
+      '--source-application',
+      'codex'
+    ]
   });
   let writes = 0;
   const result = connectCodex(AGENT, CONTEXT, {

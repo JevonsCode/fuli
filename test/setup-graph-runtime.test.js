@@ -14,12 +14,20 @@ const PATHS = Object.freeze({
   graphComposePath: 'C:/Package/compose.graphiti.yml',
   graphRuntimeConfigPath: 'C:/Fuli/graph-runtime.json',
   graphRuntimeStatePath: 'C:/Fuli/graph-runtime-state.json',
-  runtimeSettingsPath: 'C:/Fuli/runtime-settings.json'
+  runtimeSettingsPath: 'C:/Fuli/runtime-settings.json',
+  containerGraphConfigProfilePath: 'C:/Fuli/runtime-configs/container.json',
+  nativeGraphConfigProfilePath: 'C:/Fuli/runtime-configs/native.json'
 });
 const CONTAINER_RUNTIME = Object.freeze({
   status: 'ready',
   dockerCommand: 'docker',
   dockerEnvironment: { PATH: '/usr/bin' }
+});
+
+const ADAPTIVE_PATHS = Object.freeze({
+  ...PATHS,
+  adaptiveRuntimeSettingsPath: 'C:/Fuli/adaptive-runtime-settings.json',
+  adaptiveRuntimeStatePath: 'C:/Fuli/adaptive-runtime-state.json'
 });
 
 test('container runtime preflight fails before setup writes Fuli data', async () => {
@@ -50,6 +58,128 @@ test('container runtime preflight fails before setup writes Fuli data', async ()
 
   assert.deepEqual(sideEffects, []);
 });
+
+test('native setup bypasses Docker and starts the native graph runtime', async () => {
+  const nativeRuntime = { status: 'ready', mode: 'native' };
+  const started = [];
+  await ensureGraphRuntime({
+    paths: PATHS,
+    personalSpaceName: '我',
+    personalOnly: true,
+    runtimeMode: 'native',
+    runtimeSettings: {
+      version: 1,
+      graphRuntimeMode: 'native',
+      ports: {
+        console: 2727,
+        personalProvider: 8787,
+        personalNeo4jHttp: 8060,
+        personalNeo4jBolt: 7687,
+        workspaceProvider: 8788,
+        workspaceNeo4jHttp: 7475,
+        workspaceNeo4jBolt: 7688
+      },
+      lanAccess: false,
+      resourceRefreshSeconds: 5,
+      conversationLaunchers: DEFAULT_CONVERSATION_LAUNCHERS
+    },
+    noStart: true
+  }, dependencies({
+    ensureContainerRuntime() {
+      throw new Error('Docker must not be inspected in native mode');
+    },
+    async ensureNativeRuntime(input) {
+      assert.equal(input.paths, PATHS);
+      return nativeRuntime;
+    },
+    startNativeProviders(paths, envPath, options) {
+      started.push({ paths, envPath, options });
+    },
+    async fetch(url, options = {}) {
+      if (url.endsWith('/health')) return response({ status: 'ready' });
+      if (url.endsWith('/v1/bootstrap')) {
+        return response({ access_token: 'personal-token', principal_id: 'personal-user' });
+      }
+      if (url.endsWith('/v1/spaces') && !options.method) return response([]);
+      if (url.endsWith('/v1/spaces') && options.method === 'POST') {
+        return response({ id: 'personal-space', name: '我', kind: 'personal' });
+      }
+      throw new Error(`Unexpected Provider request: ${url}`);
+    }
+  }));
+
+  assert.deepEqual(started, [{
+    paths: PATHS,
+    envPath: PATHS.graphEnvPath,
+    options: { personalOnly: true, nativeRuntime }
+  }]);
+});
+
+test('switching modes preserves each graph credential profile and bootstraps a fresh target',
+  async () => {
+    const previous = configuredGraph();
+    previous.personal.accessToken = 'container-token';
+    const writes = [];
+    const nativeSettings = {
+      version: 1,
+      graphRuntimeMode: 'native',
+      ports: {
+        console: 2727,
+        personalProvider: 8787,
+        personalNeo4jHttp: 8060,
+        personalNeo4jBolt: 7687,
+        workspaceProvider: 8788,
+        workspaceNeo4jHttp: 7475,
+        workspaceNeo4jBolt: 7688
+      },
+      lanAccess: false,
+      resourceRefreshSeconds: 5,
+      conversationLaunchers: DEFAULT_CONVERSATION_LAUNCHERS
+    };
+    await ensureGraphRuntime({
+      paths: PATHS,
+      personalSpaceName: '我',
+      personalOnly: true,
+      runtimeMode: 'native',
+      runtimeSettings: nativeSettings,
+      noStart: true
+    }, dependencies({
+      ensureNativeRuntime: async () => ({ status: 'ready', mode: 'native' }),
+      startNativeProviders() {},
+      readState: () => ({
+        version: 4,
+        pid: 27,
+        url: 'http://127.0.0.1:2727',
+        runtimeSettings: { ...nativeSettings, graphRuntimeMode: 'container' }
+      }),
+      readConfig(path) {
+        if (path === PATHS.graphRuntimeConfigPath) return previous;
+        return null;
+      },
+      writeConfig(path, value) { writes.push({ path, value }); },
+      async fetch(url, options = {}) {
+        if (url.endsWith('/health')) return response({ status: 'ready' });
+        if (url.endsWith('/v1/bootstrap')) {
+          return response({ access_token: 'native-token', principal_id: 'native-user' });
+        }
+        if (url.endsWith('/v1/spaces') && !options.method) return response([]);
+        if (url.endsWith('/v1/spaces') && options.method === 'POST') {
+          return response({ id: 'native-space', name: '我', kind: 'personal' });
+        }
+        throw new Error(`Unexpected Provider request: ${url}`);
+      }
+    }));
+
+    assert.equal(writes.find(({ path }) =>
+      path === PATHS.containerGraphConfigProfilePath).value.personal.accessToken,
+    'container-token');
+    assert.equal(writes.find(({ path }) =>
+      path === PATHS.graphRuntimeConfigPath).value.personal.accessToken,
+    'native-token');
+    assert.equal(writes.find(({ path }) =>
+      path === PATHS.nativeGraphConfigProfilePath).value.personal.accessToken,
+    'native-token');
+  });
 
 test('LAN setup fails before runtime side effects when no private IPv4 address exists', async () => {
   const sideEffects = [];
@@ -135,6 +265,7 @@ test('personal-only setup starts and bootstraps only the local Provider', async 
 test('setup applies every configured service port to Provider URLs and Compose environment', async () => {
   const runtimeSettings = {
     version: 1,
+    graphRuntimeMode: 'container',
     ports: {
       console: 3030,
       personalProvider: 18787,
@@ -155,6 +286,7 @@ test('setup applies every configured service port to Provider URLs and Compose e
     paths: PATHS,
     personalSpaceName: '我',
     personalOnly: true,
+    memoryProfile: 'low',
     runtimeSettings,
     noStart: true
   }, dependencies({
@@ -185,8 +317,49 @@ test('setup applies every configured service port to Provider URLs and Compose e
   );
   assert.match(environment, /FULI_PERSONAL_HUMAN_REVIEW_TOKEN=/);
   assert.match(environment, /FULI_WORKSPACE_PROVIDER_PORT=18788/);
+  assert.match(environment, /FULI_NEO4J_MEMORY_PROFILE=low/);
+  assert.match(environment, /FULI_NEO4J_HEAP_INITIAL_SIZE=128m/);
+  assert.match(environment, /FULI_NEO4J_HEAP_MAX_SIZE=256m/);
+  assert.match(environment, /FULI_NEO4J_PAGECACHE_SIZE=64m/);
   assert.deepEqual(savedSettings, runtimeSettings);
   assert.equal(writtenConfig.personal.providerUrl, 'http://127.0.0.1:18787');
+});
+
+test('setup persists adaptive memory and marks freshly started graph services awake', async () => {
+  let settings = null;
+  let state = null;
+  await ensureGraphRuntime({
+    paths: ADAPTIVE_PATHS,
+    personalSpaceName: '我',
+    personalOnly: true,
+    adaptiveRuntimeSettings: {
+      version: 1,
+      enabled: true,
+      providerIdleSeconds: 60,
+      databaseIdleSeconds: 180,
+      executorIdleSeconds: 60,
+      leaseTtlSeconds: 180
+    },
+    noStart: true
+  }, dependencies({
+    readConfig: configuredGraph,
+    writeAdaptiveSettings(path, value) {
+      assert.equal(path, ADAPTIVE_PATHS.adaptiveRuntimeSettingsPath);
+      settings = value;
+    },
+    writeAdaptiveState(path, value) {
+      assert.equal(path, ADAPTIVE_PATHS.adaptiveRuntimeStatePath);
+      state = value;
+    },
+    async fetch(url) {
+      if (url.endsWith('/health')) return response({ status: 'ready' });
+      throw new Error(`Unexpected Provider request: ${url}`);
+    }
+  }));
+
+  assert.equal(settings.enabled, true);
+  assert.equal(state.stage, 'awake');
+  assert.equal(state.lastError, null);
 });
 
 test('setup migrates an existing personal runtime onto the host observation capability', async () => {

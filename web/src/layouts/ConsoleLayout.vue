@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, watchEffect } from 'vue'
+import { computed, nextTick, onMounted, ref, watch, watchEffect } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
 import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
@@ -11,6 +11,9 @@ import { useConsoleStore } from '@/stores/console'
 
 const store = useConsoleStore()
 const route = useRoute()
+const mobileNavOpen = ref(false)
+const mobileNavToggleRef = ref<HTMLButtonElement | null>(null)
+const mobileNavCloseRef = ref<HTMLButtonElement | null>(null)
 
 const activeSpaceId = computed(() => store.activePersonalSpace?.id ?? 'current')
 const personalProjectsTo = computed(() => personalProjectsPath(activeSpaceId.value, 'graph'))
@@ -51,11 +54,40 @@ watchEffect(() => {
   updateDocumentTitle(route.meta.title)
 })
 
+watch(() => route.fullPath, () => {
+  mobileNavOpen.value = false
+})
+
+async function openMobileNav() {
+  mobileNavOpen.value = true
+  await nextTick()
+  mobileNavCloseRef.value?.focus({ preventScroll: true })
+}
+
+async function closeMobileNav() {
+  mobileNavOpen.value = false
+  await nextTick()
+  mobileNavToggleRef.value?.focus({ preventScroll: true })
+}
+
 </script>
 
 <template>
   <div class="app-shell">
-    <aside class="sidebar">
+    <aside
+      id="console-primary-sidebar"
+      class="sidebar"
+      :class="{ 'is-mobile-open': mobileNavOpen }"
+      @keydown.esc.stop="closeMobileNav"
+    >
+      <button
+        ref="mobileNavCloseRef"
+        class="mobile-nav-close quiet-button"
+        type="button"
+        @click="closeMobileNav"
+      >
+        {{ t('console.navigation.closeMenu') }}
+      </button>
       <BrandEasterEgg />
 
       <nav class="primary-nav" :aria-label="t('console.navigation.aria')">
@@ -77,6 +109,10 @@ watchEffect(() => {
         <RouterLink class="space-nav-button personal-space-button" :to="personalProjectsTo" active-class="is-active">
           <span class="nav-icon nav-icon-personal-project" aria-hidden="true" />
           <span class="nav-copy"><strong>{{ t('console.navigation.personalProjects') }}</strong><small>{{ t('console.navigation.personalProjectsMeta') }}</small></span>
+        </RouterLink>
+        <RouterLink class="space-nav-button project-agents-button" to="/project-agents" active-class="is-active">
+          <span class="nav-icon nav-icon-project-agent" aria-hidden="true" />
+          <span class="nav-copy"><strong>{{ t('console.navigation.projectAgents') }}</strong><small>{{ t('console.navigation.projectAgentsMeta') }}</small></span>
         </RouterLink>
 
         <template v-if="publicVisible">
@@ -138,6 +174,17 @@ watchEffect(() => {
 
     <main class="workspace">
       <header class="topbar">
+        <button
+          ref="mobileNavToggleRef"
+          class="mobile-nav-toggle quiet-button"
+          type="button"
+          aria-controls="console-primary-sidebar"
+          :aria-expanded="mobileNavOpen"
+          @click="openMobileNav"
+        >
+          <span class="mobile-nav-icon" aria-hidden="true" />
+          {{ t('console.navigation.openMenu') }}
+        </button>
         <div class="topbar-heading">
           <p v-if="eyebrow" class="eyebrow">{{ eyebrow }}</p>
           <h2>{{ title }}</h2>

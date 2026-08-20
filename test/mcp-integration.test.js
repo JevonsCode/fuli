@@ -235,6 +235,25 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'get_knowledge_graph',
     'search_human_knowledge_changes', 'review_human_knowledge_change',
     'list_knowledge_spaces', 'upsert_personal_project', 'list_personal_projects',
+    'upsert_project_agent', 'list_project_agents', 'get_project_agent_context',
+    'get_project_agent', 'delete_project_agent', 'cleanup_test_project_agents',
+    'create_project_agent_assignment', 'list_project_agent_assignments',
+    'end_project_agent_assignment', 'replace_project_agent_assignment',
+    'coordinate_project_agent_task',
+    'acquire_runtime_lease', 'refresh_runtime_lease', 'release_runtime_lease',
+    'submit_project_agent_task',
+    'view_project_agent_task', 'record_project_agent_task_activity',
+    'view_project_agent_activity', 'get_project_agent_recruitment_policy',
+    'update_project_agent_recruitment_policy', 'list_project_agent_recruitments',
+    'decide_project_agent_recruitment', 'upsert_executor', 'list_executors',
+    'get_executor', 'delete_executor', 'preflight_executor',
+    'authorize_executor', 'report_executor_health',
+    'record_project_agent_executor_actual',
+    'upsert_executor_routing_rule', 'update_executor_routing_rule',
+    'list_executor_routing_rules',
+    'get_executor_routing_rule', 'delete_executor_routing_rule',
+    'record_project_agent_task_outcome', 'list_project_agent_routing_learning',
+    'ignore_project_agent_routing_learning', 'reset_project_agent_routing_learning',
     'start_knowledge_review', 'list_knowledge_review_candidates',
     'record_knowledge_review_progress', 'finish_knowledge_review',
     'list_workflow_candidates', 'recommend_next_workflow_steps',
@@ -250,6 +269,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   const preferencesTool = listed.tools.find(
     ({ name }) => name === 'get_collaboration_preferences'
   );
+  const executorTool = listed.tools.find(({ name }) => name === 'list_executors');
   const previewProjectTool = listed.tools.find(
     ({ name }) => name === 'preview_personal_project_action'
   );
@@ -257,6 +277,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     ({ name }) => name === 'apply_personal_project_action'
   );
   assert.equal(preferencesTool.title, 'READ FIRST · Load task collaboration preferences');
+  assert.match(executorTool.description, /connected/i);
   assert.equal(previewProjectTool.title, 'PREVIEW · Authorize a personal project write');
   assert.equal(applyProjectTool.title, 'WRITE · Apply an authorized personal project action');
   assert.match(preferencesTool.description, /exact tool name/i);
@@ -265,6 +286,16 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   assert.match(preferencesTool.description, /focused action, artifact, target-system/i);
   assert.match(applyProjectTool.description, /never call.*read-only task/i);
   assert.match(applyProjectTool.description, /previewToken/i);
+
+  const disabledLease = await connection.client.callTool({
+    name: 'acquire_runtime_lease',
+    arguments: { kind: 'graph', owner: 'mcp-integration-disabled-runtime' }
+  });
+  assert.equal(disabledLease.isError, undefined, JSON.stringify(disabledLease));
+  assert.deepEqual(disabledLease.structuredContent, {
+    enabled: false,
+    leaseId: null
+  });
 
   const personalProjects = await connection.client.callTool({
     name: 'list_personal_projects',
@@ -275,6 +306,42 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     personalProjects.structuredContent.result.map(({ project_id }) => project_id),
     ['hotel-b', 'inbound']
   );
+
+  const executors = await connection.client.callTool({
+    name: 'list_executors',
+    arguments: { personalSpaceId: 'personal-1' }
+  });
+  assert.equal(executors.isError, undefined, JSON.stringify(executors));
+  assert.deepEqual(executors.structuredContent.result, []);
+
+  const authorization = await connection.client.callTool({
+    name: 'authorize_executor',
+    arguments: {
+      personalSpaceId: 'personal-1',
+      executorId: 'executor-1',
+      status: 'authorized',
+      reason: 'e2e executor authorization',
+      idempotencyKey: 'authorization-mcp-1'
+    }
+  });
+  assert.equal(authorization.isError, undefined, JSON.stringify(authorization));
+
+  const actualExecutor = await connection.client.callTool({
+    name: 'record_project_agent_executor_actual',
+    arguments: {
+      personalSpaceId: 'personal-1',
+      personalProjectId: 'hotel-b',
+      taskId: 'task-1',
+      runId: 'run-1',
+      agentId: 'agent-1',
+      executorId: 'executor-1',
+      provider: 'openai',
+      model: 'model-x',
+      idempotencyKey: 'actual-mcp-1',
+      occurredAt: '2026-08-17T00:00:00Z'
+    }
+  });
+  assert.equal(actualExecutor.isError, undefined, JSON.stringify(actualExecutor));
 
   const reviewCandidates = await connection.client.callTool({
     name: 'list_knowledge_review_candidates',

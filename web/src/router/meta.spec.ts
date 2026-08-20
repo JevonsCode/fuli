@@ -38,6 +38,13 @@ describe('localized route metadata', () => {
     expect(routeMetaText(route.meta.title)).toBe('写作偏好')
   })
 
+  it('registers the concise project Agent directory', () => {
+    const route = router.resolve('/project-agents')
+    expect(route.name).toBe('project-agents')
+    expect(route.meta.eyebrow).toBe('')
+    expect(routeMetaText(route.meta.title)).toBe('项目 Agent')
+  })
+
   it('registers the about page', () => {
     expect(router.resolve('/about').name).toBe('about')
     expect(routeMetaText(router.resolve('/about').meta.title)).toBe('说明')

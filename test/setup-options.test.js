@@ -12,6 +12,9 @@ test('setup options have simple defaults', () => {
     dataDir: null,
     personalSpaceName: 'Personal',
     port: null,
+    memoryProfile: null,
+    runtimeMode: null,
+    adaptiveMemory: null,
     yes: false,
     codexOnly: false,
     skipAgents: false,
@@ -33,6 +36,9 @@ test('setup options parse explicit automation values', () => {
     '--data-dir', 'D:/Fuli Data',
     '--personal-space', 'Jevons',
     '--port', '5199',
+    '--memory-profile', 'low',
+    '--runtime-mode', 'native',
+    '--adaptive-memory',
     '--yes',
     '--codex-only',
     '--skip-agents',
@@ -42,6 +48,9 @@ test('setup options parse explicit automation values', () => {
     dataDir: 'D:/Fuli Data',
     personalSpaceName: 'Jevons',
     port: 5199,
+    memoryProfile: 'low',
+    runtimeMode: 'native',
+    adaptiveMemory: true,
     yes: true,
     codexOnly: true,
     skipAgents: true,
@@ -58,6 +67,18 @@ test('setup options reject unknown, duplicate, missing, and invalid values', () 
     /Missing value for --personal-space/);
   assert.throws(() => parseSetupOptions(['--port', '0']), /--port must be between 1 and 65535/);
   assert.throws(() => parseSetupOptions(['--port', 'abc']), /--port must be between 1 and 65535/);
+  assert.throws(
+    () => parseSetupOptions(['--memory-profile', 'tiny']),
+    /must be "low" or "balanced"/
+  );
+  assert.throws(
+    () => parseSetupOptions(['--runtime-mode', 'virtual-machine']),
+    /must be "container" or "native"/
+  );
+  assert.throws(
+    () => parseSetupOptions(['--adaptive-memory', '--no-adaptive-memory']),
+    /cannot be combined/
+  );
 });
 
 test('update accepts setup options and reports update-specific option errors', () => {
@@ -67,6 +88,9 @@ test('update accepts setup options and reports update-specific option errors', (
       dataDir: 'D:/Fuli',
       personalSpaceName: 'Personal',
       port: null,
+      memoryProfile: null,
+      runtimeMode: null,
+      adaptiveMemory: null,
       yes: true,
       codexOnly: false,
       skipAgents: false,

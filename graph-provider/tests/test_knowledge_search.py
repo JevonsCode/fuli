@@ -169,6 +169,73 @@ def test_exact_active_project_key_overrides_a_higher_scoring_inherited_item():
     assert ranked == [(local, 2.0)]
 
 
+def test_project_agent_memory_is_visible_only_to_its_selected_agent():
+    scopes = {
+        'project-a': {
+            'scope_distance': 0,
+            'scope_path': ['project-a'],
+            'inherited': False,
+        },
+    }
+    agent_item = {
+        'profile_aspect': None,
+        'assignment_project_id': None,
+        'episode_project_ids': ['project-a'],
+        'episode_project_agent_ids': ['agent-a'],
+        'reference_project_ids': [],
+        'has_global_episode': False,
+        'inheritance_mode': 'local_only',
+        'inherited_project_ids': [],
+    }
+    default_request = SearchRequest(
+        space_ids=['personal-space'],
+        query='活动复盘',
+        personal_project_ids=['project-a'],
+        active_personal_project_id='project-a',
+    )
+    agent_a_request = default_request.model_copy(
+        update={'project_agent_id': 'agent-a'}
+    )
+    agent_b_request = default_request.model_copy(
+        update={'project_agent_id': 'agent-b'}
+    )
+
+    assert _item_scope_metadata(agent_item, default_request, scopes, True) is None
+    assert _item_scope_metadata(agent_item, agent_b_request, scopes, True) is None
+    assert _item_scope_metadata(agent_item, agent_a_request, scopes, True) == {
+        'defined_project_id': 'project-a',
+        'scope_distance': 0,
+        'inherited_from_project_id': None,
+        'scope_path': ['project-a'],
+        'inherited': False,
+        'project_agent_id': 'agent-a',
+    }
+
+
+def test_selected_agent_item_overrides_same_key_project_item():
+    project_item = {
+        'id': 'project-item',
+        'key': 'activity.format',
+        'defined_project_id': 'project-a',
+        'scope_distance': 0,
+        'created_at': datetime(2026, 8, 17, tzinfo=timezone.utc),
+    }
+    agent_item = {
+        **project_item,
+        'id': 'agent-item',
+        'project_agent_id': 'agent-a',
+        'created_at': datetime(2026, 8, 16, tzinfo=timezone.utc),
+    }
+
+    ranked = _dedupe_ranked_entities(
+        [(project_item, 12.0), (agent_item, 2.0)],
+        'project-a',
+        'agent-a',
+    )
+
+    assert ranked == [(agent_item, 2.0)]
+
+
 def test_confirmation_authority_affects_ranking_but_not_quadrants():
     confirmed = _ranked_relevance(10, {
         'confirmation_status': 'confirmed',

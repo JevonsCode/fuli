@@ -9,6 +9,7 @@ import { aboutMessages } from './messages/about'
 import { pageMessages } from './messages/pages'
 import { preferenceMessages } from './messages/preferences'
 import { projectMessages } from './messages/projects'
+import { projectAgentMessages } from './messages/project-agents'
 import { routeMessages } from './messages/routes'
 import { settingsMessages } from './messages/settings'
 import { writingTasteMessages } from './messages/writing-taste'
@@ -70,6 +71,7 @@ export const messages = {
     pages: pageMessages['zh-CN'],
     preferences: preferenceMessages['zh-CN'],
     projects: projectMessages['zh-CN'],
+    projectAgents: projectAgentMessages['zh-CN'],
     routes: routeMessages['zh-CN'],
     settings: settingsMessages['zh-CN'],
     writingTaste: writingTasteMessages['zh-CN'],
@@ -86,6 +88,7 @@ export const messages = {
     pages: pageMessages['en-US'],
     preferences: preferenceMessages['en-US'],
     projects: projectMessages['en-US'],
+    projectAgents: projectAgentMessages['en-US'],
     routes: routeMessages['en-US'],
     settings: settingsMessages['en-US'],
     writingTaste: writingTasteMessages['en-US'],

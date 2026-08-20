@@ -63,7 +63,13 @@ export function inspectAgentInstallations(agents, context, {
 function inspectRegistration(agent, context, readers) {
   const expected = {
     command: context.nodePath,
-    args: [context.mcpServerPath, '--runtime-config', context.runtimeConfigPath]
+    args: [
+      context.mcpServerPath,
+      '--runtime-config',
+      context.runtimeConfigPath,
+      '--source-application',
+      agent.id === 'claude-code' ? 'claude_code' : agent.id
+    ]
   };
   try {
     if (agent.id === 'codex') {

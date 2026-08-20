@@ -102,6 +102,7 @@ test('fl restart applies persisted ports and LAN settings when CLI overrides are
   let received = null;
   const configured = {
     version: 1,
+    graphRuntimeMode: 'container',
     ports: {
       console: 3030,
       personalProvider: 18787,

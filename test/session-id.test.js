@@ -64,3 +64,68 @@ test('workflow observations replace every Agent session and timestamp with host 
     hostObservedAt: '2026-08-03T08:00:00.000Z'
   })));
 });
+
+test('Project Agent MCP calls replace forged client and session attribution', () => {
+  const forged = {
+    personalSpaceId: 'space-1',
+    personalProjectId: 'project-1',
+    idempotencyKey: 'task-request-1',
+    sourceApplication: 'codex',
+    sourceSessionId: 'forged-session'
+  };
+
+  assert.deepEqual(
+    normalizeAgentSessionInput(
+      'submit_project_agent_task',
+      forged,
+      null,
+      'claude-host-session',
+      () => new Date('2026-08-17T00:00:00Z'),
+      'claude_code'
+    ),
+    {
+      ...forged,
+      sourceApplication: 'claude_code',
+      sourceSessionId: 'claude-host-session'
+    }
+  );
+  assert.deepEqual(
+    normalizeAgentSessionInput(
+      'coordinate_project_agent_task',
+      { projectPath: '/workspace/fuli' },
+      null,
+      'codex-host-session',
+      () => new Date('2026-08-17T00:00:00Z'),
+      'codex'
+    ),
+    {
+      projectPath: '/workspace/fuli',
+      sourceApplication: 'codex',
+      sourceSessionId: 'codex-host-session'
+    }
+  );
+});
+
+test('task activity source attribution stays host-authoritative with worker fields', () => {
+  assert.deepEqual(
+    normalizeAgentSessionInput(
+      'record_project_agent_task_activity',
+      {
+        sourceApplication: 'codex',
+        sourceSessionId: 'forged-session',
+        workerId: 'worker-1',
+        workerLabel: 'worker label'
+      },
+      null,
+      'cursor-host-session',
+      () => new Date('2026-08-17T00:00:00Z'),
+      'cursor'
+    ),
+    {
+      workerId: 'worker-1',
+      workerLabel: 'worker label',
+      sourceApplication: 'cursor',
+      sourceSessionId: 'cursor-host-session'
+    }
+  );
+});

@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createResourceMonitor, parseDockerBytes } from '../src/system/resource-monitor.js';
+import {
+  createResourceMonitor,
+  parseDarwinAvailableMemory,
+  parseDockerBytes
+} from '../src/system/resource-monitor.js';
 
 test('resource monitor combines the console, managed containers, images, and Neo4j volumes', async () => {
   const calls = [];
@@ -61,6 +65,41 @@ test('Docker byte values use the unit base reported by Docker', () => {
   assert.equal(parseDockerBytes('1.5MB'), 1_500_000);
 });
 
+test('macOS available memory follows the memory-pressure percentage', () => {
+  assert.equal(parseDarwinAvailableMemory(
+    'System-wide memory free percentage: 30%\n',
+    16 * 1024 ** 3
+  ), Math.round(16 * 1024 ** 3 * 0.3));
+  assert.equal(parseDarwinAvailableMemory('unavailable', 16 * 1024 ** 3), null);
+});
+
+test('macOS resource samples cache the pressure-based available-memory reading', async () => {
+  let pressureCalls = 0;
+  const monitor = createResourceMonitor({
+    dataDir: '/data',
+    packageRoot: '/package',
+    platform: 'darwin',
+    now: () => new Date('2026-08-18T12:00:00.000Z'),
+    processMemory: () => ({ rss: 10 }),
+    containerRuntime: { status: 'missing' },
+    run: async (command, args) => {
+      assert.equal(command, 'memory_pressure');
+      assert.deepEqual(args, ['-Q']);
+      pressureCalls += 1;
+      return 'System-wide memory free percentage: 25%\n';
+    },
+    directorySize: async () => 0,
+    filesystemStats: async () => ({ totalBytes: 100, freeBytes: 50 })
+  });
+
+  const first = await monitor.sample();
+  const second = await monitor.sample();
+
+  assert.equal(first.memory.hostFreeBytes, Math.round(first.memory.hostTotalBytes * 0.25));
+  assert.equal(second.memory.hostFreeBytes, first.memory.hostFreeBytes);
+  assert.equal(pressureCalls, 1);
+});
+
 test('resource monitor marks unavailable container and filesystem measurements as partial', async () => {
   const monitor = createResourceMonitor({
     dataDir: '/missing-data',
@@ -88,6 +127,7 @@ test('resource monitor does not replace malformed Docker disk metrics with zero'
   const monitor = createResourceMonitor({
     dataDir: '/data',
     packageRoot: '/package',
+    hostMemory: () => ({ totalBytes: 100, freeBytes: 50 }),
     containerRuntime: {
       status: 'ready',
       dockerCommand: 'docker',
@@ -105,3 +145,63 @@ test('resource monitor does not replace malformed Docker disk metrics with zero'
   assert.equal(snapshot.disk.complete, false);
   assert.equal(snapshot.disk.components.some(({ id }) => id === 'containerWritable'), false);
 });
+
+test('native resource monitor measures owned Provider and Neo4j processes without Docker',
+  async () => {
+    const processState = {
+      version: 1,
+      mode: 'native',
+      providers: {
+        personal: { pid: 4100, command: '/native/python' },
+        workspace: { pid: 4101, command: '/native/python' }
+      }
+    };
+    const pidFiles = new Map([
+      ['/native/personal/run/neo4j.pid', '4200\n'],
+      ['/native/workspace/run/neo4j.pid', '4201\n']
+    ]);
+    const processTable = [
+      '4100 1 51200',
+      '4101 1 25600',
+      '4200 1 1024',
+      '4201 1 1024',
+      '4300 4200 204800',
+      '4301 4201 102400'
+    ].join('\n');
+    const monitor = createResourceMonitor({
+      dataDir: '/data',
+      packageRoot: '/package',
+      runtimeMode: 'native',
+      nativeProcessStatePath: '/native/processes.json',
+      nativePersonalDir: '/native/personal',
+      nativeWorkspaceDir: '/native/workspace',
+      readJson: () => processState,
+      readText: async (path) => pidFiles.get(path) ?? null,
+      processMemory: () => ({ rss: 10 * 1024 * 1024 }),
+      hostMemory: () => ({ totalBytes: 1000, freeBytes: 500 }),
+      inspectRuntime() {
+        throw new Error('Docker must not be inspected in native mode');
+      },
+      run: async (command, args) => {
+        assert.equal(command, 'ps');
+        assert.deepEqual(args, ['-axo', 'pid=,ppid=,rss=']);
+        return processTable;
+      },
+      directorySize: async () => 0,
+      filesystemStats: async () => ({ totalBytes: 1000, freeBytes: 500 })
+    });
+
+    const snapshot = await monitor.sample();
+
+    assert.equal(snapshot.status, 'ready');
+    assert.equal(snapshot.memory.usedBytes,
+      (10 * 1024 + 51_200 + 25_600 + 1_024 + 1_024 + 204_800 + 102_400) * 1024);
+    assert.deepEqual(snapshot.memory.components.slice(1).map(({ id, kind }) => ({ id, kind })), [
+      { id: 'personal-provider', kind: 'process' },
+      { id: 'workspace-provider', kind: 'process' },
+      { id: 'personal-neo4j', kind: 'process' },
+      { id: 'workspace-neo4j', kind: 'process' }
+    ]);
+    assert.deepEqual(snapshot.exclusions, ['browser-tab-memory']);
+    assert.equal(snapshot.disk.complete, true);
+  });

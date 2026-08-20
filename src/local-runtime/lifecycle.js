@@ -7,6 +7,8 @@ import {
   stopGraphProviders
 } from '../setup/graph-runtime.js';
 import { readJsonFile } from '../storage/json-file.js';
+import { readAdaptiveRuntimeSettings } from '../adaptive-runtime/settings.js';
+import { readAdaptiveRuntimeState } from '../adaptive-runtime/state.js';
 import {
   DEFAULT_RUNTIME_SETTINGS,
   managedProviderUrls
@@ -28,6 +30,7 @@ export async function startLocalRuntime(input, dependencies = {}) {
     port: input.port,
     lan: input.lan === true,
     runtimeSettings,
+    previousRuntimeMode: input.previousRuntimeMode,
     personalOnly: !managesDevelopmentWorkspace,
     buildProviders,
     noStart: false,
@@ -51,11 +54,14 @@ export async function stopLocalRuntime(input, dependencies = {}) {
   const managesDevelopmentWorkspace = state?.managedProviders?.includes(
     'development-workspace'
   ) || hasManagedDevelopmentWorkspace(config, runtimeSettings);
+  const activeRuntimeMode = state?.runtimeSettings?.graphRuntimeMode ??
+    runtimeSettings.graphRuntimeMode;
 
   let providers = 'not_initialized';
   if (deps.fileExists(input.paths.graphEnvPath)) {
-    deps.stopProviders(input.paths, input.paths.graphEnvPath, {
-      personalOnly: !managesDevelopmentWorkspace
+    await deps.stopProviders(input.paths, input.paths.graphEnvPath, {
+      personalOnly: !managesDevelopmentWorkspace,
+      runtimeMode: activeRuntimeMode
     });
     providers = 'stopped';
   }
@@ -70,11 +76,14 @@ export async function stopLocalRuntime(input, dependencies = {}) {
 }
 
 export async function restartLocalRuntime(input, dependencies = {}) {
+  const deps = lifecycleDependencies(dependencies);
+  const previousRuntimeMode = deps.readState(input.paths.graphRuntimeStatePath)
+    ?.runtimeSettings?.graphRuntimeMode;
   const stopped = await stopLocalRuntime(input, dependencies);
   if (stopped.status === 'partial') {
     throw new Error('Could not safely verify the existing local UI process; restart was refused.');
   }
-  const started = await startLocalRuntime(input, dependencies);
+  const started = await startLocalRuntime({ ...input, previousRuntimeMode }, dependencies);
   return { stopped, ...started, status: 'restarted' };
 }
 
@@ -90,19 +99,34 @@ export async function inspectLocalRuntime(input, dependencies = {}) {
     state.pid,
     state.version
   );
+  const adaptiveSettings = deps.readAdaptiveSettings(pathsValue(
+    input.paths.adaptiveRuntimeSettingsPath
+  ));
+  const adaptiveState = adaptiveSettings.enabled
+    ? deps.readAdaptiveState(pathsValue(input.paths.adaptiveRuntimeStatePath))
+    : null;
+  const intentionallySleeping = adaptiveSettings.enabled &&
+    ['provider-sleeping', 'sleeping'].includes(adaptiveState?.stage);
   const managedUrls = managedProviderUrls(runtimeSettings);
   const personalUrl = config?.personal?.providerUrl ?? managedUrls.personal;
   const personal = config
-    ? await deps.providerHealth(personalUrl)
+    ? intentionallySleeping
+      ? { url: personalUrl, status: 'sleeping' }
+      : await deps.providerHealth(personalUrl)
     : { url: personalUrl, status: 'not_configured' };
-  const workspaces = await Promise.all((config?.workspaces ?? []).map(async (workspace) => ({
-    ...(await deps.providerHealth(workspace.providerUrl)),
-    managedDevelopment: isManagedDevelopmentUrl(workspace, runtimeSettings)
-  })));
+  const workspaces = await Promise.all((config?.workspaces ?? []).map(async (workspace) => {
+    const managedDevelopment = isManagedDevelopmentUrl(workspace, runtimeSettings);
+    return {
+      ...(intentionallySleeping && managedDevelopment
+        ? { url: workspace.providerUrl, status: 'sleeping' }
+        : await deps.providerHealth(workspace.providerUrl)),
+      managedDevelopment
+    };
+  }));
 
   let status = 'stopped';
   if (!config && !state) status = 'not_configured';
-  else if (consoleReady && personal.status === 'ready') status = 'running';
+  else if (consoleReady && ['ready', 'sleeping'].includes(personal.status)) status = 'running';
   else if (processAlive || personal.status === 'ready') status = 'degraded';
 
   return {
@@ -120,6 +144,10 @@ export async function inspectLocalRuntime(input, dependencies = {}) {
       configured: workspaces.length > 0,
       status: publicProviderStatus(workspaces),
       providers: workspaces
+    },
+    adaptiveRuntime: {
+      enabled: adaptiveSettings.enabled,
+      stage: adaptiveSettings.enabled ? adaptiveState?.stage ?? 'unknown' : 'always-on'
     }
   };
 }
@@ -162,6 +190,10 @@ function lifecycleDependencies(overrides) {
     stopProviders: stopGraphProviders,
     consoleHealth: checkLocalConsoleHealth,
     providerHealth,
+    readAdaptiveSettings: (path) => path
+      ? readAdaptiveRuntimeSettings(path)
+      : { enabled: false },
+    readAdaptiveState: (path) => path ? readAdaptiveRuntimeState(path) : null,
     isProcessAlive,
     stopProcess,
     waitForExit,
@@ -171,6 +203,10 @@ function lifecycleDependencies(overrides) {
     openExternal,
     ...overrides
   };
+}
+
+function pathsValue(value) {
+  return typeof value === 'string' && value ? value : null;
 }
 
 function safeReadState(path) {
@@ -242,7 +278,7 @@ function isLoopbackConsoleUrl(value) {
 
 function publicProviderStatus(workspaces) {
   if (!workspaces.length) return 'not_connected';
-  const ready = workspaces.filter(({ status }) => status === 'ready').length;
+  const ready = workspaces.filter(({ status }) => ['ready', 'sleeping'].includes(status)).length;
   if (ready === workspaces.length) return 'ready';
   return ready > 0 ? 'degraded' : 'unavailable';
 }

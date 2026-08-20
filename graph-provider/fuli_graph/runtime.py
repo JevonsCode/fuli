@@ -18,6 +18,9 @@ from graphiti_core.prompts.models import Message
 from pydantic import BaseModel
 
 from .config import Settings
+from .store_project_agent_executor_learning import (
+    project_agent_executor_outcome_bucket_id,
+)
 
 
 class AgentStructuredLLM(LLMClient):
@@ -235,6 +238,42 @@ class GraphitiRuntime:
             'FOR (n:FuliPersonalProjectRelationReview) '
             'REQUIRE n.id IS UNIQUE'
         )
+        # Legacy learning caches were keyed only by a composite property map.
+        # Collapse those buckets before adding ID uniqueness so startup remains
+        # safe for upgraded stores as well as fresh databases.
+        await self._migrate_project_agent_executor_learning_buckets()
+        for query in (
+            'CREATE CONSTRAINT fuli_project_agent_id IF NOT EXISTS '
+            'FOR (n:FuliProjectAgent) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_assignment_id IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentAssignment) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_task_id IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentTask) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_task_event_id IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentTaskEvent) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_routing_decision_id IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentRoutingDecision) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_recruitment_id IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentRecruitment) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_recruitment_policy_space '
+            'IF NOT EXISTS FOR (n:FuliProjectAgentRecruitmentPolicy) '
+            'REQUIRE n.personal_space_id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_executor_id IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentExecutor) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_executor_routing_rule_id IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentExecutorRoutingRule) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_executor_decision_id IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentExecutorDecision) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_executor_outcome_evidence_id IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentExecutorOutcomeEvidence) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_executor_outcome_aggregate_id IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentExecutorOutcomeAggregate) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_executor_outcome_reset_id IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentExecutorOutcomeReset) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_executor_observation_id IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentExecutorObservation) REQUIRE n.id IS UNIQUE',
+        ):
+            await self.driver.execute_query(query)
         for query in (
             'CREATE INDEX fuli_entity_confirmation IF NOT EXISTS '
             'FOR (n:Entity) ON (n.group_id, n.fuli_confirmation_status)',
@@ -259,13 +298,233 @@ class GraphitiRuntime:
             'ON (n.personal_space_id, n.scope_key, n.status)',
             'CREATE INDEX fuli_personal_project_relation_type IF NOT EXISTS '
             'FOR ()-[r:PERSONAL_PROJECT_RELATION]-() ON (r.relation_type)',
+            'CREATE INDEX fuli_project_agent_assignment_lookup IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentAssignment) '
+            'ON (n.status, n.assigned_at)',
+            'CREATE INDEX fuli_project_agent_task_lookup IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentTask) '
+            'ON (n.personal_space_id, n.personal_project_id, n.status)',
+            'CREATE INDEX fuli_project_agent_event_activity IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentTaskEvent) '
+            'ON (n.agent_id, n.activity_date, n.status)',
+            'CREATE INDEX fuli_project_agent_executor_eligibility IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentExecutor) '
+            'ON (n.personal_space_id, n.registration_status, n.preflight_status, n.health_status)',
+            'CREATE INDEX fuli_project_agent_executor_rule_scope IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentExecutorRoutingRule) '
+            'ON (n.personal_space_id, n.scope, n.personal_project_id, n.task_id)',
+            'CREATE INDEX fuli_project_agent_executor_evidence_lookup IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentExecutorOutcomeEvidence) '
+            'ON (n.personal_space_id, n.agent_id, n.work_kind, n.executor_id, n.occurred_at)',
+            'CREATE INDEX fuli_project_agent_aggregate_lookup IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentExecutorOutcomeAggregate) '
+            'ON (n.personal_space_id, n.personal_project_id, n.agent_id, '
+            'n.work_kind, n.executor_id, n.model_strategy_key)',
         ):
             await self.driver.execute_query(query)
+        await self._migrate_project_agent_control_plane()
         await self._migrate_knowledge_lifecycle_defaults()
         await self._migrate_personal_project_relation_review_defaults()
         await self._migrate_space_visibility_and_owners()
         await self._migrate_project_releases()
         await self._migrate_legacy_group_ids()
+
+    async def _migrate_project_agent_executor_learning_buckets(self) -> None:
+        """Give legacy learning caches stable IDs and collapse duplicates.
+
+        Aggregates and resets are replaceable projections.  For each complete
+        provider/space bucket we keep the newest projection, remove only older
+        projection nodes, and leave immutable outcome evidence untouched.
+        """
+
+        bucket_properties = (
+            'personal_space_id',
+            'personal_project_id',
+            'work_kind',
+            'agent_id',
+            'executor_id',
+            'model_strategy_key',
+        )
+        migrations = (
+            (
+                'FuliProjectAgentExecutorOutcomeAggregate',
+                'aggregate',
+                'bucket.as_of',
+                'aggregate_id',
+            ),
+            (
+                'FuliProjectAgentExecutorOutcomeReset',
+                'reset',
+                'bucket.reset_at',
+                'reset_id',
+            ),
+        )
+        for label, bucket_kind, latest_property, public_id_property in migrations:
+            projections = ', '.join(
+                f'bucket.{property_name} AS {property_name}'
+                for property_name in bucket_properties
+            )
+            completeness = ' AND '.join(
+                f'bucket.{property_name} IS NOT NULL'
+                for property_name in bucket_properties
+            )
+            records, _, _ = await self.driver.execute_query(
+                f'''
+                MATCH (bucket:{label})
+                WHERE {completeness}
+                RETURN DISTINCT {projections}
+                ''',
+                routing_='r',
+            )
+            for record in records:
+                bucket = {
+                    property_name: str(record[property_name])
+                    for property_name in bucket_properties
+                }
+                bucket_id = project_agent_executor_outcome_bucket_id(
+                    self.settings.provider_id,
+                    bucket['personal_space_id'],
+                    bucket['personal_project_id'],
+                    bucket['work_kind'],
+                    bucket['agent_id'],
+                    bucket['executor_id'],
+                    bucket['model_strategy_key'],
+                    bucket_kind=bucket_kind,
+                )
+                property_match = ', '.join(
+                    f'{property_name}: ${property_name}'
+                    for property_name in bucket_properties
+                )
+                await self.driver.execute_query(
+                    f'''
+                    MATCH (bucket:{label} {{{property_match}}})
+                    WITH bucket
+                    ORDER BY coalesce(
+                      {latest_property},
+                      bucket.updated_at,
+                      bucket.created_at,
+                      datetime({{epochMillis: 0}})
+                    ) DESC, elementId(bucket) DESC
+                    WITH collect(bucket) AS buckets
+                    WITH head(buckets) AS keeper, tail(buckets) AS duplicates
+                    CALL {{
+                      WITH duplicates
+                      UNWIND duplicates AS duplicate
+                      DETACH DELETE duplicate
+                      RETURN count(*) AS removed_count
+                    }}
+                    SET keeper.id = $bucket_id,
+                        keeper.{public_id_property} = $bucket_id
+                    RETURN removed_count
+                    ''',
+                    **bucket,
+                    bucket_id=bucket_id,
+                )
+
+    async def _migrate_project_agent_control_plane(self) -> None:
+        """Preserve legacy project-bound records while adding space identities.
+
+        The migration does not merge Agents by name or rewrite any existing
+        knowledge namespace. It only creates explicit assignment history and
+        the one system coordinator required by the lightweight control plane.
+        """
+        await self.driver.execute_query(
+            '''
+            MATCH (space:FuliSpace {kind: 'personal'})-[:CONTAINS_PROJECT]->
+                  (project:FuliPersonalProject)-[:HAS_PROJECT_AGENT]->
+                  (agent:FuliProjectAgent)
+            MERGE (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(agent)
+            SET agent.agent_id = coalesce(agent.agent_id, agent.id),
+                agent.agent_type = coalesce(agent.agent_type, 'durable'),
+                agent.memory_scope = coalesce(agent.memory_scope, 'reviewed_agent'),
+                agent.status = coalesce(agent.status, 'active')
+            WITH project, agent,
+                 agent.id + ':legacy-assignment:' + project.id AS assignment_id
+            MERGE (assignment:FuliProjectAgentAssignment {id: assignment_id})
+            ON CREATE SET assignment.assignment_id = assignment_id,
+                          assignment.responsibility =
+                            coalesce(agent.responsibility, agent.name),
+                          assignment.work_kinds =
+                            coalesce(agent.work_kinds, []),
+                          assignment.capabilities =
+                            coalesce(agent.capabilities, []),
+                          assignment.reason = 'legacy Project Agent migration',
+                          assignment.status = CASE agent.status
+                            WHEN 'active' THEN 'active' ELSE 'ended' END,
+                          assignment.revision = 0,
+                          assignment.assigned_at = agent.created_at,
+                          assignment.updated_at =
+                            coalesce(agent.updated_at, agent.created_at),
+                          assignment.legacy_assignment = true
+            MERGE (project)-[:HAS_PROJECT_AGENT_ASSIGNMENT]->(assignment)
+            MERGE (assignment)-[:ASSIGNED_AGENT]->(agent)
+            '''
+        )
+        await self.driver.execute_query(
+            '''
+            MATCH (space:FuliSpace {kind: 'personal'})
+            MERGE (policy:FuliProjectAgentRecruitmentPolicy {
+              personal_space_id: space.id
+            })
+            ON CREATE SET policy.confirmation_mode = 'automatic',
+                          policy.updated_at = datetime()
+            MERGE (space)-[:HAS_PROJECT_AGENT_RECRUITMENT_POLICY]->(policy)
+            '''
+        )
+        records, _, _ = await self.driver.execute_query(
+            "MATCH (space:FuliSpace {kind: 'personal'}) RETURN space.id AS space_id",
+            routing_='r',
+        )
+        if not records:
+            return
+        from .project_agent_models import ProjectAgentProfile
+        from .provider_values import now_utc, stable_uuid
+
+        profile = ProjectAgentProfile(
+            name='项目协调人',
+            responsibility='评估任务、应用用户配置并路由已有 Agent。',
+            agent_type='coordinator',
+            work_kinds=['task-coordination'],
+            capabilities=['任务评估', '策略应用', 'Agent 路由'],
+            initial_preferences=['质量与可验收完成优先于成本和时间'],
+            status='active',
+        )
+        updated_at = now_utc()
+        for record in records:
+            space_id = record['space_id']
+            node_id = stable_uuid(
+                self.settings.provider_id,
+                space_id,
+                'project-agent',
+                'fuli-project-coordinator',
+            )
+            await self.driver.execute_query(
+                '''
+                MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
+                MERGE (agent:FuliProjectAgent {id: $id})
+                ON CREATE SET agent.agent_id = 'fuli-project-coordinator',
+                              agent.profile_json = $profile_json,
+                              agent.name = $name,
+                              agent.responsibility = $responsibility,
+                              agent.capabilities = $capabilities,
+                              agent.work_kinds = $work_kinds,
+                              agent.agent_type = 'coordinator',
+                              agent.memory_scope = 'reviewed_agent',
+                              agent.status = 'active',
+                              agent.system_managed = true,
+                              agent.created_at = $updated_at,
+                              agent.updated_at = $updated_at
+                MERGE (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(agent)
+                ''',
+                space_id=space_id,
+                id=node_id,
+                profile_json=profile.model_dump_json(),
+                name=profile.name,
+                responsibility=profile.responsibility,
+                capabilities=profile.capabilities,
+                work_kinds=profile.work_kinds,
+                updated_at=updated_at,
+            )
 
     async def _migrate_personal_project_relation_review_defaults(self) -> None:
         await self.driver.execute_query(
