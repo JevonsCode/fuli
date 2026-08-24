@@ -13,6 +13,7 @@ import {
   getExecutorRoutingRule as getExecutorRoutingRuleWorkflow,
   getProjectAgent as getProjectAgentWorkflow,
   getProjectAgentContext as getProjectAgentContextWorkflow,
+  getProjectAgentCoordinationPolicy as getProjectAgentCoordinationPolicyWorkflow,
   getProjectAgentRecruitmentPolicy as getProjectAgentRecruitmentPolicyWorkflow,
   ignoreProjectAgentRoutingLearning as ignoreProjectAgentRoutingLearningWorkflow,
   listCurrentProjectAgents as listCurrentProjectAgentsWorkflow,
@@ -32,6 +33,7 @@ import {
   resetProjectAgentRoutingLearning as resetProjectAgentRoutingLearningWorkflow,
   submitProjectAgentTask as submitProjectAgentTaskWorkflow,
   updateExecutorRoutingRule as updateExecutorRoutingRuleWorkflow,
+  updateProjectAgentCoordinationPolicy as updateProjectAgentCoordinationPolicyWorkflow,
   updateProjectAgentRecruitmentPolicy as updateProjectAgentRecruitmentPolicyWorkflow,
   upsertExecutor as upsertExecutorWorkflow,
   upsertExecutorRoutingRule as upsertExecutorRoutingRuleWorkflow,
@@ -132,6 +134,16 @@ export class ProjectAgentControlPlaneApplication {
   async viewProjectAgentActivity(input) {
     this.#assertSpace(input.personalSpaceId);
     return viewProjectAgentActivityWorkflow(this, input);
+  }
+
+  async getProjectAgentCoordinationPolicy(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return getProjectAgentCoordinationPolicyWorkflow(this, input);
+  }
+
+  async updateProjectAgentCoordinationPolicy(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return updateProjectAgentCoordinationPolicyWorkflow(this, input);
   }
 
   async getProjectAgentRecruitmentPolicy(input) {

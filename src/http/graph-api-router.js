@@ -283,6 +283,18 @@ export async function handleGraphApiRequest({
     sendJson(response, 200, await app.recordProjectAgentTaskActivity(await readJson(request)));
     return true;
   }
+  if (url.pathname === '/api/project-agent-coordination-policy' && request.method === 'GET') {
+    sendJson(response, 200, await app.getProjectAgentCoordinationPolicy({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('personalProjectId')
+    }));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-coordination-policy' &&
+      (request.method === 'PUT' || request.method === 'PATCH')) {
+    sendJson(response, 200, await app.updateProjectAgentCoordinationPolicy(await readJson(request)));
+    return true;
+  }
   if (url.pathname === '/api/project-agent-recruitment-policy' && request.method === 'GET') {
     sendJson(response, 200, await app.getProjectAgentRecruitmentPolicy({
       personalSpaceId: url.searchParams.get('personalSpaceId')

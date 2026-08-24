@@ -4,6 +4,7 @@ import { deleteJson, getJson, patchJson, postJson } from '@/api/client'
 import SearchableSelect from '@/components/SearchableSelect.vue'
 import AgentAssignmentDialog from '@/features/project-agents/AgentAssignmentDialog.vue'
 import ExecutorRoutingDialog from '@/features/project-agents/ExecutorRoutingDialog.vue'
+import ProjectAgentAutomationPolicyPanel from '@/features/project-agents/ProjectAgentAutomationPolicyPanel.vue'
 import ProjectAgentDetailState from '@/features/project-agents/ProjectAgentDetailState.vue'
 import {
   agentValues,
@@ -930,6 +931,14 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
         <button v-for="option in statusOptions" :key="option.value" type="button" :aria-pressed="statusFilter === option.value" @click="statusFilter = option.value">{{ option.label }}</button>
       </div>
     </div>
+
+    <ProjectAgentAutomationPolicyPanel
+      v-if="projectFilter !== 'all'"
+      :key="projectFilter"
+      :personal-space-id="activeSpaceId"
+      :personal-project-id="projectFilter"
+      :project-name="projectName(projectFilter)"
+    />
 
     <div v-if="loading" class="project-agents-state">{{ t('projectAgents.loading') }}</div>
     <div v-else-if="error" class="project-agents-state is-error" role="alert"><p>{{ error }}</p><button class="quiet-button" type="button" @click="loadAgents()">{{ t('projectAgents.retry') }}</button></div>

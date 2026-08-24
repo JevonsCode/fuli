@@ -92,6 +92,10 @@ const HANDLERS = Object.freeze({
   record_project_agent_task_activity: (app, input) =>
     app.recordProjectAgentTaskActivity(input),
   view_project_agent_activity: (app, input) => app.viewProjectAgentActivity(input),
+  get_project_agent_coordination_policy: (app, input) =>
+    app.getProjectAgentCoordinationPolicy(input),
+  update_project_agent_coordination_policy: (app, input) =>
+    app.updateProjectAgentCoordinationPolicy(input),
   get_project_agent_recruitment_policy: (app, input) =>
     app.getProjectAgentRecruitmentPolicy(input),
   update_project_agent_recruitment_policy: (app, input) =>

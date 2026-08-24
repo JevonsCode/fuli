@@ -4,6 +4,7 @@ import {
   executorRoutingRuleRecord,
   projectAgentActivityRecord,
   projectAgentAssignmentRecord,
+  projectAgentCoordinationPolicyRecord,
   projectAgentRecruitmentPolicyRecord,
   projectAgentRecruitmentRecord,
   projectAgentTaskRecord,
@@ -20,6 +21,7 @@ import {
   providerProjectAgentAssignment,
   providerProjectAgentAssignmentEnd,
   providerProjectAgentAssignmentReplace,
+  providerProjectAgentCoordinationPolicy,
   providerProjectAgentRecruitmentDecision,
   providerProjectAgentTaskActivity,
   providerProjectAgentTaskOutcome,
@@ -270,6 +272,23 @@ export async function viewProjectAgentActivity(application, input) {
     toDate: input.toDate ?? null
   });
   return projectAgentActivityRecord(value);
+}
+
+export async function getProjectAgentCoordinationPolicy(application, input) {
+  return projectAgentCoordinationPolicyRecord(
+    await application.personal.getProjectAgentCoordinationPolicy(
+      input.personalSpaceId,
+      input.personalProjectId
+    )
+  );
+}
+
+export async function updateProjectAgentCoordinationPolicy(application, input) {
+  return projectAgentCoordinationPolicyRecord(
+    await application.personal.updateProjectAgentCoordinationPolicy(
+      providerProjectAgentCoordinationPolicy(input)
+    )
+  );
 }
 
 export async function getProjectAgentRecruitmentPolicy(application, input) {

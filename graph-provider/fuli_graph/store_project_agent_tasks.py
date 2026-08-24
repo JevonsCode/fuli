@@ -29,12 +29,16 @@ from .store_project_agents import SYSTEM_COORDINATOR_AGENT_ID
 from .store_project_agent_task_reads import StoreProjectAgentTaskReads
 from .store_project_agent_task_recruitment import StoreProjectAgentTaskRecruitment
 from .store_project_agent_task_staffing import StoreProjectAgentTaskStaffing
+from .store_project_agent_coordination_policy import (
+    StoreProjectAgentCoordinationPolicy,
+)
 
 
 TERMINAL_TASK_STATUSES = {'completed', 'failed', 'cancelled'}
 
 
 class StoreProjectAgentTasks(
+    StoreProjectAgentCoordinationPolicy,
     StoreProjectAgentTaskRecruitment,
     StoreProjectAgentTaskReads,
     # Keep the pre-existing base order ahead of the extracted implementation.
@@ -168,6 +172,9 @@ class StoreProjectAgentTasks(
         task_status = 'queued' if lead else 'blocked'
         if request.staffing_intent == 'unassigned':
             reason = 'explicit_unassigned'
+            routing_outcome = 'unassigned'
+            task_status = 'blocked'
+        elif reason == 'manual_agent_selection':
             routing_outcome = 'unassigned'
             task_status = 'blocked'
         elif not lead or request.staffing_intent in {'new_durable', 'temporary'}:

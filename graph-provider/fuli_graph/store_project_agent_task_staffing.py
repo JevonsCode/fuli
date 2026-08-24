@@ -1,5 +1,7 @@
 """Agent assignment selection, history continuity, and parallel staffing."""
 
+from datetime import datetime
+
 from fastapi import HTTPException
 
 from .project_agent_access import authorize_project_agent
@@ -50,6 +52,26 @@ class StoreProjectAgentTaskStaffing:
                 else 'explicit_new_agent',
                 ['user explicitly requested recruitment'],
             )
+        policy = await self.get_project_agent_coordination_policy(
+            actor,
+            request.personal_space_id,
+            request.personal_project_id,
+        )
+        if not policy.auto_reuse_previous_agent:
+            return [], rows, 'manual_agent_selection', [
+                'project policy requires an explicit @Agent selection',
+            ]
+        continuity, project_history = await self._rank_project_continuity(
+            rows,
+            request,
+        )
+        if continuity:
+            selected = continuity[0]
+            return [selected], continuity, 'project_continuity', [
+                self._project_history_match_basis(
+                    project_history.get(selected['agent_id']),
+                ),
+            ]
         normalized_work_kind = request.work_kind.casefold()
         required = {item.casefold() for item in request.required_capabilities}
         candidates, history = await self._rank_agent_candidates(rows, request)
@@ -74,6 +96,10 @@ class StoreProjectAgentTaskStaffing:
                 return [], rows, 'agent_unavailable', [
                     'matching Agent is unavailable to source client: '
                     f'{request.source_application or "other"}',
+                ]
+            if len(rows) == 1:
+                return [rows[0]], rows, 'sole_active_assignment', [
+                    'the project has one active Agent assignment',
                 ]
             return [], rows, 'no_match', ['no active assignment matched exactly']
         selected = candidates[0]
@@ -127,6 +153,107 @@ class StoreProjectAgentTaskStaffing:
             )
         )
         return [item[1] for item in scored], history
+
+    async def _rank_project_continuity(self, rows, request):
+        """Prefer the last effective project lead before task-type matching."""
+
+        if not rows:
+            return [], {}
+        history = await self._historical_project_agent_outcomes(
+            request.personal_space_id,
+            request.personal_project_id,
+            [row['agent_id'] for row in rows],
+        )
+        candidates = [
+            row
+            for row in rows
+            if self._metric_int(
+                (history.get(row['agent_id']) or {}).get('participation_count')
+            ) > 0
+        ]
+        candidates.sort(
+            key=lambda row: (
+                *self._project_history_sort_key(history.get(row['agent_id'])),
+                row['assigned_at'],
+                row['agent_id'],
+            )
+        )
+        return candidates, history
+
+    async def _historical_project_agent_outcomes(
+        self,
+        personal_space_id,
+        personal_project_id,
+        agent_ids,
+    ):
+        """Read cross-work-kind lead history for sticky project continuity."""
+
+        if not agent_ids:
+            return {}
+        runtime = getattr(self, 'runtime', None)
+        driver = getattr(runtime, 'driver', None)
+        if driver is None:
+            return {}
+        records, _, _ = await driver.execute_query(
+            '''
+            MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
+                  [:HAS_PROJECT_AGENT_TASK]->
+                  (task:FuliProjectAgentTask {
+                    personal_space_id: $personal_space_id,
+                    personal_project_id: $personal_project_id
+                  })-[participant:HAS_PARTICIPANT]->
+                  (agent:FuliProjectAgent)
+            WHERE agent.agent_id IN $agent_ids
+              AND (participant.role = 'lead'
+                   OR task.lead_agent_id = agent.agent_id)
+            OPTIONAL MATCH (task)-[:HAS_TASK_EVENT]->
+                  (event:FuliProjectAgentTaskEvent)-[:EVENT_AGENT]->(agent)
+            RETURN agent.agent_id AS agent_id,
+                   count(DISTINCT task.task_id) AS participation_count,
+                   count(DISTINCT CASE
+                     WHEN participant.status = 'completed'
+                       OR event.status = 'completed'
+                     THEN task.task_id END
+                   ) AS completed_count,
+                   count(DISTINCT CASE
+                     WHEN participant.status = 'failed'
+                       OR event.status = 'failed'
+                     THEN task.task_id END
+                   ) AS failed_count,
+                   count(DISTINCT CASE
+                     WHEN participant.status = 'cancelled'
+                       OR event.status = 'cancelled'
+                     THEN task.task_id END
+                   ) AS cancelled_count,
+                   max(task.updated_at) AS last_task_at,
+                   max(CASE
+                     WHEN participant.status = 'completed'
+                       OR event.status = 'completed'
+                     THEN coalesce(event.created_at, task.updated_at) END
+                   ) AS last_completed_at
+            ''',
+            personal_space_id=personal_space_id,
+            personal_project_id=personal_project_id,
+            agent_ids=list(agent_ids),
+            routing_='r',
+        )
+        result = {}
+        for row in records or []:
+            raw = dict(row)
+            agent_id = raw.get('agent_id')
+            if not agent_id:
+                continue
+            result[agent_id] = {
+                'participation_count': self._metric_int(
+                    raw.get('participation_count')
+                ),
+                'completed_count': self._metric_int(raw.get('completed_count')),
+                'failed_count': self._metric_int(raw.get('failed_count')),
+                'cancelled_count': self._metric_int(raw.get('cancelled_count')),
+                'last_task_at': raw.get('last_task_at'),
+                'last_completed_at': raw.get('last_completed_at'),
+            }
+        return result
 
     async def _historical_agent_outcomes(
         self,
@@ -226,6 +353,56 @@ class StoreProjectAgentTaskStaffing:
             cancelled,
             -participation,
         )
+
+    @classmethod
+    def _project_history_sort_key(cls, history):
+        history = history or {}
+        completed = cls._metric_int(history.get('completed_count'))
+        failed = cls._metric_int(history.get('failed_count'))
+        cancelled = cls._metric_int(history.get('cancelled_count'))
+        participation = cls._metric_int(history.get('participation_count'))
+        effective_time = (
+            history.get('last_completed_at')
+            if completed > 0
+            else history.get('last_task_at')
+        )
+        outcome_score = completed * 3 - failed * 2 - cancelled
+        return (
+            0 if completed > 0 else 1,
+            -cls._history_timestamp(effective_time),
+            -outcome_score,
+            -participation,
+        )
+
+    @staticmethod
+    def _history_timestamp(value):
+        if value is None:
+            return 0.0
+        if hasattr(value, 'to_native'):
+            value = value.to_native()
+        if hasattr(value, 'timestamp'):
+            try:
+                return float(value.timestamp())
+            except (TypeError, ValueError, OSError):
+                return 0.0
+        try:
+            return datetime.fromisoformat(
+                str(value).replace('Z', '+00:00')
+            ).timestamp()
+        except (TypeError, ValueError, OSError):
+            return 0.0
+
+    @classmethod
+    def _project_history_match_basis(cls, history):
+        history = history or {}
+        participation = cls._metric_int(history.get('participation_count'))
+        completed = cls._metric_int(history.get('completed_count'))
+        if completed:
+            return (
+                'last successful project lead continuity: '
+                f'{participation} prior task(s), {completed} completed'
+            )
+        return f'most recent project lead continuity: {participation} prior task(s)'
 
     @classmethod
     def _history_match_basis(cls, history, work_kind):

@@ -33,6 +33,10 @@ from .project_agent_executor_models import (
     ProjectAgentExecutorRoutingRuleUpdate,
     ProjectAgentExecutorScope,
 )
+from .project_agent_coordination_models import (
+    ProjectAgentCoordinationPolicyRecord,
+    ProjectAgentCoordinationPolicyUpdate,
+)
 from .project_agent_task_models import (
     ProjectAgentActivityResult,
     ProjectAgentRecruitmentDecision,
@@ -263,6 +267,31 @@ def register_project_agent_routes(
             from_date,
             to_date,
         )
+
+    @application.get(
+        '/v1/project-agent-coordination-policy',
+        response_model=ProjectAgentCoordinationPolicyRecord,
+    )
+    async def get_project_agent_coordination_policy(
+        actor: Actor,
+        personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
+        personal_project_id: Annotated[str, Query(min_length=1, max_length=128)],
+    ) -> ProjectAgentCoordinationPolicyRecord:
+        return await store.get_project_agent_coordination_policy(
+            actor,
+            personal_space_id,
+            personal_project_id,
+        )
+
+    @application.put(
+        '/v1/project-agent-coordination-policy',
+        response_model=ProjectAgentCoordinationPolicyRecord,
+    )
+    async def update_project_agent_coordination_policy(
+        request: ProjectAgentCoordinationPolicyUpdate,
+        actor: Actor,
+    ) -> ProjectAgentCoordinationPolicyRecord:
+        return await store.update_project_agent_coordination_policy(actor, request)
 
     @application.get(
         '/v1/project-agent-recruitment-policy',

@@ -612,6 +612,27 @@ export function projectAgentRecruitmentPolicyRecord(value = {}) {
   };
 }
 
+export function projectAgentCoordinationPolicyRecord(value = {}) {
+  return {
+    personalSpaceId: value.personal_space_id,
+    personalProjectId: value.personal_project_id,
+    askBeforeRecruitment: value.ask_before_recruitment ?? true,
+    autoReusePreviousAgent: value.auto_reuse_previous_agent ?? true,
+    updatedAt: value.updated_at ?? null
+  };
+}
+
+export function providerProjectAgentCoordinationPolicy(input) {
+  return {
+    personal_space_id: input.personalSpaceId ?? input.personal_space_id,
+    personal_project_id: input.personalProjectId ?? input.personal_project_id,
+    ask_before_recruitment:
+      input.askBeforeRecruitment ?? input.ask_before_recruitment ?? true,
+    auto_reuse_previous_agent:
+      input.autoReusePreviousAgent ?? input.auto_reuse_previous_agent ?? true
+  };
+}
+
 export function providerProjectAgentRecruitmentDecision(input) {
   return {
     personal_space_id: input.personalSpaceId ?? input.personal_space_id,

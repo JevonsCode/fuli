@@ -88,6 +88,84 @@ async def test_historical_project_work_kind_continuity_breaks_static_tie():
 
 
 @pytest.mark.asyncio
+async def test_activity_project_reuses_last_successful_agent_for_new_hotel_work():
+    store = HistorySelectionStore([
+        candidate('agent-a', ['past-hotel-work'], ['legacy planning']),
+        candidate('agent-b', ['hotel-requirement'], ['hotel planning']),
+    ], {}, project_history={
+        'agent-a': {
+            'participation_count': 2,
+            'completed_count': 2,
+            'failed_count': 0,
+            'cancelled_count': 0,
+            'last_completed_at': '2026-08-23T10:00:00Z',
+            'last_task_at': '2026-08-23T10:00:00Z',
+        },
+        'agent-b': {
+            'participation_count': 1,
+            'completed_count': 1,
+            'failed_count': 0,
+            'cancelled_count': 0,
+            'last_completed_at': '2026-08-20T10:00:00Z',
+            'last_task_at': '2026-08-20T10:00:00Z',
+        },
+    })
+
+    selected, candidates, reason, basis = await store._select_agents(
+        {'id': 'principal'},
+        {'id': 'personal-space'},
+        task_request(
+            title='活动承接酒店需求二期',
+            work_kind='hotel-requirement',
+            required_capabilities=['hotel planning'],
+        ),
+    )
+
+    assert selected[0]['agent_id'] == 'agent-a'
+    assert [item['agent_id'] for item in candidates] == ['agent-a', 'agent-b']
+    assert reason == 'project_continuity'
+    assert basis == [
+        'last successful project lead continuity: 2 prior task(s), 2 completed'
+    ]
+
+
+@pytest.mark.asyncio
+async def test_project_policy_can_require_manual_agent_selection():
+    store = SelectionStore([
+        candidate('agent-a', ['verification'], ['test execution']),
+    ], auto_reuse_previous_agent=False)
+
+    selected, candidates, reason, basis = await store._select_agents(
+        {'id': 'principal'},
+        {'id': 'personal-space'},
+        task_request(),
+    )
+
+    assert selected == []
+    assert [item['agent_id'] for item in candidates] == ['agent-a']
+    assert reason == 'manual_agent_selection'
+    assert basis == ['project policy requires an explicit @Agent selection']
+
+
+@pytest.mark.asyncio
+async def test_single_active_assignment_is_the_safe_first_use_fallback():
+    store = SelectionStore([
+        candidate('agent-a', ['design'], ['visual review']),
+    ])
+
+    selected, candidates, reason, basis = await store._select_agents(
+        {'id': 'principal'},
+        {'id': 'personal-space'},
+        task_request(),
+    )
+
+    assert selected[0]['agent_id'] == 'agent-a'
+    assert candidates == selected
+    assert reason == 'sole_active_assignment'
+    assert basis == ['the project has one active Agent assignment']
+
+
+@pytest.mark.asyncio
 async def test_explicit_lead_remains_hard_override_over_historical_candidates():
     store = HistorySelectionStore([
         candidate('agent-a', ['verification'], ['test execution']),
@@ -224,9 +302,10 @@ def test_route_result_exposes_the_selected_agent_when_supplied():
 
 
 @pytest.mark.asyncio
-async def test_no_exact_assignment_reports_auditable_no_match():
+async def test_multiple_non_matching_assignments_report_auditable_no_match():
     store = SelectionStore([
         candidate('agent-a', ['design'], ['visual review']),
+        candidate('agent-b', ['copywriting'], ['content review']),
     ])
 
     selected, candidates, reason, basis = await store._select_agents(
@@ -236,7 +315,7 @@ async def test_no_exact_assignment_reports_auditable_no_match():
     )
 
     assert selected == []
-    assert [item['agent_id'] for item in candidates] == ['agent-a']
+    assert [item['agent_id'] for item in candidates] == ['agent-a', 'agent-b']
     assert reason == 'no_match'
     assert basis == ['no active assignment matched exactly']
 
@@ -318,6 +397,25 @@ async def test_recruitment_cannot_route_a_new_agent_to_a_disallowed_client():
         )
 
     assert store.persisted is False
+
+
+@pytest.mark.asyncio
+async def test_project_policy_asks_before_recruiting_a_new_agent_by_default():
+    store = RecruitmentStore()
+
+    recruitment, recruited = await store._open_recruitment(
+        {'id': 'principal'},
+        {'id': 'personal-space'},
+        task_request(staffing_intent='new_durable', source_application='codex'),
+        'task-1',
+        'coordinator-1',
+        'explicit_new_agent',
+    )
+
+    assert recruitment.status == 'awaiting_confirmation'
+    assert recruitment.confirmation_mode == 'require_confirmation'
+    assert recruited is None
+    assert store.persisted is True
 
 
 def test_task_model_strategy_precedence_is_task_assignment_agent():
@@ -733,8 +831,9 @@ class ResolverStore(StoreProjectAgentTasks):
 
 
 class SelectionStore(StoreProjectAgentTasks):
-    def __init__(self, rows):
+    def __init__(self, rows, *, auto_reuse_previous_agent=True):
         self.rows = rows
+        self.auto_reuse_previous_agent = auto_reuse_previous_agent
         self.settings = SimpleNamespace(
             provider_id='provider',
             provider_mode='personal',
@@ -745,13 +844,33 @@ class SelectionStore(StoreProjectAgentTasks):
         assert personal_project_id == 'project-a'
         return self.rows
 
+    async def get_project_agent_coordination_policy(
+        self,
+        actor,
+        personal_space_id,
+        personal_project_id,
+    ):
+        return SimpleNamespace(
+            ask_before_recruitment=True,
+            auto_reuse_previous_agent=self.auto_reuse_previous_agent,
+        )
+
+    async def _historical_project_agent_outcomes(
+        self,
+        personal_space_id,
+        personal_project_id,
+        agent_ids,
+    ):
+        return {}
+
 
 class HistorySelectionStore(SelectionStore):
-    def __init__(self, rows, history):
+    def __init__(self, rows, history, *, project_history=None):
         super().__init__(rows)
         self.runtime = SimpleNamespace(driver=SelectionAuthorizationDriver())
         self.history = history
         self.history_context = None
+        self.project_history = project_history or {}
 
     async def _historical_agent_outcomes(
         self,
@@ -767,6 +886,14 @@ class HistorySelectionStore(SelectionStore):
             tuple(agent_ids),
         )
         return self.history
+
+    async def _historical_project_agent_outcomes(
+        self,
+        personal_space_id,
+        personal_project_id,
+        agent_ids,
+    ):
+        return self.project_history
 
 
 class SelectionAuthorizationDriver:
@@ -791,8 +918,16 @@ class RecruitmentStore(StoreProjectAgentTasks):
         self.runtime = SimpleNamespace(driver=RecruitmentDriver())
         self.persisted = False
 
-    async def get_project_agent_recruitment_policy(self, actor, personal_space_id):
-        return SimpleNamespace(confirmation_mode='automatic')
+    async def get_project_agent_coordination_policy(
+        self,
+        actor,
+        personal_space_id,
+        personal_project_id,
+    ):
+        return SimpleNamespace(
+            ask_before_recruitment=True,
+            auto_reuse_previous_agent=True,
+        )
 
     async def _persist_recruitment(self, raw):
         self.persisted = True

@@ -200,6 +200,18 @@ export class GraphitiProviderClient {
       `/v1/project-agents/${encodeURIComponent(agentId)}/activity?${query}`
     );
   }
+  getProjectAgentCoordinationPolicy(personalSpaceId, personalProjectId) {
+    const query = new URLSearchParams({
+      personal_space_id: personalSpaceId,
+      personal_project_id: personalProjectId
+    });
+    return this.#request(`/v1/project-agent-coordination-policy?${query}`);
+  }
+  updateProjectAgentCoordinationPolicy(input) {
+    return this.#request('/v1/project-agent-coordination-policy', {
+      method: 'PUT', body: input
+    });
+  }
   getProjectAgentRecruitmentPolicy(personalSpaceId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
     return this.#request(`/v1/project-agent-recruitment-policy?${query}`);

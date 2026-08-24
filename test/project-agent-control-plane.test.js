@@ -4,6 +4,7 @@ import test from 'node:test';
 import { GraphitiProviderClient } from '../src/graphiti/provider-client.js';
 import {
   executorRecord,
+  projectAgentCoordinationPolicyRecord,
   projectAgentProfileRecord,
   projectAgentTaskRecord,
   providerExecutor,
@@ -12,6 +13,7 @@ import {
   providerExecutorHealth,
   providerExecutorPreflight,
   providerExecutorRoutingRule,
+  providerProjectAgentCoordinationPolicy,
   providerProjectAgentProfile,
   providerProjectAgentTaskActivity
 } from '../src/graphiti/project-agent-mapping.js';
@@ -75,6 +77,49 @@ test('control-plane provider client uses durable task and activity routes', asyn
     personal_space_id: 'space-1',
     from: '2026-08-01',
     to: '2026-08-17'
+  });
+});
+
+test('project coordination policy stays project-local across provider seams', async () => {
+  const calls = [];
+  const client = providerClient(calls, {
+    '/v1/project-agent-coordination-policy': {
+      personal_space_id: 'space-1',
+      personal_project_id: 'activity-intake',
+      ask_before_recruitment: true,
+      auto_reuse_previous_agent: false,
+      updated_at: '2026-08-24T00:00:00Z'
+    }
+  });
+
+  const loaded = projectAgentCoordinationPolicyRecord(
+    await client.getProjectAgentCoordinationPolicy('space-1', 'activity-intake')
+  );
+  const updated = providerProjectAgentCoordinationPolicy({
+    personalSpaceId: 'space-1',
+    personalProjectId: 'activity-intake',
+    askBeforeRecruitment: false,
+    autoReusePreviousAgent: true
+  });
+  await client.updateProjectAgentCoordinationPolicy(updated);
+
+  assert.deepEqual(loaded, {
+    personalSpaceId: 'space-1',
+    personalProjectId: 'activity-intake',
+    askBeforeRecruitment: true,
+    autoReusePreviousAgent: false,
+    updatedAt: '2026-08-24T00:00:00Z'
+  });
+  assert.deepEqual(calls[0].query, {
+    personal_space_id: 'space-1',
+    personal_project_id: 'activity-intake'
+  });
+  assert.equal(calls[1].options.method, 'PUT');
+  assert.deepEqual(calls[1].body, {
+    personal_space_id: 'space-1',
+    personal_project_id: 'activity-intake',
+    ask_before_recruitment: false,
+    auto_reuse_previous_agent: true
   });
 });
 

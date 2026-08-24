@@ -18,6 +18,7 @@ def test_super_collaboration_http_contract_exposes_all_control_plane_layers():
         '/v1/project-agents': {'get', 'put'},
         '/v1/project-agent-assignments': {'get', 'post'},
         '/v1/project-agent-tasks': {'get', 'post'},
+        '/v1/project-agent-coordination-policy': {'get', 'put'},
         '/v1/project-agent-recruitments': {'get'},
         '/v1/executors': {'get', 'put'},
         '/v1/executors/authorization': {'post'},

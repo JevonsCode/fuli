@@ -445,9 +445,15 @@ class StoreProjectAgentTaskRecruitment:
         hr_agent_id = (
             dict(hr_records[0]['hr'])['agent_id'] if hr_records else None
         )
-        policy = await self.get_project_agent_recruitment_policy(
+        coordination_policy = await self.get_project_agent_coordination_policy(
             actor,
             request.personal_space_id,
+            request.personal_project_id,
+        )
+        confirmation_mode = (
+            'require_confirmation'
+            if coordination_policy.ask_before_recruitment
+            else 'automatic'
         )
         position_kind = (
             'temporary'
@@ -483,7 +489,7 @@ class StoreProjectAgentTaskRecruitment:
         )
         if not hr_agent_id:
             status = 'no_hr'
-        elif policy.confirmation_mode == 'require_confirmation':
+        elif confirmation_mode == 'require_confirmation':
             status = 'awaiting_confirmation'
         else:
             status = 'requested'
@@ -502,7 +508,7 @@ class StoreProjectAgentTaskRecruitment:
             'reason_code': reason_code,
             'reason': request.routing_reason,
             'status': status,
-            'confirmation_mode': policy.confirmation_mode,
+            'confirmation_mode': confirmation_mode,
             'proposed_agent_id': proposed_agent_id,
             'proposed_profile_json': profile.model_dump_json(),
             'occupation_emoji': profile.occupation_emoji,

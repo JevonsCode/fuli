@@ -399,6 +399,14 @@ export interface ProjectAgentRecruitmentPolicy {
   updatedAt?: string | null
 }
 
+export interface ProjectAgentCoordinationPolicy {
+  personalSpaceId: string
+  personalProjectId: string
+  askBeforeRecruitment: boolean
+  autoReusePreviousAgent: boolean
+  updatedAt?: string | null
+}
+
 export interface ProjectAgentLearningEvidence {
   learningKey?: string
   evidenceId?: string

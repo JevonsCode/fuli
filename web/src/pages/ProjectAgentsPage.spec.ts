@@ -116,8 +116,10 @@ describe('ProjectAgentsPage', () => {
     await wrapper.get('[aria-label="项目范围"]').setValue('project-b')
     expect(wrapper.findAll('.project-agent-row')).toHaveLength(1)
     expect(wrapper.get('.project-agent-row').text()).toContain('活动 Agent')
+    expect(wrapper.get('.project-agent-automation-policy').text()).toContain('设计项目')
 
     await wrapper.get('[aria-label="项目范围"]').setValue('all')
+    expect(wrapper.find('.project-agent-automation-policy').exists()).toBe(false)
     await wrapper.get('.project-agents-status-filter button:nth-child(2)').trigger('click')
     expect(wrapper.findAll('.project-agent-row')).toHaveLength(1)
     expect(wrapper.get('.project-agent-row').text()).toContain('活动 Agent')

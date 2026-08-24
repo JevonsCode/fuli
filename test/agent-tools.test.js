@@ -47,6 +47,8 @@ const NAMES = [
   'view_project_agent_task',
   'record_project_agent_task_activity',
   'view_project_agent_activity',
+  'get_project_agent_coordination_policy',
+  'update_project_agent_coordination_policy',
   'get_project_agent_recruitment_policy',
   'update_project_agent_recruitment_policy',
   'list_project_agent_recruitments',
@@ -338,6 +340,10 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       calls.push(['record-project-agent-task-activity', input]),
     viewProjectAgentActivity: async (input) =>
       calls.push(['view-project-agent-activity', input]),
+    getProjectAgentCoordinationPolicy: async (input) =>
+      calls.push(['get-project-agent-coordination-policy', input]),
+    updateProjectAgentCoordinationPolicy: async (input) =>
+      calls.push(['update-project-agent-coordination-policy', input]),
     getProjectAgentRecruitmentPolicy: async (input) =>
       calls.push(['get-project-agent-recruitment-policy', input]),
     updateProjectAgentRecruitmentPolicy: async (input) =>
@@ -414,6 +420,8 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'acquire-runtime-lease', 'refresh-runtime-lease', 'release-runtime-lease',
     'submit-project-agent-task', 'view-project-agent-task',
     'record-project-agent-task-activity', 'view-project-agent-activity',
+    'get-project-agent-coordination-policy',
+    'update-project-agent-coordination-policy',
     'get-project-agent-recruitment-policy', 'update-project-agent-recruitment-policy',
     'list-project-agent-recruitments', 'decide-project-agent-recruitment',
     'upsert-executor', 'list-executors', 'get-executor', 'delete-executor',

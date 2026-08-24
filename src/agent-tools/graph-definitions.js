@@ -781,6 +781,29 @@ export const GRAPH_TOOL_DEFINITIONS = [
     }, ['personalSpaceId', 'agentId'])
   },
   {
+    name: 'get_project_agent_coordination_policy',
+    title: 'READ · Get project Agent continuity policy',
+    description: 'Read the exact project policy for asking before recruitment and automatically reusing the previous effective Agent. Both switches default on.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      personalProjectId: id
+    }, ['personalSpaceId', 'personalProjectId'])
+  },
+  {
+    name: 'update_project_agent_coordination_policy',
+    title: 'WRITE · Set project Agent continuity policy',
+    description: 'Persist the exact project switches for asking before recruitment and automatically reusing its previous effective Agent. This changes policy only and never starts a worker.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      personalProjectId: id,
+      askBeforeRecruitment: booleanSchema(),
+      autoReusePreviousAgent: booleanSchema()
+    }, [
+      'personalSpaceId', 'personalProjectId',
+      'askBeforeRecruitment', 'autoReusePreviousAgent'
+    ])
+  },
+  {
     name: 'get_project_agent_recruitment_policy',
     title: 'READ · Get recruitment policy',
     description: 'Read the persisted recruitment confirmation mode. The default is automatic; require_confirmation creates only a pending recruitment event.',

@@ -41,6 +41,9 @@ ProjectAgentRoutingOutcome = Literal[
 ]
 ProjectAgentRoutingReason = Literal[
     'explicit_agent',
+    'project_continuity',
+    'sole_active_assignment',
+    'manual_agent_selection',
     'exact_work_kind',
     'exact_capability',
     'no_match',
