@@ -4,6 +4,7 @@ import {
 } from '../app/application-error.js';
 import { JsonBodyTooLargeError } from './response.js';
 import { ProviderRequestError } from '../graphiti/provider-client.js';
+import { EmployeeError } from '../employees/manifest.js';
 
 const BAD_REQUEST_CODES = new Set([
   ApplicationErrorCode.NOT_FOUND,
@@ -11,6 +12,9 @@ const BAD_REQUEST_CODES = new Set([
 ]);
 
 export function mapHttpError(error) {
+  if (error instanceof EmployeeError) {
+    return { status: error.status, body: { error: error.message, code: error.code } };
+  }
   if (error instanceof JsonBodyTooLargeError) {
     return { status: 413, body: { error: 'Request body too large' } };
   }

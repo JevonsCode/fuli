@@ -117,6 +117,41 @@ test('project Agent context loads only the selected Agent scope', async () => {
   assert.equal(result.scope_policy.excludes_other_project_agents, true);
 });
 
+test('project Agent context accepts an authenticated project id without a host path', async () => {
+  const calls = [];
+  const app = application(calls, {
+    '/v1/project-agents/activity-agent': projectAgentProviderRecord(),
+    '/v1/collaboration-preferences': {
+      personal_space_id: 'personal-space',
+      personal_project_id: 'fuli',
+      project_agent_id: 'activity-agent',
+      global_preferences: [],
+      project_preferences: [],
+      agent_preferences: [],
+      effective_preferences: [],
+      conflicts: []
+    },
+    '/v1/preference-conflicts': [],
+    '/v1/search': { facts: [], entities: [{ id: 'remote-agent-memory' }] }
+  });
+
+  const result = await app.getProjectAgentContext({
+    personalProjectId: 'fuli',
+    projectPath: null,
+    agentId: 'activity-agent',
+    queries: ['远程项目记忆']
+  });
+
+  assert.equal(result.status, 'ready');
+  assert.equal(result.personal_project_id, 'fuli');
+  assert.equal(result.knowledge_results[0].entities[0].id, 'remote-agent-memory');
+  assert.equal(
+    calls.some(({ path }) => path === '/v1/personal-projects'),
+    false,
+    'an authenticated remote project id must not require host filesystem discovery'
+  );
+});
+
 test('project Agent context exposes Provider-reported worker execution summaries', async () => {
   const calls = [];
   const app = application(calls, {
@@ -185,7 +220,14 @@ test('project Agent context refuses a client outside the Agent allow-list', asyn
       profile: { name: 'Fuli', sources: [], boundaries: [] }
     }],
     '/v1/project-agents/activity-agent': projectAgentProviderRecord({
-      allowedClients: ['claude_code']
+      allowedClients: ['claude_code'],
+      executionSummary: [{
+        source_application: 'claude_code',
+        source_session_id: 'private-session',
+        source_session_url: 'https://private.invalid/session',
+        tools_used: ['PrivateTool'],
+        token_usage: { source: 'executor', total_tokens: 99 }
+      }]
     })
   });
 
@@ -198,11 +240,41 @@ test('project Agent context refuses a client outside the Agent allow-list', asyn
 
   assert.equal(result.status, 'client_not_allowed');
   assert.equal(result.source_application, 'codex');
+  assert.equal('agent' in result, false);
+  assert.equal('executionSummary' in result, false);
+  assert.equal(JSON.stringify(result).includes('private-session'), false);
   assert.equal(calls.some(({ path }) => path === '/v1/search'), false);
   assert.equal(
     calls.some(({ path }) => path === '/v1/collaboration-preferences'),
     false
   );
+});
+
+test('project Agent context withholds an inactive Agent profile and execution history', async () => {
+  const calls = [];
+  const app = application(calls, {
+    '/v1/personal-projects': [{
+      project_id: 'fuli',
+      profile: { name: 'Fuli', sources: [], boundaries: [] }
+    }],
+    '/v1/project-agents/activity-agent': projectAgentProviderRecord({
+      status: 'inactive',
+      executionSummary: [{ source_session_id: 'private-inactive-session' }]
+    })
+  });
+
+  const result = await app.getProjectAgentContext({
+    projectPath: process.cwd(),
+    agentId: 'activity-agent',
+    queries: ['活动复盘格式'],
+    sourceApplication: 'codex'
+  });
+
+  assert.equal(result.status, 'agent_unavailable');
+  assert.equal('agent' in result, false);
+  assert.equal('executionSummary' in result, false);
+  assert.equal(JSON.stringify(result).includes('private-inactive-session'), false);
+  assert.equal(calls.some(({ path }) => path === '/v1/search'), false);
 });
 
 test('project Agent coordinator returns isolated contexts for the Provider-selected team', async () => {
@@ -266,6 +338,7 @@ test('project Agent coordinator returns isolated contexts for the Provider-selec
 
   assert.equal(result.status, 'ready_for_host_execution');
   assert.equal(result.host_execution_required, true);
+  assert.deepEqual(result.route.recruitments, []);
   assert.deepEqual(result.worker_plan.map((worker) => [
     worker.agent_id,
     worker.participant_role,
@@ -311,6 +384,104 @@ test('project Agent coordinator never routes work when the local project is unre
   assert.equal(calls.some(({ path }) => path === '/v1/project-agent-tasks'), false);
 });
 
+test('project Agent coordinator preserves a terminal task status on idempotent replay', async () => {
+  const calls = [];
+  const app = application(calls, {
+    '/v1/personal-projects': [{
+      project_id: 'fuli',
+      profile: { name: 'Fuli', sources: [], boundaries: [] }
+    }],
+    '/v1/project-agent-tasks': {
+      task: {
+        task_id: 'task-completed-1', personal_space_id: 'personal-space',
+        personal_project_id: 'fuli', status: 'completed', revision: 2,
+        participants: [{ agent_id: 'agent-a', role: 'lead', status: 'completed' }],
+        events: []
+      },
+      assigned_agent: null, recruitment: null, decision: 'assigned_existing'
+    },
+    '/v1/project-agents/agent-a': projectAgentProviderRecord({ agentId: 'agent-a' }),
+    '/v1/collaboration-preferences': {
+      personal_space_id: 'personal-space', personal_project_id: 'fuli',
+      global_preferences: [], project_preferences: [], agent_preferences: [],
+      effective_preferences: [], conflicts: []
+    },
+    '/v1/preference-conflicts': [],
+    '/v1/search': { facts: [], entities: [] }
+  });
+
+  const result = await app.coordinateProjectAgentTask({
+    projectPath: process.cwd(), idempotencyKey: 'coordinate-completed-1',
+    title: 'Replay completed work', objective: 'Do not restart completed work.',
+    workKind: 'implementation', routingReason: 'Idempotent replay.',
+    contextQueries: ['completed work'], sourceApplication: 'codex'
+  });
+
+  assert.equal(result.worker_plan[0].context_status, 'ready');
+  assert.equal(result.status, 'completed');
+  assert.equal(result.host_execution_required, false);
+});
+
+test('project Agent coordinator preserves a running task status without restarting it', async () => {
+  const calls = [];
+  const app = application(calls, {
+    '/v1/personal-projects': [{
+      project_id: 'fuli', profile: { name: 'Fuli', sources: [], boundaries: [] }
+    }],
+    '/v1/project-agent-tasks': {
+      task: {
+        task_id: 'task-running-1', personal_space_id: 'personal-space',
+        personal_project_id: 'fuli', status: 'running', revision: 1,
+        participants: [{ agent_id: 'agent-a', role: 'lead', status: 'running' }], events: []
+      }, assigned_agent: null, recruitment: null, decision: 'assigned_existing'
+    },
+    '/v1/project-agents/agent-a': projectAgentProviderRecord({ agentId: 'agent-a' }),
+    '/v1/collaboration-preferences': {
+      personal_space_id: 'personal-space', personal_project_id: 'fuli',
+      global_preferences: [], project_preferences: [], agent_preferences: [],
+      effective_preferences: [], conflicts: []
+    },
+    '/v1/preference-conflicts': [], '/v1/search': { facts: [], entities: [] }
+  });
+
+  const result = await app.coordinateProjectAgentTask({
+    projectPath: process.cwd(), idempotencyKey: 'coordinate-running-1',
+    title: 'Replay running work', objective: 'Do not restart running work.',
+    workKind: 'implementation', routingReason: 'Idempotent replay.',
+    contextQueries: ['running work'], sourceApplication: 'codex'
+  });
+
+  assert.equal(result.status, 'running');
+  assert.equal(result.host_execution_required, false);
+});
+
+test('project Agent coordinator reports a queued task with no participant as staffing unavailable', async () => {
+  const calls = [];
+  const app = application(calls, {
+    '/v1/personal-projects': [{
+      project_id: 'fuli', profile: { name: 'Fuli', sources: [], boundaries: [] }
+    }],
+    '/v1/project-agent-tasks': {
+      task: {
+        task_id: 'task-empty-1', personal_space_id: 'personal-space',
+        personal_project_id: 'fuli', status: 'queued', revision: 0,
+        participants: [], events: []
+      }, assigned_agent: null, recruitment: null, decision: 'assigned_existing'
+    }
+  });
+
+  const result = await app.coordinateProjectAgentTask({
+    projectPath: process.cwd(), idempotencyKey: 'coordinate-empty-1',
+    title: 'No assigned role', objective: 'Do not fabricate a worker.',
+    workKind: 'implementation', routingReason: 'Synthetic malformed route.',
+    contextQueries: ['staffing'], sourceApplication: 'codex'
+  });
+
+  assert.equal(result.status, 'staffing_unavailable');
+  assert.equal(result.host_execution_required, false);
+  assert.deepEqual(result.worker_plan, []);
+});
+
 function application(calls, routes) {
   return new FederatedGraphApplication(CONFIG, {
     fetchImpl: providerFetch(calls, routes)
@@ -330,7 +501,8 @@ function projectAgentInputProfile() {
 function projectAgentProviderRecord({
   agentId = 'activity-agent',
   allowedClients = ['codex', 'claude_code', 'cursor', 'kiro', 'other'],
-  executionSummary = null
+  executionSummary = null,
+  status = 'active'
 } = {}) {
   return {
     agent_id: agentId,
@@ -342,7 +514,7 @@ function projectAgentProviderRecord({
       capabilities: ['活动策划'],
       initial_preferences: ['先给结论'],
       allowed_clients: allowedClients,
-      status: 'active'
+      status
     },
     ...(executionSummary ? { execution_summary: executionSummary } : {}),
     created_at: '2026-08-17T00:00:00Z',

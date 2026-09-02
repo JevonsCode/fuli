@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import { updateDocumentTitle } from './meta'
+import { installNavigationRecovery } from './navigation-recovery'
 
 export function legacyKnowledgeHashPath(hash: string) {
   const match = hash.match(
@@ -92,6 +93,12 @@ export const router = createRouter({
       meta: { eyebrow: '', title: 'routes.projectAgents.title' },
     },
     {
+      path: '/employees/:templateId',
+      name: 'employee-workbench',
+      component: () => import('@/pages/EmployeeWorkbenchPage.vue'),
+      meta: { eyebrow: '', title: 'routes.employeeWorkbench.title', dedicatedWorkspace: true },
+    },
+    {
       path: '/public-projects',
       name: 'public-projects',
       component: () => import('@/pages/PublicProjectsPage.vue'),
@@ -173,6 +180,8 @@ export const router = createRouter({
   ],
   scrollBehavior: () => ({ top: 0 }),
 })
+
+installNavigationRecovery(router)
 
 router.beforeEach((to) => {
   if (to.path !== '/' || typeof window === 'undefined') return true

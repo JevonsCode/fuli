@@ -14,13 +14,15 @@ export function createRuntimeLeaseClient({
   clearHeartbeat = clearInterval
 }) {
   const leases = new Map();
+  const acquisitions = new Set();
+  let closed = false;
 
-  async function withGraphLease(owner, operation) {
-    return withLease({ kind: 'graph', owner }, operation);
+  async function withGraphLease(owner, operation, requestContext = null) {
+    return withLease({ kind: 'graph', owner }, operation, requestContext);
   }
 
-  async function withExecutorLease(executorId, owner, operation) {
-    return withLease({ kind: 'executor', executorId, owner }, operation);
+  async function withExecutorLease(executorId, owner, operation, requestContext = null) {
+    return withLease({ kind: 'executor', executorId, owner }, operation, requestContext);
   }
 
   async function acquireGraphLease(owner) {
@@ -31,7 +33,19 @@ export function createRuntimeLeaseClient({
     return acquireLease({ kind: 'executor', executorId, owner });
   }
 
-  async function acquireLease(input) {
+  async function acquireLease(input, signal = null) {
+    assertOpen();
+    signal?.throwIfAborted();
+    const acquisition = acquireOpenLease(input, signal);
+    acquisitions.add(acquisition);
+    try {
+      return await acquisition;
+    } finally {
+      acquisitions.delete(acquisition);
+    }
+  }
+
+  async function acquireOpenLease(input, signal = null) {
     const settings = readSettings(paths.adaptiveRuntimeSettingsPath);
     if (!settings.enabled) return disabledLease();
 
@@ -40,10 +54,24 @@ export function createRuntimeLeaseClient({
       method: 'POST',
       body: input,
       timeoutMs: 180_000,
-      fetchImpl
+      fetchImpl,
+      signal
     });
     const handle = publicLease(lease);
-    if (!handle.enabled) return handle;
+    if (!handle.enabled) {
+      const explicitlyDisabled = lease?.enabled === false && lease.leaseId === null;
+      if (!explicitlyDisabled) {
+        // Preserve a usable ID before rejecting a malformed success response.
+        // Without one, remote TTL is the only available cleanup mechanism.
+        if (typeof lease?.leaseId === 'string' && lease.leaseId.trim()) {
+          await releaseRemote({ consoleUrl, handle: { leaseId: lease.leaseId } }).catch(() => {});
+        }
+        throw new Error('Invalid runtime lease response');
+      }
+      assertOpen();
+      signal?.throwIfAborted();
+      return handle;
+    }
 
     const entry = {
       handle,
@@ -55,6 +83,8 @@ export function createRuntimeLeaseClient({
     };
     leases.set(handle.leaseId, entry);
     try {
+      assertOpen();
+      signal?.throwIfAborted();
       startHeartbeat(entry, settings);
       return { ...entry.handle };
     } catch (error) {
@@ -89,10 +119,13 @@ export function createRuntimeLeaseClient({
     }
   }
 
-  async function withLease(input, operation) {
+  async function withLease(input, operation, requestContext = null) {
     if (typeof operation !== 'function') throw new TypeError('Runtime operation is required');
-    const handle = await acquireLease(input);
+    const signal = agentRequestSignal(requestContext);
+    signal?.throwIfAborted();
+    const handle = await acquireLease(input, signal);
     try {
+      signal?.throwIfAborted();
       return await operation();
     } finally {
       await releaseLease(handle);
@@ -100,8 +133,16 @@ export function createRuntimeLeaseClient({
   }
 
   async function close() {
+    closed = true;
     const handles = [...leases.values()].map(({ handle }) => ({ ...handle }));
-    await Promise.allSettled(handles.map((handle) => releaseLease(handle)));
+    await Promise.allSettled([
+      ...acquisitions,
+      ...handles.map((handle) => releaseLease(handle))
+    ]);
+  }
+
+  function assertOpen() {
+    if (closed) throw new Error('Runtime lease client is closed');
   }
 
   function startHeartbeat(entry, settings) {
@@ -184,7 +225,8 @@ export function createRuntimeLeaseClient({
         }
         return { ...entry.handle, refreshed };
       } catch (error) {
-        stopHeartbeat(entry);
+        // A transient request failure must not abandon a still-running operation.
+        // The next heartbeat retries; release/close or refreshed:false stops it.
         throw error;
       }
     })();
@@ -269,7 +311,7 @@ function publicLease(value, fallback = null) {
     ...(fallback && typeof fallback === 'object' ? fallback : {}),
     ...(value && typeof value === 'object' ? value : {})
   };
-  if (source.enabled !== true || typeof source.leaseId !== 'string' || !source.leaseId) {
+  if (source.enabled !== true || typeof source.leaseId !== 'string' || !source.leaseId.trim()) {
     return disabledLease();
   }
   const handle = {
@@ -311,13 +353,15 @@ async function requestJson(url, {
   method,
   body,
   timeoutMs,
-  fetchImpl
+  fetchImpl,
+  signal = null
 }) {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const response = await fetchImpl(url, {
     method,
     headers: body === undefined ? undefined : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs)
+    signal: signal ? AbortSignal.any([timeoutSignal, signal]) : timeoutSignal
   });
   if (!response.ok) {
     let detail = null;
@@ -332,4 +376,12 @@ async function requestJson(url, {
     throw new Error(detail ?? `Adaptive runtime request failed (${response.status})`);
   }
   return response.json();
+}
+
+function agentRequestSignal(value) {
+  const signal = value?.signal;
+  return signal && typeof signal.addEventListener === 'function' &&
+    typeof signal.throwIfAborted === 'function'
+    ? signal
+    : null;
 }

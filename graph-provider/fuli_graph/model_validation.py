@@ -1,6 +1,7 @@
 import json
 import re
 from typing import Any
+from urllib.parse import urlsplit
 
 
 _CREDENTIAL_PATTERNS = (
@@ -160,6 +161,37 @@ def normalize_provider_url(value: str) -> str:
     if not value.startswith(('https://', 'http://127.0.0.1:', 'http://localhost:')):
         raise ValueError('provider_url must use HTTPS or a loopback HTTP address')
     return value.rstrip('/')
+
+
+def normalize_source_session_url(value: str | None) -> str | None:
+    """Allow auditable session links without accepting credential-bearing URLs."""
+
+    if value is None:
+        return None
+    normalized = value.strip()
+    parsed = urlsplit(normalized)
+    is_codex_thread = (
+        parsed.scheme == 'codex'
+        and parsed.netloc == 'threads'
+        and bool(parsed.path.strip('/'))
+    )
+    is_https = parsed.scheme == 'https' and bool(parsed.netloc)
+    is_loopback_http = (
+        parsed.scheme == 'http'
+        and parsed.hostname in {'127.0.0.1', 'localhost', '::1'}
+    )
+    if (
+        not normalized
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or not (is_codex_thread or is_https or is_loopback_http)
+    ):
+        raise ValueError(
+            'source session URL must be a Codex thread, HTTPS, or loopback URL'
+        )
+    return normalized
 
 
 def complete_epistemic_state(

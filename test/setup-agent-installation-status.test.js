@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
-import { replaceFuliTable } from '../src/setup/codex-config.js';
+import { connectCodex, replaceFuliTable } from '../src/setup/codex-config.js';
 import { inspectAgentInstallations } from '../src/setup/agent-installation-status.js';
 
 const CONTEXT = Object.freeze({
@@ -110,7 +118,11 @@ test('a current JSON MCP registration and both current Skills count as connected
     skillCurrent: () => true
   });
 
-  assert.equal(inspected.integrationStatus, 'connected');
+  assert.equal(
+    inspected.integrationStatus,
+    'connected',
+    JSON.stringify(inspected.integrationDetails)
+  );
 });
 
 test('Claude Code requires always-loaded Fuli plus task lifecycle hooks', () => {
@@ -134,19 +146,35 @@ test('Claude Code requires always-loaded Fuli plus task lifecycle hooks', () => 
       }
     }],
     [claude.settingsPath, {
+      permissions: {
+        allow: [
+          'mcp__fuli__get_collaboration_preferences',
+          'mcp__fuli__checkpoint_task_knowledge'
+        ]
+      },
       hooks: {
         UserPromptSubmit: [{
           hooks: [{
             type: 'mcp_tool',
             server: 'fuli',
-            tool: 'begin_task_context'
+            tool: 'begin_task_context',
+            input: {
+              sessionId: '${session_id}',
+              projectPath: '${cwd}',
+              taskPrompt: '${prompt}'
+            },
+            timeout: 30,
+            statusMessage: 'Loading Fuli task context'
           }]
         }],
         Stop: [{
           hooks: [{
             type: 'mcp_tool',
             server: 'fuli',
-            tool: 'verify_task_checkpoint'
+            tool: 'verify_task_checkpoint',
+            input: { sessionId: '${session_id}' },
+            timeout: 30,
+            statusMessage: 'Checking Fuli task checkpoint'
           }]
         }]
       }
@@ -159,6 +187,17 @@ test('Claude Code requires always-loaded Fuli plus task lifecycle hooks', () => 
   });
   assert.equal(current.integrationStatus, 'connected');
   assert.equal(current.integrationDetails.lifecycleHooks, 'current');
+
+  const incomplete = structuredClone(configs.get(claude.settingsPath));
+  delete incomplete.hooks.UserPromptSubmit[0].hooks[0].input;
+  configs.set(claude.settingsPath, incomplete);
+  const [missingInput] = inspectAgentInstallations([claude], CONTEXT, {
+    readJson: (path) => configs.get(path) ?? {},
+    fileExists: () => true,
+    skillCurrent: () => true
+  });
+  assert.equal(missingInput.integrationStatus, 'update_available');
+  assert.equal(missingInput.integrationDetails.lifecycleHooks, 'outdated');
 
   configs.set(claude.settingsPath, {});
   const [outdated] = inspectAgentInstallations([claude], CONTEXT, {
@@ -192,4 +231,91 @@ test('Codex requires a current global bootstrap in addition to MCP and Skills', 
 
   assert.equal(inspected.integrationStatus, 'update_available');
   assert.equal(inspected.integrationDetails.bootstrap, 'outdated');
+});
+
+test('Codex accepts current lifecycle hooks consolidated in config.toml', () => {
+  const codex = {
+    ...AGENTS[0],
+    hooksPath: 'C:/User/.codex/hooks.json'
+  };
+  let currentConfig = [
+    replaceFuliTable('', {
+      command: CONTEXT.nodePath,
+      args: [
+        CONTEXT.mcpServerPath,
+        '--runtime-config',
+        CONTEXT.runtimeConfigPath,
+        '--source-application',
+        'codex'
+      ]
+    }).trimEnd(),
+    '',
+    '[[hooks.Stop]]',
+    '',
+    '[[hooks.Stop.hooks]]',
+    'type = "command"',
+    'command = "notify-existing"',
+    ''
+  ].join('\n');
+
+  connectCodex(codex, CONTEXT, {
+    readConfig: () => currentConfig,
+    writeConfig: (_path, value) => { currentConfig = value; },
+    readHooks: () => ({}),
+    writeHooks: () => {},
+    installBootstrap: () => ({ changed: false })
+  });
+
+  const [inspected] = inspectAgentInstallations([codex], CONTEXT, {
+    readText: () => currentConfig,
+    readJson: () => ({}),
+    fileExists: () => true,
+    skillCurrent: () => true,
+    bootstrapCurrent: () => true
+  });
+
+  assert.equal(
+    inspected.integrationStatus,
+    'connected',
+    JSON.stringify(inspected.integrationDetails)
+  );
+  assert.equal(inspected.integrationDetails.lifecycleHooks, 'current');
+});
+
+test('malformed installed configs degrade to outdated instead of aborting setup inspection', () => {
+  const root = mkdtempSync(join(tmpdir(), 'fuli-installation-status-'));
+  const claude = {
+    ...AGENTS[1],
+    configPath: join(root, '.claude.json'),
+    settingsPath: join(root, '.claude', 'settings.json')
+  };
+  const cursor = {
+    ...AGENTS[2],
+    configPath: join(root, '.cursor', 'mcp.json'),
+    hooksPath: join(root, '.cursor', 'hooks.json')
+  };
+  mkdirSync(join(root, '.claude'), { recursive: true });
+  mkdirSync(join(root, '.cursor'), { recursive: true });
+  writeFileSync(claude.configPath, '{', 'utf8');
+  writeFileSync(claude.settingsPath, '{', 'utf8');
+  writeFileSync(cursor.configPath, '{', 'utf8');
+  writeFileSync(cursor.hooksPath, '{', 'utf8');
+
+  try {
+    const inspected = inspectAgentInstallations([claude, cursor], CONTEXT, {
+      fileExists: () => true,
+      skillCurrent: () => true
+    });
+
+    assert.deepEqual(
+      inspected.map(({ integrationStatus }) => integrationStatus),
+      ['update_available', 'update_available']
+    );
+    assert.deepEqual(
+      inspected.map(({ integrationDetails }) => integrationDetails.lifecycleHooks),
+      ['outdated', 'outdated']
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

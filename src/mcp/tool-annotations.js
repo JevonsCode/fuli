@@ -1,4 +1,6 @@
 const READ_TOOLS = new Set([
+  'list_employee_templates',
+  'list_employee_tools',
   'verify_task_checkpoint',
   'search_current_project_knowledge',
   'discover_common_knowledge_candidates',
@@ -11,6 +13,7 @@ const READ_TOOLS = new Set([
   'get_project_agent',
   'list_project_agent_assignments',
   'get_project_agent_context',
+  'get_project_agent_memory',
   'view_project_agent_task',
   'view_project_agent_activity',
   'get_project_agent_coordination_policy',
@@ -33,8 +36,11 @@ const READ_TOOLS = new Set([
 ]);
 
 const WRITE_TOOLS = new Set([
+  'recruit_employee',
+  'call_employee_tool',
   'begin_task_context',
   'checkpoint_task_knowledge',
+  'checkpoint_project_agent_memory',
   'get_collaboration_preferences',
   'get_user_taste_skill',
   'resolve_deferred_preference_conflict',
@@ -93,6 +99,7 @@ const WRITE_TOOLS = new Set([
 ]);
 
 const DESTRUCTIVE_TOOLS = new Set([
+  'recruit_employee',
   'resolve_deferred_preference_conflict',
   'apply_common_knowledge_promotion',
   'review_project_proposal',
@@ -109,7 +116,7 @@ export function annotationsFor(name) {
   return {
     readOnlyHint: readOnly,
     destructiveHint: DESTRUCTIVE_TOOLS.has(name),
-    idempotentHint: readOnly || name === 'upsert_personal_project' ||
+    idempotentHint: readOnly || name === 'recruit_employee' || name === 'upsert_personal_project' ||
       name === 'upsert_project_agent' ||
       name === 'delete_project_agent' ||
       name === 'cleanup_test_project_agents' ||
@@ -131,7 +138,8 @@ export function annotationsFor(name) {
       name === 'record_knowledge_usage' || name === 'record_decision_trace' ||
       name === 'record_knowledge_feedback' ||
       name === 'record_workflow_transition_observation' ||
-      name === 'checkpoint_task_knowledge',
+      name === 'checkpoint_task_knowledge' ||
+      name === 'checkpoint_project_agent_memory',
     openWorldHint: name === 'capture_session_knowledge' ||
       name === 'coordinate_project_agent_task' ||
       name === 'submit_project_agent_task' ||

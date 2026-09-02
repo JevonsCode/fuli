@@ -3,6 +3,13 @@ import { existsSync, readFileSync } from 'node:fs';
 import { replaceFuliTable } from './codex-config.js';
 import { isCodexBootstrapCurrent } from './codex-bootstrap.js';
 import { hasCurrentClaudeCodeHooks } from './claude-code-config.js';
+import {
+  hasCodexTomlHookDefinitions,
+  hasCurrentCodexLifecycleHooks,
+  hasCurrentCodexTomlLifecycleHooks,
+  withCodexTomlLifecycleHooks
+} from '../agents/codex/lifecycle-hooks.js';
+import { hasCurrentCursorLifecycleHooks } from '../agents/cursor/lifecycle-hooks.js';
 import { isSessionSkillCurrent } from './session-skill.js';
 import { readJsonFile } from '../storage/json-file.js';
 
@@ -30,7 +37,19 @@ export function inspectAgentInstallations(agents, context, {
       { fileExists, readText }
     );
     const claudeLifecycleCurrent = agent.id !== 'claude-code' ||
-      hasCurrentClaudeCodeHooks(readJson(agent.settingsPath));
+      hasCurrentClaudeCodeHooks(readJson(agent.settingsPath), {
+        hookTimeoutSec: context.hookTimeoutSec ?? 30
+      });
+    const codexConfig = agent.id === 'codex' && agent.hooksPath
+      ? readText(agent.configPath)
+      : '';
+    const lifecycleCurrent = agent.id === 'codex' && agent.hooksPath
+      ? hasCodexTomlHookDefinitions(codexConfig)
+        ? hasCurrentCodexTomlLifecycleHooks(codexConfig, { context })
+        : hasCurrentCodexLifecycleHooks(readJson(agent.hooksPath), { context })
+      : agent.id === 'cursor' && agent.hooksPath
+        ? hasCurrentCursorLifecycleHooks(readJson(agent.hooksPath), context)
+        : claudeLifecycleCurrent;
 
     let integrationStatus = 'not_connected';
     if (
@@ -38,6 +57,7 @@ export function inspectAgentInstallations(agents, context, {
       && skillsCurrent
       && codexBootstrapCurrent
       && claudeLifecycleCurrent
+      && lifecycleCurrent
     ) {
       integrationStatus = 'connected';
     }
@@ -52,8 +72,8 @@ export function inspectAgentInstallations(agents, context, {
         ...(agent.id === 'codex'
           ? { bootstrap: codexBootstrapCurrent ? 'current' : 'outdated' }
           : {}),
-        ...(agent.id === 'claude-code'
-          ? { lifecycleHooks: claudeLifecycleCurrent ? 'current' : 'outdated' }
+        ...(agent.id === 'claude-code' || agent.hooksPath
+          ? { lifecycleHooks: lifecycleCurrent ? 'current' : 'outdated' }
           : {})
       }
     };
@@ -75,9 +95,13 @@ function inspectRegistration(agent, context, readers) {
     if (agent.id === 'codex') {
       const current = readers.readText(agent.configPath);
       const present = /^\s*\[mcp_servers\.(?:fuli|"fuli"|'fuli')]/m.test(current);
+      const expectedConfig = replaceFuliTable(current, expected);
+      const normalizedExpected = hasCodexTomlHookDefinitions(current)
+        ? withCodexTomlLifecycleHooks(expectedConfig, { context })
+        : expectedConfig;
       return {
         present,
-        current: present && normalizeText(replaceFuliTable(current, expected)) ===
+        current: present && normalizeText(normalizedExpected) ===
           normalizeText(current)
       };
     }
@@ -108,9 +132,17 @@ function normalizeText(value) {
 }
 
 function defaultReadText(path) {
-  return existsSync(path) ? readFileSync(path, 'utf8') : '';
+  try {
+    return existsSync(path) ? readFileSync(path, 'utf8') : '';
+  } catch {
+    return '';
+  }
 }
 
 function defaultReadJson(path) {
-  return readJsonFile(path, {});
+  try {
+    return readJsonFile(path, {});
+  } catch {
+    return {};
+  }
 }

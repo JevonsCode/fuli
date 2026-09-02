@@ -54,10 +54,13 @@ export function rejectRequestOutsidePolicy({
 function hasLanAccess(authorization, accessToken) {
   if (typeof accessToken !== 'string' || !accessToken) return false;
   const expected = `Basic ${Buffer.from(`fuli:${accessToken}`).toString('base64')}`;
-  if (typeof authorization !== 'string' || authorization.length !== expected.length) {
+  if (typeof authorization !== 'string') {
     return false;
   }
-  return timingSafeEqual(Buffer.from(authorization), Buffer.from(expected));
+  const providedBytes = Buffer.from(authorization);
+  const expectedBytes = Buffer.from(expected);
+  return providedBytes.length === expectedBytes.length &&
+    timingSafeEqual(providedBytes, expectedBytes);
 }
 
 function isLoopbackAddress(address) {
@@ -67,7 +70,7 @@ function isLoopbackAddress(address) {
 function requiresJson(request) {
   if (!['PATCH', 'POST', 'PUT'].includes(request.method)) return false;
   const pathname = new URL(request.url, 'http://127.0.0.1').pathname;
-  return pathname.startsWith('/api/');
+  return pathname.startsWith('/api/') || pathname.startsWith('/employee-workspaces/');
 }
 
 function isJson(contentType) {

@@ -64,6 +64,27 @@ describe('SearchableSelect', () => {
     wrapper.unmount()
   })
 
+  it.each(['Enter', ' '])('confirms a focused option with %j and returns focus to the trigger', async (key) => {
+    const wrapper = mount(SearchableSelect, {
+      attachTo: document.body,
+      props: { modelValue: 'project-a', label: '个人项目', options: [
+        { value: 'project-a', label: '项目 Alpha' },
+        { value: 'project-b', label: '项目 Beta' },
+      ] },
+    })
+    try {
+      const trigger = wrapper.get('[role="combobox"]')
+      await trigger.trigger('keydown', { key: 'ArrowDown' })
+      const option = wrapper.findAll('[role="option"]')[1]
+      ;(option.element as HTMLButtonElement).focus()
+      await option.trigger('keydown', { key })
+      await nextTick()
+      expect(wrapper.emitted('update:modelValue')).toEqual([['project-b']])
+      expect(trigger.attributes('aria-expanded')).toBe('false')
+      expect(document.activeElement).toBe(trigger.element)
+    } finally { wrapper.unmount() }
+  })
+
   it('keeps the panel open when focus moves between controls inside the component', async () => {
     const wrapper = mount(SearchableSelect, {
       attachTo: document.body,

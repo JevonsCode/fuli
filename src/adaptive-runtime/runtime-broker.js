@@ -9,6 +9,8 @@ import {
   writeAdaptiveRuntimeState
 } from './state.js';
 
+const IDLE_FAILURE_RETRY_MS = 30_000;
+
 export function createAdaptiveRuntimeBroker({
   paths,
   settings,
@@ -33,12 +35,14 @@ export function createAdaptiveRuntimeBroker({
   let databaseTimer = null;
   let transition = Promise.resolve();
   let closed = false;
+  let closePromise = null;
+  let idleRetryAt = 0;
 
   scheduleIdle();
 
   async function acquire(input = {}) {
     if (!configured.enabled) return disabledLease();
-    if (closed) throw new Error('Adaptive runtime coordinator is closed');
+    assertOpen();
     const kind = input.kind ?? 'graph';
     if (!['graph', 'executor'].includes(kind)) {
       throw new TypeError('Runtime lease kind must be graph or executor');
@@ -56,18 +60,22 @@ export function createAdaptiveRuntimeBroker({
     };
     leases.set(leaseId, lease);
     clearIdleTimers();
-    armExpiry(lease);
     try {
       await exclusive(async () => {
+        assertOpen();
         await ensureAwake();
         if (executorId) await executorPool.acquire(executorId, leaseId);
       });
+      assertOpen();
+      idleRetryAt = 0;
+      // The caller can only heartbeat after startup returns its lease handle.
+      armExpiry(lease);
       return publicLease(lease);
     } catch (error) {
       leases.delete(leaseId);
       if (lease.timer) clearTimer(lease.timer);
       if (executorId) executorPool.release(executorId, leaseId);
-      touch();
+      touch(errorMessage(error));
       scheduleIdle();
       throw error;
     }
@@ -126,14 +134,19 @@ export function createAdaptiveRuntimeBroker({
   }
 
   function close() {
-    if (closed) return;
+    if (closed) return closePromise;
     closed = true;
     clearIdleTimers();
     for (const lease of leases.values()) {
       if (lease.timer) clearTimer(lease.timer);
     }
     leases.clear();
-    executorPool.close();
+    closePromise = executorPool.close();
+    return closePromise;
+  }
+
+  function assertOpen() {
+    if (closed) throw new Error('Adaptive runtime coordinator is closed');
   }
 
   async function ensureAwake() {
@@ -175,9 +188,11 @@ export function createAdaptiveRuntimeBroker({
         await operation();
       }).catch((error) => {
         persist('degraded', errorMessage(error));
+        // A missed idle deadline must not become a zero-delay failure loop.
+        idleRetryAt = now() + IDLE_FAILURE_RETRY_MS;
         scheduleIdle();
       });
-    }, Math.max(0, timestamp - now()));
+    }, Math.max(0, timestamp - now(), idleRetryAt - now()));
     timer?.unref?.();
     return timer;
   }
@@ -241,8 +256,8 @@ export function createAdaptiveRuntimeBroker({
     return initial;
   }
 
-  function touch() {
-    state = persistValue({ ...state, lastActivityAt: isoNow(), lastError: null });
+  function touch(lastError = null) {
+    state = persistValue({ ...state, lastActivityAt: isoNow(), lastError });
   }
 
   function persist(stage, lastError = null) {
@@ -260,7 +275,7 @@ export function createAdaptiveRuntimeBroker({
 
   function nextSleepAt(lastActivityMs, idleSeconds, stages) {
     if (!configured.enabled || leases.size > 0 || !stages.includes(state.stage)) return null;
-    return new Date(lastActivityMs + idleSeconds * 1000).toISOString();
+    return new Date(Math.max(lastActivityMs + idleSeconds * 1000, idleRetryAt)).toISOString();
   }
 
   function clearIdleTimers() {

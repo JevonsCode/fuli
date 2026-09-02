@@ -14,8 +14,26 @@ const idempotencyKey = { ...boundedString(256), minLength: 8 };
 const dateTime = { ...boundedString(64), format: 'date-time' };
 const sourceApplication = {
   type: ['string', 'null'],
-  enum: ['codex', 'claude_code', 'cursor', 'kiro', 'other', null]
+  enum: ['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other', null]
 };
+const nullableTokenCount = {
+  ...integerSchema({ minimum: 0 }),
+  type: ['integer', 'null']
+};
+export const projectAgentTokenUsage = objectSchema({
+  source: enumSchema(['executor', 'host', 'dingdong']),
+  totalTokens: integerSchema({ minimum: 0 }),
+  inputTokens: nullableTokenCount,
+  outputTokens: nullableTokenCount,
+  cachedInputTokens: nullableTokenCount,
+  cacheWriteInputTokens: nullableTokenCount,
+  reasoningOutputTokens: nullableTokenCount
+}, ['source', 'totalTokens']);
+export const projectAgentWorkerRuntime = objectSchema({
+  application: enumSchema(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other']),
+  sessionId: { ...nullableStringSchema(), minLength: 1, maxLength: 256 },
+  sessionUrl: { ...nullableStringSchema(), maxLength: 2048 }
+}, ['application']);
 
 const projectAgentStatus = enumSchema(['active', 'inactive', 'archived']);
 export const nullableProjectAgentStatus = {
@@ -43,8 +61,8 @@ export const projectAgentProfile = objectSchema({
   defaultModelStrategy: projectAgentModelStrategy,
   executorPolicy: projectAgentExecutorPolicy,
   allowedClients: arraySchema(
-    enumSchema(['codex', 'claude_code', 'cursor', 'kiro', 'other']),
-    { maxItems: 5 }
+    enumSchema(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other']),
+    { maxItems: 6 }
   ),
   testSource: nullableStringSchema(),
   cleanupEligible: booleanSchema(),
@@ -116,6 +134,7 @@ export const projectAgentTaskSubmitInput = objectSchema({
   objective: boundedString(4096),
   workKind: boundedString(128),
   requiredCapabilities: arraySchema(boundedString(512), { maxItems: 16 }),
+  executorCapabilityHints: arraySchema(boundedString(512), { maxItems: 16 }),
   duration: projectAgentTaskDuration,
   staffingIntent: projectAgentStaffingIntent,
   leadAgentId: nullableStringSchema(),
@@ -140,6 +159,7 @@ export const projectAgentTaskCoordinateInput = objectSchema({
   objective: boundedString(4096),
   workKind: boundedString(128),
   requiredCapabilities: arraySchema(boundedString(512), { maxItems: 16 }),
+  executorCapabilityHints: arraySchema(boundedString(512), { maxItems: 16 }),
   duration: projectAgentTaskDuration,
   staffingIntent: projectAgentStaffingIntent,
   leadAgentId: nullableStringSchema(),
@@ -170,6 +190,11 @@ export const projectAgentTaskActivityInput = objectSchema({
   actorKind: enumSchema(['agent', 'human']),
   sourceApplication,
   sourceSessionId: nullableStringSchema(),
+  sourceSessionUrl: { ...nullableStringSchema(), maxLength: 2048 },
+  toolsUsed: {
+    ...arraySchema(boundedString(512), { maxItems: 32 }),
+    type: ['array', 'null']
+  },
   actualExecutor: nullableStringSchema(),
   actualModelProvider: nullableStringSchema(),
   actualModel: nullableStringSchema(),
@@ -183,7 +208,13 @@ export const projectAgentTaskActivityInput = objectSchema({
   workerId: { ...nullableStringSchema(), minLength: 1, maxLength: 128 },
   workerLabel: { ...nullableStringSchema(), minLength: 1, maxLength: 160 },
   workerOccupationEmoji: { ...nullableStringSchema(), minLength: 1, maxLength: 32 },
-  workerStatus: { ...projectAgentTaskStatus, type: ['string', 'null'] }
+  workerStatus: { ...projectAgentTaskStatus, type: ['string', 'null'] },
+  tokenUsage: { ...projectAgentTokenUsage, type: ['object', 'null'] },
+  workerRuntime: {
+    ...projectAgentWorkerRuntime,
+    type: ['object', 'null'],
+    description: 'Observed worker application and session, separate from the reporting host sourceApplication/sourceSessionId. Requires workerId and a participating Agent; never infer a session URL or actual model. Token usage is the latest cumulative snapshot for this worker session, not a sum across retries.'
+  }
 }, [
   'personalSpaceId', 'personalProjectId', 'taskId', 'idempotencyKey', 'status', 'summary'
 ]);

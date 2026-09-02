@@ -1,7 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema
+} from '@modelcontextprotocol/sdk/types.js';
 
 import { callAgentTool, listAgentTools } from '../agent-tools.js';
+import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { MCP_INSTRUCTIONS } from './instructions.js';
 import { createProjectActionPreviewTokens } from './project-action-preview-tokens.js';
@@ -24,8 +28,13 @@ import {
 } from './session-id.js';
 
 const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
-  begin_task_context: 16 * 1024,
-  get_collaboration_preferences: 16 * 1024,
+  list_employee_templates: 32 * 1024,
+  recruit_employee: 64 * 1024,
+  list_employee_tools: 64 * 1024,
+  call_employee_tool: 64 * 1024,
+  begin_task_context: 64 * 1024,
+  checkpoint_task_knowledge: 16 * 1024,
+  get_collaboration_preferences: 64 * 1024,
   get_user_taste_skill: 32 * 1024,
   search_knowledge_graph: 32 * 1024,
   search_connected_knowledge: 64 * 1024,
@@ -38,6 +47,8 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   get_project_agent: 32 * 1024,
   list_project_agent_assignments: 32 * 1024,
   get_project_agent_context: 64 * 1024,
+  get_project_agent_memory: 128 * 1024,
+  checkpoint_project_agent_memory: 64 * 1024,
   coordinate_project_agent_task: 256 * 1024,
   acquire_runtime_lease: 4 * 1024,
   refresh_runtime_lease: 4 * 1024,
@@ -63,31 +74,44 @@ export function createMcpServer(
     env = process.env,
     clock = () => new Date(),
     sourceApplication = nativeCodexThreadId(env) ? 'codex' : 'other',
-    withRuntimeLease = (_owner, operation) => operation()
+    withRuntimeLease = (_owner, operation) => operation(),
+    hostSessionId = null,
+    instructions = MCP_INSTRUCTIONS,
+    toolNames = null,
+    prepareToolInput = (_name, input) => input,
+    registerResources = true
   } = {}
 ) {
   const server = new McpServer(
     { name: 'fuli', version: FULI_VERSION },
-    { instructions: MCP_INSTRUCTIONS }
+    { instructions }
   );
 
-  const nativeThreadId = nativeCodexThreadId(env);
   const authoritativeSourceApplication = normalizeMcpSourceApplication(
     sourceApplication
   );
+  const nativeThreadId = authoritativeSourceApplication === 'codex' ? nativeCodexThreadId(env) : null;
   const tools = createToolMap(
     app,
     createProjectActionPreviewTokens(),
     nativeThreadId,
-    mcpHostSessionId(env),
+    hostSessionId ?? mcpHostSessionId(authoritativeSourceApplication === 'codex' ? env : {}),
     clock,
     authoritativeSourceApplication,
-    withRuntimeLease
+    withRuntimeLease,
+    toolNames,
+    prepareToolInput
   );
   for (const tool of tools.values()) registerTool(server, tool);
-  registerFuliContextResources(server, app, { withRuntimeLease });
+  if (!tools.size) registerEmptyToolList(server);
+  if (registerResources) registerFuliContextResources(server, app, { withRuntimeLease });
   registerCallHandler(server, tools);
   return server;
+}
+
+function registerEmptyToolList(server) {
+  server.server.registerCapabilities({ tools: { listChanged: true } });
+  server.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [] }));
 }
 
 function createToolMap(
@@ -97,29 +121,52 @@ function createToolMap(
   hostSessionId,
   clock,
   sourceApplication,
-  withRuntimeLease
+  withRuntimeLease,
+  toolNames,
+  prepareToolInput
 ) {
   const commonKnowledgePreviews = createCommonKnowledgePreviewTokens();
-  return new Map(listAgentTools().map((definition) => [definition.name, {
+  if (toolNames !== null && !Array.isArray(toolNames)) {
+    throw new TypeError('MCP toolNames must be an array or null');
+  }
+  const definitions = listAgentTools();
+  const allowedTools = toolNames === null ? null : new Set(toolNames);
+  if (allowedTools) {
+    const available = new Set(definitions.map(({ name }) => name));
+    const unknown = [...allowedTools].filter((name) => !available.has(name));
+    if (unknown.length) {
+      throw new TypeError(
+        `Unknown MCP tool name${unknown.length === 1 ? '' : 's'}: ${unknown.join(', ')}`
+      );
+    }
+  }
+  return new Map(definitions
+    .filter((definition) => !allowedTools || allowedTools.has(definition.name))
+    .map((definition) => [definition.name, {
     definition,
     schema: jsonSchemaToZod(definition.inputSchema),
-    invoke: (input) => withRuntimeLease(
-      `mcp-tool:${definition.name}`,
-      () => invokeAgentTool(
-        app,
-        definition.name,
-        normalizeAgentSessionInput(
+    invoke: (input, requestContext = null) => {
+      requestContext?.signal?.throwIfAborted?.();
+      return withRuntimeLease(
+        `mcp-tool:${definition.name}`,
+        () => invokeAgentTool(
+          app,
           definition.name,
-          input,
-          nativeThreadId,
-          hostSessionId,
-          clock,
-          sourceApplication
+          normalizeAgentSessionInput(
+            definition.name,
+            prepareToolInput(definition.name, input),
+            nativeThreadId,
+            hostSessionId,
+            clock,
+            sourceApplication
+          ),
+          projectActionPreviews,
+          commonKnowledgePreviews,
+          requestContext
         ),
-        projectActionPreviews,
-        commonKnowledgePreviews
-      )
-    )
+        requestContext
+      );
+    }
   }]));
 }
 
@@ -131,22 +178,35 @@ function registerTool(server, tool) {
     inputSchema: schema,
     outputSchema: openObjectSchema(),
     annotations: annotationsFor(definition.name)
-  }, (input) => invokeTool(tool, input));
+  }, (input, extra) => invokeTool(tool, input, extra));
 }
 
 function registerCallHandler(server, tools) {
-  server.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const tool = tools.get(request.params.name);
-    if (!tool) return errorToolResult(new Error('Unknown tool'));
+    if (!tool) {
+      return errorToolResult(new ApplicationError(
+        ApplicationErrorCode.NOT_FOUND,
+        'Unknown Fuli tool'
+      ));
+    }
     const parsed = await tool.schema.safeParseAsync(request.params.arguments ?? {});
-    if (!parsed.success) return protocolErrorResult('Input validation error');
-    return invokeTool(tool, parsed.data);
+    if (!parsed.success) {
+      return protocolErrorResult(
+        'Input validation error',
+        parsed.error.issues.map(({ path, message }) => ({
+          field: path.length ? path.join('.') : 'arguments',
+          message
+        }))
+      );
+    }
+    return invokeTool(tool, parsed.data, extra);
   });
 }
 
-async function invokeTool(tool, input) {
+async function invokeTool(tool, input, requestContext = null) {
   try {
-    const value = await tool.invoke(input);
+    const value = await tool.invoke(input, requestContext);
     auditLifecycleTool(tool.definition.name);
     const limitBytes = TOOL_RESULT_LIMIT_BYTES[tool.definition.name];
     if (tool.definition.name === 'begin_task_context') {
@@ -167,10 +227,11 @@ async function invokeAgentTool(
   name,
   input,
   projectActionPreviews,
-  commonKnowledgePreviews
+  commonKnowledgePreviews,
+  requestContext = null
 ) {
   if (name === 'preview_personal_project_action') {
-    const result = await callAgentTool(app, name, input);
+    const result = await callAgentTool(app, name, input, requestContext);
     return {
       ...result,
       previewToken: projectActionPreviews.issue(input)
@@ -180,7 +241,7 @@ async function invokeAgentTool(
     projectActionPreviews.consume(input.previewToken, input);
   }
   if (name === 'preview_common_knowledge_promotion') {
-    const result = await callAgentTool(app, name, input);
+    const result = await callAgentTool(app, name, input, requestContext);
     return {
       ...result,
       previewToken: commonKnowledgePreviews.issue(input)
@@ -189,5 +250,5 @@ async function invokeAgentTool(
   if (name === 'apply_common_knowledge_promotion') {
     commonKnowledgePreviews.consume(input.previewToken, input);
   }
-  return callAgentTool(app, name, input);
+  return callAgentTool(app, name, input, requestContext);
 }

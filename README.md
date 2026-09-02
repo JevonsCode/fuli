@@ -190,8 +190,10 @@ select the project first.
 ### Which tool the Agent calls and when
 
 Normal use does not require manual MCP calls: submit a task to the Agent from the project directory.
-The Claude Code hook calls `begin_task_context`; Codex and Cursor prompt fallback call the following
-once at the start of each task:
+Fuli includes lifecycle adapters for Claude Code, Codex, and Cursor. When a loaded, trusted entry
+hook supplies `begin_task_context` context, use it without repeating the fallback. Cursor's adapter
+starts the durable task through a hook but relies on the Agent to retrieve preferences and role
+context. When no hook context was supplied, call the following once at task entry:
 
 ```json
 {
@@ -264,10 +266,10 @@ sequenceDiagram
     participant G as Local graph
 
     U->>A: Submit a task in the current project
-    alt Claude Code (hook-enforced)
+    alt Claude Code / Codex (hook context supplied)
         L->>F: begin_task_context(projectPath, taskPrompt)
         F-->>A: Preferences, exact project, bounded recall, and task token
-    else Codex / Cursor (prompt fallback)
+    else No hook context (prompt fallback, including Cursor)
         A->>F: get_collaboration_preferences(projectPath, taskPrompt)
         F-->>A: Preferences, exact project, and bounded recall
     end
@@ -293,11 +295,11 @@ sequenceDiagram
         F-->>A: retain_nothing
     end
 
-    alt Claude Code Stop hook
+    alt Loaded and trusted Claude Code / Codex Stop hook
         L->>F: verify_task_checkpoint
         F-->>L: Allow stop only after review
-    else Prompt-fallback agent
-        Note over A,F: Same contract, but the host cannot deterministically block a missed review
+    else Cursor reminder or prompt-fallback agent
+        Note over A,F: Same contract; a bounded reminder is not an unconditional Stop gate
     end
     A-->>U: Return the result and any Fuli sources actually used
 ```
@@ -392,7 +394,7 @@ Core mechanisms covered by implementation and automated tests include:
 - a local personal space, exact project scope, and selective parent inheritance;
 - preference confirmation, deferred conflict resolution, revision history, and source markers;
 - bounded task-prompt recall, focused on-demand retrieval, and material-usage auditing;
-- task entry and completion checkpoints, plus Claude Code entry and Stop hooks;
+- task entry and completion checkpoints, plus local Claude Code, Codex, and Cursor lifecycle adapters;
 - decision options, rationale, and validation results supplied during initial capture;
 - knowledge-usage events, negative feedback, and content-generation isolation;
 - persistent scoped knowledge reviews with pause/resume watermarks;
@@ -407,8 +409,10 @@ The following must not be presented as already proven:
   production data;
 - the decision tool can include validation during initial capture, but it does not yet expose a
   dedicated operation for appending immutable validation results to an existing `Decision`;
-- Claude Code has deterministic lifecycle hooks; Codex and Cursor currently use prompt fallback and
-  must not be described as equally enforced;
+- Installed files do not prove host loading, trust, or execution. Claude Code and Codex adapters
+  generate entry/Stop hook configuration; Codex trust review remains a user action. Cursor uses
+  task-entry hooks and bounded Stop reminders, not an equivalent unconditional Stop gate. Ordinary
+  input in each real client still requires live acceptance;
 - selected public projects in connected retrieval are Beta; external-to-public promotion and
   background delta synchronization are not implemented.
 
@@ -550,7 +554,15 @@ containers; it does not shut down Rancher Desktop, Docker Desktop, Kubernetes, o
 itself. Native mode directly stops the corresponding Provider and Neo4j processes, so no shared VM
 overhead remains while idle.
 
+**Project Agents → Recruit employee** provides reusable employee templates, starting with Jefa, a project manager.
+Recruitment reuses a durable identity with separate project assignments. An installed employee workbench,
+API and A2A share the FULI port; existing FULI MCP clients discover and call its tools. Recruitment does not
+start a model or rewrite client settings. See the [employee package and extension contract](docs/employee-agents.md).
+
 Project Agent identities remain control-plane records rather than one resident process per identity.
+Roles now keep versioned, project-private working memory in the same Neo4j Provider. Task entry
+restores one owner across Codex, Claude Code and Cursor; lifecycle checkpoints survive separate
+MCP processes. See [role memory, host hooks and acceptance boundaries](docs/project-agent-memory.md).
 Physical executors share leases by executor ID. Fuli starts and stops only executors with an explicitly
 injected managed lifecycle adapter; host-owned external executors such as Codex are never started or
 killed implicitly. The current minimum-memory combination is:
@@ -613,13 +625,57 @@ Fuli installs the `capturing-session-knowledge`, `grilling-project`, and `flrevi
 supported agents. `/flreview` asks FULI for ranked candidates, then the invoking Agent generates a
 fresh interactive review artifact. FULI remains the durable source of truth and write surface; no
 permanent review tab or one-question-at-a-time chat flow is required.
-Claude Code uses `UserPromptSubmit` and `Stop` hooks for the task lifecycle. Codex's user-level
-`AGENTS.md` and Cursor instructions use prompt fallback. Preference content remains in local Fuli as
-the single source of truth and is not copied into agent configuration.
+Fuli setup generates Claude Code `UserPromptSubmit`/`Stop` MCP hooks, a Codex
+`UserPromptSubmit` MCP hook plus a local `Stop` command, and Cursor
+`sessionStart`/`beforeSubmitPrompt`/`stop` hooks. The Codex Stop command first blocks an unfinished
+checkpoint; if the same token is still unfinished after one continuation, it records only
+`retain_nothing` to prevent an infinite loop and never invents knowledge or Agent memory. Codex
+bootstrap and Cursor instructions retain the fallback for tasks without supplied lifecycle context;
+they must not duplicate supplied preferences. Installing configuration never approves host trust.
+Preference content remains in local Fuli as the single source of truth and is not copied into agent
+configuration.
 
 FULI also exposes read-only `fuli://` resources for each local personal project and for global taste.
 Agents with MCP mention support can select them from the `@` picker; a project resource selects one
 exact project and never expands the search to other projects or `RELATED_TO` projects.
+
+### Remote Claude / Cowork connector upstream
+
+`fuli remote-mcp` serves a least-privilege Streamable HTTP MCP endpoint bound to one exact personal
+project. It uses the distinct `claude` client attribution, requires an owner-only bearer-token file,
+rejects cross-origin requests, and listens on loopback only:
+
+```bash
+umask 077
+openssl rand -hex 32 > ./fuli-remote.token
+fuli remote-mcp --personal-project-id YOUR_PROJECT_ID \
+  --bearer-token-file ./fuli-remote.token --port 2728
+```
+
+On POSIX systems the CLI opens the token nonblocking with no-follow semantics and requires mode
+`0600`. Windows does not provide the same `O_NOFOLLOW` or POSIX mode guarantees through Node.js, so
+the token must be a regular file in a directory protected by Windows ACLs and must not be a link.
+
+Startup fails closed unless the project exists in the configured personal space. The upstream
+allows at most eight concurrent sessions and evicts sessions idle for 15 minutes; tune those bounds
+with `--max-sessions` and `--session-idle-ttl-seconds` when needed. Idle means no completed MCP
+application request: a silent standalone SSE notification stream does not pin a slot forever and
+may be closed at the TTL, after which the client must reconnect and initialize a new session.
+Shutdown gives bounded requests and session cleanup one shared grace deadline before forcing the
+remaining HTTP connections closed. When a reverse proxy supplies a
+browser Origin or preserves its public Host, add the exact values with
+`--allowed-origin https://connector.example --allowed-host connector.example`. Otherwise configure
+the proxy to rewrite Host to the loopback upstream authority. Arbitrary Origin and Host values are
+rejected. Each MCP session may read private context and memory only for the Agent selected by its
+task entry. A checkpoint token is also bound to both the upstream's configured project and the MCP
+session that created it, so neither another project process nor a peer session can reuse it.
+
+This is an internal upstream, not a public deployment. Claude custom connectors originate from
+Anthropic's cloud and therefore require a public HTTPS endpoint with OAuth 2.1 in front of this
+listener. The proxy must validate user identity, token audience and scopes, then replace the external
+token with the internal bearer; never expose the Fuli Provider or Neo4j ports. Local lifecycle hooks
+do not run in claude.ai, so the MCP initialization instructions request task entry and checkpointing,
+but only a real connected Claude conversation can prove that behavior.
 
 When a task needs a taste or judgment recommendation, `get_user_taste_skill` generates a bounded,
 read-only `user-taste` Skill projection from the effective personal profile and prior task data.

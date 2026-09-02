@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -16,6 +17,7 @@ from fuli_graph.project_agent_task_models import (
     ProjectAgentTaskActivityCreate,
     ProjectAgentTaskRecord,
     ProjectAgentTaskSubmit,
+    ProjectAgentTokenUsage,
 )
 from fuli_graph.provider_values import stable_uuid
 from fuli_graph.store_project_agent_tasks import StoreProjectAgentTasks
@@ -52,7 +54,8 @@ async def test_existing_exact_assignment_is_reused_before_recruitment():
     assert selected[0]['agent_id'] == 'agent-a'
     assert reason == 'exact_work_kind'
     assert [item['agent_id'] for item in candidates] == ['agent-a', 'agent-b']
-    assert basis == ['exact work kind: verification']
+    assert basis == ['exact work kind: verification',
+                     'selected active task count: 0; work-kind fit and load precede history']
 
 
 @pytest.mark.asyncio
@@ -88,7 +91,7 @@ async def test_historical_project_work_kind_continuity_breaks_static_tie():
 
 
 @pytest.mark.asyncio
-async def test_activity_project_reuses_last_successful_agent_for_new_hotel_work():
+async def test_project_continuity_cannot_override_required_capabilities():
     store = HistorySelectionStore([
         candidate('agent-a', ['past-hotel-work'], ['legacy planning']),
         candidate('agent-b', ['hotel-requirement'], ['hotel planning']),
@@ -121,12 +124,41 @@ async def test_activity_project_reuses_last_successful_agent_for_new_hotel_work(
         ),
     )
 
-    assert selected[0]['agent_id'] == 'agent-a'
-    assert [item['agent_id'] for item in candidates] == ['agent-a', 'agent-b']
+    assert selected[0]['agent_id'] == 'agent-b'
+    assert [item['agent_id'] for item in candidates] == ['agent-b']
     assert reason == 'project_continuity'
     assert basis == [
-        'last successful project lead continuity: 2 prior task(s), 2 completed'
+        'last successful project lead continuity: 1 prior task(s), 1 completed',
+        'exact work kind: hotel-requirement',
+        'selected active task count: 0; work-kind fit and load precede history',
     ]
+
+
+@pytest.mark.asyncio
+async def test_blocked_or_open_participation_does_not_drive_project_continuity():
+    store = HistorySelectionStore([
+        candidate('agent-a', ['past-work'], ['legacy planning']),
+        candidate('agent-b', ['verification'], ['test execution']),
+    ], {}, project_history={
+        'agent-a': {
+            'participation_count': 2,
+            'completed_count': 0,
+            'failed_count': 0,
+            'cancelled_count': 0,
+            'last_task_at': '2026-08-27T10:00:00Z',
+        },
+    })
+
+    selected, _, reason, basis = await store._select_agents(
+        {'id': 'principal'},
+        {'id': 'personal-space'},
+        task_request(),
+    )
+
+    assert selected[0]['agent_id'] == 'agent-b'
+    assert reason == 'exact_work_kind'
+    assert basis == ['exact work kind: verification',
+                     'selected active task count: 0; work-kind fit and load precede history']
 
 
 @pytest.mark.asyncio
@@ -156,13 +188,15 @@ async def test_single_active_assignment_is_the_safe_first_use_fallback():
     selected, candidates, reason, basis = await store._select_agents(
         {'id': 'principal'},
         {'id': 'personal-space'},
-        task_request(),
+        task_request(required_capabilities=[]),
     )
 
     assert selected[0]['agent_id'] == 'agent-a'
     assert candidates == selected
     assert reason == 'sole_active_assignment'
-    assert basis == ['the project has one active Agent assignment']
+    assert basis[0] == 'the project has one active Agent assignment'
+    assert any('no exact work-kind match: verification' in item for item in basis)
+    assert any('continuity only' in item for item in basis)
 
 
 @pytest.mark.asyncio
@@ -452,11 +486,12 @@ def test_parallel_work_rejects_less_than_two_real_participants():
         workstream_boundaries=['API tests', 'UI tests'],
     )
 
-    with pytest.raises(HTTPException, match='at least two active Agents'):
+    with pytest.raises(HTTPException, match='at least two active Agents') as exc_info:
         StoreProjectAgentTasks._verify_parallel_plan(
             plan,
             [{'agent_id': 'agent-a'}],
         )
+    assert 'recruit another qualified collaborator' in exc_info.value.detail
 
 
 def test_task_transition_keeps_terminal_states_immutable_and_requires_evidence_to_unblock():
@@ -526,6 +561,19 @@ def test_actual_execution_activity_requires_executor_agent_and_model_together():
             actual_model='gpt-5',
         )
 
+
+def test_worker_status_requires_worker_and_participating_agent_identity():
+    with pytest.raises(ValueError, match='worker status requires a worker ID'):
+        ProjectAgentTaskActivityCreate(
+            personal_space_id='personal-space',
+            personal_project_id='project-a',
+            task_id='task-a',
+            idempotency_key='worker-status-without-identity',
+            status='running',
+            summary='Unattributed worker claim.',
+            worker_status='completed',
+        )
+
     with pytest.raises(ValueError, match='participating Agent'):
         ProjectAgentTaskActivityCreate(
             personal_space_id='personal-space',
@@ -583,7 +631,7 @@ async def test_exact_terminal_event_retry_is_read_only_and_returns_the_task():
     )
 
     assert result == 'existing-task'
-    assert len(store.runtime.driver.calls) == 1
+    assert store.runtime.driver.event_calls == []
 
 
 @pytest.mark.asyncio
@@ -627,11 +675,18 @@ async def test_stale_task_activity_does_not_persist_actual_executor_observation(
 
 
 @pytest.mark.asyncio
-async def test_task_activity_refuses_a_client_outside_the_participant_allow_list():
+@pytest.mark.parametrize(('allowed_clients', 'worker_runtime'), [
+    (['claude_code'], None),
+    (['codex'], {'application': 'claude_code', 'session_id': 'worker-session'}),
+    (['claude_code'], {'application': 'claude_code', 'session_id': 'worker-session'}),
+])
+async def test_task_activity_refuses_a_client_outside_the_participant_allow_list(
+    allowed_clients, worker_runtime,
+):
     profile = ProjectAgentProfile(
         name='Claude-only Agent',
         responsibility='Verify project work.',
-        allowed_clients=['claude_code'],
+        allowed_clients=allowed_clients,
     )
     store = ActivityStore({
         'task': {
@@ -657,6 +712,8 @@ async def test_task_activity_refuses_a_client_outside_the_participant_allow_list
         summary='Started.',
         agent_id='agent-a',
         source_application='codex',
+        worker_id='worker-a' if worker_runtime else None,
+        worker_runtime=worker_runtime,
     )
 
     with pytest.raises(HTTPException, match='not available to this source client'):
@@ -665,7 +722,7 @@ async def test_task_activity_refuses_a_client_outside_the_participant_allow_list
             request,
         )
 
-    assert len(store.runtime.driver.calls) == 1
+    assert store.runtime.driver.event_calls == []
 
 
 @pytest.mark.asyncio
@@ -708,12 +765,88 @@ async def test_terminal_activity_ends_every_unfinished_task_participant():
     )
 
     assert result == 'updated-task'
-    event_query = store.runtime.driver.calls[1][0]
+    event_query, event_parameters = store.runtime.driver.event_calls[0]
     assert '$terminal_at IS NOT NULL' in event_query
     assert "NOT (coalesce(participant.status, '') IN" in event_query
     assert 'applied_transition' in event_query
     assert '[:HAS_PROJECT_AGENT_TASK]' in event_query
     assert 'MATCH (space)-[:HAS_PROJECT_AGENT_IDENTITY]->' in event_query
+    assert 'task.recruitment_provisioning_claimed_at <=' in event_query
+    assert 'recruitment_claim_expired_before' in event_parameters
+
+
+@pytest.mark.asyncio
+async def test_activity_normalizes_a_legacy_null_task_revision():
+    store = ActivityStore(
+        {
+            'task': {
+                'task_id': 'task-a',
+                'personal_project_id': 'project-a',
+                'status': 'queued',
+                'revision': None,
+            },
+            'participant_rows': [
+                {'agent_id': 'agent-a', 'role': 'lead'},
+            ],
+            'event_rows': [],
+        },
+        event_rows=[{
+            'same_payload': True,
+            'applied_transition': True,
+        }],
+    )
+    request = ProjectAgentTaskActivityCreate(
+        personal_space_id='personal-space',
+        personal_project_id='project-a',
+        task_id='task-a',
+        idempotency_key='legacy-null-revision-activity',
+        status='running',
+        summary='Legacy task resumed.',
+        agent_id='agent-a',
+        source_application='codex',
+    )
+
+    result = await store.record_project_agent_task_activity(
+        {'id': 'principal'},
+        request,
+    )
+
+    assert result == 'updated-task'
+    event_query, event_parameters = store.runtime.driver.event_calls[0]
+    assert event_parameters['expected_revision'] == 0
+    assert 'coalesce(task.revision, 0) = $expected_revision' in event_query
+    assert 'task.revision = coalesce(task.revision, 0) + 1' in event_query
+
+
+@pytest.mark.asyncio
+async def test_worker_runtime_is_saved_when_both_clients_are_allowed_without_model_claim():
+    profile = ProjectAgentProfile(
+        name='Verification Agent', responsibility='Verify project work.',
+        allowed_clients=['codex', 'claude_code'],
+    )
+    store = ActivityStore({
+        'task': {'task_id': 'task-a', 'personal_project_id': 'project-a',
+                 'status': 'running', 'revision': 3},
+        'participant_rows': [{'agent_id': 'agent-a', 'role': 'lead',
+                              'profile_json': profile.model_dump_json()}],
+        'event_rows': [],
+    }, event_rows=[{'same_payload': True, 'applied_transition': True}])
+    request = ProjectAgentTaskActivityCreate(
+        personal_space_id='personal-space', personal_project_id='project-a',
+        task_id='task-a', idempotency_key='worker-session-start',
+        expected_revision=3, status='running', summary='Worker process started.',
+        agent_id='agent-a', source_application='codex', source_session_id='host-session',
+        worker_id='worker-a', worker_runtime={
+            'application': 'claude_code', 'session_id': 'worker-session',
+        },
+    )
+    assert await store.record_project_agent_task_activity({'id': 'principal'}, request) == 'updated-task'
+    assert store.actual_reports == []
+    _, params = store.runtime.driver.event_calls[0]
+    assert params['source_application'] == 'codex'
+    assert params['source_session_id'] == 'host-session'
+    assert params['worker_runtime_json'] == request.worker_runtime.model_dump_json()
+    assert params['token_usage_json'] is None
 
 
 @pytest.mark.asyncio
@@ -755,6 +888,19 @@ async def test_worker_completion_does_not_terminalize_the_global_task():
         worker_label='Codex worker',
         worker_occupation_emoji='🔧',
         worker_status='completed',
+        worker_runtime={
+            'application': 'codex', 'session_id': 'worker-session-a',
+        },
+        source_session_url=(
+            'codex://threads/01234567-89ab-cdef-0123-456789abcdef'
+        ),
+        tools_used=['pytest', 'rg'],
+        token_usage=ProjectAgentTokenUsage(
+            source='executor',
+            total_tokens=321,
+            input_tokens=300,
+            output_tokens=21,
+        ),
     )
 
     result = await store.record_project_agent_task_activity(
@@ -764,10 +910,18 @@ async def test_worker_completion_does_not_terminalize_the_global_task():
 
     assert result == 'updated-task'
     assert store.actual_reports[0].executor_id == 'executor-codex'
-    event_query, event_parameters = store.runtime.driver.calls[1]
+    event_query, event_parameters = store.runtime.driver.event_calls[0]
     assert "event.worker_id = $worker_id" in event_query
     assert event_parameters['worker_id'] == 'worker-a'
     assert event_parameters['worker_status'] == 'completed'
+    assert 'event.source_session_url = $source_session_url' in event_query
+    assert event_parameters['source_session_url'].startswith('codex://threads/')
+    assert 'event.tools_used = $tools_used' in event_query
+    assert event_parameters['tools_used'] == ['pytest', 'rg']
+    assert 'event.token_usage_json = $token_usage_json' in event_query
+    assert '"total_tokens":321' in event_parameters['token_usage_json']
+    assert 'event.worker_runtime_json = $worker_runtime_json' in event_query
+    assert event_parameters['worker_runtime_json'] == request.worker_runtime.model_dump_json()
     assert event_parameters['status'] == 'running'
 
 
@@ -794,6 +948,32 @@ async def test_task_executor_resolution_passes_task_assignment_and_model_provena
     assert store.resolved['assignment_id'] == 'assignment-agent-a'
     assert store.resolved['task_override'].locked_executor_ids == ['codex']
     assert store.resolved['model_strategy_source'] == 'task'
+    assert store.resolved['required_capabilities'] == []
+
+
+@pytest.mark.asyncio
+async def test_task_executor_resolution_uses_only_explicit_executor_hints():
+    store = ResolverStore()
+    request = task_request(
+        required_capabilities=['hotel planning', 'research'],
+        executor_capability_hints=['testing'],
+    )
+    selected = candidate(
+        'agent-a',
+        ['hotel-requirement'],
+        ['hotel planning', 'research'],
+    )
+
+    await store._resolve_executor_if_available(
+        {'id': 'principal'},
+        request,
+        selected,
+        ProjectAgentModelStrategy(mode='adaptive'),
+        'agent',
+        'task-a',
+    )
+
+    assert store.resolved['required_capabilities'] == ['testing']
 
 
 def test_executor_decision_is_embedded_as_json_audit_data():
@@ -935,6 +1115,8 @@ class RecruitmentStore(StoreProjectAgentTasks):
 
 class RecruitmentDriver:
     async def execute_query(self, query, **parameters):
+        if 'RETURN recruitment' in query:
+            return ([], None, None)
         return ([{'hr': {'agent_id': 'hr-1'}}], None, None)
 
 
@@ -977,11 +1159,30 @@ class ActivityDriver:
         self.event_rows = event_rows
         self.calls = []
 
+    @property
+    def event_calls(self):
+        return [call for call in self.calls if 'MERGE (event:FuliProjectAgentTaskEvent' in call[0]]
+
     async def execute_query(self, query, **parameters):
         self.calls.append((query, parameters))
         if 'RETURN project' in query:
             return ([{'project': {'project_id': 'project-a'}}], None, None)
         return (self.event_rows, None, None)
+
+    @asynccontextmanager
+    async def transaction(self):
+        driver = self
+
+        class QueryTransaction:
+            async def run(self, query, **parameters):
+                records, _, _ = await driver.execute_query(query, **parameters)
+
+                async def rows():
+                    for record in records:
+                        yield record
+                return rows()
+
+        yield QueryTransaction()
 
 
 def candidate(agent_id, work_kinds, capabilities, *, allowed_clients=None):

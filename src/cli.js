@@ -7,7 +7,9 @@ import {
   printHelp
 } from './cli/command-registry.js';
 import { runLocalRuntimeCommand } from './cli/local-runtime-command.js';
+import { runRemoteMcpCommand } from './cli/remote-mcp-command.js';
 import { runGraphDataCommand } from './cli/graph-data-command.js';
+import { runEmployeeCommand } from './cli/employee-command.js';
 import { runSetupCommand } from './cli/setup-command.js';
 import { runUninstallCommand } from './cli/uninstall-command.js';
 import { runUpdateCommand } from './cli/update-command.js';
@@ -35,9 +37,17 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     const [action, ...graphArgs] = commandArgs;
     return runGraphDataCommand(action, graphArgs, { env });
   }
+  if (command === 'employee') {
+    assertSupportedNodeVersion();
+    return runEmployeeCommand(commandArgs, { env });
+  }
   if (command === 'connect-workspace') {
     assertSupportedNodeVersion();
     return runWorkspaceConnectionCommand(commandArgs, { env });
+  }
+  if (command === 'remote-mcp') {
+    assertSupportedNodeVersion();
+    return runRemoteMcpCommand(commandArgs, { env });
   }
   if (command === 'uninstall') {
     await runUninstallCommand(commandArgs, { env });

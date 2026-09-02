@@ -1,6 +1,10 @@
 import { ApplicationError } from '../app/application-error.js';
 
 const HANDLERS = Object.freeze({
+  list_employee_templates: (app, input) => employeeService(app).list(input),
+  recruit_employee: (app, input) => employeeService(app).recruit(input),
+  list_employee_tools: (app, input) => employeeService(app).describeTools(input),
+  call_employee_tool: (app, input) => employeeService(app).callTool(input),
   begin_task_context: (app, input) => app.beginTaskContext(input),
   checkpoint_task_knowledge: (app, input) =>
     app.checkpointTaskKnowledge(input),
@@ -82,6 +86,8 @@ const HANDLERS = Object.freeze({
   replace_project_agent_assignment: (app, input) =>
     app.replaceProjectAgentAssignment(input),
   get_project_agent_context: (app, input) => app.getProjectAgentContext(input),
+  get_project_agent_memory: (app, input) => app.getProjectAgentMemory(input),
+  checkpoint_project_agent_memory: (app, input) => app.checkpointProjectAgentMemory(input),
   coordinate_project_agent_task: (app, input) =>
     app.coordinateProjectAgentTask(input),
   acquire_runtime_lease: (app, input) => app.acquireRuntimeLease(input),
@@ -170,6 +176,11 @@ const HANDLERS = Object.freeze({
   review_project_proposal: (app, input) => app.reviewProposal(input),
   get_graphiti_status: (app) => app.getGraphitiStatus()
 });
+
+function employeeService(app) {
+  if (!app.employees) throw new Error('Employee runtime is unavailable');
+  return app.employees;
+}
 
 export function dispatchGraphTool(app, name, input) {
   const handler = HANDLERS[name];

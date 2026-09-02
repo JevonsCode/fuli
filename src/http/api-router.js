@@ -1,6 +1,7 @@
 import { readJson, sendJson } from './response.js';
 import { handleExternalKnowledgeApiRequest } from './external-knowledge-api-router.js';
 import { handleGraphApiRequest } from './graph-api-router.js';
+import { handleEmployeeApiRequest } from './employee-api-router.js';
 
 export async function handleApiRequest({
   request,
@@ -42,7 +43,13 @@ export async function handleApiRequest({
   }
 
   if (system && url.pathname === '/api/system/runtime/leases' && request.method === 'POST') {
-    sendJson(response, 201, await system.acquireRuntimeLease(await readJson(request)));
+    const lease = await system.acquireRuntimeLease(await readJson(request));
+    if (response.destroyed) {
+      // Startup can outlive the caller's timeout. No recipient can now renew/release this handle.
+      if (lease.leaseId) system.releaseRuntimeLease(lease.leaseId);
+      return true;
+    }
+    sendJson(response, 201, lease);
     return true;
   }
 
@@ -51,7 +58,7 @@ export async function handleApiRequest({
     sendJson(
       response,
       200,
-      system.refreshRuntimeLease(decodeURIComponent(runtimeLease[1]))
+      system.refreshRuntimeLease(decodeRuntimeLeaseId(runtimeLease[1]))
     );
     return true;
   }
@@ -59,7 +66,7 @@ export async function handleApiRequest({
     sendJson(
       response,
       200,
-      system.releaseRuntimeLease(decodeURIComponent(runtimeLease[1]))
+      system.releaseRuntimeLease(decodeRuntimeLeaseId(runtimeLease[1]))
     );
     return true;
   }
@@ -76,14 +83,27 @@ export async function handleApiRequest({
     : await externalRequest();
   if (handledExternal) return true;
 
-  const graphRequest = () => handleGraphApiRequest({ request, response, url, app });
-  if (system?.withGraphRuntimeLease && url.pathname.startsWith('/api/')) {
+  const graphRequest = async () =>
+    await handleEmployeeApiRequest({ request, response, url, app }) ||
+    await handleGraphApiRequest({ request, response, url, app });
+  if (system?.withGraphRuntimeLease && (
+    url.pathname.startsWith('/api/') || url.pathname.startsWith('/employee-workspaces/')
+  )) {
     return system.withGraphRuntimeLease(
       `http:${request.method}:${url.pathname}`,
       graphRequest
     );
   }
   return graphRequest();
+}
+
+function decodeRuntimeLeaseId(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch (error) {
+    if (error instanceof URIError) throw new TypeError('Runtime lease ID is invalid');
+    throw error;
+  }
 }
 
 function externalRequestNeedsGraph(pathname, method) {

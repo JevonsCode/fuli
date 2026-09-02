@@ -15,5 +15,6 @@ app.use(createPinia())
 app.use(i18n)
 app.use(router)
 
-await router.isReady()
+// Mount the recovery UI even when the initial route's assets could not load.
+await router.isReady().catch(() => undefined)
 app.mount('#app')

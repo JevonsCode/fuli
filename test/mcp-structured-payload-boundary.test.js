@@ -45,6 +45,16 @@ test('a tool can opt into a larger bounded context result', () => {
   );
 });
 
+test('repeated sibling references are serialized fully and are not mistaken for cycles', () => {
+  const shared = { status: 'ready', revision: 3 };
+  const result = successToolResult({ primary: shared, secondary: shared });
+
+  assert.deepEqual(result.structuredContent, {
+    primary: shared,
+    secondary: shared
+  });
+});
+
 function hasIsolatedSurrogate(text) {
   for (let index = 0; index < text.length; index += 1) {
     const code = text.charCodeAt(index);

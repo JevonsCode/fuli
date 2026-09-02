@@ -3,7 +3,11 @@ from typing import Literal
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
 
-from .model_validation import reject_credentials, validate_emoji_sequence
+from .model_validation import (
+    normalize_source_session_url,
+    reject_credentials,
+    validate_emoji_sequence,
+)
 from .models import SourceApplication, StrictModel
 from .project_agent_models import (
     ProjectAgentExecutorPolicy,
@@ -42,6 +46,7 @@ ProjectAgentRoutingOutcome = Literal[
 ProjectAgentRoutingReason = Literal[
     'explicit_agent',
     'project_continuity',
+    'project_default',
     'sole_active_assignment',
     'manual_agent_selection',
     'exact_work_kind',
@@ -72,6 +77,16 @@ ProjectAgentOptimizationPriority = Literal[
     'token_and_cost',
     'time',
 ]
+ProjectAgentTokenUsageSource = Literal['executor', 'host', 'dingdong']
+
+_WORKER_EVIDENCE_ALIASES = {
+    'worker_id': 'workerId',
+    'worker_label': 'workerLabel',
+    'worker_occupation_emoji': 'workerOccupationEmoji',
+    'worker_status': 'workerStatus',
+    'token_usage': 'tokenUsage',
+    'worker_runtime': 'workerRuntime',
+}
 
 
 def _unique_text(value: list[str], label: str) -> list[str]:
@@ -80,6 +95,19 @@ def _unique_text(value: list[str], label: str) -> list[str]:
         raise ValueError(f'{label} must contain 1 to 512 characters')
     if len({item.casefold() for item in normalized}) != len(normalized):
         raise ValueError(f'{label} must be unique')
+    return normalized
+
+
+def _normalize_worker_evidence_aliases(value):
+    if not isinstance(value, dict):
+        return value
+    normalized = dict(value)
+    for field_name, alias in _WORKER_EVIDENCE_ALIASES.items():
+        if alias not in normalized:
+            continue
+        if field_name in normalized and normalized[field_name] != normalized[alias]:
+            raise ValueError(f'conflicting {field_name} and {alias} values')
+        normalized[field_name] = normalized.pop(alias)
     return normalized
 
 
@@ -120,6 +148,10 @@ class ProjectAgentTaskSubmit(StrictModel):
     objective: str = Field(min_length=1, max_length=4096)
     work_kind: str = Field(min_length=1, max_length=128)
     required_capabilities: list[str] = Field(default_factory=list, max_length=16)
+    executor_capability_hints: list[str] = Field(
+        default_factory=list,
+        max_length=16,
+    )
     duration: ProjectAgentTaskDuration = 'ongoing'
     staffing_intent: ProjectAgentStaffingIntent = 'reuse_preferred'
     lead_agent_id: str | None = Field(default=None, min_length=1, max_length=128)
@@ -142,6 +174,14 @@ class ProjectAgentTaskSubmit(StrictModel):
     @classmethod
     def validate_capabilities(cls, value: list[str]) -> list[str]:
         return _unique_text(value, 'required capabilities')
+
+    @field_validator('executor_capability_hints')
+    @classmethod
+    def validate_executor_capability_hints(
+        cls,
+        value: list[str],
+    ) -> list[str]:
+        return _unique_text(value, 'executor capability hints')
 
     @field_validator('collaborator_agent_ids')
     @classmethod
@@ -185,6 +225,80 @@ class ProjectAgentTaskParticipantRecord(StrictModel):
     ended_at: datetime | None = None
 
 
+class ProjectAgentTokenUsage(StrictModel):
+    """Cumulative token snapshot reported for one concrete worker run."""
+
+    source: ProjectAgentTokenUsageSource
+    total_tokens: int = Field(
+        ge=0,
+        validation_alias=AliasChoices('total_tokens', 'totalTokens'),
+    )
+    input_tokens: int | None = Field(
+        default=None,
+        ge=0,
+        validation_alias=AliasChoices('input_tokens', 'inputTokens'),
+    )
+    output_tokens: int | None = Field(
+        default=None,
+        ge=0,
+        validation_alias=AliasChoices('output_tokens', 'outputTokens'),
+    )
+    cached_input_tokens: int | None = Field(
+        default=None,
+        ge=0,
+        validation_alias=AliasChoices(
+            'cached_input_tokens',
+            'cachedInputTokens',
+        ),
+    )
+    cache_write_input_tokens: int | None = Field(
+        default=None,
+        ge=0,
+        validation_alias=AliasChoices(
+            'cache_write_input_tokens',
+            'cacheWriteInputTokens',
+        ),
+    )
+    reasoning_output_tokens: int | None = Field(
+        default=None,
+        ge=0,
+        validation_alias=AliasChoices(
+            'reasoning_output_tokens',
+            'reasoningOutputTokens',
+        ),
+    )
+
+
+class ProjectAgentWorkerRuntime(StrictModel):
+    """Host-reported worker location, never the reporter's trusted identity."""
+
+    application: SourceApplication
+    session_id: str | None = Field(
+        default=None, min_length=1, max_length=256,
+        validation_alias=AliasChoices('session_id', 'sessionId'),
+    )
+    session_url: str | None = Field(
+        default=None, max_length=2048,
+        validation_alias=AliasChoices('session_url', 'sessionUrl'),
+    )
+
+    _validate_session_url = field_validator('session_url')(
+        normalize_source_session_url
+    )
+
+    @field_validator('session_id')
+    @classmethod
+    def validate_session_id(cls, value):
+        if value is not None and not value.strip():
+            raise ValueError('worker session ID must not be blank')
+        return value.strip() if value is not None else None
+
+    @model_validator(mode='after')
+    def validate_evidence(self):
+        reject_credentials(self, 'worker runtime')
+        return self
+
+
 class ProjectAgentTaskExecutionSummary(StrictModel):
     """Auditable execution evidence projected onto a real task participant.
 
@@ -203,16 +317,30 @@ class ProjectAgentTaskExecutionSummary(StrictModel):
     source_application: SourceApplication | None = None
     actual_model_provider: str | None = None
     actual_model: str | None = None
+    source_session_id: str | None = None
+    source_session_url: str | None = None
+    tools_used: list[str] | None = Field(default=None, max_length=32)
+    token_usage: ProjectAgentTokenUsage | None = None
     work_summary: str | None = None
     status: ProjectAgentTaskStatus
     worker_id: str | None = None
     worker_label: str | None = None
     worker_occupation_emoji: str | None = None
+    worker_runtime: ProjectAgentWorkerRuntime | None = None
 
     @field_validator('occupation_emoji', 'worker_occupation_emoji', mode='before')
     @classmethod
     def validate_emojis(cls, value):
         return validate_emoji_sequence(value, 'occupation emoji')
+
+    _validate_session_url = field_validator('source_session_url')(
+        normalize_source_session_url
+    )
+
+    @field_validator('tools_used')
+    @classmethod
+    def validate_tools_used(cls, value):
+        return _unique_text(value, 'tools used') if value is not None else None
 
 
 class ProjectAgentTaskEventRecord(StrictModel):
@@ -224,6 +352,8 @@ class ProjectAgentTaskEventRecord(StrictModel):
     summary: str
     source_application: SourceApplication | None = None
     source_session_id: str | None = None
+    source_session_url: str | None = None
+    tools_used: list[str] | None = Field(default=None, max_length=32)
     actual_model_provider: str | None = None
     actual_model: str | None = None
     actual_executor_id: str | None = None
@@ -232,31 +362,31 @@ class ProjectAgentTaskEventRecord(StrictModel):
     executor_selection_reason: str | None = None
     executor_fallback_reason: str | None = None
     executor_blocked_reason: str | None = None
-    worker_id: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices('worker_id', 'workerId'),
-    )
-    worker_label: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices('worker_label', 'workerLabel'),
-    )
-    worker_occupation_emoji: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices(
-            'worker_occupation_emoji',
-            'workerOccupationEmoji',
-        ),
-    )
-    worker_status: ProjectAgentTaskStatus | None = Field(
-        default=None,
-        validation_alias=AliasChoices('worker_status', 'workerStatus'),
-    )
+    worker_id: str | None = None
+    worker_label: str | None = None
+    worker_occupation_emoji: str | None = None
+    worker_status: ProjectAgentTaskStatus | None = None
+    token_usage: ProjectAgentTokenUsage | None = None
+    worker_runtime: ProjectAgentWorkerRuntime | None = None
     created_at: datetime
+
+    _normalize_worker_aliases = model_validator(mode='before')(
+        _normalize_worker_evidence_aliases
+    )
 
     @field_validator('worker_occupation_emoji', mode='before')
     @classmethod
     def validate_worker_occupation_emoji(cls, value):
         return validate_emoji_sequence(value, 'worker occupation emoji')
+
+    _validate_session_url = field_validator('source_session_url')(
+        normalize_source_session_url
+    )
+
+    @field_validator('tools_used')
+    @classmethod
+    def validate_tools_used(cls, value):
+        return _unique_text(value, 'tools used') if value is not None else None
 
 
 class ProjectAgentRoutingDecisionRecord(StrictModel):
@@ -302,6 +432,7 @@ class ProjectAgentTaskRecord(StrictModel):
     objective: str
     work_kind: str
     required_capabilities: list[str]
+    executor_capability_hints: list[str] = Field(default_factory=list)
     duration: ProjectAgentTaskDuration
     staffing_intent: ProjectAgentStaffingIntent
     status: ProjectAgentTaskStatus
@@ -366,6 +497,8 @@ class ProjectAgentTaskActivityCreate(StrictModel):
     actor_kind: Literal['agent', 'human'] = 'agent'
     source_application: SourceApplication | None = None
     source_session_id: str | None = Field(default=None, min_length=1, max_length=256)
+    source_session_url: str | None = Field(default=None, max_length=2048)
+    tools_used: list[str] | None = Field(default=None, max_length=32)
     actual_model_provider: str | None = Field(default=None, min_length=1, max_length=128)
     actual_model: str | None = Field(default=None, min_length=1, max_length=256)
     actual_executor_id: str | None = Field(default=None, min_length=1, max_length=128)
@@ -393,32 +526,45 @@ class ProjectAgentTaskActivityCreate(StrictModel):
         default=None,
         min_length=1,
         max_length=128,
-        validation_alias=AliasChoices('worker_id', 'workerId'),
     )
     worker_label: str | None = Field(
         default=None,
         min_length=1,
         max_length=160,
-        validation_alias=AliasChoices('worker_label', 'workerLabel'),
     )
     worker_occupation_emoji: str | None = Field(
         default=None,
         min_length=1,
         max_length=32,
-        validation_alias=AliasChoices(
-            'worker_occupation_emoji',
-            'workerOccupationEmoji',
-        ),
     )
-    worker_status: ProjectAgentTaskStatus | None = Field(
-        default=None,
-        validation_alias=AliasChoices('worker_status', 'workerStatus'),
+    worker_status: ProjectAgentTaskStatus | None = None
+    token_usage: ProjectAgentTokenUsage | None = None
+    worker_runtime: ProjectAgentWorkerRuntime | None = None
+
+    _normalize_worker_aliases = model_validator(mode='before')(
+        _normalize_worker_evidence_aliases
     )
+
+    @property
+    def reported_client_applications(self):
+        # Worker claims can impose another restriction, never replace the
+        # host identity used for authorization and audit attribution.
+        return (self.source_application, self.worker_runtime.application) \
+            if self.worker_runtime else (self.source_application,)
 
     @field_validator('worker_occupation_emoji', mode='before')
     @classmethod
     def validate_worker_occupation_emoji(cls, value):
         return validate_emoji_sequence(value, 'worker occupation emoji')
+
+    _validate_session_url = field_validator('source_session_url')(
+        normalize_source_session_url
+    )
+
+    @field_validator('tools_used')
+    @classmethod
+    def validate_tools_used(cls, value):
+        return _unique_text(value, 'tools used') if value is not None else None
 
     @model_validator(mode='after')
     def validate_actual_model(self):
@@ -436,6 +582,24 @@ class ProjectAgentTaskActivityCreate(StrictModel):
             raise ValueError('actual execution report requires the participating Agent ID')
         if self.worker_id and not self.agent_id:
             raise ValueError('worker execution report requires the participating Agent ID')
+        if self.worker_status and not self.worker_id:
+            raise ValueError('worker status requires a worker ID')
+        if self.worker_runtime and not self.worker_id:
+            raise ValueError('worker runtime requires a worker ID')
+        if self.token_usage and not self.agent_id:
+            raise ValueError('token usage report requires the participating Agent ID')
+        if (self.source_session_url or self.tools_used) and not self.agent_id:
+            raise ValueError(
+                'execution evidence requires the participating Agent ID'
+            )
+        if (
+            self.token_usage
+            and self.token_usage.source == 'executor'
+            and not self.actual_executor_id
+        ):
+            raise ValueError(
+                'executor token usage requires the actual executor report'
+            )
         if (self.worker_label or self.worker_occupation_emoji) and not self.worker_id:
             raise ValueError(
                 'worker label or occupation emoji requires a worker ID'
@@ -460,6 +624,8 @@ class ProjectAgentRecruitmentRecord(StrictModel):
     confirmation_mode: ProjectAgentRecruitmentConfirmationMode
     proposed_agent_id: str
     proposed_profile: ProjectAgentProfile
+    participant_role: ProjectAgentParticipantRole = 'lead'
+    recruitment_slot: str = Field(default='lead', min_length=1, max_length=128)
     trigger_source_application: SourceApplication | None = None
     trigger_source_session_id: str | None = None
     revision: int = Field(ge=0)
@@ -475,6 +641,7 @@ class ProjectAgentTaskRouteResult(StrictModel):
     task: ProjectAgentTaskRecord
     assigned_agent: ProjectAgentRecord | None = None
     recruitment: ProjectAgentRecruitmentRecord | None = None
+    recruitments: list[ProjectAgentRecruitmentRecord] = Field(default_factory=list)
     decision: Literal[
         'reused',
         'recruited',
@@ -490,6 +657,13 @@ class ProjectAgentRecruitmentPolicyRecord(StrictModel):
     personal_space_id: str
     confirmation_mode: ProjectAgentRecruitmentConfirmationMode = 'automatic'
     updated_at: datetime | None = None
+    policy_status: Literal['superseded'] = 'superseded'
+    applies_to_recruitment: Literal[False] = False
+    warning: str = (
+        'Legacy storage only; this setting does not control recruitment. '
+        'Use update_project_agent_coordination_policy with the exact project '
+        'and askBeforeRecruitment to change effective authorization.'
+    )
 
 
 class ProjectAgentRecruitmentPolicyUpdate(StrictModel):
@@ -521,11 +695,25 @@ class ProjectAgentActivityTask(StrictModel):
     actual_model_provider: str | None = None
     actual_model: str | None = None
     actual_executor_id: str | None = None
+    source_session_id: str | None = None
+    source_session_url: str | None = Field(default=None, max_length=2048)
+    tools_used: list[str] | None = Field(default=None, max_length=32)
+    token_usage: ProjectAgentTokenUsage | None = None
+    worker_runtime: ProjectAgentWorkerRuntime | None = None
     matched_executor_rule_id: str | None = None
     worker_id: str | None = None
     worker_label: str | None = None
     worker_occupation_emoji: str | None = None
     worker_status: ProjectAgentTaskStatus | None = None
+
+    _validate_session_url = field_validator('source_session_url')(
+        normalize_source_session_url
+    )
+
+    @field_validator('tools_used')
+    @classmethod
+    def validate_tools_used(cls, value):
+        return _unique_text(value, 'tools used') if value is not None else None
 
 
 class ProjectAgentActivityDay(StrictModel):

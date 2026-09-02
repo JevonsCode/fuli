@@ -44,6 +44,26 @@ test('agent discovery reports Codex, Claude Code, and Cursor without failing on 
   assert.equal(agents[2].reviewSkillPath, 'C:\\Users\\Test\\.cursor\\skills\\flreview');
 });
 
+test('agent discovery recognizes installed Claude Code and Cursor config directories without CLIs', () => {
+  const existing = new Set([
+    'C:\\Users\\Test\\.claude',
+    'C:\\Users\\Test\\.cursor'
+  ]);
+  const agents = discoverAgents({
+    platform: 'win32',
+    env: {},
+    homeDir: 'C:/Users/Test',
+    commandExists: () => false,
+    fileExists: (filePath) => existing.has(filePath)
+  });
+
+  assert.deepEqual(agents.map(({ id, available }) => ({ id, available })), [
+    { id: 'codex', available: false },
+    { id: 'claude-code', available: true },
+    { id: 'cursor', available: true }
+  ]);
+});
+
 test('Codex and Claude Code registrations use their native MCP CLI', () => {
   const [codex, claude] = discoverAgents({
     platform: 'win32',

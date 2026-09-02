@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
 
+import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
+import { agentMemoryRecord, prepareProjectAgentMemory } from './project-agent-memory.js';
+
 import { onlineSourceUri } from './source-uri.js';
 import {
   relatedProjectGuidance,
@@ -8,28 +11,58 @@ import {
 
 export async function beginTaskContext(application, {
   sessionId,
+  turnId = null,
   projectPath,
-  taskPrompt = null
+  personalProjectId = null,
+  taskPrompt = null,
+  sourceApplication = 'other',
+  sourceSessionId = null,
+  projectAgentId = null,
+  workKind = null,
+  requiredCapabilities = []
 }) {
+  const continuationToken = /^FULI_CHECKPOINT_REQUIRED: (fuli-task-[a-zA-Z0-9-]{8,128})\b/.exec(taskPrompt ?? '')?.[1];
+  const resumed = continuationToken
+    ? await application.taskContextRegistry.context(continuationToken, sourceApplication) : null;
+  if (resumed && resumed.sessionId !== sessionId) {
+    throw validationError('Checkpoint continuation belongs to another host session');
+  }
   const preferences = await application.getCollaborationPreferences({
+    personalProjectId,
     projectPath,
+    sessionId,
+    turnId,
     taskPrompt,
+    projectAgentId: resumed?.projectAgentId ?? projectAgentId,
+    sourceApplication,
+    sourceSessionId,
+    workKind,
+    requiredCapabilities,
     agentInvocation: true,
     agentToolName: 'begin_task_context'
   });
-  const task = application.taskContextRegistry.begin({
+  if (resumed && resumed.personalProjectId !== preferences.context.personal_project_id) {
+    throw validationError('Checkpoint continuation belongs to another project');
+  }
+  const task = resumed ?? await application.taskContextRegistry.begin({
     sessionId,
-    personalProjectId: preferences.context.personal_project_id
+    turnId,
+    personalProjectId: preferences.context.personal_project_id,
+    projectAgentId: preferences.context.project_agent_id,
+    sourceApplication,
+    sourceSessionId,
+    memoryRevision: preferences.project_agent_context?.memory?.revision ?? null
   });
   return {
     taskContextToken: task.token,
     task_context_token: task.token,
-    checkpoint_required: true,
+    checkpoint_required: task.checkpoint?.phase !== 'complete',
+    resumed_checkpoint: Boolean(resumed),
     previous_checkpoint_missing: task.previousCheckpointMissing,
     ...preferences,
     task_guidance: {
       retrieval: 'Inspect task_knowledge_recall before asking for a stable project fact or method again. On a miss, use search_current_project_knowledge with focused action, artifact, target-system, or identifier queries; never use the full conversational request as the only query.',
-      checkpoint: 'Before finishing, call checkpoint_task_knowledge with capture_candidates or retain_nothing.'
+      checkpoint: 'Before finishing, call checkpoint_task_knowledge with capture_candidates or retain_nothing. When durable role context changed, include agentMemory with the loaded revision and a bounded merged summary, decisions, open threads and next actions. Do not overwrite from truncated context or store raw transcripts.'
     }
   };
 }
@@ -38,41 +71,118 @@ export async function checkpointTaskKnowledge(application, {
   taskContextToken,
   disposition,
   reason,
-  capture = null
+  capture = null,
+  agentMemory = null,
+  sourceApplication = 'other',
+  personalProjectId = null,
+  remoteSessionId = null
 }) {
   if (!['capture_candidates', 'retain_nothing'].includes(disposition)) {
-    throw new TypeError('Unknown task knowledge checkpoint disposition');
+    throw validationError('Unknown task knowledge checkpoint disposition');
   }
-  const task = application.taskContextRegistry.context(taskContextToken);
-
-  let captureResult = null;
+  const task = await application.taskContextRegistry.context(taskContextToken, sourceApplication);
+  if (personalProjectId && task.personalProjectId !== personalProjectId) {
+    throw validationError('Task checkpoint belongs to another project');
+  }
+  if (remoteSessionId && task.sessionId !== remoteSessionId) {
+    throw validationError('Task checkpoint belongs to another remote session');
+  }
   if (disposition === 'capture_candidates') {
     if (!capture) {
-      throw new TypeError('capture_candidates requires a bounded capture payload');
+      throw validationError('capture_candidates requires a bounded capture payload');
     }
-    captureResult = await application.captureSessionKnowledge({
-      targetKind: 'personal',
-      spaceId: application.config.personal.spaceId,
-      personalProjectId: task.personalProjectId,
-      sessionId: task.sessionId,
-      ...capture
-    });
   } else if (capture) {
-    throw new TypeError('retain_nothing cannot include a capture payload');
+    throw validationError('retain_nothing cannot include a capture payload');
   }
-
-  application.taskContextRegistry.checkpoint(taskContextToken, {
-    disposition,
-    reason,
-    captureStatus: captureResult?.status ?? null
-  });
+  const fingerprint = createHash('sha256').update(JSON.stringify(
+    canonicalCheckpoint({ disposition, reason, capture, agentMemory })
+  )).digest('hex');
+  if (task.checkpoint && task.checkpoint.fingerprint !== fingerprint) {
+    throw validationError(
+      'Task checkpoint already has different input; resume the original review or begin a new task context'
+    );
+  }
+  if (task.checkpoint?.phase === 'complete') {
+    return { status: 'checkpointed', disposition, reason,
+      personal_project_id: task.personalProjectId, project_agent_id: task.projectAgentId,
+      replayed: true, capture_status: task.checkpoint.captureStatus };
+  }
+  const captureInput = capture ? {
+    ...capture,
+    targetKind: 'personal',
+    spaceId: application.config.personal.spaceId,
+    personalProjectId: task.personalProjectId,
+    projectAgentId: task.projectAgentId ?? null,
+    sessionId: task.sessionId,
+    sourceApplication,
+    idempotencyKey: `${task.token}:knowledge`
+  } : null;
+  // Local validation has no side effects. Reject correctable input before
+  // binding an immutable checkpoint or advancing the Agent's memory revision.
+  if (captureInput) application.validateCaptureSessionKnowledge(captureInput);
+  let memoryResult = null;
+  let memoryRequest = null;
+  if (agentMemory) {
+    if (!task.projectAgentId || !task.personalProjectId) {
+      throw validationError('Task has no durable project Agent; do not guess a memory target');
+    }
+    const prepared = await prepareProjectAgentMemory(application, {
+      personalSpaceId: application.config.personal.spaceId,
+      personalProjectId: task.personalProjectId,
+      agentId: task.projectAgentId,
+      expectedRevision: agentMemory.expectedRevision,
+      idempotencyKey: `${task.token}:memory`,
+      memory: agentMemory.memory, sourceApplication,
+      // The logical client session survives independent lifecycle-hook MCP
+      // processes; their host session ids do not. The Provider persists this
+      // stable task session as the memory checkpoint provenance.
+      sourceSessionId: task.sessionId
+    });
+    if (prepared.status === 'capture_disabled') memoryResult = prepared;
+    else memoryRequest = { expected_revision: prepared.request.expected_revision,
+      memory: prepared.request.memory };
+  }
+  const checkpoint = { disposition, reason, fingerprint, captureStatus: null };
+  const preparedTask = await application.taskContextRegistry.prepare(
+    taskContextToken, checkpoint, sourceApplication, memoryRequest
+  );
+  if (memoryRequest) {
+    if (!preparedTask.agentMemory) {
+      throw new TypeError('Provider did not confirm atomic Agent memory preparation');
+    }
+    memoryResult = { status: 'checkpointed', ...agentMemoryRecord(preparedTask.agentMemory) };
+  }
+  const captureResult = captureInput
+    ? await application.captureSessionKnowledge(captureInput) : null;
+  await application.taskContextRegistry.checkpoint(taskContextToken, {
+    ...checkpoint, captureStatus: captureResult?.status ?? null
+  }, sourceApplication);
   return {
     status: 'checkpointed',
     disposition,
     reason,
     personal_project_id: task.personalProjectId,
-    capture: captureResult
+    project_agent_id: task.projectAgentId ?? null,
+    capture: captureResult,
+    agent_memory: memoryResult ? {
+      status: memoryResult.status, agentId: memoryResult.agentId,
+      checkpointId: memoryResult.checkpointId, revision: memoryResult.revision,
+      sourceApplication: memoryResult.sourceApplication,
+      sourceSessionId: memoryResult.sourceSessionId, createdAt: memoryResult.createdAt
+    } : null
   };
+}
+
+function canonicalCheckpoint(value) {
+  if (Array.isArray(value)) return value.map(canonicalCheckpoint);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [
+    key, canonicalCheckpoint(value[key])
+  ]));
+}
+
+function validationError(message) {
+  return new ApplicationError(ApplicationErrorCode.VALIDATION, message);
 }
 
 export async function recordDecisionTrace(application, input) {

@@ -108,11 +108,37 @@ class LocalLexicalReranker(CrossEncoderClient):
         )
 
 
+class ManagedNeo4jDriver(Neo4jDriver):
+    """Let GraphitiRuntime own index initialization exactly once.
+
+    graphiti-core schedules an eager background index build whenever its driver
+    is constructed inside a running event loop. Fuli has an explicit awaited
+    initialization sequence, so the dependency's untracked task would race it
+    and can leak unawaited query coroutines when one index request fails.
+    """
+
+    def __init__(self, *args, **kwargs):
+        self._fuli_constructing = True
+        try:
+            super().__init__(*args, **kwargs)
+        finally:
+            self._fuli_constructing = False
+
+    def build_indices_and_constraints(self, delete_existing: bool = False):
+        if self._fuli_constructing:
+            return _completed_index_build()
+        return super().build_indices_and_constraints(delete_existing)
+
+
+async def _completed_index_build() -> None:
+    return None
+
+
 class GraphitiRuntime:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.embedder = LocalHashEmbedder(settings.embedding_dim)
-        driver = Neo4jDriver(
+        driver = ManagedNeo4jDriver(
             uri=settings.neo4j_uri,
             user=settings.neo4j_user,
             password=settings.neo4j_password,
@@ -247,6 +273,16 @@ class GraphitiRuntime:
             'FOR (n:FuliProjectAgent) REQUIRE n.id IS UNIQUE',
             'CREATE CONSTRAINT fuli_project_agent_assignment_id IF NOT EXISTS '
             'FOR (n:FuliProjectAgentAssignment) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_memory_id IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentMemory) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_memory_checkpoint_id IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentMemoryCheckpoint) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_task_context_session_id IF NOT EXISTS '
+            'FOR (n:FuliTaskContextSession) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_task_context_id IF NOT EXISTS '
+            'FOR (n:FuliTaskContext) REQUIRE n.id IS UNIQUE',
+            'CREATE INDEX fuli_task_context_agent_scope IF NOT EXISTS '
+            'FOR (n:FuliTaskContext) ON (n.personal_space_id, n.project_agent_id)',
             'CREATE CONSTRAINT fuli_project_agent_task_id IF NOT EXISTS '
             'FOR (n:FuliProjectAgentTask) REQUIRE n.id IS UNIQUE',
             'CREATE CONSTRAINT fuli_project_agent_task_event_id IF NOT EXISTS '

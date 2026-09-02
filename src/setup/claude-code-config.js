@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
 
 import {
   readJsonFile,
@@ -9,6 +10,12 @@ const FULI_SERVER = 'fuli';
 const MANAGED_HOOK_TOOLS = new Set([
   'begin_task_context',
   'verify_task_checkpoint'
+]);
+const MANAGED_PERMISSION_RULES = Object.freeze([
+  // These allow model-initiated fallback restore/final checkpoint calls. Claude
+  // Code executes MCP lifecycle hooks separately from model tool permissions.
+  'mcp__fuli__get_collaboration_preferences',
+  'mcp__fuli__checkpoint_task_knowledge'
 ]);
 
 export function connectClaudeCode(agent, context, {
@@ -21,6 +28,7 @@ export function connectClaudeCode(agent, context, {
   assertObject(settings, 'Claude Code settings');
   assertObject(current.mcpServers ?? {}, 'Claude Code mcpServers');
   assertHookSettings(settings.hooks ?? {});
+  assertPermissionSettings(settings.permissions ?? {});
 
   const next = {
     ...current,
@@ -81,7 +89,8 @@ export function disconnectClaudeCode(agent, {
     const settings = readConfig(agent.settingsPath, {});
     assertObject(settings, 'Claude Code settings');
     assertHookSettings(settings.hooks ?? {});
-    const nextSettings = withoutManagedHooks(settings);
+    assertPermissionSettings(settings.permissions ?? {});
+    const nextSettings = withoutManagedSettings(settings);
     if (!sameJson(settings, nextSettings)) {
       writeConfig(agent.settingsPath, nextSettings);
       changed = true;
@@ -95,26 +104,23 @@ export function disconnectClaudeCode(agent, {
   };
 }
 
-export function hasCurrentClaudeCodeHooks(settings) {
+export function hasCurrentClaudeCodeHooks(settings, { hookTimeoutSec = 30 } = {}) {
   try {
     assertObject(settings, 'Claude Code settings');
     assertHookSettings(settings.hooks ?? {});
+    assertPermissionSettings(settings.permissions ?? {});
+    return sameJson(
+      withManagedHooks(settings, { hookTimeoutSec }),
+      settings
+    );
   } catch {
     return false;
   }
-  return [
-    ['UserPromptSubmit', 'begin_task_context'],
-    ['Stop', 'verify_task_checkpoint']
-  ].every(([event, tool]) => (
-    (settings.hooks?.[event] ?? []).some((group) =>
-      group.hooks.some((hook) => isManagedHook(hook, tool))
-    )
-  ));
 }
 
 function withManagedHooks(settings, { hookTimeoutSec = 30 } = {}) {
   const normalizedHookTimeoutSec = positiveHookTimeout(hookTimeoutSec);
-  const clean = withoutManagedHooks(settings);
+  const clean = withoutManagedSettings(settings);
   const hooks = { ...(clean.hooks ?? {}) };
   hooks.UserPromptSubmit = [
     ...(hooks.UserPromptSubmit ?? []),
@@ -133,7 +139,32 @@ function withManagedHooks(settings, { hookTimeoutSec = 30 } = {}) {
       normalizedHookTimeoutSec
     )
   ];
-  return { ...clean, hooks };
+  return withManagedPermissions({ ...clean, hooks });
+}
+
+function withManagedPermissions(settings) {
+  const permissions = { ...(settings.permissions ?? {}) };
+  permissions.allow = [
+    ...(permissions.allow ?? []),
+    ...MANAGED_PERMISSION_RULES
+  ];
+  return { ...settings, permissions };
+}
+
+function withoutManagedSettings(settings) {
+  return withoutManagedPermissions(withoutManagedHooks(settings));
+}
+
+function withoutManagedPermissions(settings) {
+  if (!settings.permissions) return settings;
+  const permissions = { ...settings.permissions };
+  const remainingAllow = (permissions.allow ?? [])
+    .filter(rule => !MANAGED_PERMISSION_RULES.includes(rule));
+  if (remainingAllow.length) permissions.allow = remainingAllow;
+  else delete permissions.allow;
+  if (Object.keys(permissions).length) return { ...settings, permissions };
+  const { permissions: _removed, ...rest } = settings;
+  return rest;
 }
 
 function withoutManagedHooks(settings) {
@@ -197,6 +228,17 @@ function assertHookSettings(value) {
   }
 }
 
+function assertPermissionSettings(value) {
+  assertObject(value, 'Claude Code permissions');
+  for (const field of ['allow', 'ask', 'deny']) {
+    if (value[field] !== undefined && (
+      !Array.isArray(value[field]) || !value[field].every(rule => typeof rule === 'string')
+    )) {
+      throw new TypeError(`Claude Code permissions ${field} must be an array of strings`);
+    }
+  }
+}
+
 function assertObject(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new TypeError(`${label} must be a JSON object`);
@@ -204,5 +246,5 @@ function assertObject(value, label) {
 }
 
 function sameJson(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return isDeepStrictEqual(left, right);
 }

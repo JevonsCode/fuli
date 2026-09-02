@@ -17,6 +17,16 @@ export const routeMessages = {
     projectAgents: {
       title: '项目 Agent',
     },
+    employeeWorkbench: {
+      title: '专属 Agent',
+    },
+    loadFailure: {
+      title: '暂时无法打开页面',
+      resources: '页面文件加载失败，可能是界面已更新或服务暂时断开。当前内容仍然保留。',
+      message: '页面未能加载，当前内容仍然保留。可以重新载入，或继续使用当前页面。',
+      reload: '重新载入并打开',
+      dismiss: '留在当前页',
+    },
     organizer: {
       title: '知识整理',
     },
@@ -59,6 +69,16 @@ export const routeMessages = {
     },
     projectAgents: {
       title: 'Project Agents',
+    },
+    employeeWorkbench: {
+      title: 'Specialist Agents',
+    },
+    loadFailure: {
+      title: 'This page could not open',
+      resources: 'Page files could not load. The app may have updated or disconnected. Your current page is unchanged.',
+      message: 'The page could not load. Your current page is unchanged. Reload to try again or stay here.',
+      reload: 'Reload and open',
+      dismiss: 'Stay here',
     },
     organizer: {
       title: 'Knowledge organizer',

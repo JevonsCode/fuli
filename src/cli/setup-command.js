@@ -96,6 +96,10 @@ export function formatSetupResult(result, plan) {
   }
   lines.push('Knowledge storage: Graphiti / Neo4j');
   for (const agent of result.agents) {
+    if (agent.status === 'partial') {
+      lines.push(`${agent.label}: partially configured; retry setup to finish installation`);
+      continue;
+    }
     if (agent.status !== 'connected') {
       lines.push(`${agent.label}: connection failed; retry setup later`);
       continue;
@@ -103,6 +107,7 @@ export function formatSetupResult(result, plan) {
     lines.push(agent.newTaskRequired
       ? `${agent.label}: connected; create or reopen a task to load the new configuration`
       : `${agent.label}: connected`);
+    for (const step of agent.nextSteps ?? []) lines.push(`${agent.label}: ${step}`);
   }
   return lines.join('\n');
 }

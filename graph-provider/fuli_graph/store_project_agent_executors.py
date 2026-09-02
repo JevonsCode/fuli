@@ -32,10 +32,13 @@ from .project_agent_executor_models import (
     ProjectAgentExecutorScope,
     project_agent_model_strategy_key,
 )
-from .project_agent_models import ProjectAgentExecutorPolicy, ProjectAgentModelStrategy
+from .project_agent_models import (
+    ProjectAgentExecutorPolicy, ProjectAgentModelStrategy, ProjectAgentProfile,
+)
 from .provider_values import native_datetime, now_utc, stable_uuid
 from .store_project_agent_executor_learning import StoreProjectAgentExecutorLearning
 from .store_project_agent_executor_routing import StoreProjectAgentExecutorRouting
+from .store_transactions import query_store_transaction
 
 
 class StoreProjectAgentExecutors(
@@ -131,6 +134,8 @@ class StoreProjectAgentExecutors(
                   (executor:FuliProjectAgentExecutor {
                     executor_id: $executor_id
                   })
+            SET executor._authorization_write_lock = true
+            REMOVE executor._authorization_write_lock
             WITH executor, permission,
                  coalesce(
                    permission.authorization_idempotency_key = $idempotency_key,
@@ -251,14 +256,27 @@ class StoreProjectAgentExecutors(
                   (executor:FuliProjectAgentExecutor {
                     executor_id: $executor_id
                   })
+            SET executor._preflight_write_lock = true
+            REMOVE executor._preflight_write_lock
             WITH executor, permission,
                  coalesce(
                    executor.preflight_idempotency_key = $idempotency_key,
                    false
                  ) AS same_key
-            WHERE (same_key AND executor.preflight_payload_hash = $payload_hash)
-               OR NOT same_key
-            FOREACH (_ IN CASE WHEN same_key THEN [] ELSE [1] END |
+            WITH executor, permission, same_key,
+                 (
+                   (same_key
+                    AND executor.preflight_payload_hash = $payload_hash)
+                   OR (
+                     NOT same_key
+                     AND (
+                       executor.preflight_at IS NULL
+                       OR executor.preflight_at < $checked_at
+                     )
+                   )
+                 ) AS accepted
+            FOREACH (_ IN CASE
+              WHEN accepted AND NOT same_key THEN [1] ELSE [] END |
               SET executor.preflight_status = $preflight_status,
                   executor.preflight_passed = $preflight_passed,
                   executor.preflight_reason = $reason,
@@ -271,7 +289,7 @@ class StoreProjectAgentExecutors(
                   executor.updated_at = $timestamp,
                   executor.revision = coalesce(executor.revision, 0) + 1
             )
-            RETURN executor, permission
+            RETURN executor, permission, accepted
             ''',
             personal_space_id=request.personal_space_id,
             executor_id=request.executor_id,
@@ -291,6 +309,11 @@ class StoreProjectAgentExecutors(
         )
         if not records:
             raise HTTPException(status_code=404, detail='registered executor not found')
+        if not records[0].get('accepted'):
+            raise HTTPException(
+                status_code=409,
+                detail='executor preflight report is stale or its idempotency key was reused',
+            )
         return self._executor_from_row(records[0], request.personal_space_id)
 
     async def record_project_agent_executor_health(
@@ -309,14 +332,26 @@ class StoreProjectAgentExecutors(
                   (executor:FuliProjectAgentExecutor {
                     executor_id: $executor_id
                   })
+            SET executor._health_write_lock = true
+            REMOVE executor._health_write_lock
             WITH executor, permission,
                  coalesce(
                    executor.health_idempotency_key = $idempotency_key,
                    false
                  ) AS same_key
-            WHERE (same_key AND executor.health_payload_hash = $payload_hash)
-               OR NOT same_key
-            FOREACH (_ IN CASE WHEN same_key THEN [] ELSE [1] END |
+            WITH executor, permission, same_key,
+                 (
+                   (same_key AND executor.health_payload_hash = $payload_hash)
+                   OR (
+                     NOT same_key
+                     AND (
+                       executor.health_checked_at IS NULL
+                       OR executor.health_checked_at < $checked_at
+                     )
+                   )
+                 ) AS accepted
+            FOREACH (_ IN CASE
+              WHEN accepted AND NOT same_key THEN [1] ELSE [] END |
               SET executor.health_status = $health_status,
                   executor.health_reason = $reason,
                   executor.health_checked_at = $checked_at,
@@ -325,7 +360,7 @@ class StoreProjectAgentExecutors(
                   executor.updated_at = $timestamp,
                   executor.revision = coalesce(executor.revision, 0) + 1
             )
-            RETURN executor, permission
+            RETURN executor, permission, accepted
             ''',
             personal_space_id=request.personal_space_id,
             executor_id=request.executor_id,
@@ -338,6 +373,11 @@ class StoreProjectAgentExecutors(
         )
         if not records:
             raise HTTPException(status_code=404, detail='registered executor not found')
+        if not records[0].get('accepted'):
+            raise HTTPException(
+                status_code=409,
+                detail='executor health report is stale or its idempotency key was reused',
+            )
         return self._executor_from_row(records[0], request.personal_space_id)
 
     async def list_project_agent_executors(
@@ -363,6 +403,10 @@ class StoreProjectAgentExecutors(
                 AND executor.preflight_status = 'passed'
                 AND coalesce(executor.workspace_permission, false) = true
                 AND executor.health_status <> 'unhealthy'
+                AND (
+                  coalesce(executor.health_required, false) = false
+                  OR executor.health_status = 'healthy'
+                )
               ))
             RETURN executor, permission
             ORDER BY coalesce(executor.global_priority, 100), executor.executor_id
@@ -676,6 +720,10 @@ class StoreProjectAgentExecutors(
     ) -> ProjectAgentExecutorActualReport:
         """Persist the executor/model actually observed by a Task Run."""
 
+        async with query_store_transaction(self) as scoped:
+            return await scoped._record_project_agent_executor_actual(actor, request)
+
+    async def _record_project_agent_executor_actual(self, actor, request):
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         await authorize_personal_project(
@@ -684,6 +732,33 @@ class StoreProjectAgentExecutors(
             space,
             request.personal_project_id,
         )
+        # Explicit ordering also applies when activity already owns the task lock.
+        # Profile/preflight/revocation writers cannot change validated state until
+        # this observation and its projection commit together.
+        for target, match in (
+            ('task', '''MATCH (task:FuliProjectAgentTask {
+                personal_space_id: $personal_space_id,
+                personal_project_id: $personal_project_id, task_id: $task_id
+            })'''),
+            ('agent', '''MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})
+                -[:HAS_PROJECT_AGENT_IDENTITY]->
+                (agent:FuliProjectAgent {agent_id: $agent_id})'''),
+            ('executor', '''MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})
+                -[:HAS_EXECUTOR_PERMISSION]->
+                (executor:FuliProjectAgentExecutor {executor_id: $executor_id})'''),
+            ('permission', '''MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})
+                -[permission:HAS_EXECUTOR_PERMISSION]->
+                (:FuliProjectAgentExecutor {executor_id: $executor_id})'''),
+        ):
+            await self.runtime.driver.execute_query(
+                f'{match} SET {target}._actual_write_lock = true '
+                f'REMOVE {target}._actual_write_lock RETURN count(*) AS locked',
+                personal_space_id=request.personal_space_id,
+                personal_project_id=request.personal_project_id,
+                task_id=request.task_id,
+                agent_id=request.agent_id,
+                executor_id=request.executor_id,
+            )
         validation_records, _, _ = await self.runtime.driver.execute_query(
             '''
             MATCH (task:FuliProjectAgentTask {
@@ -718,7 +793,58 @@ class StoreProjectAgentExecutors(
                 detail='actual executor is not registered, authorized, and preflighted',
             )
         validation_row = validation_records[0]
+        profile_json = dict(validation_row.get('agent') or {}).get('profile_json')
+        if profile_json:
+            profile = ProjectAgentProfile.model_validate_json(profile_json)
+            if (request.source_application or 'other') not in profile.allowed_clients:
+                raise HTTPException(
+                    status_code=403,
+                    detail='project Agent is not available to this source client',
+                )
         task_raw = dict(validation_row.get('task') or {})
+        current_projection_exists = any(task_raw.get(key) for key in (
+            'actual_executor_id', 'actual_model_provider', 'actual_model'))
+        current_actual_at = native_datetime(task_raw.get('actual_occurred_at'))
+        if current_projection_exists and current_actual_at is None and task_raw.get('actual_run_id'):
+            previous, _, _ = await self.runtime.driver.execute_query('''
+                MATCH (task:FuliProjectAgentTask {
+                  personal_space_id: $personal_space_id,
+                  personal_project_id: $personal_project_id, task_id: $task_id
+                })-[:HAS_EXECUTOR_OBSERVATION]->(observation {
+                  run_id: $actual_run_id
+                })
+                WHERE observation.executor_id = task.actual_executor_id
+                  AND observation.provider = task.actual_model_provider
+                  AND observation.model = task.actual_model
+                  AND observation.agent_id = $agent_id
+                  AND (
+                    observation.projection_applied = true
+                    OR (
+                      observation.projection_applied IS NULL
+                      AND observation.projection_considered IS NULL
+                    )
+                  )
+                RETURN observation.occurred_at AS occurred_at
+                ''', personal_space_id=request.personal_space_id,
+                personal_project_id=request.personal_project_id,
+                task_id=request.task_id, actual_run_id=task_raw['actual_run_id'],
+                agent_id=request.agent_id, routing_='r')
+            previous_times = [
+                native_datetime(row.get('occurred_at')) for row in previous
+            ]
+            if previous_times and all(
+                value is not None
+                and callable(getattr(value, 'utcoffset', None))
+                and value.utcoffset() is not None
+                for value in previous_times
+            ):
+                current_actual_at = max(previous_times)
+        projection_allowed = not current_projection_exists
+        if current_projection_exists and current_actual_at is not None:
+            projection_allowed = (
+                current_actual_at.utcoffset() is not None
+                and request.occurred_at >= current_actual_at
+            )
         task_strategy = ProjectAgentModelStrategy()
         task_strategy_json = task_raw.get('effective_model_strategy_json')
         if task_strategy_json:
@@ -756,6 +882,11 @@ class StoreProjectAgentExecutors(
             raise HTTPException(
                 status_code=409,
                 detail='actual model was not reported by the latest passed preflight',
+            )
+        if self._select_model([reported_model], task_strategy) is None:
+            raise HTTPException(
+                status_code=409,
+                detail='actual model does not satisfy the task model strategy',
             )
         if (
             executor_record.health_status == 'unhealthy'
@@ -841,11 +972,18 @@ class StoreProjectAgentExecutors(
                           observation.source_session_id = $source_session_id
             WITH task, observation,
                  observation.payload_hash = $payload_hash AS payload_matches,
-                 coalesce(observation.projection_applied, false) = false
+                 coalesce(observation.projection_considered,
+                          observation.projection_applied, false) = false
                    AS projection_pending
             FOREACH (_ IN CASE
               WHEN payload_matches AND projection_pending THEN [1] ELSE [] END |
               MERGE (task)-[:HAS_EXECUTOR_OBSERVATION]->(observation)
+              SET observation.projection_considered = true
+            )
+            FOREACH (_ IN CASE
+              WHEN payload_matches AND projection_pending
+                AND $projection_allowed
+              THEN [1] ELSE [] END |
               SET task.actual_executor_id = $executor_id,
                   task.actual_run_id = $run_id,
                   task.actual_model_provider = $provider,
@@ -854,7 +992,10 @@ class StoreProjectAgentExecutors(
                   task.actual_model_strategy_source = $model_strategy_source,
                   task.matched_executor_rule_id = $matched_rule_id,
                   task.executor_fallback_reason = $fallback_reason,
-                  task.updated_at = $occurred_at,
+                  task.actual_occurred_at = $occurred_at,
+                  task.updated_at = CASE
+                    WHEN task.updated_at IS NULL OR task.updated_at < $occurred_at
+                    THEN $occurred_at ELSE task.updated_at END,
                   observation.projection_applied = true
             )
             RETURN task, observation, payload_matches
@@ -876,6 +1017,7 @@ class StoreProjectAgentExecutors(
             occurred_at=request.occurred_at,
             source_application=request.source_application,
             source_session_id=request.source_session_id,
+            projection_allowed=projection_allowed,
         )
         if not records:
             raise HTTPException(status_code=404, detail='project Agent task not found')
@@ -912,10 +1054,34 @@ class StoreProjectAgentExecutors(
                   (agent:FuliProjectAgent)
             WHERE agent.test_source = $test_source
               AND coalesce(agent.cleanup_eligible, false) = true
+            WITH space, agent
+            ORDER BY agent.agent_id
+            SET agent._task_lifecycle_lock = true
+            REMOVE agent._task_lifecycle_lock
+            WITH space, agent
+            OPTIONAL MATCH (space)-[:HAS_PROJECT_AGENT_TASK]->
+                  (task:FuliProjectAgentTask)-
+                  [participant:HAS_PARTICIPANT]->(agent)
+            WITH space, agent, collect(DISTINCT {
+              task_id: task.task_id,
+              status: participant.status
+            }) AS tasks
+            WITH space, agent, [item IN tasks
+                         WHERE item.task_id IS NOT NULL
+                           AND item.status IN [
+                             'awaiting_recruitment', 'queued', 'running',
+                             'paused', 'blocked', 'awaiting_review'
+                           ]] AS open_tasks
+            WHERE agent.status = 'archived' OR size(open_tasks) = 0
+            WITH space, agent,
+                 coalesce(agent.status, 'active') <> 'archived'
+                   AS newly_archived
             SET agent.status = 'archived',
                 agent.updated_at = $updated_at,
-                agent.archived_reason = 'test cleanup'
-            WITH space, agent
+                agent.archive_reason = coalesce(agent.archive_reason,
+                                                'test cleanup'),
+                agent.archived_at = coalesce(agent.archived_at, $updated_at)
+            WITH space, agent, newly_archived
             OPTIONAL MATCH (space)-[:CONTAINS_PROJECT]->
                            (:FuliPersonalProject)-
                            [:HAS_PROJECT_AGENT_ASSIGNMENT]->
@@ -927,7 +1093,8 @@ class StoreProjectAgentExecutors(
                 assignment.ended_at = $updated_at,
                 assignment.updated_at = $updated_at,
                 assignment.revision = coalesce(assignment.revision, 0) + 1
-            RETURN count(DISTINCT agent) AS archived_count
+            RETURN count(DISTINCT CASE WHEN newly_archived THEN agent END)
+                     AS archived_count
             ''',
             personal_space_id=personal_space_id,
             test_source=test_source,

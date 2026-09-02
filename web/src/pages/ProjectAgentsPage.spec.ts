@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,6 +13,9 @@ import { useConsoleStore } from '@/stores/console'
 import { SearchableSelectStub } from '@/test-support/SearchableSelectStub'
 import type { ProjectAgentRecord } from '@/types'
 import ProjectAgentsPage from './ProjectAgentsPage.vue'
+import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
+import AgentAssignmentDialog from '@/features/project-agents/AgentAssignmentDialog.vue'
+import { refreshEmployeeCatalog } from '@/features/employees/catalog'
 
 const agents: ProjectAgentRecord[] = [
   {
@@ -74,7 +77,8 @@ const agents: ProjectAgentRecord[] = [
 ]
 
 describe('ProjectAgentsPage', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await refreshEmployeeCatalog('')
     getJson.mockReset()
     patchJson.mockReset()
     postJson.mockReset()
@@ -113,13 +117,16 @@ describe('ProjectAgentsPage', () => {
     const { wrapper } = mountPage()
     await flushPromises()
 
-    await wrapper.get('[aria-label="项目范围"]').setValue('project-b')
+    const filter = wrapper.get('.project-agents-project-filter')
+    await filter.get('.project-scope-trigger').trigger('click')
+    await filter.get('input[value="project-a"]').setValue(false)
     expect(wrapper.findAll('.project-agent-row')).toHaveLength(1)
     expect(wrapper.get('.project-agent-row').text()).toContain('活动 Agent')
     expect(wrapper.get('.project-agent-automation-policy').text()).toContain('设计项目')
 
-    await wrapper.get('[aria-label="项目范围"]').setValue('all')
+    await filter.get('.project-scope-all input').setValue(true)
     expect(wrapper.find('.project-agent-automation-policy').exists()).toBe(false)
+    await filter.get('.project-scope-footer button').trigger('click')
     await wrapper.get('.project-agents-status-filter button:nth-child(2)').trigger('click')
     expect(wrapper.findAll('.project-agent-row')).toHaveLength(1)
     expect(wrapper.get('.project-agent-row').text()).toContain('活动 Agent')
@@ -142,6 +149,97 @@ describe('ProjectAgentsPage', () => {
 
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(wrapper.findAll('.project-agent-row')).toHaveLength(1)
+  })
+
+  it('opens the inline multi-project editor directly for employee roles, including future templates', async () => {
+    const employee = structuredClone(agents[0]!)
+    employee.agentId = 'employee.concierge'
+    employee.personalProjectId = null
+    employee.profile.name = 'Concierge（合成测试）'
+    employee.profile.capabilities = ['fuli.employee:concierge', '项目管理']
+    employee.assignments = []
+    const template = {
+      id: 'concierge', version: '1.0.0', name: 'Concierge（合成测试）', role: '项目经理', description: '合成员工测试',
+      capabilities: ['项目管理'], permissions: ['board.read'], runtime: null, runtimeStatus: 'not_required',
+      agentId: employee.agentId, agentStatus: 'active', assignments: [], assignmentsVersion: 'version-0', identityConflict: false,
+    }
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (url.includes('/api/project-agents?')) return Promise.resolve([employee])
+      if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: [] })
+      if (url.includes('/api/employee-templates?')) return Promise.resolve({ templates: [template] })
+      return original(url)
+    })
+    const { wrapper } = mountPage()
+    await flushPromises()
+    await wrapper.get('.employee-project-overview button').trigger('click')
+    await flushPromises()
+    const dialog = wrapper.getComponent(EmployeeRecruitDialog)
+    expect(dialog.props('templateId')).toBe('concierge')
+    expect(dialog.props('open')).toBe(true)
+    expect(dialog.get('h2').text()).toContain('Concierge')
+    expect(dialog.findAll('.project-scope-list input[type="checkbox"]')).toHaveLength(2)
+    expect(dialog.find('.project-scope-trigger').exists()).toBe(false)
+    expect(wrapper.getComponent(AgentAssignmentDialog).props('open')).toBe(false)
+    await dialog.get('.project-scope-all input').setValue(true)
+    await dialog.get('input[value="project-b"]').setValue(false)
+    expect(dialog.get('.project-scope-count').text()).toContain('1 / 2')
+    expect(postJson).not.toHaveBeenCalled()
+    await dialog.get('.employee-recruit-heading button').trigger('click')
+    await wrapper.get('[data-detail-section="assignments"]').findAll('button')
+      .find((button) => button.text() === '分配项目')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.getComponent(EmployeeRecruitDialog).props('open')).toBe(true)
+    expect(wrapper.getComponent(EmployeeRecruitDialog).props('templateId')).toBe('concierge')
+    expect(wrapper.getComponent(AgentAssignmentDialog).props('open')).toBe(false)
+    expect(postJson).not.toHaveBeenCalled()
+  })
+
+  it('supports all, multiple project filters, and inversion without writing assignments', async () => {
+    const { wrapper, store } = mountPage()
+    store.state = { ...store.state!, personalProjects: [...store.state!.personalProjects!, { project_id: 'project-c', personal_space_id: 'personal-1', profile: { name: '第三个项目', sources: [], boundaries: [] } }] }
+    await flushPromises()
+    const filter = wrapper.get('.project-agents-project-filter')
+    await filter.get('.project-scope-trigger').trigger('click')
+    await filter.get('input[value="project-c"]').setValue(false)
+    expect(filter.get('.project-scope-trigger').text()).toContain('已选 2 个项目')
+    expect(wrapper.findAll('.project-agent-row')).toHaveLength(1)
+    expect(wrapper.find('.project-agent-automation-policy').exists()).toBe(false)
+    await filter.get('.project-scope-bulk button').trigger('click')
+    expect(filter.get('.project-scope-trigger').text()).toContain('第三个项目')
+    expect(wrapper.findAll('.project-agent-row')).toHaveLength(0)
+    await filter.get('.project-scope-all input').setValue(true)
+    expect(wrapper.findAll('.project-agent-row')).toHaveLength(1)
+    expect(postJson).not.toHaveBeenCalled()
+    expect(patchJson).not.toHaveBeenCalled()
+  })
+
+  it('does not show ended assignments as current projects or synthesize an empty reported assignment', async () => {
+    const endedAgent = structuredClone(agents[0]!)
+    endedAgent.assignments![0]!.status = 'ended'
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (url.includes('/api/project-agents?')) return Promise.resolve([endedAgent])
+      if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: endedAgent.assignments })
+      return original(url)
+    })
+    const { wrapper } = mountPage()
+    await flushPromises()
+    expect(wrapper.get('.project-agent-row-projects').text()).toContain('尚未分配项目')
+    expect(wrapper.get('.project-agents-header-meta').text()).toContain('0 个分配')
+    expect(wrapper.get('[data-detail-section="assignments"]').text()).toContain('活动项目')
+    expect(wrapper.get('[data-detail-section="assignments"]').text()).not.toContain('→ 当前分配')
+    const filter = wrapper.get('.project-agents-project-filter')
+    await filter.get('.project-scope-trigger').trigger('click')
+    await filter.get('input[value="project-b"]').setValue(false)
+    expect(wrapper.findAll('.project-agent-row')).toHaveLength(0)
+    await filter.get('.project-scope-all input').setValue(true)
+    await flushPromises()
+    endedAgent.assignments = []
+    await wrapper.findAll('button').find((button) => button.text() === '刷新真实数据')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.project-agents-header-meta').text()).toContain('0 个分配')
+    expect(wrapper.get('[data-detail-section="assignments"]').text()).not.toContain('当前分配')
   })
 
   it('shows only reported execution data and loads task/activity evidence on demand', async () => {
@@ -241,11 +339,19 @@ describe('ProjectAgentsPage', () => {
           worker_id: 'worker-1', worker_label: '真实子 Agent', worker_occupation_emoji: '🧭',
           agent_id: 'shared-agent', participant_role: 'collaborator', executor: '本地执行器', executor_id: 'executor-1',
           source_application: 'codex', actual_model_provider: 'openai', actual_model: 'model-x',
+          source_session_id: '01234567-89ab-cdef-0123-456789abcdef',
+          source_session_url: 'codex://threads/01234567-89ab-cdef-0123-456789abcdef',
+          tools_used: ['pytest', 'rg'],
+          token_usage: {
+            source: 'dingdong', total_tokens: 1234, input_tokens: 1200,
+            output_tokens: 34, cached_input_tokens: 500,
+          },
           work_summary: '完成结构审查', status: 'completed',
         },
         {
           agent_id: 'shared-agent', agent_name: '活动 Agent', occupation_emoji: '🎛️',
           participant_role: 'lead', work_summary: '等待收尾', status: 'failed',
+          source_session_id: 'unsafe-session', source_session_url: 'javascript:alert(1)',
         },
       ],
     }
@@ -271,13 +377,69 @@ describe('ProjectAgentsPage', () => {
     expect(summary.text()).toContain('Codex')
     expect(summary.text()).toContain('model-x')
     expect(summary.text()).toContain('完成结构审查')
+    expect(summary.text()).toContain('1,234 Token')
+    expect(summary.text()).toContain('DingDong')
+    expect(summary.text()).toContain('01234567-89ab-cdef-0123-456789abcdef')
+    expect(summary.text()).toContain('pytest')
+    expect(summary.text()).toContain('rg')
     expect(summary.text()).toContain('已完成')
     expect(summary.text()).toContain('失败')
-    expect(summary.get('.project-agent-execution-summary-list').element.tagName).toBe('UL')
+    expect(summary.get('.project-agent-execution-summary-table').element.tagName).toBe('TABLE')
+    expect(summary.get('.project-agent-execution-summary-table-wrap').attributes()).toMatchObject({
+      role: 'region', tabindex: '0',
+    })
+    expect(summary.get('caption').classes()).toContain('sr-only')
+    expect(summary.findAll('thead th').every((cell) => cell.attributes('scope') === 'col')).toBe(true)
+    expect(summary.findAll('tbody th').every((cell) => cell.attributes('scope') === 'row')).toBe(true)
     expect(summary.findAll('.project-agent-execution-summary-row')).toHaveLength(2)
-    expect(summary.findAll('.project-agent-execution-summary-row').every((row) => row.element.tagName === 'LI')).toBe(true)
+    expect(summary.findAll('.project-agent-execution-summary-row').every((row) => row.element.tagName === 'TR')).toBe(true)
+    const sessionLink = summary.get('a[href^="codex://threads/"]')
+    expect(sessionLink.attributes('href')).toBe(
+      'codex://threads/01234567-89ab-cdef-0123-456789abcdef',
+    )
+    expect(sessionLink.attributes()).toMatchObject({ target: '_blank', rel: 'noreferrer' })
+    expect(summary.find('a[href^="javascript:"]').exists()).toBe(false)
+    expect(summary.findAll('.project-agent-execution-summary-row')[0].text()).toContain('协作者')
+    expect(summary.findAll('.project-agent-execution-summary-row')[1].text()).toContain('负责人')
     expect(summary.findAll('.project-agent-execution-summary-row')[1].text()).not.toContain('实际模型')
   })
+
+  it.each([null, 'https://example.invalid/sessions/worker-session', 'javascript:alert(1)'])(
+    'keeps worker and reporting links distinct with worker URL %s', async (sessionUrl) => {
+      const originalGet = getJson.getMockImplementation()!
+      getJson.mockImplementation((url: string) => {
+        if (!url.includes('/api/project-agent-tasks?')) return originalGet(url)
+        return Promise.resolve({ tasks: [{
+          task_id: 'task-runtime', title: '独立执行器验证', personal_project_id: 'project-a',
+          status: 'blocked', participants: [], execution_summary: [{
+            agent_id: 'shared-agent', worker_id: 'worker-a', participant_role: 'lead',
+            source_application: 'codex', source_session_id: 'reporter-session',
+            source_session_url: 'https://example.invalid/sessions/reporter-session',
+            worker_runtime: { application: 'claude_code', session_id: 'worker-session', session_url: sessionUrl },
+            tools_used: [],
+            status: 'failed', work_summary: '认证失败，未执行项目测试。',
+          }],
+        }] })
+      })
+      const { wrapper } = mountPage()
+      await flushPromises()
+      const row = wrapper.get('.project-agent-execution-summary-row')
+      expect(row.text()).toContain('执行器会话 · Claude Code')
+      expect(row.text()).toContain('上报会话 · Codex')
+      expect(row.text()).toContain('worker-session')
+      expect(row.text()).toContain('未使用工具')
+      const reporterLink = row.get('a[href="https://example.invalid/sessions/reporter-session"]')
+      expect(reporterLink.text()).toBe('reporter-session')
+      if (sessionUrl?.startsWith('https:')) {
+        expect(row.get(`a[href="${sessionUrl}"]`).text()).toBe('worker-session')
+      } else {
+        expect(row.findAll('a')).toHaveLength(1)
+        expect(row.findAll('small').some((item) => item.text() === 'worker-session')).toBe(true)
+      }
+      expect(row.find('a[href^="javascript:"]').exists()).toBe(false)
+      expect(row.text()).not.toContain('0 Token')
+    },
+  )
 
   it('shows a reported empty execution summary without treating an unreported field as empty', async () => {
     const task = {
@@ -667,7 +829,7 @@ function mountPage() {
   return {
     store,
     wrapper: mount(ProjectAgentsPage, {
-      global: { plugins: [pinia], stubs: { SearchableSelect: SearchableSelectStub } },
+      global: { plugins: [pinia], stubs: { SearchableSelect: SearchableSelectStub, RouterLink: RouterLinkStub } },
     }),
   }
 }

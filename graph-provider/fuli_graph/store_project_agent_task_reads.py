@@ -7,27 +7,142 @@ import json
 
 from .project_agent_models import ProjectAgentModelStrategy, ProjectAgentProfile
 from .project_agent_task_models import (
+    ProjectAgentActivityTask,
     ProjectAgentRoutingDecisionRecord,
     ProjectAgentTaskExecutionSummary,
     ProjectAgentTaskEventRecord,
     ProjectAgentTaskParticipantRecord,
     ProjectAgentTaskRecord,
     ProjectAgentTaskRouteResult,
+    ProjectAgentTokenUsage,
+    ProjectAgentWorkerRuntime,
 )
 from .provider_values import native_datetime
 
 
 TERMINAL_TASK_STATUSES = {'completed', 'failed', 'cancelled'}
+SOURCE_SESSION_FIELDS = {
+    'source_application', 'source_session_id', 'source_session_url',
+}
+WORKER_DISPLAY_FIELDS = {'worker_label', 'worker_occupation_emoji'}
 
 
 class StoreProjectAgentTaskReads:
     """Read durable task history and derive client-facing route results."""
 
-    async def _find_task_row(self, personal_space_id, task_id):
+    @classmethod
+    def _event_with_latest_execution_evidence(cls, event, event_rows):
+        reported = sorted(
+            (dict(item) for item in event_rows),
+            key=lambda item: (
+                str(item.get('created_at') or ''),
+                str(item.get('event_id') or ''),
+            ),
+        )
+        merged = dict(event)
+        worker_id = event.get('worker_id') or next(
+            (item['worker_id'] for item in reversed(reported)
+             if item.get('worker_id')), None,
+        )
+        if worker_id:
+            reported = [item for item in reported
+                        if item.get('worker_id') == worker_id]
+        worker_events = reported
+        reported = cls._current_worker_run(reported)
+        source_events = cls._current_reporter_session(reported)
+        for field in (
+            'source_application', 'source_session_id', 'source_session_url',
+            'tools_used', 'actual_model_provider', 'actual_model',
+            'actual_executor_id', 'matched_executor_rule_id',
+            'token_usage_json', 'worker_id', 'worker_label',
+            'worker_occupation_emoji', 'worker_status', 'worker_runtime_json',
+        ):
+            scope = worker_events if field in WORKER_DISPLAY_FIELDS else (
+                source_events if field in SOURCE_SESSION_FIELDS else reported
+            )
+            if reported and (worker_id or field in SOURCE_SESSION_FIELDS):
+                merged[field] = None
+            for candidate in reversed(scope):
+                value = candidate.get(field)
+                if value is not None and value != '':
+                    merged[field] = value
+                    break
+        return merged
+
+    @staticmethod
+    def _event_json_fields(event):
+        fields = {}
+        for name, model in (
+            ('token_usage', ProjectAgentTokenUsage),
+            ('worker_runtime', ProjectAgentWorkerRuntime),
+        ):
+            value = event.get(f'{name}_json')
+            if value:
+                try:
+                    fields[name] = model.model_validate_json(value)
+                except (TypeError, ValueError):
+                    pass
+        return fields
+
+    @classmethod
+    def _current_worker_run(cls, events):
+        """Never carry usage, tools, or model claims across worker sessions."""
+        start, identity = 0, None
+        for index, event in enumerate(events):
+            runtime = cls._event_json_fields(event).get('worker_runtime') \
+                if isinstance(event, dict) else event.worker_runtime
+            if runtime is None:
+                continue
+            reported_identity = (runtime.application, runtime.session_id)
+            if reported_identity != identity:
+                start, identity = index, reported_identity
+        return events[start:]
+
+    @staticmethod
+    def _current_reporter_session(events):
+        """Keep a reporting session URL paired with its own host identity."""
+        start, identity = 0, None
+        for index, event in enumerate(events):
+            get = event.get if isinstance(event, dict) else (
+                lambda field: getattr(event, field, None)
+            )
+            reported = (get('source_application'), get('source_session_id'))
+            if reported == (None, None):
+                continue
+            if reported != identity:
+                start, identity = index, reported
+        return events[start:]
+
+    @classmethod
+    def _activity_executor_fields(cls, event):
+        fields = {
+            name: event.get(name)
+            for name in (
+                'actual_executor_id', 'matched_executor_rule_id',
+                'source_session_id', 'source_session_url', 'tools_used',
+                'worker_id', 'worker_label', 'worker_occupation_emoji',
+                'worker_status',
+            )
+        }
+        fields.update(cls._event_json_fields(event))
+        return {key: value for key, value in fields.items()
+                if key in ProjectAgentActivityTask.model_fields}
+
+    async def _find_task_row(
+        self,
+        personal_space_id,
+        task_id,
+        personal_project_id=None,
+    ):
         records, _, _ = await self.runtime.driver.execute_query(
-            self._task_read_query('WHERE task.task_id = $task_id'),
+            self._task_read_query(
+                '''WHERE task.task_id = $task_id
+                     AND ($personal_project_id IS NULL
+                          OR task.personal_project_id = $personal_project_id)'''
+            ),
             personal_space_id=personal_space_id,
             task_id=task_id,
+            personal_project_id=personal_project_id,
             routing_='r',
         )
         return records[0] if records else None
@@ -119,9 +234,12 @@ class StoreProjectAgentTaskReads:
                 'worker_label',
                 'worker_occupation_emoji',
                 'worker_status',
+                'source_session_url',
+                'tools_used',
             ):
                 if name in ProjectAgentTaskEventRecord.model_fields:
                     fields[name] = event.get(name)
+            fields.update(self._event_json_fields(event))
             events.append(ProjectAgentTaskEventRecord(**fields))
         events.sort(key=lambda item: item.created_at)
         fields = {
@@ -132,6 +250,9 @@ class StoreProjectAgentTaskReads:
             'objective': raw['objective'],
             'work_kind': raw['work_kind'],
             'required_capabilities': list(raw.get('required_capabilities') or []),
+            'executor_capability_hints': list(
+                raw.get('executor_capability_hints') or []
+            ),
             'duration': raw.get('duration') or 'ongoing',
             'staffing_intent': raw.get('staffing_intent') or 'reuse_preferred',
             'status': raw['status'],
@@ -298,14 +419,16 @@ class StoreProjectAgentTaskReads:
             or event.actual_executor_id
             or event.actual_model_provider
             or event.actual_model
+            or event.token_usage
             or event.status in {
                 'running', 'paused', 'awaiting_review', 'blocked',
                 'completed', 'failed', 'cancelled',
             }
         )
 
-    @staticmethod
+    @classmethod
     def _execution_summary_row(
+        cls,
         participant,
         agent_name,
         occupation_emoji,
@@ -316,12 +439,17 @@ class StoreProjectAgentTaskReads:
     ):
         task_fallback = task_fallback or {}
         latest = events[-1] if events else None
+        run_events = cls._current_worker_run(events)
+        source_events = cls._current_reporter_session(run_events)
 
         def latest_value(name):
+            scope = events if name in WORKER_DISPLAY_FIELDS else (
+                source_events if name in SOURCE_SESSION_FIELDS else run_events
+            )
             return next(
                 (
                     getattr(event, name)
-                    for event in reversed(events)
+                    for event in reversed(scope)
                     if getattr(event, name, None) is not None
                 ),
                 None,
@@ -347,6 +475,9 @@ class StoreProjectAgentTaskReads:
             executor=actual_executor_id,
             executor_id=actual_executor_id,
             source_application=latest_value('source_application'),
+            source_session_id=latest_value('source_session_id'),
+            source_session_url=latest_value('source_session_url'),
+            tools_used=latest_value('tools_used'),
             actual_model_provider=(
                 latest_value('actual_model_provider')
                 or task_fallback.get('actual_model_provider')
@@ -355,6 +486,7 @@ class StoreProjectAgentTaskReads:
                 latest_value('actual_model')
                 or task_fallback.get('actual_model')
             ),
+            token_usage=latest_value('token_usage'),
             work_summary=(
                 latest.summary
                 if latest
@@ -365,6 +497,7 @@ class StoreProjectAgentTaskReads:
             worker_id=worker_id,
             worker_label=worker_label,
             worker_occupation_emoji=worker_occupation_emoji,
+            worker_runtime=latest_value('worker_runtime'),
         )
 
     async def _archive_finished_temporary_agent(self, request, raw_task, updated_at):
@@ -381,7 +514,14 @@ class StoreProjectAgentTaskReads:
                     agent_type: 'temporary',
                     temporary_task_id: $task_id
                   })
+            SET agent._task_lifecycle_lock = true
+            REMOVE agent._task_lifecycle_lock
+            WITH space, task, agent
             SET agent.status = 'archived',
+                agent.archive_reason = coalesce(
+                  agent.archive_reason,
+                  'temporary task reached terminal state'),
+                agent.archived_at = coalesce(agent.archived_at, $updated_at),
                 agent.updated_at = $updated_at
             WITH space, agent
             MATCH (space)-[:CONTAINS_PROJECT]->(:FuliPersonalProject)-
@@ -392,7 +532,7 @@ class StoreProjectAgentTaskReads:
                 assignment.end_reason = 'temporary task reached terminal state',
                 assignment.ended_at = $updated_at,
                 assignment.updated_at = $updated_at,
-                assignment.revision = assignment.revision + 1
+                assignment.revision = coalesce(assignment.revision, 0) + 1
             ''',
             personal_space_id=request.personal_space_id,
             task_id=request.task_id,
@@ -421,10 +561,31 @@ class StoreProjectAgentTaskReads:
             json.dumps(payload, sort_keys=True, separators=(',', ':')).encode()
         ).hexdigest()
 
-    def _route_result(self, task, recruitment, *, assigned_agent=None):
-        if recruitment and recruitment.status == 'fulfilled':
+    def _route_result(
+        self,
+        task,
+        recruitment,
+        *,
+        assigned_agent=None,
+        recruitments=None,
+    ):
+        all_recruitments = list(recruitments or [])
+        if recruitment and not any(
+            item.recruitment_id == recruitment.recruitment_id
+            for item in all_recruitments
+        ):
+            all_recruitments.insert(0, recruitment)
+        fulfilled = [
+            item for item in all_recruitments if item.status == 'fulfilled'
+        ]
+        awaiting = [
+            item
+            for item in all_recruitments
+            if item.status == 'awaiting_confirmation'
+        ]
+        if all_recruitments and len(fulfilled) == len(all_recruitments):
             decision = 'recruited'
-        elif recruitment and recruitment.status == 'awaiting_confirmation':
+        elif awaiting:
             decision = 'awaiting_confirmation'
         elif task.routing_outcome == 'assigned_existing':
             decision = 'reused'
@@ -433,25 +594,30 @@ class StoreProjectAgentTaskReads:
         else:
             decision = 'blocked'
         notice = None
-        must_disclose = bool(
-            recruitment
-            and recruitment.confirmation_mode == 'automatic'
-            and recruitment.status == 'fulfilled'
-        )
+        disclosed_recruitments = [
+            item
+            for item in fulfilled
+            if item.confirmation_mode == 'automatic'
+        ]
+        must_disclose = bool(disclosed_recruitments)
         if must_disclose:
-            notice = (
-                f'HR {recruitment.hr_agent_id} recruited '
-                f'{recruitment.proposed_profile.name} as a '
-                f'{recruitment.position_kind} Agent for '
-                f'{recruitment.proposed_profile.responsibility}. '
-                f'Reason: {recruitment.reason}. '
-                f'Trigger: {recruitment.trigger_source_application or "unspecified"}; '
-                f'time: {recruitment.fulfilled_at.isoformat() if recruitment.fulfilled_at else "pending"}.'
+            notice = ' '.join(
+                (
+                    f'HR {item.hr_agent_id} recruited '
+                    f'{item.proposed_profile.name} as a '
+                    f'{item.position_kind} {item.participant_role} Agent for '
+                    f'{item.proposed_profile.responsibility}. '
+                    f'Reason: {item.reason}. '
+                    f'Trigger: {item.trigger_source_application or "unspecified"}; '
+                    f'time: {item.fulfilled_at.isoformat() if item.fulfilled_at else "pending"}.'
+                )
+                for item in disclosed_recruitments
             )
         return ProjectAgentTaskRouteResult(
             task=task,
             assigned_agent=assigned_agent,
             recruitment=recruitment,
+            recruitments=all_recruitments,
             decision=decision,
             must_disclose_recruitment=must_disclose,
             client_notice=notice,

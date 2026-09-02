@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+from contextlib import asynccontextmanager
 from datetime import datetime
 
 from fastapi import HTTPException
@@ -20,6 +21,7 @@ from .project_agent_executor_models import (
 )
 from .project_agent_models import ProjectAgentModelStrategy
 from .provider_values import native_datetime, now_utc, stable_uuid
+from .store_transactions import query_store_transaction
 
 
 _TERMINAL_NEUTRAL = {'cancelled'}
@@ -58,6 +60,36 @@ def project_agent_executor_outcome_bucket_id(
 class StoreProjectAgentExecutorLearning:
     """Persist explainable evidence without overriding explicit user policy."""
 
+    @staticmethod
+    def _learning_scope(request):
+        return {key: getattr(request, key) for key in (
+            'personal_space_id', 'personal_project_id', 'work_kind',
+            'agent_id', 'executor_id', 'model_strategy')}
+
+    @asynccontextmanager
+    async def _learning_bucket_transaction(self, **scope):
+        """Serialize a bucket before reading its evidence and commit together."""
+        strategy_key = project_agent_model_strategy_key(scope['model_strategy'])
+        bucket_id = project_agent_executor_outcome_bucket_id(
+            self.settings.provider_id, scope['personal_space_id'],
+            scope['personal_project_id'], scope['work_kind'], scope['agent_id'],
+            scope['executor_id'], strategy_key, bucket_kind='aggregate')
+        async with query_store_transaction(self) as scoped:
+            await scoped.runtime.driver.execute_query('''
+                MERGE (bucket:FuliProjectAgentExecutorOutcomeAggregate {id: $bucket_id})
+                ON CREATE SET bucket.aggregate_id = $bucket_id,
+                              bucket.personal_space_id = $personal_space_id,
+                              bucket.personal_project_id = $personal_project_id,
+                              bucket.work_kind = $work_kind,
+                              bucket.agent_id = $agent_id,
+                              bucket.executor_id = $executor_id,
+                              bucket.model_strategy_key = $model_strategy_key
+                SET bucket._write_lock = true
+                REMOVE bucket._write_lock
+                ''', bucket_id=bucket_id, model_strategy_key=strategy_key,
+                **{key: value for key, value in scope.items() if key != 'model_strategy'})
+            yield scoped
+
     async def record_project_agent_executor_outcome_evidence(
         self,
         actor: dict,
@@ -71,6 +103,77 @@ class StoreProjectAgentExecutorLearning:
             space,
             request.personal_project_id,
         )
+        async with query_store_transaction(self) as scoped:
+            # Relationship writes below also lock the task. Match the activity
+            # path's task -> bucket order instead of introducing its inverse.
+            await scoped.runtime.driver.execute_query('''
+                MATCH (task:FuliProjectAgentTask {
+                  personal_space_id: $personal_space_id,
+                  personal_project_id: $personal_project_id, task_id: $task_id
+                })
+                SET task._outcome_write_lock = true
+                REMOVE task._outcome_write_lock
+                ''', **{key: getattr(request, key) for key in (
+                    'personal_space_id', 'personal_project_id', 'task_id')})
+            await scoped._validate_outcome_execution(request)
+            async with scoped._learning_bucket_transaction(**self._learning_scope(request)) as bucket:
+                return await bucket._record_outcome_evidence(actor, request)
+
+    async def _validate_outcome_execution(self, request):
+        """Bind credit to recorded work, not a caller-chosen learning bucket.
+
+        External test/user references remain caller-supplied assertions. Only
+        system terminal evidence is derived from a persisted task event.
+        Historical execution remains usable after an executor is revoked.
+        """
+        rows, _, _ = await self.runtime.driver.execute_query('''
+            MATCH (task:FuliProjectAgentTask {
+              personal_space_id: $personal_space_id,
+              personal_project_id: $personal_project_id, task_id: $task_id
+            })-[:HAS_PARTICIPANT]->(agent:FuliProjectAgent {agent_id: $agent_id})
+            MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})
+                  -[:HAS_PROJECT_AGENT_IDENTITY]->(agent)
+            OPTIONAL MATCH (task)-[:HAS_EXECUTOR_OBSERVATION]->
+                          (observation:FuliProjectAgentExecutorObservation {
+                            agent_id: $agent_id, executor_id: $executor_id
+                          })
+            WHERE $run_id IS NULL OR observation.run_id = $run_id
+            WITH task, collect(DISTINCT observation) AS observations
+            OPTIONAL MATCH (task)-[:HAS_TASK_EVENT]->(event:FuliProjectAgentTaskEvent {
+                event_id: $run_id, agent_id: $agent_id, actual_executor_id: $executor_id
+            })
+            RETURN task, observations, event
+            ''', **{key: getattr(request, key) for key in (
+                'personal_space_id', 'personal_project_id', 'task_id',
+                'agent_id', 'executor_id', 'run_id')}, routing_='r')
+        if not rows:
+            raise HTTPException(status_code=409, detail='outcome Agent is not a task participant')
+        row = rows[0]
+        task = dict(row['task'])
+        strategy_key = project_agent_model_strategy_key(request.model_strategy)
+
+        def matches_strategy(raw):
+            strategy = ProjectAgentModelStrategy.model_validate_json(raw or '{}')
+            return project_agent_model_strategy_key(strategy) == strategy_key
+
+        if (task.get('work_kind') != request.work_kind
+                or not matches_strategy(task.get('effective_model_strategy_json'))):
+            raise HTTPException(status_code=409, detail='outcome work kind or strategy does not match the task')
+        observations = [dict(value) for value in row.get('observations') or []]
+        if not any(matches_strategy(value.get('model_strategy_json')) for value in observations):
+            raise HTTPException(status_code=409, detail='outcome requires a matching recorded execution')
+        if request.evidence_kind == 'terminal_outcome':
+            event = dict(row.get('event') or {})
+            terminal_status = event.get('status')
+            if terminal_status not in {'completed', 'failed', 'cancelled'}:
+                terminal_status = event.get('worker_status')
+            if (not event or terminal_status != request.terminal_outcome
+                    or request.reference_ids != [request.run_id]
+                    or request.idempotency_key != f'terminal:{request.run_id}'
+                    or request.occurred_at != native_datetime(event.get('created_at'))):
+                raise HTTPException(status_code=409, detail='terminal outcome must match its canonical task event')
+
+    async def _record_outcome_evidence(self, actor, request):
         evidence_id = stable_uuid(
             self.settings.provider_id,
             request.personal_space_id,
@@ -96,6 +199,7 @@ class StoreProjectAgentExecutorLearning:
             })
             ON CREATE SET evidence.evidence_id = $evidence_id,
                           evidence.payload_hash = $payload_hash,
+                          evidence.idempotency_key = $idempotency_key,
                           evidence.personal_space_id = $personal_space_id,
                           evidence.personal_project_id = $personal_project_id,
                           evidence.work_kind = $work_kind,
@@ -126,6 +230,7 @@ class StoreProjectAgentExecutorLearning:
             run_id=request.run_id,
             evidence_id=evidence_id,
             payload_hash=payload_hash,
+            idempotency_key=request.idempotency_key,
             model_strategy_json=request.model_strategy.model_dump_json(),
             model_strategy_key=strategy_key,
             evidence_kind=request.evidence_kind,
@@ -314,6 +419,21 @@ class StoreProjectAgentExecutorLearning:
             space,
             request.personal_project_id,
         )
+        records, _, _ = await self.runtime.driver.execute_query('''
+            MATCH (evidence:FuliProjectAgentExecutorOutcomeEvidence {
+              personal_space_id: $personal_space_id, personal_project_id: $personal_project_id,
+              agent_id: $agent_id, evidence_id: $evidence_id
+            })
+            RETURN evidence
+            ''', **{key: getattr(request, key) for key in (
+                'personal_space_id', 'personal_project_id', 'agent_id', 'evidence_id')})
+        if not records:
+            raise HTTPException(status_code=409, detail='outcome evidence is missing')
+        evidence = self._outcome_evidence_from_raw(dict(records[0]['evidence']))
+        async with self._learning_bucket_transaction(**self._learning_scope(evidence)) as scoped:
+            return await scoped._ignore_outcome_evidence(actor, request)
+
+    async def _ignore_outcome_evidence(self, actor, request):
         records, _, _ = await self.runtime.driver.execute_query(
             '''
             MATCH (evidence:FuliProjectAgentExecutorOutcomeEvidence {
@@ -323,11 +443,15 @@ class StoreProjectAgentExecutorLearning:
               evidence_id: $evidence_id
             })
             WHERE evidence.ignore_idempotency_key IS NULL
-               OR evidence.ignore_idempotency_key = $idempotency_key
+               OR (evidence.ignore_idempotency_key = $idempotency_key
+                   AND (evidence.ignore_payload_hash = $payload_hash
+                     OR (evidence.ignore_payload_hash IS NULL
+                         AND evidence.ignored_reason = $reason)))
             SET evidence.ignored = true,
                 evidence.ignored_reason = $reason,
                 evidence.ignore_idempotency_key = $idempotency_key,
-                evidence.ignored_at = $updated_at
+                evidence.ignore_payload_hash = $payload_hash,
+                evidence.ignored_at = coalesce(evidence.ignored_at, $updated_at)
             RETURN evidence
             ''',
             personal_space_id=request.personal_space_id,
@@ -336,6 +460,7 @@ class StoreProjectAgentExecutorLearning:
             evidence_id=request.evidence_id,
             reason=request.reason,
             idempotency_key=request.idempotency_key,
+            payload_hash=self._payload_hash(request),
             updated_at=now_utc(),
         )
         if not records:
@@ -371,6 +496,10 @@ class StoreProjectAgentExecutorLearning:
             space,
             request.personal_project_id,
         )
+        async with self._learning_bucket_transaction(**self._learning_scope(request)) as scoped:
+            return await scoped._reset_outcomes(actor, request)
+
+    async def _reset_outcomes(self, actor, request):
         strategy_key = project_agent_model_strategy_key(request.model_strategy)
         reset_id = project_agent_executor_outcome_bucket_id(
             self.settings.provider_id,
@@ -383,6 +512,12 @@ class StoreProjectAgentExecutorLearning:
             bucket_kind='reset',
         )
         payload_hash = self._payload_hash(request)
+        previous, _, _ = await self.runtime.driver.execute_query('''
+            MATCH (reset:FuliProjectAgentExecutorOutcomeReset {id: $reset_id})
+            RETURN reset.reset_at AS previous_reset_at
+            ''', reset_id=reset_id, routing_='r')
+        previous_time = native_datetime(previous[0]['previous_reset_at']) if previous else None
+        replace_unknown_timezone = previous_time is not None and previous_time.utcoffset() is None
         records, _, _ = await self.runtime.driver.execute_query(
             '''
             MERGE (reset:FuliProjectAgentExecutorOutcomeReset {
@@ -402,7 +537,8 @@ class StoreProjectAgentExecutorLearning:
                  OR reset.payload_hash = $payload_hash
                  OR (
                    reset.idempotency_key <> $idempotency_key
-                   AND (reset.reset_at IS NULL OR reset.reset_at < $reset_at)
+                   AND (reset.reset_at IS NULL OR $replace_unknown_timezone
+                        OR reset.reset_at < $reset_at)
                  ) AS accepted
             WHERE accepted
             SET reset.reset_at = $reset_at,
@@ -424,6 +560,7 @@ class StoreProjectAgentExecutorLearning:
             model_strategy_key=strategy_key,
             payload_hash=payload_hash,
             reset_at=request.reset_at,
+            replace_unknown_timezone=replace_unknown_timezone,
             reason=request.reason,
             idempotency_key=request.idempotency_key,
         )
@@ -466,6 +603,19 @@ class StoreProjectAgentExecutorLearning:
         if decay_half_life_days <= 0:
             raise HTTPException(status_code=422, detail='decay half-life must be positive')
         strategy = model_strategy or ProjectAgentModelStrategy()
+        async with self._learning_bucket_transaction(
+            personal_space_id=personal_space_id, personal_project_id=personal_project_id,
+            work_kind=work_kind, executor_id=executor_id, agent_id=agent_id,
+            model_strategy=strategy,
+        ) as scoped:
+            return await scoped._aggregate_outcomes(
+                personal_space_id=personal_space_id, personal_project_id=personal_project_id,
+                work_kind=work_kind, executor_id=executor_id, agent_id=agent_id,
+                strategy=strategy, as_of=as_of, decay_half_life_days=decay_half_life_days)
+
+    async def _aggregate_outcomes(self, *, personal_space_id, personal_project_id,
+                                  work_kind, executor_id, agent_id, strategy,
+                                  as_of, decay_half_life_days):
         strategy_key = project_agent_model_strategy_key(strategy)
         reset_id = project_agent_executor_outcome_bucket_id(
             self.settings.provider_id,
@@ -518,13 +668,18 @@ class StoreProjectAgentExecutorLearning:
             routing_='r',
         )
         current = as_of or now_utc()
+        if current.utcoffset() is None:
+            raise HTTPException(status_code=422, detail='aggregation time requires a timezone')
+        validation_warnings = []
         reset_at = None
         for row in reset_records:
             reset_raw = row.get('reset')
             if not reset_raw:
                 continue
             candidate = native_datetime(dict(reset_raw).get('reset_at'))
-            if candidate and (reset_at is None or candidate > reset_at):
+            if candidate and candidate.utcoffset() is None:
+                validation_warnings.append('reset_timestamp_timezone_missing')
+            if candidate and (reset_at is None or (not validation_warnings and candidate > reset_at)):
                 reset_at = candidate
         evidence_rows = []
         for row in records:
@@ -546,12 +701,20 @@ class StoreProjectAgentExecutorLearning:
                     raw_key = project_agent_model_strategy_key(evidence_strategy)
                 if raw_key == strategy_key:
                     evidence_rows.append(raw)
+                    if (not raw.get('ignored')
+                            and native_datetime(raw.get('occurred_at')).utcoffset() is None):
+                        validation_warnings.append(
+                            f'evidence_timestamp_timezone_missing:{raw.get("evidence_id") or raw.get("id")}')
+        # Older requests accepted local datetimes. Never guess their timezone or
+        # let one invalid value prevent subsequent ignore/reset repairs. Expose
+        # the history, but keep the entire bucket neutral until it is usable.
         evidence = [
             self._outcome_evidence_from_raw(raw)
             for raw in evidence_rows
             if not raw.get('ignored')
             and (
-                reset_at is None
+                validation_warnings
+                or reset_at is None
                 or native_datetime(raw.get('occurred_at')) > reset_at
             )
         ]
@@ -566,16 +729,16 @@ class StoreProjectAgentExecutorLearning:
         evidence_refs: set[str] = set()
         for item in evidence:
             occurred = item.occurred_at
-            age = max(0.0, (current - occurred).total_seconds() / 86400)
-            weight = math.pow(0.5, age / decay_half_life_days)
-            if age <= _DEFAULT_RECENT_DAYS:
+            age = None if validation_warnings else max(0.0, (current - occurred).total_seconds() / 86400)
+            weight = 0.0 if age is None else math.pow(0.5, age / decay_half_life_days)
+            if age is not None and age <= _DEFAULT_RECENT_DAYS:
                 recent_count += 1
             evidence_refs.update(item.reference_ids)
             if item.task_id:
                 evidence_refs.add(f'task:{item.task_id}')
             if item.run_id:
                 evidence_refs.add(f'run:{item.run_id}')
-            signal, value = self._evidence_signal(item)
+            signal, value = ('neutral', 0.0) if validation_warnings else self._evidence_signal(item)
             if signal == 'success':
                 success_count += 1
                 weighted_success += weight * value
@@ -616,8 +779,8 @@ class StoreProjectAgentExecutorLearning:
             failure_count=failure_count,
             rating_count=len(rating_values),
             average_rating=(sum(rating_values) / len(rating_values)) if rating_values else None,
-            neutral_due_to_insufficient_evidence=sample_count < _MINIMUM_EVIDENCE_SAMPLES,
-            ignored=False,
+            neutral_due_to_insufficient_evidence=bool(validation_warnings) or sample_count < _MINIMUM_EVIDENCE_SAMPLES,
+            ignored=bool(validation_warnings),
             reset_at=reset_at,
             as_of=current,
             decay_half_life_days=decay_half_life_days,
@@ -625,6 +788,7 @@ class StoreProjectAgentExecutorLearning:
             weighted_failure=weighted_failure,
             evidence_refs=sorted(evidence_refs),
             evidence_contributions=contributions,
+            validation_warnings=validation_warnings,
         )
         await self.runtime.driver.execute_query(
             '''

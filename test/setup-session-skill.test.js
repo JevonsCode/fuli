@@ -186,6 +186,18 @@ test('bundled session Skill reports only provider-reported worker execution summ
   assert.match(skill, /actual.*executor.*sourceApplication|sourceApplication.*actual/i);
   assert.match(skill, /work.*summary|summary.*work/i);
   assert.match(skill, /workerStatus|terminal.*status/i);
+  assert.match(
+    skill,
+    /(?:workerStatus[\s\S]{0,120}terminal|terminal[\s\S]{0,120}workerStatus)[\s\S]{0,240}task status[\s\S]{0,120}running/i
+  );
+  assert.match(
+    skill,
+    /after[\s\S]{0,160}(?:worker|participant)[\s\S]{0,200}final task[\s\S]{0,160}completed/i
+  );
+  assert.match(skill, /Markdown table|table.*worker/i);
+  assert.match(skill, /Token/i);
+  assert.match(skill, /not reported|unreported/i);
+  assert.match(skill, /sourceSessionId|session.*(?:ID|link)/i);
   assert.match(skill, /configured.*(?:allowed|available).*not.*evidence/i);
   assert.match(skill, /empty.*executionSummary.*omit|omit.*empty.*executionSummary/i);
 });

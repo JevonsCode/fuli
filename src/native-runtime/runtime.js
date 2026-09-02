@@ -13,6 +13,7 @@ import {
 } from 'node:fs';
 import {
   mkdir,
+  readdir,
   readFile,
   rename,
   rm,
@@ -22,7 +23,7 @@ import {
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createConnection } from 'node:net';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 
 import { FULI_VERSION } from '../package-metadata.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
@@ -284,12 +285,18 @@ export async function ensureNativeRuntime(input, dependencies = {}) {
   }
 
   const providerPython = join(input.paths.nativeProviderVenvPath, 'bin', 'python');
+  const providerSource = join(dirname(input.paths.graphComposePath), 'graph-provider');
+  const providerFingerprint = await deps.providerSourceFingerprint(providerSource);
+  if (!/^[a-f0-9]{64}$/.test(providerFingerprint)) {
+    throw new Error('Native Graph Provider source fingerprint is invalid.');
+  }
   const expected = {
     version: MANIFEST_VERSION,
     status: 'ready',
     mode: 'native',
     neo4jVersion: NATIVE_NEO4J_VERSION,
     providerVersion: `${FULI_VERSION}+native.${PROVIDER_RUNTIME_REVISION}`,
+    providerFingerprint,
     javaHome,
     uvCommand,
     neo4jHome: input.paths.nativeNeo4jHome,
@@ -307,14 +314,17 @@ export async function ensureNativeRuntime(input, dependencies = {}) {
       sha256: NATIVE_NEO4J_SHA256
     });
   }
-  if (!deps.pathExists(providerPython) || saved?.providerVersion !== expected.providerVersion) {
+  if (
+    !deps.pathExists(providerPython) ||
+    saved?.providerVersion !== expected.providerVersion ||
+    saved?.providerFingerprint !== expected.providerFingerprint
+  ) {
     deps.onProgress(input, 'Installing the native Graph Provider…');
     await deps.installProvider({
       uvCommand,
       venvPath: input.paths.nativeProviderVenvPath,
       providerPython,
-      providerSource: join(dirname(dirname(input.paths.graphComposePath)), 'graph-provider'),
-      packageRoot: dirname(input.paths.graphComposePath)
+      providerSource
     });
   }
   if (!neo4jReady(input.paths, deps.pathExists) || !deps.pathExists(providerPython)) {
@@ -356,6 +366,7 @@ function manifestReady(saved, expected, paths, pathExists) {
     saved.mode === expected.mode &&
     saved.neo4jVersion === expected.neo4jVersion &&
     saved.providerVersion === expected.providerVersion &&
+    saved.providerFingerprint === expected.providerFingerprint &&
     saved.javaHome === expected.javaHome &&
     saved.uvCommand === expected.uvCommand &&
     saved.neo4jHome === expected.neo4jHome &&
@@ -385,6 +396,7 @@ function nativeDependencies(overrides) {
     resolveUvCommand,
     installNeo4j,
     installProvider,
+    providerSourceFingerprint,
     onProgress: (input, message) => input.onProgress?.(message),
     ...overrides
   };
@@ -431,15 +443,53 @@ async function installNeo4j({ paths, home, url, sha256 }) {
   await runCommand('tar', ['-xzf', archive, '-C', paths.nativeRuntimeDir]);
 }
 
-async function installProvider({ uvCommand, venvPath, providerPython, packageRoot }) {
+async function installProvider({ uvCommand, venvPath, providerPython, providerSource }) {
   await mkdir(dirname(venvPath), { recursive: true });
   if (!existsSync(providerPython)) {
     await runCommand(uvCommand, ['venv', '--python', '3.12', '--seed', venvPath]);
   }
-  await runCommand(uvCommand, [
+  await runCommand(uvCommand, nativeProviderInstallArguments({
+    providerPython,
+    providerSource
+  }));
+}
+
+export function nativeProviderInstallArguments({ providerPython, providerSource }) {
+  return [
     'pip', 'install', '--python', providerPython, '--upgrade',
-    join(packageRoot, 'graph-provider')
-  ]);
+    '--reinstall-package', 'fuli-graph-provider',
+    providerSource
+  ];
+}
+
+async function providerSourceFingerprint(providerSource) {
+  const files = [
+    join(providerSource, 'pyproject.toml'),
+    ...await pythonSourceFiles(join(providerSource, 'fuli_graph'))
+  ].sort();
+  const hash = createHash('sha256');
+  for (const path of files) {
+    const name = relative(providerSource, path).replaceAll('\\', '/');
+    hash.update(name);
+    hash.update('\0');
+    hash.update(await readFile(path));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
+async function pythonSourceFiles(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name !== '__pycache__') files.push(...await pythonSourceFiles(path));
+    } else if (entry.isFile() && entry.name.endsWith('.py')) {
+      files.push(path);
+    }
+  }
+  return files;
 }
 
 async function downloadFile(url, destination) {

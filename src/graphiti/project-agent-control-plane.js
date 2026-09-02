@@ -1,5 +1,9 @@
 import { agentProjectResolution } from './agent-knowledge-workflows.js';
 import {
+  getProjectAgentMemory,
+  checkpointProjectAgentMemory
+} from './project-agent-memory.js';
+import {
   authorizeExecutor as authorizeExecutorWorkflow,
   cleanupProjectAgentTestRoles as cleanupProjectAgentTestRolesWorkflow,
   coordinateProjectAgentTask as coordinateProjectAgentTaskWorkflow,
@@ -48,6 +52,16 @@ export const projectAgentControlPlaneHooks = Object.freeze({
 });
 
 export class ProjectAgentControlPlaneApplication {
+  async getProjectAgentMemory(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return getProjectAgentMemory(this, input);
+  }
+
+  async checkpointProjectAgentMemory(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return checkpointProjectAgentMemory(this, input);
+  }
+
   async upsertProjectAgent(input) {
     this.#assertSpace(input.personalSpaceId);
     return upsertProjectAgentWorkflow(this, input);
@@ -252,7 +266,10 @@ export class ProjectAgentControlPlaneApplication {
   }
 
   async getProjectAgentContext(input) {
-    const resolution = await this.#resolveProject(input.projectPath);
+    const resolution = await this.#resolveProject(
+      input.projectPath,
+      input.personalProjectId ?? null
+    );
     return getProjectAgentContextWorkflow(
       this,
       agentProjectResolution(resolution),
@@ -266,9 +283,9 @@ export class ProjectAgentControlPlaneApplication {
     );
   }
 
-  #resolveProject(projectPath) {
+  #resolveProject(projectPath, personalProjectId = null) {
     return this[projectAgentControlPlaneHooks.resolvePreferenceProject]({
-      personalProjectId: null,
+      personalProjectId,
       projectPath
     });
   }

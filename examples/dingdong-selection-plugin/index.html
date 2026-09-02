@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>划词工作台 · DingDong Plugin</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <!--
+      THESIS: Selection becomes a proofing instrument, refusing the generic AI chat panel.
+      OWN-WORLD: Cool workbench, warm proof paper, cobalt marks, acid-yellow focus, precise ruled geometry.
+      STORY: Read, select, choose one declared tool, and inspect an honest local or provider-backed result.
+      FIRST VIEWPORT: Reading sheet dominates left; live selection ledger and provider state anchor right; tools follow the selection.
+      FORM: Optical proofing desk, grounded direction 5, seed 1f2fb29d.
+      FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+    -->
+    <main class="workbench">
+      <header class="masthead">
+        <a class="wordmark" href="#reading-sheet" aria-label="回到阅读区">
+          <svg aria-hidden="true" viewBox="0 0 36 36">
+            <circle cx="15" cy="15" r="9"></circle>
+            <path d="m22 22 8 8"></path>
+            <path d="M11 15h8M15 11v8"></path>
+          </svg>
+          <span>划词工作台</span>
+        </a>
+        <p>选中文字，工具会在原地出现。</p>
+        <button
+          class="configure-button"
+          type="button"
+          data-configure
+          aria-expanded="false"
+          aria-controls="provider-settings"
+        >
+          文本服务
+          <svg aria-hidden="true" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"></path></svg>
+        </button>
+      </header>
+
+      <section id="provider-settings" class="provider-settings" data-config-panel hidden>
+        <label for="endpoint">服务地址</label>
+        <input
+          id="endpoint"
+          data-endpoint
+          type="url"
+          inputmode="url"
+          autocomplete="off"
+          placeholder="https://example.test/text"
+          aria-describedby="endpoint-help"
+        />
+        <label for="language">翻译为</label>
+        <select id="language" data-language>
+          <option value="zh-CN">简体中文</option>
+          <option value="en-US">English</option>
+          <option value="ja-JP">日本語</option>
+        </select>
+        <p id="endpoint-help">默认不连接任何服务。仅允许 HTTPS 或本机回环 HTTP，地址不会保存。</p>
+      </section>
+
+      <div class="workspace-grid">
+        <article id="reading-sheet" class="reading-sheet" data-reading-surface tabindex="0">
+          <div class="sheet-meta" aria-label="演示文本信息">
+            <span>本地演示文本</span>
+            <span>约 1 分钟</span>
+          </div>
+          <h1>阅读不该因为一个生词中断</h1>
+          <p class="lead">
+            当一段文字值得停下来时，工具应该靠近注意力发生的位置，而不是把人带去另一个页面。
+          </p>
+          <p>
+            试着选中这一段里的任意词句。复制只在本机完成；翻译和解释只有在你主动选择操作、并配置文本服务之后，才会发送所选内容。没有服务时，界面会明确说明缺少配置。
+          </p>
+          <blockquote>
+            好的阅读工具不是替你得出结论，而是把原文、转换过程和结果放在同一张桌面上。
+          </blockquote>
+          <p>
+            这个示例把插件清单、权限和生命周期分开验证。DingDong 管理配套 Skill 的发现与项目作用域，浏览器端运行时只执行清单中声明过的命令。
+          </p>
+          <div class="selection-hint" aria-hidden="true">
+            <span></span>
+            用鼠标选择，或聚焦阅读区后按 Shift + ←/→
+          </div>
+        </article>
+
+        <aside class="inspection-rail" aria-labelledby="inspection-title">
+          <div class="rail-heading">
+            <h2 id="inspection-title">校对记录</h2>
+            <span class="live-state"><i></i> 插件已就绪</span>
+          </div>
+          <div class="selection-ledger">
+            <span>当前选区</span>
+            <p data-selection-preview>尚未选择文字</p>
+          </div>
+          <section class="result-sheet" data-result hidden aria-live="polite">
+            <h3 data-result-title>结果</h3>
+            <p data-result-body></p>
+          </section>
+          <div class="permission-ledger">
+            <h3>本次权限</h3>
+            <dl>
+              <div><dt>读取选区</dt><dd>本页</dd></div>
+              <div><dt>写入剪贴板</dt><dd>点击后</dd></div>
+              <div><dt>发送文本</dt><dd data-text-service-state>未配置</dd></div>
+              <div><dt>持久保存</dt><dd>从不</dd></div>
+            </dl>
+          </div>
+          <p class="status-line" data-status role="status" aria-live="polite">
+            在左侧选中文字开始。
+          </p>
+        </aside>
+      </div>
+    </main>
+
+    <div class="selection-toolbar" data-selection-toolbar hidden role="toolbar" aria-label="所选文字操作">
+      <button type="button" data-command="copy">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>
+        复制
+      </button>
+      <button type="button" data-command="translate">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 5h9M8.5 3v2M6 9c1.5 2.7 3.5 4.7 6 6M12 9c-1.7 3.2-4.1 5.7-7 7"></path><path d="m14 19 3-8 3 8M15 16h4"></path></svg>
+        翻译
+      </button>
+      <button type="button" data-command="explain">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M9.8 9a2.3 2.3 0 1 1 3.2 2.1c-.7.3-1 1-1 1.9M12 17h.01"></path></svg>
+        解释
+      </button>
+    </div>
+
+    <script type="module" src="./src/browser-app.js"></script>
+  </body>
+</html>

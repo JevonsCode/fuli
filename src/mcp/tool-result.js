@@ -100,9 +100,11 @@ export function applicationErrorMessage(error) {
   return boundedMessage(String(error.message));
 }
 
-export function protocolErrorResult(message) {
+export function protocolErrorResult(message, validationErrors = []) {
   if (message.includes('Input validation error')) {
-    return errorToolResult(new ApplicationError('validation', 'Invalid tool arguments'));
+    const error = new ApplicationError('validation', 'Invalid tool arguments');
+    error.validationErrors = validationErrors;
+    return errorToolResult(error);
   }
   return errorToolResult(new Error('Protocol tool failure'));
 }
@@ -117,8 +119,10 @@ function sanitize(value, state, seen = new WeakSet(), depth = 0) {
   seen.add(value);
   if (Array.isArray(value)) {
     if (value.length > RESULT_ITEM_LIMIT) state.truncated = true;
-    return value.slice(0, RESULT_ITEM_LIMIT)
+    const result = value.slice(0, RESULT_ITEM_LIMIT)
       .map((item) => sanitize(item, state, seen, depth + 1));
+    seen.delete(value);
+    return result;
   }
 
   const sanitized = {};
@@ -132,6 +136,7 @@ function sanitize(value, state, seen = new WeakSet(), depth = 0) {
     sanitized[key] = sanitize(item, state, seen, depth + 1);
     included += 1;
   }
+  seen.delete(value);
   return sanitized;
 }
 

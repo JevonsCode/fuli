@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "selection-assistant",
+  "displayName": "划词工作台",
+  "version": "0.1.0",
+  "entry": "./src/selection-plugin.js",
+  "capabilities": [
+    "selection.read",
+    "clipboard.write",
+    "text.translate",
+    "text.explain",
+    "host.permissions",
+    "model.provider"
+  ],
+  "commands": [
+    {
+      "id": "copy",
+      "label": "复制原文",
+      "permissions": ["selection.read", "clipboard.write"]
+    },
+    {
+      "id": "translate",
+      "label": "翻译",
+      "permissions": ["selection.read", "text.translate", "model.provider"]
+    },
+    {
+      "id": "explain",
+      "label": "解释",
+      "permissions": ["selection.read", "text.explain", "model.provider"]
+    }
+  ]
+}

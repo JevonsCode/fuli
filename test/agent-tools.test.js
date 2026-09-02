@@ -4,6 +4,10 @@ import test from 'node:test';
 import { callAgentTool, listAgentTools } from '../src/agent-tools.js';
 
 const NAMES = [
+  'list_employee_templates',
+  'recruit_employee',
+  'list_employee_tools',
+  'call_employee_tool',
   'begin_task_context',
   'checkpoint_task_knowledge',
   'verify_task_checkpoint',
@@ -33,6 +37,8 @@ const NAMES = [
   'list_project_agents',
   'get_project_agent_context',
   'get_project_agent',
+  'get_project_agent_memory',
+  'checkpoint_project_agent_memory',
   'delete_project_agent',
   'cleanup_test_project_agents',
   'create_project_agent_assignment',
@@ -278,6 +284,12 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
 test('Agent surface dispatches every tool through the Graphiti facade', async () => {
   const calls = [];
   const app = {
+    employees: {
+      list: async (input) => calls.push(['employee-list', input]),
+      recruit: async (input) => calls.push(['employee-recruit', input]),
+      describeTools: async (input) => calls.push(['employee-tools', input]),
+      callTool: async (input) => calls.push(['employee-call', input])
+    },
     beginTaskContext: async (input) => calls.push(['begin-task', input]),
     checkpointTaskKnowledge: async (input) => calls.push(['checkpoint-task', input]),
     verifyTaskCheckpoint: async (input) => calls.push(['verify-task', input]),
@@ -318,6 +330,8 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     listCurrentProjectAgents: async (input) => calls.push(['project-agents', input]),
     getProjectAgentContext: async (input) => calls.push(['project-agent-context', input]),
     getProjectAgent: async (input) => calls.push(['get-project-agent', input]),
+    getProjectAgentMemory: async (input) => calls.push(['get-agent-memory', input]),
+    checkpointProjectAgentMemory: async (input) => calls.push(['checkpoint-agent-memory', input]),
     deleteProjectAgent: async (input) => calls.push(['delete-project-agent', input]),
     cleanupProjectAgentTestRoles: async (input) =>
       calls.push(['cleanup-test-project-agents', input]),
@@ -403,6 +417,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
 
   for (const name of NAMES) await callAgentTool(app, name, { probe: name });
   assert.deepEqual(calls.map(([name]) => name), [
+    'employee-list', 'employee-recruit', 'employee-tools', 'employee-call',
     'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'taste-skill', 'resolve-preference-conflict',
     'capture', 'workflow-observation', 'decision-trace', 'search', 'connected-search',
@@ -413,7 +428,8 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'graph', 'human-changes', 'review-human-change',
     'spaces', 'upsert-project', 'personal-projects',
     'upsert-project-agent', 'project-agents', 'project-agent-context',
-    'get-project-agent', 'delete-project-agent', 'cleanup-test-project-agents',
+    'get-project-agent', 'get-agent-memory', 'checkpoint-agent-memory',
+    'delete-project-agent', 'cleanup-test-project-agents',
     'create-project-agent-assignment', 'list-project-agent-assignments',
     'end-project-agent-assignment', 'replace-project-agent-assignment',
     'coordinate-project-agent-task',

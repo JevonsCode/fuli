@@ -24,7 +24,7 @@ class WorkflowTransitionObservation(StrictModel):
     observed_at: datetime
     evidence_summary: str = Field(min_length=1, max_length=2048)
     source_application: Literal[
-        'codex', 'claude_code', 'cursor', 'kiro', 'other'
+        'codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other'
     ] | None = None
     source_turn_id: str | None = Field(default=None, min_length=1, max_length=256)
     sensitivity: Literal['normal', 'private', 'restricted'] = 'normal'

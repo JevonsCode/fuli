@@ -3,7 +3,8 @@ import test from 'node:test';
 
 import {
   connectClaudeCode,
-  disconnectClaudeCode
+  disconnectClaudeCode,
+  hasCurrentClaudeCodeHooks
 } from '../src/setup/claude-code-config.js';
 
 const AGENT = Object.freeze({
@@ -28,7 +29,10 @@ test('Claude Code connection keeps unrelated config and installs deterministic t
           mcpServers: { existing: { type: 'http', url: 'https://example.invalid/mcp' } }
         }
       : {
-          permissions: { deny: ['Bash(rm *)'] },
+          permissions: {
+            allow: ['mcp__other__read'],
+            deny: ['Bash(rm *)']
+          },
           hooks: {
             Stop: [{
               hooks: [{ type: 'command', command: 'existing-stop-hook' }]
@@ -60,7 +64,14 @@ test('Claude Code connection keeps unrelated config and installs deterministic t
   });
 
   const settings = writes.get(AGENT.settingsPath);
-  assert.deepEqual(settings.permissions, { deny: ['Bash(rm *)'] });
+  assert.deepEqual(settings.permissions, {
+    allow: [
+      'mcp__other__read',
+      'mcp__fuli__get_collaboration_preferences',
+      'mcp__fuli__checkpoint_task_knowledge'
+    ],
+    deny: ['Bash(rm *)']
+  });
   assert.equal(settings.hooks.Stop.length, 2);
   assert.equal(settings.hooks.Stop[0].hooks[0].command, 'existing-stop-hook');
   assert.deepEqual(settings.hooks.UserPromptSubmit.at(-1), {
@@ -112,10 +123,40 @@ test('Claude Code hook timeout can be increased by an isolated acceptance runtim
   assert.equal(settings.hooks.Stop.at(-1).hooks[0].timeout, 240);
 });
 
+test('Claude Code hook status requires the exact managed input, timeout and status message', () => {
+  const writes = new Map();
+  connectClaudeCode(AGENT, CONTEXT, {
+    readConfig: () => ({}),
+    writeConfig: (filePath, value) => writes.set(filePath, value)
+  });
+  const current = writes.get(AGENT.settingsPath);
+  assert.equal(hasCurrentClaudeCodeHooks(current), true);
+
+  for (const mutate of [
+    (settings) => { delete settings.hooks.UserPromptSubmit.at(-1).hooks[0].input; },
+    (settings) => { settings.hooks.Stop.at(-1).hooks[0].timeout = 31; },
+    (settings) => { settings.hooks.Stop.at(-1).hooks[0].statusMessage = 'Different'; },
+    (settings) => {
+      settings.permissions.allow = ['mcp__fuli__get_collaboration_preferences'];
+    }
+  ]) {
+    const outdated = structuredClone(current);
+    mutate(outdated);
+    assert.equal(hasCurrentClaudeCodeHooks(outdated), false);
+  }
+
+  const customTimeout = structuredClone(current);
+  for (const event of ['UserPromptSubmit', 'Stop']) {
+    customTimeout.hooks[event].at(-1).hooks[0].timeout = 240;
+  }
+  assert.equal(hasCurrentClaudeCodeHooks(customTimeout, { hookTimeoutSec: 240 }), true);
+});
+
 test('Claude Code connection is idempotent and disconnect removes only Fuli entries', () => {
   const files = new Map([
     [AGENT.configPath, {}],
     [AGENT.settingsPath, {
+      permissions: { allow: ['mcp__other__read'] },
       hooks: {
         UserPromptSubmit: [{
           hooks: [{ type: 'command', command: 'keep-prompt-hook' }]
@@ -141,6 +182,9 @@ test('Claude Code connection is idempotent and disconnect removes only Fuli entr
     hooks: [{ type: 'command', command: 'keep-prompt-hook' }]
   }]);
   assert.equal(files.get(AGENT.settingsPath).hooks.Stop, undefined);
+  assert.deepEqual(files.get(AGENT.settingsPath).permissions, {
+    allow: ['mcp__other__read']
+  });
 });
 
 test('Claude Code config rejects malformed JSON object shapes before writing', () => {

@@ -1,0 +1,19 @@
+{
+  "name": "dingdong-selection-plugin-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "validate": "node scripts/validate.mjs",
+    "serve": "node scripts/serve.mjs",
+    "native:test": "cd macos && xcrun swift test",
+    "native:build": "macos/scripts/build-app.sh",
+    "native:validate": "macos/scripts/validate.sh",
+    "native:memory": "macos/scripts/memory-check.sh",
+    "native:install": "macos/scripts/install-app.sh"
+  },
+  "engines": {
+    "node": ">=24.12"
+  }
+}

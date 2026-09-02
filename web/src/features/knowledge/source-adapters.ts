@@ -7,6 +7,7 @@ import type {
 
 export const CONVERSATION_SOURCE_APPLICATIONS: readonly ConversationSourceApplication[] = [
   'codex',
+  'claude',
   'claude_code',
   'cursor',
   'gemini_cli',
@@ -16,6 +17,7 @@ export const CONVERSATION_SOURCE_APPLICATIONS: readonly ConversationSourceApplic
 
 const APPLICATION_LABELS: Record<ConversationSourceApplication, string> = {
   codex: 'Codex',
+  claude: 'Claude',
   claude_code: 'Claude Code',
   cursor: 'Cursor',
   gemini_cli: 'Gemini CLI',
@@ -39,6 +41,12 @@ export const DEFAULT_CONVERSATION_LAUNCHERS: ConversationLauncherConfiguration =
     idFormat: 'uuid',
     appName: 'Codex',
     urlTemplate: 'codex://threads/{id}',
+  },
+  claude: {
+    enabled: false,
+    idFormat: 'any',
+    appName: 'Claude',
+    urlTemplate: '',
   },
   claude_code: {
     enabled: false,

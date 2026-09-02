@@ -1,3 +1,5 @@
+const STOP_FAILURE_RETRY_MS = 30_000;
+
 export function createExecutorPool({
   adapters = new Map(),
   idleMs,
@@ -6,6 +8,7 @@ export function createExecutorPool({
 }) {
   const entries = new Map();
   let closed = false;
+  let closePromise = null;
 
   async function acquire(executorId, leaseId) {
     assertExecutorId(executorId);
@@ -21,20 +24,27 @@ export function createExecutorPool({
       return snapshotEntry(executorId, entry);
     }
     await exclusive(entry, async () => {
+      if (closed) throw new Error('Executor pool is closed');
       if (entry.stage !== 'running') {
-        entry.stage = 'starting';
         try {
+          if (entry.stage === 'failed' && !await stopEntry(executorId, entry)) {
+            throw new Error(entry.lastError);
+          }
+          entry.stage = 'starting';
           await entry.adapter.start({ executorId });
           entry.stage = 'running';
+          entry.lastStartError = null;
           entry.lastError = null;
         } catch (error) {
           entry.leases.delete(leaseId);
+          if (entry.stage === 'starting') entry.lastStartError = errorMessage(error);
           entry.stage = 'failed';
           entry.lastError = errorMessage(error);
           throw error;
         }
       }
     });
+    if (closed) throw new Error('Executor pool is closed');
     return snapshotEntry(executorId, entry);
   }
 
@@ -42,15 +52,27 @@ export function createExecutorPool({
     const entry = entries.get(executorId);
     if (!entry) return;
     entry.leases.delete(leaseId);
+    // Runtime entries are live lease bookkeeping, not durable Agent identities.
+    // External hosts have no resources owned by this pool after their last lease.
+    if (!entry.adapter && entry.leases.size === 0) {
+      entries.delete(executorId);
+      return;
+    }
+    scheduleStop(executorId, entry, idleMs);
+  }
+
+  function scheduleStop(executorId, entry, delay) {
     if (!entry.adapter || entry.leases.size > 0 || entry.timer || closed) return;
     entry.timer = setTimer(() => {
       entry.timer = null;
       if (entry.leases.size > 0 || closed) return;
       void exclusive(entry, async () => {
         if (entry.leases.size > 0 || closed) return;
-        await stopEntry(executorId, entry);
+        if (!await stopEntry(executorId, entry)) {
+          scheduleStop(executorId, entry, STOP_FAILURE_RETRY_MS);
+        }
       });
-    }, idleMs);
+    }, delay);
     entry.timer?.unref?.();
   }
 
@@ -59,10 +81,12 @@ export function createExecutorPool({
     try {
       await entry.adapter.stop({ executorId });
       entry.stage = 'idle';
-      entry.lastError = null;
+      entry.lastError = entry.lastStartError;
+      return true;
     } catch (error) {
       entry.stage = 'failed';
       entry.lastError = errorMessage(error);
+      return false;
     }
   }
 
@@ -72,11 +96,27 @@ export function createExecutorPool({
   }
 
   function close() {
+    if (closePromise) return closePromise;
     closed = true;
-    for (const entry of entries.values()) {
+    const shutdowns = [];
+    for (const [executorId, entry] of entries) {
       if (entry.timer) clearTimer(entry.timer);
       entry.timer = null;
+      entry.leases.clear();
+      if (entry.adapter) shutdowns.push(exclusive(entry, async () => {
+        if (entry.stage !== 'idle' && !await stopEntry(executorId, entry)) {
+          throw new Error(`Failed to stop managed executor ${executorId}: ${entry.lastError}`);
+        }
+      }));
     }
+    closePromise = Promise.allSettled(shutdowns).then((results) => {
+      const failures = results.filter((result) => result.status === 'rejected')
+        .map((result) => result.reason);
+      if (failures.length) {
+        throw new AggregateError(failures, failures.map((error) => error.message).join('; '));
+      }
+    });
+    return closePromise;
   }
 
   function entryFor(executorId) {
@@ -88,6 +128,7 @@ export function createExecutorPool({
         timer: null,
         transition: Promise.resolve(),
         stage: adapters.has(executorId) ? 'idle' : 'external',
+        lastStartError: null,
         lastError: null
       };
       entries.set(executorId, entry);

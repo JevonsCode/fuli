@@ -61,20 +61,39 @@ class StoreProjectAgentTaskStaffing:
             return [], rows, 'manual_agent_selection', [
                 'project policy requires an explicit @Agent selection',
             ]
+        normalized_work_kind = request.work_kind.casefold()
+        required = {item.casefold() for item in request.required_capabilities}
+        eligible = [row for row in rows if required.issubset({
+            item.casefold() for item in row.get('capabilities', [])
+        })]
+        candidates, history = await self._rank_agent_candidates(eligible, request)
+        # Continuity may break a tie between qualified specialists; it must
+        # never override a capability requirement or a stronger work-kind fit.
+        continuity_pool = eligible
+        if candidates:
+            best_work_match = normalized_work_kind in {
+                item.casefold() for item in candidates[0].get('work_kinds', [])
+            }
+            continuity_pool = [row for row in candidates if (
+                normalized_work_kind in {item.casefold() for item in row.get('work_kinds', [])}
+            ) == best_work_match]
+        if continuity_pool:
+            least_busy = min(self._metric_int(row.get('active_task_count')) for row in continuity_pool)
+            continuity_pool = [row for row in continuity_pool
+                if self._metric_int(row.get('active_task_count')) == least_busy]
         continuity, project_history = await self._rank_project_continuity(
-            rows,
+            continuity_pool,
             request,
         )
         if continuity:
             selected = continuity[0]
-            return [selected], continuity, 'project_continuity', [
+            remaining = [row for row in candidates or eligible if row['agent_id'] != selected['agent_id']]
+            return [selected], [selected, *remaining], 'project_continuity', [
                 self._project_history_match_basis(
                     project_history.get(selected['agent_id']),
                 ),
+                *self._automatic_selection_basis(selected, request),
             ]
-        normalized_work_kind = request.work_kind.casefold()
-        required = {item.casefold() for item in request.required_capabilities}
-        candidates, history = await self._rank_agent_candidates(rows, request)
         if not candidates:
             unavailable_match = any(
                 not self._agent_client_allowed(row, request.source_application)
@@ -97,9 +116,20 @@ class StoreProjectAgentTaskStaffing:
                     'matching Agent is unavailable to source client: '
                     f'{request.source_application or "other"}',
                 ]
-            if len(rows) == 1:
-                return [rows[0]], rows, 'sole_active_assignment', [
+            if len(eligible) == 1:
+                return [eligible[0]], eligible, 'sole_active_assignment', [
                     'the project has one active Agent assignment',
+                    *self._automatic_selection_basis(eligible[0], request),
+                ]
+            if eligible and normalized_work_kind == 'project_context' and not required:
+                eligible.sort(key=lambda row: (
+                    self._metric_int(row.get('active_task_count')),
+                    -int(self._metric_int(row.get('memory_revision')) > 0),
+                    row['assigned_at'], row['agent_id'],
+                ))
+                return eligible[:1], eligible, 'project_default', [
+                    f'{len(eligible)} eligible project roles; working-memory continuity and stable tie-break',
+                    *self._automatic_selection_basis(eligible[0], request),
                 ]
             return [], rows, 'no_match', ['no active assignment matched exactly']
         selected = candidates[0]
@@ -119,7 +149,23 @@ class StoreProjectAgentTaskStaffing:
         )
         if history_basis:
             match_basis.append(history_basis)
+        match_basis.extend(item for item in self._automatic_selection_basis(selected, request)
+                           if item not in match_basis)
         return [selected], candidates, reason, match_basis
+
+    def _automatic_selection_basis(self, selected, request):
+        work_kind = request.work_kind.casefold()
+        if work_kind == 'project_context':
+            work_basis = 'general project context: continuity only, not semantic task matching'
+        elif work_kind in {item.casefold() for item in selected.get('work_kinds', [])}:
+            work_basis = f'exact work kind: {request.work_kind}'
+        else:
+            match = ('explicit capabilities matched' if request.required_capabilities
+                     else 'continuity only, not semantic task matching')
+            work_basis = f'no exact work-kind match: {request.work_kind}; {match}'
+        return [work_basis,
+                f'selected active task count: {self._metric_int(selected.get("active_task_count"))}; '
+                'work-kind fit and load precede history']
 
     async def _rank_agent_candidates(self, rows, request):
         """Rank already source-eligible assignments with task-history continuity."""
@@ -132,6 +178,8 @@ class StoreProjectAgentTaskStaffing:
             capabilities = {item.casefold() for item in row.get('capabilities', [])}
             work_match = normalized_work_kind in work_kinds
             capability_match = required.issubset(capabilities)
+            if not capability_match:
+                continue
             if not work_match and not (required and capability_match):
                 continue
             score = (2 if work_match else 0) + (1 if capability_match else 0)
@@ -147,7 +195,9 @@ class StoreProjectAgentTaskStaffing:
         scored.sort(
             key=lambda item: (
                 -item[0],
+                self._metric_int(item[1].get('active_task_count')),
                 *self._history_sort_key(history.get(item[1]['agent_id'])),
+                -int(self._metric_int(item[1].get('memory_revision')) > 0),
                 item[1]['assigned_at'],
                 item[1]['agent_id'],
             )
@@ -155,7 +205,7 @@ class StoreProjectAgentTaskStaffing:
         return [item[1] for item in scored], history
 
     async def _rank_project_continuity(self, rows, request):
-        """Prefer the last effective project lead before task-type matching."""
+        """Prefer an effective previous lead among equally qualified available roles."""
 
         if not rows:
             return [], {}
@@ -167,8 +217,15 @@ class StoreProjectAgentTaskStaffing:
         candidates = [
             row
             for row in rows
-            if self._metric_int(
-                (history.get(row['agent_id']) or {}).get('participation_count')
+            if sum(
+                self._metric_int(
+                    (history.get(row['agent_id']) or {}).get(metric)
+                )
+                for metric in (
+                    'completed_count',
+                    'failed_count',
+                    'cancelled_count',
+                )
             ) > 0
         ]
         candidates.sort(
@@ -209,7 +266,13 @@ class StoreProjectAgentTaskStaffing:
             OPTIONAL MATCH (task)-[:HAS_TASK_EVENT]->
                   (event:FuliProjectAgentTaskEvent)-[:EVENT_AGENT]->(agent)
             RETURN agent.agent_id AS agent_id,
-                   count(DISTINCT task.task_id) AS participation_count,
+                   count(DISTINCT CASE
+                     WHEN participant.status IN
+                       ['completed', 'failed', 'cancelled']
+                       OR event.status IN
+                       ['completed', 'failed', 'cancelled']
+                     THEN task.task_id END
+                   ) AS participation_count,
                    count(DISTINCT CASE
                      WHEN participant.status = 'completed'
                        OR event.status = 'completed'
@@ -225,7 +288,13 @@ class StoreProjectAgentTaskStaffing:
                        OR event.status = 'cancelled'
                      THEN task.task_id END
                    ) AS cancelled_count,
-                   max(task.updated_at) AS last_task_at,
+                   max(CASE
+                     WHEN participant.status IN
+                       ['completed', 'failed', 'cancelled']
+                       OR event.status IN
+                       ['completed', 'failed', 'cancelled']
+                     THEN coalesce(event.created_at, task.updated_at) END
+                   ) AS last_task_at,
                    max(CASE
                      WHEN participant.status = 'completed'
                        OR event.status = 'completed'
@@ -283,9 +352,14 @@ class StoreProjectAgentTaskStaffing:
               AND toLower(task.work_kind) = toLower($work_kind)
             OPTIONAL MATCH (task)-[:HAS_TASK_EVENT]->
                   (event:FuliProjectAgentTaskEvent)-[:EVENT_AGENT]->(agent)
-            WHERE event.status IN ['completed', 'failed', 'cancelled']
             RETURN agent.agent_id AS agent_id,
-                   count(DISTINCT task.task_id) AS participation_count,
+                   count(DISTINCT CASE
+                     WHEN participant.status IN
+                       ['completed', 'failed', 'cancelled']
+                       OR event.status IN
+                       ['completed', 'failed', 'cancelled']
+                     THEN task.task_id END
+                   ) AS participation_count,
                    count(DISTINCT CASE
                      WHEN participant.status = 'completed'
                        OR event.status = 'completed'
@@ -301,7 +375,13 @@ class StoreProjectAgentTaskStaffing:
                        OR event.status = 'cancelled'
                      THEN task.task_id END
                    ) AS cancelled_count,
-                   max(event.created_at) AS last_outcome_at
+                   max(CASE
+                     WHEN participant.status IN
+                       ['completed', 'failed', 'cancelled']
+                       OR event.status IN
+                       ['completed', 'failed', 'cancelled']
+                     THEN coalesce(event.created_at, task.updated_at) END
+                   ) AS last_outcome_at
             ''',
             personal_space_id=personal_space_id,
             personal_project_id=personal_project_id,
@@ -474,6 +554,111 @@ class StoreProjectAgentTaskStaffing:
             added.append(candidate)
         return added
 
+    async def _parallel_plan_participant_projection(
+        self,
+        actor,
+        request,
+        *,
+        lead,
+        participants,
+        routing_reason,
+        recruitment_slots=None,
+    ):
+        """Project every Agent automatic recruitment will add before writes.
+
+        Parallel-plan validation runs before recruitment because recruitment is
+        itself durable (and automatic recruitment provisions an Agent and an
+        assignment). Confirmation-mode recruitment does not create an Agent yet
+        and must therefore not count as an active participant.
+        """
+
+        projected = list(participants)
+        slots = recruitment_slots
+        if slots is None:
+            slots = await self._automatic_parallel_recruitment_slots(
+                actor,
+                request,
+                lead=lead,
+                participants=participants,
+                routing_reason=routing_reason,
+            )
+        for slot in slots:
+            participant = {
+                'agent_id': slot['placeholder_agent_id'],
+                'role': slot['participant_role'],
+            }
+            if slot['participant_role'] == 'lead':
+                projected.insert(0, participant)
+            else:
+                projected.append(participant)
+        return projected
+
+    async def _automatic_parallel_recruitment_slots(
+        self,
+        actor,
+        request,
+        *,
+        lead,
+        participants,
+        routing_reason,
+    ):
+        plan = request.parallel_plan
+        if not plan.enabled:
+            return []
+        if (
+            request.staffing_intent == 'unassigned'
+            or routing_reason == 'manual_agent_selection'
+        ):
+            return []
+
+        roles = []
+        projected_count = len(participants)
+        if not lead:
+            roles.append('lead')
+            projected_count += 1
+        while projected_count < 2:
+            roles.append('collaborator')
+            projected_count += 1
+        if not roles:
+            return []
+
+        policy = await self.get_project_agent_coordination_policy(
+            actor,
+            request.personal_space_id,
+            request.personal_project_id,
+        )
+        if policy.ask_before_recruitment:
+            return []
+        hr_records, _, _ = await self.runtime.driver.execute_query(
+            '''
+            MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
+                  [:HAS_PROJECT_AGENT_IDENTITY]->
+                  (hr:FuliProjectAgent {agent_type: 'hr', status: 'active'})
+            RETURN hr LIMIT 1
+            ''',
+            personal_space_id=request.personal_space_id,
+            routing_='r',
+        )
+        if not hr_records:
+            return []
+
+        collaborator_index = 0
+        slots = []
+        for role in roles:
+            if role == 'lead':
+                slot = 'lead'
+            else:
+                collaborator_index += 1
+                slot = f'collaborator-{collaborator_index}'
+            slots.append({
+                'participant_role': role,
+                'recruitment_slot': slot,
+                'placeholder_agent_id': (
+                    f"__recruited_{slot.replace('-', '_')}__"
+                ),
+            })
+        return slots
+
     async def _assignment_candidates(
         self,
         personal_space_id,
@@ -483,7 +668,7 @@ class StoreProjectAgentTaskStaffing:
     ):
         records, _, _ = await self.runtime.driver.execute_query(
             '''
-            MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})-
+            MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [:CONTAINS_PROJECT]->
                   (:FuliPersonalProject {project_id: $personal_project_id})-
                   [:HAS_PROJECT_AGENT_ASSIGNMENT]->
@@ -491,7 +676,27 @@ class StoreProjectAgentTaskStaffing:
                   [:ASSIGNED_AGENT]->(agent:FuliProjectAgent {status: 'active'})
             WHERE agent.agent_type = 'durable'
                OR ($include_temporary = true AND agent.agent_type = 'temporary')
-            RETURN assignment, agent
+            OPTIONAL MATCH (agent)-[:HAS_WORKING_MEMORY]->(memory:FuliProjectAgentMemory {
+              personal_space_id: $personal_space_id, personal_project_id: $personal_project_id
+            })
+            WITH space, assignment, agent, coalesce(max(memory.revision), 0) AS memory_revision
+            OPTIONAL MATCH (space)-[:HAS_PROJECT_AGENT_TASK]->(active_task:FuliProjectAgentTask)
+                  -[participant:HAS_PARTICIPANT]->(agent)
+            WHERE active_task.personal_project_id = $personal_project_id
+              AND active_task.status IN ['queued', 'running', 'awaiting_review']
+              AND participant.status IN ['queued', 'running', 'awaiting_review']
+            WITH space, assignment, agent, memory_revision,
+                 count(DISTINCT active_task) AS task_count
+            OPTIONAL MATCH (session:FuliTaskContextSession)-[:HAS_CONTEXT]->
+                  (context:FuliTaskContext {personal_space_id: $personal_space_id,
+                    personal_project_id: $personal_project_id,
+                    project_agent_id: agent.agent_id, completed: false})
+            WHERE session.current_token = context.token
+              AND context.created_at > datetime() - duration('PT2H')
+            WITH assignment, agent, memory_revision, task_count,
+                 count(DISTINCT context) AS context_count
+            RETURN assignment, agent, memory_revision,
+                   task_count + context_count AS active_task_count
             ORDER BY assignment.assigned_at, agent.agent_id
             ''',
             personal_space_id=personal_space_id,
@@ -520,6 +725,8 @@ class StoreProjectAgentTaskStaffing:
                 ),
                 'profile': profile,
                 'assigned_at': str(assignment.get('assigned_at') or ''),
+                'active_task_count': row.get('active_task_count') or 0,
+                'memory_revision': row.get('memory_revision') or 0,
             })
         return result
 
@@ -582,5 +789,10 @@ class StoreProjectAgentTaskStaffing:
         if plan.enabled and len(participants) < 2:
             raise HTTPException(
                 status_code=422,
-                detail='parallel work requires at least two active Agents',
+                detail=(
+                    'parallel work requires at least two active Agents; '
+                    'automatic recruitment needs an active HR Agent, otherwise '
+                    'recruit another qualified collaborator or assign enough '
+                    'existing Agents before enabling parallel work'
+                ),
             )

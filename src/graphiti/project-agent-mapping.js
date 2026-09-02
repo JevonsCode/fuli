@@ -246,6 +246,8 @@ export function providerProjectAgentTaskSubmit(input) {
     objective: input.objective,
     work_kind: input.workKind ?? input.work_kind,
     required_capabilities: input.requiredCapabilities ?? input.required_capabilities ?? [],
+    executor_capability_hints:
+      input.executorCapabilityHints ?? input.executor_capability_hints ?? [],
     duration: input.duration ?? 'ongoing',
     staffing_intent: input.staffingIntent ?? input.staffing_intent ?? 'reuse_preferred',
     lead_agent_id: input.leadAgentId ?? input.lead_agent_id ?? null,
@@ -293,6 +295,36 @@ export function projectAgentParallelPlan(value = {}) {
   };
 }
 
+export function providerProjectAgentTokenUsage(value) {
+  if (value === undefined || value === null) return value ?? null;
+  return {
+    source: value.source,
+    total_tokens: value.totalTokens ?? value.total_tokens,
+    input_tokens: value.inputTokens ?? value.input_tokens ?? null,
+    output_tokens: value.outputTokens ?? value.output_tokens ?? null,
+    cached_input_tokens: value.cachedInputTokens ?? value.cached_input_tokens ?? null,
+    cache_write_input_tokens: value.cacheWriteInputTokens ??
+      value.cache_write_input_tokens ?? null,
+    reasoning_output_tokens: value.reasoningOutputTokens ??
+      value.reasoning_output_tokens ?? null
+  };
+}
+
+export function projectAgentTokenUsage(value) {
+  if (value === undefined || value === null) return value ?? null;
+  return {
+    source: value.source,
+    totalTokens: value.total_tokens ?? value.totalTokens,
+    inputTokens: value.input_tokens ?? value.inputTokens ?? null,
+    outputTokens: value.output_tokens ?? value.outputTokens ?? null,
+    cachedInputTokens: value.cached_input_tokens ?? value.cachedInputTokens ?? null,
+    cacheWriteInputTokens: value.cache_write_input_tokens ??
+      value.cacheWriteInputTokens ?? null,
+    reasoningOutputTokens: value.reasoning_output_tokens ??
+      value.reasoningOutputTokens ?? null
+  };
+}
+
 export function providerProjectAgentTaskActivity(input) {
   const result = withoutUndefined({
     personal_space_id: input.personalSpaceId ?? input.personal_space_id,
@@ -332,6 +364,31 @@ export function providerProjectAgentTaskActivity(input) {
       worker_status: input.workerStatus ?? input.worker_status ?? null
     });
   }
+  if (hasAny(input, ['tokenUsage', 'token_usage'])) {
+    result.token_usage = providerProjectAgentTokenUsage(
+      input.tokenUsage ?? input.token_usage
+    );
+  }
+  if (hasAny(input, ['workerRuntime', 'worker_runtime'])) {
+    const runtime = input.workerRuntime ?? input.worker_runtime;
+    result.worker_runtime = runtime ? withoutUndefined({
+      application: runtime.application,
+      session_id: runtime.sessionId ?? runtime.session_id ?? null,
+      session_url: runtime.sessionUrl ?? runtime.session_url ?? null
+    }) : null;
+  }
+  copyOptional(
+    result,
+    'source_session_url',
+    input.sourceSessionUrl ?? input.source_session_url ?? null,
+    hasAny(input, ['sourceSessionUrl', 'source_session_url'])
+  );
+  copyOptional(
+    result,
+    'tools_used',
+    input.toolsUsed ?? input.tools_used ?? null,
+    hasAny(input, ['toolsUsed', 'tools_used'])
+  );
   return result;
 }
 
@@ -344,6 +401,7 @@ export function projectAgentTaskRecord(value = {}) {
     objective: value.objective,
     workKind: value.work_kind,
     requiredCapabilities: value.required_capabilities ?? [],
+    executorCapabilityHints: value.executor_capability_hints ?? [],
     duration: value.duration,
     staffingIntent: value.staffing_intent,
     status: value.status,
@@ -411,7 +469,7 @@ export function projectAgentTaskParticipantRecord(value = {}) {
 }
 
 export function projectAgentTaskEventRecord(value = {}) {
-  return {
+  const result = {
     eventId: value.event_id,
     taskId: value.task_id,
     agentId: value.agent_id ?? null,
@@ -439,6 +497,31 @@ export function projectAgentTaskEventRecord(value = {}) {
     fallbackUsed: value.fallback_used ?? false,
     createdAt: value.created_at
   };
+  copyOptional(
+    result,
+    'workerRuntime',
+    projectAgentWorkerRuntime(value.worker_runtime ?? value.workerRuntime),
+    hasAny(value, ['worker_runtime', 'workerRuntime'])
+  );
+  copyOptional(
+    result,
+    'sourceSessionUrl',
+    value.source_session_url ?? value.sourceSessionUrl ?? null,
+    hasAny(value, ['source_session_url', 'sourceSessionUrl'])
+  );
+  copyOptional(
+    result,
+    'toolsUsed',
+    value.tools_used ?? value.toolsUsed ?? null,
+    hasAny(value, ['tools_used', 'toolsUsed'])
+  );
+  copyOptional(
+    result,
+    'tokenUsage',
+    projectAgentTokenUsage(value.token_usage ?? value.tokenUsage),
+    hasAny(value, ['token_usage', 'tokenUsage'])
+  );
+  return result;
 }
 
 export function projectAgentRoutingDecisionRecord(value = {}) {
@@ -483,6 +566,7 @@ export function projectAgentTaskRouteResult(value = {}) {
     task: projectAgentTaskRecord(value.task ?? {}),
     assignedAgent: value.assigned_agent ? projectAgentRecord(value.assigned_agent) : null,
     recruitment: value.recruitment ? projectAgentRecruitmentRecord(value.recruitment) : null,
+    recruitments: (value.recruitments ?? []).map(projectAgentRecruitmentRecord),
     decision: value.decision,
     mustDiscloseRecruitment: value.must_disclose_recruitment ?? false,
     clientNotice: value.client_notice ?? null
@@ -505,6 +589,8 @@ export function projectAgentRecruitmentRecord(value = {}) {
     status: value.status,
     confirmationMode: value.confirmation_mode,
     proposedAgentId: value.proposed_agent_id,
+    participantRole: value.participant_role ?? 'lead',
+    recruitmentSlot: value.recruitment_slot ?? 'lead',
     proposedProfile: value.proposed_profile
       ? projectAgentProfileRecord(value.proposed_profile) : null,
     triggerSourceApplication: value.trigger_source_application ?? null,
@@ -542,10 +628,10 @@ export function projectAgentExecutionSummary(value) {
   if (!Array.isArray(value)) return [];
   return value.map((entry = {}) => {
     const actualExecutor = entry.actual_executor_id ?? entry.actual_executor ??
-      entry.actualExecutor ?? entry.executor_id ?? entry.executor ?? null;
+      entry.actualExecutor ?? null;
     const workSummary = entry.work_summary ?? entry.workSummary ?? entry.summary ?? null;
     const status = entry.status ?? entry.worker_status ?? entry.workerStatus ?? null;
-    return {
+    const result = {
       agentId: entry.agent_id ?? entry.agentId ?? null,
       agentName: entry.agent_name ?? entry.agentName ?? null,
       occupationEmoji: entry.occupation_emoji ?? entry.occupationEmoji ?? null,
@@ -563,8 +649,48 @@ export function projectAgentExecutionSummary(value) {
       workSummary,
       summary: workSummary,
       status,
-      workerStatus: entry.worker_status ?? entry.workerStatus ?? status
+      workerStatus: entry.worker_status ?? entry.workerStatus ?? null
     };
+    copyOptional(
+      result,
+      'workerRuntime',
+      projectAgentWorkerRuntime(entry.worker_runtime ?? entry.workerRuntime),
+      hasAny(entry, ['worker_runtime', 'workerRuntime'])
+    );
+    copyOptional(
+      result,
+      'sourceSessionId',
+      entry.source_session_id ?? entry.sourceSessionId ?? null,
+      hasAny(entry, ['source_session_id', 'sourceSessionId'])
+    );
+    copyOptional(
+      result,
+      'sourceSessionUrl',
+      entry.source_session_url ?? entry.sourceSessionUrl ?? null,
+      hasAny(entry, ['source_session_url', 'sourceSessionUrl'])
+    );
+    copyOptional(
+      result,
+      'toolsUsed',
+      entry.tools_used ?? entry.toolsUsed ?? null,
+      hasAny(entry, ['tools_used', 'toolsUsed'])
+    );
+    copyOptional(
+      result,
+      'tokenUsage',
+      projectAgentTokenUsage(entry.token_usage ?? entry.tokenUsage),
+      hasAny(entry, ['token_usage', 'tokenUsage'])
+    );
+    return result;
+  });
+}
+
+export function projectAgentWorkerRuntime(value) {
+  if (!value || typeof value !== 'object') return null;
+  return withoutUndefined({
+    application: value.application,
+    sessionId: value.session_id ?? value.sessionId ?? null,
+    sessionUrl: value.session_url ?? value.sessionUrl ?? null
   });
 }
 
@@ -587,12 +713,30 @@ export function projectAgentActivityRecord(value = {}) {
         summary: task.summary,
         occurredAt: task.occurred_at,
         sourceApplication: task.source_application ?? null,
+        sourceSessionId: task.source_session_id ?? null,
+        sourceSessionUrl: task.source_session_url ?? task.sourceSessionUrl ?? null,
+        toolsUsed: task.tools_used ?? task.toolsUsed ?? null,
         actualExecutor: task.actual_executor_id ?? task.actual_executor ?? null,
+        selectedExecutorId: task.selected_executor_id ?? null,
+        executorRuleId: task.executor_rule_id ?? task.rule_id ?? null,
         matchedExecutorRuleId: task.matched_executor_rule_id ?? task.routing_rule_id ?? null,
         executorSelectionReason: task.executor_selection_reason ?? null,
+        executorFallbackReason: task.executor_fallback_reason ?? null,
+        executorFallbackOutcome: task.executor_fallback_outcome ?? null,
+        executorBlockedReason: task.executor_blocked_reason ?? null,
+        executorDecision: task.executor_decision ?? null,
         auditId: task.audit_id ?? null,
         actualModelProvider: task.actual_model_provider ?? null,
         actualModel: task.actual_model ?? null,
+        workerId: task.worker_id ?? task.workerId ?? null,
+        workerLabel: task.worker_label ?? task.workerLabel ?? null,
+        workerOccupationEmoji: task.worker_occupation_emoji ??
+          task.workerOccupationEmoji ?? null,
+        workerStatus: task.worker_status ?? task.workerStatus ?? null,
+        tokenUsage: projectAgentTokenUsage(task.token_usage ?? task.tokenUsage),
+        ...(hasAny(task, ['worker_runtime', 'workerRuntime']) ? {
+          workerRuntime: projectAgentWorkerRuntime(task.worker_runtime ?? task.workerRuntime)
+        } : {}),
         executionSummary: projectAgentExecutionSummary(
           task.execution_summary ?? task.executionSummary
         ),
@@ -608,7 +752,12 @@ export function projectAgentRecruitmentPolicyRecord(value = {}) {
   return {
     personalSpaceId: value.personal_space_id,
     confirmationMode: value.confirmation_mode ?? 'automatic',
-    updatedAt: value.updated_at ?? null
+    updatedAt: value.updated_at ?? null,
+    ...(value.policy_status ? {
+      policyStatus: value.policy_status,
+      appliesToRecruitment: value.applies_to_recruitment,
+      warning: value.warning
+    } : {})
   };
 }
 
@@ -991,6 +1140,7 @@ export function routingLearningRecord(value = {}) {
     ratingCount: value.rating_count,
     averageRating: value.average_rating,
     neutralDueToInsufficientEvidence: value.neutral_due_to_insufficient_evidence,
+    validationWarnings: value.validation_warnings,
     weightedSuccess: value.weighted_success,
     weightedFailure: value.weighted_failure,
     evidenceRefs: value.evidence_refs,

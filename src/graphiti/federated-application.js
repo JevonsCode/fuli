@@ -1,4 +1,5 @@
 import { dirname } from 'node:path';
+import { createEmployeeService } from '../employees/service.js';
 
 import { GraphitiProviderClient } from './provider-client.js';
 import {
@@ -30,7 +31,7 @@ import {
 } from './source-marker.js';
 import { resolvePersonalProjectPath } from './project-path-context.js';
 import { mergeExternalKnowledgeProjection } from '../external-knowledge/graph-projection.js';
-import { TaskContextRegistry } from '../mcp/task-context-registry.js';
+import { ProviderTaskContextRegistry } from '../mcp/provider-task-context-registry.js';
 import { attachExternalKnowledgeRuntime } from '../external-knowledge/runtime.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import {
@@ -79,6 +80,7 @@ import {
   getCollaborationPreferences as getCollaborationPreferencesWorkflow
 } from './collaboration-preference-workflow.js';
 import { buildUserTasteSkill } from './user-taste-skill.js';
+import { resolveTaskEntryAgent, loadProjectAgentContinuity } from './project-agent-task-entry.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
 import {
   groupSubscriptions,
@@ -114,6 +116,7 @@ export function openFederatedGraphApplication({
       env,
       fetchImpl
     });
+    app.employees = createEmployeeService({ app, runtimeConfigPath });
   }
   return app;
 }
@@ -137,7 +140,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     agentAccessPolicyStore = new AgentAccessPolicyStore(),
     consoleUrl = sourceConsoleUrl(null),
     projectPathResolver = resolvePersonalProjectPath,
-    taskContextRegistry = new TaskContextRegistry(),
+    taskContextRegistry = null,
     providerRequestTimeoutMs = undefined
   } = {}) {
     super();
@@ -147,7 +150,6 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     this.agentAccessPolicyStore = agentAccessPolicyStore;
     this.consoleUrl = consoleUrl;
     this.projectPathResolver = projectPathResolver;
-    this.taskContextRegistry = taskContextRegistry;
     this.personal = new GraphitiProviderClient({
       baseUrl: config.personal.providerUrl,
       accessToken: config.personal.accessToken,
@@ -155,6 +157,9 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       fetchImpl,
       requestTimeoutMs: providerRequestTimeoutMs
     });
+    this.taskContextRegistry = taskContextRegistry ?? new ProviderTaskContextRegistry(
+      this.personal, config.personal.spaceId
+    );
     this.workspaces = new Map(config.workspaces.map((workspace) => {
       const provider = createWorkspaceProvider(workspace, {
         fetchImpl, requestTimeoutMs: providerRequestTimeoutMs
@@ -171,13 +176,17 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return checkpointTaskKnowledgeWorkflow(this, input);
   }
 
-  verifyTaskCheckpoint({ sessionId }) {
-    return this.taskContextRegistry.verify(sessionId);
+  verifyTaskCheckpoint({ sessionId, sourceApplication = 'other' }) {
+    return this.taskContextRegistry.verify(sessionId, sourceApplication);
   }
 
   async recordDecisionTrace(input) {
     this.#assertActivePersonalSpace(input.personalSpaceId);
     return recordDecisionTraceWorkflow(this, input);
+  }
+
+  validateCaptureSessionKnowledge(input) {
+    if (this.getCapturePolicy().enabled) this.#prepareKnowledgeCapture(input);
   }
 
   async captureSessionKnowledge(input) {
@@ -189,15 +198,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
         capturePolicy
       };
     }
-    assertNoCredentials(input);
-    const episode = providerEpisode(input);
+    const { episode, workspace } = this.#prepareKnowledgeCapture(input);
     if (input.targetKind === 'personal') {
-      if (input.spaceId !== this.config.personal.spaceId) {
-        throw new ApplicationError(
-          ApplicationErrorCode.VALIDATION,
-          'Personal capture target must be the active personal space'
-        );
-      }
       const result = await this.personal.commit({
         space_id: input.spaceId,
         personal_project_id: input.personalProjectId ?? null,
@@ -206,20 +208,6 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       });
       return { route: 'personal', ...result };
     }
-    if (input.projectAgentId) {
-      throw new ApplicationError(
-        ApplicationErrorCode.VALIDATION,
-        'Project Agent knowledge can only be captured in the personal graph'
-      );
-    }
-    if (episode.sensitivity !== 'normal') {
-      throw new ApplicationError(
-        ApplicationErrorCode.VALIDATION,
-        'Private or restricted knowledge cannot enter a team-shared project queue. Use targetKind "personal" with personalProjectId to keep it in the personal graph'
-      );
-    }
-    assertPublicKnowledgeEligible(episode);
-    const workspace = this.#workspace(input.providerUrl);
     const draft = await this.personal.createPublicationDraft({
       personal_space_id: this.config.personal.spaceId,
       target_project_id: input.spaceId,
@@ -257,19 +245,33 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     projectAgentId = null,
     projectPath = null,
     taskPrompt = null,
+    sourceApplication = 'other',
+    sourceSessionId = null,
+    sessionId = null,
+    turnId = null,
+    workKind = null,
+    requiredCapabilities = [],
     limit = 100,
     agentInvocation = false,
     agentToolName = 'get_collaboration_preferences'
   } = {}) {
-    const projectResolution = await this.#resolvePreferenceProject({
-      personalProjectId,
-      projectPath
-    });
-    return getCollaborationPreferencesWorkflow(
+    const projectResolution = await this.#resolvePreferenceProject({ personalProjectId, projectPath });
+    const selection = projectPath === null && !personalProjectId && !projectAgentId
+      ? null
+      : await resolveTaskEntryAgent(
+      this, projectResolution, { projectAgentId, taskPrompt, sourceApplication,
+        sessionId: agentToolName === 'get_collaboration_preferences'
+          ? sessionId ?? sourceSessionId : turnId ? sessionId : null,
+        turnId: agentToolName === 'begin_task_context' ? turnId : null,
+        workKind, requiredCapabilities, agentInvocation, agentToolName }
+    );
+    // A rejected explicit role must not leak its private preferences via fallback.
+    const selectedAgentId = selection ? selection.agent?.agentId ?? null : projectAgentId;
+    const preferences = await getCollaborationPreferencesWorkflow(
       this,
       projectResolution,
       {
-        projectAgentId,
+        projectAgentId: selectedAgentId,
         taskPrompt,
         limit,
         agentInvocation,
@@ -277,6 +279,19 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       },
       (items, toolName) => this.#recordAgentViews(items, toolName)
     );
+    const management = this.employees && agentInvocation &&
+      ['begin_task_context', 'get_collaboration_preferences'].includes(agentToolName)
+      ? await this.employees.taskEntry({ personalProjectId: projectResolution.personalProjectId,
+        sourceApplication, sourceSessionId, sessionId })
+      : null;
+    const managedPreferences = management ? { ...preferences, project_management_context: management } : preferences;
+    if (!selection) return managedPreferences;
+    const context = selection.agent ? await loadProjectAgentContinuity(this, {
+      projectId: projectResolution.personalProjectId, agent: selection.agent,
+      sourceApplication, taskPrompt, selectionReason: selection.reason,
+      matchBasis: selection.match_basis
+    }) : selection;
+    return { ...managedPreferences, project_agent_context: context };
   }
 
   async getUserTasteSkill({
@@ -518,7 +533,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   async searchCurrentProjectKnowledge(input) {
     const resolution = await this.#resolvePreferenceProject({
-      personalProjectId: null,
+      personalProjectId: input.personalProjectId ?? null,
       projectPath: input.projectPath
     });
     return searchCurrentProjectKnowledgeWorkflow(this, resolution, input);
@@ -1164,7 +1179,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
-  close() {}
+  close() { return this.employees?.close(); }
 
   async #recordAgentViews(items, toolName) {
     const unique = new Map(items.map((item) => [
@@ -1193,6 +1208,34 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   async [projectAgentControlPlaneHooks.resolvePreferenceProject](input) {
     return this.#resolvePreferenceProject(input);
+  }
+
+  #prepareKnowledgeCapture(input) {
+    assertNoCredentials(input);
+    const episode = providerEpisode(input);
+    if (input.targetKind === 'personal') {
+      if (input.spaceId !== this.config.personal.spaceId) {
+        throw new ApplicationError(
+          ApplicationErrorCode.VALIDATION,
+          'Personal capture target must be the active personal space'
+        );
+      }
+      return { episode };
+    }
+    if (input.projectAgentId) {
+      throw new ApplicationError(
+        ApplicationErrorCode.VALIDATION,
+        'Project Agent knowledge can only be captured in the personal graph'
+      );
+    }
+    if (episode.sensitivity !== 'normal') {
+      throw new ApplicationError(
+        ApplicationErrorCode.VALIDATION,
+        'Private or restricted knowledge cannot enter a team-shared project queue. Use targetKind "personal" with personalProjectId to keep it in the personal graph'
+      );
+    }
+    assertPublicKnowledgeEligible(episode);
+    return { episode, workspace: this.#workspace(input.providerUrl) };
   }
 
   #workspace(providerUrl) {

@@ -4,6 +4,8 @@ import { RouterLink, RouterView, useRoute } from 'vue-router'
 
 import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
+import NavigationRecovery from '@/components/NavigationRecovery.vue'
+import EmployeeNavigation from '@/features/employees/EmployeeNavigation.vue'
 import { t } from '@/i18n'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { personalProjectsPath, knowledgePath } from '@/router/paths'
@@ -21,6 +23,7 @@ const knowledgeTo = computed(() => knowledgePath('personal', activeSpaceId.value
 const title = computed(() => routeMetaText(route.meta.title, 'routes.overview.title'))
 const eyebrow = computed(() => String(route.meta.eyebrow ?? 'LOCAL + FEDERATED'))
 const description = computed(() => routeMetaText(route.meta.description))
+const dedicatedWorkspace = computed(() => route.meta.dedicatedWorkspace === true)
 const publicReady = computed(() => store.publicRuntimeStatus === 'ready')
 const publicRuntimeLabel = computed(() => {
   if (store.publicRuntimeStatus === 'ready') return t('console.services.publicReady')
@@ -123,6 +126,8 @@ async function closeMobileNav() {
           </RouterLink>
         </template>
 
+        <EmployeeNavigation :personal-space-id="activeSpaceId" />
+
         <p class="nav-section-label nav-tool-label">{{ t('console.navigation.governance') }}</p>
         <RouterLink :to="knowledgeTo" active-class="is-active">
           <span class="nav-icon nav-icon-knowledge-graph" aria-hidden="true" />
@@ -173,7 +178,7 @@ async function closeMobileNav() {
     </aside>
 
     <main class="workspace">
-      <header class="topbar">
+      <header class="topbar" :class="{ 'topbar--workbench': dedicatedWorkspace }">
         <button
           ref="mobileNavToggleRef"
           class="mobile-nav-toggle quiet-button"
@@ -185,12 +190,13 @@ async function closeMobileNav() {
           <span class="mobile-nav-icon" aria-hidden="true" />
           {{ t('console.navigation.openMenu') }}
         </button>
-        <div class="topbar-heading">
+        <span v-if="dedicatedWorkspace" class="workbench-host-label">FULI</span>
+        <div v-else class="topbar-heading">
           <p v-if="eyebrow" class="eyebrow">{{ eyebrow }}</p>
           <h2>{{ title }}</h2>
           <p v-if="description" class="topbar-description">{{ description }}</p>
         </div>
-        <div class="topbar-actions">
+        <div v-if="!dedicatedWorkspace" class="topbar-actions">
           <span v-if="publicReady" class="mode-chip">{{ t('console.publicReady') }}</span>
           <button
             v-if="route.name === 'settings'"
@@ -204,6 +210,8 @@ async function closeMobileNav() {
           <button class="quiet-button" type="button" @click="store.refresh">{{ t('common.actions.refresh') }}</button>
         </div>
       </header>
+
+      <NavigationRecovery />
 
       <button
         v-if="store.feedback"
@@ -222,3 +230,11 @@ async function closeMobileNav() {
     </main>
   </div>
 </template>
+
+<style scoped>
+.topbar--workbench { display: none; }
+.workbench-host-label { color: #58675d; font-size: 12px; font-weight: 600; }
+@media (max-width: 920px) {
+  .topbar--workbench { display: flex; justify-content: flex-start; gap: 12px; min-height: 44px; padding: 7px 16px; border: 0; background: #fff; }
+}
+</style>

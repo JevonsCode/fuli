@@ -13,6 +13,7 @@ from .project_agent_executor_models import (
     ProjectAgentExecutorRoutingRuleRecord,
     ProjectAgentExecutorScope,
     ProjectAgentExecutorSelection,
+    project_agent_capability_key,
     project_agent_model_strategy_key,
 )
 from .project_agent_models import ProjectAgentExecutorPolicy, ProjectAgentModelStrategy
@@ -20,8 +21,6 @@ from .provider_values import now_utc, stable_uuid
 
 
 _RULE_SCOPE_RANK = {'global': 0, 'space': 1, 'project': 2, 'task': 3}
-
-
 class StoreProjectAgentExecutorRouting:
     """Resolve registered executors without owning directory mutations."""
 
@@ -66,7 +65,7 @@ class StoreProjectAgentExecutorRouting:
             MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [:HAS_PROJECT_AGENT_IDENTITY]->
                   (agent:FuliProjectAgent {agent_id: $agent_id})
-            OPTIONAL MATCH (space)-[:CONTAINS_PROJECT]->
+            MATCH (space)-[:CONTAINS_PROJECT]->
                   (:FuliPersonalProject {project_id: $personal_project_id})-
                   [:HAS_PROJECT_AGENT_ASSIGNMENT]->
                   (assignment:FuliProjectAgentAssignment)-[:ASSIGNED_AGENT]->(agent)
@@ -84,9 +83,28 @@ class StoreProjectAgentExecutorRouting:
             routing_='r',
         )
         if not agent_rows:
-            raise HTTPException(status_code=404, detail='Agent not found')
+            raise HTTPException(
+                status_code=404,
+                detail='active project Agent assignment not found',
+            )
         agent_raw = dict(agent_rows[0].get('agent') or {})
         assignment_raw = dict(agent_rows[0].get('assignment') or {})
+        if (
+            not assignment_raw
+            or assignment_raw.get('status') != 'active'
+            or (
+                assignment_id is None
+                and work_kind not in (assignment_raw.get('work_kinds') or [])
+            )
+            or (
+                assignment_id is not None
+                and assignment_raw.get('assignment_id') != assignment_id
+            )
+        ):
+            raise HTTPException(
+                status_code=404,
+                detail='active project Agent assignment not found',
+            )
         agent_policy = self._policy_from_agent(agent_raw)
         assignment_policy = self._policy_from_assignment(assignment_raw)
         override = task_override if task_override is not None else executor_policy
@@ -139,7 +157,9 @@ class StoreProjectAgentExecutorRouting:
             work_kind=work_kind,
             routing_='r',
         )
-        requested_capabilities = {item.casefold() for item in required}
+        requested_capabilities = {
+            project_agent_capability_key(item) for item in required
+        }
         rules = [
             rule
             for rule in (
@@ -148,7 +168,8 @@ class StoreProjectAgentExecutorRouting:
                 if row.get('rule')
             )
             if {
-                item.casefold() for item in rule.required_capabilities
+                project_agent_capability_key(item)
+                for item in rule.required_capabilities
             }.issubset(requested_capabilities)
         ]
         top_scope = max((_RULE_SCOPE_RANK[item.scope] for item in rules), default=None)
@@ -551,11 +572,11 @@ class StoreProjectAgentExecutorRouting:
         if executor.preflight_status != 'passed':
             return f'preflight status is {executor.preflight_status}'
         available_capabilities = {
-            item.casefold() for item in executor.capabilities
+            project_agent_capability_key(item) for item in executor.capabilities
         }
         missing = [
             item for item in required_capabilities
-            if item.casefold() not in available_capabilities
+            if project_agent_capability_key(item) not in available_capabilities
         ]
         if missing:
             return f'missing capabilities: {", ".join(missing)}'
@@ -589,9 +610,11 @@ class StoreProjectAgentExecutorRouting:
                 or strategy.reasoning_effort in model.reasoning_efforts
                 or strategy.reasoning_effort == 'default'
             )
-            capabilities = {item.casefold() for item in model.capabilities}
+            capabilities = {
+                project_agent_capability_key(item) for item in model.capabilities
+            }
             hints_ok = all(
-                hint.casefold() in capabilities
+                project_agent_capability_key(hint) in capabilities
                 for hint in strategy.capability_hints
             )
             if mode_ok and effort_ok and hints_ok:

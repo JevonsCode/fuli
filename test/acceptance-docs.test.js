@@ -45,8 +45,9 @@ test('中英文 README 应完整表达项目理念、证据边界和 Agent 生�
   assert.match(中文, /npm run test:node -- test\/acceptance-docs\.test\.js test\/project-path-context\.test\.js/);
   assert.match(中文, /MOCK \/ 合成数据/);
   assert.match(中文, /还没有面向既有 `Decision` 单独追加不可变验证结果/);
-  assert.match(中文, /Claude Code（Hook 强制）/);
-  assert.match(中文, /Codex \/ Cursor（Prompt fallback）/);
+  assert.match(中文, /Claude Code \/ Codex（已提供 Hook 上下文）/);
+  assert.match(中文, /未提供上下文（Prompt fallback，含 Cursor）/);
+  assert.match(中文, /安装文件不等于宿主已加载、信任或执行/);
   assert.match(中文, /外部知识库只读接入/);
   assert.match(中文, /id="connect-external-knowledge"/);
   assert.match(中文, /同一个个人项目可以拥有多个独立知识库绑定，同一个知识库连接也可以绑定多个个人项目/);
@@ -78,8 +79,9 @@ test('中英文 README 应完整表达项目理念、证据边界和 Agent 生�
   assert.match(英文, /npm run test:node -- test\/acceptance-docs\.test\.js test\/project-path-context\.test\.js/);
   assert.match(英文, /MOCK \/ synthetic data/);
   assert.match(英文, /does not yet expose a[\s\S]*dedicated operation/);
-  assert.match(英文, /Claude Code \(hook-enforced\)/);
-  assert.match(英文, /Codex \/ Cursor \(prompt fallback\)/);
+  assert.match(英文, /Claude Code \/ Codex \(hook context supplied\)/);
+  assert.match(英文, /No hook context \(prompt fallback, including Cursor\)/);
+  assert.match(英文, /Installed files do not prove host loading, trust, or execution/);
   assert.match(英文, /Read-only external knowledge/);
   assert.match(英文, /id="connect-external-knowledge"/);
   assert.match(英文, /One personal project can have multiple knowledge connections, and one connection can target[s\n]+multiple personal projects/);

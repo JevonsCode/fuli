@@ -265,6 +265,7 @@ export async function handleGraphApiRequest({
   if (projectAgentTaskPath && request.method === 'GET') {
     sendJson(response, 200, await app.viewProjectAgentTask({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('personalProjectId'),
       taskId: decodeURIComponent(projectAgentTaskPath[1]),
       includeEvents: url.searchParams.get('includeEvents') !== 'false'
     }));
@@ -273,6 +274,7 @@ export async function handleGraphApiRequest({
   if (url.pathname === '/api/project-agent-activity' && request.method === 'GET') {
     sendJson(response, 200, await app.viewProjectAgentActivity({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('personalProjectId'),
       agentId: url.searchParams.get('agentId'),
       fromDate: url.searchParams.get('fromDate'),
       toDate: url.searchParams.get('toDate')

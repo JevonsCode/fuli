@@ -51,22 +51,52 @@ export async function createServer(options = {}) {
     closeApplicationOnShutdown
   });
   const application = runtime.application;
-  const externalKnowledge = options.externalKnowledge ??
-    application.externalKnowledge ?? null;
-  const connectedKnowledge = options.connectedKnowledge ??
-    application.connectedKnowledge ?? null;
-  const system = options.system ?? (!app
-    ? createSystemService({
-        paths: resolveSetupPaths({
-          dataDir: dirname(localOptions.runtimeConfigPath),
-          packageRoot: PACKAGE_ROOT
-        }),
-        packageRoot: PACKAGE_ROOT,
-        activePort: port,
-        activeLan: lanEnabled,
-        executorAdapters: options.executorAdapters
-      })
-    : null);
+  let externalKnowledge;
+  let connectedKnowledge;
+  let system = null;
+  let resourcesClosing = null;
+  function closeResources() {
+    resourcesClosing ??= (async () => {
+      const failures = [];
+      for (const close of [() => system?.close?.(), () => runtime.close()]) {
+        try { await close(); } catch (error) { failures.push(error); }
+      }
+      if (failures.length === 1) throw failures[0];
+      if (failures.length > 1) {
+        throw new AggregateError(failures, 'Server resource shutdown failed');
+      }
+    })();
+    return resourcesClosing;
+  }
+  async function failStartup(error) {
+    try {
+      await closeResources();
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError],
+        `Server startup failed: ${error.message}; resource shutdown also failed`, { cause: error });
+    }
+    throw error;
+  }
+  try {
+    externalKnowledge = options.externalKnowledge ?? application.externalKnowledge ?? null;
+    connectedKnowledge = options.connectedKnowledge ?? application.connectedKnowledge ?? null;
+    system = options.system ?? (!app
+      ? createSystemService({
+          paths: resolveSetupPaths({
+            dataDir: dirname(localOptions.runtimeConfigPath),
+            packageRoot: PACKAGE_ROOT
+          }),
+          packageRoot: PACKAGE_ROOT,
+          activePort: port,
+          activeLan: lanEnabled,
+          executorAdapters: options.executorAdapters
+        })
+      : null);
+  } catch (error) {
+    // The owned application can already hold local databases before system
+    // construction or configuration validation fails, even without a listener.
+    await failStartup(error);
+  }
   for (let attempt = 0; attempt < 20; attempt += 1) {
     let authority = null;
     let allowedLanAuthorities = [];
@@ -82,6 +112,12 @@ export async function createServer(options = {}) {
         lanAuthorities: allowedLanAuthorities,
         lanAccessToken: lanToken
       }).catch((error) => {
+        if (response.headersSent || response.destroyed) {
+          // A post-response lease/storage failure cannot be converted into a second response.
+          if (!response.writableEnded) response.destroy();
+          console.error('Request failed after its response was committed or disconnected');
+          return;
+        }
         const mapped = mapHttpError(error);
         sendJson(response, mapped.status, mapped.body);
       });
@@ -90,15 +126,13 @@ export async function createServer(options = {}) {
     try {
       await listenServer(server, port, lanEnabled ? '0.0.0.0' : '127.0.0.1');
     } catch (error) {
-      runtime.close();
-      throw error;
+      await failStartup(error);
     }
     const address = server.address();
     if (isBlockedPort(address.port)) {
       await new Promise((resolveClose) => server.close(resolveClose));
       if (Number(port) === 0) continue;
-      runtime.close();
-      throw new Error(`Port ${address.port} is blocked for local fetch`);
+      await failStartup(new Error(`Port ${address.port} is blocked for local fetch`));
     }
     authority = localServerAuthority(address);
     allowedLanAuthorities = lanEnabled
@@ -106,24 +140,33 @@ export async function createServer(options = {}) {
       : [];
     if (!authority) {
       await new Promise((resolveClose) => server.close(resolveClose));
-      runtime.close();
-      throw new Error('Server did not bind to a valid local authority');
+      await failStartup(new Error('Server did not bind to a valid local authority'));
     }
 
+    let closing = null;
+    const close = () => {
+      closing ??= new Promise((resolve, reject) => {
+        server.close((error) => error && error.code !== 'ERR_SERVER_NOT_RUNNING'
+          ? reject(error) : resolve());
+      }).then(closeResources);
+      return closing;
+    };
     server.once('close', () => {
-      system?.close?.();
-      runtime.close();
+      // Legacy callers may close the raw HTTP server; still consume/report asynchronous failures.
+      void closeResources().catch((error) => {
+        if (!closing) console.error(`Server shutdown failed: ${error.message}`);
+      });
     });
     return {
       server,
+      close,
       url: `http://${authority}`,
       lanUrls: lanEnabled ? lanConsoleUrls(lanAddresses, address.port) : [],
       app: application
     };
   }
 
-  runtime.close();
-  throw new Error('Could not find a fetchable local port');
+  await failStartup(new Error('Could not find a fetchable local port'));
 }
 
 function resolveServerGraphOptions(options) {
@@ -178,14 +221,19 @@ async function runProgram(args) {
   const runtimeOptions = resolveGraphRuntimeOptions(args, process.env);
   const port = numberOption(args, '--port', DEFAULT_FULI_PORT);
   const lan = args.includes('--lan');
-  const { server, url, lanUrls } = await createServer({
+  const { server, close: closeRuntime, url, lanUrls } = await createServer({
     ...runtimeOptions,
     port,
     lan,
     lanAccessToken: lan ? process.env.FULI_LAN_ACCESS_TOKEN : null
   });
   const handlers = new Map();
-  const close = () => server.close();
+  const close = () => {
+    void closeRuntime().catch((error) => {
+      console.error(`Server shutdown failed: ${error.message}`);
+      process.exitCode = 1;
+    });
+  };
   for (const signal of ['SIGINT', 'SIGTERM']) {
     const handler = close;
     handlers.set(signal, handler);

@@ -27,6 +27,7 @@ ProjectAgentReasoningEffort = Literal['default', 'low', 'medium', 'high']
 ProjectAgentExecutorPolicyMode = Literal['flexible', 'locked']
 PROJECT_AGENT_CLIENTS: tuple[SourceApplication, ...] = (
     'codex',
+    'claude',
     'claude_code',
     'cursor',
     'kiro',
@@ -161,6 +162,14 @@ class ProjectAgentUpsert(StrictModel):
     )
     agent_id: str = Field(min_length=1, max_length=128)
     profile: ProjectAgentProfile
+
+    @model_validator(mode='after')
+    def require_dedicated_archive_operation(self):
+        if self.profile.status == 'archived':
+            raise ValueError(
+                'archive Project Agents through the dedicated archive operation'
+            )
+        return self
 
 
 class ProjectAgentAssignmentCreate(StrictModel):

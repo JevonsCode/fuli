@@ -137,7 +137,12 @@ function onSearchKeydown(event: KeyboardEvent) {
   }
 }
 
-function onOptionKeydown(event: KeyboardEvent) {
+function onOptionKeydown(event: KeyboardEvent, option: SearchableSelectOption) {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    choose(option)
+    return
+  }
   if (event.key === 'Escape') {
     event.preventDefault()
     close({ restoreFocus: true })
@@ -272,7 +277,7 @@ function positionPanel() {
           :disabled="option.disabled"
           @mousedown.prevent
           @click="choose(option)"
-          @keydown="onOptionKeydown"
+          @keydown="onOptionKeydown($event, option)"
         >
           <span class="searchable-select-option-copy">
             <strong>{{ option.label }}</strong>

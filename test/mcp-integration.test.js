@@ -7,13 +7,17 @@ import { dirname, join } from 'node:path';
 
 import { FULI_VERSION } from '../src/package-metadata.js';
 import { connectMcp } from '../test-support/mcp-client.js';
+import { taskContextProviderFixture } from '../test-support/task-context-provider-fixture.js';
 
 test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知识', async (t) => {
   const received = [];
   const workflowObservations = [];
   const workflowObservationProofs = [];
   const searchRequests = [];
+  const taskContexts = taskContextProviderFixture();
   const personal = await provider((request) => {
+    const lifecycle = taskContexts(request);
+    if (lifecycle) return lifecycle;
     if (request.path === '/health') return { status: 'ready', providerId: 'personal' };
     if (request.path === '/v1/subscriptions') return [];
     if (request.path === '/v1/spaces') return [{ id: 'personal-1', kind: 'personal' }];
@@ -192,14 +196,14 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   assert.match(instructions, /get_collaboration_preferences/);
   assert.match(instructions, /deferred_conflict/);
   assert.match(instructions, /each user task/i);
-  assert.match(instructions, /before other tools\/answer/i);
+  assert.match(instructions, /before tools\/answer/i);
   assert.match(instructions, /projectPath=cwd/i);
   assert.match(instructions, /effective_preferences/);
   assert.match(instructions, /personal-global everywhere/i);
   assert.match(instructions, /matched project.*authorized inheritable parent/i);
   assert.match(instructions, /before (?:saying|answering|claiming).*(?:do not know|don't know|unknown)/i);
   assert.match(instructions, /active child first.*inheritable parent/i);
-  assert.match(instructions, /exact IDs for extra projects/i);
+  assert.match(instructions, /extra projects=exact IDs/i);
   assert.match(instructions, /Batch durable confirmed knowledge/i);
   assert.match(instructions, /writes?.*actual payload/i);
   assert.match(instructions, /final text.*not compliance/i);
@@ -209,14 +213,14 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   assert.match(instructions, /sourceMarker\.markdown/);
   assert.match(instructions, /noMatchSourceMarker/);
   assert.match(instructions, /terminal-safe Markdown/i);
-  assert.match(instructions, /never wrap.*HTML/i);
+  assert.match(instructions, /no HTML/i);
   assert.match(instructions, /all_local_confirmed/);
   assert.match(instructions, /only after consent/i);
-  assert.match(instructions, /safe current repo\/workspace/i);
-  assert.match(instructions, /Never scan outside it/i);
+  assert.match(instructions, /rg only current repo\/workspace/i);
 
   const listed = await connection.client.listTools();
   assert.deepEqual(listed.tools.map(({ name }) => name), [
+    'list_employee_templates', 'recruit_employee', 'list_employee_tools', 'call_employee_tool',
     'begin_task_context',
     'checkpoint_task_knowledge',
     'verify_task_checkpoint',
@@ -236,7 +240,8 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'search_human_knowledge_changes', 'review_human_knowledge_change',
     'list_knowledge_spaces', 'upsert_personal_project', 'list_personal_projects',
     'upsert_project_agent', 'list_project_agents', 'get_project_agent_context',
-    'get_project_agent', 'delete_project_agent', 'cleanup_test_project_agents',
+    'get_project_agent', 'get_project_agent_memory', 'checkpoint_project_agent_memory',
+    'delete_project_agent', 'cleanup_test_project_agents',
     'create_project_agent_assignment', 'list_project_agent_assignments',
     'end_project_agent_assignment', 'replace_project_agent_assignment',
     'coordinate_project_agent_task',
@@ -498,6 +503,36 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     projectTask.structuredContent.context.personal_project_id,
     'hotel-b'
   );
+  const rejectedCheckpoint = await connection.client.callTool({
+    name: 'checkpoint_task_knowledge',
+    arguments: {
+      taskContextToken: projectTask.structuredContent.task_context_token,
+      disposition: 'capture_candidates',
+      reason: 'Review a synthetic unresolved tradeoff.',
+      capture: {
+        idempotencyKey: 'synthetic-invalid-lifecycle-candidate',
+        name: 'Synthetic unresolved candidate',
+        sourceKind: 'synthetic_test',
+        sourceDescription: 'Synthetic fixture, not a production fact.',
+        referenceTime: '2026-07-31T00:00:00.000Z',
+        entities: [{
+          key: 'synthetic.unresolved.candidate', name: 'Synthetic tradeoff',
+          type: 'TestKnowledge', originQuadrant: 'known_unknown',
+          confirmationStatus: 'pending',
+          confirmationBasis: {
+            existenceReason: 'A synthetic fixture raises an unresolved question.',
+            quadrantReason: 'The question is known but unresolved.',
+            proposedBy: { kind: 'agent' }
+          }
+        }],
+        relationships: []
+      }
+    }
+  });
+  assert.equal(rejectedCheckpoint.isError, true);
+  assert.equal(rejectedCheckpoint.structuredContent.error.code, 'validation');
+  assert.match(rejectedCheckpoint.structuredContent.error.message, /reasoningSummary/);
+
   const capturedCheckpoint = await connection.client.callTool({
     name: 'checkpoint_task_knowledge',
     arguments: {
@@ -533,6 +568,8 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
       }
     }
   });
+  assert.equal(capturedCheckpoint.isError, undefined,
+    `A locally rejected candidate must remain correctable: ${JSON.stringify(capturedCheckpoint)}`);
   assert.equal(capturedCheckpoint.structuredContent.status, 'checkpointed');
   assert.equal(capturedCheckpoint.structuredContent.capture.status, 'committed');
   assert.equal(received.at(-1).personal_project_id, 'hotel-b');

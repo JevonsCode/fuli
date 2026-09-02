@@ -120,6 +120,7 @@ async function confirmKnowledge() {
 function proposedByFromEvidence(evidence?: EvidenceRecord): ConfirmationActor {
   const application = {
     codex: 'Codex',
+    claude: 'Claude',
     claude_code: 'Claude Code',
     cursor: 'Cursor',
     kiro: 'Kiro',

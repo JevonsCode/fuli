@@ -15,17 +15,18 @@ const BLOCK_START = '<!-- BEGIN FULI MANAGED INSTRUCTIONS -->';
 const BLOCK_END = '<!-- END FULI MANAGED INSTRUCTIONS -->';
 
 const GLOBAL_INSTRUCTIONS = `${BLOCK_START}
-At start of every user task, before any other tool or answer, call exactly
+At start of every user task, use \`begin_task_context\` hook context if supplied;
+do not repeat the fallback. Otherwise before any other tool or answer, call exactly
 \`get_collaboration_preferences\` with \`projectPath\`=current working directory,
-\`taskPrompt\`=current user request. Never substitute a project action/Fuli tool.
-Fuli never stores or returns them; inputs are transient. Apply all returned \`effective_preferences\`.
-Before asking user to repeat a stable project fact or method, inspect \`task_knowledge_recall\`.
-On miss call \`search_current_project_knowledge\` with focused action/artifact/target/identifier
-queries; never use the full request as the only query.
-Write tools enforce preferences in actual payload; mentioning later is not compliance.
-Resolve relevant \`deferred_conflict\` first; ignore others.
-Team: \`coordinate_project_agent_task\`; host \`acquire_runtime_lease\`, start workers, report
-execution, \`release_runtime_lease\` in finally.
+\`taskPrompt\`=current user request. Never substitute a project action.
+Fuli never stores or returns them. Apply all returned \`effective_preferences\`.
+Before reasking a stable project fact or method, inspect \`task_knowledge_recall\`.
+On miss: \`search_current_project_knowledge\`; focused action/artifact/target/identifier;
+never use the full request as the only query.
+Write tools: preferences in actual payload; mentioning later is not compliance.
+Resolve relevant \`deferred_conflict\`; ignore others.
+Team: \`coordinate_project_agent_task\`; \`acquire_runtime_lease\`, run/report workers,
+\`release_runtime_lease\` in finally.
 ${codexReviewCommandBridge()}
 ${BLOCK_END}`;
 

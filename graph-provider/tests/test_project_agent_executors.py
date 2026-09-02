@@ -1,6 +1,4 @@
-import json
-from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi import HTTPException
@@ -10,170 +8,33 @@ from fuli_graph.project_agent_executor_models import (
     ProjectAgentExecutorAuthorization,
     ProjectAgentExecutorEvidenceIgnore,
     ProjectAgentExecutorHealthReport,
-    ProjectAgentExecutorModelRecord,
     ProjectAgentExecutorOutcomeAggregate,
     ProjectAgentExecutorOutcomeEvidenceCreate,
     ProjectAgentExecutorOutcomeReset,
     ProjectAgentExecutorPreflightReport,
-    ProjectAgentExecutorRegistration,
     ProjectAgentExecutorRoutingRuleCreate,
     ProjectAgentExecutorRoutingRuleRecord,
+    project_agent_capability_key,
     project_agent_model_strategy_key,
 )
 from fuli_graph.project_agent_models import (
     ProjectAgentExecutorPolicy,
     ProjectAgentModelStrategy,
 )
-from fuli_graph.store_project_agent_executors import StoreProjectAgentExecutors
 from fuli_graph.store_project_agent_executor_learning import (
     project_agent_executor_outcome_bucket_id,
 )
-
-
-UTC = timezone.utc
-
-
-class StoreStub(StoreProjectAgentExecutors):
-    def __init__(self, driver):
-        self.runtime = SimpleNamespace(driver=driver)
-        self.settings = SimpleNamespace(
-            provider_mode='personal',
-            provider_id='provider-1',
-        )
-
-    def _require_personal(self):
-        return None
-
-    async def authorize(self, actor, space_id, role):
-        assert actor['id'] == 'principal-1'
-        assert space_id == 'space-1'
-        assert role in {'reader', 'maintainer'}
-        return {
-            'id': space_id,
-            'kind': 'personal',
-            'group_id': 'group-1',
-        }
-
-
-class SequentialDriver:
-    def __init__(self, responses):
-        self.responses = list(responses)
-        self.calls = []
-
-    async def execute_query(self, query, **parameters):
-        self.calls.append((query, parameters))
-        if self.responses:
-            return self.responses.pop(0), None, None
-        return [], None, None
-
-
-def model(*, provider='provider', name='model', capabilities=None):
-    return ProjectAgentExecutorModelRecord(
-        provider=provider,
-        model=name,
-        capabilities=capabilities or ['review'],
-        strategy_modes=['balanced'],
-        reasoning_efforts=['medium'],
-        observed_at=datetime.now(UTC),
-    )
-
-
-def executor_raw(
-    executor_id,
-    *,
-    priority=100,
-    capabilities=None,
-    status='registered',
-    permission='authorized',
-    preflight='passed',
-    health='unknown',
-    models=None,
-):
-    timestamp = datetime.now(UTC)
-    return {
-        'executor': {
-            'executor_id': executor_id,
-            'display_name': executor_id,
-            'executor_kind': 'test-host',
-            'registration_status': status,
-            'preflight_status': preflight,
-            'health_status': health,
-            'health_required': False,
-            'workspace_permission': permission == 'authorized',
-            'capabilities': capabilities or ['review'],
-            'available_models_json': json.dumps(
-                [item.model_dump(mode='json') for item in (models or [model()])]
-            ),
-            'global_priority': priority,
-            'revision': 0,
-            'registered_at': timestamp,
-            'updated_at': timestamp,
-        },
-        'permission': {'status': permission},
-    }
-
-
-def agent_raw(policy=None):
-    from fuli_graph.project_agent_models import ProjectAgentProfile
-
-    profile = ProjectAgentProfile(
-        name='Durable Agent',
-        responsibility='Review project work.',
-        executor_policy=policy or ProjectAgentExecutorPolicy(),
-    )
-    timestamp = datetime.now(UTC)
-    return {
-        'agent': {
-            'agent_id': 'agent-1',
-            'profile_json': profile.model_dump_json(),
-            'status': 'active',
-            'created_at': timestamp,
-            'updated_at': timestamp,
-        }
-    }
-
-
-def registration():
-    return ProjectAgentExecutorRegistration(
-        personal_space_id='space-1',
-        executor_id='executor-1',
-        display_name='Executor 1',
-        capabilities=['review'],
-        idempotency_key='register-1',
-    )
-
-
-def actor():
-    return {'id': 'principal-1'}
-
-
-def outcome_raw(
-    strategy: ProjectAgentModelStrategy,
-    *,
-    evidence_id='evidence-1',
-    ignored=False,
-    terminal_outcome='completed',
-):
-    timestamp = datetime.now(UTC)
-    return {
-        'evidence_id': evidence_id,
-        'personal_space_id': 'space-1',
-        'personal_project_id': 'project-1',
-        'work_kind': 'review',
-        'agent_id': 'agent-1',
-        'executor_id': 'executor-1',
-        'task_id': 'task-1',
-        'run_id': 'run-1',
-        'model_strategy_json': strategy.model_dump_json(),
-        'model_strategy_key': project_agent_model_strategy_key(strategy),
-        'evidence_kind': 'terminal_outcome',
-        'source': 'system_terminal',
-        'terminal_outcome': terminal_outcome,
-        'reference_ids': [f'{evidence_id}-ref'],
-        'occurred_at': timestamp,
-        'created_at': timestamp,
-        'ignored': ignored,
-    }
+from project_agent_executor_support import (
+    UTC,
+    SequentialDriver,
+    StoreStub,
+    actor,
+    agent_raw,
+    executor_raw,
+    model,
+    outcome_raw,
+    registration,
+)
 
 
 def test_executor_policy_defaults_flexible_and_locked_requires_explicit_allow_list():
@@ -197,6 +58,50 @@ def test_model_strategy_key_is_canonical_and_provider_neutral():
         equivalent
     )
 
+    aliased = ProjectAgentModelStrategy(
+        mode='balanced',
+        reasoning_effort='medium',
+        capability_hints=['code-review', 'tests'],
+    )
+    canonical = ProjectAgentModelStrategy(
+        mode='balanced',
+        reasoning_effort='medium',
+        capability_hints=['testing', 'code review'],
+    )
+    assert project_agent_model_strategy_key(aliased) == (
+        project_agent_model_strategy_key(canonical)
+    )
+
+
+def test_executor_capability_matching_normalizes_common_aliases():
+    assert project_agent_capability_key('run_tests') == 'testing'
+    assert project_agent_capability_key('run tests') == 'testing'
+
+    available = model(
+        capabilities=['run_tests', 'code_review', 'development'],
+    )
+    executor = StoreStub(SequentialDriver([]))._executor_from_row(
+        executor_raw(
+            'executor-1',
+            capabilities=['run tests', 'code-review', 'coding'],
+            models=[available],
+        ),
+        'space-1',
+    )
+    strategy = ProjectAgentModelStrategy(
+        mode='balanced',
+        reasoning_effort='medium',
+        capability_hints=['testing', 'code review', 'implementation'],
+    )
+
+    unavailable = StoreStub._executor_unavailable_reason(
+        executor,
+        ['tests', 'code_review', 'development'],
+        strategy,
+    )
+
+    assert unavailable is None
+
 
 def test_routing_rules_are_generic_and_empty_by_default():
     rule = ProjectAgentExecutorRoutingRuleCreate(
@@ -213,6 +118,30 @@ def test_routing_rules_are_generic_and_empty_by_default():
     assert rule.executor_ids == ['executor-1']
 
 
+@pytest.mark.parametrize('report_kind', ['preflight', 'health'])
+def test_executor_observation_requires_an_explicit_timezone(report_kind):
+    with pytest.raises(ValueError, match='timezone'):
+        if report_kind == 'preflight':
+            ProjectAgentExecutorPreflightReport(
+                personal_space_id='space-1',
+                executor_id='executor-1',
+                status='passed',
+                workspace_permission=True,
+                capabilities=['review'],
+                available_models=[model()],
+                checked_at=datetime.now(),
+                idempotency_key='naive-preflight-report',
+            )
+        else:
+            ProjectAgentExecutorHealthReport(
+                personal_space_id='space-1',
+                executor_id='executor-1',
+                status='healthy',
+                checked_at=datetime.now(),
+                idempotency_key='naive-health-report',
+            )
+
+
 @pytest.mark.asyncio
 async def test_register_authorize_preflight_and_health_are_persisted():
     available = model()
@@ -220,8 +149,11 @@ async def test_register_authorize_preflight_and_health_are_persisted():
     driver = SequentialDriver([
         [raw],
         [raw],
-        [raw],
-        [executor_raw('executor-1', health='healthy', models=[available])],
+        [{**raw, 'accepted': True}],
+        [{
+            **executor_raw('executor-1', health='healthy', models=[available]),
+            'accepted': True,
+        }],
     ])
     store = StoreStub(driver)
 
@@ -272,6 +204,68 @@ async def test_register_authorize_preflight_and_health_are_persisted():
     assert 'authorization_idempotency_key' in driver.calls[1][0]
     assert 'preflight_idempotency_key' in driver.calls[2][0]
     assert 'health_idempotency_key' in driver.calls[3][0]
+
+
+@pytest.mark.asyncio
+async def test_available_only_requires_healthy_when_health_is_mandatory():
+    driver = SequentialDriver([[]])
+    await StoreStub(driver).list_project_agent_executors(
+        actor(),
+        'space-1',
+        available_only=True,
+    )
+
+    query, parameters = driver.calls[0]
+    assert parameters['available_only'] is True
+    assert 'coalesce(executor.health_required, false) = false' in query
+    assert "executor.health_status = 'healthy'" in query
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(('kind', 'report'), [
+    (
+        'preflight',
+        ProjectAgentExecutorPreflightReport(
+            personal_space_id='space-1',
+            executor_id='executor-1',
+            status='passed',
+            workspace_permission=True,
+            capabilities=['review'],
+            available_models=[model()],
+            checked_at=datetime.now(UTC) - timedelta(minutes=5),
+            idempotency_key='stale-preflight-report',
+        ),
+    ),
+    (
+        'health',
+        ProjectAgentExecutorHealthReport(
+            personal_space_id='space-1',
+            executor_id='executor-1',
+            status='healthy',
+            checked_at=datetime.now(UTC) - timedelta(minutes=5),
+            idempotency_key='stale-health-report',
+        ),
+    ),
+])
+async def test_stale_executor_observation_is_rejected(kind, report):
+    driver = SequentialDriver([[{
+        **executor_raw('executor-1'),
+        'accepted': False,
+    }]])
+    store = StoreStub(driver)
+
+    with pytest.raises(HTTPException, match='stale') as rejected:
+        if kind == 'preflight':
+            await store.record_project_agent_executor_preflight(actor(), report)
+        else:
+            await store.record_project_agent_executor_health(actor(), report)
+
+    assert rejected.value.status_code == 409
+    query, _ = driver.calls[0]
+    assert f'executor._{kind}_write_lock = true' in query
+    assert f'executor.{kind}_at < $checked_at' in query if kind == 'preflight' else (
+        'executor.health_checked_at < $checked_at' in query
+    )
 
 
 @pytest.mark.asyncio
@@ -374,7 +368,68 @@ async def test_flexible_route_uses_same_level_rule_and_records_selection():
     assert result.model_strategy.mode == 'adaptive'
     assert 'FuliProjectAgentExecutorRoutingRule' in driver.calls[2][0]
     assert 'FuliProjectAgentExecutorDecision' in driver.calls[4][0]
-    assert 'OPTIONAL MATCH (space)-[:CONTAINS_PROJECT]->' in driver.calls[1][0]
+    assert 'MATCH (space)-[:CONTAINS_PROJECT]->' in driver.calls[1][0]
+
+
+@pytest.mark.asyncio
+async def test_route_rejects_agent_without_matching_active_project_assignment():
+    driver = SequentialDriver([
+        [{'project': {'project_id': 'project-1'}}],
+        [{'agent': agent_raw()['agent'], 'assignment': None}],
+    ])
+
+    with pytest.raises(HTTPException) as error:
+        await StoreStub(driver).resolve_project_agent_executor(
+            actor(),
+            personal_space_id='space-1',
+            personal_project_id='project-1',
+            task_id='task-without-assignment',
+            agent_id='agent-1',
+            assignment_id='ended-or-other-project-assignment',
+            work_kind='review',
+            required_capabilities=['review'],
+            idempotency_key='select-without-assignment',
+        )
+
+    assert error.value.status_code == 404
+    assert 'assignment' in str(error.value.detail).lower()
+    assert len(driver.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_route_accepts_matching_assignment_selected_by_capability_for_another_work_kind():
+    agent = agent_raw()['agent']
+    driver = SequentialDriver([
+        [{'project': {'project_id': 'project-1'}}],
+        [{
+            'agent': agent,
+            'assignment': {
+                'assignment_id': 'assignment-agent-1',
+                'status': 'active',
+                'work_kinds': ['implementation'],
+            },
+        }],
+        [],
+        [executor_raw('executor-1')],
+        [{'decision': {}}],
+    ])
+
+    result = await StoreStub(driver).resolve_project_agent_executor(
+        actor(),
+        personal_space_id='space-1',
+        personal_project_id='project-1',
+        task_id='task-capability-matched',
+        agent_id='agent-1',
+        assignment_id='assignment-agent-1',
+        work_kind='review',
+        required_capabilities=['review'],
+        idempotency_key='select-capability-matched',
+    )
+
+    assert result.selected_executor_id == 'executor-1'
+    query = driver.calls[1][0]
+    assert '$assignment_id IS NOT NULL' in query
+    assert '$work_kind IN coalesce(assignment.work_kinds, [])' in query
 
 
 @pytest.mark.asyncio
@@ -684,7 +739,7 @@ async def test_outcome_aggregate_is_decay_weighted_and_reset_is_non_destructive(
         'event-1', 'event-3', 'task:task-1', 'task:task-2', 'task:task-3', 'test-1',
     ]
     assert aggregate.evidence_contributions[0].decay_weight > aggregate.evidence_contributions[1].decay_weight
-    assert 'FuliProjectAgentExecutorOutcomeAggregate' in driver.calls[3][0]
+    assert 'SET aggregate.aggregate_json' in driver.calls[-1][0]
 
 
 @pytest.mark.asyncio
@@ -713,10 +768,13 @@ async def test_outcome_aggregate_isolated_by_agent_strategy_key_even_if_driver_r
     assert aggregate.model_strategy_key == fast_key
     assert aggregate.sample_count == 1
     assert aggregate.evidence_contributions[0].evidence_id == 'fast-evidence'
-    assert driver.calls[2][1]['model_strategy_key'] == fast_key
-    assert 'model_strategy_key: $model_strategy_key' in driver.calls[2][0]
-    assert 'OPTIONAL MATCH (reset' not in driver.calls[2][0]
-    assert driver.calls[1][1]['reset_id']
+    evidence_query, evidence_parameters = next(
+        call for call in driver.calls if 'MATCH (evidence:' in call[0])
+    assert evidence_parameters['model_strategy_key'] == fast_key
+    assert 'model_strategy_key: $model_strategy_key' in evidence_query
+    assert 'OPTIONAL MATCH (reset' not in evidence_query
+    assert next(parameters for query, parameters in driver.calls
+                if 'OPTIONAL MATCH (reset' in query)['reset_id']
 
 
 @pytest.mark.asyncio
@@ -735,12 +793,15 @@ async def test_record_outcome_recomputes_the_matching_strategy_bucket_immediatel
         evidence_kind='terminal_outcome',
         source='system_terminal',
         terminal_outcome='completed',
-        reference_ids=['event-1'],
-        idempotency_key='evidence-fast-1',
+        reference_ids=['run-1'],
+        idempotency_key='terminal:run-1',
         occurred_at=raw['occurred_at'],
     )
     driver = SequentialDriver([
         [{'project': {'project_id': 'project-1'}}],
+        [{'task': {'work_kind': 'review', 'effective_model_strategy_json': strategy.model_dump_json()},
+          'observations': [{'model_strategy_json': strategy.model_dump_json()}],
+          'event': {'status': 'completed', 'created_at': raw['occurred_at']}}],
         [{'evidence': raw}],
         [{'project': {'project_id': 'project-1'}}],
         [{'reset': None}],
@@ -752,10 +813,10 @@ async def test_record_outcome_recomputes_the_matching_strategy_bucket_immediatel
     )
     strategy_key = project_agent_model_strategy_key(strategy)
     assert evidence.model_strategy_key == strategy_key
-    assert len(driver.calls) == 6
-    assert driver.calls[4][1]['model_strategy_key'] == strategy_key
-    assert driver.calls[5][1]['model_strategy_key'] == strategy_key
-    assert 'MERGE (aggregate:FuliProjectAgentExecutorOutcomeAggregate' in driver.calls[5][0]
+    assert len(driver.calls) == 10
+    assert driver.calls[-2][1]['model_strategy_key'] == strategy_key
+    assert driver.calls[-1][1]['model_strategy_key'] == strategy_key
+    assert 'MERGE (aggregate:FuliProjectAgentExecutorOutcomeAggregate' in driver.calls[-1][0]
 
 
 @pytest.mark.asyncio
@@ -772,6 +833,7 @@ async def test_ignore_outcome_recomputes_the_matching_strategy_bucket_immediatel
     )
     driver = SequentialDriver([
         [{'project': {'project_id': 'project-1'}}],
+        [{'evidence': raw}],  # Immutable bucket identity read before locking.
         [{'evidence': raw}],
         [{'project': {'project_id': 'project-1'}}],
         [{'reset': None}],
@@ -784,9 +846,9 @@ async def test_ignore_outcome_recomputes_the_matching_strategy_bucket_immediatel
     strategy_key = project_agent_model_strategy_key(strategy)
     assert evidence.ignored is True
     assert evidence.model_strategy_key == strategy_key
-    assert len(driver.calls) == 6
-    assert driver.calls[4][1]['model_strategy_key'] == strategy_key
-    assert driver.calls[5][1]['model_strategy_key'] == strategy_key
+    assert len(driver.calls) == 9
+    assert driver.calls[-2][1]['model_strategy_key'] == strategy_key
+    assert driver.calls[-1][1]['model_strategy_key'] == strategy_key
 
 
 @pytest.mark.asyncio
@@ -805,6 +867,7 @@ async def test_reset_is_persisted_and_aggregated_in_the_matching_strategy_bucket
     )
     driver = SequentialDriver([
         [{'project': {'project_id': 'project-1'}}],
+        [],  # No prior reset timestamp requiring an explicit repair.
         [{}],
         [{'project': {'project_id': 'project-1'}}],
         [{'reset': None}],
@@ -817,9 +880,11 @@ async def test_reset_is_persisted_and_aggregated_in_the_matching_strategy_bucket
     strategy_key = project_agent_model_strategy_key(strategy)
     assert aggregate is not None
     assert aggregate.model_strategy_key == strategy_key
-    assert driver.calls[1][1]['model_strategy_key'] == strategy_key
-    assert driver.calls[4][1]['model_strategy_key'] == strategy_key
-    assert 'id: $reset_id' in driver.calls[1][0]
+    reset_query, reset_parameters = next(
+        call for call in driver.calls if 'MERGE (reset:' in call[0])
+    assert reset_parameters['model_strategy_key'] == strategy_key
+    assert driver.calls[-2][1]['model_strategy_key'] == strategy_key
+    assert 'id: $reset_id' in reset_query
 
 
 def test_outcome_bucket_ids_include_provider_space_and_complete_bucket():
@@ -922,17 +987,37 @@ async def test_actual_executor_is_written_to_task_and_test_agents_can_be_archive
     store = StoreStub(driver)
     result = await store.record_project_agent_executor_actual(actor(), actual)
     assert result.executor_id == 'executor-1'
-    assert 'MATCH (task)-[:HAS_PARTICIPANT]->(agent)' in driver.calls[1][0]
+    assert any('MATCH (task)-[:HAS_PARTICIPANT]->(agent)' in query
+               for query, _ in driver.calls)
     archived = await store.archive_test_project_agents(
         actor(),
         'space-1',
         test_source='executor-tests',
     )
     assert archived == 1
-    assert 'actual_executor_id' in driver.calls[2][0]
-    assert 'status = \'archived\'' in driver.calls[3][0]
-    assert 'WITH space, agent' in driver.calls[3][0]
-    assert '[:HAS_PROJECT_AGENT_ASSIGNMENT]' in driver.calls[3][0]
+    assert 'actual_executor_id' in driver.calls[-2][0]
+    assert 'status = \'archived\'' in driver.calls[-1][0]
+    assert 'WITH space, agent' in driver.calls[-1][0]
+    assert '[:HAS_PROJECT_AGENT_ASSIGNMENT]' in driver.calls[-1][0]
+    assert 'HAS_PROJECT_AGENT_TASK' in driver.calls[-1][0]
+    assert 'HAS_PARTICIPANT' in driver.calls[-1][0]
+    assert 'agent._task_lifecycle_lock' in driver.calls[-1][0]
+    assert 'ORDER BY agent.agent_id' in driver.calls[-1][0]
+    assert driver.calls[-1][0].index(
+        'ORDER BY agent.agent_id'
+    ) < driver.calls[-1][0].index('agent._task_lifecycle_lock')
+    assert driver.calls[-1][0].index(
+        'agent._task_lifecycle_lock'
+    ) < driver.calls[-1][0].index('HAS_PROJECT_AGENT_TASK')
+    assert "item.status IN [" in driver.calls[-1][0]
+    assert 'size(open_tasks) = 0' in driver.calls[-1][0]
+    assert 'agent.archive_reason' in driver.calls[-1][0]
+    assert 'agent.archived_at' in driver.calls[-1][0]
+    assert 'agent.archived_reason' not in driver.calls[-1][0]
+    assert 'agent.archive_reason = coalesce(agent.archive_reason' in driver.calls[-1][0]
+    assert "'test cleanup')" in driver.calls[-1][0]
+    assert "coalesce(agent.status, 'active') <> 'archived'" in driver.calls[-1][0]
+    assert 'CASE WHEN newly_archived THEN agent END' in driver.calls[-1][0]
 
 
 @pytest.mark.asyncio
@@ -1016,63 +1101,3 @@ async def test_actual_report_exact_replay_does_not_reapply_task_projection():
     assert 'AS projection_pending' in replay_query
     assert 'WHEN payload_matches AND projection_pending' in replay_query
     assert 'observation.projection_applied = true' in replay_query
-
-
-@pytest.mark.asyncio
-async def test_actual_report_rejects_executor_outside_locked_agent_policy():
-    actual = ProjectAgentExecutorActualReport(
-        personal_space_id='space-1',
-        personal_project_id='project-1',
-        task_id='task-1',
-        run_id='run-1',
-        agent_id='agent-1',
-        executor_id='executor-outside',
-        provider='provider',
-        model='model',
-        occurred_at=datetime.now(UTC),
-        idempotency_key='actual-locked',
-    )
-    locked = ProjectAgentExecutorPolicy(
-        mode='locked',
-        locked_executor_ids=['executor-allowed'],
-    )
-    driver = SequentialDriver([
-        [{'project': {'project_id': 'project-1'}}],
-        [{
-            'task': {'task_id': 'task-1'},
-            'agent': agent_raw(locked)['agent'],
-            **executor_raw('executor-outside'),
-        }],
-    ])
-    with pytest.raises(HTTPException, match='locked allow-list'):
-        await StoreStub(driver).record_project_agent_executor_actual(actor(), actual)
-
-
-@pytest.mark.asyncio
-async def test_actual_report_requires_fallback_reason_when_executor_changed():
-    actual = ProjectAgentExecutorActualReport(
-        personal_space_id='space-1',
-        personal_project_id='project-1',
-        task_id='task-1',
-        run_id='run-1',
-        agent_id='agent-1',
-        executor_id='executor-2',
-        provider='provider',
-        model='model',
-        occurred_at=datetime.now(UTC),
-        idempotency_key='actual-changed',
-    )
-    driver = SequentialDriver([
-        [{'project': {'project_id': 'project-1'}}],
-        [{
-            'task': {
-                'task_id': 'task-1',
-                'selected_executor_id': 'executor-1',
-            },
-            'agent': agent_raw()['agent'],
-            **executor_raw('executor-2'),
-        }],
-    ])
-
-    with pytest.raises(HTTPException, match='without a fallback reason'):
-        await StoreStub(driver).record_project_agent_executor_actual(actor(), actual)

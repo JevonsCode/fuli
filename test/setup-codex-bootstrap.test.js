@@ -22,6 +22,9 @@ test('Codex global instructions preserve unrelated guidance and keep a short boo
   assert.equal(second, first);
   assert.match(first, /# Existing guidance/);
   assert.match(managed, /start of every user task/i);
+  assert.match(managed, /use.*begin_task_context.*hook context if supplied/is);
+  assert.match(managed, /do not repeat the fallback/i);
+  assert.match(managed, /otherwise before any other tool or answer/i);
   assert.match(managed, /before any other tool or answer/i);
   assert.match(managed, /get_collaboration_preferences/);
   assert.match(managed, /call exactly.*get_collaboration_preferences/is);

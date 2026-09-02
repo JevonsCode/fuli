@@ -99,6 +99,24 @@ test('LAN policy rejects a valid code sent from a foreign Host or Origin', () =>
   }
 });
 
+test('LAN policy rejects non-ASCII authorization without throwing', () => {
+  const lanAuthority = '192.168.31.8:2727';
+  const token = 'temporary-access-code';
+  const malformed = request(lanAuthority, token);
+  malformed.headers.authorization = `\u00e9${malformed.headers.authorization.slice(1)}`;
+  const response = responseRecorder();
+
+  assert.equal(rejectRequestOutsidePolicy({
+    request: malformed,
+    response,
+    authority: '127.0.0.1:2727',
+    lanAuthorities: [lanAuthority],
+    lanAccessToken: token
+  }), true);
+  assert.equal(response.status, 401);
+  assert.match(response.headers['www-authenticate'], /FULI LAN/);
+});
+
 function request(host, token = null, remoteAddress = '192.168.31.20') {
   return {
     method: 'GET',

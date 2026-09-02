@@ -58,6 +58,7 @@ test('managed graph services operate only the configured Compose services in shu
       },
       readSettings: () => DEFAULT_RUNTIME_SETTINGS,
       ensureRuntime: async () => runtime,
+      inspectRuntime: () => runtime,
       runCompose: (args, selectedRuntime) => compose.push({ args, selectedRuntime }),
       fetchImpl: async (url) => { health.push(url); return { ok: true }; }
     });
@@ -85,3 +86,26 @@ test('managed graph services operate only the configured Compose services in shu
       ['stop', '-t', '20', 'personal-neo4j', 'workspace-neo4j']
     ]);
   });
+
+test('idle graph shutdown never launches a stopped container runtime', async () => {
+  // Container inspection/start/Compose are boundary substitutes; graph lifecycle is real.
+  let launches = 0;
+  const commands = [];
+  const services = createManagedGraphServices({
+    paths: PATHS,
+    readJson: () => null,
+    readSettings: () => DEFAULT_RUNTIME_SETTINGS,
+    inspectRuntime: () => ({ status: 'stopped' }),
+    async ensureRuntime() { launches++; return { status: 'ready' }; },
+    runCompose: (args) => commands.push(args),
+    fetchImpl: async () => ({ ok: true })
+  });
+  await services.stopProviders();
+  await services.stopDatabases();
+  assert.equal(launches, 0, 'an idle stop must not become a container-runtime launch');
+  assert.deepEqual(commands, []);
+  await services.start();
+  assert.equal(launches, 1, 'an explicit wake may still launch the runtime');
+  assert.equal(commands.length, 1);
+  assert.ok(commands[0].includes('up'));
+});

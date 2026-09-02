@@ -467,6 +467,7 @@ function evidenceLabel(evidence: EvidenceRecord) {
 function sessionLabel(evidence: EvidenceRecord) {
   const application = {
     codex: 'Codex',
+    claude: 'Claude',
     claude_code: 'Claude Code',
     cursor: 'Cursor',
     kiro: 'Kiro',
@@ -480,6 +481,7 @@ function sessionLabel(evidence: EvidenceRecord) {
 function proposedByFromEvidence(evidence?: EvidenceRecord) {
   const application = {
     codex: 'Codex',
+    claude: 'Claude',
     claude_code: 'Claude Code',
     cursor: 'Cursor',
     kiro: 'Kiro',

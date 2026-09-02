@@ -104,6 +104,18 @@ describe('ConsoleLayout', () => {
     await flushPromises()
     expect(wrapper.get('.settings-save-button').text()).toContain('保存设置')
     expect(wrapper.get('.settings-save-button').attributes('form')).toBe('settings-form')
+
+    router.addRoute({
+      path: '/employees/:templateId', component: { template: '<div>Agent board</div>' },
+      meta: { title: '专属 Agent', dedicatedWorkspace: true },
+    })
+    await router.push('/employees/jefa')
+    await flushPromises()
+    expect(wrapper.get('.topbar').classes()).toContain('topbar--workbench')
+    expect(wrapper.find('.topbar-heading').exists()).toBe(false)
+    expect(wrapper.find('.topbar-actions').exists()).toBe(false)
+    expect(wrapper.get('.mobile-nav-toggle').attributes('aria-controls')).toBe('console-primary-sidebar')
+    expect(wrapper.text()).toContain('Agent board')
     wrapper.unmount()
   })
 })

@@ -224,6 +224,40 @@ test('an agent failure is isolated and reported without blocking the local runti
   }]);
 });
 
+test('setup reports partial Agent artifacts when Skill installation fails after connection', async () => {
+  let skillCalls = 0;
+  const result = await applyLocalSetup(samplePlan(), OPTIONS, {
+    ensureRuntime: async () => ({ status: 'running', url: null, pid: 1 }),
+    backupConfig: () => 'synthetic-backup.toml',
+    connect: (agent) => ({
+      id: agent.id,
+      label: agent.label,
+      status: 'connected',
+      newTaskRequired: true
+    }),
+    installSkill: (agent) => {
+      skillCalls += 1;
+      if (skillCalls === 2) throw new Error('Synthetic Skill write failure');
+      return { status: 'installed', path: agent.skillPath, backupPath: null };
+    }
+  });
+
+  assert.equal(result.status, 'partial');
+  assert.deepEqual(result.agents, [{
+    id: 'codex',
+    label: 'Codex',
+    status: 'partial',
+    newTaskRequired: true,
+    backupPath: 'synthetic-backup.toml',
+    skills: [{
+      status: 'installed',
+      path: samplePlan().agents[0].skillPath,
+      backupPath: null
+    }],
+    message: 'Synthetic Skill write failure'
+  }]);
+});
+
 test('applying setup connects only the agents selected during setup', async () => {
   const calls = [];
   const result = await applyLocalSetup({

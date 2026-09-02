@@ -11,6 +11,7 @@ import type {
   ProjectAgentTaskExecutionSummary,
   ProjectAgentTaskRecord,
   ProjectAgentTaskStatus,
+  ProjectAgentTokenUsage,
 } from '@/types'
 
 export type UnknownRecord = Record<string, unknown>
@@ -26,6 +27,47 @@ export function valueOf(record: UnknownRecord, camel: string, snake: string) {
 export function stringOf(record: UnknownRecord, camel: string, snake: string) {
   const value = valueOf(record, camel, snake)
   return typeof value === 'string' ? value : null
+}
+
+export function stringArrayOf(record: UnknownRecord, camel: string, snake: string) {
+  const value = valueOf(record, camel, snake)
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+    ? value as string[]
+    : null
+}
+
+function nonNegativeIntegerOf(record: UnknownRecord, camel: string, snake: string) {
+  const value = valueOf(record, camel, snake)
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null
+}
+
+export function normalizeTokenUsage(value: unknown): ProjectAgentTokenUsage | null {
+  if (!value || typeof value !== 'object') return null
+  const record = unknownRecord(value)
+  const source = stringOf(record, 'source', 'source')
+  const totalTokens = nonNegativeIntegerOf(record, 'totalTokens', 'total_tokens')
+  if (!['executor', 'host', 'dingdong'].includes(source ?? '') || totalTokens === null) return null
+  return {
+    source: source as ProjectAgentTokenUsage['source'],
+    totalTokens,
+    inputTokens: nonNegativeIntegerOf(record, 'inputTokens', 'input_tokens'),
+    outputTokens: nonNegativeIntegerOf(record, 'outputTokens', 'output_tokens'),
+    cachedInputTokens: nonNegativeIntegerOf(record, 'cachedInputTokens', 'cached_input_tokens'),
+    cacheWriteInputTokens: nonNegativeIntegerOf(record, 'cacheWriteInputTokens', 'cache_write_input_tokens'),
+    reasoningOutputTokens: nonNegativeIntegerOf(record, 'reasoningOutputTokens', 'reasoning_output_tokens'),
+  }
+}
+
+export function normalizeWorkerRuntime(value: unknown) {
+  if (!value || typeof value !== 'object') return null
+  const record = unknownRecord(value)
+  const application = stringOf(record, 'application', 'application')
+  if (!['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other'].includes(application ?? '')) return null
+  return {
+    application: application as ConversationSourceApplication,
+    sessionId: stringOf(record, 'sessionId', 'session_id'),
+    sessionUrl: stringOf(record, 'sessionUrl', 'session_url'),
+  }
 }
 
 export function arrayOf(value: unknown) { return Array.isArray(value) ? value : [] }
@@ -144,8 +186,13 @@ export function normalizeExecutionSummary(value: unknown): ProjectAgentTaskExecu
       executor: stringOf(record, 'executor', 'executor'),
       executorId: stringOf(record, 'executorId', 'executor_id'),
       sourceApplication: stringOf(record, 'sourceApplication', 'source_application') as ConversationSourceApplication | null,
+      sourceSessionId: stringOf(record, 'sourceSessionId', 'source_session_id'),
+      sourceSessionUrl: stringOf(record, 'sourceSessionUrl', 'source_session_url'),
+      workerRuntime: normalizeWorkerRuntime(valueOf(record, 'workerRuntime', 'worker_runtime')),
+      toolsUsed: stringArrayOf(record, 'toolsUsed', 'tools_used'),
       actualModelProvider: stringOf(record, 'actualModelProvider', 'actual_model_provider'),
       actualModel: stringOf(record, 'actualModel', 'actual_model'),
+      tokenUsage: normalizeTokenUsage(valueOf(record, 'tokenUsage', 'token_usage')),
       workSummary: stringOf(record, 'workSummary', 'work_summary'),
       status: stringOf(record, 'status', 'status'),
     }
@@ -172,7 +219,12 @@ export function normalizeEvent(value: unknown): ProjectAgentTaskEvent | null {
     eventId, taskId, agentId: stringOf(record, 'agentId', 'agent_id'), status: stringOf(record, 'status', 'status') as ProjectAgentTaskStatus,
     actorKind: stringOf(record, 'actorKind', 'actor_kind') ?? undefined, summary: stringOf(record, 'summary', 'summary') ?? '',
     sourceApplication: stringOf(record, 'sourceApplication', 'source_application') as ConversationSourceApplication | null,
-    sourceSessionId: stringOf(record, 'sourceSessionId', 'source_session_id'), actualExecution: reportedActual,
+    sourceSessionId: stringOf(record, 'sourceSessionId', 'source_session_id'),
+    sourceSessionUrl: stringOf(record, 'sourceSessionUrl', 'source_session_url'),
+    workerRuntime: normalizeWorkerRuntime(valueOf(record, 'workerRuntime', 'worker_runtime')),
+    toolsUsed: stringArrayOf(record, 'toolsUsed', 'tools_used'),
+    tokenUsage: normalizeTokenUsage(valueOf(record, 'tokenUsage', 'token_usage')),
+    actualExecution: reportedActual,
     actualModelProvider: stringOf(record, 'actualModelProvider', 'actual_model_provider'), actualModel: stringOf(record, 'actualModel', 'actual_model'),
     workerId: stringOf(record, 'workerId', 'worker_id'), workerLabel: stringOf(record, 'workerLabel', 'worker_label'),
     workerOccupationEmoji: stringOf(record, 'workerOccupationEmoji', 'worker_occupation_emoji'),
@@ -251,7 +303,7 @@ export function normalizeTask(value: unknown): ProjectAgentTaskRecord | null {
     sourceApplication: stringOf(record, 'sourceApplication', 'source_application') as ConversationSourceApplication | null, sourceSessionId: stringOf(record, 'sourceSessionId', 'source_session_id'),
     resultSummary: stringOf(record, 'resultSummary', 'result_summary'), failureReason: stringOf(record, 'failureReason', 'failure_reason'), createdAt: stringOf(record, 'createdAt', 'created_at'),
     updatedAt: stringOf(record, 'updatedAt', 'updated_at'), completedAt: stringOf(record, 'completedAt', 'completed_at'), effectiveModelStrategy: normalizeStrategy(valueOf(record, 'effectiveModelStrategy', 'effective_model_strategy')), effectiveExecutorPolicy: normalizePolicy(valueOf(record, 'effectiveExecutorPolicy', 'effective_executor_policy') ?? valueOf(record, 'executorPolicy', 'executor_policy')),
-    staffingIntent: stringOf(record, 'staffingIntent', 'staffing_intent'), routingOutcome: stringOf(record, 'routingOutcome', 'routing_outcome'), routingReason: stringOf(record, 'routingReason', 'routing_reason'), routingExplanation: stringOf(record, 'routingExplanation', 'routing_explanation'),
+    staffingIntent: stringOf(record, 'staffingIntent', 'staffing_intent'), requiredCapabilities: arrayOf(valueOf(record, 'requiredCapabilities', 'required_capabilities')).filter((item): item is string => typeof item === 'string'), executorCapabilityHints: arrayOf(valueOf(record, 'executorCapabilityHints', 'executor_capability_hints')).filter((item): item is string => typeof item === 'string'), routingOutcome: stringOf(record, 'routingOutcome', 'routing_outcome'), routingReason: stringOf(record, 'routingReason', 'routing_reason'), routingExplanation: stringOf(record, 'routingExplanation', 'routing_explanation'),
     matchBasis: arrayOf(valueOf(record, 'matchBasis', 'match_basis')).filter((item): item is string => typeof item === 'string'), complexity: (() => { const complexity = valueOf(record, 'complexity', 'complexity'); return typeof complexity === 'string' || typeof complexity === 'number' ? complexity : null })(), complexityBasis: arrayOf(valueOf(record, 'complexityBasis', 'complexity_basis')).filter((item): item is string => typeof item === 'string'),
     modelStrategySource: stringOf(record, 'modelStrategySource', 'model_strategy_source') ?? undefined, actualExecution: reportedActual,
     executionSummary: normalizeExecutionSummary(valueOf(record, 'executionSummary', 'execution_summary')),

@@ -47,6 +47,33 @@ test('disabled runtime lease client stays entirely local', async () => {
   assert.equal(fetched, false);
 });
 
+test('an already-cancelled MCP request never acquires a runtime lease', async () => {
+  let fetched = false;
+  let operated = false;
+  const client = createRuntimeLeaseClient({
+    runtimeConfigPath: '/data/graph-runtime.json',
+    paths: PATHS,
+    readSettings: () => ({ ...DEFAULT_ADAPTIVE_RUNTIME_SETTINGS, enabled: true }),
+    readJson: () => ({ url: 'http://127.0.0.1:2727' }),
+    fetchImpl: async () => {
+      fetched = true;
+      return Response.json({ enabled: false, leaseId: null });
+    }
+  });
+  const controller = new AbortController();
+  const cancelled = new Error('synthetic MCP request cancelled before acquire');
+  controller.abort(cancelled);
+
+  await assert.rejects(
+    client.withGraphLease('mcp:cancelled', async () => {
+      operated = true;
+    }, { signal: controller.signal }),
+    (error) => error === cancelled
+  );
+  assert.equal(fetched, false);
+  assert.equal(operated, false);
+});
+
 test('enabled runtime lease client refuses a non-loopback coordinator', async () => {
   const client = createRuntimeLeaseClient({
     runtimeConfigPath: '/data/graph-runtime.json',
@@ -193,7 +220,7 @@ test('failed heartbeat setup releases the remote lease and leaves no timer', asy
   assert.equal(clearCount, 1);
 });
 
-test('failed refresh stops heartbeat but still permits an idempotent release', async () => {
+test('failed refresh keeps heartbeat retrying until an idempotent release', async () => {
   const leaseId = '44444444-4444-4444-8444-444444444444';
   const requests = [];
   const heartbeatTimer = { unref() {} };
@@ -222,15 +249,15 @@ test('failed refresh stops heartbeat but still permits an idempotent release', a
 
   const handle = await client.acquireGraphLease('run:refresh-failure');
   await assert.rejects(() => client.refreshLease(handle), /refresh unavailable/);
-  assert.equal(clearCount, 1);
+  assert.equal(clearCount, 0);
 
   heartbeatCallback();
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(requests, ['POST', 'PATCH']);
+  assert.deepEqual(requests, ['POST', 'PATCH', 'PATCH']);
 
   assert.equal((await client.releaseLease(handle)).released, true);
   assert.equal((await client.releaseLease(handle)).released, false);
-  assert.deepEqual(requests, ['POST', 'PATCH', 'DELETE']);
+  assert.deepEqual(requests, ['POST', 'PATCH', 'PATCH', 'DELETE']);
   assert.equal(clearCount, 1);
 });
 
@@ -266,4 +293,52 @@ test('runtime lease Agent tools expose only host-safe graph and executor operati
     () => app.acquireRuntimeLease({ kind: 'executor', owner: 'task:missing' }),
     /requires executorId/
   );
+});
+
+test('malformed successful acquisitions fail closed and reclaim any usable returned lease ID', async () => {
+  // Response mutation is a transport fixture, not a claim that the current broker emits invalid JSON.
+  const leaseId = '55555555-5555-4555-8555-555555555555';
+  for (const response of [{}, null, [], { enabled: true }, { enabled: false }, { enabled: 'true', leaseId },
+    { enabled: false, leaseId }, { enabled: true, leaseId: ' ' }]) {
+    const requests = [];
+    let operated = false;
+    let heartbeats = 0;
+    const client = createRuntimeLeaseClient({
+      runtimeConfigPath: '/data/graph-runtime.json', paths: PATHS,
+      readSettings: () => ({ ...DEFAULT_ADAPTIVE_RUNTIME_SETTINGS, enabled: true }),
+      readJson: () => ({ url: 'http://127.0.0.1:2727' }),
+      fetchImpl: async (url, init) => {
+        requests.push({ url, method: init.method });
+        return Response.json(init.method === 'POST' ? response : { released: true });
+      },
+      setHeartbeat: () => { heartbeats += 1; return { unref() {} }; }
+    });
+    try {
+      await assert.rejects(client.withGraphLease('invalid-response', async () => {
+        operated = true;
+      }), /invalid.*lease.*response/i);
+      assert.equal(operated, false);
+      assert.equal(heartbeats, 0);
+      assert.deepEqual(requests.map(({ method }) => method),
+        response?.leaseId === leaseId ? ['POST', 'DELETE'] : ['POST']);
+      if (requests.length === 2) assert.ok(requests[1].url.endsWith(`/${leaseId}`));
+    } finally { await client.close(); }
+  }
+});
+
+test('an explicit remotely disabled acquisition remains a valid no-op', async () => {
+  const requests = [];
+  const client = createRuntimeLeaseClient({
+    runtimeConfigPath: '/data/graph-runtime.json', paths: PATHS,
+    readSettings: () => ({ ...DEFAULT_ADAPTIVE_RUNTIME_SETTINGS, enabled: true }),
+    readJson: () => ({ url: 'http://127.0.0.1:2727' }),
+    fetchImpl: async (_url, init) => {
+      requests.push(init.method);
+      return Response.json({ enabled: false, leaseId: null });
+    }
+  });
+  try {
+    assert.equal(await client.withGraphLease('remote-disabled', async () => 42), 42);
+    assert.deepEqual(requests, ['POST']);
+  } finally { await client.close(); }
 });

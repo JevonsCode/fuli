@@ -38,7 +38,7 @@ export function serveStatic(pathname, response) {
   const pathFromRoot = relative(WEB_ROOT, requestedFile);
   if (pathFromRoot === '..' || pathFromRoot.startsWith(`..${sep}`) ||
       isAbsolute(pathFromRoot)) {
-    response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+    response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
     response.end('Not found');
     return;
   }
@@ -49,13 +49,14 @@ export function serveStatic(pathname, response) {
       ? join(WEB_ROOT, 'index.html')
       : null;
   if (!filePath || !existsSync(filePath)) {
-    response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+    response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
     response.end('Not found');
     return;
   }
 
   response.writeHead(200, {
-    'content-type': MIME_TYPES[extname(filePath)] ?? 'application/octet-stream'
+    'content-type': MIME_TYPES[extname(filePath)] ?? 'application/octet-stream',
+    ...(extname(filePath) === '.html' ? { 'cache-control': 'no-cache' } : {})
   });
   response.end(readFileSync(filePath));
 }

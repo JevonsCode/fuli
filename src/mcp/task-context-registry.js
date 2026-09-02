@@ -18,59 +18,91 @@ export class TaskContextRegistry {
     this.tokens = new Map();
   }
 
-  begin({ sessionId, personalProjectId }) {
+  begin({ sessionId, turnId = null, personalProjectId, projectAgentId = null,
+    sourceApplication = 'other', sourceSessionId = null, memoryRevision = null }) {
     assertNonEmpty(sessionId, 'sessionId');
-    const previous = this.sessions.get(sessionId) ?? null;
+    const key = sessionKey(sourceApplication, sessionId);
+    const previous = this.sessions.get(key) ?? null;
+    if (!previous) this.#reserveSessionSlot();
     if (previous) this.tokens.delete(previous.token);
 
     const task = {
       token: this.tokenFactory(),
       sessionId,
+      turnId,
       personalProjectId: personalProjectId ?? null,
+      projectAgentId,
+      sourceApplication,
+      sourceSessionId,
+      memoryRevision,
+      agentMemory: null,
       checkpoint: null
     };
-    this.sessions.delete(sessionId);
-    this.sessions.set(sessionId, task);
+    this.sessions.delete(key);
+    this.sessions.set(key, task);
     this.tokens.set(task.token, task);
-    this.#evictOldest();
     return {
-      ...task,
-      previousCheckpointMissing: Boolean(previous && !previous.checkpoint)
+      ...snapshot(task),
+      previousCheckpointMissing: Boolean(previous && (!previous.checkpoint || previous.checkpoint.phase === 'prepare'))
     };
   }
 
-  checkpoint(token, checkpoint) {
-    assertNonEmpty(token, 'taskContextToken');
-    const task = this.tokens.get(token);
-    if (!task) throw unknownTokenError();
-    if (task.checkpoint) {
-      if (sameCheckpoint(task.checkpoint, checkpoint)) return task;
-      throw new ApplicationError(
-        ApplicationErrorCode.VALIDATION,
+  checkpoint(token, checkpoint, sourceApplication = 'other') {
+    const task = this.#task(token, sourceApplication);
+    if (task.checkpoint?.phase === 'prepare') {
+      if (!sameCheckpointClaim(task.checkpoint, checkpoint)) {
+        throw checkpointConflict('Task checkpoint has different input');
+      }
+    } else if (task.checkpoint) {
+      if (sameCheckpoint(task.checkpoint, checkpoint)) return snapshot(task);
+      throw checkpointConflict(
         'Fuli task context has already been checkpointed with a different disposition'
       );
     }
-    task.checkpoint = Object.freeze({ ...checkpoint });
-    return task;
+    task.checkpoint = Object.freeze({ ...checkpoint, phase: 'complete' });
+    return snapshot(task);
   }
 
-  context(token) {
+  prepare(token, checkpoint, sourceApplication = 'other', agentMemory = null) {
+    const task = this.#task(token, sourceApplication);
+    if (agentMemory !== null && agentMemory !== undefined) {
+      throw new ApplicationError(
+        ApplicationErrorCode.VALIDATION,
+        'The in-memory task context registry cannot atomically persist durable Agent memory'
+      );
+    }
+    if (task.checkpoint && !sameCheckpointClaim(task.checkpoint, checkpoint)) {
+      throw checkpointConflict('Task checkpoint has different input');
+    }
+    if (!task.checkpoint) task.checkpoint = { ...checkpoint, phase: 'prepare' };
+    return snapshot(task);
+  }
+
+  context(token, sourceApplication = 'other') {
+    return snapshot(this.#task(token, sourceApplication));
+  }
+
+  #task(token, sourceApplication) {
     assertNonEmpty(token, 'taskContextToken');
     const task = this.tokens.get(token);
-    if (!task) throw unknownTokenError();
+    if (!task || task.sourceApplication !== sourceApplication) throw unknownTokenError();
+    const key = sessionKey(task.sourceApplication, task.sessionId);
+    if (this.sessions.get(key) !== task) throw unknownTokenError();
+    this.sessions.delete(key);
+    this.sessions.set(key, task);
     return task;
   }
 
-  verify(sessionId) {
+  verify(sessionId, sourceApplication = 'other') {
     assertNonEmpty(sessionId, 'sessionId');
-    const task = this.sessions.get(sessionId);
+    const task = this.sessions.get(sessionKey(sourceApplication, sessionId));
     if (!task) {
       return {
         status: 'not_started',
         guidance: 'No Fuli task context was started; do not block the Agent.'
       };
     }
-    if (task.checkpoint) {
+    if (task.checkpoint && task.checkpoint.phase !== 'prepare') {
       return {
         status: 'checkpointed',
         disposition: task.checkpoint.disposition
@@ -79,27 +111,54 @@ export class TaskContextRegistry {
     return {
       status: 'checkpoint_required',
       decision: 'block',
-      reason: 'Before finishing, call checkpoint_task_knowledge once with either a bounded durable candidate batch or retain_nothing. Do not store raw transcripts, guesses, or temporary output.'
+      task_context_token: task.token,
+      reason: `FULI_CHECKPOINT_REQUIRED: ${task.token} Before finishing, call checkpoint_task_knowledge once with either a bounded durable candidate batch or retain_nothing. Do not store raw transcripts, guesses, or temporary output.`
     };
   }
 
-  #evictOldest() {
-    while (this.sessions.size > MAX_ACTIVE_SESSIONS) {
-      const [sessionId, task] = this.sessions.entries().next().value;
-      this.sessions.delete(sessionId);
+  #reserveSessionSlot() {
+    if (this.sessions.size < MAX_ACTIVE_SESSIONS) return;
+    for (const [key, task] of this.sessions) {
+      if (task.checkpoint?.phase !== 'complete') continue;
+      this.sessions.delete(key);
       this.tokens.delete(task.token);
+      return;
     }
+    throw new ApplicationError(
+      ApplicationErrorCode.VALIDATION,
+      'Fuli has too many unfinished in-memory task contexts; finish an existing context or restart this fallback MCP process'
+    );
   }
+}
+
+function snapshot(task) {
+  return structuredClone(task);
+}
+
+function sessionKey(sourceApplication, sessionId) {
+  return JSON.stringify([sourceApplication, sessionId]);
 }
 
 function assertNonEmpty(value, label) {
   if (typeof value !== 'string' || !value.trim()) {
-    throw new TypeError(`${label} must be a nonempty string`);
+    throw new ApplicationError(
+      ApplicationErrorCode.VALIDATION,
+      `${label} must be a nonempty string`
+    );
   }
 }
 
 function sameCheckpoint(left, right) {
-  return left.disposition === right.disposition
-    && left.reason === right.reason
+  return sameCheckpointClaim(left, right)
     && left.captureStatus === right.captureStatus;
+}
+
+function sameCheckpointClaim(left, right) {
+  return left.fingerprint === right.fingerprint
+    && left.disposition === right.disposition
+    && left.reason === right.reason;
+}
+
+function checkpointConflict(message) {
+  return new ApplicationError(ApplicationErrorCode.VALIDATION, message);
 }

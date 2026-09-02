@@ -95,10 +95,23 @@ test('exact local browser authority and requests without Origin keep working', a
   assert.equal(favicon.headers.get('content-type'), 'image/png');
   assert.equal(index.status, 200);
   assert.match(index.headers.get('content-type'), /^text\/html/);
+  assert.equal(index.headers.get('cache-control'), 'no-cache');
   assert.ok(entryPath);
   assert.equal(entry.status, 200);
   assert.match(entry.headers.get('content-type'), /^text\/javascript/);
   assert.match(entrySource, /#app/);
+});
+
+test('workspace deep links revalidate HTML and missing build chunks are not cached', async (t) => {
+  const { server, url } = await createServer({ app: {}, port: 0 });
+  t.after(() => closeServer(server));
+  const page = await fetch(`${url}/employees/jefa`);
+  const missing = await fetch(`${url}/assets/EmployeeWorkbenchPage-previous-build.js`);
+  assert.equal(page.status, 200);
+  assert.equal(page.headers.get('cache-control'), 'no-cache');
+  assert.equal(missing.status, 404);
+  assert.equal(missing.headers.get('cache-control'), 'no-store');
+  assert.doesNotMatch(await missing.text(), /<html/i);
 });
 
 test('loopback HTTP never proxies the independent human-review credential', async (t) => {
@@ -190,10 +203,19 @@ test('LAN mode binds a protected authority while loopback health remains availab
   }), 401);
   assert.equal(stateCalls, 0);
 
+  const authorization = `Basic ${Buffer.from(`fuli:${accessCode}`).toString('base64')}`;
   assert.equal(await rawStatus(`${url}/api/state`, {
     headers: {
       host: lanAuthority,
-      authorization: `Basic ${Buffer.from(`fuli:${accessCode}`).toString('base64')}`
+      authorization: `\u00e9${authorization.slice(1)}`
+    }
+  }), 401);
+  assert.equal(stateCalls, 0);
+
+  assert.equal(await rawStatus(`${url}/api/state`, {
+    headers: {
+      host: lanAuthority,
+      authorization
     }
   }), 200);
   assert.equal(stateCalls, 1);

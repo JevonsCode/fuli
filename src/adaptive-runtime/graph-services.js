@@ -2,6 +2,7 @@ import { readJsonFile } from '../storage/json-file.js';
 import { createNativeGraphServices } from '../native-runtime/runtime.js';
 import {
   ensureContainerRuntime,
+  inspectContainerRuntime,
   runDockerCompose
 } from '../setup/container-runtime.js';
 import {
@@ -38,6 +39,7 @@ export function createManagedGraphServices({
   readJson = readJsonFile,
   readSettings = readRuntimeSettings,
   ensureRuntime = ensureContainerRuntime,
+  inspectRuntime = inspectContainerRuntime,
   runCompose = runDockerCompose,
   fetchImpl = globalThis.fetch,
   wait = delay,
@@ -80,15 +82,20 @@ export function createManagedGraphServices({
   }
 
   async function stopProviders() {
+    const selectedRuntime = inspectRuntime();
+    if (selectedRuntime.status === 'stopped') return;
     const services = managedServices();
-    compose(['stop', '-t', '20', ...services.providers], await runtime());
+    compose(['stop', '-t', '20', ...services.providers], selectedRuntime);
   }
 
   async function stopDatabases() {
+    // Inspect only: shutdown must not launch a desktop container engine to stop it.
+    const selectedRuntime = inspectRuntime();
+    if (selectedRuntime.status === 'stopped') return;
     const services = managedServices();
     // Keep shutdown ordering explicit even if an external action restarted a Provider.
-    compose(['stop', '-t', '20', ...services.providers], await runtime());
-    compose(['stop', '-t', '20', ...services.databases], await runtime());
+    compose(['stop', '-t', '20', ...services.providers], selectedRuntime);
+    compose(['stop', '-t', '20', ...services.databases], selectedRuntime);
   }
 
   async function ready() {

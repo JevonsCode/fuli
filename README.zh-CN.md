@@ -163,8 +163,10 @@ Fuli 只匹配已经登记在“个人项目”中的稳定 `project_id`，不�
 
 ### Agent 什么时候调用什么
 
-正常使用时，不需要手工调用 MCP 工具：在项目目录中向 Agent 提任务即可。Claude Code Hook
-调用 `begin_task_context`；Codex 和 Cursor 的 Prompt fallback 在每个任务开始调用一次：
+正常使用时，不需要手工调用 MCP 工具：在项目目录中向 Agent 提任务即可。Fuli 已有 Claude
+Code、Codex 和 Cursor 生命周期适配器。已加载、获信任的入口 Hook 提供 `begin_task_context`
+上下文时，直接使用，不重复 fallback。Cursor 的 Hook 建立持久任务，但偏好与角色上下文
+仍由 Agent 取回。没有收到 Hook 上下文时，在每个任务开始调用一次：
 
 ```json
 {
@@ -233,10 +235,10 @@ sequenceDiagram
     participant G as 本地图谱
 
     U->>A: 在当前项目提交任务
-    alt Claude Code（Hook 强制）
+    alt Claude Code / Codex（已提供 Hook 上下文）
         L->>F: begin_task_context(projectPath, taskPrompt)
         F-->>A: 生效偏好、精确项目、有界召回和任务令牌
-    else Codex / Cursor（Prompt fallback）
+    else 未提供上下文（Prompt fallback，含 Cursor）
         A->>F: get_collaboration_preferences(projectPath, taskPrompt)
         F-->>A: 生效偏好、精确项目和有界召回
     end
@@ -262,11 +264,11 @@ sequenceDiagram
         F-->>A: retain_nothing
     end
 
-    alt Claude Code Stop Hook
+    alt 已加载并获信任的 Claude Code / Codex Stop Hook
         L->>F: verify_task_checkpoint
         F-->>L: 已检查才允许结束
-    else Prompt fallback Agent
-        Note over A,F: 遵循同一契约，但宿主不能确定性阻止漏检
+    else Cursor 提醒或 Prompt fallback Agent
+        Note over A,F: 遵循同一契约；有限提醒不是无条件 Stop Gate
     end
     A-->>U: 返回结果与实际使用的 Fuli 来源
 ```
@@ -361,8 +363,9 @@ Agent 上下文。
 - Benchmark 的测试项目和对话是明确标注的 **MOCK / 合成数据**，不是用户或生产数据；
 - 当前决策工具可在首次记录时附带验证，但还没有面向既有 `Decision` 单独追加不可变验证结果
   的专用入口；
-- Claude Code 具备确定性的生命周期 Hook；Codex 和 Cursor 当前是 Prompt fallback，不能把两者
-  表述为同等强制能力；
+- 安装文件不等于宿主已加载、信任或执行。Claude Code 和 Codex 适配器会生成入口/Stop Hook
+  配置，Codex 信任审阅仍由用户完成；Cursor 使用任务入口 Hook 和有限 Stop 提醒，不能表述为
+  同等的无条件 Stop Gate。三个真实客户端的普通输入触发仍需实际验收；
 - 聚合检索中的选定公共项目仍是 Beta；外部知识提升到公共空间和后台增量同步尚未实现。
 
 ## 安装
@@ -498,7 +501,13 @@ start 和 restart 会继续沿用。
 Kubernetes 或整台容器虚拟机；原生模式会直接停止对应 Provider 和 Neo4j 进程，因此空闲时
 不再保留共享虚拟机开销。
 
-Project Agent 身份仍是控制面记录，不会每个身份常驻一个进程。实际执行器按 ID 共用租约：
+“项目 Agent → 招募员工”支持可复用的默认员工模板，首位员工是项目经理 Jefa。招募复用持久身份，
+按项目单独任职；安装员工包后，侧栏工作台与 API/A2A 共用 FULI 端口，已有 FULI MCP 可发现和调用员工工具。
+招募不等于启动模型，也不改写已有客户端配置。详见[员工包安装与扩展协议](docs/employee-agents.md)。
+
+Project Agent 身份仍是控制面记录，不会每个身份常驻一个进程。角色工作记忆按项目私有、
+版本化地保存在同一个 Neo4j Provider 中；任务入口恢复唯一负责人，结束检查跨 MCP 进程持久化。
+详见[角色记忆、宿主 hooks 与验收边界](docs/project-agent-memory.md)。实际执行器按 ID 共用租约：
 只有显式注入受管生命周期适配器的执行器才由 Fuli 启停；Codex 等宿主自己拥有的外部执行器
 不会被 Fuli 擅自启动或终止。当前可用的最小内存组合是：
 
@@ -553,14 +562,51 @@ npm uninstall --global fuli-context
 
 Fuli 为支持的 Agent 安装 `capturing-session-knowledge`、`grilling-project` 和 `flreview`
 Skills。输入 `/flreview` 后可选择全部、个人偏好或个人项目；若用户表示完全没耐心，流程会
-跳过心情、时间和 token 询问，只处理少量最高优先级问题。Claude
-Code 使用 `UserPromptSubmit` 和 `Stop` Hook 接入任务生命周期；Codex 的用户级
-`AGENTS.md` 与 Cursor 指令使用 Prompt fallback。偏好正文始终以本机 Fuli 为唯一来源，
-不会复制到 Agent 配置中。
+跳过心情、时间和 token 询问，只处理少量最高优先级问题。Fuli setup 为 Claude Code 生成
+`UserPromptSubmit`/`Stop` MCP Hook，为 Codex 生成 `UserPromptSubmit` MCP Hook 和本地 `Stop`
+命令，为 Cursor 生成 `sessionStart`/`beforeSubmitPrompt`/`stop` Hook。Codex bootstrap 和 Cursor
+指令只在未收到生命周期上下文时使用 fallback，不重复已提供的偏好。Codex 的 Stop 命令首次
+阻止未完成检查；若一次继续后仍未完成，只对同一 token 写入 `retain_nothing` 防止无限循环，
+不生成知识或角色记忆。安装配置不会代替用户批准宿主信任。偏好正文始终以本机 Fuli 为唯一
+来源，不复制到 Agent 配置中。
 
 FULI MCP 还提供只读的 `fuli://` resources：每个本地个人项目和“全局品味”各有一个可选条目。
 支持 MCP mention 的 Agent 可以在 `@` 选择器里选中它们；项目条目只代表一个精确项目，
 不会因为选择而自动扩大到其他项目或 `RELATED_TO` 项目。
+
+### Claude 网页版 / Cowork 的远程上游
+
+`fuli remote-mcp` 提供绑定单一个人项目、最小权限的 Streamable HTTP MCP 上游。它把来源
+独立记录为 `claude`，要求仅 owner 可读的 bearer token 文件，拒绝跨站 Origin，并且只监听
+loopback：
+
+```bash
+umask 077
+openssl rand -hex 32 > ./fuli-remote.token
+fuli remote-mcp --personal-project-id YOUR_PROJECT_ID \
+  --bearer-token-file ./fuli-remote.token --port 2728
+```
+
+在 POSIX 系统上，CLI 会以 nonblocking + no-follow 方式打开 token，并要求权限为 `0600`。
+Windows 无法通过 Node.js 获得同等的 `O_NOFOLLOW` 与 POSIX 权限保证，因此 token 必须放在
+受 Windows ACL 保护的目录中，必须是普通文件且不能使用链接。
+
+启动前会校验该项目确实属于当前个人空间；默认最多同时保留 8 个会话，并清理空闲超过
+15 分钟的会话；需要时可用 `--max-sessions` 和 `--session-idle-ttl-seconds` 调整。“空闲”按
+已完成的 MCP 应用请求计算，静默的独立 SSE 通知流不会永久占用会话槽；到达 TTL 后连接
+可能被关闭，客户端须重新连接并初始化新会话。关闭服务时，正在处理的有界请求与会话清理
+共享同一个宽限截止时间，超时后才强制关闭剩余 HTTP 连接。若反向代理
+会转发浏览器 `Origin` 或保留公网 Host，用
+`--allowed-origin https://connector.example --allowed-host connector.example` 显式配置；否则让
+代理把 Host 重写为 loopback 上游地址。任意未允许的 Origin 和 Host 都会被拒绝。每个 MCP
+会话只能读取任务入口为它选中的 Agent 私有上下文与记忆。checkpoint token 还同时绑定上游
+配置的项目和创建它的 MCP 会话，其他项目进程或同项目的其他会话都不能复用。
+
+这只是内部上游，不是公网部署。Claude 自定义连接器从 Anthropic 云端发起请求，因此仍须在
+监听器前配置公开 HTTPS 与 OAuth 2.1 代理；代理必须校验用户身份、token audience 和最小
+scope，再把外部 token 换成内部 bearer，绝不能开放 Fuli Provider 或 Neo4j 端口。
+claude.ai 不运行本机生命周期 hooks；MCP 初始化指令会要求每项任务先恢复角色、结束前
+checkpoint，但只有真实连接后的 Claude 会话才能证明该行为。
 
 当任务需要品味或判断建议时，`get_user_taste_skill` 会根据当前生效的个人档案和历史任务
 数据生成一份有界、只读的 `user-taste` Skill 结论。它会标注证据状态与作用域，返回与当前

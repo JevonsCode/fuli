@@ -142,6 +142,19 @@ export interface ProjectAgentActualExecution {
   reportedAt?: string | null
 }
 
+export type ProjectAgentTokenUsageSource = 'executor' | 'host' | 'dingdong'
+
+/** Exact cumulative usage reported for one concrete worker run. */
+export interface ProjectAgentTokenUsage {
+  source: ProjectAgentTokenUsageSource
+  totalTokens: number
+  inputTokens?: number | null
+  outputTokens?: number | null
+  cachedInputTokens?: number | null
+  cacheWriteInputTokens?: number | null
+  reasoningOutputTokens?: number | null
+}
+
 export interface ProjectAgentProfile {
   name: string
   responsibility: string
@@ -198,6 +211,12 @@ export interface ProjectAgentTaskParticipant {
   endedAt?: string | null
 }
 
+export interface ProjectAgentWorkerRuntime {
+  application: ConversationSourceApplication
+  sessionId?: string | null
+  sessionUrl?: string | null
+}
+
 export interface ProjectAgentTaskExecutionSummary {
   agentId?: string | null
   agentName?: string | null
@@ -209,8 +228,13 @@ export interface ProjectAgentTaskExecutionSummary {
   executor?: string | null
   executorId?: string | null
   sourceApplication?: ConversationSourceApplication | null
+  sourceSessionId?: string | null
+  sourceSessionUrl?: string | null
+  toolsUsed?: string[] | null
   actualModelProvider?: string | null
   actualModel?: string | null
+  tokenUsage?: ProjectAgentTokenUsage | null
+  workerRuntime?: ProjectAgentWorkerRuntime | null
   workSummary?: string | null
   status?: string | null
 }
@@ -232,6 +256,10 @@ export interface ProjectAgentTaskEvent {
   summary: string
   sourceApplication?: ConversationSourceApplication | null
   sourceSessionId?: string | null
+  sourceSessionUrl?: string | null
+  toolsUsed?: string[] | null
+  tokenUsage?: ProjectAgentTokenUsage | null
+  workerRuntime?: ProjectAgentWorkerRuntime | null
   actualExecution?: ProjectAgentActualExecution | null
   actualModelProvider?: string | null
   actualModel?: string | null
@@ -284,6 +312,8 @@ export interface ProjectAgentTaskRecord {
   updatedAt?: string | null
   completedAt?: string | null
   staffingIntent?: string | null
+  requiredCapabilities?: string[]
+  executorCapabilityHints?: string[]
   routingOutcome?: string | null
   routingReason?: string | null
   routingExplanation?: string | null
@@ -309,9 +339,14 @@ export interface ProjectAgentActivityTask {
   assignmentId?: string | null
   collaborators?: ProjectAgentTaskParticipant[]
   sourceApplication?: ConversationSourceApplication | null
+  sourceSessionId?: string | null
+  sourceSessionUrl?: string | null
+  toolsUsed?: string[] | null
   actualExecution?: ProjectAgentActualExecution | null
   actualModelProvider?: string | null
   actualModel?: string | null
+  tokenUsage?: ProjectAgentTokenUsage | null
+  workerRuntime?: ProjectAgentWorkerRuntime | null
 }
 
 export interface ProjectAgentActivityDay {
@@ -348,6 +383,8 @@ export interface ProjectAgentRecruitmentRecord {
   status: string
   confirmationMode?: string | null
   proposedAgentId: string
+  participantRole?: 'lead' | 'collaborator'
+  recruitmentSlot?: string
   revision?: number
   recruitedAgentId?: string | null
   triggerSourceApplication?: ConversationSourceApplication | null
@@ -579,6 +616,7 @@ export interface RuntimePorts {
 
 export type ConversationSourceApplication =
   | 'codex'
+  | 'claude'
   | 'claude_code'
   | 'cursor'
   | 'gemini_cli'

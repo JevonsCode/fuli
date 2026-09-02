@@ -5,6 +5,8 @@ from typing import Annotated, Any
 
 from fastapi import FastAPI, HTTPException, Query
 
+from .project_agent_memory_routes import register_project_agent_memory_routes
+
 from .project_agent_models import (
     ProjectAgentAssignmentCreate,
     ProjectAgentAssignmentEnd,
@@ -56,6 +58,8 @@ def register_project_agent_routes(
     Actor: Any,
 ) -> None:
     """Attach Project Agent routes while keeping ``create_app`` orchestration small."""
+
+    register_project_agent_memory_routes(application, store, Actor)
 
     @application.put('/v1/project-agents', response_model=ProjectAgentRecord)
     async def upsert_project_agent(
@@ -233,8 +237,17 @@ def register_project_agent_routes(
         task_id: str,
         actor: Actor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
+        personal_project_id: Annotated[
+            str | None,
+            Query(min_length=1, max_length=128),
+        ] = None,
     ) -> ProjectAgentTaskRecord:
-        return await store.get_project_agent_task(actor, personal_space_id, task_id)
+        return await store.get_project_agent_task(
+            actor,
+            personal_space_id,
+            task_id,
+            personal_project_id=personal_project_id,
+        )
 
     @application.post(
         '/v1/project-agent-tasks/{task_id}/events',
@@ -259,6 +272,10 @@ def register_project_agent_routes(
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
         from_date: Annotated[date, Query(alias='from')],
         to_date: Annotated[date, Query(alias='to')],
+        personal_project_id: Annotated[
+            str | None,
+            Query(min_length=1, max_length=128),
+        ] = None,
     ) -> ProjectAgentActivityResult:
         return await store.get_project_agent_activity(
             actor,
@@ -266,6 +283,7 @@ def register_project_agent_routes(
             agent_id,
             from_date,
             to_date,
+            personal_project_id=personal_project_id,
         )
 
     @application.get(
@@ -296,6 +314,7 @@ def register_project_agent_routes(
     @application.get(
         '/v1/project-agent-recruitment-policy',
         response_model=ProjectAgentRecruitmentPolicyRecord,
+        deprecated=True,
     )
     async def get_project_agent_recruitment_policy(
         actor: Actor,
@@ -309,6 +328,7 @@ def register_project_agent_routes(
     @application.put(
         '/v1/project-agent-recruitment-policy',
         response_model=ProjectAgentRecruitmentPolicyRecord,
+        deprecated=True,
     )
     async def update_project_agent_recruitment_policy(
         request: ProjectAgentRecruitmentPolicyUpdate,

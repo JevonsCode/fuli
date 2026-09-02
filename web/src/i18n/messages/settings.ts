@@ -77,6 +77,7 @@ export const settingsMessages = {
       idFormatMeta: 'Codex 深链要求原生会话 UUID；其他来源可按其支持的 ID 格式配置。',
       applications: {
         codex: 'Codex',
+        claude: 'Claude',
         claude_code: 'Claude Code',
         cursor: 'Cursor',
         gemini_cli: 'Gemini CLI',
@@ -170,6 +171,7 @@ export const settingsMessages = {
       idFormatMeta: 'Codex deep links require the native conversation UUID; configure other sources to match their supported IDs.',
       applications: {
         codex: 'Codex',
+        claude: 'Claude',
         claude_code: 'Claude Code',
         cursor: 'Cursor',
         gemini_cli: 'Gemini CLI',

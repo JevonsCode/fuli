@@ -50,6 +50,14 @@ describe('localized route metadata', () => {
     expect(routeMetaText(router.resolve('/about').meta.title)).toBe('说明')
   })
 
+  it('localizes the employee workbench title in both supported languages', () => {
+    const route = router.resolve('/employees/jefa')
+    expect(routeMetaText(route.meta.title)).toBe('专属 Agent')
+    expect(route.meta.dedicatedWorkspace).toBe(true)
+    setLocale('en-US', { persist: false })
+    expect(routeMetaText(route.meta.title)).toBe('Specialist Agents')
+  })
+
   it('registers settings as a separate page beside about', () => {
     expect(router.resolve('/settings').name).toBe('settings')
     expect(routeMetaText(router.resolve('/settings').meta.title)).toBe('设置')

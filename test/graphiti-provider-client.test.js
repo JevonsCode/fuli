@@ -225,6 +225,69 @@ test('provider client reports network failures without exposing credentials', as
   );
 });
 
+test('provider client classifies malformed successful JSON as an invalid response', async () => {
+  const client = new GraphitiProviderClient({
+    baseUrl: 'http://127.0.0.1:8787',
+    accessToken: 'test-token',
+    fetchImpl: async () => new Response('{malformed', {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    })
+  });
+
+  await assert.rejects(
+    client.health(),
+    (error) => error instanceof ProviderRequestError &&
+      error.code === 'provider_invalid_response' &&
+      error.status === 0 &&
+      error.message === 'Graphiti provider returned invalid JSON.'
+  );
+});
+
+test('provider client rejects non-JSON and empty successful responses', async () => {
+  for (const response of [
+    new Response('<html>proxy error</html>', {
+      status: 200,
+      headers: { 'content-type': 'text/html' }
+    }),
+    new Response(null, {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    })
+  ]) {
+    const client = new GraphitiProviderClient({
+      baseUrl: 'http://127.0.0.1:8787',
+      accessToken: 'test-token',
+      fetchImpl: async () => response
+    });
+
+    await assert.rejects(
+      client.health(),
+      (error) => error instanceof ProviderRequestError &&
+        error.code === 'provider_invalid_response' &&
+        error.status === 0
+    );
+  }
+});
+
+test('provider client keeps malformed non-2xx responses on the HTTP error path', async () => {
+  const client = new GraphitiProviderClient({
+    baseUrl: 'http://127.0.0.1:8787',
+    accessToken: 'test-token',
+    fetchImpl: async () => new Response('{malformed', {
+      status: 503,
+      headers: { 'content-type': 'application/json' }
+    })
+  });
+
+  await assert.rejects(
+    client.health(),
+    (error) => error instanceof ProviderRequestError &&
+      error.code === 'provider_http_5xx' &&
+      error.status === 503
+  );
+});
+
 test('provider client aborts a request after the configured timeout', async () => {
   let requestSignal;
   const client = new GraphitiProviderClient({

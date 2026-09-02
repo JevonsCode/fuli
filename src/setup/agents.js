@@ -20,6 +20,8 @@ export function discoverAgents({
 } = {}) {
   const pathApi = platform === 'win32' ? path.win32 : path.posix;
   const codexHome = nonEmpty(env.CODEX_HOME) ?? pathApi.join(homeDir, '.codex');
+  const claudeHome = pathApi.join(homeDir, '.claude');
+  const cursorHome = pathApi.join(homeDir, '.cursor');
   const skillName = 'capturing-session-knowledge';
   const projectSkillName = 'grilling-project';
   return [
@@ -28,6 +30,7 @@ export function discoverAgents({
       label: 'Codex',
       command: 'codex',
       configPath: pathApi.join(codexHome, 'config.toml'),
+      hooksPath: pathApi.join(codexHome, 'hooks.json'),
       globalInstructionsPath: pathApi.join(codexHome, 'AGENTS.md'),
       globalInstructionsOverridePath: pathApi.join(codexHome, 'AGENTS.override.md'),
       skillPath: pathApi.join(homeDir, '.agents', 'skills', skillName),
@@ -39,19 +42,28 @@ export function discoverAgents({
       label: 'Claude Code',
       command: 'claude',
       configPath: pathApi.join(homeDir, '.claude.json'),
-      settingsPath: pathApi.join(homeDir, '.claude', 'settings.json'),
-      skillPath: pathApi.join(homeDir, '.claude', 'skills', skillName),
-      projectSkillPath: pathApi.join(homeDir, '.claude', 'skills', projectSkillName),
-      available: Boolean(commandExists('claude'))
+      settingsPath: pathApi.join(claudeHome, 'settings.json'),
+      skillPath: pathApi.join(claudeHome, 'skills', skillName),
+      projectSkillPath: pathApi.join(claudeHome, 'skills', projectSkillName),
+      available: Boolean(
+        commandExists('claude') ||
+        fileExists(pathApi.join(homeDir, '.claude.json')) ||
+        fileExists(claudeHome)
+      )
     },
     {
       id: 'cursor',
       label: 'Cursor',
       command: 'cursor',
-      configPath: pathApi.join(homeDir, '.cursor', 'mcp.json'),
-      skillPath: pathApi.join(homeDir, '.cursor', 'skills', skillName),
-      projectSkillPath: pathApi.join(homeDir, '.cursor', 'skills', projectSkillName),
-      available: Boolean(commandExists('cursor'))
+      configPath: pathApi.join(cursorHome, 'mcp.json'),
+      hooksPath: pathApi.join(cursorHome, 'hooks.json'),
+      skillPath: pathApi.join(cursorHome, 'skills', skillName),
+      projectSkillPath: pathApi.join(cursorHome, 'skills', projectSkillName),
+      available: Boolean(
+        commandExists('cursor') ||
+        fileExists(pathApi.join(cursorHome, 'mcp.json')) ||
+        fileExists(cursorHome)
+      )
     }
   ].map((agent) => adaptAgentForReviewSkill(agent, { homeDir, pathApi }));
 }

@@ -11,6 +11,7 @@ import {
   resolveGraphRuntimeOptions
 } from './graphiti/runtime-config.js';
 import { runStdio } from './mcp/runtime.js';
+import { prepareDirectAgentToolCall } from './mcp/direct-call.js';
 import { normalizeMcpSourceApplication } from './mcp/session-id.js';
 import { applicationErrorMessage } from './mcp/tool-result.js';
 
@@ -30,13 +31,19 @@ async function main(args) {
   }
 
   const { runtimeConfigPath } = resolveGraphRuntimeOptions(args, process.env);
-  if (args.includes('--call')) {
-    await runCall({ args, runtimeConfigPath });
-    return;
-  }
   const configuredSourceApplication = args.includes('--source-application')
     ? requiredOption(args, '--source-application')
     : null;
+  if (args.includes('--call')) {
+    await runCall({
+      args,
+      runtimeConfigPath,
+      sourceApplication: configuredSourceApplication
+        ? normalizeMcpSourceApplication(configuredSourceApplication)
+        : 'other'
+    });
+    return;
+  }
   await runStdio({
     runtimeConfigPath,
     sourceApplication: configuredSourceApplication
@@ -45,15 +52,20 @@ async function main(args) {
   });
 }
 
-async function runCall({ args, runtimeConfigPath }) {
+async function runCall({ args, runtimeConfigPath, sourceApplication }) {
+  const toolName = requiredOption(args, '--call');
+  const prepared = await prepareDirectAgentToolCall({
+    toolName,
+    input: parseInput(args),
+    sourceApplication
+  });
   const app = openFederatedGraphApplication({ runtimeConfigPath });
   const leaseClient = createRuntimeLeaseClient({ runtimeConfigPath });
   bindRuntimeLeaseAgentTools(app, leaseClient);
   try {
-    const toolName = requiredOption(args, '--call');
     const result = await leaseClient.withGraphLease(
       `cli-call:${toolName}`,
-      () => callAgentTool(app, toolName, parseInput(args))
+      () => callAgentTool(app, toolName, prepared.input)
     );
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } finally {
@@ -86,7 +98,7 @@ function startupMessage(error) {
 
 function helpText() {
   return 'Usage: node src/mcp-server.js [--runtime-config <graph-runtime.json>] ' +
-    '[--source-application <codex|claude_code|cursor|kiro|other>]\n' +
+    '[--source-application <codex|claude|claude_code|cursor|kiro|other>]\n' +
     '       node src/mcp-server.js --tools\n' +
     '       node src/mcp-server.js --runtime-config <graph-runtime.json> ' +
     '--call <tool> [--input <json>]\n';

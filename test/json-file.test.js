@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import {
+  chmodSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
+  statSync,
   writeFileSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -40,6 +42,43 @@ test('atomic JSON write replaces the target without leaving a temporary file', (
     assert.deepEqual(temporaryFiles(dir), []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('atomic JSON rewrite passes the existing file mode to the replacement', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fuli-json-file-'));
+  const filePath = join(dir, 'context.json');
+  let requestedMode = null;
+
+  try {
+    writeFileSync(filePath, '{"version":1}\n');
+    chmodSync(filePath, 0o640);
+
+    writeJsonFileAtomic(filePath, { version: 2 }, {
+      writeFileSync(tempPath, contents, options) {
+        requestedMode = options.mode;
+        writeFileSync(tempPath, contents, options);
+      }
+    });
+
+    assert.equal(requestedMode, 0o640);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('atomic JSON write creates private directories and files by default', () => {
+  const root = mkdtempSync(join(tmpdir(), 'fuli-json-file-'));
+  const directory = join(root, 'private-config');
+  const filePath = join(directory, 'context.json');
+
+  try {
+    writeJsonFileAtomic(filePath, { version: 1 });
+
+    assert.equal(statSync(directory).mode & 0o777, 0o700);
+    assert.equal(statSync(filePath).mode & 0o777, 0o600);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

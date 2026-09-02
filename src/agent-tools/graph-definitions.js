@@ -31,6 +31,8 @@ import {
   recruitmentStatus,
   routingRuleScope
 } from './project-agent-definitions.js';
+import { PROJECT_AGENT_MEMORY_DEFINITIONS, workingMemorySchema } from './project-agent-memory-definitions.js';
+import { EMPLOYEE_TOOL_DEFINITIONS } from './employee-definitions.js';
 
 const id = boundedString(256);
 const label = boundedString(512);
@@ -98,7 +100,7 @@ const profileAspect = {
 };
 const sourceApplication = {
   type: ['string', 'null'],
-  enum: ['codex', 'claude_code', 'cursor', 'kiro', 'other', null]
+  enum: ['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other', null]
 };
 const epistemicFields = {
   originQuadrant: epistemicQuadrant,
@@ -276,13 +278,19 @@ const workflowObservedStep = objectSchema({
 }, ['actionId', 'name']);
 
 export const GRAPH_TOOL_DEFINITIONS = [
+  ...EMPLOYEE_TOOL_DEFINITIONS,
   {
     name: 'begin_task_context',
     title: 'LIFECYCLE · Begin a Fuli-aware task',
-    description: 'Lifecycle entry used by supported Agent hooks before the model processes a user prompt. It resolves the exact local project from projectPath, loads effective collaboration preferences, and uses taskPrompt transiently for bounded automatic recall when the request signals a stable prior fact, runbook, URL, decision, release, deployment, or authentication method. It never stores or returns projectPath or taskPrompt. Inspect task_knowledge_recall before asking the user to repeat stable context. Returns an opaque taskContextToken. Claude Code setup installs this as a deterministic UserPromptSubmit hook; manual Agent calls are a fallback.',
+    description: 'Lifecycle entry used by supported Agent hooks before the model processes a user prompt. It resolves the exact local project from projectPath, loads effective collaboration preferences, and uses taskPrompt transiently for bounded automatic recall when the request signals a stable prior fact, runbook, URL, decision, release, deployment, or authentication method. It never stores or returns projectPath or taskPrompt. Inspect task_knowledge_recall before asking the user to repeat stable context. Returns an opaque taskContextToken. Fuli setup generates Claude Code and Codex UserPromptSubmit hook configuration and a Cursor task-entry adapter. Configuration is not proof of host loading, trust, or execution. Use supplied hook context without repeating the preference fallback; Cursor retrieves context through the Agent when its hook cannot inject it.',
     inputSchema: objectSchema({
       sessionId: id,
+      turnId: id,
       projectPath: boundedString(4096),
+      personalProjectId: nullableStringSchema(),
+      projectAgentId: nullableStringSchema(),
+      workKind: boundedString(128),
+      requiredCapabilities: arraySchema(boundedString(512), { maxItems: 16 }),
       taskPrompt: boundedString(8192)
     }, ['sessionId', 'projectPath'])
   },
@@ -294,7 +302,11 @@ export const GRAPH_TOOL_DEFINITIONS = [
       taskContextToken: id,
       disposition: enumSchema(['capture_candidates', 'retain_nothing']),
       reason: boundedString(2000),
-      capture: objectSchema(captureEpisodeFields, captureEpisodeRequired)
+      capture: objectSchema(captureEpisodeFields, captureEpisodeRequired),
+      agentMemory: objectSchema({
+        expectedRevision: integerSchema({ minimum: 0 }),
+        memory: workingMemorySchema
+      }, ['expectedRevision', 'memory'])
     }, ['taskContextToken', 'disposition', 'reason'])
   },
   {
@@ -308,10 +320,13 @@ export const GRAPH_TOOL_DEFINITIONS = [
     title: 'READ FIRST · Load task collaboration preferences',
     description: 'Fallback for Agents or tasks without begin_task_context hook context. When no hook context was supplied, call this exact tool name at the start of every user task before any other tool or answer; never substitute a project action tool. Do not call it redundantly when the entry hook already supplied preferences. Pass projectPath as the current working directory and taskPrompt as the current user request. Fuli uses both transiently, never stores or returns them, resolves one exact registered local project, and performs bounded automatic recall only when the request signals stable prior context. Inspect task_knowledge_recall before asking the user to repeat a project fact or method. On a miss, search_current_project_knowledge with one to four focused action, artifact, target-system, or identifier queries; never use the full conversational request as the only query. Apply effective_preferences before answering or constructing tool arguments. Resolve only relevant deferred_conflicts first. For write tools, enforce preferences in the actual payload; the final answer is not compliance. Personal-global preferences always apply; conflicted, pending, invalid, ambiguous-project, and unrelated-project items never auto-apply. Automatic injection does not count as usage evidence. personalProjectId remains an explicit compatibility override.',
     inputSchema: objectSchema({
+      sessionId: id,
       projectPath: boundedString(4096),
       taskPrompt: boundedString(8192),
       personalProjectId: nullableStringSchema(),
       projectAgentId: nullableStringSchema(),
+      workKind: boundedString(128),
+      requiredCapabilities: arraySchema(boundedString(512), { maxItems: 16 }),
       limit: integerSchema({ minimum: 1, maximum: 200 })
     }, ['projectPath'])
   },
@@ -514,6 +529,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
     description: 'High-level project search for normal Agent work. Pass projectPath plus one or more focused queries; Fuli resolves the exact local project, searches its local knowledge first, then follows outgoing PART_OF or USES_KNOWLEDGE_FROM relations to authorized parent/source knowledge. An exact current-project item with the same stable key overrides an inherited item. The tool never guesses an ambiguous project and never traverses RELATED_TO. Instead it returns structured related_project_suggestions so the Agent can ask whether to add exactly one related project to this read-only search; explicit human confirmation is required before any expansion.',
     inputSchema: objectSchema({
       projectPath: boundedString(4096),
+      personalProjectId: nullableStringSchema(),
       queries: arraySchema(shortText, { minItems: 1, maxItems: 10 }),
       limitPerQuery: integerSchema({ minimum: 1, maximum: 50 }),
       includeHistorical: booleanSchema(),
@@ -671,6 +687,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
       agentId: id
     }, ['personalSpaceId', 'agentId'])
   },
+  ...PROJECT_AGENT_MEMORY_DEFINITIONS,
   {
     name: 'delete_project_agent',
     title: 'WRITE · Archive one Agent identity',
@@ -759,6 +776,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
     description: 'View one task with lead/collaborator assignments, routing decision, effective model strategy, source client/session, event history, actual executor/model, routing rule, and fallback audit. Missing connected state is not synthesized.',
     inputSchema: objectSchema({
       personalSpaceId: id,
+      personalProjectId: id,
       taskId: id,
       includeEvents: booleanSchema()
     }, ['personalSpaceId', 'taskId'])
@@ -766,7 +784,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'record_project_agent_task_activity',
     title: 'WRITE · Record task activity',
-    description: 'Record one explicit task event, including real terminal activity and actual executor/model/client attribution. Terminal activity is the only source for per-Agent activity summaries.',
+    description: 'Record one explicit task event, including real terminal activity, actual executor/model/client attribution, and an optional source-labelled cumulative token snapshot for the concrete worker. Never estimate missing usage. Terminal activity is the only source for per-Agent activity summaries.',
     inputSchema: projectAgentTaskActivityInput
   },
   {
@@ -775,6 +793,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
     description: 'Return actual per-Agent daily completed/failed/cancelled activity and verifiable summaries. No history is fabricated and configured Agent status is not treated as running state.',
     inputSchema: objectSchema({
       personalSpaceId: id,
+      personalProjectId: id,
       agentId: id,
       fromDate: nullableStringSchema(),
       toDate: nullableStringSchema()
@@ -806,13 +825,13 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'get_project_agent_recruitment_policy',
     title: 'READ · Get recruitment policy',
-    description: 'Read the persisted recruitment confirmation mode. The default is automatic; require_confirmation creates only a pending recruitment event.',
+    description: 'Deprecated: read the legacy stored space setting, which does not control recruitment. Use get_project_agent_coordination_policy for the effective exact-project switches.',
     inputSchema: objectSchema({ personalSpaceId: id }, ['personalSpaceId'])
   },
   {
     name: 'update_project_agent_recruitment_policy',
     title: 'WRITE · Set recruitment policy',
-    description: 'Persist automatic or require_confirmation recruitment authorization. This changes policy only; it does not create an Agent or recruitment record by itself.',
+    description: 'Deprecated compatibility storage only; this does not change recruitment authorization. Use update_project_agent_coordination_policy with the exact project and askBeforeRecruitment instead. The response warns that this legacy value is not effective.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       confirmationMode: recruitmentConfirmationMode

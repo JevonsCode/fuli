@@ -109,36 +109,44 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
   for (const agent of plan.agents.filter(
     ({ available, selected }) => available && selected !== false
   )) {
+    let backupPath;
+    let connected;
+    const skills = [];
     try {
-      const backupPath = backupConfig(agent, { backupDir: plan.paths.backupDir });
-      const connected = connect(agent, context);
-      const skills = [
-        installSkill(agent, {
-          sourcePath: plan.paths.sessionSkillPath,
+      backupPath = backupConfig(agent, { backupDir: plan.paths.backupDir });
+      connected = connect(agent, context);
+      for (const [target, sourcePath] of [
+        [agent, plan.paths.sessionSkillPath],
+        [{ ...agent, skillPath: agent.projectSkillPath }, plan.paths.projectSkillPath],
+        [{ ...agent, skillPath: agent.reviewSkillPath }, plan.paths.reviewSkillPath]
+      ]) {
+        skills.push(await installSkill(target, {
+          sourcePath,
           backupDir: plan.paths.backupDir
-        }),
-        installSkill({ ...agent, skillPath: agent.projectSkillPath }, {
-          sourcePath: plan.paths.projectSkillPath,
-          backupDir: plan.paths.backupDir
-        }),
-        installSkill({ ...agent, skillPath: agent.reviewSkillPath }, {
-          sourcePath: plan.paths.reviewSkillPath,
-          backupDir: plan.paths.backupDir
-        })
-      ];
+        }));
+      }
       agents.push({ ...connected, backupPath, skills });
     } catch (error) {
-      agents.push({
-        id: agent.id,
-        label: agent.label,
-        status: 'failed',
-        message: error instanceof Error ? error.message : 'Agent connection failed'
-      });
+      const message = error instanceof Error ? error.message : 'Agent connection failed';
+      agents.push(connected
+        ? {
+            ...connected,
+            status: 'partial',
+            backupPath,
+            skills,
+            message
+          }
+        : {
+            id: agent.id,
+            label: agent.label,
+            status: 'failed',
+            message
+          });
     }
   }
 
   return {
-    status: agents.some(({ status }) => status === 'failed') ? 'partial' : 'ready',
+    status: agents.some(({ status }) => status !== 'connected') ? 'partial' : 'ready',
     runtime,
     agents
   };

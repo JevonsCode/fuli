@@ -1,4 +1,5 @@
 import { ApplicationError } from '../app/application-error.js';
+import { activeAgentRequestSignal } from '../app/agent-request-context.js';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
@@ -102,6 +103,35 @@ export class GraphitiProviderClient {
       `/v1/project-agents/${encodeURIComponent(agentId)}?${query}`
     );
   }
+  getProjectAgentMemory({ personalSpaceId, personalProjectId, agentId, limit = 1 }) {
+    const query = new URLSearchParams({
+      personal_space_id: personalSpaceId, personal_project_id: personalProjectId,
+      limit: String(limit)
+    });
+    return this.#request(`/v1/project-agents/${encodeURIComponent(agentId)}/memory?${query}`);
+  }
+  writeProjectAgentMemory(input) {
+    return this.#request(`/v1/project-agents/${encodeURIComponent(input.agent_id)}/memory`, {
+      method: 'PUT', body: input
+    });
+  }
+  resolveProjectAgentContext(input) {
+    return this.#request('/v1/project-agent-context/resolve', { method: 'POST', body: input });
+  }
+  beginTaskContext(input) {
+    return this.#request('/v1/task-contexts', { method: 'PUT', body: input });
+  }
+  getTaskContext(token, query) {
+    return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}?${new URLSearchParams(query)}`);
+  }
+  checkpointTaskContext(token, input) {
+    return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}/checkpoint`, {
+      method: 'PUT', body: input
+    });
+  }
+  verifyTaskCheckpoint(query) {
+    return this.#request(`/v1/task-context-sessions/checkpoint?${new URLSearchParams(query)}`);
+  }
   deleteProjectAgent(personalSpaceId, agentId, reason = 'archived by user') {
     const query = new URLSearchParams({
       personal_space_id: personalSpaceId,
@@ -169,8 +199,12 @@ export class GraphitiProviderClient {
     if (limit !== null && limit !== undefined) query.set('limit', String(limit));
     return this.#request(`/v1/project-agent-tasks?${query}`);
   }
-  viewProjectAgentTask(personalSpaceId, taskId, { includeEvents = true } = {}) {
+  viewProjectAgentTask(personalSpaceId, taskId, {
+    personalProjectId = null,
+    includeEvents = true
+  } = {}) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    if (personalProjectId) query.set('personal_project_id', personalProjectId);
     query.set('include_events', String(includeEvents));
     return this.#request(
       `/v1/project-agent-tasks/${encodeURIComponent(taskId)}?${query}`
@@ -186,6 +220,7 @@ export class GraphitiProviderClient {
   }
   listProjectAgentActivity({
     personalSpaceId,
+    personalProjectId = null,
     agentId,
     fromDate = null,
     toDate = null
@@ -196,6 +231,7 @@ export class GraphitiProviderClient {
       from: fromDate ?? toDate ?? today,
       to: toDate ?? fromDate ?? today
     });
+    if (personalProjectId) query.set('personal_project_id', personalProjectId);
     return this.#request(
       `/v1/project-agents/${encodeURIComponent(agentId)}/activity?${query}`
     );
@@ -634,7 +670,10 @@ export class GraphitiProviderClient {
       timedOut = true;
       controller.abort(new Error('Graphiti provider request timed out'));
     }, this.requestTimeoutMs);
-    const { signal } = controller;
+    const callerSignal = activeAgentRequestSignal();
+    const signal = callerSignal
+      ? AbortSignal.any([controller.signal, callerSignal])
+      : controller.signal;
     let response;
     let payload;
     try {
@@ -646,6 +685,10 @@ export class GraphitiProviderClient {
       });
       payload = await parseResponse(response);
     } catch (error) {
+      if (error instanceof ProviderRequestError) throw error;
+      if (!timedOut && callerSignal?.aborted) {
+        throw callerSignal.reason ?? new DOMException('Aborted', 'AbortError');
+      }
       const diagnostic = {
         category: timedOut ? 'provider_timeout' : 'provider_unavailable',
         status: timedOut ? 504 : 0,
@@ -684,9 +727,28 @@ export class GraphitiProviderClient {
 
 async function parseResponse(response) {
   const type = response.headers.get('content-type') ?? '';
-  if (type.includes('application/json')) return response.json();
   const text = await response.text();
-  return text ? { detail: text } : null;
+  if (!type.includes('application/json')) {
+    if (!response.ok) return text ? { detail: text } : null;
+    throw invalidResponse(
+      text ? 'Graphiti provider returned a non-JSON response.'
+        : 'Graphiti provider returned an empty response.'
+    );
+  }
+  if (!text.trim()) {
+    if (!response.ok) return null;
+    throw invalidResponse('Graphiti provider returned an empty response.');
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    if (!response.ok) return null;
+    throw invalidResponse('Graphiti provider returned invalid JSON.');
+  }
+}
+
+function invalidResponse(message) {
+  return new ProviderRequestError(message, { code: 'provider_invalid_response' });
 }
 
 function providerErrorDiagnostic(status, payload) {

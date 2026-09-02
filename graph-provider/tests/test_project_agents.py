@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 from fuli_graph.project_agent_models import (
     ProjectAgentAssignmentCreate,
+    ProjectAgentAssignmentEnd,
     ProjectAgentAssignmentReplace,
     ProjectAgentProfile,
     ProjectAgentUpsert,
@@ -19,7 +20,7 @@ async def test_project_agent_upsert_creates_space_identity_and_project_assignmen
     driver = SequentialDriver([
         [{'project': {'project_id': 'project-a'}}],
         [{'agent': raw_agent(profile)}],
-        [],
+        [{'agent_id': 'activity-agent'}],
         [{'project': {'project_id': 'project-a'}}],
         [{
             'agent': raw_agent(profile),
@@ -53,7 +54,57 @@ async def test_project_agent_upsert_creates_space_identity_and_project_assignmen
     assert identity_parameters['agent_id'] == 'activity-agent'
     assert identity_parameters['occupation_emoji'] == '🧱'
     assert 'HAS_PROJECT_AGENT_ASSIGNMENT' in assignment_query
+    assert 'agent._task_lifecycle_lock' in assignment_query
+    assert "agent.status <> 'archived'" in assignment_query
     assert assignment_parameters['personal_project_id'] == 'project-a'
+    assert driver.calls[4][1]['personal_project_id'] is None
+
+
+@pytest.mark.asyncio
+async def test_project_agent_upsert_does_not_duplicate_an_explicit_active_assignment():
+    profile = project_agent_profile()
+    driver = SequentialDriver([
+        [{'project': {'project_id': 'project-a'}}],
+        [{'agent': raw_agent(profile)}],
+        [{'agent_id': 'activity-agent'}],
+        [{'project': {'project_id': 'project-a'}}],
+        [{
+            'agent': raw_agent(profile),
+            'assignment_rows': [{
+                'assignment': raw_assignment('explicit-assignment'),
+                'personal_project_id': 'project-a',
+            }],
+            'task_rows': [],
+            'observed_clients': [],
+        }],
+    ])
+
+    await StoreStub(driver).upsert_project_agent(
+        {'id': 'principal-1'},
+        ProjectAgentUpsert(
+            personal_space_id='personal-space',
+            personal_project_id='project-a',
+            agent_id='activity-agent',
+            profile=profile,
+        ),
+    )
+
+    assignment_query = driver.calls[2][0]
+    assert 'active_assignment_count' in assignment_query
+    assert 'legacy_assignment_count' in assignment_query
+    assert 'active_assignment_count = 0' in assignment_query
+    assert "assignment.status <> 'active'" in assignment_query
+    assert 'assignment.revision, 0) + 1' in assignment_query
+    assert 'assignment.ended_at = NULL' in assignment_query
+    assert 'assignment.end_reason = NULL' in assignment_query
+    assert 'assignment.replaced_by_assignment_id = NULL' in assignment_query
+    assert 'handed_off_assignment_count' in assignment_query
+    assert 'handed_off_assignment.status = \'ended\'' in assignment_query
+    assert 'handed_off_assignment.replaced_by_assignment_id' in assignment_query
+    assert 'legacy_assignment_count > 0 OR (' in assignment_query
+    assert 'AND handed_off_assignment_count = 0' in assignment_query
+    assert 'agent._task_lifecycle_lock' in assignment_query
+    assert "agent.status <> 'archived'" in assignment_query
 
 
 @pytest.mark.asyncio
@@ -84,6 +135,88 @@ async def test_project_agent_directory_filters_by_status_and_capability():
     assert 'agent.responsibility' in query
     assert parameters['status'] == 'active'
     assert parameters['capability'] == '活动'
+
+
+@pytest.mark.asyncio
+async def test_project_agent_directory_project_scope_filters_other_project_work_and_clients():
+    profile = project_agent_profile()
+    driver = SequentialDriver([
+        [{'project': {'project_id': 'project-a'}}],
+        [{
+            'agent': raw_agent(profile),
+            'assignment_rows': [
+                {
+                    'assignment': raw_assignment('assignment-a'),
+                    'personal_project_id': 'project-a',
+                },
+                {
+                    'assignment': raw_assignment('assignment-b'),
+                    'personal_project_id': 'project-b',
+                },
+            ],
+            'task_rows': [
+                {
+                    'task_id': 'task-a',
+                    'personal_project_id': 'project-a',
+                    'status': 'running',
+                },
+                {
+                    'task_id': 'task-b',
+                    'personal_project_id': 'project-b',
+                    'status': 'queued',
+                },
+            ],
+            'observed_clients': ['codex', 'cursor'],
+            'observed_client_rows': [
+                {
+                    'personal_project_id': 'project-a',
+                    'source_application': 'codex',
+                },
+                {
+                    'personal_project_id': 'project-b',
+                    'source_application': 'cursor',
+                },
+            ],
+        }],
+    ])
+
+    result = await StoreStub(driver).list_project_agents(
+        {'id': 'principal-1'},
+        'personal-space',
+        'project-a',
+    )
+
+    assert [item.personal_project_id for item in result[0].assignments] == ['project-a']
+    assert result[0].open_task_count == 1
+    assert result[0].current_task_id == 'task-a'
+    assert result[0].observed_clients == ['codex']
+
+
+@pytest.mark.asyncio
+async def test_get_project_agent_rejects_identity_not_assigned_to_requested_project():
+    profile = project_agent_profile()
+    driver = SequentialDriver([
+        [{'project': {'project_id': 'project-a'}}],
+        [{
+            'agent': raw_agent(profile),
+            'assignment_rows': [{
+                'assignment': raw_assignment('assignment-b'),
+                'personal_project_id': 'project-b',
+            }],
+            'task_rows': [],
+            'observed_clients': [],
+        }],
+    ])
+
+    with pytest.raises(HTTPException) as error:
+        await StoreStub(driver).get_project_agent(
+            {'id': 'principal-1'},
+            'personal-space',
+            'project-a',
+            'activity-agent',
+        )
+
+    assert error.value.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -120,8 +253,9 @@ async def test_project_agent_directory_returns_one_identity_with_many_projects()
     ]
     query, parameters = driver.calls[0]
     assert 'HAS_PROJECT_AGENT_IDENTITY' in query
-    assert 'collect(DISTINCT event.source_application) AS event_clients' in query
-    assert 'task_clients + event_clients AS observed_clients' in query
+    assert 'collect(DISTINCT {' in query
+    assert 'event_task.personal_project_id' in query
+    assert 'AS observed_client_rows' in query
     assert 'task_clients + collect(' not in query
     assert parameters['personal_project_id'] is None
 
@@ -159,6 +293,8 @@ async def test_assignment_idempotency_conflict_cannot_attach_new_project_or_agen
 
     assert error.value.status_code == 409
     mutation_query = driver.calls[-1][0]
+    assert 'agent._task_lifecycle_lock' in mutation_query
+    assert "WHERE agent.status = 'active'" in mutation_query
     guard_position = mutation_query.index('FOREACH')
     assert mutation_query.index(
         'MERGE (project)-[:HAS_PROJECT_AGENT_ASSIGNMENT]->(assignment)'
@@ -210,6 +346,9 @@ async def test_assignment_replace_rejects_reused_key_before_mutating_edges_or_so
 
     assert error.value.status_code == 409
     mutation_query = driver.calls[-1][0]
+    assert 'lifecycle_agent._task_lifecycle_lock' in mutation_query
+    assert "replacement_agent.status = 'active'" in mutation_query
+    assert "ended_agent.status = 'active'" in mutation_query
     assert 'replacement.payload_hash = $payload_hash AS payload_matches' in mutation_query
     guard_position = mutation_query.index('FOREACH')
     assert mutation_query.index('SET ended.status = \'ended\'') > guard_position
@@ -241,11 +380,13 @@ async def test_assignment_replace_exact_replay_returns_existing_transition():
     })
     replacement = raw_assignment('replacement-existing')
     replacement['payload_hash'] = payload_hash
+    archived_replacement_agent = raw_agent(project_agent_profile())
+    archived_replacement_agent['status'] = 'archived'
     driver = SequentialDriver([
         [{'project': {'project_id': 'project-a'}}],
         [{'project': {'project_id': 'project-a'}}],
         [{
-            'agent': raw_agent(project_agent_profile()),
+            'agent': archived_replacement_agent,
             'assignment_id': None,
         }],
         [{
@@ -269,6 +410,36 @@ async def test_assignment_replace_exact_replay_returns_existing_transition():
     assert result.replacement.assignment_id == 'replacement-existing'
 
 
+@pytest.mark.asyncio
+async def test_assignment_end_normalizes_a_legacy_null_revision():
+    request = ProjectAgentAssignmentEnd(
+        personal_space_id='personal-space',
+        personal_project_id='project-a',
+        assignment_id='assignment-a',
+        expected_revision=0,
+        reason='End a legacy assignment safely.',
+    )
+    ended = raw_assignment('assignment-a')
+    ended.update({'status': 'ended', 'revision': 1})
+    driver = SequentialDriver([
+        [{'project': {'project_id': 'project-a'}}],
+        [{
+            'assignment': ended,
+            'personal_project_id': 'project-a',
+            'agent_id': 'activity-agent',
+        }],
+    ])
+
+    result = await StoreStub(driver).end_project_agent_assignment(
+        {'id': 'principal-1'}, request
+    )
+
+    assert result.revision == 1
+    mutation_query = driver.calls[-1][0]
+    assert 'coalesce(assignment.revision, 0) = $expected_revision' in mutation_query
+    assert 'assignment.revision = coalesce(assignment.revision, 0) + 1' in mutation_query
+
+
 def test_project_agent_profile_rejects_duplicate_capabilities():
     with pytest.raises(ValueError, match='must be unique'):
         ProjectAgentProfile(
@@ -276,6 +447,16 @@ def test_project_agent_profile_rejects_duplicate_capabilities():
             responsibility='负责活动业务。',
             capabilities=['活动策划', '活动策划'],
         )
+
+
+def test_project_agent_profile_accepts_claude_remote_connector():
+    profile = ProjectAgentProfile(
+        name='远程 Claude Agent',
+        responsibility='在远程 Claude 连接器中续接同一角色。',
+        allowed_clients=['claude'],
+    )
+
+    assert profile.allowed_clients == ['claude']
 
 
 @pytest.mark.parametrize('field', ['name', 'responsibility'])
@@ -297,6 +478,44 @@ def test_project_agent_upsert_rejects_blank_stable_ids():
             agent_id='   ',
             profile=project_agent_profile(),
         )
+
+
+def test_project_agent_upsert_requires_dedicated_archive_operation():
+    archived_profile = project_agent_profile().model_copy(
+        update={'status': 'archived'}
+    )
+
+    with pytest.raises(ValueError, match='dedicated archive operation'):
+        ProjectAgentUpsert(
+            personal_space_id='personal-space',
+            personal_project_id='project-a',
+            agent_id='activity-agent',
+            profile=archived_profile,
+        )
+
+
+@pytest.mark.asyncio
+async def test_project_agent_upsert_cannot_reactivate_an_archived_identity():
+    driver = SequentialDriver([
+        [{'project': {'project_id': 'project-a'}}],
+        [],
+    ])
+
+    with pytest.raises(HTTPException, match='dedicated restore operation'):
+        await StoreStub(driver).upsert_project_agent(
+            {'id': 'principal-1'},
+            ProjectAgentUpsert(
+                personal_space_id='personal-space',
+                personal_project_id='project-a',
+                agent_id='activity-agent',
+                profile=project_agent_profile(),
+            ),
+        )
+
+    assert len(driver.calls) == 2
+    identity_query = driver.calls[1][0]
+    assert 'agent._profile_upsert_lock' in identity_query
+    assert "agent.status <> 'archived'" in identity_query
 
 
 @pytest.mark.asyncio
@@ -384,11 +603,17 @@ async def test_archiving_agent_preserves_history_and_ends_assignments():
     )
 
     assert result.profile.status == 'archived'
+    assert result.work_status == 'ended'
     query, parameters = driver.calls[0]
     assert 'HAS_PARTICIPANT' in query
+    assert 'agent._task_lifecycle_lock' in query
+    assert query.index('agent._task_lifecycle_lock') < query.index(
+        'HAS_PROJECT_AGENT_TASK'
+    )
     assert 'MATCH (space)-[:CONTAINS_PROJECT]->' in query
     assert '[:HAS_PROJECT_AGENT_ASSIGNMENT]->' in query
     assert 'FuliProjectAgentAssignment' in query
+    assert 'coalesce(agent.archive_reason, $reason)' in query
     assert parameters['reason'] == '职责已移交'
 
 

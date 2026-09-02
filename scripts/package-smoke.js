@@ -48,10 +48,14 @@ try {
     'package.json',
     'src/cli.js',
     'src/cli/update-command.js',
+    'src/cli/employee-command.js',
+    'src/employees/catalog/jefa.json',
     'src/setup/neo4j-memory-profile.js',
     'dist/web/index.html',
     'docs/external-knowledge-architecture.md',
     'docs/public-personal-architecture.md',
+    'docs/project-agent-memory.md',
+    'docs/employee-agents.md',
     'examples/external-knowledge/markdown-folder.mjs',
     'graph-provider/fuli_graph/app.py',
     'skills/capturing-session-knowledge/SKILL.md',
@@ -65,7 +69,9 @@ try {
     if (path.startsWith('docs/')) {
       assert.ok([
         'docs/external-knowledge-architecture.md',
-        'docs/public-personal-architecture.md'
+        'docs/public-personal-architecture.md',
+        'docs/project-agent-memory.md',
+        'docs/employee-agents.md'
       ].includes(path), `unexpected published documentation file ${path}`);
     }
     assert.doesNotMatch(path, /^(?:AGENTS|CLAUDE)\.md$/);

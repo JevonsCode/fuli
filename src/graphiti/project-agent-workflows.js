@@ -1,3 +1,4 @@
+import { loadProjectAgentContinuity } from './project-agent-task-entry.js';
 import {
   executorActualReportRecord,
   executorRecord,
@@ -175,6 +176,7 @@ export async function coordinateProjectAgentTask(
     objective: input.objective,
     workKind: input.workKind,
     requiredCapabilities: input.requiredCapabilities,
+    executorCapabilityHints: input.executorCapabilityHints,
     duration: input.duration,
     staffingIntent: input.staffingIntent,
     leadAgentId: input.leadAgentId,
@@ -213,13 +215,11 @@ export async function coordinateProjectAgentTask(
     workerPlan.length > 0 && contextsReady;
 
   return {
-    status: hostExecutionRequired
-      ? 'ready_for_host_execution'
-      : route.task.status === 'awaiting_recruitment'
-        ? 'awaiting_recruitment'
-        : route.task.status === 'blocked'
-          ? 'blocked'
-          : 'context_unavailable',
+    status: coordinatedTaskStatus(
+      route.task.status,
+      hostExecutionRequired,
+      workerPlan.length
+    ),
     personal_space_id: application.config.personal.spaceId,
     personal_project_id: projectId,
     project_resolution: projectResolution,
@@ -252,7 +252,10 @@ export async function viewProjectAgentTask(application, input) {
   const value = await application.personal.viewProjectAgentTask(
     input.personalSpaceId,
     input.taskId,
-    { includeEvents: input.includeEvents ?? true }
+    {
+      personalProjectId: input.personalProjectId ?? null,
+      includeEvents: input.includeEvents ?? true
+    }
   );
   return projectAgentTaskRecord(value.task ?? value);
 }
@@ -267,6 +270,7 @@ export async function recordProjectAgentTaskActivity(application, input) {
 export async function viewProjectAgentActivity(application, input) {
   const value = await application.personal.listProjectAgentActivity({
     personalSpaceId: input.personalSpaceId,
+    personalProjectId: input.personalProjectId ?? null,
     agentId: input.agentId,
     fromDate: input.fromDate ?? null,
     toDate: input.toDate ?? null
@@ -497,8 +501,6 @@ export async function getProjectAgentContext(
       personal_project_id: projectId,
       project_agent_id: agentId,
       project_resolution: projectResolution,
-      agent,
-      executionSummary: agent.executionSummary ?? [],
       required_action: 'Choose an active project Agent or reactivate this Agent before use.'
     };
   }
@@ -510,8 +512,6 @@ export async function getProjectAgentContext(
       project_agent_id: agentId,
       project_resolution: projectResolution,
       source_application: sourceApplication,
-      agent,
-      executionSummary: agent.executionSummary ?? [],
       required_action: (
         'Use a client in this Agent\'s allow-list or update the Agent profile '
         + 'before loading its context.'
@@ -519,10 +519,11 @@ export async function getProjectAgentContext(
     };
   }
 
-  const [preferences, results] = await Promise.all([
+  const [preferences, results, continuity] = await Promise.all([
     application.getCollaborationPreferences({
       personalProjectId: projectId,
       projectAgentId: agentId,
+      sourceApplication,
       agentInvocation: true,
       agentToolName: 'get_project_agent_context'
     }),
@@ -535,7 +536,10 @@ export async function getProjectAgentContext(
       includePending,
       agentInvocation: true,
       agentToolName: 'get_project_agent_context'
-    })))
+    }))),
+    loadProjectAgentContinuity(application, {
+      projectId, agent, sourceApplication, includeKnowledge: false
+    })
   ]);
 
   return {
@@ -555,6 +559,11 @@ export async function getProjectAgentContext(
     deferred_conflicts: preferences.deferred_conflicts,
     active_conflicts: preferences.active_conflicts,
     knowledge_results: results,
+    working_memory: continuity.memory,
+    project_brief: continuity.project_brief,
+    recent_tasks: continuity.recent_tasks,
+    continuity_status: continuity.status,
+    unavailable_components: continuity.unavailable_components,
     scope_policy: {
       includes_personal_global_preferences: true,
       includes_project_preferences_and_shared_knowledge: true,
@@ -564,6 +573,13 @@ export async function getProjectAgentContext(
       max_project_inheritance_hops: 2
     }
   };
+}
+
+function coordinatedTaskStatus(taskStatus, hostExecutionRequired, participantCount) {
+  if (hostExecutionRequired) return 'ready_for_host_execution';
+  if (taskStatus === 'queued' && participantCount === 0) return 'staffing_unavailable';
+  if (taskStatus === 'queued' || !taskStatus) return 'context_unavailable';
+  return taskStatus;
 }
 
 function asList(value, keys = []) {

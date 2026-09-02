@@ -1,3 +1,4 @@
+import asyncio
 import math
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
@@ -9,6 +10,7 @@ from fuli_graph.runtime import (
     GraphitiRuntime,
     LocalHashEmbedder,
     LocalLexicalReranker,
+    ManagedNeo4jDriver,
 )
 from fuli_graph.store_project_agent_executor_learning import (
     project_agent_executor_outcome_bucket_id,
@@ -18,6 +20,29 @@ from fuli_graph.store_project_agent_executor_learning import (
 def test_local_hash_embedder_rejects_dimensions_that_are_too_small():
     with pytest.raises(ValueError, match='at least 64 dimensions'):
         LocalHashEmbedder(63)
+
+
+@pytest.mark.asyncio
+async def test_managed_driver_defers_dependency_auto_index_build(monkeypatch):
+    from graphiti_core.driver.neo4j_driver import Neo4jDriver
+
+    calls = 0
+
+    async def build_indices(_driver, _delete_existing=False):
+        nonlocal calls
+        calls += 1
+
+    monkeypatch.setattr(Neo4jDriver, 'build_indices_and_constraints', build_indices)
+    driver = ManagedNeo4jDriver(
+        uri='bolt://127.0.0.1:9', user='neo4j', password='synthetic-password'
+    )
+    try:
+        await asyncio.sleep(0)
+        assert calls == 0
+        await driver.build_indices_and_constraints()
+        assert calls == 1
+    finally:
+        await driver.close()
 
 
 @pytest.mark.asyncio

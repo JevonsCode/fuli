@@ -134,13 +134,19 @@ class StoreProjectAgents:
             if request.profile.agent_type == 'temporary'
             else 'reviewed_agent'
         )
-        await self.runtime.driver.execute_query(
+        records, _, _ = await self.runtime.driver.execute_query(
             '''
             MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
             MERGE (agent:FuliProjectAgent {id: $id})
             ON CREATE SET agent.agent_id = $agent_id,
                           agent.created_at = $updated_at,
                           agent.system_managed = false
+            // Acquire the node write lock before reading lifecycle status so a
+            // concurrent archive cannot be lost to this compatibility upsert.
+            SET agent._profile_upsert_lock = true
+            REMOVE agent._profile_upsert_lock
+            WITH space, agent
+            WHERE agent.status IS NULL OR agent.status <> 'archived'
             SET agent.profile_json = $profile_json,
                 agent.name = $name,
                 agent.occupation_emoji = $occupation_emoji,
@@ -175,20 +181,37 @@ class StoreProjectAgents:
             recruitment_id=recruitment_id,
             updated_at=updated_at,
         )
+        if not records:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    'archived Project Agents require a dedicated restore operation'
+                ),
+        )
         if request.personal_project_id:
-            await self._upsert_legacy_assignment(request, updated_at)
+            if not await self._upsert_legacy_assignment(request, updated_at):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        'archived Project Agents require a dedicated '
+                        'restore operation'
+                    ),
+                )
         return await self.get_project_agent(
             actor,
             request.personal_space_id,
             request.personal_project_id,
             request.agent_id,
+            include_inactive_project_assignment=bool(
+                request.personal_project_id
+            ),
         )
 
     async def _upsert_legacy_assignment(
         self,
         request: ProjectAgentUpsert,
         updated_at,
-    ) -> None:
+    ) -> bool:
         assignment_id = stable_uuid(
             self.settings.provider_id,
             request.personal_space_id,
@@ -197,7 +220,7 @@ class StoreProjectAgents:
             request.personal_project_id,
             request.agent_id,
         )
-        await self.runtime.driver.execute_query(
+        records, _, _ = await self.runtime.driver.execute_query(
             '''
             MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [:CONTAINS_PROJECT]->
@@ -205,20 +228,62 @@ class StoreProjectAgents:
             MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [:HAS_PROJECT_AGENT_IDENTITY]->
                   (agent:FuliProjectAgent {agent_id: $agent_id})
-            MERGE (assignment:FuliProjectAgentAssignment {id: $assignment_id})
-            ON CREATE SET assignment.assignment_id = $assignment_id,
-                          assignment.assigned_at = $updated_at,
-                          assignment.revision = 0,
-                          assignment.reason = 'legacy project Agent profile'
-            SET assignment.responsibility = $responsibility,
-                assignment.work_kinds = $work_kinds,
-                assignment.capabilities = $capabilities,
-                assignment.model_strategy_json = $model_strategy_json,
-                assignment.executor_policy_json = $executor_policy_json,
-                assignment.status = 'active',
-                assignment.updated_at = $updated_at
-            MERGE (project)-[:HAS_PROJECT_AGENT_ASSIGNMENT]->(assignment)
-            MERGE (assignment)-[:ASSIGNED_AGENT]->(agent)
+            SET agent._task_lifecycle_lock = true
+            REMOVE agent._task_lifecycle_lock
+            WITH project, agent
+            WHERE agent.status <> 'archived'
+            OPTIONAL MATCH (project)-[:HAS_PROJECT_AGENT_ASSIGNMENT]->
+                  (active_assignment:FuliProjectAgentAssignment)-
+                  [:ASSIGNED_AGENT]->(agent)
+            WHERE active_assignment.status = 'active'
+            OPTIONAL MATCH (project)-[:HAS_PROJECT_AGENT_ASSIGNMENT]->
+                  (handed_off_assignment:FuliProjectAgentAssignment)-
+                  [:ASSIGNED_AGENT]->(agent)
+            WHERE handed_off_assignment.status = 'ended'
+              AND handed_off_assignment.replaced_by_assignment_id IS NOT NULL
+            WITH project, agent,
+                 count(DISTINCT active_assignment) AS active_assignment_count,
+                 count(DISTINCT CASE
+                   WHEN active_assignment.id = $assignment_id
+                   THEN active_assignment
+                 END) AS legacy_assignment_count,
+                 count(DISTINCT handed_off_assignment)
+                   AS handed_off_assignment_count
+            // An audited handoff is terminal for the backwards-compatible
+            // upsert path. Reassignment must use the explicit assignment API.
+            // An already-active legacy assignment may still refresh its
+            // profile-backed fields even when another historical role moved.
+            FOREACH (_ IN CASE
+              WHEN legacy_assignment_count > 0 OR (
+                     active_assignment_count = 0
+                     AND handed_off_assignment_count = 0
+                   )
+              THEN [1] ELSE [] END |
+              MERGE (assignment:FuliProjectAgentAssignment {id: $assignment_id})
+              ON CREATE SET assignment.assignment_id = $assignment_id,
+                            assignment.assigned_at = $updated_at,
+                            assignment.revision = 0,
+                            assignment.reason = 'legacy project Agent profile'
+              SET assignment.revision = CASE
+                    WHEN assignment.status IS NOT NULL
+                         AND assignment.status <> 'active'
+                    THEN coalesce(assignment.revision, 0) + 1
+                    ELSE coalesce(assignment.revision, 0)
+                  END,
+                  assignment.ended_at = NULL,
+                  assignment.end_reason = NULL,
+                  assignment.replaced_by_assignment_id = NULL
+              SET assignment.responsibility = $responsibility,
+                  assignment.work_kinds = $work_kinds,
+                  assignment.capabilities = $capabilities,
+                  assignment.model_strategy_json = $model_strategy_json,
+                  assignment.executor_policy_json = $executor_policy_json,
+                  assignment.status = 'active',
+                  assignment.updated_at = $updated_at
+              MERGE (project)-[:HAS_PROJECT_AGENT_ASSIGNMENT]->(assignment)
+              MERGE (assignment)-[:ASSIGNED_AGENT]->(agent)
+            )
+            RETURN agent.agent_id AS agent_id
             ''',
             personal_space_id=request.personal_space_id,
             personal_project_id=request.personal_project_id,
@@ -236,6 +301,7 @@ class StoreProjectAgents:
             ),
             updated_at=updated_at,
         )
+        return bool(records)
 
     async def list_project_agents(
         self,
@@ -273,6 +339,8 @@ class StoreProjectAgents:
         personal_space_id: str,
         personal_project_id: str | None,
         agent_id: str,
+        *,
+        include_inactive_project_assignment: bool = False,
     ) -> ProjectAgentRecord:
         self._require_personal()
         space = await self.authorize(actor, personal_space_id, 'reader')
@@ -285,12 +353,21 @@ class StoreProjectAgents:
             )
         records = await self._project_agent_rows(
             personal_space_id,
-            personal_project_id=None,
+            personal_project_id=(
+                None
+                if include_inactive_project_assignment
+                else personal_project_id
+            ),
             agent_id=agent_id,
             status=None,
             capability=None,
         )
         if not records:
+            raise HTTPException(status_code=404, detail='project Agent not found')
+        if personal_project_id and not any(
+            dict(item).get('personal_project_id') == personal_project_id
+            for item in records[0].get('assignment_rows') or []
+        ):
             raise HTTPException(status_code=404, detail='project Agent not found')
         return self._project_agent_from_row(
             records[0],
@@ -322,6 +399,11 @@ class StoreProjectAgents:
             MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [:HAS_PROJECT_AGENT_IDENTITY]->
                   (agent:FuliProjectAgent {agent_id: $agent_id})
+            // Serialize task-participant creation with lifecycle termination.
+            // The lock must be taken before the open-work snapshot is read.
+            SET agent._task_lifecycle_lock = true
+            REMOVE agent._task_lifecycle_lock
+            WITH space, agent
             OPTIONAL MATCH (space)-[:HAS_PROJECT_AGENT_TASK]->
                   (task:FuliProjectAgentTask)-
                   [participant:HAS_PARTICIPANT]->(agent)
@@ -337,7 +419,7 @@ class StoreProjectAgents:
                            ]] AS open_tasks
             WHERE agent.status = 'archived' OR size(open_tasks) = 0
             SET agent.status = 'archived',
-                agent.archive_reason = $reason,
+                agent.archive_reason = coalesce(agent.archive_reason, $reason),
                 agent.archived_at = coalesce(agent.archived_at, $updated_at),
                 agent.updated_at = $updated_at
             WITH space, agent
@@ -355,7 +437,7 @@ class StoreProjectAgents:
             ''',
             personal_space_id=personal_space_id,
             agent_id=agent_id,
-            reason=reason,
+            reason=reason.strip(),
             updated_at=now_utc(),
         )
         if not records:
@@ -420,30 +502,64 @@ class StoreProjectAgents:
             WITH space, agent, collect(DISTINCT {
               assignment: assignment,
               personal_project_id: project.project_id
-            }) AS assignment_rows
+            }) AS all_assignment_rows
+            WITH space, agent,
+                 [item IN all_assignment_rows
+                  WHERE $personal_project_id IS NULL
+                     OR item.personal_project_id = $personal_project_id]
+                   AS assignment_rows
             OPTIONAL MATCH (space)-[:HAS_PROJECT_AGENT_TASK]->
                   (task:FuliProjectAgentTask)-
                   [participant:HAS_PARTICIPANT]->(agent)
             WITH space, agent, assignment_rows,
                  collect(DISTINCT {
                    task_id: task.task_id,
+                   personal_project_id: task.personal_project_id,
                    status: participant.status,
                    updated_at: participant.updated_at,
                    source_application: task.source_application
-                 }) AS task_rows,
-                 collect(DISTINCT task.source_application) AS task_clients
+                 }) AS all_task_rows,
+                 collect(DISTINCT {
+                   personal_project_id: task.personal_project_id,
+                   source_application: task.source_application
+                 }) AS all_task_client_rows
+            WITH space, agent, assignment_rows,
+                 [item IN all_task_rows
+                  WHERE $personal_project_id IS NULL
+                     OR item.personal_project_id = $personal_project_id]
+                   AS task_rows,
+                 [item IN all_task_client_rows
+                  WHERE ($personal_project_id IS NULL
+                         OR item.personal_project_id = $personal_project_id)
+                    AND item.source_application IS NOT NULL]
+                   AS task_client_rows
             OPTIONAL MATCH (space)-[:HAS_PROJECT_AGENT_TASK]->
-                  (:FuliProjectAgentTask)-[:HAS_TASK_EVENT]->
+                  (event_task:FuliProjectAgentTask)-[:HAS_TASK_EVENT]->
                   (event:FuliProjectAgentTaskEvent)-[:EVENT_AGENT]->(agent)
             WITH agent,
                  assignment_rows,
                  task_rows,
-                 task_clients,
-                 collect(DISTINCT event.source_application) AS event_clients
+                 task_client_rows,
+                 collect(DISTINCT {
+                   personal_project_id: event_task.personal_project_id,
+                   source_application: event.source_application
+                 }) AS all_event_client_rows
+            WITH agent,
+                 assignment_rows,
+                 task_rows,
+                 task_client_rows,
+                 [item IN all_event_client_rows
+                  WHERE ($personal_project_id IS NULL
+                         OR item.personal_project_id = $personal_project_id)
+                    AND item.source_application IS NOT NULL]
+                   AS event_client_rows
             RETURN agent,
                    assignment_rows,
                    task_rows,
-                   task_clients + event_clients AS observed_clients
+                   [item IN task_client_rows | item.source_application]
+                     + [item IN event_client_rows | item.source_application]
+                     AS observed_clients,
+                   task_client_rows + event_client_rows AS observed_client_rows
             ORDER BY CASE agent.agent_type
                        WHEN 'coordinator' THEN 0
                        WHEN 'hr' THEN 1
@@ -500,6 +616,10 @@ class StoreProjectAgents:
             MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [:HAS_PROJECT_AGENT_IDENTITY]->
                   (agent:FuliProjectAgent {agent_id: $agent_id})
+            SET agent._task_lifecycle_lock = true
+            REMOVE agent._task_lifecycle_lock
+            WITH project, agent
+            WHERE agent.status = 'active'
             MERGE (assignment:FuliProjectAgentAssignment {id: $assignment_id})
             ON CREATE SET assignment.assignment_id = $assignment_id,
                           assignment.payload_hash = $payload_hash,
@@ -548,7 +668,10 @@ class StoreProjectAgents:
             updated_at=updated_at,
         )
         if not records:
-            raise HTTPException(status_code=404, detail='project or Agent not found')
+            raise HTTPException(
+                status_code=409,
+                detail='project Agent is not active or is unavailable',
+            )
         assignment = dict(records[0]['assignment'])
         if assignment.get('payload_hash') != payload_hash:
             raise HTTPException(
@@ -634,13 +757,16 @@ class StoreProjectAgents:
                   (assignment:FuliProjectAgentAssignment {
                     assignment_id: $assignment_id
                   })-[:ASSIGNED_AGENT]->(agent:FuliProjectAgent)
+            SET agent._task_lifecycle_lock = true
+            REMOVE agent._task_lifecycle_lock
+            WITH project, assignment, agent
             WHERE assignment.status = 'active'
-              AND assignment.revision = $expected_revision
+              AND coalesce(assignment.revision, 0) = $expected_revision
             SET assignment.status = 'ended',
                 assignment.end_reason = $reason,
                 assignment.ended_at = $updated_at,
                 assignment.updated_at = $updated_at,
-                assignment.revision = assignment.revision + 1
+                assignment.revision = coalesce(assignment.revision, 0) + 1
             RETURN assignment, project.project_id AS personal_project_id,
                    agent.agent_id AS agent_id
             ''',
@@ -683,7 +809,7 @@ class StoreProjectAgents:
             space,
             request.personal_project_id,
             request.replacement_agent_id,
-            require_active=True,
+            require_active=False,
             allow_unassigned=True,
         )
         replacement_id = stable_uuid(
@@ -708,16 +834,29 @@ class StoreProjectAgents:
                   (replacement_agent:FuliProjectAgent {
                     agent_id: $replacement_agent_id
                   })
+            WITH project, ended, ended_agent, replacement_agent,
+                 CASE
+                   WHEN ended_agent.agent_id <= replacement_agent.agent_id
+                   THEN [ended_agent, replacement_agent]
+                   ELSE [replacement_agent, ended_agent]
+                 END AS lifecycle_agents
+            UNWIND lifecycle_agents AS lifecycle_agent
+            SET lifecycle_agent._task_lifecycle_lock = true
+            REMOVE lifecycle_agent._task_lifecycle_lock
+            WITH project, ended, ended_agent, replacement_agent,
+                 collect(lifecycle_agent) AS locked_agents
             OPTIONAL MATCH (existing_replacement:FuliProjectAgentAssignment {
               id: $replacement_id
             })
             WITH project, ended, ended_agent, replacement_agent,
                  existing_replacement
             WHERE existing_replacement IS NOT NULL
-               OR (ended.status = 'active'
-                   AND ended.revision = $expected_revision)
+               OR (replacement_agent.status = 'active'
+                   AND ended_agent.status = 'active'
+                   AND ended.status = 'active'
+                   AND coalesce(ended.revision, 0) = $expected_revision)
                OR (ended.status = 'ended'
-                   AND ended.revision = $expected_revision + 1
+                   AND coalesce(ended.revision, 0) = $expected_revision + 1
                    AND ended.replaced_by_assignment_id = $replacement_id)
             MERGE (replacement:FuliProjectAgentAssignment {id: $replacement_id})
             ON CREATE SET replacement.assignment_id = $replacement_id,
@@ -737,10 +876,13 @@ class StoreProjectAgents:
                           replacement.updated_at = $updated_at
             WITH project, ended, ended_agent, replacement_agent, replacement,
                  replacement.payload_hash = $payload_hash AS payload_matches,
-                 (ended.status = 'active'
-                  AND ended.revision = $expected_revision) AS can_apply,
+                 (replacement_agent.status = 'active'
+                  AND ended_agent.status = 'active'
+                  AND ended.status = 'active'
+                  AND coalesce(ended.revision, 0) = $expected_revision)
+                    AS can_apply,
                  (ended.status = 'ended'
-                  AND ended.revision = $expected_revision + 1
+                  AND coalesce(ended.revision, 0) = $expected_revision + 1
                   AND ended.replaced_by_assignment_id = $replacement_id)
                     AS exact_replay
             FOREACH (_ IN CASE
@@ -752,7 +894,7 @@ class StoreProjectAgents:
                   ended.ended_at = $updated_at,
                   ended.updated_at = $updated_at,
                   ended.replaced_by_assignment_id = $replacement_id,
-                  ended.revision = ended.revision + 1
+                  ended.revision = coalesce(ended.revision, 0) + 1
             )
             RETURN ended, replacement,
                    ended_agent.agent_id AS ended_agent_id,
@@ -849,7 +991,14 @@ class StoreProjectAgents:
             value = dict(item)
             assignment_raw = value.get('assignment')
             project_id = value.get('personal_project_id')
-            if assignment_raw is None or not project_id:
+            if (
+                assignment_raw is None
+                or not project_id
+                or (
+                    projection_project_id is not None
+                    and project_id != projection_project_id
+                )
+            ):
                 continue
             assignments.append(
                 self._assignment(
@@ -871,7 +1020,13 @@ class StoreProjectAgents:
         tasks = [
             dict(value)
             for value in (row.get('task_rows') or [])
-            if value and value.get('task_id') and value.get('status') in nonterminal
+            if value
+            and value.get('task_id')
+            and value.get('status') in nonterminal
+            and (
+                projection_project_id is None
+                or value.get('personal_project_id') == projection_project_id
+            )
         ]
         priority = {
             'running': 0,
@@ -888,13 +1043,26 @@ class StoreProjectAgents:
                   if item.get('updated_at') else 0),
             )
         )
-        work_status = 'ended' if (
-            profile.agent_type == 'temporary' and profile.status == 'archived'
-        ) else (tasks[0]['status'] if tasks else 'idle')
+        work_status = (
+            'ended'
+            if profile.status == 'archived'
+            else (tasks[0]['status'] if tasks else 'idle')
+        )
+        observed_client_rows = row.get('observed_client_rows')
+        if projection_project_id is not None:
+            observed_values = [
+                dict(value).get('source_application')
+                for value in observed_client_rows or []
+                if dict(value).get('personal_project_id') == projection_project_id
+            ]
+        else:
+            observed_values = row.get('observed_clients') or []
         observed_clients = sorted({
             value
-            for value in (row.get('observed_clients') or [])
-            if value in {'codex', 'claude_code', 'cursor', 'kiro', 'other'}
+            for value in observed_values
+            if value in {
+                'codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other'
+            }
         })
         return ProjectAgentRecord(
             agent_id=raw['agent_id'],

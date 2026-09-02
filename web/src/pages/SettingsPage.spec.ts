@@ -96,8 +96,14 @@ describe('SettingsPage', () => {
     expect(wrapper.find('.save-bar').exists()).toBe(false)
     expect(wrapper.findAll('.select-row > select')).toHaveLength(0)
     expect(wrapper.findAll('.settings-select [role="combobox"]')).toHaveLength(3)
-    expect(wrapper.findAll('.conversation-launcher-row')).toHaveLength(6)
+    expect(wrapper.findAll('.conversation-launcher-row')).toHaveLength(7)
     expect(wrapper.get('.conversation-launcher-card').text()).toContain('会话打开方式')
+
+    const claudeLauncher = wrapper
+      .findAll('.conversation-launcher-row')
+      .find((row) => row.text().includes('Claude') && !row.text().includes('Claude Code'))
+    expect(claudeLauncher).toBeDefined()
+    expect((claudeLauncher?.get('input[role="switch"]').element as HTMLInputElement).checked).toBe(false)
 
     const cursorLauncher = wrapper
       .findAll('.conversation-launcher-row')

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { deleteJson, getJson, patchJson, postJson } from '@/api/client'
-import SearchableSelect from '@/components/SearchableSelect.vue'
+import { activityRange, normalizeActivity } from '@/features/project-agents/activity-evidence'
+import ProjectScopePicker from '@/features/employees/ProjectScopePicker.vue'
 import AgentAssignmentDialog from '@/features/project-agents/AgentAssignmentDialog.vue'
 import ExecutorRoutingDialog from '@/features/project-agents/ExecutorRoutingDialog.vue'
 import ProjectAgentAutomationPolicyPanel from '@/features/project-agents/ProjectAgentAutomationPolicyPanel.vue'
@@ -10,9 +12,7 @@ import {
   agentValues,
   arrayOf,
   eventExecution,
-  normalizeActual,
   normalizeAssignment,
-  normalizeParticipant,
   normalizePolicy,
   normalizeStrategy,
   normalizeTask,
@@ -23,6 +23,8 @@ import {
   workerEventEvidence,
 } from '@/features/project-agents/task-evidence'
 import ProjectAgentDialog from '@/features/projects/ProjectAgentDialog.vue'
+import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
+import { employeeTemplates, employeeTemplateIdForAgent, refreshEmployeeCatalog, type EmployeeRecruitmentResult } from '@/features/employees/catalog'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type {
@@ -46,6 +48,7 @@ import type {
   ProjectAgentTaskExecutionSummary,
   ProjectAgentTaskRecord,
   ProjectAgentTaskStatus,
+  ProjectAgentTokenUsage,
   ProjectAgentType,
   ProjectAgentWorkStatus,
 } from '@/types'
@@ -62,11 +65,14 @@ const store = useConsoleStore()
 const agents = ref<ProjectAgentRecord[]>([])
 const loading = ref(false)
 const error = ref('')
-const projectFilter = ref('all')
+// null is the unrestricted view, including employees not assigned to a project yet.
+const projectFilter = ref<string[] | null>(null)
 const statusFilter = ref<StatusFilter>('all')
 const search = ref('')
 const selectedAgentKey = ref('')
 const dialogOpen = ref(false)
+const recruitDialogOpen = ref(false)
+const recruitTemplateId = ref('')
 const editingAgent = ref<ProjectAgentRecord | null>(null)
 const assignmentDialogOpen = ref(false)
 const assignmentAction = ref<'assign' | 'end' | 'replace'>('assign')
@@ -94,18 +100,30 @@ function actionIdempotencyKey(prefix: string) {
   return `${prefix}:${suffix}`
 }
 const projects = computed(() => store.state?.personalProjects ?? [])
+async function employeeRecruited(result: EmployeeRecruitmentResult) {
+  await loadAgents()
+  if (!filteredAgents.value.some((agent) => agent.agentId === result.agent.agentId)) {
+    projectFilter.value = null
+    statusFilter.value = 'all'
+    search.value = ''
+  }
+  const wasSelected = selectedAgentKey.value === result.agent.agentId
+  selectedAgentKey.value = result.agent.agentId
+  if (wasSelected) void refreshDetails()
+}
 const activeSpaceId = computed(() => store.activePersonalSpace?.id ?? '')
 const projectById = computed(() => new Map(
   projects.value.map((project) => [project.project_id, project]),
 ))
-const projectOptions = computed(() => [
-  { value: 'all', label: t('projectAgents.allProjects') },
-  ...projects.value.map((project) => ({
-    value: project.project_id,
-    label: project.profile.name,
-    meta: project.project_id,
-  })),
-])
+const projectOptions = computed(() => projects.value.map((project) => ({ id: project.project_id, name: project.profile.name })))
+const filterProjectIds = computed({
+  get: () => projectFilter.value ?? projectOptions.value.map((project) => project.id),
+  set: (ids: string[]) => {
+    const selected = projectOptions.value.filter((project) => ids.includes(project.id)).map((project) => project.id)
+    projectFilter.value = selected.length === projectOptions.value.length ? null : selected
+  },
+})
+const singleFilterProjectId = computed(() => projectFilter.value?.length === 1 ? projectFilter.value[0]! : '')
 const statusOptions = computed<Array<{ value: StatusFilter; label: string }>>(() => [
   { value: 'all', label: t('projectAgents.status.all') },
   { value: 'active', label: t('projectAgents.status.active') },
@@ -115,8 +133,8 @@ const statusOptions = computed<Array<{ value: StatusFilter; label: string }>>(()
 const filteredAgents = computed(() => {
   const needle = search.value.trim().toLocaleLowerCase(currentLocale())
   return agents.value
-    .filter((agent) => projectFilter.value === 'all'
-      || assignmentsFor(agent).some(({ personalProjectId }) => personalProjectId === projectFilter.value))
+    .filter((agent) => projectFilter.value === null
+      || responsibleProjectsFor(agent).some(({ id }) => projectFilter.value!.includes(id)))
     .filter((agent) => statusFilter.value === 'all' || agent.profile.status === statusFilter.value)
     .filter((agent) => !needle || searchText(agent).toLocaleLowerCase(currentLocale()).includes(needle))
     .sort(compareAgents)
@@ -124,16 +142,20 @@ const filteredAgents = computed(() => {
 const selectedAgent = computed(() => filteredAgents.value.find(
   (agent) => agent.agentId === selectedAgentKey.value,
 ) ?? null)
+const selectedEmployeeId = computed(() => selectedAgent.value ? employeeTemplateIdForAgent(selectedAgent.value) : null)
+const selectedEmployee = computed(() => employeeTemplates.value.find(entry => entry.id === selectedEmployeeId.value))
+const employeeProjects = computed(() => selectedAgent.value ? responsibleProjectsFor(selectedAgent.value)
+  .filter((project) => projectById.value.get(project.id)?.profile.lifecycle !== 'archived') : [])
 const activeCount = computed(() => agents.value.filter(({ profile }) => profile.status === 'active').length)
 const assignmentCount = computed(() => agents.value.reduce(
-  (count, agent) => count + assignmentsFor(agent).length,
+  (count, agent) => count + currentAssignmentsFor(agent).length,
   0,
 ))
 const representedProjectCount = computed(() => new Set(
-  agents.value.flatMap((agent) => assignmentsFor(agent).map(({ personalProjectId }) => personalProjectId)),
+  agents.value.flatMap((agent) => currentAssignmentsFor(agent).map(({ personalProjectId }) => personalProjectId)),
 ).size)
 const dialogDefaultProjectId = computed(() => {
-  if (projectFilter.value !== 'all') return projectFilter.value
+  if (singleFilterProjectId.value) return singleFilterProjectId.value
   return selectedAgent.value?.assignments?.find(({ status }) => status === 'active')?.personalProjectId
     ?? selectedAgent.value?.personalProjectId
     ?? projects.value[0]?.project_id
@@ -153,6 +175,7 @@ watch(activeSpaceId, (spaceId) => {
   detailStates.value = {}
   selectedAgentKey.value = ''
   agents.value = []
+  projectFilter.value = null
   if (spaceId) void loadAgents(spaceId)
   else if (store.runtimeStatus !== 'loading') loading.value = false
 }, { immediate: true })
@@ -182,6 +205,7 @@ async function loadAgents(spaceId = activeSpaceId.value) {
       // hide collaboration from the directory row.
       getJson<unknown>(`/api/project-agent-tasks?${query}`),
     ])
+    void refreshEmployeeCatalog(spaceId)
     if (agentsResult.status === 'rejected') throw agentsResult.reason
     if (version === loadVersion) {
       const listed = mergeAgents(agentValues(agentsResult.value))
@@ -273,7 +297,9 @@ function applyDetailResult(agent: ProjectAgentRecord, source: DetailSource, valu
       patch = { tasks: taskValues(value) }
       break
     case 'activity': {
-      const activity = normalizeActivity(value)
+      const activity = normalizeActivity(value, {
+        agentId: selectedAgentKey.value, personalSpaceId: activeSpaceId.value,
+      })
       if (!activity) throw new Error(t('projectAgents.detail.sectionUnavailable'))
       patch = { activity }
       break
@@ -469,7 +495,21 @@ function projectName(projectId: string | null | undefined) {
 }
 
 function assignmentsFor(agent: ProjectAgentRecord) {
-  return agent.assignments?.length ? agent.assignments : agent.personalProjectId ? [legacyAssignment(agent)] : []
+  return agent.assignments ?? (agent.personalProjectId ? [legacyAssignment(agent)] : [])
+}
+
+function currentAssignmentsFor(agent: ProjectAgentRecord) {
+  return [...new Map(assignmentsFor(agent).filter((assignment) => assignment.status === 'active')
+    .map((assignment) => [assignment.personalProjectId, assignment])).values()]
+}
+
+function responsibleProjectsFor(agent: ProjectAgentRecord) {
+  const templateId = employeeTemplateIdForAgent(agent)
+  const employee = templateId ? employeeTemplates.value.find(entry => entry.id === templateId) : undefined
+  // Effective policy membership is not a fabricated Provider assignment or history row.
+  return employee?.managedProjects ?? currentAssignmentsFor(agent).map(assignment => ({
+    id: assignment.personalProjectId, name: projectName(assignment.personalProjectId),
+  }))
 }
 
 function legacyAssignment(agent: ProjectAgentRecord): ProjectAgentAssignmentRecord {
@@ -497,10 +537,13 @@ function searchText(agent: ProjectAgentRecord) {
 }
 
 function openCreate() { editingAgent.value = null; dialogOpen.value = true }
+function openRecruit(templateId = '') { recruitTemplateId.value = templateId; recruitDialogOpen.value = true }
 function openEdit(agent: ProjectAgentRecord) { editingAgent.value = agent; dialogOpen.value = true }
 function closeDialog() { dialogOpen.value = false; editingAgent.value = null }
 
 function openAssignment(agent: ProjectAgentRecord, assignment: ProjectAgentAssignmentRecord | null = null, action: 'assign' | 'end' | 'replace' = 'assign') {
+  const templateId = employeeTemplateIdForAgent(agent)
+  if (action === 'assign' && templateId) { openRecruit(templateId); return }
   editingAgent.value = agent
   assignmentTarget.value = assignment
   assignmentAction.value = action
@@ -523,7 +566,7 @@ function recordSaved(agent: ProjectAgentRecord) {
   const next = agents.value.filter((item) => !(item.agentId === saved.agentId
     && saved.personalProjectId && item.personalProjectId === saved.personalProjectId))
   agents.value = mergeAgents([...next, saved])
-  if (saved.personalProjectId) projectFilter.value = saved.personalProjectId
+  if (saved.personalProjectId) projectFilter.value = [saved.personalProjectId]
   statusFilter.value = 'all'; search.value = ''; selectedAgentKey.value = saved.agentId
   store.notify(t('projectAgents.saved'))
 }
@@ -583,6 +626,43 @@ function executionSummaryOccupationEmoji(summary: ProjectAgentTaskExecutionSumma
 function executionSummaryStatusLabel(status: string | null | undefined) {
   return status ? taskStatusLabel(status) : t('projectAgents.notReported')
 }
+function participantRoleLabel(role: string | null | undefined) {
+  if (!role) return t('projectAgents.notReported')
+  const key = `projectAgents.participantRoles.${role}`
+  const translated = t(key)
+  return translated === key ? role : translated
+}
+function tokenUsageSourceLabel(source: ProjectAgentTokenUsage['source']) {
+  return t(`projectAgents.tokenSources.${source}`)
+}
+function tokenUsageLabel(usage: ProjectAgentTokenUsage | null | undefined) {
+  if (!usage) return t('projectAgents.notReported')
+  return `${new Intl.NumberFormat(currentLocale()).format(usage.totalTokens)} Token · ${tokenUsageSourceLabel(usage.source)}`
+}
+function executionSummarySessionHref(summary: ProjectAgentTaskExecutionSummary) {
+  return sessionHref(summary.workerRuntime
+    ? summary.workerRuntime.sessionUrl
+    : summary.sourceSessionUrl)
+}
+function sessionHref(raw: string | null | undefined) {
+  const value = raw?.trim()
+  if (!value) return null
+  try {
+    const url = new URL(value)
+    if (url.username || url.password || url.search || url.hash) return null
+    if (url.protocol === 'https:') return value
+    if (url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) return value
+    if (url.protocol === 'codex:' && url.hostname === 'threads' && url.pathname !== '/') return value
+  } catch {
+    return null
+  }
+  return null
+}
+function executionSummarySessionId(summary: ProjectAgentTaskExecutionSummary) {
+  return summary.workerRuntime
+    ? summary.workerRuntime.sessionId
+    : summary.sourceSessionId
+}
 function currentWork(agent: ProjectAgentRecord) {
   return (agent.tasks ?? []).find((task) => nonTerminalTaskStatuses.has(task.status)) ?? null
 }
@@ -627,64 +707,6 @@ function attachTasks(items: ProjectAgentRecord[], tasks: ProjectAgentTaskRecord[
     return matching.length ? { ...agent, tasks: dedupeById([...(agent.tasks ?? []), ...matching], ({ taskId }) => taskId) } : agent
   })
 }
-function activityRange() {
-  const to = new Date()
-  const from = new Date(to)
-  from.setUTCFullYear(from.getUTCFullYear() - 1)
-  return { fromDate: toIsoDate(from), toDate: toIsoDate(to) }
-}
-function toIsoDate(value: Date) { return value.toISOString().slice(0, 10) }
-function normalizeActivity(value: unknown): ProjectAgentActivityResult | null {
-  const record = unknownRecord(value); const rawDays = arrayOf(record.days)
-  if (!rawDays.length && !('days' in record)) return null
-  const reportedDays = rawDays.map((raw) => {
-    const item = unknownRecord(raw)
-    return {
-      date: stringOf(item, 'date', 'date') ?? '', completed: typeof item.completed === 'number' ? item.completed : 0,
-      failed: typeof item.failed === 'number' ? item.failed : 0, cancelled: typeof item.cancelled === 'number' ? item.cancelled : 0,
-      total: typeof item.total === 'number' ? item.total : 0, tasks: arrayOf(item.tasks).map(normalizeActivityTask).filter((task): task is NonNullable<ReturnType<typeof normalizeActivityTask>> => Boolean(task)),
-    }
-  }).filter(({ date }) => date)
-  const reportedFrom = stringOf(record, 'fromDate', 'from_date')
-  const reportedTo = stringOf(record, 'toDate', 'to_date')
-  const hasHistory = reportedDays.some(({ total, tasks }) => total > 0 || Boolean(tasks?.length))
-  const fromDate = reportedFrom ?? (reportedDays.length ? reportedDays.map(({ date }) => date).sort()[0] : undefined)
-  const toDate = reportedTo ?? (reportedDays.length ? reportedDays.map(({ date }) => date).sort().at(-1) : undefined)
-  const days = hasHistory && fromDate && toDate
-    ? fillActivityCalendar(reportedDays, fromDate, toDate)
-    : []
-  return { agentId: stringOf(record, 'agentId', 'agent_id') ?? selectedAgentKey.value, personalSpaceId: stringOf(record, 'personalSpaceId', 'personal_space_id') ?? activeSpaceId.value, fromDate, toDate, days }
-}
-
-function fillActivityCalendar(reportedDays: ProjectAgentActivityDay[], fromDate: string, toDate: string) {
-  const byDate = new Map(reportedDays.map((day) => [day.date, day]))
-  const from = new Date(`${fromDate}T00:00:00Z`)
-  const to = new Date(`${toDate}T00:00:00Z`)
-  if (Number.isNaN(from.valueOf()) || Number.isNaN(to.valueOf()) || from > to) return reportedDays
-  const days: ProjectAgentActivityDay[] = []
-  for (const cursor = new Date(from); cursor <= to; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
-    const date = toIsoDate(cursor)
-    days.push(byDate.get(date) ?? { date, completed: 0, failed: 0, cancelled: 0, total: 0, tasks: [] })
-  }
-  return days.reverse()
-}
-
-function normalizeActivityTask(value: unknown): NonNullable<ProjectAgentActivityDay['tasks']>[number] | null {
-  const record = unknownRecord(value); const taskId = stringOf(record, 'taskId', 'task_id'); if (!taskId) return null
-  const reportedActual = normalizeActual(valueOf(record, 'actualExecution', 'actual_execution')) ?? normalizeActual({
-    executor: stringOf(record, 'actualExecutor', 'actual_executor'),
-    provider: stringOf(record, 'actualModelProvider', 'actual_model_provider'),
-    model: stringOf(record, 'actualModel', 'actual_model'),
-    client: stringOf(record, 'sourceApplication', 'source_application'),
-  })
-  return {
-    taskId, title: stringOf(record, 'title', 'title') ?? taskId, status: stringOf(record, 'status', 'status') as 'completed' | 'failed' | 'cancelled',
-    summary: stringOf(record, 'summary', 'summary') ?? '', occurredAt: stringOf(record, 'occurredAt', 'occurred_at') ?? '',
-    personalProjectId: stringOf(record, 'personalProjectId', 'personal_project_id'), assignmentId: stringOf(record, 'assignmentId', 'assignment_id'),
-    collaborators: arrayOf(record.collaborators).map(normalizeParticipant), sourceApplication: stringOf(record, 'sourceApplication', 'source_application') as ConversationSourceApplication | null,
-    actualExecution: reportedActual, actualModelProvider: stringOf(record, 'actualModelProvider', 'actual_model_provider'), actualModel: stringOf(record, 'actualModel', 'actual_model'),
-  }
-}
 
 function normalizeAgent(value: unknown): ProjectAgentRecord {
   const record = unknownRecord(value); const rawProfile = unknownRecord(record.profile); const agentId = stringOf(record, 'agentId', 'agent_id') ?? ''
@@ -700,14 +722,16 @@ function normalizeAgent(value: unknown): ProjectAgentRecord {
   const fallback: ProjectAgentRecord = { agentId, personalSpaceId: stringOf(record, 'personalSpaceId', 'personal_space_id') ?? activeSpaceId.value, personalProjectId: stringOf(record, 'personalProjectId', 'personal_project_id'), profile, createdAt, updatedAt }
   return {
     ...fallback, memoryScope: stringOf(record, 'memoryScope', 'memory_scope') ?? undefined,
-    assignments: arrayOf(record.assignments).map((item) => normalizeAssignment(item, fallback)).filter(Boolean) as ProjectAgentAssignmentRecord[],
+    assignments: Array.isArray(record.assignments)
+      ? record.assignments.map((item) => normalizeAssignment(item, fallback)).filter(Boolean) as ProjectAgentAssignmentRecord[] : undefined,
     recruitments: recruitmentValues(record.recruitments ?? record.recruitmentHistory).filter((item) => recruitmentBelongsTo(item, fallback)),
     recruitmentId: stringOf(record, 'recruitmentId', 'recruitment_id'), temporaryTaskId: stringOf(record, 'temporaryTaskId', 'temporary_task_id'), workStatus: stringOf(record, 'workStatus', 'work_status') as ProjectAgentWorkStatus | undefined,
     openTaskCount: typeof record.openTaskCount === 'number' ? record.openTaskCount : typeof record.open_task_count === 'number' ? record.open_task_count : undefined, currentTaskId: stringOf(record, 'currentTaskId', 'current_task_id'),
     observedClients: arrayOf(record.observedClients ?? record.observed_clients).filter((item): item is ConversationSourceApplication => typeof item === 'string'), recruitedAt: stringOf(record, 'recruitedAt', 'recruited_at'),
     recruitmentReason: stringOf(record, 'recruitmentReason', 'recruitment_reason'), recruitmentSourceApplication: stringOf(record, 'recruitmentSourceApplication', 'recruitment_source_application') as ConversationSourceApplication | null,
     isTestRole: Boolean(profile.testSource) || profile.cleanupEligible || record.isTestRole === true || record.is_test_role === true,
-    tasks: arrayOf(record.tasks ?? record.taskHistory).map(normalizeTask).filter(Boolean) as ProjectAgentTaskRecord[], activity: normalizeActivity(record.activity),
+    tasks: arrayOf(record.tasks ?? record.taskHistory).map(normalizeTask).filter(Boolean) as ProjectAgentTaskRecord[],
+    activity: normalizeActivity(record.activity, { agentId: selectedAgentKey.value, personalSpaceId: activeSpaceId.value }),
     clientEvidence: clientValues(record.clientEvidence ?? record.client_evidence), routingRules: routingValues(record.routingRules ?? record.routing_rules), learningEvidence: normalizeLearningMap(record.learningEvidence ?? record.learning_evidence),
   }
 }
@@ -920,12 +944,16 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
         <h2>{{ t('projectAgents.title') }}</h2>
         <p class="project-agents-header-meta">{{ t('projectAgents.stats.total', { count: agents.length }) }} · {{ t('projectAgents.stats.assignments', { count: assignmentCount }) }} · {{ t('projectAgents.stats.projects', { count: representedProjectCount }) }}</p>
       </div>
-      <button class="project-agent-add" type="button" :disabled="!activeSpaceId" @click="openCreate">{{ t('projectAgents.add') }}</button>
+      <div class="project-agent-header-actions">
+        <button class="quiet-button" type="button" :disabled="!activeSpaceId" @click="openCreate">{{ t('projectAgents.add') }}</button>
+        <button class="project-agent-add" type="button" :disabled="!activeSpaceId" @click="openRecruit()">{{ t('employees.recruit') }}</button>
+      </div>
     </header>
+    <EmployeeRecruitDialog :open="recruitDialogOpen" :personal-space-id="activeSpaceId" :projects="projects" :template-id="recruitTemplateId" :default-project-ids="projectFilter ?? []" @close="recruitDialogOpen = false" @recruited="employeeRecruited" />
     <div class="project-agents-summary" aria-live="polite"><span>{{ t('projectAgents.stats.active', { count: activeCount }) }}</span><span>{{ t('projectAgents.stats.noOnlineClaim') }}</span></div>
 
     <div class="project-agents-toolbar">
-      <SearchableSelect v-model="projectFilter" class="project-agents-project-filter" control-id="project-agent-filter" :options="projectOptions" :label="t('projectAgents.projectFilter')" />
+      <ProjectScopePicker v-model="filterProjectIds" class="project-agents-project-filter" compact :projects="projectOptions" :label="t('employees.filterLabel')" :hint="t('employees.filterHint')" :empty-label="t('employees.filterEmpty')" />
       <label class="project-agents-search"><span class="sr-only">{{ t('projectAgents.searchLabel') }}</span><input v-model="search" type="search" :placeholder="t('projectAgents.searchPlaceholder')" /></label>
       <div class="project-agents-status-filter" :aria-label="t('projectAgents.fields.status')">
         <button v-for="option in statusOptions" :key="option.value" type="button" :aria-pressed="statusFilter === option.value" @click="statusFilter = option.value">{{ option.label }}</button>
@@ -933,11 +961,11 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
     </div>
 
     <ProjectAgentAutomationPolicyPanel
-      v-if="projectFilter !== 'all'"
-      :key="projectFilter"
+      v-if="singleFilterProjectId"
+      :key="singleFilterProjectId"
       :personal-space-id="activeSpaceId"
-      :personal-project-id="projectFilter"
-      :project-name="projectName(projectFilter)"
+      :personal-project-id="singleFilterProjectId"
+      :project-name="projectName(singleFilterProjectId)"
     />
 
     <div v-if="loading" class="project-agents-state">{{ t('projectAgents.loading') }}</div>
@@ -948,8 +976,7 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
       <div class="project-agent-list" role="list" :aria-label="t('projectAgents.listLabel')">
         <button v-for="agent in filteredAgents" :key="agent.agentId" type="button" class="project-agent-row" :class="{ selected: selectedAgentKey === agent.agentId }" :aria-current="selectedAgentKey === agent.agentId ? 'true' : undefined" @click="selectedAgentKey = agent.agentId">
           <span class="project-agent-row-heading"><span v-if="agent.profile.occupationEmoji" class="project-agent-occupation-emoji" role="img" :aria-label="`${t('projectAgents.fields.occupationEmoji')}: ${agent.profile.occupationEmoji}`">{{ agent.profile.occupationEmoji }}</span><strong>{{ agent.profile.name }}</strong><i class="project-agent-kind">{{ agentTypeLabel(agent.profile.agentType) }}</i><i :class="`is-${agent.profile.status}`">{{ t(`projectAgents.status.${agent.profile.status}`) }}</i></span>
-          <span class="project-agent-row-id">{{ agent.agentId }}</span>
-          <span class="project-agent-row-projects"><b v-for="assignment in assignmentsFor(agent)" :key="assignment.assignmentId">{{ projectName(assignment.personalProjectId) }}</b><em v-if="!assignmentsFor(agent).length">{{ t('projectAgents.notReported') }}</em></span>
+          <span class="project-agent-row-projects"><b v-for="project in responsibleProjectsFor(agent).slice(0, 3)" :key="project.id">{{ project.name }}</b><b v-if="responsibleProjectsFor(agent).length > 3">+{{ responsibleProjectsFor(agent).length - 3 }}</b><em v-if="!responsibleProjectsFor(agent).length">{{ t('employees.noAssignedProjects') }}</em></span>
           <span class="project-agent-row-responsibility">{{ agent.profile.responsibility || t('projectAgents.notReported') }}</span>
           <span class="project-agent-row-work"><template v-if="currentWork(agent)"><i :class="['project-agent-work-dot', { 'is-live': currentWork(agent)!.status === 'running' }]" aria-hidden="true" />{{ taskStatusLabel(currentWork(agent)!.status) }} · {{ currentWork(agent)!.title }}</template><template v-else-if="agent.workStatus === 'blocked' || agent.workStatus === 'queued'">{{ taskStatusLabel(agent.workStatus) }} · {{ t('projectAgents.detail.stateReported') }}</template><template v-else>{{ t('projectAgents.detail.noRun') }}</template></span>
           <span class="project-agent-row-capabilities"><b v-for="capability in agent.profile.capabilities.slice(0, 3)" :key="capability">{{ capability }}</b></span>
@@ -959,7 +986,20 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
       <aside v-if="selectedAgent" class="project-agent-detail" :aria-label="selectedAgent.profile.name">
         <header><div class="project-agent-detail-heading"><h3><span v-if="selectedAgent.profile.occupationEmoji" class="project-agent-occupation-emoji" role="img" :aria-label="`${t('projectAgents.fields.occupationEmoji')}: ${selectedAgent.profile.occupationEmoji}`">{{ selectedAgent.profile.occupationEmoji }}</span>{{ selectedAgent.profile.name }}</h3><p>{{ selectedAgent.agentId }} · {{ agentTypeLabel(selectedAgent.profile.agentType) }}<span v-if="selectedAgent.isTestRole"> · {{ t('projectAgents.source.testRole') }}<span v-if="selectedAgent.profile.testSource"> · {{ selectedAgent.profile.testSource }}</span></span></p></div><div class="project-agent-detail-actions"><button class="quiet-button" type="button" :disabled="detailLoading" @click="refreshDetails()">{{ detailLoading ? t('projectAgents.detail.refreshing') : t('projectAgents.detail.refresh') }}</button><button class="quiet-button" type="button" @click="openEdit(selectedAgent)">{{ t('projectAgents.edit') }}</button><button v-if="selectedAgent.profile.cleanupEligible" class="quiet-button" type="button" :disabled="detailLoading" @click="cleanupTestAgent(selectedAgent)">{{ t('projectAgents.source.cleanup') }}</button></div></header>
         <p v-if="detailNotice" class="project-agent-detail-notice" role="status">{{ detailNotice }}</p>
-        <dl class="project-agent-detail-meta"><div><dt>{{ t('projectAgents.fields.assignments') }}</dt><dd>{{ assignmentsFor(selectedAgent).length }}</dd></div><div><dt>{{ t('projectAgents.fields.memoryScope') }}</dt><dd>{{ selectedAgent.memoryScope ?? t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.fields.status') }}</dt><dd>{{ t(`projectAgents.status.${selectedAgent.profile.status}`) }}</dd></div><div><dt>{{ t('projectAgents.fields.recruitment') }}</dt><dd>{{ sourceLabel(selectedAgent.recruitmentSourceApplication) }}<small v-if="selectedAgent.recruitmentReason">{{ selectedAgent.recruitmentReason }}</small></dd></div><div><dt>{{ t('projectAgents.fields.updatedAt') }}</dt><dd>{{ formatDate(selectedAgent.updatedAt) }}</dd></div></dl>
+        <section v-if="selectedEmployeeId" class="employee-project-overview" aria-labelledby="employee-project-overview-title">
+          <div class="employee-project-overview-heading">
+            <div><h4 id="employee-project-overview-title">{{ selectedEmployee?.management?.mode === 'all' ? t('employees.scope.continuousAll') : t('employees.scope.label') }}</h4><p>{{ t('employees.assignedCount', { count: employeeProjects.length }) }}</p></div>
+            <button class="project-agent-add" type="button" @click="openRecruit(selectedEmployeeId)">{{ t('employees.manageProjects') }}</button>
+          </div>
+          <div v-if="employeeProjects.length" class="employee-assigned-projects">
+            <RouterLink v-for="project in employeeProjects" :key="project.id" :to="`/employees/${encodeURIComponent(selectedEmployeeId)}?project=${encodeURIComponent(project.id)}`">
+              <span>{{ project.name }}</span>
+              <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </RouterLink>
+          </div>
+          <p v-else class="employee-project-overview-hint">{{ t('employees.manageHint') }}</p>
+        </section>
+        <dl class="project-agent-detail-meta"><div><dt>{{ t('projectAgents.fields.assignments') }}</dt><dd>{{ currentAssignmentsFor(selectedAgent).length }}</dd></div><div><dt>{{ t('projectAgents.fields.memoryScope') }}</dt><dd>{{ selectedAgent.memoryScope ?? t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.fields.status') }}</dt><dd>{{ t(`projectAgents.status.${selectedAgent.profile.status}`) }}</dd></div><div><dt>{{ t('projectAgents.fields.recruitment') }}</dt><dd>{{ sourceLabel(selectedAgent.recruitmentSourceApplication) }}<small v-if="selectedAgent.recruitmentReason">{{ selectedAgent.recruitmentReason }}</small></dd></div><div><dt>{{ t('projectAgents.fields.updatedAt') }}</dt><dd>{{ formatDate(selectedAgent.updatedAt) }}</dd></div></dl>
 
         <div class="project-agent-detail-source" data-detail-section="recruitment">
           <ProjectAgentDetailState v-bind="detailState('recruitments')" @retry="refreshDetails">
@@ -971,7 +1011,7 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
 
         <div class="project-agent-detail-source" data-detail-section="assignments">
           <ProjectAgentDetailState v-bind="detailState('assignments')" @retry="refreshDetails">
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.assignments') }}</h4><div class="project-agent-section-tools"><span>{{ assignmentsFor(selectedAgent).length }}</span><button class="quiet-button" type="button" @click="openAssignment(selectedAgent)">{{ t('projectAgents.assignmentDialog.assign') }}</button></div></div><div v-if="assignmentsFor(selectedAgent).length" class="project-agent-assignment-list"><article v-for="assignment in assignmentsFor(selectedAgent)" :key="assignment.assignmentId" class="project-agent-assignment-card"><header><strong>{{ projectName(assignment.personalProjectId) }}</strong><div class="project-agent-card-actions"><i :class="`is-${assignment.status}`">{{ t(`projectAgents.assignmentStatus.${assignment.status}`) }}</i><button v-if="assignment.status === 'active'" class="quiet-button" type="button" @click="openAssignment(selectedAgent, assignment, 'end')">{{ t('projectAgents.assignmentDialog.end') }}</button><button v-if="assignment.status === 'active'" class="quiet-button" type="button" @click="openAssignment(selectedAgent, assignment, 'replace')">{{ t('projectAgents.assignmentDialog.replace') }}</button></div></header><p>{{ assignment.responsibility || t('projectAgents.notReported') }}</p><small v-if="assignment.scope">{{ t('projectAgents.fields.scope') }} · {{ assignment.scope }}</small><small>{{ formatDate(assignment.assignedAt) }} → {{ assignment.endedAt ? formatDate(assignment.endedAt) : t('projectAgents.assignmentStatus.active') }}</small><div v-if="assignment.workKinds?.length" class="project-agent-inline-list"><span v-for="workKind in assignment.workKinds" :key="workKind">{{ workKind }}</span></div><div class="project-agent-strategy-note"><span>{{ t('projectAgents.fields.assignmentModel') }}</span><strong>{{ strategyLabel(assignment.modelStrategyOverride) }} · {{ policyLabel(assignment.executorPolicyOverride) }}</strong><small v-if="policyIsLocked(assignment.executorPolicyOverride) && !policyAllowList(assignment.executorPolicyOverride).length">{{ t('projectAgents.strategy.lockedUnavailable') }}</small></div><div v-if="policyAllowList(assignment.executorPolicyOverride).length" class="project-agent-tags"><span v-for="executor in policyAllowList(assignment.executorPolicyOverride)" :key="executor.executorId">{{ executor.label || executor.executorId }}</span></div><small v-if="assignment.reason">{{ t('projectAgents.fields.reason') }} · {{ assignment.reason }}</small></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.detail.noAssignments') }}</p></section>
+            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.assignments') }}</h4><div class="project-agent-section-tools"><span>{{ assignmentsFor(selectedAgent).length }}</span><button class="quiet-button" type="button" @click="openAssignment(selectedAgent)">{{ t('projectAgents.assignmentDialog.assign') }}</button></div></div><div v-if="assignmentsFor(selectedAgent).length" class="project-agent-assignment-list"><article v-for="assignment in assignmentsFor(selectedAgent)" :key="assignment.assignmentId" class="project-agent-assignment-card"><header><strong>{{ projectName(assignment.personalProjectId) }}</strong><div class="project-agent-card-actions"><i :class="`is-${assignment.status}`">{{ t(`projectAgents.assignmentStatus.${assignment.status}`) }}</i><button v-if="assignment.status === 'active'" class="quiet-button" type="button" @click="openAssignment(selectedAgent, assignment, 'end')">{{ t('projectAgents.assignmentDialog.end') }}</button><button v-if="assignment.status === 'active'" class="quiet-button" type="button" @click="openAssignment(selectedAgent, assignment, 'replace')">{{ t('projectAgents.assignmentDialog.replace') }}</button></div></header><p>{{ assignment.responsibility || t('projectAgents.notReported') }}</p><small v-if="assignment.scope">{{ t('projectAgents.fields.scope') }} · {{ assignment.scope }}</small><small>{{ formatDate(assignment.assignedAt) }} → {{ assignment.endedAt ? formatDate(assignment.endedAt) : t(`projectAgents.assignmentStatus.${assignment.status}`) }}</small><div v-if="assignment.workKinds?.length" class="project-agent-inline-list"><span v-for="workKind in assignment.workKinds" :key="workKind">{{ workKind }}</span></div><div class="project-agent-strategy-note"><span>{{ t('projectAgents.fields.assignmentModel') }}</span><strong>{{ strategyLabel(assignment.modelStrategyOverride) }} · {{ policyLabel(assignment.executorPolicyOverride) }}</strong><small v-if="policyIsLocked(assignment.executorPolicyOverride) && !policyAllowList(assignment.executorPolicyOverride).length">{{ t('projectAgents.strategy.lockedUnavailable') }}</small></div><div v-if="policyAllowList(assignment.executorPolicyOverride).length" class="project-agent-tags"><span v-for="executor in policyAllowList(assignment.executorPolicyOverride)" :key="executor.executorId">{{ executor.label || executor.executorId }}</span></div><small v-if="assignment.reason">{{ t('projectAgents.fields.reason') }} · {{ assignment.reason }}</small></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.detail.noAssignments') }}</p></section>
           </ProjectAgentDetailState>
         </div>
 
@@ -983,7 +1023,60 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
 
         <div class="project-agent-detail-source" data-detail-section="tasks">
           <ProjectAgentDetailState v-bind="detailState('tasks')" @retry="refreshDetails">
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.tasks') }}</h4><span>{{ selectedAgent.tasks?.length ?? 0 }}</span></div><div v-if="selectedAgent.tasks?.length" class="project-agent-task-list"><article v-for="task in selectedAgent.tasks" :key="task.taskId" class="project-agent-task-card"><header><div><strong>{{ task.title }}</strong><small>{{ task.taskId }} · {{ projectName(task.personalProjectId) }}</small></div><i :class="`is-${task.status}`">{{ taskStatusLabel(task.status) }}</i></header><p v-if="task.resultSummary || task.failureReason">{{ task.resultSummary || task.failureReason }}</p><small>{{ t('projectAgents.fields.collaborators') }} · {{ task.participants.length }}</small><div v-if="task.participants.length" class="project-agent-inline-list"><span v-for="participant in task.participants" :key="`${task.taskId}:${participant.agentId}`">{{ participant.agentId }} · {{ participant.role }}</span></div><section v-if="task.executionSummary !== undefined" class="project-agent-execution-summary" :aria-label="t('projectAgents.fields.executionSummary')"><div class="project-agent-section-heading"><h5>{{ t('projectAgents.fields.executionSummary') }}</h5><span>{{ task.executionSummary.length }}</span></div><ul v-if="task.executionSummary.length" class="project-agent-execution-summary-list"><li v-for="(summary, summaryIndex) in task.executionSummary" :key="`${task.taskId}:execution:${summary.workerId || summary.agentId || summaryIndex}`" class="project-agent-execution-summary-row"><header><strong><span v-if="executionSummaryOccupationEmoji(summary)" class="project-agent-occupation-emoji" role="img" :aria-label="`${t('projectAgents.fields.occupationEmoji')}: ${executionSummaryOccupationEmoji(summary)}`">{{ executionSummaryOccupationEmoji(summary) }}</span>{{ executionSummaryWorkerLabel(summary) }}<small v-if="summary.agentId || summary.workerId">{{ summary.workerId || summary.agentId }}</small></strong><i v-if="summary.status" :class="`is-${summary.status}`">{{ executionSummaryStatusLabel(summary.status) }}</i></header><dl class="project-agent-execution-summary-meta"><div><dt>{{ t('projectAgents.fields.executionEnvironment') }}</dt><dd>{{ summary.executor || t('projectAgents.notReported') }}<small v-if="summary.executorId && summary.executorId !== summary.executor">{{ t('projectAgents.fields.executorId') }} · {{ summary.executorId }}</small></dd></div><div><dt>{{ t('projectAgents.fields.participantRole') }}</dt><dd>{{ summary.participantRole || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.fields.sourceApplication') }}</dt><dd>{{ sourceLabel(summary.sourceApplication) }}</dd></div><div v-if="summary.actualModelProvider || summary.actualModel"><dt>{{ t('projectAgents.fields.actualModel') }}</dt><dd><span v-if="summary.actualModelProvider">{{ summary.actualModelProvider }}</span><span v-if="summary.actualModelProvider && summary.actualModel"> · </span><span v-if="summary.actualModel">{{ summary.actualModel }}</span></dd></div><div><dt>{{ t('projectAgents.fields.workSummary') }}</dt><dd>{{ summary.workSummary || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.fields.terminalStatus') }}</dt><dd>{{ executionSummaryStatusLabel(summary.status) }}</dd></div></dl></li></ul><p v-else class="project-agent-muted">{{ t('projectAgents.detail.noExecutionSummary') }}</p></section><section v-if="workerEventEvidence(task).length" class="project-agent-worker-event-evidence" :aria-label="t('projectAgents.fields.workerEventEvidence')"><div class="project-agent-section-heading"><h5>{{ t('projectAgents.fields.workerEventEvidence') }}</h5><span>{{ workerEventEvidence(task).length }}</span></div><ul class="project-agent-execution-summary-list"><li v-for="event in workerEventEvidence(task)" :key="`${task.taskId}:worker-event:${event.eventId}`" class="project-agent-execution-summary-row"><header><strong><span v-if="workerEventOccupationEmoji(event)" class="project-agent-occupation-emoji" role="img" :aria-label="`${t('projectAgents.fields.occupationEmoji')}: ${workerEventOccupationEmoji(event)}`">{{ workerEventOccupationEmoji(event) }}</span>{{ workerEventLabel(event) }}<small v-if="event.agentId">{{ t('projectAgents.fields.agentId') }} · {{ event.agentId }}</small></strong><i :class="`is-${event.workerStatus || event.status}`">{{ workerEventStatusLabel(event) }}</i></header><dl class="project-agent-execution-summary-meta"><div><dt>{{ t('projectAgents.fields.workSummary') }}</dt><dd>{{ event.summary || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.fields.sourceApplication') }}</dt><dd>{{ sourceLabel(event.sourceApplication) }}</dd></div><div v-if="event.actualModelProvider || event.actualModel"><dt>{{ t('projectAgents.fields.actualModel') }}</dt><dd><span v-if="event.actualModelProvider">{{ event.actualModelProvider }}</span><span v-if="event.actualModelProvider && event.actualModel"> · </span><span v-if="event.actualModel">{{ event.actualModel }}</span></dd></div><div><dt>{{ t('projectAgents.fields.reportedAt') }}</dt><dd>{{ formatDate(event.createdAt) }}</dd></div></dl></li></ul></section><small v-if="task.effectiveModelStrategy">{{ t('projectAgents.fields.strategySource') }} · {{ task.modelStrategySource || t('projectAgents.notReported') }} · {{ strategyLabel(task.effectiveModelStrategy) }} · {{ policyLabel(task.effectiveExecutorPolicy) }}</small><div v-if="task.routingDecision" class="project-agent-routing-decision"><div class="project-agent-section-heading"><span>{{ t('projectAgents.fields.reportedStaffingDecision') }}</span><strong>{{ task.routingDecision.outcome || t('projectAgents.notReported') }}</strong></div><small v-if="task.routingDecision.coordinatorAgentId || task.coordinatorAgentId">{{ t('projectAgents.fields.coordinator') }} · {{ task.routingDecision.coordinatorAgentId || task.coordinatorAgentId }}</small><small>{{ t('projectAgents.fields.matchBasis') }} · {{ task.routingDecision.matchBasis?.join(' · ') || t('projectAgents.notReported') }} · {{ task.routingDecision.reason || t('projectAgents.notReported') }}</small><small v-if="task.routingDecision.candidateAgentIds?.length">{{ t('projectAgents.fields.candidateAgents') }} · {{ task.routingDecision.candidateAgentIds.join(' · ') }}</small><small v-if="task.routingDecision.complexity !== null && task.routingDecision.complexity !== undefined">{{ t('projectAgents.fields.complexity') }} · {{ task.routingDecision.complexity }}<span v-if="task.routingDecision.complexityBasis?.length"> · {{ task.routingDecision.complexityBasis.join(' · ') }}</span></small><small v-if="parallelPlanHasEvidence(task.routingDecision.parallelPlan)">{{ t('projectAgents.fields.parallelPlan') }} · {{ task.routingDecision.parallelPlan?.reason || t('projectAgents.notReported') }}<span v-if="task.routingDecision.parallelPlan?.workstreamBoundaries?.length"> · {{ task.routingDecision.parallelPlan.workstreamBoundaries.join(' · ') }}</span></small><small v-if="task.routingDecision.ruleId || task.routingDecision.fallback">{{ task.routingDecision.ruleId || t('projectAgents.notReported') }} · {{ task.routingDecision.fallback || t('projectAgents.notReported') }}</small></div><div class="project-agent-execution-line"><span>{{ t('projectAgents.fields.actualExecution') }}</span><strong v-if="actualExecution(task)">{{ actualExecution(task)?.executor || actualExecution(task)?.provider || t('projectAgents.notReported') }} / {{ actualExecution(task)?.model || t('projectAgents.notReported') }} / {{ sourceLabel(actualExecution(task)?.client) }}</strong><span v-else>{{ t('projectAgents.detail.notReportedActualExecution') }}</span><small v-if="actualExecution(task)?.rule || actualExecution(task)?.fallback">{{ actualExecution(task)?.rule || t('projectAgents.notReported') }} · {{ actualExecution(task)?.fallback || t('projectAgents.notReported') }}</small></div><small v-if="task.runId">{{ t('projectAgents.fields.run') }} · {{ task.runId }}</small><small v-else>{{ t('projectAgents.detail.noRun') }}</small></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.detail.noTasks') }}</p></section>
+            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.tasks') }}</h4><span>{{ selectedAgent.tasks?.length ?? 0 }}</span></div><div v-if="selectedAgent.tasks?.length" class="project-agent-task-list"><article v-for="task in selectedAgent.tasks" :key="task.taskId" class="project-agent-task-card"><header><div><strong>{{ task.title }}</strong><small>{{ task.taskId }} · {{ projectName(task.personalProjectId) }}</small></div><i :class="`is-${task.status}`">{{ taskStatusLabel(task.status) }}</i></header><p v-if="task.resultSummary || task.failureReason">{{ task.resultSummary || task.failureReason }}</p><small>{{ t('projectAgents.fields.collaborators') }} · {{ task.participants.length }}</small><div v-if="task.participants.length" class="project-agent-inline-list"><span v-for="participant in task.participants" :key="`${task.taskId}:${participant.agentId}`">{{ participant.agentId }} · {{ participant.role }}</span></div><section v-if="task.executionSummary !== undefined" class="project-agent-execution-summary" :aria-label="t('projectAgents.fields.executionSummary')">
+<div class="project-agent-section-heading">
+<h5>{{ t('projectAgents.fields.executionSummary') }}</h5>
+<span>{{ task.executionSummary.length }}</span>
+</div>
+<div v-if="task.executionSummary.length" class="project-agent-execution-summary-table-wrap" role="region" tabindex="0" :aria-label="t('projectAgents.fields.executionSummary')">
+<table class="project-agent-execution-summary-table">
+<caption class="sr-only">{{ t('projectAgents.fields.executionSummary') }}</caption>
+<thead>
+<tr>
+<th scope="col">{{ t('projectAgents.fields.worker') }}</th>
+<th scope="col">{{ t('projectAgents.fields.workSummary') }}</th>
+<th scope="col">{{ t('projectAgents.fields.toolsUsed') }}</th>
+<th scope="col">{{ t('projectAgents.fields.executionEnvironment') }}</th>
+<th scope="col">{{ t('projectAgents.fields.sourceSession') }}</th>
+<th scope="col">{{ t('projectAgents.fields.tokenUsage') }}</th>
+<th scope="col">{{ t('projectAgents.fields.terminalStatus') }}</th>
+</tr>
+</thead>
+<tbody>
+<tr v-for="(summary, summaryIndex) in task.executionSummary" :key="task.taskId + ':execution:' + (summary.workerId || summary.agentId || summaryIndex)" class="project-agent-execution-summary-row">
+<th scope="row">
+<span class="project-agent-execution-worker">
+<span v-if="executionSummaryOccupationEmoji(summary)" class="project-agent-occupation-emoji" role="img" :aria-label="t('projectAgents.fields.occupationEmoji') + ': ' + executionSummaryOccupationEmoji(summary)">{{ executionSummaryOccupationEmoji(summary) }}</span>
+{{ executionSummaryWorkerLabel(summary) }}
+</span>
+<small v-if="summary.agentId || summary.workerId">{{ summary.workerId || summary.agentId }}</small>
+<small>{{ participantRoleLabel(summary.participantRole) }}</small>
+</th>
+<td :data-label="t('projectAgents.fields.workSummary')">{{ summary.workSummary || t('projectAgents.notReported') }}</td>
+<td :data-label="t('projectAgents.fields.toolsUsed')">{{ summary.toolsUsed ? summary.toolsUsed.join(' · ') || t('projectAgents.noToolsUsed') : t('projectAgents.notReported') }}</td>
+<td :data-label="t('projectAgents.fields.executionEnvironment')">
+<strong>{{ summary.executor || t('projectAgents.notReported') }}</strong>
+<small v-if="summary.executorId && summary.executorId !== summary.executor">{{ summary.executorId }}</small>
+<small v-if="summary.actualModelProvider || summary.actualModel">{{ [summary.actualModelProvider, summary.actualModel].filter(Boolean).join(' · ') }}</small>
+</td>
+<td :data-label="t('projectAgents.fields.sourceSession')">
+<span><template v-if="summary.workerRuntime">{{ t('projectAgents.fields.workerSession') }} · </template>{{ sourceLabel(summary.workerRuntime?.application || summary.sourceApplication) }}</span>
+<a v-if="executionSummarySessionHref(summary)" :href="executionSummarySessionHref(summary) || undefined" target="_blank" rel="noreferrer">{{ executionSummarySessionId(summary) || executionSummarySessionHref(summary) }}</a>
+<small v-else>{{ executionSummarySessionId(summary) || t('projectAgents.notReported') }}</small>
+<template v-if="summary.workerRuntime">
+<small class="project-agent-reporter-label">{{ t('projectAgents.fields.reporterSession') }} · {{ sourceLabel(summary.sourceApplication) }}</small>
+<a v-if="sessionHref(summary.sourceSessionUrl)" :href="sessionHref(summary.sourceSessionUrl) || undefined" target="_blank" rel="noreferrer">{{ summary.sourceSessionId || summary.sourceSessionUrl }}</a>
+<small v-else>{{ summary.sourceSessionId || t('projectAgents.notReported') }}</small>
+</template>
+</td>
+<td :data-label="t('projectAgents.fields.tokenUsage')">{{ tokenUsageLabel(summary.tokenUsage) }}</td>
+<td :data-label="t('projectAgents.fields.terminalStatus')"><i v-if="summary.status" :class="'is-' + summary.status">{{ executionSummaryStatusLabel(summary.status) }}</i><span v-else>{{ t('projectAgents.notReported') }}</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p v-else class="project-agent-muted">{{ t('projectAgents.detail.noExecutionSummary') }}</p>
+</section><section v-if="workerEventEvidence(task).length" class="project-agent-worker-event-evidence" :aria-label="t('projectAgents.fields.workerEventEvidence')"><div class="project-agent-section-heading"><h5>{{ t('projectAgents.fields.workerEventEvidence') }}</h5><span>{{ workerEventEvidence(task).length }}</span></div><ul class="project-agent-execution-summary-list"><li v-for="event in workerEventEvidence(task)" :key="`${task.taskId}:worker-event:${event.eventId}`" class="project-agent-worker-event-row"><header><strong><span v-if="workerEventOccupationEmoji(event)" class="project-agent-occupation-emoji" role="img" :aria-label="`${t('projectAgents.fields.occupationEmoji')}: ${workerEventOccupationEmoji(event)}`">{{ workerEventOccupationEmoji(event) }}</span>{{ workerEventLabel(event) }}<small v-if="event.agentId">{{ t('projectAgents.fields.agentId') }} · {{ event.agentId }}</small></strong><i :class="`is-${event.workerStatus || event.status}`">{{ workerEventStatusLabel(event) }}</i></header><dl class="project-agent-execution-summary-meta"><div><dt>{{ t('projectAgents.fields.workSummary') }}</dt><dd>{{ event.summary || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.fields.sourceApplication') }}</dt><dd>{{ sourceLabel(event.sourceApplication) }}</dd></div><div><dt>{{ t('projectAgents.fields.sourceSession') }}</dt><dd>{{ event.sourceSessionId || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.fields.tokenUsage') }}</dt><dd>{{ tokenUsageLabel(event.tokenUsage) }}</dd></div><div v-if="event.actualModelProvider || event.actualModel"><dt>{{ t('projectAgents.fields.actualModel') }}</dt><dd><span v-if="event.actualModelProvider">{{ event.actualModelProvider }}</span><span v-if="event.actualModelProvider && event.actualModel"> · </span><span v-if="event.actualModel">{{ event.actualModel }}</span></dd></div><div><dt>{{ t('projectAgents.fields.reportedAt') }}</dt><dd>{{ formatDate(event.createdAt) }}</dd></div></dl></li></ul></section><small v-if="task.effectiveModelStrategy">{{ t('projectAgents.fields.strategySource') }} · {{ task.modelStrategySource || t('projectAgents.notReported') }} · {{ strategyLabel(task.effectiveModelStrategy) }} · {{ policyLabel(task.effectiveExecutorPolicy) }}</small><div v-if="task.routingDecision" class="project-agent-routing-decision"><div class="project-agent-section-heading"><span>{{ t('projectAgents.fields.reportedStaffingDecision') }}</span><strong>{{ task.routingDecision.outcome || t('projectAgents.notReported') }}</strong></div><small v-if="task.routingDecision.coordinatorAgentId || task.coordinatorAgentId">{{ t('projectAgents.fields.coordinator') }} · {{ task.routingDecision.coordinatorAgentId || task.coordinatorAgentId }}</small><small>{{ t('projectAgents.fields.matchBasis') }} · {{ task.routingDecision.matchBasis?.join(' · ') || t('projectAgents.notReported') }} · {{ task.routingDecision.reason || t('projectAgents.notReported') }}</small><small v-if="task.routingDecision.candidateAgentIds?.length">{{ t('projectAgents.fields.candidateAgents') }} · {{ task.routingDecision.candidateAgentIds.join(' · ') }}</small><small v-if="task.routingDecision.complexity !== null && task.routingDecision.complexity !== undefined">{{ t('projectAgents.fields.complexity') }} · {{ task.routingDecision.complexity }}<span v-if="task.routingDecision.complexityBasis?.length"> · {{ task.routingDecision.complexityBasis.join(' · ') }}</span></small><small v-if="parallelPlanHasEvidence(task.routingDecision.parallelPlan)">{{ t('projectAgents.fields.parallelPlan') }} · {{ task.routingDecision.parallelPlan?.reason || t('projectAgents.notReported') }}<span v-if="task.routingDecision.parallelPlan?.workstreamBoundaries?.length"> · {{ task.routingDecision.parallelPlan.workstreamBoundaries.join(' · ') }}</span></small><small v-if="task.routingDecision.ruleId || task.routingDecision.fallback">{{ task.routingDecision.ruleId || t('projectAgents.notReported') }} · {{ task.routingDecision.fallback || t('projectAgents.notReported') }}</small></div><div class="project-agent-execution-line"><span>{{ t('projectAgents.fields.actualExecution') }}</span><strong v-if="actualExecution(task)">{{ actualExecution(task)?.executor || actualExecution(task)?.provider || t('projectAgents.notReported') }} / {{ actualExecution(task)?.model || t('projectAgents.notReported') }} / {{ sourceLabel(actualExecution(task)?.client) }}</strong><span v-else>{{ t('projectAgents.detail.notReportedActualExecution') }}</span><small v-if="actualExecution(task)?.rule || actualExecution(task)?.fallback">{{ actualExecution(task)?.rule || t('projectAgents.notReported') }} · {{ actualExecution(task)?.fallback || t('projectAgents.notReported') }}</small></div><small v-if="task.runId">{{ t('projectAgents.fields.run') }} · {{ task.runId }}</small><small v-else>{{ t('projectAgents.detail.noRun') }}</small></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.detail.noTasks') }}</p></section>
           </ProjectAgentDetailState>
         </div>
 
@@ -1023,27 +1116,28 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
 </template>
 
 <style scoped>
+.project-agent-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .project-agents-view { min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 18px 32px 20px; overflow: hidden; }
 .project-agents-header, .project-agent-section-heading, .project-agent-section-tools, .project-agent-detail-actions, .project-agent-assignment-card header, .project-agent-task-card header, .project-agent-learning-card header, .project-agent-day-detail header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .project-agents-header h2 { color: #283a31; font-size: 18px; }
 .project-agents-header-meta { color: #7a847d; font-size: 10px; }
-.project-agents-summary { display: flex; gap: 18px; padding: 9px 14px; border: 1px solid #d6ddd8; border-radius: 10px; background: #f9faf9; color: #737d76; font-size: 11px; }
+.project-agents-summary { display: flex; gap: 18px; padding: 2px 0 4px; color: #58675d; font-size: 12px; line-height: 1.5; }
 .project-agents-summary span:first-child { color: #2f493b; font-weight: 700; }
-.project-agent-add { border: 0; border-radius: 8px; background: #344c3d; color: #fff; padding: 8px 13px; font-size: 11px; font-weight: 700; }
+.project-agent-add { min-height: 40px; border: 0; border-radius: 8px; background: #344c3d; color: #fff; padding: 9px 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .project-agent-add:hover { background: #2b4234; }
 .project-agent-add:focus-visible, .quiet-button:focus-visible { outline: 2px solid #91a398; outline-offset: 2px; }
 .project-agent-add:disabled { cursor: not-allowed; opacity: .55; }
-.project-agents-toolbar { display: grid; grid-template-columns: minmax(220px, 300px) minmax(240px, 1fr) auto; align-items: center; gap: 10px; }
-.project-agents-search input { width: 100%; min-height: 34px; border: 1px solid #cfd7d1; border-radius: 8px; background: #fff; color: #2e3932; padding: 7px 10px; font-size: 11px; }
+.project-agents-toolbar { display: grid; grid-template-columns: minmax(240px, 320px) minmax(200px, 1fr) auto; align-items: center; gap: 12px; }
+.project-agents-search input { width: 100%; min-height: 44px; border: 1px solid #cfd7d1; border-radius: 8px; background: #fff; color: #2e3932; padding: 10px 12px; font-size: 13px; }
 .project-agents-search input:focus-visible { outline: 2px solid #91a398; outline-offset: 1px; }
 .project-agents-status-filter { display: flex; gap: 3px; padding: 3px; border: 1px solid #d8ded9; border-radius: 8px; background: #f5f7f5; }
-.project-agents-status-filter button, .quiet-button { border: 0; border-radius: 6px; background: transparent; color: #6d7770; padding: 6px 9px; font-size: 10px; }
+.project-agents-status-filter button, .quiet-button { min-height: 34px; border: 0; border-radius: 6px; background: transparent; color: #58675d; padding: 7px 10px; font-size: 12px; cursor: pointer; }
 .project-agents-status-filter button[aria-pressed='true'] { background: #fff; color: #315440; box-shadow: 0 1px 3px rgb(39 57 47 / 12%); font-weight: 700; }
 .project-agents-directory { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(360px, .94fr) minmax(390px, 1.06fr); overflow: hidden; border: 1px solid #cfd7d1; border-radius: 10px; background: #fff; }
 .project-agent-list { min-width: 0; min-height: 0; overflow: auto; border-right: 1px solid #dfe4e0; }
 .project-agent-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 14px; padding: 14px 16px; border: 0; border-bottom: 1px solid #e6eae7; background: #fff; color: inherit; text-align: left; }
 .project-agent-row:hover { background: #f7f9f7; }
-.project-agent-row.selected { background: #edf3ef; box-shadow: inset 3px 0 #64816f; }
+.project-agent-row.selected { background: #edf3ef; }
 .project-agent-row:focus-visible { position: relative; z-index: 1; outline: 2px solid #91a398; outline-offset: -3px; }
 .project-agent-row-heading { min-width: 0; display: flex; align-items: center; gap: 7px; }
 .project-agent-occupation-emoji { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 1.2em; font-size: 15px; line-height: 1; }
@@ -1062,6 +1156,18 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
 .project-agent-row-capabilities { grid-column: 1 / -1; min-height: 20px; display: flex; flex-wrap: wrap; gap: 5px; }
 .project-agent-row-capabilities b { border-radius: 999px; background: #f1f3f1; color: #68736c; padding: 3px 7px; font-size: 9px; font-weight: 650; }
 .project-agent-detail { min-width: 0; min-height: 0; padding: 20px; overflow: auto; container-type: inline-size; }
+.employee-project-overview { margin: 22px 0; padding-bottom: 18px; border-bottom: 1px solid #e1e6e2; }
+.employee-project-overview-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.employee-project-overview-heading h4 { margin: 0; color: #33483c; font-size: 14px; }
+.employee-project-overview-heading p, .employee-project-overview-hint { margin: 5px 0 0; color: #58675d; font-size: 12px; line-height: 1.6; }
+.employee-project-overview-hint { margin-top: 12px; }
+.employee-assigned-projects { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 20px; margin-top: 12px; }
+.employee-assigned-projects a { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; color: #315c43; font-size: 13px; line-height: 1.5; text-decoration: none; }
+.employee-assigned-projects a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.employee-assigned-projects a:focus-visible { outline: 2px solid #91a398; outline-offset: 3px; }
+.employee-assigned-projects a span { overflow-wrap: anywhere; }
+.employee-assigned-projects svg { flex-shrink: 0; }
+@container (max-width: 480px) { .employee-assigned-projects { grid-template-columns: minmax(0, 1fr); } }
 .project-agent-detail > header { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: flex-start; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid #e1e6e2; }
 .project-agent-detail-heading { min-width: 0; }.project-agent-detail h3 { color: #263b30; font-size: 17px; line-height: 1.32; text-wrap: balance; }.project-agent-detail header p { max-width: 72ch; margin-top: 5px; color: #7a847d; font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }.project-agent-detail-actions { display: grid; grid-auto-flow: column; grid-auto-columns: 78px; justify-content: end; gap: 8px; }.project-agent-detail-actions .quiet-button { width: 78px; white-space: nowrap; }
 .project-agent-detail-meta, .project-agent-compact-meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 16px 0 0; }
@@ -1081,25 +1187,51 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
 .project-agents-state p { max-width: 52ch; line-height: 1.6; }
 .project-agents-state.is-error { color: #8b3f38; }
 .project-agent-assignment-list, .project-agent-task-list, .project-agent-learning-list, .project-agent-recruitment-list { display: grid; gap: 8px; margin-top: 9px; }
-.project-agent-execution-summary { margin-top: 13px; padding-top: 12px; border-top: 1px solid #dfe5e0; }
+.project-agent-task-list { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.project-agent-execution-summary { min-width: 0; margin-top: 13px; padding-top: 12px; border-top: 1px solid #dfe5e0; }
 .project-agent-worker-event-evidence { margin-top: 13px; padding: 10px 10px 0; border: 1px dashed #d8dfd9; border-radius: 8px; background: #f8faf8; }
 .project-agent-execution-summary .project-agent-section-heading { gap: 8px; }
-.project-agent-execution-summary h5 { margin: 0; color: #65736a; font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.project-agent-execution-summary h5 { margin: 0; color: #65736a; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.project-agent-execution-summary-table-wrap { box-sizing: border-box; width: 100%; max-width: 100%; margin-top: 7px; overflow-x: auto; overscroll-behavior-inline: contain; border: 1px solid #dce3de; border-radius: 8px; background: #fff; }
+.project-agent-execution-summary-table-wrap:focus-visible { outline: 2px solid #91a398; outline-offset: 2px; }
+.project-agent-execution-summary-table { width: 100%; min-width: 1040px; border-collapse: collapse; table-layout: fixed; color: #4f5e54; font-size: 12px; line-height: 1.5; }
+.project-agent-execution-summary-table th, .project-agent-execution-summary-table td { min-width: 0; padding: 8px 9px; border-right: 1px solid #e6ebe7; border-bottom: 1px solid #e6ebe7; overflow-wrap: anywhere; text-align: left; vertical-align: top; }
+.project-agent-execution-summary-table tr > :last-child { border-right: 0; }
+.project-agent-execution-summary-table tbody tr:last-child > * { border-bottom: 0; }
+.project-agent-execution-summary-table thead th { background: #f3f6f4; color: #65736a; font-size: 11px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+.project-agent-execution-summary-table thead th:nth-child(1) { width: 14%; }
+.project-agent-execution-summary-table thead th:nth-child(2) { width: 20%; }
+.project-agent-execution-summary-table thead th:nth-child(3) { width: 13%; }
+.project-agent-execution-summary-table thead th:nth-child(4) { width: 15%; }
+.project-agent-execution-summary-table thead th:nth-child(5) { width: 15%; }
+.project-agent-execution-summary-table thead th:nth-child(6) { width: 12%; }
+.project-agent-execution-summary-table tbody tr:hover { background: #fafcfb; }
+.project-agent-execution-summary-table tbody th { color: #3f5647; font-weight: 700; }
+.project-agent-execution-summary-table tbody strong, .project-agent-execution-summary-table tbody span, .project-agent-execution-summary-table tbody small, .project-agent-execution-summary-table tbody a { display: block; }
+.project-agent-execution-summary-table tbody small { margin-top: 3px; color: #647168; font-size: 11px; font-weight: 500; }
+.project-agent-execution-summary-table tbody .project-agent-reporter-label { margin-top: 8px; }
+.project-agent-execution-summary-table tbody a { margin-top: 3px; color: #386c50; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.project-agent-execution-summary-table tbody a:focus-visible { border-radius: 2px; outline: 2px solid #91a398; outline-offset: 2px; }
+.project-agent-execution-worker { display: flex !important; align-items: center; gap: 4px; }
+.project-agent-execution-summary-row i { display: inline-flex; border-radius: 999px; background: #e6eae7; color: #66716a; padding: 2px 6px; font-size: 11px; font-style: normal; font-weight: 700; }
+.project-agent-execution-summary-row i.is-completed { background: #e1eee6; color: #2f6947; }
+.project-agent-execution-summary-row i.is-failed { background: #f7e9e6; color: #8c4f49; }
+.project-agent-execution-summary-row i.is-cancelled { background: #eeeae5; color: #75695d; }
 .project-agent-execution-summary-list { display: grid; margin: 7px 0 0; padding: 0; list-style: none; }
-.project-agent-execution-summary-row { min-width: 0; padding: 10px 0; border-top: 1px solid #e6ebe7; }.project-agent-execution-summary-row:first-child { border-top: 0; }
-.project-agent-execution-summary-row header { align-items: flex-start; }
-.project-agent-execution-summary-row header strong { min-width: 0; display: flex; align-items: center; gap: 5px; overflow-wrap: anywhere; color: #3f5647; font-size: 10px; }
-.project-agent-execution-summary-row header strong small { display: inline; margin: 0; color: #89948c; font-size: 8px; font-weight: 500; }
-.project-agent-execution-summary-row header i { flex: 0 0 auto; border-radius: 999px; background: #e6eae7; color: #66716a; padding: 2px 6px; font-size: 8px; font-style: normal; font-weight: 700; }
-.project-agent-execution-summary-row header i.is-completed { background: #e1eee6; color: #2f6947; }
-.project-agent-execution-summary-row header i.is-failed { background: #f7e9e6; color: #8c4f49; }
-.project-agent-execution-summary-row header i.is-cancelled { background: #eeeae5; color: #75695d; }
+.project-agent-worker-event-row { min-width: 0; padding: 10px 0; border-top: 1px solid #e6ebe7; }.project-agent-worker-event-row:first-child { border-top: 0; }
+.project-agent-worker-event-row header { align-items: flex-start; }
+.project-agent-worker-event-row header strong { min-width: 0; display: flex; align-items: center; gap: 5px; overflow-wrap: anywhere; color: #3f5647; font-size: 10px; }
+.project-agent-worker-event-row header strong small { display: inline; margin: 0; color: #89948c; font-size: 8px; font-weight: 500; }
+.project-agent-worker-event-row header i { flex: 0 0 auto; border-radius: 999px; background: #e6eae7; color: #66716a; padding: 2px 6px; font-size: 8px; font-style: normal; font-weight: 700; }
+.project-agent-worker-event-row header i.is-completed { background: #e1eee6; color: #2f6947; }
+.project-agent-worker-event-row header i.is-failed { background: #f7e9e6; color: #8c4f49; }
+.project-agent-worker-event-row header i.is-cancelled { background: #eeeae5; color: #75695d; }
 .project-agent-execution-summary-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 10px; margin: 8px 0 0; }
 .project-agent-execution-summary-meta div { min-width: 0; }
 .project-agent-execution-summary-meta dt { color: #89948c; font-size: 8px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .project-agent-execution-summary-meta dd { margin: 2px 0 0; overflow-wrap: anywhere; color: #4f5e54; font-size: 9px; line-height: 1.45; }
 .project-agent-execution-summary-meta dd small { display: block; margin-top: 2px; color: #89948c; font-size: 8px; }
-.project-agent-assignment-card, .project-agent-task-card, .project-agent-learning-card { padding: 11px 12px; border: 1px solid #e0e6e1; border-radius: 9px; background: #fbfcfb; }
+.project-agent-assignment-card, .project-agent-task-card, .project-agent-learning-card { min-width: 0; padding: 11px 12px; border: 1px solid #e0e6e1; border-radius: 9px; background: #fbfcfb; }
 .project-agent-recruitment-card { padding: 11px 12px; border: 1px solid #e0e6e1; border-radius: 9px; background: #fbfcfb; }
 .project-agent-assignment-card header strong, .project-agent-task-card header strong, .project-agent-learning-card header strong { color: #33483a; font-size: 11px; }
 .project-agent-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: wrap; }
@@ -1109,7 +1241,7 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
 .project-agent-strategy-note, .project-agent-execution-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; margin-top: 8px; color: #7a847d; font-size: 9px; }
 .project-agent-strategy-note strong, .project-agent-execution-line strong { color: #53685a; font-size: 10px; }
 .project-agent-strategy-note small { flex-basis: 100%; color: #8c5d54; }
-.project-agent-routing-decision { display: grid; gap: 5px; margin-top: 10px; padding: 9px 10px; border-left: 3px solid #7c9c86; border-radius: 0 7px 7px 0; background: #f3f7f3; color: #65736a; font-size: 9px; }
+.project-agent-routing-decision { display: grid; gap: 5px; margin-top: 10px; padding: 9px 10px; border: 1px solid #dce5de; border-radius: 7px; background: #f3f7f3; color: #65736a; font-size: 9px; }
 .project-agent-routing-decision .project-agent-section-heading { align-items: baseline; gap: 8px; }
 .project-agent-routing-decision .project-agent-section-heading strong { color: #3f604b; font-size: 10px; }
 .project-agent-routing-decision small { color: #65736a; line-height: 1.45; }
@@ -1131,5 +1263,5 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (max-width: 1180px) { .project-agents-toolbar { grid-template-columns: minmax(220px, 280px) 1fr; }.project-agents-status-filter { grid-column: 1 / -1; justify-self: start; }.project-agents-directory { grid-template-columns: minmax(320px, .9fr) minmax(330px, 1fr); }.project-agent-detail-meta, .project-agent-compact-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @container (max-width: 420px) { .project-agent-detail > header { grid-template-columns: minmax(0, 1fr); }.project-agent-detail-actions { justify-content: start; } }
-@media (max-width: 760px) { .project-agents-view { padding: 14px 16px 18px; overflow: auto; }.project-agents-header, .project-agents-summary, .project-agent-section-heading, .project-agent-assignment-card header { align-items: flex-start; flex-wrap: wrap; }.project-agents-toolbar { grid-template-columns: minmax(0, 1fr); }.project-agents-project-filter, .project-agents-search, .project-agents-status-filter { grid-column: 1; }.project-agents-status-filter { width: 100%; justify-self: stretch; flex-wrap: wrap; }.project-agents-directory { flex: 0 0 auto; grid-template-columns: minmax(0, 1fr); overflow: visible; }.project-agent-list { max-height: 340px; border-right: 0; border-bottom: 1px solid #dfe4e0; }.project-agent-detail { min-height: 520px; padding: 16px; }.project-agent-client-row, .project-agent-rule-row, .project-agent-executor-row { grid-template-columns: minmax(0, 1fr); align-items: start; }.project-agent-client-row small, .project-agent-executor-row small { grid-column: 1; }.project-agent-execution-summary-meta { grid-template-columns: minmax(0, 1fr); }.project-agent-execution-summary-row header { gap: 8px; } }
+@media (max-width: 760px) { .project-agents-view { padding: 14px 16px 18px; overflow: auto; }.project-agents-header, .project-agents-summary, .project-agent-section-heading, .project-agent-assignment-card header { align-items: flex-start; flex-wrap: wrap; }.project-agents-toolbar { grid-template-columns: minmax(0, 1fr); }.project-agents-project-filter, .project-agents-search, .project-agents-status-filter { grid-column: 1; }.project-agents-status-filter { width: 100%; justify-self: stretch; flex-wrap: wrap; }.project-agents-directory { flex: 0 0 auto; grid-template-columns: minmax(0, 1fr); overflow: visible; }.project-agent-list { max-height: 340px; border-right: 0; border-bottom: 1px solid #dfe4e0; }.project-agent-detail { min-height: 520px; padding: 16px; }.project-agent-client-row, .project-agent-rule-row, .project-agent-executor-row { grid-template-columns: minmax(0, 1fr); align-items: start; }.project-agent-client-row small, .project-agent-executor-row small { grid-column: 1; }.project-agent-execution-summary-meta { grid-template-columns: minmax(0, 1fr); }.project-agent-worker-event-row header { gap: 8px; } }
 </style>

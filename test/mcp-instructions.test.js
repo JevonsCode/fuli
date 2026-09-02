@@ -9,9 +9,9 @@ test('MCP instructions support hook-provided task context and an exact fallback 
   assert.match(MCP_INSTRUCTIONS, /begin_task_context/i);
   assert.match(MCP_INSTRUCTIONS, /hook-provided task context/i);
   assert.match(MCP_INSTRUCTIONS, /get_collaboration_preferences/);
-  assert.match(MCP_INSTRUCTIONS, /otherwise.*call exactly get_collaboration_preferences/is);
+  assert.match(MCP_INSTRUCTIONS, /else.*call exactly get_collaboration_preferences/is);
   assert.match(MCP_INSTRUCTIONS, /never substitute.*project action/i);
-  assert.match(MCP_INSTRUCTIONS, /before other tools\/answer.*fallback/is);
+  assert.match(MCP_INSTRUCTIONS, /else before tools\/answer call exactly/is);
   assert.match(MCP_INSTRUCTIONS, /projectPath=cwd/i);
   assert.match(MCP_INSTRUCTIONS, /taskPrompt=current user request/i);
   assert.match(MCP_INSTRUCTIONS, /all effective_preferences/i);
@@ -19,13 +19,13 @@ test('MCP instructions support hook-provided task context and an exact fallback 
   assert.match(MCP_INSTRUCTIONS, /writes?.*actual payload/i);
   assert.match(MCP_INSTRUCTIONS, /final text.*not compliance/i);
   assert.match(MCP_INSTRUCTIONS, /get_user_taste_skill/);
-  assert.match(MCP_INSTRUCTIONS, /never replaces a user-authored Skill/i);
+  assert.match(MCP_INSTRUCTIONS, /never replaces user Skill/i);
   assert.match(MCP_INSTRUCTIONS, /never guess personalProjectId/i);
   assert.match(MCP_INSTRUCTIONS, /search_current_project_knowledge/i);
   assert.match(MCP_INSTRUCTIONS, /task_knowledge_recall/i);
-  assert.match(MCP_INSTRUCTIONS, /stable project fact or method/i);
-  assert.match(MCP_INSTRUCTIONS, /focused action, artifact, target-system, or identifier queries/i);
-  assert.match(MCP_INSTRUCTIONS, /never use the whole conversational request as the only query/i);
+  assert.match(MCP_INSTRUCTIONS, /stable project fact\/method/i);
+  assert.match(MCP_INSTRUCTIONS, /focused action\/artifact\/target\/ID queries/i);
+  assert.match(MCP_INSTRUCTIONS, /never only the full request/i);
   assert.match(MCP_INSTRUCTIONS, /search_knowledge_graph/i);
   assert.match(MCP_INSTRUCTIONS, /search_connected_knowledge/i);
   assert.match(MCP_INSTRUCTIONS, /agent_decide.*response-only/i);
@@ -37,7 +37,7 @@ test('MCP instructions support hook-provided task context and an exact fallback 
   assert.match(MCP_INSTRUCTIONS, /match.*candidate only/i);
   assert.match(
     MCP_INSTRUCTIONS,
-    /supports the answer.*sourceMarker.*otherwise.*noMatchSourceMarker/is
+    /If supported.*sourceMarker.*otherwise.*noMatchSourceMarker/is
   );
   assert.match(
     MCP_INSTRUCTIONS,
@@ -50,8 +50,15 @@ test('MCP instructions support hook-provided task context and an exact fallback 
   assert.match(MCP_INSTRUCTIONS, /occupation.*emoji/i);
   assert.match(MCP_INSTRUCTIONS, /actual.*executor.*sourceApplication|sourceApplication.*actual/i);
   assert.match(MCP_INSTRUCTIONS, /configured.*(?:allowed|available).*not.*evidence/i);
-  assert.match(MCP_INSTRUCTIONS, /empty.*executionSummary.*omit|omit.*empty.*executionSummary/i);
+  assert.match(MCP_INSTRUCTIONS, /executionSummary:.*Empty: omit/is);
   assert.match(MCP_INSTRUCTIONS, /coordinate_project_agent_task/);
   assert.match(MCP_INSTRUCTIONS, /Fuli never spawns/i);
   assert.match(MCP_INSTRUCTIONS, /release_runtime_lease.*finally/i);
+  assert.match(MCP_INSTRUCTIONS, /project_management_context: actionable work via authorized manager\+board/i);
+  assert.match(MCP_INSTRUCTIONS, /keep chosen specialist; no excluded projects\/extra model/i);
+  assert.match(MCP_INSTRUCTIONS, /exact current native session, host rename tool, manual-title protection/i);
+  assert.match(MCP_INSTRUCTIONS, /receipt after actual client result/i);
+  assert.match(MCP_INSTRUCTIONS, /all workerStatus terminal/i);
+  assert.match(MCP_INSTRUCTIONS, /source-labelled cumulative tokens/i);
+  assert.match(MCP_INSTRUCTIONS, /Missing=unknown; no invent\/estimate\/copy totals/i);
 });

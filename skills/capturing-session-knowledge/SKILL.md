@@ -243,14 +243,26 @@ including concrete worker identity. Call `record_project_agent_executor_actual` 
 executor/model use. If the host cannot start a worker, report the task as blocked or failed and do
 not fabricate an execution-summary row. The Provider's `executionSummary` remains authoritative.
 
+Keep per-worker completion separate from the global task transition. While parallel work is still
+being integrated, report each worker's terminal result in `workerStatus` and keep the task status
+`running`; this preserves one terminal execution-summary row per actual worker. Only after every
+required worker or participant result has been recorded should the coordinator send the final task
+`completed`, `failed`, or `cancelled` activity. Never let the first completed worker close the task
+before the remaining workers have reported their tools, session evidence, and exact Token usage.
+
 ## Report Actual Worker Execution
 
-When a FULI task or task view returns a non-empty Provider `executionSummary`, append one row per worker.
-Include the worker label and occupation emoji, actual executor and `sourceApplication` environment,
-work summary, and `workerStatus`/terminal status. This applies only to Provider-reported actual workers.
-When empty `executionSummary` is returned, omit rows; an absent `executionSummary` also omits rows.
-Configured, allowed, or available clients/executors are not evidence of actual use. Keep this
-Agent-agnostic; client-specific details and work-kind routing remain at adapter boundaries.
+When a FULI task or task view returns a non-empty Provider `executionSummary`, append a compact
+Markdown table with one row per actual worker. Include the worker label and occupation emoji,
+actual executor/tool plus `sourceApplication`, work summary, terminal `workerStatus`/status,
+session (`sourceSessionId`, or a session link only when the Provider supplies one), and Token usage.
+Use only the source-labelled cumulative `tokenUsage` reported for that worker. If it is absent,
+show `not reported`; never estimate it or copy a conversation-wide total into a worker row. If no
+session link exists, show `sourceSessionId` or `not reported`; never invent a link. This applies only
+to Provider-reported actual workers. When empty `executionSummary` is returned, omit rows; an absent
+`executionSummary` also omits rows. Configured, allowed, or available clients/executors are not evidence
+of actual use. Keep this Agent-agnostic; client-specific details and work-kind routing remain at
+adapter boundaries.
 
 ## Classify Knowledge State
 

@@ -4,8 +4,11 @@ import test from 'node:test';
 import { GraphitiProviderClient } from '../src/graphiti/provider-client.js';
 import {
   executorRecord,
+  projectAgentActivityRecord,
   projectAgentCoordinationPolicyRecord,
+  projectAgentRecruitmentPolicyRecord,
   projectAgentProfileRecord,
+  projectAgentTaskRouteResult,
   projectAgentTaskRecord,
   providerExecutor,
   providerExecutorActualReport,
@@ -15,6 +18,7 @@ import {
   providerExecutorRoutingRule,
   providerProjectAgentCoordinationPolicy,
   providerProjectAgentProfile,
+  providerProjectAgentTaskSubmit,
   providerProjectAgentTaskActivity
 } from '../src/graphiti/project-agent-mapping.js';
 import {
@@ -25,8 +29,53 @@ import {
 import {
   listExecutors,
   listProjectAgentRoutingLearning,
-  resetProjectAgentRoutingLearning
+  resetProjectAgentRoutingLearning,
+  viewProjectAgentActivity,
+  viewProjectAgentTask
 } from '../src/graphiti/project-agent-workflows.js';
+
+test('legacy recruitment policy warnings survive the Node mapping', () => {
+  const warning = 'Use update_project_agent_coordination_policy for the exact project.';
+  const mapped = projectAgentRecruitmentPolicyRecord({
+    personal_space_id: 'space-1', confirmation_mode: 'automatic',
+    policy_status: 'superseded', applies_to_recruitment: false, warning
+  });
+  assert.equal(mapped.policyStatus, 'superseded');
+  assert.equal(mapped.appliesToRecruitment, false);
+  assert.equal(mapped.warning, warning);
+  assert.equal('policyStatus' in projectAgentRecruitmentPolicyRecord({
+    personal_space_id: 'legacy-provider'
+  }), false, 'old Provider metadata is unknown, not fabricated');
+});
+
+test('task route mapping preserves every recruitment slot for new clients', () => {
+  const route = projectAgentTaskRouteResult({
+    task: {},
+    recruitment: { recruitment_id: 'lead-recruitment' },
+    recruitments: [{
+      recruitment_id: 'lead-recruitment',
+      participant_role: 'lead',
+      recruitment_slot: 'lead'
+    }, {
+      recruitment_id: 'collaborator-recruitment',
+      participant_role: 'collaborator',
+      recruitment_slot: 'collaborator-1'
+    }]
+  });
+
+  assert.equal(route.recruitment.recruitmentId, 'lead-recruitment');
+  assert.deepEqual(
+    route.recruitments.map(({ recruitmentId, participantRole, recruitmentSlot }) => [
+      recruitmentId,
+      participantRole,
+      recruitmentSlot
+    ]),
+    [
+      ['lead-recruitment', 'lead', 'lead'],
+      ['collaborator-recruitment', 'collaborator', 'collaborator-1']
+    ]
+  );
+});
 
 test('control-plane provider client uses durable task and activity routes', async () => {
   const calls = [];
@@ -51,8 +100,13 @@ test('control-plane provider client uses durable task and activity routes', asyn
     status: 'completed',
     summary: 'verified'
   });
+  await client.viewProjectAgentTask('space-1', 'task-1', {
+    personalProjectId: 'project-1',
+    includeEvents: false
+  });
   await client.listProjectAgentActivity({
     personalSpaceId: 'space-1',
+    personalProjectId: 'project-1',
     agentId: 'agent-1',
     fromDate: '2026-08-01',
     toDate: '2026-08-17'
@@ -64,6 +118,7 @@ test('control-plane provider client uses durable task and activity routes', asyn
     '/v1/project-agents/agent-1',
     '/v1/project-agents/test-cleanup',
     '/v1/project-agent-tasks/task-1/events',
+    '/v1/project-agent-tasks/task-1',
     '/v1/project-agents/agent-1/activity'
   ]);
   assert.deepEqual(calls[1].query, {
@@ -75,9 +130,53 @@ test('control-plane provider client uses durable task and activity routes', asyn
   });
   assert.deepEqual(calls[5].query, {
     personal_space_id: 'space-1',
+    personal_project_id: 'project-1',
+    include_events: 'false'
+  });
+  assert.deepEqual(calls[6].query, {
+    personal_space_id: 'space-1',
+    personal_project_id: 'project-1',
     from: '2026-08-01',
     to: '2026-08-17'
   });
+});
+
+test('project-bound task and activity workflows preserve the project scope', async () => {
+  const calls = [];
+  const application = {
+    personal: {
+      viewProjectAgentTask: async (...args) => {
+        calls.push(['task', ...args]);
+        return { task_id: 'task-1' };
+      },
+      listProjectAgentActivity: async (input) => {
+        calls.push(['activity', input]);
+        return {
+          agent_id: 'agent-1', personal_space_id: 'space-1',
+          from_date: '2026-08-01', to_date: '2026-08-17', days: []
+        };
+      }
+    }
+  };
+
+  await viewProjectAgentTask(application, {
+    personalSpaceId: 'space-1', personalProjectId: 'project-1',
+    taskId: 'task-1', includeEvents: false
+  });
+  await viewProjectAgentActivity(application, {
+    personalSpaceId: 'space-1', personalProjectId: 'project-1',
+    agentId: 'agent-1', fromDate: '2026-08-01', toDate: '2026-08-17'
+  });
+
+  assert.deepEqual(calls, [
+    ['task', 'space-1', 'task-1', {
+      personalProjectId: 'project-1', includeEvents: false
+    }],
+    ['activity', {
+      personalSpaceId: 'space-1', personalProjectId: 'project-1',
+      agentId: 'agent-1', fromDate: '2026-08-01', toDate: '2026-08-17'
+    }]
+  ]);
 });
 
 test('project coordination policy stays project-local across provider seams', async () => {
@@ -379,6 +478,95 @@ test('task activity mapping sends actual executor fields and no inferred satisfa
   });
 });
 
+test('activity history exposes session links and concrete tools without inference', () => {
+  const activity = projectAgentActivityRecord({
+    agent_id: 'agent-1',
+    personal_space_id: 'space-1',
+    from_date: '2026-08-28',
+    to_date: '2026-08-28',
+    days: [{
+      date: '2026-08-28',
+      completed: 1,
+      total: 1,
+      tasks: [{
+        task_id: 'task-1',
+        title: 'Evidence task',
+        status: 'completed',
+        summary: 'Verified.',
+        occurred_at: '2026-08-28T00:00:00Z',
+        source_session_url: 'codex://threads/01234567-89ab-cdef-0123-456789abcdef',
+        tools_used: ['pytest', 'rg']
+      }]
+    }]
+  });
+
+  assert.equal(
+    activity.days[0].tasks[0].sourceSessionUrl,
+    'codex://threads/01234567-89ab-cdef-0123-456789abcdef'
+  );
+  assert.deepEqual(activity.days[0].tasks[0].toolsUsed, ['pytest', 'rg']);
+});
+
+test('activity history preserves worker and executor audit fields', () => {
+  const activity = projectAgentActivityRecord({
+    days: [{
+      tasks: [{
+        task_id: 'task-worker-1',
+        title: 'Worker task',
+        status: 'completed',
+        summary: 'done',
+        occurred_at: '2026-08-30T00:00:00Z',
+        worker_id: 'worker-1',
+        worker_label: '验证工位',
+        worker_occupation_emoji: '🔌',
+        worker_status: 'completed',
+        selected_executor_id: 'codex-local',
+        executor_rule_id: 'rule-1',
+        actual_executor_id: 'codex-local',
+        executor_selection_reason: 'preferred executor',
+        executor_fallback_reason: 'fallback reason',
+        executor_fallback_outcome: 'fallback outcome',
+        executor_blocked_reason: 'blocked reason',
+        executor_decision: 'selected',
+        audit_id: 'audit-1'
+      }]
+    }]
+  });
+
+  assert.deepEqual(activity.days[0].tasks[0], {
+    taskId: 'task-worker-1',
+    title: 'Worker task',
+    status: 'completed',
+    summary: 'done',
+    occurredAt: '2026-08-30T00:00:00Z',
+    workerId: 'worker-1',
+    workerLabel: '验证工位',
+    workerOccupationEmoji: '🔌',
+    workerStatus: 'completed',
+    sourceApplication: null,
+    sourceSessionId: null,
+    sourceSessionUrl: null,
+    toolsUsed: null,
+    actualExecutor: 'codex-local',
+    selectedExecutorId: 'codex-local',
+    executorRuleId: 'rule-1',
+    matchedExecutorRuleId: null,
+    executorSelectionReason: 'preferred executor',
+    executorFallbackReason: 'fallback reason',
+    executorFallbackOutcome: 'fallback outcome',
+    executorBlockedReason: 'blocked reason',
+    executorDecision: 'selected',
+    auditId: 'audit-1',
+    actualModelProvider: null,
+    actualModel: null,
+    tokenUsage: null,
+    executionSummary: [],
+    routingRuleId: null,
+    fallbackReason: 'fallback reason',
+    fallbackUsed: false
+  });
+});
+
 test('project Agent profiles expose an optional occupation emoji independently of name', () => {
   assert.equal(projectAgentProfile.properties.occupationEmoji.type.join(','), 'string,null');
   assert.equal(projectAgentProfile.required.includes('occupationEmoji'), false);
@@ -419,6 +607,52 @@ test('project Agent profiles expose an optional occupation emoji independently o
   );
 });
 
+test('task executor hints stay separate from Agent staffing capabilities', () => {
+  assert.equal(
+    projectAgentTaskSubmitInput.properties.executorCapabilityHints.type,
+    'array'
+  );
+  assert.deepEqual(providerProjectAgentTaskSubmit({
+    personalSpaceId: 'space-1',
+    personalProjectId: 'project-1',
+    idempotencyKey: 'separate-capabilities-1',
+    title: 'Verify executor routing',
+    objective: 'Keep domain expertise out of runtime capability gates.',
+    workKind: 'hotel-planning',
+    requiredCapabilities: ['hotel planning', 'research'],
+    executorCapabilityHints: ['testing'],
+    routingReason: 'Use separate routing vocabularies.'
+  }), {
+    personal_space_id: 'space-1',
+    personal_project_id: 'project-1',
+    idempotency_key: 'separate-capabilities-1',
+    title: 'Verify executor routing',
+    objective: 'Keep domain expertise out of runtime capability gates.',
+    work_kind: 'hotel-planning',
+    required_capabilities: ['hotel planning', 'research'],
+    executor_capability_hints: ['testing'],
+    duration: 'ongoing',
+    staffing_intent: 'reuse_preferred',
+    lead_agent_id: null,
+    collaborator_agent_ids: [],
+    coordinator_agent_id: null,
+    complexity_hint: null,
+    parallel_plan: {
+      enabled: false,
+      independent_verification: false,
+      conflict_free_scopes: false,
+      reason: null,
+      workstream_boundaries: []
+    },
+    model_strategy_override: null,
+    source_application: null,
+    source_session_id: null,
+    routing_reason: 'Use separate routing vocabularies.',
+    recruitment_profile: null,
+    executor_policy_override: null
+  });
+});
+
 test('task activity schema and mapping preserve optional concrete worker attribution', () => {
   assert.deepEqual(projectAgentTaskActivityInput.properties.workerId, {
     type: ['string', 'null'],
@@ -440,6 +674,14 @@ test('task activity schema and mapping preserve optional concrete worker attribu
     'awaiting_recruitment', 'queued', 'running', 'paused', 'failed',
     'awaiting_review', 'blocked', 'completed', 'cancelled'
   ]);
+  assert.deepEqual(projectAgentTaskActivityInput.properties.tokenUsage.required, [
+    'source', 'totalTokens'
+  ]);
+  assert.deepEqual(projectAgentTaskActivityInput.properties.tokenUsage.properties.source.enum, [
+    'executor', 'host', 'dingdong'
+  ]);
+  assert.equal(projectAgentTaskActivityInput.properties.sourceSessionUrl.maxLength, 2048);
+  assert.equal(projectAgentTaskActivityInput.properties.toolsUsed.maxItems, 32);
 
   assert.deepEqual(providerProjectAgentTaskActivity({
     personalSpaceId: 'space-1',
@@ -451,7 +693,16 @@ test('task activity schema and mapping preserve optional concrete worker attribu
     workerId: 'worker-1',
     workerLabel: '验证工位',
     workerOccupationEmoji: '🔌',
-    workerStatus: 'completed'
+    workerStatus: 'completed',
+    sourceSessionUrl: 'codex://threads/01234567-89ab-cdef-0123-456789abcdef',
+    toolsUsed: ['pytest', 'rg'],
+    tokenUsage: {
+      source: 'executor',
+      totalTokens: 150,
+      inputTokens: 100,
+      outputTokens: 50,
+      cachedInputTokens: 25
+    }
   }), {
     personal_space_id: 'space-1',
     personal_project_id: 'project-1',
@@ -463,6 +714,8 @@ test('task activity schema and mapping preserve optional concrete worker attribu
     actor_kind: 'agent',
     source_application: null,
     source_session_id: null,
+    source_session_url: 'codex://threads/01234567-89ab-cdef-0123-456789abcdef',
+    tools_used: ['pytest', 'rg'],
     actual_model_provider: null,
     actual_model: null,
     actual_executor_id: null,
@@ -473,7 +726,16 @@ test('task activity schema and mapping preserve optional concrete worker attribu
     worker_id: 'worker-1',
     worker_label: '验证工位',
     worker_occupation_emoji: '🔌',
-    worker_status: 'completed'
+    worker_status: 'completed',
+    token_usage: {
+      source: 'executor',
+      total_tokens: 150,
+      input_tokens: 100,
+      output_tokens: 50,
+      cached_input_tokens: 25,
+      cache_write_input_tokens: null,
+      reasoning_output_tokens: null
+    }
   });
 });
 
@@ -495,8 +757,20 @@ test('task view mapping exposes empty and provider-reported execution summaries 
       worker_occupation_emoji: '🔌',
       actual_executor_id: 'codex-local',
       source_application: 'codex',
+      source_session_id: 'session-worker-1',
+      source_session_url: 'codex://threads/01234567-89ab-cdef-0123-456789abcdef',
+      tools_used: ['pytest', 'rg'],
       summary: '运行了真实测试。',
-      worker_status: 'completed'
+      worker_status: 'completed',
+      token_usage: {
+        source: 'dingdong',
+        total_tokens: 1234,
+        input_tokens: 1200,
+        output_tokens: 34,
+        cached_input_tokens: 500,
+        cache_write_input_tokens: 0,
+        reasoning_output_tokens: 12
+      }
     }],
     events: [{
       event_id: 'event-real',
@@ -506,7 +780,14 @@ test('task view mapping exposes empty and provider-reported execution summaries 
       worker_id: 'worker-1',
       worker_label: '验证工位',
       worker_occupation_emoji: '🔌',
-      worker_status: 'completed'
+      worker_status: 'completed',
+      source_session_id: 'session-worker-1',
+      source_session_url: 'codex://threads/01234567-89ab-cdef-0123-456789abcdef',
+      tools_used: ['pytest'],
+      token_usage: {
+        source: 'dingdong',
+        total_tokens: 1234
+      }
     }]
   });
 
@@ -522,8 +803,20 @@ test('task view mapping exposes empty and provider-reported execution summaries 
     executorId: 'codex-local',
     actualExecutor: 'codex-local',
     sourceApplication: 'codex',
+    sourceSessionId: 'session-worker-1',
+    sourceSessionUrl: 'codex://threads/01234567-89ab-cdef-0123-456789abcdef',
+    toolsUsed: ['pytest', 'rg'],
     actualModelProvider: null,
     actualModel: null,
+    tokenUsage: {
+      source: 'dingdong',
+      totalTokens: 1234,
+      inputTokens: 1200,
+      outputTokens: 34,
+      cachedInputTokens: 500,
+      cacheWriteInputTokens: 0,
+      reasoningOutputTokens: 12
+    },
     workSummary: '运行了真实测试。',
     summary: '运行了真实测试。',
     status: 'completed',
@@ -531,6 +824,13 @@ test('task view mapping exposes empty and provider-reported execution summaries 
   }]);
   assert.equal(task.events[0].workerId, 'worker-1');
   assert.equal(task.events[0].workerStatus, 'completed');
+  assert.equal(task.events[0].sourceSessionId, 'session-worker-1');
+  assert.equal(
+    task.events[0].sourceSessionUrl,
+    'codex://threads/01234567-89ab-cdef-0123-456789abcdef'
+  );
+  assert.deepEqual(task.events[0].toolsUsed, ['pytest']);
+  assert.equal(task.events[0].tokenUsage.totalTokens, 1234);
 
   const providerShape = projectAgentTaskRecord({
     task_id: 'task-provider-shape',
@@ -555,9 +855,32 @@ test('task view mapping exposes empty and provider-reported execution summaries 
   assert.equal(providerShape.occupationEmoji, '🎭');
   assert.equal(providerShape.executor, 'Codex');
   assert.equal(providerShape.executorId, 'codex-local');
-  assert.equal(providerShape.actualExecutor, 'codex-local');
+  assert.equal(providerShape.actualExecutor, null);
   assert.equal(providerShape.workSummary, 'Provider reported the worker result.');
-  assert.equal(providerShape.workerStatus, 'completed');
+  assert.equal(providerShape.workerStatus, null);
+
+  const activityConfiguredOnly = projectAgentActivityRecord({
+    agent_id: 'agent-1',
+    personal_space_id: 'space-1',
+    days: [{
+      date: '2026-09-01',
+      tasks: [{
+        task_id: 'task-configured-only',
+        execution_summary: [{
+          executor: 'Codex',
+          executor_id: 'codex-local',
+          selected_executor_id: 'codex-local',
+          status: 'completed'
+        }]
+      }]
+    }]
+  });
+  const configuredOnlySummary = activityConfiguredOnly.days[0].tasks[0].executionSummary[0];
+  assert.equal(configuredOnlySummary.executor, 'Codex');
+  assert.equal(configuredOnlySummary.executorId, 'codex-local');
+  assert.equal(configuredOnlySummary.actualExecutor, null);
+  assert.equal(configuredOnlySummary.workerId, null);
+  assert.equal(configuredOnlySummary.workerStatus, null);
 });
 
 function providerClient(calls, routes) {

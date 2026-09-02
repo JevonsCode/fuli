@@ -11,7 +11,7 @@ import json
 from datetime import datetime
 from typing import Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AwareDatetime, Field, field_validator, model_validator
 
 from .model_validation import reject_credentials
 from .models import SourceApplication, StrictModel
@@ -81,6 +81,26 @@ ProjectAgentExecutorTerminalOutcome = Literal[
     'cancelled',
 ]
 
+_CAPABILITY_ALIASES = {
+    'code': 'coding',
+    'development': 'coding',
+    'implementation': 'coding',
+    'software_development': 'coding',
+    'software_implementation': 'coding',
+    'test': 'testing',
+    'tests': 'testing',
+    'run_test': 'testing',
+    'run_tests': 'testing',
+    'test_execution': 'testing',
+}
+
+
+def project_agent_capability_key(value: str) -> str:
+    """Return one provider-neutral key for common capability vocabulary."""
+
+    key = '_'.join(value.casefold().replace('-', ' ').split())
+    return _CAPABILITY_ALIASES.get(key, key)
+
 
 def project_agent_model_strategy_key(
     strategy: ProjectAgentModelStrategy,
@@ -92,7 +112,10 @@ def project_agent_model_strategy_key(
     # Canonicalizing them prevents equivalent provider-neutral strategies from
     # creating separate evidence/aggregate buckets.
     payload['capability_hints'] = sorted(
-        (value.casefold() for value in payload.get('capability_hints', [])),
+        (
+            project_agent_capability_key(value)
+            for value in payload.get('capability_hints', [])
+        ),
     )
     encoded = json.dumps(
         payload,
@@ -210,7 +233,7 @@ class ProjectAgentExecutorPreflightReport(StrictModel):
         max_length=64,
     )
     reason: str | None = Field(default=None, min_length=1, max_length=2048)
-    checked_at: datetime
+    checked_at: AwareDatetime
     idempotency_key: str = Field(min_length=8, max_length=256)
     source_application: SourceApplication | None = None
     source_session_id: str | None = Field(default=None, min_length=1, max_length=256)
@@ -238,7 +261,7 @@ class ProjectAgentExecutorHealthReport(StrictModel):
     executor_id: str = Field(min_length=1, max_length=128)
     status: ProjectAgentExecutorHealthStatus
     reason: str | None = Field(default=None, min_length=1, max_length=2048)
-    checked_at: datetime
+    checked_at: AwareDatetime
     idempotency_key: str = Field(min_length=8, max_length=256)
     source_application: SourceApplication | None = None
     source_session_id: str | None = Field(default=None, min_length=1, max_length=256)
@@ -277,6 +300,7 @@ class ProjectAgentExecutorRecord(StrictModel):
 
 
 class ProjectAgentExecutorPriorityUpdate(StrictModel):
+    personal_space_id: str = Field(min_length=1, max_length=128)
     executor_id: str = Field(min_length=1, max_length=128)
     global_priority: int = Field(ge=1, le=1_000_000)
     expected_revision: int = Field(ge=0)
@@ -453,7 +477,7 @@ class ProjectAgentExecutorActualReport(StrictModel):
     matched_rule_id: str | None = Field(default=None, min_length=1, max_length=128)
     fallback_reason: str | None = Field(default=None, min_length=1, max_length=2048)
     idempotency_key: str = Field(min_length=8, max_length=256)
-    occurred_at: datetime
+    occurred_at: AwareDatetime
     source_application: SourceApplication | None = None
     source_session_id: str | None = Field(default=None, min_length=1, max_length=256)
 
@@ -486,7 +510,7 @@ class ProjectAgentExecutorOutcomeEvidenceCreate(StrictModel):
     reference_ids: list[str] = Field(default_factory=list, max_length=16)
     note: str | None = Field(default=None, min_length=1, max_length=2048)
     idempotency_key: str = Field(min_length=8, max_length=256)
-    occurred_at: datetime
+    occurred_at: AwareDatetime
 
     @field_validator('reference_ids')
     @classmethod
@@ -537,6 +561,9 @@ class ProjectAgentExecutorOutcomeEvidenceRecord(
     # contract keeps this optional for backwards-compatible callers; the store
     # computes it before returning a durable record.
     model_strategy_key: str = Field(min_length=64, max_length=64)
+    # Legacy unknown-timezone records remain inspectable/ignorable; new writes
+    # require an explicit offset and must not guess the caller's local zone.
+    occurred_at: datetime
     evidence_id: str
     ignored: bool = False
     ignored_reason: str | None = None
@@ -579,6 +606,7 @@ class ProjectAgentExecutorOutcomeAggregate(StrictModel):
     evidence_contributions: list[ProjectAgentExecutorEvidenceContribution] = Field(
         default_factory=list
     )
+    validation_warnings: list[str] = Field(default_factory=list)
 
     @model_validator(mode='after')
     def validate_strategy_key(self):
@@ -619,7 +647,7 @@ class ProjectAgentExecutorOutcomeReset(StrictModel):
     )
     reason: str = Field(min_length=1, max_length=2048)
     idempotency_key: str = Field(min_length=8, max_length=256)
-    reset_at: datetime
+    reset_at: AwareDatetime
 
     @model_validator(mode='after')
     def reject_sensitive_values(self):

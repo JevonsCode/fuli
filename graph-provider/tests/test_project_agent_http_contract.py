@@ -31,3 +31,13 @@ def test_super_collaboration_http_contract_exposes_all_control_plane_layers():
 
     for path, methods in expected.items():
         assert methods <= set(paths[path])
+
+
+def test_role_working_memory_has_one_shared_read_write_contract():
+    application = create_app(Settings(
+        bootstrap_token='test-bootstrap-token-1234',
+        neo4j_password='test-password',
+    ))
+    contract = application.openapi()['paths']
+
+    assert {'get', 'put'} <= set(contract['/v1/project-agents/{agent_id}/memory'])
