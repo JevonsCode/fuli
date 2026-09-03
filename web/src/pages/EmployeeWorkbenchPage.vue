@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { getJson, postJson } from '@/api/client'
+import { getJson, patchJson, postJson } from '@/api/client'
 import EmployeeAllProjectsBoard, { type EmployeeBoardItem, type EmployeeBoardStatus, type EmployeeProjectBoard } from '@/features/employees/EmployeeAllProjectsBoard.vue'
 import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
 import { employeeAvatarUrl } from '@/features/employees/avatars'
@@ -134,6 +134,11 @@ function replaceBoardItem(projectId: string, itemId: string, replacement: Employ
     items: board.items.map((item) => item.id === itemId ? replacement : item),
   })
 }
+function taskMoveRequestId() {
+  const suffix = globalThis.crypto?.randomUUID?.()
+    ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `aggregate-board-move-${suffix}`
+}
 async function moveTask(item: EmployeeBoardItem, status: EmployeeBoardStatus) {
   if (item.status === status) return
   const key = boardItemKey(item)
@@ -142,17 +147,30 @@ async function moveTask(item: EmployeeBoardItem, status: EmployeeBoardStatus) {
   movingItemKeys.value = [...movingItemKeys.value, key]
   replaceBoardItem(item.projectId, item.id, optimistic)
   try {
-    const result = await postJson<{ updatedWorkItem?: EmployeeBoardItem; updatedWorkItems?: EmployeeBoardItem[] }>(`/api/employee-templates/${encodeURIComponent(templateId.value)}/call`, {
-      personalSpaceId: personalSpaceId.value,
-      personalProjectId: item.projectId,
-      tool: 'move_task',
-      arguments: {
-        workItemId: item.id,
-        status,
-        ...(item.updatedAt ? { expectedUpdatedAt: item.updatedAt } : {}),
-      },
-    })
-    const updated = result.updatedWorkItem ?? result.updatedWorkItems?.find((candidate) => candidate.id === item.id)
+    let updated: EmployeeBoardItem | undefined
+    if (templateId.value === 'jefa' && status === 'done') {
+      const result = await patchJson<{ workItem?: EmployeeBoardItem }>(
+        `/employee-workspaces/${encodeURIComponent(templateId.value)}/${encodeURIComponent(item.projectId)}/api/work-items/${encodeURIComponent(item.id)}/status`,
+        { status },
+      )
+      updated = result.workItem
+    } else {
+      if (!item.updatedAt) throw new Error(t('employees.allProjects.refreshRequired'))
+      const result = await postJson<{ updatedWorkItems?: EmployeeBoardItem[] }>(`/api/employee-templates/${encodeURIComponent(templateId.value)}/call`, {
+        personalSpaceId: personalSpaceId.value,
+        personalProjectId: item.projectId,
+        tool: 'update_tasks',
+        arguments: {
+          requestId: taskMoveRequestId(),
+          updates: [{
+            id: item.id,
+            expectedUpdatedAt: item.updatedAt,
+            status,
+          }],
+        },
+      })
+      updated = result.updatedWorkItems?.find((candidate) => candidate.id === item.id)
+    }
     replaceBoardItem(item.projectId, item.id, updated && isEmployeeBoardItem(updated) ? updated : optimistic)
   } catch (cause) {
     replaceBoardItem(item.projectId, item.id, item)

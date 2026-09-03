@@ -1,8 +1,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
-const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
-vi.mock('@/api/client', () => ({ getJson, postJson }))
+const { getJson, patchJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), patchJson: vi.fn(), postJson: vi.fn() }))
+vi.mock('@/api/client', () => ({ getJson, patchJson, postJson }))
 vi.mock('@/stores/console', () => ({ useConsoleStore: () => ({
   activePersonalSpace: { id: 'space-a' },
   state: { personalProjects: [{ project_id: 'project-a', profile: { name: '验收项目' } }] },
@@ -16,6 +16,7 @@ const mounted: Array<{ unmount: () => void }> = []
 beforeEach(async () => {
   await refreshEmployeeCatalog('')
   getJson.mockReset()
+  patchJson.mockReset()
   postJson.mockReset()
   postJson.mockImplementation(async (_url: string, body: { personalProjectId: string }) => ({
     project: { id: body.personalProjectId, name: body.personalProjectId },
@@ -147,12 +148,12 @@ describe('employee workbench', () => {
       ]
       return result
     })
-    postJson.mockImplementation(async (_url: string, body: { personalProjectId: string; tool: string; arguments?: Record<string, string> }) => {
-      if (body.tool === 'move_task') return {
-        updatedWorkItem: {
-          id: 'task-project-b', projectId: 'project-b', title: '准备发布', status: body.arguments?.status,
+    postJson.mockImplementation(async (_url: string, body: { personalProjectId: string; tool: string; arguments?: { updates?: Array<{ status: string }> } }) => {
+      if (body.tool === 'update_tasks') return {
+        updatedWorkItems: [{
+          id: 'task-project-b', projectId: 'project-b', title: '准备发布', status: body.arguments?.updates?.[0]?.status,
           updatedAt: '2026-09-03T01:00:00.000Z',
-        },
+        }],
       }
       return {
         project: { id: body.personalProjectId, name: body.personalProjectId },
@@ -173,14 +174,45 @@ describe('employee workbench', () => {
     expect(postJson).toHaveBeenLastCalledWith('/api/employee-templates/jefa/call', {
       personalSpaceId: 'space-a',
       personalProjectId: 'project-b',
-      tool: 'move_task',
+      tool: 'update_tasks',
       arguments: {
-        workItemId: 'task-project-b',
-        status: 'active',
-        expectedUpdatedAt: '2026-09-03T00:00:00.000Z',
+        requestId: expect.stringMatching(/^aggregate-board-move-/),
+        updates: [{
+          id: 'task-project-b',
+          status: 'active',
+          expectedUpdatedAt: '2026-09-03T00:00:00.000Z',
+        }],
       },
     })
     expect(board.props('boards').find((entry) => entry.project.id === 'project-b')!.items[0].status).toBe('active')
+  })
+  it('uses Jefa human confirmation when a task is moved to done', async () => {
+    postJson.mockImplementation(async (_url: string, body: { personalProjectId: string }) => ({
+      project: { id: body.personalProjectId, name: body.personalProjectId },
+      items: [{
+        id: 'task-project-a', projectId: 'project-a', title: '确认发布', status: 'review',
+        updatedAt: '2026-09-03T00:00:00.000Z',
+      }],
+      total: 1,
+      truncated: false,
+    }))
+    patchJson.mockResolvedValue({ workItem: {
+      id: 'task-project-a', projectId: 'project-a', title: '确认发布', status: 'done',
+      updatedAt: '2026-09-03T01:00:00.000Z',
+    } })
+    const wrapper = await setup('/employees/jefa')
+    const board = wrapper.getComponent(EmployeeAllProjectsBoard)
+    const item = board.props('boards')[0].items[0]
+
+    board.vm.$emit('move-task', item, 'done')
+    await flushPromises()
+
+    expect(patchJson).toHaveBeenCalledWith(
+      '/employee-workspaces/jefa/project-a/api/work-items/task-project-a/status',
+      { status: 'done' },
+    )
+    expect(postJson).toHaveBeenCalledTimes(1)
+    expect(board.props('boards')[0].items[0].status).toBe('done')
   })
   it('does not silently switch an unauthorized deep link to another project', async () => {
     const wrapper = await setup('/employees/jefa?project=project-b')
