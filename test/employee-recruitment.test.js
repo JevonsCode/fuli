@@ -146,7 +146,9 @@ test('all-except exclusions gate workspaces, tool calls, and task entry before t
     await assert.rejects(service[method]({ templateId: 'jefa', personalProjectId: 'project-b', tool: 'read_board' }), { code: 'assignment_required' });
   }
   assert.equal((await service.taskEntry({ personalProjectId: 'project-b' })).managers.length, 0);
-  assert.equal((await service.taskEntry({ personalProjectId: 'project-a' })).managers[0].template_id, 'jefa');
+  const taskEntry = await service.taskEntry({ personalProjectId: 'project-a' });
+  assert.equal(taskEntry.managers[0].template_id, 'jefa');
+  assert.match(taskEntry.managers[0].guidance, /end the user-facing response with a short receipt naming that task/);
   assert.equal(agents.get('employee.jefa').assignments.find(a => a.personalProjectId === 'project-b').status, 'ended');
   projects.push({ project_id: 'future-project', profile: { name: 'Future', lifecycle: 'active' } });
   assert.equal((await service.taskEntry({ personalProjectId: 'future-project' })).status, 'ready');

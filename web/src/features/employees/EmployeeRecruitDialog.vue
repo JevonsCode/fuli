@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import { postJson } from '@/api/client'
 import SearchableSelect from '@/components/SearchableSelect.vue'
 import ProjectScopePicker from './ProjectScopePicker.vue'
+import { employeeAvatarUrl } from './avatars'
 import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import { personalProjectsPath } from '@/router/paths'
@@ -182,7 +183,10 @@ function scopeKeydown(event: KeyboardEvent) {
         <SearchableSelect v-model="templateId" control-id="employee-template" :label="t('employees.choose')" :options="employeeTemplates.map((entry) => ({ value: entry.id, label: entry.name, meta: entry.role }))" :disabled="busy || selectionLoading" />
       </div>
       <div class="employee-profile">
-        <span class="employee-avatar" aria-hidden="true">{{ selected.name.slice(0, 1) }}</span>
+        <span class="employee-avatar" aria-hidden="true">
+          <img v-if="employeeAvatarUrl(selected.id)" :src="employeeAvatarUrl(selected.id)" alt="" />
+          <template v-else>{{ selected.name.slice(0, 1) }}</template>
+        </span>
         <div><h3>{{ selected.name }} <span>{{ selected.role }}</span></h3><p>{{ selected.description }}</p></div>
       </div>
       <p class="employee-specialties">{{ selected.capabilities.join(' · ') }}</p>
@@ -241,7 +245,8 @@ function scopeKeydown(event: KeyboardEvent) {
 .employee-profile h3 { margin: 0 0 4px; font-size: 21px; line-height: 1.35; }
 .employee-profile h3 span { display: inline-block; margin-left: 8px; color: #5a6960; font-size: 13px; font-weight: 500; }
 .employee-profile p, .employee-success p { margin: 0; color: #536259; }
-.employee-avatar { display: grid; flex: 0 0 52px; height: 52px; place-items: center; border-radius: 14px; background: #e7eee9; color: #315c43; font-size: 27px; font-weight: 650; }
+.employee-avatar { display: grid; flex: 0 0 52px; height: 52px; place-items: center; overflow: hidden; border-radius: 14px; background: #e7eee9; color: #315c43; font-size: 27px; font-weight: 650; }
+.employee-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .employee-specialties { margin: 0 0 24px; color: #59695f; font-size: 12px; }
 .employee-scope-mode { display: flex; gap: 4px; padding: 4px; margin: 0 0 10px; border-radius: 10px; background: #f0f3f1; }
 .employee-scope-mode button { flex: 1; min-height: 40px; padding: 8px 10px; border: 0; border-radius: 7px; background: transparent; color: #52645a; font: inherit; font-size: 13px; cursor: pointer; }

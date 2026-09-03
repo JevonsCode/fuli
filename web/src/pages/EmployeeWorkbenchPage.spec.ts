@@ -9,6 +9,7 @@ vi.mock('@/stores/console', () => ({ useConsoleStore: () => ({
 }) }))
 import EmployeeWorkbenchPage from './EmployeeWorkbenchPage.vue'
 import { refreshEmployeeCatalog } from '@/features/employees/catalog'
+import EmployeeAllProjectsBoard from '@/features/employees/EmployeeAllProjectsBoard.vue'
 import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
 
 const mounted: Array<{ unmount: () => void }> = []
@@ -23,7 +24,7 @@ beforeEach(async () => {
   getJson.mockImplementation(async (url: string) => {
     if (url.startsWith('/api/employee-templates?')) return { templates: [{
       id: 'jefa', name: 'Jefa', role: '项目经理', runtime: { apiVersion: 1 }, runtimeStatus: 'ready',
-      capabilities: ['项目管理'], permissions: ['board.read'], agentId: 'employee.jefa', agentStatus: 'active', assignmentsVersion: 'version-1',
+      capabilities: ['项目管理'], permissions: ['board.read', 'board.write'], agentId: 'employee.jefa', agentStatus: 'active', assignmentsVersion: 'version-1',
       assignments: [{ personalProjectId: 'project-a', status: 'active' }],
     }] }
     if (!url.includes('personalProjectId=project-a')) throw new Error(JSON.stringify({ code: 'assignment_required' }))
@@ -52,9 +53,10 @@ describe('employee workbench', () => {
       return result
     })
     const wrapper = await setup('/employees/jefa')
-    expect(wrapper.get('iframe').attributes('src')).toBe('/employee-workspaces/jefa/project-a/')
-    expect(wrapper.get('[role="combobox"]').text()).toContain('自动纳入的新项目')
-    expect(wrapper.vm.$route.query.project).toBe('project-a')
+    expect(wrapper.find('iframe').exists()).toBe(false)
+    expect(wrapper.get('h2').text()).toBe('全部项目看板')
+    expect(wrapper.get('.project-scope-trigger').text()).toContain('全部项目 · 1 个')
+    expect(wrapper.vm.$route.query.project).toBe('__all__')
   })
   it('embeds only the exact same-origin employee project route', async () => {
     const wrapper = await setup('/employees/jefa?project=project-a')
@@ -87,7 +89,7 @@ describe('employee workbench', () => {
       total: 1,
       truncated: false,
     }))
-    const wrapper = await setup('/employees/jefa?project=__all__')
+    const wrapper = await setup('/employees/jefa')
     expect(wrapper.find('iframe').exists()).toBe(false)
     expect(wrapper.get('h2').text()).toBe('全部项目看板')
     expect(wrapper.vm.$route.query.project).toBe('__all__')
@@ -98,6 +100,87 @@ describe('employee workbench', () => {
     await flushPromises()
     expect(wrapper.vm.$route.query.project).toBe('project-b')
     expect(wrapper.get('iframe').attributes('src')).toBe('/employee-workspaces/jefa/project-b/')
+  })
+  it('hides unchecked projects and supports inversion without changing the managed scope', async () => {
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation(async (url: string) => {
+      const result = await original(url)
+      if (url.startsWith('/api/employee-templates?')) result.templates[0].managedProjects = [
+        { id: 'project-a', name: '验收项目' },
+        { id: 'project-b', name: '第二项目' },
+      ]
+      return result
+    })
+    postJson.mockImplementation(async (_url: string, body: { personalProjectId: string }) => ({
+      project: { id: body.personalProjectId, name: body.personalProjectId },
+      items: [{
+        id: `task-${body.personalProjectId}`, projectId: body.personalProjectId,
+        title: body.personalProjectId === 'project-a' ? '整理验收' : '准备发布', status: 'planned',
+      }],
+      total: 1,
+      truncated: false,
+    }))
+    const wrapper = await setup('/employees/jefa?project=__all__')
+    await wrapper.get('.employee-all-projects-filter .project-scope-trigger').trigger('click')
+    await wrapper.get('.employee-all-projects-filter input[value="project-b"]').setValue(false)
+    expect(wrapper.text()).toContain('整理验收')
+    expect(wrapper.text()).not.toContain('准备发布')
+    await wrapper.get('.employee-all-projects-filter .project-scope-bulk button').trigger('click')
+    expect(wrapper.text()).not.toContain('整理验收')
+    expect(wrapper.text()).toContain('准备发布')
+    await wrapper.get('.employee-all-projects-filter .project-scope-all input').setValue(true)
+    await wrapper.get('.employee-all-projects-filter .project-scope-all input').setValue(false)
+    expect(wrapper.text()).toContain('没有显示任何项目')
+    await wrapper.get('.employee-all-projects-empty button').trigger('click')
+    expect(wrapper.text()).toContain('整理验收')
+    expect(wrapper.text()).toContain('准备发布')
+    expect(postJson).toHaveBeenCalledTimes(2)
+    expect(wrapper.vm.$route.query.project).toBe('__all__')
+  })
+  it('moves a task on the aggregate board through its owning project', async () => {
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation(async (url: string) => {
+      const result = await original(url)
+      if (url.startsWith('/api/employee-templates?')) result.templates[0].managedProjects = [
+        { id: 'project-a', name: '验收项目' },
+        { id: 'project-b', name: '第二项目' },
+      ]
+      return result
+    })
+    postJson.mockImplementation(async (_url: string, body: { personalProjectId: string; tool: string; arguments?: Record<string, string> }) => {
+      if (body.tool === 'move_task') return {
+        updatedWorkItem: {
+          id: 'task-project-b', projectId: 'project-b', title: '准备发布', status: body.arguments?.status,
+          updatedAt: '2026-09-03T01:00:00.000Z',
+        },
+      }
+      return {
+        project: { id: body.personalProjectId, name: body.personalProjectId },
+        items: [{
+          id: `task-${body.personalProjectId}`, projectId: body.personalProjectId,
+          title: body.personalProjectId === 'project-a' ? '整理验收' : '准备发布', status: 'planned',
+          updatedAt: '2026-09-03T00:00:00.000Z',
+        }],
+        total: 1,
+        truncated: false,
+      }
+    })
+    const wrapper = await setup('/employees/jefa')
+    const board = wrapper.getComponent(EmployeeAllProjectsBoard)
+    const item = board.props('boards').find((entry) => entry.project.id === 'project-b')!.items[0]
+    board.vm.$emit('move-task', item, 'active')
+    await flushPromises()
+    expect(postJson).toHaveBeenLastCalledWith('/api/employee-templates/jefa/call', {
+      personalSpaceId: 'space-a',
+      personalProjectId: 'project-b',
+      tool: 'move_task',
+      arguments: {
+        workItemId: 'task-project-b',
+        status: 'active',
+        expectedUpdatedAt: '2026-09-03T00:00:00.000Z',
+      },
+    })
+    expect(board.props('boards').find((entry) => entry.project.id === 'project-b')!.items[0].status).toBe('active')
   })
   it('does not silently switch an unauthorized deep link to another project', async () => {
     const wrapper = await setup('/employees/jefa?project=project-b')
@@ -115,7 +198,8 @@ describe('employee workbench', () => {
   })
   it('separates the current board view from the multi-project responsibility editor', async () => {
     const wrapper = await setup('/employees/jefa?project=project-a')
-    expect(wrapper.get('[role="combobox"]').attributes('aria-label')).toBe('当前查看的项目')
+    expect(wrapper.find('[role="combobox"]').exists()).toBe(false)
+    expect(wrapper.get('.employee-back-to-all').text()).toBe('返回全部项目')
     await wrapper.get('.employee-workbench-actions button.employee-manage-projects').trigger('click')
     await flushPromises()
     const dialog = wrapper.getComponent(EmployeeRecruitDialog)
@@ -134,7 +218,8 @@ describe('employee workbench', () => {
     getJson.mockImplementation(original)
     await wrapper.get('[role="alert"] button').trigger('click')
     await flushPromises()
-    expect(wrapper.get('iframe').attributes('src')).toBe('/employee-workspaces/jefa/project-a/')
+    expect(wrapper.find('iframe').exists()).toBe(false)
+    expect(wrapper.get('h2').text()).toBe('全部项目看板')
   })
 
   it('offers assignment as an explicit next step for a hired Agent with no allowed projects', async () => {

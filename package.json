@@ -1,6 +1,6 @@
 {
   "name": "fuli-context",
-  "version": "0.7.8",
+  "version": "0.7.9",
   "description": "Local-first collaboration relationship graph for AI agents.",
   "type": "module",
   "files": [
