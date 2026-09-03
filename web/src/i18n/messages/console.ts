@@ -29,6 +29,12 @@ export const consoleMessages = {
     brandEffect: {
       aria: '复利，触发品牌光效',
     },
+    update: {
+      aria: '发现新版本 {version}，查看更新方法',
+      title: '新版本 v{version} 可用',
+      copy: '在终端运行以下命令即可安全更新并刷新本地服务：',
+      npmLink: '在 npm 查看版本详情',
+    },
     services: {
       aria: '知识服务状态',
       localReady: '本地知识库已连接',
@@ -93,6 +99,12 @@ export const consoleMessages = {
     },
     brandEffect: {
       aria: 'FULI, play the brand light effect',
+    },
+    update: {
+      aria: 'Version {version} is available. View update instructions',
+      title: 'Version v{version} is available',
+      copy: 'Run this command in a terminal to update safely and refresh local services:',
+      npmLink: 'View version details on npm',
     },
     services: {
       aria: 'Knowledge service status',

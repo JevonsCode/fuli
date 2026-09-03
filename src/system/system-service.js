@@ -9,6 +9,7 @@ import {
 import { createResourceMonitor } from './resource-monitor.js';
 import { createAdaptiveRuntimeBroker } from '../adaptive-runtime/runtime-broker.js';
 import { readAdaptiveRuntimeSettings } from '../adaptive-runtime/settings.js';
+import { createPackageVersionChecker } from './package-version-checker.js';
 
 export function createSystemService({
   paths,
@@ -19,6 +20,7 @@ export function createSystemService({
   readSettings = readRuntimeSettings,
   writeSettings = writeRuntimeSettings,
   executorAdapters = new Map(),
+  versionChecker = createPackageVersionChecker(),
   runtimeBroker = createAdaptiveRuntimeBroker({
     paths,
     settings: readAdaptiveRuntimeSettings(paths.adaptiveRuntimeSettingsPath),
@@ -59,6 +61,7 @@ export function createSystemService({
     getSettings,
     updateSettings,
     resources: () => resourceMonitor.sample(),
+    versionStatus: () => versionChecker.check(),
     runtimeStatus: () => runtimeBroker.status(),
     acquireRuntimeLease: (input) => runtimeBroker.acquire(input),
     refreshRuntimeLease: (leaseId) => runtimeBroker.refresh(leaseId),

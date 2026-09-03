@@ -11,7 +11,7 @@ const PATHS = Object.freeze({
   runtimeSettingsPath: '/data/runtime-settings.json'
 });
 
-test('system settings distinguish immediately applied refresh changes from restart changes', () => {
+test('system settings distinguish immediately applied refresh changes from restart changes', async () => {
   let configured = structuredClone(DEFAULT_RUNTIME_SETTINGS);
   const state = {
     version: 4,
@@ -39,7 +39,8 @@ test('system settings distinguish immediately applied refresh changes from resta
       configured = structuredClone(value);
       return configured;
     },
-    resourceMonitor: { sample: async () => ({ status: 'ready' }) }
+    resourceMonitor: { sample: async () => ({ status: 'ready' }) },
+    versionChecker: { check: async () => ({ updateAvailable: true }) }
   });
 
   const refreshOnly = service.updateSettings({
@@ -69,4 +70,5 @@ test('system settings distinguish immediately applied refresh changes from resta
   assert.equal(changedPort.active.ports.console, 2727);
   assert.equal(changedPort.configured.ports.console, 3030);
   assert.equal(changedPort.restartRequired, true);
+  assert.deepEqual(await service.versionStatus(), { updateAvailable: true });
 });

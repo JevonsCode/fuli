@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { getJson } from '@/api/client'
+import { getJson, postJson } from '@/api/client'
 import SearchableSelect from '@/components/SearchableSelect.vue'
+import EmployeeAllProjectsBoard, { type EmployeeBoardItem, type EmployeeProjectBoard } from '@/features/employees/EmployeeAllProjectsBoard.vue'
 import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
 import { useConsoleStore } from '@/stores/console'
 import { t } from '@/i18n'
@@ -13,6 +14,8 @@ const router = useRouter()
 const store = useConsoleStore()
 const projectId = ref('')
 const workspace = ref<EmployeeWorkspace | null>(null)
+const projectBoards = ref<EmployeeProjectBoard[]>([])
+const failedProjects = ref(0)
 const error = ref('')
 const loading = ref(false)
 const manageProjectsOpen = ref(false)
@@ -20,12 +23,19 @@ const personalSpaceId = computed(() => store.activePersonalSpace?.id ?? '')
 const templateId = computed(() => String(route.params.templateId ?? ''))
 const template = computed(() => employeeTemplates.value.find((entry) => entry.id === templateId.value))
 const visibleError = computed(() => employeeCatalogError.value || error.value)
-const projectOptions = computed(() => template.value?.managedProjects !== undefined
+const ALL_PROJECTS = '__all__'
+const managedProjectOptions = computed(() => template.value?.managedProjects !== undefined
   ? template.value.managedProjects.map(project => ({ value: project.id, label: project.name }))
   : (template.value?.assignments ?? []).filter(assignment => assignment.status === 'active').map((assignment) => ({
   value: assignment.personalProjectId,
   label: store.state?.personalProjects?.find((project) => project.project_id === assignment.personalProjectId)?.profile.name ?? assignment.personalProjectId,
 })))
+const supportsAllProjects = computed(() => template.value?.runtimeStatus === 'ready'
+  && template.value.permissions.includes('board.read')
+  && managedProjectOptions.value.length > 1)
+const projectOptions = computed(() => supportsAllProjects.value
+  ? [{ value: ALL_PROJECTS, label: t('employees.allProjects.option'), meta: t('employees.allProjects.optionMeta', { count: managedProjectOptions.value.length }) }, ...managedProjectOptions.value]
+  : managedProjectOptions.value)
 let version = 0
 watch(personalSpaceId, (id) => { void refreshEmployeeCatalog(id) }, { immediate: true })
 watch([projectOptions, () => route.query.project, templateId], () => {
@@ -38,16 +48,50 @@ watch([projectOptions, () => route.query.project, templateId], () => {
     void router.replace({ query: { ...route.query, project: projectId.value } })
   }
 }, { immediate: true })
-watch([templateId, projectId, personalSpaceId], () => { void loadWorkspace() }, { immediate: true })
+watch([templateId, projectId, personalSpaceId, supportsAllProjects], () => {
+  void loadWorkspace()
+}, { immediate: true })
+watch(employeeCatalogLoading, (catalogLoading) => {
+  if (!catalogLoading && projectId.value === ALL_PROJECTS) void loadWorkspace()
+})
 async function loadWorkspace() {
   const current = ++version
   workspace.value = null
+  projectBoards.value = []
+  failedProjects.value = 0
   error.value = ''
   if (!projectId.value || !personalSpaceId.value) { loading.value = false; return }
-  loading.value = true
   const requestedTemplate = templateId.value
   const requestedProject = projectId.value
+  if (requestedProject === ALL_PROJECTS && (employeeCatalogLoading.value || !template.value)) {
+    loading.value = employeeCatalogLoading.value
+    return
+  }
+  loading.value = true
   try {
+    if (requestedProject === ALL_PROJECTS && supportsAllProjects.value) {
+      const results = await Promise.all(managedProjectOptions.value.map(async (project) => {
+        try {
+          const board = await postJson<EmployeeProjectBoard>(`/api/employee-templates/${encodeURIComponent(requestedTemplate)}/call`, {
+            personalSpaceId: personalSpaceId.value,
+            personalProjectId: project.value,
+            tool: 'read_board',
+            arguments: { limit: 100 },
+          })
+          const items = Array.isArray(board.items) ? board.items.filter(isEmployeeBoardItem) : []
+          return { ok: true as const, board: { ...board, project: { id: project.value, name: project.label }, items } }
+        } catch (cause) {
+          return { ok: false as const, cause }
+        }
+      }))
+      if (current !== version) return
+      projectBoards.value = results.filter(result => result.ok).map(result => result.board)
+      failedProjects.value = results.filter(result => !result.ok).length
+      if (!projectBoards.value.length && failedProjects.value) {
+        error.value = employeeErrorMessage(results.find(result => !result.ok)?.cause)
+      }
+      return
+    }
     const result = await getJson<EmployeeWorkspace>(`/api/employee-templates/${encodeURIComponent(requestedTemplate)}/workspace?${new URLSearchParams({ personalSpaceId: personalSpaceId.value, personalProjectId: requestedProject })}`)
     const prefix = `/employee-workspaces/${encodeURIComponent(requestedTemplate)}/${encodeURIComponent(requestedProject)}/`
     if (result.workbenchUrl !== prefix) throw new Error(t('employees.loadError'))
@@ -56,13 +100,21 @@ async function loadWorkspace() {
   finally { if (current === version) loading.value = false }
 }
 function changeProject(value: string) { void router.replace({ query: { ...route.query, project: value } }) }
+function isEmployeeBoardItem(value: unknown): value is EmployeeBoardItem {
+  if (!value || typeof value !== 'object') return false
+  const item = value as Partial<EmployeeBoardItem>
+  return typeof item.id === 'string' && typeof item.projectId === 'string' && typeof item.title === 'string'
+    && ['planned', 'active', 'blocked', 'review', 'done'].includes(item.status ?? '')
+}
 async function retry() {
   await refreshEmployeeCatalog(personalSpaceId.value)
   if (!employeeCatalogError.value) await loadWorkspace()
 }
 async function projectsSaved() {
-  const current = projectOptions.value.find((option) => option.value === projectId.value)?.value
-    ?? projectOptions.value[0]?.value
+  const current = projectId.value === ALL_PROJECTS && supportsAllProjects.value
+    ? ALL_PROJECTS
+    : managedProjectOptions.value.find((option) => option.value === projectId.value)?.value
+      ?? projectOptions.value[0]?.value
   // Only an explicit successful scope edit may replace a project that was just removed.
   await router.replace({ query: current ? { project: current } : {} })
   await loadWorkspace()
@@ -91,7 +143,15 @@ async function projectsSaved() {
     <div v-else-if="visibleError" class="employee-workbench-state" role="alert"><p>{{ visibleError }}</p><button class="quiet-button" type="button" @click="retry">{{ t('employees.retry') }}</button></div>
     <div v-else-if="!template" class="employee-workbench-state"><p>{{ t('employees.unavailable') }}</p><RouterLink to="/project-agents">{{ t('employees.backToAgents') }}</RouterLink></div>
     <div v-else-if="!projectId" class="employee-workbench-state"><h2>{{ t('employees.emptyWorkbench') }}</h2><p>{{ t('employees.manageHint') }}</p><button class="quiet-button" type="button" @click="manageProjectsOpen = true">{{ t('employees.manageProjects') }}</button></div>
-    <div v-else-if="workspace?.runtimeStatus !== 'ready'" class="employee-workbench-state"><p>{{ t('employees.installRequired') }}</p><small>{{ t('employees.installHelp') }}</small></div>
+    <EmployeeAllProjectsBoard
+      v-else-if="projectId === ALL_PROJECTS && supportsAllProjects"
+      :boards="projectBoards"
+      :total-projects="managedProjectOptions.length"
+      :failed-projects="failedProjects"
+      @select-project="changeProject"
+      @retry="loadWorkspace"
+    />
+    <div v-else-if="workspace && workspace.runtimeStatus !== 'ready'" class="employee-workbench-state"><p>{{ t('employees.installRequired') }}</p><small>{{ t('employees.installHelp') }}</small></div>
     <iframe v-else-if="workspace" :key="workspace.workbenchUrl" :src="workspace.workbenchUrl" :title="`${workspace.name} · ${workspace.project.name}`" class="employee-workbench-frame" />
   </section>
 </template>

@@ -36,6 +36,13 @@ test('system API exposes resource samples and validates persisted settings throu
       status: 'ready',
       memory: { usedBytes: 42 },
       disk: { usedBytes: 84 }
+    }),
+    versionStatus: async () => ({
+      status: 'ready',
+      currentVersion: '0.7.7',
+      latestVersion: '0.7.8',
+      updateAvailable: true,
+      packageUrl: 'https://www.npmjs.com/package/fuli-context'
     })
   };
   const app = { graphiti: true, close() {} };
@@ -43,6 +50,7 @@ test('system API exposes resource samples and validates persisted settings throu
   try {
     assert.equal((await getJson(`${url}/api/system/settings`)).configured.ports.console, 2727);
     assert.equal((await getJson(`${url}/api/system/resources`)).memory.usedBytes, 42);
+    assert.equal((await getJson(`${url}/api/system/version`)).latestVersion, '0.7.8');
     const next = { ...configured, ports: { ...configured.ports, console: 3030 } };
     const response = await requestJson(`${url}/api/system/settings`, {
       method: 'PUT',

@@ -37,6 +37,11 @@ export async function handleApiRequest({
     return true;
   }
 
+  if (system && url.pathname === '/api/system/version' && request.method === 'GET') {
+    sendJson(response, 200, await system.versionStatus());
+    return true;
+  }
+
   if (system && url.pathname === '/api/system/runtime' && request.method === 'GET') {
     sendJson(response, 200, system.runtimeStatus());
     return true;

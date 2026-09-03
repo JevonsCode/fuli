@@ -1,13 +1,37 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import fuliLogoUrl from '../../assets/brand/fuli-logo.png'
+import { getJson } from '@/api/client'
 import { t } from '@/i18n'
 import { FULI_VERSION } from '@/version'
 
+interface PackageVersionStatus {
+  status: 'ready' | 'unavailable'
+  currentVersion: string
+  latestVersion: string | null
+  updateAvailable: boolean
+  packageUrl: string
+  checkedAt: string
+}
+
+const root = ref<HTMLElement | null>(null)
+const versionButton = ref<HTMLButtonElement | null>(null)
 const effectRun = ref(0)
 const isPlaying = ref(false)
 const isKeyboardFocused = ref(false)
+const isUpdateOpen = ref(false)
+const versionStatus = ref<PackageVersionStatus | null>(null)
+const updateAvailable = computed(() => (
+  versionStatus.value?.status === 'ready'
+  && versionStatus.value.updateAvailable
+  && Boolean(versionStatus.value.latestVersion)
+))
+const latestVersion = computed(() => versionStatus.value?.latestVersion ?? '')
+const packageUrl = computed(() => (
+  versionStatus.value?.packageUrl ?? 'https://www.npmjs.com/package/fuli-context'
+))
+const versionRequestController = new AbortController()
 let lastInputWasKeyboard = false
 
 function playEffect() {
@@ -19,13 +43,25 @@ function finishEffect() {
   isPlaying.value = false
 }
 
-function handleGlobalPointerDown() {
+function toggleUpdateDetails() {
+  if (updateAvailable.value) isUpdateOpen.value = !isUpdateOpen.value
+}
+
+function handleGlobalPointerDown(event: PointerEvent) {
   lastInputWasKeyboard = false
   isKeyboardFocused.value = false
+  if (isUpdateOpen.value && !root.value?.contains(event.target as Node)) {
+    isUpdateOpen.value = false
+  }
 }
 
 function handleGlobalKeyDown(event: KeyboardEvent) {
   if (event.key === 'Tab') lastInputWasKeyboard = true
+  if (event.key === 'Escape' && isUpdateOpen.value) {
+    event.preventDefault()
+    isUpdateOpen.value = false
+    void nextTick(() => versionButton.value?.focus())
+  }
 }
 
 function handleFocus() {
@@ -39,38 +75,64 @@ function handleBlur() {
 onMounted(() => {
   window.addEventListener('pointerdown', handleGlobalPointerDown, true)
   window.addEventListener('keydown', handleGlobalKeyDown, true)
+  void getJson<PackageVersionStatus>('/api/system/version', {
+    signal: versionRequestController.signal,
+  }).then((status) => {
+    versionStatus.value = status
+  }).catch(() => {
+    // Version checks are advisory and must never interrupt the local console.
+  })
 })
 
 onBeforeUnmount(() => {
+  versionRequestController.abort()
   window.removeEventListener('pointerdown', handleGlobalPointerDown, true)
   window.removeEventListener('keydown', handleGlobalKeyDown, true)
 })
 </script>
 
 <template>
-  <button
+  <div
+    ref="root"
     class="brand-block"
     :class="{
       'is-sparkling': isPlaying,
       'is-keyboard-focused': isKeyboardFocused,
     }"
-    type="button"
-    :aria-label="t('console.brandEffect.aria')"
-    @click="playEffect"
-    @focus="handleFocus"
-    @blur="handleBlur"
   >
-    <span class="brand-mark-wrap">
-      <img class="brand-mark" :src="fuliLogoUrl" alt="" aria-hidden="true" />
-      <template v-if="isPlaying">
-        <span :key="`orbit-${effectRun}`" class="brand-orbit" aria-hidden="true" />
-      </template>
-    </span>
+    <button
+      class="brand-effect-button"
+      type="button"
+      :aria-label="t('console.brandEffect.aria')"
+      @click="playEffect"
+      @focus="handleFocus"
+      @blur="handleBlur"
+    >
+      <span class="brand-mark-wrap">
+        <img class="brand-mark" :src="fuliLogoUrl" alt="" aria-hidden="true" />
+        <template v-if="isPlaying">
+          <span :key="`orbit-${effectRun}`" class="brand-orbit" aria-hidden="true" />
+        </template>
+      </span>
+    </button>
 
     <span class="brand-copy">
       <span class="brand-title-row">
         <span class="brand-name">{{ t('common.brand') }}</span>
-        <span class="brand-version">v{{ FULI_VERSION }}</span>
+        <button
+          v-if="updateAvailable"
+          ref="versionButton"
+          class="brand-version-button"
+          type="button"
+          :aria-label="t('console.update.aria', { version: latestVersion })"
+          :aria-expanded="isUpdateOpen"
+          aria-controls="brand-update-details"
+          @click="toggleUpdateDetails"
+        >
+          <span class="brand-version">v{{ FULI_VERSION }}</span>
+          <span class="brand-update-dot" aria-hidden="true" />
+        </button>
+        <span v-else class="brand-version">v{{ FULI_VERSION }}</span>
       </span>
       <span class="brand-subtitle">Context Graph</span>
       <span
@@ -86,12 +148,26 @@ onBeforeUnmount(() => {
         </span>
       </span>
     </span>
-  </button>
+
+    <div
+      v-if="isUpdateOpen"
+      id="brand-update-details"
+      class="brand-update-popover"
+      role="dialog"
+      :aria-label="t('console.update.title', { version: latestVersion })"
+    >
+      <strong>{{ t('console.update.title', { version: latestVersion }) }}</strong>
+      <p>{{ t('console.update.copy') }}</p>
+      <code>fuli update --yes</code>
+      <a :href="packageUrl" target="_blank" rel="noopener noreferrer">
+        {{ t('console.update.npmLink') }}
+      </a>
+    </div>
+  </div>
 </template>
 
 <style scoped>
 .brand-block {
-  appearance: none;
   position: relative;
   isolation: isolate;
   display: flex;
@@ -99,10 +175,7 @@ onBeforeUnmount(() => {
   gap: 11px;
   width: 100%;
   padding: 0 8px 22px;
-  border: 0;
-  border-radius: 14px;
   color: inherit;
-  background: transparent;
   text-align: left;
   -webkit-tap-highlight-color: transparent;
 }
@@ -121,7 +194,18 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-.brand-block:focus {
+.brand-effect-button {
+  appearance: none;
+  display: block;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.brand-effect-button:focus {
   outline: none;
 }
 
@@ -211,6 +295,37 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.brand-version-button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: -2px -1px;
+  padding: 2px 1px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.brand-version-button:hover .brand-version {
+  color: #555e57;
+}
+
+.brand-version-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #789084;
+}
+
+.brand-update-dot {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #d53d3d;
+  box-shadow: 0 1px 4px rgba(189, 30, 30, .28);
+}
+
 .brand-subtitle {
   margin-top: 2px;
   color: #747d76;
@@ -235,6 +350,65 @@ onBeforeUnmount(() => {
 .brand-copy-reflection .brand-version {
   color: #c89536;
   text-shadow: 0 0 6px rgba(239, 190, 93, .28);
+}
+
+.brand-update-popover {
+  position: absolute;
+  z-index: 20;
+  top: 45px;
+  right: 8px;
+  left: 49px;
+  padding: 12px;
+  border-radius: 12px;
+  color: #263129;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(35, 48, 39, .16);
+}
+
+.brand-update-popover strong {
+  display: block;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.brand-update-popover p {
+  margin: 5px 0 9px;
+  color: #5a665e;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.brand-update-popover code {
+  display: block;
+  padding: 7px 8px;
+  border-radius: 7px;
+  color: #27342b;
+  background: #f1f4f1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.brand-update-popover a {
+  display: inline-block;
+  margin-top: 9px;
+  color: #356c55;
+  font-size: 10px;
+  font-weight: 650;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.brand-update-popover a:hover {
+  color: #234d3b;
+}
+
+.brand-update-popover a:focus-visible {
+  outline: 2px solid #789084;
+  outline-offset: 3px;
+  border-radius: 2px;
 }
 
 .brand-block.is-sparkling::before {

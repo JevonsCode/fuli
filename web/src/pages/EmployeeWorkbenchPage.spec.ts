@@ -1,8 +1,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
-const { getJson } = vi.hoisted(() => ({ getJson: vi.fn() }))
-vi.mock('@/api/client', () => ({ getJson }))
+const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
+vi.mock('@/api/client', () => ({ getJson, postJson }))
 vi.mock('@/stores/console', () => ({ useConsoleStore: () => ({
   activePersonalSpace: { id: 'space-a' },
   state: { personalProjects: [{ project_id: 'project-a', profile: { name: '验收项目' } }] },
@@ -15,6 +15,11 @@ const mounted: Array<{ unmount: () => void }> = []
 beforeEach(async () => {
   await refreshEmployeeCatalog('')
   getJson.mockReset()
+  postJson.mockReset()
+  postJson.mockImplementation(async (_url: string, body: { personalProjectId: string }) => ({
+    project: { id: body.personalProjectId, name: body.personalProjectId },
+    items: [], total: 0, truncated: false,
+  }))
   getJson.mockImplementation(async (url: string) => {
     if (url.startsWith('/api/employee-templates?')) return { templates: [{
       id: 'jefa', name: 'Jefa', role: '项目经理', runtime: { apiVersion: 1 }, runtimeStatus: 'ready',
@@ -58,6 +63,41 @@ describe('employee workbench', () => {
     expect(wrapper.get('h1').text()).toBe('Jefa 项目经理')
     expect(wrapper.text()).not.toContain('员工工作台')
     expect(getJson.mock.calls.some(([url]) => String(url).includes('personalSpaceId=space-a'))).toBe(true)
+  })
+  it('aggregates every managed project and opens a task in its exact project', async () => {
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation(async (url: string) => {
+      if (url.includes('personalProjectId=project-b')) return {
+        templateId: 'jefa', name: 'Jefa', project: { id: 'project-b', name: '第二项目' },
+        runtimeStatus: 'ready', workbenchUrl: '/employee-workspaces/jefa/project-b/',
+      }
+      const result = await original(url)
+      if (url.startsWith('/api/employee-templates?')) result.templates[0].managedProjects = [
+        { id: 'project-a', name: '验收项目' },
+        { id: 'project-b', name: '第二项目' },
+      ]
+      return result
+    })
+    postJson.mockImplementation(async (_url: string, body: { personalProjectId: string; tool: string }) => ({
+      project: { id: body.personalProjectId, name: body.personalProjectId },
+      items: [{
+        id: `task-${body.personalProjectId}`, projectId: body.personalProjectId,
+        title: body.personalProjectId === 'project-a' ? '整理验收' : '准备发布', status: 'planned', tags: ['agent'],
+      }],
+      total: 1,
+      truncated: false,
+    }))
+    const wrapper = await setup('/employees/jefa?project=__all__')
+    expect(wrapper.find('iframe').exists()).toBe(false)
+    expect(wrapper.get('h2').text()).toBe('全部项目看板')
+    expect(wrapper.vm.$route.query.project).toBe('__all__')
+    expect(postJson).toHaveBeenCalledTimes(2)
+    expect(postJson.mock.calls.map(([, body]) => body.personalProjectId)).toEqual(['project-a', 'project-b'])
+    expect(postJson.mock.calls.every(([, body]) => body.tool === 'read_board')).toBe(true)
+    await wrapper.get('[aria-label="在 第二项目 中查看任务：准备发布"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.vm.$route.query.project).toBe('project-b')
+    expect(wrapper.get('iframe').attributes('src')).toBe('/employee-workspaces/jefa/project-b/')
   })
   it('does not silently switch an unauthorized deep link to another project', async () => {
     const wrapper = await setup('/employees/jefa?project=project-b')

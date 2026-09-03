@@ -1,12 +1,12 @@
 {
   "name": "fuli-context",
-  "version": "0.7.7",
+  "version": "0.7.8",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "fuli-context",
-      "version": "0.7.7",
+      "version": "0.7.8",
       "license": "Apache-2.0",
       "dependencies": {
         "@hono/node-server": "2.0.12",
