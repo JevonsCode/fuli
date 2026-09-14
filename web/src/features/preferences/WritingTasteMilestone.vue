@@ -59,7 +59,7 @@ function ratio(current: number, target: number) {
       </div>
       <p>{{ copy }}</p>
       <div class="writing-taste-milestone__progress" aria-hidden="true">
-        <i :style="{ width: `${progress}%` }" />
+        <i :style="{ transform: `scaleX(${progress / 100})` }" />
       </div>
       <div class="writing-taste-milestone__metrics">
         <small>
@@ -172,10 +172,12 @@ function ratio(current: number, target: number) {
 
 .writing-taste-milestone__progress i {
   display: block;
+  width: 100%;
   height: 100%;
   border-radius: inherit;
   background: #6f8e7c;
-  transition: width 180ms ease;
+  transform-origin: left;
+  transition: transform 180ms ease;
 }
 
 .writing-taste-milestone__metrics {

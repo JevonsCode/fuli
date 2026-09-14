@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { postJson } from '@/api/client'
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import SearchableSelect from '@/components/SearchableSelect.vue'
 import ProjectScopePicker from './ProjectScopePicker.vue'
 import { employeeAvatarUrl } from './avatars'
@@ -10,8 +11,8 @@ import { t } from '@/i18n'
 import { personalProjectsPath } from '@/router/paths'
 import type { PersonalProject } from '@/types'
 import {
-  employeeTemplates, employeeCatalogLoading, employeeCatalogError,
-  refreshEmployeeCatalog, employeeErrorMessage, type EmployeeRecruitmentResult,
+  employeeTemplates, fetchEmployeeCatalog, refreshEmployeeCatalog,
+  employeeErrorMessage, type EmployeeRecruitmentResult, type EmployeeTemplate,
 } from './catalog'
 
 const props = defineProps<{
@@ -37,10 +38,13 @@ const templateId = ref('')
 const busy = ref(false)
 const error = ref('')
 const success = ref<EmployeeRecruitmentResult | null>(null)
+const catalogTemplates = ref<EmployeeTemplate[]>([])
+const catalogError = ref('')
 const { dialogRef, initialFocusRef, onCancel, onKeydown } = useModalDialog(() => props.open, close)
+const templates = computed(() => catalogTemplates.value)
 const selected = computed(() => props.templateId
-  ? employeeTemplates.value.find((entry) => entry.id === props.templateId)
-  : employeeTemplates.value.find((entry) => entry.id === templateId.value) ?? employeeTemplates.value[0])
+  ? templates.value.find((entry) => entry.id === props.templateId)
+  : templates.value.find((entry) => entry.id === templateId.value) ?? templates.value[0])
 const title = computed(() => selected.value?.agentId
   ? t('employees.manageProjectsTitle', { name: selected.value.name }) : t('employees.recruit'))
 const projectOptions = computed(() => props.projects.filter((project) => project.profile.lifecycle !== 'archived')
@@ -115,10 +119,21 @@ function initializeSelection(includeDefault = false) {
 async function reloadSelection(includeDefault = false) {
   const current = ++loadVersion
   selectionLoading.value = true
-  await refreshEmployeeCatalog(props.personalSpaceId)
-  if (current !== loadVersion || !props.open) return
-  if (!employeeCatalogError.value) initializeSelection(includeDefault)
-  selectionLoading.value = false
+  catalogTemplates.value = []
+  catalogError.value = ''
+  try {
+    const nextTemplates = await fetchEmployeeCatalog(props.personalSpaceId)
+    if (current !== loadVersion || !props.open) return
+    catalogTemplates.value = nextTemplates
+    initializeSelection(includeDefault)
+  } catch (cause) {
+    if (current === loadVersion && props.open) {
+      catalogTemplates.value = []
+      catalogError.value = employeeErrorMessage(cause)
+    }
+  } finally {
+    if (current === loadVersion) selectionLoading.value = false
+  }
 }
 
 function close() { if (!busy.value) emit('close') }
@@ -137,6 +152,7 @@ async function recruit() {
       ...(reactivating.value ? { reactivate: true } : {}),
     })
     await refreshEmployeeCatalog(props.personalSpaceId)
+    catalogTemplates.value = [...employeeTemplates.value]
     initializeSelection()
     success.value = result
     emit('recruited', result)
@@ -170,17 +186,17 @@ function scopeKeydown(event: KeyboardEvent) {
       <h2 id="employee-recruit-title">{{ title }}</h2>
       <button ref="initialFocusRef" type="button" class="quiet-button" :disabled="busy" @click="close">{{ t('employees.close') }}</button>
     </header>
-    <p v-if="employeeCatalogLoading && !employeeTemplates.length" role="status">{{ t('employees.loading') }}</p>
-    <div v-else-if="employeeCatalogError" role="alert" class="employee-message">
-      <p>{{ employeeCatalogError }}</p>
+    <GrowthLoading v-if="selectionLoading && !templates.length" variant="compact" :label="t('employees.loading')" />
+    <div v-else-if="catalogError" role="alert" class="employee-message">
+      <p>{{ catalogError }}</p>
       <button class="quiet-button" type="button" @click="reloadSelection(true)">{{ t('employees.retry') }}</button>
     </div>
     <p v-else-if="!selected">{{ t('employees.noTemplates') }}</p>
     <form v-else @submit.prevent="recruit">
       <div class="employee-recruit-body">
-      <div v-if="employeeTemplates.length > 1 && !props.templateId" class="employee-picker-field">
+      <div v-if="templates.length > 1 && !props.templateId" class="employee-picker-field">
         <span>{{ t('employees.choose') }}</span>
-        <SearchableSelect v-model="templateId" control-id="employee-template" :label="t('employees.choose')" :options="employeeTemplates.map((entry) => ({ value: entry.id, label: entry.name, meta: entry.role }))" :disabled="busy || selectionLoading" />
+        <SearchableSelect v-model="templateId" control-id="employee-template" :label="t('employees.choose')" :options="templates.map((entry) => ({ value: entry.id, label: entry.name, meta: entry.role }))" :disabled="busy || selectionLoading" />
       </div>
       <div class="employee-profile">
         <span class="employee-avatar" aria-hidden="true">
@@ -190,7 +206,7 @@ function scopeKeydown(event: KeyboardEvent) {
         <div><h3>{{ selected.name }} <span>{{ selected.role }}</span></h3><p>{{ selected.description }}</p></div>
       </div>
       <p class="employee-specialties">{{ selected.capabilities.join(' · ') }}</p>
-      <p v-if="selectionLoading" class="employee-muted" role="status">{{ t('employees.loadingScope') }}</p>
+      <GrowthLoading v-if="selectionLoading" variant="compact" :label="t('employees.loadingScope')" />
       <div v-if="supportsPolicy" class="employee-scope-mode" role="radiogroup" :aria-label="t('employees.scope.rule')" @keydown="scopeKeydown">
         <button v-for="mode in (['all', 'selected'] as const)" :key="mode" type="button" role="radio" :data-scope="mode" :aria-checked="scopeMode === mode" :tabindex="scopeMode === mode ? 0 : -1" :disabled="busy || selectionLoading || requiresReload" @click="changeScope(mode)">
           {{ t(`employees.scope.${mode === 'all' ? 'continuousAll' : 'onlySelected'}`) }}
@@ -226,7 +242,10 @@ function scopeKeydown(event: KeyboardEvent) {
       <footer class="employee-recruit-actions">
         <button class="quiet-button" type="button" :disabled="busy" @click="close">{{ t('employees.cancel') }}</button>
         <RouterLink v-if="noChange && workbenchLink && !busy && !selectionLoading && !requiresReload && selected.runtimeStatus === 'ready'" class="employee-primary" :to="workbenchLink" @click="close">{{ t('employees.open') }}</RouterLink>
-        <button v-else class="employee-primary" type="submit" :disabled="busy || selectionLoading || requiresReload || !expectedVersion || noChange || selected.identityConflict || !personalSpaceId">{{ actionLabel }}</button>
+        <button v-else class="employee-primary" type="submit" :disabled="busy || selectionLoading || requiresReload || !expectedVersion || noChange || selected.identityConflict || !personalSpaceId">
+          <GrowthLoading v-if="busy" variant="inline" :label="actionLabel" />
+          <template v-else>{{ actionLabel }}</template>
+        </button>
       </footer>
     </form>
   </dialog>

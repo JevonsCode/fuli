@@ -33,15 +33,18 @@ test('agent discovery reports Codex, Claude Code, and Cursor without failing on 
   assert.equal(agents[0].skillPath, 'C:\\Users\\Test\\.agents\\skills\\capturing-session-knowledge');
   assert.equal(agents[0].projectSkillPath, 'C:\\Users\\Test\\.agents\\skills\\grilling-project');
   assert.equal(agents[0].reviewSkillPath, 'C:\\Users\\Test\\.agents\\skills\\flreview');
+  assert.equal(agents[0].operationSkillPath, 'C:\\Users\\Test\\.agents\\skills\\operating-fuli');
   assert.equal(agents[1].configPath, 'C:\\Users\\Test\\.claude.json');
   assert.match(agents[1].settingsPath, /\\\.claude\\settings\.json$/);
   assert.equal(agents[1].skillPath, 'C:\\Users\\Test\\.claude\\skills\\capturing-session-knowledge');
   assert.equal(agents[1].projectSkillPath, 'C:\\Users\\Test\\.claude\\skills\\grilling-project');
   assert.equal(agents[1].reviewSkillPath, 'C:\\Users\\Test\\.claude\\skills\\flreview');
+  assert.equal(agents[1].operationSkillPath, 'C:\\Users\\Test\\.claude\\skills\\operating-fuli');
   assert.equal(agents[2].configPath, 'C:\\Users\\Test\\.cursor\\mcp.json');
   assert.equal(agents[2].skillPath, 'C:\\Users\\Test\\.cursor\\skills\\capturing-session-knowledge');
   assert.equal(agents[2].projectSkillPath, 'C:\\Users\\Test\\.cursor\\skills\\grilling-project');
   assert.equal(agents[2].reviewSkillPath, 'C:\\Users\\Test\\.cursor\\skills\\flreview');
+  assert.equal(agents[2].operationSkillPath, 'C:\\Users\\Test\\.cursor\\skills\\operating-fuli');
 });
 
 test('agent discovery recognizes installed Claude Code and Cursor config directories without CLIs', () => {

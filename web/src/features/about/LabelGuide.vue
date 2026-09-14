@@ -650,4 +650,11 @@ const statuses = computed(() => [
     grid-column: 1 / -1;
   }
 }
+
+@media (max-width: 720px) {
+  .status-definition-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
 </style>

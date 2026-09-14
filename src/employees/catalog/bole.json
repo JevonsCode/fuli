@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "bole",
+  "version": "1.0.0",
+  "name": "Bole",
+  "role": "HR",
+  "description": "查看 Agent 人员分布、当前工作和带时间与原因的招募记录。",
+  "occupationEmoji": "🔎",
+  "defaultProjectScope": "all",
+  "workbench": { "kind": "native", "view": "people" },
+  "capabilities": ["Agent 招募", "人员分布", "工作状态", "招募审计"],
+  "workKinds": ["agent-recruitment", "staffing-review"],
+  "initialPreferences": [
+    "每次招募保留任务、原因、触发来源与时间线。",
+    "只展示 Provider 已记录的人员状态，不推测未上报的工作。"
+  ],
+  "permissions": ["agents.read", "tasks.read", "recruitments.read"],
+  "runtime": null
+}

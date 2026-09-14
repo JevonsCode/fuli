@@ -143,7 +143,7 @@ class StoreTaskContexts:
         # The existing checkpoint lets pre-upgrade claims retry without new writes.
         memory_checkpoint_id = None
         if record['project_agent_id'] and record['personal_project_id']:
-            memory_checkpoint_id = stable_uuid(self._agent_memory_id(
+            memory_checkpoint_id = stable_uuid(await self._resolved_agent_memory_id(
                 request.personal_space_id, record['personal_project_id'],
                 record['project_agent_id'],
             ), f'{token}:memory')

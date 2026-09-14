@@ -10,7 +10,8 @@ const PLAN = Object.freeze({
     backupDir: 'C:/Fuli/backups/agents',
     sessionSkillPath: 'C:/Package/skills/capturing-session-knowledge',
     projectSkillPath: 'C:/Package/skills/grilling-project',
-    reviewSkillPath: 'C:/Package/skills/flreview'
+    reviewSkillPath: 'C:/Package/skills/flreview',
+    operationSkillPath: 'C:/Package/skills/operating-fuli'
   },
   agents: [{
     id: 'codex',
@@ -19,7 +20,8 @@ const PLAN = Object.freeze({
     configPath: 'C:/Codex/config.toml',
     skillPath: 'C:/Skills/capturing-session-knowledge',
     projectSkillPath: 'C:/Skills/grilling-project',
-    reviewSkillPath: 'C:/Skills/flreview'
+    reviewSkillPath: 'C:/Skills/flreview',
+    operationSkillPath: 'C:/Skills/operating-fuli'
   }]
 });
 
@@ -35,7 +37,8 @@ test('uninstall planning is side-effect free and finds installed integration art
         configPath: 'C:/Cursor/mcp.json',
         skillPath: 'C:/Cursor/skills/session',
         projectSkillPath: 'C:/Cursor/skills/project',
-        reviewSkillPath: 'C:/Cursor/skills/flreview'
+        reviewSkillPath: 'C:/Cursor/skills/flreview',
+        operationSkillPath: 'C:/Cursor/skills/operating-fuli'
       }
     ],
     fileExists: (path) => path === 'C:/Cursor/mcp.json'
@@ -69,7 +72,8 @@ test('uninstall disconnects integrations, removes only bundled Skills, and prese
     'disconnect:codex',
     'skill:capturing-session-knowledge',
     'skill:grilling-project',
-    'skill:flreview'
+    'skill:flreview',
+    'skill:operating-fuli'
   ]);
 });
 

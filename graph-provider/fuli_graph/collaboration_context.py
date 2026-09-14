@@ -42,7 +42,7 @@ async def read_collaboration_context(
                 status_code=422,
                 detail='project Agent preferences require a personal project',
             )
-        await authorize_project_agent(
+        agent = await authorize_project_agent(
             store,
             actor,
             space,
@@ -50,6 +50,7 @@ async def read_collaboration_context(
             project_agent_id,
             require_memory=True,
         )
+        project_agent_id = agent['agent_id']
     project_scopes = await _project_scopes(
         store,
         space,

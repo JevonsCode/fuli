@@ -54,8 +54,24 @@ function fixture() {
     close() {}
   };
   app.employees = createEmployeeService({ app, registry });
-  return { app, agents, writes, projects, service: app.employees };
+  return { app, agents, writes, projects, registry, service: app.employees };
 }
+
+test('the host rejects Jefa human acceptance even if a package would accept it', async (t) => {
+  const { service, registry } = fixture();
+  t.after(() => service.close());
+  let called = false;
+  registry.runtime = async () => ({
+    describeTools: () => [{ name: 'update_tasks', permission: 'board.write' }],
+    callTool: async () => { called = true; return {}; },
+  });
+  await service.recruit({ templateId: 'jefa', personalProjectId: 'project-a' });
+  await assert.rejects(service.callTool({
+    templateId: 'jefa', personalProjectId: 'project-a', tool: 'update_tasks',
+    arguments: { updates: [{ id: 'task-a', status: 'done' }] },
+  }), { code: 'human_acceptance_required' });
+  assert.equal(called, false);
+});
 
 test('employee recruitment reuses an identity, preserves customization, and assigns projects separately', async () => {
   const { service, agents, writes } = fixture();

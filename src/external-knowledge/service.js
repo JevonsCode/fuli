@@ -9,6 +9,7 @@ import {
   normalizeExternalDocument
 } from './document-mapping.js';
 import { safeExternalSourceDiagnostic } from './safe-diagnostic.js';
+import { ApplicationError } from '../app/application-error.js';
 
 const MODES = new Set(['hybrid', 'live', 'mirror']);
 const MAX_TARGETS = 32;
@@ -80,6 +81,10 @@ export class ExternalKnowledgeService {
   }
 
   async createBinding(input) {
+    return this.registry.withMutation(() => this.#createBinding(input));
+  }
+
+  async #createBinding(input) {
     const connectorType = requiredString(input?.connectorType, 'connectorType', 64);
     const connector = this.#connector(connectorType);
     const connectorConfig = safeConfiguration(input.connectorConfig ?? {});
@@ -117,7 +122,14 @@ export class ExternalKnowledgeService {
   }
 
   async updateBindingTargets(id, input) {
+    return this.registry.withMutation(() => this.#updateBindingTargets(id, input));
+  }
+
+  async #updateBindingTargets(id, input) {
     const binding = this.#binding(id);
+    if (input.expectedTargetsVersion !== undefined && input.expectedTargetsVersion !== targetsVersion(binding)) {
+      throw new ApplicationError('external_knowledge_conflict', 'Binding targets changed; re-read the complete targets array before retrying');
+    }
     const connector = this.#connector(binding.connectorType);
     const targets = bindingTargets(input, {
       bindingId: binding.id,
@@ -151,6 +163,10 @@ export class ExternalKnowledgeService {
   }
 
   async checkBinding(id) {
+    return this.registry.withMutation(() => this.#checkBinding(id));
+  }
+
+  async #checkBinding(id) {
     const binding = this.#binding(id);
     const connector = this.#connector(binding.connectorType);
     const result = typeof connector.check === 'function'
@@ -165,6 +181,10 @@ export class ExternalKnowledgeService {
   }
 
   async syncBinding(id, options = {}) {
+    return this.registry.withMutation(() => this.#syncBinding(id, options));
+  }
+
+  async #syncBinding(id, options) {
     if (!options || typeof options !== 'object' || Array.isArray(options)) {
       throw new TypeError('Synchronization options must be an object');
     }
@@ -227,6 +247,10 @@ export class ExternalKnowledgeService {
   }
 
   async deleteBinding(id) {
+    return this.registry.withMutation(() => this.#deleteBinding(id));
+  }
+
+  async #deleteBinding(id) {
     const binding = this.#binding(id);
     let invalidated = 0;
     for (const target of binding.targets) {
@@ -503,6 +527,7 @@ function publicBinding(binding) {
   const first = output.targets?.[0] ?? null;
   return {
     ...output,
+    targetsVersion: targetsVersion(binding),
     // Keep the v1 aliases while clients migrate to target-aware bindings.
     target: first ? {
       personalSpaceId: first.personalSpaceId,
@@ -511,6 +536,12 @@ function publicBinding(binding) {
     mode: first?.mode ?? null,
     sync: first?.sync ?? null
   };
+}
+
+function targetsVersion(binding) {
+  return createHash('sha256').update(JSON.stringify(binding.targets.map((target) => [
+    target.id, target.personalSpaceId, target.personalProjectId, target.mode,
+  ]).sort((left, right) => String(left[0]).localeCompare(String(right[0]))))).digest('hex');
 }
 
 function bindingTargets(input, {
@@ -631,13 +662,15 @@ function assertNegotiatedCapabilities(type, capabilities, targets) {
 }
 
 function selectedTargets(binding, input, { capability, requireOne = false }) {
+  const targetId = optionalString(input?.targetId, 'targetId', 256);
   const personalSpaceId = optionalString(input?.personalSpaceId, 'personalSpaceId', 256);
   const personalProjectId = optionalString(input?.personalProjectId, 'personalProjectId', 256);
   let targets = binding.targets.filter((target) =>
+    (!targetId || target.id === targetId) &&
     (!personalSpaceId || target.personalSpaceId === personalSpaceId) &&
     (!personalProjectId || target.personalProjectId === personalProjectId)
   );
-  if ((personalSpaceId || personalProjectId) && !targets.length) {
+  if ((targetId || personalSpaceId || personalProjectId) && !targets.length) {
     throw new TypeError('External knowledge binding is not assigned to this personal project');
   }
   targets = targets.filter(({ mode }) => capability === 'sync' ? mode !== 'live' : mode !== 'mirror');

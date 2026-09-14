@@ -53,4 +53,31 @@ describe('typed graph runtime', () => {
     expect(svg.children).toHaveLength(0)
     svg.remove()
   })
+
+  it('clears pending settle timers when the graph is destroyed', () => {
+    vi.useFakeTimers()
+    try {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+      Object.defineProperty(svg, 'clientWidth', { value: 900 })
+      Object.defineProperty(svg, 'clientHeight', { value: 600 })
+      document.body.append(svg)
+      const controller = renderKnowledgeGraph(svg, {
+        nodes: [{ id: 'node-1', name: '节点', type: 'Decision' }],
+        edges: [],
+      })
+      const clearTimeout = vi.spyOn(window, 'clearTimeout')
+      const node = svg.querySelector('.graph-node') as SVGGElement
+
+      node.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      expect(vi.getTimerCount()).toBe(1)
+
+      controller.destroy()
+
+      expect(clearTimeout).toHaveBeenCalledTimes(1)
+      expect(vi.getTimerCount()).toBe(0)
+      svg.remove()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

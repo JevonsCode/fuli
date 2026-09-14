@@ -13,6 +13,9 @@ export function installEmployeePackage({ sourceDirectory, runtimeConfigPath, rep
   const source = resolve(sourceDirectory);
   const digest = packageDigest(source);
   const manifest = parseEmployeeManifest(JSON.parse(readFileSync(join(source, 'employee.json'), 'utf8')));
+  if (manifest.id === 'bole' || manifest.workbench?.kind === 'native') {
+    throw new EmployeeError('A built-in native workbench cannot be installed or replaced by a package', 409, 'native_workbench_reserved');
+  }
   if (manifest.runtime) {
     confinedPath(source, manifest.runtime.entry);
     confinedPath(source, `${manifest.runtime.webRoot}/index.html`);

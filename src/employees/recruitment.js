@@ -62,6 +62,9 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
   async function recruit(input) {
     assertSpace(input);
     const { manifest } = registry.get(input.templateId);
+    if (manifest.workbench?.kind === 'native') {
+      throw new EmployeeError('This built-in role is provisioned by the Provider and does not require recruitment', 409, 'system_managed_employee');
+    }
     const selection = parseEmployeeProjectSelection(input);
     const agentId = employeeAgentId(manifest.id);
     const key = `${spaceId}:${agentId}`;

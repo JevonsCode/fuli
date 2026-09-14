@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 
 import { postJson } from '@/api/client'
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import SearchableSelect from '@/components/SearchableSelect.vue'
 import {
   batchConfirmationBasis,
   quadrantLabel,
 } from '@/features/knowledge/model'
+import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
@@ -33,6 +35,11 @@ const confirmerLabel = ref('')
 const reason = ref('')
 const acknowledged = ref(false)
 const busy = ref(false)
+const dialogTitleId = useId()
+const { dialogRef, onCancel, onKeydown } = useModalDialog(
+  () => true,
+  () => { if (!busy.value) emit('close') },
+)
 const localError = ref('')
 
 const groupOptions = computed(() =>
@@ -113,6 +120,7 @@ function basisFor(item: KnowledgeItem) {
 }
 
 async function confirmBatch() {
+  if (busy.value) return
   const group = selectedGroup.value
   if (!group) return fail(t('knowledge.dialogs.batch.errors.groupRequired'))
   if (selectedItems.value.length < 2) {
@@ -173,15 +181,14 @@ function fail(message: string) {
 </script>
 
 <template>
-  <dialog open class="project-dialog batch-confirm-dialog vue-dialog">
+  <dialog ref="dialogRef" aria-modal="true" :aria-labelledby="dialogTitleId" @cancel="onCancel" @keydown="onKeydown" class="project-dialog batch-confirm-dialog vue-dialog">
     <div class="project-dialog-shell">
       <header class="project-dialog-header">
         <div>
-          <p class="eyebrow">BATCH CONFIRMATION</p>
-          <h3>{{ t('knowledge.dialogs.batch.title') }}</h3>
+          <h3 :id="dialogTitleId">{{ t('knowledge.dialogs.batch.title') }}</h3>
           <p>{{ t('knowledge.dialogs.batch.intro') }}</p>
         </div>
-        <button class="secondary-action" type="button" @click="emit('close')">{{ t('common.actions.close') }}</button>
+        <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">{{ t('common.actions.close') }}</button>
       </header>
 
       <form class="batch-confirm-form" @submit.prevent="confirmBatch">
@@ -284,9 +291,14 @@ function fail(message: string) {
             type="submit"
             :disabled="!canSubmit"
           >
-            {{ busy
-              ? t('knowledge.dialogs.batch.confirming')
-              : t('knowledge.dialogs.batch.confirmItems', { count: selectedItems.length }) }}
+            <GrowthLoading
+              v-if="busy"
+              variant="inline"
+              :label="t('knowledge.dialogs.batch.confirming')"
+            />
+            <template v-else>
+              {{ t('knowledge.dialogs.batch.confirmItems', { count: selectedItems.length }) }}
+            </template>
           </button>
         </div>
       </form>

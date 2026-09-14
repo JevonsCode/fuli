@@ -7,6 +7,7 @@ from .store_project_agent_executors import StoreProjectAgentExecutors
 from .store_project_agent_memory import StoreProjectAgentMemory
 from .store_project_agent_context import StoreProjectAgentContext
 from .store_project_agents import StoreProjectAgents
+from .store_project_agent_attention import StoreProjectAgentAttention
 from .store_project_agent_tasks import StoreProjectAgentTasks
 from .store_projects import StoreProjects
 from .store_publication import StorePublication
@@ -18,6 +19,7 @@ class GraphStore(
     StoreIdentity,
     StoreProjects,
     StoreProjectAgents,
+    StoreProjectAgentAttention,
     StoreProjectAgentMemory,
     StoreProjectAgentContext,
     StoreTaskContexts,

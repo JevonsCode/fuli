@@ -17,7 +17,7 @@ from .models import (
     KnowledgeItemKind,
     KnowledgeRevisionRecord,
     PersonalProfileAspect,
-    PreferenceScope,
+    ScopedPreferenceScope,
     StrictModel,
 )
 from .project_action_models import (
@@ -44,8 +44,9 @@ class GraphNode(StrictModel):
     confirmation_basis: ConfirmationBasis | None = None
     reasoning_summary: str | None = None
     profile_aspect: PersonalProfileAspect | None = None
-    preference_scope: PreferenceScope | None = None
+    preference_scope: ScopedPreferenceScope | None = None
     preference_project_id: str | None = None
+    preference_agent_id: str | None = None
     inheritance_mode: KnowledgeInheritanceMode = 'local_only'
     inherited_project_ids: list[str] = Field(default_factory=list, max_length=32)
     human_edited: bool = False
@@ -97,8 +98,9 @@ class GraphEdge(StrictModel):
     confirmation_basis: ConfirmationBasis | None = None
     reasoning_summary: str | None = None
     profile_aspect: PersonalProfileAspect | None = None
-    preference_scope: PreferenceScope | None = None
+    preference_scope: ScopedPreferenceScope | None = None
     preference_project_id: str | None = None
+    preference_agent_id: str | None = None
     inheritance_mode: KnowledgeInheritanceMode = 'local_only'
     inherited_project_ids: list[str] = Field(default_factory=list, max_length=32)
     human_edited: bool = False

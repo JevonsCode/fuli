@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 
 import { postJson, putJson } from '@/api/client'
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import SearchableSelect from '@/components/SearchableSelect.vue'
 import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
@@ -31,6 +32,7 @@ const emit = defineEmits<{
 const projectId = ref('')
 const agentId = ref('')
 const name = ref('')
+const displayName = ref('')
 const occupationEmoji = ref('')
 const responsibility = ref('')
 const capabilities = ref('')
@@ -64,6 +66,7 @@ watch(
       ?? ''
     agentId.value = agent?.agentId ?? ''
     name.value = agent?.profile.name ?? ''
+    displayName.value = agent?.profile.displayName ?? ''
     occupationEmoji.value = agent?.profile.occupationEmoji ?? ''
     responsibility.value = agent?.profile.responsibility ?? ''
     capabilities.value = (agent?.profile.capabilities ?? []).join('\n')
@@ -139,12 +142,14 @@ async function save() {
   error.value = ''
   try {
     const profile: Record<string, unknown> = {
+      ...props.agent?.profile,
       name: agentName,
       responsibility: assignedResponsibility,
       capabilities: capabilityList,
       initialPreferences: preferenceList,
       status: status.value,
     }
+    if (displayName.value.trim()) profile.displayName = displayName.value.trim()
     if (agentOccupationEmoji) profile.occupationEmoji = agentOccupationEmoji
     if (agentType.value !== 'durable') profile.agentType = agentType.value
     if (strategyMode.value !== 'adaptive') {
@@ -166,7 +171,7 @@ async function save() {
       profile,
     })
     let result = saved
-    if (selectedProjectId) {
+    if (selectedProjectId && !editing.value) {
       const assignment = await postJson<ProjectAgentAssignmentRecord>('/api/project-agent-assignments', {
         personalSpaceId,
         personalProjectId: selectedProjectId,
@@ -260,7 +265,7 @@ function isValidOccupationEmoji(value: string) {
           />
         </label>
         <label>
-          <span>{{ t('projectAgents.fields.name') }}</span>
+          <span>{{ t('attention.roleName') }}</span>
           <input
             v-model="name"
             name="project-agent-name"
@@ -270,6 +275,7 @@ function isValidOccupationEmoji(value: string) {
             :placeholder="t('projectAgents.dialog.namePlaceholder')"
           />
         </label>
+        <label><span>{{ t('attention.displayName') }}</span><input v-model="displayName" name="project-agent-display-name" maxlength="160" :disabled="busy" /></label>
         <label>
           <span>{{ t('projectAgents.fields.occupationEmoji') }}</span>
           <input
@@ -351,7 +357,8 @@ function isValidOccupationEmoji(value: string) {
           {{ t('common.actions.cancel') }}
         </button>
         <button class="project-agent-primary-action" type="submit" :disabled="busy">
-          {{ editing ? t('projectAgents.dialog.saveEdit') : t('projectAgents.dialog.saveCreate') }}
+          <GrowthLoading v-if="busy" variant="inline" :label="t('projectAgents.dialog.saving')" />
+          <span v-else>{{ editing ? t('projectAgents.dialog.saveEdit') : t('projectAgents.dialog.saveCreate') }}</span>
         </button>
       </footer>
     </form>

@@ -554,7 +554,7 @@ containers; it does not shut down Rancher Desktop, Docker Desktop, Kubernetes, o
 itself. Native mode directly stops the corresponding Provider and Neo4j processes, so no shared VM
 overhead remains while idle.
 
-**Project Agents → Recruit employee** provides reusable employee templates, starting with Jefa, a project manager.
+**Project Agents → Recruit employee** provides reusable employee templates. Jefa is the project manager; Bole is the built-in HR Agent with a native people panel for Agent distribution, current work, and recruitment history.
 Recruitment reuses a durable identity with separate project assignments. An installed employee workbench,
 API and A2A share the FULI port; existing FULI MCP clients discover and call its tools. Recruitment does not
 start a model or rewrite client settings. See the [employee package and extension contract](docs/employee-agents.md).
@@ -621,10 +621,13 @@ reuse the same data.
 
 ## Agent integrations and primary tools
 
-Fuli installs the `capturing-session-knowledge`, `grilling-project`, and `flreview` Skills for
+Fuli installs the `capturing-session-knowledge`, `grilling-project`, `operating-fuli`, and `flreview` Skills for
 supported agents. `/flreview` asks FULI for ranked candidates, then the invoking Agent generates a
 fresh interactive review artifact. FULI remains the durable source of truth and write surface; no
 permanent review tab or one-question-at-a-time chat flow is required.
+`operating-fuli` makes Agents inspect the structured interface-parity catalog before changing data,
+verify writes through matching read tools, and treat browser automation as visual verification only.
+See the [Agent interface architecture](docs/agent-interface-architecture.md).
 Fuli setup generates Claude Code `UserPromptSubmit`/`Stop` MCP hooks, a Codex
 `UserPromptSubmit` MCP hook plus a local `Stop` command, and Cursor
 `sessionStart`/`beforeSubmitPrompt`/`stop` hooks. The Codex Stop command first blocks an unfinished

@@ -157,6 +157,7 @@ export interface ProjectAgentTokenUsage {
 
 export interface ProjectAgentProfile {
   name: string
+  displayName?: string | null
   responsibility: string
   capabilities: string[]
   initialPreferences: string[]
@@ -478,6 +479,7 @@ export interface ProjectAgentLearningEvidence {
 
 export interface ProjectAgentRecord {
   agentId: string
+  legacyAgentIds?: string[]
   personalSpaceId: string
   personalProjectId?: string | null
   profile: ProjectAgentProfile
@@ -559,6 +561,7 @@ export interface ExternalKnowledgeBindingTarget {
 
 export interface ExternalKnowledgeBinding {
   id: string
+  targetsVersion?: string
   name: string
   connectorType: string
   mode: ExternalKnowledgeMode

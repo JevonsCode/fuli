@@ -29,3 +29,9 @@
 - Add focused tests for each behavior change and run the relevant suite before committing.
 - Keep commits scoped to one task and do not mix unrelated refactors into feature work.
 - Use codebase-memory-mcp for structural discovery when available, then read the exact files before editing.
+
+## Loading Feedback
+
+- Reuse `web/src/components/GrowthLoading.vue` for visible pending operations. Use the default page variant for initial views, `compact` for sections, and `inline` for actions.
+- Loading labels must describe the actual action and its object in Chinese and English. When the awaited request changes, update the label from real request state; do not invent progress or backend stages.
+- Show one indicator per pending operation, preserve useful loaded content during refresh, and keep the shared live-status and reduced-motion behavior.

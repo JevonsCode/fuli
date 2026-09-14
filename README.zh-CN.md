@@ -501,7 +501,7 @@ start 和 restart 会继续沿用。
 Kubernetes 或整台容器虚拟机；原生模式会直接停止对应 Provider 和 Neo4j 进程，因此空闲时
 不再保留共享虚拟机开销。
 
-“项目 Agent → 招募员工”支持可复用的默认员工模板，首位员工是项目经理 Jefa。招募复用持久身份，
+“项目 Agent → 招募员工”支持可复用的默认员工模板。Jefa 是项目经理；Bole 是固定 HR Agent，原生人员面板可查看 Agent 分布、当前工作与招募历史。招募复用持久身份，
 按项目单独任职；安装员工包后，侧栏工作台与 API/A2A 共用 FULI 端口，已有 FULI MCP 可发现和调用员工工具。
 招募不等于启动模型，也不改写已有客户端配置。详见[员工包安装与扩展协议](docs/employee-agents.md)。
 
@@ -560,7 +560,7 @@ npm uninstall --global fuli-context
 
 ## Agent 接入与主要工具
 
-Fuli 为支持的 Agent 安装 `capturing-session-knowledge`、`grilling-project` 和 `flreview`
+Fuli 为支持的 Agent 安装 `capturing-session-knowledge`、`grilling-project`、`operating-fuli` 和 `flreview`
 Skills。输入 `/flreview` 后可选择全部、个人偏好或个人项目；若用户表示完全没耐心，流程会
 跳过心情、时间和 token 询问，只处理少量最高优先级问题。Fuli setup 为 Claude Code 生成
 `UserPromptSubmit`/`Stop` MCP Hook，为 Codex 生成 `UserPromptSubmit` MCP Hook 和本地 `Stop`
@@ -568,7 +568,9 @@ Skills。输入 `/flreview` 后可选择全部、个人偏好或个人项目；�
 指令只在未收到生命周期上下文时使用 fallback，不重复已提供的偏好。Codex 的 Stop 命令首次
 阻止未完成检查；若一次继续后仍未完成，只对同一 token 写入 `retain_nothing` 防止无限循环，
 不生成知识或角色记忆。安装配置不会代替用户批准宿主信任。偏好正文始终以本机 Fuli 为唯一
-来源，不复制到 Agent 配置中。
+来源，不复制到 Agent 配置中。`operating-fuli` 要求 Agent 在写数据前先检查结构化接口覆盖目录，
+写后用对应读取工具验证；浏览器自动化只用于可选的视觉检查，不作为数据写入手段。详见
+[Agent 接口架构](docs/agent-interface-architecture.md)。
 
 FULI MCP 还提供只读的 `fuli://` resources：每个本地个人项目和“全局品味”各有一个可选条目。
 支持 MCP mention 的 Agent 可以在 `@` 选择器里选中它们；项目条目只代表一个精确项目，

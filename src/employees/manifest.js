@@ -27,6 +27,10 @@ export const employeeManifestSchema = z.object({
     boardTool: toolIdentifier,
     titleTool: toolIdentifier.optional(),
   }).strict().optional(),
+  workbench: z.object({
+    kind: z.literal('native'),
+    view: z.literal('people')
+  }).strict().optional(),
   runtime: z.object({
     apiVersion: z.literal(1),
     entry: relativeFile,

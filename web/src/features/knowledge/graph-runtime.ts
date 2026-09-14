@@ -255,6 +255,7 @@ export function renderKnowledgeGraph(
 
   for (let tick = 0; tick < 220; tick += 1) simulation.tick()
   updatePositions()
+  let settleTimer: ReturnType<typeof window.setTimeout> | null = null
 
   const drag = d3.drag<SVGGElement, GraphNodeDatum>()
     .on('start', (event, node) => {
@@ -301,7 +302,11 @@ export function renderKnowledgeGraph(
       node.fy = null
       d3.select(event.currentTarget).classed('pinned', false)
       simulation.alpha(0.35).restart()
-      window.setTimeout(() => simulation.stop(), 700)
+      if (settleTimer !== null) window.clearTimeout(settleTimer)
+      settleTimer = window.setTimeout(() => {
+        settleTimer = null
+        simulation.stop()
+      }, 700)
     })
 
   edgeHits
@@ -379,6 +384,10 @@ export function renderKnowledgeGraph(
     },
     clearSelection,
     destroy() {
+      if (settleTimer !== null) {
+        window.clearTimeout(settleTimer)
+        settleTimer = null
+      }
       simulation.stop()
       root.on('.zoom', null).on('.selection', null)
       root.selectAll('*').remove()

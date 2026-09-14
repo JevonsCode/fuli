@@ -90,6 +90,7 @@ class ProjectAgentExecutorPolicy(StrictModel):
 
 class ProjectAgentProfile(StrictModel):
     name: str = Field(min_length=1, max_length=160)
+    display_name: str | None = Field(default=None, min_length=1, max_length=160)
     # Keep the visual occupation marker as first-class profile data.  It is
     # intentionally independent from ``name`` so clients can update either
     # value without rewriting the other and old profiles can omit it.
@@ -266,6 +267,7 @@ class ProjectAgentAssignmentReplaceResult(StrictModel):
 
 class ProjectAgentRecord(StrictModel):
     agent_id: str
+    legacy_agent_ids: list[str] = Field(default_factory=list)
     personal_space_id: str
     personal_project_id: str | None = None
     profile: ProjectAgentProfile

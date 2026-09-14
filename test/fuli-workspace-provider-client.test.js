@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { runWithAgentRequestContext } from '../src/app/agent-request-context.js';
 
 import { GraphitiProviderClient, ProviderRequestError } from '../src/graphiti/provider-client.js';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
@@ -11,6 +12,34 @@ import {
 
 const BASE_URL = 'http://127.0.0.1:8789';
 const TEST_TOKEN = 'test-workspace-token-1234567890';
+
+test('fuli-workspace cancels all active health requests when its caller stops', async () => {
+  const caller = new AbortController();
+  const signals = [];
+  const client = workspaceClient(async (_url, { signal }) => {
+    signals.push(signal);
+    return new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    });
+  });
+  const pending = runWithAgentRequestContext({ signal: caller.signal }, () => client.health());
+  const reason = new Error('Synthetic caller cancelled');
+  caller.abort(reason);
+  await assert.rejects(pending, (error) => error === reason);
+  assert.equal(signals.length, 2);
+  assert.equal(signals.every((signal) => signal.aborted), true);
+});
+
+test('fuli-workspace keeps its timeout diagnostic without caller cancellation', async () => {
+  const client = new FuliWorkspaceProviderClient({
+    baseUrl: BASE_URL, accessToken: TEST_TOKEN, requestTimeoutMs: 20,
+    fetchImpl: async (_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    })
+  });
+  await assert.rejects(client.health(), (error) =>
+    error instanceof ProviderRequestError && error.code === 'provider_timeout');
+});
 
 test('workspace provider factory keeps Graphiti as the default protocol', () => {
   const provider = createWorkspaceProvider({

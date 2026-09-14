@@ -11,8 +11,11 @@ const props = defineProps<{
   hint?: string
   emptyLabel?: string
   compact?: boolean
+  allLabel?: string
+  showCount?: boolean
+  resettable?: boolean
 }>()
-const emit = defineEmits<{ 'update:modelValue': [value: string[]] }>()
+const emit = defineEmits<{ 'update:modelValue': [value: string[]]; reset: [] }>()
 const root = ref<HTMLElement | null>(null)
 const trigger = ref<HTMLButtonElement | null>(null)
 const search = ref<HTMLInputElement | null>(null)
@@ -32,7 +35,8 @@ const singleSelectionLabel = computed(() => {
   const project = props.projects.find((entry) => selectedIds.value.has(entry.id))
   return project ? `${project.name}${duplicateNames.value.has(project.name) ? ` · ${project.id}` : ''}` : ''
 })
-const summary = computed(() => allSelected.value ? t('employees.scope.allSummary', { count: count.value })
+const summary = computed(() => props.showCount ? t('employees.scope.count', { selected: count.value, total: props.projects.length })
+  : allSelected.value ? props.allLabel ?? t('employees.scope.allSummary', { count: count.value })
   : count.value === 1 ? singleSelectionLabel.value
     : count.value ? t('employees.scope.selected', { count: count.value }) : props.emptyLabel ?? t('employees.unassigned'))
 const filtered = computed(() => {
@@ -81,7 +85,7 @@ function toggleProject(id: string) {
 </script>
 
 <template>
-  <div ref="root" class="project-scope-picker" :class="{ 'is-inline': inline, 'is-compact': compact }" @focusout="onFocusout" @keydown="onKeydown">
+  <div ref="root" class="project-scope-picker" :class="{ 'is-inline': inline, 'is-compact': compact, 'has-count': showCount }" @focusout="onFocusout" @keydown="onKeydown">
     <div class="project-scope-heading">
       <span :id="`${id}-label`" class="project-scope-label">{{ label }}</span>
       <span v-if="inline" class="project-scope-count" role="status">{{ t('employees.scope.count', { selected: count, total: projects.length }) }}</span>
@@ -89,7 +93,7 @@ function toggleProject(id: string) {
     <button v-if="!inline" ref="trigger" type="button" class="project-scope-trigger" :disabled="disabled" :aria-expanded="open" :aria-controls="`${id}-panel`" :aria-labelledby="`${id}-label ${id}-value`" @click="toggle">
       <svg v-if="compact" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M3 5h14M5.5 10h9M8 15h4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
       <span :id="`${id}-value`" class="project-scope-value">{{ summary }}</span>
-      <small v-if="compact" class="project-scope-multiple">{{ t('employees.scope.multiple') }}</small>
+      <small v-if="compact && !showCount" class="project-scope-multiple">{{ t('employees.scope.multiple') }}</small>
       <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="m5 7.5 5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
     </button>
     <div v-if="inline || open" :id="`${id}-panel`" class="project-scope-panel" role="group" :aria-labelledby="`${id}-label`">
@@ -97,9 +101,10 @@ function toggleProject(id: string) {
       <div class="project-scope-bulk">
         <label class="project-scope-option project-scope-all">
           <input type="checkbox" :checked="allSelected" :indeterminate="count > 0 && !allSelected" :disabled="disabled || !projects.length" @change="selectAll">
-          <span>{{ t('employees.scope.all') }} <small>{{ projects.length }}</small></span>
+          <span>{{ allLabel ?? t('employees.scope.all') }} <small>{{ projects.length }}</small></span>
         </label>
         <button type="button" :disabled="disabled || !projects.length" @click="invert">{{ t('employees.scope.invert') }}</button>
+        <button v-if="resettable" class="project-scope-reset" type="button" :disabled="disabled" @click="emit('reset')">{{ t('employees.scope.reset') }}</button>
       </div>
       <div class="project-scope-list">
         <label v-for="project in filtered" :key="project.id" class="project-scope-option" :class="{ 'is-selected': selectedIds.has(project.id) }">
@@ -126,6 +131,7 @@ function toggleProject(id: string) {
 .project-scope-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #bdcbbf; border-radius: 8px; background: #fff; color: #25392e; font: inherit; text-align: left; cursor: pointer; }
 .project-scope-trigger svg { flex-shrink: 0; }
 .project-scope-value { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.has-count .project-scope-value { overflow: visible; white-space: normal; line-height: 1.4; }
 .project-scope-multiple { color: #58675d; font-size: 11px; white-space: nowrap; }
 .project-scope-trigger:hover:not(:disabled) { border-color: #315c43; }
 .project-scope-trigger[aria-expanded=true] { border-color: #315c43; }
@@ -133,7 +139,7 @@ function toggleProject(id: string) {
 .project-scope-panel { position: absolute; z-index: 5; inset: auto 0 auto; margin-top: 6px; padding: 8px; border: 0; border-radius: 12px; background: #fff; box-shadow: 0 8px 30px #12291c2e; }
 .project-scope-search { display: block; box-sizing: border-box; width: 100%; min-height: 40px; padding: 8px 10px; border: 0; border-radius: 6px; background: #f1f5f2; color: #25392e; font: inherit; }
 .project-scope-search::placeholder { color: #59695f; }
-.project-scope-bulk, .project-scope-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.project-scope-bulk, .project-scope-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .project-scope-bulk { margin-top: 4px; }
 .project-scope-bulk button, .project-scope-footer button { min-height: 40px; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: #315c43; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
 .project-scope-bulk button:hover:not(:disabled), .project-scope-footer button:hover { background: #edf3ee; }

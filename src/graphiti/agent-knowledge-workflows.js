@@ -61,6 +61,7 @@ export async function beginTaskContext(application, {
     previous_checkpoint_missing: task.previousCheckpointMissing,
     ...preferences,
     task_guidance: {
+      human_attention: 'When the selected Project Agent needs a human answer, decision, review or permission, use request_agent_attention with the exact current space/project/Agent IDs, a stable idempotency key and a specific requestedAction. Never raise a hand for ordinary running, queueing or automatic retries. Read list_agent_attention with status=resolved for replies; cancel obsolete requests with cancel_agent_attention. A response does not grant permission or accept task completion.',
       retrieval: 'Inspect task_knowledge_recall before asking for a stable project fact or method again. On a miss, use search_current_project_knowledge with focused action, artifact, target-system, or identifier queries; never use the full conversational request as the only query.',
       checkpoint: 'Before finishing, call checkpoint_task_knowledge with capture_candidates or retain_nothing. When durable role context changed, include agentMemory with the loaded revision and a bounded merged summary, decisions, open threads and next actions. Do not overwrite from truncated context or store raw transcripts.'
     }

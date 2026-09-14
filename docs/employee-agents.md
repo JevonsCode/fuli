@@ -1,6 +1,6 @@
 # Specialist Agents
 
-An employee template is a reusable role with an optional FULI-hosted workbench. Recruitment reuses the existing durable Project Agent identity and assignment model. The first built-in template is **Jefa, project manager**; adding another employee does not require a host-side special case.
+An employee template is a reusable role with an optional FULI-hosted or native workbench. Recruitment reuses the existing durable Project Agent identity and assignment model. The built-in specialists are **Jefa**, the project manager, and **Bole**, the fixed system HR Agent. Bole is created with every personal space, cannot be archived or replaced by another `hr` identity, and does not require a separate runtime package.
 
 ## User flow
 
@@ -16,7 +16,7 @@ The directory's **Filter projects** control supports multi-selection and inversi
 
 Repeat recruitment is idempotent. Customized profile preferences and executor/model policies are preserved. One employee identity can have multiple project assignments. Reactivating an inactive identity is an explicit action; a conflicting unrelated identity is never overwritten. Recruitment does not start an executor or constitute model usage.
 
-The catalog shows whether a workbench package is actually installed. Identity-only templates need no runtime and remain valid employees without a sidebar workbench.
+The catalog shows whether a workbench package is actually installed. Identity-only templates need no runtime and remain valid employees without a sidebar workbench. A trusted built-in template may declare `workbench: { "kind": "native", "view": "people" }`; Bole uses this native panel to summarize Agent distribution, current tasks, and timestamped recruitment reasons from the same Project Agent APIs used elsewhere in the console.
 
 ## Local installation
 
@@ -71,7 +71,11 @@ Context includes `personalSpaceId`, `project`, `agentId`, and `basePath`; HTTP a
 
 Optional manifest fields `defaultProjectScope: "all" | "selected"` and `taskEntry: { "boardTool": "read_board", "titleTool": "prepare_session_title" }` declare defaults and task-entry participation without a template-specific host branch. Context also carries the trusted `management` policy and native `session` identity when available. Task-entry board tools must declare `board.read`; the host returns bounded data and guidance, not an automatically started worker. A failed employee runtime degrades manager context without breaking collaboration preferences.
 
+The optional built-in-only native workbench declaration is `workbench: { "kind": "native", "view": "people" }`. It renders host-owned read models and does not load third-party code. Installable employee packages continue to use the runtime contract above.
+
 The reserved identity is `employee.<template-id>`, recognized by the generic `fuli.employee:<template-id>` capability. Preserve this marker when customizing employee profiles. The actual role, history, memory and project assignments remain in FULI's existing Agent model.
+
+`employee.bole` is additionally reserved as the only system HR identity. Its Provider type is `hr`; other identities cannot claim that type. Recruitment history records the coordinating and HR Agent IDs, time, reason, proposed identity and final recruited identity, which powers Bole's people panel without inventing activity.
 
 ## HTTP and MCP
 
@@ -87,6 +91,42 @@ Jefa supplies eight workbench tools for board/task reading, task creation, optim
 
 ## Verification and release boundary
 
+Jefa uses one native `EmployeeTaskBoard` for every project scope. `/employees/jefa` and
+`?project=all` show the current managed projects; legacy `__all__` is normalized. A single
+project query or repeated `project` query parameters filter the same board, without changing
+assignments. Task details and creation use the existing `get_task`, `create_tasks`, and
+version-checked `update_tasks` interfaces. Explicit human confirmation of `done` continues
+through the existing human HTTP endpoint. Other employee packages retain their generic iframe
+workspaces; Jefa no longer switches to the package board when a card is opened.
+
+The external-report action beside Jefa's identity has an independent project selection,
+including all, one, several, and inverted selection. Generating a link explicitly enables
+sharing for selected projects through `PATCH /employee-workspaces/jefa/<project>/api/projects/<project>/sharing`
+with `{ publicShareEnabled: true, acceptsPublicRequests: false }`. Merely opening or filtering
+the dialog performs no writes. Sharing status comes from the existing scoped snapshot API;
+disabling uses the same endpoint with both flags false and invalidates that project's old slug.
+
+One `/reports/jefa` link aggregates the selected project capabilities in its URL fragment,
+keeping them out of HTTP access logs and referrer query strings. The report loads only
+`GET /employee-workspaces/jefa/<project>/api/public/<slug>` and uses the same board in read-only
+mode. It never loads the console shell or private board/task endpoints. The existing public
+projection controls visibility: private tasks, details, evidence, and unrelated projects are
+not included. Partial enablement is reported without claiming a complete link, and selection
+changes clear the previously generated link. “All” is the current selection, not consent to
+publish future projects automatically.
+
+Before presenting a report link, the dialog verifies the selected public projections and
+shows their task count. A zero-task selection is not presented as a successful report;
+existing empty links explain that no tasks have been approved for public viewing. This
+never changes task privacy or substitutes private board data for a public projection.
+Refreshing the preview preserves the selected projects.
+
+These structured HTTP operations remain subject to the host's existing scope, Origin and LAN
+authentication checks. The link is not a separate authorization layer for the entire console.
+Loopback links work only on the same computer; this UI does not enable LAN access, tunnels,
+production hosting, or new public task visibility. Do not expose the local management service
+as a public multi-user report server.
+
 Run FULI's normal Node/web tests and typecheck. For an actual Jefa build:
 
 ```sh
@@ -97,3 +137,19 @@ node scripts/employee-package-smoke.js <built-package-directory> --serve
 The smoke fixture uses a synthetic FULI directory but the real installed employee bundle, SQLite and MCP transport. The UI mode does not query a personal provider or external model. It deletes its temporary test data on shutdown.
 
 Signing, remote catalog distribution, a runtime sandbox, database migration/uninstall UX, and production multi-user authorization remain separate release work. This feature does not authorize or publish a Feishu application.
+
+### Bole identity upgrades
+
+Local startup calls the idempotent system-HR endpoint for both fresh and existing installs.
+It consolidates the reserved legacy `fuli-project-hr` identity into `employee.bole` in one
+transaction. Names never identify merge targets. The legacy node remains an audit alias;
+assignments, recruitment references, attention and task history follow the canonical Bole.
+Old profile links resolve to Bole, and the obsolete ID cannot be recreated as another role.
+Working-memory heads and immutable checkpoint JSON/hashes are retained; equivalent old/new-ID
+memory retries address the same checkpoint. Knowledge visibility metadata is migrated only
+inside the owning space, without changing historical evidence UUIDs.
+
+Conflicting memory heads, locked executor policies, relationship properties or overlapping
+learning buckets abort the complete migration. Nothing is silently selected or overwritten.
+The Neo4j acceptance tests require an explicitly disposable loopback database; they never
+clear or seed an existing user's graph.

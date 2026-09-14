@@ -21,7 +21,8 @@ export function planLocalUninstall(options, {
       fileExists(agent.globalInstructionsOverridePath)) ||
     (agent.skillPath && fileExists(agent.skillPath)) ||
     (agent.projectSkillPath && fileExists(agent.projectSkillPath)) ||
-    (agent.reviewSkillPath && fileExists(agent.reviewSkillPath))
+    (agent.reviewSkillPath && fileExists(agent.reviewSkillPath)) ||
+    (agent.operationSkillPath && fileExists(agent.operationSkillPath))
   ));
   return { paths, agents };
 }
@@ -62,7 +63,8 @@ export async function applyLocalUninstall(plan, dependencies = {}) {
     for (const [skillPath, sourcePath] of [
       [agent.skillPath, plan.paths.sessionSkillPath],
       [agent.projectSkillPath, plan.paths.projectSkillPath],
-      [agent.reviewSkillPath, plan.paths.reviewSkillPath]
+      [agent.reviewSkillPath, plan.paths.reviewSkillPath],
+      [agent.operationSkillPath, plan.paths.operationSkillPath]
     ]) {
       try {
         skills.push(removeSkill({ ...agent, skillPath }, { sourcePath }));

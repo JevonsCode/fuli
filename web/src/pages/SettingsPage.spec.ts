@@ -26,9 +26,60 @@ const configured = {
 describe('SettingsPage', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
-  it('shows real resource data, personal ports, and the public-service roadmap', async () => {
+  it('renders older settings with a missing launcher without crashing or changing existing values', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().runtimeStatus = 'ready'
+    const legacy = { ...configured, conversationLaunchers: { codex: { ...DEFAULT_CONVERSATION_LAUNCHERS.codex, enabled: false } } }
+    vi.stubGlobal('fetch', vi.fn(async (input) => {
+      if (String(input) === '/api/system/settings') return Response.json({ configured: legacy, active: configured, restartRequired: false })
+      return Response.json({}, { status: 503 })
+    }))
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    await flushPromises()
+    expect(wrapper.findAll('.conversation-launcher-row')).toHaveLength(7)
+    const codex = wrapper.findAll('.conversation-launcher-row').find((row) => row.text().includes('Codex'))!
+    expect((codex.get('input[role="switch"]').element as HTMLInputElement).checked).toBe(false)
+    expect(wrapper.find('#settings-form').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('locks settings and the shared save state until a pending save finishes, rejecting repeat submits', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.runtimeStatus = 'ready'
+    let finish!: (value: Response) => void
+    let saves = 0
+    vi.stubGlobal('fetch', vi.fn(async (input, init) => {
+      if (String(input) === '/api/system/settings' && init?.method === 'PUT') {
+        saves += 1
+        return new Promise<Response>(resolve => { finish = resolve })
+      }
+      if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured })
+      return Response.json({}, { status: 503 })
+    }))
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    await flushPromises()
+    await wrapper.get('#settings-form').trigger('submit')
+    await wrapper.get('#settings-form').trigger('submit')
+    expect(saves).toBe(1)
+    expect(store.settingsSaving).toBe(true)
+    expect(wrapper.get('.settings-fields').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.growth-loading--inline').text()).toContain('保存运行设置')
+    finish(Response.json({ configured, active: configured }))
+    await flushPromises()
+    expect(store.settingsSaving).toBe(false)
+    expect(wrapper.get('.settings-fields').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('.growth-loading--inline').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('renders resource responses including native and unknown labels without translation warnings', async () => {
+    const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = useConsoleStore()
@@ -63,7 +114,8 @@ describe('SettingsPage', () => {
             complete: true,
             components: [
               { id: 'console', label: 'Management service', status: 'ready', bytes: 40_000_000 },
-              { id: 'personalNeo4j', label: 'Personal Neo4j', status: 'ready', bytes: 900_000_000 },
+              { id: 'personal-neo4j', label: 'Personal Neo4j', status: 'ready', bytes: 900_000_000 },
+              { id: 'synthetic-extension', label: 'Synthetic extension', status: 'ready', bytes: 1 },
             ],
           },
           disk: {
@@ -89,6 +141,8 @@ describe('SettingsPage', () => {
     expect(wrapper.text()).toContain('资源占用')
     expect(wrapper.text()).toContain('1.00 GiB')
     expect(wrapper.text()).toContain('个人 Neo4j')
+    expect(wrapper.text()).toContain('Synthetic extension')
+    expect(warnings).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('硬盘更新于')
     expect(wrapper.findAll('.port-grid input')).toHaveLength(4)
     expect(wrapper.get('.development-section').text()).toContain('开发中')

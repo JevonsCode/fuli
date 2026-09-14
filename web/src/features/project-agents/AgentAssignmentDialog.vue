@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 
 import { postJson } from '@/api/client'
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import SearchableSelect from '@/components/SearchableSelect.vue'
 import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
@@ -51,7 +52,7 @@ const projectOptions = computed(() => props.projects.map((project) => ({
 })))
 const replacementOptions = computed(() => props.availableAgents
   .filter((agent) => agent.agentId !== props.agent?.agentId && agent.profile.status === 'active')
-  .map((agent) => ({ value: agent.agentId, label: agent.profile.name, meta: agent.agentId })))
+  .map((agent) => ({ value: agent.agentId, label: agent.profile.displayName || agent.profile.name, meta: agent.profile.name })))
 
 watch(() => [props.open, props.agent, props.assignment, props.action, props.defaultProjectId], () => {
   if (!props.open) return
@@ -179,7 +180,10 @@ function createIdempotencyKey() {
       <p v-if="error" class="project-agent-assignment-dialog-error" role="alert">{{ error }}</p>
       <footer class="project-agent-assignment-dialog-actions">
         <button class="quiet-button" type="button" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</button>
-        <button class="project-agent-primary-action" type="submit" :disabled="busy">{{ t(`projectAgents.assignmentDialog.${editing ? 'saveChange' : 'saveAssign'}`) }}</button>
+        <button class="project-agent-primary-action" type="submit" :disabled="busy">
+          <GrowthLoading v-if="busy" variant="inline" :label="t('projectAgents.assignmentDialog.saving')" />
+          <span v-else>{{ t(`projectAgents.assignmentDialog.${editing ? 'saveChange' : 'saveAssign'}`) }}</span>
+        </button>
       </footer>
     </form>
   </dialog>

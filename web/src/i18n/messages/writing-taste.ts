@@ -17,7 +17,7 @@ export const writingTasteMessages = {
       open: '查看写作偏好',
     },
     page: {
-      loading: '正在整理写作偏好',
+      loading: '正在读取写作偏好与规则依据…',
       back: '返回协作偏好',
       collectingTitle: '还在收集写作偏好',
       collectingCopy: '画像会在证据跨越多个会话和日期，或你明确确认足够多规则后生成。',
@@ -77,7 +77,7 @@ export const writingTasteMessages = {
       open: 'View writing taste',
     },
     page: {
-      loading: 'Organizing writing preferences',
+      loading: 'Loading writing preferences and rule evidence…',
       back: 'Back to collaboration preferences',
       collectingTitle: 'Still collecting writing preferences',
       collectingCopy: 'The profile appears after evidence spans multiple sessions and days, or after you directly confirm enough rules.',

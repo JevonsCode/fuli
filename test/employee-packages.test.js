@@ -44,7 +44,41 @@ test('a second employee uses the same catalog protocol without a Jefa branch', (
   installEmployeePackage({ sourceDirectory: f.source, runtimeConfigPath: f.runtimeConfigPath });
   const registry = createEmployeePackageRegistry(employeeDirectories(f.runtimeConfigPath));
   assert.equal(registry.get('release-reviewer').runtimeStatus, 'not_required');
-  assert.equal(registry.catalog().length, 2);
+  assert.equal(registry.catalog().length, 3);
+});
+
+test('Bole is a built-in native specialist instead of an installable package', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'fuli-bole-catalog-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const registry = createEmployeePackageRegistry({
+    packageDirectory: join(root, 'packages'),
+    dataDirectory: join(root, 'data'),
+  });
+  t.after(() => registry.close());
+
+  const entry = registry.get('bole');
+  assert.equal(entry.runtimeStatus, 'not_required');
+  assert.equal(entry.manifest.name, 'Bole');
+  assert.equal(entry.manifest.role, 'HR');
+  assert.deepEqual(entry.manifest.workbench, { kind: 'native', view: 'people' });
+  assert.equal(entry.manifest.runtime, null);
+});
+
+test('local packages cannot replace a native workbench or claim a native view', (t) => {
+  const f = fixture(t);
+  for (const manifest of [
+    { ...original, id: 'bole' },
+    { ...original, id: 'other-hr', runtime: null, workbench: { kind: 'native', view: 'people' } },
+  ]) {
+    writeFileSync(join(f.source, 'employee.json'), JSON.stringify(manifest));
+    assert.throws(() => installEmployeePackage({ sourceDirectory: f.source, runtimeConfigPath: f.runtimeConfigPath }), /native workbench/);
+  }
+  const dirs = employeeDirectories(f.runtimeConfigPath);
+  const target = join(dirs.packageDirectory, 'bole');
+  mkdirSync(target, { recursive: true });
+  writeFileSync(join(target, 'employee.json'), JSON.stringify({ ...original, id: 'bole', name: 'Override', runtime: null }));
+  const registry = createEmployeePackageRegistry(dirs);
+  assert.equal(registry.get('bole').manifest.name, 'Bole');
 });
 
 test('a stale installation receipt cannot hide a modified runtime', (t) => {

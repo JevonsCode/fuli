@@ -216,6 +216,7 @@ def _node_query(project_scoped: bool, paginated: bool = False) -> str:
                     ELSE coalesce(node.fuli_preference_scope, 'global') END
                     AS preference_scope,
                node.fuli_preference_project_id AS preference_project_id,
+               node.fuli_preference_agent_id AS preference_agent_id,
                coalesce(node.fuli_inheritance_mode, 'local_only')
                  AS inheritance_mode,
                coalesce(node.fuli_inherited_project_ids, [])
@@ -331,6 +332,7 @@ def _edge_query(project_scoped: bool, paginated: bool = False) -> str:
                     ELSE coalesce(edge.fuli_preference_scope, 'global') END
                     AS preference_scope,
                edge.fuli_preference_project_id AS preference_project_id,
+               edge.fuli_preference_agent_id AS preference_agent_id,
                coalesce(edge.fuli_inheritance_mode, 'local_only')
                  AS inheritance_mode,
                coalesce(edge.fuli_inherited_project_ids, [])
@@ -499,6 +501,7 @@ def _graph_node(
         profile_aspect=record.get('profile_aspect'),
         preference_scope=record.get('preference_scope'),
         preference_project_id=record.get('preference_project_id'),
+        preference_agent_id=record.get('preference_agent_id'),
         inheritance_mode=record.get('inheritance_mode') or 'local_only',
         inherited_project_ids=record.get('inherited_project_ids') or [],
         human_edited=record.get('human_edited') is True,
@@ -580,6 +583,7 @@ def _graph_edge(
         profile_aspect=record.get('profile_aspect'),
         preference_scope=record.get('preference_scope'),
         preference_project_id=record.get('preference_project_id'),
+        preference_agent_id=record.get('preference_agent_id'),
         inheritance_mode=record.get('inheritance_mode') or 'local_only',
         inherited_project_ids=record.get('inherited_project_ids') or [],
         human_edited=record.get('human_edited') is True,

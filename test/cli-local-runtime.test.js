@@ -71,7 +71,8 @@ test('fl start tells the user to run setup when an Agent integration is outdated
       graphRuntimeConfigPath: 'C:/Fuli/graph-runtime.json',
       sessionSkillPath: 'C:/Package/skills/capturing-session-knowledge',
       projectSkillPath: 'C:/Package/skills/grilling-project',
-      reviewSkillPath: 'C:/Package/skills/flreview'
+      reviewSkillPath: 'C:/Package/skills/flreview',
+      operationSkillPath: 'C:/Package/skills/operating-fuli'
     }),
     discoverAgents: () => [{ id: 'codex', label: 'Codex', available: true }],
     inspectAgentInstallations: () => [{

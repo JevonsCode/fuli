@@ -7,6 +7,46 @@ import {
   parseDockerBytes
 } from '../src/system/resource-monitor.js';
 
+test('concurrent resource refreshes share one scan and later refreshes remain fresh', async () => {
+  let directoryScans = 0;
+  let memorySamples = 0;
+  const monitor = createResourceMonitor({
+    dataDir: '/synthetic-data', packageRoot: '/synthetic-package',
+    containerRuntime: { status: 'missing' },
+    processMemory: () => ({ rss: ++memorySamples }),
+    hostMemory: () => ({ totalBytes: 100, freeBytes: 50 }),
+    directorySize: async () => { directoryScans += 1; return 0; },
+    filesystemStats: async () => ({ totalBytes: 100, freeBytes: 50 })
+  });
+  const snapshots = await Promise.all(Array.from({ length: 20 }, () => monitor.sample()));
+  assert.equal(memorySamples, 1);
+  assert.equal(directoryScans, 2);
+  assert.equal(snapshots.every((snapshot) => snapshot === snapshots[0]), true);
+  const fresh = await monitor.sample();
+  assert.equal(memorySamples, 2);
+  assert.equal(fresh.memory.usedBytes, 2);
+  assert.equal(directoryScans, 2);
+});
+
+test('resource monitoring recovers after a failed shared scan', async () => {
+  let attempts = 0;
+  const monitor = createResourceMonitor({
+    dataDir: '/synthetic-data', packageRoot: '/synthetic-package',
+    containerRuntime: { status: 'missing' },
+    processMemory: () => ({ rss: 1 }),
+    hostMemory: () => {
+      if (++attempts === 1) throw new Error('Synthetic sample failure');
+      return { totalBytes: 100, freeBytes: 50 };
+    },
+    directorySize: async () => 0,
+    filesystemStats: async () => ({ totalBytes: 100, freeBytes: 50 })
+  });
+  const failed = await Promise.allSettled([monitor.sample(), monitor.sample()]);
+  assert.equal(failed.every(({ status }) => status === 'rejected'), true);
+  assert.equal((await monitor.sample()).memory.usedBytes, 1);
+  assert.equal(attempts, 2);
+});
+
 test('resource monitor combines the console, managed containers, images, and Neo4j volumes', async () => {
   const calls = [];
   const run = async (_command, args) => {

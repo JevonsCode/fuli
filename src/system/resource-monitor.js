@@ -38,8 +38,18 @@ export function createResourceMonitor({
   let resolvedRuntime = containerRuntime;
   let diskCache = null;
   let hostMemoryCache = null;
+  let pendingSample = null;
 
-  async function sample() {
+  function sample() {
+    // Several console tabs can refresh together. Share the expensive process and
+    // directory scan until it settles, without retaining a stale memory sample.
+    pendingSample ??= Promise.resolve().then(collectSample).finally(() => {
+      pendingSample = null;
+    });
+    return pendingSample;
+  }
+
+  async function collectSample() {
     const sampledAt = now().toISOString();
     const runtime = runtimeMode === 'container'
       ? (resolvedRuntime ??= inspectRuntime())

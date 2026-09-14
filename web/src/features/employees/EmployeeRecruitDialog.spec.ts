@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { createPinia, setActivePinia } from 'pinia'
 import type { PersonalProject } from '@/types'
 import { setLocale } from '@/i18n'
 
@@ -8,7 +9,7 @@ const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi
 vi.mock('@/api/client', () => ({ getJson, postJson }))
 import EmployeeRecruitDialog from './EmployeeRecruitDialog.vue'
 import EmployeeNavigation from './EmployeeNavigation.vue'
-import { refreshEmployeeCatalog, type EmployeeTemplate } from './catalog'
+import { employeeCatalogLoading, employeeTemplates, refreshEmployeeCatalog, type EmployeeTemplate } from './catalog'
 
 const projects: PersonalProject[] = [{
   project_id: 'project-a', personal_space_id: 'space-a',
@@ -30,6 +31,7 @@ let entry = fresh()
 const mounted: Array<{ unmount: () => void }> = []
 
 beforeEach(async () => {
+  setActivePinia(createPinia())
   await refreshEmployeeCatalog('')
   setLocale('zh-CN', { persist: false })
   getJson.mockReset()
@@ -54,6 +56,13 @@ async function setup(projectsList = projects, props: { defaultProjectIds?: strin
 }
 
 describe('employee recruitment', () => {
+  it('reads a fresh management snapshot without toggling the shared catalog state', async () => {
+    const { wrapper } = await setup()
+    expect(wrapper.find('form').exists()).toBe(true)
+    expect(employeeCatalogLoading.value).toBe(false)
+    expect(employeeTemplates.value).toEqual([])
+  })
+
   it('supports all current and future projects with explicit exclusions and keeps exclusion IDs when projects disappear', async () => {
     entry.management = { mode: 'all', projectIds: [], excludedProjectIds: ['temporarily-unavailable'], titleMode: 'auto', titleStyle: 'emoji' }
     entry.permissions.push('session.title')
@@ -63,7 +72,7 @@ describe('employee recruitment', () => {
     expect(wrapper.get('.project-scope-picker').find('select').exists()).toBe(false)
     expect(wrapper.find('select:not([aria-hidden="true"])').exists()).toBe(false)
     expect(wrapper.findAll('.employee-title-settings .searchable-select')).toHaveLength(2)
-    expect(wrapper.get('.project-scope-count').text()).toContain('2 / 2')
+    expect(wrapper.get('.project-scope-count').text()).toContain('2 / 共 2')
     await wrapper.get('input[value="project-b"]').setValue(false)
     expect(wrapper.text()).not.toContain('将移出')
     const future = { ...projects[0]!, project_id: 'future-project', profile: { ...projects[0]!.profile, name: 'Future project' } }
@@ -100,10 +109,10 @@ describe('employee recruitment', () => {
     entry.management = { mode: 'selected', projectIds: [], excludedProjectIds: [], titleMode: 'auto', titleStyle: 'emoji' }
     const { wrapper } = await setup()
     expect(wrapper.get('[data-scope="selected"]').attributes('aria-checked')).toBe('true')
-    expect(wrapper.get('.project-scope-count').text()).toContain('0 / 2')
+    expect(wrapper.get('.project-scope-count').text()).toContain('0 / 共 2')
     expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
     await wrapper.get('[data-scope="all"]').trigger('click')
-    expect(wrapper.get('.project-scope-count').text()).toContain('2 / 2')
+    expect(wrapper.get('.project-scope-count').text()).toContain('2 / 共 2')
     expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined()
   })
 
@@ -174,7 +183,7 @@ describe('employee recruitment', () => {
     const { wrapper } = await setup()
     expect(wrapper.find('input[value="archived"]').exists()).toBe(false)
     await wrapper.get('.project-scope-all input').setValue(true)
-    expect(wrapper.get('.project-scope-count').text()).toContain('2 / 2')
+    expect(wrapper.get('.project-scope-count').text()).toContain('2 / 共 2')
     await wrapper.get('input[value="project-b"]').setValue(false)
     postJson.mockRejectedValue(new Error('Synthetic failure preserves selection'))
     await wrapper.get('form').trigger('submit')
@@ -207,7 +216,7 @@ describe('employee recruitment', () => {
     entry.assignments = []
     await wrapper.findAll('button').find((button) => button.text() === '重新读取负责范围')!.trigger('click')
     await flushPromises()
-    expect(wrapper.get('.project-scope-count').text()).toContain('0 / 2')
+    expect(wrapper.get('.project-scope-count').text()).toContain('0 / 共 2')
     await wrapper.get('input[value="project-a"]').setValue(true)
     await wrapper.get('form').trigger('submit')
     await flushPromises()
@@ -220,14 +229,14 @@ describe('employee recruitment', () => {
     entry.assignments = [{ assignmentId: 'ended', personalProjectId: 'project-b', agentId: 'employee.jefa', personalSpaceId: 'space-a', status: 'ended', responsibility: '管理', assignedAt: '', updatedAt: '' }]
     const { wrapper } = await setup(projects, { defaultProjectIds: ['project-a', 'project-b'], templateId: 'jefa' })
     expect(wrapper.get('h2').text()).toBe('管理 Jefa 的项目')
-    expect(wrapper.get('.project-scope-count').text()).toContain('0 / 2')
+    expect(wrapper.get('.project-scope-count').text()).toContain('0 / 共 2')
     expect(wrapper.findAll('.project-scope-list input').every((input) => !(input.element as HTMLInputElement).checked)).toBe(true)
     expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
   })
 
   it('uses explicit multi-project defaults only for a new identity', async () => {
     const { wrapper } = await setup(projects, { defaultProjectIds: ['project-a', 'project-b', 'archived', 'project-a'] })
-    expect(wrapper.get('.project-scope-count').text()).toContain('2 / 2')
+    expect(wrapper.get('.project-scope-count').text()).toContain('2 / 共 2')
     postJson.mockRejectedValue(new Error('Synthetic failure'))
     await wrapper.get('form').trigger('submit')
     await flushPromises()

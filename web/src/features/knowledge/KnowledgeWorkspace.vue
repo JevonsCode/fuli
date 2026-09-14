@@ -79,6 +79,7 @@ const selectedItem = ref<KnowledgeItem | null>(null)
 const graphCanvas = ref<GraphCanvasApi | null>(null)
 const searchDraft = ref(queryValue(route.query.q))
 const searchMessage = ref('')
+const searching = ref(false)
 const confirmingItem = ref<KnowledgeItem | null>(null)
 const editingItem = ref<KnowledgeItem | null>(null)
 const projectActionItem = ref<KnowledgeItem | null>(null)
@@ -555,6 +556,7 @@ async function syncSearchQuery(value: string) {
 }
 
 function cancelGraphSearch() {
+  searching.value = false
   searchSequence += 1
   searchAbortController?.abort()
   searchAbortController = null
@@ -578,7 +580,8 @@ async function runGraphSearch(queryText: string) {
   const controller = new AbortController()
   searchAbortController = controller
   projectDiscovery.value = null
-  searchMessage.value = t('knowledge.workspace.workspace.search.searching')
+  searching.value = true
+  searchMessage.value = ''
   const query = new URLSearchParams({ personalSpaceId, q: queryText, limit: '30' })
   if (projectId.value) query.set('personalProjectId', projectId.value)
   for (const id of contextIds.value) query.append('contextPersonalProjectId', id)
@@ -629,7 +632,10 @@ async function runGraphSearch(queryText: string) {
     searchMessage.value = t('knowledge.workspace.workspace.search.failed')
     store.reportError(error)
   } finally {
-    if (searchAbortController === controller) searchAbortController = null
+    if (searchAbortController === controller) {
+      searchAbortController = null
+      searching.value = false
+    }
   }
 }
 
@@ -899,13 +905,18 @@ function queryValues(value: unknown) {
 </script>
 
 <template>
-  <section class="view graph-view vue-knowledge-view">
+  <section
+    class="view graph-view vue-knowledge-view"
+    :class="{ 'graph-canvas-active': mode === 'graph' }"
+  >
     <div class="knowledge-view-heading">
       <div class="knowledge-mode-switch" role="tablist" :aria-label="t('knowledge.workspace.workspace.view.modeAria')">
         <button type="button" role="tab" :aria-selected="mode === 'directory'" @click="changeMode('directory')">{{ t('knowledge.workspace.workspace.view.directory') }}</button>
         <button type="button" role="tab" :aria-selected="mode === 'graph'" @click="changeMode('graph')">{{ t('knowledge.workspace.workspace.view.graph') }}</button>
       </div>
-      <span class="muted">{{ countLabel }}</span>
+      <GrowthLoading v-if="searching && !projectDiscovery?.checking" variant="inline" :label="t('knowledge.workspace.workspace.search.searching')" />
+      <GrowthLoading v-else-if="loading && !showInitialLoading && (mode !== 'graph' || graphView?.nodes.length)" variant="inline" :label="t('common.status.loadingKnowledge')" />
+      <span v-else-if="!showInitialLoading" class="muted">{{ countLabel }}</span>
     </div>
 
     <div class="graph-toolbar">
@@ -1021,7 +1032,7 @@ function queryValues(value: unknown) {
       v-if="showInitialLoading"
       :label="t('common.status.loadingKnowledge')"
     />
-    <div v-else class="knowledge-layout">
+    <div v-else class="knowledge-layout" :class="{ 'has-selection': Boolean(selectedItem) }">
       <KnowledgeDirectoryPanel
         v-if="mode === 'directory'"
         :personal-projects-only="personalProjectsOnly"
@@ -1058,7 +1069,8 @@ function queryValues(value: unknown) {
           <aside v-if="projectDiscovery" class="graph-search-status" aria-live="polite">
             <span class="graph-search-status-kicker">{{ t('knowledge.workspace.workspace.discovery.noHitKicker') }}</span>
             <strong class="graph-search-status-title">{{ t('knowledge.workspace.workspace.discovery.noResults', { query: projectDiscovery.query }) }}</strong>
-            <p class="graph-search-status-copy">{{ projectDiscoveryCopy }}</p>
+            <GrowthLoading v-if="projectDiscovery.checking" variant="inline" :label="projectDiscoveryCopy" />
+            <p v-else class="graph-search-status-copy">{{ projectDiscoveryCopy }}</p>
             <div
               v-if="projectDiscovery.result?.matches.length"
               class="graph-search-suggestions"
@@ -1093,9 +1105,8 @@ function queryValues(value: unknown) {
             @select-node="selectNode"
             @select-edge="selectEdge"
           />
-          <div v-else class="graph-empty">{{ loading
-            ? t('common.status.loadingKnowledge')
-            : t('knowledge.workspace.workspace.view.noGraph') }}</div>
+          <GrowthLoading v-else-if="loading" variant="compact" :label="t('common.status.loadingKnowledge')" />
+          <div v-else class="graph-empty">{{ t('knowledge.workspace.workspace.view.noGraph') }}</div>
         </div>
       </div>
 

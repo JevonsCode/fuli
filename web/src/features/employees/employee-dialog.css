@@ -1,0 +1,20 @@
+.employee-dialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid #dce4df; border-radius: 16px; color: #253c2f; background: #fff; box-sizing: border-box; overflow: hidden; }
+.employee-dialog::backdrop { background: rgb(15 29 21 / 38%); }
+.employee-dialog-shell { display: flex; flex-direction: column; max-height: calc(100dvh - 34px); min-height: 0; }
+.employee-dialog header, .employee-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: 0 0 auto; padding: 18px 24px; }
+.employee-dialog header { border-bottom: 1px solid #e6ece8; }
+.employee-dialog h2 { margin: 0; font-size: 20px; }
+.employee-dialog button { min-height: 40px; padding: 8px 12px; border: 1px solid #d8e2dc; border-radius: 8px; color: #36523f; background: #fff; font: inherit; cursor: pointer; }
+.employee-dialog header > button { border: 0; font-size: 24px; }
+.employee-dialog button:disabled { opacity: .5; cursor: default; }
+.employee-dialog .primary { background: #315c43; color: #fff; border-color: #315c43; }
+.employee-dialog footer { justify-content: flex-end; border-top: 1px solid #e6ece8; }
+.employee-dialog-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 20px 24px; display: flex; flex-direction: column; gap: 18px; }
+.employee-dialog-body > label { display: flex; flex-direction: column; gap: 8px; color: #526659; font-size: 13px; }
+.employee-dialog-body input:not([type=checkbox]), .employee-dialog-body select, .employee-dialog-body textarea { min-width: 0; width: 100%; min-height: 40px; padding: 9px 11px; border: 1px solid #cddbd2; border-radius: 8px; font: inherit; background: #fff; color: #253c2f; box-sizing: border-box; }
+.employee-dialog-body textarea { resize: vertical; }
+.employee-dialog :is(button, input, textarea, select, a):focus-visible { outline: 2px solid #356448; outline-offset: 2px; }
+.employee-dialog-error { color: #903c30; }
+.employee-dialog-body p { margin: 0; line-height: 1.6; font-size: 13px; overflow-wrap: anywhere; }
+.employee-task-status { color: #526659; }
+@media (max-width: 640px) { .employee-dialog header, .employee-dialog footer, .employee-dialog-body { padding: 16px; } }

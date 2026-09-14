@@ -33,6 +33,8 @@ import {
 } from './project-agent-definitions.js';
 import { PROJECT_AGENT_MEMORY_DEFINITIONS, workingMemorySchema } from './project-agent-memory-definitions.js';
 import { EMPLOYEE_TOOL_DEFINITIONS } from './employee-definitions.js';
+import { AGENT_INTERFACE_DEFINITIONS } from './interface-definitions.js';
+import { AGENT_ATTENTION_DEFINITIONS } from './agent-attention-definitions.js';
 
 const id = boundedString(256);
 const label = boundedString(512);
@@ -278,6 +280,8 @@ const workflowObservedStep = objectSchema({
 }, ['actionId', 'name']);
 
 export const GRAPH_TOOL_DEFINITIONS = [
+  ...AGENT_ATTENTION_DEFINITIONS,
+  ...AGENT_INTERFACE_DEFINITIONS,
   ...EMPLOYEE_TOOL_DEFINITIONS,
   {
     name: 'begin_task_context',
@@ -1106,13 +1110,15 @@ export const GRAPH_TOOL_DEFINITIONS = [
   },
   {
     name: 'revise_personal_knowledge',
-    description: 'Confirm, correct, invalidate, or restore one personal entity or relationship while preserving revision history and original evidence. This is the same personal-only operation used by the management UI.',
+    description: 'Confirm, correct, invalidate, restore, or link a replacement for one personal entity or relationship while preserving revision history and original evidence. A replacement link requires an invalidated item and an exact replacement item ID and kind. This is the same personal-only operation used by the management UI; Agent attribution is always retained.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectId: nullableStringSchema(),
       itemKind: knowledgeItemKind,
       itemId: id,
-      action: enumSchema(['confirm', 'update', 'invalidate', 'restore']),
+      action: enumSchema(['confirm', 'update', 'invalidate', 'restore', 'link_replacement']),
+      replacementItemId: nullableStringSchema(),
+      replacementItemKind: knowledgeItemKind,
       reason: shortText,
       name: nullableStringSchema(),
       summary: nullableStringSchema(),

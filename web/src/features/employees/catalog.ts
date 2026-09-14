@@ -19,6 +19,7 @@ export interface EmployeeTemplate {
   assignmentsVersion: string
   identityConflict: boolean
   defaultProjectScope?: 'all' | 'selected'
+  workbench?: { kind: 'native'; view: 'people' }
   management?: EmployeeManagement
   managedProjects?: { id: string; name: string }[]
 }
@@ -66,6 +67,12 @@ let currentSpace = ''
 let pending: Promise<void> | null = null
 let generation = 0
 
+export async function fetchEmployeeCatalog(spaceId: string): Promise<EmployeeTemplate[]> {
+  if (!spaceId) return []
+  const result = await getJson<{ templates: EmployeeTemplate[] }>(`/api/employee-templates?${new URLSearchParams({ personalSpaceId: spaceId })}`)
+  return Array.isArray(result.templates) ? result.templates : []
+}
+
 export function refreshEmployeeCatalog(spaceId: string): Promise<void> {
   if (spaceId === currentSpace && pending) return pending
   const version = ++generation
@@ -74,8 +81,8 @@ export function refreshEmployeeCatalog(spaceId: string): Promise<void> {
   employeeCatalogError.value = ''
   if (!spaceId) { employeeTemplates.value = []; employeeCatalogLoading.value = false; return Promise.resolve() }
   employeeCatalogLoading.value = true
-  pending = getJson<{ templates: EmployeeTemplate[] }>(`/api/employee-templates?${new URLSearchParams({ personalSpaceId: spaceId })}`)
-    .then((result) => { if (version === generation) employeeTemplates.value = Array.isArray(result.templates) ? result.templates : [] })
+  pending = fetchEmployeeCatalog(spaceId)
+    .then((templates) => { if (version === generation) employeeTemplates.value = templates })
     .catch((error: unknown) => {
       if (version === generation) { employeeTemplates.value = []; employeeCatalogError.value = employeeErrorMessage(error) }
     })

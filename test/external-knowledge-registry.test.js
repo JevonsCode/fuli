@@ -6,6 +6,20 @@ import test from 'node:test';
 
 import { ExternalKnowledgeRegistry } from '../src/external-knowledge/index.js';
 
+test('registry mutation reservation excludes another instance and releases on failure', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-external-lock-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const first = new ExternalKnowledgeRegistry(join(directory, 'bindings.json'));
+  const second = new ExternalKnowledgeRegistry(join(directory, 'bindings.json'));
+  let release;
+  const pending = first.withMutation(() => new Promise((resolve) => { release = resolve; }));
+  await assert.rejects(second.withMutation(() => assert.fail('must not enter')), { code: 'external_knowledge_busy' });
+  release();
+  await pending;
+  await assert.rejects(first.withMutation(() => { throw new Error('fixture failure'); }), /fixture failure/);
+  assert.equal(await second.withMutation(() => 'released'), 'released');
+});
+
 test('registry migrates a v1 single-project binding to v2 target state without data loss', () => {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-external-registry-'));
   const file = join(directory, 'bindings.json');

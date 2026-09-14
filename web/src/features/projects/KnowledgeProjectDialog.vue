@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, useId } from 'vue'
 
 import { postJson } from '@/api/client'
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import SearchableSelect from '@/components/SearchableSelect.vue'
+import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
@@ -66,6 +68,11 @@ const reason = ref('')
 const preview = ref<ProjectActionPreview | null>(null)
 const previewLoading = ref(false)
 const busy = ref(false)
+const dialogTitleId = useId()
+const { dialogRef, onCancel, onKeydown } = useModalDialog(
+  () => Boolean(props.item),
+  () => { if (!busy.value) emit('close') },
+)
 const localError = ref('')
 const idTouched = ref(false)
 let previewSequence = 0
@@ -161,11 +168,16 @@ const relationOptions = computed(() =>
     .map(([value, label]) => ({ value, label })),
 )
 const submitLabel = computed(() => {
-  if (busy.value) return t('projects.knowledgeDialog.actions.processing')
   if (mode.value === 'create') return t('projects.knowledgeDialog.actions.create')
   return preview.value?.match.kind === 'exact_duplicate'
     ? t('projects.knowledgeDialog.actions.reuse')
     : t('projects.knowledgeDialog.actions.add')
+})
+const submitPendingLabel = computed(() => {
+  if (mode.value === 'create') return t('projects.knowledgeDialog.actions.creating')
+  return preview.value?.match.kind === 'exact_duplicate'
+    ? t('projects.knowledgeDialog.actions.reusing')
+    : t('projects.knowledgeDialog.actions.adding')
 })
 const submitDisabled = computed(() =>
   busy.value
@@ -241,6 +253,7 @@ async function loadPreview() {
 }
 
 async function submit() {
+  if (busy.value) return
   const item = props.item
   if (!item || item.itemKind !== 'entity') return
   if (mode.value === 'create' && (!newProjectName.value.trim() || !newProjectId.value.trim())) {
@@ -310,18 +323,18 @@ function fail(message: string) {
 </script>
 
 <template>
-  <dialog v-if="item" open class="project-dialog knowledge-project-dialog vue-dialog">
+  <dialog v-if="item" ref="dialogRef" aria-modal="true" :aria-labelledby="dialogTitleId" @cancel="onCancel" @keydown="onKeydown" class="project-dialog knowledge-project-dialog vue-dialog">
     <div class="project-dialog-shell">
       <header class="project-dialog-header">
         <div>
-          <p class="eyebrow">PERSONAL PROJECT</p>
-          <h3>{{ t('projects.knowledgeDialog.title') }}</h3>
+          <h3 :id="dialogTitleId">{{ t('projects.knowledgeDialog.title') }}</h3>
           <p>{{ t('projects.knowledgeDialog.intro') }}</p>
         </div>
-        <button class="secondary-action" type="button" @click="emit('close')">{{ t('common.actions.close') }}</button>
+        <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">{{ t('common.actions.close') }}</button>
       </header>
 
       <form class="knowledge-project-form" @submit.prevent="submit">
+            <fieldset class="pending-inputs" :disabled="busy">
         <div class="knowledge-project-source">
           <span>{{ t('projects.knowledgeDialog.sourceNode') }}</span>
           <strong>{{ rawNode?.name }}</strong>
@@ -393,7 +406,12 @@ function fail(message: string) {
         </section>
 
         <section class="knowledge-project-preview">
-          <div>
+          <GrowthLoading
+            v-if="previewLoading"
+            variant="compact"
+            :label="t('projects.knowledgeDialog.previews.checking.title')"
+          />
+          <div v-else>
             <span>{{ previewState.label }}</span>
             <strong>{{ previewState.title }}</strong>
             <p>{{ previewState.copy }}</p>
@@ -430,12 +448,28 @@ function fail(message: string) {
         </label>
         <p v-if="localError" class="publish-dialog-error" role="alert">{{ localError }}</p>
         <div class="knowledge-project-actions">
-          <button class="secondary-action" type="button" @click="emit('close')">{{ t('common.actions.cancel') }}</button>
+          <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</button>
           <button class="primary-action" type="submit" :disabled="submitDisabled">
-            {{ submitLabel }}
+            <GrowthLoading
+              v-if="busy"
+              variant="inline"
+              :label="submitPendingLabel"
+            />
+            <template v-else>{{ submitLabel }}</template>
           </button>
         </div>
-      </form>
+      </fieldset>
+          </form>
     </div>
   </dialog>
 </template>
+
+<style scoped>
+.pending-inputs {
+  display: contents;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+</style>

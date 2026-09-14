@@ -74,6 +74,8 @@ function sampleValue(schema) {
   if (Array.isArray(schema.type)) return schema.type.includes('string') ? 'value' : null;
   if (schema.type === 'string') {
     return schema.format === 'date-time' ? '2026-07-21T10:00:00.000Z' :
+      schema.pattern === '^https?://\\S+$' ? 'https://provider.example.test' :
+      schema.pattern === '^[a-f0-9]{64}$' ? 'a'.repeat(64) :
       schema.pattern === '^[A-Z][A-Z0-9_]*$' ? 'RELATES_TO' :
         schema.pattern === '^[A-Za-z][A-Za-z0-9_]*$' ? 'Entity' :
           schema.pattern === '^personal-global-[a-f0-9]{20}$' ?

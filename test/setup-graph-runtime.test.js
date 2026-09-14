@@ -104,6 +104,7 @@ test('native setup bypasses Docker and starts the native graph runtime', async (
       if (url.endsWith('/v1/spaces') && options.method === 'POST') {
         return response({ id: 'personal-space', name: '我', kind: 'personal' });
       }
+      if (url.includes('/v1/project-agents/system-hr?')) return response({ agent_id: 'employee.bole' });
       throw new Error(`Unexpected Provider request: ${url}`);
     }
   }));
@@ -166,6 +167,7 @@ test('switching modes preserves each graph credential profile and bootstraps a f
         if (url.endsWith('/v1/spaces') && options.method === 'POST') {
           return response({ id: 'native-space', name: '我', kind: 'personal' });
         }
+        if (url.includes('/v1/project-agents/system-hr?')) return response({ agent_id: 'employee.bole' });
         throw new Error(`Unexpected Provider request: ${url}`);
       }
     }));
@@ -231,6 +233,7 @@ test('personal-only setup starts and bootstraps only the local Provider', async 
       if (url === 'http://127.0.0.1:8787/v1/spaces' && options.method === 'POST') {
         return response({ id: 'personal-space', name: '我', kind: 'personal' });
       }
+      if (url.includes('/v1/project-agents/system-hr?')) return response({ agent_id: 'employee.bole' });
       throw new Error(`Unexpected Provider request: ${url}`);
     },
     writeConfig(path, value) {
@@ -301,6 +304,7 @@ test('setup applies every configured service port to Provider URLs and Compose e
       if (url.endsWith('/v1/spaces') && options.method === 'POST') {
         return response({ id: 'personal-space', name: '我', kind: 'personal' });
       }
+      if (url.includes('/v1/project-agents/system-hr?')) return response({ agent_id: 'employee.bole' });
       throw new Error(`Unexpected Provider request: ${url}`);
     },
     writeConfig(_path, value) { writtenConfig = value; }
@@ -353,6 +357,7 @@ test('setup persists adaptive memory and marks freshly started graph services aw
     },
     async fetch(url) {
       if (url.endsWith('/health')) return response({ status: 'ready' });
+      if (url.includes('/v1/project-agents/system-hr?')) return response({ agent_id: 'employee.bole' });
       throw new Error(`Unexpected Provider request: ${url}`);
     }
   }));
@@ -379,6 +384,7 @@ test('setup migrates an existing personal runtime onto the host observation capa
     },
     async fetch(url) {
       if (url.endsWith('/health')) return response({ status: 'ready' });
+      if (url.includes('/v1/project-agents/system-hr?')) return response({ agent_id: 'employee.bole' });
       throw new Error(`Unexpected Provider request: ${url}`);
     },
     writeConfig(_path, value) { writtenConfig = value; },
@@ -465,6 +471,7 @@ test('setup restarts a healthy console when the configured port changes', async 
     },
     async fetch(url) {
       if (url.endsWith('/health')) return response({ status: 'ready' });
+      if (url.includes('/v1/project-agents/system-hr?')) return response({ agent_id: 'employee.bole' });
       throw new Error(`Unexpected Provider request: ${url}`);
     },
     isProcessAlive(pid) { return pid === 5173 || pid === 2727; },
@@ -509,6 +516,7 @@ test('setup starts an authenticated LAN console and secures its runtime state', 
     readConfig: configuredGraph,
     async fetch(url) {
       if (url.endsWith('/health')) return response({ status: 'ready' });
+      if (url.includes('/v1/project-agents/system-hr?')) return response({ agent_id: 'employee.bole' });
       throw new Error(`Unexpected Provider request: ${url}`);
     },
     isProcessAlive: (pid) => pid === 2727,
@@ -568,6 +576,7 @@ test('repeating LAN start restarts the console and rotates its in-memory access 
     readState: () => existing,
     async fetch(url) {
       if (url.endsWith('/health')) return response({ status: 'ready' });
+      if (url.includes('/v1/project-agents/system-hr?')) return response({ agent_id: 'employee.bole' });
       throw new Error(`Unexpected Provider request: ${url}`);
     },
     stopProcess: (pid) => stopped.push(pid),

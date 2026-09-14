@@ -1,0 +1,4 @@
+interface:
+  display_name: "Operate FULI"
+  short_description: "Control FULI data through structured Agent tools"
+  default_prompt: "Use $operating-fuli to inspect FULI's Agent interface catalog and safely complete this FULI data operation without browser automation."

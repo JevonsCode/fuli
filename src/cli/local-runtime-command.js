@@ -125,7 +125,8 @@ function checkAgentSetup({ paths, env, nodePath, discover, inspect }) {
       runtimeConfigPath: paths.graphRuntimeConfigPath,
       sessionSkillPath: paths.sessionSkillPath,
       projectSkillPath: paths.projectSkillPath,
-      reviewSkillPath: paths.reviewSkillPath
+      reviewSkillPath: paths.reviewSkillPath,
+      operationSkillPath: paths.operationSkillPath
     });
     return {
       status: 'checked',

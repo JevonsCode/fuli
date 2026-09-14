@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
+import AgentHand from '@/features/project-agents/AgentHand.vue'
 import { deleteJson, getJson, patchJson, postJson } from '@/api/client'
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import { activityRange, normalizeActivity } from '@/features/project-agents/activity-evidence'
 import ProjectScopePicker from '@/features/employees/ProjectScopePicker.vue'
 import AgentAssignmentDialog from '@/features/project-agents/AgentAssignmentDialog.vue'
@@ -62,6 +64,7 @@ type DetailSource = typeof detailSources[number]
 type DetailSourceStatus = 'idle' | 'loading' | 'ready' | 'error'
 interface DetailSourceState { status: DetailSourceStatus; error: string }
 const store = useConsoleStore()
+const route = useRoute()
 const agents = ref<ProjectAgentRecord[]>([])
 const loading = ref(false)
 const error = ref('')
@@ -70,6 +73,7 @@ const projectFilter = ref<string[] | null>(null)
 const statusFilter = ref<StatusFilter>('all')
 const search = ref('')
 const selectedAgentKey = ref('')
+watch(() => route.query.agent, id => { if (typeof id === 'string') selectedAgentKey.value = id }, { immediate: true })
 const dialogOpen = ref(false)
 const recruitDialogOpen = ref(false)
 const recruitTemplateId = ref('')
@@ -81,9 +85,13 @@ const detailLoading = ref(false)
 const detailStates = ref<Record<string, Record<DetailSource, DetailSourceState>>>({})
 const detailNotice = ref('')
 const activityDay = ref('')
+const cleanupBusy = ref(false)
 const learningBusy = ref('')
+const learningBusyAction = ref<'ignore' | 'reset' | ''>('')
 const recruitmentBusy = ref('')
+const recruitmentBusyAction = ref<'approve' | 'cancel' | 'disable' | ''>('')
 const executorBusy = ref('')
+const executorBusyAction = ref<'authorize' | 'revoke' | ''>('')
 const executorDialogOpen = ref(false)
 const executorDialogMode = ref<'executor' | 'rule'>('executor')
 const editingExecutor = ref<ProjectAgentExecutorRef | null>(null)
@@ -112,6 +120,14 @@ async function employeeRecruited(result: EmployeeRecruitmentResult) {
   if (wasSelected) void refreshDetails()
 }
 const activeSpaceId = computed(() => store.activePersonalSpace?.id ?? '')
+const pageLoading = computed(() => loading.value || (!store.state
+  && (store.runtimeStatus === 'idle' || store.runtimeStatus === 'loading')))
+const pageError = computed(() => error.value || (!store.state && store.runtimeStatus === 'error'
+  ? store.feedback?.message || t('projectAgents.loadError') : ''))
+function retryPage() {
+  if (!store.state) void store.refresh()
+  else void loadAgents()
+}
 const projectById = computed(() => new Map(
   projects.value.map((project) => [project.project_id, project]),
 ))
@@ -171,17 +187,21 @@ onMounted(() => {
   if (store.runtimeStatus === 'idle') void store.refresh()
 })
 watch(activeSpaceId, (spaceId) => {
+  ++loadVersion
   ++detailLoadVersion
   detailStates.value = {}
   selectedAgentKey.value = ''
   agents.value = []
   projectFilter.value = null
+  error.value = ''
   if (spaceId) void loadAgents(spaceId)
-  else if (store.runtimeStatus !== 'loading') loading.value = false
+  else loading.value = false
 }, { immediate: true })
 watch(filteredAgents, (items) => {
   if (!items.some((agent) => agent.agentId === selectedAgentKey.value)) {
-    selectedAgentKey.value = items[0]?.agentId ?? ''
+    const linkedAgent = items.find((agent) => agent.agentId === route.query.agent
+      || (typeof route.query.agent === 'string' && agent.legacyAgentIds?.includes(route.query.agent)))
+    selectedAgentKey.value = linkedAgent?.agentId ?? items[0]?.agentId ?? ''
   }
   if (!items.some((agent) => agent.activity?.days.some(({ date }) => date === activityDay.value))) {
     activityDay.value = ''
@@ -205,6 +225,7 @@ async function loadAgents(spaceId = activeSpaceId.value) {
       // hide collaboration from the directory row.
       getJson<unknown>(`/api/project-agent-tasks?${query}`),
     ])
+    if (version !== loadVersion) return
     void refreshEmployeeCatalog(spaceId)
     if (agentsResult.status === 'rejected') throw agentsResult.reason
     if (version === loadVersion) {
@@ -280,6 +301,9 @@ function detailState(source: DetailSource | DetailSource[]): DetailSourceState {
     ?? states.find(({ status }) => status === 'idle')
     ?? { status: 'ready', error: '' }
 }
+function detailLoadingLabel(source: DetailSource) {
+  return t('projectAgents.detail.loading.' + source)
+}
 function detailRequestIsCurrent(version: number, agentId: string, spaceId: string) {
   return version === detailLoadVersion
     && agentId === selectedAgentKey.value
@@ -350,6 +374,7 @@ async function updateLearning(
     return
   }
   learningBusy.value = evidenceId
+  learningBusyAction.value = action
   try {
     await patchJson(`/api/project-agent-learning/${encodeURIComponent(evidenceId)}`, {
       action,
@@ -371,12 +396,14 @@ async function updateLearning(
     detailNotice.value = cause instanceof Error ? cause.message : t('projectAgents.learning.updateFailed')
   } finally {
     learningBusy.value = ''
+    learningBusyAction.value = ''
   }
 }
 
 async function decideRecruitment(recruitment: ProjectAgentRecruitmentRecord, decision: 'approve' | 'cancel') {
   if (!activeSpaceId.value || recruitmentBusy.value) return
   recruitmentBusy.value = recruitment.recruitmentId
+  recruitmentBusyAction.value = decision
   try {
     await postJson('/api/project-agent-recruitments/decision', {
       personalSpaceId: activeSpaceId.value,
@@ -391,12 +418,14 @@ async function decideRecruitment(recruitment: ProjectAgentRecruitmentRecord, dec
     detailNotice.value = cause instanceof Error ? cause.message : t('projectAgents.recruitment.decisionFailed')
   } finally {
     recruitmentBusy.value = ''
+    recruitmentBusyAction.value = ''
   }
 }
 
 async function authorizeExecutor(executor: ProjectAgentExecutorRef, status: 'authorized' | 'revoked') {
   if (!activeSpaceId.value || executorBusy.value) return
   executorBusy.value = executor.executorId
+  executorBusyAction.value = status === 'authorized' ? 'authorize' : 'revoke'
   try {
     await postJson('/api/executors/authorization', {
       personalSpaceId: activeSpaceId.value,
@@ -411,6 +440,7 @@ async function authorizeExecutor(executor: ProjectAgentExecutorRef, status: 'aut
     detailNotice.value = cause instanceof Error ? cause.message : t('projectAgents.routing.authorizationFailed')
   } finally {
     executorBusy.value = ''
+    executorBusyAction.value = ''
   }
 }
 
@@ -452,6 +482,7 @@ function executorDialogSaved(value: ProjectAgentExecutorRef | ProjectAgentRoutin
 async function disableRule(rule: ProjectAgentRoutingRule) {
   if (!activeSpaceId.value || !rule.ruleId || recruitmentBusy.value) return
   recruitmentBusy.value = `rule:${rule.ruleId}`
+  recruitmentBusyAction.value = 'disable'
   try {
     await patchJson(`/api/executor-routing-rules/${encodeURIComponent(rule.ruleId)}`, {
       personalSpaceId: activeSpaceId.value,
@@ -466,11 +497,13 @@ async function disableRule(rule: ProjectAgentRoutingRule) {
     detailNotice.value = cause instanceof Error ? cause.message : t('projectAgents.routing.updateFailed')
   } finally {
     recruitmentBusy.value = ''
+    recruitmentBusyAction.value = ''
   }
 }
 
 async function cleanupTestAgent(agent: ProjectAgentRecord) {
   if (!agent.profile.cleanupEligible) return
+  cleanupBusy.value = true
   detailLoading.value = true
   try {
     await deleteJson(`/api/project-agents/${encodeURIComponent(agent.agentId)}?personalSpaceId=${encodeURIComponent(agent.personalSpaceId)}&reason=${encodeURIComponent('archived test role')}`)
@@ -478,6 +511,7 @@ async function cleanupTestAgent(agent: ProjectAgentRecord) {
   } catch (cause) {
     detailNotice.value = cause instanceof Error ? cause.message : t('projectAgents.source.cleanupFailed')
   } finally {
+    cleanupBusy.value = false
     detailLoading.value = false
   }
 }
@@ -529,7 +563,7 @@ function legacyAssignment(agent: ProjectAgentRecord): ProjectAgentAssignmentReco
 
 function searchText(agent: ProjectAgentRecord) {
   return [
-    agent.agentId, agent.profile.name, agent.profile.occupationEmoji ?? '', agent.profile.responsibility,
+    agent.agentId, agent.profile.name, agent.profile.displayName ?? '', agent.profile.occupationEmoji ?? '', agent.profile.responsibility,
     ...(agent.profile.capabilities ?? []), ...(agent.profile.workKinds ?? []),
     ...assignmentsFor(agent).flatMap((item) => [item.personalProjectId, item.responsibility, item.scope ?? '', ...(item.workKinds ?? [])]),
     ...(agent.tasks ?? []).flatMap((task) => [task.taskId, task.title, task.workKind ?? '']),
@@ -712,7 +746,7 @@ function normalizeAgent(value: unknown): ProjectAgentRecord {
   const record = unknownRecord(value); const rawProfile = unknownRecord(record.profile); const agentId = stringOf(record, 'agentId', 'agent_id') ?? ''
   const createdAt = stringOf(record, 'createdAt', 'created_at') ?? ''; const updatedAt = stringOf(record, 'updatedAt', 'updated_at') ?? createdAt
   const profile = {
-    name: stringOf(rawProfile, 'name', 'name') ?? agentId, responsibility: stringOf(rawProfile, 'responsibility', 'responsibility') ?? '',
+    name: stringOf(rawProfile, 'name', 'name') ?? agentId, displayName: stringOf(rawProfile, 'displayName', 'display_name'), responsibility: stringOf(rawProfile, 'responsibility', 'responsibility') ?? '',
     capabilities: arrayOf(rawProfile.capabilities).filter((item): item is string => typeof item === 'string'), initialPreferences: arrayOf(valueOf(rawProfile, 'initialPreferences', 'initial_preferences')).filter((item): item is string => typeof item === 'string'),
     status: (stringOf(rawProfile, 'status', 'status') ?? 'active') as ProjectAgentStatus, occupationEmoji: stringOf(rawProfile, 'occupationEmoji', 'occupation_emoji'), agentType: stringOf(rawProfile, 'agentType', 'agent_type') as ProjectAgentType | undefined,
     workKinds: arrayOf(valueOf(rawProfile, 'workKinds', 'work_kinds')).filter((item): item is string => typeof item === 'string'), defaultModelStrategy: normalizeStrategy(valueOf(rawProfile, 'defaultModelStrategy', 'default_model_strategy')), executorPolicy: normalizePolicy(valueOf(rawProfile, 'executorPolicy', 'executor_policy')),
@@ -724,6 +758,7 @@ function normalizeAgent(value: unknown): ProjectAgentRecord {
     ...fallback, memoryScope: stringOf(record, 'memoryScope', 'memory_scope') ?? undefined,
     assignments: Array.isArray(record.assignments)
       ? record.assignments.map((item) => normalizeAssignment(item, fallback)).filter(Boolean) as ProjectAgentAssignmentRecord[] : undefined,
+    legacyAgentIds: arrayOf(record.legacyAgentIds ?? record.legacy_agent_ids).filter((item): item is string => typeof item === 'string'),
     recruitments: recruitmentValues(record.recruitments ?? record.recruitmentHistory).filter((item) => recruitmentBelongsTo(item, fallback)),
     recruitmentId: stringOf(record, 'recruitmentId', 'recruitment_id'), temporaryTaskId: stringOf(record, 'temporaryTaskId', 'temporary_task_id'), workStatus: stringOf(record, 'workStatus', 'work_status') as ProjectAgentWorkStatus | undefined,
     openTaskCount: typeof record.openTaskCount === 'number' ? record.openTaskCount : typeof record.open_task_count === 'number' ? record.open_task_count : undefined, currentTaskId: stringOf(record, 'currentTaskId', 'current_task_id'),
@@ -942,7 +977,7 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
     <header class="project-agents-header">
       <div>
         <h2>{{ t('projectAgents.title') }}</h2>
-        <p class="project-agents-header-meta">{{ t('projectAgents.stats.total', { count: agents.length }) }} · {{ t('projectAgents.stats.assignments', { count: assignmentCount }) }} · {{ t('projectAgents.stats.projects', { count: representedProjectCount }) }}</p>
+        <p v-if="!pageLoading && !pageError" class="project-agents-header-meta">{{ t('projectAgents.stats.total', { count: agents.length }) }} · {{ t('projectAgents.stats.assignments', { count: assignmentCount }) }} · {{ t('projectAgents.stats.projects', { count: representedProjectCount }) }}</p>
       </div>
       <div class="project-agent-header-actions">
         <button class="quiet-button" type="button" :disabled="!activeSpaceId" @click="openCreate">{{ t('projectAgents.add') }}</button>
@@ -950,7 +985,7 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
       </div>
     </header>
     <EmployeeRecruitDialog :open="recruitDialogOpen" :personal-space-id="activeSpaceId" :projects="projects" :template-id="recruitTemplateId" :default-project-ids="projectFilter ?? []" @close="recruitDialogOpen = false" @recruited="employeeRecruited" />
-    <div class="project-agents-summary" aria-live="polite"><span>{{ t('projectAgents.stats.active', { count: activeCount }) }}</span><span>{{ t('projectAgents.stats.noOnlineClaim') }}</span></div>
+    <div v-if="!pageLoading && !pageError" class="project-agents-summary" aria-live="polite"><span>{{ t('projectAgents.stats.active', { count: activeCount }) }}</span><span>{{ t('projectAgents.stats.noOnlineClaim') }}</span></div>
 
     <div class="project-agents-toolbar">
       <ProjectScopePicker v-model="filterProjectIds" class="project-agents-project-filter" compact :projects="projectOptions" :label="t('employees.filterLabel')" :hint="t('employees.filterHint')" :empty-label="t('employees.filterEmpty')" />
@@ -968,23 +1003,26 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
       :project-name="projectName(singleFilterProjectId)"
     />
 
-    <div v-if="loading" class="project-agents-state">{{ t('projectAgents.loading') }}</div>
-    <div v-else-if="error" class="project-agents-state is-error" role="alert"><p>{{ error }}</p><button class="quiet-button" type="button" @click="loadAgents()">{{ t('projectAgents.retry') }}</button></div>
+    <GrowthLoading v-if="pageLoading" :label="!store.state ? t('common.status.loadingConsole') : t('projectAgents.loading')" />
+    <div v-else-if="pageError" class="project-agents-state is-error" role="alert"><p>{{ pageError }}</p><button class="quiet-button" type="button" @click="retryPage">{{ t('projectAgents.retry') }}</button></div>
     <div v-else-if="!agents.length" class="project-agents-state"><strong>{{ t('projectAgents.emptyTitle') }}</strong><p>{{ t('projectAgents.emptyCopy') }}</p><button class="project-agent-add" type="button" :disabled="!activeSpaceId" @click="openCreate">{{ t('projectAgents.add') }}</button></div>
     <div v-else-if="!filteredAgents.length" class="project-agents-state"><strong>{{ t('projectAgents.noMatchTitle') }}</strong><p>{{ t('projectAgents.noMatchCopy') }}</p></div>
     <div v-else class="project-agents-directory">
       <div class="project-agent-list" role="list" :aria-label="t('projectAgents.listLabel')">
-        <button v-for="agent in filteredAgents" :key="agent.agentId" type="button" class="project-agent-row" :class="{ selected: selectedAgentKey === agent.agentId }" :aria-current="selectedAgentKey === agent.agentId ? 'true' : undefined" @click="selectedAgentKey = agent.agentId">
-          <span class="project-agent-row-heading"><span v-if="agent.profile.occupationEmoji" class="project-agent-occupation-emoji" role="img" :aria-label="`${t('projectAgents.fields.occupationEmoji')}: ${agent.profile.occupationEmoji}`">{{ agent.profile.occupationEmoji }}</span><strong>{{ agent.profile.name }}</strong><i class="project-agent-kind">{{ agentTypeLabel(agent.profile.agentType) }}</i><i :class="`is-${agent.profile.status}`">{{ t(`projectAgents.status.${agent.profile.status}`) }}</i></span>
+        <div v-for="agent in filteredAgents" :key="agent.agentId" class="project-agent-row-shell">
+        <button type="button" class="project-agent-row" :class="{ selected: selectedAgentKey === agent.agentId }" :aria-current="selectedAgentKey === agent.agentId ? 'true' : undefined" @click="selectedAgentKey = agent.agentId">
+          <span class="project-agent-row-heading"><span v-if="agent.profile.occupationEmoji" class="project-agent-occupation-emoji" role="img" :aria-label="`${t('projectAgents.fields.occupationEmoji')}: ${agent.profile.occupationEmoji}`">{{ agent.profile.occupationEmoji }}</span><strong>{{ agent.profile.displayName || agent.profile.name }}</strong><i class="project-agent-kind">{{ agentTypeLabel(agent.profile.agentType) }}</i><i :class="`is-${agent.profile.status}`">{{ t(`projectAgents.status.${agent.profile.status}`) }}</i></span>
           <span class="project-agent-row-projects"><b v-for="project in responsibleProjectsFor(agent).slice(0, 3)" :key="project.id">{{ project.name }}</b><b v-if="responsibleProjectsFor(agent).length > 3">+{{ responsibleProjectsFor(agent).length - 3 }}</b><em v-if="!responsibleProjectsFor(agent).length">{{ t('employees.noAssignedProjects') }}</em></span>
           <span class="project-agent-row-responsibility">{{ agent.profile.responsibility || t('projectAgents.notReported') }}</span>
           <span class="project-agent-row-work"><template v-if="currentWork(agent)"><i :class="['project-agent-work-dot', { 'is-live': currentWork(agent)!.status === 'running' }]" aria-hidden="true" />{{ taskStatusLabel(currentWork(agent)!.status) }} · {{ currentWork(agent)!.title }}</template><template v-else-if="agent.workStatus === 'blocked' || agent.workStatus === 'queued'">{{ taskStatusLabel(agent.workStatus) }} · {{ t('projectAgents.detail.stateReported') }}</template><template v-else>{{ t('projectAgents.detail.noRun') }}</template></span>
           <span class="project-agent-row-capabilities"><b v-for="capability in agent.profile.capabilities.slice(0, 3)" :key="capability">{{ capability }}</b></span>
         </button>
+        <AgentHand :agent-id="agent.agentId" />
+        </div>
       </div>
 
-      <aside v-if="selectedAgent" class="project-agent-detail" :aria-label="selectedAgent.profile.name">
-        <header><div class="project-agent-detail-heading"><h3><span v-if="selectedAgent.profile.occupationEmoji" class="project-agent-occupation-emoji" role="img" :aria-label="`${t('projectAgents.fields.occupationEmoji')}: ${selectedAgent.profile.occupationEmoji}`">{{ selectedAgent.profile.occupationEmoji }}</span>{{ selectedAgent.profile.name }}</h3><p>{{ selectedAgent.agentId }} · {{ agentTypeLabel(selectedAgent.profile.agentType) }}<span v-if="selectedAgent.isTestRole"> · {{ t('projectAgents.source.testRole') }}<span v-if="selectedAgent.profile.testSource"> · {{ selectedAgent.profile.testSource }}</span></span></p></div><div class="project-agent-detail-actions"><button class="quiet-button" type="button" :disabled="detailLoading" @click="refreshDetails()">{{ detailLoading ? t('projectAgents.detail.refreshing') : t('projectAgents.detail.refresh') }}</button><button class="quiet-button" type="button" @click="openEdit(selectedAgent)">{{ t('projectAgents.edit') }}</button><button v-if="selectedAgent.profile.cleanupEligible" class="quiet-button" type="button" :disabled="detailLoading" @click="cleanupTestAgent(selectedAgent)">{{ t('projectAgents.source.cleanup') }}</button></div></header>
+      <aside v-if="selectedAgent" class="project-agent-detail" :aria-label="selectedAgent.profile.displayName || selectedAgent.profile.name">
+        <header><div class="project-agent-detail-heading"><h3><span v-if="selectedAgent.profile.occupationEmoji" class="project-agent-occupation-emoji" role="img" :aria-label="`${t('projectAgents.fields.occupationEmoji')}: ${selectedAgent.profile.occupationEmoji}`">{{ selectedAgent.profile.occupationEmoji }}</span>{{ selectedAgent.profile.displayName || selectedAgent.profile.name }} <AgentHand :agent-id="selectedAgent.agentId" /></h3><p>{{ selectedAgent.agentId }} · {{ agentTypeLabel(selectedAgent.profile.agentType) }}<span v-if="selectedAgent.isTestRole"> · {{ t('projectAgents.source.testRole') }}<span v-if="selectedAgent.profile.testSource"> · {{ selectedAgent.profile.testSource }}</span></span></p></div><div class="project-agent-detail-actions"><button class="quiet-button" type="button" :disabled="detailLoading" @click="refreshDetails()">{{ t('projectAgents.detail.refresh') }}</button><button class="quiet-button" type="button" @click="openEdit(selectedAgent)">{{ t('projectAgents.edit') }}</button><button v-if="selectedAgent.profile.cleanupEligible" class="quiet-button" type="button" :disabled="detailLoading" @click="cleanupTestAgent(selectedAgent)"><GrowthLoading v-if="cleanupBusy" variant="inline" :label="t('projectAgents.source.cleanupLoading')" /><span v-else>{{ t('projectAgents.source.cleanup') }}</span></button></div></header>
         <p v-if="detailNotice" class="project-agent-detail-notice" role="status">{{ detailNotice }}</p>
         <section v-if="selectedEmployeeId" class="employee-project-overview" aria-labelledby="employee-project-overview-title">
           <div class="employee-project-overview-heading">
@@ -1002,27 +1040,27 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
         <dl class="project-agent-detail-meta"><div><dt>{{ t('projectAgents.fields.assignments') }}</dt><dd>{{ currentAssignmentsFor(selectedAgent).length }}</dd></div><div><dt>{{ t('projectAgents.fields.memoryScope') }}</dt><dd>{{ selectedAgent.memoryScope ?? t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.fields.status') }}</dt><dd>{{ t(`projectAgents.status.${selectedAgent.profile.status}`) }}</dd></div><div><dt>{{ t('projectAgents.fields.recruitment') }}</dt><dd>{{ sourceLabel(selectedAgent.recruitmentSourceApplication) }}<small v-if="selectedAgent.recruitmentReason">{{ selectedAgent.recruitmentReason }}</small></dd></div><div><dt>{{ t('projectAgents.fields.updatedAt') }}</dt><dd>{{ formatDate(selectedAgent.updatedAt) }}</dd></div></dl>
 
         <div class="project-agent-detail-source" data-detail-section="recruitment">
-          <ProjectAgentDetailState v-bind="detailState('recruitments')" @retry="refreshDetails">
-            <section class="project-agent-detail-section" aria-labelledby="project-agent-recruitment-heading"><div class="project-agent-section-heading"><h4 id="project-agent-recruitment-heading">{{ t('projectAgents.sections.recruitment') }}</h4><span>{{ selectedRecruitments.length }}</span></div><div v-if="selectedRecruitments.length" class="project-agent-recruitment-list"><article v-for="recruitment in selectedRecruitments" :key="recruitment.recruitmentId" class="project-agent-recruitment-card"><header><strong>{{ recruitment.positionKind }} · {{ recruitment.workKind || t('projectAgents.notReported') }}</strong><div class="project-agent-card-actions"><i>{{ recruitment.status }}</i><button v-if="recruitment.status === 'awaiting_confirmation'" class="quiet-button" type="button" :disabled="Boolean(recruitmentBusy)" @click="decideRecruitment(recruitment, 'approve')">{{ t('projectAgents.recruitment.approve') }}</button><button v-if="recruitment.status === 'awaiting_confirmation'" class="quiet-button" type="button" :disabled="Boolean(recruitmentBusy)" @click="decideRecruitment(recruitment, 'cancel')">{{ t('projectAgents.recruitment.cancel') }}</button></div></header><dl class="project-agent-compact-meta"><div><dt>{{ t('projectAgents.recruitment.hr') }}</dt><dd>{{ recruitment.hrAgentId || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.recruitment.trigger') }}</dt><dd>{{ sourceLabel(recruitment.triggerSourceApplication) }}</dd></div><div><dt>{{ t('projectAgents.recruitment.reason') }}</dt><dd>{{ recruitment.reason || recruitment.reasonCode || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.recruitment.time') }}</dt><dd>{{ formatDate(recruitment.fulfilledAt || recruitment.createdAt) }}</dd></div></dl><small>{{ t('projectAgents.recruitment.testSource') }} · {{ recruitment.testSource || t('projectAgents.notReported') }}</small></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.recruitment.empty') }}</p></section>
+          <ProjectAgentDetailState v-bind="detailState('recruitments')" :label="detailLoadingLabel('recruitments')" @retry="refreshDetails">
+            <section class="project-agent-detail-section" aria-labelledby="project-agent-recruitment-heading"><div class="project-agent-section-heading"><h4 id="project-agent-recruitment-heading">{{ t('projectAgents.sections.recruitment') }}</h4><span>{{ selectedRecruitments.length }}</span></div><div v-if="selectedRecruitments.length" class="project-agent-recruitment-list"><article v-for="recruitment in selectedRecruitments" :key="recruitment.recruitmentId" class="project-agent-recruitment-card"><header><strong>{{ recruitment.positionKind }} · {{ recruitment.workKind || t('projectAgents.notReported') }}</strong><div class="project-agent-card-actions"><i>{{ recruitment.status }}</i><button v-if="recruitment.status === 'awaiting_confirmation'" class="quiet-button" type="button" :disabled="Boolean(recruitmentBusy)" @click="decideRecruitment(recruitment, 'approve')"><GrowthLoading v-if="recruitmentBusy === recruitment.recruitmentId && recruitmentBusyAction === 'approve'" variant="inline" :label="t('projectAgents.recruitment.approving')" /><span v-else>{{ t('projectAgents.recruitment.approve') }}</span></button><button v-if="recruitment.status === 'awaiting_confirmation'" class="quiet-button" type="button" :disabled="Boolean(recruitmentBusy)" @click="decideRecruitment(recruitment, 'cancel')"><GrowthLoading v-if="recruitmentBusy === recruitment.recruitmentId && recruitmentBusyAction === 'cancel'" variant="inline" :label="t('projectAgents.recruitment.cancelling')" /><span v-else>{{ t('projectAgents.recruitment.cancel') }}</span></button></div></header><dl class="project-agent-compact-meta"><div><dt>{{ t('projectAgents.recruitment.hr') }}</dt><dd>{{ recruitment.hrAgentId || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.recruitment.trigger') }}</dt><dd>{{ sourceLabel(recruitment.triggerSourceApplication) }}</dd></div><div><dt>{{ t('projectAgents.recruitment.reason') }}</dt><dd>{{ recruitment.reason || recruitment.reasonCode || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.recruitment.time') }}</dt><dd>{{ formatDate(recruitment.fulfilledAt || recruitment.createdAt) }}</dd></div></dl><small>{{ t('projectAgents.recruitment.testSource') }} · {{ recruitment.testSource || t('projectAgents.notReported') }}</small></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.recruitment.empty') }}</p></section>
           </ProjectAgentDetailState>
         </div>
 
         <section class="project-agent-detail-section is-responsibility"><h4>{{ t('projectAgents.fields.responsibility') }}</h4><p>{{ selectedAgent.profile.responsibility || t('projectAgents.notReported') }}</p><div v-if="selectedAgent.profile.capabilities.length" class="project-agent-tags"><span v-for="capability in selectedAgent.profile.capabilities" :key="capability">{{ capability }}</span></div></section>
 
         <div class="project-agent-detail-source" data-detail-section="assignments">
-          <ProjectAgentDetailState v-bind="detailState('assignments')" @retry="refreshDetails">
+          <ProjectAgentDetailState v-bind="detailState('assignments')" :label="detailLoadingLabel('assignments')" @retry="refreshDetails">
             <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.assignments') }}</h4><div class="project-agent-section-tools"><span>{{ assignmentsFor(selectedAgent).length }}</span><button class="quiet-button" type="button" @click="openAssignment(selectedAgent)">{{ t('projectAgents.assignmentDialog.assign') }}</button></div></div><div v-if="assignmentsFor(selectedAgent).length" class="project-agent-assignment-list"><article v-for="assignment in assignmentsFor(selectedAgent)" :key="assignment.assignmentId" class="project-agent-assignment-card"><header><strong>{{ projectName(assignment.personalProjectId) }}</strong><div class="project-agent-card-actions"><i :class="`is-${assignment.status}`">{{ t(`projectAgents.assignmentStatus.${assignment.status}`) }}</i><button v-if="assignment.status === 'active'" class="quiet-button" type="button" @click="openAssignment(selectedAgent, assignment, 'end')">{{ t('projectAgents.assignmentDialog.end') }}</button><button v-if="assignment.status === 'active'" class="quiet-button" type="button" @click="openAssignment(selectedAgent, assignment, 'replace')">{{ t('projectAgents.assignmentDialog.replace') }}</button></div></header><p>{{ assignment.responsibility || t('projectAgents.notReported') }}</p><small v-if="assignment.scope">{{ t('projectAgents.fields.scope') }} · {{ assignment.scope }}</small><small>{{ formatDate(assignment.assignedAt) }} → {{ assignment.endedAt ? formatDate(assignment.endedAt) : t(`projectAgents.assignmentStatus.${assignment.status}`) }}</small><div v-if="assignment.workKinds?.length" class="project-agent-inline-list"><span v-for="workKind in assignment.workKinds" :key="workKind">{{ workKind }}</span></div><div class="project-agent-strategy-note"><span>{{ t('projectAgents.fields.assignmentModel') }}</span><strong>{{ strategyLabel(assignment.modelStrategyOverride) }} · {{ policyLabel(assignment.executorPolicyOverride) }}</strong><small v-if="policyIsLocked(assignment.executorPolicyOverride) && !policyAllowList(assignment.executorPolicyOverride).length">{{ t('projectAgents.strategy.lockedUnavailable') }}</small></div><div v-if="policyAllowList(assignment.executorPolicyOverride).length" class="project-agent-tags"><span v-for="executor in policyAllowList(assignment.executorPolicyOverride)" :key="executor.executorId">{{ executor.label || executor.executorId }}</span></div><small v-if="assignment.reason">{{ t('projectAgents.fields.reason') }} · {{ assignment.reason }}</small></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.detail.noAssignments') }}</p></section>
           </ProjectAgentDetailState>
         </div>
 
         <div class="project-agent-detail-source" data-detail-section="executors">
-          <ProjectAgentDetailState v-bind="detailState('executors')" @retry="refreshDetails">
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.strategy') }}</h4><span>{{ strategyLabel(selectedAgent.profile.defaultModelStrategy) }} · {{ policyLabel(selectedAgent.profile.executorPolicy) }}</span></div><p class="project-agent-muted">{{ t('projectAgents.strategy.providerNeutral') }}</p><div v-if="policyAllowList(selectedAgent.profile.executorPolicy).length" class="project-agent-tags"><span v-for="executor in policyAllowList(selectedAgent.profile.executorPolicy)" :key="executor.executorId">{{ executor.label || executor.executorId }}</span></div><p v-else-if="policyIsLocked(selectedAgent.profile.executorPolicy)" class="project-agent-blocked">{{ t('projectAgents.strategy.lockedUnavailable') }}</p><p v-else class="project-agent-muted">{{ t('projectAgents.strategy.noAllowList') }}</p><div class="project-agent-section-tools"><button class="quiet-button" type="button" @click="openExecutorDialog()">{{ t('projectAgents.routing.addExecutor') }}</button></div><div v-if="selectedAgent.executorDirectory?.length" class="project-agent-executor-list"><div v-for="executor in selectedAgent.executorDirectory" :key="executor.executorId" class="project-agent-executor-row"><strong>{{ executor.displayName || executor.label || executor.executorId }}</strong><span>{{ executor.provider || t('projectAgents.notReported') }} / {{ executor.model || t('projectAgents.notReported') }}</span><span>{{ executor.globalPriority ?? t('projectAgents.notReported') }}</span><small>{{ executor.registrationStatus || t('projectAgents.notReported') }} · {{ executor.permissionStatus || t('projectAgents.notReported') }} · {{ executor.preflightStatus || t('projectAgents.strategy.availabilityUnreported') }} · {{ executor.healthStatus || t('projectAgents.notReported') }}</small><button class="quiet-button" type="button" @click="openExecutorDialog(executor)">{{ t('projectAgents.routing.editExecutor') }}</button><button v-if="executor.permissionStatus !== 'authorized'" class="quiet-button" type="button" :disabled="Boolean(executorBusy)" @click="authorizeExecutor(executor, 'authorized')">{{ t('projectAgents.routing.authorize') }}</button><button v-else class="quiet-button" type="button" :disabled="Boolean(executorBusy)" @click="authorizeExecutor(executor, 'revoked')">{{ t('projectAgents.routing.revoke') }}</button></div></div></section>
+          <ProjectAgentDetailState v-bind="detailState('executors')" :label="detailLoadingLabel('executors')" @retry="refreshDetails">
+            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.strategy') }}</h4><span>{{ strategyLabel(selectedAgent.profile.defaultModelStrategy) }} · {{ policyLabel(selectedAgent.profile.executorPolicy) }}</span></div><p class="project-agent-muted">{{ t('projectAgents.strategy.providerNeutral') }}</p><div v-if="policyAllowList(selectedAgent.profile.executorPolicy).length" class="project-agent-tags"><span v-for="executor in policyAllowList(selectedAgent.profile.executorPolicy)" :key="executor.executorId">{{ executor.label || executor.executorId }}</span></div><p v-else-if="policyIsLocked(selectedAgent.profile.executorPolicy)" class="project-agent-blocked">{{ t('projectAgents.strategy.lockedUnavailable') }}</p><p v-else class="project-agent-muted">{{ t('projectAgents.strategy.noAllowList') }}</p><div class="project-agent-section-tools"><button class="quiet-button" type="button" @click="openExecutorDialog()">{{ t('projectAgents.routing.addExecutor') }}</button></div><div v-if="selectedAgent.executorDirectory?.length" class="project-agent-executor-list"><div v-for="executor in selectedAgent.executorDirectory" :key="executor.executorId" class="project-agent-executor-row"><strong>{{ executor.displayName || executor.label || executor.executorId }}</strong><span>{{ executor.provider || t('projectAgents.notReported') }} / {{ executor.model || t('projectAgents.notReported') }}</span><span>{{ executor.globalPriority ?? t('projectAgents.notReported') }}</span><small>{{ executor.registrationStatus || t('projectAgents.notReported') }} · {{ executor.permissionStatus || t('projectAgents.notReported') }} · {{ executor.preflightStatus || t('projectAgents.strategy.availabilityUnreported') }} · {{ executor.healthStatus || t('projectAgents.notReported') }}</small><button class="quiet-button" type="button" @click="openExecutorDialog(executor)">{{ t('projectAgents.routing.editExecutor') }}</button><button v-if="executor.permissionStatus !== 'authorized'" class="quiet-button" type="button" :disabled="Boolean(executorBusy)" @click="authorizeExecutor(executor, 'authorized')"><GrowthLoading v-if="executorBusy === executor.executorId && executorBusyAction === 'authorize'" variant="inline" :label="t('projectAgents.routing.authorizing')" /><span v-else>{{ t('projectAgents.routing.authorize') }}</span></button><button v-else class="quiet-button" type="button" :disabled="Boolean(executorBusy)" @click="authorizeExecutor(executor, 'revoked')"><GrowthLoading v-if="executorBusy === executor.executorId && executorBusyAction === 'revoke'" variant="inline" :label="t('projectAgents.routing.revoking')" /><span v-else>{{ t('projectAgents.routing.revoke') }}</span></button></div></div></section>
           </ProjectAgentDetailState>
         </div>
 
         <div class="project-agent-detail-source" data-detail-section="tasks">
-          <ProjectAgentDetailState v-bind="detailState('tasks')" @retry="refreshDetails">
+          <ProjectAgentDetailState v-bind="detailState('tasks')" :label="detailLoadingLabel('tasks')" @retry="refreshDetails">
             <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.tasks') }}</h4><span>{{ selectedAgent.tasks?.length ?? 0 }}</span></div><div v-if="selectedAgent.tasks?.length" class="project-agent-task-list"><article v-for="task in selectedAgent.tasks" :key="task.taskId" class="project-agent-task-card"><header><div><strong>{{ task.title }}</strong><small>{{ task.taskId }} · {{ projectName(task.personalProjectId) }}</small></div><i :class="`is-${task.status}`">{{ taskStatusLabel(task.status) }}</i></header><p v-if="task.resultSummary || task.failureReason">{{ task.resultSummary || task.failureReason }}</p><small>{{ t('projectAgents.fields.collaborators') }} · {{ task.participants.length }}</small><div v-if="task.participants.length" class="project-agent-inline-list"><span v-for="participant in task.participants" :key="`${task.taskId}:${participant.agentId}`">{{ participant.agentId }} · {{ participant.role }}</span></div><section v-if="task.executionSummary !== undefined" class="project-agent-execution-summary" :aria-label="t('projectAgents.fields.executionSummary')">
 <div class="project-agent-section-heading">
 <h5>{{ t('projectAgents.fields.executionSummary') }}</h5>
@@ -1081,26 +1119,26 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
         </div>
 
         <div class="project-agent-detail-source" data-detail-section="activity">
-          <ProjectAgentDetailState v-bind="detailState('activity')" @retry="refreshDetails">
+          <ProjectAgentDetailState v-bind="detailState('activity')" :label="detailLoadingLabel('activity')" @retry="refreshDetails">
             <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.activity') }}</h4><span v-if="selectedActivity">{{ selectedActivity.days.length }}</span></div><div v-if="selectedActivity?.days.length" class="project-agent-heatmap-wrap project-agent-heatmap-viewport"><div class="project-agent-heatmap" role="list" :aria-label="t('projectAgents.activity.aria')"><button v-for="day in selectedActivity.days" :key="day.date" type="button" role="listitem" :class="['project-agent-heat-cell', `intensity-${activityIntensity(day, selectedActivity)}`, { selected: activityDay === day.date }]" :aria-label="`${formatDateOnly(day.date)} · ${day.total}`" :aria-pressed="activityDay === day.date" @click="chooseActivityDay(day)"><span class="sr-only">{{ formatDateOnly(day.date) }} · {{ day.total }}</span></button></div><article v-if="selectedActivityDay" class="project-agent-day-detail"><header><strong>{{ formatDateOnly(selectedActivityDay.date) }}</strong><span>{{ selectedActivityDay.total }}</span></header><p v-if="!selectedActivityDay.tasks?.length" class="project-agent-muted">{{ t('projectAgents.activity.noTasks') }}</p><ul v-else><li v-for="task in selectedActivityDay.tasks" :key="task.taskId"><strong>{{ task.title }}</strong><span>{{ taskStatusLabel(task.status) }} · {{ projectName(task.personalProjectId) }}</span><small>{{ task.summary || t('projectAgents.notReported') }}</small></li></ul></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.activity.empty') }}</p></section>
           </ProjectAgentDetailState>
         </div>
 
         <div class="project-agent-detail-source" data-detail-section="clients">
-          <ProjectAgentDetailState v-bind="detailState('executors')" @retry="refreshDetails">
+          <ProjectAgentDetailState v-bind="detailState('executors')" :label="detailLoadingLabel('executors')" @retry="refreshDetails">
             <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.clients') }}</h4><span>{{ clientNames(selectedAgent).length }}</span></div><div v-if="clientNames(selectedAgent).length" class="project-agent-client-list"><div v-for="clientName in clientNames(selectedAgent)" :key="clientName" class="project-agent-client-row"><strong>{{ sourceLabel(clientName) }}</strong><span>{{ clientEvidenceFor(selectedAgent, clientName)?.allowed || selectedAgent.profile.allowedClients?.includes(clientName) ? t('projectAgents.clients.allowed') : t('projectAgents.clients.notAllowed') }}</span><span v-if="clientUseCount(selectedAgent, clientName)">{{ t('projectAgents.clients.observed', { count: clientUseCount(selectedAgent, clientName) }) }}</span><span v-else-if="selectedAgent.observedClients?.includes(clientName)">{{ t('projectAgents.clients.observedAny') }}</span><span v-else>{{ t('projectAgents.clients.unreported') }}</span><small>{{ clientEvidenceFor(selectedAgent, clientName)?.integrationStatus || t('projectAgents.clients.integrationUnreported') }}</small></div></div><p v-else class="project-agent-muted">{{ t('projectAgents.clients.empty') }}</p></section>
           </ProjectAgentDetailState>
         </div>
 
         <div class="project-agent-detail-source" data-detail-section="routing">
-          <ProjectAgentDetailState v-bind="detailState('routingRules')" @retry="refreshDetails">
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.routing') }}</h4><div class="project-agent-section-tools"><span>{{ selectedAgent.routingRules?.length ?? 0 }}</span><button class="quiet-button" type="button" @click="openRuleDialog()">{{ t('projectAgents.routing.addRule') }}</button></div></div><div v-if="selectedAgent.routingRules?.length" class="project-agent-rule-list"><div v-for="rule in selectedAgent.routingRules" :key="rule.ruleId" class="project-agent-rule-row"><strong>{{ rule.scope }} · {{ rule.priority }}</strong><span>{{ rule.workKind || rule.reason || t('projectAgents.notReported') }} · {{ rule.executorIds?.join(', ') || t('projectAgents.notReported') }}</span><button v-if="rule.enabled" class="quiet-button" type="button" :disabled="Boolean(recruitmentBusy)" @click="disableRule(rule)">{{ t('projectAgents.routing.disable') }}</button></div></div><p v-else class="project-agent-muted">{{ t('projectAgents.routing.empty') }}</p><small class="project-agent-note">{{ t('projectAgents.routing.priorityNote') }}</small></section>
+          <ProjectAgentDetailState v-bind="detailState('routingRules')" :label="detailLoadingLabel('routingRules')" @retry="refreshDetails">
+            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.routing') }}</h4><div class="project-agent-section-tools"><span>{{ selectedAgent.routingRules?.length ?? 0 }}</span><button class="quiet-button" type="button" @click="openRuleDialog()">{{ t('projectAgents.routing.addRule') }}</button></div></div><div v-if="selectedAgent.routingRules?.length" class="project-agent-rule-list"><div v-for="rule in selectedAgent.routingRules" :key="rule.ruleId" class="project-agent-rule-row"><strong>{{ rule.scope }} · {{ rule.priority }}</strong><span>{{ rule.workKind || rule.reason || t('projectAgents.notReported') }} · {{ rule.executorIds?.join(', ') || t('projectAgents.notReported') }}</span><button v-if="rule.enabled" class="quiet-button" type="button" :disabled="Boolean(recruitmentBusy)" @click="disableRule(rule)"><GrowthLoading v-if="recruitmentBusy === `rule:${rule.ruleId}` && recruitmentBusyAction === 'disable'" variant="inline" :label="t('projectAgents.routing.disabling')" /><span v-else>{{ t('projectAgents.routing.disable') }}</span></button></div></div><p v-else class="project-agent-muted">{{ t('projectAgents.routing.empty') }}</p><small class="project-agent-note">{{ t('projectAgents.routing.priorityNote') }}</small></section>
           </ProjectAgentDetailState>
         </div>
 
         <div class="project-agent-detail-source" data-detail-section="learning">
-          <ProjectAgentDetailState v-bind="detailState('learning')" @retry="refreshDetails">
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.learning') }}</h4><span>{{ selectedLearning.length }}</span></div><div v-if="selectedLearning.length" class="project-agent-learning-list"><article v-for="[key, evidence] in selectedLearning" :key="key" class="project-agent-learning-card"><header><strong>{{ key }}</strong><i>{{ learningLabel(evidence) }}</i></header><small v-if="evidence.personalProjectId || evidence.workKind || evidence.executor || evidence.modelStrategy">{{ projectName(evidence.personalProjectId) }} · {{ evidence.workKind || t('projectAgents.notReported') }} · {{ evidence.executor || t('projectAgents.notReported') }} / {{ evidence.modelStrategy ? strategyLabel(evidence.modelStrategy) : t('projectAgents.notReported') }}</small><p>{{ t('projectAgents.learning.samples', { count: evidence.sampleCount }) }} · {{ t('projectAgents.learning.recent', { count: learningRecent(evidence) }) }}</p><small>{{ evidence.decayBasis || t('projectAgents.learning.decayUnreported') }} · {{ formatDate(evidence.updatedAt) }}</small><div v-if="evidence.outcomes" class="project-agent-inline-list"><span v-for="(count, outcome) in evidence.outcomes" :key="outcome" v-show="count !== undefined">{{ outcome }} · {{ count ?? t('projectAgents.notReported') }}</span><span v-if="evidence.score !== null && evidence.score !== undefined">{{ t('projectAgents.learning.score', { score: scoreValue(evidence) }) }}</span></div><ul v-if="evidence.evidence?.length" class="project-agent-evidence-list"><li v-for="item in evidence.evidence" :key="`${item.evidenceId}:${item.kind}:${item.occurredAt}`"><span>{{ item.kind }} · {{ item.count ?? 0 }} · {{ item.summary || t('projectAgents.notReported') }}</span><button v-if="item.evidenceId" class="quiet-button" type="button" :disabled="learningBusy === item.evidenceId" @click="updateLearning(evidence, 'ignore', item.evidenceId)">{{ t('projectAgents.learning.ignore') }}</button></li></ul><div v-if="evidence.learningKey" class="project-agent-learning-actions"><button class="quiet-button" type="button" :disabled="learningBusy === evidence.learningKey || !evidence.personalProjectId || !evidence.workKind || !evidence.executor" @click="updateLearning(evidence, 'reset')">{{ t('projectAgents.learning.reset') }}</button></div></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.learning.empty') }}</p><small class="project-agent-note">{{ t('projectAgents.learning.note') }}</small></section>
+          <ProjectAgentDetailState v-bind="detailState('learning')" :label="detailLoadingLabel('learning')" @retry="refreshDetails">
+            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.learning') }}</h4><span>{{ selectedLearning.length }}</span></div><div v-if="selectedLearning.length" class="project-agent-learning-list"><article v-for="[key, evidence] in selectedLearning" :key="key" class="project-agent-learning-card"><header><strong>{{ key }}</strong><i>{{ learningLabel(evidence) }}</i></header><small v-if="evidence.personalProjectId || evidence.workKind || evidence.executor || evidence.modelStrategy">{{ projectName(evidence.personalProjectId) }} · {{ evidence.workKind || t('projectAgents.notReported') }} · {{ evidence.executor || t('projectAgents.notReported') }} / {{ evidence.modelStrategy ? strategyLabel(evidence.modelStrategy) : t('projectAgents.notReported') }}</small><p>{{ t('projectAgents.learning.samples', { count: evidence.sampleCount }) }} · {{ t('projectAgents.learning.recent', { count: learningRecent(evidence) }) }}</p><small>{{ evidence.decayBasis || t('projectAgents.learning.decayUnreported') }} · {{ formatDate(evidence.updatedAt) }}</small><div v-if="evidence.outcomes" class="project-agent-inline-list"><span v-for="(count, outcome) in evidence.outcomes" :key="outcome" v-show="count !== undefined">{{ outcome }} · {{ count ?? t('projectAgents.notReported') }}</span><span v-if="evidence.score !== null && evidence.score !== undefined">{{ t('projectAgents.learning.score', { score: scoreValue(evidence) }) }}</span></div><ul v-if="evidence.evidence?.length" class="project-agent-evidence-list"><li v-for="item in evidence.evidence" :key="`${item.evidenceId}:${item.kind}:${item.occurredAt}`"><span>{{ item.kind }} · {{ item.count ?? 0 }} · {{ item.summary || t('projectAgents.notReported') }}</span><button v-if="item.evidenceId" class="quiet-button" type="button" :disabled="Boolean(learningBusy)" @click="updateLearning(evidence, 'ignore', item.evidenceId)"><GrowthLoading v-if="learningBusy === item.evidenceId && learningBusyAction === 'ignore'" variant="inline" :label="t('projectAgents.learning.ignoring')" /><span v-else>{{ t('projectAgents.learning.ignore') }}</span></button></li></ul><div v-if="evidence.learningKey" class="project-agent-learning-actions"><button class="quiet-button" type="button" :disabled="Boolean(learningBusy) || !evidence.personalProjectId || !evidence.workKind || !evidence.executor" @click="updateLearning(evidence, 'reset')"><GrowthLoading v-if="learningBusy === evidence.learningKey && learningBusyAction === 'reset'" variant="inline" :label="t('projectAgents.learning.resetting')" /><span v-else>{{ t('projectAgents.learning.reset') }}</span></button></div></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.learning.empty') }}</p><small class="project-agent-note">{{ t('projectAgents.learning.note') }}</small></section>
           </ProjectAgentDetailState>
         </div>
 
@@ -1115,153 +1153,4 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
   </section>
 </template>
 
-<style scoped>
-.project-agent-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.project-agents-view { min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 18px 32px 20px; overflow: hidden; }
-.project-agents-header, .project-agent-section-heading, .project-agent-section-tools, .project-agent-detail-actions, .project-agent-assignment-card header, .project-agent-task-card header, .project-agent-learning-card header, .project-agent-day-detail header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.project-agents-header h2 { color: #283a31; font-size: 18px; }
-.project-agents-header-meta { color: #7a847d; font-size: 10px; }
-.project-agents-summary { display: flex; gap: 18px; padding: 2px 0 4px; color: #58675d; font-size: 12px; line-height: 1.5; }
-.project-agents-summary span:first-child { color: #2f493b; font-weight: 700; }
-.project-agent-add { min-height: 40px; border: 0; border-radius: 8px; background: #344c3d; color: #fff; padding: 9px 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
-.project-agent-add:hover { background: #2b4234; }
-.project-agent-add:focus-visible, .quiet-button:focus-visible { outline: 2px solid #91a398; outline-offset: 2px; }
-.project-agent-add:disabled { cursor: not-allowed; opacity: .55; }
-.project-agents-toolbar { display: grid; grid-template-columns: minmax(240px, 320px) minmax(200px, 1fr) auto; align-items: center; gap: 12px; }
-.project-agents-search input { width: 100%; min-height: 44px; border: 1px solid #cfd7d1; border-radius: 8px; background: #fff; color: #2e3932; padding: 10px 12px; font-size: 13px; }
-.project-agents-search input:focus-visible { outline: 2px solid #91a398; outline-offset: 1px; }
-.project-agents-status-filter { display: flex; gap: 3px; padding: 3px; border: 1px solid #d8ded9; border-radius: 8px; background: #f5f7f5; }
-.project-agents-status-filter button, .quiet-button { min-height: 34px; border: 0; border-radius: 6px; background: transparent; color: #58675d; padding: 7px 10px; font-size: 12px; cursor: pointer; }
-.project-agents-status-filter button[aria-pressed='true'] { background: #fff; color: #315440; box-shadow: 0 1px 3px rgb(39 57 47 / 12%); font-weight: 700; }
-.project-agents-directory { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(360px, .94fr) minmax(390px, 1.06fr); overflow: hidden; border: 1px solid #cfd7d1; border-radius: 10px; background: #fff; }
-.project-agent-list { min-width: 0; min-height: 0; overflow: auto; border-right: 1px solid #dfe4e0; }
-.project-agent-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 14px; padding: 14px 16px; border: 0; border-bottom: 1px solid #e6eae7; background: #fff; color: inherit; text-align: left; }
-.project-agent-row:hover { background: #f7f9f7; }
-.project-agent-row.selected { background: #edf3ef; }
-.project-agent-row:focus-visible { position: relative; z-index: 1; outline: 2px solid #91a398; outline-offset: -3px; }
-.project-agent-row-heading { min-width: 0; display: flex; align-items: center; gap: 7px; }
-.project-agent-occupation-emoji { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 1.2em; font-size: 15px; line-height: 1; }
-.project-agent-row-heading strong { overflow: hidden; color: #293b31; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.project-agent-row-heading i, .project-agent-assignment-card header i, .project-agent-task-card header i, .project-agent-learning-card header i { flex: 0 0 auto; border-radius: 999px; background: #e6eae7; color: #66716a; padding: 2px 7px; font-size: 9px; font-style: normal; font-weight: 700; }
-.project-agent-row-heading i.is-active { background: #e1eee6; color: #2f6947; }
-.project-agent-row-heading i.is-archived { background: #eeeae5; color: #75695d; }
-.project-agent-kind { background: #eef2f7 !important; color: #53647b !important; }
-.project-agent-row-id { color: #8a938d; font-size: 9px; overflow-wrap: anywhere; text-align: right; }
-.project-agent-row-projects { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
-.project-agent-row-projects b, .project-agent-tags span, .project-agent-inline-list span { border-radius: 999px; background: #eef1ef; color: #5f6b64; padding: 3px 7px; font-size: 9px; font-weight: 650; }
-.project-agent-row-projects em { color: #8a938d; font-size: 9px; font-style: normal; }
-.project-agent-row-responsibility { grid-column: 1 / -1; overflow: hidden; color: #59645d; font-size: 11px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
-.project-agent-row-work { grid-column: 1 / -1; color: #59645d; font-size: 10px; line-height: 1.5; }
-.project-agent-work-dot { display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; background: #4b8d63; }
-.project-agent-row-capabilities { grid-column: 1 / -1; min-height: 20px; display: flex; flex-wrap: wrap; gap: 5px; }
-.project-agent-row-capabilities b { border-radius: 999px; background: #f1f3f1; color: #68736c; padding: 3px 7px; font-size: 9px; font-weight: 650; }
-.project-agent-detail { min-width: 0; min-height: 0; padding: 20px; overflow: auto; container-type: inline-size; }
-.employee-project-overview { margin: 22px 0; padding-bottom: 18px; border-bottom: 1px solid #e1e6e2; }
-.employee-project-overview-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
-.employee-project-overview-heading h4 { margin: 0; color: #33483c; font-size: 14px; }
-.employee-project-overview-heading p, .employee-project-overview-hint { margin: 5px 0 0; color: #58675d; font-size: 12px; line-height: 1.6; }
-.employee-project-overview-hint { margin-top: 12px; }
-.employee-assigned-projects { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 20px; margin-top: 12px; }
-.employee-assigned-projects a { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; color: #315c43; font-size: 13px; line-height: 1.5; text-decoration: none; }
-.employee-assigned-projects a:hover { text-decoration: underline; text-underline-offset: 3px; }
-.employee-assigned-projects a:focus-visible { outline: 2px solid #91a398; outline-offset: 3px; }
-.employee-assigned-projects a span { overflow-wrap: anywhere; }
-.employee-assigned-projects svg { flex-shrink: 0; }
-@container (max-width: 480px) { .employee-assigned-projects { grid-template-columns: minmax(0, 1fr); } }
-.project-agent-detail > header { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: flex-start; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid #e1e6e2; }
-.project-agent-detail-heading { min-width: 0; }.project-agent-detail h3 { color: #263b30; font-size: 17px; line-height: 1.32; text-wrap: balance; }.project-agent-detail header p { max-width: 72ch; margin-top: 5px; color: #7a847d; font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }.project-agent-detail-actions { display: grid; grid-auto-flow: column; grid-auto-columns: 78px; justify-content: end; gap: 8px; }.project-agent-detail-actions .quiet-button { width: 78px; white-space: nowrap; }
-.project-agent-detail-meta, .project-agent-compact-meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 16px 0 0; }
-.project-agent-detail-meta div, .project-agent-compact-meta div { min-width: 0; }
-.project-agent-detail-meta dt, .project-agent-compact-meta dt, .project-agent-detail-section h4 { color: #7a847d; font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-.project-agent-detail-meta dd, .project-agent-compact-meta dd { margin: 4px 0 0; overflow-wrap: anywhere; color: #39483f; font-size: 11px; }
-.project-agent-detail-meta dd small { display: block; margin-top: 3px; color: #818a84; font-size: 9px; line-height: 1.4; }
-.project-agent-detail-section { margin-top: 22px; }
-.project-agent-detail-section.is-responsibility { padding: 14px; border-radius: 10px; background: #f2f5f2; }
-.project-agent-detail-section p, .project-agent-detail-section li { color: #4f5c54; font-size: 11px; line-height: 1.65; }
-.project-agent-tags, .project-agent-inline-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
-.project-agent-muted { color: #8a928d !important; }
-.project-agent-detail-notice { margin: 12px 0 0; padding: 8px 10px; border-radius: 7px; background: #f5f5f1; color: #6f705f !important; }
-.project-agent-detail-placeholder, .project-agents-state { min-height: 240px; display: grid; place-content: center; justify-items: center; gap: 8px; color: #737d76; font-size: 11px; text-align: center; }
-.project-agents-state { flex: 1; border: 1px solid #d9dfda; border-radius: 10px; background: #fafbfa; }
-.project-agents-state strong { color: #36473e; font-size: 14px; }
-.project-agents-state p { max-width: 52ch; line-height: 1.6; }
-.project-agents-state.is-error { color: #8b3f38; }
-.project-agent-assignment-list, .project-agent-task-list, .project-agent-learning-list, .project-agent-recruitment-list { display: grid; gap: 8px; margin-top: 9px; }
-.project-agent-task-list { min-width: 0; grid-template-columns: minmax(0, 1fr); }
-.project-agent-execution-summary { min-width: 0; margin-top: 13px; padding-top: 12px; border-top: 1px solid #dfe5e0; }
-.project-agent-worker-event-evidence { margin-top: 13px; padding: 10px 10px 0; border: 1px dashed #d8dfd9; border-radius: 8px; background: #f8faf8; }
-.project-agent-execution-summary .project-agent-section-heading { gap: 8px; }
-.project-agent-execution-summary h5 { margin: 0; color: #65736a; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-.project-agent-execution-summary-table-wrap { box-sizing: border-box; width: 100%; max-width: 100%; margin-top: 7px; overflow-x: auto; overscroll-behavior-inline: contain; border: 1px solid #dce3de; border-radius: 8px; background: #fff; }
-.project-agent-execution-summary-table-wrap:focus-visible { outline: 2px solid #91a398; outline-offset: 2px; }
-.project-agent-execution-summary-table { width: 100%; min-width: 1040px; border-collapse: collapse; table-layout: fixed; color: #4f5e54; font-size: 12px; line-height: 1.5; }
-.project-agent-execution-summary-table th, .project-agent-execution-summary-table td { min-width: 0; padding: 8px 9px; border-right: 1px solid #e6ebe7; border-bottom: 1px solid #e6ebe7; overflow-wrap: anywhere; text-align: left; vertical-align: top; }
-.project-agent-execution-summary-table tr > :last-child { border-right: 0; }
-.project-agent-execution-summary-table tbody tr:last-child > * { border-bottom: 0; }
-.project-agent-execution-summary-table thead th { background: #f3f6f4; color: #65736a; font-size: 11px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
-.project-agent-execution-summary-table thead th:nth-child(1) { width: 14%; }
-.project-agent-execution-summary-table thead th:nth-child(2) { width: 20%; }
-.project-agent-execution-summary-table thead th:nth-child(3) { width: 13%; }
-.project-agent-execution-summary-table thead th:nth-child(4) { width: 15%; }
-.project-agent-execution-summary-table thead th:nth-child(5) { width: 15%; }
-.project-agent-execution-summary-table thead th:nth-child(6) { width: 12%; }
-.project-agent-execution-summary-table tbody tr:hover { background: #fafcfb; }
-.project-agent-execution-summary-table tbody th { color: #3f5647; font-weight: 700; }
-.project-agent-execution-summary-table tbody strong, .project-agent-execution-summary-table tbody span, .project-agent-execution-summary-table tbody small, .project-agent-execution-summary-table tbody a { display: block; }
-.project-agent-execution-summary-table tbody small { margin-top: 3px; color: #647168; font-size: 11px; font-weight: 500; }
-.project-agent-execution-summary-table tbody .project-agent-reporter-label { margin-top: 8px; }
-.project-agent-execution-summary-table tbody a { margin-top: 3px; color: #386c50; text-decoration-thickness: 1px; text-underline-offset: 2px; }
-.project-agent-execution-summary-table tbody a:focus-visible { border-radius: 2px; outline: 2px solid #91a398; outline-offset: 2px; }
-.project-agent-execution-worker { display: flex !important; align-items: center; gap: 4px; }
-.project-agent-execution-summary-row i { display: inline-flex; border-radius: 999px; background: #e6eae7; color: #66716a; padding: 2px 6px; font-size: 11px; font-style: normal; font-weight: 700; }
-.project-agent-execution-summary-row i.is-completed { background: #e1eee6; color: #2f6947; }
-.project-agent-execution-summary-row i.is-failed { background: #f7e9e6; color: #8c4f49; }
-.project-agent-execution-summary-row i.is-cancelled { background: #eeeae5; color: #75695d; }
-.project-agent-execution-summary-list { display: grid; margin: 7px 0 0; padding: 0; list-style: none; }
-.project-agent-worker-event-row { min-width: 0; padding: 10px 0; border-top: 1px solid #e6ebe7; }.project-agent-worker-event-row:first-child { border-top: 0; }
-.project-agent-worker-event-row header { align-items: flex-start; }
-.project-agent-worker-event-row header strong { min-width: 0; display: flex; align-items: center; gap: 5px; overflow-wrap: anywhere; color: #3f5647; font-size: 10px; }
-.project-agent-worker-event-row header strong small { display: inline; margin: 0; color: #89948c; font-size: 8px; font-weight: 500; }
-.project-agent-worker-event-row header i { flex: 0 0 auto; border-radius: 999px; background: #e6eae7; color: #66716a; padding: 2px 6px; font-size: 8px; font-style: normal; font-weight: 700; }
-.project-agent-worker-event-row header i.is-completed { background: #e1eee6; color: #2f6947; }
-.project-agent-worker-event-row header i.is-failed { background: #f7e9e6; color: #8c4f49; }
-.project-agent-worker-event-row header i.is-cancelled { background: #eeeae5; color: #75695d; }
-.project-agent-execution-summary-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 10px; margin: 8px 0 0; }
-.project-agent-execution-summary-meta div { min-width: 0; }
-.project-agent-execution-summary-meta dt { color: #89948c; font-size: 8px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-.project-agent-execution-summary-meta dd { margin: 2px 0 0; overflow-wrap: anywhere; color: #4f5e54; font-size: 9px; line-height: 1.45; }
-.project-agent-execution-summary-meta dd small { display: block; margin-top: 2px; color: #89948c; font-size: 8px; }
-.project-agent-assignment-card, .project-agent-task-card, .project-agent-learning-card { min-width: 0; padding: 11px 12px; border: 1px solid #e0e6e1; border-radius: 9px; background: #fbfcfb; }
-.project-agent-recruitment-card { padding: 11px 12px; border: 1px solid #e0e6e1; border-radius: 9px; background: #fbfcfb; }
-.project-agent-assignment-card header strong, .project-agent-task-card header strong, .project-agent-learning-card header strong { color: #33483a; font-size: 11px; }
-.project-agent-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: wrap; }
-.project-agent-assignment-card p, .project-agent-task-card p, .project-agent-learning-card p { margin: 7px 0 0; }
-.project-agent-assignment-card small, .project-agent-task-card small, .project-agent-learning-card small { display: block; margin-top: 6px; color: #818a84; font-size: 9px; line-height: 1.5; }
-.project-agent-assignment-card header i.is-ended, .project-agent-assignment-card header i.is-replaced { background: #eeeae5; color: #75695d; }
-.project-agent-strategy-note, .project-agent-execution-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; margin-top: 8px; color: #7a847d; font-size: 9px; }
-.project-agent-strategy-note strong, .project-agent-execution-line strong { color: #53685a; font-size: 10px; }
-.project-agent-strategy-note small { flex-basis: 100%; color: #8c5d54; }
-.project-agent-routing-decision { display: grid; gap: 5px; margin-top: 10px; padding: 9px 10px; border: 1px solid #dce5de; border-radius: 7px; background: #f3f7f3; color: #65736a; font-size: 9px; }
-.project-agent-routing-decision .project-agent-section-heading { align-items: baseline; gap: 8px; }
-.project-agent-routing-decision .project-agent-section-heading strong { color: #3f604b; font-size: 10px; }
-.project-agent-routing-decision small { color: #65736a; line-height: 1.45; }
-.project-agent-blocked { color: #8c5d54 !important; }
-.project-agent-task-card header { align-items: flex-start; }
-.project-agent-task-card header small { margin-top: 3px; }
-.project-agent-task-card header i { background: #eef2f7; color: #53647b; }
-.project-agent-task-card header i.is-completed { background: #e1eee6; color: #2f6947; }
-.project-agent-task-card header i.is-failed { background: #f7e9e6; color: #8c4f49; }
-.project-agent-task-card header i.is-cancelled { background: #eeeae5; color: #75695d; }
-.project-agent-heatmap-viewport { min-width: 0; max-width: 100%; overflow-x: clip; contain: layout inline-size paint; }
-.project-agent-heatmap { width: 100%; max-width: 100%; display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, minmax(10px, 1fr)); grid-auto-columns: minmax(10px, 1fr); gap: 3px; margin-top: 9px; overflow-x: auto; padding: 0; }
-.project-agent-heat-cell { appearance: none; box-sizing: border-box; aspect-ratio: 1; min-width: 9px; margin: 0; padding: 0; border: 1px solid #dfe6e0; border-radius: 3px; background: #f2f4f2; }
-.project-agent-heat-cell.intensity-1 { background: #dce9df; }.project-agent-heat-cell.intensity-2 { background: #b9d3bf; }.project-agent-heat-cell.intensity-3 { background: #87b493; }.project-agent-heat-cell.intensity-4 { background: #548466; }.project-agent-heat-cell:focus-visible, .project-agent-heat-cell.selected { border: 2px solid #2f5740; outline: none; box-shadow: none; }
-.project-agent-day-detail { margin-top: 10px; padding: 10px; border-radius: 8px; background: #f6f8f6; }.project-agent-day-detail ul { margin: 8px 0 0; padding-left: 17px; }.project-agent-day-detail li { margin-top: 6px; }.project-agent-day-detail li strong, .project-agent-day-detail li span, .project-agent-day-detail li small { display: block; }.project-agent-day-detail li span { color: #66736b; font-size: 9px; }.project-agent-day-detail li small { color: #7e8981; font-size: 9px; }
-.project-agent-client-list, .project-agent-rule-list { display: grid; gap: 5px; margin-top: 9px; }.project-agent-client-row, .project-agent-rule-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 7px; align-items: center; padding: 8px 10px; border-radius: 7px; background: #f7f9f7; color: #68736c; font-size: 9px; }.project-agent-client-row strong, .project-agent-rule-row strong { color: #43584a; font-size: 10px; }.project-agent-client-row small { grid-column: 1 / -1; color: #8a938d; }
-.project-agent-executor-list { display: grid; gap: 5px; margin-top: 9px; }.project-agent-executor-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 7px; align-items: center; padding: 8px 10px; border-radius: 7px; background: #f7f9f7; color: #68736c; font-size: 9px; }.project-agent-executor-row strong { color: #43584a; font-size: 10px; }.project-agent-executor-row small { grid-column: 1 / -1; color: #8a938d; }
-.project-agent-learning-card header i { background: #f1f3f1; color: #6c776f; }.project-agent-evidence-list { margin: 8px 0 0; padding-left: 17px; }.project-agent-evidence-list li { color: #768179; font-size: 9px; }.project-agent-learning-actions { display: flex; gap: 6px; margin-top: 8px; }.project-agent-note { display: block; margin-top: 9px; color: #818a84; font-size: 9px; line-height: 1.5; }
-.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-@media (max-width: 1180px) { .project-agents-toolbar { grid-template-columns: minmax(220px, 280px) 1fr; }.project-agents-status-filter { grid-column: 1 / -1; justify-self: start; }.project-agents-directory { grid-template-columns: minmax(320px, .9fr) minmax(330px, 1fr); }.project-agent-detail-meta, .project-agent-compact-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@container (max-width: 420px) { .project-agent-detail > header { grid-template-columns: minmax(0, 1fr); }.project-agent-detail-actions { justify-content: start; } }
-@media (max-width: 760px) { .project-agents-view { padding: 14px 16px 18px; overflow: auto; }.project-agents-header, .project-agents-summary, .project-agent-section-heading, .project-agent-assignment-card header { align-items: flex-start; flex-wrap: wrap; }.project-agents-toolbar { grid-template-columns: minmax(0, 1fr); }.project-agents-project-filter, .project-agents-search, .project-agents-status-filter { grid-column: 1; }.project-agents-status-filter { width: 100%; justify-self: stretch; flex-wrap: wrap; }.project-agents-directory { flex: 0 0 auto; grid-template-columns: minmax(0, 1fr); overflow: visible; }.project-agent-list { max-height: 340px; border-right: 0; border-bottom: 1px solid #dfe4e0; }.project-agent-detail { min-height: 520px; padding: 16px; }.project-agent-client-row, .project-agent-rule-row, .project-agent-executor-row { grid-template-columns: minmax(0, 1fr); align-items: start; }.project-agent-client-row small, .project-agent-executor-row small { grid-column: 1; }.project-agent-execution-summary-meta { grid-template-columns: minmax(0, 1fr); }.project-agent-worker-event-row header { gap: 8px; } }
-</style>
+<style scoped src="@/features/project-agents/ProjectAgentsPage.css"></style>

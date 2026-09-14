@@ -22,6 +22,7 @@ from .project_agent_executor_models import (
 from .project_agent_models import ProjectAgentModelStrategy
 from .provider_values import native_datetime, now_utc, stable_uuid
 from .store_transactions import query_store_transaction
+from .system_hr_identity import resolve_hr_alias
 
 
 _TERMINAL_NEUTRAL = {'cancelled'}
@@ -276,6 +277,7 @@ class StoreProjectAgentExecutorLearning:
     ) -> list[ProjectAgentExecutorOutcomeEvidenceRecord]:
         self._require_personal()
         space = await self.authorize(actor, personal_space_id, 'reader')
+        agent_id = await resolve_hr_alias(self, personal_space_id, agent_id)
         await authorize_personal_project(
             self,
             actor,
@@ -334,6 +336,7 @@ class StoreProjectAgentExecutorLearning:
 
         self._require_personal()
         space = await self.authorize(actor, personal_space_id, 'reader')
+        agent_id = await resolve_hr_alias(self, personal_space_id, agent_id)
         if personal_project_id is not None:
             await authorize_personal_project(
                 self,
@@ -367,12 +370,17 @@ class StoreProjectAgentExecutorLearning:
         aggregates: list[ProjectAgentExecutorOutcomeAggregate] = []
         for row in records:
             raw = dict(row.get('aggregate') or {})
+            identity = raw.get('agent_id')
             aggregate_json = raw.get('aggregate_json')
             if aggregate_json:
                 try:
                     raw.update(json.loads(aggregate_json))
                 except (TypeError, ValueError):
                     pass
+            if raw.get('hr_identity_original_refs_json'):
+                raw['agent_id'] = identity
+            raw.pop('hr_identity_original_refs_json', None)
+            raw.pop('hr_identity_original_id', None)
             # Storage identities are intentionally internal: the public model
             # remains the provider-neutral bucket contract.
             raw.pop('id', None)

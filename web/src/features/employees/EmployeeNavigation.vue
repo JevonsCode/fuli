@@ -4,9 +4,11 @@ import { RouterLink } from 'vue-router'
 import { t } from '@/i18n'
 import { employeeTemplates, refreshEmployeeCatalog } from './catalog'
 import { employeeAvatarUrl } from './avatars'
+import AgentHand from '@/features/project-agents/AgentHand.vue'
 const props = defineProps<{ personalSpaceId: string }>()
 watch(() => props.personalSpaceId, (id) => { void refreshEmployeeCatalog(id === 'current' ? '' : id) }, { immediate: true })
-const employees = computed(() => employeeTemplates.value.filter((entry) => entry.agentId && entry.agentStatus === 'active' && entry.runtime))
+const employees = computed(() => employeeTemplates.value.filter((entry) => entry.agentId && entry.agentStatus === 'active'
+  && (entry.runtime || entry.workbench?.kind === 'native')))
 </script>
 
 <template>
@@ -18,6 +20,7 @@ const employees = computed(() => employeeTemplates.value.filter((entry) => entry
         <template v-else>{{ employee.name.slice(0, 1) }}</template>
       </span>
       <span class="nav-copy"><strong>{{ employee.name }}</strong><small>{{ employee.role }}</small></span>
+      <AgentHand :agent-id="employee.agentId!" passive />
     </RouterLink>
   </template>
 </template>

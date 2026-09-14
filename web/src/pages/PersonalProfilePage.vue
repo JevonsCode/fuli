@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { getJson, postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -49,6 +49,8 @@ const editingItem = ref<KnowledgeItem | null>(null)
 const activeConflict = ref<PreferenceConflict | null>(null)
 const conflictRecords = ref<PreferenceConflictRecord[]>([])
 const deferringConflictId = ref('')
+let loadVersion = 0
+let loadController: AbortController | null = null
 
 const items = computed(() => personalProfileItems(graph.value))
 const conflicts = computed(() =>
@@ -178,11 +180,32 @@ const summaryGuidance = computed(() => {
 
 watch(
   () => store.activePersonalSpace?.id,
-  (spaceId) => {
+  (spaceId, previousSpaceId) => {
+    if (spaceId !== previousSpaceId) {
+      graph.value = null
+      writingTaste.value = null
+      conflictRecords.value = []
+      selectedItem.value = null
+      confirmingItem.value = null
+      editingItem.value = null
+      activeConflict.value = null
+      activeScope.value = 'all'
+    }
     if (spaceId) void load(spaceId)
+    else {
+      loadVersion += 1
+      loadController?.abort()
+      loadController = null
+      loading.value = false
+    }
   },
   { immediate: true },
 )
+onBeforeUnmount(() => {
+  loadVersion += 1
+  loadController?.abort()
+  loadController = null
+})
 watch(
   [activeAspect, activeScope, activeReviewState, conflictsOnly],
   () => {
@@ -200,6 +223,10 @@ watch(scopeOptions, (options) => {
 
 async function load(spaceId = store.activePersonalSpace?.id) {
   if (!spaceId) return
+  loadController?.abort()
+  const requestVersion = ++loadVersion
+  const controller = new AbortController()
+  loadController = controller
   loading.value = true
   try {
     const query = new URLSearchParams({ spaceId, limit: '500' })
@@ -212,14 +239,17 @@ async function load(spaceId = store.activePersonalSpace?.id) {
       limit: '500',
     })
     const [nextGraph, nextConflictRecords, nextWritingTaste] = await Promise.all([
-      getJson<KnowledgeGraph>(`/api/graph?${query}`),
+      getJson<KnowledgeGraph>(`/api/graph?${query}`, { signal: controller.signal }),
       getJson<PreferenceConflictRecord[]>(
         `/api/preference-conflicts?${conflictQuery}`,
+        { signal: controller.signal },
       ),
       getJson<WritingTasteProfile>(
         `/api/writing-taste-profile?${writingTasteQuery}`,
+        { signal: controller.signal },
       ).catch(() => null),
     ])
+    if (requestVersion !== loadVersion || controller.signal.aborted) return
     graph.value = nextGraph
     conflictRecords.value = Array.isArray(nextConflictRecords)
       ? nextConflictRecords
@@ -231,11 +261,14 @@ async function load(spaceId = store.activePersonalSpace?.id) {
       selectedItem.value = items.value.find(({ id }) => id === selectedItem.value?.id) ?? null
     }
   } catch (error) {
+    if (requestVersion !== loadVersion || controller.signal.aborted) return
     graph.value = null
     writingTaste.value = null
     store.reportError(error)
   } finally {
+    if (requestVersion !== loadVersion || controller.signal.aborted) return
     loading.value = false
+    if (loadController === controller) loadController = null
   }
 }
 
@@ -426,8 +459,6 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
       <p>{{ summaryGuidance }}</p>
     </div>
 
-    <WritingTasteMilestone :profile="writingTaste" />
-
     <section
       v-if="conflicts.length && !conflictsOnly && activeReviewState === 'all'"
       class="preference-conflict-alert"
@@ -443,6 +474,8 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
         {{ t('preferences.profile.alert.action') }}
       </button>
     </section>
+
+    <WritingTasteMilestone :profile="writingTaste" />
 
     <div class="personal-profile-toolbar">
       <div class="personal-profile-filter-groups">
@@ -501,12 +534,13 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
               })
           }}
         </span>
-        <button class="toolbar-action" type="button" @click="load()">
+        <button class="toolbar-action" type="button" :disabled="loading" @click="load()">
           {{ t('common.actions.refresh') }}
         </button>
       </div>
     </div>
 
+    <GrowthLoading v-if="loading && !showInitialLoading && !conflictsOnly" variant="inline" :label="t('preferences.profile.directory.loading')" />
     <GrowthLoading
       v-if="showInitialLoading"
       :label="t('preferences.profile.directory.loading')"
@@ -596,18 +630,16 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
           </footer>
         </article>
       </div>
-      <div v-if="loading || !visibleConflicts.length" class="empty-state">
-        {{
-          loading
-            ? t('preferences.profile.workbench.loading')
-            : conflicts.length
+      <GrowthLoading v-if="loading" variant="compact" :label="t('preferences.profile.workbench.loading')" />
+      <div v-else-if="!visibleConflicts.length" class="empty-state">
+        {{ conflicts.length
               ? t('preferences.profile.workbench.noFiltered')
               : t('preferences.profile.workbench.empty')
         }}
       </div>
     </section>
 
-    <div v-else class="personal-profile-layout">
+    <div v-else class="personal-profile-layout" :class="{ 'has-selection': selectedItem }">
       <!-- @vue-generic {import('@/types').KnowledgeItem} -->
       <VirtualDirectoryList
         class="personal-profile-directory"

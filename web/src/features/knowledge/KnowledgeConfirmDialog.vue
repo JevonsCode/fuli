@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 
 import { patchJson } from '@/api/client'
+import GrowthLoading from '@/components/GrowthLoading.vue'
+import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { ConfirmationActor, EvidenceRecord, KnowledgeItem } from '@/types'
@@ -24,6 +26,11 @@ const quadrantReason = ref('')
 const confirmationReason = ref('')
 const acknowledged = ref(false)
 const busy = ref(false)
+const dialogTitleId = useId()
+const { dialogRef, onCancel, onKeydown } = useModalDialog(
+  () => Boolean(props.item),
+  () => { if (!busy.value) emit('close') },
+)
 const localError = ref('')
 const proposedBy = ref<ConfirmationActor>({
   kind: 'import',
@@ -137,12 +144,11 @@ function fail(message: string) {
 </script>
 
 <template>
-  <dialog v-if="item" open class="knowledge-confirm-dialog vue-dialog">
+  <dialog v-if="item" ref="dialogRef" aria-modal="true" :aria-labelledby="dialogTitleId" @cancel="onCancel" @keydown="onKeydown" class="knowledge-confirm-dialog vue-dialog">
     <form class="knowledge-confirm-dialog-shell" @submit.prevent="confirmKnowledge">
       <header class="project-dialog-header">
         <div>
-          <p class="eyebrow">KNOWLEDGE CONFIRMATION</p>
-          <h3>{{ t('knowledge.dialogs.confirm.title', { subject: subjectLabel }) }}</h3>
+          <h3 :id="dialogTitleId">{{ t('knowledge.dialogs.confirm.title', { subject: subjectLabel }) }}</h3>
           <p>{{ t('knowledge.dialogs.confirm.intro') }}</p>
         </div>
         <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">
@@ -209,9 +215,14 @@ function fail(message: string) {
           type="submit"
           :disabled="busy || !acknowledged"
         >
-          {{ busy
-            ? t('knowledge.dialogs.confirm.confirming')
-            : t('knowledge.dialogs.confirm.confirmSubject', { subject: subjectLabel }) }}
+          <GrowthLoading
+            v-if="busy"
+            variant="inline"
+            :label="t('knowledge.dialogs.confirm.confirming', { subject: subjectLabel })"
+          />
+          <template v-else>
+            {{ t('knowledge.dialogs.confirm.confirmSubject', { subject: subjectLabel }) }}
+          </template>
         </button>
       </footer>
     </form>
@@ -224,9 +235,13 @@ function fail(message: string) {
 }
 
 .knowledge-confirm-dialog-shell {
+  box-sizing: border-box;
+  min-height: 0;
+  max-height: inherit;
   display: grid;
   gap: 18px;
   padding: 24px;
+  overflow: auto;
 }
 
 .knowledge-confirm-summary {

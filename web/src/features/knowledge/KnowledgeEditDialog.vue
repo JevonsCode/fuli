@@ -1,13 +1,23 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch, useId } from 'vue'
 
 import { patchJson, postJson } from '@/api/client'
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import SearchableSelect from '@/components/SearchableSelect.vue'
+import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import { quadrantLabel } from './model'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
 import type { KnowledgeEdge, KnowledgeItem, KnowledgeNode, PersonalProject } from '@/types'
+
+type PendingAction =
+  | 'correction'
+  | 'invalidate'
+  | 'restore'
+  | 'replacement'
+  | 'ownership'
+  | 'scope'
 
 const props = withDefaults(defineProps<{
   item: KnowledgeItem | null
@@ -26,6 +36,12 @@ const emit = defineEmits<{
 
 const store = useConsoleStore()
 const busy = ref(false)
+const pendingAction = ref<PendingAction | null>(null)
+const dialogTitleId = useId()
+const { dialogRef, onCancel, onKeydown } = useModalDialog(
+  () => Boolean(props.item),
+  () => { if (!busy.value) emit('close') },
+)
 const localError = ref('')
 const assignmentReason = ref('')
 const targetProjectId = ref('')
@@ -268,7 +284,7 @@ async function saveCorrection() {
     body.name = form.name.trim()
     body.summary = form.summary.trim()
   }
-  await execute(async () => {
+  await execute('correction', async () => {
     await patchJson(`/api/knowledge/${item.itemKind}/${encodeURIComponent(item.id)}`, body)
     store.notify(t('knowledge.dialogs.edit.notices.corrected'))
   })
@@ -284,7 +300,7 @@ async function changeStatus(action: 'invalidate' | 'restore') {
         : t('knowledge.dialogs.edit.errors.restoreReasonRequired'),
     )
   }
-  await execute(async () => {
+  await execute(action === 'invalidate' ? 'invalidate' : 'restore', async () => {
     const body: Record<string, unknown> = baseRevision(action)
     if (action === 'invalidate' && selectedReplacement.value) {
       body.replacementItemId = selectedReplacement.value.id
@@ -312,7 +328,7 @@ async function saveReplacement() {
   if (!form.reason.trim()) {
     return fail(t('knowledge.dialogs.edit.errors.replacementReasonRequired'))
   }
-  await execute(async () => {
+  await execute('replacement', async () => {
     await patchJson(
       `/api/knowledge/${item.itemKind}/${encodeURIComponent(item.id)}`,
       {
@@ -335,7 +351,7 @@ async function saveAssignment() {
   if (targetProjectId.value === currentProjectId.value) {
     return fail(t('knowledge.dialogs.edit.errors.alreadyAssigned'))
   }
-  await execute(async () => {
+  await execute('ownership', async () => {
     await postJson(
       `/api/knowledge/${item.itemKind}/${encodeURIComponent(item.id)}/assignment`,
       {
@@ -358,7 +374,7 @@ async function savePreferenceScope() {
   if (!preferenceReason.value.trim()) {
     return fail(t('knowledge.dialogs.edit.errors.preferenceReasonRequired'))
   }
-  await execute(async () => {
+  await execute('scope', async () => {
     await postJson(
       `/api/knowledge/${item.itemKind}/${encodeURIComponent(item.id)}/preference-scope`,
       {
@@ -389,8 +405,10 @@ function replacementKey(itemKind: KnowledgeItem['itemKind'], itemId: string) {
   return JSON.stringify([itemKind, itemId])
 }
 
-async function execute(operation: () => Promise<void>) {
+async function execute(action: PendingAction, operation: () => Promise<void>) {
+  if (busy.value) return
   busy.value = true
+  pendingAction.value = action
   localError.value = ''
   try {
     await operation()
@@ -403,6 +421,7 @@ async function execute(operation: () => Promise<void>) {
     store.reportError(error)
   } finally {
     busy.value = false
+    pendingAction.value = null
   }
 }
 
@@ -412,23 +431,23 @@ function fail(message: string) {
 </script>
 
 <template>
-  <dialog v-if="item" open class="project-dialog knowledge-edit-dialog vue-dialog">
+  <dialog v-if="item" ref="dialogRef" aria-modal="true" :aria-labelledby="dialogTitleId" @cancel="onCancel" @keydown="onKeydown" class="project-dialog knowledge-edit-dialog vue-dialog">
     <div class="project-dialog-shell">
       <header class="project-dialog-header">
         <div>
-          <p class="eyebrow">PERSONAL KNOWLEDGE</p>
-          <h3>{{ invalid
+          <h3 :id="dialogTitleId">{{ invalid
             ? t('knowledge.dialogs.edit.titleRestore')
             : t('knowledge.dialogs.edit.titleCorrect') }}</h3>
           <p>{{ t('knowledge.dialogs.edit.intro') }}</p>
         </div>
-        <button class="secondary-action" type="button" @click="emit('close')">{{ t('common.actions.close') }}</button>
+        <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">{{ t('common.actions.close') }}</button>
       </header>
 
       <div class="knowledge-edit-columns">
         <section>
           <h4>{{ t('knowledge.dialogs.edit.currentContent') }}</h4>
           <form class="knowledge-editor-form" @submit.prevent="saveCorrection">
+            <fieldset class="pending-inputs" :disabled="busy">
             <label v-if="!relationship">{{ t('knowledge.dialogs.edit.name') }}<input v-model="form.name" maxlength="512" /></label>
             <label v-if="!relationship">{{ t('knowledge.dialogs.edit.description') }}<textarea v-model="form.summary" maxlength="4096" rows="5" /></label>
             <label v-else>{{ t('knowledge.dialogs.edit.fact') }}<textarea v-model="form.fact" maxlength="8192" rows="5" /></label>
@@ -541,19 +560,48 @@ function fail(message: string) {
             <label>{{ t('knowledge.dialogs.edit.correctionReason') }}<textarea v-model="form.reason" maxlength="2000" rows="3" required /></label>
             <p v-if="localError" class="publish-dialog-error" role="alert">{{ localError }}</p>
             <div class="knowledge-editor-actions">
-              <button v-if="!invalid" class="secondary-action" type="button" :disabled="busy" @click="changeStatus('invalidate')">{{ t('knowledge.dialogs.edit.invalidate') }}</button>
+              <button v-if="!invalid" class="secondary-action" type="button" :disabled="busy" @click="changeStatus('invalidate')">
+                <GrowthLoading
+                  v-if="pendingAction === 'invalidate'"
+                  variant="inline"
+                  :label="t('knowledge.dialogs.edit.invalidating')"
+                />
+                <template v-else>{{ t('knowledge.dialogs.edit.invalidate') }}</template>
+              </button>
               <template v-else>
-                <button class="secondary-action" type="button" :disabled="busy" @click="changeStatus('restore')">{{ t('knowledge.dialogs.edit.restore') }}</button>
-                <button class="secondary-action" type="button" :disabled="busy" @click="saveReplacement">{{ t('knowledge.dialogs.edit.saveReplacement') }}</button>
+                <button class="secondary-action" type="button" :disabled="busy" @click="changeStatus('restore')">
+                  <GrowthLoading
+                    v-if="pendingAction === 'restore'"
+                    variant="inline"
+                    :label="t('knowledge.dialogs.edit.restoring')"
+                  />
+                  <template v-else>{{ t('knowledge.dialogs.edit.restore') }}</template>
+                </button>
+                <button class="secondary-action" type="button" :disabled="busy" @click="saveReplacement">
+                  <GrowthLoading
+                    v-if="pendingAction === 'replacement'"
+                    variant="inline"
+                    :label="t('knowledge.dialogs.edit.savingReplacement')"
+                  />
+                  <template v-else>{{ t('knowledge.dialogs.edit.saveReplacement') }}</template>
+                </button>
               </template>
               <button class="primary-action" type="submit" :disabled="busy">
-                {{ busy
-                  ? t('knowledge.dialogs.edit.saving')
-                  : form.confirmationStatus === 'confirmed'
+                <GrowthLoading
+                  v-if="pendingAction === 'correction'"
+                  variant="inline"
+                  :label="t(form.confirmationStatus === 'confirmed'
+                    ? 'knowledge.dialogs.edit.savingConfirmed'
+                    : 'knowledge.dialogs.edit.savingPending')"
+                />
+                <template v-else>
+                  {{ form.confirmationStatus === 'confirmed'
                     ? t('knowledge.dialogs.edit.saveConfirmed')
                     : t('knowledge.dialogs.edit.savePending') }}
+                </template>
               </button>
             </div>
+          </fieldset>
           </form>
         </section>
 
@@ -561,6 +609,7 @@ function fail(message: string) {
           <h4>{{ t('knowledge.dialogs.edit.projectOwnership') }}</h4>
           <p>{{ t('knowledge.dialogs.edit.ownershipCopy') }}</p>
           <form class="knowledge-editor-form" @submit.prevent="saveAssignment">
+            <fieldset class="pending-inputs" :disabled="busy">
             <label>{{ t('knowledge.dialogs.edit.targetProject') }}
               <SearchableSelect
                 v-model="targetProjectId"
@@ -571,7 +620,15 @@ function fail(message: string) {
               />
             </label>
             <label>{{ t('knowledge.dialogs.edit.assignmentReason') }}<textarea v-model="assignmentReason" maxlength="2000" rows="3" required /></label>
-            <button class="primary-action" type="submit" :disabled="busy || projects.length === 0">{{ t('knowledge.dialogs.edit.adjustOwnership') }}</button>
+            <button class="primary-action" type="submit" :disabled="busy || projects.length === 0">
+              <GrowthLoading
+                v-if="pendingAction === 'ownership'"
+                variant="inline"
+                :label="t('knowledge.dialogs.edit.changingOwnership')"
+              />
+              <template v-else>{{ t('knowledge.dialogs.edit.adjustOwnership') }}</template>
+            </button>
+          </fieldset>
           </form>
         </section>
 
@@ -579,6 +636,7 @@ function fail(message: string) {
           <h4>{{ t('knowledge.dialogs.edit.preferenceScope') }}</h4>
           <p>{{ t('knowledge.dialogs.edit.preferenceScopeCopy') }}</p>
           <form class="knowledge-editor-form" @submit.prevent="savePreferenceScope">
+            <fieldset class="pending-inputs" :disabled="busy">
             <label>{{ t('knowledge.dialogs.edit.effectiveScope') }}
               <SearchableSelect
                 v-model="preferenceScope"
@@ -595,10 +653,28 @@ function fail(message: string) {
               />
             </label>
             <label>{{ t('knowledge.dialogs.edit.assignmentReason') }}<textarea v-model="preferenceReason" maxlength="2000" rows="3" required /></label>
-            <button class="primary-action" type="submit" :disabled="busy">{{ t('knowledge.dialogs.edit.saveScope') }}</button>
+            <button class="primary-action" type="submit" :disabled="busy">
+              <GrowthLoading
+                v-if="pendingAction === 'scope'"
+                variant="inline"
+                :label="t('knowledge.dialogs.edit.savingScope')"
+              />
+              <template v-else>{{ t('knowledge.dialogs.edit.saveScope') }}</template>
+            </button>
+          </fieldset>
           </form>
         </section>
       </div>
     </div>
   </dialog>
 </template>
+
+<style scoped>
+.pending-inputs {
+  display: contents;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+</style>

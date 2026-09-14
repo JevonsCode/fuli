@@ -16,6 +16,7 @@ def test_super_collaboration_http_contract_exposes_all_control_plane_layers():
     paths = application.openapi()['paths']
     expected = {
         '/v1/project-agents': {'get', 'put'},
+        '/v1/project-agents/system-hr': {'post'},
         '/v1/project-agent-assignments': {'get', 'post'},
         '/v1/project-agent-tasks': {'get', 'post'},
         '/v1/project-agent-coordination-policy': {'get', 'put'},

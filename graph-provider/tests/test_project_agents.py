@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -11,7 +12,7 @@ from fuli_graph.project_agent_models import (
     ProjectAgentProfile,
     ProjectAgentUpsert,
 )
-from fuli_graph.store_project_agents import StoreProjectAgents
+from fuli_graph.store_project_agents import SYSTEM_HR_AGENT_ID, StoreProjectAgents
 
 
 @pytest.mark.asyncio
@@ -555,6 +556,87 @@ async def test_only_system_identity_can_use_coordinator_type():
 
 
 @pytest.mark.asyncio
+async def test_bole_is_the_fixed_system_hr_identity():
+    bole_profile = ProjectAgentProfile(
+        name='Bole',
+        occupation_emoji='🔎',
+        responsibility='维护 Agent 人员分布与可审计招募记录。',
+        agent_type='hr',
+        work_kinds=['agent-recruitment', 'staffing-review'],
+        capabilities=['Agent 招募', '人员分布', '招募审计', 'fuli.employee:bole'],
+        status='active',
+    )
+    bole = raw_agent(bole_profile)
+    bole['agent_id'] = SYSTEM_HR_AGENT_ID
+    driver = SequentialDriver([
+        [{'agent': bole}],
+        [],
+        [{
+            'agent': bole,
+            'assignment_rows': [],
+            'task_rows': [],
+            'observed_clients': [],
+        }],
+    ])
+
+    result = await StoreStub(driver).ensure_system_project_hr(
+        {'id': 'principal-1'},
+        'personal-space',
+    )
+
+    assert result.agent_id == 'employee.bole'
+    assert result.profile.name == 'Bole'
+    assert result.profile.agent_type == 'hr'
+    assert 'fuli.employee:bole' in result.profile.capabilities
+    query, parameters = driver.calls[0]
+    assert "agent.agent_type = 'hr'" in query
+    assert 'agent.system_managed = true' in query
+    assert parameters['agent_id'] == 'employee.bole'
+
+
+@pytest.mark.asyncio
+async def test_only_bole_system_identity_can_use_hr_type():
+    store = StoreStub(SequentialDriver([]))
+    profile = project_agent_profile().model_copy(update={'agent_type': 'hr'})
+
+    with pytest.raises(HTTPException, match='system-managed Bole identity'):
+        await store.upsert_project_agent(
+            {'id': 'principal-1'},
+            ProjectAgentUpsert(
+                personal_space_id='personal-space',
+                agent_id='extra-hr',
+                profile=profile,
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_bole_system_hr_cannot_be_archived():
+    with pytest.raises(HTTPException, match='system HR cannot be archived'):
+        await StoreStub(SequentialDriver([])).archive_project_agent(
+            {'id': 'principal-1'},
+            'personal-space',
+            SYSTEM_HR_AGENT_ID,
+            reason='not allowed',
+        )
+
+
+@pytest.mark.asyncio
+async def test_bole_cannot_be_deactivated_through_profile_upsert():
+    profile = project_agent_profile().model_copy(update={
+        'agent_type': 'hr', 'status': 'inactive',
+    })
+    with pytest.raises(HTTPException, match='system HR must remain active'):
+        await StoreStub(SequentialDriver([])).upsert_project_agent(
+            {'id': 'principal-1'},
+            ProjectAgentUpsert(
+                personal_space_id='personal-space', agent_id=SYSTEM_HR_AGENT_ID,
+                profile=profile,
+            ),
+        )
+
+
+@pytest.mark.asyncio
 async def test_blocked_task_is_visible_as_current_agent_work():
     profile = project_agent_profile()
     driver = SequentialDriver([[
@@ -647,6 +729,17 @@ class SequentialDriver:
     async def execute_query(self, query, **parameters):
         self.calls.append((query, parameters))
         return self.responses.pop(0), None, None
+
+    @asynccontextmanager
+    async def transaction(self):
+        yield self
+
+    async def run(self, query, **parameters):
+        rows, _, _ = await self.execute_query(query, **parameters)
+        async def records():
+            for row in rows:
+                yield row
+        return records()
 
 
 def project_agent_profile():

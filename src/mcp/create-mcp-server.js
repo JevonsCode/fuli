@@ -28,6 +28,13 @@ import {
 } from './session-id.js';
 
 const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
+  list_project_agent_tasks: 128 * 1024,
+  list_preference_conflicts: 128 * 1024,
+  list_agent_interfaces: 64 * 1024,
+  list_external_knowledge_connectors: 32 * 1024,
+  discover_external_knowledge_sources: 64 * 1024,
+  list_external_knowledge_bindings: 64 * 1024,
+  retrieve_external_knowledge_binding: 64 * 1024,
   list_employee_templates: 32 * 1024,
   recruit_employee: 64 * 1024,
   list_employee_tools: 64 * 1024,
@@ -216,7 +223,9 @@ async function invokeTool(tool, input, requestContext = null) {
         limitBytes
       });
     }
-    return successToolResult(value, { limitBytes });
+    const itemLimit = ({ list_agent_interfaces: 200, list_project_agent_tasks: 200,
+      list_preference_conflicts: 1000, list_external_knowledge_bindings: 200 })[tool.definition.name];
+    return successToolResult(value, { limitBytes, itemLimit });
   } catch (error) {
     return errorToolResult(error);
   }

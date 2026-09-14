@@ -1,4 +1,5 @@
 import { readJson, sendJson } from './response.js';
+import { handleAgentAttentionRequest } from './agent-attention-api-router.js';
 
 export async function handleGraphApiRequest({
   request,
@@ -6,6 +7,7 @@ export async function handleGraphApiRequest({
   url,
   app
 }) {
+  if (await handleAgentAttentionRequest({ request, response, url, app })) return true;
   if (url.pathname === '/api/state' && request.method === 'GET') {
     sendJson(response, 200, await app.state());
     return true;

@@ -1,34 +1,79 @@
 <script setup lang="ts">
-defineProps<{
+withDefaults(defineProps<{
   label: string
-}>()
+  variant?: 'page' | 'compact' | 'inline'
+}>(), { variant: 'page' })
 </script>
 
 <template>
-  <div
-    class="view-loading growth-loading"
+  <span
+    class="growth-loading"
+    :class="[`growth-loading--${variant}`, { 'view-loading': variant === 'page' }]"
     role="status"
     aria-live="polite"
     aria-atomic="true"
   >
-    <div class="growth-loading__content">
-      <div class="growth-loading__chart" aria-hidden="true">
-        <span class="growth-loading__bar growth-loading__bar--1"><i /></span>
-        <span class="growth-loading__bar growth-loading__bar--2"><i /></span>
-        <span class="growth-loading__bar growth-loading__bar--3"><i /></span>
-        <span class="growth-loading__bar growth-loading__bar--4"><i /></span>
-        <span class="growth-loading__bar growth-loading__bar--5"><i /></span>
-        <span class="growth-loading__baseline" />
-      </div>
+    <span class="growth-loading__content">
+      <span class="growth-loading__visual" aria-hidden="true">
+        <span class="growth-loading__chart" aria-hidden="true">
+          <span class="growth-loading__bar growth-loading__bar--1"><i /></span>
+          <span class="growth-loading__bar growth-loading__bar--2"><i /></span>
+          <span class="growth-loading__bar growth-loading__bar--3"><i /></span>
+          <span class="growth-loading__bar growth-loading__bar--4"><i /></span>
+          <span class="growth-loading__bar growth-loading__bar--5"><i /></span>
+          <span class="growth-loading__baseline" />
+        </span>
+      </span>
       <span class="growth-loading__label">{{ label }}</span>
-    </div>
-  </div>
+    </span>
+  </span>
 </template>
 
 <style scoped>
+.growth-loading {
+  --growth-scale: 1;
+  min-width: 0;
+}
+
+.growth-loading--compact {
+  --growth-scale: .65;
+  display: grid;
+  place-items: center;
+  min-height: 104px;
+  padding: 16px;
+}
+
+.growth-loading--inline {
+  --growth-scale: .28;
+  display: inline-flex;
+  max-width: 100%;
+  vertical-align: middle;
+  font: inherit;
+}
+
+.growth-loading__visual {
+  display: block;
+  width: calc(126px * var(--growth-scale));
+  height: calc(70px * var(--growth-scale));
+  flex: 0 0 auto;
+}
+
 .growth-loading__content {
   display: grid;
   justify-items: center;
+  min-width: 0;
+}
+
+.growth-loading--inline .growth-loading__content {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.growth-loading--inline .growth-loading__label {
+  margin: 0;
+  color: inherit;
+  font: inherit;
 }
 
 .growth-loading__chart {
@@ -41,6 +86,8 @@ defineProps<{
   gap: 7px;
   padding: 0 8px 7px;
   contain: layout paint;
+  transform: scale(var(--growth-scale));
+  transform-origin: top left;
 }
 
 .growth-loading__bar {
@@ -149,6 +196,8 @@ defineProps<{
   color: #778079;
   font-size: 12px;
   line-height: 1.5;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 @keyframes growth-loading-rise {

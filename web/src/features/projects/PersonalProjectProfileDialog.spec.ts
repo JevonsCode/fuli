@@ -17,6 +17,26 @@ describe('PersonalProjectProfileDialog', () => {
     })
   })
 
+  it('keeps an in-flight save open when Escape is pressed', async () => {
+    let finishSave!: (value: unknown) => void
+    putJson.mockReturnValue(new Promise((resolve) => { finishSave = resolve }))
+    const wrapper = mount(PersonalProjectProfileDialog, {
+      props: { project: {
+        project_id: 'synthetic-project', personal_space_id: 'synthetic-space',
+        profile: { name: 'Synthetic modal fixture', lifecycle: 'active' },
+      } },
+    })
+    await flushPromises()
+    await wrapper.get('form').trigger('submit')
+    await wrapper.get('dialog').trigger('cancel')
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect((wrapper.get('dialog').element as HTMLDialogElement).open).toBe(true)
+    finishSave({ project_id: 'synthetic-project', profile: { name: 'Synthetic modal fixture' } })
+    await flushPromises()
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
   it('updates project material without rewriting it as a knowledge revision', async () => {
     const wrapper = mount(PersonalProjectProfileDialog, {
       props: {

@@ -1,4 +1,5 @@
 import { agentProjectResolution } from './agent-knowledge-workflows.js';
+import { listAgentAttention, changeAgentAttention } from './agent-attention.js';
 import {
   getProjectAgentMemory,
   checkpointProjectAgentMemory
@@ -52,6 +53,26 @@ export const projectAgentControlPlaneHooks = Object.freeze({
 });
 
 export class ProjectAgentControlPlaneApplication {
+  async listAgentAttention(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return listAgentAttention(this, input);
+  }
+
+  async requestAgentAttention(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return changeAgentAttention(this, 'create', input);
+  }
+
+  async cancelAgentAttention(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return changeAgentAttention(this, 'cancel', input);
+  }
+
+  async respondToAgentAttention(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return changeAgentAttention(this, 'respond', input);
+  }
+
   async getProjectAgentMemory(input) {
     this.#assertSpace(input.personalSpaceId);
     return getProjectAgentMemory(this, input);

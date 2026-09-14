@@ -57,7 +57,8 @@ export function resolveSetupPaths({
     graphComposePath: join(root, 'compose.graphiti.yml'),
     sessionSkillPath: join(root, 'skills', 'capturing-session-knowledge'),
     projectSkillPath: join(root, 'skills', 'grilling-project'),
-    reviewSkillPath: join(root, 'skills', 'flreview')
+    reviewSkillPath: join(root, 'skills', 'flreview'),
+    operationSkillPath: join(root, 'skills', 'operating-fuli')
   };
 }
 

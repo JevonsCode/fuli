@@ -21,17 +21,29 @@ describe('API client errors', () => {
     await expect(getJson('/api/state')).rejects.toEqual(
       expect.objectContaining<ApiError>({
         name: 'ApiError',
-        message: 'Request failed (503)',
+        message: 'The service is temporarily unavailable. Retry shortly; if it still fails, check Service connections. (503)',
         status: 503,
+        detail: '',
       }),
     )
   })
 
-  it('preserves a server-provided error as runtime content', async () => {
+  it('localizes service failures while preserving diagnostic detail', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
       new Response('Provider unavailable', { status: 503 }),
     ))
 
-    await expect(getJson('/api/state')).rejects.toThrow('Provider unavailable')
+    await expect(getJson('/api/state')).rejects.toMatchObject({
+      message: '服务暂时无法响应，请稍后重试；如仍失败，请在「服务连接」检查连接状态。(503)',
+      detail: 'Provider unavailable',
+      status: 503,
+    })
+  })
+
+  it('preserves actionable server validation errors', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response('Project has changed. Reload before saving.', { status: 409 }),
+    ))
+    await expect(getJson('/api/state')).rejects.toThrow('Project has changed. Reload before saving.')
   })
 })

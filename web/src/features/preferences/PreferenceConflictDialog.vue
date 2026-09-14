@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, useId } from 'vue'
 
 import { patchJson, postJson } from '@/api/client'
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import { formatTime, latestItemValue } from '@/features/knowledge/model'
+import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { KnowledgeItem, PersonalProject } from '@/types'
@@ -34,6 +36,11 @@ const mergedValue = ref('')
 const reason = ref('')
 const generatedReason = ref('')
 const busy = ref(false)
+const dialogTitleId = useId()
+const { dialogRef, onCancel, onKeydown } = useModalDialog(
+  () => Boolean(props.conflict),
+  () => { if (!busy.value) emit('close') },
+)
 const localError = ref('')
 
 const splitProjects = computed(() => {
@@ -108,6 +115,7 @@ watch([splitItem, splitProjects], () => {
 }, { immediate: true })
 
 function chooseAction(nextAction: PreferenceConflictAction) {
+  if (busy.value) return
   action.value = nextAction
   if (!reason.value.trim() || reason.value === generatedReason.value) {
     setGeneratedReason(nextAction)
@@ -124,6 +132,7 @@ function setGeneratedReason(nextAction: PreferenceConflictAction | null) {
 }
 
 async function resolveConflict() {
+  if (busy.value) return
   const conflict = props.conflict
   if (!conflict || !action.value) {
     return fail(t('preferences.dialog.errors.actionRequired'))
@@ -138,19 +147,22 @@ async function resolveConflict() {
     return fail(t('preferences.dialog.errors.projectRequired'))
   }
 
+  const submittedAction = action.value
+  const submittedReason = reason.value.trim()
+  const submittedSpace = props.personalSpaceId
   busy.value = true
   localError.value = ''
   try {
-    if (action.value === 'merge') await mergeConflict(conflict)
-    else if (action.value === 'split_scope') await splitConflictScope(conflict)
-    else await keepOneConflictItem(conflict, action.value)
+    if (submittedAction === 'merge') await mergeConflict(conflict)
+    else if (submittedAction === 'split_scope') await splitConflictScope(conflict)
+    else await keepOneConflictItem(conflict, submittedAction)
     if (conflict.aiRecord) {
       await postJson(
         `/api/preference-conflicts/${encodeURIComponent(conflict.aiRecord.id)}/complete`,
         {
-          personalSpaceId: props.personalSpaceId,
-          resolution: action.value,
-          reason: reason.value.trim(),
+          personalSpaceId: submittedSpace,
+          resolution: submittedAction,
+          reason: submittedReason,
         },
       )
     }
@@ -168,13 +180,15 @@ async function resolveConflict() {
 }
 
 async function mergeConflict(conflict: PreferenceConflict) {
+  const submittedReason = reason.value.trim()
+  const submittedSpace = props.personalSpaceId
   const target = mergeTarget.value === 'left' ? conflict.left : conflict.right
   const historical = mergeTarget.value === 'left' ? conflict.right : conflict.left
   const update: Record<string, unknown> = {
-    personalSpaceId: props.personalSpaceId,
+    personalSpaceId: submittedSpace,
     personalProjectId: null,
     action: 'update',
-    reason: reason.value.trim(),
+    reason: submittedReason,
   }
   if (target.itemKind === 'entity') {
     update.name = target.title
@@ -207,10 +221,10 @@ async function mergeConflict(conflict: PreferenceConflict) {
   await patchJson(
     `/api/knowledge/${historical.itemKind}/${encodeURIComponent(historical.id)}`,
     {
-      personalSpaceId: props.personalSpaceId,
+      personalSpaceId: submittedSpace,
       personalProjectId: null,
       action: 'invalidate',
-      reason: reason.value.trim(),
+      reason: submittedReason,
       replacementItemId: target.id,
       replacementItemKind: target.itemKind,
     },
@@ -279,12 +293,11 @@ function fail(message: string) {
 </script>
 
 <template>
-  <dialog v-if="conflict" open class="project-dialog conflict-resolution-dialog vue-dialog">
+  <dialog v-if="conflict" ref="dialogRef" aria-modal="true" :aria-labelledby="dialogTitleId" @cancel="onCancel" @keydown="onKeydown" class="project-dialog conflict-resolution-dialog vue-dialog">
     <div class="project-dialog-shell conflict-resolution-shell">
       <header class="project-dialog-header">
         <div>
-          <p class="eyebrow">CONFLICT RESOLUTION</p>
-          <h3>{{ t('preferences.dialog.title') }}</h3>
+          <h3 :id="dialogTitleId">{{ t('preferences.dialog.title') }}</h3>
           <p>{{ t('preferences.dialog.intro', { reason: conflict.reason }) }}</p>
         </div>
         <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">
@@ -379,6 +392,7 @@ function fail(message: string) {
         </div>
       </section>
 
+      <fieldset class="conflict-inputs" :disabled="busy">
       <section
         class="conflict-resolution-options"
         :aria-label="t('preferences.dialog.actionsAria')"
@@ -485,6 +499,7 @@ function fail(message: string) {
         {{ t('preferences.dialog.reason') }}
         <textarea v-model="reason" rows="2" maxlength="2000" />
       </label>
+      </fieldset>
       <p v-if="localError" class="dialog-error">{{ localError }}</p>
 
       <footer class="project-dialog-actions conflict-resolution-actions">
@@ -499,11 +514,12 @@ function fail(message: string) {
             :disabled="busy || !action"
             @click="resolveConflict"
           >
-            {{
-              busy
-                ? t('preferences.dialog.processing')
-                : t('preferences.dialog.confirm')
-            }}
+            <GrowthLoading
+              v-if="busy"
+              variant="inline"
+              :label="t('preferences.dialog.processing')"
+            />
+            <template v-else>{{ t('preferences.dialog.confirm') }}</template>
           </button>
         </div>
       </footer>
@@ -512,6 +528,8 @@ function fail(message: string) {
 </template>
 
 <style scoped>
+.conflict-inputs { display: contents; border: 0; margin: 0; padding: 0; min-width: 0; }
+
 .conflict-resolution-dialog.vue-dialog {
   width: min(1180px, calc(100vw - 48px));
 }

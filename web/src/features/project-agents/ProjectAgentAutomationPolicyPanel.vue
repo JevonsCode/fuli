@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { getJson, patchJson } from '@/api/client'
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import { t } from '@/i18n'
 import type { ProjectAgentCoordinationPolicy } from '@/types'
 
@@ -133,9 +134,11 @@ function stringValue(value: unknown) {
       <span>{{ projectName }}</span>
     </header>
 
-    <p v-if="loading" class="project-agent-policy-state" role="status">
-      {{ t('projectAgents.coordination.loading') }}
-    </p>
+    <GrowthLoading
+      v-if="loading"
+      variant="compact"
+      :label="t('projectAgents.coordination.loading')"
+    />
     <div v-else class="project-agent-policy-options">
       <label>
         <span>
@@ -172,7 +175,11 @@ function stringValue(value: unknown) {
           {{ t('projectAgents.retry') }}
         </button>
       </p>
-      <p v-else-if="saving" role="status">{{ t('projectAgents.coordination.saving') }}</p>
+      <GrowthLoading
+        v-else-if="saving"
+        variant="compact"
+        :label="t('projectAgents.coordination.saving')"
+      />
       <p v-else-if="saved" role="status">{{ t('projectAgents.coordination.saved') }}</p>
     </div>
   </section>

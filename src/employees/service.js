@@ -51,6 +51,9 @@ export function createEmployeeService({ app, runtimeConfigPath, registry: config
     if (!tool || !manifest.permissions.includes(tool.permission)) {
       throw new EmployeeError('Employee tool is not available or permitted', 403, 'tool_not_permitted');
     }
+    if (context.templateId === 'jefa' && tool.permission === 'board.write' && requestsHumanAcceptance(input.arguments)) {
+      throw new EmployeeError('Jefa completion requires explicit human acceptance in the workbench', 403, 'human_acceptance_required');
+    }
     const session = input.sourceSessionId ? {
       sourceApplication: input.sourceApplication ?? 'other', id: input.sourceSessionId,
       verified: input.sourceSessionVerified === true,
@@ -80,4 +83,11 @@ export function createEmployeeService({ app, runtimeConfigPath, registry: config
     },
     async close() { try { await registry.close(); } finally { managementStore.close(); } }
   };
+}
+
+function requestsHumanAcceptance(value, depth = 0) {
+  if (!value || typeof value !== 'object') return false;
+  if (depth > 32) throw new TypeError('Employee tool arguments are too deeply nested');
+  return Object.entries(value).some(([key, entry]) =>
+    (key === 'status' && entry === 'done') || requestsHumanAcceptance(entry, depth + 1));
 }

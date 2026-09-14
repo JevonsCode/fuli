@@ -8,6 +8,7 @@ export const RESOURCE_REFRESH_OPTIONS = Object.freeze([5, 10, 30, 60]);
 export const GRAPH_RUNTIME_MODES = Object.freeze(['container', 'native']);
 export const CONVERSATION_LAUNCHER_APPLICATIONS = Object.freeze([
   'codex',
+  'claude',
   'claude_code',
   'cursor',
   'gemini_cli',
@@ -36,6 +37,12 @@ export const DEFAULT_CONVERSATION_LAUNCHERS = deepFreeze({
     enabled: false,
     idFormat: 'any',
     appName: 'Claude Code',
+    urlTemplate: ''
+  },
+  claude: {
+    enabled: false,
+    idFormat: 'any',
+    appName: 'Claude',
     urlTemplate: ''
   },
   cursor: {

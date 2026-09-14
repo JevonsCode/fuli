@@ -24,6 +24,7 @@ export function discoverAgents({
   const cursorHome = pathApi.join(homeDir, '.cursor');
   const skillName = 'capturing-session-knowledge';
   const projectSkillName = 'grilling-project';
+  const operationSkillName = 'operating-fuli';
   return [
     {
       id: 'codex',
@@ -35,6 +36,7 @@ export function discoverAgents({
       globalInstructionsOverridePath: pathApi.join(codexHome, 'AGENTS.override.md'),
       skillPath: pathApi.join(homeDir, '.agents', 'skills', skillName),
       projectSkillPath: pathApi.join(homeDir, '.agents', 'skills', projectSkillName),
+      operationSkillPath: pathApi.join(homeDir, '.agents', 'skills', operationSkillName),
       available: Boolean(commandExists('codex') || fileExists(pathApi.join(codexHome, 'config.toml')))
     },
     {
@@ -45,6 +47,7 @@ export function discoverAgents({
       settingsPath: pathApi.join(claudeHome, 'settings.json'),
       skillPath: pathApi.join(claudeHome, 'skills', skillName),
       projectSkillPath: pathApi.join(claudeHome, 'skills', projectSkillName),
+      operationSkillPath: pathApi.join(claudeHome, 'skills', operationSkillName),
       available: Boolean(
         commandExists('claude') ||
         fileExists(pathApi.join(homeDir, '.claude.json')) ||
@@ -59,6 +62,7 @@ export function discoverAgents({
       hooksPath: pathApi.join(cursorHome, 'hooks.json'),
       skillPath: pathApi.join(cursorHome, 'skills', skillName),
       projectSkillPath: pathApi.join(cursorHome, 'skills', projectSkillName),
+      operationSkillPath: pathApi.join(cursorHome, 'skills', operationSkillName),
       available: Boolean(
         commandExists('cursor') ||
         fileExists(pathApi.join(cursorHome, 'mcp.json')) ||

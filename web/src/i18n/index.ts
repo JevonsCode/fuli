@@ -14,6 +14,7 @@ import { routeMessages } from './messages/routes'
 import { settingsMessages } from './messages/settings'
 import { writingTasteMessages } from './messages/writing-taste'
 import { employeeMessages } from './messages/employees'
+import { attentionMessages } from './messages/attention'
 
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const
 export type AppLocale = typeof SUPPORTED_LOCALES[number]
@@ -61,6 +62,7 @@ function localeForLanguage(language: string): AppLocale | null {
 
 export const messages = {
   'zh-CN': {
+    attention: attentionMessages['zh-CN'],
     employees: employeeMessages['zh-CN'],
     about: aboutMessages['zh-CN'],
     common: commonMessages['zh-CN'],
@@ -79,6 +81,7 @@ export const messages = {
     writingTaste: writingTasteMessages['zh-CN'],
   },
   'en-US': {
+    attention: attentionMessages['en-US'],
     employees: employeeMessages['en-US'],
     about: aboutMessages['en-US'],
     common: commonMessages['en-US'],

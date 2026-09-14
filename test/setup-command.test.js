@@ -157,7 +157,8 @@ test('applying setup starts the runtime, backs up configs, and connects availabl
       'connect:codex',
       'skill:codex:capturing-session-knowledge',
       'skill:codex:grilling-project',
-      'skill:codex:flreview'
+      'skill:codex:flreview',
+      'skill:codex:operating-fuli'
     ]);
     assert.equal(runtimeInput.personalOnly, true);
     assert.equal(runtimeInput.memoryProfile, 'low');
@@ -183,6 +184,11 @@ test('applying setup starts the runtime, backs up configs, and connects availabl
         {
           status: 'installed',
           path: 'C:/Users/Test/.agents/skills/flreview',
+          backupPath: null
+        },
+        {
+          status: 'installed',
+          path: 'C:/Users/Test/.agents/skills/operating-fuli',
           backupPath: null
         }
       ]
@@ -406,7 +412,8 @@ function samplePlan() {
       graphRuntimeConfigPath: 'C:/Fuli/graph-runtime.json',
       sessionSkillPath: 'C:/Package/skills/capturing-session-knowledge',
       projectSkillPath: 'C:/Package/skills/grilling-project',
-      reviewSkillPath: 'C:/Package/skills/flreview'
+      reviewSkillPath: 'C:/Package/skills/flreview',
+      operationSkillPath: 'C:/Package/skills/operating-fuli'
     },
     agents: [
       {
@@ -416,7 +423,8 @@ function samplePlan() {
         configPath: 'C:/Codex/config.toml',
         skillPath: 'C:/Users/Test/.agents/skills/capturing-session-knowledge',
         projectSkillPath: 'C:/Users/Test/.agents/skills/grilling-project',
-        reviewSkillPath: 'C:/Users/Test/.agents/skills/flreview'
+        reviewSkillPath: 'C:/Users/Test/.agents/skills/flreview',
+        operationSkillPath: 'C:/Users/Test/.agents/skills/operating-fuli'
       },
       { id: 'claude-code', label: 'Claude Code', available: false, configPath: 'C:/x' }
     ]
@@ -433,7 +441,8 @@ function multiAgentPlan() {
       configPath: 'C:/Codex/config.toml',
       skillPath: 'C:/Users/Test/.agents/skills/capturing-session-knowledge',
       projectSkillPath: 'C:/Users/Test/.agents/skills/grilling-project',
-      reviewSkillPath: 'C:/Users/Test/.agents/skills/flreview'
+      reviewSkillPath: 'C:/Users/Test/.agents/skills/flreview',
+      operationSkillPath: 'C:/Users/Test/.agents/skills/operating-fuli'
     },
     {
       id: 'claude-code',
@@ -443,7 +452,8 @@ function multiAgentPlan() {
       configPath: 'C:/Users/Test/.claude.json',
       skillPath: 'C:/Users/Test/.claude/skills/capturing-session-knowledge',
       projectSkillPath: 'C:/Users/Test/.claude/skills/grilling-project',
-      reviewSkillPath: 'C:/Users/Test/.claude/skills/flreview'
+      reviewSkillPath: 'C:/Users/Test/.claude/skills/flreview',
+      operationSkillPath: 'C:/Users/Test/.claude/skills/operating-fuli'
     },
     {
       id: 'cursor',
@@ -453,7 +463,8 @@ function multiAgentPlan() {
       configPath: 'C:/Users/Test/.cursor/mcp.json',
       skillPath: 'C:/Users/Test/.cursor/skills/capturing-session-knowledge',
       projectSkillPath: 'C:/Users/Test/.cursor/skills/grilling-project',
-      reviewSkillPath: 'C:/Users/Test/.cursor/skills/flreview'
+      reviewSkillPath: 'C:/Users/Test/.cursor/skills/flreview',
+      operationSkillPath: 'C:/Users/Test/.cursor/skills/operating-fuli'
     }
   ];
 }

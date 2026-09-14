@@ -60,6 +60,8 @@ def register_project_agent_routes(
     """Attach Project Agent routes while keeping ``create_app`` orchestration small."""
 
     register_project_agent_memory_routes(application, store, Actor)
+    from .project_agent_attention_routes import register_project_agent_attention_routes
+    register_project_agent_attention_routes(application, store, Actor)
 
     @application.put('/v1/project-agents', response_model=ProjectAgentRecord)
     async def upsert_project_agent(
@@ -136,6 +138,16 @@ def register_project_agent_routes(
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
     ) -> ProjectAgentRecord:
         return await store.ensure_system_project_coordinator(actor, personal_space_id)
+
+    @application.post(
+        '/v1/project-agents/system-hr',
+        response_model=ProjectAgentRecord,
+    )
+    async def ensure_project_agent_hr(
+        actor: Actor,
+        personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
+    ) -> ProjectAgentRecord:
+        return await store.ensure_system_project_hr(actor, personal_space_id)
 
     @application.post(
         '/v1/project-agent-assignments',

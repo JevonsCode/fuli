@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import { t } from '@/i18n'
 import ProjectScopePicker from './ProjectScopePicker.vue'
 
@@ -32,16 +33,24 @@ const props = defineProps<{
   movingItemKeys?: string[]
   actionError?: string
   canMoveTasks: boolean
+  readOnly?: boolean
+  resettableFilter?: boolean
+  filterStorageUnavailable?: boolean
 }>()
 
 const emit = defineEmits<{
-  'select-project': [projectId: string]
+  'select-task': [item: EmployeeBoardItem]
+  'create-task': []
   'update:visible-project-ids': [projectIds: string[]]
   'move-task': [item: EmployeeBoardItem, status: EmployeeBoardStatus]
   retry: []
+  'reset-project-filter': []
 }>()
 
 const query = ref('')
+const boardElement = ref<HTMLElement | null>(null)
+let scrollFrame = 0
+let pointer = { x: 0, y: 0 }
 const announcement = ref('')
 type DragState = {
   item: EmployeeBoardItem
@@ -176,7 +185,25 @@ function onPointerMove(event: PointerEvent) {
   event.preventDefault()
   drag.value.left = event.clientX - drag.value.offsetX
   drag.value.top = event.clientY - drag.value.offsetY
+  pointer = { x: event.clientX, y: event.clientY }
+  if (!scrollFrame) scrollFrame = requestAnimationFrame(scrollAtPointer)
   updatePointerTarget(event.clientX, event.clientY)
+}
+function scrollAtPointer() {
+  scrollFrame = 0
+  if (!drag.value || drag.value.phase !== 'dragging' || drag.value.keyboard) return
+  const board = boardElement.value
+  if (!board) return
+  const rect = board.getBoundingClientRect()
+  const speed = (position: number, start: number, end: number) => position < start + 48 ? -Math.min(16, (start + 48 - position) / 3) : position > end - 48 ? Math.min(16, (position - end + 48) / 3) : 0
+  if (pointer.y >= rect.top && pointer.y <= rect.bottom) board.scrollLeft += speed(pointer.x, rect.left, rect.right)
+  const list = document.elementsFromPoint(pointer.x, pointer.y).map(element => element.closest<HTMLElement>('.employee-all-projects-list')).find(element => element && board.contains(element))
+  if (list) {
+    const bounds = list.getBoundingClientRect()
+    list.scrollTop += speed(pointer.y, bounds.top, bounds.bottom)
+  }
+  updatePointerTarget(pointer.x, pointer.y)
+  scrollFrame = requestAnimationFrame(scrollAtPointer)
 }
 function updatePointerTarget(x: number, y: number) {
   const current = drag.value
@@ -204,6 +231,8 @@ function cancelPointerDrag() {
   cancelDrag()
 }
 function removePointerListeners() {
+  if (scrollFrame) cancelAnimationFrame(scrollFrame)
+  scrollFrame = 0
   document.removeEventListener('pointermove', onPointerMove)
   document.removeEventListener('pointerup', onPointerUp)
   document.removeEventListener('pointercancel', cancelPointerDrag)
@@ -301,18 +330,21 @@ onBeforeUnmount(() => {
     <header class="employee-all-projects-header">
       <div class="employee-all-projects-heading">
         <h2 id="employee-all-projects-title">{{ t('employees.allProjects.title') }}</h2>
-        <p>{{ t('employees.allProjects.hint', { count: boards.length }) }}</p>
       </div>
       <div class="employee-all-projects-controls">
+        <button v-if="canMoveTasks" class="employee-board-create" type="button" @click="emit('create-task')">+ {{ t('employees.task.create') }}</button>
         <ProjectScopePicker
           class="employee-all-projects-filter"
           :model-value="visibleProjectIds"
           :projects="projects"
           compact
+          show-count
+          :resettable="resettableFilter"
           :label="t('employees.allProjects.projectFilter')"
           :hint="t('employees.allProjects.projectFilterHint')"
           :empty-label="t('employees.allProjects.noProjectsVisible')"
           @update:model-value="emit('update:visible-project-ids', $event)"
+          @reset="emit('reset-project-filter')"
         />
         <label class="employee-all-projects-search">
           <span>{{ t('employees.allProjects.search') }}</span>
@@ -321,6 +353,7 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
+    <div v-if="filterStorageUnavailable" class="employee-all-projects-notice" role="status">{{ t('employees.scope.storageUnavailable') }}</div>
     <div v-if="failedProjects" class="employee-all-projects-notice" role="status">
       <span>{{ t('employees.allProjects.partial', { loaded: boards.length, total: visibleProjectIds.length, failed: failedProjects }) }}</span>
       <button type="button" @click="emit('retry')">{{ t('employees.retry') }}</button>
@@ -344,9 +377,9 @@ onBeforeUnmount(() => {
       <p>{{ t('employees.allProjects.noMatchHint') }}</p>
     </div>
     <div v-else class="employee-all-projects-board-shell">
-      <p v-if="canMoveTasks" class="employee-all-projects-drag-instructions">{{ t('employees.allProjects.dragHint') }}</p>
+      <p v-if="canMoveTasks" id="employee-drag-instructions" class="visually-hidden">{{ t('employees.allProjects.dragHint') }}</p>
       <p class="visually-hidden" aria-live="assertive" aria-atomic="true">{{ announcement }}</p>
-      <div class="employee-all-projects-board" :class="{ 'is-dragging': drag }" :aria-label="t('employees.allProjects.boardLabel')">
+      <div ref="boardElement" class="employee-all-projects-board" :class="{ 'is-dragging': drag }" :aria-label="t('employees.allProjects.boardLabel')">
       <section
         v-for="column in columns"
         :key="column.value"
@@ -369,9 +402,9 @@ onBeforeUnmount(() => {
             <button
               type="button"
               class="employee-all-projects-task-open"
-              :disabled="isMoving(item)"
+              :disabled="isMoving(item) || readOnly"
               :aria-label="t('employees.allProjects.openTask', { project: projectName(item.projectId), task: item.title })"
-              @click="emit('select-project', item.projectId)"
+              @click="emit('select-task', item)"
             >
               <span class="employee-all-projects-project">{{ projectName(item.projectId) }}</span>
               <strong>{{ item.title }}</strong>
@@ -387,12 +420,13 @@ onBeforeUnmount(() => {
               :disabled="isMoving(item)"
               :aria-label="t('employees.allProjects.dragTask', { task: item.title })"
               :title="t('employees.allProjects.dragTask', { task: item.title })"
+              aria-describedby="employee-drag-instructions"
               @pointerdown.stop.prevent="beginPointerDrag($event, item, index)"
               @keydown="onDragHandleKeydown($event, item, index)"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="5" cy="4" r="1" /><circle cx="11" cy="4" r="1" /><circle cx="5" cy="8" r="1" /><circle cx="11" cy="8" r="1" /><circle cx="5" cy="12" r="1" /><circle cx="11" cy="12" r="1" /></svg>
             </button>
-            <span v-if="isMoving(item)" class="employee-all-projects-saving" role="status">{{ t('employees.allProjects.saving') }}</span>
+            <GrowthLoading v-if="isMoving(item)" class="employee-all-projects-saving" variant="inline" :label="t('employees.allProjects.saving')" />
           </article>
           <p v-if="!itemsForColumn(column.value).length" :key="`${column.value}-empty`" class="employee-all-projects-column-empty">{{ t('employees.allProjects.columnEmpty') }}</p>
         </TransitionGroup>
@@ -425,8 +459,8 @@ onBeforeUnmount(() => {
 .employee-all-projects-heading { min-width: 0; }
 .employee-all-projects-heading h2 { margin: 0 0 4px; font-size: 20px; font-weight: 650; letter-spacing: -0.02em; }
 .employee-all-projects-heading p { margin: 0; color: #5b6b61; font-size: 13px; line-height: 1.5; }
-.employee-all-projects-controls { display: flex; flex: 0 1 570px; align-items: end; justify-content: flex-end; gap: 10px; min-width: 0; }
-.employee-all-projects-filter { flex: 0 1 250px; min-width: 180px; }
+.employee-all-projects-controls { display: flex; flex: 0 1 660px; align-items: end; justify-content: flex-end; gap: 10px; min-width: 0; }
+.employee-all-projects-filter { flex: 0 1 270px; min-width: 240px; }
 .employee-all-projects-filter :deep(.project-scope-trigger) { min-height: 40px; }
 .employee-all-projects-search { display: grid; flex: 1 1 300px; min-width: 180px; gap: 5px; color: #516158; font-size: 12px; }
 .employee-all-projects-search input { width: 100%; min-height: 40px; border: 1px solid #cbd5ce; border-radius: 9px; background: #fff; color: #253c2f; font: inherit; font-size: 14px; padding: 8px 11px; }
@@ -436,7 +470,6 @@ onBeforeUnmount(() => {
 .employee-all-projects-notice button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .employee-all-projects-notice.is-error { background: #f6e6e3; color: #813e37; }
 .employee-all-projects-board-shell { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 8px; }
-.employee-all-projects-drag-instructions { margin: 0; color: #65736a; font-size: 11px; line-height: 1.4; }
 .employee-all-projects-board { display: grid; flex: 1; grid-template-columns: repeat(5, minmax(230px, 1fr)); gap: 12px; min-height: 0; overflow-x: auto; padding: 2px 2px 4px; }
 .employee-all-projects-column { display: flex; min-width: 230px; min-height: 0; flex-direction: column; overflow: hidden; border-radius: 14px; background: #ecefed; transition: background-color 160ms ease, box-shadow 160ms ease; }
 .employee-all-projects-column.is-drop-target { background: #e3ebe6; box-shadow: inset 0 0 0 1px rgb(49 92 67 / 18%); }
@@ -449,6 +482,9 @@ onBeforeUnmount(() => {
 .employee-all-projects-task-open { display: flex; width: 100%; flex-direction: column; align-items: stretch; gap: 7px; padding: 11px 38px 11px 12px; border: 0; border-radius: inherit; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .employee-all-projects-task-open:focus-visible, .employee-all-projects-drag-handle:focus-visible { outline: 2px solid #356448; outline-offset: -2px; }
 .employee-all-projects-task-open:disabled { cursor: wait; }
+.employee-all-projects-task-open:disabled:not(.is-saving *) { cursor: default; }
+.employee-board-create { border: 0; border-radius: 8px; min-height: 40px; padding: 8px 14px; background: #315c43; color: #fff; font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.employee-board-create:focus-visible { outline: 2px solid #356448; outline-offset: 2px; }
 .employee-all-projects-drag-handle { position: absolute; top: 7px; right: 7px; display: grid; width: 28px; height: 28px; place-items: center; padding: 0; border: 0; border-radius: 7px; background: transparent; color: #7a887f; cursor: grab; touch-action: none; }
 .employee-all-projects-drag-handle:hover:not(:disabled) { background: #edf3ef; color: #315c43; }
 .employee-all-projects-drag-handle:active { cursor: grabbing; }
@@ -479,7 +515,10 @@ onBeforeUnmount(() => {
 @media (max-width: 760px) {
   .employee-all-projects { padding: 10px 16px 18px; }
   .employee-all-projects-header { align-items: stretch; flex-direction: column; gap: 10px; }
-  .employee-all-projects-controls { flex-basis: auto; align-items: stretch; flex-direction: column; }
+  .employee-all-projects-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; flex-basis: auto; align-items: end; }
+  .employee-board-create { grid-column: 2; grid-row: 1; }
+  .employee-all-projects-filter { grid-column: 1; grid-row: 1; }
+  .employee-all-projects-search { grid-column: 1 / -1; }
   .employee-all-projects-filter, .employee-all-projects-search { flex-basis: auto; min-width: 0; }
   .employee-all-projects-search { flex-basis: auto; }
   .employee-all-projects-board { grid-template-columns: repeat(5, minmax(82vw, 1fr)); }

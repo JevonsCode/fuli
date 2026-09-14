@@ -1,6 +1,6 @@
 {
   "name": "fuli-context",
-  "version": "0.7.10-beta.0",
+  "version": "0.7.10-beta.7",
   "description": "Local-first collaboration relationship graph for AI agents.",
   "type": "module",
   "files": [
@@ -12,6 +12,7 @@
     "docs/public-personal-architecture.md",
     "docs/project-agent-memory.md",
     "docs/employee-agents.md",
+    "docs/agent-interface-architecture.md",
     "examples/external-knowledge/markdown-folder.mjs",
     "graph-provider/Dockerfile",
     "graph-provider/pyproject.toml",
@@ -83,7 +84,6 @@
     "@vue/test-utils": "^2.4.11",
     "brace-expansion": "5.0.9",
     "d3": "^7.9.0",
-    "gsap": "^3.15.0",
     "jsdom": "^29.1.1",
     "linkedom": "^0.18.12",
     "npm-run-all2": "^9.0.2",

@@ -36,7 +36,7 @@ export function loadConversationLauncherConfiguration({ force = false } = {}) {
   return loading
 }
 
-function normalizedConfiguration(
+export function normalizedConfiguration(
   value: ConversationLauncherConfiguration | undefined,
 ): ConversationLauncherConfiguration {
   return Object.fromEntries(CONVERSATION_SOURCE_APPLICATIONS.map((application) => [

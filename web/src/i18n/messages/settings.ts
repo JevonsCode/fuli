@@ -1,8 +1,10 @@
 export const settingsMessages = {
   'zh-CN': {
     aria: '设置',
+    loading: '正在读取运行设置…',
     resources: {
       title: '资源占用',
+      loading: '正在读取内存与硬盘占用…',
       memory: '内存',
       disk: '硬盘',
       available: '电脑可用 {value}',
@@ -86,7 +88,7 @@ export const settingsMessages = {
       },
     },
     save: '保存设置',
-    saving: '正在保存',
+    saving: '正在保存运行设置…',
     saved: '设置已保存',
     restartRequired: '需要重启',
     restartCopy: '端口或局域网设置将在运行 fuli restart 后生效。',
@@ -95,8 +97,10 @@ export const settingsMessages = {
   },
   'en-US': {
     aria: 'Settings',
+    loading: 'Loading runtime settings…',
     resources: {
       title: 'Resource usage',
+      loading: 'Reading memory and disk usage…',
       memory: 'Memory',
       disk: 'Disk',
       available: '{value} available on this device',
@@ -180,7 +184,7 @@ export const settingsMessages = {
       },
     },
     save: 'Save settings',
-    saving: 'Saving',
+    saving: 'Saving runtime settings…',
     saved: 'Settings saved',
     restartRequired: 'Restart required',
     restartCopy: 'Port and LAN changes apply after running fuli restart.',

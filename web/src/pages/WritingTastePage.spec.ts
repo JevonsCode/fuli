@@ -84,6 +84,67 @@ describe('WritingTastePage', () => {
     await hypothesisCard!.get('.secondary-action').trigger('click')
     expect(wrapper.get('.edit-dialog-stub').text()).toContain('隐喻偏好')
   })
+
+  it('clears old rules and dialogs immediately when the personal space changes', async () => {
+    const profile = writingTasteProfile('active')
+    profile.rules = [writingRule('hypothesis', 'Working hypothesis')]
+    mockProfileRequests(profile)
+    const wrapper = mountPage()
+    await finishLoading()
+    await wrapper.get('.writing-taste-rule .primary-action').trigger('click')
+    expect(wrapper.find('.confirm-dialog-stub').exists()).toBe(true)
+
+    getJson.mockImplementation(() => new Promise(() => {}))
+    const store = useConsoleStore()
+    store.state = { ...store.state!, activePersonalSpaceId: 'space-two',
+      personalSpaces: [{ id: 'space-two', name: 'Second space' }] }
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('大胆隐喻')
+    expect(wrapper.find('.confirm-dialog-stub').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('aborts old requests and rejects late results after the space is removed', async () => {
+    let resolveProfile!: (value: WritingTasteProfile) => void
+    const pending = new Promise<WritingTasteProfile>((resolve) => { resolveProfile = resolve })
+    getJson.mockImplementation((url: string) => url.startsWith('/api/writing-taste-profile')
+      ? pending : Promise.resolve(profileGraph()))
+    const wrapper = mountPage()
+    const signal = getJson.mock.calls[0][1].signal as AbortSignal
+    const store = useConsoleStore()
+    store.state = { ...store.state!, personalSpaces: [], activePersonalSpaceId: null }
+    await flushPromises()
+    expect(signal.aborted).toBe(true)
+    const profile = writingTasteProfile('active')
+    profile.rules = [writingRule('confirmed', 'Confirmed')]
+    resolveProfile(profile)
+    await finishLoading()
+    expect(wrapper.find('.writing-taste-rule').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('offers retry after a failed load and aborts requests on unmount', async () => {
+    getJson.mockRejectedValue(new Error('Synthetic failure'))
+    const wrapper = mountPage()
+    await finishLoading()
+    expect(wrapper.get('[role="alert"]').text()).toContain('读取失败')
+    expect(useConsoleStore().feedback).toBeNull()
+    const profile = writingTasteProfile('active')
+    profile.rules = [writingRule('confirmed', 'Confirmed')]
+    mockProfileRequests(profile)
+    await wrapper.get('.writing-taste-unavailable button').trigger('click')
+    await finishLoading()
+    expect(wrapper.find('.writing-taste-rule').exists()).toBe(true)
+    expect(useConsoleStore().feedback).toBeNull()
+    getJson.mockImplementation(() => new Promise(() => {}))
+    const store = useConsoleStore()
+    store.state = { ...store.state!, activePersonalSpaceId: 'space-two',
+      personalSpaces: [{ id: 'space-two', name: 'Second space' }] }
+    await flushPromises()
+    const signal = getJson.mock.calls.at(-1)![1].signal as AbortSignal
+    wrapper.unmount()
+    expect(signal.aborted).toBe(true)
+  })
 })
 
 function mountPage() {

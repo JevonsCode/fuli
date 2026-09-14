@@ -2,20 +2,24 @@ import { t } from '@/i18n'
 
 export class ApiError extends Error {
   readonly status: number
+  readonly detail: string
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, detail = '') {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.detail = detail
   }
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
   if (!response.ok) {
-    const message = (await response.text()).trim()
-      || t('common.errors.requestFailed', { status: response.status })
-    throw new ApiError(message, response.status)
+    const detail = (await response.text()).trim()
+    const message = response.status >= 500
+      ? t('common.errors.serviceUnavailable', { status: response.status })
+      : detail || t('common.errors.requestFailed', { status: response.status })
+    throw new ApiError(message, response.status, detail)
   }
   return response.json() as Promise<T>
 }

@@ -18,7 +18,8 @@ const CONTEXT = Object.freeze({
   runtimeConfigPath: 'C:/Data/Fuli/graph-runtime.json',
   sessionSkillPath: 'C:/Fuli/skills/capturing-session-knowledge',
   projectSkillPath: 'C:/Fuli/skills/grilling-project',
-  reviewSkillPath: 'C:/Fuli/skills/flreview'
+  reviewSkillPath: 'C:/Fuli/skills/flreview',
+  operationSkillPath: 'C:/Fuli/skills/operating-fuli'
 });
 
 const AGENTS = Object.freeze([
@@ -30,7 +31,8 @@ const AGENTS = Object.freeze([
     globalInstructionsOverridePath: 'C:/User/.codex/AGENTS.override.md',
     skillPath: 'C:/User/.agents/skills/capturing-session-knowledge',
     projectSkillPath: 'C:/User/.agents/skills/grilling-project',
-    reviewSkillPath: 'C:/User/.agents/skills/flreview'
+    reviewSkillPath: 'C:/User/.agents/skills/flreview',
+    operationSkillPath: 'C:/User/.agents/skills/operating-fuli'
   },
   {
     id: 'claude-code',
@@ -39,7 +41,8 @@ const AGENTS = Object.freeze([
     settingsPath: 'C:/User/.claude/settings.json',
     skillPath: 'C:/User/.claude/skills/capturing-session-knowledge',
     projectSkillPath: 'C:/User/.claude/skills/grilling-project',
-    reviewSkillPath: 'C:/User/.claude/skills/flreview'
+    reviewSkillPath: 'C:/User/.claude/skills/flreview',
+    operationSkillPath: 'C:/User/.claude/skills/operating-fuli'
   },
   {
     id: 'cursor',
@@ -47,7 +50,8 @@ const AGENTS = Object.freeze([
     configPath: 'C:/User/.cursor/mcp.json',
     skillPath: 'C:/User/.cursor/skills/capturing-session-knowledge',
     projectSkillPath: 'C:/User/.cursor/skills/grilling-project',
-    reviewSkillPath: 'C:/User/.cursor/skills/flreview'
+    reviewSkillPath: 'C:/User/.cursor/skills/flreview',
+    operationSkillPath: 'C:/User/.cursor/skills/operating-fuli'
   }
 ]);
 
@@ -78,6 +82,7 @@ test('setup distinguishes current, outdated, and missing Agent integrations', ()
     AGENTS[0].skillPath,
     AGENTS[0].projectSkillPath,
     AGENTS[0].reviewSkillPath,
+    AGENTS[0].operationSkillPath,
     AGENTS[1].skillPath
   ]);
   const presentSkills = new Set(currentSkills);

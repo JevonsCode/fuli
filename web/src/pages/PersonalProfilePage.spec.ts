@@ -87,6 +87,98 @@ describe('PersonalProfilePage', () => {
     expect(wrapper.findAll('.virtual-directory-list')).toHaveLength(1)
   })
 
+  it('keeps the latest personal-space response when loads resolve out of order', async () => {
+    const deferred = new Map<string, Array<(value: unknown) => void>>()
+    getJson.mockImplementation((url: string) => {
+      const parsed = new URL(url, 'http://fuli.test')
+      const spaceId = parsed.searchParams.get('spaceId')
+        ?? parsed.searchParams.get('personalSpaceId')
+        ?? ''
+      const kind = url.startsWith('/api/graph')
+        ? 'graph'
+        : url.startsWith('/api/preference-conflicts')
+          ? 'conflicts'
+          : 'taste'
+      const key = `${kind}:${spaceId}`
+      return new Promise((resolve) => {
+        const resolvers = deferred.get(key) ?? []
+        resolvers.push(resolve)
+        deferred.set(key, resolvers)
+      })
+    })
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.state = {
+      mode: 'personal_only',
+      activePersonalSpaceId: 'space-a',
+      personalSpaces: [
+        { id: 'space-a', name: '空间 A' },
+        { id: 'space-b', name: '空间 B' },
+      ],
+      personalProjects: [],
+      projects: [],
+      subscriptions: [],
+    }
+
+    const wrapper = mount(PersonalProfilePage, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          KnowledgeEditDialog: true,
+          KnowledgeInspector: true,
+          PreferenceConflictDialog: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    store.state = { ...store.state!, activePersonalSpaceId: 'space-b' }
+    await wrapper.vm.$nextTick()
+    await flushPromises()
+
+    const resolveOne = (key: string, value: unknown) => deferred.get(key)?.shift()?.(value)
+    resolveOne('graph:space-b', profileGraphFor('space-b', '空间 B 偏好'))
+    resolveOne('conflicts:space-b', [])
+    resolveOne('taste:space-b', null)
+    await finishProfileLoading()
+
+    resolveOne('graph:space-a', profileGraphFor('space-a', '空间 A 偏好'))
+    resolveOne('conflicts:space-a', [])
+    resolveOne('taste:space-a', null)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('空间 B 偏好')
+    expect(wrapper.text()).not.toContain('空间 A 偏好')
+  })
+
+  it('clears the previous space immediately while the next space is loading', async () => {
+    getJson.mockImplementation((url: string) => Promise.resolve(
+      url.startsWith('/api/graph') ? profileGraphFor('space-a', 'Synthetic old-space preference') : [],
+    ))
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.state = {
+      mode: 'personal_only', activePersonalSpaceId: 'space-a',
+      personalSpaces: [{ id: 'space-a', name: 'Synthetic A' }, { id: 'space-b', name: 'Synthetic B' }],
+      personalProjects: [], projects: [], subscriptions: [],
+    }
+    const wrapper = mount(PersonalProfilePage, { global: { plugins: [pinia] } })
+    await finishProfileLoading()
+    expect(wrapper.text()).toContain('Synthetic old-space preference')
+    getJson.mockImplementation(() => new Promise(() => {}))
+    store.state = { ...store.state, activePersonalSpaceId: 'space-b' }
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Synthetic old-space preference')
+    expect(wrapper.find('.growth-loading').exists()).toBe(true)
+    store.state = { ...store.state, personalSpaces: [] }
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Synthetic old-space preference')
+    wrapper.unmount()
+  })
+
   it('reveals the writing-taste page entry only when its profile is ready', async () => {
     getJson.mockImplementation((url: string) => {
       if (url.startsWith('/api/preference-conflicts')) return Promise.resolve([])
@@ -540,6 +632,15 @@ function profileGraph() {
       preferenceNode('project-a', 'A 项目判断', 'judgment_preference', 'project-a'),
       preferenceNode('project-b', 'B 项目个性', 'personality', 'project-b'),
     ],
+    edges: [],
+    truncated: false,
+  }
+}
+
+function profileGraphFor(spaceId: string, name: string) {
+  return {
+    space_id: spaceId,
+    nodes: [preferenceNode(`${spaceId}-preference`, name, 'taste')],
     edges: [],
     truncated: false,
   }

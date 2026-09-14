@@ -8,6 +8,8 @@ export const commonMessages = {
       switched: '界面语言已切换为中文。',
     },
     actions: {
+      retry: '重试',
+      backHome: '返回首页',
       refresh: '刷新',
       close: '关闭',
       cancel: '取消',
@@ -25,10 +27,15 @@ export const commonMessages = {
       selectedCount: '已选 {count} 个项目',
     },
     errors: {
+      loadFailed: '读取失败，请重试。',
+      serviceUnavailable: '服务暂时无法响应，请稍后重试；如仍失败，请在「服务连接」检查连接状态。({status})',
+      pageNotFound: '找不到这个页面',
+      pageNotFoundCopy: '链接可能已失效，或地址有误。请检查地址，也可以返回首页继续。',
       requestFailed: '请求失败 ({status})',
       operationFailed: '操作失败',
     },
     status: {
+      loadingConsole: '正在读取空间与服务状态…',
       connected: '已连接',
       connectionError: '连接异常',
       notConnected: '未连接',
@@ -58,6 +65,8 @@ export const commonMessages = {
       switched: 'Interface language changed to English.',
     },
     actions: {
+      retry: 'Retry',
+      backHome: 'Back to home',
       refresh: 'Refresh',
       close: 'Close',
       cancel: 'Cancel',
@@ -75,10 +84,15 @@ export const commonMessages = {
       selectedCount: '{count} projects selected',
     },
     errors: {
+      loadFailed: 'Could not load. Please retry.',
+      serviceUnavailable: 'The service is temporarily unavailable. Retry shortly; if it still fails, check Service connections. ({status})',
+      pageNotFound: 'Page not found',
+      pageNotFoundCopy: 'This link may be outdated or the address may be incorrect. Check the address or return home to continue.',
       requestFailed: 'Request failed ({status})',
       operationFailed: 'Operation failed',
     },
     status: {
+      loadingConsole: 'Loading spaces and service status…',
       connected: 'Connected',
       connectionError: 'Connection error',
       notConnected: 'Not connected',

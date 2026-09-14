@@ -161,6 +161,10 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
       deps.secureFile(input.paths.graphRuntimeConfigPath);
     }
   }
+  // Run the idempotent identity upgrade on existing installs as well as first setup.
+  await providerRequest(config.personal.providerUrl, `/v1/project-agents/system-hr?${new URLSearchParams({
+    personal_space_id: config.personal.spaceId
+  })}`, { token: config.personal.accessToken, fetchImpl: deps.fetch });
   const activeProfilePath = configSelection.switched
     ? graphConfigProfilePath(input.paths, runtimeMode)
     : null;

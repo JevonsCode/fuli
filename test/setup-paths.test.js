@@ -91,4 +91,5 @@ test('setup paths honor an explicit data directory and resolve runtime entries',
   assert.equal(paths.sessionSkillPath, join(PACKAGE_ROOT, 'skills', 'capturing-session-knowledge'));
   assert.equal(paths.projectSkillPath, join(PACKAGE_ROOT, 'skills', 'grilling-project'));
   assert.equal(paths.reviewSkillPath, join(PACKAGE_ROOT, 'skills', 'flreview'));
+  assert.equal(paths.operationSkillPath, join(PACKAGE_ROOT, 'skills', 'operating-fuli'));
 });

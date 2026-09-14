@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 
 import { putJson } from '@/api/client'
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import SearchableSelect from '@/components/SearchableSelect.vue'
 import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
@@ -57,6 +58,9 @@ const editingExecutor = computed(() => Boolean(props.executor))
 const titleKey = computed(() => props.mode === 'executor'
   ? (editingExecutor.value ? 'executorEditTitle' : 'executorCreateTitle')
   : 'ruleCreateTitle')
+const savingLabel = computed(() => props.mode === 'executor'
+  ? t('projectAgents.routing.editor.savingExecutor')
+  : t('projectAgents.routing.editor.savingRule'))
 const projectOptions = computed(() => props.projects.map((project) => ({
   value: project.project_id,
   label: project.profile.name,
@@ -185,13 +189,140 @@ async function save() {
       <p v-if="error" class="project-agent-dialog-error" role="alert">{{ error }}</p>
       <footer class="project-agent-dialog-actions">
         <button class="quiet-button" type="button" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</button>
-        <button class="project-agent-primary-action" type="submit" :disabled="busy">{{ t('projectAgents.routing.editor.save') }}</button>
+        <button class="project-agent-primary-action" type="submit" :disabled="busy">
+          <GrowthLoading v-if="busy" variant="inline" :label="savingLabel" />
+          <span v-else>{{ t('projectAgents.routing.editor.save') }}</span>
+        </button>
       </footer>
     </form>
   </dialog>
 </template>
 
 <style scoped>
+.project-agent-dialog {
+  width: min(760px, calc(100vw - 64px));
+  max-height: calc(100vh - 64px);
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+}
+
+.project-agent-dialog-shell {
+  max-height: calc(100vh - 64px);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #d5dcd7;
+  border-radius: 12px;
+  background: #fbfcfb;
+  box-shadow: 0 18px 48px rgb(33 45 38 / 18%);
+}
+
+.project-agent-dialog-header,
+.project-agent-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+}
+
+.project-agent-dialog-header {
+  border-bottom: 1px solid #e1e6e2;
+}
+
+.project-agent-dialog-header h3 {
+  color: #283a31;
+  font-size: 17px;
+}
+
+.project-agent-dialog-fields {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 20px;
+  overflow: auto;
+}
+
+.project-agent-dialog-fields label {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  color: #626d66;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.project-agent-dialog-fields input,
+.project-agent-dialog-fields select,
+.project-agent-dialog-fields textarea {
+  width: 100%;
+  border: 1px solid #ccd5ce;
+  border-radius: 8px;
+  background: #fff;
+  color: #28342d;
+  padding: 9px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.project-agent-dialog-fields textarea {
+  resize: vertical;
+}
+
+.project-agent-dialog-fields input:focus-visible,
+.project-agent-dialog-fields select:focus-visible,
+.project-agent-dialog-fields textarea:focus-visible {
+  outline: 2px solid #91a398;
+  outline-offset: 1px;
+}
+
+.project-agent-wide-field,
+.project-agent-id-note {
+  grid-column: 1 / -1;
+}
+
+.project-agent-dialog-error {
+  margin: 0 20px;
+  color: #8b3f38;
+  font-size: 11px;
+}
+
+.project-agent-dialog-actions {
+  justify-content: flex-end;
+  border-top: 1px solid #e1e6e2;
+}
+
+.project-agent-primary-action {
+  border: 0;
+  border-radius: 8px;
+  background: #344c3d;
+  color: #fff;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.project-agent-primary-action:hover {
+  background: #2b4234;
+}
+
+.project-agent-primary-action:focus-visible {
+  outline: 2px solid #91a398;
+  outline-offset: 2px;
+}
+
+.project-agent-primary-action:disabled,
+.project-agent-dialog-fields :disabled {
+  cursor: not-allowed;
+  opacity: .6;
+}
+
 .project-agent-dialog-check { display: flex !important; align-items: center; gap: 7px !important; }
 .project-agent-dialog-check input { width: auto !important; }
 .project-agent-dialog-note { color: #7b857e; font-size: 10px; line-height: 1.55; }

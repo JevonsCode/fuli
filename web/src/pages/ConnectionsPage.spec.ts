@@ -285,4 +285,104 @@ describe('ConnectionsPage', () => {
       'https://github.com/JevonsCode/fuli/blob/main/README.md#external-knowledge-conflict-policy',
     )
   })
+
+  it('ignores a late policy from the previous project and prevents edits while loading', async () => {
+    let resolveFirst!: (value: unknown) => void
+    const first = new Promise((resolve) => { resolveFirst = resolve })
+    getJson.mockImplementation((url: string) => {
+      if (url.includes('conflict-policy')) return url.includes('project-a')
+        ? first : Promise.resolve({ mode: 'ask_human' })
+      return Promise.resolve([])
+    })
+    const wrapper = mountConflictPage()
+    await flushPromises()
+    const policyCall = getJson.mock.calls.find(([url]) => url.includes('conflict-policy'))!
+    expect(wrapper.get('[control-id="external-conflict-mode"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[control-id="external-conflict-project"]').setValue('project-b')
+    await flushPromises()
+    expect(policyCall[1].signal.aborted).toBe(true)
+    resolveFirst({ mode: 'agent_decide' })
+    await flushPromises()
+    expect((wrapper.get('[control-id="external-conflict-mode"]').element as HTMLSelectElement).value).toBe('ask_human')
+    await wrapper.get('[control-id="external-conflict-mode"]').setValue('agent_decide')
+    await flushPromises()
+    expect(patchJson).toHaveBeenCalledWith(
+      '/api/external-knowledge/conflict-policy?personalProjectId=project-b',
+      { personalSpaceId: 'personal-1', personalProjectId: 'project-b', mode: 'agent_decide' },
+    )
+    wrapper.unmount()
+  })
+
+  it('shows failed policy reads with retry and restores the saved mode after a failed write', async () => {
+    let failLoad = true
+    getJson.mockImplementation((url: string) => url.includes('conflict-policy')
+      ? failLoad ? Promise.reject(new Error('Synthetic read failure')) : Promise.resolve({ mode: 'ask_human' })
+      : Promise.resolve([]))
+    const wrapper = mountConflictPage()
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('读取失败')
+    expect(useConsoleStore().feedback).toBeNull()
+    expect(wrapper.get('[control-id="external-conflict-mode"]').attributes('disabled')).toBeDefined()
+    failLoad = false
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(useConsoleStore().feedback).toBeNull()
+    patchJson.mockRejectedValue(new Error('Synthetic save failure'))
+    await wrapper.get('[control-id="external-conflict-mode"]').setValue('agent_decide')
+    await flushPromises()
+    expect((wrapper.get('[control-id="external-conflict-mode"]').element as HTMLSelectElement).value).toBe('ask_human')
+    wrapper.unmount()
+  })
+
+  it('aborts pending policy reads on unmount', async () => {
+    getJson.mockImplementation((url: string) => url.includes('conflict-policy')
+      ? new Promise(() => {}) : Promise.resolve([]))
+    const wrapper = mountConflictPage()
+    await flushPromises()
+    const signal = getJson.mock.calls.find(([url]) => url.includes('conflict-policy'))![1].signal as AbortSignal
+    wrapper.unmount()
+    expect(signal.aborted).toBe(true)
+  })
+
+  it('submits a subscription once while its request is pending', async () => {
+    const wrapper = mountConflictPage()
+    const store = useConsoleStore()
+    let finishRefresh!: () => void
+    vi.spyOn(store, 'refresh').mockImplementation(() => new Promise<void>((resolve) => { finishRefresh = resolve }))
+    store.state = { ...store.state!, capabilities: { subscribeProject: true },
+      projects: [{ id: 'shared-project', name: 'Synthetic shared project', providerUrl: 'https://provider.example' }] }
+    let finish!: (value: unknown) => void
+    postJson.mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+    await flushPromises()
+    await wrapper.get('.subscription-form select').setValue('https://provider.example::shared-project')
+    await wrapper.get('.subscription-form').trigger('submit')
+    await wrapper.get('.subscription-form').trigger('submit')
+    expect(postJson).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('.subscription-form button').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.growth-loading--inline').text()).toBe('正在订阅公共项目…')
+    finish({})
+    await flushPromises()
+    expect(wrapper.get('.growth-loading--inline').text()).toBe('正在读取项目订阅状态…')
+    finishRefresh()
+    await flushPromises()
+    expect(wrapper.find('.growth-loading--inline').exists()).toBe(false)
+    wrapper.unmount()
+  })
 })
+
+function mountConflictPage() {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  useConsoleStore().state = {
+    mode: 'personal_only', activePersonalSpaceId: 'personal-1',
+    personalSpaces: [{ id: 'personal-1', name: 'Synthetic personal space' }],
+    personalProjects: ['project-a', 'project-b'].map((id) => ({
+      project_id: id, personal_space_id: 'personal-1', profile: { name: id },
+    })),
+    projects: [], subscriptions: [],
+  }
+  return mount(ConnectionsPage, { global: {
+    plugins: [pinia], stubs: { SearchableSelect: SearchableSelectStub },
+  } })
+}

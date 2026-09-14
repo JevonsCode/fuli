@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { activeAgentRequestSignal } from '../app/agent-request-context.js';
 
 import {
   GraphitiProviderClient,
@@ -215,6 +216,10 @@ export class FuliWorkspaceProviderClient {
     if (authenticated) headers.authorization = `Bearer ${this.#accessToken}`;
     if (body !== undefined) headers['content-type'] = 'application/json';
     const controller = new AbortController();
+    const callerSignal = activeAgentRequestSignal();
+    const signal = callerSignal
+      ? AbortSignal.any([controller.signal, callerSignal])
+      : controller.signal;
     let timedOut = false;
     const timeout = setTimeout(() => {
       timedOut = true;
@@ -226,7 +231,7 @@ export class FuliWorkspaceProviderClient {
         headers,
         body: body === undefined ? undefined : JSON.stringify(body),
         redirect: 'error',
-        signal: controller.signal
+        signal
       });
       if (!response.ok) {
         throw new ProviderRequestError(
@@ -239,6 +244,9 @@ export class FuliWorkspaceProviderClient {
       }
       return await safeJson(response);
     } catch (error) {
+      if (!timedOut && callerSignal?.aborted) {
+        throw callerSignal.reason ?? new DOMException('Aborted', 'AbortError');
+      }
       if (error instanceof ProviderRequestError) throw error;
       throw new ProviderRequestError(
         timedOut

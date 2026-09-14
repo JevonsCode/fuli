@@ -48,11 +48,9 @@
   color: #2c414d;
 }
 
-.feedback-button {
-  width: auto;
-  text-align: left;
-  cursor: pointer;
-}
+.feedback-message { display: flex; align-items: center; gap: 12px; }
+.feedback-message > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.feedback-dismiss { flex: 0 0 auto; min-width: 44px; min-height: 44px; border: 0; color: inherit; background: transparent; }
 
 .status-dot.idle {
   background: #aeb5af;

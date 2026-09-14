@@ -32,7 +32,7 @@ class StoreKnowledge:
                 self, actor, space, request.personal_project_id
             )
         if request.project_agent_id:
-            await authorize_project_agent(
+            agent = await authorize_project_agent(
                 self,
                 actor,
                 space,
@@ -41,6 +41,7 @@ class StoreKnowledge:
                 require_active=True,
                 require_memory=True,
             )
+            request = request.model_copy(update={'project_agent_id': agent['agent_id']})
         return await self._commit_episode(
             space,
             request.episode,
@@ -65,7 +66,7 @@ class StoreKnowledge:
                 self, actor, space, request.personal_project_id
             )
         if request.project_agent_id:
-            await authorize_project_agent(
+            agent = await authorize_project_agent(
                 self,
                 actor,
                 space,
@@ -74,6 +75,7 @@ class StoreKnowledge:
                 require_active=True,
                 require_memory=True,
             )
+            request = request.model_copy(update={'project_agent_id': agent['agent_id']})
         return await self._commit_episode(
             space,
             request.episode,

@@ -1,6 +1,61 @@
 from datetime import UTC, datetime
 
+import pytest
+
 from fuli_graph.graph_query import _edge_query, _graph_edge, _graph_node, _node_query
+
+
+@pytest.mark.parametrize('scope,project_id,agent_id', [
+    (None, None, None),
+    ('global', None, None),
+    ('project', 'project-a', None),
+    ('agent', 'project-a', 'agent-a'),
+])
+def test_graph_projection_preserves_preference_scope_and_owner(scope, project_id, agent_id):
+    preference = {
+        'profile_aspect': 'judgment_preference' if scope else None,
+        'preference_scope': scope,
+        'preference_project_id': project_id,
+        'preference_agent_id': agent_id,
+    }
+    node = _graph_node(
+        {
+            'id': 'preference-1',
+            'name': 'Explain verification results',
+            'type': 'Preference',
+            'group_id': 'personal-group',
+            'summary': 'Explain the result of verification.',
+            **preference,
+        },
+        {}, {}, {}, {}, {},
+    )
+    edge = _graph_edge(
+        {
+            'id': 'relationship-1',
+            'source': 'agent-a',
+            'target': 'preference-1',
+            'type': 'PREFERS',
+            'fact': 'Explain the result of verification.',
+            **preference,
+        },
+        {}, {}, {}, {}, {},
+    )
+
+    for item in (node, edge):
+        payload = item.model_dump(mode='json')
+        for key, value in preference.items():
+            assert payload[key] == value
+
+
+@pytest.mark.parametrize('project_scoped', [False, True])
+@pytest.mark.parametrize('paginated', [False, True])
+def test_graph_queries_include_preference_agent_ownership(project_scoped, paginated):
+    assert 'node.fuli_preference_agent_id AS preference_agent_id' in _node_query(
+        project_scoped, paginated
+    )
+    assert 'edge.fuli_preference_agent_id AS preference_agent_id' in _edge_query(
+        project_scoped, paginated
+    )
 
 
 def test_graph_record_projection_parses_shared_json_attributes():

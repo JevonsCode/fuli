@@ -4,6 +4,27 @@ import test from 'node:test';
 import { callAgentTool, listAgentTools } from '../src/agent-tools.js';
 
 const NAMES = [
+  'request_agent_attention',
+  'list_agent_attention',
+  'cancel_agent_attention',
+  'list_project_agent_tasks',
+  'list_preference_conflicts',
+  'list_agent_interfaces',
+  'get_capture_policy',
+  'update_capture_policy',
+  'list_external_knowledge_connectors',
+  'discover_external_knowledge_sources',
+  'list_external_knowledge_bindings',
+  'create_external_knowledge_binding',
+  'check_external_knowledge_binding',
+  'sync_external_knowledge_binding',
+  'retrieve_external_knowledge_binding',
+  'update_external_knowledge_binding_targets',
+  'delete_external_knowledge_binding',
+  'get_external_knowledge_conflict_policy',
+  'update_external_knowledge_conflict_policy',
+  'defer_preference_conflict',
+  'delete_public_project',
   'list_employee_templates',
   'recruit_employee',
   'list_employee_tools',
@@ -133,7 +154,7 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
     name === 'revise_personal_knowledge'
   );
   assert.deepEqual(reviseKnowledge.inputSchema.properties.action.enum, [
-    'confirm', 'update', 'invalidate', 'restore'
+    'confirm', 'update', 'invalidate', 'restore', 'link_replacement'
   ]);
 
   const search = tools.find(({ name }) => name === 'search_knowledge_graph');
@@ -284,6 +305,34 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
 test('Agent surface dispatches every tool through the Graphiti facade', async () => {
   const calls = [];
   const app = {
+    requestAgentAttention: async (input) => calls.push(['request-attention', input]),
+    listAgentAttention: async (input) => calls.push(['list-attention', input]),
+    cancelAgentAttention: async (input) => calls.push(['cancel-attention', input]),
+    getCapturePolicy: () => {
+      calls.push(['get-capture-policy']);
+      return { enabled: true, updatedAt: null };
+    },
+    updateCapturePolicy: async (input) => calls.push(['update-capture-policy', input]),
+    externalKnowledge: {
+      listConnectorTypes: () => calls.push(['external-connectors']),
+      discover: async (input) => calls.push(['external-discover', input]),
+      listBindings: async () => calls.push(['external-bindings']),
+      createBinding: async (input) => calls.push(['external-create', input]),
+      checkBinding: async (id) => calls.push(['external-check', id]),
+      syncBinding: async (id, input) => calls.push(['external-sync', id, input]),
+      retrieveBinding: async (id, input) => calls.push(['external-retrieve', id, input]),
+      updateBindingTargets: async (id, input) => calls.push(['external-targets', id, input]),
+      deleteBinding: async (id) => calls.push(['external-delete', id]),
+    },
+    connectedKnowledge: {
+      query: async (input) => calls.push(['connected-search', input]),
+      getConflictPolicy: (input) => calls.push(['external-conflict-policy', input]),
+      updateConflictPolicy: async (input) => calls.push(['external-update-policy', input]),
+    },
+    deferPreferenceConflict: async (input) => calls.push(['defer-preference-conflict', input]),
+    listPreferenceConflicts: async (input) => calls.push(['preference-conflicts', input]),
+    listProjectAgentTasks: async (input) => calls.push(['agent-tasks', input]),
+    deletePublicProject: async (input) => calls.push(['delete-public-project', input]),
     employees: {
       list: async (input) => calls.push(['employee-list', input]),
       recruit: async (input) => calls.push(['employee-recruit', input]),
@@ -302,9 +351,6 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       calls.push(['workflow-observation', input]),
     recordDecisionTrace: async (input) => calls.push(['decision-trace', input]),
     searchKnowledge: async (input) => calls.push(['search', input]),
-    connectedKnowledge: {
-      query: async (input) => calls.push(['connected-search', input])
-    },
     recordKnowledgeUsage: async (input) => calls.push(['knowledge-usage', input]),
     recordKnowledgeFeedback: async (input) =>
       calls.push(['knowledge-feedback', input]),
@@ -417,6 +463,13 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
 
   for (const name of NAMES) await callAgentTool(app, name, { probe: name });
   assert.deepEqual(calls.map(([name]) => name), [
+    'request-attention', 'list-attention', 'cancel-attention',
+    'agent-tasks', 'preference-conflicts',
+    'get-capture-policy', 'update-capture-policy',
+    'external-connectors', 'external-discover', 'external-bindings',
+    'external-create', 'external-check', 'external-sync', 'external-retrieve',
+    'external-targets', 'external-delete', 'external-conflict-policy',
+    'external-update-policy', 'defer-preference-conflict', 'delete-public-project',
     'employee-list', 'employee-recruit', 'employee-tools', 'employee-call',
     'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'taste-skill', 'resolve-preference-conflict',
@@ -426,8 +479,8 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'preview-personal-global-decision',
     'preview-common-promotion', 'apply-common-promotion',
     'graph', 'human-changes', 'review-human-change',
-    'spaces', 'upsert-project', 'personal-projects',
-    'upsert-project-agent', 'project-agents', 'project-agent-context',
+    'spaces', 'get-capture-policy', 'upsert-project', 'personal-projects',
+    'get-capture-policy', 'upsert-project-agent', 'project-agents', 'project-agent-context',
     'get-project-agent', 'get-agent-memory', 'checkpoint-agent-memory',
     'delete-project-agent', 'cleanup-test-project-agents',
     'create-project-agent-assignment', 'list-project-agent-assignments',

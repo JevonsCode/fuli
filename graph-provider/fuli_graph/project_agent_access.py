@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 
 from .personal_project_access import authorize_personal_project
+from .system_hr_identity import resolve_hr_alias
 
 
 async def authorize_project_agent(
@@ -20,6 +21,7 @@ async def authorize_project_agent(
             detail='project Agent access requires a personal project',
         )
     await authorize_personal_project(store, actor, space, project_id)
+    agent_id = await resolve_hr_alias(store, space['id'], agent_id)
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})-

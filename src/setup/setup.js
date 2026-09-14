@@ -60,7 +60,8 @@ export function planLocalSetup(options, {
       runtimeConfigPath: paths.graphRuntimeConfigPath,
       sessionSkillPath: paths.sessionSkillPath,
       projectSkillPath: paths.projectSkillPath,
-      reviewSkillPath: paths.reviewSkillPath
+      reviewSkillPath: paths.reviewSkillPath,
+      operationSkillPath: paths.operationSkillPath
     })
   };
 }
@@ -118,7 +119,8 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
       for (const [target, sourcePath] of [
         [agent, plan.paths.sessionSkillPath],
         [{ ...agent, skillPath: agent.projectSkillPath }, plan.paths.projectSkillPath],
-        [{ ...agent, skillPath: agent.reviewSkillPath }, plan.paths.reviewSkillPath]
+        [{ ...agent, skillPath: agent.reviewSkillPath }, plan.paths.reviewSkillPath],
+        [{ ...agent, skillPath: agent.operationSkillPath }, plan.paths.operationSkillPath]
       ]) {
         skills.push(await installSkill(target, {
           sourcePath,

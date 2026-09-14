@@ -1,13 +1,16 @@
 import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 const getJson = vi.hoisted(() => vi.fn())
 const patchJson = vi.hoisted(() => vi.fn())
 const postJson = vi.hoisted(() => vi.fn())
 const deleteJson = vi.hoisted(() => vi.fn())
+const route = vi.hoisted(() => ({ query: {} as Record<string, string> }))
 
 vi.mock('@/api/client', () => ({ getJson, patchJson, postJson, deleteJson }))
+vi.mock('vue-router', async (original) => ({ ...await original<typeof import('vue-router')>(), useRoute: () => route }))
 
 import { useConsoleStore } from '@/stores/console'
 import { SearchableSelectStub } from '@/test-support/SearchableSelectStub'
@@ -83,6 +86,7 @@ describe('ProjectAgentsPage', () => {
     patchJson.mockReset()
     postJson.mockReset()
     deleteJson.mockReset()
+    route.query = {}
     getJson.mockImplementation((url: string) => {
       if (url.includes('/api/project-agents?')) return Promise.resolve(agents)
       if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: agents.flatMap((agent) => agent.assignments ?? []) })
@@ -113,6 +117,61 @@ describe('ProjectAgentsPage', () => {
       .toBe(false)
   })
 
+  it('starts with loading during console bootstrap, never a false empty roster', async () => {
+    let finishBootstrap!: (value: unknown) => void
+    let finishRoster!: (value: unknown) => void
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (url === '/api/state') return new Promise(resolve => { finishBootstrap = resolve })
+      if (url.includes('/api/project-agents?')) return new Promise(resolve => { finishRoster = resolve })
+      return original(url)
+    })
+    const { wrapper, store, initialState } = mountPage(true)
+    expect(wrapper.get('.growth-loading--page').attributes('role')).toBe('status')
+    expect(wrapper.find('.project-agents-state strong').exists()).toBe(false)
+    expect(wrapper.find('.project-agents-header-meta').exists()).toBe(false)
+    finishBootstrap(initialState)
+    await flushPromises()
+    expect(store.runtimeStatus).toBe('ready')
+    expect(wrapper.get('.growth-loading--page').attributes('role')).toBe('status')
+    finishRoster(agents)
+    await flushPromises()
+    expect(wrapper.findAll('.project-agent-row')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('shows bootstrap failure and retries initialization instead of claiming no Agents', async () => {
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => url === '/api/state'
+      ? Promise.reject(new Error('initialization unavailable')) : original(url))
+    const { wrapper, initialState } = mountPage(true)
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('initialization unavailable')
+    expect(wrapper.find('.project-agents-state strong').exists()).toBe(false)
+    getJson.mockImplementation((url: string) => url === '/api/state'
+      ? Promise.resolve(initialState) : original(url))
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.project-agent-row')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('ignores a pending roster after the personal space is removed', async () => {
+    let finishRoster!: (value: unknown) => void
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => url.includes('/api/project-agents?')
+      ? new Promise(resolve => { finishRoster = resolve }) : original(url))
+    const { wrapper, store } = mountPage()
+    store.state = { ...store.state!, personalSpaces: [], activePersonalSpaceId: null }
+    await nextTick()
+    const calls = getJson.mock.calls.length
+    finishRoster(agents)
+    await flushPromises()
+    expect(wrapper.findAll('.project-agent-row')).toHaveLength(0)
+    expect(getJson.mock.calls).toHaveLength(calls)
+    wrapper.unmount()
+  })
+
   it('filters by project, status, and responsibility search', async () => {
     const { wrapper } = mountPage()
     await flushPromises()
@@ -135,6 +194,26 @@ describe('ProjectAgentsPage', () => {
     await wrapper.get('input[type="search"]').setValue('可用性')
     expect(wrapper.findAll('.project-agent-row')).toHaveLength(1)
     expect(wrapper.get('.project-agent-row').text()).toContain('活动 Agent')
+  })
+
+  it.each(['linked-agent', 'legacy-agent'])('selects the linked Agent or identity alias (%s) after loading', async (agentId) => {
+    route.query = { agent: agentId }
+    const linked = structuredClone(agents[0]!)
+    linked.agentId = 'linked-agent'
+    linked.legacyAgentIds = ['legacy-agent']
+    linked.profile.name = '验证工程师'
+    linked.profile.displayName = 'Nova Reed'
+    linked.assignments = []
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => url.includes('/api/project-agents?')
+      ? Promise.resolve([...agents, linked]) : original(url))
+    const { wrapper } = mountPage()
+    await flushPromises()
+
+    expect(wrapper.get('.project-agent-detail-heading h3').text()).toContain('Nova Reed')
+    await wrapper.findAll('.project-agent-row').find(row => row.text().includes('活动 Agent'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.project-agent-detail-heading h3').text()).toContain('活动 Agent')
   })
 
   it('shows request errors and retries the roster load', async () => {
@@ -183,7 +262,7 @@ describe('ProjectAgentsPage', () => {
     expect(wrapper.getComponent(AgentAssignmentDialog).props('open')).toBe(false)
     await dialog.get('.project-scope-all input').setValue(true)
     await dialog.get('input[value="project-b"]').setValue(false)
-    expect(dialog.get('.project-scope-count').text()).toContain('1 / 2')
+    expect(dialog.get('.project-scope-count').text()).toContain('1 / 共 2')
     expect(postJson).not.toHaveBeenCalled()
     await dialog.get('.employee-recruit-heading button').trigger('click')
     await wrapper.get('[data-detail-section="assignments"]').findAll('button')
@@ -802,7 +881,7 @@ describe('ProjectAgentsPage', () => {
   })
 })
 
-function mountPage() {
+function mountPage(bootstrap = false) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const store = useConsoleStore()
@@ -826,8 +905,14 @@ function mountPage() {
     projects: [],
     subscriptions: [],
   }
+  const initialState = store.state
+  if (bootstrap) {
+    store.state = null
+    store.runtimeStatus = 'idle'
+  }
   return {
     store,
+    initialState,
     wrapper: mount(ProjectAgentsPage, {
       global: { plugins: [pinia], stubs: { SearchableSelect: SearchableSelectStub, RouterLink: RouterLinkStub } },
     }),

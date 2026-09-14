@@ -62,6 +62,28 @@ describe('PreferenceConflictDialog', () => {
     expect(wrapper.emitted('resolved')).toHaveLength(1)
   })
 
+  it('locks conflict choices and keeps the original reason across a delayed multi-step merge', async () => {
+    let finish!: (value: object) => void
+    patchJson.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const wrapper = mount(PreferenceConflictDialog, { props: {
+      conflict: currentConflict(), personalSpaceId: 'personal-space', projects: [],
+    } })
+    await wrapper.get('.conflict-resolution-actions .primary-action').trigger('click')
+    await wrapper.get('.conflict-resolution-actions .primary-action').trigger('click')
+    expect(patchJson).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('.conflict-inputs').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.growth-loading--inline').text()).toContain('偏好冲突处理')
+    const submittedReason = patchJson.mock.calls[0][1].reason
+    // Simulate even a programmatic model update; later writes keep the submitted reason.
+    await wrapper.get('.conflict-resolution-reason textarea').setValue('Different later input')
+    finish({})
+    await flushPromises()
+    expect(patchJson.mock.calls[1][1].reason).toBe(submittedReason)
+    expect(wrapper.get('.conflict-inputs').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('.growth-loading--inline').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('can split one item into an exact personal project scope', async () => {
     const wrapper = mount(PreferenceConflictDialog, {
       props: {

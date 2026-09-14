@@ -1,4 +1,8 @@
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { chmodSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { ApplicationError } from '../app/application-error.js';
 
 const CURRENT_VERSION = 2;
 const EMPTY_REGISTRY = Object.freeze({ version: CURRENT_VERSION, bindings: [] });
@@ -13,6 +17,26 @@ export class ExternalKnowledgeRegistry {
 
   list() {
     return clone(this.#read().bindings);
+  }
+
+  async withMutation(operation) {
+    // An OS-backed SQLite reservation coordinates separate console/MCP processes.
+    // No credentials or binding data is stored here; a crashed owner releases its lock.
+    mkdirSync(dirname(this.filePath), { recursive: true, mode: 0o700 });
+    const path = `${this.filePath}.mutation-lock.sqlite`;
+    const lock = new DatabaseSync(path);
+    try {
+      chmodSync(path, 0o600);
+      try { lock.exec('BEGIN IMMEDIATE'); }
+      catch (error) {
+        if (error.errcode === 5 || error.errcode === 6) {
+          throw new ApplicationError('external_knowledge_busy', 'Another external-knowledge mutation is in progress; re-read state before retrying');
+        }
+        throw error;
+      }
+      try { return await operation(); }
+      finally { lock.exec('ROLLBACK'); }
+    } finally { lock.close(); }
   }
 
   get(id) {

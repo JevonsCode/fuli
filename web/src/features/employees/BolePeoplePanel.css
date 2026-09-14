@@ -1,0 +1,90 @@
+.bole-panel { --bole-ink: #293d31; --bole-muted: #596b60; --bole-line: #dde5df; display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; background: #fafbf9; color: var(--bole-ink); }
+.bole-header, .bole-controls { flex: 0 0 auto; padding-inline: 24px; }
+.bole-header { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding-block: 8px; border-bottom: 1px solid var(--bole-line); background: #fff; }
+.bole-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 24px; }
+.bole-heading h2 { margin: 0; font-size: 20px; font-weight: 650; line-height: 1.3; }
+.bole-refresh, .bole-alert button { min-height: 36px; padding: 8px 12px; border: 0; border-radius: 8px; color: var(--bole-muted); background: transparent; font-size: 13px; }
+.bole-refresh:hover:not(:disabled), .bole-alert button:hover { background: #e9efea; }
+.bole-refresh:disabled { cursor: progress; }
+.bole-summary { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 0 0 0 auto; }
+.bole-summary div { display: flex; align-items: baseline; gap: 8px; }
+.bole-summary dt { color: var(--bole-muted); font-size: 12px; }
+.bole-summary dd { margin: 0; font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.bole-controls { z-index: 2; padding-bottom: 12px; border-bottom: 1px solid var(--bole-line); background: #fff; }
+.bole-views { display: flex; flex-wrap: wrap; gap: 20px; }
+.bole-views button { position: relative; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 0; border: 0; color: var(--bole-muted); background: transparent; font-size: 14px; }
+.bole-views button[aria-pressed=true] { color: #214b33; font-weight: 650; }
+.bole-views button[aria-pressed=true]::after { position: absolute; inset: auto 0 -1px; height: 2px; background: #315c43; content: ''; }
+.bole-views span { color: var(--bole-muted); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.bole-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-top: 12px; }
+.bole-search { flex: 1 1 220px; min-width: 0; }
+.bole-search, .bole-filters select { min-height: 44px; padding: 10px 12px; border: 1px solid #bdcbbf; border-radius: 8px; color: var(--bole-ink); background: #fff; font-size: 13px; }
+.bole-search::placeholder { color: var(--bole-muted); }
+.bole-filters .project-scope-picker { flex: 0 1 260px; }
+.bole-role-filters { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 12px; }
+.bole-role-filters button { min-height: 36px; padding: 8px 10px; border: 0; border-radius: 8px; color: var(--bole-muted); background: transparent; font-size: 12px; }
+.bole-role-filters button[aria-pressed=true] { color: #244d34; background: #e8f0e9; font-weight: 600; }
+.bole-role-filters button:hover { background: #edf2ed; }
+.bole-role-filters span { margin-left: 4px; font-variant-numeric: tabular-nums; }
+.bole-role-filters .bole-clear { margin-left: auto; text-decoration: underline; text-underline-offset: 3px; }
+.bole-content { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 16px 24px 32px; }
+.bole-result-count { align-self: center; color: var(--bole-muted); font-size: 12px; }
+.bole-agent-list { border: 1px solid var(--bole-line); border-radius: 12px; background: #fff; }
+.bole-table-heading, .bole-agent-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, .8fr); gap: 24px; padding: 16px; }
+.bole-table-heading { padding-block: 12px; border-radius: 12px 12px 0 0; background: #f0f4f0; color: var(--bole-muted); font-size: 12px; }
+.bole-agent-row { align-items: center; border-top: 1px solid var(--bole-line); }
+.bole-agent-row:hover { background: #f8faf7; }
+.bole-agent-row:last-child { border-radius: 0 0 12px 12px; }
+.bole-agent-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.bole-agent-identity > div { min-width: 0; }
+.bole-agent-mark { display: grid; place-items: center; flex: 0 0 36px; height: 36px; border-radius: 10px; background: #edf2ed; font-size: 18px; overflow: hidden; }
+.bole-agent-mark img { width: 100%; height: 100%; object-fit: cover; }
+.bole-agent-identity strong, .bole-recruitment-identity strong { display: block; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.bole-agent-identity small, .bole-timeline small { display: block; margin-top: 4px; color: var(--bole-muted); font-size: 12px; line-height: 1.5; }
+.bole-agent-work p { margin: 6px 0 0; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.bole-agent-work .is-idle { margin: 0; color: var(--bole-muted); }
+.bole-status { display: inline-block; padding: 3px 6px; border-radius: 4px; color: #315b40; background: #edf4ee; font-size: 11px; }
+.bole-status[data-status=blocked] { background: #faeae4; color: #893f2d; }
+.bole-status[data-status=awaiting_review] { background: #f4efd9; color: #6f591f; }
+.bole-agent-projects { min-width: 0; color: var(--bole-muted); font-size: 12px; line-height: 1.6; }
+.bole-agent-projects span { display: block; overflow-wrap: anywhere; }
+.bole-agent-projects summary { width: fit-content; min-height: 32px; padding-block: 6px; cursor: pointer; color: #315c43; }
+.bole-timeline { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--bole-line); }
+.bole-timeline li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr) minmax(120px, .6fr); gap: 24px; padding: 20px 0; border-bottom: 1px solid var(--bole-line); }
+.bole-recruitment-reason p { margin: 0; max-width: 70ch; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.bole-timeline time { color: var(--bole-muted); font-size: 12px; line-height: 1.6; }
+.bole-empty { padding: 32px 16px; color: var(--bole-muted); font-size: 13px; text-align: center; }
+.bole-alert { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 24px; background: #fff1e9; color: #7b4033; font-size: 13px; }
+.bole-panel :is(button, input, select, summary):focus-visible, .bole-content:focus-visible { outline: 2px solid #356448; outline-offset: 2px; }
+@media (max-width: 1100px) {
+  .bole-table-heading, .bole-agent-row { gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
+  .bole-table-heading > :last-child { display: none; }
+  .bole-agent-projects { grid-column: 2; }
+  .bole-timeline li { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 12px 20px; }
+  .bole-timeline time { grid-column: 2; }
+}
+@media (max-width: 700px), (max-height: 560px) {
+  .bole-panel { overflow: auto; overscroll-behavior: contain; }
+  .bole-content { flex: 0 0 auto; overflow: visible; }
+}
+@media (max-width: 700px) {
+  .bole-header, .bole-controls { padding-inline: 16px; }
+  .bole-content { padding: 16px 16px 28px; }
+  .bole-heading { width: 100%; gap: 4px 16px; }
+  .bole-views { gap: 16px; }
+  .bole-summary { margin-left: 0; gap: 8px 16px; }
+  .bole-refresh { margin-left: auto; }
+  .bole-filters { gap: 8px; }
+  .bole-search { flex-basis: 100%; }
+  .bole-filters .project-scope-picker { flex: 1 1 180px; }
+  .bole-filters select { flex: 1 1 120px; }
+  .bole-role-filters { gap: 4px; }
+  .bole-table-heading { display: none; }
+  .bole-agent-row { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .bole-agent-row:first-of-type { border-top: 0; }
+  .bole-agent-projects { grid-column: auto; padding-left: 48px; }
+  .bole-agent-work { padding-left: 48px; }
+  .bole-timeline li { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .bole-timeline time { grid-column: auto; }
+  .bole-alert { padding-inline: 16px; }
+}

@@ -24,6 +24,7 @@ from .project_agent_task_models import (
     ProjectAgentRoutingDecisionRecord,
 )
 from .provider_values import native_datetime, now_utc, stable_uuid
+from .store_project_agents import SYSTEM_HR_AGENT_ID
 from .store_transactions import query_store_transaction
 
 
@@ -744,9 +745,11 @@ class StoreProjectAgentTaskRecruitment:
             MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [:HAS_PROJECT_AGENT_IDENTITY]->
                   (hr:FuliProjectAgent {agent_type: 'hr', status: 'active'})
-            RETURN hr ORDER BY hr.created_at, hr.agent_id LIMIT 1
+            RETURN hr ORDER BY CASE WHEN hr.agent_id = $system_hr_agent_id
+              THEN 0 ELSE 1 END, hr.created_at, hr.agent_id LIMIT 1
             ''',
             personal_space_id=request.personal_space_id,
+            system_hr_agent_id=SYSTEM_HR_AGENT_ID,
             routing_='r',
         )
         hr_agent_id = (

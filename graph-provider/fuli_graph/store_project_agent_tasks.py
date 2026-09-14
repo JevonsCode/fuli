@@ -2,6 +2,7 @@ import json
 from collections import defaultdict
 from datetime import date
 from fastapi import HTTPException
+from .system_hr_identity import resolve_hr_alias
 from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
 from .project_agent_models import ProjectAgentModelStrategy, ProjectAgentProfile
@@ -470,6 +471,7 @@ class StoreProjectAgentTasks(
     ) -> list[ProjectAgentTaskRecord]:
         self._require_personal()
         space = await self.authorize(actor, personal_space_id, 'reader')
+        agent_id = await resolve_hr_alias(self, personal_space_id, agent_id)
         if personal_project_id:
             await authorize_personal_project(
                 self,
@@ -510,6 +512,7 @@ class StoreProjectAgentTasks(
     ) -> ProjectAgentActivityResult:
         self._require_personal()
         space = await self.authorize(actor, personal_space_id, 'reader')
+        agent_id = await resolve_hr_alias(self, personal_space_id, agent_id)
         if personal_project_id:
             await authorize_personal_project(
                 self,

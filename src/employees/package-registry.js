@@ -18,12 +18,14 @@ export function createEmployeePackageRegistry({ packageDirectory, dataDirectory,
     if (packageDirectory && existsSync(packageDirectory)) {
       for (const name of readdirSync(packageDirectory)) {
         if (!/^[a-z][a-z0-9-]{0,63}$/.test(name)) continue;
+        if (entries.get(name)?.manifest.workbench?.kind === 'native') continue;
         const root = join(packageDirectory, name);
         try {
           if (!statSync(root).isDirectory()) continue;
           confinedPath(packageDirectory, name);
           const manifest = readManifest(confinedPath(root, 'employee.json'));
           if (manifest.id !== name) continue;
+          if (manifest.workbench?.kind === 'native') continue;
           if (manifest.runtime) {
             confinedPath(root, manifest.runtime.entry);
             confinedPath(root, `${manifest.runtime.webRoot}/index.html`);

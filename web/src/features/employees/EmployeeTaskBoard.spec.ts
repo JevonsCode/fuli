@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
-import EmployeeAllProjectsBoard, { type EmployeeBoardItem } from './EmployeeAllProjectsBoard.vue'
+import EmployeeTaskBoard, { type EmployeeBoardItem } from './EmployeeTaskBoard.vue'
 
 const task: EmployeeBoardItem = {
   id: 'task-1',
@@ -12,7 +12,7 @@ const task: EmployeeBoardItem = {
 }
 
 function setup(canMoveTasks = true) {
-  return mount(EmployeeAllProjectsBoard, {
+  return mount(EmployeeTaskBoard, {
     attachTo: document.body,
     props: {
       boards: [{ project: { id: 'project-a', name: '发布项目' }, items: [task], total: 1, truncated: false }],
@@ -24,7 +24,7 @@ function setup(canMoveTasks = true) {
   })
 }
 
-describe('all-project employee board', () => {
+describe('employee task board', () => {
   it('moves a card between status columns with the keyboard drag controls', async () => {
     const wrapper = setup()
     const handle = wrapper.get('.employee-all-projects-drag-handle')
@@ -43,6 +43,14 @@ describe('all-project employee board', () => {
     await wrapper.get('.project-scope-trigger').trigger('click')
     await wrapper.get('input[value="project-a"]').setValue(false)
     expect(wrapper.emitted('update:visible-project-ids')).toEqual([[[]]])
+    wrapper.unmount()
+  })
+
+  it('emits the selected task without changing the project filter', async () => {
+    const wrapper = setup()
+    await wrapper.get('.employee-all-projects-task-open').trigger('click')
+    expect(wrapper.emitted('select-task')).toEqual([[task]])
+    expect(wrapper.emitted('update:visible-project-ids')).toBeUndefined()
     wrapper.unmount()
   })
 

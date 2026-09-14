@@ -17,8 +17,8 @@ const MESSAGE_LIMIT = 240;
 const TRUNCATION_MARKER = '...[truncated]';
 const VALIDATION_ERROR_LIMIT = 5;
 
-export function successToolResult(value, { limitBytes = RESULT_LIMIT_BYTES } = {}) {
-  const state = { truncated: false };
+export function successToolResult(value, { limitBytes = RESULT_LIMIT_BYTES, itemLimit = RESULT_ITEM_LIMIT } = {}) {
+  const state = { truncated: false, itemLimit: Number.isInteger(itemLimit) && itemLimit > 0 ? Math.min(itemLimit, 1000) : RESULT_ITEM_LIMIT };
   const sanitized = sanitize(value, state);
   const candidate = isObject(sanitized) && !Array.isArray(sanitized)
     ? sanitized
@@ -118,8 +118,8 @@ function sanitize(value, state, seen = new WeakSet(), depth = 0) {
   }
   seen.add(value);
   if (Array.isArray(value)) {
-    if (value.length > RESULT_ITEM_LIMIT) state.truncated = true;
-    const result = value.slice(0, RESULT_ITEM_LIMIT)
+    if (value.length > state.itemLimit) state.truncated = true;
+    const result = value.slice(0, state.itemLimit)
       .map((item) => sanitize(item, state, seen, depth + 1));
     seen.delete(value);
     return result;

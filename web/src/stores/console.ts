@@ -16,6 +16,7 @@ export type FeedbackTone = 'success' | 'error'
 export const useConsoleStore = defineStore('console', () => {
   const state = shallowRef<ConsoleState | null>(null)
   const runtimeStatus = ref<RuntimeStatus>('idle')
+  const settingsSaving = ref(false)
   const feedback = ref<{ message: string; tone: FeedbackTone } | null>(null)
 
   const activePersonalSpace = computed(() => {
@@ -96,6 +97,7 @@ export const useConsoleStore = defineStore('console', () => {
   return {
     state,
     runtimeStatus,
+    settingsSaving,
     feedback,
     activePersonalSpace,
     publicRuntimeStatus,

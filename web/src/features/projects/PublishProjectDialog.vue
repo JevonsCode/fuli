@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, useId } from 'vue'
 
 import { postJson } from '@/api/client'
+import GrowthLoading from '@/components/GrowthLoading.vue'
+import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { PersonalProject } from '@/types'
@@ -20,6 +22,11 @@ const version = ref('')
 const summary = ref('')
 const error = ref('')
 const busy = ref(false)
+const dialogTitleId = useId()
+const { dialogRef, onCancel, onKeydown } = useModalDialog(
+  () => Boolean(props.project),
+  () => { if (!busy.value) emit('close') },
+)
 
 const publicProject = computed(() =>
   store.state?.projects.find(
@@ -43,6 +50,7 @@ watch(
 )
 
 async function publish() {
+  if (busy.value) return
   if (!props.project) return
   if (!providerUrl.value) {
     error.value = t('projects.publishDialog.errors.providerUnavailable')
@@ -92,10 +100,9 @@ function suggestedVersion(current: string | null) {
 </script>
 
 <template>
-  <dialog v-if="project" open class="publish-dialog vue-dialog">
+  <dialog v-if="project" ref="dialogRef" aria-modal="true" :aria-labelledby="dialogTitleId" @cancel="onCancel" @keydown="onKeydown" class="publish-dialog vue-dialog">
     <div class="publish-dialog-shell">
-      <p class="eyebrow">PUBLICATION</p>
-      <h3>{{ t('projects.publishDialog.title') }}</h3>
+      <h3 :id="dialogTitleId">{{ t('projects.publishDialog.title') }}</h3>
       <p class="publish-dialog-intro">
         <strong>{{ project.profile.name }}</strong>
         <span>{{ t('projects.publishDialog.warning') }}</span>
@@ -112,7 +119,14 @@ function suggestedVersion(current: string | null) {
       <p v-if="error" class="publish-dialog-error" role="alert">{{ error }}</p>
       <div class="publish-dialog-actions">
         <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</button>
-        <button class="primary-action" type="button" :disabled="busy" @click="publish">{{ busy ? t('projects.publishDialog.publishing') : t('projects.publishDialog.confirm') }}</button>
+        <button class="primary-action" type="button" :disabled="busy" @click="publish">
+          <GrowthLoading
+            v-if="busy"
+            variant="inline"
+            :label="t('projects.publishDialog.publishing')"
+          />
+          <template v-else>{{ t('projects.publishDialog.confirm') }}</template>
+        </button>
       </div>
     </div>
   </dialog>

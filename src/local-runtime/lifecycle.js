@@ -9,6 +9,7 @@ import {
 import { readJsonFile } from '../storage/json-file.js';
 import { readAdaptiveRuntimeSettings } from '../adaptive-runtime/settings.js';
 import { readAdaptiveRuntimeState } from '../adaptive-runtime/state.js';
+import { createWorkspaceProvider } from '../graphiti/workspace-provider-client.js';
 import {
   DEFAULT_RUNTIME_SETTINGS,
   managedProviderUrls
@@ -119,7 +120,7 @@ export async function inspectLocalRuntime(input, dependencies = {}) {
     return {
       ...(intentionallySleeping && managedDevelopment
         ? { url: workspace.providerUrl, status: 'sleeping' }
-        : await deps.providerHealth(workspace.providerUrl)),
+        : await deps.providerHealth(workspace.providerUrl, workspace)),
       managedDevelopment
     };
   }));
@@ -217,8 +218,13 @@ function safeReadState(path) {
   }
 }
 
-async function providerHealth(url) {
+async function providerHealth(url, workspace = null) {
   try {
+    if (workspace) {
+      const { client } = createWorkspaceProvider(workspace, { requestTimeoutMs: 2500 });
+      const body = await client.health();
+      return { url, status: body?.status === 'ready' ? 'ready' : 'unavailable' };
+    }
     const response = await fetch(`${String(url).replace(/\/$/, '')}/health`, {
       signal: AbortSignal.timeout(2500)
     });

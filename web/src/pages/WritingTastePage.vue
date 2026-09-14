@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { getJson } from '@/api/client'
@@ -22,10 +22,12 @@ const store = useConsoleStore()
 const profile = ref<WritingTasteProfile | null>(null)
 const graph = ref<KnowledgeGraph | null>(null)
 const loading = ref(false)
+const loadFailed = ref(false)
 const confirmingItem = ref<KnowledgeItem | null>(null)
 const editingItem = ref<KnowledgeItem | null>(null)
 const showAgentPreview = ref(false)
 let loadVersion = 0
+let loadController: AbortController | null = null
 
 const showInitialLoading = useMinimumLoadingDisplay(computed(() =>
   loading.value && !profile.value,
@@ -48,14 +50,27 @@ const pageCopy = computed(() => {
 watch(
   () => store.activePersonalSpace?.id,
   (spaceId) => {
-    if (spaceId) void load(spaceId)
+    profile.value = null
+    graph.value = null
+    confirmingItem.value = null
+    editingItem.value = null
+    showAgentPreview.value = false
+    void load(spaceId)
   },
-  { immediate: true },
+  { immediate: true, flush: 'sync' },
 )
 
 async function load(spaceId = store.activePersonalSpace?.id) {
-  if (!spaceId) return
   const version = ++loadVersion
+  loadController?.abort()
+  loadController = null
+  loadFailed.value = false
+  if (!spaceId) {
+    loading.value = false
+    return
+  }
+  const controller = new AbortController()
+  loadController = controller
   loading.value = true
   try {
     const tasteQuery = new URLSearchParams({
@@ -67,8 +82,8 @@ async function load(spaceId = store.activePersonalSpace?.id) {
       limit: '500',
     })
     const [nextProfile, nextGraph] = await Promise.all([
-      getJson<WritingTasteProfile>(`/api/writing-taste-profile?${tasteQuery}`),
-      getJson<KnowledgeGraph>(`/api/graph?${graphQuery}`),
+      getJson<WritingTasteProfile>(`/api/writing-taste-profile?${tasteQuery}`, { signal: controller.signal }),
+      getJson<KnowledgeGraph>(`/api/graph?${graphQuery}`, { signal: controller.signal }),
     ])
     if (version !== loadVersion) return
     profile.value = isWritingTasteProfile(nextProfile) ? nextProfile : null
@@ -78,11 +93,19 @@ async function load(spaceId = store.activePersonalSpace?.id) {
     if (version !== loadVersion) return
     profile.value = null
     graph.value = null
-    store.reportError(error)
+    loadFailed.value = true
   } finally {
-    if (version === loadVersion) loading.value = false
+    if (version === loadVersion) {
+      loading.value = false
+      loadController = null
+    }
   }
 }
+
+onBeforeUnmount(() => {
+  loadVersion += 1
+  loadController?.abort()
+})
 
 function itemForRule(rule: WritingTasteRule) {
   return itemsByKey.value.get(`${rule.item_kind}:${rule.item_id}`) ?? null
@@ -153,10 +176,12 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
       {{ t('writingTaste.page.back') }}
     </RouterLink>
 
+    <GrowthLoading v-if="loading && !showInitialLoading" variant="inline" :label="t('writingTaste.page.loading')" />
     <GrowthLoading v-if="showInitialLoading" :label="t('writingTaste.page.loading')" />
 
     <div v-else-if="!profile" class="writing-taste-unavailable">
-      {{ t('writingTaste.page.profileUnavailable') }}
+      <p :role="loadFailed ? 'alert' : undefined">{{ t(loadFailed ? 'common.errors.loadFailed' : 'writingTaste.page.profileUnavailable') }}</p>
+      <button v-if="store.activePersonalSpace" type="button" class="secondary-action" @click="load()">{{ t('common.actions.retry') }}</button>
     </div>
 
     <template v-else>

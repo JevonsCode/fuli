@@ -135,4 +135,268 @@ describe('PublicProjectsPage', () => {
     )
     expect(refresh).toHaveBeenCalledTimes(1)
   })
+
+  it('keeps the latest project details when requests resolve out of order', async () => {
+    const pending: Array<{
+      url: string
+      resolve: (value: unknown) => void
+    }> = []
+    getJson.mockImplementation((url: string) => new Promise<unknown>((resolve) => {
+      pending.push({ url, resolve })
+    }))
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.state = {
+      mode: 'connected',
+      activePersonalSpaceId: 'personal-1',
+      personalSpaces: [{ id: 'personal-1', name: '我' }],
+      personalProjects: [],
+      providers: {
+        personal: { status: 'ready' },
+        workspaces: [{ status: 'ready', providerUrl: 'https://provider.example' }],
+      },
+      projects: [
+        {
+          id: 'project-a',
+          name: '项目 A',
+          providerUrl: 'https://provider.example',
+          role: 'reader',
+        },
+        {
+          id: 'project-b',
+          name: '项目 B',
+          providerUrl: 'https://provider.example',
+          role: 'reader',
+        },
+      ],
+      subscriptions: [],
+    }
+    const router = await readyRouter()
+    const wrapper = mount(PublicProjectsPage, {
+      attachTo: document.body,
+      global: {
+        plugins: [pinia, router],
+        stubs: { SearchableSelect: SearchableSelectStub },
+      },
+    })
+
+    const cards = wrapper.findAll('.project-card')
+    await cards[0].get('.primary-action').trigger('click')
+    await flushPromises()
+    expect(pending.map(({ url }) => url)).toEqual([
+      expect.stringContaining('/api/projects/project-a/releases'),
+      expect.stringContaining('/api/project-relations'),
+    ])
+
+    await wrapper
+      .get('dialog[aria-labelledby="public-project-details-title"] button')
+      .trigger('click')
+    await flushPromises()
+    await cards[1].get('.primary-action').trigger('click')
+    await flushPromises()
+
+    pending[2]?.resolve({
+      releases: [{ version: 'B-release', update_summary: 'B 版本', published_at: '2026-08-01' }],
+    })
+    pending[3]?.resolve({
+      relations: [{
+        id: 'relation-b',
+        source_project_id: 'project-b',
+        target_project_id: 'project-b-target',
+        relation_type: 'DEPENDS_ON',
+        status: 'active',
+      }],
+    })
+    await flushPromises()
+
+    const details = wrapper.get('dialog[aria-labelledby="public-project-details-title"]')
+    expect(details.text()).toContain('B-release')
+    expect(details.text()).toContain('DEPENDS_ON')
+
+    pending[0]?.resolve({
+      releases: [{ version: 'A-release', update_summary: 'A 版本', published_at: '2026-08-01' }],
+    })
+    pending[1]?.resolve({
+      relations: [{
+        id: 'relation-a',
+        source_project_id: 'project-a',
+        target_project_id: 'project-a-target',
+        relation_type: 'PART_OF',
+        status: 'active',
+      }],
+    })
+    await flushPromises()
+
+    expect(details.text()).toContain('B-release')
+    expect(details.text()).not.toContain('A-release')
+    expect(details.text()).not.toContain('PART_OF')
+    wrapper.unmount()
+  })
+
+  it('opens public project dialogs as modal and restores focus after Escape', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.state = {
+      mode: 'connected',
+      activePersonalSpaceId: 'personal-1',
+      personalSpaces: [{ id: 'personal-1', name: '我' }],
+      personalProjects: [],
+      providers: {
+        personal: { status: 'ready' },
+        workspaces: [{ status: 'ready', providerUrl: 'https://provider.example' }],
+      },
+      projects: [{
+        id: 'project-a',
+        name: '项目 A',
+        providerUrl: 'https://provider.example',
+        role: 'maintainer',
+        can_manage: true,
+      }],
+      subscriptions: [],
+    }
+    const router = await readyRouter()
+    const wrapper = mount(PublicProjectsPage, {
+      attachTo: document.body,
+      global: {
+        plugins: [pinia, router],
+        stubs: { SearchableSelect: SearchableSelectStub },
+      },
+    })
+
+    const detailsTrigger = wrapper.get('.project-card .primary-action')
+    ;(detailsTrigger.element as HTMLElement).focus()
+    await detailsTrigger.trigger('click')
+    await flushPromises()
+    const details = wrapper.get('dialog[aria-labelledby="public-project-details-title"]')
+    expect((details.element as HTMLDialogElement).open).toBe(true)
+    expect(document.activeElement).toBe(details.get('button').element)
+
+    await details.trigger('cancel')
+    await flushPromises()
+    expect(document.activeElement).toBe(detailsTrigger.element)
+
+    const deletionTrigger = wrapper.get('.project-card .management-action')
+    ;(deletionTrigger.element as HTMLElement).focus()
+    await deletionTrigger.trigger('click')
+    await flushPromises()
+    const deletion = wrapper.get('dialog[aria-labelledby="public-project-deletion-title"]')
+    expect((deletion.element as HTMLDialogElement).open).toBe(true)
+    expect(document.activeElement).toBe(deletion.get('input').element)
+
+    await deletion.trigger('cancel')
+    await flushPromises()
+    expect(document.activeElement).toBe(deletionTrigger.element)
+    wrapper.unmount()
+  })
+
+  it('gates unsupported workspace operations per provider without affecting Graphiti', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.state = {
+      mode: 'connected',
+      activePersonalSpaceId: 'personal-1',
+      personalSpaces: [{ id: 'personal-1', name: '我' }],
+      personalProjects: [],
+      providers: {
+        personal: { status: 'ready' },
+        workspaces: [
+          {
+            status: 'ready',
+            providerUrl: 'https://graphiti.example',
+            protocol: 'graphiti-v1',
+          },
+          {
+            status: 'ready',
+            providerUrl: 'https://fuli-workspace.example',
+            protocol: 'fuli-workspace-v1',
+          },
+        ],
+      },
+      projects: [
+        {
+          id: 'graphiti-project',
+          name: 'Graphiti 项目',
+          providerUrl: 'https://graphiti.example',
+          role: 'maintainer',
+          can_manage: true,
+          current_release: {
+            version: 'graphiti-v1',
+            published_at: '2026-08-01',
+          },
+        },
+        {
+          id: 'fuli-workspace-project',
+          name: 'Workspace 项目',
+          providerUrl: 'https://fuli-workspace.example',
+          role: 'maintainer',
+          can_manage: true,
+          current_release: {
+            version: 'must-not-display',
+            published_at: '2026-08-01',
+          },
+        },
+      ],
+      subscriptions: [],
+    }
+    const router = await readyRouter()
+    const wrapper = mount(PublicProjectsPage, {
+      global: {
+        plugins: [pinia, router],
+        stubs: { SearchableSelect: SearchableSelectStub },
+      },
+    })
+
+    const cards = wrapper.findAll('.project-card')
+    const graphitiCard = cards.find((card) => card.text().includes('Graphiti 项目'))!
+    const fuliCard = cards.find((card) => card.text().includes('Workspace 项目'))!
+    expect(graphitiCard.find('.management-action').exists()).toBe(true)
+    expect(fuliCard.find('.management-action').exists()).toBe(false)
+    expect(fuliCard.find('.project-release-meta').exists()).toBe(false)
+
+    await fuliCard.get('.primary-action').trigger('click')
+    await flushPromises()
+    expect(getJson).not.toHaveBeenCalled()
+    expect(wrapper.get('dialog[aria-labelledby="public-project-details-title"]').text())
+      .toContain('该服务不提供版本记录或项目关系')
+    expect(wrapper.find('.project-detail-columns').exists()).toBe(false)
+
+    await wrapper
+      .get('dialog[aria-labelledby="public-project-details-title"] button')
+      .trigger('click')
+    await flushPromises()
+    await graphitiCard.get('.primary-action').trigger('click')
+    await flushPromises()
+    expect(getJson).toHaveBeenCalledTimes(2)
+    expect(getJson.mock.calls.every(([url]) =>
+      url.includes('graphiti-project') || url.includes('projectId=graphiti-project')))
+      .toBe(true)
+    expect(wrapper.get('dialog[aria-labelledby="public-project-details-title"]').text())
+      .toContain('首次发布')
+
+    const addRelation = wrapper.get('.relation-section-toolbar .primary-action')
+    expect(addRelation.attributes('disabled')).toBeUndefined()
+    await addRelation.trigger('click')
+    const relationSource = wrapper.get('[aria-label="关系来源项目"]')
+    expect(relationSource.findAll('option').map((option) => option.attributes('value')))
+      .toContain('graphiti-project')
+    expect(relationSource.findAll('option').map((option) => option.attributes('value')))
+      .not.toContain('fuli-workspace-project')
+  })
 })
+
+async function readyRouter() {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: { template: '<div />' } },
+      { path: '/knowledge/:scope/:spaceId/:mode', component: { template: '<div />' } },
+    ],
+  })
+  await router.push('/')
+  await router.isReady()
+  return router
+}

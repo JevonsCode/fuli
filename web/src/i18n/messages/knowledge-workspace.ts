@@ -53,7 +53,7 @@ export const knowledgeWorkspaceMessages = {
         enterProject: '进入项目搜索 →',
       },
       search: {
-        searching: '正在搜索…',
+        searching: '正在搜索当前范围的知识…',
         results: '找到 {entities} 个实体 · {relationships} 条关系 · 图中高亮 {nodes} 个节点',
         noResults: '当前范围未检索到匹配结果',
         failed: '搜索失败',
@@ -168,25 +168,6 @@ export const knowledgeWorkspaceMessages = {
       updated: '更新时间',
       noFilteredContent: '当前筛选条件下没有内容',
       noContent: '个人空间还没有可整理的结构化知识',
-    },
-    quadrant: {
-      aria: '知识发现四象限',
-      viewing: '正在查看 {quadrant}',
-      focusPrompt: '点击一个象限，进入聚焦整理',
-      focusedHint: '选择其他象限可直接切换；再次点击当前象限返回全局。',
-      globalHint: '横轴表示是否掌握，纵轴表示是否意识到。',
-      backAria: '返回四象限',
-      global: '全局',
-      returnGlobal: '再次点击返回全局',
-      clickToFocus: '点击聚焦',
-      axes: {
-        mastery: '掌握程度',
-        awareness: '意识程度',
-        notMastered: '未掌握',
-        mastered: '已掌握',
-        unaware: '未意识',
-        aware: '已意识',
-      },
     },
     inspector: {
       humanReview: {
@@ -336,7 +317,7 @@ export const knowledgeWorkspaceMessages = {
         enterProject: 'Search in project →',
       },
       search: {
-        searching: 'Searching…',
+        searching: 'Searching knowledge in the current scope…',
         results: 'Found {entities} entities · {relationships} relationships · highlighted {nodes} nodes',
         noResults: 'No matching results in the current scope',
         failed: 'Search failed',
@@ -451,25 +432,6 @@ export const knowledgeWorkspaceMessages = {
       updated: 'Updated',
       noFilteredContent: 'No content matches the current filters',
       noContent: 'The personal space has no structured knowledge to organize',
-    },
-    quadrant: {
-      aria: 'Knowledge discovery quadrants',
-      viewing: 'Viewing {quadrant}',
-      focusPrompt: 'Select a quadrant to focus the organizer',
-      focusedHint: 'Select another quadrant to switch directly; select the current one again to return to the full view.',
-      globalHint: 'The horizontal axis shows mastery; the vertical axis shows awareness.',
-      backAria: 'Return to all quadrants',
-      global: 'All',
-      returnGlobal: 'Select again to return',
-      clickToFocus: 'Select to focus',
-      axes: {
-        mastery: 'Mastery',
-        awareness: 'Awareness',
-        notMastered: 'Not mastered',
-        mastered: 'Mastered',
-        unaware: 'Unaware',
-        aware: 'Aware',
-      },
     },
     inspector: {
       humanReview: {

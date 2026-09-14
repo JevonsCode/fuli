@@ -318,10 +318,11 @@ function openReplacement(item: KnowledgeItem) {
         >
           {{ t('knowledge.workspace.organizer.batchConfirm', { count: confirmationGroups.length }) }}
         </button>
-        <button class="toolbar-action" type="button" @click="load()">{{ t('common.actions.refresh') }}</button>
+        <button class="toolbar-action" type="button" :disabled="loading || loadingMore" @click="load()">{{ t('common.actions.refresh') }}</button>
       </div>
     </div>
 
+    <GrowthLoading v-if="loading && !loadingMore && !showInitialLoading" variant="inline" :label="t('common.status.loadingKnowledge')" />
     <GrowthLoading
       v-if="showInitialLoading"
       :label="t('common.status.loadingKnowledge')"
@@ -375,9 +376,7 @@ function openReplacement(item: KnowledgeItem) {
         </template>
 
         <template #footer>
-          <div v-if="loadingMore" class="organizer-loading-inline">
-            {{ t('knowledge.workspace.organizer.loadingMore') }}
-          </div>
+          <GrowthLoading v-if="loadingMore" variant="compact" :label="t('knowledge.workspace.organizer.loadingMore')" />
         </template>
 
         <template #empty>
@@ -716,13 +715,7 @@ function openReplacement(item: KnowledgeItem) {
   -webkit-line-clamp: 2;
 }
 
-.organizer-loading-inline {
-  min-width: 100%;
-  padding: 10px 15px;
-  color: #7b847e;
-  font-size: 9px;
-  text-align: center;
-}
+
 
 @media (max-width: 1260px) {
   .review-state-filter > span,
@@ -779,6 +772,7 @@ function openReplacement(item: KnowledgeItem) {
 }
 
 @media (max-width: 720px) {
+  .organizer-layout.has-selection { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(160px, 1fr) minmax(160px, .8fr); }
   .review-state-filter,
   .quadrant-filter {
     width: 100%;

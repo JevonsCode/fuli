@@ -1,14 +1,15 @@
 <script setup lang="ts">
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { getJson, putJson } from '@/api/client'
 import SearchableSelect from '@/components/SearchableSelect.vue'
-import { setConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
+import { normalizedConfiguration, setConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
 import {
   CONVERSATION_SOURCE_APPLICATIONS,
   sourceApplicationName,
 } from '@/features/knowledge/source-adapters'
-import { currentLocale, setLocale, t, type AppLocale } from '@/i18n'
+import { currentLocale, i18n, setLocale, t, type AppLocale } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type {
   ConversationSourceApplication,
@@ -24,7 +25,7 @@ const settings = ref<SystemSettingsResult | null>(null)
 const form = ref<RuntimeSettings | null>(null)
 const resources = ref<ResourceSnapshot | null>(null)
 const loading = ref(true)
-const saving = ref(false)
+const saving = computed({ get: () => store.settingsSaving, set: (value: boolean) => { store.settingsSaving = value } })
 const loadingResources = ref(false)
 const loadError = ref('')
 const resourceError = ref('')
@@ -94,7 +95,7 @@ async function loadSettings() {
   try {
     const result = await getJson<SystemSettingsResult>('/api/system/settings')
     settings.value = result
-    form.value = structuredClone(result.configured)
+    form.value = { ...structuredClone(result.configured), conversationLaunchers: normalizedConfiguration(result.configured.conversationLaunchers) }
     setConversationLauncherConfiguration(result.configured.conversationLaunchers)
     loadError.value = ''
   } catch (error) {
@@ -124,7 +125,7 @@ async function saveSettings() {
   try {
     const result = await putJson<SystemSettingsResult>('/api/system/settings', form.value)
     settings.value = result
-    form.value = structuredClone(result.configured)
+    form.value = { ...structuredClone(result.configured), conversationLaunchers: normalizedConfiguration(result.configured.conversationLaunchers) }
     setConversationLauncherConfiguration(result.configured.conversationLaunchers)
     saved.value = true
     loadError.value = ''
@@ -183,9 +184,9 @@ function activePort(key: keyof RuntimePorts) {
 }
 
 function componentLabel(component: ResourceComponent) {
-  const key = `settings.resources.components.${component.id}`
-  const translated = t(key)
-  return translated === key ? component.label : translated
+  const id = component.id.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase())
+  const key = `settings.resources.components.${id}`
+  return i18n.global.te(key) ? t(key) : component.label
 }
 
 function formatBytes(bytes: number | null | undefined) {
@@ -219,6 +220,7 @@ function formatTime(value: string | undefined) {
 <template>
   <section class="view settings-view" :aria-label="t('settings.aria')">
     <div class="settings-content">
+      <GrowthLoading v-if="saving" variant="inline" :label="t('settings.saving')" />
       <div v-if="saved || settings?.restartRequired" class="settings-top-status" role="status">
         <strong v-if="saved">{{ t('settings.saved') }}</strong>
         <span v-if="settings?.restartRequired">{{ t('settings.restartCopy') }}</span>
@@ -234,6 +236,7 @@ function formatTime(value: string | undefined) {
           </button>
         </header>
 
+        <GrowthLoading v-if="loadingResources" :variant="resources ? 'inline' : 'compact'" :label="t('settings.resources.loading')" />
         <p v-if="resourceError" class="settings-error" role="alert">{{ resourceError }}</p>
         <template v-else-if="resources">
           <div class="resource-totals">
@@ -275,10 +278,11 @@ function formatTime(value: string | undefined) {
               : 'settings.resources.exclusionsNative') }}</span>
           </div>
         </template>
-        <div v-else class="settings-skeleton" aria-hidden="true" />
       </section>
 
-      <form v-if="form" id="settings-form" class="settings-form" @submit.prevent="saveSettings">
+      <GrowthLoading v-if="loading && !form" variant="compact" :label="t('settings.loading')" />
+      <form v-if="form" id="settings-form" class="settings-form" :aria-busy="saving" @submit.prevent="saveSettings">
+        <fieldset class="settings-fields" :disabled="saving">
         <section class="settings-card ports-card">
           <header class="section-heading">
             <h3>{{ t('settings.ports.title') }}</h3>
@@ -432,6 +436,7 @@ function formatTime(value: string | undefined) {
           </div>
         </section>
 
+        </fieldset>
         <p v-if="loadError" class="settings-error" role="alert">{{ loadError }}</p>
       </form>
       <p v-else-if="!loading" class="settings-error" role="alert">{{ loadError || t('settings.loadError') }}</p>
@@ -440,6 +445,8 @@ function formatTime(value: string | undefined) {
 </template>
 
 <style scoped>
+.settings-fields { display: contents; min-width: 0; border: 0; margin: 0; padding: 0; }
+
 .settings-view {
   padding-top: 24px;
   background: #f7f8f6;
@@ -519,11 +526,7 @@ function formatTime(value: string | undefined) {
   font-size: 10px;
 }
 
-.settings-skeleton {
-  height: 260px;
-  border-radius: 9px;
-  background: #f2f4f2;
-}
+
 
 .restart-chip {
   padding: 5px 9px;

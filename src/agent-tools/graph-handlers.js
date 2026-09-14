@@ -1,6 +1,37 @@
 import { ApplicationError } from '../app/application-error.js';
+import { agentInterfaceCatalog } from './interface-catalog.js';
 
 const HANDLERS = Object.freeze({
+  list_project_agent_tasks: (app, input) => app.listProjectAgentTasks(input),
+  request_agent_attention: (app, input) => app.requestAgentAttention(input),
+  list_agent_attention: (app, input) => app.listAgentAttention(input),
+  cancel_agent_attention: (app, input) => app.cancelAgentAttention(input),
+  list_preference_conflicts: (app, input) => app.listPreferenceConflicts(input),
+  list_agent_interfaces: () => agentInterfaceCatalog(),
+  get_capture_policy: (app) => app.getCapturePolicy(),
+  update_capture_policy: (app, input) => app.updateCapturePolicy(input),
+  list_external_knowledge_connectors: (app) => externalKnowledge(app).listConnectorTypes(),
+  discover_external_knowledge_sources: (app, input) => externalKnowledge(app).discover(input),
+  list_external_knowledge_bindings: (app) => externalKnowledge(app).listBindings(),
+  create_external_knowledge_binding: (app, input) => externalKnowledge(app).createBinding(input),
+  check_external_knowledge_binding: (app, input) => externalKnowledge(app).checkBinding(input.bindingId),
+  sync_external_knowledge_binding: (app, { bindingId, ...input }) =>
+    externalKnowledge(app).syncBinding(bindingId, input),
+  retrieve_external_knowledge_binding: (app, { bindingId, ...input }) =>
+    externalKnowledge(app).retrieveBinding(bindingId, input),
+  update_external_knowledge_binding_targets: (app, { bindingId, ...input }) =>
+    externalKnowledge(app).updateBindingTargets(bindingId, input),
+  delete_external_knowledge_binding: (app, input) =>
+    externalKnowledge(app).deleteBinding(input.bindingId),
+  get_external_knowledge_conflict_policy: (app, input) =>
+    connectedKnowledge(app).getConflictPolicy(input),
+  update_external_knowledge_conflict_policy: (app, input) =>
+    connectedKnowledge(app).updateConflictPolicy(input),
+  defer_preference_conflict: (app, input) => app.deferPreferenceConflict({
+    ...input,
+    operationActor: 'agent'
+  }),
+  delete_public_project: (app, input) => app.deletePublicProject(input),
   list_employee_templates: (app, input) => employeeService(app).list(input),
   recruit_employee: (app, input) => employeeService(app).recruit(input),
   list_employee_tools: (app, input) => employeeService(app).describeTools(input),
@@ -180,6 +211,16 @@ const HANDLERS = Object.freeze({
 function employeeService(app) {
   if (!app.employees) throw new Error('Employee runtime is unavailable');
   return app.employees;
+}
+
+function externalKnowledge(app) {
+  if (!app.externalKnowledge) throw new Error('External knowledge runtime is unavailable');
+  return app.externalKnowledge;
+}
+
+function connectedKnowledge(app) {
+  if (!app.connectedKnowledge) throw new Error('Connected knowledge runtime is unavailable');
+  return app.connectedKnowledge;
 }
 
 export function dispatchGraphTool(app, name, input) {

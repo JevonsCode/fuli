@@ -1,6 +1,6 @@
 import { t } from '@/i18n'
 
-const TRANSLATION_KEY_PREFIXES = ['routes.', 'common.']
+const TRANSLATION_KEY_PREFIXES = ['routes.', 'common.', 'employees.']
 
 export function routeMetaText(value: unknown, fallbackKey = '') {
   const text = typeof value === 'string' && value ? value : fallbackKey

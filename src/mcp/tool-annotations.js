@@ -1,4 +1,14 @@
 const READ_TOOLS = new Set([
+  'list_agent_attention',
+  'list_project_agent_tasks',
+  'list_preference_conflicts',
+  'list_agent_interfaces',
+  'get_capture_policy',
+  'list_external_knowledge_connectors',
+  'discover_external_knowledge_sources',
+  'list_external_knowledge_bindings',
+  'retrieve_external_knowledge_binding',
+  'get_external_knowledge_conflict_policy',
   'list_employee_templates',
   'list_employee_tools',
   'verify_task_checkpoint',
@@ -36,6 +46,17 @@ const READ_TOOLS = new Set([
 ]);
 
 const WRITE_TOOLS = new Set([
+  'request_agent_attention',
+  'cancel_agent_attention',
+  'update_capture_policy',
+  'create_external_knowledge_binding',
+  'check_external_knowledge_binding',
+  'sync_external_knowledge_binding',
+  'update_external_knowledge_binding_targets',
+  'delete_external_knowledge_binding',
+  'update_external_knowledge_conflict_policy',
+  'defer_preference_conflict',
+  'delete_public_project',
   'recruit_employee',
   'call_employee_tool',
   'begin_task_context',
@@ -99,6 +120,8 @@ const WRITE_TOOLS = new Set([
 ]);
 
 const DESTRUCTIVE_TOOLS = new Set([
+  'delete_external_knowledge_binding',
+  'delete_public_project',
   'recruit_employee',
   'resolve_deferred_preference_conflict',
   'apply_common_knowledge_promotion',
@@ -141,6 +164,14 @@ export function annotationsFor(name) {
       name === 'checkpoint_task_knowledge' ||
       name === 'checkpoint_project_agent_memory',
     openWorldHint: name === 'capture_session_knowledge' ||
+      name === 'discover_external_knowledge_sources' ||
+      name === 'create_external_knowledge_binding' ||
+      name === 'check_external_knowledge_binding' ||
+      name === 'sync_external_knowledge_binding' ||
+      name === 'retrieve_external_knowledge_binding' ||
+      name === 'update_external_knowledge_binding_targets' ||
+      name === 'delete_external_knowledge_binding' ||
+      name === 'delete_public_project' ||
       name === 'coordinate_project_agent_task' ||
       name === 'submit_project_agent_task' ||
       name === 'record_project_agent_task_activity' ||

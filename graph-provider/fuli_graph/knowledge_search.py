@@ -317,7 +317,7 @@ async def _personal_search_space(store, actor, spaces, request):
     for project_id in request.personal_project_ids:
         await authorize_personal_project(store, actor, space, project_id)
     if request.project_agent_id:
-        await authorize_project_agent(
+        agent = await authorize_project_agent(
             store,
             actor,
             space,
@@ -326,6 +326,7 @@ async def _personal_search_space(store, actor, spaces, request):
             require_active=True,
             require_memory=True,
         )
+        request.project_agent_id = agent['agent_id']
     return space
 
 

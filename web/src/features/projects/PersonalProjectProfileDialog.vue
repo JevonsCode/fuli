@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch, useId } from 'vue'
 
 import { putJson } from '@/api/client'
+import GrowthLoading from '@/components/GrowthLoading.vue'
+import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
 
@@ -33,6 +35,11 @@ const boundaries = ref('')
 const sources = ref<SourceDraft[]>([])
 const error = ref('')
 const busy = ref(false)
+const dialogTitleId = useId()
+const { dialogRef, onCancel, onKeydown } = useModalDialog(
+  () => Boolean(props.project),
+  () => { if (!busy.value) emit('close') },
+)
 const purposeField = ref<HTMLTextAreaElement | null>(null)
 const scopeField = ref<HTMLTextAreaElement | null>(null)
 const boundariesField = ref<HTMLTextAreaElement | null>(null)
@@ -204,12 +211,11 @@ function focusRelevantField() {
 </script>
 
 <template>
-  <dialog v-if="project" open class="project-profile-dialog vue-dialog">
+  <dialog v-if="project" ref="dialogRef" aria-modal="true" :aria-labelledby="dialogTitleId" @cancel="onCancel" @keydown="onKeydown" class="project-profile-dialog vue-dialog">
     <form class="project-profile-dialog-shell" @submit.prevent="save">
       <header class="project-profile-dialog-header">
         <div>
-          <p class="eyebrow">PROJECT MATERIAL</p>
-          <h3>{{ t('projects.profileDialog.title', { material: materialLabel }) }}</h3>
+          <h3 :id="dialogTitleId">{{ t('projects.profileDialog.title', { material: materialLabel }) }}</h3>
           <p>{{ t('projects.profileDialog.intro') }}</p>
         </div>
         <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">
@@ -332,7 +338,12 @@ function focusRelevantField() {
           {{ t('common.actions.cancel') }}
         </button>
         <button class="primary-action" type="submit" :disabled="busy">
-          {{ busy ? t('projects.profileDialog.saving') : t('projects.profileDialog.save') }}
+          <GrowthLoading
+            v-if="busy"
+            variant="inline"
+            :label="t('projects.profileDialog.saving')"
+          />
+          <template v-else>{{ t('projects.profileDialog.save') }}</template>
         </button>
       </footer>
     </form>

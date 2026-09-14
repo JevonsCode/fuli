@@ -83,6 +83,19 @@ export class GraphitiProviderClient {
   upsertProjectAgent(input) {
     return this.#request('/v1/project-agents', { method: 'PUT', body: input });
   }
+  listAgentAttention(input) {
+    const query = new URLSearchParams(Object.entries(input).filter(([, value]) => value != null));
+    return this.#request(`/v1/agent-attention?${query}`);
+  }
+  changeAgentAttention(operation, input) {
+    const paths = { create: '/v1/agent-attention', cancel: '/v1/agent-attention/cancel', respond: '/v1/agent-attention/respond' };
+    if (!Object.hasOwn(paths, operation)) throw new TypeError('Unknown attention operation');
+    return this.#request(paths[operation], { method: 'POST', body: input });
+  }
+  ensureSystemProjectHr(personalSpaceId) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    return this.#request(`/v1/project-agents/system-hr?${query}`, { method: 'POST' });
+  }
   listProjectAgents(
     personalSpaceId,
     personalProjectId = null,

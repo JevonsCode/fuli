@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  CONVERSATION_LAUNCHER_APPLICATIONS,
   DEFAULT_CONVERSATION_LAUNCHERS,
   DEFAULT_RUNTIME_SETTINGS,
   managedProviderUrls,
@@ -13,6 +14,15 @@ import {
 test('runtime settings validate unique ports and browser-safe console ports', () => {
   assert.equal(DEFAULT_RUNTIME_SETTINGS.ports.personalNeo4jHttp, 8060);
   assert.equal(DEFAULT_RUNTIME_SETTINGS.graphRuntimeMode, 'container');
+  assert.deepEqual(Object.keys(DEFAULT_CONVERSATION_LAUNCHERS).sort(), [
+    ...CONVERSATION_LAUNCHER_APPLICATIONS
+  ].sort());
+  assert.deepEqual(DEFAULT_CONVERSATION_LAUNCHERS.claude, {
+    enabled: false,
+    idFormat: 'any',
+    appName: 'Claude',
+    urlTemplate: ''
+  });
   const custom = runtimeSettingsWithOverrides(DEFAULT_RUNTIME_SETTINGS, {
     consolePort: 3030,
     lanAccess: true
@@ -105,4 +115,28 @@ test('runtime settings writes one validated secure payload', () => {
   });
   assert.deepEqual(result, DEFAULT_RUNTIME_SETTINGS);
   assert.deepEqual(calls.map(([name]) => name), ['write', 'secure']);
+});
+
+test('runtime settings fills legacy launcher keys and round-trips the normalized payload', () => {
+  const legacy = {
+    ...DEFAULT_RUNTIME_SETTINGS,
+    conversationLaunchers: {
+      codex: {
+        ...DEFAULT_CONVERSATION_LAUNCHERS.codex,
+        enabled: false
+      }
+    }
+  };
+  const calls = [];
+  const saved = writeRuntimeSettings('/data/runtime-settings.json', legacy, {
+    write: (path, value) => calls.push(['write', path, value]),
+    secure: () => {}
+  });
+
+  assert.deepEqual(saved.conversationLaunchers.codex, {
+    ...DEFAULT_CONVERSATION_LAUNCHERS.codex,
+    enabled: false
+  });
+  assert.deepEqual(saved.conversationLaunchers.claude, DEFAULT_CONVERSATION_LAUNCHERS.claude);
+  assert.deepEqual(normalizeRuntimeSettings(calls[0][2]), saved);
 });

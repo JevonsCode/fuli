@@ -9,6 +9,29 @@ import {
   ExternalKnowledgeService
 } from '../src/external-knowledge/index.js';
 
+test('target updates reject stale snapshots and targetId never widens a sync', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-external-cas-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  let syncCalls = 0;
+  const service = new ExternalKnowledgeService({
+    app: { listPersonalProjects: async () => [{ project_id: 'a' }, { project_id: 'b' }] },
+    registry: new ExternalKnowledgeRegistry(join(directory, 'bindings.json')),
+    connectors: { get: () => ({ check: async () => ({ status: 'ready', capabilities: ['sync'] }),
+      sync: async () => { syncCalls++; return { items: [], deleted: [], hasMore: false }; } }) },
+    createId: () => 'binding-a',
+  });
+  const target = (id) => ({ personalSpaceId: 'space-a', personalProjectId: id, mode: 'mirror' });
+  const created = await service.createBinding({ name: 'Docs', connectorType: 'test', connectorConfig: {}, source: {}, targets: [target('a'), target('b')] });
+  await service.syncBinding(created.id, { targetId: created.targets[0].id });
+  assert.equal(syncCalls, 1);
+  await assert.rejects(service.syncBinding(created.id, { targetId: 'missing' }), /target|project/i);
+  assert.equal(syncCalls, 1);
+  const updated = await service.updateBindingTargets(created.id, { expectedTargetsVersion: created.targetsVersion, targets: [target('a')] });
+  assert.notEqual(updated.targetsVersion, created.targetsVersion);
+  await assert.rejects(service.updateBindingTargets(created.id, { expectedTargetsVersion: created.targetsVersion, targets: [target('a'), target('b')] }), { code: 'external_knowledge_conflict' });
+  assert.deepEqual((await service.listBindings())[0].targets.map((item) => item.personalProjectId), ['a']);
+});
+
 test('a read-only binding syncs normalized source documents into one personal project', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-external-knowledge-'));
   const captures = [];

@@ -15,6 +15,38 @@ describe('KnowledgeConfirmDialog', () => {
     patchJson.mockResolvedValue({})
   })
 
+  it('contains keyboard focus, handles Escape, and restores the opener without saving', async () => {
+    const opener = document.createElement('button')
+    document.body.append(opener)
+    opener.focus()
+    const wrapper = mount(KnowledgeConfirmDialog, {
+      attachTo: document.body,
+      props: { item: null, personalSpaceId: 'synthetic-space', personalProjectId: null },
+      global: { plugins: [createPinia()] },
+    })
+    await wrapper.setProps({ item: knowledgeItemFromNode({
+      id: 'synthetic-focus-item', name: 'Synthetic focus fixture', type: 'Fact',
+      origin_quadrant: 'known_known', confirmation_status: 'pending', evidence: [],
+    }) })
+    await flushPromises()
+    const dialog = wrapper.get('dialog')
+    expect((dialog.element as HTMLDialogElement).open).toBe(true)
+    expect(dialog.attributes('aria-modal')).toBe('true')
+    expect(dialog.attributes('aria-labelledby')).toBe(wrapper.get('h3').attributes('id'))
+    const buttons = dialog.findAll('button:not([disabled])')
+    expect(document.activeElement).toBe(buttons[0]!.element)
+    ;(buttons.at(-1)!.element as HTMLElement).focus()
+    await dialog.trigger('keydown', { key: 'Tab' })
+    expect(document.activeElement).toBe(buttons[0]!.element)
+    await dialog.trigger('cancel')
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    expect(patchJson).not.toHaveBeenCalled()
+    await wrapper.setProps({ item: null })
+    await flushPromises()
+    expect(document.activeElement).toBe(opener)
+    wrapper.unmount()
+  })
+
   it('confirms one pending preference with auditable basis', async () => {
     const item = knowledgeItemFromNode({
       id: 'preference-1',

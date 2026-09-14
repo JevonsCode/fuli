@@ -16,6 +16,7 @@ from .project_agent_memory_models import (
     ProjectAgentMemoryWrite,
 )
 from .provider_values import now_utc, stable_uuid
+from .system_hr_identity import LEGACY_HR_AGENT_ID, SYSTEM_HR_AGENT_ID, resolve_hr_alias
 
 
 class StoreProjectAgentMemory:
@@ -24,7 +25,7 @@ class StoreProjectAgentMemory:
     ) -> ProjectAgentMemoryView:
         self._require_personal()
         space = await self.authorize(actor, personal_space_id, 'reader')
-        await authorize_project_agent(
+        agent = await authorize_project_agent(
             self, actor, space, personal_project_id, agent_id, require_memory=True,
         )
         records, _, _ = await self.runtime.driver.execute_query(
@@ -34,21 +35,21 @@ class StoreProjectAgentMemory:
             RETURN checkpoint.record_json AS record_json
             ORDER BY checkpoint.revision DESC LIMIT $limit
             ''',
-            memory_id=self._agent_memory_id(
-                personal_space_id, personal_project_id, agent_id,
-            ),
+            memory_id=await self._resolved_agent_memory_id(
+                personal_space_id, personal_project_id, agent['agent_id']),
             limit=max(1, min(limit, 10)),
             routing_='r',
         )
         history = [
-            ProjectAgentMemoryRecord.model_validate_json(row['record_json'])
+            ProjectAgentMemoryRecord.model_validate_json(row['record_json']).model_copy(
+                update={'agent_id': agent['agent_id']})
             for row in records
         ]
         current = history[0] if history else None
         return ProjectAgentMemoryView(
             personal_space_id=personal_space_id,
             personal_project_id=personal_project_id,
-            agent_id=agent_id,
+            agent_id=agent['agent_id'],
             revision=current.revision if current else 0,
             current=current,
             history=history,
@@ -78,14 +79,14 @@ class StoreProjectAgentMemory:
                 ''',
                 space_id=request.personal_space_id,
                 project_id=request.personal_project_id,
-                agent_id=request.agent_id,
+                agent_id=agent['agent_id'],
                 task_id=request.task_id,
                 routing_='r',
             )
             if not task_rows:
                 raise HTTPException(status_code=404, detail='Agent memory task not found')
-        memory_id = self._agent_memory_id(
-            request.personal_space_id, request.personal_project_id, request.agent_id,
+        memory_id = await self._resolved_agent_memory_id(
+            request.personal_space_id, request.personal_project_id, agent['agent_id'],
         )
         checkpoint_id = stable_uuid(memory_id, request.idempotency_key)
         payload = request.model_dump(mode='json', exclude={
@@ -98,7 +99,7 @@ class StoreProjectAgentMemory:
             checkpoint_id=checkpoint_id,
             personal_space_id=request.personal_space_id,
             personal_project_id=request.personal_project_id,
-            agent_id=request.agent_id,
+            agent_id=agent['agent_id'],
             revision=request.expected_revision + 1,
             memory=request.memory,
             source_application=request.source_application,
@@ -147,7 +148,7 @@ class StoreProjectAgentMemory:
             ''',
             space_id=request.personal_space_id,
             project_id=request.personal_project_id,
-            agent_id=request.agent_id,
+            agent_id=agent['agent_id'],
             memory_id=memory_id,
             checkpoint_id=checkpoint_id,
             expected_revision=request.expected_revision,
@@ -164,9 +165,35 @@ class StoreProjectAgentMemory:
                 status_code=409,
                 detail='Agent memory changed; reload its latest revision before merging notes',
             )
-        if row['payload_hash'] != payload_hash:
+        compatible_hashes = {payload_hash}
+        if LEGACY_HR_AGENT_ID in agent.get('legacy_agent_ids', []):
+            # Old checkpoints keep their exact IDs/JSON/hashes. A canonical
+            # retry of the same input may differ only in the identity spelling.
+            for identity in (LEGACY_HR_AGENT_ID, SYSTEM_HR_AGENT_ID):
+                compatible_hashes.add(hashlib.sha256(json.dumps(
+                    {**payload, 'agent_id': identity}, sort_keys=True,
+                    ensure_ascii=False, separators=(',', ':'),
+                ).encode()).hexdigest())
+        if row['payload_hash'] not in compatible_hashes:
             raise HTTPException(status_code=409, detail='memory idempotency key has different input')
-        return ProjectAgentMemoryRecord.model_validate_json(row['record_json'])
+        return ProjectAgentMemoryRecord.model_validate_json(row['record_json']).model_copy(
+            update={'agent_id': agent['agent_id']})
+
+    async def _resolved_agent_memory_id(self, space_id, project_id, agent_id):
+        agent_id = await resolve_hr_alias(self, space_id, agent_id)
+        if agent_id == SYSTEM_HR_AGENT_ID:
+            rows, _, _ = await self.runtime.driver.execute_query(
+                '''MATCH (:FuliSpace {id: $space_id})-[:HAS_PROJECT_AGENT_IDENTITY]->
+                         (:FuliProjectAgent {agent_id: $agent_id})-[:HAS_WORKING_MEMORY]->
+                         (head:FuliProjectAgentMemory {personal_space_id: $space_id,
+                           personal_project_id: $project_id})
+                   RETURN DISTINCT head.id AS id''',
+                space_id=space_id, project_id=project_id, agent_id=agent_id, routing_='r')
+            if len(rows) > 1:
+                raise HTTPException(409, 'Agent has conflicting memory heads')
+            if rows:
+                return rows[0]['id']
+        return self._agent_memory_id(space_id, project_id, agent_id)
 
     def _agent_memory_id(self, space_id, project_id, agent_id):
         return stable_uuid(

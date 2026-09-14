@@ -5,32 +5,39 @@ make pending-claim boundaries deterministic; no product worker is started.
 """
 
 import asyncio
+import json
 from datetime import timedelta
 
 import pytest
+from neo4j import AsyncGraphDatabase
 
 from test_project_agent_memory_neo4j import fixture_settings, provider_client
 from test_project_agent_staffing_neo4j import create_scope
 
 
 async def hr_profile(client, scope, status='active'):
-    if status == 'archived':
-        response = await client.delete('/v1/project-agents/synthetic-hr', params={
+    if status == 'active':
+        response = await client.post('/v1/project-agents/system-hr', params={
             'personal_space_id': scope['personal_space_id'],
-            'reason': 'Synthetic recruitment guard archive.',
         })
-    else:
-        response = await client.put('/v1/project-agents', json={
-            'personal_space_id': scope['personal_space_id'],
-            'agent_id': 'synthetic-hr',
-            'profile': {
-                'name': 'Synthetic recruiter',
-                'responsibility': 'Audit sample hiring.',
-                'agent_type': 'hr',
-                'status': status,
-            },
-        })
-    assert response.status_code == 200, response.text
+        assert response.status_code == 200, response.text
+        return
+    # Built-in HR cannot be disabled through public writers. Inject only the
+    # historical/inconsistent storage state these guard tests must withstand.
+    settings = fixture_settings()  # refuses non-disposable/non-loopback graphs
+    async with AsyncGraphDatabase.driver(settings.neo4j_uri,
+            auth=('neo4j', settings.neo4j_password)) as driver:
+        rows, _, _ = await driver.execute_query('''
+            MATCH (:FuliSpace {id: $space_id})-[:HAS_PROJECT_AGENT_IDENTITY]->
+                  (hr:FuliProjectAgent {agent_id: 'employee.bole'})
+            RETURN hr.profile_json AS profile''', space_id=scope['personal_space_id'])
+        profile = json.loads(rows[0]['profile'])
+        profile['status'] = status
+        await driver.execute_query('''
+            MATCH (:FuliSpace {id: $space_id})-[:HAS_PROJECT_AGENT_IDENTITY]->
+                  (hr:FuliProjectAgent {agent_id: 'employee.bole'})
+            SET hr.status = $status, hr.profile_json = $profile''',
+            space_id=scope['personal_space_id'], status=status, profile=json.dumps(profile))
 
 
 async def recruitment_setup(client, *, confirmation):

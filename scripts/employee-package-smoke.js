@@ -16,7 +16,10 @@ const runtimeConfigPath = join(root, 'host/graph-runtime.json');
 installEmployeePackage({ sourceDirectory, runtimeConfigPath });
 const app = createEmployeeFixture({ runtimeConfigPath });
 const { server, url } = await createServer({ app, port: 0 });
-const mcp = createMcpServer(app, { env: {} });
+// A synthetic host identity exercises the verified-session contract without
+// reading or renaming any real client session.
+const syntheticSessionId = '00000000-0000-4000-8000-000000000001';
+const mcp = createMcpServer(app, { env: { CODEX_THREAD_ID: syntheticSessionId }, sourceApplication: 'codex' });
 const client = new Client({ name: 'employee-package-smoke', version: '1.0.0' });
 let serving = false;
 async function cleanup() {
@@ -53,7 +56,7 @@ try {
     const moved = await call('update_tasks', { requestId: 'packaged-update-01', updates: [{ id: task.id, expectedUpdatedAt: task.updatedAt, status: 'review' }] });
     assert.equal(moved.updatedWorkItems[0].status, 'review');
     assert.equal((await call('read_board', {})).total, 1);
-    const titleInput = { requestId: 'packaged-title-01', sourceApplication: 'synthetic-client', sessionId: 'synthetic-session',
+    const titleInput = { requestId: 'packaged-title-01', sourceApplication: 'codex', sessionId: syntheticSessionId,
       workItemIds: [task.id], currentTitle: 'Synthetic temporary title', canRename: true };
     const prepared = await call('prepare_session_title', titleInput);
     assert.equal(prepared.execution, 'client_required');
@@ -80,12 +83,30 @@ try {
     assert.equal(card.name, 'Jefa');
     assert.ok(JSON.stringify(card).includes(`${base}a2a`));
     assert.equal((await fetch(`${url}/employee-workspaces/jefa/not-assigned/`)).status, 404);
+    const sharing = `${base}api/projects/employee-qa/sharing`;
+    const enableShare = await fetch(sharing, { method: 'PATCH', headers: { 'content-type': 'application/json', origin: url },
+      body: JSON.stringify({ publicShareEnabled: true, acceptsPublicRequests: false }) }).then(response => response.json());
+    assert.ok(enableShare.project.publicShareSlug);
+    const publicUrl = `${base}api/public/${encodeURIComponent(enableShare.project.publicShareSlug)}`;
+    const privateProjection = await fetch(publicUrl).then(response => response.json());
+    assert.equal(privateProjection.items.length, 0, 'sharing must not publish existing private tasks');
+    const publicItem = await fetch(`${base}api/work-items`, { method: 'POST', headers: { 'content-type': 'application/json', origin: url },
+      body: JSON.stringify({ projectId: 'employee-qa', title: 'Synthetic public task', summary: 'Private details must stay private', privacy: 'work', visibility: 'public_summary', priority: 'medium', acceptanceCriteria: [], keywords: [], tags: [], safeAutoComplete: false }) }).then(response => response.json());
+    assert.ok(publicItem.workItem?.id);
+    const publicProjection = await fetch(publicUrl).then(response => response.json());
+    assert.equal(publicProjection.items.length, 1);
+    assert.equal(publicProjection.items[0].title, 'Synthetic public task');
+    assert.equal(publicProjection.items[0].summary, undefined);
+    assert.equal(publicProjection.acceptsRequests, false);
+    await fetch(sharing, { method: 'PATCH', headers: { 'content-type': 'application/json', origin: url },
+      body: JSON.stringify({ publicShareEnabled: false, acceptsPublicRequests: false }) });
+    assert.equal((await fetch(publicUrl)).status, 404, 'revocation must invalidate the previous capability');
     await app.close();
     const reopened = createEmployeeFixture({ runtimeConfigPath });
     try {
       await reopened.employees.recruit({ templateId: 'jefa', personalProjectId: 'employee-qa' });
       const board = await reopened.employees.callTool({ ...target, tool: 'read_board', arguments: {} });
-      assert.equal(board.total, 1);
+      assert.equal(board.total, 2);
     } finally { await reopened.close(); }
     console.log('PASS: packaged runtime, FULI MCP CRUD/title proposal + synthetic native-client receipt, task-entry board context, same-port assets/API/A2A discovery, project isolation, and SQLite persistence.');
   }

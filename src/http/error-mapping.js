@@ -12,6 +12,9 @@ const BAD_REQUEST_CODES = new Set([
 ]);
 
 export function mapHttpError(error) {
+  if (error instanceof ApplicationError && ['external_knowledge_busy', 'external_knowledge_conflict'].includes(error.code)) {
+    return { status: 409, body: { error: error.message, code: error.code } };
+  }
   if (error instanceof EmployeeError) {
     return { status: error.status, body: { error: error.message, code: error.code } };
   }

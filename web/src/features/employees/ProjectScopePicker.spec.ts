@@ -44,7 +44,7 @@ describe('employee project multi-select', () => {
     expect(wrapper.props('modelValue')).toHaveLength(3)
     await wrapper.get('input[type="search"]').setValue('No match')
     expect(wrapper.text()).toContain('没有匹配')
-    expect(wrapper.text()).toContain('已选 3 / 3')
+    expect(wrapper.text()).toContain('已选 3 / 共 3')
   })
 
   it('closes with Escape without closing the parent dialog and restores keyboard focus', async () => {
@@ -80,7 +80,7 @@ describe('employee project multi-select', () => {
     expect(wrapper.findAll('.project-scope-list input[type="checkbox"]')).toHaveLength(3)
     await wrapper.setProps({ projects: [...projects, { id: 'later', name: '后来创建的项目' }] })
     expect((wrapper.get('input[value="later"]').element as HTMLInputElement).checked).toBe(false)
-    expect(wrapper.get('.project-scope-count').text()).toContain('3 / 4')
+    expect(wrapper.get('.project-scope-count').text()).toContain('3 / 共 4')
     await wrapper.setProps({ disabled: true })
     expect(wrapper.get('input[value="alpha"]').attributes('disabled')).toBeDefined()
   })
@@ -94,6 +94,23 @@ describe('employee project multi-select', () => {
     expect(wrapper.text()).toContain('仅筛选列表')
     await wrapper.get('input[value="alpha"]').setValue(false)
     expect(wrapper.get('.project-scope-trigger').text()).toContain('未选择项目')
+  })
+
+  it('shows selected and total counts for every board filter state and offers an explicit reset', async () => {
+    const wrapper = setup(['alpha'])
+    await wrapper.setProps({ compact: true, showCount: true, resettable: true })
+    expect(wrapper.get('.project-scope-trigger').text()).toContain('已选 1 / 共 3 个项目')
+    await wrapper.get('.project-scope-trigger').trigger('click')
+    await wrapper.get('input[type="search"]').setValue('Alpha')
+    expect(wrapper.get('.project-scope-trigger').text()).toContain('已选 1 / 共 3 个项目')
+    await wrapper.get('.project-scope-reset').trigger('click')
+    expect(wrapper.emitted('reset')).toHaveLength(1)
+    await wrapper.setProps({ modelValue: projects.map(project => project.id) })
+    expect(wrapper.get('.project-scope-trigger').text()).toContain('已选 3 / 共 3 个项目')
+    await wrapper.setProps({ modelValue: [] })
+    expect(wrapper.get('.project-scope-trigger').text()).toContain('已选 0 / 共 3 个项目')
+    await wrapper.setProps({ projects: [] })
+    expect(wrapper.get('.project-scope-trigger').text()).toContain('已选 0 / 共 0 个项目')
   })
 
   it('distinguishes projects with the same display name using their project identifier', async () => {

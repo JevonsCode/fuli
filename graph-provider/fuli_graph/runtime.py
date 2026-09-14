@@ -271,6 +271,8 @@ class GraphitiRuntime:
         for query in (
             'CREATE CONSTRAINT fuli_project_agent_id IF NOT EXISTS '
             'FOR (n:FuliProjectAgent) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_agent_attention_id IF NOT EXISTS '
+            'FOR (n:FuliAgentAttention) REQUIRE n.id IS UNIQUE',
             'CREATE CONSTRAINT fuli_project_agent_assignment_id IF NOT EXISTS '
             'FOR (n:FuliProjectAgentAssignment) REQUIRE n.id IS UNIQUE',
             'CREATE CONSTRAINT fuli_project_agent_memory_id IF NOT EXISTS '
@@ -516,7 +518,7 @@ class GraphitiRuntime:
         from .project_agent_models import ProjectAgentProfile
         from .provider_values import now_utc, stable_uuid
 
-        profile = ProjectAgentProfile(
+        coordinator_profile = ProjectAgentProfile(
             name='项目协调人',
             responsibility='评估任务、应用用户配置并路由已有 Agent。',
             agent_type='coordinator',
@@ -525,26 +527,50 @@ class GraphitiRuntime:
             initial_preferences=['质量与可验收完成优先于成本和时间'],
             status='active',
         )
+        hr_profile = ProjectAgentProfile(
+            name='Bole',
+            occupation_emoji='🔎',
+            responsibility=(
+                '维护 Agent 人员分布、当前工作与可审计招募记录，'
+                '并在需要新角色时执行受策略约束的招募。'
+            ),
+            agent_type='hr',
+            work_kinds=['agent-recruitment', 'staffing-review'],
+            capabilities=[
+                'Agent 招募', '人员分布', '工作状态', '招募审计',
+                'fuli.employee:bole',
+            ],
+            initial_preferences=[
+                '每次招募保留任务、原因、触发来源与时间线。',
+                '只展示 Provider 已记录的人员状态，不推测未上报的工作。',
+            ],
+            status='active',
+        )
         updated_at = now_utc()
         for record in records:
             space_id = record['space_id']
-            node_id = stable_uuid(
-                self.settings.provider_id,
-                space_id,
-                'project-agent',
-                'fuli-project-coordinator',
-            )
-            await self.driver.execute_query(
-                '''
+            for agent_id, profile in (
+                ('fuli-project-coordinator', coordinator_profile),
+                ('employee.bole', hr_profile),
+            ):
+                node_id = stable_uuid(
+                    self.settings.provider_id,
+                    space_id,
+                    'project-agent',
+                    agent_id,
+                )
+                await self.driver.execute_query(
+                    '''
                 MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
                 MERGE (agent:FuliProjectAgent {id: $id})
-                ON CREATE SET agent.agent_id = 'fuli-project-coordinator',
+                ON CREATE SET agent.agent_id = $agent_id,
                               agent.profile_json = $profile_json,
                               agent.name = $name,
+                              agent.occupation_emoji = $occupation_emoji,
                               agent.responsibility = $responsibility,
                               agent.capabilities = $capabilities,
                               agent.work_kinds = $work_kinds,
-                              agent.agent_type = 'coordinator',
+                              agent.agent_type = $agent_type,
                               agent.memory_scope = 'reviewed_agent',
                               agent.status = 'active',
                               agent.system_managed = true,
@@ -552,15 +578,18 @@ class GraphitiRuntime:
                               agent.updated_at = $updated_at
                 MERGE (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(agent)
                 ''',
-                space_id=space_id,
-                id=node_id,
-                profile_json=profile.model_dump_json(),
-                name=profile.name,
-                responsibility=profile.responsibility,
-                capabilities=profile.capabilities,
-                work_kinds=profile.work_kinds,
-                updated_at=updated_at,
-            )
+                    space_id=space_id,
+                    id=node_id,
+                    agent_id=agent_id,
+                    profile_json=profile.model_dump_json(),
+                    name=profile.name,
+                    occupation_emoji=profile.occupation_emoji,
+                    responsibility=profile.responsibility,
+                    capabilities=profile.capabilities,
+                    work_kinds=profile.work_kinds,
+                    agent_type=profile.agent_type,
+                    updated_at=updated_at,
+                )
 
     async def _migrate_personal_project_relation_review_defaults(self) -> None:
         await self.driver.execute_query(

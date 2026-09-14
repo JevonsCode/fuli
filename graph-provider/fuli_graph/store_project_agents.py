@@ -18,12 +18,87 @@ from .project_agent_models import (
     ProjectAgentUpsert,
 )
 from .provider_values import native_datetime, now_utc, stable_uuid
+from .project_agent_names import agent_display_name
+from .store_transactions import query_store_transaction
+from .system_hr_identity import LEGACY_HR_AGENT_ID, merge_legacy_hr, resolve_hr_alias
 
 
 SYSTEM_COORDINATOR_AGENT_ID = 'fuli-project-coordinator'
+SYSTEM_HR_AGENT_ID = 'employee.bole'
 
 
 class StoreProjectAgents:
+    async def ensure_system_project_hr(
+        self,
+        actor: dict,
+        personal_space_id: str,
+    ) -> ProjectAgentRecord:
+        self._require_personal()
+        await self.authorize(actor, personal_space_id, 'maintainer')
+        async with query_store_transaction(self) as scoped:
+            await scoped._ensure_system_project_hr_identity(personal_space_id)
+            await merge_legacy_hr(scoped, personal_space_id)
+        return await self.get_project_agent(actor, personal_space_id, None, SYSTEM_HR_AGENT_ID)
+
+    async def _ensure_system_project_hr_identity(self, personal_space_id):
+        profile = ProjectAgentProfile(
+            name='Bole',
+            occupation_emoji='🔎',
+            responsibility=(
+                '维护 Agent 人员分布、当前工作与可审计招募记录，'
+                '并在需要新角色时执行受策略约束的招募。'
+            ),
+            agent_type='hr',
+            work_kinds=['agent-recruitment', 'staffing-review'],
+            capabilities=[
+                'Agent 招募', '人员分布', '工作状态', '招募审计',
+                'fuli.employee:bole',
+            ],
+            initial_preferences=[
+                '每次招募保留任务、原因、触发来源与时间线。',
+                '只展示 Provider 已记录的人员状态，不推测未上报的工作。',
+            ],
+            status='active',
+        )
+        updated_at = now_utc()
+        node_id = stable_uuid(
+            self.settings.provider_id,
+            personal_space_id,
+            'project-agent',
+            SYSTEM_HR_AGENT_ID,
+        )
+        await self.runtime.driver.execute_query(
+            '''
+            MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
+            MERGE (agent:FuliProjectAgent {id: $id})
+            ON CREATE SET agent.agent_id = $agent_id,
+                          agent.created_at = $updated_at,
+                          agent.system_managed = true
+            ON CREATE SET agent.profile_json = $profile_json,
+                          agent.name = $name,
+                          agent.occupation_emoji = $occupation_emoji,
+                          agent.responsibility = $responsibility,
+                          agent.capabilities = $capabilities,
+                          agent.work_kinds = $work_kinds,
+                          agent.agent_type = 'hr',
+                          agent.memory_scope = 'reviewed_agent',
+                          agent.status = 'active',
+                          agent.updated_at = $updated_at
+            MERGE (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(agent)
+            RETURN agent
+            ''',
+            personal_space_id=personal_space_id,
+            id=node_id,
+            agent_id=SYSTEM_HR_AGENT_ID,
+            profile_json=profile.model_dump_json(),
+            name=profile.name,
+            occupation_emoji=profile.occupation_emoji,
+            responsibility=profile.responsibility,
+            capabilities=profile.capabilities,
+            work_kinds=profile.work_kinds,
+            updated_at=updated_at,
+        )
+
     async def ensure_system_project_coordinator(
         self,
         actor: dict,
@@ -93,6 +168,8 @@ class StoreProjectAgents:
         recruitment_id: str | None = None,
     ) -> ProjectAgentRecord:
         self._require_personal()
+        if request.agent_id == LEGACY_HR_AGENT_ID:
+            raise HTTPException(409, 'This HR identity has moved to employee.bole')
         if request.profile.agent_type == 'temporary' and not recruitment_id:
             raise HTTPException(
                 status_code=422,
@@ -107,12 +184,33 @@ class StoreProjectAgents:
                 detail='only the system-managed identity may use coordinator type',
             )
         if (
+            request.profile.agent_type == 'hr'
+            and request.agent_id != SYSTEM_HR_AGENT_ID
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail='only the system-managed Bole identity may use HR type',
+            )
+        if (
             request.agent_id == SYSTEM_COORDINATOR_AGENT_ID
             and request.profile.agent_type != 'coordinator'
         ):
             raise HTTPException(
                 status_code=422,
                 detail='the system coordinator identity cannot change Agent type',
+            )
+        if (
+            request.agent_id == SYSTEM_HR_AGENT_ID
+            and request.profile.agent_type != 'hr'
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail='the system HR identity cannot change Agent type',
+            )
+        if request.agent_id == SYSTEM_HR_AGENT_ID and request.profile.status != 'active':
+            raise HTTPException(
+                status_code=422,
+                detail='the system HR must remain active',
             )
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         if request.personal_project_id:
@@ -344,6 +442,7 @@ class StoreProjectAgents:
     ) -> ProjectAgentRecord:
         self._require_personal()
         space = await self.authorize(actor, personal_space_id, 'reader')
+        agent_id = await resolve_hr_alias(self, personal_space_id, agent_id)
         if personal_project_id:
             await authorize_personal_project(
                 self,
@@ -390,6 +489,11 @@ class StoreProjectAgents:
             raise HTTPException(
                 status_code=422,
                 detail='the system coordinator cannot be archived',
+            )
+        if agent_id == SYSTEM_HR_AGENT_ID:
+            raise HTTPException(
+                status_code=422,
+                detail='the system HR cannot be archived',
             )
         await self.authorize(actor, personal_space_id, 'maintainer')
         if not reason.strip():
@@ -696,6 +800,7 @@ class StoreProjectAgents:
     ) -> list[ProjectAgentAssignmentRecord]:
         self._require_personal()
         space = await self.authorize(actor, personal_space_id, 'reader')
+        agent_id = await resolve_hr_alias(self, personal_space_id, agent_id)
         if personal_project_id:
             await authorize_personal_project(
                 self,
@@ -974,6 +1079,9 @@ class StoreProjectAgents:
     ) -> ProjectAgentRecord:
         raw = dict(row['agent'])
         profile = ProjectAgentProfile.model_validate_json(raw['profile_json'])
+        profile = profile.model_copy(update={
+            'display_name': agent_display_name(raw['agent_id'], profile.name, profile.display_name),
+        })
         # ``occupation_emoji`` was introduced after the original profile JSON
         # contract.  Prefer the durable profile value, but tolerate an older
         # JSON payload while the explicit node property is being backfilled.
@@ -1066,6 +1174,7 @@ class StoreProjectAgents:
         })
         return ProjectAgentRecord(
             agent_id=raw['agent_id'],
+            legacy_agent_ids=list(raw.get('legacy_agent_ids') or []),
             personal_space_id=personal_space_id,
             personal_project_id=projection_project_id,
             profile=profile,

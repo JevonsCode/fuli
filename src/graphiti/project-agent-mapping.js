@@ -12,6 +12,8 @@ export function providerProjectAgentProfile(profile) {
   copyOptional(result, 'occupation_emoji', profile.occupationEmoji !== undefined
     ? profile.occupationEmoji : profile.occupation_emoji,
     hasAny(profile, ['occupationEmoji', 'occupation_emoji']));
+  copyOptional(result, 'display_name', profile.displayName ?? profile.display_name,
+    hasAny(profile, ['displayName', 'display_name']));
   copyOptional(result, 'agent_type', profile.agentType ?? profile.agent_type,
     hasAny(profile, ['agentType', 'agent_type']));
   copyOptional(result, 'work_kinds', profile.workKinds ?? profile.work_kinds,
@@ -61,6 +63,10 @@ export function projectAgentRecord(value) {
   );
   copyOptional(result.profile, 'agentType', profile.agent_type,
     Object.hasOwn(profile, 'agent_type'));
+  copyOptional(result.profile, 'displayName', profile.display_name,
+    Object.hasOwn(profile, 'display_name'));
+  copyOptional(result, 'legacyAgentIds', value.legacy_agent_ids,
+    Object.hasOwn(value, 'legacy_agent_ids'));
   copyOptional(result.profile, 'workKinds', profile.work_kinds,
     Object.hasOwn(profile, 'work_kinds'));
   copyOptional(

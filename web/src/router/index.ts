@@ -17,6 +17,7 @@ export function legacyKnowledgeHashPath(hash: string) {
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    { path: '/reports/jefa', name: 'shared-jefa-report', component: () => import('@/pages/SharedJefaReportPage.vue'), meta: { publicReport: true, title: 'employees.share.title' } },
     {
       path: '/',
       name: 'overview',
@@ -176,9 +177,15 @@ export const router = createRouter({
         title: 'routes.about.title',
       },
     },
-    { path: '/:pathMatch(.*)*', redirect: '/' },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      component: () => import('@/pages/NotFoundPage.vue'),
+      meta: { title: 'common.errors.pageNotFound' },
+    },
   ],
-  scrollBehavior: () => ({ top: 0 }),
+  scrollBehavior: (to, from, savedPosition) => savedPosition
+    ?? (to.path === from.path ? false : { top: 0 }),
 })
 
 installNavigationRecovery(router)

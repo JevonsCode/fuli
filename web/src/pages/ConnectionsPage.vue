@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import GrowthLoading from '@/components/GrowthLoading.vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import { deleteJson, getJson, patchJson, postJson } from '@/api/client'
 import SearchableMultiSelect from '@/components/SearchableMultiSelect.vue'
@@ -22,15 +23,24 @@ type ConflictMode = KnowledgeConflictPolicy['mode']
 
 const store = useConsoleStore()
 const selectedProjectKey = ref('')
+const subscriptionBusy = ref(false)
+const subscriptionAction = ref('')
 const connectors = ref<ExternalKnowledgeConnector[]>([])
 const bindings = ref<ExternalKnowledgeBinding[]>([])
 const externalBusy = ref(false)
+const externalLoading = ref(false)
+const externalAction = ref('')
 const editingBindingId = ref<string | null>(null)
 const editingProjectIds = ref<string[]>([])
 const editingTargetModes = ref<Record<string, ExternalKnowledgeMode>>({})
 const conflictProjectId = ref('')
 const conflictMode = ref<ConflictMode>('ask_human')
 const conflictBusy = ref(false)
+const conflictLoading = ref(false)
+const conflictError = ref(false)
+let confirmedConflictMode: ConflictMode = 'ask_human'
+let conflictVersion = 0
+let conflictController: AbortController | null = null
 const form = reactive({
   name: '',
   connectorType: 'mcp',
@@ -135,18 +145,25 @@ watch(personalProjects, (projects) => {
   editingProjectIds.value = editingProjectIds.value.filter((id) => ids.has(id))
   if (!ids.has(conflictProjectId.value)) {
     conflictProjectId.value = first
-    if (first) void loadConflictPolicy()
   }
 }, { immediate: true })
+
+watch(
+  () => [store.activePersonalSpace?.id, conflictProjectId.value],
+  () => void loadConflictPolicy(),
+  { immediate: true, flush: 'sync' },
+)
 
 watch(() => form.connectorType, (type) => {
   if (connectorSupportsMode(type, form.mode)) return
   form.mode = firstSupportedMode(type)
 })
 
-onMounted(async () => {
-  await refreshExternalKnowledge()
-  if (conflictProjectId.value) await loadConflictPolicy()
+onMounted(() => void refreshExternalKnowledge())
+
+onBeforeUnmount(() => {
+  conflictVersion += 1
+  conflictController?.abort()
 })
 
 function projectKey(project: PublicProject) {
@@ -154,40 +171,54 @@ function projectKey(project: PublicProject) {
 }
 
 async function subscribe() {
+  const personalSpaceId = store.activePersonalSpace?.id
   const project = availableProjects.value.find((item) => projectKey(item) === selectedProjectKey.value)
-  if (!project) return
+  if (!personalSpaceId || !project || subscriptionBusy.value) return
+  subscriptionBusy.value = true
+  subscriptionAction.value = 'pages.connections.subscribing'
   try {
     await postJson('/api/subscriptions', {
-      personalSpaceId: store.activePersonalSpace?.id,
+      personalSpaceId,
       projectId: project.id,
       providerUrl: project.providerUrl,
       projectName: project.name,
     })
     selectedProjectKey.value = ''
     store.notify(t('pages.connections.subscribed', { name: project.name }))
+    subscriptionAction.value = 'pages.connections.loadingSubscriptions'
     await store.refresh()
   } catch (error) {
     store.reportError(error)
+  } finally {
+    subscriptionBusy.value = false
   }
 }
 
 async function unsubscribe(subscription: Subscription) {
+  const personalSpaceId = store.activePersonalSpace?.id
+  if (!personalSpaceId || subscriptionBusy.value) return
+  subscriptionBusy.value = true
+  subscriptionAction.value = 'pages.connections.unsubscribing'
   try {
     const query = new URLSearchParams({
-      personalSpaceId: store.activePersonalSpace?.id ?? '',
+      personalSpaceId,
       providerUrl: subscription.provider_url,
     })
     await deleteJson(`/api/subscriptions/${encodeURIComponent(subscription.project_id)}?${query}`)
     store.notify(t('pages.connections.unsubscribed', {
       name: subscription.project_name ?? subscription.project_id,
     }))
+    subscriptionAction.value = 'pages.connections.loadingSubscriptions'
     await store.refresh()
   } catch (error) {
     store.reportError(error)
+  } finally {
+    subscriptionBusy.value = false
   }
 }
 
 async function refreshExternalKnowledge() {
+  externalLoading.value = true
   try {
     const [available, configured] = await Promise.all([
       getJson<ExternalKnowledgeConnector[]>('/api/external-knowledge/connectors'),
@@ -197,13 +228,16 @@ async function refreshExternalKnowledge() {
     bindings.value = configured
   } catch (error) {
     store.reportError(error)
+  } finally {
+    externalLoading.value = false
   }
 }
 
 async function createBinding() {
   const personalSpaceId = store.activePersonalSpace?.id
-  if (!personalSpaceId || !form.personalProjectIds.length) return
+  if (!personalSpaceId || !form.personalProjectIds.length || externalBusy.value) return
   externalBusy.value = true
+  externalAction.value = 'pages.connections.creatingBinding'
   try {
     const { connectorConfig, source } = bindingConnectorInput()
     await postJson('/api/external-knowledge/bindings', {
@@ -309,7 +343,9 @@ async function syncBinding(binding: ExternalKnowledgeBinding) {
 }
 
 async function bindingAction(binding: ExternalKnowledgeBinding, action: 'check' | 'sync') {
+  if (externalBusy.value) return
   externalBusy.value = true
+  externalAction.value = action === 'sync' ? 'pages.connections.syncingBinding' : 'pages.connections.checkingBinding'
   try {
     const result = await postJson<{ skippedCredentials?: number }>(
       `/api/external-knowledge/bindings/${encodeURIComponent(binding.id)}/${action}`,
@@ -332,7 +368,9 @@ async function bindingAction(binding: ExternalKnowledgeBinding, action: 'check' 
 }
 
 async function deleteBinding(binding: ExternalKnowledgeBinding) {
+  if (externalBusy.value) return
   externalBusy.value = true
+  externalAction.value = 'pages.connections.disconnectingBinding'
   try {
     await deleteJson(`/api/external-knowledge/bindings/${encodeURIComponent(binding.id)}`)
     store.notify(t('pages.connections.externalDeleted', { name: binding.name }))
@@ -379,12 +417,14 @@ function setEditingTargetMode(projectId: string, mode: string) {
 
 async function saveBindingTargets(binding: ExternalKnowledgeBinding) {
   const personalSpaceId = store.activePersonalSpace?.id
-  if (!personalSpaceId || !editingProjectIds.value.length) return
+  if (!personalSpaceId || !editingProjectIds.value.length || externalBusy.value) return
   externalBusy.value = true
+  externalAction.value = 'pages.connections.savingBindingTargets'
   try {
     await patchJson(
       `/api/external-knowledge/bindings/${encodeURIComponent(binding.id)}/targets`,
       {
+        expectedTargetsVersion: binding.targetsVersion,
         targets: editingProjectIds.value.map((personalProjectId) => ({
           personalSpaceId,
           personalProjectId,
@@ -403,21 +443,41 @@ async function saveBindingTargets(binding: ExternalKnowledgeBinding) {
 }
 
 async function loadConflictPolicy() {
-  if (!conflictProjectId.value) return
+  const version = ++conflictVersion
+  conflictController?.abort()
+  conflictController = null
+  conflictMode.value = 'ask_human'
+  conflictError.value = false
+  conflictLoading.value = false
+  if (!store.activePersonalSpace?.id || !conflictProjectId.value) return
+  const controller = new AbortController()
+  conflictController = controller
+  conflictLoading.value = true
   try {
     const query = new URLSearchParams({ personalProjectId: conflictProjectId.value })
     const policy = await getJson<KnowledgeConflictPolicy>(
       `/api/external-knowledge/conflict-policy?${query}`,
+      { signal: controller.signal },
     )
+    if (version !== conflictVersion) return
     conflictMode.value = policy.mode
+    confirmedConflictMode = policy.mode
   } catch (error) {
-    store.reportError(error)
+    if (version !== conflictVersion) return
+    conflictError.value = true
+  } finally {
+    if (version === conflictVersion) {
+      conflictLoading.value = false
+      conflictController = null
+    }
   }
 }
 
 async function updateConflictPolicy() {
   const personalSpaceId = store.activePersonalSpace?.id
-  if (!personalSpaceId || !conflictProjectId.value) return
+  if (!personalSpaceId || !conflictProjectId.value || conflictBusy.value
+    || conflictLoading.value || conflictError.value) return
+  const version = conflictVersion
   conflictBusy.value = true
   try {
     const query = new URLSearchParams({ personalProjectId: conflictProjectId.value })
@@ -429,9 +489,13 @@ async function updateConflictPolicy() {
         mode: conflictMode.value,
       },
     )
+    if (version !== conflictVersion) return
     conflictMode.value = policy.mode
+    confirmedConflictMode = policy.mode
     store.notify(t('pages.connections.conflictSaved'))
   } catch (error) {
+    if (version !== conflictVersion) return
+    conflictMode.value = confirmedConflictMode
     store.reportError(error)
   } finally {
     conflictBusy.value = false
@@ -563,6 +627,7 @@ function readmeHelpUrl(fragment: string) {
         >?</a>
         <span class="external-binding-count">{{ t('pages.connections.bindingCount', { count: bindings.length }) }}</span>
       </div>
+      <GrowthLoading v-if="externalLoading || externalBusy" variant="compact" :label="t(externalLoading ? 'pages.connections.loadingBindings' : externalAction)" />
       <div class="external-binding-list">
         <article v-for="binding in bindings" :key="binding.id" class="external-binding-row" :data-status="binding.status">
           <i aria-hidden="true" />
@@ -624,7 +689,7 @@ function readmeHelpUrl(fragment: string) {
             </div>
           </div>
         </article>
-        <div v-if="!bindings.length" class="compact-empty">{{ t('pages.connections.noExternalBindings') }}</div>
+        <div v-if="!externalLoading && !bindings.length" class="compact-empty">{{ t('pages.connections.noExternalBindings') }}</div>
       </div>
 
       <form class="external-binding-form" @submit.prevent="createBinding">
@@ -757,7 +822,6 @@ function readmeHelpUrl(fragment: string) {
             :options="personalProjectOptions"
             :disabled="conflictBusy"
             required
-            @change="loadConflictPolicy"
           />
         </label>
         <label>
@@ -767,21 +831,28 @@ function readmeHelpUrl(fragment: string) {
             control-id="external-conflict-mode"
             :label="t('pages.connections.conflictAction')"
             :options="conflictModeOptions"
-            :disabled="conflictBusy"
+            :disabled="conflictBusy || conflictLoading || conflictError || !conflictProjectId"
             required
             @change="updateConflictPolicy"
           />
         </label>
       </div>
+      <GrowthLoading v-if="conflictLoading" variant="compact" :label="t('pages.connections.loadingConflictPolicy')" />
+      <GrowthLoading v-if="conflictBusy" variant="inline" :label="t('pages.connections.savingConflictPolicy')" />
+      <div v-else-if="conflictError" role="alert">
+        <p>{{ t('common.errors.loadFailed') }}</p>
+        <button class="secondary-action" type="button" @click="loadConflictPolicy">{{ t('common.actions.retry') }}</button>
+      </div>
     </section>
 
     <section v-if="store.state?.capabilities?.subscribeProject" class="connection-subscriptions">
       <div class="section-title"><h3>{{ t('pages.connections.subscriptionsTitle') }} <span class="feature-badge beta">BETA</span></h3></div>
+      <GrowthLoading v-if="subscriptionBusy" variant="inline" :label="t(subscriptionAction)" />
       <div class="subscription-list">
         <div v-for="subscription in subscriptions" :key="`${subscription.provider_url}:${subscription.project_id}`" class="subscription-row">
           <span>↗</span>
           <div><strong>{{ subscription.project_name ?? subscription.project_id }}</strong><span>{{ t('pages.connections.sharedProject') }}</span></div>
-          <button class="secondary-action subscription-action" type="button" @click="unsubscribe(subscription)">{{ t('pages.connections.unsubscribe') }}</button>
+          <button class="secondary-action subscription-action" type="button" :disabled="subscriptionBusy" @click="unsubscribe(subscription)">{{ t('pages.connections.unsubscribe') }}</button>
         </div>
         <div v-if="!subscriptions.length" class="empty-state">{{ t('pages.connections.noSubscriptions') }}</div>
       </div>
@@ -793,8 +864,9 @@ function readmeHelpUrl(fragment: string) {
           :placeholder="t('pages.connections.choosePublicProject')"
           searchable
           required
+          :disabled="subscriptionBusy"
         />
-        <button type="submit">{{ t('pages.connections.subscribe') }}</button>
+        <button type="submit" :disabled="subscriptionBusy || !selectedProjectKey || !store.activePersonalSpace">{{ t('pages.connections.subscribe') }}</button>
       </form>
     </section>
   </section>

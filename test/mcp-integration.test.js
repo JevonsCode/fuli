@@ -219,7 +219,20 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   assert.match(instructions, /rg only current repo\/workspace/i);
 
   const listed = await connection.client.listTools();
+  const interfaceCatalog = await connection.client.callTool({ name: 'list_agent_interfaces', arguments: {} });
+  assert.equal(interfaceCatalog.structuredContent.truncated, undefined);
+  assert.equal(interfaceCatalog.structuredContent.uiMutationParity.length, interfaceCatalog.structuredContent.coverage.total);
   assert.deepEqual(listed.tools.map(({ name }) => name), [
+    'request_agent_attention', 'list_agent_attention', 'cancel_agent_attention',
+    'list_project_agent_tasks', 'list_preference_conflicts',
+    'list_agent_interfaces', 'get_capture_policy', 'update_capture_policy',
+    'list_external_knowledge_connectors', 'discover_external_knowledge_sources',
+    'list_external_knowledge_bindings', 'create_external_knowledge_binding',
+    'check_external_knowledge_binding', 'sync_external_knowledge_binding',
+    'retrieve_external_knowledge_binding', 'update_external_knowledge_binding_targets',
+    'delete_external_knowledge_binding', 'get_external_knowledge_conflict_policy',
+    'update_external_knowledge_conflict_policy', 'defer_preference_conflict',
+    'delete_public_project',
     'list_employee_templates', 'recruit_employee', 'list_employee_tools', 'call_employee_tool',
     'begin_task_context',
     'checkpoint_task_knowledge',

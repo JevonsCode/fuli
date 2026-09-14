@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import { t } from '@/i18n'
 
 defineProps<{
   status: 'idle' | 'loading' | 'ready' | 'error'
   error?: string
+  label: string
 }>()
 
 defineEmits<{ retry: [] }>()
@@ -13,8 +15,11 @@ defineEmits<{ retry: [] }>()
   <div v-if="status === 'idle'" class="project-agent-source-state" role="status">
     {{ t('projectAgents.detail.notLoaded') }}
   </div>
-  <div v-else-if="status === 'loading'" class="project-agent-source-state" role="status">
-    {{ t('projectAgents.detail.loadingSection') }}
+  <div v-else-if="status === 'loading'" class="project-agent-source-state">
+    <GrowthLoading
+      variant="inline"
+      :label="label"
+    />
   </div>
   <div v-else-if="status === 'error'" class="project-agent-source-state is-error" role="alert">
     <span>{{ error || t('projectAgents.detail.sectionUnavailable') }}</span>

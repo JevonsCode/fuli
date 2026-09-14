@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch, watchEffect } from 'vue'
+import GrowthLoading from '@/components/GrowthLoading.vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
 import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
 import EmployeeNavigation from '@/features/employees/EmployeeNavigation.vue'
+import AgentAttentionCenter from '@/features/project-agents/AgentAttentionCenter.vue'
 import { t } from '@/i18n'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { personalProjectsPath, knowledgePath } from '@/router/paths'
@@ -21,8 +23,6 @@ const activeSpaceId = computed(() => store.activePersonalSpace?.id ?? 'current')
 const personalProjectsTo = computed(() => personalProjectsPath(activeSpaceId.value, 'graph'))
 const knowledgeTo = computed(() => knowledgePath('personal', activeSpaceId.value, 'directory'))
 const title = computed(() => routeMetaText(route.meta.title, 'routes.overview.title'))
-const eyebrow = computed(() => String(route.meta.eyebrow ?? 'LOCAL + FEDERATED'))
-const description = computed(() => routeMetaText(route.meta.description))
 const dedicatedWorkspace = computed(() => route.meta.dedicatedWorkspace === true)
 const publicReady = computed(() => store.publicRuntimeStatus === 'ready')
 const publicRuntimeLabel = computed(() => {
@@ -51,7 +51,19 @@ const reviewVisible = computed(() => {
 
 onMounted(() => {
   if (store.runtimeStatus === 'idle') void store.refresh()
+  window.addEventListener('resize', onResize)
 })
+onBeforeUnmount(() => window.removeEventListener('resize', onResize))
+function onResize() { if (window.innerWidth > 920) mobileNavOpen.value = false }
+function containMobileFocus(event: KeyboardEvent) {
+  if (!mobileNavOpen.value || event.key !== 'Tab') return
+  const controls = [...(event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), [tabindex="0"]')]
+    .filter((element) => element.getClientRects().length > 0)
+  const first = controls[0]
+  const last = controls.at(-1)
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+}
 
 watchEffect(() => {
   updateDocumentTitle(route.meta.title)
@@ -82,6 +94,7 @@ async function closeMobileNav() {
       class="sidebar"
       :class="{ 'is-mobile-open': mobileNavOpen }"
       @keydown.esc.stop="closeMobileNav"
+      @keydown="containMobileFocus"
     >
       <button
         ref="mobileNavCloseRef"
@@ -127,6 +140,7 @@ async function closeMobileNav() {
         </template>
 
         <EmployeeNavigation :personal-space-id="activeSpaceId" />
+        <AgentAttentionCenter :personal-space-id="activeSpaceId" :projects="store.state?.personalProjects ?? []" />
 
         <p class="nav-section-label nav-tool-label">{{ t('console.navigation.governance') }}</p>
         <RouterLink :to="knowledgeTo" active-class="is-active">
@@ -177,7 +191,8 @@ async function closeMobileNav() {
       </div>
     </aside>
 
-    <main class="workspace">
+    <button v-if="mobileNavOpen" class="mobile-nav-backdrop" type="button" tabindex="-1" :aria-label="t('console.navigation.closeMenu')" @click="closeMobileNav" />
+    <main class="workspace" :inert="mobileNavOpen || undefined">
       <header class="topbar" :class="{ 'topbar--workbench': dedicatedWorkspace }">
         <button
           ref="mobileNavToggleRef"
@@ -192,37 +207,39 @@ async function closeMobileNav() {
         </button>
         <span v-if="dedicatedWorkspace" class="workbench-host-label">FULI</span>
         <div v-else class="topbar-heading">
-          <p v-if="eyebrow" class="eyebrow">{{ eyebrow }}</p>
           <h2>{{ title }}</h2>
-          <p v-if="description" class="topbar-description">{{ description }}</p>
         </div>
         <div v-if="!dedicatedWorkspace" class="topbar-actions">
           <span v-if="publicReady" class="mode-chip">{{ t('console.publicReady') }}</span>
           <button
             v-if="route.name === 'settings'"
             class="settings-save-button"
+            :disabled="store.settingsSaving"
             form="settings-form"
             type="submit"
           >
             {{ t('settings.save') }}
           </button>
           <LocaleSwitcher />
-          <button class="quiet-button" type="button" @click="store.refresh">{{ t('common.actions.refresh') }}</button>
+          <button class="quiet-button" type="button" :disabled="store.runtimeStatus === 'loading'" @click="store.refresh">
+            <GrowthLoading v-if="store.runtimeStatus === 'loading'" variant="inline" :label="t('common.status.loadingConsole')" />
+            <span v-else>{{ t('common.actions.refresh') }}</span>
+          </button>
         </div>
       </header>
 
       <NavigationRecovery />
 
-      <button
+      <div
         v-if="store.feedback"
-        class="feedback feedback-button"
+        class="feedback feedback-message"
         :class="{ success: store.feedback.tone === 'success' }"
-        type="button"
+        role="status"
         aria-live="polite"
-        @click="store.clearFeedback"
       >
-        {{ store.feedback.message }}
-      </button>
+        <span>{{ store.feedback.message }}</span>
+        <button class="feedback-dismiss" type="button" :aria-label="t('common.actions.close')" @click="store.clearFeedback">×</button>
+      </div>
 
       <RouterView v-slot="{ Component }">
         <component :is="Component" />

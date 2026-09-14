@@ -52,6 +52,7 @@ export const projectAgentModelStrategy = objectSchema({
 });
 export const projectAgentProfile = objectSchema({
   name: boundedString(160),
+  displayName: boundedString(160),
   responsibility: boundedString(4096),
   occupationEmoji: { ...nullableStringSchema(), minLength: 1, maxLength: 32 },
   agentType: enumSchema(['coordinator', 'durable', 'hr', 'temporary']),
