@@ -134,6 +134,11 @@ export class GraphitiProviderClient {
   beginTaskContext(input) {
     return this.#request('/v1/task-contexts', { method: 'PUT', body: input });
   }
+  adoptTaskContextAgent(token, input) {
+    return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}/agent`, {
+      method: 'PUT', body: input
+    });
+  }
   getTaskContext(token, query) {
     return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}?${new URLSearchParams(query)}`);
   }
@@ -593,12 +598,13 @@ export class GraphitiProviderClient {
       method: 'POST', body: input
     });
   }
-  listPreferenceConflicts(personalSpaceId, status = null, limit = 500) {
+  listPreferenceConflicts(personalSpaceId, status = null, limit = 500, offset = 0) {
     const query = new URLSearchParams({
       personal_space_id: personalSpaceId,
       limit: String(limit)
     });
     if (status) query.set('status', status);
+    if (offset) query.set('offset', String(offset));
     return this.#request(`/v1/preference-conflicts?${query}`);
   }
   resolvePreferenceConflict(conflictId, input) {

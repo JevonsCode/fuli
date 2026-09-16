@@ -1,6 +1,7 @@
 import { projectAgentRecord } from './project-agent-mapping.js';
 import { agentMemoryView } from './project-agent-memory.js';
 import { planTaskKnowledgeRecall } from './task-knowledge-recall.js';
+import { loadProjectTeamContext } from './project-agent-team-context.js';
 
 const ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
 
@@ -48,6 +49,7 @@ export async function loadProjectAgentContinuity(application, {
   const queries = (planned.queries.length ? planned.queries
     : [agent.profile.responsibility || 'project requirements architecture decisions']).slice(0, 2);
   const requests = [
+    ['team', loadProjectTeamContext(application, scope.personalSpaceId, projectId)],
     ['memory', agent.memoryScope === 'reviewed_agent'
       ? application.personal.getProjectAgentMemory({ ...scope, limit: 1 })
       : Promise.resolve(null)],
@@ -86,12 +88,13 @@ export async function loadProjectAgentContinuity(application, {
     worker_started: false,
     selection_reason: selectionReason,
     match_basis: [...matchBasis],
-    role: { name: agent.profile.name, responsibility: agent.profile.responsibility,
+    role: { name: agent.profile.displayName || agent.profile.name, responsibility: agent.profile.responsibility,
       initial_preferences: [...(agent.profile.initialPreferences ?? [])] },
     project_brief: profile ? { name: profile.name, purpose: profile.purpose,
       scope: profile.scope, technical_summary: profile.technical_summary,
       boundaries: profile.boundaries ?? [] } : null,
     memory: data.memory,
+    team: data.team ?? null,
     recent_tasks: (Array.isArray(data.tasks) ? data.tasks : []).map(task => ({
       task_id: task.task_id, title: task.title, status: task.status,
       result_summary: task.result_summary, updated_at: task.updated_at

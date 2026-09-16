@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
 vi.mock('@/api/client', () => ({ getJson, postJson }))
-import { useAgentAttention } from './attention-store'
+import { attentionTaskHref, useAgentAttention } from './attention-store'
 import AgentHand from './AgentHand.vue'
 import AgentAttentionCenter from './AgentAttentionCenter.vue'
 
@@ -17,6 +17,14 @@ beforeEach(() => {
 })
 
 describe('Agent attention', () => {
+  it('retains exact project and task when following a request', () => {
+    expect(attentionTaskHref({ ...item, taskId: 'task-a' })).toBe('/project-agents?agent=agent-a&project=project-a&task=task-a#task-task-a')
+  })
+  it('does not send a reply to an item from a previous space', async () => {
+    const store = useAgentAttention(); store.setSpace('space-b'); await flushPromises()
+    await expect(store.respond(item, '选择 A')).rejects.toThrow('different space')
+    expect(postJson).not.toHaveBeenCalled()
+  })
   it('shows only explicit pending counts and opens the exact Agent queue', async () => {
     const store = useAgentAttention()
     const wrapper = mount(AgentHand, { props: { agentId: 'agent-a' } })

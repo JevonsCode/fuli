@@ -147,6 +147,7 @@ class StoreProjectAgentTasks(
                 request,
                 candidates,
                 participants,
+                **({'team_only': True} if reason == 'project_team_lead' else {}),
             )
             candidate_ids = {item['agent_id'] for item in candidates}
             candidates.extend(

@@ -266,7 +266,7 @@ class StoreProjectAgentTaskActivity:
               THEN [1] ELSE [] END |
               SET task.status = $status,
                   task.result_summary = CASE
-                    WHEN $status = 'completed' THEN $summary
+                    WHEN $status IN ['completed', 'awaiting_review', 'failed', 'blocked', 'cancelled'] THEN $summary
                     ELSE task.result_summary END,
                   task.failure_reason = CASE
                     WHEN $status = 'failed' THEN $summary

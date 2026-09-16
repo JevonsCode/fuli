@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from .models import SourceApplication, StrictModel
 from .model_validation import reject_credentials
@@ -19,6 +19,7 @@ class TaskContextBegin(StrictModel):
     token: str = Field(pattern=r'^fuli-task-[a-zA-Z0-9-]{8,128}$')
     turn_id: str | None = Field(default=None, min_length=1, max_length=256)
     memory_revision: int | None = Field(default=None, ge=0)
+    work_log_required: bool = False
 
     @model_validator(mode='after')
     def require_project_for_agent(self):
@@ -32,6 +33,26 @@ class TaskContextAgentMemory(StrictModel):
     memory: ProjectAgentWorkingMemory
 
 
+class TaskContextAdoptAgent(StrictModel):
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    personal_project_id: str = Field(min_length=1, max_length=128)
+    source_application: SourceApplication
+    task_id: str = Field(min_length=1, max_length=128)
+    agent_id: str = Field(min_length=1, max_length=128)
+
+
+class TaskWorkLog(StrictModel):
+    status: Literal['reported', 'completed', 'incomplete', 'failed', 'no_change', 'unreported']
+    summary: str = Field(min_length=1, max_length=2000)
+
+    @field_validator('summary')
+    @classmethod
+    def require_summary(cls, value):
+        if not value.strip():
+            raise ValueError('Work summary must not be blank')
+        return value.strip()
+
+
 class TaskContextCheckpoint(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     source_application: SourceApplication
@@ -41,6 +62,7 @@ class TaskContextCheckpoint(StrictModel):
     fingerprint: str = Field(pattern=r'^[a-f0-9]{64}$')
     capture_status: str | None = Field(default=None, max_length=128)
     agent_memory: TaskContextAgentMemory | None = None
+    work_log: TaskWorkLog | None = None
 
     @model_validator(mode='after')
     def reject_sensitive_values(self):

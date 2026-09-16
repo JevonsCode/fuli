@@ -65,6 +65,16 @@ class ProjectAgentMemoryRecord(StrictModel):
     created_at: datetime
 
 
+class EmployeeWorkLogRecord(StrictModel):
+    task_context_token: str
+    source_application: SourceApplication
+    session_id: str
+    created_at: datetime
+    status: Literal['reported', 'completed', 'incomplete', 'failed', 'no_change', 'unreported', 'running']
+    summary: str = Field(min_length=1, max_length=2000)
+    memory_updated: bool
+
+
 class ProjectAgentMemoryView(StrictModel):
     personal_space_id: str
     personal_project_id: str
@@ -77,3 +87,4 @@ class ProjectAgentMemoryView(StrictModel):
     revision: int = Field(default=0, ge=0)
     current: ProjectAgentMemoryRecord | None = None
     history: list[ProjectAgentMemoryRecord] = Field(default_factory=list)
+    work_log: list[EmployeeWorkLogRecord] = Field(default_factory=list, max_length=6)

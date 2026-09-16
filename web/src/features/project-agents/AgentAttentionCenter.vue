@@ -6,7 +6,7 @@ import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import type { PersonalProject, ProjectAgentRecord } from '@/types'
 import AgentHand from './AgentHand.vue'
-import { useAgentAttention, type AgentAttention } from './attention-store'
+import { attentionTaskHref, useAgentAttention, type AgentAttention } from './attention-store'
 const props = defineProps<{ personalSpaceId: string; projects: PersonalProject[] }>()
 const attention = useAgentAttention()
 const names = ref<Record<string, string>>({})
@@ -65,7 +65,7 @@ async function respond(item: AgentAttention) {
             <p class="attention-meta">{{ names[item.agentId] || item.agentId }} · {{ projectNames.get(item.personalProjectId) || item.personalProjectId }} · {{ t(`attention.kinds.${item.kind}`) }}</p>
             <h3>{{ item.title }}</h3><p>{{ item.detail }}</p>
             <p class="attention-action">{{ item.requestedAction }}</p>
-            <a v-if="item.taskId" :href="`/project-agents?agent=${encodeURIComponent(item.agentId)}`" @click="attention.open = false">{{ t('attention.task') }}</a>
+            <a v-if="item.taskId" :href="attentionTaskHref(item)" @click="attention.open = false">{{ t('attention.task') }}</a>
             <form @submit.prevent="respond(item)"><label :for="`attention-${item.requestId}`">{{ t('attention.response') }}</label><textarea :id="`attention-${item.requestId}`" v-model="drafts[item.requestId]" rows="2" maxlength="4096" required :disabled="Boolean(busy)" /><button type="submit" class="primary" :disabled="Boolean(busy) || !drafts[item.requestId]?.trim()"><GrowthLoading v-if="busy === item.requestId" variant="inline" :label="t('attention.sending')" /><span v-else>{{ t('attention.send') }}</span></button></form>
           </article>
           <button v-if="attention.items.length < attention.filteredTotal" type="button" :disabled="attention.loading" @click="attention.more()">{{ t('attention.more') }}</button>

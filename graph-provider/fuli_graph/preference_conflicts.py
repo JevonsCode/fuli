@@ -92,6 +92,7 @@ async def list_preference_conflicts(
     *,
     status: str | None = None,
     limit: int = 500,
+    offset: int = 0,
 ) -> list[PreferenceConflictRecord]:
     await _authorize_personal_space(
         store,
@@ -105,12 +106,14 @@ async def list_preference_conflicts(
               [:HAS_PREFERENCE_CONFLICT]->(conflict:FuliPreferenceConflict)
         WHERE $status IS NULL OR conflict.status = $status
         RETURN conflict
-        ORDER BY conflict.updated_at DESC
+        ORDER BY conflict.updated_at DESC, conflict.id ASC
+        SKIP $offset
         LIMIT $limit
         ''',
         space_id=personal_space_id,
         status=status,
         limit=min(max(limit, 1), 1000),
+        offset=max(offset, 0),
         routing_='r',
     )
     return [_record(record['conflict']) for record in records]

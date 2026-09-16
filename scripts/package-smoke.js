@@ -3,9 +3,10 @@ import { execFileSync } from 'node:child_process';
 import {
   mkdtempSync,
   readFileSync,
-  rmSync
+  rmSync,
+  writeFileSync
 } from 'node:fs';
-import { devNull, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -15,19 +16,29 @@ const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const scratch = mkdtempSync(join(tmpdir(), 'fuli-package-smoke-'));
 const packDir = scratch;
 const prefix = join(scratch, 'global');
-const cleanEnvironment = {
-  ...process.env,
-  npm_config_audit: 'false',
-  npm_config_fund: 'false',
-  npm_config_registry: 'https://registry.npmjs.org',
-  npm_config_userconfig: devNull
-};
+const cleanEnvironment = { ...process.env };
 for (const key of Object.keys(cleanEnvironment)) {
   if (/^(?:NODE_AUTH_TOKEN|NPM_TOKEN)$/i.test(key) ||
-      /^npm_config_.*(?:auth|token)/i.test(key)) {
+      /^npm_config_.*(?:auth|token)/i.test(key) ||
+      /^npm_config_(?:userconfig|globalconfig|registry|audit|fund|fetch_.*)$/i.test(key)) {
     delete cleanEnvironment[key];
   }
 }
+const userConfig = join(scratch, 'user.npmrc');
+const globalConfig = join(scratch, 'global.npmrc');
+writeFileSync(userConfig, '');
+writeFileSync(globalConfig, '');
+Object.assign(cleanEnvironment, {
+  npm_config_audit: 'false',
+  npm_config_fund: 'false',
+  npm_config_registry: 'https://registry.npmjs.org',
+  npm_config_userconfig: userConfig,
+  npm_config_globalconfig: globalConfig,
+  npm_config_fetch_timeout: '30000',
+  npm_config_fetch_retries: '2',
+  npm_config_fetch_retry_mintimeout: '1000',
+  npm_config_fetch_retry_maxtimeout: '5000'
+});
 
 try {
   runNpm(['run', 'build'], { stdio: 'inherit' });
@@ -88,6 +99,7 @@ try {
   assert.equal(Object.hasOwn(manifest.dependencies ?? {}, 'better-sqlite3'), false);
 
   const tarball = join(packDir, packed.filename);
+  process.stdout.write(`Installing ${packed.filename} into a temporary prefix…\n`);
   runNpm([
     'install',
     '--global',
@@ -138,6 +150,7 @@ function runNpm(args, options = {}) {
     cwd: packageRoot,
     env: cleanEnvironment,
     encoding: 'utf8',
+    timeout: 600_000,
     ...options
   });
 }
@@ -145,7 +158,8 @@ function runNpm(args, options = {}) {
 function run(command, args) {
   return execFileSync(command, args, {
     env: cleanEnvironment,
-    encoding: 'utf8'
+    encoding: 'utf8',
+    timeout: 30_000
   });
 }
 

@@ -2,6 +2,7 @@ import { agentProjectResolution } from './agent-knowledge-workflows.js';
 import { listAgentAttention, changeAgentAttention } from './agent-attention.js';
 import {
   getProjectAgentMemory,
+  agentMemoryView,
   checkpointProjectAgentMemory
 } from './project-agent-memory.js';
 import {
@@ -76,6 +77,14 @@ export class ProjectAgentControlPlaneApplication {
   async getProjectAgentMemory(input) {
     this.#assertSpace(input.personalSpaceId);
     return getProjectAgentMemory(this, input);
+  }
+
+  async inspectProjectAgentMemory(input) {
+    // The local owner's console can inspect its employees independently of
+    // which model clients an employee is allowed to run in. Provider access
+    // still validates the exact personal space, project and assignment.
+    this.#assertSpace(input.personalSpaceId);
+    return agentMemoryView(await this.personal.getProjectAgentMemory(input));
   }
 
   async checkpointProjectAgentMemory(input) {

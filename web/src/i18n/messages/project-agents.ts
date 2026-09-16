@@ -1,5 +1,10 @@
 export const projectAgentMessages = {
   'zh-CN': {
+    workHistory: {
+      title: '工作记录', loading: '正在读取员工工作记录…', loadFailed: '工作记录读取失败，请重试。',
+      empty: '这个项目还没有工作记录。', reported: '已报告', completed: '已完成',
+      incomplete: '未完成', failed: '失败', no_change: '无变更', unreported: '缺少总结', running: '进行中',
+    },
     aria: '项目 Agent 名录',
     title: 'Agents',
     listLabel: '空间 Agent 列表',
@@ -16,7 +21,7 @@ export const projectAgentMessages = {
     loading: '正在读取项目 Agent 列表…',
     loadError: '项目 Agent 暂时无法读取。',
     emptyTitle: '还没有项目 Agent',
-    emptyCopy: '新增一个 Agent，记录它负责什么以及可用能力。',
+    emptyCopy: '开始项目任务后，HR 可按需招募员工。也可以自行选择员工和职能。',
     noMatchTitle: '没有匹配的 Agent',
     noMatchCopy: '调整项目、状态或搜索条件。',
     stats: {
@@ -26,12 +31,21 @@ export const projectAgentMessages = {
       projects: '分布在 {count} 个项目',
       noOnlineClaim: '配置状态不等于在线或执行；在线/执行只以真实上报为准',
     },
+    team: {
+      autoGrow: '新员工自动归组',
+      unavailableMember: '成员不可用', removeUnavailable: '取消勾选以移除',
+      autoGrowMeta: '按需招募的长期员工加入项目小组；首位担任组长。可以随时调整成员或关闭。',
+      hr: 'HR', manager: '项目经理', lead: '小组长', noLead: '未设置小组长',
+      unavailable: '小组长不可用，请重新选择',
+      summary: '日常与小组长沟通，成员按职责协作。HR 与项目经理保持同级。',
+      members: '小组成员', edit: '管理小组', save: '保存小组',
+    },
     coordination: {
       aria: '{project} 项目 Agent 协作策略',
       title: '项目协作',
       loading: '正在读取项目协作策略…',
       autoReuse: '自动沿用 Agent',
-      autoReuseMeta: "新任务优先交给上一次有效的主 Agent；关闭后需手动 {'@'}Agent。",
+      autoReuseMeta: "新任务交给固定小组长；未设置时沿用上一次有效 Agent。关闭后需手动 {'@'}Agent。",
       askBeforeRecruitment: '新 Agent 先询问',
       askBeforeRecruitmentMeta: '没有可沿用 Agent 时，先等待确认再新建。',
       saving: '正在保存项目协作策略…',
@@ -326,6 +340,20 @@ export const projectAgentMessages = {
     },
   },
   'en-US': {
+    workHistory: {
+      title: 'Work history', loading: 'Loading employee work records…', loadFailed: 'Could not load work records. Try again.',
+      empty: 'No work records for this project yet.', reported: 'Reported', completed: 'Completed',
+      incomplete: 'Incomplete', failed: 'Failed', no_change: 'No changes', unreported: 'Summary missing', running: 'In progress',
+    },
+    team: {
+      hr: 'HR', manager: 'Project manager', lead: 'Team lead', noLead: 'No team lead',
+      autoGrow: 'Add new employees to the team',
+      unavailableMember: 'Unavailable member', removeUnavailable: 'Uncheck to remove',
+      autoGrowMeta: 'Recruited permanent employees join this project team; the first becomes its lead. Adjust members or turn this off at any time.',
+      unavailable: 'Team lead unavailable; choose a replacement',
+      summary: 'Work through the team lead. Members handle their specialties; HR and the project manager remain peers.',
+      members: 'Team members', edit: 'Manage team', save: 'Save team',
+    },
     aria: 'Project Agent directory',
     title: 'Agents',
     listLabel: 'Space Agent list',

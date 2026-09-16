@@ -98,7 +98,8 @@ const knowledgeConflictResolution = enumSchema([
 ]);
 const profileAspect = {
   type: ['string', 'null'],
-  enum: ['taste', 'personality', 'judgment_preference', null]
+  enum: ['taste', 'personality', 'judgment_preference', null],
+  description: 'Use "taste" for durable stylistic preference about the artifact itself, including writing voice, tone, wording, structure, formatting, and visual style; a writing or formatting style rule belongs here, not in judgment_preference. Use "judgment_preference" only for how a decision or process should be made, such as verification, risk, or sequencing rules. Use "personality" only for stable collaboration personality; an Agent-inferred personality item must stay confirmationStatus "pending" until a human confirms it.'
 };
 const sourceApplication = {
   type: ['string', 'null'],
@@ -301,11 +302,15 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'checkpoint_task_knowledge',
     title: 'LIFECYCLE · Finish knowledge review',
-    description: 'Complete exactly one end-of-task knowledge review. Use capture_candidates only for a small durable batch supported by the task; captured Agent proposals remain pending unless the payload contains valid human or authoritative-source confirmation. Use retain_nothing when the turn produced no reusable knowledge. Never store raw transcripts, guesses, temporary logs, credentials, or disposable output.',
+    description: 'Complete exactly one end-of-task knowledge review. An assigned employee must include workLog with a concise result summary and truthful status even with retain_nothing. Include agentMemory with the loaded revision and merged notes when durable role memory changed. Use capture_candidates only for a small durable batch supported by the task; captured Agent proposals remain pending unless the payload contains valid human or authoritative-source confirmation. Use retain_nothing when the turn produced no reusable knowledge. Never store raw transcripts, guesses, temporary logs, credentials, or disposable output.',
     inputSchema: objectSchema({
       taskContextToken: id,
       disposition: enumSchema(['capture_candidates', 'retain_nothing']),
       reason: boundedString(2000),
+      workLog: objectSchema({
+        status: enumSchema(['reported', 'completed', 'incomplete', 'failed', 'no_change']),
+        summary: boundedString(2000)
+      }, ['status', 'summary']),
       capture: objectSchema(captureEpisodeFields, captureEpisodeRequired),
       agentMemory: objectSchema({
         expectedRevision: integerSchema({ minimum: 0 }),
@@ -743,7 +748,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'coordinate_project_agent_task',
     title: 'WRITE · Prepare a host-executed Agent team',
-    description: 'Resolve the exact local project, let the Provider coordinator route one durable task, and assemble an isolated context bundle for every selected lead/collaborator. The result is a truthful host execution plan: Fuli persists identity, staffing, and memory scope, while the calling host must start real workers, report their concrete worker/executor evidence, and finish their lifecycle. This tool never claims that a selected Agent is online or that a worker was started.',
+    description: 'Resolve the exact local project, let the Provider coordinator route one durable task, and assemble an isolated context bundle for every selected lead/collaborator. Pass the current taskContextToken so a newly recruited lead can claim an initially unassigned task, including its blocked work. The result is a truthful host execution plan: Fuli persists identity, staffing, and memory scope, while the calling host must start real workers, report their concrete worker/executor evidence, and finish their lifecycle. This tool never claims that a selected Agent is online or that a worker was started.',
     inputSchema: projectAgentTaskCoordinateInput
   },
   {
@@ -815,12 +820,16 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'update_project_agent_coordination_policy',
     title: 'WRITE · Set project Agent continuity policy',
-    description: 'Persist the exact project switches for asking before recruitment and automatically reusing its previous effective Agent. This changes policy only and never starts a worker.',
+    description: 'Persist project collaboration switches and an optional stable team lead with members. HR and employee project managers remain peer roles and cannot be team members. Omitted team fields preserve the current team. Read policy first and send expectedUpdatedAt to prevent overwriting concurrent edits. This changes policy only and never starts a worker.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectId: id,
       askBeforeRecruitment: booleanSchema(),
-      autoReusePreviousAgent: booleanSchema()
+      autoReusePreviousAgent: booleanSchema(),
+      autoGrowTeam: booleanSchema(),
+      teamLeadAgentId: nullableStringSchema(),
+      teamMemberAgentIds: arraySchema(id, { maxItems: 32, uniqueItems: true }),
+      expectedUpdatedAt: { ...dateTime, type: ['string', 'null'] }
     }, [
       'personalSpaceId', 'personalProjectId',
       'askBeforeRecruitment', 'autoReusePreviousAgent'

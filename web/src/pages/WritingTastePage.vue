@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { getJson } from '@/api/client'
+import { readPersonalProfileGraph } from '@/api/personal-profile-graph'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay'
 import KnowledgeConfirmDialog from '@/features/knowledge/KnowledgeConfirmDialog.vue'
@@ -77,13 +78,9 @@ async function load(spaceId = store.activePersonalSpace?.id) {
       personalSpaceId: spaceId,
       limit: '500',
     })
-    const graphQuery = new URLSearchParams({
-      spaceId,
-      limit: '500',
-    })
     const [nextProfile, nextGraph] = await Promise.all([
       getJson<WritingTasteProfile>(`/api/writing-taste-profile?${tasteQuery}`, { signal: controller.signal }),
-      getJson<KnowledgeGraph>(`/api/graph?${graphQuery}`, { signal: controller.signal }),
+      readPersonalProfileGraph(spaceId, controller.signal),
     ])
     if (version !== loadVersion) return
     profile.value = isWritingTasteProfile(nextProfile) ? nextProfile : null

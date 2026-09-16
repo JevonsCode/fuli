@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { getJson, postJson } from '@/api/client'
+import { readPersonalProfileGraph } from '@/api/personal-profile-graph'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import SearchableSelect from '@/components/SearchableSelect.vue'
 import VirtualDirectoryList from '@/components/VirtualDirectoryList.vue'
@@ -229,7 +230,6 @@ async function load(spaceId = store.activePersonalSpace?.id) {
   loadController = controller
   loading.value = true
   try {
-    const query = new URLSearchParams({ spaceId, limit: '500' })
     const conflictQuery = new URLSearchParams({
       personalSpaceId: spaceId,
       limit: '500',
@@ -239,7 +239,7 @@ async function load(spaceId = store.activePersonalSpace?.id) {
       limit: '500',
     })
     const [nextGraph, nextConflictRecords, nextWritingTaste] = await Promise.all([
-      getJson<KnowledgeGraph>(`/api/graph?${query}`, { signal: controller.signal }),
+      readPersonalProfileGraph(spaceId, controller.signal),
       getJson<PreferenceConflictRecord[]>(
         `/api/preference-conflicts?${conflictQuery}`,
         { signal: controller.signal },

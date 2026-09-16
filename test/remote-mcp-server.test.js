@@ -363,9 +363,11 @@ test('remote MCP closes rejected initializations and caps active sessions', asyn
 });
 
 test('remote MCP evicts abandoned sessions after the idle TTL', async (t) => {
+  let clock = 0;
   const remote = await startRemote({
     sessionIdleTtlMs: 20,
-    sessionSweepIntervalMs: 5
+    sessionSweepIntervalMs: 5,
+    now: () => clock
   });
   t.after(() => remote.close());
   const transport = new StreamableHTTPClientTransport(new URL(`${remote.url}/mcp`), {
@@ -375,6 +377,7 @@ test('remote MCP evicts abandoned sessions after the idle TTL', async (t) => {
   await client.connect(transport);
   assert.equal(remote.stats().activeSessions, 1);
   await client.close();
+  clock = 21;
   await delay(80);
   assert.equal(remote.stats().activeSessions, 0);
 });

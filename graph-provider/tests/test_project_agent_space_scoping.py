@@ -41,6 +41,8 @@ class RecordingDriver:
 
     async def execute_query(self, query, **parameters):
         self.calls.append((query, parameters))
+        if 'AS full' in query:
+            return ([{'full': False}], None, None)
         if 'RETURN true AS payload_matches' in query:
             return ([{
                 'payload_matches': True,
@@ -899,6 +901,9 @@ class RecruitmentProvisionStore(StoreProjectAgentTaskRecruitment):
 
     async def _assignment_candidates(self, *args, **kwargs):
         return [{'agent_id': 'shared-agent-id'}]
+
+    def _project_agent_coordination_policy_id(self, space_id, project_id):
+        return f'{space_id}:{project_id}:team'
 
 
 @pytest.mark.asyncio

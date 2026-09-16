@@ -198,6 +198,15 @@ export async function handleGraphApiRequest({
     return true;
   }
   const projectAgentPath = url.pathname.match(/^\/api\/project-agents\/([^/]+)$/);
+  const agentMemoryPath = url.pathname.match(/^\/api\/project-agents\/([^/]+)\/memory$/);
+  if (agentMemoryPath && request.method === 'GET') {
+    sendJson(response, 200, await app.inspectProjectAgentMemory({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('personalProjectId'),
+      agentId: decodeURIComponent(agentMemoryPath[1]), limit: 1
+    }));
+    return true;
+  }
   if (projectAgentPath && request.method === 'GET') {
     sendJson(response, 200, await app.getProjectAgent({
       personalSpaceId: url.searchParams.get('personalSpaceId'),

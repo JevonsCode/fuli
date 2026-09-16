@@ -30,7 +30,10 @@ export function agentMemoryRecord(value) {
 export function agentMemoryView(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
     !Number.isInteger(value.revision) || value.revision < 0 ||
-    (value.history !== undefined && value.history !== null && !Array.isArray(value.history))) {
+    (value.history !== undefined && value.history !== null && !Array.isArray(value.history)) ||
+    (value.work_log !== undefined && value.work_log !== null && (!Array.isArray(value.work_log)
+      || value.work_log.some(log => !log || typeof log.summary !== 'string'
+        || typeof log.task_context_token !== 'string' || typeof log.status !== 'string')))) {
     throw invalidAgentMemoryResponse();
   }
   const current = value.current === undefined || value.current === null
@@ -46,7 +49,12 @@ export function agentMemoryView(value) {
     authority: value.authority,
     revision: value.revision ?? 0,
     current,
-    history
+    history,
+    workLog: (value.work_log ?? []).map(log => ({
+      taskContextToken: log.task_context_token, sourceApplication: log.source_application,
+      sessionId: log.session_id, createdAt: log.created_at, status: log.status,
+      summary: log.summary, memoryUpdated: log.memory_updated
+    }))
   };
 }
 

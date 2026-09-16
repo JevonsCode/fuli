@@ -287,6 +287,7 @@ test('project Agent coordinator returns isolated contexts for the Provider-selec
     '/v1/project-agent-tasks': {
       task: {
         task_id: 'task-team-1',
+        lead_agent_id: 'agent-a',
         personal_space_id: 'personal-space',
         personal_project_id: 'fuli',
         status: 'queued',
@@ -310,7 +311,8 @@ test('project Agent coordinator returns isolated contexts for the Provider-selec
       recruitment: null,
       decision: 'assigned_existing'
     },
-    '/v1/project-agents/agent-a': projectAgentProviderRecord({ agentId: 'agent-a' }),
+    '/v1/project-agents/agent-a': { ...projectAgentProviderRecord({ agentId: 'agent-a' }), memory_scope: 'reviewed_agent' },
+    '/v1/project-agents/agent-a/memory': { revision: 0, current: null, history: [] },
     '/v1/project-agents/agent-b': projectAgentProviderRecord({ agentId: 'agent-b' }),
     '/v1/collaboration-preferences': {
       personal_space_id: 'personal-space',
@@ -325,7 +327,16 @@ test('project Agent coordinator returns isolated contexts for the Provider-selec
     '/v1/search': { facts: [], entities: [] }
   });
 
+  const adoptions = [];
+  app.taskContextRegistry = {
+    context: async () => ({ personalProjectId: 'fuli', projectAgentId: null }),
+    adoptAgent: async (token, input, source) => {
+      adoptions.push({ token, input, source });
+      return { token, projectAgentId: input.agentId, memoryRevision: 0, workLogRequired: true };
+    }
+  };
   const result = await app.coordinateProjectAgentTask({
+    taskContextToken: 'fuli-task-first-team',
     projectPath: process.cwd(),
     idempotencyKey: 'coordinate-team-1',
     title: '实现宿主桥接',
@@ -338,6 +349,9 @@ test('project Agent coordinator returns isolated contexts for the Provider-selec
 
   assert.equal(result.status, 'ready_for_host_execution');
   assert.equal(result.host_execution_required, true);
+  assert.deepEqual(adoptions, [{ token: 'fuli-task-first-team',
+    input: { personalProjectId: 'fuli', taskId: 'task-team-1', agentId: 'agent-a' }, source: 'codex' }]);
+  assert.equal(result.task_context.work_log_required, true);
   assert.deepEqual(result.route.recruitments, []);
   assert.deepEqual(result.worker_plan.map((worker) => [
     worker.agent_id,

@@ -80,7 +80,7 @@ export function formatSetupPreview(plan, options) {
   return lines.join('\n');
 }
 
-export function formatSetupResult(result, plan) {
+export function formatSetupResult(result) {
   const lines = [result.status === 'ready'
     ? 'Fuli is ready.'
     : 'Fuli started, but one or more Agents are not connected.'];

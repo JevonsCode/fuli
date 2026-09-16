@@ -14,9 +14,13 @@ from .project_agent_access import authorize_project_agent
 from .provider_values import now_utc, stable_uuid
 from .project_agent_memory_models import ProjectAgentMemoryWrite
 from .store_transactions import query_store_transaction
+from .task_context_adoption import adopt_task_agent
 
 
 class StoreTaskContexts:
+    async def adopt_task_context_agent(self, actor, token, request):
+        return await adopt_task_agent(self, actor, token, request)
+
     async def begin_task_context(self, actor, request):
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
@@ -133,6 +137,8 @@ class StoreTaskContexts:
         record = await self.get_task_context(
             actor, request.personal_space_id, token, request.source_application,
         )
+        if record.get('work_log_required') and request.work_log is None:
+            raise HTTPException(422, 'Employee work summary is required before checkpointing')
         checkpoint = request.model_dump(mode='json', exclude={
             'personal_space_id', 'source_application', 'agent_memory',
         })
@@ -163,12 +169,14 @@ class StoreTaskContexts:
             WITH task, first_claim OR (
               task.fingerprint = $fingerprint AND task.disposition = $disposition
               AND task.reason = $reason
+              AND coalesce(task.work_log_json, 'null') = $work_log_json
               AND (NOT $is_prepare OR memory_claimed = $has_agent_memory)
             ) AS matches,
             CASE WHEN first_claim THEN $has_agent_memory ELSE memory_claimed END AS memory_claimed
             FOREACH (ignored IN CASE WHEN matches AND NOT task.completed THEN [1] ELSE [] END |
               SET task.fingerprint = $fingerprint, task.record_json = $record_json,
                   task.agent_memory_claimed = memory_claimed,
+                  task.work_log_json = $work_log_json,
                   task.completed = $completed, task.disposition = $disposition, task.reason = $reason
             )
             RETURN matches, task.record_json AS record_json
@@ -178,6 +186,8 @@ class StoreTaskContexts:
             completed=request.phase == 'complete',
             is_prepare=request.phase == 'prepare',
             has_agent_memory=request.agent_memory is not None,
+            work_log_json=json.dumps(request.work_log.model_dump() if request.work_log else None,
+                                     sort_keys=True, ensure_ascii=False),
             memory_checkpoint_id=memory_checkpoint_id,
         )
         if not rows or not rows[0]['matches']:
@@ -208,7 +218,7 @@ class StoreTaskContexts:
             'task_context_token': record['token'],
             'reason': f'FULI_CHECKPOINT_REQUIRED: {record["token"]} '
                 'Before finishing, call checkpoint_task_knowledge using this task_context_token '
-                'with capture_candidates or retain_nothing; include agentMemory when durable '
+                'with capture_candidates or retain_nothing and workLog (summary and truthful status); include agentMemory when durable '
                 'role context changed. Never store raw transcripts or credentials.',
         }
 

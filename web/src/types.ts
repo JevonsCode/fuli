@@ -442,6 +442,9 @@ export interface ProjectAgentCoordinationPolicy {
   personalProjectId: string
   askBeforeRecruitment: boolean
   autoReusePreviousAgent: boolean
+  autoGrowTeam?: boolean
+  teamLeadAgentId?: string | null
+  teamMemberAgentIds?: string[]
   updatedAt?: string | null
 }
 

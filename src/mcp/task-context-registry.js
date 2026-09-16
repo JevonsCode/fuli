@@ -19,7 +19,7 @@ export class TaskContextRegistry {
   }
 
   begin({ sessionId, turnId = null, personalProjectId, projectAgentId = null,
-    sourceApplication = 'other', sourceSessionId = null, memoryRevision = null }) {
+    sourceApplication = 'other', sourceSessionId = null, memoryRevision = null, workLogRequired = false }) {
     assertNonEmpty(sessionId, 'sessionId');
     const key = sessionKey(sourceApplication, sessionId);
     const previous = this.sessions.get(key) ?? null;
@@ -35,6 +35,7 @@ export class TaskContextRegistry {
       sourceApplication,
       sourceSessionId,
       memoryRevision,
+      workLogRequired,
       agentMemory: null,
       checkpoint: null
     };

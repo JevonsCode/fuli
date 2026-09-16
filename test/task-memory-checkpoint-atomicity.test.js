@@ -161,7 +161,8 @@ test('a project-bound remote server cannot checkpoint another project token', {
     name: 'checkpoint_task_knowledge',
     arguments: {
       taskContextToken: token, disposition: 'retain_nothing',
-      reason: 'A foreign project must not complete this task.'
+      reason: 'A foreign project must not complete this task.',
+      workLog: { status: 'no_change', summary: 'Synthetic foreign project attempt.' }
     }
   });
   assert.equal(rejected.isError, true, JSON.stringify(rejected));
@@ -173,7 +174,8 @@ test('a project-bound remote server cannot checkpoint another project token', {
     name: 'checkpoint_task_knowledge',
     arguments: {
       taskContextToken: token, disposition: 'retain_nothing',
-      reason: 'Another remote session must not complete this task.'
+      reason: 'Another remote session must not complete this task.',
+      workLog: { status: 'no_change', summary: 'Synthetic foreign session attempt.' }
     }
   });
   assert.equal(rejectedPeer.isError, true, JSON.stringify(rejectedPeer));
@@ -185,16 +187,27 @@ test('a project-bound remote server cannot checkpoint another project token', {
     name: 'verify_task_checkpoint', arguments: { sessionId: 'remote' }
   });
   assert.equal(stillPending.structuredContent.decision, 'block');
+  const missingWorkLog = await clientA.callTool({
+    name: 'checkpoint_task_knowledge',
+    arguments: { taskContextToken: token, disposition: 'retain_nothing',
+      reason: 'Knowledge capture is optional, but the employee report is required.' }
+  });
+  assert.equal(missingWorkLog.isError, true);
+  assert.match(missingWorkLog.structuredContent.error.message, /workLog summary/);
   const accepted = await clientA.callTool({
     name: 'checkpoint_task_knowledge',
     arguments: {
       taskContextToken: token, disposition: 'retain_nothing',
-      reason: 'The owning remote project completes its own task.'
+      reason: 'The owning remote project completes its own task.',
+      workLog: { status: 'no_change', summary: 'Verified project and session isolation.' }
     }
   });
   assert.equal(accepted.isError, undefined, JSON.stringify(accepted));
   assert.equal(accepted.structuredContent.status, 'checkpointed');
-  assert.equal((await fixture.memory()).revision, 0);
+  const memory = await fixture.memory();
+  assert.equal(memory.revision, 0);
+  assert.ok(memory.work_log.some(entry => entry.status === 'no_change'
+    && entry.summary === 'Verified project and session isolation.'));
 });
 
 test('atomic preparation rolls back a failed memory CAS and accepts a merged retry', {

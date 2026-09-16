@@ -76,7 +76,7 @@ function ratio(current: number, target: number) {
         </small>
       </div>
     </div>
-    <RouterLink v-if="ready" class="writing-taste-milestone__action" to="/preferences/writing">
+    <RouterLink class="writing-taste-milestone__action" to="/preferences/writing">
       {{ t('writingTaste.milestone.open') }}
       <span aria-hidden="true">→</span>
     </RouterLink>

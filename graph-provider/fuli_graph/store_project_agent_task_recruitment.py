@@ -26,6 +26,7 @@ from .project_agent_task_models import (
 from .provider_values import native_datetime, now_utc, stable_uuid
 from .store_project_agents import SYSTEM_HR_AGENT_ID
 from .store_transactions import query_store_transaction
+from .project_agent_team_growth import enroll_recruited_team_member
 
 
 RECRUITMENT_CLAIM_TTL = timedelta(minutes=2)
@@ -1236,6 +1237,7 @@ class StoreProjectAgentTaskRecruitment:
             include_temporary=True,
         )
         selected = next(item for item in assignment_rows if item['agent_id'] == agent_id)
+        await enroll_recruited_team_member(self, raw, profile)
         return selected
 
     async def _get_recruitment(self, personal_space_id, recruitment_id):

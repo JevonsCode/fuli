@@ -11,7 +11,7 @@ const RouterLinkStub = defineComponent({
 })
 
 describe('WritingTasteMilestone', () => {
-  it('shows collection progress without revealing the profile entry', () => {
+  it('keeps the profile entry accessible while evidence is still collecting', () => {
     const wrapper = mount(WritingTasteMilestone, {
       props: { profile: writingTasteProfile('collecting') },
       global: { stubs: { RouterLink: RouterLinkStub } },
@@ -19,7 +19,7 @@ describe('WritingTasteMilestone', () => {
 
     expect(wrapper.text()).toContain('写作偏好正在形成')
     expect(wrapper.text()).toContain('2/3 条规则')
-    expect(wrapper.find('.router-link-stub').exists()).toBe(false)
+    expect(wrapper.find('.router-link-stub').exists()).toBe(true)
   })
 
   it('reveals the profile entry only after readiness is reached', () => {

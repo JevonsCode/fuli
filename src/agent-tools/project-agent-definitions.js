@@ -154,6 +154,7 @@ export const projectAgentTaskSubmitInput = objectSchema({
   'workKind', 'routingReason'
 ]);
 export const projectAgentTaskCoordinateInput = objectSchema({
+  taskContextToken: id,
   projectPath: boundedString(4096),
   idempotencyKey,
   title: boundedString(160),

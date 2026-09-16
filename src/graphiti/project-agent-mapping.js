@@ -773,6 +773,9 @@ export function projectAgentCoordinationPolicyRecord(value = {}) {
     personalProjectId: value.personal_project_id,
     askBeforeRecruitment: value.ask_before_recruitment ?? true,
     autoReusePreviousAgent: value.auto_reuse_previous_agent ?? true,
+    autoGrowTeam: value.auto_grow_team ?? true,
+    teamLeadAgentId: value.team_lead_agent_id ?? null,
+    teamMemberAgentIds: value.team_member_agent_ids ?? [],
     updatedAt: value.updated_at ?? null
   };
 }
@@ -784,7 +787,15 @@ export function providerProjectAgentCoordinationPolicy(input) {
     ask_before_recruitment:
       input.askBeforeRecruitment ?? input.ask_before_recruitment ?? true,
     auto_reuse_previous_agent:
-      input.autoReusePreviousAgent ?? input.auto_reuse_previous_agent ?? true
+      input.autoReusePreviousAgent ?? input.auto_reuse_previous_agent ?? true,
+    ...(Object.hasOwn(input, 'autoGrowTeam') || Object.hasOwn(input, 'auto_grow_team')
+      ? { auto_grow_team: input.autoGrowTeam ?? input.auto_grow_team } : {}),
+    ...(Object.hasOwn(input, 'teamLeadAgentId') || Object.hasOwn(input, 'team_lead_agent_id')
+      ? { team_lead_agent_id: input.teamLeadAgentId ?? input.team_lead_agent_id ?? null } : {}),
+    ...(Object.hasOwn(input, 'teamMemberAgentIds') || Object.hasOwn(input, 'team_member_agent_ids')
+      ? { team_member_agent_ids: input.teamMemberAgentIds ?? input.team_member_agent_ids ?? [] } : {}),
+    ...(Object.hasOwn(input, 'expectedUpdatedAt') || Object.hasOwn(input, 'expected_updated_at')
+      ? { expected_updated_at: input.expectedUpdatedAt ?? input.expected_updated_at ?? null } : {})
   };
 }
 

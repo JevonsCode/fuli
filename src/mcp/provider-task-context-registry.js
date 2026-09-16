@@ -18,13 +18,21 @@ export class ProviderTaskContextRegistry {
       source_session_id: input.sourceSessionId ?? null,
       token: `fuli-task-${randomUUID()}`,
       turn_id: input.turnId ?? null,
-      memory_revision: input.memoryRevision ?? null
+      memory_revision: input.memoryRevision ?? null,
+      work_log_required: input.workLogRequired ?? false
     }));
   }
 
   async context(token, sourceApplication = 'other') {
     return taskRecord(await this.provider.getTaskContext(token, {
       personal_space_id: this.personalSpaceId, source_application: sourceApplication
+    }));
+  }
+
+  async adoptAgent(token, { personalProjectId, taskId, agentId }, sourceApplication = 'other') {
+    return taskRecord(await this.provider.adoptTaskContextAgent(token, {
+      personal_space_id: this.personalSpaceId, personal_project_id: personalProjectId,
+      task_id: taskId, agent_id: agentId, source_application: sourceApplication
     }));
   }
 
@@ -48,6 +56,7 @@ export class ProviderTaskContextRegistry {
       personal_space_id: this.personalSpaceId, source_application: sourceApplication,
       phase, disposition: value.disposition, reason: value.reason,
       fingerprint: value.fingerprint, capture_status: value.captureStatus ?? null,
+      ...(value.workLog ? { work_log: value.workLog } : {}),
       ...(agentMemory ? { agent_memory: agentMemory } : {})
     }));
   }
@@ -65,6 +74,7 @@ function taskRecord(value) {
     sourceSessionId: value.source_session_id ?? null,
     turnId: value.turn_id ?? null,
     memoryRevision: value.memory_revision,
+    workLogRequired: value.work_log_required ?? false,
     agentMemory: value.agent_memory ?? null,
     previousCheckpointMissing: Boolean(value.previous_checkpoint_missing),
     checkpoint: value.checkpoint ? {

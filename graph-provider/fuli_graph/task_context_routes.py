@@ -3,10 +3,14 @@ from typing import Annotated
 from fastapi import Query
 
 from .models import SourceApplication
-from .task_context_models import TaskContextBegin, TaskContextCheckpoint
+from .task_context_models import TaskContextBegin, TaskContextCheckpoint, TaskContextAdoptAgent
 
 
 def register_task_context_routes(application, store, Actor):
+    @application.put('/v1/task-contexts/{token}/agent')
+    async def adopt_agent(token: str, request: TaskContextAdoptAgent, actor: Actor):
+        return await store.adopt_task_context_agent(actor, token, request)
+
     @application.put('/v1/task-contexts')
     async def begin_context(request: TaskContextBegin, actor: Actor):
         return await store.begin_task_context(actor, request)

@@ -66,11 +66,6 @@ const projectOptions = computed(() => props.projects.map((project) => ({
   label: project.profile.name,
   meta: project.project_id,
 })))
-const executorOptions = computed(() => props.availableExecutors.map((executor) => ({
-  value: executor.executorId,
-  label: executor.displayName || executor.label || executor.executorId,
-  meta: executor.executorId,
-})))
 
 watch(() => [props.open, props.mode, props.executor, props.rule] as const, ([open]) => {
   if (!open) return

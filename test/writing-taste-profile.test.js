@@ -79,6 +79,7 @@ test('same-scope contradictions block generation while project overrides do not'
   assert.equal(conflicting.readiness.conflict_count, 1);
 
   const contextual = buildWritingTasteProfile({
+    personalProjectId: 'marketing',
     graph: graph([
       writingRule('tone-global', {
         status: 'confirmed',
@@ -100,6 +101,7 @@ test('same-scope contradictions block generation while project overrides do not'
 });
 
 test('writing classification respects explicit domains and rejects unrelated taste', () => {
+  assert.equal(isWritingTasteItem({ profile_aspect: 'taste', name: 'PC 页面避免页面级滚动', summary: '标题、工具栏固定，只允许内部区域滚动。' }), false);
   assert.equal(isWritingTasteItem({
     profile_aspect: 'taste',
     summary: 'Prefer concise product copy.'
@@ -115,29 +117,77 @@ test('writing classification respects explicit domains and rejects unrelated tas
   }), false);
 });
 
+test('one observation supporting several rules is counted once without episode IDs', () => {
+  const evidence = [{ session_id: 'one-session', source_turn_id: 'one-turn', reference_time: '2026-09-01T00:00:00Z' }];
+  const profile = buildWritingTasteProfile({ graph: graph(['a', 'b', 'c'].map(id => writingRule(id, { evidence }))) });
+  assert.equal(profile.readiness.evidence_count, 1);
+  assert.equal(profile.status, 'collecting');
+});
+
 test('an optional project view combines global writing taste with only that exact project', () => {
+  const source = graph([
+    writingRule('global', { status: 'confirmed' }),
+    writingRule('project-a', {
+      status: 'confirmed',
+      scope: 'project',
+      projectId: 'project-a'
+    }),
+    writingRule('project-b', {
+      status: 'confirmed',
+      scope: 'project',
+      projectId: 'project-b'
+    })
+  ]);
+  const globalResult = buildWritingTasteProfile({ graph: source });
   const result = buildWritingTasteProfile({
-    graph: graph([
-      writingRule('global', { status: 'confirmed' }),
-      writingRule('project-a', {
-        status: 'confirmed',
-        scope: 'project',
-        projectId: 'project-a'
-      }),
-      writingRule('project-b', {
-        status: 'confirmed',
-        scope: 'project',
-        projectId: 'project-b'
-      })
-    ]),
+    graph: source,
     personalProjectId: 'project-a'
   });
 
+  assert.deepEqual(
+    globalResult.rules.map(({ item_id: itemId }) => itemId),
+    ['global']
+  );
   assert.deepEqual(
     result.rules.map(({ item_id: itemId }) => itemId).sort(),
     ['global', 'project-a']
   );
   assert.equal(result.status, 'collecting');
+});
+
+test('maturity normalizes evidence provenance and deduplicates repeated episodes', () => {
+  const first = writingRule('direct', {
+    status: 'agent_confirmed',
+    evidence: [
+      {
+        episodeId: 'episode-1',
+        sessionId: 'session-1',
+        referenceTime: '2026-07-01T10:00:00.000Z'
+      },
+      {
+        id: 'episode-1',
+        session_id: 'session-1',
+        reference_time: '2026-07-01T10:00:00.000Z'
+      },
+      {
+        episode_id: 'episode-2',
+        session_id: 'session-2',
+        created_at: '2026-07-02T10:00:00.000Z'
+      }
+    ]
+  });
+  const result = buildWritingTasteProfile({ graph: graph([
+    first,
+    observedRule('headings', 3),
+    observedRule('examples', 5)
+  ]) });
+
+  assert.equal(result.rules.find(({ item_id: id }) => id === 'direct').evidence_count, 2);
+  assert.equal(result.rules.find(({ item_id: id }) => id === 'direct').session_count, 2);
+  assert.equal(result.readiness.evidence_count, 6);
+  assert.equal(result.readiness.session_count, 6);
+  assert.equal(result.readiness.observation_day_count, 6);
+  assert.equal(result.status, 'preview_ready');
 });
 
 function graph(nodes) {

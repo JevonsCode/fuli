@@ -16,6 +16,7 @@ from .project_agent_memory_models import (
     ProjectAgentMemoryWrite,
 )
 from .provider_values import now_utc, stable_uuid
+from .project_agent_work_log import read_employee_work_log
 from .system_hr_identity import LEGACY_HR_AGENT_ID, SYSTEM_HR_AGENT_ID, resolve_hr_alias
 
 
@@ -53,6 +54,8 @@ class StoreProjectAgentMemory:
             revision=current.revision if current else 0,
             current=current,
             history=history,
+            work_log=await read_employee_work_log(self, personal_space_id,
+                                                  personal_project_id, agent['agent_id']),
         )
 
     async def write_project_agent_memory(

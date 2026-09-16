@@ -735,6 +735,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
         status: Annotated[str | None, Query(pattern='^(ai_pending|resolved)$')] = None,
         limit: Annotated[int, Query(ge=1, le=1000)] = 500,
+        offset: Annotated[int, Query(ge=0)] = 0,
     ) -> list[PreferenceConflictRecord]:
         return await list_preference_conflicts(
             store,
@@ -742,6 +743,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             personal_space_id,
             status=status,
             limit=limit,
+            offset=offset,
         )
 
     @application.post(

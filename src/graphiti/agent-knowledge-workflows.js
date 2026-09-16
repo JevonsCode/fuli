@@ -51,7 +51,8 @@ export async function beginTaskContext(application, {
     projectAgentId: preferences.context.project_agent_id,
     sourceApplication,
     sourceSessionId,
-    memoryRevision: preferences.project_agent_context?.memory?.revision ?? null
+    memoryRevision: preferences.project_agent_context?.memory?.revision ?? null,
+    workLogRequired: Boolean(preferences.project_agent_context?.memory)
   });
   return {
     taskContextToken: task.token,
@@ -61,9 +62,10 @@ export async function beginTaskContext(application, {
     previous_checkpoint_missing: task.previousCheckpointMissing,
     ...preferences,
     task_guidance: {
+      profile_capture: 'Evaluate durable artifact taste (including writing voice, wording, structure and formatting), stable collaboration personality, and decision preferences separately. Do not default every preference to judgment_preference. Use tasteDomain: writing for writing evidence; retain exact session/turn/time provenance. Agent-inferred personality remains pending. Report actual missing evidence rather than promising automatic progress from use alone.',
       human_attention: 'When the selected Project Agent needs a human answer, decision, review or permission, use request_agent_attention with the exact current space/project/Agent IDs, a stable idempotency key and a specific requestedAction. Never raise a hand for ordinary running, queueing or automatic retries. Read list_agent_attention with status=resolved for replies; cancel obsolete requests with cancel_agent_attention. A response does not grant permission or accept task completion.',
       retrieval: 'Inspect task_knowledge_recall before asking for a stable project fact or method again. On a miss, use search_current_project_knowledge with focused action, artifact, target-system, or identifier queries; never use the full conversational request as the only query.',
-      checkpoint: 'Before finishing, call checkpoint_task_knowledge with capture_candidates or retain_nothing. When durable role context changed, include agentMemory with the loaded revision and a bounded merged summary, decisions, open threads and next actions. Do not overwrite from truncated context or store raw transcripts.'
+      checkpoint: 'Before finishing, call checkpoint_task_knowledge with capture_candidates or retain_nothing. For an assigned employee include workLog with a concise result summary and truthful status (completed, incomplete, failed, no_change, or reported), even when there is no knowledge to capture. When durable role context changed, also include agentMemory with the loaded revision and bounded merged notes. Do not overwrite from truncated context or store raw transcripts.'
     }
   };
 }
@@ -74,6 +76,7 @@ export async function checkpointTaskKnowledge(application, {
   reason,
   capture = null,
   agentMemory = null,
+  workLog = null,
   sourceApplication = 'other',
   personalProjectId = null,
   remoteSessionId = null
@@ -95,8 +98,11 @@ export async function checkpointTaskKnowledge(application, {
   } else if (capture) {
     throw validationError('retain_nothing cannot include a capture payload');
   }
+  if (task.workLogRequired && !workLog && !agentMemory) {
+    throw validationError('This employee needs a workLog summary and status before finishing; retain_nothing only skips knowledge capture.');
+  }
   const fingerprint = createHash('sha256').update(JSON.stringify(
-    canonicalCheckpoint({ disposition, reason, capture, agentMemory })
+    canonicalCheckpoint({ disposition, reason, capture, agentMemory, ...(workLog ? { workLog } : {}) })
   )).digest('hex');
   if (task.checkpoint && task.checkpoint.fingerprint !== fingerprint) {
     throw validationError(
@@ -143,7 +149,10 @@ export async function checkpointTaskKnowledge(application, {
     else memoryRequest = { expected_revision: prepared.request.expected_revision,
       memory: prepared.request.memory };
   }
-  const checkpoint = { disposition, reason, fingerprint, captureStatus: null };
+  const checkpoint = { disposition, reason, fingerprint, captureStatus: null,
+    ...(task.projectAgentId ? { workLog: workLog ?? {
+      status: agentMemory ? 'reported' : 'unreported', summary: reason
+    } } : {}) };
   const preparedTask = await application.taskContextRegistry.prepare(
     taskContextToken, checkpoint, sourceApplication, memoryRequest
   );

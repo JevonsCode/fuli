@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import AgentHand from '@/features/project-agents/AgentHand.vue'
 import { deleteJson, getJson, patchJson, postJson } from '@/api/client'
@@ -10,6 +10,7 @@ import AgentAssignmentDialog from '@/features/project-agents/AgentAssignmentDial
 import ExecutorRoutingDialog from '@/features/project-agents/ExecutorRoutingDialog.vue'
 import ProjectAgentAutomationPolicyPanel from '@/features/project-agents/ProjectAgentAutomationPolicyPanel.vue'
 import ProjectAgentDetailState from '@/features/project-agents/ProjectAgentDetailState.vue'
+import EmployeeWorkHistory from '@/features/project-agents/EmployeeWorkHistory.vue'
 import {
   agentValues,
   arrayOf,
@@ -31,7 +32,6 @@ import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type {
   ConversationSourceApplication,
-  PersonalProject,
   ProjectAgentActivityDay,
   ProjectAgentActivityResult,
   ProjectAgentActualExecution,
@@ -44,7 +44,6 @@ import type {
   ProjectAgentRecruitmentRecord,
   ProjectAgentRecord,
   ProjectAgentRoutingRule,
-  ProjectAgentRoutingDecision,
   ProjectAgentStatus,
   ProjectAgentTaskEvent,
   ProjectAgentTaskExecutionSummary,
@@ -140,6 +139,9 @@ const filterProjectIds = computed({
   },
 })
 const singleFilterProjectId = computed(() => projectFilter.value?.length === 1 ? projectFilter.value[0]! : '')
+watch([() => route.query.project, projectOptions], ([project, options]) => {
+  if (typeof project === 'string' && options.some(option => option.id === project)) projectFilter.value = [project]
+}, { immediate: true })
 const statusOptions = computed<Array<{ value: StatusFilter; label: string }>>(() => [
   { value: 'all', label: t('projectAgents.status.all') },
   { value: 'active', label: t('projectAgents.status.active') },
@@ -192,7 +194,7 @@ watch(activeSpaceId, (spaceId) => {
   detailStates.value = {}
   selectedAgentKey.value = ''
   agents.value = []
-  projectFilter.value = null
+  projectFilter.value = typeof route.query.project === 'string' && projectOptions.value.some(option => option.id === route.query.project) ? [route.query.project] : null
   error.value = ''
   if (spaceId) void loadAgents(spaceId)
   else loading.value = false
@@ -258,7 +260,7 @@ async function refreshDetails(agentId = selectedAgentKey.value, spaceId = active
   })
   const requests: Record<DetailSource, Promise<unknown>> = {
     assignments: getJson<unknown>(`/api/project-agent-assignments?${query}`),
-    tasks: getJson<unknown>(`/api/project-agent-tasks?${query}`),
+    tasks: loadScopedTasks(query),
     activity: getJson<unknown>(`/api/project-agent-activity?${activityQuery}`),
     recruitments: getJson<unknown>(`/api/project-agent-recruitments?personalSpaceId=${encodeURIComponent(spaceId)}`),
     executors: getJson<unknown>(`/api/executors?personalSpaceId=${encodeURIComponent(spaceId)}`),
@@ -281,6 +283,24 @@ async function refreshDetails(agentId = selectedAgentKey.value, spaceId = active
   }))
   if (detailRequestIsCurrent(version, agentId, spaceId)) detailLoading.value = false
 }
+async function loadScopedTasks(query: URLSearchParams) {
+  const project = typeof route.query.project === 'string' ? route.query.project : ''
+  const taskId = typeof route.query.task === 'string' ? route.query.task : ''
+  if (project) query = new URLSearchParams([...query, ['personalProjectId', project]])
+  const value = await getJson<unknown>(`/api/project-agent-tasks?${query}`)
+  if (!taskId || !project) return value
+  const tasks = taskValues(value)
+  if (!tasks.some(task => task.taskId === taskId)) {
+    const task = normalizeTask(await getJson<unknown>(`/api/project-agent-tasks/${encodeURIComponent(taskId)}?${query}`))
+    if (task && task.personalProjectId === project && task.participants.some(participant => participant.agentId === query.get('agentId'))) tasks.unshift(task)
+  }
+  return tasks
+}
+watch([() => route.query.task, detailLoading], async ([task, busy]) => {
+  if (busy || typeof task !== 'string') return
+  await nextTick()
+  document.getElementById(`task-${task}`)?.scrollIntoView?.({ block: 'nearest' })
+})
 function emptyDetailStates(status: DetailSourceStatus = 'idle'): Record<DetailSource, DetailSourceState> {
   return Object.fromEntries(detailSources.map((source) => [source, { status, error: '' }])) as Record<DetailSource, DetailSourceState>
 }
@@ -1001,6 +1021,8 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
       :personal-space-id="activeSpaceId"
       :personal-project-id="singleFilterProjectId"
       :project-name="projectName(singleFilterProjectId)"
+      :agents="agents"
+      @select="selectedAgentKey = $event"
     />
 
     <GrowthLoading v-if="pageLoading" :label="!store.state ? t('common.status.loadingConsole') : t('projectAgents.loading')" />
@@ -1061,7 +1083,7 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
 
         <div class="project-agent-detail-source" data-detail-section="tasks">
           <ProjectAgentDetailState v-bind="detailState('tasks')" :label="detailLoadingLabel('tasks')" @retry="refreshDetails">
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.tasks') }}</h4><span>{{ selectedAgent.tasks?.length ?? 0 }}</span></div><div v-if="selectedAgent.tasks?.length" class="project-agent-task-list"><article v-for="task in selectedAgent.tasks" :key="task.taskId" class="project-agent-task-card"><header><div><strong>{{ task.title }}</strong><small>{{ task.taskId }} · {{ projectName(task.personalProjectId) }}</small></div><i :class="`is-${task.status}`">{{ taskStatusLabel(task.status) }}</i></header><p v-if="task.resultSummary || task.failureReason">{{ task.resultSummary || task.failureReason }}</p><small>{{ t('projectAgents.fields.collaborators') }} · {{ task.participants.length }}</small><div v-if="task.participants.length" class="project-agent-inline-list"><span v-for="participant in task.participants" :key="`${task.taskId}:${participant.agentId}`">{{ participant.agentId }} · {{ participant.role }}</span></div><section v-if="task.executionSummary !== undefined" class="project-agent-execution-summary" :aria-label="t('projectAgents.fields.executionSummary')">
+            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.tasks') }}</h4><span>{{ selectedAgent.tasks?.length ?? 0 }}</span></div><div v-if="selectedAgent.tasks?.length" class="project-agent-task-list"><article v-for="task in selectedAgent.tasks" :id="`task-${task.taskId}`" :key="task.taskId" class="project-agent-task-card" :class="{ 'is-linked': task.taskId === route.query.task }"><header><div><strong>{{ task.title }}</strong><small>{{ task.taskId }} · {{ projectName(task.personalProjectId) }}</small></div><i :class="`is-${task.status}`">{{ taskStatusLabel(task.status) }}</i></header><p v-if="task.resultSummary || task.failureReason">{{ task.resultSummary || task.failureReason }}</p><small>{{ t('projectAgents.fields.collaborators') }} · {{ task.participants.length }}</small><div v-if="task.participants.length" class="project-agent-inline-list"><span v-for="participant in task.participants" :key="`${task.taskId}:${participant.agentId}`">{{ participant.agentId }} · {{ participant.role }}</span></div><section v-if="task.executionSummary !== undefined" class="project-agent-execution-summary" :aria-label="t('projectAgents.fields.executionSummary')">
 <div class="project-agent-section-heading">
 <h5>{{ t('projectAgents.fields.executionSummary') }}</h5>
 <span>{{ task.executionSummary.length }}</span>
@@ -1142,7 +1164,7 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
           </ProjectAgentDetailState>
         </div>
 
-        <section class="project-agent-detail-section"><h4>{{ t('projectAgents.sections.memory') }}</h4><p>{{ selectedAgent.memoryScope ?? t('projectAgents.notReported') }}</p><small>{{ t('projectAgents.detail.memoryNote') }}</small></section>
+        <EmployeeWorkHistory v-if="selectedAgent.memoryScope === 'reviewed_agent'" :personal-space-id="activeSpaceId" :agent-id="selectedAgent.agentId" :projects="employeeProjects" />
       </aside>
       <div v-else class="project-agent-detail-placeholder">{{ t('projectAgents.detail.choose') }}</div>
     </div>

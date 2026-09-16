@@ -168,6 +168,11 @@ export async function coordinateProjectAgentTask(
     };
   }
 
+  const entryTask = input.taskContextToken
+    ? await application.taskContextRegistry.context(input.taskContextToken, input.sourceApplication) : null;
+  if (entryTask && entryTask.personalProjectId !== projectId) {
+    throw new TypeError('Coordination task context belongs to another project');
+  }
   const route = await submitProjectAgentTask(application, {
     personalSpaceId: application.config.personal.spaceId,
     personalProjectId: projectId,
@@ -213,6 +218,15 @@ export async function coordinateProjectAgentTask(
   const contextsReady = workerPlan.every(({ context_status: status }) => status === 'ready');
   const hostExecutionRequired = route.task.status === 'queued' &&
     workerPlan.length > 0 && contextsReady;
+  let adoptedTask = null;
+  if (entryTask && !entryTask.projectAgentId && contextsReady
+      && ['queued', 'running', 'paused', 'blocked', 'awaiting_recruitment'].includes(route.task.status)
+      && workerPlan.find(worker => worker.agent_id === route.task.leadAgentId)
+        ?.context?.agent?.memoryScope === 'reviewed_agent') {
+    adoptedTask = await application.taskContextRegistry.adoptAgent(input.taskContextToken, {
+      personalProjectId: projectId, taskId: route.task.taskId, agentId: route.task.leadAgentId
+    }, input.sourceApplication);
+  }
 
   return {
     status: coordinatedTaskStatus(
@@ -224,6 +238,10 @@ export async function coordinateProjectAgentTask(
     personal_project_id: projectId,
     project_resolution: projectResolution,
     route,
+    ...(adoptedTask ? { task_context: {
+      task_context_token: adoptedTask.token, project_agent_id: adoptedTask.projectAgentId,
+      memory_revision: adoptedTask.memoryRevision, work_log_required: adoptedTask.workLogRequired
+    } } : {}),
     host_execution_required: hostExecutionRequired,
     host_execution_policy: {
       fuli_is_control_plane_only: true,

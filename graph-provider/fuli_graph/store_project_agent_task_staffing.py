@@ -62,6 +62,18 @@ class StoreProjectAgentTaskStaffing:
             return [], rows, 'manual_agent_selection', [
                 'project policy requires an explicit @Agent selection',
             ]
+        team_lead = getattr(policy, 'team_lead_agent_id', None)
+        if team_lead:
+            lead = next((row for row in rows if row['agent_id'] == team_lead), None)
+            if lead is None:
+                return [], rows, 'agent_unavailable', ['configured team lead is unavailable; select or replace the lead']
+            member_ids = set(getattr(policy, 'team_member_agent_ids', []))
+            members = [row for row in rows if row['agent_id'] in member_ids]
+            return [lead], [lead, *members], 'project_team_lead', [
+                'project team lead is the stable conversation owner',
+                f'{len(members)} active team member(s) available for explicit workstreams',
+                'HR and project manager remain peer roles',
+            ]
         normalized_work_kind = request.work_kind.casefold()
         required = {item.casefold() for item in request.required_capabilities}
         eligible = [row for row in rows if required.issubset({
@@ -506,16 +518,19 @@ class StoreProjectAgentTaskStaffing:
         request,
         candidates,
         participants,
+        *,
+        team_only=False,
     ):
         capacity = len(request.parallel_plan.workstream_boundaries) - len(participants)
         if capacity <= 0:
             return []
         pool = list(candidates)
         known_ids = {item['agent_id'] for item in pool}
-        for row in await self._assignment_candidates(
+        assignments = [] if team_only else await self._assignment_candidates(
             request.personal_space_id,
             request.personal_project_id,
-        ):
+        )
+        for row in assignments:
             if row['agent_id'] not in known_ids:
                 pool.append(row)
                 known_ids.add(row['agent_id'])

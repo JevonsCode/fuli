@@ -97,6 +97,7 @@ test('Codex Stop adapter closes an unfinished checkpoint after one continuation'
       taskContextToken: 'fuli-task-synthetic-token',
       disposition: 'retain_nothing',
       reason: 'Codex Stop hook fallback after one checkpoint continuation.',
+      workLog: { status: 'incomplete', summary: 'The host stopped before the employee submitted a work summary. Review the prior task before resuming.' },
       sourceApplication: 'codex',
       sourceSessionId: 'codex-session'
     }

@@ -39,11 +39,15 @@ export function hookAdditionalContextToolResult(
   {
     hookEventName,
     label,
-    limitBytes = RESULT_LIMIT_BYTES
+    limitBytes = RESULT_LIMIT_BYTES,
+    itemLimit = RESULT_ITEM_LIMIT
   }
 ) {
-  const result = successToolResult(value, { limitBytes });
-  const additionalContext = `${label}\n${JSON.stringify(result.structuredContent)}`;
+  const result = successToolResult(value, { limitBytes, itemLimit });
+  const warning = result.structuredContent.truncated
+    ? '\nContext delivery is incomplete. Do not claim full employee recovery or merge truncated memory. Read get_project_agent_memory for the exact role and project before continuing its work; retrieve omitted preference details before applying them.'
+    : '';
+  const additionalContext = `${label}${warning}\n${JSON.stringify(result.structuredContent)}`;
   return {
     ...result,
     content: [{

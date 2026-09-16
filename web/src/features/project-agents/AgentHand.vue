@@ -5,7 +5,7 @@ import { useAgentAttention } from './attention-store'
 const props = defineProps<{ agentId?: string; passive?: boolean }>()
 const attention = useAgentAttention()
 const count = computed(() => props.agentId ? attention.counts[props.agentId] ?? 0 : attention.total)
-function activate(event: Event) { if (!props.passive) { event.stopPropagation(); attention.show(props.agentId) } }
+function activate(event: Event) { if (!props.passive) { event.preventDefault(); event.stopPropagation(); attention.show(props.agentId) } }
 </script>
 
 <template>

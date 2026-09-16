@@ -53,8 +53,9 @@ export function buildWritingTasteProfile({
   for (const rule of decoratedRules) {
     for (const evidence of rule.evidence) {
       evidenceKeys.add(evidenceKey(rule.item_id, evidence));
-      if (evidence.session_id) sessionIds.add(evidence.session_id);
-      const day = dateKey(evidence.reference_time ?? evidence.created_at);
+      const sessionId = evidenceSessionId(evidence);
+      if (sessionId) sessionIds.add(sessionId);
+      const day = dateKey(evidenceReferenceTime(evidence));
       if (day) observationDays.add(day);
     }
     if (rule.evidence_status === 'Confirmed') {
@@ -174,6 +175,9 @@ export function isWritingTasteItem(value) {
     ...stringValues(attributes.searchTerms),
     ...stringValues(attributes.search_terms)
   ].filter(Boolean).join(' ');
+  // UI geometry mentioning a heading is visual taste, not writing evidence.
+  if (/(?:页面|界面|图谱|画布|导航|工具栏|卡片|布局|滚动|按钮|控件)/u.test(searchable)
+    && !/(?:文案|写作|措辞|语气|说明文字|copywriting|prose|wording)/iu.test(searchable)) return false;
   return writingTermMatch(searchable);
 }
 
@@ -225,8 +229,9 @@ function normalizeRule(value, itemKind, names) {
       : null,
     contexts,
     evidence,
-    evidence_count: evidence.length + (STATUS_LABELS[confirmationStatus] === 'Confirmed' ? 1 : 0),
-    session_count: new Set(evidence.map(({ session_id: sessionId }) => sessionId).filter(Boolean)).size,
+    evidence_count: new Set(evidence.map((item) => evidenceKey(value.id, item))).size
+      + (STATUS_LABELS[confirmationStatus] === 'Confirmed' ? 1 : 0),
+    session_count: new Set(evidence.map(evidenceSessionId).filter(Boolean)).size,
     confirmed_at: basis.confirmed_at ?? null,
     updated_at: latestRuleTime(value, evidence),
     origin_quadrant: value.origin_quadrant ?? 'known_known'
@@ -301,7 +306,7 @@ function writingTasteConflicts(rules, conflictRecords) {
 }
 
 function writingRuleApplies(rule, personalProjectId) {
-  if (!personalProjectId) return true;
+  if (!personalProjectId) return rule.preference_scope !== 'project';
   return rule.preference_scope !== 'project'
     || rule.preference_project_id === personalProjectId;
 }
@@ -417,7 +422,12 @@ function latestRuleTime(value, evidence) {
   const revisionTimes = Array.isArray(value.revisions)
     ? value.revisions.map((revision) => revision?.created_at).filter(Boolean)
     : [];
-  const evidenceTimes = evidence.flatMap((item) => [item.reference_time, item.created_at]).filter(Boolean);
+  const evidenceTimes = evidence.flatMap((item) => [
+    item.reference_time,
+    item.referenceTime,
+    item.created_at,
+    item.createdAt
+  ]).filter(Boolean);
   const values = [
     ...revisionTimes,
     value.last_human_changed_at,
@@ -429,16 +439,33 @@ function latestRuleTime(value, evidence) {
 }
 
 function evidenceKey(itemId, evidence) {
-  return String(
-    evidence.id
-      ?? [
-        evidence.session_id,
-        evidence.source_turn_id,
-        evidence.reference_time,
-        evidence.source_description,
-        itemId
-      ].filter(Boolean).join(':')
-  );
+  const identity = evidenceValue(evidence, ['id', 'episode_id', 'episodeId']);
+  if (identity) return String(identity);
+  const provenance = [evidenceSessionId(evidence),
+    evidenceValue(evidence, ['source_turn_id', 'sourceTurnId']),
+    evidenceReferenceTime(evidence),
+    evidenceValue(evidence, ['source_description', 'sourceDescription'])].filter(Boolean);
+  return provenance.length ? JSON.stringify(provenance) : `unattributed:${itemId}`;
+}
+
+function evidenceSessionId(evidence) {
+  return evidenceValue(evidence, ['session_id', 'sessionId']);
+}
+
+function evidenceReferenceTime(evidence) {
+  return evidenceValue(evidence, [
+    'reference_time', 'referenceTime', 'created_at', 'createdAt'
+  ]);
+}
+
+function evidenceValue(evidence, keys) {
+  const source = objectValue(evidence);
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return null;
 }
 
 function writingTermMatch(value) {

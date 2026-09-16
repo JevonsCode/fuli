@@ -45,6 +45,7 @@ export const useAgentAttention = defineStore('agent-attention', () => {
     if (spaceId.value === id) return
     version++; spaceId.value = id; counts.value = {}; items.value = []; total.value = 0
     filteredTotal.value = 0; error.value = ''; open.value = false; loading.value = false
+    agentId.value = ''
     if (id) void refresh()
   }
   function show(id = '') {
@@ -67,6 +68,7 @@ export const useAgentAttention = defineStore('agent-attention', () => {
   }
   async function respond(item: AgentAttention, response: string) {
     const originalSpace = spaceId.value
+    if (!originalSpace || item.personalSpaceId !== originalSpace) throw new Error('This request belongs to a different space. Reopen it before replying.')
     await postJson('/api/agent-attention/respond', {
       personalSpaceId: originalSpace, personalProjectId: item.personalProjectId,
       requestId: item.requestId, expectedRevision: item.revision, response,
@@ -75,3 +77,9 @@ export const useAgentAttention = defineStore('agent-attention', () => {
   }
   return { spaceId, counts, total, items, filteredTotal, agentId, open, loading, error, setSpace, show, refresh, more, respond }
 })
+
+export function attentionTaskHref(item: AgentAttention) {
+  const query = new URLSearchParams({ agent: item.agentId, project: item.personalProjectId })
+  if (item.taskId) query.set('task', item.taskId)
+  return `/project-agents?${query}${item.taskId ? `#task-${encodeURIComponent(item.taskId)}` : ''}`
+}
