@@ -149,3 +149,31 @@ test('custom MCP validation reports bounded issue paths without argument values'
   assert.doesNotMatch(JSON.stringify(result), /secret-value/);
   await server.close();
 });
+
+test('default MCP surfaces omit cleanup_test_project_agents unless enabled', async () => {
+  const disabled = createMcpServer({}, {
+    env: {}, registerResources: false
+  });
+  const enabled = createMcpServer({}, {
+    env: { FULI_ENABLE_TEST_TOOLS: '1' }, registerResources: false
+  });
+  const disabledClient = new Client({ name: 'test-tools-off', version: '1.0.0' });
+  const enabledClient = new Client({ name: 'test-tools-on', version: '1.0.0' });
+  const [disabledClientTransport, disabledServerTransport] = InMemoryTransport.createLinkedPair();
+  const [enabledClientTransport, enabledServerTransport] = InMemoryTransport.createLinkedPair();
+  try {
+    await disabled.connect(disabledServerTransport);
+    await disabledClient.connect(disabledClientTransport);
+    await enabled.connect(enabledServerTransport);
+    await enabledClient.connect(enabledClientTransport);
+    const disabledNames = (await disabledClient.listTools()).tools.map(({ name }) => name);
+    const enabledNames = (await enabledClient.listTools()).tools.map(({ name }) => name);
+    assert.equal(disabledNames.includes('cleanup_test_project_agents'), false);
+    assert.equal(enabledNames.includes('cleanup_test_project_agents'), true);
+  } finally {
+    await disabledClient.close();
+    await enabledClient.close();
+    await disabled.close();
+    await enabled.close();
+  }
+});

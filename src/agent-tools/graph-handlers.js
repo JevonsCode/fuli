@@ -1,4 +1,5 @@
 import { ApplicationError } from '../app/application-error.js';
+import { assertTestToolsEnabled } from '../mcp/test-tools.js';
 import { agentInterfaceCatalog } from './interface-catalog.js';
 
 const HANDLERS = Object.freeze({
@@ -107,7 +108,10 @@ const HANDLERS = Object.freeze({
   list_project_agents: (app, input) => app.listCurrentProjectAgents(input),
   get_project_agent: (app, input) => app.getProjectAgent(input),
   delete_project_agent: (app, input) => app.deleteProjectAgent(input),
-  cleanup_test_project_agents: (app, input) => app.cleanupProjectAgentTestRoles(input),
+  cleanup_test_project_agents: (app, input) => {
+    assertTestToolsEnabled();
+    return app.cleanupProjectAgentTestRoles(input);
+  },
   create_project_agent_assignment: (app, input) =>
     app.createProjectAgentAssignment(input),
   list_project_agent_assignments: (app, input) =>

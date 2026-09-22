@@ -710,7 +710,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'cleanup_test_project_agents',
     title: 'WRITE · Archive test Agent roles',
-    description: 'Archive only test-marked Project Agents for one explicit test source through the Provider. Durable production identities are not touched; the result reports the number archived for cleanup verification.',
+    description: 'TEST-ONLY. Archive only test-marked Project Agents for one explicit test source through the Provider. Disabled on default MCP/HTTP surfaces unless FULI_ENABLE_TEST_TOOLS=1. Durable production identities are not touched; the result reports the number archived for cleanup verification.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       testSource: boundedString(256)

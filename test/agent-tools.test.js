@@ -461,7 +461,10 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     getGraphitiStatus: async () => calls.push(['status'])
   };
 
-  for (const name of NAMES) await callAgentTool(app, name, { probe: name });
+  const previousTestTools = process.env.FULI_ENABLE_TEST_TOOLS;
+  process.env.FULI_ENABLE_TEST_TOOLS = '1';
+  try {
+    for (const name of NAMES) await callAgentTool(app, name, { probe: name });
   assert.deepEqual(calls.map(([name]) => name), [
     'request-attention', 'list-attention', 'cancel-attention',
     'agent-tasks', 'preference-conflicts',
@@ -510,6 +513,10 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'personal-review', 'review-draft',
     'subscribe', 'unsubscribe', 'queue', 'review', 'status'
   ]);
+  } finally {
+    if (previousTestTools === undefined) delete process.env.FULI_ENABLE_TEST_TOOLS;
+    else process.env.FULI_ENABLE_TEST_TOOLS = previousTestTools;
+  }
 });
 
 test('Agent surface rejects removed SQLite and unknown tools', () => {

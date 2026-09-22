@@ -128,7 +128,8 @@ const DESTRUCTIVE_TOOLS = new Set([
   'review_project_proposal',
   'review_project_relation',
   'review_personal_draft',
-  'unsubscribe_public_project'
+  'unsubscribe_public_project',
+  'cleanup_test_project_agents'
 ]);
 
 export function annotationsFor(name) {
