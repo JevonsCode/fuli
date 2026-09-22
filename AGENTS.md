@@ -1,4 +1,4 @@
-# Compound Interest Engineering Rules
+# Fuli Engineering Rules
 
 ## Product Boundaries
 

@@ -13,6 +13,7 @@ import { createCommonKnowledgePreviewTokens } from './common-knowledge-preview-t
 import { auditLifecycleTool } from './lifecycle-audit.js';
 import { registerFuliContextResources } from './context-resources.js';
 import { annotationsFor } from './tool-annotations.js';
+import { isTestOnlyToolName, testToolsEnabled } from './test-tools.js';
 import {
   errorToolResult,
   hookAdditionalContextToolResult,
@@ -107,7 +108,8 @@ export function createMcpServer(
     authoritativeSourceApplication,
     withRuntimeLease,
     toolNames,
-    prepareToolInput
+    prepareToolInput,
+    env
   );
   for (const tool of tools.values()) registerTool(server, tool);
   if (!tools.size) registerEmptyToolList(server);
@@ -130,7 +132,8 @@ function createToolMap(
   sourceApplication,
   withRuntimeLease,
   toolNames,
-  prepareToolInput
+  prepareToolInput,
+  env = process.env
 ) {
   const commonKnowledgePreviews = createCommonKnowledgePreviewTokens();
   if (toolNames !== null && !Array.isArray(toolNames)) {
@@ -147,8 +150,10 @@ function createToolMap(
       );
     }
   }
+  const includeTestTools = testToolsEnabled(env);
   return new Map(definitions
     .filter((definition) => !allowedTools || allowedTools.has(definition.name))
+    .filter((definition) => includeTestTools || !isTestOnlyToolName(definition.name))
     .map((definition) => [definition.name, {
     definition,
     schema: jsonSchemaToZod(definition.inputSchema),

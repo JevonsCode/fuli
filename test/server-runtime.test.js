@@ -129,10 +129,18 @@ test('Web server exposes the Graphiti facade and graph console', async () => {
       agentId: 'activity-agent',
       reason: 'retired'
     });
-    const cleanup = await requestJson(
-      `${url}/api/project-agents/test-cleanup?personalSpaceId=personal-1&testSource=e2e-1`,
-      { method: 'POST', body: {} }
-    );
+    const previousTestTools = process.env.FULI_ENABLE_TEST_TOOLS;
+    process.env.FULI_ENABLE_TEST_TOOLS = '1';
+    let cleanup;
+    try {
+      cleanup = await requestJson(
+        `${url}/api/project-agents/test-cleanup?personalSpaceId=personal-1&testSource=e2e-1`,
+        { method: 'POST', body: {} }
+      );
+    } finally {
+      if (previousTestTools === undefined) delete process.env.FULI_ENABLE_TEST_TOOLS;
+      else process.env.FULI_ENABLE_TEST_TOOLS = previousTestTools;
+    }
     assert.equal(cleanup.status, 200);
     assert.deepEqual(calls.find(([name]) => name === 'project-agent-test-cleanup')[1], {
       personalSpaceId: 'personal-1',
