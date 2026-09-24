@@ -563,6 +563,10 @@ Project Agent identities remain control-plane records rather than one resident p
 Roles now keep versioned, project-private working memory in the same Neo4j Provider. Task entry
 restores one owner across Codex, Claude Code and Cursor; lifecycle checkpoints survive separate
 MCP processes. See [role memory, host hooks and acceptance boundaries](docs/project-agent-memory.md).
+Supported Codex and Claude Code hooks also journal visible conversations, with 7-day inactivity
+archival and bounded recovery. Specialist loans and artifact verification share the same Provider.
+See [conversation continuity and collaboration](docs/agent-conversations-and-collaboration.md)
+for client coverage, model capability configuration and acceptance limits.
 Physical executors share leases by executor ID. Fuli starts and stops only executors with an explicitly
 injected managed lifecycle adapter; host-owned external executors such as Codex are never started or
 killed implicitly. The current minimum-memory combination is:

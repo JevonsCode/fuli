@@ -1,7 +1,20 @@
 import { ApplicationError } from '../app/application-error.js';
+import { assertTestToolsEnabled } from '../app/test-tools.js';
+import { activeTestToolsEnabled } from '../app/agent-request-context.js';
 import { agentInterfaceCatalog } from './interface-catalog.js';
 
 const HANDLERS = Object.freeze({
+  get_agent_quality_gate: (app, input) => app.agentVerification('query', input),
+  record_agent_verification: (app, input) => app.agentVerification('record', input),
+  plan_agent_collaboration: (app, input) => app.planAgentCollaboration(input),
+  request_agent_loan: (app, input) => app.agentLoan('request', input),
+  decide_agent_loan: (app, input) => app.agentLoan('decide', input),
+  list_agent_loans: (app, input) => app.agentLoan('query', input),
+  list_agent_conversations: (app, input) => app.queryAgentConversations({ ...input, mode: 'list' }),
+  read_agent_conversation: (app, input) => app.queryAgentConversations({ ...input, mode: 'events' }),
+  resume_agent_conversation: (app, input) => app.resumeAgentConversation(input),
+  get_agent_conversation_policy: (app, input) => app.queryAgentConversations({ ...input, mode: 'policy' }),
+  update_agent_conversation_policy: (app, input) => app.updateAgentConversationPolicy(input),
   list_project_agent_tasks: (app, input) => app.listProjectAgentTasks(input),
   request_agent_attention: (app, input) => app.requestAgentAttention(input),
   list_agent_attention: (app, input) => app.listAgentAttention(input),
@@ -107,7 +120,10 @@ const HANDLERS = Object.freeze({
   list_project_agents: (app, input) => app.listCurrentProjectAgents(input),
   get_project_agent: (app, input) => app.getProjectAgent(input),
   delete_project_agent: (app, input) => app.deleteProjectAgent(input),
-  cleanup_test_project_agents: (app, input) => app.cleanupProjectAgentTestRoles(input),
+  cleanup_test_project_agents: (app, input) => {
+    assertTestToolsEnabled({ FULI_ENABLE_TEST_TOOLS: activeTestToolsEnabled() ? '1' : '0' });
+    return app.cleanupProjectAgentTestRoles(input);
+  },
   create_project_agent_assignment: (app, input) =>
     app.createProjectAgentAssignment(input),
   list_project_agent_assignments: (app, input) =>

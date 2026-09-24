@@ -1162,15 +1162,31 @@ async def test_explicit_role_and_active_owner_do_not_silently_switch_identity():
 
 @pytest.mark.asyncio
 async def test_successful_history_precedes_a_more_recent_failed_lead():
+    from neo4j import AsyncGraphDatabase
     from test_project_agent_activity_atomicity_neo4j import seed_executor
 
-    async with provider_client(fixture_settings()) as (client, _):
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
         scope = await create_scope(client)
         await seed_executor(client, scope['personal_space_id'])
         for agent, outcome in [('successful-owner', 'completed'), ('recent-failure', 'failed')]:
             await assign_role(client, scope, agent, ['coding', 'review'])
             task = await submit_task(client, scope, lead_agent_id=agent,
                                      idempotency_key=f'synthetic-outcome-{agent}')
+            # This ranking test uses pre-verification task history. Simulate the
+            # missing property in migrated records, never a public submit opt-out.
+            async with AsyncGraphDatabase.driver(settings.neo4j_uri,
+                    auth=(settings.neo4j_user, settings.neo4j_password)) as driver:
+                rows, _, _ = await driver.execute_query('''
+                    MATCH (task:FuliProjectAgentTask {
+                        task_id: $task_id, personal_space_id: $personal_space_id,
+                        personal_project_id: $personal_project_id})
+                    WITH task, task.verification_required AS newly_required
+                    REMOVE task.verification_required
+                    RETURN task.task_id AS task_id, newly_required
+                ''', task_id=task['task_id'], **scope, database_=settings.neo4j_database)
+                assert [row['task_id'] for row in rows] == [task['task_id']]
+                assert rows[0]['newly_required'] is True
             for status in ['running', outcome]:
                 activity = await client.post(
                     f'/v1/project-agent-tasks/{task["task_id"]}/events', json={

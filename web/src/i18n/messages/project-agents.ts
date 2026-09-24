@@ -1,5 +1,21 @@
 export const projectAgentMessages = {
   'zh-CN': {
+    advanced: '高级设置与诊断',
+    taskDetails: '协作与执行详情',
+    profileDetails: 'Agent 资料',
+    conversations: {
+      title: '对话与记忆', hint: '跨客户端继续工作时，按需恢复相关上下文。',
+      loading: '正在读取对话记录…', loadFailed: '对话记录读取失败，请重试。',
+      empty: '这个项目还没有保存的对话。', untitled: '未命名对话', archived: '已归档', recent: '近期',
+      rawRetained: '原始记录仍保留，归档不会删除对话。', loadingMessages: '正在读取对话原文…',
+      more: '读取后续消息', noMessages: '尚无可读取的原始消息。',
+      settings: '记忆设置', loadingPolicy: '正在读取记忆设置…', capture: '保存这个 Agent 在本项目的对话',
+      idleDays: '不活跃多少天后归档', budget: '恢复上下文预算',
+      budgetHint: '默认 7 天后归档。预算越小，自动恢复越精简；需要时再读取原文。预算是保守的内容上限，不等于实际计费 token。',
+      invalidPolicy: '归档天数须为 1–365 的整数，预算须为 512–16000 的整数。',
+      save: '保存记忆设置', saving: '正在保存记忆设置…', saved: '记忆设置已保存。',
+      user: '用户', assistant: 'Agent', tool: '工具',
+    },
     workHistory: {
       title: '工作记录', loading: '正在读取员工工作记录…', loadFailed: '工作记录读取失败，请重试。',
       empty: '这个项目还没有工作记录。', reported: '已报告', completed: '已完成',
@@ -340,6 +356,22 @@ export const projectAgentMessages = {
     },
   },
   'en-US': {
+    advanced: 'Advanced settings and diagnostics',
+    taskDetails: 'Collaboration and execution details',
+    profileDetails: 'Agent profile',
+    conversations: {
+      title: 'Conversations and memory', hint: 'Resume across clients with relevant context loaded on demand.',
+      loading: 'Loading conversations…', loadFailed: 'Could not load conversations. Try again.',
+      empty: 'No saved conversations for this project yet.', untitled: 'Untitled conversation', archived: 'Archived', recent: 'Recent',
+      rawRetained: 'Original records are retained. Archiving does not delete conversations.', loadingMessages: 'Loading original messages…',
+      more: 'Load next messages', noMessages: 'No original messages available yet.',
+      settings: 'Memory settings', loadingPolicy: 'Loading memory settings…', capture: 'Save this Agent’s conversations in this project',
+      idleDays: 'Archive after inactive days', budget: 'Context recovery budget',
+      budgetHint: 'The default is 7 inactive days. Smaller budgets restore less context; originals remain available on demand. This is a conservative content limit, not billed tokens.',
+      invalidPolicy: 'Use an integer from 1–365 for days and 512–16000 for the budget.',
+      save: 'Save memory settings', saving: 'Saving memory settings…', saved: 'Memory settings saved.',
+      user: 'User', assistant: 'Agent', tool: 'Tool',
+    },
     workHistory: {
       title: 'Work history', loading: 'Loading employee work records…', loadFailed: 'Could not load work records. Try again.',
       empty: 'No work records for this project yet.', reported: 'Reported', completed: 'Completed',

@@ -58,6 +58,23 @@ export class GraphitiProviderClient {
     this.requestTimeoutMs = requestTimeoutMs;
   }
 
+  agentVerification(operation, input) {
+    if (!['query', 'record'].includes(operation)) throw new TypeError('Unknown verification operation');
+    return this.#request(`/v1/agent-verification/${operation}`, { method: 'POST', body: input });
+  }
+  agentLoan(operation, input) {
+    if (!['query', 'request', 'decide'].includes(operation)) throw new TypeError('Unknown loan operation');
+    return this.#request(`/v1/agent-loans/${operation}`, { method: 'POST', body: input });
+  }
+  conversation(operation, input) {
+    if (!['query', 'append', 'resume', 'policy', 'boundary'].includes(operation)) throw new TypeError('Unknown conversation operation');
+    return this.#request(`/v1/agent-conversations/${operation}`, {
+      method: operation === 'policy' ? 'PUT' : 'POST', body: input
+    });
+  }
+  currentTaskContext(input) {
+    return this.#request(`/v1/task-context-sessions/current?${new URLSearchParams(input)}`);
+  }
   health() { return this.#request('/health', { authenticated: false }); }
   listSpaces() { return this.#request('/v1/spaces'); }
   createSpace(input) { return this.#request('/v1/spaces', { method: 'POST', body: input }); }

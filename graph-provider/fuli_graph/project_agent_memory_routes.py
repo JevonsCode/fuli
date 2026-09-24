@@ -12,11 +12,13 @@ from .project_agent_memory_models import (
 from .project_agent_context_models import (
     ProjectAgentContextRequest, ProjectAgentContextResolution,
 )
+from .agent_conversation_routes import register_agent_conversation_routes
 from .task_context_routes import register_task_context_routes
 
 
 def register_project_agent_memory_routes(application, store, Actor):
     register_task_context_routes(application, store, Actor)
+    register_agent_conversation_routes(application, store, Actor)
     @application.post(
         '/v1/project-agent-context/resolve', response_model=ProjectAgentContextResolution,
     )

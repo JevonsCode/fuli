@@ -610,6 +610,15 @@ test('project Agent profiles expose an optional occupation emoji independently o
   );
 });
 
+test('all task submission mappings require verification and MCP cannot opt out', () => {
+  assert.equal(providerProjectAgentTaskSubmit({}).verification_required, true);
+  assert.equal(providerProjectAgentTaskSubmit({ verificationRequired: false }).verification_required, false);
+  assert.equal(providerProjectAgentTaskSubmit({ verification_required: false }).verification_required, false);
+  assert.equal(projectAgentTaskSubmitInput.properties.verificationRequired, undefined);
+  assert.equal(projectAgentTaskSubmitInput.properties.verification_required, undefined);
+  assert.equal(projectAgentTaskSubmitInput.additionalProperties, false);
+});
+
 test('task executor hints stay separate from Agent staffing capabilities', () => {
   assert.equal(
     projectAgentTaskSubmitInput.properties.executorCapabilityHints.type,
@@ -634,6 +643,7 @@ test('task executor hints stay separate from Agent staffing capabilities', () =>
     work_kind: 'hotel-planning',
     required_capabilities: ['hotel planning', 'research'],
     executor_capability_hints: ['testing'],
+    verification_required: true,
     duration: 'ongoing',
     staffing_intent: 'reuse_preferred',
     lead_agent_id: null,

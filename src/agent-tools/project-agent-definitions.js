@@ -4,6 +4,7 @@ import {
   enumSchema,
   integerSchema,
   nullableStringSchema,
+  numberSchema,
   objectSchema,
   stringSchema
 } from './schema.js';
@@ -54,6 +55,18 @@ export const projectAgentProfile = objectSchema({
   name: boundedString(160),
   displayName: boundedString(160),
   responsibility: boundedString(4096),
+  character: {
+    ...objectSchema({
+      judgment: { type: 'string', maxLength: 2048, default: '' },
+      taste: { type: 'string', maxLength: 2048, default: '' },
+      personality: { type: 'string', maxLength: 2048, default: '' }
+    }),
+    description: 'HR-configured judgment, taste and personality based on role responsibilities. These are intended working traits, not evidence of observed growth or performance.'
+  },
+  expectations: {
+    type: 'string', maxLength: 4096, default: '',
+    description: 'User expectations for this Agent. Preserve the user’s wording and leave empty when none were provided.'
+  },
   occupationEmoji: { ...nullableStringSchema(), minLength: 1, maxLength: 32 },
   agentType: enumSchema(['coordinator', 'durable', 'hr', 'temporary']),
   workKinds: arraySchema(boundedString(512), { maxItems: 32 }),
@@ -156,6 +169,10 @@ export const projectAgentTaskSubmitInput = objectSchema({
 export const projectAgentTaskCoordinateInput = objectSchema({
   taskContextToken: id,
   projectPath: boundedString(4096),
+  personalProjectId: {
+    ...nullableStringSchema(), minLength: 1, maxLength: 128,
+    description: 'Explicit existing project ID when the directory has no exact match. A conflicting exact path match is rejected.'
+  },
   idempotencyKey,
   title: boundedString(160),
   objective: boundedString(4096),
@@ -181,6 +198,7 @@ export const projectAgentTaskCoordinateInput = objectSchema({
   'routingReason', 'contextQueries'
 ]);
 export const projectAgentTaskActivityInput = objectSchema({
+  artifactRevision: { ...stringSchema(), minLength: 1, maxLength: 160 },
   personalSpaceId: id,
   personalProjectId: id,
   taskId: id,
@@ -235,6 +253,8 @@ const executorActualModelStrategySource = enumSchema([
   'task', 'assignment', 'agent', 'routing_rule', 'coordinator'
 ]);
 export const executorModel = objectSchema({
+  capabilityTier: integerSchema({ minimum: 1, maximum: 3 }),
+  costRank: numberSchema({ minimum: 0 }),
   provider: boundedString(128),
   model: boundedString(256),
   capabilities: arraySchema(boundedString(512), { maxItems: 32 }),
@@ -276,6 +296,7 @@ export const executorRoutingRuleInput = objectSchema({
   idempotencyKey
 }, ['scope', 'workKind', 'reason', 'idempotencyKey']);
 export const executorActualReportInput = objectSchema({
+  artifactRevision: { ...stringSchema(), minLength: 1, maxLength: 160 },
   personalSpaceId: id,
   personalProjectId: id,
   taskId: id,

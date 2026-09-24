@@ -321,3 +321,22 @@ test('Codex TOML cleanup removes only a managed handler from a mixed hook group'
   assert.match(cleaned, /command = "notify-me"/);
   assert.doesNotMatch(cleaned, /--fuli-lifecycle|lifecycle-hook\.js/);
 });
+
+
+test('Cursor permits only one checkpoint follow-up and makes read-only failure explicit', async () => {
+  const calls = [];
+  const invoke = async (...args) => {
+    calls.push(args);
+    return { status: 'checkpoint_required', reason: 'FULI_CHECKPOINT_REQUIRED: Save checkpoint.' };
+  };
+  const input = { conversation_id: 'cursor-read-only', status: 'completed', loop_count: 0 };
+  const first = await cursorLifecycleOutput('stop', input, invoke);
+  assert.match(first.followup_message, /read-only/);
+  assert.match(first.followup_message, /checkpoint was not saved/);
+  assert.match(first.followup_message, /do not retry/);
+  for (const loop_count of [1, 2, 3]) {
+    assert.deepEqual(await cursorLifecycleOutput('stop', { ...input, loop_count }, invoke), {});
+  }
+  assert.equal(calls.length, 1, 'continuations cannot prompt or write a fabricated checkpoint');
+  assert.equal(calls[0][0], 'verify_task_checkpoint');
+});

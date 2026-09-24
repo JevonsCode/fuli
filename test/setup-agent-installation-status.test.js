@@ -11,6 +11,7 @@ import test from 'node:test';
 
 import { connectCodex, replaceFuliTable } from '../src/setup/codex-config.js';
 import { inspectAgentInstallations } from '../src/setup/agent-installation-status.js';
+import { claudeLifecycleCommand } from '../src/agents/claude-code/lifecycle-hooks.js';
 
 const CONTEXT = Object.freeze({
   nodePath: 'C:/Runtime/node.exe',
@@ -160,24 +161,16 @@ test('Claude Code requires always-loaded Fuli plus task lifecycle hooks', () => 
       hooks: {
         UserPromptSubmit: [{
           hooks: [{
-            type: 'mcp_tool',
-            server: 'fuli',
-            tool: 'begin_task_context',
-            input: {
-              sessionId: '${session_id}',
-              projectPath: '${cwd}',
-              taskPrompt: '${prompt}'
-            },
+            type: 'command',
+            command: claudeLifecycleCommand(CONTEXT, 'UserPromptSubmit', 30),
             timeout: 30,
             statusMessage: 'Loading Fuli task context'
           }]
         }],
         Stop: [{
           hooks: [{
-            type: 'mcp_tool',
-            server: 'fuli',
-            tool: 'verify_task_checkpoint',
-            input: { sessionId: '${session_id}' },
+            type: 'command',
+            command: claudeLifecycleCommand(CONTEXT, 'Stop', 30),
             timeout: 30,
             statusMessage: 'Checking Fuli task checkpoint'
           }]
@@ -194,7 +187,7 @@ test('Claude Code requires always-loaded Fuli plus task lifecycle hooks', () => 
   assert.equal(current.integrationDetails.lifecycleHooks, 'current');
 
   const incomplete = structuredClone(configs.get(claude.settingsPath));
-  delete incomplete.hooks.UserPromptSubmit[0].hooks[0].input;
+  delete incomplete.hooks.UserPromptSubmit[0].hooks[0].command;
   configs.set(claude.settingsPath, incomplete);
   const [missingInput] = inspectAgentInstallations([claude], CONTEXT, {
     readJson: (path) => configs.get(path) ?? {},

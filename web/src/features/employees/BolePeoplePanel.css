@@ -20,6 +20,7 @@
 .bole-search { flex: 1 1 220px; min-width: 0; }
 .bole-search, .bole-filters select { min-height: 44px; padding: 10px 12px; border: 1px solid #bdcbbf; border-radius: 8px; color: var(--bole-ink); background: #fff; font-size: 13px; }
 .bole-search::placeholder { color: var(--bole-muted); }
+.bole-search-hint { margin: 6px 0 0; color: var(--bole-muted); font-size: 12px; line-height: 1.5; }
 .bole-filters .project-scope-picker { flex: 0 1 260px; }
 .bole-role-filters { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 12px; }
 .bole-role-filters button { min-height: 36px; padding: 8px 10px; border: 0; border-radius: 8px; color: var(--bole-muted); background: transparent; font-size: 12px; }

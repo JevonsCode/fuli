@@ -1,3 +1,5 @@
+import { planAgentCollaboration, agentLoan, agentVerification } from './agent-collaboration.js';
+import { queryConversations, resumeConversation, updateConversationPolicy } from './agent-conversations.js';
 import { agentProjectResolution } from './agent-knowledge-workflows.js';
 import { listAgentAttention, changeAgentAttention } from './agent-attention.js';
 import {
@@ -54,6 +56,24 @@ export const projectAgentControlPlaneHooks = Object.freeze({
 });
 
 export class ProjectAgentControlPlaneApplication {
+  async agentVerification(operation, input) {
+    this.#assertSpace(input.personalSpaceId);
+    return agentVerification(this, operation, input);
+  }
+  async planAgentCollaboration(input) { return planAgentCollaboration(this, input); }
+  async agentLoan(operation, input) {
+    if (input.personalSpaceId) this.#assertSpace(input.personalSpaceId);
+    return agentLoan(this, operation, input);
+  }
+  async queryAgentConversations(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return queryConversations(this, input);
+  }
+  async resumeAgentConversation(input) { return resumeConversation(this, input); }
+  async updateAgentConversationPolicy(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return updateConversationPolicy(this, input);
+  }
   async listAgentAttention(input) {
     this.#assertSpace(input.personalSpaceId);
     return listAgentAttention(this, input);
@@ -103,7 +123,7 @@ export class ProjectAgentControlPlaneApplication {
   }
 
   async listCurrentProjectAgents(input) {
-    const resolution = await this.#resolveProject(input.projectPath);
+    const resolution = await this.#resolveProject(input.projectPath, input.personalProjectId ?? null);
     return listCurrentProjectAgentsWorkflow(
       this,
       agentProjectResolution(resolution),
@@ -152,7 +172,7 @@ export class ProjectAgentControlPlaneApplication {
   }
 
   async coordinateProjectAgentTask(input) {
-    const resolution = await this.#resolveProject(input.projectPath);
+    const resolution = await this.#resolveProject(input.projectPath, input.personalProjectId ?? null);
     return coordinateProjectAgentTaskWorkflow(
       this,
       agentProjectResolution(resolution),

@@ -18,12 +18,13 @@ export async function cursorLifecycleOutput(event, input, invoke) {
   }
   const source = { sourceApplication: 'cursor', sourceSessionId: sessionId };
   if (event === 'stop') {
-    // Never restart a cancelled/error turn or loop indefinitely on an outage.
-    if (input.status !== 'completed' || (input.loop_count ?? 0) >= 2) return {};
+    // One host-counted continuation at most; never restart cancelled/error turns.
+    if (input.status !== 'completed' || (input.loop_count ?? 0) >= 1) return {};
     const check = await invoke('verify_task_checkpoint', { sessionId, ...source });
-    const reason = boundedHookMessage(check.reason);
+    const notice = '\nIf this mode is read-only or checkpoint writes are denied, state that the checkpoint was not saved and do not retry. This is the only checkpoint continuation.';
+    const reason = boundedHookMessage(check.reason, { maxBytes: 8_000 - Buffer.byteLength(notice, 'utf8') });
     return check.status === 'checkpoint_required' && reason.trim()
-      ? { followup_message: reason }
+      ? { followup_message: reason + notice }
       : {};
   }
   const roots = input.workspace_roots;

@@ -39,6 +39,7 @@ export function inspectAgentInstallations(agents, context, {
     );
     const claudeLifecycleCurrent = agent.id !== 'claude-code' ||
       hasCurrentClaudeCodeHooks(readJson(agent.settingsPath), {
+        ...context,
         hookTimeoutSec: context.hookTimeoutSec ?? 30
       });
     const codexConfig = agent.id === 'codex' && agent.hooksPath

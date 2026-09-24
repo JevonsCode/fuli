@@ -159,6 +159,8 @@ export interface ProjectAgentProfile {
   name: string
   displayName?: string | null
   responsibility: string
+  character?: { judgment: string; taste: string; personality: string }
+  expectations?: string
   capabilities: string[]
   initialPreferences: string[]
   status: ProjectAgentStatus

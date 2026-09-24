@@ -141,6 +141,9 @@ class ProjectAgentParallelPlan(StrictModel):
 
 
 class ProjectAgentTaskSubmit(StrictModel):
+    # All newly submitted tasks use the quality gate, including legacy public
+    # entry points. Existing graph records without this field remain readable.
+    verification_required: Literal[True] = True
     personal_space_id: str = Field(min_length=1, max_length=128)
     personal_project_id: str = Field(min_length=1, max_length=128)
     idempotency_key: str = Field(min_length=8, max_length=256)
@@ -486,6 +489,7 @@ class ProjectAgentTaskRecord(StrictModel):
 
 
 class ProjectAgentTaskActivityCreate(StrictModel):
+    artifact_revision: str | None = Field(default=None, min_length=1, max_length=160)
     personal_space_id: str = Field(min_length=1, max_length=128)
     personal_project_id: str = Field(min_length=1, max_length=128)
     task_id: str = Field(min_length=1, max_length=128)

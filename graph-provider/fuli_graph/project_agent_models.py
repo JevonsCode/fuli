@@ -88,6 +88,14 @@ class ProjectAgentExecutorPolicy(StrictModel):
         return self
 
 
+class ProjectAgentCharacter(StrictModel):
+    """Configured role intent, not a claim about demonstrated performance."""
+
+    judgment: str = Field(default='', max_length=2048)
+    taste: str = Field(default='', max_length=2048)
+    personality: str = Field(default='', max_length=2048)
+
+
 class ProjectAgentProfile(StrictModel):
     name: str = Field(min_length=1, max_length=160)
     display_name: str | None = Field(default=None, min_length=1, max_length=160)
@@ -101,6 +109,8 @@ class ProjectAgentProfile(StrictModel):
         validation_alias=AliasChoices('occupation_emoji', 'occupationEmoji'),
     )
     responsibility: str = Field(min_length=1, max_length=4096)
+    character: ProjectAgentCharacter = Field(default_factory=ProjectAgentCharacter)
+    expectations: str = Field(default='', max_length=4096)
     agent_type: ProjectAgentType = 'durable'
     work_kinds: list[str] = Field(default_factory=list, max_length=32)
     capabilities: list[str] = Field(default_factory=list, max_length=32)

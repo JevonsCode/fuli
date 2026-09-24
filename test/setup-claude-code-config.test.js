@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { claudeLifecycleCommand } from '../src/agents/claude-code/lifecycle-hooks.js';
 
 import {
   connectClaudeCode,
@@ -76,24 +77,16 @@ test('Claude Code connection keeps unrelated config and installs deterministic t
   assert.equal(settings.hooks.Stop[0].hooks[0].command, 'existing-stop-hook');
   assert.deepEqual(settings.hooks.UserPromptSubmit.at(-1), {
     hooks: [{
-      type: 'mcp_tool',
-      server: 'fuli',
-      tool: 'begin_task_context',
-      input: {
-        sessionId: '${session_id}',
-        projectPath: '${cwd}',
-        taskPrompt: '${prompt}'
-      },
+      type: 'command',
+      command: claudeLifecycleCommand(CONTEXT, 'UserPromptSubmit', 30),
       timeout: 30,
       statusMessage: 'Loading Fuli task context'
     }]
   });
   assert.deepEqual(settings.hooks.Stop.at(-1), {
     hooks: [{
-      type: 'mcp_tool',
-      server: 'fuli',
-      tool: 'verify_task_checkpoint',
-      input: { sessionId: '${session_id}' },
+      type: 'command',
+      command: claudeLifecycleCommand(CONTEXT, 'Stop', 30),
       timeout: 30,
       statusMessage: 'Checking Fuli task checkpoint'
     }]
@@ -123,17 +116,17 @@ test('Claude Code hook timeout can be increased by an isolated acceptance runtim
   assert.equal(settings.hooks.Stop.at(-1).hooks[0].timeout, 240);
 });
 
-test('Claude Code hook status requires the exact managed input, timeout and status message', () => {
+test('Claude Code hook status requires the exact managed command, timeout and status message', () => {
   const writes = new Map();
   connectClaudeCode(AGENT, CONTEXT, {
     readConfig: () => ({}),
     writeConfig: (filePath, value) => writes.set(filePath, value)
   });
   const current = writes.get(AGENT.settingsPath);
-  assert.equal(hasCurrentClaudeCodeHooks(current), true);
+  assert.equal(hasCurrentClaudeCodeHooks(current, CONTEXT), true);
 
   for (const mutate of [
-    (settings) => { delete settings.hooks.UserPromptSubmit.at(-1).hooks[0].input; },
+    (settings) => { settings.hooks.UserPromptSubmit.at(-1).hooks[0].command += ' --extra'; },
     (settings) => { settings.hooks.Stop.at(-1).hooks[0].timeout = 31; },
     (settings) => { settings.hooks.Stop.at(-1).hooks[0].statusMessage = 'Different'; },
     (settings) => {
@@ -142,14 +135,36 @@ test('Claude Code hook status requires the exact managed input, timeout and stat
   ]) {
     const outdated = structuredClone(current);
     mutate(outdated);
-    assert.equal(hasCurrentClaudeCodeHooks(outdated), false);
+    assert.equal(hasCurrentClaudeCodeHooks(outdated, CONTEXT), false);
   }
 
   const customTimeout = structuredClone(current);
   for (const event of ['UserPromptSubmit', 'Stop']) {
     customTimeout.hooks[event].at(-1).hooks[0].timeout = 240;
+    customTimeout.hooks[event].at(-1).hooks[0].command = claudeLifecycleCommand(CONTEXT, event, 240);
   }
-  assert.equal(hasCurrentClaudeCodeHooks(customTimeout, { hookTimeoutSec: 240 }), true);
+  assert.equal(hasCurrentClaudeCodeHooks(customTimeout, { ...CONTEXT, hookTimeoutSec: 240 }), true);
+});
+
+test('Claude Code migrates legacy MCP hooks while preserving unrelated handlers in the same group', () => {
+  const files = new Map([[AGENT.configPath, {}], [AGENT.settingsPath, { hooks: {
+    UserPromptSubmit: [{ matcher: '*', hooks: [
+      { type: 'mcp_tool', server: 'fuli', tool: 'begin_task_context' },
+      { type: 'command', command: 'keep-other-hook' }
+    ] }],
+    Stop: [{ hooks: [{ type: 'mcp_tool', server: 'fuli', tool: 'verify_task_checkpoint' }] }]
+  } }]]);
+  assert.equal(hasCurrentClaudeCodeHooks(files.get(AGENT.settingsPath), CONTEXT), false);
+  const io = { readConfig: path => files.get(path), writeConfig: (path, value) => files.set(path, value) };
+  connectClaudeCode(AGENT, CONTEXT, io);
+  const settings = files.get(AGENT.settingsPath);
+  assert.deepEqual(settings.hooks.UserPromptSubmit[0], {
+    matcher: '*', hooks: [{ type: 'command', command: 'keep-other-hook' }]
+  });
+  assert.equal(settings.hooks.Stop.length, 1);
+  assert.equal(JSON.stringify(settings.hooks).includes('mcp_tool'), false);
+  assert.equal(hasCurrentClaudeCodeHooks(settings, CONTEXT), true);
+  assert.equal(connectClaudeCode(AGENT, CONTEXT, io).newTaskRequired, false);
 });
 
 test('Claude Code connection is idempotent and disconnect removes only Fuli entries', () => {

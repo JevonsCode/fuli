@@ -1,3 +1,6 @@
+import { projectRelationDefinitions } from './project-relation-definitions.js';
+import { AGENT_COLLABORATION_DEFINITIONS } from './agent-collaboration-definitions.js';
+import { AGENT_CONVERSATION_DEFINITIONS } from './agent-conversation-definitions.js';
 import {
   arraySchema,
   booleanSchema,
@@ -670,6 +673,10 @@ export const GRAPH_TOOL_DEFINITIONS = [
     description: 'Resolve the exact local project from projectPath and return its lightweight Agent directory. Optionally filter active/inactive/archived records or find Agents whose capabilities or responsibility match a capability query. This never loads another Agent\'s private memory.',
     inputSchema: objectSchema({
       projectPath: boundedString(4096),
+      personalProjectId: {
+        ...nullableStringSchema(), minLength: 1, maxLength: 128,
+        description: 'Explicit existing project ID when the directory has no exact match. A conflicting exact path match is rejected.'
+      },
       status: nullableProjectAgentStatus,
       capability: nullableStringSchema()
     }, ['projectPath'])
@@ -680,6 +687,10 @@ export const GRAPH_TOOL_DEFINITIONS = [
     description: 'Resolve one active project Agent and assemble only the context needed for the task: personal-global rules, exact and authorized inherited project knowledge, this Agent\'s preferences and memory, and focused query results. It excludes every other project Agent. Fuli remains a control layer; the calling host Agent performs reasoning and execution.',
     inputSchema: objectSchema({
       projectPath: boundedString(4096),
+      personalProjectId: {
+        ...nullableStringSchema(), minLength: 1, maxLength: 128,
+        description: 'Explicit existing project ID when the directory has no exact match. A conflicting exact path match is rejected.'
+      },
       agentId: boundedString(128),
       queries: arraySchema(shortText, { minItems: 1, maxItems: 10 }),
       limitPerQuery: integerSchema({ minimum: 1, maximum: 50 }),
@@ -697,6 +708,8 @@ export const GRAPH_TOOL_DEFINITIONS = [
     }, ['personalSpaceId', 'agentId'])
   },
   ...PROJECT_AGENT_MEMORY_DEFINITIONS,
+  ...AGENT_CONVERSATION_DEFINITIONS,
+  ...AGENT_COLLABORATION_DEFINITIONS,
   {
     name: 'delete_project_agent',
     title: 'WRITE · Archive one Agent identity',
@@ -710,7 +723,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'cleanup_test_project_agents',
     title: 'WRITE · Archive test Agent roles',
-    description: 'Archive only test-marked Project Agents for one explicit test source through the Provider. Durable production identities are not touched; the result reports the number archived for cleanup verification.',
+    description: 'TEST-ONLY. Archive only test-marked Project Agents for one explicit test source through the Provider. Disabled on default MCP/HTTP surfaces unless FULI_ENABLE_TEST_TOOLS=1. Durable production identities are not touched; the result reports the number archived for cleanup verification.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       testSource: boundedString(256)
@@ -748,7 +761,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'coordinate_project_agent_task',
     title: 'WRITE · Prepare a host-executed Agent team',
-    description: 'Resolve the exact local project, let the Provider coordinator route one durable task, and assemble an isolated context bundle for every selected lead/collaborator. Pass the current taskContextToken so a newly recruited lead can claim an initially unassigned task, including its blocked work. The result is a truthful host execution plan: Fuli persists identity, staffing, and memory scope, while the calling host must start real workers, report their concrete worker/executor evidence, and finish their lifecycle. This tool never claims that a selected Agent is online or that a worker was started.',
+    description: 'Resolve the exact local project, let the Provider coordinator route one durable task, and assemble an isolated context bundle for every selected lead/collaborator. Pass the current taskContextToken so a newly recruited lead can claim an initially unassigned task, including its blocked work. When recruiting, HR should set recruitmentProfile.character from the role responsibilities and preserve user expectations; configured traits must never be presented as proven growth. The result is a truthful host execution plan: Fuli persists identity, staffing, and memory scope, while the calling host must start real workers, report their concrete worker/executor evidence, and finish their lifecycle. This tool never claims that a selected Agent is online or that a worker was started.',
     inputSchema: projectAgentTaskCoordinateInput
   },
   {
@@ -776,7 +789,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'submit_project_agent_task',
     title: 'WRITE · Submit a routed Agent task',
-    description: 'Submit one durable task to the FULI control plane. Existing matching durable Agents are preferred; no anonymous temporary Agent is created. The Agent locked executor policy outranks task, assignment, project, and space rules; explicit user priority is never lowered for token savings. The space coordinator, complexity, model strategy, routing decision, boundaries, actual executor/model/rule/fallback audit fields, and any HR disclosure are persisted by the Provider.',
+    description: 'Submit one durable task to the FULI control plane. Every new task requires a passed quality gate for its exact artifact revision before completion; use record_agent_verification with actual run evidence. Existing matching durable Agents are preferred; no anonymous temporary Agent is created. The Agent locked executor policy outranks task, assignment, project, and space rules; explicit user priority is never lowered for token savings. The space coordinator, complexity, model strategy, routing decision, boundaries, actual executor/model/rule/fallback audit fields, and any HR disclosure are persisted by the Provider. HR should fill recruitmentProfile.character from role responsibilities, preserve user expectations, and distinguish configured traits from demonstrated growth; never invent past achievements.',
     inputSchema: projectAgentTaskSubmitInput
   },
   {
@@ -1194,36 +1207,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
       providerUrl: shortText
     }, ['projectId', 'providerUrl'])
   },
-  {
-    name: 'create_project_relation',
-    description: 'Create a canonical relationship between two public projects. PART_OF waits for target/parent Maintainer confirmation; other relation types become active immediately. This never subscribes either project.',
-    inputSchema: objectSchema({
-      sourceProjectId: id,
-      targetProjectId: id,
-      providerUrl: shortText,
-      relationType: projectRelationType,
-      note: nullableStringSchema()
-    }, ['sourceProjectId', 'targetProjectId', 'providerUrl', 'relationType'])
-  },
-  {
-    name: 'list_project_relations',
-    description: 'List canonical incoming and outgoing project relationships. Related projects are suggestions only and never expand the active subscription set.',
-    inputSchema: objectSchema({
-      projectId: id,
-      providerUrl: shortText
-    }, ['projectId', 'providerUrl'])
-  },
-  {
-    name: 'review_project_relation',
-    description: 'Confirm or reject a pending PART_OF relationship as a Maintainer of the target parent project.',
-    inputSchema: objectSchema({
-      targetProjectId: id,
-      relationId: id,
-      providerUrl: shortText,
-      decision: enumSchema(['confirm', 'reject']),
-      note: nullableStringSchema()
-    }, ['targetProjectId', 'relationId', 'providerUrl', 'decision'])
-  },
+  ...projectRelationDefinitions({ id, shortText, projectRelationType }),
   {
     name: 'list_personal_review_queue',
     description: 'List full structured knowledge drafts waiting in the local personal pre-review queue before any public submission.',

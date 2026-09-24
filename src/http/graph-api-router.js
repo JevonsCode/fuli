@@ -1,4 +1,5 @@
 import { readJson, sendJson } from './response.js';
+import { testToolsEnabled } from '../app/test-tools.js';
 import { handleAgentAttentionRequest } from './agent-attention-api-router.js';
 
 export async function handleGraphApiRequest({
@@ -8,6 +9,14 @@ export async function handleGraphApiRequest({
   app
 }) {
   if (await handleAgentAttentionRequest({ request, response, url, app })) return true;
+  if (url.pathname === '/api/agent-conversations/query' && request.method === 'POST') {
+    sendJson(response, 200, await app.queryAgentConversations({ ...(await readJson(request)), ownerInspection: true }));
+    return true;
+  }
+  if (url.pathname === '/api/agent-conversations/policy' && request.method === 'PUT') {
+    sendJson(response, 200, await app.updateAgentConversationPolicy({ ...(await readJson(request)), ownerInspection: true }));
+    return true;
+  }
   if (url.pathname === '/api/state' && request.method === 'GET') {
     sendJson(response, 200, await app.state());
     return true;
@@ -224,6 +233,14 @@ export async function handleGraphApiRequest({
     return true;
   }
   if (url.pathname === '/api/project-agents/test-cleanup' && request.method === 'POST') {
+    if (!testToolsEnabled()) {
+      sendJson(response, 404, {
+        error: 'Not found',
+        code: 'not_found',
+        detail: 'Test cleanup requires FULI_ENABLE_TEST_TOOLS=1'
+      });
+      return true;
+    }
     sendJson(response, 200, await app.cleanupProjectAgentTestRoles({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
       testSource: url.searchParams.get('testSource')

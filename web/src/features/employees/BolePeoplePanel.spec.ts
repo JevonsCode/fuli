@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 
 const { getJson } = vi.hoisted(() => ({ getJson: vi.fn() }))
 vi.mock('@/api/client', () => ({ getJson }))
@@ -13,7 +14,15 @@ const projects = [
   { project_id: 'project-b', personal_space_id: 'space-a', profile: { name: '第二项目' } },
 ]
 
-beforeEach(() => {
+let router: Router
+function mountPanel() {
+  return mount(BolePeoplePanel, { props: { personalSpaceId: 'space-a', projects }, global: { plugins: [router] } })
+}
+
+beforeEach(async () => {
+  router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
+  await router.push('/employees')
+  await router.isReady()
   setActivePinia(createPinia())
   getJson.mockReset()
   getJson.mockImplementation(async (url: string) => {
@@ -25,13 +34,13 @@ beforeEach(() => {
       },
       {
         agent_id: 'employee.jefa', personal_space_id: 'space-a',
-        profile: { name: 'Jefa', responsibility: '项目管理', status: 'active', agent_type: 'durable', occupation_emoji: '🧭' },
+        profile: { name: 'Jefa', responsibility: '项目管理', capabilities: ['planning'], workKinds: ['implementation'], status: 'active', agent_type: 'durable', occupation_emoji: '🧭' },
         assignments: [{ personal_project_id: 'project-a', status: 'active' }],
         created_at: '2026-09-01T08:00:00.000Z', updated_at: '2026-09-01T08:00:00.000Z',
       },
       {
         agent_id: 'agent.researcher', personal_space_id: 'space-a',
-        profile: { name: 'Researcher', responsibility: '调研', status: 'active', agent_type: 'temporary', occupation_emoji: '🧪' },
+        profile: { name: 'Researcher', responsibility: '调研', capabilities: ['usability research'], work_kinds: ['interviews'], status: 'active', agent_type: 'temporary', occupation_emoji: '🧪' },
         personal_project_id: 'project-b',
         created_at: '2026-09-02T08:00:00.000Z', updated_at: '2026-09-02T08:00:00.000Z',
       },
@@ -56,8 +65,60 @@ beforeEach(() => {
 })
 
 describe('Bole people panel', () => {
+  it('opens a distinct profile for each name in people and recruitment history', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+    const links = wrapper.findAll('.bole-agent-identity a')
+    expect(links.map(link => link.attributes('href'))).toEqual([
+      '/agents/space-a/employee.jefa', '/agents/space-a/employee.bole', '/agents/space-a/agent.researcher',
+    ])
+    await links[0]!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/agents/space-a/employee.jefa')
+    await links[1]!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/agents/space-a/employee.bole')
+    await wrapper.get('#bole-history-title').trigger('click')
+    const recruited = wrapper.get('.bole-recruitment-identity a')
+    expect(recruited.text()).toBe('Researcher')
+    await recruited.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/agents/space-a/agent.researcher')
+    wrapper.unmount()
+  })
+
+  it('matches multiword capability, work kind and project searches with English typos', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('.bole-search').setValue('第二项目 usabilty intervews')
+    expect(wrapper.findAll('.bole-agent-row')).toHaveLength(1)
+    expect(wrapper.get('.bole-agent-row').text()).toContain('Researcher')
+    await wrapper.get('.bole-search').setValue('Jefa implementaton 项目管理')
+    expect(wrapper.get('.bole-agent-row').text()).toContain('Jefa')
+    await wrapper.get('#bole-history-title').trigger('click')
+    await wrapper.get('.bole-search').setValue('调研 usabilty 第二项目')
+    expect(wrapper.findAll('.bole-timeline li')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('prefills from q and clears the previous query when switching spaces', async () => {
+    await router.push('/employees?q=usabilty')
+    const wrapper = mountPanel()
+    await flushPromises()
+    expect((wrapper.get('.bole-search').element as HTMLInputElement).value).toBe('usabilty')
+    expect(wrapper.get('.bole-agent-row').text()).toContain('Researcher')
+    await router.push('/employees?q=planning')
+    await flushPromises()
+    expect(wrapper.get('.bole-agent-row').text()).toContain('Jefa')
+    await wrapper.setProps({ personalSpaceId: 'space-b' })
+    await flushPromises()
+    expect((wrapper.get('.bole-search').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.findAll('.bole-agent-row')).toHaveLength(3)
+    wrapper.unmount()
+  })
+
   it('keeps team navigation in the heading without duplicate totals or section headings', async () => {
-    const wrapper = mount(BolePeoplePanel, { props: { personalSpaceId: 'space-a', projects } })
+    const wrapper = mountPanel()
     expect(wrapper.get('[data-testid="people-total"]').text()).toBe('—')
     await flushPromises()
     expect(wrapper.find('.bole-heading .bole-views').exists()).toBe(true)
@@ -74,7 +135,7 @@ describe('Bole people panel', () => {
   })
 
   it('shows personnel distribution, current work and recruitment reasons from the shared Agent APIs', async () => {
-    const wrapper = mount(BolePeoplePanel, { props: { personalSpaceId: 'space-a', projects } })
+    const wrapper = mountPanel()
     await flushPromises()
 
     expect(getJson.mock.calls.map(([url]) => url)).toEqual([
@@ -98,7 +159,7 @@ describe('Bole people panel', () => {
   })
 
   it('filters people by project, work status, role and search without changing records', async () => {
-    const wrapper = mount(BolePeoplePanel, { props: { personalSpaceId: 'space-a', projects } })
+    const wrapper = mountPanel()
     await flushPromises()
     expect(wrapper.findAll('.bole-agent-row')).toHaveLength(3)
     expect(wrapper.findAll('.bole-agent-row')[0].text()).toContain('Jefa')
@@ -120,7 +181,7 @@ describe('Bole people panel', () => {
   })
 
   it('supports no selected projects, unassigned Agents and clearing filters', async () => {
-    const wrapper = mount(BolePeoplePanel, { props: { personalSpaceId: 'space-a', projects } })
+    const wrapper = mountPanel()
     await flushPromises()
     const picker = wrapper.getComponent(ProjectScopePicker)
     picker.vm.$emit('update:modelValue', [])
@@ -135,7 +196,7 @@ describe('Bole people panel', () => {
   })
 
   it('searches recruitment reasons and shares the same project scope across views', async () => {
-    const wrapper = mount(BolePeoplePanel, { props: { personalSpaceId: 'space-a', projects } })
+    const wrapper = mountPanel()
     await flushPromises()
     await wrapper.get('.bole-views button:nth-child(2)').trigger('click')
     await wrapper.get('.bole-search').setValue('用户研究')
@@ -155,7 +216,7 @@ describe('Bole people panel', () => {
       if (url.startsWith('/api/project-agents?')) result.agents[1] = { ...result.agents[1], work_status: 'completed', current_task_id: 'task-a' }
       return result
     })
-    const wrapper = mount(BolePeoplePanel, { props: { personalSpaceId: 'space-a', projects } })
+    const wrapper = mountPanel()
     await flushPromises()
     expect(wrapper.get('[data-testid="people-working"]').text()).toContain('0')
     expect(wrapper.findAll('.bole-status')).toHaveLength(0)
@@ -166,7 +227,7 @@ describe('Bole people panel', () => {
       if (url.startsWith('/api/project-agents?')) return { agents: [] }
       throw new Error('暂时不可用')
     })
-    const wrapper = mount(BolePeoplePanel, { props: { personalSpaceId: 'space-a', projects } })
+    const wrapper = mountPanel()
     await flushPromises()
 
     expect(wrapper.get('[role="alert"]').text()).toContain('部分人员信息暂时不可用')

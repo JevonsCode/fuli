@@ -1,3 +1,4 @@
+import { compactTaskContext } from '../conversations/task-context-view.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   CallToolRequestSchema,
@@ -13,6 +14,7 @@ import { createCommonKnowledgePreviewTokens } from './common-knowledge-preview-t
 import { auditLifecycleTool } from './lifecycle-audit.js';
 import { registerFuliContextResources } from './context-resources.js';
 import { annotationsFor } from './tool-annotations.js';
+import { isTestOnlyToolName, testToolsEnabled } from '../app/test-tools.js';
 import {
   errorToolResult,
   hookAdditionalContextToolResult,
@@ -28,6 +30,9 @@ import {
 } from './session-id.js';
 
 const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
+  read_agent_conversation: 600 * 1024,
+  list_agent_conversations: 32 * 1024,
+  resume_agent_conversation: 24 * 1024,
   list_project_agent_tasks: 128 * 1024,
   list_preference_conflicts: 128 * 1024,
   list_agent_interfaces: 64 * 1024,
@@ -107,7 +112,8 @@ export function createMcpServer(
     authoritativeSourceApplication,
     withRuntimeLease,
     toolNames,
-    prepareToolInput
+    prepareToolInput,
+    env
   );
   for (const tool of tools.values()) registerTool(server, tool);
   if (!tools.size) registerEmptyToolList(server);
@@ -130,7 +136,8 @@ function createToolMap(
   sourceApplication,
   withRuntimeLease,
   toolNames,
-  prepareToolInput
+  prepareToolInput,
+  env = process.env
 ) {
   const commonKnowledgePreviews = createCommonKnowledgePreviewTokens();
   if (toolNames !== null && !Array.isArray(toolNames)) {
@@ -147,8 +154,10 @@ function createToolMap(
       );
     }
   }
+  const includeTestTools = testToolsEnabled(env);
   return new Map(definitions
     .filter((definition) => !allowedTools || allowedTools.has(definition.name))
+    .filter((definition) => includeTestTools || !isTestOnlyToolName(definition.name))
     .map((definition) => [definition.name, {
     definition,
     schema: jsonSchemaToZod(definition.inputSchema),
@@ -169,7 +178,7 @@ function createToolMap(
           ),
           projectActionPreviews,
           commonKnowledgePreviews,
-          requestContext
+          { ...requestContext, testToolsEnabled: includeTestTools }
         ),
         requestContext
       );
@@ -217,7 +226,7 @@ async function invokeTool(tool, input, requestContext = null) {
     auditLifecycleTool(tool.definition.name);
     const limitBytes = TOOL_RESULT_LIMIT_BYTES[tool.definition.name];
     if (tool.definition.name === 'begin_task_context') {
-      return hookAdditionalContextToolResult(value, {
+      return hookAdditionalContextToolResult(compactTaskContext(value), {
         hookEventName: 'UserPromptSubmit',
         label: 'Fuli task context. Apply effective_preferences and use taskContextToken for the final checkpoint.',
         limitBytes,

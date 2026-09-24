@@ -1,6 +1,6 @@
 {
   "name": "fuli-context",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Local-first collaboration relationship graph for AI agents.",
   "type": "module",
   "files": [
@@ -11,6 +11,7 @@
     "docs/external-knowledge-architecture.md",
     "docs/public-personal-architecture.md",
     "docs/project-agent-memory.md",
+    "docs/agent-conversations-and-collaboration.md",
     "docs/employee-agents.md",
     "docs/agent-interface-architecture.md",
     "examples/external-knowledge/markdown-folder.mjs",

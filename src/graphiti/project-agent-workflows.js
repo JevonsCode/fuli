@@ -178,6 +178,7 @@ export async function coordinateProjectAgentTask(
     personalProjectId: projectId,
     idempotencyKey: input.idempotencyKey,
     title: input.title,
+    verificationRequired: true,
     objective: input.objective,
     workKind: input.workKind,
     requiredCapabilities: input.requiredCapabilities,

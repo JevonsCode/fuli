@@ -2,6 +2,9 @@ from .config import Settings
 from .provider_values import graphiti_group_id, native_datetime
 from .runtime import GraphitiRuntime
 from .store_identity import StoreIdentity
+from .store_agent_conversations import StoreAgentConversations
+from .store_agent_loans import StoreAgentLoans
+from .store_agent_verification import StoreAgentVerification
 from .store_knowledge import StoreKnowledge
 from .store_project_agent_executors import StoreProjectAgentExecutors
 from .store_project_agent_memory import StoreProjectAgentMemory
@@ -17,6 +20,9 @@ from .store_task_contexts import StoreTaskContexts
 
 class GraphStore(
     StoreIdentity,
+    StoreAgentConversations,
+    StoreAgentLoans,
+    StoreAgentVerification,
     StoreProjects,
     StoreProjectAgents,
     StoreProjectAgentAttention,

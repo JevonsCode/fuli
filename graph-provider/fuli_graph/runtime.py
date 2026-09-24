@@ -269,6 +269,20 @@ class GraphitiRuntime:
         # safe for upgraded stores as well as fresh databases.
         await self._migrate_project_agent_executor_learning_buckets()
         for query in (
+            'CREATE CONSTRAINT fuli_agent_verification_id IF NOT EXISTS '
+            'FOR (n:FuliAgentVerification) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_agent_loan_id IF NOT EXISTS '
+            'FOR (n:FuliAgentLoan) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_transcript_cursor_id IF NOT EXISTS '
+            'FOR (n:FuliTranscriptCursor) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_conversation_id IF NOT EXISTS '
+            'FOR (n:FuliConversation) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_conversation_event IF NOT EXISTS '
+            'FOR (n:FuliConversationEvent) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_conversation_binding IF NOT EXISTS '
+            'FOR (n:FuliConversationBinding) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_conversation_policy IF NOT EXISTS '
+            'FOR (n:FuliConversationPolicy) REQUIRE n.id IS UNIQUE',
             'CREATE CONSTRAINT fuli_project_agent_id IF NOT EXISTS '
             'FOR (n:FuliProjectAgent) REQUIRE n.id IS UNIQUE',
             'CREATE CONSTRAINT fuli_agent_attention_id IF NOT EXISTS '

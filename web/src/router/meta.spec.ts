@@ -45,6 +45,13 @@ describe('localized route metadata', () => {
     expect(routeMetaText(route.meta.title)).toBe('项目 Agent')
   })
 
+  it('localizes Agent profile and management routes', () => {
+    expect(routeMetaText(router.resolve('/agents/space/agent').meta.title)).toBe('个人主页')
+    expect(routeMetaText(router.resolve('/project-agents/manage').meta.title)).toBe('高级管理')
+    setLocale('en-US', { persist: false })
+    expect(routeMetaText(router.resolve('/agents/space/agent').meta.title)).toBe('Profile')
+  })
+
   it('registers the about page', () => {
     expect(router.resolve('/about').name).toBe('about')
     expect(routeMetaText(router.resolve('/about').meta.title)).toBe('说明')

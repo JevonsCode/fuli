@@ -35,6 +35,10 @@ Start from `list_agent_interfaces`; names and schemas can evolve. Common workflo
 
 For read-only questions, use the narrowest list/get/search tool and return source and scope information. For writes, keep the user-requested scope explicit and verify after mutation. For multi-step operations, stop on the first failed invariant rather than continuing with a partially stale plan.
 
+## HR questions and finding people
+
+When the user addresses HR or Bole to ask about organization or find someone, resolve the existing dedicated HR identity and read `list_project_agents` plus `get_project_agent_coordination_policy` for the exact personal space and relevant project. Use recorded roles, assignments and team membership; do not invent an organization or recruit a replacement HR. Match names, responsibilities and capabilities, but never guess between ambiguous or duplicate names. Link each resolved name to its personal page at `/agents/{encodedPersonalSpaceId}/{encodedAgentId}`. Answering in the HR role does not mean a worker has started; report actual execution separately.
+
 ## Handling conflicts and failures
 
 - On revision or timestamp conflict, re-read, explain what changed, and recompute the intended patch. Do not blindly retry stale input.

@@ -3,6 +3,10 @@ import { randomUUID } from 'node:crypto';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const WORKFLOW_OBSERVATION_TOOL = 'record_workflow_transition_observation';
 const PROJECT_AGENT_SOURCE_TOOLS = new Set([
+  'get_agent_quality_gate', 'record_agent_verification',
+  'plan_agent_collaboration', 'request_agent_loan', 'decide_agent_loan', 'list_agent_loans',
+  'list_agent_conversations', 'read_agent_conversation', 'resume_agent_conversation',
+  'get_agent_conversation_policy', 'update_agent_conversation_policy',
   'call_employee_tool',
   'begin_task_context',
   'verify_task_checkpoint',

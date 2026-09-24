@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from fuli_graph.project_agent_models import (
     ProjectAgentExecutorPolicy,
@@ -36,6 +37,46 @@ def task_request(**updates):
     }
     values.update(updates)
     return ProjectAgentTaskSubmit(**values)
+
+
+def test_new_tasks_always_require_verification_even_when_field_is_omitted():
+    assert task_request().verification_required is True
+    assert task_request(verification_required=True).verification_required is True
+    with pytest.raises(ValidationError):
+        task_request(verification_required=False)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('artifact_revision', [None, 'changed-revision'])
+async def test_new_task_cannot_complete_without_its_exact_verified_revision(artifact_revision):
+    store = ActivityStore({
+        'task': {'task_id': 'task-a', 'personal_project_id': 'project-a',
+                 'status': 'running', 'revision': 1, 'verification_required': task_request().verification_required,
+                 'quality_gate': 'passed', 'verified_artifact_revision': 'previous-revision'},
+        'participant_rows': [{'agent_id': 'agent-a', 'role': 'lead'}], 'event_rows': [],
+    })
+    request = ProjectAgentTaskActivityCreate(
+        personal_space_id='personal-space', personal_project_id='project-a', task_id='task-a',
+        idempotency_key='complete-unverified-artifact', status='completed', summary='Done.',
+        agent_id='agent-a', artifact_revision=artifact_revision,
+    )
+    with pytest.raises(HTTPException, match='exact artifact revision'):
+        await store.record_project_agent_task_activity({'id': 'principal'}, request)
+    assert store.runtime.driver.event_calls == []
+
+
+@pytest.mark.asyncio
+async def test_legacy_persisted_task_without_quality_field_keeps_its_original_contract():
+    # Simulate an already persisted pre-quality-gate task, never a newly submitted task.
+    store = ActivityStore({
+        'task': {'task_id': 'task-a', 'personal_project_id': 'project-a', 'status': 'running', 'revision': 1},
+        'participant_rows': [{'agent_id': 'agent-a', 'role': 'lead'}], 'event_rows': [],
+    }, event_rows=[{'same_payload': True, 'applied_transition': True}])
+    request = ProjectAgentTaskActivityCreate(
+        personal_space_id='personal-space', personal_project_id='project-a', task_id='task-a',
+        idempotency_key='complete-legacy-artifact', status='completed', summary='Done.', agent_id='agent-a',
+    )
+    assert await store.record_project_agent_task_activity({'id': 'principal'}, request) == 'updated-task'
 
 
 @pytest.mark.asyncio
@@ -464,7 +505,7 @@ def test_task_model_strategy_precedence_is_task_assignment_agent():
         'model_strategy_override': ProjectAgentModelStrategy(mode='deep').model_dump_json(),
     }
     request = task_request(
-        model_strategy_override=ProjectAgentModelStrategy(mode='adaptive')
+        model_strategy_override=ProjectAgentModelStrategy(mode='fast')
     )
 
     strategy, source = StoreProjectAgentTasks._effective_model_strategy(
@@ -473,7 +514,7 @@ def test_task_model_strategy_precedence_is_task_assignment_agent():
         coordinator,
     )
 
-    assert strategy.mode == 'adaptive'
+    assert strategy.mode == 'fast'
     assert source == 'task'
 
 
@@ -1121,6 +1162,9 @@ class RecruitmentDriver:
 
 
 class ActivityStore(StoreProjectAgentTasks):
+    async def close_task_agent_loans(self, actor, space_id, task_id):
+        return None
+
     def __init__(self, row, *, event_rows=None):
         self.row = row
         self.settings = SimpleNamespace(

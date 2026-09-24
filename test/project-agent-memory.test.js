@@ -314,12 +314,47 @@ test('capture-disabled mode never writes Agent working memory', async () => {
   assert.equal(memoryWrites, 0);
 });
 
+test('automatic task entry restores configured character and user expectations through the Provider contract', async () => {
+  const character = { judgment: 'Verify claims.', taste: 'Prefer clear navigation.', personality: 'Patient and direct.' };
+  const app = entryApplication({ profileFields: { character, expectations: 'Explain the evidence.', initial_preferences: ['Keep summaries concise.'] } });
+  const result = await callAgentTool(app, 'get_collaboration_preferences', {
+    projectPath: '/synthetic/sample-project', taskPrompt: 'Continue.', sourceApplication: 'cursor'
+  });
+  assert.deepEqual(result.project_agent_context.role, {
+    name: 'Engineer', responsibility: 'Maintain Aster.', initial_preferences: ['Keep summaries concise.'],
+    character, expectations: 'Explain the evidence.'
+  });
+  assert.equal(result.project_agent_context.worker_started, false);
+  assert.equal(result.project_agent_context.memory.revision, 3);
+});
+
+test('automatic task entry gives legacy profiles empty character and expectation defaults', async () => {
+  const result = await callAgentTool(entryApplication(), 'get_collaboration_preferences', {
+    projectPath: '/synthetic/sample-project', taskPrompt: 'Continue.', sourceApplication: 'cursor'
+  });
+  assert.deepEqual(result.project_agent_context.role.character, { judgment: '', taste: '', personality: '' });
+  assert.equal(result.project_agent_context.role.expectations, '');
+});
+
+test('automatic task entry bounds profile prose and ignores unsupported character data', async () => {
+  const app = entryApplication({ profileFields: {
+    character: { judgment: 'j'.repeat(3000), taste: null, personality: ['invalid'], unrelated: 'Do not include.' },
+    expectations: 'e'.repeat(5000)
+  } });
+  const result = await callAgentTool(app, 'get_collaboration_preferences', {
+    projectPath: '/synthetic/sample-project', taskPrompt: 'Continue.', sourceApplication: 'cursor'
+  });
+  assert.deepEqual(result.project_agent_context.role.character, { judgment: 'j'.repeat(2048), taste: '', personality: '' });
+  assert.equal(result.project_agent_context.role.expectations, 'e'.repeat(4096));
+});
+
 function entryApplication({
   onResolve = () => {},
   onMemoryRead = () => {},
   denied = false,
   malformedMemory = false,
-  omitMemoryScope = false
+  omitMemoryScope = false,
+  profileFields = {}
 } = {}) {
   return new FederatedGraphApplication(CONFIG, {
     projectPathResolver: () => ({ status: 'matched', personalProjectId: 'sample-project' }),
@@ -335,7 +370,7 @@ function entryApplication({
             personal_project_id: 'sample-project',
             ...(omitMemoryScope ? {} : { memory_scope: 'reviewed_agent' }),
             profile: { name: 'Engineer', responsibility: 'Maintain Aster.',
-              status: 'active', allowed_clients: denied ? ['codex'] : ['cursor'], initial_preferences: [] } } });
+              status: 'active', allowed_clients: denied ? ['codex'] : ['cursor'], initial_preferences: [], ...profileFields } } });
       }
       if (target.pathname === '/v1/collaboration-preferences') {
         assert.equal(target.searchParams.get('project_agent_id'), denied ? null : 'engineer');

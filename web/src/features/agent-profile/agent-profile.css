@@ -1,0 +1,479 @@
+.agents-directory,
+.agent-profile-page {
+  color: var(--text-primary, #293f33);
+  min-width: 0;
+}
+.agents-directory-heading,
+.agent-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.agents-directory-heading h2 {
+  margin: 0;
+  font-size: 24px;
+}
+.agents-directory-heading p {
+  margin: 6px 0 0;
+  color: var(--text-muted, #637369);
+}
+.agent-profile-actions {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-shrink: 0;
+}
+.agents-directory .primary-button,
+.agent-simple-settings .primary-button {
+  border: 0;
+  background: #334e3e;
+  color: #fff;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font: inherit;
+  cursor: pointer;
+}
+.agent-profile-page .quiet-button,
+.agents-directory .quiet-button {
+  border: 1px solid #ccd7cf;
+  background: transparent;
+  border-radius: 8px;
+  padding: 9px 15px;
+  font: inherit;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.agents-directory-filters {
+  display: flex;
+  gap: 12px;
+  margin: 26px 0 16px;
+}
+.agents-directory-search {
+  flex: 1;
+  min-width: 100px;
+}
+.agents-directory input,
+.agents-directory select,
+.agent-simple-settings select,
+.agent-simple-settings textarea {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid #ced8d1;
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  color: inherit;
+  font: inherit;
+  padding: 11px 13px;
+}
+.agents-directory-filters > select {
+  width: auto;
+}
+.agents-directory input:focus-visible,
+.agent-simple-settings textarea:focus-visible,
+.agent-simple-settings select:focus-visible {
+  outline: 2px solid #50785f;
+  outline-offset: 2px;
+}
+.agents-directory-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--surface, #fff);
+  border: 1px solid #d8e0da;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.agents-directory-list > li {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 24px;
+  border-bottom: 1px solid #e4e9e5;
+}
+.agents-directory-list > li:last-child {
+  border-bottom: 0;
+}
+.agent-portrait {
+  display: grid;
+  place-items: center;
+  flex: 0 0 76px;
+  width: 76px;
+  height: 76px;
+  border-radius: 20px;
+  background: #e6eee8;
+  color: #32523e;
+  font-size: 36px;
+}
+.agent-portrait.small {
+  flex-basis: 44px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  font-size: 24px;
+}
+.agent-directory-person {
+  flex: 1;
+  min-width: 0;
+}
+.agent-directory-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+  font-weight: 650;
+}
+.agent-directory-person p {
+  margin: 7px 0 9px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.6;
+  color: #5e6b62;
+}
+.agent-inline-skills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.agent-inline-skills > span {
+  font-size: 12px;
+  background: #f0f4f1;
+  border-radius: 5px;
+  padding: 4px 8px;
+  color: #536659;
+  overflow-wrap: anywhere;
+}
+.agent-directory-projects {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 150px;
+  font-size: 13px;
+  color: #65746a;
+}
+.agent-directory-status {
+  font-size: 12px;
+}
+.agent-directory-open {
+  padding: 8px;
+  color: inherit;
+}
+.agent-profile-empty {
+  padding: 48px 20px;
+  text-align: center;
+  color: #68796d;
+}
+.agent-profile-page {
+  max-width: 1080px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+.agent-profile-back {
+  display: inline-block;
+  margin-bottom: 34px;
+  color: #567361;
+  text-decoration: none;
+  font-size: 14px;
+}
+.agent-resume-header {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  padding-bottom: 32px;
+}
+.agent-resume-intro {
+  flex: 1;
+  min-width: 0;
+}
+.agent-resume-intro h1 {
+  margin: 0 0 12px;
+  font-size: clamp(26px, 3vw, 36px);
+  letter-spacing: -0.025em;
+}
+.agent-resume-intro > p {
+  line-height: 1.8;
+  max-width: 650px;
+  margin: 0 0 16px;
+  overflow-wrap: anywhere;
+}
+.agent-resume-meta {
+  display: flex;
+  gap: 20px;
+  font-size: 12px;
+  color: #68796d;
+  flex-wrap: wrap;
+}
+.agent-resume-section {
+  padding: 30px 0;
+  border-top: 1px solid #dce3dd;
+}
+.agent-resume-section h2 {
+  font-size: 19px;
+  margin: 0 0 22px;
+}
+.agent-resume-section h3 {
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+.agent-resume-section p {
+  line-height: 1.8;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  margin: 8px 0;
+}
+.agent-character {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 30px;
+}
+.agent-character p {
+  font-size: 14px;
+}
+.agent-muted,
+.agent-work-timeline small {
+  color: #68796d;
+}
+.agent-strengths {
+  margin-top: 26px;
+}
+.agent-strengths h3 {
+  margin-bottom: 12px;
+}
+.agent-expectation {
+  padding: 16px 20px;
+  background: #eaf0eb;
+  border-radius: 8px;
+}
+.agent-expectation strong {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.agent-resume-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.agent-resume-list li {
+  padding: 14px 0;
+}
+.agent-resume-list li + li {
+  border-top: 1px solid #e2e7e3;
+}
+.agent-section-heading h2 {
+  margin-bottom: 0;
+}
+.agent-section-heading {
+  margin-bottom: 20px;
+}
+.agent-section-heading > a {
+  color: inherit;
+}
+.agent-section-heading > span {
+  font-size: 12px;
+  color: #68796d;
+}
+.agent-organization {
+  padding: 18px 0;
+}
+.agent-org-lead,
+.agent-org-members {
+  display: flex;
+  gap: 24px;
+  padding: 10px 0;
+}
+.agent-org-lead > span,
+.agent-org-members > span {
+  font-size: 12px;
+  color: #68796d;
+  min-width: 54px;
+}
+.agent-org-members {
+  margin-left: 18px;
+  padding-left: 18px;
+  border-left: 2px solid #d9e4db;
+}
+.agent-org-members ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.agent-work-timeline {
+  list-style: none;
+  border-left: 1px solid #cbd8ce;
+  margin: 24px 0 0 6px;
+  padding: 0 0 0 24px;
+}
+.agent-work-timeline > li {
+  position: relative;
+  margin: 0 0 28px;
+}
+.agent-work-timeline > li:before {
+  content: "";
+  position: absolute;
+  left: -29px;
+  top: 5px;
+  width: 8px;
+  height: 8px;
+  background: #66816f;
+  border-radius: 50%;
+}
+.agent-work-timeline .agent-section-heading {
+  margin-bottom: 8px;
+}
+.agent-work-timeline a {
+  font-weight: 600;
+}
+.agent-work-timeline p {
+  font-size: 14px;
+}
+.agent-work-timeline small {
+  font-size: 12px;
+}
+.agent-collaborators {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  gap: 20px 36px;
+  flex-wrap: wrap;
+}
+.agent-collaborators li {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.agent-collaborators span {
+  font-size: 12px;
+  color: #68796d;
+}
+.agent-profile-footer {
+  border-top: 1px solid #dce3dd;
+  padding: 24px 0;
+  display: flex;
+  gap: 24px;
+  font-size: 13px;
+}
+.agent-profile-footer a,
+.agent-profile-actions a,
+.agent-section-heading > a {
+  color: #45684f;
+}
+.agent-simple-settings {
+  padding: 24px;
+  background: var(--surface, #fff);
+  border: 1px solid #d5dfd8;
+  border-radius: 12px;
+  margin: 0 0 26px;
+}
+.agent-simple-settings h3 {
+  margin: 0 0 20px;
+}
+.agent-simple-settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+.agent-simple-settings small {
+  color: #68796d;
+  font-size: 12px;
+}
+.agent-simple-settings details {
+  margin: 24px 0;
+}
+.agent-simple-settings summary,
+.agent-resume-section summary {
+  cursor: pointer;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+.agent-simple-settings textarea {
+  resize: vertical;
+  min-height: 70px;
+}
+.agent-simple-settings button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+@media (max-width: 760px) {
+  .agents-directory-filters {
+    flex-wrap: wrap;
+  }
+  .agents-directory-search {
+    flex-basis: 100%;
+  }
+  .agents-directory-list > li {
+    padding: 18px 14px;
+    gap: 12px;
+  }
+  .agent-directory-projects {
+    display: none;
+  }
+  .agent-directory-status {
+    display: none;
+  }
+  .agent-resume-header {
+    flex-wrap: wrap;
+    gap: 18px;
+  }
+  .agent-resume-header .agent-profile-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .agent-character {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .agent-portrait {
+    flex-basis: 56px;
+    width: 56px;
+    height: 56px;
+    font-size: 28px;
+    border-radius: 16px;
+  }
+  .agent-profile-back {
+    margin-bottom: 24px;
+  }
+  .agent-section-heading {
+    align-items: flex-start;
+  }
+  .agent-simple-settings {
+    padding: 18px;
+  }
+  .agent-org-members {
+    gap: 12px;
+  }
+  .agents-directory-heading {
+    align-items: flex-start;
+  }
+  .agents-directory-heading .agent-profile-actions {
+    gap: 10px;
+    font-size: 12px;
+  }
+  .agent-directory-open {
+    padding: 4px;
+  }
+  .agent-profile-page .agent-section-heading > span {
+    white-space: nowrap;
+  }
+}
+
+.agents-directory .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

@@ -67,6 +67,7 @@ try {
     'docs/external-knowledge-architecture.md',
     'docs/public-personal-architecture.md',
     'docs/project-agent-memory.md',
+    'docs/agent-conversations-and-collaboration.md',
     'docs/employee-agents.md',
     'docs/agent-interface-architecture.md',
     'examples/external-knowledge/markdown-folder.mjs',
@@ -87,6 +88,7 @@ try {
         'docs/external-knowledge-architecture.md',
         'docs/public-personal-architecture.md',
         'docs/project-agent-memory.md',
+        'docs/agent-conversations-and-collaboration.md',
         'docs/employee-agents.md',
         'docs/agent-interface-architecture.md'
       ].includes(path), `unexpected published documentation file ${path}`);
