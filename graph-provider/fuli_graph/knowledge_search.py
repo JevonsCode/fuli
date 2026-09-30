@@ -496,21 +496,6 @@ def _item_scope_metadata(
     project_scopes: dict[str, dict],
     include_personal_global: bool,
 ) -> dict | None:
-    if not any(
-        field in record
-        for field in (
-            'profile_aspect',
-            'preference_agent_id',
-            'assignment_project_id',
-            'episode_project_ids',
-            'episode_project_agent_ids',
-            'reference_project_ids',
-            'has_global_episode',
-        )
-    ):
-        # Backward-compatible projection for older Provider clients that returned
-        # only already-filtered item IDs.
-        return _global_scope_metadata()
     profile_aspect = record.get('profile_aspect')
     if profile_aspect:
         preference_scope = record.get('preference_scope') or 'global'
@@ -592,7 +577,14 @@ def _item_scope_metadata(
             ),
         )
         return _project_scope_metadata(project_id, scope)
-    if include_personal_global and record.get('has_global_episode'):
+    # A later project assignment, or an existing project origin, takes
+    # precedence over a historical unscoped episode. It is not global access.
+    if (
+        include_personal_global
+        and record.get('has_global_episode')
+        and not assignment_project_id
+        and not episode_project_ids
+    ):
         return _global_scope_metadata()
     return None
 

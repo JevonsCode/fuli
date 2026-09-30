@@ -5,6 +5,27 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 
+test('fallback task entry uses the same compact instruction and memory view as hooks', async () => {
+  const instruction = 'Keep the complete effective instruction. '.repeat(25);
+  const server = createMcpServer({ getCollaborationPreferences: async () => ({
+    effective_preferences: [{ instruction, preference_key: 'example', attributes: { duplicate: instruction } }],
+    project_agent_context: { memory: { revision: 7, history: [{ old: 'full history' }],
+      current: { memory: { summary: 'x'.repeat(2000), decisions: ['a'], nextActions: ['b'] } } } }
+  }) }, { env: {}, toolNames: ['get_collaboration_preferences'], registerResources: false });
+  try {
+    const result = await server.server._requestHandlers.get('tools/call')({
+      method: 'tools/call', params: { name: 'get_collaboration_preferences',
+        arguments: { projectPath: '/synthetic/project' } }
+    }, { signal: new AbortController().signal, requestId: 1 });
+    const data = result.structuredContent;
+    assert.equal(data.effective_preferences[0].instruction, instruction);
+    assert.equal(data.effective_preferences[0].attributes, undefined);
+    assert.equal(data.project_agent_context.memory.current.memory.summary.length, 800);
+    assert.equal(data.project_agent_context.memory.history, undefined);
+    assert.equal(data.project_agent_context.memory.requiresFullReadBeforeWrite, true);
+  } finally { await server.close(); }
+});
+
 test('an explicit empty MCP allowlist creates a valid tool-less server', async () => {
   const server = createMcpServer({}, {
     env: {}, toolNames: [], registerResources: false

@@ -9,6 +9,13 @@ Accumulate reusable knowledge without interrupting the user's normal work. Keep 
 
 ## Establish Task Context
 
+For a coordinated worker sharing its parent's host task, use the isolated context and lifecycle
+policy supplied by the coordinator. An inherited task token belongs to the parent: do not call
+`begin_task_context`, `checkpoint_task_knowledge`, or write the parent's Agent memory. Return
+your result, evidence and proposed work summary to the coordinator for integration. Worker
+activity uses `record_project_agent_task_activity`. A separately created host task/session has
+its own lifecycle and follows the normal entry and checkpoint rules below.
+
 At the start of every user task, first use the lifecycle context supplied by the host when one
 exists. A Claude Code `UserPromptSubmit` hook calls `begin_task_context`, which already loads
 collaboration preferences and resolves the exact local personal project from the current working
@@ -230,9 +237,11 @@ project history. Explicit user-selected Agents and locked policies remain higher
 Treat the returned durable Agent identity and a host worker as different things. A durable Agent
 keeps its project assignment, preferences, task history, and Agent-scoped graph memory while idle;
 the host creates an execution process only when needed. Start only entries in `worker_plan`, give
-each worker only its returned isolated `context`, role, and workstream boundary, and never expose
+each worker only its returned isolated `context` (including `lifecycle`), role, and workstream boundary, and never expose
 another Agent's private context. Fuli is the control plane and does not itself prove that a native
 worker started.
+Do not forward the parent's task token. The coordinator alone checkpoints the shared host task
+after integrating worker results; a worker's completion is not that task's completion.
 
 The host adapter must keep an adaptive-runtime graph lease for the whole worker run, and an
 executor lease when Fuli manages that executor. Call `acquire_runtime_lease` before starting
@@ -242,6 +251,14 @@ with `record_project_agent_task_activity`,
 including concrete worker identity. Call `record_project_agent_executor_actual` only after real
 executor/model use. If the host cannot start a worker, report the task as blocked or failed and do
 not fabricate an execution-summary row. The Provider's `executionSummary` remains authoritative.
+
+`workerStatus` requires `workerId` and the participating `agentId`. Structured actual executor,
+provider and model form one report and must match authorized preflight evidence. When that
+evidence is missing or inconsistent, omit all three; preserve the observed `workerRuntime`,
+terminal status and mismatch in the summary. Do not guess a provider or rewrite preflight to
+make history fit. Valid terminal activity automatically creates its routing outcome. Additional
+user/test outcome evidence needs a matching recorded execution, the task's exact work kind and
+model strategy, and real references; a CLI session ID alone does not establish that execution.
 
 Keep per-worker completion separate from the global task transition. While parallel work is still
 being integrated, report each worker's terminal result in `workerStatus` and keep the task status
@@ -388,7 +405,8 @@ If `capture_session_knowledge` or automatic project creation returns `capture_di
 user has disabled automatic capture. Do not retry, do not create a fallback record elsewhere,
 and do not describe the skipped batch as stored. Existing knowledge may still be queried.
 
-Before sending the final response, perform one checkpoint. For a hook-managed task, call
+Before sending the final response for a task you own, perform one checkpoint. A coordinated
+worker returns its result to the owner instead of checkpointing an inherited token. For a hook-managed task, call
 `checkpoint_task_knowledge` exactly once with either `capture_candidates` and the bounded durable
 batch, or `retain_nothing`. For a prompt-only Agent, either flush the durable batch directly or
 determine that the turn produced no reusable knowledge. Do not finish a reusable project decision

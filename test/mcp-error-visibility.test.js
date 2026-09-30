@@ -8,7 +8,7 @@ import {
 } from '../src/graphiti/agent-knowledge-workflows.js';
 import { ProviderRequestError } from '../src/graphiti/provider-client.js';
 import { errorToolResult } from '../src/mcp/tool-result.js';
-import { TaskContextRegistry } from '../src/mcp/task-context-registry.js';
+import { TaskContextRegistry } from './fixtures/in-memory-task-context-registry.js';
 
 // Issue source: WZ.
 // Callers need enough detail to correct rejected requests.

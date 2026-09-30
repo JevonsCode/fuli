@@ -3,7 +3,7 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import { createMcpServer } from '../../src/mcp/create-mcp-server.js';
-import { TaskContextRegistry } from '../../src/mcp/task-context-registry.js';
+import { TaskContextRegistry } from '../../test/fixtures/in-memory-task-context-registry.js';
 
 const registry = new TaskContextRegistry();
 const app = {

@@ -20,7 +20,10 @@ from fuli_graph.models import SearchRequest
 
 @pytest.mark.asyncio
 async def test_personal_edge_scope_uses_assignments_references_and_global_episodes():
-    driver = RecordingDriver([{'id': 'edge-a'}, {'id': 'edge-global'}])
+    driver = RecordingDriver([
+        {'id': 'edge-a', 'assignment_project_id': 'project-a'},
+        {'id': 'edge-global', 'has_global_episode': True},
+    ])
     store = SimpleNamespace(runtime=SimpleNamespace(driver=driver))
 
     result = await personal_edge_ids(
@@ -84,6 +87,48 @@ async def test_project_inheritance_traverses_only_two_explicit_directional_hops(
     assert 'PERSONAL_PROJECT_RELATION*1..2' in query
     assert "['PART_OF', 'USES_KNOWLEDGE_FROM']" in query
     assert parameters['active_project_id'] == 'child-project'
+
+
+@pytest.mark.parametrize('origin', [
+    {'assignment_project_id': 'other-project'},
+    {'episode_project_ids': ['other-project']},
+])
+def test_old_global_episode_cannot_bypass_current_project_ownership(origin):
+    request = SearchRequest(space_ids=['personal-space'], query='deployment',
+                            personal_project_ids=['active-project'])
+    scopes = {'active-project': {'scope_distance': 0, 'scope_path': ['active-project'], 'inherited': False}}
+    record = {'profile_aspect': None, 'has_global_episode': True, **origin}
+    assert _item_scope_metadata(record, request, scopes, True) is None
+
+
+def test_scope_missing_records_fail_closed_but_real_global_knowledge_stays_available():
+    request = SearchRequest(space_ids=['personal-space'], query='deployment',
+                            personal_project_ids=['active-project'])
+    assert _item_scope_metadata({'id': 'old-record'}, request, {}, True) is None
+    assert _item_scope_metadata({'id': 'old-record'}, request, {}, False) is None
+    assert _item_scope_metadata({'has_global_episode': True}, request, {}, True) == {
+        'defined_project_id': None, 'scope_distance': 0,
+        'inherited_from_project_id': None, 'scope_path': [], 'inherited': False,
+    }
+
+
+def test_project_references_share_knowledge_without_changing_its_primary_scope():
+    request = SearchRequest(space_ids=['personal-space'], query='scope',
+                            personal_project_ids=['active-project'])
+    scopes = {'active-project': {
+        'scope_distance': 0, 'scope_path': ['active-project'], 'inherited': False,
+    }}
+    # A reference does not move the primary owner. Genuine global knowledge
+    # remains global even when another project references it.
+    global_reference = {
+        'has_global_episode': True, 'reference_project_ids': ['other-project'],
+    }
+    assert _item_scope_metadata(global_reference, request, scopes, True)['defined_project_id'] is None
+    assert _item_scope_metadata(global_reference, request, scopes, False) is None
+    owned = {**global_reference, 'assignment_project_id': 'owner-project'}
+    assert _item_scope_metadata(owned, request, scopes, True) is None
+    shared = {**owned, 'reference_project_ids': ['active-project']}
+    assert _item_scope_metadata(shared, request, scopes, False)['defined_project_id'] == 'active-project'
 
 
 def test_item_level_inheritance_is_opt_in_and_never_applies_to_preferences():

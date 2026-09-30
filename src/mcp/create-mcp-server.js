@@ -1,4 +1,5 @@
 import { compactTaskContext } from '../conversations/task-context-view.js';
+import { employeeToolCatalogResult } from './employee-tool-catalog.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   CallToolRequestSchema,
@@ -225,6 +226,9 @@ async function invokeTool(tool, input, requestContext = null) {
     const value = await tool.invoke(input, requestContext);
     auditLifecycleTool(tool.definition.name);
     const limitBytes = TOOL_RESULT_LIMIT_BYTES[tool.definition.name];
+    if (tool.definition.name === 'list_employee_tools') {
+      return employeeToolCatalogResult(value, { limitBytes });
+    }
     if (tool.definition.name === 'begin_task_context') {
       return hookAdditionalContextToolResult(compactTaskContext(value), {
         hookEventName: 'UserPromptSubmit',
@@ -236,7 +240,8 @@ async function invokeTool(tool, input, requestContext = null) {
     const itemLimit = ({ list_agent_interfaces: 200, list_project_agent_tasks: 200,
       list_preference_conflicts: 1000, list_external_knowledge_bindings: 200,
       get_collaboration_preferences: 1000 })[tool.definition.name];
-    return successToolResult(value, { limitBytes, itemLimit });
+    return successToolResult(tool.definition.name === 'get_collaboration_preferences'
+      ? compactTaskContext(value) : value, { limitBytes, itemLimit });
   } catch (error) {
     return errorToolResult(error);
   }

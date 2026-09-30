@@ -806,7 +806,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'record_project_agent_task_activity',
     title: 'WRITE · Record task activity',
-    description: 'Record one explicit task event, including real terminal activity, actual executor/model/client attribution, and an optional source-labelled cumulative token snapshot for the concrete worker. Never estimate missing usage. Terminal activity is the only source for per-Agent activity summaries.',
+    description: 'Record real task/worker activity and optional source-labelled cumulative token usage; never estimate. workerStatus requires workerId and agentId. Report actualExecutorId, actualModelProvider and actualModel together only with matching authorized preflight evidence. Otherwise omit all three, report observed workerRuntime and explain the mismatch in summary. A terminal activity with valid actual execution automatically records its routing outcome.',
     inputSchema: projectAgentTaskActivityInput
   },
   {
@@ -1016,7 +1016,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'record_project_agent_task_outcome',
     title: 'WRITE · Record explicit routing outcome evidence',
-    description: 'Record only explicit acceptance/satisfaction evidence such as rework_requested, repeated_negative_feedback, explicit_praise, test/acceptance pass or fail, or an explicit rating. Natural-language text is never used to infer satisfaction.',
+    description: 'Record explicit user/test outcome evidence against a matching recorded execution. Use the task workKind and effective modelStrategy plus real referenceIds; a CLI session ID alone is not a recorded run. Terminal routing outcomes are already derived from valid task activity; do not submit them again. Never infer satisfaction or fabricate execution evidence to clear a validation error.',
     inputSchema: projectAgentTaskOutcomeInput
   },
   {

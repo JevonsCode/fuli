@@ -178,7 +178,9 @@ function projectString(value, budget) {
 function projectArray(value, budget, depth) {
   const projected = [];
   let used = 2;
-  for (const item of value.slice(0, RESULT_ITEM_LIMIT)) {
+  // sanitize already applied the caller's item limit. A second default limit
+  // here silently drops catalog entries and preferences when bytes are capped.
+  for (const item of value) {
     const separatorBytes = projected.length ? 1 : 0;
     const child = projectValue(item, budget - used - separatorBytes, depth + 1);
     if (child === undefined) continue;

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { checkpointTaskKnowledge } from '../src/graphiti/agent-knowledge-workflows.js';
-import { TaskContextRegistry } from '../src/mcp/task-context-registry.js';
+import { TaskContextRegistry } from './fixtures/in-memory-task-context-registry.js';
 import { agentMemoryView } from '../src/graphiti/project-agent-memory.js';
 
 function scenario() {

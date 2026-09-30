@@ -214,7 +214,14 @@ export async function coordinateProjectAgentTask(
     assignment_summary: participant.assignmentSummary ?? null,
     workstream_boundary: boundaries[index] ?? null,
     context_status: contexts[index]?.status ?? 'unavailable',
-    context: contexts[index]
+    context: {
+      ...contexts[index],
+      lifecycle: {
+        task_checkpoint_owner: 'coordinator',
+        completion_tool: 'record_project_agent_task_activity',
+        instruction: 'Return the bounded result and evidence to the coordinator. Report only worker activity. Do not begin or checkpoint an inherited parent task context, or write its Agent memory. An independently created host task/session owns its own lifecycle.'
+      }
+    }
   }));
   const contextsReady = workerPlan.every(({ context_status: status }) => status === 'ready');
   const hostExecutionRequired = route.task.status === 'queued' &&
@@ -249,6 +256,8 @@ export async function coordinateProjectAgentTask(
       start_only_returned_workers: true,
       report_worker_start_and_terminal_events: true,
       report_actual_executor_only_after_real_use: true,
+      task_checkpoint_owner: 'coordinator',
+      forward_parent_task_context_token: false,
       release_runtime_lease_in_finally: true
     },
     worker_plan: workerPlan,

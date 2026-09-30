@@ -61,6 +61,23 @@ An Agent should:
 
 The bundled `operating-fuli` Skill teaches this sequence and is installed by `fuli setup` for supported Agents. Browser automation is permitted only as optional visual verification after a structured operation, never as a data-mutation fallback.
 
+## Bounded context and exact contracts
+
+Task entry through either the hook or `get_collaboration_preferences` returns the same compact
+context shape: full active preference instructions, bounded working-memory previews and explicit
+instructions to read complete memory before writing. Duplicate evidence wrappers are omitted.
+`view_project_agent_task` supports `includeEvents: false` to omit event history while retaining
+the derived execution summary and observed worker evidence. Detailed reads remain the default.
+
+Summary limits must not alter executable tool schemas. Employee discovery uses a separate exact
+catalog projection with explicit size errors; ordinary summaries retain their configured item
+and byte budgets without applying a second fixed 20-item limit during byte reduction.
+
+Knowledge retrieval requires current scope evidence. An old unscoped episode cannot make a
+currently project-assigned item globally accessible. Explicit project references, opted-in
+inheritance and genuine personal-global knowledge keep their existing scope rules; records
+without scope metadata fail closed.
+
 ## Human-only boundaries
 
 The following operations intentionally remain local-user-only:

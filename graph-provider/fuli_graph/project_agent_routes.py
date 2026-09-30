@@ -253,13 +253,17 @@ def register_project_agent_routes(
             str | None,
             Query(min_length=1, max_length=128),
         ] = None,
+        include_events: bool = True,
     ) -> ProjectAgentTaskRecord:
-        return await store.get_project_agent_task(
+        task = await store.get_project_agent_task(
             actor,
             personal_space_id,
             task_id,
             personal_project_id=personal_project_id,
         )
+        # Derive execution evidence before omitting history from the response.
+        # Never mutate the durable record or erase worker state in compact reads.
+        return task if include_events else task.model_copy(update={'events': []})
 
     @application.post(
         '/v1/project-agent-tasks/{task_id}/events',
