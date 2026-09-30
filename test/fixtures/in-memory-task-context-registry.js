@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
-import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
+import { ApplicationError, ApplicationErrorCode } from '../../src/app/application-error.js';
+
+// Synthetic test double only. Production task contexts are persisted by the
+// Provider so separate host and hook processes share the same lifecycle state.
 
 const MAX_ACTIVE_SESSIONS = 256;
 

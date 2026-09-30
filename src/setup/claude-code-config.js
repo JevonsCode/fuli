@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
+import { claudeLifecycleCommand, isClaudeLifecycleCommand } from '../agents/claude-code/lifecycle-hooks.js';
 
 import {
   readJsonFile,
@@ -48,9 +49,7 @@ export function connectClaudeCode(agent, context, {
       }
     }
   };
-  const nextSettings = withManagedHooks(settings, {
-    hookTimeoutSec: context.hookTimeoutSec
-  });
+  const nextSettings = withManagedHooks(settings, context);
   const registrationChanged = !sameJson(current, next);
   const hooksChanged = !sameJson(settings, nextSettings);
   if (registrationChanged) writeConfig(agent.configPath, next);
@@ -104,13 +103,13 @@ export function disconnectClaudeCode(agent, {
   };
 }
 
-export function hasCurrentClaudeCodeHooks(settings, { hookTimeoutSec = 30 } = {}) {
+export function hasCurrentClaudeCodeHooks(settings, context = {}) {
   try {
     assertObject(settings, 'Claude Code settings');
     assertHookSettings(settings.hooks ?? {});
     assertPermissionSettings(settings.permissions ?? {});
     return sameJson(
-      withManagedHooks(settings, { hookTimeoutSec }),
+      withManagedHooks(settings, context),
       settings
     );
   } catch {
@@ -118,23 +117,20 @@ export function hasCurrentClaudeCodeHooks(settings, { hookTimeoutSec = 30 } = {}
   }
 }
 
-function withManagedHooks(settings, { hookTimeoutSec = 30 } = {}) {
+function withManagedHooks(settings, context) {
+  const { hookTimeoutSec = 30 } = context;
   const normalizedHookTimeoutSec = positiveHookTimeout(hookTimeoutSec);
   const clean = withoutManagedSettings(settings);
   const hooks = { ...(clean.hooks ?? {}) };
   hooks.UserPromptSubmit = [
     ...(hooks.UserPromptSubmit ?? []),
-    managedHookGroup('begin_task_context', {
-      sessionId: '${session_id}',
-      projectPath: '${cwd}',
-      taskPrompt: '${prompt}'
-    }, 'Loading Fuli task context', normalizedHookTimeoutSec)
+    managedHookGroup(context, 'UserPromptSubmit', 'Loading Fuli task context', normalizedHookTimeoutSec)
   ];
   hooks.Stop = [
     ...(hooks.Stop ?? []),
     managedHookGroup(
-      'verify_task_checkpoint',
-      { sessionId: '${session_id}' },
+      context,
+      'Stop',
       'Checking Fuli task checkpoint',
       normalizedHookTimeoutSec
     )
@@ -186,13 +182,11 @@ function withoutManagedHooks(settings) {
   return { ...settings, hooks };
 }
 
-function managedHookGroup(tool, input, statusMessage, timeout) {
+function managedHookGroup(context, event, statusMessage, timeout) {
   return {
     hooks: [{
-      type: 'mcp_tool',
-      server: FULI_SERVER,
-      tool,
-      input,
+      type: 'command',
+      command: claudeLifecycleCommand(context, event, timeout),
       timeout,
       statusMessage
     }]
@@ -207,7 +201,7 @@ function positiveHookTimeout(value) {
 }
 
 function isManagedHook(hook, tool = null) {
-  return hook?.type === 'mcp_tool'
+  return isClaudeLifecycleCommand(hook) || hook?.type === 'mcp_tool'
     && hook.server === FULI_SERVER
     && MANAGED_HOOK_TOOLS.has(hook.tool)
     && (tool === null || hook.tool === tool);

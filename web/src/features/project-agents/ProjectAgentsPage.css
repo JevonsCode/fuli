@@ -38,8 +38,6 @@
 .project-agent-row-responsibility { grid-column: 1 / -1; overflow: hidden; color: #59645d; font-size: 11px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
 .project-agent-row-work { grid-column: 1 / -1; color: #59645d; font-size: 10px; line-height: 1.5; }
 .project-agent-work-dot { display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; background: #4b8d63; }
-.project-agent-row-capabilities { grid-column: 1 / -1; min-height: 20px; display: flex; flex-wrap: wrap; gap: 5px; }
-.project-agent-row-capabilities b { border-radius: 999px; background: #f1f3f1; color: #68736c; padding: 3px 7px; font-size: 9px; font-weight: 650; }
 .project-agent-detail { min-width: 0; min-height: 0; padding: 20px; overflow: auto; container-type: inline-size; }
 .employee-project-overview { margin: 22px 0; padding-bottom: 18px; border-bottom: 1px solid #e1e6e2; }
 .employee-project-overview-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
@@ -149,3 +147,8 @@
 @media (max-width: 1180px) { .project-agents-toolbar { grid-template-columns: minmax(220px, 280px) 1fr; }.project-agents-status-filter { grid-column: 1 / -1; justify-self: start; }.project-agents-directory { grid-template-columns: minmax(320px, .9fr) minmax(330px, 1fr); }.project-agent-detail-meta, .project-agent-compact-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @container (max-width: 420px) { .project-agent-detail > header { grid-template-columns: minmax(0, 1fr); }.project-agent-detail-actions { justify-content: start; } }
 @media (max-width: 760px) { .project-agents-view { padding: 14px 16px 18px; overflow: auto; }.project-agents-header, .project-agents-summary, .project-agent-section-heading, .project-agent-assignment-card header { align-items: flex-start; flex-wrap: wrap; }.project-agents-toolbar { grid-template-columns: minmax(0, 1fr); }.project-agents-project-filter, .project-agents-search, .project-agents-status-filter { grid-column: 1; }.project-agents-status-filter { width: 100%; justify-self: stretch; flex-wrap: wrap; }.project-agents-directory { flex: 0 0 auto; grid-template-columns: minmax(0, 1fr); overflow: visible; }.project-agent-list { max-height: 340px; border-right: 0; border-bottom: 1px solid #dfe4e0; }.project-agent-detail { min-height: 520px; padding: 16px; }.project-agent-client-row, .project-agent-rule-row, .project-agent-executor-row { grid-template-columns: minmax(0, 1fr); align-items: start; }.project-agent-client-row small, .project-agent-executor-row small { grid-column: 1; }.project-agent-execution-summary-meta { grid-template-columns: minmax(0, 1fr); }.project-agent-worker-event-row header { gap: 8px; } }
+
+.project-agent-disclosure { margin-top: 18px; }
+.project-agent-disclosure > summary { cursor: pointer; color: #39483f; font-size: 13px; font-weight: 650; padding-block: 10px; }
+.project-agent-disclosure > summary:focus-visible { outline: 2px solid #315c43; outline-offset: 3px; }
+.project-agent-disclosure .project-agent-detail-section:first-child { margin-top: 12px; }

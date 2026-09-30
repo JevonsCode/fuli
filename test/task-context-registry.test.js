@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { ApplicationError } from '../src/app/application-error.js';
-import { TaskContextRegistry } from '../src/mcp/task-context-registry.js';
+import { TaskContextRegistry } from './fixtures/in-memory-task-context-registry.js';
 import { errorToolResult } from '../src/mcp/tool-result.js';
 
 test('in-memory task contexts preserve turn metadata and isolate identical session IDs by client', () => {

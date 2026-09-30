@@ -1,4 +1,6 @@
 const UI_MUTATION_PARITY = Object.freeze([
+  agent('POST /api/agent-conversations/query', 'list_agent_conversations', 'read_agent_conversation', 'get_agent_conversation_policy'),
+  agent('PUT /api/agent-conversations/policy', 'update_agent_conversation_policy'),
   agent('POST /api/agent-attention', 'request_agent_attention'),
   agent('POST /api/agent-attention/cancel', 'cancel_agent_attention'),
   local('POST /api/agent-attention/respond', 'Only a local person may respond to an Agent request. A response records a decision, but never executes permissions or task acceptance.'),

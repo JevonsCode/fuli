@@ -1,3 +1,4 @@
+import { beginConversation, checkpointConversation } from './agent-conversations.js';
 import { createHash } from 'node:crypto';
 
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
@@ -54,7 +55,9 @@ export async function beginTaskContext(application, {
     memoryRevision: preferences.project_agent_context?.memory?.revision ?? null,
     workLogRequired: Boolean(preferences.project_agent_context?.memory)
   });
+  const conversation = await beginConversation(application, task);
   return {
+    conversation,
     taskContextToken: task.token,
     task_context_token: task.token,
     checkpoint_required: task.checkpoint?.phase !== 'complete',
@@ -62,10 +65,11 @@ export async function beginTaskContext(application, {
     previous_checkpoint_missing: task.previousCheckpointMissing,
     ...preferences,
     task_guidance: {
+      collaboration: 'Before implementation assess work complexity and required capabilities using plan_agent_collaboration. The stable project lead coordinates qualified specialists and source-lead-approved loans. Use only available authorized clients/models. Ask optional verification-client preference once; after 15 seconds use the recommended authorized task-local default. Persist project/global preferences only after explicit choice. Verify artifacts, record_agent_verification with evidence; after two failures escalate capability. Never claim a model change or worker run from a routing recommendation alone.',
       profile_capture: 'Evaluate durable artifact taste (including writing voice, wording, structure and formatting), stable collaboration personality, and decision preferences separately. Do not default every preference to judgment_preference. Use tasteDomain: writing for writing evidence; retain exact session/turn/time provenance. Agent-inferred personality remains pending. Report actual missing evidence rather than promising automatic progress from use alone.',
       human_attention: 'When the selected Project Agent needs a human answer, decision, review or permission, use request_agent_attention with the exact current space/project/Agent IDs, a stable idempotency key and a specific requestedAction. Never raise a hand for ordinary running, queueing or automatic retries. Read list_agent_attention with status=resolved for replies; cancel obsolete requests with cancel_agent_attention. A response does not grant permission or accept task completion.',
       retrieval: 'Inspect task_knowledge_recall before asking for a stable project fact or method again. On a miss, use search_current_project_knowledge with focused action, artifact, target-system, or identifier queries; never use the full conversational request as the only query.',
-      checkpoint: 'Before finishing, call checkpoint_task_knowledge with capture_candidates or retain_nothing. For an assigned employee include workLog with a concise result summary and truthful status (completed, incomplete, failed, no_change, or reported), even when there is no knowledge to capture. When durable role context changed, also include agentMemory with the loaded revision and bounded merged notes. Do not overwrite from truncated context or store raw transcripts.'
+      checkpoint: 'The task owner checkpoints once after integration. Coordinated workers return results and evidence to the coordinator; they must not begin or checkpoint an inherited parent context. Before finishing the owned task, call checkpoint_task_knowledge with capture_candidates or retain_nothing. For an assigned employee include workLog with a concise result summary and truthful status (completed, incomplete, failed, no_change, or reported), even when there is no knowledge to capture. When durable role context changed, also include agentMemory with the loaded revision and bounded merged notes. Do not overwrite from truncated context or store raw transcripts.'
     }
   };
 }
@@ -112,7 +116,8 @@ export async function checkpointTaskKnowledge(application, {
   if (task.checkpoint?.phase === 'complete') {
     return { status: 'checkpointed', disposition, reason,
       personal_project_id: task.personalProjectId, project_agent_id: task.projectAgentId,
-      replayed: true, capture_status: task.checkpoint.captureStatus };
+      replayed: true, capture_status: task.checkpoint.captureStatus,
+      conversation: await checkpointConversation(application, task, workLog ?? { status: 'reported', summary: reason }) };
   }
   const captureInput = capture ? {
     ...capture,
@@ -174,6 +179,7 @@ export async function checkpointTaskKnowledge(application, {
     personal_project_id: task.personalProjectId,
     project_agent_id: task.projectAgentId ?? null,
     capture: captureResult,
+    conversation: await checkpointConversation(application, task, workLog ?? { status: 'reported', summary: reason }),
     agent_memory: memoryResult ? {
       status: memoryResult.status, agentId: memoryResult.agentId,
       checkpointId: memoryResult.checkpointId, revision: memoryResult.revision,

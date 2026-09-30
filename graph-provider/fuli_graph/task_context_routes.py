@@ -7,6 +7,13 @@ from .task_context_models import TaskContextBegin, TaskContextCheckpoint, TaskCo
 
 
 def register_task_context_routes(application, store, Actor):
+    @application.get('/v1/task-context-sessions/current')
+    async def current_context(actor: Actor,
+        personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
+        session_id: Annotated[str, Query(min_length=1, max_length=256)],
+        source_application: SourceApplication):
+        return await store.current_task_context(actor, personal_space_id, session_id, source_application)
+
     @application.put('/v1/task-contexts/{token}/agent')
     async def adopt_agent(token: str, request: TaskContextAdoptAgent, actor: Actor):
         return await store.adopt_task_context_agent(actor, token, request)

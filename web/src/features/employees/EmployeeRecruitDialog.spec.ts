@@ -140,7 +140,7 @@ describe('employee recruitment', () => {
     expect(navigation.find('.nav-section-label').text()).toBe('专属 Agent')
     mounted.push(navigation)
     await flushPromises()
-    expect(navigation.get('a').attributes('href')).toBe('/employees/jefa')
+    expect(navigation.get('a').attributes('href')).toBe('/agents/space-a/employee.jefa')
     expect(navigation.text()).toContain('项目经理')
   })
 

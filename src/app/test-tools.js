@@ -1,4 +1,4 @@
-import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
+import { ApplicationError, ApplicationErrorCode } from './application-error.js';
 
 /** Tools that must not appear on default production MCP surfaces. */
 export const TEST_ONLY_TOOL_NAMES = Object.freeze([

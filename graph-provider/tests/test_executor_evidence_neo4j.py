@@ -567,11 +567,14 @@ async def test_outcome_cannot_credit_an_unrelated_execution(mismatch):
     settings = fixture_settings()
     async with provider_client(settings, raise_app_exceptions=False) as (client, _):
         scope, _, payload = await evidence_setup(client, with_actual=mismatch != 'no_actual')
+        # Adaptive selection may already resolve to fast for this simple task.
+        # Change the observed mode instead of assuming a particular default.
+        unrelated_mode = 'deep' if payload['model_strategy']['mode'] != 'deep' else 'fast'
         changes = {
             'agent': {'agent_id': 'unrelated-synthetic-agent'},
             'executor': {'executor_id': 'unrelated-synthetic-executor'},
             'work_kind': {'work_kind': 'unrelated-work'},
-            'strategy': {'model_strategy': {'mode': 'fast'}},
+            'strategy': {'model_strategy': {'mode': unrelated_mode}},
             'run': {'run_id': 'unrelated-synthetic-run'}, 'no_actual': {},
         }
         rejected = await client.post('/v1/project-agent-routing-outcomes', json={**payload, **changes[mismatch]})

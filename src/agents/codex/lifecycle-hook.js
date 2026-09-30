@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+import { withTranscriptGuard } from '../../conversations/transcript-guard.js';
+import { compactTaskContext } from '../../conversations/task-context-view.js';
+import { syncConversationTranscript, withTranscriptNotice, claimTranscriptBoundary, recordTranscriptTaskEntry } from '../../conversations/sync-transcript.js';
+import { normalizeCodexRecord, verifyCodexTranscript } from './conversation-transcript.js';
+import { hookAdditionalContextToolResult } from '../../mcp/tool-result.js';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -37,13 +42,26 @@ export async function codexStopLifecycleOutput(input, invoke) {
   return { decision: 'block', reason: boundedHookMessage(check.reason) };
 }
 
+export async function codexLifecycleOutput(event, input, invoke) {
+  if (event === 'Stop') return codexStopLifecycleOutput(input, invoke);
+  if (!input?.session_id || typeof input.cwd !== 'string' || typeof input.prompt !== 'string') {
+    throw new TypeError('Codex task entry requires session, cwd and prompt');
+  }
+  const context = await invoke('begin_task_context', { sessionId: input.session_id,
+    turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192),
+    sourceApplication: 'codex', sourceSessionId: input.session_id });
+  return JSON.parse(hookAdditionalContextToolResult(compactTaskContext(context), { hookEventName: event,
+    label: 'Fuli task context. Apply effective_preferences and checkpoint with taskContextToken.',
+    limitBytes: 128 * 1024, itemLimit: 1000 }).content[0].text);
+}
+
 export async function runCodexLifecycleHook(args, dependencies = {}) {
   const event = args[args.indexOf('--event') + 1];
-  if (event !== 'Stop') throw new TypeError('Missing Codex lifecycle event');
+  if (!['Stop', 'UserPromptSubmit'].includes(event)) throw new TypeError('Missing Codex lifecycle event');
   const input = await (dependencies.readInput ?? readHookInput)();
   const write = dependencies.write ?? ((value) => process.stdout.write(value));
   if (dependencies.invoke) {
-    const output = await codexStopLifecycleOutput(input, dependencies.invoke);
+    const output = await codexLifecycleOutput(event, input, dependencies.invoke);
     write(`${JSON.stringify(output)}\n`);
     return output;
   }
@@ -63,12 +81,33 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
       runtimeConfigPath
     });
     const invokeTool = dependencies.callTool ?? callAgentTool;
-    const output = await leases.withGraphLease('codex-lifecycle', () =>
-      codexStopLifecycleOutput(
-        input,
-        (name, parameters) => invokeTool(app, name, parameters)
-      )
-    );
+    const output = await leases.withGraphLease('codex-lifecycle', async () => {
+      try {
+        return await withTranscriptGuard(runtimeConfigPath, input, 'codex', app.getCapturePolicy?.().enabled, async guard => {
+          let sync = await syncConversationTranscript(app, input, 'codex', {
+            normalize: normalizeCodexRecord, verify: verifyCodexTranscript
+          }, guard);
+          if (event === 'UserPromptSubmit' && sync.entryBlocked) return { decision: 'block', reason: sync.reason };
+          const entryGuard = sync.status === 'capture_disabled' ? null : guard;
+          if (event === 'UserPromptSubmit' && entryGuard?.value) await entryGuard.write({ ...entryGuard.value, phase: 'beginning' });
+          const result = await codexLifecycleOutput(event, input, async (name, parameters) => {
+            const context = await invokeTool(app, name, parameters);
+            if (name === 'begin_task_context') await recordTranscriptTaskEntry(entryGuard, context);
+            return context;
+          });
+          if (event === 'UserPromptSubmit') sync = await claimTranscriptBoundary(app, input, 'codex', sync, {
+            normalize: normalizeCodexRecord, verify: verifyCodexTranscript
+          }, entryGuard);
+          if (event === 'UserPromptSubmit' && sync.entryBlocked) return { decision: 'block', reason: sync.reason };
+          return withTranscriptNotice(result, sync);
+        });
+      } catch (error) {
+        if (event !== 'UserPromptSubmit' || !app.getCapturePolicy?.().enabled || !input.transcript_path) throw error;
+        return { decision: 'block', reason: error.code === 'EADDRINUSE'
+          ? 'The session handoff lock is occupied. Retry after the current hook finishes; if it persists, start a new host session and resume the intended Agent.'
+          : 'Fuli transcript handoff could not be completed safely. Retry task entry; no previous Agent context was supplied.' };
+      }
+    });
     write(`${JSON.stringify(output)}\n`);
     return output;
   } finally {

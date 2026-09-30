@@ -49,6 +49,21 @@ try {
     runtimeConfigPath: join(temporaryRoot, 'unused-runtime.json'),
     hookTimeoutSec: timeouts.hookTimeoutSec
   });
+  // This fixture verifies the MCP hook wire contract with an in-memory registry.
+  // Production uses the independent Claude command adapter; its regression tests
+  // must also pass when the host has no Fuli MCP connection.
+  const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
+  for (const [event, tool, input] of [
+    ['UserPromptSubmit', 'begin_task_context', {
+      sessionId: '${session_id}', projectPath: '${cwd}', taskPrompt: '${prompt}'
+    }],
+    ['Stop', 'verify_task_checkpoint', { sessionId: '${session_id}' }]
+  ]) {
+    settings.hooks[event] = [{ hooks: [{
+      type: 'mcp_tool', server: 'fuli', tool, input, timeout: timeouts.hookTimeoutSec
+    }] }];
+  }
+  writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 });
   const mcpConfig = JSON.parse(readFileSync(mcpConfigPath, 'utf8'));
   mcpConfig.mcpServers.fuli.env = {
     FULI_ACCEPTANCE_LIFECYCLE_AUDIT_PATH: auditPath,

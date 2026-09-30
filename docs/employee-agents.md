@@ -81,7 +81,20 @@ The reserved identity is `employee.<template-id>`, recognized by the generic `fu
 
 The host serves `/api/employee-templates`, recruitment/workspace/tool endpoints below it, and `/employee-workspaces/<template-id>/<project-id>/…`. Existing Host/Origin, JSON-body and LAN authorization checks apply. All workbench requests require an active matching identity and authorized responsibility policy, including assets and Agent discovery. Selected mode additionally requires an active assignment; all mode includes future active projects but enforces explicit exclusions and ended assignments before reaching the runtime.
 
-The existing FULI MCP exposes `list_employee_templates`, `recruit_employee`, `list_employee_tools`, and `call_employee_tool`. Workbench operations resolve an exact registered `projectPath`; unresolved or mismatched projects fail closed. Clients need to rediscover tools after upgrading the FULI installation they launch. Editing a source checkout does not update an already installed server or active MCP session.
+The existing FULI MCP exposes `list_employee_templates`, `recruit_employee`, `list_employee_tools`, and `call_employee_tool`. Workbench operations resolve an exact registered project from its path or an authorized explicit project ID; unresolved or mismatched projects fail closed. Clients need to rediscover tools after upgrading the FULI installation they launch. Editing a source checkout does not update an already installed server or active MCP session.
+
+Employee tool discovery preserves complete JSON Schema contracts, including deeply nested
+fields and enums. Use `includeSchemas: false` for a compact list, then `toolName` to read one
+complete contract. The catalog has a 64 KiB response limit; an oversized catalog returns a
+controlled error with this recovery sequence instead of a partially usable schema. Only tools
+allowed by the installed employee manifest are returned.
+
+Discovery and invocation accept either `projectPath` or an already resolved `personalProjectId`.
+When directory resolution is unavailable, pass the known ID and omit the path. If both are
+provided, the path must resolve to that same project. The selected project must exist, be
+active and be assigned to the employee under the current management policy; an explicit ID
+does not bypass these checks. This supports remote directories and arbitrary checkout names
+without inventing a second project or guessing from its description.
 
 Recruitment accepts an exact `projectPath` (MCP), a legacy `personalProjectId`/`personalProjectIds` selection, or a `management` policy; legacy project selectors cannot be mixed with a policy. Policy shape: `{ mode, projectIds, excludedProjectIds, titleMode, titleStyle }`. `all` stores exclusions and no inclusion list; `selected` stores a fixed project list and no exclusions. Omission for a new identity uses the template default; explicit empty selection recruits without an assignment. Arrays are deduplicated and bounded to 500 entries, and validated before writes. Existing policy replacement requires `replaceAssignments: true` plus the last-read `expectedAssignmentsVersion`. A stale selection fails with `assignment_scope_conflict`; an identical retry is idempotent. Changes preserve customized preferences, role, and executor policies.
 

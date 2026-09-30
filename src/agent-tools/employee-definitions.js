@@ -3,6 +3,7 @@ import { booleanSchema, objectSchema, stringSchema } from './schema.js';
 const id = { ...stringSchema(), minLength: 1, maxLength: 256 };
 const projectPath = { ...stringSchema(), minLength: 1, maxLength: 4096 };
 const target = { projectPath, templateId: id };
+const workbenchTarget = { ...target, personalProjectId: id };
 
 export const EMPLOYEE_TOOL_DEFINITIONS = [
   {
@@ -29,15 +30,15 @@ export const EMPLOYEE_TOOL_DEFINITIONS = [
   },
   {
     name: 'list_employee_tools', title: 'READ · Employee workbench tools',
-    description: 'Discover the exact input schemas and permissions for a recruited employee in the current project. Read these schemas before calling a tool; a workbench has to be installed first.',
-    inputSchema: objectSchema(target, ['projectPath', 'templateId'])
+    description: 'Discover complete input schemas and permitted tools for a recruited employee. Supply projectPath, or a previously resolved personalProjectId without projectPath when directory resolution is unavailable. If both are supplied they must resolve to the same project. Existing project and employee authorization always apply. Use includeSchemas=false for a compact name list, then toolName to read one exact schema. Oversized contracts fail explicitly, never return partial schemas. Read the schema before calling; a workbench has to be installed first.',
+    inputSchema: objectSchema({ ...workbenchTarget, toolName: id, includeSchemas: booleanSchema() }, ['templateId'])
   },
   {
     name: 'call_employee_tool', title: 'WRITE · Call an employee workbench tool',
-    description: 'Call a discovered employee tool inside the exact assigned project. May read or change data according to the tool schema. Preserve optimistic concurrency and idempotency keys. Does not grant cross-project access, execute an external model, or confirm task completion for the human.',
+    description: 'Call a discovered employee tool inside the exact assigned project. Supply projectPath or a previously resolved personalProjectId; omit projectPath if directory resolution is unavailable. If both are supplied they must resolve to the same project. May read or change data according to the tool schema. Preserve optimistic concurrency and idempotency keys. Does not grant cross-project access, execute an external model, or confirm task completion for the human.',
     inputSchema: objectSchema({
-      ...target, tool: id,
+      ...workbenchTarget, tool: id,
       arguments: { type: 'object', additionalProperties: true }
-    }, ['projectPath', 'templateId', 'tool', 'arguments'])
+    }, ['templateId', 'tool', 'arguments'])
   }
 ];

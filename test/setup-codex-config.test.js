@@ -127,7 +127,7 @@ test('Codex connector keeps one hook representation when config.toml already has
   assert.match(configWrite.value, /command = "notify-existing"/);
   assert.match(configWrite.value,
     /\[\[hooks\.UserPromptSubmit]]\n\n\[\[hooks\.UserPromptSubmit\.hooks]]\n/);
-  assert.match(configWrite.value, /server = "fuli"\ntool = "begin_task_context"/);
+  assert.match(configWrite.value, /--fuli-lifecycle.*--event.*UserPromptSubmit/);
   assert.match(configWrite.value,
     /\[\[hooks\.Stop]]\n\n\[\[hooks\.Stop\.hooks]]\n/);
   assert.match(configWrite.value,

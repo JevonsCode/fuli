@@ -9,6 +9,8 @@ export function providerProjectAgentProfile(profile) {
     initial_preferences: profile.initialPreferences ?? profile.initial_preferences ?? [],
     status: profile.status ?? 'active'
   };
+  copyOptional(result, 'character', profile.character, Object.hasOwn(profile, 'character'));
+  copyOptional(result, 'expectations', profile.expectations, Object.hasOwn(profile, 'expectations'));
   copyOptional(result, 'occupation_emoji', profile.occupationEmoji !== undefined
     ? profile.occupationEmoji : profile.occupation_emoji,
     hasAny(profile, ['occupationEmoji', 'occupation_emoji']));
@@ -55,6 +57,8 @@ export function projectAgentRecord(value) {
     createdAt: value.created_at,
     updatedAt: value.updated_at
   };
+  copyOptional(result.profile, 'character', profile.character, Object.hasOwn(profile, 'character'));
+  copyOptional(result.profile, 'expectations', profile.expectations, Object.hasOwn(profile, 'expectations'));
   copyOptional(
     result.profile,
     'occupationEmoji',
@@ -254,6 +258,9 @@ export function providerProjectAgentTaskSubmit(input) {
     required_capabilities: input.requiredCapabilities ?? input.required_capabilities ?? [],
     executor_capability_hints:
       input.executorCapabilityHints ?? input.executor_capability_hints ?? [],
+    // Preserve an explicit opt-out so Provider validation rejects it instead
+    // of silently accepting a different contract from the caller's request.
+    verification_required: input.verificationRequired ?? input.verification_required ?? true,
     duration: input.duration ?? 'ongoing',
     staffing_intent: input.staffingIntent ?? input.staffing_intent ?? 'reuse_preferred',
     lead_agent_id: input.leadAgentId ?? input.lead_agent_id ?? null,
@@ -333,6 +340,7 @@ export function projectAgentTokenUsage(value) {
 
 export function providerProjectAgentTaskActivity(input) {
   const result = withoutUndefined({
+    artifact_revision: input.artifactRevision ?? input.artifact_revision,
     personal_space_id: input.personalSpaceId ?? input.personal_space_id,
     personal_project_id: input.personalProjectId ?? input.personal_project_id,
     task_id: input.taskId ?? input.task_id,
@@ -612,7 +620,7 @@ export function projectAgentRecruitmentRecord(value = {}) {
 }
 
 export function projectAgentProfileRecord(profile = {}) {
-  return {
+  const result = {
     name: profile.name,
     responsibility: profile.responsibility,
     occupationEmoji: profile.occupation_emoji !== undefined
@@ -628,6 +636,11 @@ export function projectAgentProfileRecord(profile = {}) {
     cleanupEligible: profile.cleanup_eligible ?? false,
     status: profile.status ?? 'active'
   };
+  copyOptional(result, 'displayName', profile.display_name ?? profile.displayName,
+    hasAny(profile, ['display_name', 'displayName']));
+  copyOptional(result, 'character', profile.character, Object.hasOwn(profile, 'character'));
+  copyOptional(result, 'expectations', profile.expectations, Object.hasOwn(profile, 'expectations'));
+  return result;
 }
 
 export function projectAgentExecutionSummary(value) {
@@ -812,6 +825,8 @@ export function providerProjectAgentRecruitmentDecision(input) {
 
 function providerExecutorModel(value = {}) {
   return withoutUndefined({
+    capability_tier: value.capabilityTier ?? value.capability_tier,
+    cost_rank: value.costRank ?? value.cost_rank,
     provider: value.provider,
     model: value.model,
     capabilities: value.capabilities ?? [],
@@ -826,6 +841,8 @@ function providerExecutorModel(value = {}) {
 
 function executorModelRecord(value = {}) {
   return withoutUndefined({
+    capabilityTier: value.capability_tier ?? value.capabilityTier,
+    costRank: value.cost_rank ?? value.costRank,
     provider: value.provider,
     model: value.model,
     capabilities: value.capabilities ?? [],
@@ -1034,6 +1051,7 @@ export function executorPreflightRecord(value = {}) {
 
 export function providerExecutorActualReport(input) {
   return withoutUndefined({
+    artifact_revision: input.artifactRevision ?? input.artifact_revision,
     personal_space_id: input.personalSpaceId ?? input.personal_space_id,
     personal_project_id: input.personalProjectId ?? input.personal_project_id,
     task_id: input.taskId ?? input.task_id,

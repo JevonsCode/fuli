@@ -47,23 +47,22 @@ export function resolvePersonalProjectPath(projectPath, projects, {
     pathApi
   });
   if (repositoryRoot) {
-    const repositoryId = pathApi.basename(repositoryRoot);
-    if (projectIds.has(repositoryId)) {
-      return matched(repositoryId, 'repository_root');
-    }
     const worktreeId = worktreeOriginProjectId(
       pathApi.join(repositoryRoot, '.git'),
       { readText, pathApi }
     );
-    if (worktreeId && projectIds.has(worktreeId)) {
-      return matched(worktreeId, 'git_worktree_origin');
+    if (worktreeId) {
+      // A worktree's folder name is arbitrary; only its original repository
+      // identifies the project, even when the folder names another project.
+      return resolveProjectId(worktreeId, projectIds, 'git_worktree_origin')
+        ?? unresolved('unmatched');
     }
+    const repository = resolveProjectId(pathApi.basename(repositoryRoot), projectIds, 'repository_root');
+    if (repository) return repository;
   }
 
-  const directoryId = pathApi.basename(currentPath);
-  if (projectIds.has(directoryId)) {
-    return matched(directoryId, 'directory_name');
-  }
+  const directory = resolveProjectId(pathApi.basename(currentPath), projectIds, 'directory_name');
+  if (directory) return directory;
 
   const childMatches = [...projectIds].filter((projectId) => (
     CHILD_PROJECT_MARKERS.some((marker) =>
@@ -77,6 +76,14 @@ export function resolvePersonalProjectPath(projectPath, projects, {
     return unresolved('ambiguous', { candidateCount: childMatches.length });
   }
   return unresolved('unmatched');
+}
+
+function resolveProjectId(candidate, projectIds, basis) {
+  if (projectIds.has(candidate)) return matched(candidate, basis);
+  const matches = [...projectIds].filter((id) => id.toLowerCase() === candidate.toLowerCase());
+  if (matches.length === 1) return matched(matches[0], `${basis}_case_insensitive`);
+  if (matches.length > 1) return unresolved('ambiguous', { candidateCount: matches.length });
+  return null;
 }
 
 export function findRepositoryRoot(projectPath, {

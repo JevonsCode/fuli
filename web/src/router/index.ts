@@ -90,9 +90,11 @@ export const router = createRouter({
     {
       path: '/project-agents',
       name: 'project-agents',
-      component: () => import('@/pages/ProjectAgentsPage.vue'),
+      component: () => import('@/pages/AgentsDirectoryPage.vue'),
       meta: { eyebrow: '', title: 'routes.projectAgents.title' },
     },
+    { path: '/agents/:spaceId/:agentId', name: 'agent-profile', component: () => import('@/pages/AgentProfilePage.vue'), meta: { eyebrow: '', title: 'agentProfiles.profile' } },
+    { path: '/project-agents/manage', name: 'agent-management', component: () => import('@/pages/ProjectAgentsPage.vue'), meta: { eyebrow: '', title: 'agentProfiles.advanced' } },
     {
       path: '/employees/:templateId',
       name: 'employee-workbench',

@@ -349,6 +349,8 @@ test('project Agent coordinator returns isolated contexts for the Provider-selec
 
   assert.equal(result.status, 'ready_for_host_execution');
   assert.equal(result.host_execution_required, true);
+  assert.equal(result.host_execution_policy.task_checkpoint_owner, 'coordinator');
+  assert.equal(result.host_execution_policy.forward_parent_task_context_token, false);
   assert.deepEqual(adoptions, [{ token: 'fuli-task-first-team',
     input: { personalProjectId: 'fuli', taskId: 'task-team-1', agentId: 'agent-a' }, source: 'codex' }]);
   assert.equal(result.task_context.work_log_required, true);
@@ -362,6 +364,11 @@ test('project Agent coordinator returns isolated contexts for the Provider-selec
     ['agent-a', 'lead', 'src/', 'ready'],
     ['agent-b', 'collaborator', 'test/', 'ready']
   ]);
+  for (const worker of result.worker_plan) {
+    assert.equal(worker.context.lifecycle.task_checkpoint_owner, 'coordinator');
+    assert.equal(worker.context.lifecycle.completion_tool, 'record_project_agent_task_activity');
+    assert.equal(JSON.stringify(worker).includes('fuli-task-first-team'), false);
+  }
   const submit = calls.find(({ path }) => path === '/v1/project-agent-tasks');
   assert.equal(submit.body.personal_space_id, 'personal-space');
   assert.equal(submit.body.personal_project_id, 'fuli');

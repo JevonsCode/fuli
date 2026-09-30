@@ -9,7 +9,7 @@ const postJson = vi.hoisted(() => vi.fn())
 const deleteJson = vi.hoisted(() => vi.fn())
 const route = vi.hoisted(() => ({ query: {} as Record<string, string> }))
 
-vi.mock('@/api/client', () => ({ getJson, patchJson, postJson, deleteJson }))
+vi.mock('@/api/client', () => ({ getJson, patchJson, postJson, deleteJson, putJson: vi.fn() }))
 vi.mock('vue-router', async (original) => ({ ...await original<typeof import('vue-router')>(), useRoute: () => route }))
 
 import { useConsoleStore } from '@/stores/console'
@@ -115,6 +115,22 @@ describe('ProjectAgentsPage', () => {
     expect(wrapper.get('.project-agent-detail').text()).toContain('设计项目')
     expect(getJson.mock.calls.some(([url]) => String(url).includes('project-agent-context')))
       .toBe(false)
+  })
+
+  it('keeps tasks in the overview and advanced configuration closed but reachable', async () => {
+    const { wrapper } = mountPage()
+    await flushPromises()
+    const advanced = wrapper.get<HTMLDetailsElement>('[data-agent-advanced]')
+    expect(advanced.element.open).toBe(false)
+    for (const section of ['executors', 'clients', 'routing', 'learning']) {
+      expect(advanced.find(`[data-detail-section="${section}"]`).exists()).toBe(true)
+    }
+    expect(advanced.find('[data-detail-section="tasks"]').exists()).toBe(false)
+    expect(wrapper.get('[data-detail-section="tasks"]').element.closest('details')).toBeNull()
+    advanced.element.open = true
+    await advanced.trigger('toggle')
+    expect(advanced.find('button').exists()).toBe(true)
+    expect(wrapper.find('.project-agent-row-capabilities').exists()).toBe(false)
   })
 
   it('starts with loading during console bootstrap, never a false empty roster', async () => {

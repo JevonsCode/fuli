@@ -1,3 +1,4 @@
+import { testToolsEnabled } from './test-tools.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 const requestContext = new AsyncLocalStorage();
@@ -8,7 +9,7 @@ export function runWithAgentRequestContext(value, operation) {
   }
   const signal = abortSignal(value?.signal);
   signal?.throwIfAborted();
-  return signal ? requestContext.run({ signal }, operation) : operation();
+  return requestContext.run({ signal, testToolsEnabled: value?.testToolsEnabled ?? testToolsEnabled() }, operation);
 }
 
 export function activeAgentRequestSignal() {
@@ -20,4 +21,8 @@ function abortSignal(value) {
     typeof value.throwIfAborted === 'function'
     ? value
     : null;
+}
+
+export function activeTestToolsEnabled() {
+  return requestContext.getStore()?.testToolsEnabled ?? testToolsEnabled();
 }

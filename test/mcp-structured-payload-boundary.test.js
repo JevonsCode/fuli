@@ -55,6 +55,16 @@ test('repeated sibling references are serialized fully and are not mistaken for 
   });
 });
 
+test('byte projection preserves a caller item limit instead of silently reverting to twenty', () => {
+  const items = Array.from({ length: 30 }, (_, id) => ({ id }));
+  const result = successToolResult({ items, trailing: 'x'.repeat(3000) }, {
+    itemLimit: 40, limitBytes: 1200
+  });
+  assert.equal(result.structuredContent.truncated, true);
+  assert.deepEqual(result.structuredContent.items, items);
+  assert.ok(Buffer.byteLength(result.content[0].text, 'utf8') <= 1200);
+});
+
 function hasIsolatedSurrogate(text) {
   for (let index = 0; index < text.length; index += 1) {
     const code = text.charCodeAt(index);

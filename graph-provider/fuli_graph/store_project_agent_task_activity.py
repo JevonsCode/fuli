@@ -92,6 +92,10 @@ class StoreProjectAgentTaskActivity:
                     ),
                 )
             return self._task_from_row(row)
+        if request.status == 'completed' and raw_task.get('verification_required'):
+            if (not request.artifact_revision or raw_task.get('quality_gate') != 'passed'
+                or raw_task.get('verified_artifact_revision') != request.artifact_revision):
+                raise HTTPException(409, 'Verify this exact artifact revision before completing the task')
         self._validate_task_transition(
             raw_task.get('status'),
             request.status,
@@ -122,6 +126,8 @@ class StoreProjectAgentTaskActivity:
                         {'agent_id': request.agent_id, 'profile': profile},
                         application,
                     )
+        if request.status in TERMINAL_TASK_STATUSES:
+            await self.close_task_agent_loans(actor, request.personal_space_id, request.task_id)
         now = now_utc()
         terminal_at = now if request.status in TERMINAL_TASK_STATUSES else None
         actual_executor_id = getattr(request, 'actual_executor_id', None)

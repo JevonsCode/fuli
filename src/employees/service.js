@@ -39,7 +39,14 @@ export function createEmployeeService({ app, runtimeConfigPath, registry: config
   async function describeTools(input) {
     const context = await workspace(input);
     const runtime = await registry.runtime(context.templateId);
-    return { ...context, tools: await runtime.describeTools() };
+    const { manifest } = registry.get(context.templateId);
+    let tools = (await runtime.describeTools()).filter(tool => manifest.permissions.includes(tool.permission));
+    if (input.toolName) {
+      tools = tools.filter(tool => tool.name === input.toolName);
+      if (!tools.length) throw new EmployeeError('Employee tool is not available or permitted', 403, 'tool_not_permitted');
+    }
+    if (input.includeSchemas === false) tools = tools.map(({ inputSchema, ...tool }) => tool);
+    return { ...context, tools };
   }
 
   async function callTool(input) {

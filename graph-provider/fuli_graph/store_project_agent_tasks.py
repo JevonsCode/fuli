@@ -669,21 +669,31 @@ class StoreProjectAgentTasks(
             return 'standard', basis or ['standard task shape']
         return 'simple', basis or ['bounded task shape']
 
-    @staticmethod
-    def _effective_model_strategy(request, selected, coordinator_strategy):
+    @classmethod
+    def _effective_model_strategy(cls, request, selected, coordinator_strategy):
         if request.model_strategy_override:
-            return request.model_strategy_override, 'task'
-        if selected and selected.get('model_strategy_override'):
+            strategy, source = request.model_strategy_override, 'task'
+        elif selected and selected.get('model_strategy_override'):
             value = selected['model_strategy_override']
-            return (
+            strategy, source = (
                 value
                 if isinstance(value, ProjectAgentModelStrategy)
                 else ProjectAgentModelStrategy.model_validate_json(value),
                 'assignment',
             )
-        if selected and selected.get('profile'):
-            return selected['profile'].default_model_strategy, 'agent'
-        return coordinator_strategy, 'coordinator'
+        elif selected and selected.get('profile'):
+            strategy, source = selected['profile'].default_model_strategy, 'agent'
+        else:
+            strategy, source = coordinator_strategy, 'coordinator'
+        if strategy.mode == 'adaptive':
+            complexity, _ = cls._assess_complexity(request)
+            # Resolve automatic intent once the task shape is known. Preserve
+            # explicit reasoning/capability hints and the policy's provenance;
+            # never mutate the shared Agent profile or relax executor locks.
+            strategy = strategy.model_copy(update={
+                'mode': {'simple': 'fast', 'standard': 'balanced', 'complex': 'deep'}[complexity],
+            })
+        return strategy, source
 
     async def _resolve_executor_if_available(
         self,
@@ -825,6 +835,7 @@ class StoreProjectAgentTasks(
               match_basis: $match_basis,
               coordinator_agent_id: $coordinator_agent_id,
               lead_agent_id: $lead_agent_id,
+              verification_required: $verification_required,
               complexity: $complexity,
               complexity_basis: $complexity_basis,
               effective_model_strategy_json: $model_strategy_json,
@@ -892,6 +903,7 @@ class StoreProjectAgentTasks(
             lead_agent_id=lead_agent_id,
             complexity=complexity,
             complexity_basis=complexity_basis,
+            verification_required=request.verification_required,
             model_strategy_json=model_strategy.model_dump_json() if model_strategy else None,
             task_model_strategy_override_json=(
                 request.model_strategy_override.model_dump_json()

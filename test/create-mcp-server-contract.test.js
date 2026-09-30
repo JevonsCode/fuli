@@ -5,6 +5,27 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 
+test('fallback task entry uses the same compact instruction and memory view as hooks', async () => {
+  const instruction = 'Keep the complete effective instruction. '.repeat(25);
+  const server = createMcpServer({ getCollaborationPreferences: async () => ({
+    effective_preferences: [{ instruction, preference_key: 'example', attributes: { duplicate: instruction } }],
+    project_agent_context: { memory: { revision: 7, history: [{ old: 'full history' }],
+      current: { memory: { summary: 'x'.repeat(2000), decisions: ['a'], nextActions: ['b'] } } } }
+  }) }, { env: {}, toolNames: ['get_collaboration_preferences'], registerResources: false });
+  try {
+    const result = await server.server._requestHandlers.get('tools/call')({
+      method: 'tools/call', params: { name: 'get_collaboration_preferences',
+        arguments: { projectPath: '/synthetic/project' } }
+    }, { signal: new AbortController().signal, requestId: 1 });
+    const data = result.structuredContent;
+    assert.equal(data.effective_preferences[0].instruction, instruction);
+    assert.equal(data.effective_preferences[0].attributes, undefined);
+    assert.equal(data.project_agent_context.memory.current.memory.summary.length, 800);
+    assert.equal(data.project_agent_context.memory.history, undefined);
+    assert.equal(data.project_agent_context.memory.requiresFullReadBeforeWrite, true);
+  } finally { await server.close(); }
+});
+
 test('an explicit empty MCP allowlist creates a valid tool-less server', async () => {
   const server = createMcpServer({}, {
     env: {}, toolNames: [], registerResources: false
@@ -154,7 +175,8 @@ test('default MCP surfaces omit cleanup_test_project_agents unless enabled', asy
   const disabled = createMcpServer({}, {
     env: {}, registerResources: false
   });
-  const enabled = createMcpServer({}, {
+  let invoked = 0;
+  const enabled = createMcpServer({ cleanupProjectAgentTestRoles: async () => { invoked += 1; return { removed: 0 }; } }, {
     env: { FULI_ENABLE_TEST_TOOLS: '1' }, registerResources: false
   });
   const disabledClient = new Client({ name: 'test-tools-off', version: '1.0.0' });
@@ -170,6 +192,14 @@ test('default MCP surfaces omit cleanup_test_project_agents unless enabled', asy
     const enabledNames = (await enabledClient.listTools()).tools.map(({ name }) => name);
     assert.equal(disabledNames.includes('cleanup_test_project_agents'), false);
     assert.equal(enabledNames.includes('cleanup_test_project_agents'), true);
+    const result = await enabledClient.callTool({ name: 'cleanup_test_project_agents', arguments: {
+      personalSpaceId: 'fixture-space', testSource: 'fixture-run'
+    } });
+    assert.notEqual(result.isError, true);
+    assert.equal(invoked, 1);
+    assert.equal((await disabledClient.callTool({ name: 'cleanup_test_project_agents', arguments: {
+      personalSpaceId: 'fixture-space', testSource: 'fixture-run'
+    } })).isError, true);
   } finally {
     await disabledClient.close();
     await enabledClient.close();

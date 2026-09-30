@@ -90,6 +90,15 @@ class StoreTaskContexts:
                 raise HTTPException(status_code=409, detail='Task turn already has another context')
         return {**saved, 'previous_checkpoint_missing': rows[0]['previous_checkpoint_missing']}
 
+    async def current_task_context(self, actor, space_id, session_id, source_application):
+        self._require_personal()
+        await self.authorize(actor, space_id, 'reader')
+        rows, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (s:FuliTaskContextSession {id: $id})-[:HAS_CONTEXT]->(t:FuliTaskContext) '
+            'WHERE t.token=s.current_token RETURN t.record_json AS record_json',
+            id=self._task_session_id(space_id, source_application, session_id))
+        return json.loads(rows[0]['record_json']) if rows else None
+
     async def get_task_context(self, actor, space_id, token, source_application):
         self._require_personal()
         await self.authorize(actor, space_id, 'reader')

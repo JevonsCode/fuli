@@ -150,6 +150,8 @@ class ProjectAgentExecutorModelRecord(StrictModel):
     provider: str = Field(min_length=1, max_length=128)
     model: str = Field(min_length=1, max_length=256)
     capabilities: list[str] = Field(default_factory=list, max_length=32)
+    capability_tier: int | None = Field(default=None, ge=1, le=3)
+    cost_rank: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     strategy_modes: list[Literal['adaptive', 'fast', 'balanced', 'deep']] = Field(
         default_factory=list,
         max_length=4,
@@ -456,6 +458,7 @@ class ProjectAgentExecutorSelection(StrictModel):
 
 
 class ProjectAgentExecutorActualReport(StrictModel):
+    artifact_revision: str | None = Field(default=None, min_length=1, max_length=160)
     personal_space_id: str = Field(min_length=1, max_length=128)
     personal_project_id: str = Field(min_length=1, max_length=128)
     task_id: str = Field(min_length=1, max_length=128)

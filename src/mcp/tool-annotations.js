@@ -1,4 +1,7 @@
 const READ_TOOLS = new Set([
+  'get_agent_quality_gate',
+  'plan_agent_collaboration', 'list_agent_loans',
+  'list_agent_conversations', 'read_agent_conversation', 'get_agent_conversation_policy',
   'list_agent_attention',
   'list_project_agent_tasks',
   'list_preference_conflicts',
@@ -46,6 +49,9 @@ const READ_TOOLS = new Set([
 ]);
 
 const WRITE_TOOLS = new Set([
+  'record_agent_verification',
+  'request_agent_loan', 'decide_agent_loan',
+  'resume_agent_conversation', 'update_agent_conversation_policy',
   'request_agent_attention',
   'cancel_agent_attention',
   'update_capture_policy',

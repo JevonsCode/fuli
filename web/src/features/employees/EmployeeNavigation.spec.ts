@@ -21,6 +21,7 @@ describe('employee raised hand', () => {
     await button.trigger('click')
     expect(store.open).toBe(true)
     expect(store.agentId).toBe('employee.jefa')
-    expect(wrapper.get('a').attributes('href')).toBe('/employees/jefa')
+    expect(wrapper.get('a').attributes('href')).toBe('/agents/space-a/employee.jefa')
+    expect(wrapper.get('.employee-workbench-link').attributes('href')).toBe('/employees/jefa')
   })
 })

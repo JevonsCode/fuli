@@ -57,6 +57,27 @@ function fixture() {
   return { app, agents, writes, projects, registry, service: app.employees };
 }
 
+test('employee tool discovery supports exact selection and compact schema-free listings', async (t) => {
+  const { service, registry } = fixture();
+  t.after(() => service.close());
+  const schemas = [
+    { name: 'read_board', permission: 'board.read', inputSchema: { type: 'object' } },
+    { name: 'create_tasks', permission: 'board.write', inputSchema: { type: 'object' } },
+    { name: 'not_permitted', permission: 'unknown.write', inputSchema: { type: 'object' } }
+  ];
+  registry.runtime = async () => ({ describeTools: () => schemas });
+  await service.recruit({ templateId: 'jefa', personalProjectId: 'project-a' });
+  const input = { templateId: 'jefa', personalProjectId: 'project-a' };
+  const selected = await service.describeTools({ ...input, toolName: 'create_tasks' });
+  assert.deepEqual(selected.tools, [schemas[1]]);
+  const compact = await service.describeTools({ ...input, includeSchemas: false });
+  assert.deepEqual(compact.tools.map(x => x.name), ['read_board', 'create_tasks']);
+  assert.ok(compact.tools.every(x => !Object.hasOwn(x, 'inputSchema')));
+  assert.deepEqual(schemas[0].inputSchema, { type: 'object' });
+  await assert.rejects(service.describeTools({ ...input, toolName: 'not_permitted' }),
+    { code: 'tool_not_permitted' });
+});
+
 test('the host rejects Jefa human acceptance even if a package would accept it', async (t) => {
   const { service, registry } = fixture();
   t.after(() => service.close());
@@ -263,6 +284,29 @@ test('tool calls bind the resolved project and reject missing assignments, path 
   await assert.rejects(service.callTool({ templateId: 'jefa', personalProjectId: 'project-b', tool: 'read_board' }), { code: 'assignment_required' });
   await assert.rejects(service.callTool({ templateId: 'jefa', projectPath: '/test/project-a', personalProjectId: 'project-b', tool: 'read_board' }), { code: 'project_mismatch' });
   await assert.rejects(service.callTool({ templateId: 'jefa', personalProjectId: 'project-a', tool: 'shell' }), { code: 'tool_not_permitted' });
+});
+
+test('employee MCP accepts an explicit project ID without weakening assignment or path checks', async (t) => {
+  const { app, service } = fixture();
+  await service.recruit({ templateId: 'jefa', personalProjectId: 'project-a' });
+  const server = createMcpServer(app, { env: {}, registerResources: false });
+  const client = new Client({ name: 'employee-explicit-project-test', version: '1.0.0' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  t.after(async () => { await client.close(); await server.close(); await service.close(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const scope = { templateId: 'jefa', personalProjectId: 'project-a' };
+  const catalog = await client.callTool({ name: 'list_employee_tools', arguments: scope });
+  assert.equal(catalog.isError, undefined);
+  assert.equal(catalog.structuredContent.project.id, 'project-a');
+  const read = (input) => client.callTool({ name: 'call_employee_tool', arguments: {
+    ...scope, tool: 'read_board', arguments: {}, ...input
+  } });
+  assert.equal((await read({})).structuredContent.projectId, 'project-a');
+  assert.equal((await read({ personalProjectId: 'project-b' })).structuredContent.error.code, 'assignment_required');
+  assert.equal((await read({ personalProjectId: 'missing' })).structuredContent.error.code, 'project_not_found');
+  assert.equal((await read({ personalProjectId: 'project-b', projectPath: '/test/project-a' })).structuredContent.error.code, 'project_mismatch');
+  assert.equal((await read({ personalProjectId: undefined })).structuredContent.error.code, 'project_required');
 });
 
 test('employee HTTP routes and workbench share the host listener and existing origin policy', async (t) => {

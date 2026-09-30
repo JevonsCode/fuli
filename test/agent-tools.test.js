@@ -60,6 +60,10 @@ const NAMES = [
   'get_project_agent',
   'get_project_agent_memory',
   'checkpoint_project_agent_memory',
+  'list_agent_conversations', 'read_agent_conversation', 'resume_agent_conversation',
+  'get_agent_conversation_policy', 'update_agent_conversation_policy',
+  'get_agent_quality_gate', 'record_agent_verification', 'plan_agent_collaboration',
+  'request_agent_loan', 'decide_agent_loan', 'list_agent_loans',
   'delete_project_agent',
   'cleanup_test_project_agents',
   'create_project_agent_assignment',
@@ -305,6 +309,12 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
 test('Agent surface dispatches every tool through the Graphiti facade', async () => {
   const calls = [];
   const app = {
+    queryAgentConversations: async input => calls.push(['conversations-' + input.mode, input]),
+    resumeAgentConversation: async input => calls.push(['conversation-resume', input]),
+    updateAgentConversationPolicy: async input => calls.push(['conversation-policy', input]),
+    agentVerification: async (operation, input) => calls.push(['verification-' + operation, input]),
+    planAgentCollaboration: async input => calls.push(['collaboration-plan', input]),
+    agentLoan: async (operation, input) => calls.push(['loan-' + operation, input]),
     requestAgentAttention: async (input) => calls.push(['request-attention', input]),
     listAgentAttention: async (input) => calls.push(['list-attention', input]),
     cancelAgentAttention: async (input) => calls.push(['cancel-attention', input]),
@@ -485,6 +495,8 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'spaces', 'get-capture-policy', 'upsert-project', 'personal-projects',
     'get-capture-policy', 'upsert-project-agent', 'project-agents', 'project-agent-context',
     'get-project-agent', 'get-agent-memory', 'checkpoint-agent-memory',
+    'conversations-list', 'conversations-events', 'conversation-resume', 'conversations-policy', 'conversation-policy',
+    'verification-query', 'verification-record', 'collaboration-plan', 'loan-request', 'loan-decide', 'loan-query',
     'delete-project-agent', 'cleanup-test-project-agents',
     'create-project-agent-assignment', 'list-project-agent-assignments',
     'end-project-agent-assignment', 'replace-project-agent-assignment',

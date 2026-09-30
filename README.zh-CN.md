@@ -507,7 +507,10 @@ Kubernetes 或整台容器虚拟机；原生模式会直接停止对应 Provider
 
 Project Agent 身份仍是控制面记录，不会每个身份常驻一个进程。角色工作记忆按项目私有、
 版本化地保存在同一个 Neo4j Provider 中；任务入口恢复唯一负责人，结束检查跨 MCP 进程持久化。
-详见[角色记忆、宿主 hooks 与验收边界](docs/project-agent-memory.md)。实际执行器按 ID 共用租约：
+详见[角色记忆、宿主 hooks 与验收边界](docs/project-agent-memory.md)。受支持的 Codex 和
+Claude Code Hook 还会保存可见对话，默认闲置 7 天归档、按预算恢复。跨项目借调与
+产物验证沿用同一个 Provider；客户端覆盖及模型能力配置见
+[对话与协作](docs/agent-conversations-and-collaboration.md)。实际执行器按 ID 共用租约：
 只有显式注入受管生命周期适配器的执行器才由 Fuli 启停；Codex 等宿主自己拥有的外部执行器
 不会被 Fuli 擅自启动或终止。当前可用的最小内存组合是：
 

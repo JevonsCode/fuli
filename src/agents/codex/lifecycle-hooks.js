@@ -18,8 +18,8 @@ export function withCodexLifecycleHooks(current, { timeout = 30, context = null 
     }],
     ['Stop', 'verify_task_checkpoint', { sessionId: '${session_id}' }]
   ]) {
-    const handler = event === 'Stop' && context
-      ? { type: 'command', command: codexStopCommand(context), timeout }
+    const handler = context
+      ? { type: 'command', command: codexStopCommand(context, event), timeout }
       : { type: 'mcp_tool', server: 'fuli', tool, input, timeout };
     hooks[event] = [...(hooks[event] ?? []), { hooks: [handler] }];
   }
@@ -88,12 +88,12 @@ export function withCodexTomlLifecycleHooks(source, { timeout = 30, context = nu
   const lines = clean.replaceAll('\r\n', '\n').split('\n');
   while (lines.length && !lines.at(-1).trim()) lines.pop();
   const blocks = [
-    ...codexTomlHookBlock('UserPromptSubmit', 'begin_task_context', {
+    ...(context ? codexTomlCommandHookBlock('UserPromptSubmit', codexStopCommand(context, 'UserPromptSubmit'), timeout) : codexTomlHookBlock('UserPromptSubmit', 'begin_task_context', {
       sessionId: '${session_id}',
       turnId: '${turn_id}',
       projectPath: '${cwd}',
       taskPrompt: '${prompt}'
-    }, timeout),
+    }, timeout)),
     ...(context
       ? codexTomlCommandHookBlock('Stop', codexStopCommand(context), timeout)
       : codexTomlHookBlock('Stop', 'verify_task_checkpoint', {
@@ -212,7 +212,7 @@ function isManagedCodexHook(hook) {
       hook.command.includes(COMMAND_MARKER) && hook.command.includes('lifecycle-hook.js');
 }
 
-function codexStopCommand(context) {
+function codexStopCommand(context, event = 'Stop') {
   const script = context.codexLifecycleHookPath ??
     join(dirname(context.mcpServerPath), 'agents', 'codex', 'lifecycle-hook.js');
   return [
@@ -222,7 +222,7 @@ function codexStopCommand(context) {
     '--runtime-config',
     context.runtimeConfigPath,
     '--event',
-    'Stop'
+    event
   ].map(value => quoteShellArgument(value, context.platform)).join(' ');
 }
 

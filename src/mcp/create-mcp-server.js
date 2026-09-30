@@ -1,3 +1,5 @@
+import { compactTaskContext } from '../conversations/task-context-view.js';
+import { employeeToolCatalogResult } from './employee-tool-catalog.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   CallToolRequestSchema,
@@ -13,7 +15,7 @@ import { createCommonKnowledgePreviewTokens } from './common-knowledge-preview-t
 import { auditLifecycleTool } from './lifecycle-audit.js';
 import { registerFuliContextResources } from './context-resources.js';
 import { annotationsFor } from './tool-annotations.js';
-import { isTestOnlyToolName, testToolsEnabled } from './test-tools.js';
+import { isTestOnlyToolName, testToolsEnabled } from '../app/test-tools.js';
 import {
   errorToolResult,
   hookAdditionalContextToolResult,
@@ -29,6 +31,9 @@ import {
 } from './session-id.js';
 
 const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
+  read_agent_conversation: 600 * 1024,
+  list_agent_conversations: 32 * 1024,
+  resume_agent_conversation: 24 * 1024,
   list_project_agent_tasks: 128 * 1024,
   list_preference_conflicts: 128 * 1024,
   list_agent_interfaces: 64 * 1024,
@@ -174,7 +179,7 @@ function createToolMap(
           ),
           projectActionPreviews,
           commonKnowledgePreviews,
-          requestContext
+          { ...requestContext, testToolsEnabled: includeTestTools }
         ),
         requestContext
       );
@@ -221,8 +226,11 @@ async function invokeTool(tool, input, requestContext = null) {
     const value = await tool.invoke(input, requestContext);
     auditLifecycleTool(tool.definition.name);
     const limitBytes = TOOL_RESULT_LIMIT_BYTES[tool.definition.name];
+    if (tool.definition.name === 'list_employee_tools') {
+      return employeeToolCatalogResult(value, { limitBytes });
+    }
     if (tool.definition.name === 'begin_task_context') {
-      return hookAdditionalContextToolResult(value, {
+      return hookAdditionalContextToolResult(compactTaskContext(value), {
         hookEventName: 'UserPromptSubmit',
         label: 'Fuli task context. Apply effective_preferences and use taskContextToken for the final checkpoint.',
         limitBytes,
@@ -232,7 +240,8 @@ async function invokeTool(tool, input, requestContext = null) {
     const itemLimit = ({ list_agent_interfaces: 200, list_project_agent_tasks: 200,
       list_preference_conflicts: 1000, list_external_knowledge_bindings: 200,
       get_collaboration_preferences: 1000 })[tool.definition.name];
-    return successToolResult(value, { limitBytes, itemLimit });
+    return successToolResult(tool.definition.name === 'get_collaboration_preferences'
+      ? compactTaskContext(value) : value, { limitBytes, itemLimit });
   } catch (error) {
     return errorToolResult(error);
   }

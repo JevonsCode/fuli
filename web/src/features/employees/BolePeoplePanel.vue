@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { t } from '@/i18n'
@@ -7,6 +8,8 @@ import type { PersonalProject } from '@/types'
 import ProjectScopePicker from './ProjectScopePicker.vue'
 import { employeeAvatarUrl } from './avatars'
 import AgentHand from '@/features/project-agents/AgentHand.vue'
+import AgentName from '@/features/agent-profile/AgentName.vue'
+import { fuzzyMatch } from '@/features/agent-profile/profile-model'
 
 type UnknownRecord = Record<string, unknown>
 type AgentView = {
@@ -14,6 +17,7 @@ type AgentView = {
   name: string
   emoji: string
   responsibility: string
+  searchTerms: string[]
   type: string
   status: string
   projectIds: string[]
@@ -40,6 +44,7 @@ type RecruitmentView = {
 }
 
 const props = defineProps<{ personalSpaceId: string; projects: PersonalProject[] }>()
+const route = useRoute()
 const agents = ref<AgentView[]>([])
 const tasks = ref<TaskView[]>([])
 const recruitments = ref<RecruitmentView[]>([])
@@ -97,24 +102,35 @@ const filteredAgents = computed(() => agentRows.value.filter((agent) => {
   const projects = [...agent.projectIds, ...(agent.task?.projectId ? [agent.task.projectId] : [])]
   return matchesProject(projects) && (!roleFilter.value || agent.type === roleFilter.value)
     && (workFilter.value === 'all' || (workFilter.value === 'working' ? Boolean(agent.task) : !agent.task))
-    && matchesSearch([agent.name, agent.responsibility, agent.task?.title ?? '', ...projects.map(projectName)])
+    && matchesSearch([agent.name, agent.responsibility, ...agent.searchTerms, agent.task?.title ?? '', ...projects.map(projectName)])
 }).sort((a, b) => Number(Boolean(b.task)) - Number(Boolean(a.task)) || a.name.localeCompare(b.name)))
 const filteredRecruitments = computed(() => recruitmentRows.value.filter((item) =>
   matchesProject(item.projectId ? [item.projectId] : []) && (!roleFilter.value || item.positionKind === roleFilter.value)
-    && matchesSearch([agentName(item.agentId), item.reason, item.workKind, projectName(item.projectId)]),
+    && matchesSearch([...agentSearchTerms(item.agentId), item.reason, item.workKind, projectName(item.projectId)]),
 ))
 const filtersActive = computed(() => search.value || roleFilter.value || selectedProjects.value !== null || (activeView.value === 'people' && workFilter.value !== 'all'))
 
 function matchesProject(ids: string[]) {
   return selectedProjects.value === null || (ids.length ? ids : [unassignedKey]).some((id) => selectedProjects.value?.includes(id))
 }
-function matchesSearch(parts: string[]) { return parts.join(' ').toLocaleLowerCase().includes(search.value.trim().toLocaleLowerCase()) }
+function matchesSearch(parts: string[]) { return fuzzyMatch(parts.join(' '), search.value) }
+function agentSearchTerms(id: string) {
+  const agent = agents.value.find((item) => item.id === id)
+  return agent ? [agent.name, agent.responsibility, ...agent.searchTerms] : [id]
+}
 function clearFilters() { search.value = ''; roleFilter.value = ''; workFilter.value = 'all'; selectedProjects.value = null }
 function avatar(agentId: string) { return employeeAvatarUrl(agentId.replace(/^employee\./, '')) }
 
 watch([activeView, search, roleFilter, workFilter, selectedProjects], () => { if (scrollRegion.value) scrollRegion.value.scrollTop = 0 })
 
-watch(() => props.personalSpaceId, () => { clearFilters(); void load() }, { immediate: true })
+watch([() => props.personalSpaceId, () => route.query.q], ([space, query], [previousSpace]) => {
+  if (space !== previousSpace) {
+    clearFilters()
+    // A query link prefills the initial space; changing spaces clears old filters.
+    if (previousSpace === undefined) search.value = typeof query === 'string' ? query : ''
+    void load()
+  } else search.value = typeof query === 'string' ? query : ''
+}, { immediate: true })
 
 async function load() {
   const current = ++requestVersion
@@ -169,6 +185,8 @@ function normalizeAgent(value: unknown): AgentView | null {
     name: pickString(profile, 'displayName', 'display_name') || pickString(profile, 'name') || id,
     emoji: pickString(profile, 'occupationEmoji', 'occupation_emoji') || '✦',
     responsibility: pickString(profile, 'responsibility'),
+    searchTerms: [pickString(profile, 'name'), ...array(profile.capabilities),
+      ...array(profile.workKinds ?? profile.work_kinds)].filter((item): item is string => typeof item === 'string'),
     type: pickString(profile, 'agentType', 'agent_type') || 'other',
     status: pickString(profile, 'status') || 'active',
     projectIds: [...new Set([...assignmentProjectIds, ...(primaryProjectId ? [primaryProjectId] : [])])],
@@ -262,7 +280,7 @@ function formattedDate(value: string) {
 
     <div class="bole-controls">
       <div class="bole-filters">
-        <input v-model="search" type="search" class="bole-search" :aria-label="t('employees.bole.search')" :placeholder="t('employees.bole.search')">
+        <input v-model="search" type="search" class="bole-search" :aria-label="t('employees.bole.search')" :placeholder="t('employees.bole.search')" aria-describedby="bole-search-hint">
         <ProjectScopePicker v-model="projectSelection" :projects="projectOptions" :label="t('employees.allProjects.projectFilter')" :all-label="t('employees.bole.allProjects')" :empty-label="t('employees.filterEmpty')" compact hint="" />
         <select v-if="activeView === 'people'" v-model="workFilter" :aria-label="t('employees.bole.workFilter')">
           <option value="all">{{ t('employees.bole.allWork') }}</option>
@@ -270,6 +288,7 @@ function formattedDate(value: string) {
           <option value="idle">{{ t('employees.bole.withoutTask') }}</option>
         </select>
       </div>
+      <p id="bole-search-hint" class="bole-search-hint">{{ t('agentProfiles.hrSearchHint') }}</p>
       <div class="bole-role-filters" role="group" :aria-label="t('employees.bole.distribution')">
         <button type="button" :aria-pressed="!roleFilter" @click="roleFilter = ''">{{ t('employees.bole.allRoles') }}</button>
         <button v-for="item in distribution" :key="item.type" type="button" :aria-pressed="roleFilter === item.type" @click="roleFilter = roleFilter === item.type ? '' : item.type">{{ item.label }} <span>{{ item.count }}</span></button>
@@ -287,7 +306,7 @@ function formattedDate(value: string) {
           <article v-for="agent in filteredAgents" :key="agent.id" class="bole-agent-row">
             <div class="bole-agent-identity">
               <span class="bole-agent-mark" aria-hidden="true"><img v-if="avatar(agent.id)" :src="avatar(agent.id)" alt=""><template v-else>{{ agent.emoji }}</template></span>
-              <div><strong>{{ agent.name }}</strong><AgentHand :agent-id="agent.id" /><small>{{ agent.responsibility || typeLabel(agent.type) }}</small></div>
+              <div><strong><AgentName :space-id="personalSpaceId" :agent-id="agent.id" :name="agent.name" /></strong><AgentHand :agent-id="agent.id" /><small>{{ agent.responsibility || typeLabel(agent.type) }}</small></div>
             </div>
             <div class="bole-agent-work">
               <template v-if="agent.task"><span class="bole-status" :data-status="agent.task.status">{{ statusLabel(agent.task.status) }}</span><p>{{ agent.task.title }}</p></template>
@@ -305,7 +324,7 @@ function formattedDate(value: string) {
       <section v-else aria-labelledby="bole-history-title">
         <ol v-if="filteredRecruitments.length" class="bole-timeline">
           <li v-for="recruitment in filteredRecruitments" :key="recruitment.id">
-            <div class="bole-recruitment-identity"><strong>{{ agentName(recruitment.agentId) }}</strong><small>{{ typeLabel(recruitment.positionKind) }} · {{ projectName(recruitment.projectId) }}</small></div>
+            <div class="bole-recruitment-identity"><strong><AgentName :space-id="personalSpaceId" :agent-id="recruitment.agentId" :name="agentName(recruitment.agentId)" /></strong><small>{{ typeLabel(recruitment.positionKind) }} · {{ projectName(recruitment.projectId) }}</small></div>
             <div class="bole-recruitment-reason">
               <p>{{ recruitment.reason }}</p>
               <small>{{ recruitment.workKind || recruitment.status }}</small>
