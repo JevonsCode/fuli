@@ -8,6 +8,16 @@ from .project_agent_access import authorize_project_agent
 from .project_agent_models import ProjectAgentProfile
 from .project_agent_task_models import ProjectAgentParallelPlan
 from .store_project_agents import SYSTEM_HR_AGENT_ID
+from .system_hr_identity import LEGACY_HR_AGENT_ID
+
+
+IMPLICIT_PEER_AGENT_IDS = frozenset({
+    'employee.jefa',
+    SYSTEM_HR_AGENT_ID.casefold(),
+    LEGACY_HR_AGENT_ID.casefold(),
+})
+IMPLICIT_PEER_CAPABILITIES = frozenset({'fuli.employee:jefa', 'fuli.employee:bole'})
+IMPLICIT_PEER_AGENT_TYPES = frozenset({'hr'})
 
 
 class StoreProjectAgentTaskStaffing:
@@ -79,10 +89,14 @@ class StoreProjectAgentTaskStaffing:
         eligible = [row for row in rows if required.issubset({
             item.casefold() for item in row.get('capabilities', [])
         })]
-        candidates, history = await self._rank_agent_candidates(eligible, request)
+        implicit_eligible = [
+            row for row in eligible
+            if self._implicit_owner_allowed(row, request)
+        ]
+        candidates, history = await self._rank_agent_candidates(implicit_eligible, request)
         # Continuity may break a tie between qualified specialists; it must
         # never override a capability requirement or a stronger work-kind fit.
-        continuity_pool = eligible
+        continuity_pool = implicit_eligible
         if candidates:
             best_work_match = normalized_work_kind in {
                 item.casefold() for item in candidates[0].get('work_kinds', [])
@@ -100,7 +114,10 @@ class StoreProjectAgentTaskStaffing:
         )
         if continuity:
             selected = continuity[0]
-            remaining = [row for row in candidates or eligible if row['agent_id'] != selected['agent_id']]
+            remaining = [
+                row for row in candidates or implicit_eligible
+                if row['agent_id'] != selected['agent_id']
+            ]
             return [selected], [selected, *remaining], 'project_continuity', [
                 self._project_history_match_basis(
                     project_history.get(selected['agent_id']),
@@ -129,20 +146,20 @@ class StoreProjectAgentTaskStaffing:
                     'matching Agent is unavailable to source client: '
                     f'{request.source_application or "other"}',
                 ]
-            if len(eligible) == 1:
-                return [eligible[0]], eligible, 'sole_active_assignment', [
+            if len(eligible) == 1 and len(implicit_eligible) == 1:
+                return [implicit_eligible[0]], implicit_eligible, 'sole_active_assignment', [
                     'the project has one active Agent assignment',
-                    *self._automatic_selection_basis(eligible[0], request),
+                    *self._automatic_selection_basis(implicit_eligible[0], request),
                 ]
-            if eligible and normalized_work_kind == 'project_context' and not required:
-                eligible.sort(key=lambda row: (
+            if implicit_eligible and normalized_work_kind == 'project_context' and not required:
+                implicit_eligible.sort(key=lambda row: (
                     self._metric_int(row.get('active_task_count')),
                     -int(self._metric_int(row.get('memory_revision')) > 0),
                     row['assigned_at'], row['agent_id'],
                 ))
-                return eligible[:1], eligible, 'project_default', [
-                    f'{len(eligible)} eligible project roles; working-memory continuity and stable tie-break',
-                    *self._automatic_selection_basis(eligible[0], request),
+                return implicit_eligible[:1], implicit_eligible, 'project_default', [
+                    f'{len(implicit_eligible)} eligible project roles; working-memory continuity and stable tie-break',
+                    *self._automatic_selection_basis(implicit_eligible[0], request),
                 ]
             return [], rows, 'no_match', ['no active assignment matched exactly']
         selected = candidates[0]
@@ -165,6 +182,64 @@ class StoreProjectAgentTaskStaffing:
         match_basis.extend(item for item in self._automatic_selection_basis(selected, request)
                            if item not in match_basis)
         return [selected], candidates, reason, match_basis
+
+    @classmethod
+    def _implicit_owner_allowed(cls, row, request):
+        """Keep management peers out of unrelated automatic ownership paths."""
+
+        if not cls._is_implicit_peer(row):
+            return True
+        profile = row.get('profile')
+        work_kinds = {
+            str(item).casefold()
+            for item in row.get('work_kinds', [])
+        }
+        work_kinds.update(
+            str(item).casefold()
+            for item in (cls._profile_value(profile, 'work_kinds', []) or [])
+        )
+        capabilities = {
+            str(item).casefold()
+            for item in row.get('capabilities', [])
+        }
+        capabilities.update(
+            str(item).casefold()
+            for item in (cls._profile_value(profile, 'capabilities', []) or [])
+        )
+        required = {
+            str(item).casefold()
+            for item in request.required_capabilities
+        }
+        return request.work_kind.casefold() in work_kinds or (
+            bool(required) and required.issubset(capabilities)
+        )
+
+    @classmethod
+    def _is_implicit_peer(cls, row):
+        agent_id = str(row.get('agent_id') or '').casefold()
+        profile = row.get('profile')
+        agent_type = str(cls._profile_value(profile, 'agent_type', '')).casefold()
+        capabilities = {
+            str(item).casefold()
+            for item in (cls._profile_value(profile, 'capabilities', []) or [])
+        }
+        capabilities.update(
+            str(item).casefold()
+            for item in (row.get('capabilities', []) or [])
+        )
+        return (
+            agent_id in IMPLICIT_PEER_AGENT_IDS
+            or agent_type in IMPLICIT_PEER_AGENT_TYPES
+            or bool(capabilities & IMPLICIT_PEER_CAPABILITIES)
+        )
+
+    @staticmethod
+    def _profile_value(profile, field, default):
+        if profile is None:
+            return default
+        if isinstance(profile, dict):
+            return profile.get(field, default)
+        return getattr(profile, field, default)
 
     def _automatic_selection_basis(self, selected, request):
         work_kind = request.work_kind.casefold()

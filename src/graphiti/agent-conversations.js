@@ -1,4 +1,5 @@
 import { detectSensitiveContent } from '../security/sensitive-content.js';
+import { agentContinuation, taskAgentReceipt } from '../agents/identity-receipt.js';
 
 export function conversationScope(application, input) {
   return { personal_space_id: application.config.personal.spaceId,
@@ -46,16 +47,29 @@ export async function checkpointConversation(application, task, workLog) {
       ...conversationTask(application, task), summary: safeConversationContent(workLog.summary), status: workLog.status,
       events: [{ event_id: `${task.token}:summary`, role: 'summary', kind: 'checkpoint', content: safeConversationContent(workLog.summary) }]
     });
+    if (result.status !== 'saved') return result;
+    let name = null;
+    try {
+      const agent = await application.personal.getProjectAgent(application.config.personal.spaceId, task.personalProjectId, task.projectAgentId);
+      name = agent?.profile?.display_name || agent?.profile?.name || null;
+    } catch { /* Metadata availability does not undo a successful save. */ }
     return { ...result, agent_id: task.projectAgentId, work_status: workLog.status,
+      receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
+        agentId: task.projectAgentId, name, sourceApplication: task.sourceApplication,
+        workStatus: workLog.status, conversationId: result.conversation_id,
+        persistence: result.status }),
       coverage: 'task_summary; visible transcript capture is confirmed separately by the host hook',
       guidance: 'Include the Agent name, truthful work status and conversation ID in the final receipt. In another client select this Agent, then call resume_agent_conversation with its current taskContextToken and this conversation ID.' };
   } catch { return unavailable(); }
 }
 
 export async function queryConversations(application, input) {
-  return application.personal.conversation('query', { ...conversationScope(application, input),
+  const result = await application.personal.conversation('query', { ...conversationScope(application, input),
     mode: input.mode ?? 'list', ...(input.conversationId ? { conversation_id: input.conversationId } : {}),
     after: input.after ?? 0, limit: input.limit ?? (input.mode === 'events' ? 3 : 10) });
+  if (!Array.isArray(result.conversations)) return result;
+  return { ...result, conversations: result.conversations.map(conversation => ({ ...conversation,
+    continuation_prompt: agentContinuation(input.personalProjectId, input.agentId, conversation.id).prompt })) };
 }
 export async function resumeConversation(application, input) {
   const task = await application.taskContextRegistry.context(input.taskContextToken, input.sourceApplication);

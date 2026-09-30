@@ -38,11 +38,28 @@ class StoreProjectAgentContext:
             lead_agent_id=request.agent_id or owner, source_application=request.source_application,
             routing_reason='Read-only task-entry context recovery',
         )
+        if owner and not request.agent_id:
+            owner_rows = await self._assignment_candidates(
+                request.personal_space_id,
+                request.personal_project_id,
+            )
+            owner_row = next(
+                (row for row in owner_rows if row['agent_id'] == owner),
+                None,
+            )
+            if owner_row and not self._implicit_owner_allowed(owner_row, selection):
+                owner = None
+                selection = selection.model_copy(update={'lead_agent_id': None})
         selected, candidates, reason, basis = await self._select_agents(actor, space, selection)
         if not selected and reason == 'no_match' and not request.required_capabilities:
+            fallback_selection = selection.model_copy(update={'work_kind': 'project_context'})
             selected, candidates, reason, basis = await self._select_agents(
-                actor, space, selection.model_copy(update={'work_kind': 'project_context'}),
+                actor, space, fallback_selection,
             )
+            if selected and not self._implicit_owner_allowed(selected[0], fallback_selection):
+                selected, reason, basis = [], 'no_match', [
+                    'management or HR peer cannot own unrelated project context implicitly',
+                ]
             if selected:
                 reason = 'project_context_fallback'
                 basis = [

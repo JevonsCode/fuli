@@ -1,6 +1,6 @@
 {
   "name": "fuli-context",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "Local-first collaboration relationship graph for AI agents.",
   "type": "module",
   "files": [
@@ -65,7 +65,7 @@
     "type": "git",
     "url": "git+https://github.com/JevonsCode/fuli.git"
   },
-  "homepage": "https://github.com/JevonsCode/fuli#readme",
+  "homepage": "https://jevonscode.github.io/fuli/",
   "bugs": {
     "url": "https://github.com/JevonsCode/fuli/issues"
   },

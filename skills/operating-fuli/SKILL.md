@@ -39,6 +39,10 @@ For read-only questions, use the narrowest list/get/search tool and return sourc
 
 When the user addresses HR or Bole to ask about organization or find someone, resolve the existing dedicated HR identity and read `list_project_agents` plus `get_project_agent_coordination_policy` for the exact personal space and relevant project. Use recorded roles, assignments and team membership; do not invent an organization or recruit a replacement HR. Match names, responsibilities and capabilities, but never guess between ambiguous or duplicate names. Link each resolved name to its personal page at `/agents/{encodedPersonalSpaceId}/{encodedAgentId}`. Answering in the HR role does not mean a worker has started; report actual execution separately.
 
+## Before starting collaborators
+
+Read each returned worker's `context.agent.profile.allowedClients` and `executorPolicy`, together with the task's effective executor policy. Intersect the restrictions before starting either a native or external worker; the lead's selected executor does not authorize every collaborator. A locked allow-list applies even when the current host has an idle worker. If the intended platform is outside any effective lock, select an eligible Agent/executor or report the constraint before launch. Never relax the lock, relabel the worker, or invent model evidence to satisfy reporting. FULI context recovery and a ready worker plan are not execution authorization by themselves.
+
 ## Handling conflicts and failures
 
 - On revision or timestamp conflict, re-read, explain what changed, and recompute the intended patch. Do not blindly retry stale input.
@@ -49,3 +53,7 @@ When the user addresses HR or Bole to ask about organization or find someone, re
 ## Completion response
 
 State what changed, the exact project or item scope, the verification result, and any remaining human-only action. Do not claim success from a configured capability or submitted request alone.
+
+Include the task's named durable owner and profile link from `agent_receipt` or the successful checkpoint's `conversation.receipt`. Include Jefa or other peers only with an actual `collaboration_receipt`, naming the tool work they performed; board tools do not imply a separate model worker ran. Keep this receipt brief and distinguish work completion, memory checkpoint and visible-transcript coverage. Do not report saved memory when capture failed or is disabled.
+
+For cross-client continuation, copy the supplied continuation prompt into the same project's connected client. A leading `@Name` matches exact directory names; `@{agentId}` is the stable form (the generated prompt percent-encodes unusual IDs). Duplicate names require an exact ID in the current request; an ambiguous explicit mention must not fall back to the prior session owner or memory. This is FULI task-entry matching, not registration in a client's native @ menu. Obtain a fresh task token before `resume_agent_conversation`; never copy an old token between clients. If no qualified owner exists, route staffing through HR before implementation; Jefa remains a management peer. Preserve confirmed taste/personality/preferences and Agent character/expectations in delegated context.

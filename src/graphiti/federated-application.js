@@ -76,11 +76,8 @@ import {
 import {
   relatedProjectGuidance
 } from './related-project-suggestions.js';
-import {
-  getCollaborationPreferences as getCollaborationPreferencesWorkflow
-} from './collaboration-preference-workflow.js';
 import { buildUserTasteSkill } from './user-taste-skill.js';
-import { resolveTaskEntryAgent, loadProjectAgentContinuity } from './project-agent-task-entry.js';
+import { taskEntryPreferences } from './task-entry-preferences.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
 import {
   groupSubscriptions,
@@ -256,42 +253,11 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     agentToolName = 'get_collaboration_preferences'
   } = {}) {
     const projectResolution = await this.#resolvePreferenceProject({ personalProjectId, projectPath });
-    const selection = projectPath === null && !personalProjectId && !projectAgentId
-      ? null
-      : await resolveTaskEntryAgent(
-      this, projectResolution, { projectAgentId, taskPrompt, sourceApplication,
-        sessionId: agentToolName === 'get_collaboration_preferences'
-          ? sessionId ?? sourceSessionId : turnId ? sessionId : null,
-        turnId: agentToolName === 'begin_task_context' ? turnId : null,
-        workKind, requiredCapabilities, agentInvocation, agentToolName }
-    );
-    // A rejected explicit role must not leak its private preferences via fallback.
-    const selectedAgentId = selection ? selection.agent?.agentId ?? null : projectAgentId;
-    const preferences = await getCollaborationPreferencesWorkflow(
-      this,
-      projectResolution,
-      {
-        projectAgentId: selectedAgentId,
-        taskPrompt,
-        limit,
-        agentInvocation,
-        agentToolName
-      },
-      (items, toolName) => this.#recordAgentViews(items, toolName)
-    );
-    const management = this.employees && agentInvocation &&
-      ['begin_task_context', 'get_collaboration_preferences'].includes(agentToolName)
-      ? await this.employees.taskEntry({ personalProjectId: projectResolution.personalProjectId,
-        sourceApplication, sourceSessionId, sessionId })
-      : null;
-    const managedPreferences = management ? { ...preferences, project_management_context: management } : preferences;
-    if (!selection) return managedPreferences;
-    const context = selection.agent ? await loadProjectAgentContinuity(this, {
-      projectId: projectResolution.personalProjectId, agent: selection.agent,
-      sourceApplication, taskPrompt, selectionReason: selection.reason,
-      matchBasis: selection.match_basis
-    }) : selection;
-    return { ...managedPreferences, project_agent_context: context };
+    return taskEntryPreferences(this, projectResolution, {
+      personalProjectId, projectAgentId, projectPath, taskPrompt, sourceApplication,
+      sourceSessionId, sessionId, turnId, workKind, requiredCapabilities,
+      limit, agentInvocation, agentToolName
+    }, (items, toolName) => this.#recordAgentViews(items, toolName));
   }
 
   async getUserTasteSkill({

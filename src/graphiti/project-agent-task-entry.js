@@ -2,6 +2,7 @@ import { projectAgentRecord } from './project-agent-mapping.js';
 import { agentMemoryView } from './project-agent-memory.js';
 import { planTaskKnowledgeRecall } from './task-knowledge-recall.js';
 import { loadProjectTeamContext } from './project-agent-team-context.js';
+import { resolveTaskAgentMention } from './project-agent-mention.js';
 
 const ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
 
@@ -9,18 +10,25 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
   if (!input.agentInvocation || !ENTRY_TOOLS.has(input.agentToolName)) return null;
   if (!resolution.personalProjectId) return { status: 'project_unresolved', worker_started: false };
   try {
+    const mention = await resolveTaskAgentMention(application, resolution.personalProjectId, input);
+    if (mention?.status) return mention;
+    const workKind = input.workKind ?? taskWorkKind(input.taskPrompt);
     const value = await application.personal.resolveProjectAgentContext({
       personal_space_id: application.config.personal.spaceId,
       personal_project_id: resolution.personalProjectId,
-      agent_id: input.projectAgentId ?? null,
+      agent_id: mention?.agentId ?? input.projectAgentId ?? null,
       session_id: input.sessionId ?? null,
       turn_id: input.turnId ?? null,
-      work_kind: input.workKind ?? taskWorkKind(input.taskPrompt),
+      work_kind: workKind,
       required_capabilities: input.requiredCapabilities ?? [],
       source_application: input.sourceApplication ?? 'other'
     });
     if (!value?.status) throw new Error('Role resolution is unavailable');
     const agent = value.agent ? projectAgentRecord(value.agent) : null;
+    if (agent && !mention?.agentId && !input.projectAgentId && unrelatedPeer(agent, workKind, input.requiredCapabilities)) {
+      return { status: 'unassigned', reason: 'specialist_required', worker_started: false,
+        required_action: 'Use coordinate_project_agent_task to select or recruit a qualified durable owner before implementation. HR and project managers collaborate in their own roles; do not attribute development to them by fallback.' };
+    }
     const employeeId = /^employee\.([a-z][a-z0-9-]{0,63})$/.exec(agent?.agentId ?? '')?.[1];
     if (employeeId && application.employees) {
       try { await application.employees.authorize({ templateId: employeeId, personalProjectId: resolution.personalProjectId }); }
@@ -118,6 +126,15 @@ function boundedRoleText(value, limit) {
   return typeof value === 'string' ? value.slice(0, limit) : '';
 }
 
+function unrelatedPeer(agent, workKind, required = []) {
+  const profile = agent.profile;
+  const capabilities = (profile.capabilities ?? []).map(value => value.toLowerCase());
+  const peer = ['employee.jefa', 'employee.bole', 'fuli-project-hr'].includes(agent.agentId)
+    || profile.agentType === 'hr' || capabilities.some(value => ['fuli.employee:jefa', 'fuli.employee:bole'].includes(value));
+  return peer && !(profile.workKinds ?? []).some(kind => kind.toLowerCase() === workKind.toLowerCase())
+    && !(required.length && required.every(value => capabilities.includes(value.toLowerCase())));
+}
+
 function scopedItems(items, agentId) {
   return (items ?? []).filter(item => !item.project_agent_id || item.project_agent_id === agentId)
     .slice(0, 4).map(item => ({
@@ -133,7 +150,9 @@ function scopedItems(items, agentId) {
 function taskWorkKind(prompt) {
   const text = typeof prompt === 'string' ? prompt.slice(0, 8192) : '';
   if (/代码审查|代码评审|code review|review code/iu.test(text)) return 'code_review';
-  if (/修复|实现|开发|编写代码|\b(?:implement|fix|bug|coding)\b/iu.test(text)) return 'implementation';
+  if (/架构|\barchitecture\b/iu.test(text)) return 'architecture';
+  if (/修复|实现|开发|编写代码|优化|改为|接入|\b(?:implement|fix|bug|coding)\b/iu.test(text)) return 'implementation';
   if (/测试|验证|\b(?:test|verify|validation)\b/iu.test(text)) return 'test_validation';
+  if (/看板|排期|规划|\bplanning\b/iu.test(text)) return 'project_management';
   return 'project_context';
 }

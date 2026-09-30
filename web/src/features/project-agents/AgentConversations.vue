@@ -6,9 +6,10 @@ import { currentLocale, t } from '@/i18n'
 
 const props = defineProps<{ personalSpaceId: string; agentId: string; projects: Array<{ id: string; name: string }> }>()
 interface Policy { idle_days: number; context_budget: number; enabled: boolean }
-interface Conversation { id: string; summary: string; status: string; revision: number; last_activity: string; archived: boolean; raw_retained: boolean }
+interface Conversation { id: string; summary: string; status: string; revision: number; last_activity: string; archived: boolean; raw_retained: boolean; continuation_prompt?: string }
 interface Message { role: string; content: unknown; kind: string; sequence: number }
 interface MessagePage { events: Message[]; next_cursor?: number; has_more?: boolean }
+interface CopyFeedback { conversationId: string; state: 'copied' | 'fallback' }
 const projectId = ref('')
 const opened = ref(false)
 const settingsOpen = ref(false)
@@ -29,9 +30,11 @@ const saved = ref(false)
 const idleDays = ref(7)
 const contextBudget = ref(2000)
 const enabled = ref(true)
+const copyFeedback = ref<CopyFeedback>()
 let version = 0
 let messageVersion = 0
 let policyVersion = 0
+let copyVersion = 0
 function scope() { return { personalSpaceId: props.personalSpaceId, personalProjectId: projectId.value, agentId: props.agentId } }
 function failure(cause: unknown) { return cause instanceof Error ? cause.message : t('projectAgents.conversations.loadFailed') }
 watch(() => [props.agentId, props.personalSpaceId, props.projects.map(project => project.id).join('\n')], () => {
@@ -44,7 +47,9 @@ async function load() {
   const current = ++version
   ++messageVersion
   ++policyVersion
+  ++copyVersion
   conversations.value = []; messages.value = []; selectedId.value = ''; error.value = ''; messagesError.value = ''
+  copyFeedback.value = undefined
   policyReady.value = false; policyLoading.value = false; policyError.value = ''; saved.value = false; saving.value = false
   loading.value = false; messagesLoading.value = false; hasMore.value = false
   if (!opened.value || !projectId.value) return
@@ -61,7 +66,7 @@ function toggle(event: Event) {
   if (next === opened.value) return
   opened.value = next
   if (next) void load()
-  else { ++version; ++messageVersion; ++policyVersion; settingsOpen.value = false }
+  else { ++version; ++messageVersion; ++policyVersion; ++copyVersion; copyFeedback.value = undefined; settingsOpen.value = false }
 }
 async function readMessages(id: string, more = false) {
   if (messagesLoading.value || !projectId.value) return
@@ -117,6 +122,22 @@ function role(value: string) {
   return ['user', 'assistant', 'tool'].includes(value) ? t(`projectAgents.conversations.${value}`) : value
 }
 function content(value: unknown) { return typeof value === 'string' ? value : JSON.stringify(value, null, 2) }
+async function copyContinuation(conversation: Conversation) {
+  const prompt = conversation.continuation_prompt
+  if (!prompt) return
+  const current = ++copyVersion
+  const currentProjectId = projectId.value
+  copyFeedback.value = undefined
+  try {
+    const clipboard = globalThis.navigator?.clipboard
+    if (!clipboard?.writeText) throw new Error('Clipboard unavailable')
+    await clipboard.writeText(prompt)
+    if (current === copyVersion && currentProjectId === projectId.value) copyFeedback.value = { conversationId: conversation.id, state: 'copied' }
+  } catch {
+    if (current === copyVersion && currentProjectId === projectId.value) copyFeedback.value = { conversationId: conversation.id, state: 'fallback' }
+  }
+}
+function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement).select() }
 </script>
 
 <template>
@@ -135,6 +156,14 @@ function content(value: unknown) { return typeof value === 'string' ? value : JS
             <strong>{{ conversation.summary || t('projectAgents.conversations.untitled') }}</strong>
             <span>{{ conversation.archived ? t('projectAgents.conversations.archived') : t('projectAgents.conversations.recent') }} · <time :datetime="conversation.last_activity">{{ date(conversation.last_activity) }}</time></span>
           </button>
+          <button v-if="conversation.continuation_prompt" :data-copy-continuation="conversation.id" class="quiet-button continuation-copy" type="button" @click="copyContinuation(conversation)">{{ t('projectAgents.conversations.copyContinuation') }}</button>
+          <div v-if="copyFeedback?.conversationId === conversation.id" data-continuation-feedback>
+            <p v-if="copyFeedback.state === 'copied'" role="status" class="conversation-hint">{{ t('projectAgents.conversations.copiedContinuation') }}</p>
+            <template v-else>
+              <p role="alert" class="conversation-hint">{{ t('projectAgents.conversations.copyContinuationFailed') }}</p>
+              <textarea data-continuation-fallback readonly rows="3" :aria-label="t('projectAgents.conversations.manualContinuation')" :value="conversation.continuation_prompt" @focus="selectContinuation" />
+            </template>
+          </div>
           <div v-if="selectedId === conversation.id" class="conversation-messages">
             <p v-if="conversation.raw_retained" class="conversation-hint">{{ t('projectAgents.conversations.rawRetained') }}</p>
             <ol><li v-for="message in messages" :key="message.sequence"><strong>{{ role(message.role) }}</strong><pre>{{ content(message.content) }}</pre></li></ol>
@@ -168,7 +197,7 @@ function content(value: unknown) { return typeof value === 'string' ? value : JS
 <style scoped>
 .agent-conversations { margin-block: 20px; color: #39483f; font-size: 14px; }
 summary { cursor: pointer; padding-block: 12px; font-weight: 650; }
-summary:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid #315c43; outline-offset: 3px; }
+summary:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid #315c43; outline-offset: 3px; }
 label { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 select, input[type=number] { max-width: 100%; border: 1px solid #a8b7ad; border-radius: 6px; padding: 8px; font: inherit; color: inherit; background: #fff; }
 input[type=number] { width: 100px; }
@@ -178,6 +207,7 @@ fieldset button { justify-self: start; }
 .conversation-hint { color: #58675d; line-height: 1.65; margin-block: 12px; }
 ol { padding: 0; list-style: none; margin: 0; }
 .conversation-list > li { border-bottom: 1px solid #dce3de; }
+.continuation-copy { margin-bottom: 12px; }
 .conversation-link { display: grid; gap: 6px; width: 100%; text-align: left; border: 0; padding: 14px 0; font: inherit; color: inherit; background: transparent; cursor: pointer; }
 .conversation-link:hover strong { text-decoration: underline; text-underline-offset: 3px; }
 .conversation-link[aria-pressed=true] strong { color: #315c43; }
@@ -186,6 +216,7 @@ ol { padding: 0; list-style: none; margin: 0; }
 .conversation-messages { padding-bottom: 16px; }
 .conversation-messages li { padding-block: 12px; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.65; max-height: 320px; overflow: auto; margin-block: 8px; }
+textarea { width: 100%; box-sizing: border-box; border: 1px solid #a8b7ad; border-radius: 6px; padding: 8px; font: inherit; color: inherit; background: #fff; resize: vertical; }
 button:disabled { cursor: wait; opacity: .65; }
 @media (max-width: 640px) { .agent-conversations { font-size: 16px; } }
 </style>

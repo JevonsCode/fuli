@@ -6,7 +6,8 @@ import AgentConversations from './AgentConversations.vue'
 
 const policy = { idle_days: 7, context_budget: 2000, enabled: true }
 const conversation = { id: 'conversation-a', summary: 'Prepare a new page', status: 'completed', revision: 2,
-  last_activity: '2026-09-20T10:00:00Z', archived: true, raw_retained: true, policy }
+  last_activity: '2026-09-20T10:00:00Z', archived: true, raw_retained: true, policy,
+  continuation_prompt: 'Continue @{agent} in project project-a using conversation conversation-a with a fresh task token.' }
 const scope = { personalSpaceId: 'space', agentId: 'agent', personalProjectId: 'project-a' }
 function render() {
   return mount(AgentConversations, { props: { personalSpaceId: 'space', agentId: 'agent',
@@ -19,6 +20,7 @@ async function open(wrapper: ReturnType<typeof render>, selector = 'details') {
   await flushPromises()
 }
 beforeEach(() => {
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
   postJson.mockReset().mockImplementation((_url, body) => Promise.resolve(body.mode === 'policy' ? policy : { conversations: [conversation] }))
   putJson.mockReset().mockResolvedValue(policy)
 })
@@ -77,4 +79,43 @@ it('keeps failures visible and allows retry without claiming an empty history', 
   await wrapper.get('[data-retry-list]').trigger('click')
   await flushPromises()
   expect(wrapper.text()).toContain('Prepare a new page')
+})
+it('copies the authoritative continuation prompt exactly', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+  const wrapper = render()
+  await open(wrapper)
+  await wrapper.get('[data-copy-continuation="conversation-a"]').trigger('click')
+  await flushPromises()
+  expect(writeText).toHaveBeenCalledExactlyOnceWith(conversation.continuation_prompt)
+  expect(wrapper.get('[data-continuation-feedback]').text()).toContain('已复制接续指令')
+})
+it('shows the exact prompt for manual selection when clipboard copying fails', async () => {
+  const writeText = vi.fn().mockRejectedValue(new Error('Permission denied'))
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+  const wrapper = render()
+  await open(wrapper)
+  await wrapper.get('[data-copy-continuation="conversation-a"]').trigger('click')
+  await flushPromises()
+  const fallback = wrapper.get<HTMLTextAreaElement>('[data-continuation-fallback]')
+  expect(fallback.element.value).toBe(conversation.continuation_prompt)
+  expect(wrapper.get('[data-continuation-feedback]').text()).toContain('自动复制失败')
+})
+it('clears copy feedback and ignores stale clipboard results after switching projects', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+  const wrapper = render()
+  await open(wrapper)
+  await wrapper.get('[data-copy-continuation="conversation-a"]').trigger('click')
+  await flushPromises()
+  expect(wrapper.find('[data-continuation-feedback]').exists()).toBe(true)
+
+  let resolveCopy!: () => void
+  writeText.mockImplementationOnce(() => new Promise<void>(resolve => { resolveCopy = resolve }))
+  await wrapper.get('[data-copy-continuation="conversation-a"]').trigger('click')
+  await wrapper.get('select').setValue('project-b')
+  await flushPromises()
+  resolveCopy()
+  await flushPromises()
+  expect(wrapper.find('[data-continuation-feedback]').exists()).toBe(false)
 })

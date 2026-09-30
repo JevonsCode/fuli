@@ -328,6 +328,24 @@ test('automatic task entry restores configured character and user expectations t
   assert.equal(result.project_agent_context.memory.revision, 3);
 });
 
+test('explicit worker context carries the same character and expectations as automatic entry', async () => {
+  const character = { judgment: 'Verify evidence.', taste: 'Clear prose.', personality: 'Patient.' };
+  const app = entryApplication();
+  app.personal.getProjectAgent = async () => ({ agent_id: 'engineer', personal_space_id: 'test-space',
+    personal_project_id: 'sample-project', memory_scope: 'reviewed_agent',
+    profile: { name: 'Engineer', responsibility: 'Maintain Aster.', status: 'active',
+      allowed_clients: ['cursor'], character, expectations: 'Keep decisions traceable.',
+      initial_preferences: ['Use concise summaries.'] } });
+  const result = await callAgentTool(app, 'get_project_agent_context', {
+    projectPath: '/synthetic/sample-project', agentId: 'engineer', queries: ['project'], sourceApplication: 'cursor'
+  });
+  assert.deepEqual(result.role_instructions.character, character);
+  assert.equal(result.role_instructions.expectations, 'Keep decisions traceable.');
+  assert.deepEqual(result.role_instructions.initial_preferences, ['Use concise summaries.']);
+  assert.equal(result.effective_preferences[0].instruction, 'Verify changes before finishing.');
+  assert.equal(result.working_memory.revision, 3);
+});
+
 test('automatic task entry gives legacy profiles empty character and expectation defaults', async () => {
   const result = await callAgentTool(entryApplication(), 'get_collaboration_preferences', {
     projectPath: '/synthetic/sample-project', taskPrompt: 'Continue.', sourceApplication: 'cursor'

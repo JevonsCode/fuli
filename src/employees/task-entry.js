@@ -1,6 +1,7 @@
 // Management is a task-entry capability, not a replacement for the specialist
 // role/executor chosen by FULI. Never persist the user's prompt or start a model.
-export async function employeeTaskEntry({ registry, recruitment, workspace }, input) {
+import { employeeCollaborationReceipt } from '../agents/identity-receipt.js';
+export async function employeeTaskEntry({ app, registry, recruitment, workspace }, input) {
   if (!input.personalProjectId) return { status: 'project_unresolved', managers: [], worker_started: false };
   const managers = [];
   let unavailable = false;
@@ -18,6 +19,9 @@ export async function employeeTaskEntry({ registry, recruitment, workspace }, in
       const board = await runtime.callTool(manifest.taskEntry.boardTool, { limit: 8 }, resolved);
       managers.push({
         template_id: manifest.id, agent_id: context.agentId, name: manifest.name,
+        collaboration_receipt: employeeCollaborationReceipt(app, resolved, {
+          tool: manifest.taskEntry.boardTool, permission: 'board.read', sourceApplication: input.sourceApplication
+        }),
         personal_project_id: context.project.id, scope_mode: context.management.mode,
         title_mode: context.management.titleMode, title_style: context.management.titleStyle,
         board: { version: board.version, total: board.total, truncated: board.truncated,

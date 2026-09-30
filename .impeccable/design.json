@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-30T21:21:51Z",
+  "title": "Design System: Fuli Site",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "primary",
+        "displayName": "Forest Ink",
+        "canonical": "#17392c"
+      },
+      "mint": {
+        "role": "secondary",
+        "displayName": "Mint Ground",
+        "canonical": "#ddebdf"
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Cool Paper",
+        "canonical": "#f7f9f5"
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted Green",
+        "canonical": "#4c6659"
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Line Green",
+        "canonical": "#b2c7b9"
+      },
+      "citron": {
+        "role": "tertiary",
+        "displayName": "Citron Signal",
+        "canonical": "#deef73"
+      },
+      "blue": {
+        "role": "secondary",
+        "displayName": "Cobalt Signal",
+        "canonical": "#254fe6"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Unbounded Display",
+        "purpose": "Oversized Latin wordmark and compact counters."
+      },
+      "headline": {
+        "displayName": "Chinese Headline",
+        "purpose": "Short statements paired with diagrams."
+      },
+      "body": {
+        "displayName": "Chinese Body",
+        "purpose": "Readable explanatory copy."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "orbit-flow",
+        "value": "SVG animateMotion, 4s, indefinite",
+        "purpose": "Show context moving between the Agent and client nodes."
+      },
+      {
+        "name": "scene-transition",
+        "value": "color and background 0.5s",
+        "purpose": "Move the sticky story diagram through four states."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "prefers-reduced-motion: reduce",
+        "purpose": "Disable transitions, SVG animation, and interlude rotation while retaining content."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "wide",
+        "value": "1600px",
+        "purpose": "Cap the hero and widen the column gap."
+      },
+      {
+        "name": "compact",
+        "value": "1000px",
+        "purpose": "Reduce gaps and diagram scale."
+      },
+      {
+        "name": "mobile",
+        "value": "700px",
+        "purpose": "Stack the site and compact the sticky story stage."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Main action from the promise to local setup.",
+      "html": "<a class=\"ds-button-primary\" href=\"#start\">开始积累 <svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 12h14M13 6l6 6-6 6\" /></svg></a>",
+      "css": ".ds-button-primary{display:inline-flex;align-items:center;gap:45px;min-height:54px;padding:17px 23px;border-radius:6px;background:#17392c;color:#fff;font:650 15px/1.2 'PingFang SC','Microsoft YaHei',sans-serif;text-decoration:none;transition:background .2s,color .2s}.ds-button-primary svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.ds-button-primary:hover{background:#32654c}.ds-button-primary:focus-visible{outline:3px solid #254fe6;outline-offset:6px}"
+    },
+    {
+      "name": "Light Button",
+      "kind": "button",
+      "refersTo": "button-light",
+      "description": "Guide action on the forest installation surface.",
+      "html": "<a class=\"ds-button-light\" href=\"https://github.com/JevonsCode/fuli/blob/main/README.zh-CN.md\">阅读安装指南 <svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 12h14M13 6l6 6-6 6\" /></svg></a>",
+      "css": ".ds-button-light{display:inline-flex;align-items:center;gap:45px;min-height:54px;padding:17px 23px;border-radius:6px;background:#deef73;color:#17392c;font:650 15px/1.2 'PingFang SC','Microsoft YaHei',sans-serif;text-decoration:none;transition:background .2s,color .2s}.ds-button-light svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.ds-button-light:hover{background:#fff}.ds-button-light:focus-visible{outline:3px solid #254fe6;outline-offset:6px}"
+    },
+    {
+      "name": "Copy Utility",
+      "kind": "button",
+      "refersTo": "button-utility",
+      "description": "Bordered utility for copying installation commands.",
+      "html": "<button class=\"ds-copy-button\" type=\"button\">复制命令</button>",
+      "css": ".ds-copy-button{min-height:38px;padding:9px 12px;border:1px solid #7c9a88;border-radius:4px;background:transparent;color:#f7f9f5;font:550 11px/1.2 'PingFang SC','Microsoft YaHei',sans-serif}.ds-copy-button:hover{background:#355745}.ds-copy-button:focus-visible{outline:3px solid #254fe6;outline-offset:6px}"
+    },
+    {
+      "name": "Site Navigation",
+      "kind": "nav",
+      "refersTo": "site-header",
+      "description": "Quiet mint navigation for the public site.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"主导航\"><a href=\"#story\">如何协作</a><a href=\"#principles\">我们的理念</a><a href=\"https://github.com/JevonsCode/fuli\">GitHub</a></nav>",
+      "css": ".ds-nav{display:flex;align-items:center;gap:36px;font:550 14px/1.2 'PingFang SC','Microsoft YaHei',sans-serif;color:#17392c}.ds-nav a{color:inherit;text-decoration:none}.ds-nav a:hover{text-decoration:underline;text-underline-offset:5px}.ds-nav a:focus-visible{outline:3px solid #254fe6;outline-offset:6px}@media(max-width:700px){.ds-nav{gap:20px;font-size:12px}}"
+    },
+    {
+      "name": "Relationship Node",
+      "kind": "custom",
+      "refersTo": "relationship-diagram",
+      "description": "Circular marker with the shared authored SVG icon treatment.",
+      "html": "<span class=\"ds-node-symbol\" aria-hidden=\"true\"><svg viewBox=\"0 0 24 24\"><path d=\"M6 18 18 6M6 6h12v12\" /></svg></span>",
+      "css": ".ds-node-symbol{display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:#ddebdf;color:#17392c}.ds-node-symbol svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}@media(max-width:700px){.ds-node-symbol{width:24px;height:24px}.ds-node-symbol svg{width:14px;height:14px}}"
+    },
+    {
+      "name": "FAQ Disclosure",
+      "kind": "custom",
+      "refersTo": "questions",
+      "description": "Native disclosure row for product limits and setup questions.",
+      "html": "<details class=\"ds-faq\"><summary class=\"ds-faq__summary\">我能在任何地方直接 @Agent 吗？</summary><p class=\"ds-faq__answer\">需要先为该客户端接入 Fuli，并连接同一份可访问的数据。</p></details>",
+      "css": ".ds-faq{padding:21px 0;border-bottom:1px solid #b2c7b9;color:#17392c}.ds-faq__summary{display:flex;align-items:center;justify-content:space-between;gap:20px;font:400 15px/1.7 'PingFang SC','Microsoft YaHei',sans-serif;cursor:pointer;list-style:none}.ds-faq__summary::-webkit-details-marker{display:none}.ds-faq__summary::after{content:'+';font-size:24px;line-height:1;font-weight:300}.ds-faq[open] .ds-faq__summary::after{content:'−'}.ds-faq__summary:focus-visible{outline:3px solid #254fe6;outline-offset:6px}.ds-faq__answer{max-width:70ch;margin:17px 0 0;color:#4c6659;font:400 13px/1.9 'PingFang SC','Microsoft YaHei',sans-serif}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Continuous Context Ribbon",
+    "overview": "This system documents the public static site in site/ only. A quiet mint ground, forest ink, and vivid state signals make continuity feel like a visible relationship graph. Circles, rings, paths, and short labels explain the mechanism before prose fills in detail.\n\nThe geometric Latin wordmark and compact Chinese copy carry one node-and-path vocabulary through the hero orbit, sticky story stage, and cobalt interlude. Motion follows scroll and has a reduced-motion path. These rules do not replace the operational-console style of web/.",
+    "keyCharacteristics": [
+      "Mint ground, forest ink, thin green dividers.",
+      "Unbounded Latin signature and compact counters.",
+      "Bold Chinese headlines with generous reading measure.",
+      "Crisp circular SVG nodes, rings, and connecting paths.",
+      "Citron and cobalt reserved for action and state.",
+      "Flat tonal surfaces with no decorative shadow system."
+    ],
+    "rules": [
+      {
+        "name": "The Signal Rarity Rule",
+        "body": "Citron and cobalt mark an action or state change; they are not general background decoration.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two-Voice Rule",
+        "body": "Use Unbounded for Latin identity and counters; use the Chinese sans stack for Chinese communication.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-by-Default Rule",
+        "body": "Use a surface change, ring, or path instead of shadow, blur, or simulated material.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep this system scoped to site/; web/ has its own console language.",
+      "Do use the named palette and one-pixel line vocabulary.",
+      "Do explain mechanisms with authored SVG geometry and paths.",
+      "Do preserve readable content when motion is reduced or JavaScript is unavailable.",
+      "Do use the shared 1.8px rounded SVG icon stroke."
+    ],
+    "donts": [
+      "Don't turn the site into a repeated feature-card grid or generic dashboard.",
+      "Don't add gradients, decorative shadows, blur, or fake texture.",
+      "Don't use Unicode glyphs or emoji as diagram icons.",
+      "Don't present synthetic activity or private project data as public evidence."
+    ]
+  }
+}

@@ -4,6 +4,7 @@ import { createEmployeeRecruitment } from './recruitment.js';
 import { join } from 'node:path';
 import { EmployeeManagementStore } from './management-policy.js';
 import { employeeTaskEntry } from './task-entry.js';
+import { employeeCollaborationReceipt } from '../agents/identity-receipt.js';
 
 export function createEmployeeService({ app, runtimeConfigPath, registry: configuredRegistry, managementStore: configuredManagementStore }) {
   const registry = configuredRegistry ?? createEmployeePackageRegistry(employeeDirectories(runtimeConfigPath));
@@ -65,7 +66,13 @@ export function createEmployeeService({ app, runtimeConfigPath, registry: config
       sourceApplication: input.sourceApplication ?? 'other', id: input.sourceSessionId,
       verified: input.sourceSessionVerified === true,
     } : null;
-    try { return await runtime.callTool(input.tool, input.arguments ?? {}, { ...context, session }); }
+    try {
+      const result = await runtime.callTool(input.tool, input.arguments ?? {}, { ...context, session });
+      if (!result || typeof result !== 'object' || Array.isArray(result)) return result;
+      return { ...result, collaboration_receipt: employeeCollaborationReceipt(app, context, {
+        tool: input.tool, permission: tool.permission, sourceApplication: input.sourceApplication
+      }) };
+    }
     catch (error) {
       if (Number.isInteger(error?.status) && error.status >= 400 && error.status < 500) {
         throw new EmployeeError(error.message, error.status, error.code ?? 'tool_error');
@@ -79,7 +86,7 @@ export function createEmployeeService({ app, runtimeConfigPath, registry: config
     recruit: async (input) => recruitment.recruit(await resolveInput(input)),
     workspace, describeTools, callTool,
     authorize: recruitment.authorize,
-    taskEntry: (input) => employeeTaskEntry({ registry, recruitment, workspace }, input)
+    taskEntry: (input) => employeeTaskEntry({ app, registry, recruitment, workspace }, input)
       .catch(() => ({ status: 'unavailable', managers: [], worker_started: false })),
     async handleHttp(request, response, input) {
       const context = await workspace(input);

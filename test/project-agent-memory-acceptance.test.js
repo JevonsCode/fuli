@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -17,13 +17,14 @@ test('real Neo4j + HTTP Provider + independent MCP hosts retain one role across 
 }, async (t) => {
   assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(new URL(process.env.FULI_TEST_NEO4J_URI).hostname));
   const directory = mkdtempSync(join(tmpdir(), 'fuli-role-mcp-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
   const projectId = 'synthetic-role-project';
   const projectPath = join(directory, projectId);
   mkdirSync(projectPath);
   const port = await freePort();
   const providerUrl = `http://127.0.0.1:${port}`;
   const bootstrapToken = 'synthetic-mcp-bootstrap-123456';
-  const processHandle = spawn(resolve('graph-provider/.venv/bin/python'), [
+  const processHandle = spawn(process.env.FULI_TEST_PYTHON ?? resolve('graph-provider/.venv/bin/python'), [
     '-m', 'uvicorn', 'fuli_graph.app:app', '--host', '127.0.0.1', '--port', String(port), '--log-level', 'error'
   ], { cwd: resolve('graph-provider'), env: {
     PATH: process.env.PATH, PYTHONUNBUFFERED: '1',
@@ -64,7 +65,9 @@ test('real Neo4j + HTTP Provider + independent MCP hosts retain one role across 
   ]) {
     await request('/v1/project-agents', {
       personal_space_id: space.id, personal_project_id: projectId, agent_id: agentId,
-      profile: { name: `Synthetic ${agentId}`, responsibility: 'Maintain the synthetic sample.',
+      profile: { name: `Synthetic ${agentId}`, display_name: `Synthetic ${agentId}`, responsibility: 'Maintain the synthetic sample.',
+        character: { judgment: 'Check evidence.', taste: 'Clear writing.', personality: 'Patient.' },
+        expectations: 'Preserve confirmed preferences.',
         allowed_clients: ['codex', 'claude', 'claude_code', 'cursor'], work_kinds: [workKind], capabilities: [capability] }
     }, { token, method: 'PUT' });
   }
@@ -74,13 +77,14 @@ test('real Neo4j + HTTP Provider + independent MCP hosts retain one role across 
     workspaces: []
   }), { mode: 0o600 });
   let revision = 0;
+  let conversationId;
   for (const sourceApplication of ['codex', 'claude', 'claude_code', 'cursor']) {
     const connection = await connectMcp(runtimeConfigPath, { sourceApplication });
     const sessionId = `synthetic-${sourceApplication}-session`;
     let tokenForTask;
     try {
       const begun = await connection.client.callTool({ name: 'begin_task_context', arguments: {
-        sessionId, turnId: 'synthetic-turn-one', projectPath, taskPrompt: 'Implement the synthetic service.',
+        sessionId, turnId: 'synthetic-turn-one', projectPath, taskPrompt: '@Synthetic engineer Implement the synthetic service.',
         workKind: 'implementation', requiredCapabilities: ['coding']
       } });
       assert.equal(begun.isError, undefined, JSON.stringify(begun));
@@ -88,9 +92,20 @@ test('real Neo4j + HTTP Provider + independent MCP hosts retain one role across 
       assert.equal(value.context.project_agent_id, 'engineer');
       assert.equal(value.project_agent_context.status, 'ready');
       assert.equal(value.project_agent_context.worker_started, false);
+      assert.equal(value.agent_receipt.owner.name, 'Synthetic engineer');
+      assert.equal(value.project_agent_context.role.character.taste, 'Clear writing.');
+      assert.equal(value.project_agent_context.role.expectations, 'Preserve confirmed preferences.');
       assert.equal(value.project_agent_context.memory.revision, revision);
       if (revision) assert.equal(value.project_agent_context.memory.current.memory.summary, `Synthetic milestone ${revision}.`);
       tokenForTask = value.task_context_token;
+      if (conversationId) {
+        const continued = await connection.client.callTool({ name: 'resume_agent_conversation', arguments: {
+          taskContextToken: tokenForTask, conversationId
+        } });
+        assert.equal(continued.isError, undefined, JSON.stringify(continued));
+        assert.equal(continued.structuredContent.conversation_id, conversationId);
+        assert.match(continued.structuredContent.context.summary, /Synthetic/);
+      }
       const sameTurn = await connection.client.callTool({ name: 'begin_task_context', arguments: {
         sessionId, turnId: 'synthetic-turn-one', projectPath, taskPrompt: 'Implement the synthetic service.',
         workKind: 'implementation', requiredCapabilities: ['coding']
@@ -132,6 +147,7 @@ test('real Neo4j + HTTP Provider + independent MCP hosts retain one role across 
       const saved = await finisher.client.callTool({ name: 'checkpoint_task_knowledge', arguments: {
         taskContextToken: tokenForTask, disposition: 'retain_nothing',
         reason: 'Only private working context changed in this synthetic test.',
+        workLog: { status: 'completed', summary: `Synthetic milestone ${revision + 1}.` },
         agentMemory: { expectedRevision: revision, memory: {
           summary: `Synthetic milestone ${revision + 1}.`, nextActions: ['Continue the same role in the next host.']
         } }
@@ -139,6 +155,10 @@ test('real Neo4j + HTTP Provider + independent MCP hosts retain one role across 
       assert.equal(saved.isError, undefined, JSON.stringify(saved));
       assert.equal(saved.structuredContent.agent_memory.revision, ++revision);
       assert.equal(saved.structuredContent.agent_memory.sourceApplication, sourceApplication);
+      assert.equal(saved.structuredContent.conversation.receipt.owner.name, 'Synthetic engineer');
+      const savedId = saved.structuredContent.conversation.conversation_id;
+      if (conversationId) assert.equal(savedId, conversationId);
+      conversationId = savedId;
     } finally { await finisher.close(); }
     const verifier = await connectMcp(runtimeConfigPath, { sourceApplication });
     try {

@@ -57,6 +57,19 @@ function fixture() {
   return { app, agents, writes, projects, registry, service: app.employees };
 }
 
+test('a successful employee tool call supplies truthful collaboration evidence', async (t) => {
+  const { service } = fixture();
+  t.after(() => service.close());
+  await service.recruit({ templateId: 'jefa', personalProjectId: 'project-a' });
+  const result = await service.callTool({ templateId: 'jefa', personalProjectId: 'project-a', tool: 'read_board', sourceApplication: 'codex' });
+  assert.equal(result.collaboration_receipt.agent_id, 'employee.jefa');
+  assert.equal(result.collaboration_receipt.name, 'Jefa');
+  assert.equal(result.collaboration_receipt.tool, 'read_board');
+  assert.equal(result.collaboration_receipt.status, 'tool_completed');
+  assert.equal(result.collaboration_receipt.worker_started, false);
+  assert.equal(result.collaboration_receipt.personal_project_id, 'project-a');
+});
+
 test('employee tool discovery supports exact selection and compact schema-free listings', async (t) => {
   const { service, registry } = fixture();
   t.after(() => service.close());
@@ -280,7 +293,9 @@ test('inactive employees require explicit reactivation and custom identities are
 test('tool calls bind the resolved project and reject missing assignments, path mismatches, and unknown tools', async () => {
   const { service } = fixture();
   await service.recruit({ templateId: 'jefa', projectPath: '/test/project-a' });
-  assert.deepEqual(await service.callTool({ templateId: 'jefa', projectPath: '/test/project-a', tool: 'read_board' }), { projectId: 'project-a' });
+  const result = await service.callTool({ templateId: 'jefa', projectPath: '/test/project-a', tool: 'read_board' });
+  assert.equal(result.projectId, 'project-a');
+  assert.equal(result.collaboration_receipt.personal_project_id, 'project-a');
   await assert.rejects(service.callTool({ templateId: 'jefa', personalProjectId: 'project-b', tool: 'read_board' }), { code: 'assignment_required' });
   await assert.rejects(service.callTool({ templateId: 'jefa', projectPath: '/test/project-a', personalProjectId: 'project-b', tool: 'read_board' }), { code: 'project_mismatch' });
   await assert.rejects(service.callTool({ templateId: 'jefa', personalProjectId: 'project-a', tool: 'shell' }), { code: 'tool_not_permitted' });

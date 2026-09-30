@@ -5,7 +5,9 @@ export function compactTaskContext(value) {
   const result = { ...value };
   if (Array.isArray(value.effective_preferences)) result.effective_preferences = value.effective_preferences.map(item => ({
     instruction: item.instruction, preference_key: item.preference_key,
-    preference_scope: item.preference_scope, confirmation_status: item.confirmation_status
+    preference_scope: item.preference_scope, confirmation_status: item.confirmation_status,
+    profile_aspect: item.profile_aspect,
+    ...(item.attributes?.tasteDomain ? { attributes: { tasteDomain: item.attributes.tasteDomain } } : {})
   }));
   const continuity = value.project_agent_context;
   if (continuity?.memory) {

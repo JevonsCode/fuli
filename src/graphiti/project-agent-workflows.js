@@ -581,7 +581,9 @@ export async function getProjectAgentContext(
     executionSummary: agent.executionSummary ?? [],
     role_instructions: {
       responsibility: agent.profile.responsibility,
-      initial_preferences: agent.profile.initialPreferences
+      initial_preferences: agent.profile.initialPreferences,
+      character: continuity.role.character,
+      expectations: continuity.role.expectations
     },
     effective_preferences: preferences.effective_preferences,
     deferred_conflicts: preferences.deferred_conflicts,

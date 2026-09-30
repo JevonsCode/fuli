@@ -20,9 +20,11 @@ Those nodes may point to Fuli-local content, an external knowledge base, or anot
 Codex, Claude Code, and Cursor can then reuse the taste, personality, judgment preferences, and
 working methods formed through that collaboration.
 
-Fuli is not a transcript archive or a knowledge base whose goal is to collect more documents, and
-it is not an attempt to build a personality model that replaces human judgment. AI retrieves,
-summarizes, warns, and executes; humans retain final authority.
+Fuli separates private conversation journals, agent working memory, and confirmed knowledge so
+ongoing collaboration produces reusable understanding. AI retrieves, summarizes, warns, and
+executes; humans retain final authority.
+
+Explore the [product website](https://jevonscode.github.io/fuli/).
 
 ## npm packages
 
@@ -113,8 +115,10 @@ can apply.
 
 ### 7. Local first; no personal model in the shared layer
 
-The personal graph stays local by default. Fuli stores structured reusable knowledge, not raw
-transcripts, credentials, temporary logs, or command output. The team-shared layer contains only
+The personal graph stays local by default. Supported client adapters can journal visible
+conversations for private agent continuity, separately from structured confirmed knowledge.
+Conversation recall is bounded, with a default seven-day inactivity window. Credentials, temporary
+logs, and raw command output must not enter the knowledge graph. The team-shared layer contains only
 confirmed project or domain knowledge with context and provenance—not personal taste, personality,
 or judgment preferences.
 
@@ -136,7 +140,7 @@ not appear on the Personal preferences page.
 Four questions provide a quick classifier: “What outcome do I want?” is taste; “How do I work over
 the long term?” is personality; “How do I decide under a trade-off?” is judgment preference; and
 “How does this system objectively work?” is project knowledge. One-off commands, temporary output,
-unverified guesses, raw chat, and credentials are not retained.
+unverified guesses, raw chat, and credentials are not promoted into confirmed knowledge.
 
 Personality is not a catch-all category for everything learned about a person. Only an explicit,
 stable self-description can be confirmed with a human basis. A personality inferred by an Agent
@@ -715,7 +719,7 @@ the durable graph remains the source of truth.
 ## Privacy and safety boundaries
 
 - Personal knowledge is written to the local Provider.
-- Agents distill structured knowledge instead of storing raw transcripts.
+- Agents distill structured knowledge separately from private, adapter-visible conversation journals.
 - Tokens, cookies, private keys, credentials, private contact details, temporary logs, and raw command
   output must not enter the graph.
 - Graphiti's remote-LLM path is disabled; embeddings are currently computed locally.

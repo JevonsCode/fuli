@@ -15,6 +15,8 @@ export const projectAgentMessages = {
       invalidPolicy: '归档天数须为 1–365 的整数，预算须为 512–16000 的整数。',
       save: '保存记忆设置', saving: '正在保存记忆设置…', saved: '记忆设置已保存。',
       user: '用户', assistant: 'Agent', tool: '工具',
+      copyContinuation: '复制接续指令', copiedContinuation: '已复制接续指令。',
+      copyContinuationFailed: '自动复制失败，请手动选择下方指令并复制。', manualContinuation: '接续指令',
     },
     workHistory: {
       title: '工作记录', loading: '正在读取员工工作记录…', loadFailed: '工作记录读取失败，请重试。',
@@ -371,6 +373,8 @@ export const projectAgentMessages = {
       invalidPolicy: 'Use an integer from 1–365 for days and 512–16000 for the budget.',
       save: 'Save memory settings', saving: 'Saving memory settings…', saved: 'Memory settings saved.',
       user: 'User', assistant: 'Agent', tool: 'Tool',
+      copyContinuation: 'Copy continuation', copiedContinuation: 'Continuation copied.',
+      copyContinuationFailed: 'Could not copy automatically. Select and copy the instruction below.', manualContinuation: 'Continuation instruction',
     },
     workHistory: {
       title: 'Work history', loading: 'Loading employee work records…', loadFailed: 'Could not load work records. Try again.',
