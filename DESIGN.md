@@ -1,176 +1,136 @@
----
-name: Fuli Site
-description: A diagram-led Chinese landing page for local-first Agent continuity.
-colors:
-  ink: "#17392c"
-  mint: "#ddebdf"
-  paper: "#f7f9f5"
-  muted: "#4c6659"
-  line: "#b2c7b9"
-  citron: "#deef73"
-  blue: "#254fe6"
-typography:
-  display:
-    fontFamily: "Unbounded, sans-serif"
-    fontSize: "clamp(100px, 20.7vw, 320px)"
-    fontWeight: 700
-    lineHeight: 1.1
-    letterSpacing: "-0.04em"
-  headline:
-    fontFamily: "PingFang SC, Microsoft YaHei, sans-serif"
-    fontSize: "clamp(42px, 5.3vw, 82px)"
-    fontWeight: 750
-    lineHeight: 1.22
-    letterSpacing: "-0.035em"
-  title:
-    fontFamily: "PingFang SC, Microsoft YaHei, sans-serif"
-    fontSize: "clamp(33px, 3.55vw, 54px)"
-    fontWeight: 700
-    lineHeight: 1.3
-    letterSpacing: "-0.025em"
-  body:
-    fontFamily: "PingFang SC, Microsoft YaHei, sans-serif"
-    fontSize: "16px"
-    fontWeight: 400
-    lineHeight: 1.9
-  label:
-    fontFamily: "PingFang SC, Microsoft YaHei, sans-serif"
-    fontSize: "12px"
-    fontWeight: 550
-    lineHeight: 1.7
-rounded:
-  xs: "4px"
-  sm: "6px"
-  md: "7px"
-  circle: "50%"
-spacing:
-  gutter: "clamp(22px, 5vw, 88px)"
-  button: "17px 23px"
-  section: "110px"
-  story-step: "145px 0 100px"
-components:
-  button-primary:
-    backgroundColor: "{colors.ink}"
-    textColor: "#ffffff"
-    rounded: "{rounded.sm}"
-    padding: "{spacing.button}"
-    height: "54px"
-  button-light:
-    backgroundColor: "{colors.citron}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.sm}"
-    padding: "{spacing.button}"
-    height: "54px"
-  button-utility:
-    backgroundColor: "transparent"
-    textColor: "{colors.paper}"
-    rounded: "{rounded.xs}"
-    padding: "9px 12px"
-    height: "38px"
----
+# Fuli Public Site Design
 
-# Design System: Fuli Site
+Scope: the static product website in `site/`. This document describes the current
+`site/index.html`, `site/style.css`, `site/styles/scenes.css`,
+`site/styles/responsive.css`, `site/site.js`, and `site/scroll-state.js`.
+Styles load in that order: shared styles and static sections, scroll scenes, then
+motion fallbacks and responsive rules. Keep the bundled font URL in `site/style.css`.
+The operational console in `web/` has its own design language.
 
-## Overview
+## Direction and narrative
 
-**Creative North Star: "The Continuous Context Ribbon"**
+An editorial product launch: a black-and-gold brand object opens the page, then
+warm white and pale sage surfaces explain the actual architecture. Scroll motion
+reveals relationships and stages; the content must also work as a static document.
 
-This system documents the public static site in site/ only. A quiet mint ground, forest ink, and vivid state signals make continuity feel like a visible relationship graph. Circles, rings, paths, and short labels explain the mechanism before prose fills in detail.
+Reading order:
 
-The geometric Latin wordmark and compact Chinese copy carry one node-and-path vocabulary through the hero orbit, sticky story stage, and cobalt interlude. Motion follows scroll and has a reduced-motion path. These rules do not replace the operational-console style of web/.
+1. Original Fuli logo and the promise “每次合作，都有复利。”
+2. Continuity across supported Agent clients.
+3. Four architecture boundaries, progressively emphasized.
+4. Four stages of the knowledge loop, with a labeled illustrative evidence panel.
+5. Distinct visual stories for preferences, bounded memory, and knowledge history.
+6. Personal-edition installation, product boundaries, and source links.
 
-**Key Characteristics:**
+Use generous space and short Chinese headlines. Capability illustrations should
+explain a mechanism; avoid turning every section into identical feature cards.
 
-- Mint ground, forest ink, thin green dividers.
-- Unbounded Latin signature and compact counters.
-- Bold Chinese headlines with generous reading measure.
-- Crisp circular SVG nodes, rings, and connecting paths.
-- Citron and cobalt reserved for action and state.
-- Flat tonal surfaces with no decorative shadow system.
+## Brand and material
 
-## Colors
+- Use `site/assets/fuli-logo.png`, sourced from `web/assets/brand/fuli-logo.png`.
+  Keep the original image proportions and colors; do not redraw or replace it.
+- The hero presents the logo on a warm metallic circular face. Orbit lines connect
+  identity, memory, and judgment. These are conceptual illustrations, not live data.
+- Restrained gradients, soft shadows, perspective, and header blur are intentional.
+  Apply them to the hero object, spatial layers, and selective emphasis.
+- Architecture uses pale sage layers, thin connectors, a dark application core,
+  and a dashed external-source boundary. Depth should make the hierarchy legible.
 
-Botanical neutrals carry the page; citron and cobalt are scarce signals for action, memory, and motion.
+## Palette and typography
 
-### Primary
+| Token / role | Current value |
+| --- | --- |
+| `--dark` / hero, workflow, install | `#101110` |
+| `--paper` / reading surfaces | `#f5f5f1` |
+| `--ink` / primary light-surface text | `#20221f` |
+| `--muted` / secondary text | `#696c65` |
+| `--gold` / active states and accents | `#d5b776` |
+| `--line` / neutral dividers | `#dedfd7` |
+| Architecture background | `#eaece5` |
+| Application core | `#20291f` |
+| Primary button | `#ead7ac` with dark text |
 
-- **Forest Ink:** primary text, diagram core, header brand, and primary action.
-- **Cobalt Signal:** the interlude surface and motion accent.
+Chinese copy uses Arial, PingFang SC, Microsoft YaHei, then sans-serif. The bundled
+Unbounded font is reserved for the Latin brand, counters, and the large memory
+number. Installation commands use SFMono-Regular / Consolas / monospace.
 
-### Secondary
+Desktop hero type is `clamp(52px, 5.8vw, 86px)` with 1.16 line height. Main section
+headlines use approximately 40–64px, with smaller chapter headings. Body copy uses
+relaxed 1.8–1.9 line height and restrained reading widths. Preserve legibility when
+adjusting muted labels, especially on sage and dark surfaces.
 
-- **Citron Signal:** action surface, selected state, and node marker.
+## Layout and components
 
-### Neutral
+- Shared content width: 1600px maximum; gutter `clamp(24px, 6vw, 100px)`.
+- Desktop header: 76px. With JavaScript it is fixed, translucent, and carries a
+  thin scroll-progress line plus current-section navigation.
+- Architecture: copy beside layered diagram. Workflow: four connected steps above
+  explanatory copy and evidence rows. Keep the two compositions distinct.
+- Primary buttons are 48px-high pills. Feature panels use 22px corners; architecture
+  and evidence layers use approximately 13px corners. Use thin borders consistently.
+- FAQ uses native `details` / `summary`. Commands remain selectable and can scroll
+  horizontally inside the code block. Clipboard feedback uses a live status region.
+- Keep meaningful headings, figure captions, diagram labels, visible focus states,
+  a skip link, and descriptive control names. Decorative geometry is aria-hidden.
 
-- **Mint Ground:** hero and header surface.
-- **Cool Paper:** reading surface for story, principles, questions, and footer.
-- **Muted Green:** secondary copy and captions.
-- **Line Green:** one-pixel dividers and diagram tracks.
+## Scroll behavior and fallbacks
 
-**The Signal Rarity Rule.** Citron and cobalt mark an action or state change; they are not general background decoration.
+- `site.js` enhances the document only after initialization by adding `.js`.
+  The unenhanced HTML contains every chapter in reading order.
+- Scroll handling uses passive listeners and one scheduled animation frame.
+  `scroll-state.js` owns progress, stage selection, and stage-scroll calculations.
+- In full-motion mode the hero spans 165svh. Its sticky object scales and shifts
+  while the heading fades with scroll progress.
+- Architecture and workflow each have four stages. Desktop scenes span 360svh;
+  sticky content sits beneath the header. Scroll emphasizes the corresponding
+  diagram layer or evidence row and reveals the matching caption.
+- Chapter buttons provide another route to each stage. Preserve `aria-pressed`,
+  the visible stage counter, anchor navigation, and the footer motion control.
+- General section reveals run once as content enters view; they must never be
+  the only way essential content becomes available.
+- Honor `prefers-reduced-motion` and the explicit footer preference. System reduced
+  motion takes priority. Reduced mode removes long scene heights, transitions,
+  transforms, and hidden captions; all chapters and diagram layers remain visible.
+- With no JavaScript, every caption remains readable, the native FAQ still works,
+  and command text is present. Hide controls that depend on JavaScript.
 
-## Typography
+## Responsive rules
 
-**Display Font:** Unbounded with a sans-serif fallback.
-**Body Font:** PingFang SC, Microsoft YaHei, sans-serif.
-**Label/Mono Font:** the body stack for labels; monospace for installation commands.
+- 1100px and 900px refine spacing, diagram labels, and desktop columns.
+- **700px is the mobile breakpoint**; JavaScript uses the matching minimum 701px
+  desktop query. Navigation becomes a toggleable menu, major layouts stack, and
+  scene geometry/type shrink. Do not invent a separate 768px breakpoint.
+- **735px viewport height is the short-screen cutoff.** Long sticky scenes become
+  static, all captions and diagram layers show, and scroll-stage animation stops.
+  Wider layouts may keep the accompanying figure sticky; at 700px and below the
+  figure and evidence panel are static too.
+- A separate maximum-height 850px / minimum-width 901px rule compacts desktop
+  scenes. At 360px and below, gutters and dense diagram labels reduce further.
+- Reduced motion and no-JavaScript layouts must stay readable at every breakpoint.
+  Check narrow phones, short landscape screens, and a full desktop viewport.
 
-The Latin signature is geometric and oversized. Chinese copy is bold, direct, and legible with tight display tracking and a relaxed body rhythm.
+## Product truth in diagrams and copy
 
-- **Display:** 700, clamp(100px, 20.7vw, 320px), 1.1, -0.04em; FULI wordmark.
-- **Headline:** 750, clamp(42px, 5.3vw, 82px), 1.22, -0.035em; hero promise.
-- **Title:** 700, clamp(33px, 3.55vw, 54px), 1.3, -0.025em; story statements.
-- **Body:** 400, 16px, 1.9; explanatory copy, generally 34em or 70ch maximum.
-- **Label:** 550, 12px, 1.7; metadata, captions, and navigation.
+- Agent clients use MCP and client lifecycle adapters. The management UI uses HTTP.
+  Both are peers of the same application services, not a UI-driven Agent pipeline.
+- Application services enforce project scope, preferences, retrieval, and review.
+  Personal Provider connects to local Neo4j. Private conversations, working memory,
+  and confirmed knowledge remain separate concerns; history is preserved.
+- External knowledge is project-bound and read-only. Do not draw a writeback path
+  to Notion, Feishu, MCP sources, or custom connectors.
+- The workflow is context → focused retrieval → real use and feedback → a durable
+  candidate or `retain_nothing`. Retrieval alone does not count as knowledge use.
+- Seven days describes the default conversation inactivity/archive window, not a
+  deletion deadline. Context recovery is bounded, with details retrieved on demand.
+- Cross-client continuity depends on installed, trusted adapters and saved context;
+  it does not transfer filesystem or native tool state or promise seamless recovery.
+- Only `fuli-context` personal edition is released. The independent team server is
+  in development. Personal taste, personality, and judgment stay out of shared data.
+- Installation: `npm install --global fuli-context`, `fuli setup`, then `fuli open`.
+  Require Node.js 24.12+; the default container mode requires Docker Compose v2.
+- Label illustrative preferences and process panels as examples. Do not invent
+  production metrics, client coverage, customer evidence, or quantified savings.
 
-**The Two-Voice Rule.** Use Unbounded for Latin identity and counters; use the Chinese sans stack for Chinese communication.
-
-## Layout
-
-Use a full-width surface with gutter clamp(22px, 5vw, 88px). The desktop hero is a 1fr / 1.12fr grid; the story is 1.15fr / 1fr with a sticky diagram beside four narrative steps. At 1000px gaps and diagram scale reduce. At 700px the hero and story stack, the first nav link hides, and the story stage becomes compact and sticky. The install code scrolls inside its own block.
-
-## Elevation & Depth
-
-This is a flat tonal system: depth comes from mint, paper, ink, cobalt, citron, one-pixel rules, circles, and SVG rings. There is no shadow vocabulary. Focus uses a 3px cobalt outline with a 6px offset.
-
-**The Flat-by-Default Rule.** Use a surface change, ring, or path instead of shadow, blur, or simulated material.
-
-## Shapes
-
-Buttons use 6px corners; the utility copy button uses 4px; the brand mark uses 7px. Diagram nodes, signal dots, and the Agent core are circular. SVG diagram labels may use a 24px pill radius. Dividers are one-pixel lines. Icons are inline SVG paths with 1.8px stroke, round caps, and round joins.
-
-## Components
-
-### Buttons
-
-Primary and light actions use 17px 23px padding, 54px minimum height, and 6px corners. Primary is forest ink with white text; light is citron with forest ink text. Hover changes the surface; focus uses the shared cobalt outline. Text links remain unboxed and underline on hover.
-
-### Navigation
-
-Mint header, 82px desktop and 70px mobile, with 36px desktop link gaps and 20px mobile gaps. Links inherit forest ink, underline on hover, and keep the shared focus outline.
-
-### Relationship Diagram
-
-A dark Agent core, four satellite nodes, thin paths, and a ring form the sticky story. Scene state changes recolor the core and markers. Each marker uses one inline SVG icon treatment.
-
-### Install and Disclosure
-
-The forest install block contains a monospace command sequence and a bordered copy utility. FAQ rows use native details and summary with one-pixel dividers, a plus/minus marker, and a 70ch answer measure.
-
-## Do's and Don'ts
-
-### Do:
-
-- **Do** keep this system scoped to site/; web/ has its own console language.
-- **Do** use the named palette and one-pixel line vocabulary.
-- **Do** explain mechanisms with authored SVG geometry and paths.
-- **Do** preserve readable content when motion is reduced or JavaScript is unavailable.
-- **Do** use the shared 1.8px rounded SVG icon stroke.
-
-### Don't:
-
-- **Don't** turn the site into a repeated feature-card grid or generic dashboard.
-- **Don't** add gradients, decorative shadows, blur, or fake texture.
-- **Don't** use Unicode glyphs or emoji as diagram icons.
-- **Don't** present synthetic activity or private project data as public evidence.
+Validate future claims against `README.zh-CN.md`, `docs/agent-interface-architecture.md`,
+`docs/agent-conversations-and-collaboration.md`, and
+`docs/external-knowledge-architecture.md` before changing public copy.
