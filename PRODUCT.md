@@ -36,3 +36,10 @@ explicitly fictional. Publish only public product facts, never private project d
 
 Success means visitors understand the mechanism and can start with the documented local
 setup, not that they spend longer watching effects.
+
+## Brand assets
+
+Fuli already has an established logo. Use the original artwork at
+`site/assets/fuli-logo.png`, identical to `web/assets/brand/fuli-logo.png`.
+Website redesigns preserve this logo, its colors and proportions. Do not redraw it,
+replace it with an initial, recolor it, or create a new brand mark without an explicit request.

@@ -112,10 +112,11 @@ summary:focus-visible {
   font-weight: 700;
   letter-spacing: -0.02em;
 }
-.brand > svg {
-  width: 30px;
-  height: 30px;
-  stroke-width: 2.5;
+.brand > img {
+  width: 32px;
+  height: 32px;
+  display: block;
+  object-fit: contain;
 }
 .brand-cn {
   font-size: 14px;
@@ -667,9 +668,18 @@ footer {
   font-size: 12px;
 }
 .footer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 27px;
   font-weight: 650;
   letter-spacing: -0.03em;
+}
+.footer-brand > img {
+  display: block;
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
 }
 .footer-brand span {
   font-size: 13px;
@@ -768,9 +778,9 @@ footer a:hover {
   .brand-cn {
     display: none;
   }
-  .brand > svg {
-    width: 25px;
-    height: 25px;
+  .brand > img {
+    width: 28px;
+    height: 28px;
   }
   .site-header nav {
     gap: 22px;

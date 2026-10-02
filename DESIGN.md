@@ -123,6 +123,14 @@ The experience uses native document scrolling and progressive enhancement. The H
 - Architecture is explicit: adapters, Fuli orchestration, Python Provider, and Neo4j storage are named.
 - Static, reduced-motion, short-viewport, and no-JavaScript paths keep the product story available.
 
+## Brand identity
+
+The existing Fuli logo is a fixed brand asset, not part of the website redesign.
+Use `site/assets/fuli-logo.png` unchanged in the header, footer, and favicon.
+It matches the console's `web/assets/brand/fuli-logo.png`. Preserve its native colors,
+aspect ratio, and transparent background; do not substitute an authored F glyph.
+The header renders it at 32px (28px on mobile), the footer at 36px.
+
 ## Colors
 
 The interface starts on `#f5f5f7` and uses near-black type with a restrained jade signal. The dark architecture chapter and carbon fragments supply contrast; green marks continuity, confirmation, and action.
@@ -204,21 +212,21 @@ The form language mixes a rounded physical fragment with restrained utility cont
 
 The signature component is twelve generated `.fragment` elements inside a `preserve-3d` rig. Each face carries a short public mechanism label and three quiet bars. The source materials are silver, jade, and carbon. `scroll-scene.js` maps the same fragments through these seven poses:
 
-| Pose | Source scene | Meaning shown in the page |
-| --- | --- | --- |
-| Scatter | `scatter` | Experience exists as separate pieces before continuity is formed. |
-| Identity | `identity` | Identity, project, dialogue, taste, context, collaboration, source, judgment, memory, history, permission, and expectation compose one Agent. |
-| Architecture | `architecture` | Client adapters anchor the connector layer above Fuli CLI/MCP/HTTP, Python Provider, and Neo4j relationship/history storage. |
-| Cross-client | `continuity` | Codex, Claude Code, and Cursor route through their connectors to the same Agent and reachable data when Fuli integration is present. |
-| Memory 7 days | `memory` | Visible records remain saved; recent context uses the default seven-day inactivity window, while older records become compact archive context and the current context is restored within a budget. |
-| Taste | `taste` | Taste, personality, and judgment preferences carry source and scope; inference waits for human confirmation. |
-| Team | `team` | HR matches, a group lead coordinates, specialist Agents execute and validate, and Jefa follows progress and delivery. |
+| Pose          | Source scene   | Meaning shown in the page                                                                                                                                                                          |
+| ------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scatter       | `scatter`      | Experience exists as separate pieces before continuity is formed.                                                                                                                                  |
+| Identity      | `identity`     | Identity, project, dialogue, taste, context, collaboration, source, judgment, memory, history, permission, and expectation compose one Agent.                                                      |
+| Architecture  | `architecture` | Client adapters anchor the connector layer above Fuli CLI/MCP/HTTP, Python Provider, and Neo4j relationship/history storage.                                                                       |
+| Cross-client  | `continuity`   | Codex, Claude Code, and Cursor route through their connectors to the same Agent and reachable data when Fuli integration is present.                                                               |
+| Memory 7 days | `memory`       | Visible records remain saved; recent context uses the default seven-day inactivity window, while older records become compact archive context and the current context is restored within a budget. |
+| Taste         | `taste`        | Taste, personality, and judgment preferences carry source and scope; inference waits for human confirmation.                                                                                       |
+| Team          | `team`         | HR matches, a group lead coordinates, specialist Agents execute and validate, and Jefa follows progress and delivery.                                                                              |
 
 The architecture overlay is a public mechanism diagram with anchored layers and connector labels. The cross-client overlay routes three client labels to one identity label and uses `Lin` as an explicitly illustrative role. The team overlay keeps HR, group lead, specialist Agent, and Jefa as floating stage labels. It carries no private project data.
 
 ### Navigation and actions
 
-The header keeps a quiet paper surface, a compact Fuli mark, links to architecture, memory, and setup, and a GitHub link with an external-arrow SVG. The primary action is an ink pill with white text, `15px 24px` padding, a 48px minimum height, and a `28px` radius. The quiet action is an unboxed text link with a directional SVG. Hover shifts the ink or accent; keyboard focus uses the shared jade outline.
+The header keeps a quiet paper surface, the original Fuli logo, links to architecture, memory, and setup, and a GitHub link with an external-arrow SVG. The primary action is an ink pill with white text, `15px 24px` padding, a 48px minimum height, and a `28px` radius. The quiet action is an unboxed text link with a directional SVG. Hover shifts the ink or accent; keyboard focus uses the shared jade outline.
 
 ### Manifesto and principle notes
 
@@ -236,7 +244,7 @@ The terminal is a `#1b2422` panel with `Node.js 24.12+` metadata. The copy utili
 
 ### Questions and disclosure
 
-Native `<details>` rows answer adapter-dependent mentions, seven-day archiving versus deletion, the separation of private conversations from trusted reusable knowledge, confirmation of inferred preferences, and the current personal-local scope. Preserve native disclosure behavior and the one-pixel rule treatment.
+Native `<details>` rows answer adapter-dependent mentions, seven-day archiving versus deletion, the separation of private conversations from trusted reusable knowledge, confirmation of inferred preferences. Preserve native disclosure behavior and the one-pixel rule treatment.
 
 ### Motion and access paths
 

@@ -14,6 +14,11 @@
       content="身份、记忆、品味与协作关系，跟着同一个 Agent 继续生长。本地优先，按需取用，由你决定。"
     />
     <meta property="og:type" content="website" />
+    <meta
+      property="og:image"
+      content="https://jevonscode.github.io/fuli/assets/fuli-logo.png"
+    />
+    <meta property="og:image:alt" content="Fuli 复利 Logo" />
     <meta property="og:locale" content="zh_CN" />
     <meta property="og:url" content="https://jevonscode.github.io/fuli/" />
     <link rel="canonical" href="https://jevonscode.github.io/fuli/" />
@@ -47,9 +52,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <a class="skip-link" href="#main">跳到正文</a>
     <header class="site-header">
       <a class="brand" href="#top" aria-label="Fuli 复利，回到顶部"
-        ><svg viewBox="0 0 32 32" aria-hidden="true">
-          <path d="M8 25V7h18M8 15h14" /></svg
-        ><span>Fuli<span class="brand-cn">复利</span></span></a
+        ><img src="./assets/fuli-logo.png" alt="" width="32" height="32" />
+        <span>Fuli<span class="brand-cn">复利</span></span></a
       >
       <nav aria-label="主导航">
         <a href="#architecture">架构</a><a href="#memory">记忆</a
@@ -457,17 +461,18 @@ fuli open</code></pre>
               推断出的偏好保留来源、适用范围与待确认状态，由你决定是否采纳。
             </p>
           </details>
-          <details>
-            <summary>现在可以部署给整个公司使用吗？</summary>
-            <p>
-              当前公开版本以个人本地使用为主。独立团队服务包尚未发布，不应把本机管理服务直接暴露为多人服务。
-            </p>
-          </details>
         </div>
       </section>
     </main>
     <footer>
-      <a class="footer-brand" href="#top">Fuli<span>复利</span></a>
+      <a class="footer-brand" href="#top" aria-label="Fuli 复利，回到顶部"
+        ><img
+          src="./assets/fuli-logo.png"
+          alt=""
+          width="36"
+          height="36"
+        />Fuli<span>复利</span></a
+      >
       <p>让每一次合作，都有复利。</p>
       <div>
         <a href="https://github.com/JevonsCode/fuli/releases/tag/v0.8.3"
