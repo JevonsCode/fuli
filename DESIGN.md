@@ -62,12 +62,12 @@ components:
     rounded: "{rounded.action}"
     padding: "{spacing.action}"
     height: "48px"
-  button-quiet:
+  scroll-cue:
     backgroundColor: "transparent"
     textColor: "{colors.muted}"
-    rounded: "0"
+    rounded: "50%"
     padding: "0"
-    height: "18px"
+    height: "48px"
   site-nav:
     backgroundColor: "rgba(245, 245, 247, 0.96)"
     textColor: "{colors.ink}"
@@ -112,7 +112,11 @@ components:
 
 The public site is a Chinese, Apple-like spatial product narrative. Large restrained typography gives the promise room to land while one physical-looking object carries the explanation. Twelve reusable CSS3D fragments begin scattered, then assemble and recompose as the visitor scrolls. The same object becomes a readable model of identity, architecture, client continuity, memory, taste, and team coordination.
 
-The experience uses native document scrolling and progressive enhancement. The HTML chapters, static diagrams, manifesto, local setup, questions, and footer remain the reading surface. JavaScript adds a sticky full-viewport stage, scroll-scrubbed transforms, changing captions, and scene overlays when motion is appropriate. The public page remains scoped to `site/`; the operational console has its own visual language.
+The experience uses native document scrolling and progressive enhancement. The HTML chapters, static diagrams, manifesto, local setup, questions, and footer remain the reading surface. JavaScript adds a sticky full-viewport stage, scroll-scrubbed transforms, and scene overlays when motion is appropriate. The public page remains scoped to `site/`; the operational console has its own visual language.
+
+Keep interface copy minimal. A single icon-only down arrow sits at the bottom center of
+the hero, with a 48px target, an accessible name, and a gentle pulse only in enhanced
+motion mode. Do not add written scroll instructions or captions repeating the chapter.
 
 **Key Characteristics:**
 
@@ -151,7 +155,7 @@ The interface starts on `#f5f5f7` and uses near-black type with a restrained jad
 
 - **Porcelain Paper** (`#f5f5f7`): page background, header, and the default scene ground.
 - **White** (`#ffffff`): setup surface, fragment highlights, and static diagram tags.
-- **Muted Text** (`#6e6e73`): supporting copy and quiet actions.
+- **Muted Text** (`#6e6e73`): supporting copy and secondary controls.
 - **Rule Gray** (`#d6dad7`): FAQ, footer, and setup separators.
 
 ### Fragment materials
@@ -175,7 +179,7 @@ The type system is quiet and spacious. The large Chinese `h1` and `h2` deliberat
 - **Display** (550, `clamp(90px, 14vw, 230px)`, line-height 1): the translucent `FULI` stage word.
 - **Headline** (650, `clamp(42px, 4.5vw, 72px)`, line-height 1.14, `-0.035em`): hero and chapter statements.
 - **Body** (400, 16px base, line-height 1.7): explanatory copy; chapter lead text grows to `clamp(17px, 1.4vw, 21px)`.
-- **Label** (500, 12px, line-height 1.2): navigation, captions, material labels, and metadata.
+- **Label** (500, 12px, line-height 1.2): navigation, scene labels, material labels, and metadata.
 - **Mono** (400, `clamp(12px, 1.2vw, 16px)`, line-height 2.3): the three-line install command.
 
 **The Two-Voice Rule.** Keep large Latin identity in Unbounded and let the system sans stack carry Chinese product communication.
@@ -226,7 +230,7 @@ The architecture overlay is a public mechanism diagram with anchored layers and 
 
 ### Navigation and actions
 
-The header keeps a quiet paper surface, the original Fuli logo, links to architecture, memory, and setup, and a GitHub link with an external-arrow SVG. The primary action is an ink pill with white text, `15px 24px` padding, a 48px minimum height, and a `28px` radius. The quiet action is an unboxed text link with a directional SVG. Hover shifts the ink or accent; keyboard focus uses the shared jade outline.
+The header keeps a quiet paper surface, the original Fuli logo, links to architecture, memory, and setup, and a GitHub link with an external-arrow SVG. The primary action is an ink pill with white text, `15px 24px` padding, a 48px minimum height, and a `28px` radius. The hero's `.scroll-cue` is a centered icon-only down arrow with a 48px target and an accessible destination label. Hover shifts the ink or accent; keyboard focus uses the shared jade outline.
 
 ### Manifesto and principle notes
 
@@ -248,7 +252,7 @@ Native `<details>` rows answer adapter-dependent mentions, seven-day archiving v
 
 ### Motion and access paths
 
-- **Enhanced:** `site.js` enables the scene when `prefers-reduced-motion` is off and the viewport is taller than 560px. Scroll interpolation updates the camera, fragment transforms, opacity, scene background, overlay labels, caption, and chapter dots.
+- **Enhanced:** `site.js` enables the scene when `prefers-reduced-motion` is off and the viewport is taller than 560px. Scroll interpolation updates the camera, fragment transforms, opacity, scene background, overlay labels, and chapter dots.
 - **Reduced motion:** a system reduce preference or the footer toggle disables the scene and keeps the ordinary chapters and static diagrams. CSS removes transitions, animations, and smooth scrolling. The system-controlled toggle is disabled and reports that it is following the system preference.
 - **Short viewport:** `max-height: 560px` follows the readable document path so the stage does not compete with the copy.
 - **No JavaScript:** the module never adds `.enhanced`; `.spatial-stage` stays hidden, static chapter diagrams stay in the document, and setup, questions, links, and footer remain usable.

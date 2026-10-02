@@ -93,7 +93,7 @@
       },
       "label": {
         "displayName": "Mechanism Label",
-        "purpose": "Navigation, captions, material labels, and metadata."
+        "purpose": "Navigation, scene labels, material labels, and metadata."
       },
       "mono": {
         "displayName": "Terminal Mono",
@@ -130,7 +130,7 @@
       },
       {
         "name": "scene-state",
-        "value": "interpolated stage background, camera angle, fragment opacity, captions, overlays, and chapter dots",
+        "value": "interpolated stage background, camera angle, fragment opacity, overlays, and chapter dots",
         "purpose": "Keep the visual stage synchronized with the readable chapter."
       },
       {
@@ -142,6 +142,11 @@
         "name": "short-viewport",
         "value": "max-height: 560px disables enhanced scene",
         "purpose": "Avoid making the sticky spatial stage compete with copy in short windows."
+      },
+      {
+        "name": "scroll-cue",
+        "value": "2.4s ease-in-out opacity pulse and 6px vertical travel in enhanced mode only",
+        "purpose": "Suggest scrolling with one familiar icon; no written instructions."
       }
     ],
     "breakpoints": [
@@ -189,12 +194,12 @@
       "css": ".ds-primary{display:inline-flex;align-items:center;justify-content:center;gap:24px;min-height:48px;padding:15px 24px;border-radius:28px;background:#1d1d1f;color:#fff;font:500 14px/1.2 -apple-system,BlinkMacSystemFont,\"Helvetica Neue\",\"PingFang SC\",\"Microsoft YaHei\",sans-serif;text-decoration:none;transition:background .2s}.ds-primary svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.ds-primary:hover{background:#3c3c40}.ds-primary:focus-visible{outline:3px solid #00896b;outline-offset:6px}"
     },
     {
-      "name": "Quiet Action",
+      "name": "Scroll Cue",
       "kind": "button",
-      "refersTo": "button-quiet",
-      "description": "Unboxed directional link that expands the story.",
-      "html": "<a class=\"ds-quiet\" href=\"#identity\">向下展开<svg viewBox=\"0 0 20 20\" aria-hidden=\"true\"><path d=\"M10 4v12m-5-5 5 5 5-5\" /></svg></a>",
-      "css": ".ds-quiet{display:inline-flex;align-items:center;gap:7px;color:#626268;font:400 13px/1.2 -apple-system,BlinkMacSystemFont,\"Helvetica Neue\",\"PingFang SC\",\"Microsoft YaHei\",sans-serif;text-decoration:none}.ds-quiet svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.ds-quiet:hover{color:#1d1d1f}.ds-quiet:focus-visible{outline:3px solid #00896b;outline-offset:6px}"
+      "refersTo": "scroll-cue",
+      "description": "Icon-only down arrow with an accessible name and a 48px target.",
+      "html": "<a class=\"ds-scroll-cue\" href=\"#identity\" aria-label=\"查看 Agent 身份\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 4v16m-6-6 6 6 6-6\" /></svg></a>",
+      "css": ".ds-scroll-cue{display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:50%;color:#626268;text-decoration:none}.ds-scroll-cue svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.ds-scroll-cue:hover{color:#1d1d1f}.ds-scroll-cue:focus-visible{outline:3px solid #00896b;outline-offset:6px}"
     },
     {
       "name": "Site Navigation",
@@ -247,7 +252,7 @@
   ],
   "narrative": {
     "northStar": "The Continuity Object",
-    "overview": "The public site is a Chinese, Apple-like spatial product narrative. Large restrained typography gives the promise room to land while one physical-looking object carries the explanation. Twelve reusable CSS3D fragments begin scattered, then assemble and recompose as the visitor scrolls. The same object models identity, architecture, client continuity, memory, taste, and team coordination.\n\nThe page uses native document scrolling and progressive enhancement. HTML chapters, static diagrams, manifesto, setup, questions, and footer remain the reading surface. JavaScript adds a sticky full-viewport stage, scroll-scrubbed transforms, captions, and overlays when motion is appropriate. The public page is scoped to site/.",
+    "overview": "The public site is a Chinese, Apple-like spatial product narrative. Large restrained typography gives the promise room to land while one physical-looking object carries the explanation. Twelve reusable CSS3D fragments begin scattered, then assemble and recompose as the visitor scrolls. The same object models identity, architecture, client continuity, memory, taste, and team coordination.\n\nThe page uses native document scrolling and progressive enhancement. HTML chapters, static diagrams, manifesto, setup, questions, and footer remain the reading surface. JavaScript adds a sticky full-viewport stage, scroll-scrubbed transforms and overlays when motion is appropriate. The public page is scoped to site/.",
     "keyCharacteristics": [
       "Porcelain paper, carbon black, silver, and jade create a quiet physical palette.",
       "One twelve-piece object moves through seven authored poses.",

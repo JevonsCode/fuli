@@ -207,39 +207,44 @@ h2 em {
 .primary-action:hover {
   background: #3c3c40;
 }
-.primary-action svg,
-.quiet-action svg {
+.primary-action svg {
   width: 18px;
   height: 18px;
 }
-.quiet-action {
-  display: inline-flex;
+.scroll-cue {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  z-index: 4;
+  display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 13px;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
   color: #626268;
+  transform: translateX(-50%);
 }
-.quiet-action:hover {
+.scroll-cue:hover {
   color: var(--ink);
 }
-.hero-foot {
-  position: absolute;
-  bottom: 40px;
-  left: var(--gutter);
-  right: var(--gutter);
-  display: flex;
-  justify-content: space-between;
-  color: #77777d;
-  font-size: 11px;
+.scroll-cue svg {
+  width: 24px;
+  height: 24px;
 }
-.hero-foot > span:last-child {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.enhanced .scroll-cue svg {
+  animation: scroll-cue-pulse 2.4s ease-in-out infinite;
 }
-.hero-foot svg {
-  width: 15px;
-  height: 15px;
+@keyframes scroll-cue-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(-3px);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(3px);
+  }
 }
 .example-note {
   display: block;
@@ -387,8 +392,8 @@ h2 em {
 .enhanced .hero-chapter h1 {
   font-size: clamp(44px, 4.5vw, 72px);
 }
-.enhanced .hero-foot {
-  top: calc(100svh - 50px);
+.enhanced .scroll-cue {
+  top: calc(100svh - 76px);
   bottom: auto;
 }
 .enhanced .static-diagram {
@@ -842,19 +847,8 @@ footer a:hover {
     margin-top: 24px;
     gap: 25px;
   }
-  .hero-foot {
-    font-size: 9px;
-    left: 26px;
-    right: 26px;
-  }
-  .hero-foot > span:first-child {
-    max-width: 170px;
-  }
-  .hero-foot > span:last-child {
-    gap: 6px;
-  }
-  .enhanced .hero-foot {
-    top: calc(100svh - 32px);
+  .enhanced .scroll-cue {
+    top: calc(100svh - 64px);
   }
   .architecture-key {
     font-size: 11px;

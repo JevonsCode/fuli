@@ -34,6 +34,10 @@ how context connects and persists; it must respect reduced-motion preferences. K
 essential information accessible without JavaScript. Demonstration people and tasks are
 explicitly fictional. Publish only public product facts, never private project data.
 
+Use familiar icons for self-evident actions, with accessible names. The hero uses one
+centered down arrow, not multiple scroll instructions. Remove copy that merely describes
+the interface or repeats the adjacent diagram; keep meaningful product explanations.
+
 Success means visitors understand the mechanism and can start with the documented local
 setup, not that they spend longer watching effects.
 

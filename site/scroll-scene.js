@@ -1,15 +1,6 @@
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 const mix = (a, b, t) => a + (b - a) * t;
 const smooth = (t) => t * t * (3 - 2 * t);
-const captions = [
-  "每一段经验，都有自己的位置。",
-  "身份、职责与记忆，组成持续的伙伴。",
-  "从客户端到数据，边界清晰可见。",
-  "客户端会变，同一个 Agent 的脉络继续。",
-  "保存可见记录，上下文按预算恢复。",
-  "偏好有来源，推断待确认。",
-  "能力各有分工，交付都有据可查。",
-];
 const fragments = [
   ["身份", "持续的名字", "jade"],
   ["项目", "职责与边界", "silver"],
@@ -199,7 +190,6 @@ export function createScrollScene() {
   const nav = document.querySelector(".chapter-nav");
   const dots = [...nav.querySelectorAll("a")];
   const overlays = [...document.querySelectorAll("[data-overlay]")];
-  const caption = document.querySelector("#scene-caption");
   const pieces = fragments.map(createFragment);
   pieces.forEach((piece) => rig.append(piece));
   const architecturePaths = [
@@ -291,10 +281,6 @@ export function createScrollScene() {
       blendColor([245, 245, 247], [17, 23, 24], dark),
     );
     stage.style.setProperty(
-      "--scene-muted",
-      blendColor([122, 133, 128], [142, 166, 153], dark),
-    );
-    stage.style.setProperty(
       "--scene-label",
       blendColor([45, 73, 60], [210, 231, 219], dark),
     );
@@ -346,7 +332,6 @@ export function createScrollScene() {
     if (index === 3 || next === 3) connectMechanism(3);
     if (current !== active) {
       active = current;
-      caption.textContent = captions[current];
       const architectureLabels = [
         "关系",
         "历史",
