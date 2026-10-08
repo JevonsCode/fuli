@@ -9,9 +9,9 @@ export function run(command, args, { cwd, env = process.env, timeoutMs = 300_000
     const finish = code => {
       if (settled) return;
       settled = true;
-      // A parent can close its pipes before its descendants exit. On a failed
-      // run, reclaim the remaining group before cancelling the hard deadline.
-      if (failure && process.platform !== 'win32') {
+      // Each bounded run owns its process group. A parent can close its pipes
+      // on success, failure or a signal before its descendants exit.
+      if (process.platform !== 'win32') {
         try { process.kill(-child.pid, 'SIGKILL'); } catch {}
       }
       clearTimeout(timer); clearTimeout(hardTimer);

@@ -37,3 +37,24 @@ test('POSIX cleanup kills descendants even when the parent exits on SIGTERM', {
     if (alive) { try { process.kill(childPid, 'SIGKILL'); } catch {} }
   }
 });
+
+test('POSIX cleanup reclaims descendants after a nonzero parent exit', {
+  skip: process.platform === 'win32', timeout: 12_000
+}, async () => {
+  const source = "const {spawn}=require('node:child_process');const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});console.log(child.pid);setTimeout(()=>process.exit(1),200)";
+  const result = await run(process.execPath, ['-e', source], { timeoutMs: 5000 });
+  const childPid = Number(result.stdout.trim());
+  assert.equal(result.code, 1);
+  assert.ok(childPid > 0);
+  let alive = false;
+  try {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    try {
+      process.kill(childPid, 0);
+      alive = process.platform !== 'linux' || !/\) Z /.test(readFileSync(`/proc/${childPid}/stat`, 'utf8'));
+    } catch {}
+    assert.equal(alive, false);
+  } finally {
+    if (alive) { try { process.kill(childPid, 'SIGKILL'); } catch {} }
+  }
+});
