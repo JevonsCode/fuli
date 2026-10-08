@@ -5,7 +5,7 @@
 <h1 align="center">复利（Fuli）</h1>
 
 <p align="center">
-  <a href="README.md">English</a> · 简体中文 · <a href="https://jevonscode.github.io/fuli/">产品网站</a>
+  <a href="README.md">English</a> · 简体中文 · <a href="https://有点.意思.com/fuli/">产品网站</a>
 </p>
 
 <p align="center">
@@ -14,13 +14,39 @@
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="许可证" /></a>
 </p>
 
-复利是一个面向 AI Agent 的本地优先协作关系图谱。人与 Agent 的持续对话会逐步形成项目、
-人物、决定、偏好、行为步骤和证据之间的关系；关系节点可以指向 Fuli 本地内容，也可以连接
-外部知识库或其他数据源。Codex、Claude Code 和 Cursor 因而能在后续任务中复用已经形成的
-品味、个性、判断偏好与协作方法。
+**换 AI 工具，不用换搭档。**
+
+复利是一个本地优先、跨 AI 工具的长期 Agent 协作层。让 Codex、Claude Code 和 Cursor
+接入同一份可访问的 Fuli 数据，选中同一位 Agent，就能延续它的身份、项目职责和相关工作脉络。
+
+- **搭档留得住：**任务结束后，Agent 的职责、合作记录与工作记忆继续保留。
+- **上下文有边界：**按需取回项目知识、决定与偏好，保留来源、作用域和确认状态。
+- **需要时一起做：**协调不同专长的 Agent，通过可用且获授权的客户端或执行器开展任务，记录真实执行。
+
+这里的“长期”指身份和上下文持续存在。Fuli 负责组织上下文与协调任务，接入的 AI 工具负责执行。
+能采集、接续哪些对话取决于客户端适配器；换工具不会自动获得其他项目的私有记忆。
 
 复利将私有对话记录、Agent 工作记忆和经过确认的知识分开管理，让持续协作形成可复用的理解。
 AI 负责检索、提醒、归纳和执行；人始终保留最终判断权。
+
+## 先用起来
+
+准备好 Node.js 24.12+ 和 Docker Compose v2 后，运行：
+
+```bash
+npm install --global fuli-context
+fuli setup
+fuli open
+```
+
+设置向导会先展示计划，再修改环境。完整要求与 macOS / Linux 原生运行方式见[安装](#安装)。
+
+第一次可以试一次跨工具接续：登记一个本地项目、分配一位 Agent，在一个已接入客户端完成任务，
+再把这位 Agent 的接续指令带到连接同一份数据的另一客户端。检查它是否找对项目、恢复上次的工作，
+并在缺少信息时如实说明。支持范围见[Agent 对话与协作说明](docs/agent-conversations-and-collaboration.md)。
+
+[工作原理](#项目理念) · [安装](#安装) · [Agent 角色与团队](docs/employee-agents.md) ·
+[反馈问题](https://github.com/JevonsCode/fuli/issues)
 
 ## npm 包
 
@@ -350,7 +376,7 @@ Agent 上下文。
 - 本地个人空间、精确项目作用域和选择性上级继承；
 - 偏好确认、延迟冲突处理、修订历史和来源标记；
 - 有界的任务提示自动召回、聚焦的按需检索和实际使用审计；
-- 任务入口、任务末尾知识检查，以及 Claude Code 的入口 / Stop Hook；
+- 任务入口、任务末尾知识检查，以及 Claude Code、Codex、Cursor 的客户端适配（Hook 覆盖范围见下文）；
 - 决策选项、决策理由和首次记录时附带的验证结果；
 - 知识使用事件、负面反馈和内容代际隔离；
 - 支持暂停、恢复和水位线的持久化分范围知识复核；

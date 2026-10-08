@@ -14,17 +14,49 @@
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="license" /></a>
 </p>
 
-Fuli is a local-first collaboration relationship graph for AI agents. Continued human–Agent
-dialogue gradually connects projects, people, decisions, preferences, workflow steps, and evidence.
-Those nodes may point to Fuli-local content, an external knowledge base, or another data source.
-Codex, Claude Code, and Cursor can then reuse the taste, personality, judgment preferences, and
-working methods formed through that collaboration.
+**Switch AI tools. Keep your agent.**
+
+Fuli is a local-first collaboration layer for long-lived agents across AI tools. Connect Codex,
+Claude Code, and Cursor to the same accessible Fuli data, select the same agent, and continue with
+its identity, project responsibilities, and relevant working context.
+
+- **A lasting teammate:** keep an agent's role, collaboration history, and working memory between tasks.
+- **Context with boundaries:** retrieve relevant project knowledge, decisions, and preferences with
+  their sources, scope, and confirmation status.
+- **A team when needed:** coordinate specialist agents and record actual worker execution through
+  an available, authorized host client or executor.
+
+“Long-lived” means persistent identity and context. Fuli assembles that context and coordinates
+work; the connected AI tools run it. Client adapters determine which conversations can be captured
+and resumed. Connecting another tool does not grant access to another project's private memory.
 
 Fuli separates private conversation journals, agent working memory, and confirmed knowledge so
 ongoing collaboration produces reusable understanding. AI retrieves, summarizes, warns, and
 executes; humans retain final authority.
 
-Explore the [product website](https://jevonscode.github.io/fuli/).
+Explore the [product website](https://有点.意思.com/fuli/).
+
+## Start here
+
+With Node.js 24.12+ and Docker Compose v2 available, run:
+
+```bash
+npm install --global fuli-context
+fuli setup
+fuli open
+```
+
+The setup wizard shows its plan before changing your environment. See [Installation](#installation)
+for requirements and the macOS/Linux native runtime option.
+
+To try a cross-tool handoff, register a local project and assign an agent, complete a task through
+one connected client, then use the agent's continuation instruction in another client connected
+to the same data. Check whether it recovers the correct project and prior work, and asks for
+missing context rather than inventing it. See [Agent conversations and collaboration](docs/agent-conversations-and-collaboration.md)
+for supported adapters and boundaries.
+
+[How it works](#philosophy) · [Installation](#installation) ·
+[Agent roles and teams](docs/employee-agents.md) · [Report an issue](https://github.com/JevonsCode/fuli/issues)
 
 ## npm packages
 
