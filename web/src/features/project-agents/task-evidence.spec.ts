@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeEvent, normalizeExecutionSummary, normalizeWorkerRuntime } from './task-evidence'
+import { normalizeEvent, normalizeExecutionSummary, normalizeTask, normalizeWorkerRuntime } from './task-evidence'
 
 describe('worker runtime evidence', () => {
+  it.each(['projectScope', 'project_scope'])('preserves explicit temporary project scope from %s', (key) => {
+    expect(normalizeTask({ task_id: 'task-a', [key]: { type: 'temporary', lifetime: 'task', persisted: true } })?.projectScope)
+      .toEqual({ type: 'temporary', lifetime: 'task', persisted: true })
+    expect(normalizeTask({ task_id: 'temporary-task', personal_project_id: 'temporary-project' })?.projectScope).toBeUndefined()
+  })
   it.each([
     { application: 'claude_code', session_id: 'worker-session', session_url: null },
     { application: 'claude_code', sessionId: 'worker-session', sessionUrl: null },

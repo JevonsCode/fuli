@@ -1,0 +1,82 @@
+name: Installation or first-use problem / 安装与首次使用
+description: Report a reproducible setup, client connection, or project assignment problem.
+title: "[Installation] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tell us where the first successful task stopped. English or 中文都可以。
+        Share only a small redacted example. Do not upload runtime configs, credentials, task-context tokens, or full personal transcripts.
+        Installed files, a connected MCP server, and a Hook executed by the client are different evidence.
+  - type: input
+    id: versions
+    attributes:
+      label: Versions / 版本
+      description: Fuli package version or source commit, Node version, OS and architecture.
+      placeholder: "Fuli …; Node …; Windows/macOS/Linux …; x64/arm64"
+    validations:
+      required: true
+  - type: textarea
+    id: runtime
+    attributes:
+      label: Runtime and installation source / 运行方式与安装来源
+      description: Container or native; Docker Compose version if used; npm package or source checkout; whether the running service is from the same install. Redact paths.
+      placeholder: |
+        Install command / 安装命令:
+        Runtime / 运行方式:
+        Running service source / 当前服务来源: known or unknown
+        fuli status --json: relevant redacted fields only
+    validations:
+      required: true
+  - type: textarea
+    id: clients
+    attributes:
+      label: Client and actual connection state / 客户端与实际接入状态
+      description: Include the client version, MCP availability, whether you opened a fresh session, and observed Hook evidence. If only files were inspected, say so.
+      placeholder: |
+        Client + version / 客户端及版本:
+        MCP tool call result / MCP 实际调用结果:
+        Integration files / 接入文件: present, missing, outdated, or unknown
+        Entry Hook / 入口 Hook: executed, not executed, or unknown; evidence:
+        Stop Hook / 结束 Hook: executed, not executed, or unknown; evidence:
+    validations:
+      required: true
+  - type: textarea
+    id: project
+    attributes:
+      label: Project and Agent assignment / 项目与 Agent 归属
+      description: Use aliases. State registered or temporary/unregistered, exact/ambiguous/unmatched resolution if known, selected Agent and assignment. Never include the task-context token.
+      placeholder: |
+        Project state / 项目状态:
+        Directory shape / 目录关系: repository root, worktree, subdirectory, or standalone folder
+        Resolution / 识别结果:
+        Agent selection and assignment / Agent 选择与任职:
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce / 复现步骤
+      description: List the smallest sequence from setup or a fresh session to the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior / 预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior and evidence / 实际结果与证据
+      description: Include exact error codes, relevant redacted output, and any workaround. Missing evidence may be marked unknown.
+    validations:
+      required: true
+  - type: checkboxes
+    id: redaction
+    attributes:
+      label: Redaction / 脱敏
+      options:
+        - label: I removed secrets, task-context tokens, private project contents, and full personal transcripts from this report. / 已移除密钥、任务令牌、私有项目内容和完整个人对话。
+          required: true

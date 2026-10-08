@@ -9,6 +9,7 @@ from .auth import (
     matches_workflow_observation_token,
 )
 from .config import Settings, get_settings
+from .temporary_project_scope import TemporaryProjectEnsure, ensure_temporary_project
 from .graph_models import GraphResult
 from .knowledge_usage_models import KnowledgeUsageCreate, KnowledgeUsageResult
 from .knowledge_feedback_models import (
@@ -285,6 +286,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         actor: Actor,
     ) -> ProjectDeleteResult:
         return await store.delete_project(actor, project_id)
+
+    @application.post('/v1/temporary-projects/ensure', response_model=PersonalProjectRecord)
+    async def ensure_task_project(request: TemporaryProjectEnsure, actor: Actor):
+        return await ensure_temporary_project(store, actor, request)
 
     @application.put('/v1/personal-projects', response_model=PersonalProjectRecord)
     async def upsert_personal_project(

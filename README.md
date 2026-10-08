@@ -55,8 +55,20 @@ to the same data. Check whether it recovers the correct project and prior work, 
 missing context rather than inventing it. See [Agent conversations and collaboration](docs/agent-conversations-and-collaboration.md)
 for supported adapters and boundaries.
 
+For a one-off task, this source version also supports an isolated **temporary project**: ask the
+connected client to coordinate the task with Fuli even when no registered project matches. Fuli
+retains its task history and follows the existing Agent recruitment and executor permissions.
+Reading preferences alone creates nothing. An ambiguous project still needs a choice.
+This behavior is pending the next npm release.
+
+The Agent directory now explains the first-task entry, and task details distinguish assignment
+from actual worker reports. A completion table appears only after real execution is reported;
+an assigned Agent or an ordinary local conversation alone is not worker evidence.
+
 [How it works](#philosophy) · [Installation](#installation) ·
-[Agent roles and teams](docs/employee-agents.md) · [Report an issue](https://github.com/JevonsCode/fuli/issues)
+[Agent roles and teams](docs/employee-agents.md) ·
+[Cross-client acceptance](acceptance/cross-client-handoff.md) · [Contribute](CONTRIBUTING.md) ·
+[Report an issue](https://github.com/JevonsCode/fuli/issues/new/choose)
 
 ## npm packages
 

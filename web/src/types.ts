@@ -40,6 +40,7 @@ export interface ProjectProfile {
 export interface PersonalProject {
   project_id: string
   personal_space_id: string
+  scope_type?: 'registered' | 'temporary'
   publication_key?: string | null
   profile: ProjectProfile
 }
@@ -295,6 +296,7 @@ export interface ProjectAgentTaskRecord {
   taskId: string
   personalSpaceId?: string
   personalProjectId?: string | null
+  projectScope?: { type: 'registered' | 'temporary'; lifetime?: string | null; persisted?: boolean }
   title: string
   objective?: string | null
   workKind?: string | null

@@ -157,7 +157,8 @@ class StoreTaskContexts:
         # content is already immutable under the memory checkpoint's payload hash.
         # The existing checkpoint lets pre-upgrade claims retry without new writes.
         memory_checkpoint_id = None
-        if record['project_agent_id'] and record['personal_project_id']:
+        if (record['project_agent_id'] and record['personal_project_id']
+                and record.get('agent_memory_scope') != 'task_only'):
             memory_checkpoint_id = stable_uuid(await self._resolved_agent_memory_id(
                 request.personal_space_id, record['personal_project_id'],
                 record['project_agent_id'],

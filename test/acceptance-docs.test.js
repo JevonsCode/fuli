@@ -84,7 +84,7 @@ test('中英文 README 应完整表达项目理念、证据边界和 Agent 生�
   assert.match(英文, /Installed files do not prove host loading, trust, or execution/);
   assert.match(英文, /Read-only external knowledge/);
   assert.match(英文, /id="connect-external-knowledge"/);
-  assert.match(英文, /One personal project can have multiple knowledge connections, and one connection can target[s\n]+multiple personal projects/);
+  assert.match(英文, /One personal project can have multiple knowledge connections, and one connection can target\s+multiple personal projects/);
   assert.match(英文, /id="external-knowledge-conflict-policy"/);
   assert.match(英文, /Allow an Agent decision lets the Agent select/);
   assert.match(英文, /search_connected_knowledge/);

@@ -73,6 +73,7 @@ class StoreRecords:
         return PersonalProjectRecord(
             project_id=value['project_id'],
             personal_space_id=personal_space_id,
+            scope_type=value.get('scope_type') or 'registered',
             publication_key=value['publication_key'],
             profile=ProjectProfile.model_validate_json(value['profile_json']),
             created_at=native_datetime(value['created_at']),

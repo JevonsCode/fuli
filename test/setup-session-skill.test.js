@@ -183,7 +183,8 @@ test('bundled session Skill reports only provider-reported worker execution summ
   assert.match(skill, /executionSummary/);
   assert.match(skill, /one .*row.*worker|one .*line.*worker/i);
   assert.match(skill, /occupation.*emoji/i);
-  assert.match(skill, /actual.*executor.*sourceApplication|sourceApplication.*actual/i);
+  assert.match(skill, /actual.*executor.*workerRuntime\.application/i);
+  assert.match(skill, /sourceApplication[\s\S]{0,100}reporting host/i);
   assert.match(skill, /work.*summary|summary.*work/i);
   assert.match(skill, /workerStatus|terminal.*status/i);
   assert.match(

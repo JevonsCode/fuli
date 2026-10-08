@@ -1,0 +1,82 @@
+name: Cross-client acceptance / 跨客户端验收
+description: Record a real handoff, a failed attempt, or a clearly scoped protocol result.
+title: "[Acceptance] Codex → Claude Code: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Follow acceptance/cross-client-handoff.md in the repository. English or 中文都可以。
+        Report failures and blocked steps too. A mock or protocol pass is not proof of a real cross-client session.
+        Use synthetic facts. Do not attach full transcripts, runtime configs, credentials, or task-context tokens.
+  - type: dropdown
+    id: evidence_level
+    attributes:
+      label: Evidence level / 证据层级
+      options:
+        - Real clients + real Fuli Provider / 真实客户端与真实 Provider
+        - Real client + mock Provider / 真实客户端与模拟 Provider
+        - Protocol or automated tests only / 仅协议或自动化测试
+        - Blocked before execution / 执行前阻塞
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Versions and runtime / 版本与运行环境
+      description: Record date/timezone, Fuli version or commit, OS/Node, container or native runtime, both client versions, actual models if known, and package versus source service.
+    validations:
+      required: true
+  - type: textarea
+    id: hook_evidence
+    attributes:
+      label: Files installed versus Hooks loaded / 文件安装与 Hook 加载
+      description: For each client record MCP call evidence, entry Hook and Stop Hook evidence separately; use unknown when not observed. Do not include tokens.
+      placeholder: |
+        Codex: files …; MCP …; entry Hook …; Stop Hook …
+        Claude Code: files …; MCP …; entry Hook …; Stop Hook …
+    validations:
+      required: true
+  - type: textarea
+    id: identity
+    attributes:
+      label: Data, project and Agent identity / 数据、项目与 Agent 身份
+      description: Use consistent aliases for the shared test space, project, Agent and conversation; state exact project resolution and assignment. Include temporary-project behavior if exercised. Do not share tokens or private paths.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps and expected versus observed results / 步骤及预期与实际
+      description: Include recovery in a fresh client, project isolation, correction of the current value with preserved history, and temporary-project behavior. Mark each PASS, FAIL, BLOCKED or NOT RUN.
+      placeholder: |
+        CCX-01 memory recovery / 记忆恢复:
+        CCX-02 isolation / 项目隔离:
+        CCX-03 correction and history / 纠正与历史:
+        CCX-04 temporary project / 临时项目:
+        CCX-05 actual worker completion / 实际 worker 收尾:
+    validations:
+      required: true
+  - type: textarea
+    id: workers
+    attributes:
+      label: Actual workers and usage / 实际执行者与用量
+      description: One row per actual worker. Use executor or workerRuntime.application/sessionId for its actual client/session; list sourceApplication/sourceSessionId separately as the reporting host. Include terminal status, evidence, and cumulative tokens with source/scope. Missing worker data stays unknown; do not copy the host identity or parent token total. Say so if none started.
+      placeholder: "Role | Actual worker client/executor | Reporting host | Work and final status | Evidence | Tokens (source, scope)"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence and remaining gaps / 脱敏证据与未验证项
+      description: Provide short tool-result excerpts, sanitized screenshots, test commands/results, and blockers. State which checks used mock data or a real Provider, and whether test data remains or was cleaned up.
+    validations:
+      required: true
+  - type: checkboxes
+    id: disclosure
+    attributes:
+      label: Disclosure / 披露
+      options:
+        - label: I separated real-client observations from mock/protocol results and marked unrun checks. / 已区分真实客户端与模拟、协议结果，并标明未运行项。
+          required: true
+        - label: I removed secrets, task-context tokens, private contents, and full personal transcripts. / 已移除密钥、任务令牌、私有内容和完整个人对话。
+          required: true

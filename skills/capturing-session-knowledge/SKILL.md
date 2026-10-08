@@ -52,6 +52,10 @@ current working directory. It resolves the exact active project without requirin
 copy an ID, searches that child project first, and then includes only inheritable knowledge from
 authorized parents or shared-source projects. Use `search_knowledge_graph` for personal-global
 context, explicitly named extra projects, subscribed public projects, or advanced scoped queries.
+An already resolved temporary project is an active private scope for this task. Pass its exact
+returned `personalProjectId` alongside the directory; without a directory, use
+`search_knowledge_graph` with that exact project and personal space. Do not re-resolve it from
+a repository name, and never omit its `personalProjectId` or move its facts to personal-global.
 Use `search_connected_knowledge` for a project-bound third-party source or explicitly selected
 public project. Keep its source sets separate and obey the project's conflict policy;
 `agent_decide` affects only the current response and never mutates or confirms a source.
@@ -104,7 +108,7 @@ URL, route, deployment, document, file, or where a durable artifact is located.
 Personal retrieval always includes the bounded personal-global profile. For a local personal
 project, pass its exact `personalProjectId`; if the user explicitly names another personal
 project, resolve it with `list_personal_projects` and add only that exact ID through
-`contextPersonalProjectIds`. Without an active local project, search only the personal-global
+`contextPersonalProjectIds`. Without an active local or resolved temporary project, search only the personal-global
 profile. For public context, pass only the active or explicitly named subscribed public project
 IDs; never search every personal project, every subscription, or the whole graph by default.
 Use the current repository, the user's wording, and `list_knowledge_spaces` to resolve scope.
@@ -228,11 +232,15 @@ responsible for decisions, integration, and final verification. Do not split a s
 coupled task merely to create more workers.
 
 For an eligible task, call `coordinate_project_agent_task` once with the exact current
-`projectPath`, one stable idempotency key, an explicit complexity hint when known, and focused
+`projectPath` when available, one stable idempotency key, an explicit complexity hint when known, and focused
 context queries. Enable its parallel plan only when there are at least two conflict-free
 workstreams with independent verification; state each workstream boundary. The Provider chooses
 the lead and collaborators from active project assignments, preferring Agents with relevant
 project history. Explicit user-selected Agents and locked policies remain higher priority.
+When no registered project matches, coordination may return an isolated temporary project;
+keep its exact returned ID for this task. Ambiguous candidates still require a choice. Temporary
+scope creation is not Agent recruitment approval or proof of execution; follow the returned
+recruitment/authorization state and worker plan.
 
 Treat the returned durable Agent identity and a host worker as different things. A durable Agent
 keeps its project assignment, preferences, task history, and Agent-scoped graph memory while idle;
@@ -271,11 +279,13 @@ before the remaining workers have reported their tools, session evidence, and ex
 
 When a FULI task or task view returns a non-empty Provider `executionSummary`, append a compact
 Markdown table with one row per actual worker. Include the worker label and occupation emoji,
-actual executor/tool plus `sourceApplication`, work summary, terminal `workerStatus`/status,
-session (`sourceSessionId`, or a session link only when the Provider supplies one), and Token usage.
+actual executor/tool and `workerRuntime.application`, work summary, terminal `workerStatus`/status,
+worker session (`workerRuntime.sessionId`, or a worker session link only when supplied), and Token usage.
+Label `sourceApplication` and `sourceSessionId` separately as the reporting host. They do not
+identify an external worker; do not substitute them for missing worker evidence.
 Use only the source-labelled cumulative `tokenUsage` reported for that worker. If it is absent,
 show `not reported`; never estimate it or copy a conversation-wide total into a worker row. If no
-session link exists, show `sourceSessionId` or `not reported`; never invent a link. This applies only
+worker session link exists, show `workerRuntime.sessionId` or `not reported`; never invent a link. This applies only
 to Provider-reported actual workers. When empty `executionSummary` is returned, omit rows; an absent
 `executionSummary` also omits rows. Configured, allowed, or available clients/executors are not evidence
 of actual use. Keep this Agent-agnostic; client-specific details and work-kind routing remain at
@@ -379,6 +389,11 @@ supersede child duplicates, and record the promotion audit. Child-specific excep
 their child projects.
 
 ## Resolve Or Create The Local Project
+
+Do not run this registration flow for an already resolved temporary project. Keep its isolated
+scope and retained audit history; creating or migrating to a registered project requires a
+separate explicit request. Disposable output uses `retain_nothing` with a truthful work log;
+any reusable project candidates remain in the returned temporary scope, subject to capture policy.
 
 Before the first project-scoped capture in a repository:
 

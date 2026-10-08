@@ -411,6 +411,7 @@ export function projectAgentTaskRecord(value = {}) {
     taskId: value.task_id,
     personalSpaceId: value.personal_space_id,
     personalProjectId: value.personal_project_id,
+    ...(value.project_scope ? { projectScope: value.project_scope } : {}),
     title: value.title,
     objective: value.objective,
     workKind: value.work_kind,

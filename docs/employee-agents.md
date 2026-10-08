@@ -18,6 +18,25 @@ Repeat recruitment is idempotent. Customized profile preferences and executor/mo
 
 The catalog shows whether a workbench package is actually installed. Identity-only templates need no runtime and remain valid employees without a sidebar workbench. A trusted built-in template may declare `workbench: { "kind": "native", "view": "people" }`; Bole uses this native panel to summarize Agent distribution, current tasks, and timestamped recruitment reasons from the same Project Agent APIs used elsewhere in the console.
 
+## One-off tasks without a registered project
+
+Explicit `coordinate_project_agent_task` calls can create a task-scoped temporary project when
+project resolution is `unmatched` or `not_provided`. Preference reads remain read-only; an
+ambiguous or invalid explicit project is never replaced with a temporary one. Use the exact
+returned project ID for subsequent task operations. Temporary projects do not participate in
+automatic directory matching and do not inherit another project's private context.
+
+The scope is marked `type: temporary`, `lifetime: task`, `persisted: true`: its audit history
+is retained after the task, rather than deleted. Agent staffing defaults to temporary and still
+follows recruitment confirmation, allowed-client and executor policies. A request may therefore
+be `awaiting_recruitment` or blocked before execution. Fuli returns a worker plan; the authorized
+host starts and reports actual workers. Creating the scope or assigning an Agent does not create
+an execution-summary row.
+
+The Agent directory's first-task prompt is usable without registering a project. Task details
+show scope, assignment, worker evidence and why a completion summary is unavailable. Registration
+remains useful for work that should share a stable project identity across future tasks.
+
 ## Local installation
 
 ```sh

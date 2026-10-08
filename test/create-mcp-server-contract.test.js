@@ -163,10 +163,9 @@ test('custom MCP validation reports bounded issue paths without argument values'
   assert.equal(result.isError, true);
   assert.equal(result.structuredContent.error.code, 'validation');
   assert.ok(result.structuredContent.error.validationErrors.length > 0);
-  assert.match(
-    result.structuredContent.error.validationErrors[0].field,
-    /projectPath|personalProjectId|objective|workKind|requiredCapabilities/
-  );
+  assert.ok(result.structuredContent.error.validationErrors.some(({ field }) =>
+    ['idempotencyKey', 'title', 'objective', 'workKind', 'routingReason', 'contextQueries'].includes(field)
+  ), 'missing required task inputs still produce a concrete field error');
   assert.doesNotMatch(JSON.stringify(result), /secret-value/);
   await server.close();
 });

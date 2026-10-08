@@ -437,6 +437,45 @@ async def test_configured_participant_without_execution_event_has_no_summary_row
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(('actor_kind', 'status'), [
+    ('hr', 'blocked'), ('system', 'blocked'), ('agent', 'cancelled'), ('human', 'cancelled'),
+])
+async def test_staffing_blocks_and_unstarted_cancellations_are_not_worker_execution(actor_kind, status):
+    row = task_row(final_status=status)
+    row['event_rows'] = [{
+        'event_id': 'not-started', 'task_id': 'task-a', 'agent_id': 'agent-a',
+        'status': status, 'actor_kind': actor_kind, 'summary': 'No worker was started.',
+        'created_at': row['task']['created_at'],
+    }]
+    task = await PublicTaskReadStore(row).get_project_agent_task({'id': 'principal-a'}, 'space-a', 'task-a')
+    assert task.execution_summary == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('actor_kind', ['agent', 'system', None])
+@pytest.mark.parametrize('final_status', ['cancelled', 'completed'])
+async def test_legacy_running_then_terminal_report_preserves_real_run_and_final_state(
+    actor_kind, final_status,
+):
+    row = task_row(final_status=final_status)
+    row['event_rows'] = [{
+        'event_id': 'legacy-started', 'task_id': 'task-a', 'agent_id': 'agent-a',
+        'status': 'running', 'summary': 'Legacy worker started.',
+        'created_at': row['task']['created_at'],
+    }, {
+        'event_id': 'legacy-terminal', 'task_id': 'task-a', 'agent_id': 'agent-a',
+        'status': final_status, 'summary': 'Finished the running worker.',
+        'created_at': row['task']['created_at'] + timedelta(seconds=1),
+    }]
+    if actor_kind is not None:
+        for event in row['event_rows']:
+            event['actor_kind'] = actor_kind
+    task = await PublicTaskReadStore(row).get_project_agent_task({'id': 'principal-a'}, 'space-a', 'task-a')
+    assert len(task.execution_summary) == 1
+    assert task.execution_summary[0].status == final_status
+
+
+@pytest.mark.asyncio
 async def test_agent_linked_legacy_running_event_remains_execution_evidence():
     row = task_row()
     row['event_rows'] = [{

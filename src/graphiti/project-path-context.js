@@ -39,6 +39,7 @@ export function resolvePersonalProjectPath(projectPath, projects, {
 
   const projectIds = new Set(
     projects
+      .filter(project => project.scope_type !== 'temporary' && project.scopeType !== 'temporary')
       .map(({ project_id: projectId }) => projectId)
       .filter((projectId) => safeProjectId(projectId, pathApi))
   );
