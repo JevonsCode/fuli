@@ -36,5 +36,7 @@ const employees = computed(() => employeeTemplates.value.filter((entry) => entry
 .employee-nav-row > .employee-nav { flex: 1; min-width: 0; grid-template-columns: 26px minmax(0, 1fr); padding-inline: 8px; }
 .employee-nav-row > .agent-hand { width: auto; margin-inline-end: 4px; }
 .employee-nav-mark { display: grid; flex: 0 0 26px; height: 26px; place-items: center; overflow: hidden; border-radius: var(--radius-control); background: var(--color-surface-subtle); color: var(--color-ink); font-size: 15px; font-weight: 650; }
+.employee-nav .nav-copy { min-width: 0; }
+.employee-nav .nav-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .employee-nav-mark img { width: 100%; height: 100%; object-fit: cover; }
 </style>
