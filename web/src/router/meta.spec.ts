@@ -35,7 +35,7 @@ describe('localized route metadata', () => {
     const route = router.resolve('/preferences/writing')
     expect(route.name).toBe('writing-taste')
     expect(route.meta.eyebrow).toBe('')
-    expect(routeMetaText(route.meta.title)).toBe('写作偏好')
+    expect(routeMetaText(route.meta.title)).toBe('文风画像')
   })
 
   it('registers the concise project Agent directory', () => {

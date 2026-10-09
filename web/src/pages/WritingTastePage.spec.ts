@@ -44,7 +44,7 @@ describe('WritingTastePage', () => {
     const wrapper = mountPage()
     await finishLoading()
 
-    expect(wrapper.text()).toContain('还在收集写作偏好')
+    expect(wrapper.text()).toContain('文风画像收集中')
     expect(wrapper.text()).toContain('工作假设')
     expect(wrapper.text()).toContain('可以尝试大胆隐喻')
     expect(wrapper.find('.writing-taste-agent-preview').exists()).toBe(false)

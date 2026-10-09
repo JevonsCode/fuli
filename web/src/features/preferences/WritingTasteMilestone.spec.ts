@@ -17,7 +17,7 @@ describe('WritingTasteMilestone', () => {
       global: { stubs: { RouterLink: RouterLinkStub } },
     })
 
-    expect(wrapper.text()).toContain('写作偏好')
+    expect(wrapper.text()).toContain('文风画像')
     expect(wrapper.text()).toContain('2/3 条规则')
     expect(wrapper.find('.router-link-stub').exists()).toBe(true)
   })
@@ -28,7 +28,7 @@ describe('WritingTasteMilestone', () => {
       global: { stubs: { RouterLink: RouterLinkStub } },
     })
 
-    expect(wrapper.text()).toContain('写作偏好 · 初稿')
+    expect(wrapper.text()).toContain('文风画像 · 初稿')
     expect(wrapper.get('.router-link-stub').attributes('data-to'))
       .toBe('/preferences/writing')
   })

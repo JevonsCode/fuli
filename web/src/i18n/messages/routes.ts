@@ -8,7 +8,7 @@ export const routeMessages = {
       description: '个人全局与项目级的品味、个性和判断偏好，只保存在本机。',
     },
     writingTaste: {
-      title: '写作偏好',
+      title: '文风画像',
     },
     personalProjects: {
       title: '项目',

@@ -218,7 +218,7 @@ describe('PersonalProfilePage', () => {
     await finishProfileLoading()
 
     expect(wrapper.get('.writing-taste-milestone').text())
-      .toContain('写作偏好 · 初稿')
+      .toContain('文风画像 · 初稿')
     expect(wrapper.get('a.writing-taste-milestone').attributes('href'))
       .toBe('/preferences/writing')
   })
