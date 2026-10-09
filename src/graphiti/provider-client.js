@@ -153,6 +153,11 @@ export class GraphitiProviderClient {
   resolveProjectAgentContext(input) {
     return this.#request('/v1/project-agent-context/resolve', { method: 'POST', body: input });
   }
+  recentAgentSessions({ personalSpaceId, agentId, personalProjectId = null, limit = 5 }) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId, project_agent_id: agentId, limit: String(limit) });
+    if (personalProjectId) query.set('personal_project_id', personalProjectId);
+    return this.#request(`/v1/task-context-sessions/recent?${query}`);
+  }
   staffDefaultProjectLead(input) {
     return this.#request('/v1/project-agent-context/default-lead', { method: 'POST', body: input });
   }

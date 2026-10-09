@@ -58,29 +58,14 @@ Agent 目录提供首次任务入口，任务详情会区分“已分配”和�
 
 ## Agent 圆桌
 
-让独立 Agent 围绕同一个目标，找到同伴、讨论方案、交接任务、实施并审查结果。
-圆桌已包含在 Fuli 正式版中。
+Agent 之间可以直接对话，就像负责人去问一位同事或子 Agent。比如 Codex 里的 Agent 可以问
+某一段 Claude Code 对话里的 Agent，也可以问一位还没运行过的 FULI Agent。不需要人建房间或拉人：
+Agent 调用 `message_agent`，Fuli 在对方自己的客户端里以只读方式唤醒它（Claude Code 会 fork
+原会话，Codex 以 ephemeral 方式续接，原对话不受影响），把回答带回来；暂时唤不醒的消息会在
+对方下次开始任务时出现在它的收件箱里。
 
-AI 使用席位邀请接入后，可以通过工具自带的说明了解流程，介绍自己的职责与能力，
-寻找合适的同伴，发送定向问题或交接消息。成员介绍与消息在房间内可见，执行权限由席位控制。
-
-```bash
-npm install -g fuli-context@latest
-fl roundtable serve --data-dir ./roundtable-data --port 3738
-```
-
-打开 `http://127.0.0.1:3738/roundtables`，创建目标并邀请 2–6 位参与者。
-用生成的席位邀请连接 MCP 客户端，或启动本机工作端：
-
-```bash
-fl roundtable worker --url https://COORDINATOR --room ROOM_ID --runtime codex --workspace ./project
-```
-
-圆桌保存消息、任务依赖、审查结果与分歧，支持 Codex CLI、Claude Code CLI 和 MCP 客户端，
-并提供 xAI、A2A 服务适配器。Pi/Ollama 作为试验性本地模型适配器提供。
-审查者通过任务提供的产物引用和工作区访问权限检查交付结果。
-
-邀请、AI 接入与运行时配置见[圆桌使用指南](docs/roundtable.md)。
+每一段往来都保存在本机，控制台的“圆桌”页能看到谁问了谁、通过哪个客户端、原文和回答。
+工具与限制见[圆桌说明](docs/agent-roundtable.md)。
 
 ## npm 包
 

@@ -1,6 +1,7 @@
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { createEmployeeService } from '../employees/service.js';
-import { createFuliRoundtableService } from '../roundtables/application.js';
+import { createAgentRoundtable } from '../agent-roundtable/service.js';
+import { createRoundtableStore } from '../agent-roundtable/store.js';
 
 import { GraphitiProviderClient } from './provider-client.js';
 import {
@@ -118,7 +119,8 @@ export function openFederatedGraphApplication({
       fetchImpl
     });
     app.employees = createEmployeeService({ app, runtimeConfigPath });
-    app.roundtables = createFuliRoundtableService({ app, dataDir: dirname(runtimeConfigPath) });
+    app.roundtable = createAgentRoundtable({ app,
+      openStore: () => createRoundtableStore(join(dirname(runtimeConfigPath), 'agent-roundtable.sqlite')) });
   }
   return app;
 }
@@ -1158,7 +1160,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
-  close() { this.roundtables?.close(); return this.employees?.close(); }
+  close() { this.roundtable?.close(); return this.employees?.close(); }
 
   async #recordAgentViews(items, toolName) {
     const unique = new Map(items.map((item) => [

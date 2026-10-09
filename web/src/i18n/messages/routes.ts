@@ -17,6 +17,9 @@ export const routeMessages = {
     projectAgents: {
       title: 'Agents',
     },
+    roundtable: {
+      title: '圆桌',
+    },
     employeeWorkbench: {
       title: '专属 Agent',
     },
@@ -69,6 +72,9 @@ export const routeMessages = {
     },
     projectAgents: {
       title: 'Agents',
+    },
+    roundtable: {
+      title: 'Roundtable',
     },
     employeeWorkbench: {
       title: 'Specialist Agents',

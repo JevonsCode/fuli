@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { callAgentTool, listAgentTools } from '../src/agent-tools.js';
+import { ROUNDTABLE_TOOL_NAMES } from '../src/agent-roundtable/tools.js';
 
 const NAMES = [
   'request_agent_attention',
@@ -123,7 +124,7 @@ const NAMES = [
   'list_project_review_queue',
   'review_project_proposal',
   'get_graphiti_status',
-  'discover_roundtable', 'read_roundtable', 'join_roundtable', 'claim_roundtable_turn', 'submit_roundtable_turn', 'message_roundtable'
+  'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread'
 ];
 
 test('Agent surface exposes only the Graphiti final-version tools', () => {
@@ -475,7 +476,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
   const previousTestTools = process.env.FULI_ENABLE_TEST_TOOLS;
   process.env.FULI_ENABLE_TEST_TOOLS = '1';
   try {
-    for (const name of NAMES.filter((value) => !value.includes('roundtable'))) await callAgentTool(app, name, { probe: name });
+    for (const name of NAMES.filter((value) => !ROUNDTABLE_TOOL_NAMES.includes(value))) await callAgentTool(app, name, { probe: name });
   assert.deepEqual(calls.map(([name]) => name), [
     'request-attention', 'list-attention', 'cancel-attention',
     'agent-tasks', 'preference-conflicts',

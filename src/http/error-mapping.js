@@ -5,7 +5,6 @@ import {
 import { JsonBodyTooLargeError } from './response.js';
 import { ProviderRequestError } from '../graphiti/provider-client.js';
 import { EmployeeError } from '../employees/manifest.js';
-import { RoundtableError } from '../roundtables/domain.js';
 
 const BAD_REQUEST_CODES = new Set([
   ApplicationErrorCode.NOT_FOUND,
@@ -13,7 +12,6 @@ const BAD_REQUEST_CODES = new Set([
 ]);
 
 export function mapHttpError(error) {
-  if (error instanceof RoundtableError) return { status: error.statusCode, body: { error: error.message, code: error.code } };
   if (error instanceof ApplicationError && ['external_knowledge_busy', 'external_knowledge_conflict'].includes(error.code)) {
     return { status: 409, body: { error: error.message, code: error.code } };
   }

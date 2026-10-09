@@ -19,6 +19,7 @@ import { settingsMessages } from './messages/settings'
 import { writingTasteMessages } from './messages/writing-taste'
 import { employeeMessages } from './messages/employees'
 import { attentionMessages } from './messages/attention'
+import { roundtableMessages } from './messages/roundtable'
 
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const
 export type AppLocale = typeof SUPPORTED_LOCALES[number]
@@ -71,6 +72,7 @@ export const messages = {
     agentRedesign: agentRedesignMessages['zh-CN'],
     agentProfiles: agentProfileMessages['zh-CN'],
     attention: attentionMessages['zh-CN'],
+    roundtable: roundtableMessages['zh-CN'],
     employees: employeeMessages['zh-CN'],
     about: aboutMessages['zh-CN'],
     common: commonMessages['zh-CN'],
@@ -94,6 +96,7 @@ export const messages = {
     agentRedesign: agentRedesignMessages['en-US'],
     agentProfiles: agentProfileMessages['en-US'],
     attention: attentionMessages['en-US'],
+    roundtable: roundtableMessages['en-US'],
     employees: employeeMessages['en-US'],
     about: aboutMessages['en-US'],
     common: commonMessages['en-US'],

@@ -7,6 +7,16 @@ from .task_context_models import TaskContextBegin, TaskContextCheckpoint, TaskCo
 
 
 def register_task_context_routes(application, store, Actor):
+    @application.get('/v1/task-context-sessions/recent')
+    async def recent_sessions(actor: Actor,
+        personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
+        project_agent_id: Annotated[str, Query(min_length=1, max_length=128)],
+        personal_project_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
+        limit: Annotated[int, Query(ge=1, le=20)] = 5):
+        return await store.recent_agent_sessions(
+            actor, personal_space_id, project_agent_id, personal_project_id, limit,
+        )
+
     @application.get('/v1/task-context-sessions/current')
     async def current_context(actor: Actor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],

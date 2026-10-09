@@ -168,7 +168,7 @@ test('writing taste stays evidence-backed and separates review from Agent use', 
 });
 
 test('connection forms use the shared custom controls', () => {
-  assert.match(connections, /<SearchableSelect/);
+  assert.match(connections, /<UiSelect/);
   assert.match(connections, /<TextField/);
   assert.doesNotMatch(connections, /<(?:input|select|textarea)\b/);
 });

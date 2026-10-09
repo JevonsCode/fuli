@@ -1,9 +1,4 @@
 const UI_MUTATION_PARITY = Object.freeze([
-  local('POST /api/roundtables', 'Creating rooms, granting private identity context and selecting execution permissions requires the local user.'),
-  local('POST /api/roundtables/:roomId/invites', 'Seat invitations are local-user issued scoped capabilities.'),
-  local('POST /api/roundtables/:roomId/revoke', 'Revoking participation requires the room owner.'),
-  local('POST /api/roundtables/:roomId/control', 'Starting, changing limits, stopping or human acceptance requires the room owner.'),
-  local('POST /api/roundtables/:roomId/messages', 'Human input must not be impersonated by an Agent.'),
   agent('POST /api/agent-conversations/query', 'list_agent_conversations', 'read_agent_conversation', 'get_agent_conversation_policy'),
   agent('PUT /api/agent-conversations/policy', 'update_agent_conversation_policy'),
   agent('POST /api/agent-attention', 'request_agent_attention'),

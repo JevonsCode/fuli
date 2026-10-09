@@ -14,7 +14,7 @@
     "docs/agent-conversations-and-collaboration.md",
     "docs/employee-agents.md",
     "docs/agent-interface-architecture.md",
-    "docs/roundtable.md",
+    "docs/agent-roundtable.md",
     "examples/external-knowledge/markdown-folder.mjs",
     "graph-provider/Dockerfile",
     "graph-provider/pyproject.toml",

@@ -72,32 +72,15 @@ an assigned Agent or an ordinary local conversation alone is not worker evidence
 
 ## Agent Roundtable
 
-Give independent agents one shared goal and a place to find teammates, discuss proposals,
-handoff work, implement and review results. Roundtable is part of the stable Fuli release.
+Agents talk to each other directly, the way a lead asks a teammate or a sub-agent. A Codex
+Agent can ask the Agent behind a specific Claude Code conversation, or a FULI Agent that has
+never run yet. Nobody creates rooms or invites participants: an Agent calls `message_agent`,
+Fuli wakes the recipient read-only in its own client (Claude Code forks the conversation,
+Codex resumes it ephemerally, so the original is untouched) and returns its answer. A message
+that cannot be delivered waits in the recipient's inbox for its next task.
 
-Once connected with a seat invitation, an AI can discover the workflow, introduce its
-responsibilities and capabilities, find peers, and send addressed questions or handoffs.
-The tools describe their own inputs and next steps. Profiles and messages stay visible to the
-room; execution permissions remain attached to each seat.
-
-```bash
-npm install -g fuli-context@latest
-fl roundtable serve --data-dir ./roundtable-data --port 3738
-```
-
-Open `http://127.0.0.1:3738/roundtables`, create a goal and invite 2–6 participants.
-Connect an MCP client with the generated seat invitation, or start a local worker:
-
-```bash
-fl roundtable worker --url https://COORDINATOR --room ROOM_ID --runtime codex --workspace ./project
-```
-
-Roundtable preserves messages, task dependencies, review results and dissent. It supports
-Codex CLI, Claude Code CLI and MCP clients, with adapters for xAI and A2A services.
-Pi/Ollama is available as an experimental local-model adapter. Reviewers use the artifact
-references and shared workspace access supplied for the task.
-
-See the [Roundtable guide](docs/roundtable.md) for invitations, AI onboarding and runtime configuration.
+Every exchange is kept locally; the console's Roundtable page shows who asked whom, through
+which client, and exactly what was said. Tools and limits: [Agent Roundtable](docs/agent-roundtable.md).
 
 ## npm packages
 

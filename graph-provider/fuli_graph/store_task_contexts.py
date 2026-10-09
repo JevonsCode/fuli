@@ -99,6 +99,32 @@ class StoreTaskContexts:
             id=self._task_session_id(space_id, source_application, session_id))
         return json.loads(rows[0]['record_json']) if rows else None
 
+    async def recent_agent_sessions(self, actor, space_id, agent_id, project_id, limit):
+        """The host conversations an Agent most recently worked in, newest first."""
+        self._require_personal()
+        await self.authorize(actor, space_id, 'reader')
+        rows, _, _ = await self.runtime.driver.execute_query(
+            '''
+            MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
+                  [:HAS_TASK_CONTEXT_SESSION]->(:FuliTaskContextSession)-
+                  [:HAS_CONTEXT]->(task:FuliTaskContext {project_agent_id: $agent_id})
+            WHERE $project_id IS NULL OR task.personal_project_id = $project_id
+            RETURN task.record_json AS record_json, task.created_at AS created_at
+            ORDER BY task.created_at DESC LIMIT 200
+            ''', space_id=space_id, agent_id=agent_id, project_id=project_id, routing_='r',
+        )
+        sessions = {}
+        for row in rows:
+            record = json.loads(row['record_json'])
+            key = (record['source_application'], record['session_id'])
+            if key not in sessions:
+                sessions[key] = {
+                    'source_application': key[0], 'session_id': key[1],
+                    'personal_project_id': record.get('personal_project_id'),
+                    'last_active': str(row['created_at']),
+                }
+        return list(sessions.values())[:limit]
+
     async def get_task_context(self, actor, space_id, token, source_application):
         self._require_personal()
         await self.authorize(actor, space_id, 'reader')
