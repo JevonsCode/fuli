@@ -39,7 +39,7 @@ export async function beginConversation(application, task) {
   } catch { return unavailable(); }
 }
 
-export async function checkpointConversation(application, task, workLog) {
+export async function checkpointConversation(application, task, workLog, team = null) {
   if (!task.projectAgentId || !task.personalProjectId) return { status: 'unassigned' };
   if (!application.getCapturePolicy?.().enabled) return { status: 'capture_disabled' };
   try {
@@ -48,16 +48,18 @@ export async function checkpointConversation(application, task, workLog) {
       events: [{ event_id: `${task.token}:summary`, role: 'summary', kind: 'checkpoint', content: safeConversationContent(workLog.summary) }]
     });
     if (result.status !== 'saved') return result;
-    let name = null;
-    try {
-      const agent = await application.personal.getProjectAgent(application.config.personal.spaceId, task.personalProjectId, task.projectAgentId);
-      name = agent?.profile?.display_name || agent?.profile?.name || null;
-    } catch { /* Metadata availability does not undo a successful save. */ }
+    let name = team?.name ?? null;
+    if (!team) {
+      try {
+        const agent = await application.personal.getProjectAgent(application.config.personal.spaceId, task.personalProjectId, task.projectAgentId);
+        name = agent?.profile?.display_name || agent?.profile?.name || null;
+      } catch { /* Metadata availability does not undo a successful save. */ }
+    }
     return { ...result, agent_id: task.projectAgentId, work_status: workLog.status,
       receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
         agentId: task.projectAgentId, name, sourceApplication: task.sourceApplication,
         workStatus: workLog.status, conversationId: result.conversation_id,
-        persistence: result.status }),
+        persistence: result.status, collaborators: team?.collaborators ?? [] }),
       coverage: 'task_summary; visible transcript capture is confirmed separately by the host hook',
       guidance: 'Include the Agent name, truthful work status and conversation ID in the final receipt. In another client select this Agent, then call resume_agent_conversation with its current taskContextToken and this conversation ID.' };
   } catch { return unavailable(); }
