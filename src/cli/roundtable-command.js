@@ -5,19 +5,39 @@ import { resolveSetupPaths } from '../setup/paths.js';
 import { createRoundtableServer } from '../roundtables/server.js';
 import { runRoundtableWorker } from '../roundtables/worker.js';
 
+const SERVE_USAGE = 'fl roundtable serve [--data-dir DIR] [--port PORT] [--host HOST] [--public-url HTTPS_URL]';
+const WORKER_USAGE = 'fl roundtable worker --url URL --room ID --runtime codex|claude-code|pi|grok|a2a [--workspace DIR] [--allow-write] [--model MODEL] [--a2a-url HTTPS_URL] [--once] [--allow-http]';
+
+function printRoundtableHelp(action) {
+  if (action === 'serve') {
+    console.log(`${SERVE_USAGE}\n\nDefaults: --port 3738, --host 127.0.0.1.\nOwner console remains local; expose only /roundtable-peer/ through your HTTPS proxy.\n--help, -h  Show server help without starting a coordinator.`);
+  } else if (action === 'worker') {
+    console.log(`${WORKER_USAGE}\n\nSeat secret: FULI_ROUNDTABLE_TOKEN environment variable.\nPi uses local Ollama; select an installed model with --model.\n--once runs one available turn. --allow-http explicitly permits a remote HTTP coordinator.\n--help, -h  Show worker help without joining or running a model.`);
+  } else {
+    console.log(`${SERVE_USAGE}\n${WORKER_USAGE}\n\nfl roundtable <serve|worker> --help  Show command-specific options.\n--help, -h  Show Roundtable help.\nSeat secret: FULI_ROUNDTABLE_TOKEN environment variable. Pi uses local Ollama; select an installed model with --model.\nOwner console remains local; expose only /roundtable-peer/ through your HTTPS proxy.`);
+  }
+}
+
 export async function runRoundtableCommand(args, { env = process.env } = {}) {
   const [action, ...options] = args;
-  if (!action || ['--help', '-h'].includes(action)) {
-    console.log('fl roundtable serve [--data-dir DIR] [--port 3738] [--host 127.0.0.1] [--public-url HTTPS_URL]\nfl roundtable worker --url URL --room ID --runtime codex|claude-code|pi|grok|a2a [--workspace DIR] [--allow-write] [--model MODEL] [--a2a-url HTTPS_URL]\nSeat secret: FULI_ROUNDTABLE_TOKEN environment variable. Pi uses local Ollama; select an installed model with --model. Owner console remains local; expose only /roundtable-peer/ through your HTTPS proxy.'); return;
+  if (!action) {
+    printRoundtableHelp(); return;
   }
-  const allowed = new Set(['--data-dir', '--port', '--host', '--public-url', '--url', '--room', '--runtime', '--workspace', '--model', '--a2a-url', '--allow-write', '--once', '--allow-http']);
-  const flags = new Set(['--allow-write', '--once', '--allow-http']);
+  const topLevelHelp = ['--help', '-h'].includes(action);
+  const optionArgs = topLevelHelp ? args : options;
+  const allowed = new Set(['--data-dir', '--port', '--host', '--public-url', '--url', '--room', '--runtime', '--workspace', '--model', '--a2a-url', '--allow-write', '--once', '--allow-http', '--help', '-h']);
+  const flags = new Set(['--allow-write', '--once', '--allow-http', '--help', '-h']);
   const values = {};
-  for (let index = 0; index < options.length; index++) {
-    const name = options[index];
-    if (!allowed.has(name) || Object.hasOwn(values, name)) throw new TypeError(`Unknown or duplicate Roundtable option ${name}`);
-    if (flags.has(name)) values[name] = true;
-    else { const value = options[++index]; if (!value || value.startsWith('--')) throw new TypeError(`Missing ${name}`); values[name] = value; }
+  for (let index = 0; index < optionArgs.length; index++) {
+    const name = optionArgs[index];
+    const key = name === '-h' ? '--help' : name;
+    if (!allowed.has(name) || Object.hasOwn(values, key)) throw new TypeError(`Unknown or duplicate Roundtable option ${name}`);
+    if (flags.has(name)) values[key] = true;
+    else { const value = optionArgs[++index]; if (!value || value.startsWith('--') || value === '-h') throw new TypeError(`Missing ${name}`); values[key] = value; }
+  }
+  if (values['--help']) {
+    if (!topLevelHelp && !['serve', 'worker'].includes(action)) throw new TypeError('Roundtable action must be serve or worker');
+    printRoundtableHelp(topLevelHelp ? undefined : action); return;
   }
   if (action === 'serve') {
     const port = Number(values['--port'] ?? 3738);
