@@ -46,7 +46,7 @@ export const knowledgeWorkspaceMessages = {
       },
       discovery: {
         checking: '当前范围没有命中，正在检查其他个人项目…',
-        retry: '当前范围没有找到可定位的内容，可以调整关键词后重试。',
+        retry: '没有找到，换个关键词试试。',
         noHitKicker: '当前范围未命中',
         noResults: '没有检索到“{query}”',
         candidateCount: '{count} 条候选内容',
@@ -172,8 +172,8 @@ export const knowledgeWorkspaceMessages = {
     inspector: {
       humanReview: {
         unseen: '这次人工修改还没有被 Agent 调用查看，提醒会持续保留。',
-        viewed: 'Agent 已查看当前版本，但还没有同时完成冲突检查和分类合理性审核。',
-        reviewed: 'Agent 已对当前人工修改版本完成无冲突与分类合理性审核；历史记录仍永久保留。',
+        viewed: 'Agent 已查看，还没完成审核。',
+        reviewed: 'Agent 已审核当前修改。',
       },
       inheritance: {
         descendants: '允许子项目继承',
@@ -186,7 +186,7 @@ export const knowledgeWorkspaceMessages = {
         relationship: '关系 ID',
       },
       ownership: '内容归属',
-      projectionCopy: '这是项目档案在关系图中的投影，不是可独立确认、失效或恢复的知识记录。如需改变内容，请编辑项目资料。',
+      projectionCopy: '这是项目资料在图中的投影，修改请编辑项目资料。',
       currentJudgment: '当前判定',
       humanReviewTitle: '人工变更审核',
       humanVersion: '人工变更版本 {version}',
@@ -195,7 +195,7 @@ export const knowledgeWorkspaceMessages = {
       noReplacement: '没有可跳转的替代内容',
       viewReplacement: '查看替代内容 →',
       replacementOutOfScope: '已记录替代对象，但它不在当前查看范围内。',
-      missingReplacement: '这条历史记录只有失效原因，没有记录明确的替代对象；系统不会根据文字猜测链接。',
+      missingReplacement: '这条历史只记录了失效原因，没有替代项。',
       fields: {
         type: '类型',
         originQuadrant: '发现时象限',
@@ -226,7 +226,7 @@ export const knowledgeWorkspaceMessages = {
         time: '确认时间',
         agentPolicy: 'Agent 策略',
       },
-      legacyBasis: '旧数据没有结构化的确认依据，因此已放入待确认，不会自动作为已确认知识使用。',
+      legacyBasis: '旧数据缺少确认依据，已归入待确认。',
       contentDetails: '内容详情',
       formation: '形成过程',
       confirmPreference: '确认这条偏好',
@@ -310,7 +310,7 @@ export const knowledgeWorkspaceMessages = {
       },
       discovery: {
         checking: 'No match in the current scope. Checking other personal projects…',
-        retry: 'No locatable content in the current scope. Adjust the keywords and try again.',
+        retry: 'Nothing found. Try other keywords.',
         noHitKicker: 'No match in current scope',
         noResults: 'No results for “{query}”',
         candidateCount: '{count} candidate item | {count} candidate items',
@@ -436,8 +436,8 @@ export const knowledgeWorkspaceMessages = {
     inspector: {
       humanReview: {
         unseen: 'An Agent has not viewed this human edit; the reminder remains active.',
-        viewed: 'An Agent viewed this version but has not completed both conflict and classification review.',
-        reviewed: 'An Agent completed conflict and classification review for this human-edited version. History remains permanently available.',
+        viewed: 'Viewed by an Agent; review not finished.',
+        reviewed: 'Reviewed by an Agent.',
       },
       inheritance: {
         descendants: 'Child projects may inherit',
@@ -450,7 +450,7 @@ export const knowledgeWorkspaceMessages = {
         relationship: 'Relationship ID',
       },
       ownership: 'Content ownership',
-      projectionCopy: 'This is a project-profile projection in the relationship graph, not an independently confirmable or restorable knowledge record. Edit project materials to change it.',
+      projectionCopy: 'Projected from project materials; edit the materials to change it.',
       currentJudgment: 'Current judgment',
       humanReviewTitle: 'Human-change review',
       humanVersion: 'Human-change version {version}',
@@ -459,7 +459,7 @@ export const knowledgeWorkspaceMessages = {
       noReplacement: 'No linked replacement content',
       viewReplacement: 'View replacement →',
       replacementOutOfScope: 'A replacement is recorded but outside the current view scope.',
-      missingReplacement: 'This historical record has an invalidation reason but no explicit replacement. The system will not infer a link from text.',
+      missingReplacement: 'Only an invalidation reason was recorded; no replacement.',
       fields: {
         type: 'Type',
         originQuadrant: 'Discovery quadrant',
@@ -490,7 +490,7 @@ export const knowledgeWorkspaceMessages = {
         time: 'Confirmation time',
         agentPolicy: 'Agent policy',
       },
-      legacyBasis: 'Legacy data has no structured confirmation basis, so it is pending and will not be treated as confirmed knowledge.',
+      legacyBasis: 'Legacy data without a confirmation basis; treated as pending.',
       contentDetails: 'Content details',
       formation: 'How it formed',
       confirmPreference: 'Confirm this preference',

@@ -76,7 +76,7 @@ export const settingsMessages = {
         any: '任意非空 ID',
         uuid: '仅 UUID',
       },
-      idFormatMeta: 'Codex 深链要求原生会话 UUID；其他来源可按其支持的 ID 格式配置。',
+      idFormatMeta: 'Codex 需要原生会话 UUID。',
       applications: {
         codex: 'Codex',
         claude: 'Claude',
@@ -172,7 +172,7 @@ export const settingsMessages = {
         any: 'Any non-empty ID',
         uuid: 'UUID only',
       },
-      idFormatMeta: 'Codex deep links require the native conversation UUID; configure other sources to match their supported IDs.',
+      idFormatMeta: 'Codex needs the native conversation UUID.',
       applications: {
         codex: 'Codex',
         claude: 'Claude',

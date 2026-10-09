@@ -179,7 +179,7 @@ describe('knowledge model', () => {
     expect(item.confirmationStatus).toBe('pending')
     expect(quadrantLabel(item.currentQuadrant)).toBe('待分类')
     expect(reviewStateLabel(item)).toBe('待确认')
-    expect(classificationExplanation(item)).toContain('不会自动归入')
+    expect(classificationExplanation(item)).toContain('保存前需要补充')
   })
 
   it('keeps human edits searchable after Agent review while only pending versions stay marked', () => {
@@ -236,7 +236,7 @@ describe('knowledge model', () => {
 
     expect(knowledgeReviewState(item)).toBe('pending')
     expect(reviewStateLabel(item)).toBe('待确认')
-    expect(classificationExplanation(item)).toContain('没有结构化的确认人和确认时间')
+    expect(classificationExplanation(item)).toContain('缺少确认记录')
   })
 
   it('keeps the discovery quadrant after an auditable confirmation', () => {
@@ -295,7 +295,7 @@ describe('knowledge model', () => {
     expect(item.confidenceScore).toBe(0.74)
     expect(item.qualifiedUseCount).toBe(5)
     expect(item.distinctTaskCount).toBe(3)
-    expect(classificationExplanation(item)).toContain('低于人工或权威来源确认')
+    expect(classificationExplanation(item)).toContain('权重仍低于你的确认')
 
     item.confirmationBasis!.agent_policy_version = undefined
     expect(knowledgeReviewState(item)).toBe('pending')

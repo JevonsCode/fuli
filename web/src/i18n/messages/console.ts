@@ -34,7 +34,7 @@ export const consoleMessages = {
     update: {
       aria: '发现新版本 {version}，查看更新方法',
       title: '新版本 v{version} 可用',
-      copy: '在终端运行以下命令即可安全更新并刷新本地服务：',
+      copy: '在终端运行：',
       npmLink: '在 npm 查看版本详情',
     },
     services: {
@@ -64,11 +64,11 @@ export const consoleMessages = {
       enabledCopy: '允许调用整个 FULI',
       disabledCopy: '所有调用已拦截',
       enabledNotice: 'Agent 使用已开启；已连接的 Agent 可以调用 FULI。',
-      disabledNotice: 'Agent 使用已关闭；管理界面仍可使用，但所有 Agent 调用都会被拦截。',
+      disabledNotice: 'Agent 使用已关闭，所有 Agent 调用会被拦截。',
     },
     captureNotices: {
-      enabled: '自动沉淀已开启；Agent 会继续把新的稳定会话知识写入本机。',
-      disabled: '自动沉淀已关闭；已有知识仍可读取，但不会写入新的会话内容。',
+      enabled: '自动沉淀已开启。',
+      disabled: '自动沉淀已关闭，已有知识仍可读取。',
     },
     publicReady: 'Public ready',
   },
@@ -107,7 +107,7 @@ export const consoleMessages = {
     update: {
       aria: 'Version {version} is available. View update instructions',
       title: 'Version v{version} is available',
-      copy: 'Run this command in a terminal to update safely and refresh local services:',
+      copy: 'Run in a terminal:',
       npmLink: 'View version details on npm',
     },
     services: {
@@ -137,11 +137,11 @@ export const consoleMessages = {
       enabledCopy: 'Full FULI access allowed',
       disabledCopy: 'All calls blocked',
       enabledNotice: 'Agent access is on. Connected Agents can use FULI.',
-      disabledNotice: 'Agent access is off. The console remains available, but all Agent calls are blocked.',
+      disabledNotice: 'Agent access is off; all Agent calls are blocked.',
     },
     captureNotices: {
-      enabled: 'Automatic capture is on. The Agent will keep writing new, stable conversation knowledge to this device.',
-      disabled: 'Automatic capture is off. Existing knowledge remains readable, but new conversation content will not be written.',
+      enabled: 'Automatic capture is on.',
+      disabled: 'Automatic capture is off; existing knowledge stays readable.',
     },
     publicReady: 'Public ready',
   },

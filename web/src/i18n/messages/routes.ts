@@ -5,7 +5,7 @@ export const routeMessages = {
     },
     preferences: {
       title: '偏好',
-      description: '个人全局与项目级的品味、个性和判断偏好，只保存在本机。',
+      description: '全局与项目级的品味、个性和判断偏好。',
     },
     writingTaste: {
       title: '文风画像',
@@ -25,8 +25,8 @@ export const routeMessages = {
     },
     loadFailure: {
       title: '暂时无法打开页面',
-      resources: '页面文件加载失败，可能是界面已更新或服务暂时断开。当前内容仍然保留。',
-      message: '页面未能加载，当前内容仍然保留。可以重新载入，或继续使用当前页面。',
+      resources: '页面文件加载失败，可能是界面刚更新。',
+      message: '页面没能加载。',
       reload: '重新载入并打开',
       dismiss: '留在当前页',
     },
@@ -61,7 +61,7 @@ export const routeMessages = {
     },
     preferences: {
       title: 'Preferences',
-      description: 'Global and project-specific taste, personality, and judgment preferences stored only on this device.',
+      description: 'Global and project taste, personality, and judgment preferences.',
     },
     writingTaste: {
       title: 'Writing taste',
@@ -81,8 +81,8 @@ export const routeMessages = {
     },
     loadFailure: {
       title: 'This page could not open',
-      resources: 'Page files could not load. The app may have updated or disconnected. Your current page is unchanged.',
-      message: 'The page could not load. Your current page is unchanged. Reload to try again or stay here.',
+      resources: 'Page files could not load; the app may have just updated.',
+      message: 'The page could not load.',
       reload: 'Reload and open',
       dismiss: 'Stay here',
     },

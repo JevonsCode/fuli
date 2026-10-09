@@ -58,7 +58,7 @@ describe('KnowledgeInspector', () => {
     expect(wrapper.find('.inspector-project-material').exists()).toBe(true)
     expect(wrapper.find('.inspector-classification').exists()).toBe(false)
     expect(wrapper.find('.inspector-confirmation-basis').exists()).toBe(false)
-    expect(wrapper.text()).toContain('不是可独立确认、失效或恢复的知识记录')
+    expect(wrapper.text()).toContain('修改请编辑项目资料')
 
     const actions = wrapper.findAll('.inspector-actions button')
     expect(actions.map((button) => button.text())).toContain('编辑项目资料')
@@ -201,7 +201,7 @@ describe('KnowledgeInspector', () => {
     })
 
     expect(wrapper.find('.inspector-replacement-link').exists()).toBe(false)
-    expect(wrapper.get('.inspector-replacement').text()).toContain('不会根据文字猜测链接')
+    expect(wrapper.get('.inspector-replacement').text()).toContain('没有替代项')
   })
 
   it('opens exact Codex evidence and copies non-Codex source identities', async () => {

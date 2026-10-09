@@ -30,9 +30,9 @@ export const commonMessages = {
     },
     errors: {
       loadFailed: '读取失败，请重试。',
-      serviceUnavailable: '服务暂时无法响应，请稍后重试；如仍失败，请在「服务连接」检查连接状态。({status})',
+      serviceUnavailable: '服务暂时无法响应，请稍后重试。({status})',
       pageNotFound: '找不到这个页面',
-      pageNotFoundCopy: '链接可能已失效，或地址有误。请检查地址，也可以返回首页继续。',
+      pageNotFoundCopy: '链接可能已失效。',
       requestFailed: '请求失败 ({status})',
       operationFailed: '操作失败',
     },
@@ -89,9 +89,9 @@ export const commonMessages = {
     },
     errors: {
       loadFailed: 'Could not load. Please retry.',
-      serviceUnavailable: 'The service is temporarily unavailable. Retry shortly; if it still fails, check Service connections. ({status})',
+      serviceUnavailable: 'The service is temporarily unavailable. Try again shortly. ({status})',
       pageNotFound: 'Page not found',
-      pageNotFoundCopy: 'This link may be outdated or the address may be incorrect. Check the address or return home to continue.',
+      pageNotFoundCopy: 'This link may be outdated.',
       requestFailed: 'Request failed ({status})',
       operationFailed: 'Operation failed',
     },

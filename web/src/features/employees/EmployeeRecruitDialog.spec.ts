@@ -68,7 +68,7 @@ describe('employee recruitment', () => {
     entry.permissions.push('session.title')
     const { wrapper } = await setup()
     expect(wrapper.get('[data-scope="all"]').attributes('aria-checked')).toBe('true')
-    expect(wrapper.text()).toContain('以后新建的项目')
+    expect(wrapper.text()).toContain('以后的项目')
     expect(wrapper.get('.project-scope-picker').find('select').exists()).toBe(false)
     expect(wrapper.find('select:not([aria-hidden="true"])').exists()).toBe(false)
     expect(wrapper.findAll('.employee-title-settings .ui-select')).toHaveLength(2)
@@ -85,7 +85,7 @@ describe('employee recruitment', () => {
       mode: 'all', projectIds: [], excludedProjectIds: ['project-b', 'temporarily-unavailable'], titleMode: 'auto', titleStyle: 'emoji',
     }, expectedAssignmentsVersion: 'version-0' })
     expect(postJson.mock.calls[0]![1]).not.toHaveProperty('personalProjectIds')
-    expect(wrapper.text()).toContain('手动改名后暂停覆盖')
+    expect(wrapper.text()).toContain('手动改过的标题不再覆盖')
   })
 
   it('switches to a fixed selection with keyboard access, without silently including future projects', async () => {

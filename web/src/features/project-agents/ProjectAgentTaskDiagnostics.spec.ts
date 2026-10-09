@@ -24,20 +24,20 @@ describe('task execution diagnostics', () => {
     })
     expect(wrapper.get('[data-task-assignment-state]').text()).toContain('已记录任务分配')
     expect(wrapper.get('[data-task-execution-state]').text()).toContain('尚未收到工作进程报告')
-    expect(wrapper.get('[data-task-summary-reason]').text()).toContain('请回到发起任务的客户端继续执行并上报结果')
+    expect(wrapper.get('[data-task-summary-reason]').text()).toContain('等待客户端上报执行结果')
     expect(wrapper.text()).not.toContain('工作进程报告运行中')
   })
 
   it('does not treat coordinator or candidate metadata as a task assignment', () => {
     const wrapper = mountDiagnostics({ participants: [], coordinatorAgentId: 'coordinator-a', routingDecision: { candidateAgentIds: ['candidate-a'] } })
     expect(wrapper.get('[data-task-assignment-state]').text()).toContain('尚未记录任务分配')
-    expect(wrapper.get('[data-task-summary-reason]').text()).toContain('请在发起任务的客户端说明任务并开始协作')
+    expect(wrapper.get('[data-task-summary-reason]').text()).toContain('还没有分配或执行记录')
   })
 
   it('labels an explicitly temporary scope and leaves opaque IDs uninterpreted', () => {
     const temporary = mountDiagnostics({ projectScope: { type: 'temporary', lifetime: 'task', persisted: true } })
     expect(temporary.get('[data-task-project-state]').text()).toContain('独立临时项目')
-    expect(temporary.text()).toContain('不会借用其他项目的知识与偏好')
+    expect(temporary.text()).toContain('独立的临时项目')
     expect(mountDiagnostics({ personalProjectId: 'temporary-looking-id' }).get('[data-task-project-state]').text()).toContain('已关联项目')
     expect(mountDiagnostics({ personalProjectId: null }).get('[data-task-project-state]').text()).toContain('项目尚未识别')
   })
@@ -54,7 +54,7 @@ describe('task execution diagnostics', () => {
       { eventId: 'event-1', taskId: 'task-a', workerId: 'worker-a', status: 'running', workerStatus: 'running', summary: 'Started', createdAt: '2026-10-09T01:00:00Z' },
     ] })
     expect(wrapper.get('[data-task-execution-state]').text()).toContain('已收到结束状态')
-    expect(wrapper.get('[data-task-summary-reason]').text()).toContain('已收到工作进程事件，尚未收到执行汇总')
+    expect(wrapper.get('[data-task-summary-reason]').text()).toContain('已收到执行事件，等待汇总')
     expect(wrapper.find('table').exists()).toBe(false)
   })
 

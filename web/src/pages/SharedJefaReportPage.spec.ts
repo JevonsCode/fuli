@@ -30,7 +30,7 @@ describe('public report', () => {
     const wrapper = mount(SharedJefaReportPage, { global: { plugins: [router] } }); wrappers.push(wrapper)
     await flushPromises()
     expect(wrapper.get('.report-state').text()).toContain('暂无可公开的任务')
-    expect(wrapper.get('.report-state').text()).toContain('已读取 1 个项目')
+    expect(wrapper.get('.report-state').text()).toContain('这 1 个项目还没有公开的任务')
     expect(wrapper.get('.report-warning').text()).toContain('1 个项目')
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(getJson.mock.calls.every(([url]) => String(url).includes('/api/public/'))).toBe(true)

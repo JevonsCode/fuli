@@ -115,7 +115,7 @@ describe('PreferenceConflictDialog', () => {
         personalSpaceId: 'personal-space',
         scope: 'project',
         projectId: 'project-dashboard',
-        reason: '两条偏好适用于不同项目，拆分生效范围并同时保留。',
+        reason: '两条适用于不同项目，拆开范围。',
       },
     )
   })
