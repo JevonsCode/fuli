@@ -46,8 +46,7 @@
 :where(input[type=checkbox], input[type=radio]):disabled { opacity: .5; cursor: not-allowed; }
 
 /* Buttons. Legacy aliases share the exact same rules. */
-.ui-button, .quiet-button, .primary-button, .primary-action, .secondary-action,
-.management-action, .danger-action, .settings-save-button, .toolbar-action, .relation-actions button {
+.ui-button, .quiet-button, .primary-button, .primary-action, .secondary-action, .management-action, .toolbar-action {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   min-height: var(--control-height); padding: 6px 14px;
   border: 1px solid var(--color-border-strong); border-radius: var(--radius-control);
@@ -56,21 +55,19 @@
   white-space: nowrap; text-decoration: none; cursor: pointer;
   transition: background-color var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast);
 }
-.ui-button:hover:not(:disabled), .quiet-button:hover:not(:disabled), .secondary-action:hover:not(:disabled),
-.management-action:hover:not(:disabled), .relation-actions button:hover:not(:disabled) {
+.ui-button:hover:not(:disabled), .quiet-button:hover:not(:disabled), .secondary-action:hover:not(:disabled), .management-action:hover:not(:disabled) {
   background: var(--color-surface-hover); border-color: var(--color-control-border);
 }
-.ui-button--primary, .primary-button, .primary-action, .settings-save-button {
+.ui-button--primary, .primary-button, .primary-action {
   color: var(--color-on-accent); background: var(--color-accent); border-color: var(--color-accent);
 }
-.ui-button--primary:hover:not(:disabled), .primary-button:hover:not(:disabled),
-.primary-action:hover:not(:disabled), .settings-save-button:hover:not(:disabled) {
+.ui-button--primary:hover:not(:disabled), .primary-button:hover:not(:disabled), .primary-action:hover:not(:disabled) {
   background: var(--color-accent-hover); border-color: var(--color-accent-hover);
 }
 .ui-button--ghost, .toolbar-action { border-color: transparent; background: transparent; color: var(--color-ink-soft); }
 .ui-button--ghost:hover:not(:disabled), .toolbar-action:hover:not(:disabled) { background: var(--color-surface-hover); color: var(--color-ink); }
-.ui-button--danger, .danger-action, .quiet-button.danger { color: var(--color-danger); }
-.ui-button--danger:hover:not(:disabled), .danger-action:hover:not(:disabled), .quiet-button.danger:hover:not(:disabled) {
+.ui-button--danger, .quiet-button.danger { color: var(--color-danger); }
+.ui-button--danger:hover:not(:disabled), .quiet-button.danger:hover:not(:disabled) {
   background: var(--color-danger-soft); border-color: var(--color-danger-soft);
 }
 .ui-button--sm { min-height: var(--control-height-sm); padding: 4px 10px; font-size: 12px; }

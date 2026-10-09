@@ -2,9 +2,9 @@
 import { computed, ref, watch } from 'vue'
 
 import { postJson, putJson } from '@/api/client'
-import GrowthLoading from '@/components/GrowthLoading.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiDialog from '@/components/ui/UiDialog.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
-import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import type {
   PersonalProject,
@@ -44,10 +44,6 @@ const selectionMode = ref<ProjectAgentModelSelectionMode>('flexible')
 const allowList = ref('')
 const busy = ref(false)
 const error = ref('')
-const { dialogRef, initialFocusRef, onCancel, onKeydown } = useModalDialog(
-  () => props.open,
-  () => emit('close'),
-)
 
 const editing = computed(() => Boolean(props.agent))
 const projectOptions = computed(() => props.projects.map((project) => ({
@@ -55,6 +51,18 @@ const projectOptions = computed(() => props.projects.map((project) => ({
   label: project.profile.name,
   meta: project.project_id,
 })))
+const statusOptions = computed(() => (['active', 'inactive', 'archived'] as const)
+  .map((value) => ({ value, label: t(`projectAgents.status.${value}`) })))
+// Temporary and coordinator identities cannot be created here; they only show when editing one.
+const agentTypeOptions = computed(() => [
+  ...(['durable', 'hr'] as const).map((value) => ({ value, label: t(`projectAgents.agentType.${value}`) })),
+  ...(editing.value && (agentType.value === 'temporary' || agentType.value === 'coordinator')
+    ? [{ value: agentType.value, label: t(`projectAgents.agentType.${agentType.value}`), disabled: true }]
+    : []),
+])
+const selectionModeOptions = computed(() => (['flexible', 'locked'] as const)
+  .map((value) => ({ value, label: t(`projectAgents.strategy.${value}`) })))
+const strategyModeOptions = ['adaptive', 'fast', 'balanced', 'deep'].map((value) => ({ value, label: value }))
 
 watch(
   () => [props.open, props.agent, props.defaultProjectId] as const,
@@ -205,330 +213,59 @@ function isValidOccupationEmoji(value: string) {
 </script>
 
 <template>
-  <dialog
-    v-if="open"
-    ref="dialogRef"
-    class="project-agent-dialog vue-dialog"
-    aria-modal="true"
-    :aria-labelledby="'project-agent-dialog-title'"
-    @cancel="onCancel"
-    @keydown="onKeydown"
-  >
-    <form class="project-agent-dialog-shell" @submit.prevent="save">
-      <header class="project-agent-dialog-header">
-        <h3 id="project-agent-dialog-title">
-          {{ editing ? t('projectAgents.dialog.editTitle') : t('projectAgents.dialog.createTitle') }}
-        </h3>
-        <button ref="initialFocusRef" data-dialog-initial-focus class="quiet-button" type="button" :disabled="busy" @click="emit('close')">
-          {{ t('common.actions.close') }}
-        </button>
-      </header>
-
-      <div class="project-agent-dialog-fields">
-        <label>
-          <span>{{ t('projectAgents.fields.project') }}</span>
-          <UiSelect
-            v-model="projectId"
-            control-id="project-agent-project"
-            :options="projectOptions"
-            :label="t('projectAgents.fields.project')"
-            :placeholder="t('projectAgents.dialog.projectPlaceholder')"
-            :disabled="editing || busy"
-          />
+  <UiDialog :open="open" class="project-agent-dialog" size="lg" form :busy="busy" :error="error"
+    :title="editing ? t('projectAgents.dialog.editTitle') : t('projectAgents.dialog.createTitle')"
+    @close="emit('close')" @submit="save">
+    <div class="project-agent-fields">
+      <UiSelect v-model="projectId" field control-id="project-agent-project" :options="projectOptions" :label="t('projectAgents.fields.project')" :placeholder="t('projectAgents.dialog.projectPlaceholder')" :disabled="editing || busy" />
+      <UiSelect v-model="status" field name="project-agent-status" :label="t('projectAgents.fields.status')" :options="statusOptions" :disabled="busy" />
+      <UiSelect v-model="agentType" field name="project-agent-type" :label="t('projectAgents.fields.agentType')" :options="agentTypeOptions" :disabled="busy" />
+      <label class="ui-field">{{ t('projectAgents.fields.agentId') }}
+        <input v-model="agentId" name="project-agent-id" maxlength="128" required :disabled="editing || busy" :placeholder="t('projectAgents.dialog.agentIdPlaceholder')" />
+        <small v-if="editing" class="ui-field-hint">{{ t('projectAgents.dialog.idLocked') }}</small>
+      </label>
+      <label class="ui-field">{{ t('attention.roleName') }}
+        <input v-model="name" name="project-agent-name" maxlength="160" required :disabled="busy" :placeholder="t('projectAgents.dialog.namePlaceholder')" />
+      </label>
+      <label class="ui-field">{{ t('attention.displayName') }}
+        <input v-model="displayName" name="project-agent-display-name" maxlength="160" :disabled="busy" />
+      </label>
+      <label class="ui-field">{{ t('projectAgents.fields.occupationEmoji') }}
+        <input v-model="occupationEmoji" name="project-agent-occupation-emoji" maxlength="64" autocomplete="off" :disabled="busy" :placeholder="t('projectAgents.dialog.occupationEmojiPlaceholder')" />
+      </label>
+      <label class="ui-field project-agent-wide">{{ t('projectAgents.fields.responsibility') }}
+        <textarea v-model="responsibility" name="project-agent-responsibility" maxlength="4096" rows="4" required :disabled="busy" :placeholder="t('projectAgents.dialog.responsibilityPlaceholder')" />
+      </label>
+      <label class="ui-field project-agent-wide">{{ t('projectAgents.fields.capabilities') }}
+        <textarea v-model="capabilities" name="project-agent-capabilities" maxlength="8192" rows="4" :disabled="busy" :placeholder="t('projectAgents.dialog.capabilitiesPlaceholder')" />
+      </label>
+      <label class="ui-field project-agent-wide">{{ t('projectAgents.fields.initialPreferences') }}
+        <textarea v-model="initialPreferences" name="project-agent-preferences" maxlength="8192" rows="4" :disabled="busy" :placeholder="t('projectAgents.dialog.preferencesPlaceholder')" />
+      </label>
+      <fieldset class="project-agent-wide project-agent-strategy">
+        <legend>{{ t('projectAgents.fields.defaultModelStrategy') }}</legend>
+        <UiSelect v-model="selectionMode" field name="project-agent-selection-mode" :label="t('projectAgents.fields.executorPolicy')" :options="selectionModeOptions" :disabled="busy" />
+        <UiSelect v-model="strategyMode" field name="project-agent-model-mode" :label="t('projectAgents.fields.modelIntent')" :options="strategyModeOptions" :disabled="busy" />
+        <label class="ui-field project-agent-wide">{{ t('projectAgents.fields.allowList') }}
+          <textarea v-model="allowList" name="project-agent-allow-list" rows="3" :disabled="busy" :placeholder="t('projectAgents.dialog.allowListPlaceholder')" />
         </label>
-        <label>
-          <span>{{ t('projectAgents.fields.status') }}</span>
-          <select v-model="status" name="project-agent-status" :disabled="busy">
-            <option value="active">{{ t('projectAgents.status.active') }}</option>
-            <option value="inactive">{{ t('projectAgents.status.inactive') }}</option>
-            <option value="archived">{{ t('projectAgents.status.archived') }}</option>
-          </select>
-        </label>
-        <label>
-          <span>{{ t('projectAgents.fields.agentType') }}</span>
-          <select v-model="agentType" name="project-agent-type" :disabled="busy">
-            <option value="durable">{{ t('projectAgents.agentType.durable') }}</option>
-            <option value="hr">{{ t('projectAgents.agentType.hr') }}</option>
-            <option v-if="editing && agentType === 'temporary'" value="temporary" disabled>{{ t('projectAgents.agentType.temporary') }}</option>
-            <option v-if="editing && agentType === 'coordinator'" value="coordinator" disabled>{{ t('projectAgents.agentType.coordinator') }}</option>
-          </select>
-        </label>
-        <label>
-          <span>{{ t('projectAgents.fields.agentId') }}</span>
-          <input
-            v-model="agentId"
-            name="project-agent-id"
-            maxlength="128"
-            required
-            :disabled="editing || busy"
-            :placeholder="t('projectAgents.dialog.agentIdPlaceholder')"
-          />
-        </label>
-        <label>
-          <span>{{ t('attention.roleName') }}</span>
-          <input
-            v-model="name"
-            name="project-agent-name"
-            maxlength="160"
-            required
-            :disabled="busy"
-            :placeholder="t('projectAgents.dialog.namePlaceholder')"
-          />
-        </label>
-        <label><span>{{ t('attention.displayName') }}</span><input v-model="displayName" name="project-agent-display-name" maxlength="160" :disabled="busy" /></label>
-        <label>
-          <span>{{ t('projectAgents.fields.occupationEmoji') }}</span>
-          <input
-            v-model="occupationEmoji"
-            name="project-agent-occupation-emoji"
-            maxlength="64"
-            autocomplete="off"
-            :disabled="busy"
-            :placeholder="t('projectAgents.dialog.occupationEmojiPlaceholder')"
-          />
-        </label>
-        <small v-if="editing" class="project-agent-id-note">
-          {{ t('projectAgents.dialog.idLocked') }}
-        </small>
-        <label class="project-agent-wide-field">
-          <span>{{ t('projectAgents.fields.responsibility') }}</span>
-          <textarea
-            v-model="responsibility"
-            name="project-agent-responsibility"
-            maxlength="4096"
-            rows="4"
-            required
-            :disabled="busy"
-            :placeholder="t('projectAgents.dialog.responsibilityPlaceholder')"
-          />
-        </label>
-        <label class="project-agent-wide-field">
-          <span>{{ t('projectAgents.fields.capabilities') }}</span>
-          <textarea
-            v-model="capabilities"
-            name="project-agent-capabilities"
-            maxlength="8192"
-            rows="4"
-            :disabled="busy"
-            :placeholder="t('projectAgents.dialog.capabilitiesPlaceholder')"
-          />
-        </label>
-        <label class="project-agent-wide-field">
-          <span>{{ t('projectAgents.fields.initialPreferences') }}</span>
-          <textarea
-            v-model="initialPreferences"
-            name="project-agent-preferences"
-            maxlength="8192"
-            rows="4"
-            :disabled="busy"
-            :placeholder="t('projectAgents.dialog.preferencesPlaceholder')"
-          />
-        </label>
-        <fieldset class="project-agent-wide-field project-agent-strategy-fields">
-          <legend>{{ t('projectAgents.fields.defaultModelStrategy') }}</legend>
-          <label>
-            <span>{{ t('projectAgents.fields.executorPolicy') }}</span>
-            <select v-model="selectionMode" name="project-agent-selection-mode" :disabled="busy">
-              <option value="flexible">{{ t('projectAgents.strategy.flexible') }}</option>
-              <option value="locked">{{ t('projectAgents.strategy.locked') }}</option>
-            </select>
-          </label>
-          <label>
-            <span>{{ t('projectAgents.fields.modelIntent') }}</span>
-            <select v-model="strategyMode" name="project-agent-model-mode" :disabled="busy">
-              <option value="adaptive">adaptive</option>
-              <option value="fast">fast</option>
-              <option value="balanced">balanced</option>
-              <option value="deep">deep</option>
-            </select>
-          </label>
-          <label class="project-agent-wide-field">
-            <span>{{ t('projectAgents.fields.allowList') }}</span>
-            <textarea v-model="allowList" name="project-agent-allow-list" rows="3" :disabled="busy" :placeholder="t('projectAgents.dialog.allowListPlaceholder')" />
-          </label>
-          <small>{{ selectionMode === 'locked' ? t('projectAgents.strategy.lockedUnavailable') : t('projectAgents.strategy.providerNeutral') }}</small>
-        </fieldset>
-      </div>
-
-      <p v-if="error" class="project-agent-dialog-error" role="alert">{{ error }}</p>
-
-      <footer class="project-agent-dialog-actions">
-        <button class="quiet-button" type="button" :disabled="busy" @click="emit('close')">
-          {{ t('common.actions.cancel') }}
-        </button>
-        <button class="project-agent-primary-action" type="submit" :disabled="busy">
-          <GrowthLoading v-if="busy" variant="inline" :label="t('projectAgents.dialog.saving')" />
-          <span v-else>{{ editing ? t('projectAgents.dialog.saveEdit') : t('projectAgents.dialog.saveCreate') }}</span>
-        </button>
-      </footer>
-    </form>
-  </dialog>
+        <small class="ui-field-hint project-agent-wide">{{ selectionMode === 'locked' ? t('projectAgents.strategy.lockedUnavailable') : t('projectAgents.strategy.providerNeutral') }}</small>
+      </fieldset>
+    </div>
+    <template #footer>
+      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</UiButton>
+      <UiButton variant="primary" type="submit" :busy="busy" :busy-label="t('projectAgents.dialog.saving')">{{ editing ? t('projectAgents.dialog.saveEdit') : t('projectAgents.dialog.saveCreate') }}</UiButton>
+    </template>
+  </UiDialog>
 </template>
 
 <style scoped>
-.project-agent-dialog {
-  width: min(760px, calc(100vw - 64px));
-  max-height: calc(100vh - 64px);
-  padding: 0;
-  overflow: hidden;
-  border: 0;
-  border-radius: 12px;
-  background: transparent;
-}
-
-.project-agent-dialog-shell {
-  max-height: calc(100vh - 64px);
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 12px;
-  background: var(--color-surface);
-  box-shadow: 0 18px 48px rgb(33 45 38 / 18%);
-}
-
-.project-agent-dialog-header,
-.project-agent-dialog-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 18px 20px;
-}
-
-.project-agent-dialog-header {
-  border-bottom: 1px solid var(--color-border);
-}
-
-.project-agent-dialog-header h3 {
-  color: var(--color-ink);
-  font-size: 17px;
-}
-
-.project-agent-dialog-fields {
-  min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  padding: 20px;
-  overflow: auto;
-}
-
-.project-agent-dialog-fields label {
-  min-width: 0;
-  display: grid;
-  align-content: start;
-  gap: 6px;
-  color: var(--color-muted);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.project-agent-dialog-fields input,
-.project-agent-dialog-fields select,
-.project-agent-dialog-fields textarea {
-  width: 100%;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-ink);
-  padding: 9px 10px;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.project-agent-dialog-fields textarea {
-  resize: vertical;
-}
-
-.project-agent-dialog-fields input:focus-visible,
-.project-agent-dialog-fields select:focus-visible,
-.project-agent-dialog-fields textarea:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 1px;
-}
-
-.project-agent-wide-field,
-.project-agent-id-note {
-  grid-column: 1 / -1;
-}
-
-.project-agent-strategy-fields {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin: 0;
-  padding: 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-}
-
-.project-agent-strategy-fields legend {
-  padding: 0 5px;
-  color: var(--color-muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.project-agent-strategy-fields > small {
-  grid-column: 1 / -1;
-  color: var(--color-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.project-agent-id-note {
-  margin-top: -8px;
-  color: var(--color-muted);
-  font-size: 12px;
-}
-
-.project-agent-dialog-error {
-  margin: 0 20px;
-  color: var(--color-danger);
-  font-size: 12px;
-}
-
-.project-agent-dialog-actions {
-  justify-content: flex-end;
-  border-top: 1px solid var(--color-border);
-}
-
-.project-agent-primary-action {
-  border: 0;
-  border-radius: var(--radius-control);
-  background: var(--color-ink);
-  color: var(--color-surface);
-  padding: 8px 14px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.project-agent-primary-action:hover {
-  background: var(--color-ink);
-}
-
-.project-agent-primary-action:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-
-.project-agent-primary-action:disabled,
-.project-agent-dialog-fields :disabled {
-  cursor: not-allowed;
-  opacity: .6;
-}
-
-@media (max-width: 720px) {
-  .project-agent-dialog-fields {
-    grid-template-columns: 1fr;
-  }
-
-  .project-agent-wide-field,
-  .project-agent-id-note {
-    grid-column: 1;
-  }
+.project-agent-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.project-agent-wide { grid-column: 1 / -1; }
+.project-agent-strategy { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; margin: 0; padding: 14px; border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+.project-agent-strategy legend { padding: 0 6px; font-size: 12px; font-weight: 600; }
+@media (max-width: 620px) {
+  .project-agent-fields, .project-agent-strategy { grid-template-columns: 1fr; }
+  .project-agent-wide { grid-column: auto; }
 }
 </style>

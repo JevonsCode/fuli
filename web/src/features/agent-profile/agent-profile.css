@@ -509,7 +509,8 @@
   margin: 0 0 var(--space-5, 20px);
 }
 
-.agent-simple-settings label {
+.agent-simple-settings label,
+.agent-simple-settings .agent-platform-field {
   display: flex;
   flex-direction: column;
   gap: var(--space-2, 8px);

@@ -45,6 +45,7 @@ const templates = computed(() => props.templateId ? catalogTemplates.value : cat
 const selected = computed(() => props.templateId
   ? templates.value.find((entry) => entry.id === props.templateId)
   : templates.value.find((entry) => entry.id === templateId.value) ?? templates.value[0])
+const templateChoice = computed({ get: () => selected.value?.id ?? '', set: (id: string) => { templateId.value = id } })
 const title = computed(() => selected.value?.agentId
   ? t('employees.manageProjectsTitle', { name: selected.value.name }) : t('employees.recruit'))
 const projectOptions = computed(() => props.projects.filter((project) => project.profile.lifecycle !== 'archived')
@@ -189,7 +190,7 @@ function scopeKeydown(event: KeyboardEvent) {
     </div>
     <p v-else-if="!selected" class="ui-muted">{{ t('employees.noTemplates') }}</p>
     <template v-else>
-      <UiSelect v-if="templates.length > 1 && !props.templateId" v-model="templateId" class="ui-field" control-id="employee-template" :label="t('employees.choose')" :options="templates.map((entry) => ({ value: entry.id, label: entry.name, meta: entry.role }))" :disabled="busy || selectionLoading" />
+      <UiSelect v-if="templates.length > 1 && !props.templateId" v-model="templateChoice" field control-id="employee-template" :label="t('employees.choose')" :options="templates.map((entry) => ({ value: entry.id, label: entry.name, meta: entry.role }))" :disabled="busy || selectionLoading" />
       <div class="employee-profile">
         <span class="employee-avatar" aria-hidden="true">
           <img v-if="employeeAvatarUrl(selected.id)" :src="employeeAvatarUrl(selected.id)" alt="" />

@@ -16,7 +16,7 @@
 .bole-views span { color: var(--bole-muted); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .bole-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-top: 12px; }
 .bole-search { flex: 1 1 220px; min-width: 0; }
-.bole-search, .bole-filters select { min-height: 44px; }
+.bole-search { min-height: 44px; }
 .bole-search::placeholder { color: var(--bole-muted); }
 .bole-filters .project-scope-picker { flex: 0 1 260px; }
 .bole-role-filters { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 12px; }
@@ -73,7 +73,6 @@
   .bole-filters { gap: 8px; }
   .bole-search { flex-basis: 100%; }
   .bole-filters .project-scope-picker { flex: 1 1 180px; }
-  .bole-filters select { flex: 1 1 120px; }
   .bole-role-filters { gap: 4px; }
   .bole-table-heading { display: none; }
   .bole-agent-row { grid-template-columns: minmax(0, 1fr); gap: 12px; }

@@ -26,6 +26,7 @@ const draft = computed({
   set: value => { if (selected.value) drafts.value[selectedId.value] = { ...value, revision: selected.value.revision } },
 })
 const projectNames = computed(() => new Map(props.projects.map(project => [project.project_id, project.profile.name])))
+const pendingCount = computed(() => attention.agentId ? attention.counts[attention.agentId] ?? attention.filteredTotal : attention.total)
 const requestOptions = computed(() => attention.items.map(item => ({
   value: item.requestId,
   label: item.title,
@@ -79,7 +80,7 @@ async function respond(item: AgentAttention, response: string) {
   <button class="space-nav-button attention-nav" :aria-label="attention.total ? `${t('attention.title')} · ${t('attention.count', { count: attention.total })}` : t('attention.title')" type="button" @click="attention.show()"><span class="nav-icon nav-icon-review" aria-hidden="true" /><span>{{ t('attention.title') }}</span><span class="attention-nav-status"><AgentHand passive count-only /><span v-if="attention.error" :title="t('attention.loadError')">!</span></span></button>
   <Teleport to="body">
     <UiDialog :open="attention.open" class="attention-dialog" size="xl" :busy="Boolean(busy)"
-      :title="t('attention.title')" :description="t('attention.count', { count: attention.agentId ? attention.counts[attention.agentId] ?? attention.filteredTotal : attention.total })"
+      :title="t('attention.title')" :description="pendingCount ? t('attention.count', { count: pendingCount }) : undefined"
       @close="attention.open = false">
       <div v-if="attention.error" role="alert" class="attention-error"><span>{{ t('attention.loadError') }}</span><UiButton size="sm" :disabled="attention.loading" @click="attention.refresh()">{{ t('attention.refresh') }}</UiButton></div>
       <GrowthLoading v-if="attention.loading && !attention.items.length" variant="page" :label="t('attention.loading')" />

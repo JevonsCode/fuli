@@ -167,7 +167,7 @@ describe('Bole people panel', () => {
     await flushPromises()
     expect(wrapper.findAll('.bole-agent-row')).toHaveLength(1)
     expect(wrapper.get('.bole-agent-row').text()).toContain('Researcher')
-    await wrapper.get('.bole-filters select').setValue('working')
+    await wrapper.get('.bole-filters .ui-segmented button:nth-child(2)').trigger('click')
     expect(wrapper.findAll('.bole-agent-row')).toHaveLength(0)
     await wrapper.get('.bole-clear').trigger('click')
     await wrapper.get('.bole-search').setValue('发布')

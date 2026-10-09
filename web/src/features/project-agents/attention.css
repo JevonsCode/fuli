@@ -1,5 +1,6 @@
 .attention-nav-status { display: inline-flex; align-items: center; gap: 6px; justify-self: end; }
-.attention-dialog[open] { height: min(780px, calc(100dvh - 40px)); }
+.attention-dialog[open]:has(.attention-workspace) { height: min(780px, calc(100dvh - 40px)); }
+.attention-dialog:not(:has(.attention-workspace)) { width: min(560px, calc(100vw - 32px)); }
 .attention-dialog .ui-dialog__shell { height: 100%; }
 .attention-dialog .ui-dialog__header { padding-bottom: 16px; border-bottom: 1px solid var(--color-border); }
 .attention-dialog .ui-dialog__body { flex: 1 1 auto; padding: 0; gap: 0; overflow: hidden; }
@@ -25,7 +26,8 @@
 .attention-empty > span { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--color-success-soft); color: var(--color-success); font-size: 24px; }
 .attention-empty p { margin: 0; font-size: 14px; }
 @media (max-width: 640px) {
-  .attention-dialog[open] { width: calc(100vw - 16px); height: calc(100dvh - 16px); }
+  .attention-dialog[open] { width: calc(100vw - 16px); }
+  .attention-dialog[open]:has(.attention-workspace) { height: calc(100dvh - 16px); }
   .attention-workspace { flex: 1 1 auto; overflow: hidden; display: flex; flex-direction: column; height: auto; }
   .attention-queue { flex: 0 0 auto; padding: 8px 16px 12px; border-right: 0; border-bottom: 1px solid var(--color-border); max-height: 185px; }
   .attention-queue-toolbar { padding: 0; }

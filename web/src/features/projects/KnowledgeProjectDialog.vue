@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch, useId } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiDialog from '@/components/ui/UiDialog.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
-import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
@@ -68,11 +69,6 @@ const reason = ref('')
 const preview = ref<ProjectActionPreview | null>(null)
 const previewLoading = ref(false)
 const busy = ref(false)
-const dialogTitleId = useId()
-const { dialogRef, onCancel, onKeydown } = useModalDialog(
-  () => Boolean(props.item),
-  () => { if (!busy.value) emit('close') },
-)
 const localError = ref('')
 const idTouched = ref(false)
 let previewSequence = 0
@@ -323,153 +319,113 @@ function fail(message: string) {
 </script>
 
 <template>
-  <dialog v-if="item" ref="dialogRef" aria-modal="true" :aria-labelledby="dialogTitleId" @cancel="onCancel" @keydown="onKeydown" class="project-dialog knowledge-project-dialog vue-dialog">
-    <div class="project-dialog-shell">
-      <header class="project-dialog-header">
-        <div>
-          <h3 :id="dialogTitleId">{{ t('projects.knowledgeDialog.title') }}</h3>
-          <p>{{ t('projects.knowledgeDialog.intro') }}</p>
-        </div>
-        <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">{{ t('common.actions.close') }}</button>
-      </header>
+  <UiDialog v-if="item" open class="knowledge-project-dialog" size="lg" form :busy="busy" :error="localError"
+    :title="t('projects.knowledgeDialog.title')" :description="t('projects.knowledgeDialog.intro')"
+    @close="emit('close')" @submit="submit">
+    <fieldset class="knowledge-project-body" :disabled="busy">
+      <div class="knowledge-project-source">
+        <span class="ui-meta">{{ t('projects.knowledgeDialog.sourceNode') }}</span>
+        <strong>{{ rawNode?.name }}</strong>
+        <p>{{ rawNode?.summary || t('common.status.noDescription') }}</p>
+      </div>
 
-      <form class="knowledge-project-form" @submit.prevent="submit">
-            <fieldset class="pending-inputs" :disabled="busy">
-        <div class="knowledge-project-source">
-          <span>{{ t('projects.knowledgeDialog.sourceNode') }}</span>
-          <strong>{{ rawNode?.name }}</strong>
-          <p>{{ rawNode?.summary || t('common.status.noDescription') }}</p>
-        </div>
-
-        <fieldset class="knowledge-project-mode">
-          <legend>{{ t('projects.knowledgeDialog.chooseAction') }}</legend>
-          <label>
-            <input v-model="mode" type="radio" value="create" />
-            <span><strong>{{ t('projects.knowledgeDialog.createNew') }}</strong><small>{{ t('projects.knowledgeDialog.createNewCopy') }}</small></span>
-          </label>
-          <label :class="{ disabled: availableProjects.length === 0 }">
-            <input
-              v-model="mode"
-              type="radio"
-              value="existing"
-              :disabled="availableProjects.length === 0"
-            />
-            <span><strong>{{ t('projects.knowledgeDialog.addExisting') }}</strong><small>{{ t('projects.knowledgeDialog.addExistingCopy') }}</small></span>
-          </label>
-        </fieldset>
-
-        <section v-if="mode === 'create'" class="knowledge-project-fields">
-          <label>{{ t('projects.knowledgeDialog.projectName') }}
-            <input v-model="newProjectName" maxlength="512" required />
-          </label>
-          <label>{{ t('projects.knowledgeDialog.projectId') }}
-            <input
-              v-model="newProjectId"
-              maxlength="128"
-              required
-              @input="idTouched = true"
-            />
-          </label>
-          <label class="full-width">{{ t('projects.knowledgeDialog.purpose') }}
-            <textarea v-model="newProjectPurpose" maxlength="4096" rows="3" />
-          </label>
-        </section>
-
-        <section v-else class="knowledge-project-fields">
-          <label class="full-width">{{ t('projects.knowledgeDialog.targetPersonalProject') }}
-            <UiSelect
-              v-model="targetProjectId"
-              :options="availableProjectOptions"
-              :label="t('projects.knowledgeDialog.targetPersonalProject')"
-              searchable
-              required
-            />
-          </label>
-        </section>
-
-        <section v-if="sourceProjectId" class="knowledge-project-relation">
-          <label class="toggle-row">
-            <input v-model="keepSourceRelation" type="checkbox" />
-            <span>
-              <strong>{{ t('projects.knowledgeDialog.preserveRelation') }}</strong>
-              <small>{{ t('projects.knowledgeDialog.preserveRelationCopy') }}</small>
-            </span>
-          </label>
-          <label>{{ t('projects.knowledgeDialog.projectRelation') }}
-            <UiSelect
-              v-model="relationType"
-              :options="relationOptions"
-              :label="t('projects.knowledgeDialog.projectRelation')"
-              :disabled="!keepSourceRelation"
-            />
-          </label>
-        </section>
-
-        <section class="knowledge-project-preview">
-          <GrowthLoading
-            v-if="previewLoading"
-            variant="compact"
-            :label="t('projects.knowledgeDialog.previews.checking.title')"
-          />
-          <div v-else>
-            <span>{{ previewState.label }}</span>
-            <strong>{{ previewState.title }}</strong>
-            <p>{{ previewState.copy }}</p>
-          </div>
-          <div
-            v-if="preview && ['exact_duplicate', 'conflict'].includes(preview.match.kind)"
-            class="knowledge-project-compare"
-          >
-            <article>
-              <span>{{ t('projects.knowledgeDialog.currentNode') }}</span>
-              <strong>{{ preview.item_name }}</strong>
-              <p>{{ preview.item_summary || t('common.status.noDescription') }}</p>
-            </article>
-            <article>
-              <span>{{ t('projects.knowledgeDialog.targetContent') }}</span>
-              <strong>{{ preview.match.item_name || t('projects.knowledgeDialog.targetContentFallback') }}</strong>
-              <p>{{ preview.match.item_summary || t('common.status.noDescription') }}</p>
-            </article>
-          </div>
-          <fieldset
-            v-if="preview?.match.kind === 'conflict'"
-            class="knowledge-project-conflict-options"
-          >
-            <legend>{{ t('projects.knowledgeDialog.conflictResolution') }}</legend>
-            <label><input v-model="conflictResolution" type="radio" value="defer" /> {{ t('projects.knowledgeDialog.defer') }}</label>
-            <label><input v-model="conflictResolution" type="radio" value="keep_target" /> {{ t('projects.knowledgeDialog.keepTarget') }}</label>
-            <label><input v-model="conflictResolution" type="radio" value="use_source" /> {{ t('projects.knowledgeDialog.useSource') }}</label>
-            <label><input v-model="conflictResolution" type="radio" value="coexist" /> {{ t('projects.knowledgeDialog.coexist') }}</label>
-          </fieldset>
-        </section>
-
-        <label class="knowledge-project-reason">{{ t('projects.knowledgeDialog.operationReason') }}
-          <textarea v-model="reason" maxlength="2048" rows="3" required />
+      <fieldset class="knowledge-project-mode">
+        <legend>{{ t('projects.knowledgeDialog.chooseAction') }}</legend>
+        <label>
+          <input v-model="mode" type="radio" value="create" />
+          <span><strong>{{ t('projects.knowledgeDialog.createNew') }}</strong><small>{{ t('projects.knowledgeDialog.createNewCopy') }}</small></span>
         </label>
-        <p v-if="localError" class="publish-dialog-error" role="alert">{{ localError }}</p>
-        <div class="knowledge-project-actions">
-          <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</button>
-          <button class="primary-action" type="submit" :disabled="submitDisabled">
-            <GrowthLoading
-              v-if="busy"
-              variant="inline"
-              :label="submitPendingLabel"
-            />
-            <template v-else>{{ submitLabel }}</template>
-          </button>
-        </div>
+        <label :class="{ disabled: availableProjects.length === 0 }">
+          <input v-model="mode" type="radio" value="existing" :disabled="availableProjects.length === 0" />
+          <span><strong>{{ t('projects.knowledgeDialog.addExisting') }}</strong><small>{{ t('projects.knowledgeDialog.addExistingCopy') }}</small></span>
+        </label>
       </fieldset>
-          </form>
-    </div>
-  </dialog>
+
+      <section v-if="mode === 'create'" class="knowledge-project-fields">
+        <label class="ui-field">{{ t('projects.knowledgeDialog.projectName') }}
+          <input v-model="newProjectName" maxlength="512" required />
+        </label>
+        <label class="ui-field">{{ t('projects.knowledgeDialog.projectId') }}
+          <input v-model="newProjectId" maxlength="128" required @input="idTouched = true" />
+        </label>
+        <label class="ui-field knowledge-project-wide">{{ t('projects.knowledgeDialog.purpose') }}
+          <textarea v-model="newProjectPurpose" maxlength="4096" rows="3" />
+        </label>
+      </section>
+      <UiSelect v-else v-model="targetProjectId" field :options="availableProjectOptions" :label="t('projects.knowledgeDialog.targetPersonalProject')" searchable required />
+
+      <section v-if="sourceProjectId" class="knowledge-project-relation">
+        <label class="ui-check">
+          <input v-model="keepSourceRelation" type="checkbox" />
+          <span><strong>{{ t('projects.knowledgeDialog.preserveRelation') }}</strong><small class="ui-meta">{{ t('projects.knowledgeDialog.preserveRelationCopy') }}</small></span>
+        </label>
+        <UiSelect v-model="relationType" field :options="relationOptions" :label="t('projects.knowledgeDialog.projectRelation')" :disabled="!keepSourceRelation" />
+      </section>
+
+      <section class="knowledge-project-preview">
+        <GrowthLoading v-if="previewLoading" variant="compact" :label="t('projects.knowledgeDialog.previews.checking.title')" />
+        <div v-else>
+          <span class="ui-meta">{{ previewState.label }}</span>
+          <strong>{{ previewState.title }}</strong>
+          <p>{{ previewState.copy }}</p>
+        </div>
+        <div v-if="preview && ['exact_duplicate', 'conflict'].includes(preview.match.kind)" class="knowledge-project-compare">
+          <article>
+            <span class="ui-meta">{{ t('projects.knowledgeDialog.currentNode') }}</span>
+            <strong>{{ preview.item_name }}</strong>
+            <p>{{ preview.item_summary || t('common.status.noDescription') }}</p>
+          </article>
+          <article>
+            <span class="ui-meta">{{ t('projects.knowledgeDialog.targetContent') }}</span>
+            <strong>{{ preview.match.item_name || t('projects.knowledgeDialog.targetContentFallback') }}</strong>
+            <p>{{ preview.match.item_summary || t('common.status.noDescription') }}</p>
+          </article>
+        </div>
+        <fieldset v-if="preview?.match.kind === 'conflict'" class="knowledge-project-conflict-options">
+          <legend>{{ t('projects.knowledgeDialog.conflictResolution') }}</legend>
+          <label class="ui-check"><input v-model="conflictResolution" type="radio" value="defer" /><span>{{ t('projects.knowledgeDialog.defer') }}</span></label>
+          <label class="ui-check"><input v-model="conflictResolution" type="radio" value="keep_target" /><span>{{ t('projects.knowledgeDialog.keepTarget') }}</span></label>
+          <label class="ui-check"><input v-model="conflictResolution" type="radio" value="use_source" /><span>{{ t('projects.knowledgeDialog.useSource') }}</span></label>
+          <label class="ui-check"><input v-model="conflictResolution" type="radio" value="coexist" /><span>{{ t('projects.knowledgeDialog.coexist') }}</span></label>
+        </fieldset>
+      </section>
+
+      <label class="ui-field">{{ t('projects.knowledgeDialog.operationReason') }}
+        <textarea v-model="reason" maxlength="2048" rows="3" required />
+      </label>
+    </fieldset>
+    <template #footer>
+      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</UiButton>
+      <UiButton variant="primary" type="submit" :disabled="submitDisabled" :busy="busy" :busy-label="submitPendingLabel">{{ submitLabel }}</UiButton>
+    </template>
+  </UiDialog>
 </template>
 
 <style scoped>
-.pending-inputs {
-  display: contents;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
+.knowledge-project-body { display: grid; gap: 16px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.knowledge-project-body p { margin: 0; }
+.knowledge-project-source, .knowledge-project-preview > div:first-child { display: grid; gap: 2px; }
+.knowledge-project-source { padding: 12px 14px; border-radius: var(--radius-control); background: var(--color-surface-subtle); }
+.knowledge-project-source strong { font-size: 15px; }
+.knowledge-project-source p, .knowledge-project-preview p { color: var(--color-muted); font-size: 12px; line-height: 1.5; }
+.knowledge-project-mode { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; padding: 0; border: 0; }
+.knowledge-project-mode legend, .knowledge-project-conflict-options legend { margin-bottom: 6px; color: var(--color-ink-soft); font-size: 13px; font-weight: 500; }
+.knowledge-project-mode label { display: flex; align-items: flex-start; gap: 9px; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-control); cursor: pointer; transition: border-color var(--motion-fast), background-color var(--motion-fast); }
+.knowledge-project-mode label:has(input:checked) { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.knowledge-project-mode label.disabled { cursor: not-allowed; opacity: .5; }
+.knowledge-project-mode span, .knowledge-project-relation .ui-check span { display: grid; gap: 2px; }
+.knowledge-project-mode strong, .knowledge-project-relation strong { font-size: 13px; }
+.knowledge-project-mode small { color: var(--color-muted); font-size: 12px; line-height: 1.4; }
+.knowledge-project-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.knowledge-project-wide { grid-column: 1 / -1; }
+.knowledge-project-relation { display: grid; grid-template-columns: minmax(0, 1fr) 220px; align-items: end; gap: 16px; }
+.knowledge-project-preview { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+.knowledge-project-preview strong { font-size: 13px; }
+.knowledge-project-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-border); }
+.knowledge-project-compare article { display: grid; gap: 2px; min-width: 0; padding: 10px 12px; background: var(--color-surface); }
+.knowledge-project-compare p { white-space: pre-wrap; }
+.knowledge-project-conflict-options { display: grid; gap: 8px; margin: 0; padding: 12px 0 0; border: 0; border-top: 1px solid var(--color-border); }
+@media (max-width: 640px) {
+  .knowledge-project-mode, .knowledge-project-fields, .knowledge-project-relation, .knowledge-project-compare { grid-template-columns: 1fr; }
 }
 </style>

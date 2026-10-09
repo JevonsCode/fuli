@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import { postJson, putJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { currentLocale, t } from '@/i18n'
 
 const props = defineProps<{ personalSpaceId: string; agentId: string; projects: Array<{ id: string; name: string }> }>()
@@ -144,9 +145,7 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
   <details class="agent-conversations" @toggle="toggle">
     <summary>{{ t('projectAgents.conversations.title') }}</summary>
     <template v-if="opened">
-      <label v-if="projects.length">{{ t('projectAgents.fields.project') }}
-        <select v-model="projectId"><option v-for="project in projects" :key="project.id" :value="project.id">{{ project.name }}</option></select>
-      </label>
+      <UiSelect v-if="projects.length" v-model="projectId" field :label="t('projectAgents.fields.project')" :options="projects.map(project => ({ value: project.id, label: project.name }))" />
       <p class="conversation-hint">{{ t('projectAgents.conversations.hint') }}</p>
       <GrowthLoading v-if="loading" variant="compact" :label="t('projectAgents.conversations.loading')" />
       <div v-else-if="error" role="alert"><p>{{ error }}</p><button data-retry-list class="quiet-button" type="button" @click="load">{{ t('projectAgents.retry') }}</button></div>

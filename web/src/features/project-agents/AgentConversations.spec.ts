@@ -3,6 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 const { postJson, putJson } = vi.hoisted(() => ({ postJson: vi.fn(), putJson: vi.fn() }))
 vi.mock('@/api/client', () => ({ postJson, putJson }))
 import AgentConversations from './AgentConversations.vue'
+import { UiSelectStub } from '@/test-support/UiSelectStub'
 
 const policy = { compact_after_kb: 64, context_budget: 2000, enabled: true }
 const conversation = { id: 'conversation-a', summary: 'Prepare a new page', status: 'completed', revision: 2,
@@ -11,7 +12,7 @@ const conversation = { id: 'conversation-a', summary: 'Prepare a new page', stat
 const scope = { personalSpaceId: 'space', agentId: 'agent', personalProjectId: 'project-a' }
 function render() {
   return mount(AgentConversations, { props: { personalSpaceId: 'space', agentId: 'agent',
-    projects: [{ id: 'project-a', name: 'Project A' }, { id: 'project-b', name: 'Project B' }] } })
+    projects: [{ id: 'project-a', name: 'Project A' }, { id: 'project-b', name: 'Project B' }] }, global: { stubs: { UiSelect: UiSelectStub } } })
 }
 async function open(wrapper: ReturnType<typeof render>, selector = 'details') {
   const details = wrapper.get(selector)

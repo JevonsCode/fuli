@@ -113,14 +113,6 @@
   overflow: hidden; color: var(--color-muted); font-size: 12px; text-overflow: ellipsis;
   white-space: nowrap;
 }
-.graph-search-legend {
-  position: absolute; z-index: 2; top: 12px; left: 12px; display: flex; align-items: center;
-  gap: 7px; padding: 7px 9px; border: 1px solid var(--color-warning); border-radius: 6px;
-  color: var(--color-warning); background: rgba(255, 252, 244, .94); box-shadow: 0 4px 14px rgba(73, 53, 23, .09);
-  font-size: 12px; font-weight: 680; pointer-events: none;
-}
-.graph-search-legend[hidden] { display: none; }
-.graph-search-legend i { width: 8px; height: 8px; border-radius: 50%; background: var(--color-warning); }
 .graph-search-status {
   position: absolute; z-index: 3; top: 18px; left: 50%; width: min(440px, calc(100% - 36px));
   box-sizing: border-box; padding: 15px 16px; transform: translateX(-50%);

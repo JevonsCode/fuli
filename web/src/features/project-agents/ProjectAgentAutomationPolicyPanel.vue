@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { getJson, patchJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import type { ProjectAgentCoordinationPolicy, ProjectAgentRecord } from '@/types'
 
@@ -32,6 +33,10 @@ const eligible = computed(() => (props.agents ?? []).filter(agent =>
   && agent.assignments?.some(assignment => assignment.status === 'active'
     && assignment.personalProjectId === props.personalProjectId)))
 const leaders = eligible
+const leaderOptions = computed(() => [
+  { value: '', label: t('projectAgents.team.noLead') },
+  ...leaders.value.map(agent => ({ value: agent.agentId, label: label(agent) })),
+])
 const members = computed(() => eligible.value.filter(agent => agent.agentId !== teamLead.value))
 const unavailableMembers = computed(() => teamMembers.value.filter(id => !members.value.some(agent => agent.agentId === id))
   .map(id => ({ id, name: (props.agents ?? []).find(agent => agent.agentId === id)?.profile.displayName
@@ -251,12 +256,7 @@ function stringValue(value: unknown) {
       </ul>
       <details>
         <summary>{{ t('projectAgents.team.edit') }}</summary>
-        <label class="team-lead-field">{{ t('projectAgents.team.lead') }}
-          <select v-model="teamLead" :disabled="busy">
-            <option value="">{{ t('projectAgents.team.noLead') }}</option>
-            <option v-for="agent in leaders" :key="agent.agentId" :value="agent.agentId">{{ label(agent) }}</option>
-          </select>
-        </label>
+        <UiSelect v-model="teamLead" class="team-lead-field" field :label="t('projectAgents.team.lead')" :options="leaderOptions" :disabled="busy" />
         <fieldset :disabled="busy || !teamLead">
           <legend>{{ t('projectAgents.team.members') }}</legend>
           <label v-for="member in unavailableMembers" :key="member.id" class="unavailable-team-member">
@@ -294,8 +294,7 @@ function stringValue(value: unknown) {
 .project-team-members button { display: grid; gap: 3px; text-align: start; max-width: 100%; background: transparent; border: 0; color: var(--color-ink); }
 .project-team-members span { color: var(--color-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .project-team summary { cursor: pointer; font-size: 12px; }
-.team-lead-field { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-block: 14px; }
-.team-lead-field select { max-width: 100%; padding: 7px; }
+.team-lead-field { max-width: 360px; margin-block: 14px; }
 .project-team fieldset { display: flex; gap: 12px; flex-wrap: wrap; border: 0; padding: 0; margin-bottom: 14px; }
 .project-team fieldset label { display: flex; gap: 5px; align-items: center; font-size: 12px; }
 .project-team legend { margin-bottom: 8px; font-size: 12px; }

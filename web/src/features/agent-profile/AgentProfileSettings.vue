@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import { getJson, putJson } from "@/api/client";
 import GrowthLoading from "@/components/GrowthLoading.vue";
+import UiSelect from "@/components/ui/UiSelect.vue";
 import { t } from "@/i18n";
 import type { ProjectAgentRecord, ProjectAgentExecutorRef } from "@/types";
 const props = defineProps<{ agent: ProjectAgentRecord }>();
@@ -39,6 +40,23 @@ const options = computed(() =>
       (!item.healthRequired || item.healthStatus === "healthy"),
   ),
 );
+const platformOptions = computed(() => [
+  { value: "", label: t("agentProfiles.automatic") },
+  ...(platform.value &&
+  !options.value.some((item) => item.executorId === platform.value)
+    ? [
+        {
+          value: platform.value,
+          label: t("agentProfiles.platformUnavailable"),
+          disabled: true,
+        },
+      ]
+    : []),
+  ...options.value.map((executor) => ({
+    value: executor.executorId,
+    label: executor.displayName || executor.executorId,
+  })),
+]);
 let generation = 0;
 watch(
   () => `${props.agent.personalSpaceId}/${props.agent.agentId}`,
@@ -135,30 +153,18 @@ async function save() {
       </p>
       <small>{{ t("agentProfiles.locked") }}</small>
     </div>
-    <label v-else
-      >{{ t("agentProfiles.platform")
-      }}<select v-model="platform" :disabled="locked || saving">
-        <option value="">{{ t("agentProfiles.automatic") }}</option>
-        <option
-          v-if="
-            platform && !options.some((item) => item.executorId === platform)
-          "
-          :value="platform"
-          disabled
-        >
-          {{ t("agentProfiles.platformUnavailable") }}
-        </option>
-        <option
-          v-for="executor in options"
-          :key="executor.executorId"
-          :value="executor.executorId"
-        >
-          {{ executor.displayName || executor.executorId }}
-        </option></select
-      ><small>{{
+    <div v-else class="agent-platform-field">
+      <UiSelect
+        v-model="platform"
+        field
+        :label="t('agentProfiles.platform')"
+        :options="platformOptions"
+        :disabled="locked || saving"
+      />
+      <small>{{
         t(locked ? "agentProfiles.locked" : "agentProfiles.platformHint")
-      }}</small></label
-    >
+      }}</small>
+    </div>
     <label
       >{{ t("agentProfiles.expectations")
       }}<textarea
