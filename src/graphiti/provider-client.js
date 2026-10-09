@@ -153,6 +153,9 @@ export class GraphitiProviderClient {
   resolveProjectAgentContext(input) {
     return this.#request('/v1/project-agent-context/resolve', { method: 'POST', body: input });
   }
+  staffDefaultProjectLead(input) {
+    return this.#request('/v1/project-agent-context/default-lead', { method: 'POST', body: input });
+  }
   beginTaskContext(input) {
     return this.#request('/v1/task-contexts', { method: 'PUT', body: input });
   }

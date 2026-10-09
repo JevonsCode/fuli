@@ -81,3 +81,53 @@ async def test_recruited_jefa_is_adopted_and_legacy_coordinator_retired():
             RETURN count(agent) AS count
             ''', space_id=space_id)
         assert count[0]['count'] == 1
+
+
+@pytest.mark.asyncio
+async def test_first_task_in_a_project_has_bole_hire_its_lead():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await _create_space(client, 'Synthetic default lead')
+        assert (await client.post('/v1/project-agents/system-hr', params={
+            'personal_space_id': space_id,
+        })).status_code == 200
+        project = await client.put('/v1/personal-projects', json={
+            'personal_space_id': space_id, 'project_id': 'sample-app',
+            'profile': {'name': 'Sample App', 'lifecycle': 'active'},
+        })
+        assert project.status_code == 200, project.text
+        body = {'personal_space_id': space_id, 'personal_project_id': 'sample-app',
+                'source_application': 'claude_code'}
+
+        staffed = await client.post('/v1/project-agent-context/default-lead', json=body)
+        assert staffed.status_code == 200, staffed.text
+        result = staffed.json()
+        assert result['status'] == 'ready'
+        lead = result['agent']
+        assert lead['profile']['agent_type'] == 'durable'
+        assert lead['profile']['name'] == 'Sample App 负责人'
+
+        policy = await client.get('/v1/project-agent-coordination-policy', params={
+            'personal_space_id': space_id, 'personal_project_id': 'sample-app',
+        })
+        assert policy.json()['team_lead_agent_id'] == lead['agent_id']
+        recruitments = await client.get('/v1/project-agent-recruitments', params={
+            'personal_space_id': space_id, 'personal_project_id': 'sample-app',
+        })
+        [recruitment] = recruitments.json()
+        assert recruitment['hr_agent_id'] == 'employee.bole'
+        assert recruitment['status'] == 'fulfilled'
+        assert recruitment['recruited_agent_id'] == lead['agent_id']
+        tasks = await client.get('/v1/project-agent-tasks', params={
+            'personal_space_id': space_id, 'personal_project_id': 'sample-app',
+        })
+        assert [task['status'] for task in tasks.json()] == ['completed']
+
+        resolved = await client.post('/v1/project-agent-context/resolve', json=body)
+        assert resolved.json()['agent']['agent_id'] == lead['agent_id']
+        again = await client.post('/v1/project-agent-context/default-lead', json=body)
+        assert again.json()['status'] == 'unassigned'
+        agents = await client.get('/v1/project-agents', params={
+            'personal_space_id': space_id, 'personal_project_id': 'sample-app',
+        })
+        assert sum(agent['profile']['agent_type'] == 'durable' for agent in agents.json()) == 1

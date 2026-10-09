@@ -13,21 +13,33 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
     const mention = await resolveTaskAgentMention(application, resolution.personalProjectId, input);
     if (mention?.status) return mention;
     const workKind = input.workKind ?? taskWorkKind(input.taskPrompt);
-    const value = await application.personal.resolveProjectAgentContext({
+    const scope = {
       personal_space_id: application.config.personal.spaceId,
       personal_project_id: resolution.personalProjectId,
+      source_application: input.sourceApplication ?? 'other'
+    };
+    let value = await application.personal.resolveProjectAgentContext({
+      ...scope,
       agent_id: mention?.agentId ?? input.projectAgentId ?? null,
       session_id: input.sessionId ?? null,
       turn_id: input.turnId ?? null,
       work_kind: workKind,
-      required_capabilities: input.requiredCapabilities ?? [],
-      source_application: input.sourceApplication ?? 'other'
+      required_capabilities: input.requiredCapabilities ?? []
     });
     if (!value?.status) throw new Error('Role resolution is unavailable');
-    const agent = value.agent ? projectAgentRecord(value.agent) : null;
-    if (agent && !mention?.agentId && !input.projectAgentId && unrelatedPeer(agent, workKind, input.requiredCapabilities)) {
-      return { status: 'unassigned', reason: 'specialist_required', worker_started: false,
-        required_action: 'Use coordinate_project_agent_task to select or recruit a qualified durable owner before implementation. HR and project managers collaborate in their own roles; do not attribute development to them by fallback.' };
+    let agent = value.agent ? projectAgentRecord(value.agent) : null;
+    const implicit = !mention?.agentId && !input.projectAgentId;
+    const peerOnly = agent && implicit && unrelatedPeer(agent, workKind, input.requiredCapabilities);
+    if (implicit && (peerOnly || value.status === 'unassigned')) {
+      // Every task gets a FULI Agent: a project without a lead has HR hire one.
+      const staffed = await application.personal.staffDefaultProjectLead(scope).catch(() => null);
+      if (staffed?.agent) {
+        value = staffed;
+        agent = projectAgentRecord(staffed.agent);
+      } else if (peerOnly) {
+        return { status: 'unassigned', reason: 'specialist_required', worker_started: false,
+          required_action: 'Use coordinate_project_agent_task to select or recruit a qualified durable owner before implementation. HR and project managers collaborate in their own roles; do not attribute development to them by fallback.' };
+      }
     }
     const employeeId = /^employee\.([a-z][a-z0-9-]{0,63})$/.exec(agent?.agentId ?? '')?.[1];
     if (employeeId && application.employees) {

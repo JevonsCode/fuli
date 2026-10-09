@@ -9,6 +9,7 @@ from .store_knowledge import StoreKnowledge
 from .store_project_agent_executors import StoreProjectAgentExecutors
 from .store_project_agent_memory import StoreProjectAgentMemory
 from .store_project_agent_context import StoreProjectAgentContext
+from .default_project_lead import StoreDefaultProjectLead
 from .store_project_agents import StoreProjectAgents
 from .store_project_agent_attention import StoreProjectAgentAttention
 from .store_project_agent_tasks import StoreProjectAgentTasks
@@ -28,6 +29,7 @@ class GraphStore(
     StoreProjectAgentAttention,
     StoreProjectAgentMemory,
     StoreProjectAgentContext,
+    StoreDefaultProjectLead,
     StoreTaskContexts,
     StoreProjectAgentExecutors,
     StoreProjectAgentTasks,

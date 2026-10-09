@@ -151,3 +151,21 @@ test('ambiguous, unmatched, and invalid project paths never guess a project', ()
     /existing absolute directory/
   );
 });
+
+test('an unregistered repository is reported as the exact ID to register', () => {
+  const existing = new Set(['/work/new-app/src', '/work/new-app/.git', '/work/tree', '/work/tree/.git']);
+  const options = {
+    fileExists: (candidate) => existing.has(candidate),
+    isDirectory: () => true,
+    realPath: (candidate) => candidate,
+    readText: (file) => file === '/work/tree/.git' ? 'gitdir: /repos/origin-app/.git/worktrees/tree\n' : '',
+    pathApi: path.posix
+  };
+  assert.deepEqual(resolvePersonalProjectPath('/work/new-app/src', PROJECTS, options), {
+    status: 'unmatched', basis: null, personalProjectId: null, repositoryProjectId: 'new-app'
+  });
+  assert.equal(resolvePersonalProjectPath('/work/tree', PROJECTS, options).repositoryProjectId, 'origin-app');
+  assert.equal(resolvePersonalProjectPath('/outside', PROJECTS, {
+    ...options, fileExists: (candidate) => candidate === '/outside'
+  }).repositoryProjectId, undefined);
+});

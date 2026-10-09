@@ -79,6 +79,7 @@ import {
 } from './related-project-suggestions.js';
 import { buildUserTasteSkill } from './user-taste-skill.js';
 import { taskEntryPreferences } from './task-entry-preferences.js';
+import { TASK_ENTRY_TOOLS, registerRepositoryProject } from './repository-project-registration.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
 import {
   groupSubscriptions,
@@ -258,7 +259,12 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     agentInvocation = false,
     agentToolName = 'get_collaboration_preferences'
   } = {}) {
-    const projectResolution = await this.#resolvePreferenceProject({ personalProjectId, projectPath });
+    let projectResolution = await this.#resolvePreferenceProject({ personalProjectId, projectPath });
+    if (projectResolution.repositoryProjectId && agentInvocation && TASK_ENTRY_TOOLS.has(agentToolName)
+      && this.getCapturePolicy().enabled) {
+      // Every task gets a FULI Agent, so a task in an unregistered repository registers it.
+      projectResolution = await registerRepositoryProject(this, projectResolution);
+    }
     return taskEntryPreferences(this, projectResolution, {
       personalProjectId, projectAgentId, projectPath, taskPrompt, sourceApplication,
       sourceSessionId, sessionId, turnId, workKind, requiredCapabilities,

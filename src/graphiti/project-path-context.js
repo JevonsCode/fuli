@@ -47,6 +47,8 @@ export function resolvePersonalProjectPath(projectPath, projects, {
     fileExists,
     pathApi
   });
+  // An unregistered repository can be registered under this exact ID.
+  let repositoryProjectId = null;
   if (repositoryRoot) {
     const worktreeId = worktreeOriginProjectId(
       pathApi.join(repositoryRoot, '.git'),
@@ -56,10 +58,13 @@ export function resolvePersonalProjectPath(projectPath, projects, {
       // A worktree's folder name is arbitrary; only its original repository
       // identifies the project, even when the folder names another project.
       return resolveProjectId(worktreeId, projectIds, 'git_worktree_origin')
-        ?? unresolved('unmatched');
+        ?? unresolved('unmatched', safeProjectId(worktreeId, pathApi) ? { repositoryProjectId: worktreeId } : {});
     }
     const repository = resolveProjectId(pathApi.basename(repositoryRoot), projectIds, 'repository_root');
     if (repository) return repository;
+    if (safeProjectId(pathApi.basename(repositoryRoot), pathApi)) {
+      repositoryProjectId = pathApi.basename(repositoryRoot);
+    }
   }
 
   const directory = resolveProjectId(pathApi.basename(currentPath), projectIds, 'directory_name');
@@ -76,7 +81,7 @@ export function resolvePersonalProjectPath(projectPath, projects, {
   if (childMatches.length > 1) {
     return unresolved('ambiguous', { candidateCount: childMatches.length });
   }
-  return unresolved('unmatched');
+  return unresolved('unmatched', repositoryProjectId ? { repositoryProjectId } : {});
 }
 
 function resolveProjectId(candidate, projectIds, basis) {
