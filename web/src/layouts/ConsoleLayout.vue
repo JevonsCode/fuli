@@ -7,6 +7,7 @@ import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
 import EmployeeNavigation from '@/features/employees/EmployeeNavigation.vue'
+import { copy as roundtableCopy } from '@/features/roundtables/copy'
 import AgentAttentionCenter from '@/features/project-agents/AgentAttentionCenter.vue'
 import { t } from '@/i18n'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
@@ -129,6 +130,10 @@ async function closeMobileNav() {
         <RouterLink class="space-nav-button project-agents-button" to="/project-agents" active-class="is-active">
           <span class="nav-icon nav-icon-project-agent" aria-hidden="true" />
           <span class="nav-copy"><strong>{{ t('console.navigation.projectAgents') }}</strong><small>{{ t('console.navigation.projectAgentsMeta') }}</small></span>
+        </RouterLink>
+        <RouterLink class="space-nav-button roundtables-button" to="/roundtables" active-class="is-active">
+          <span class="nav-icon nav-icon-project-agent" aria-hidden="true" />
+          <span class="nav-copy"><strong>{{ roundtableCopy('Agent 圆桌', 'Agent Roundtable') }}</strong><small>{{ roundtableCopy('讨论 · 分工 · 结果', 'Discuss · assign · deliver') }}</small></span>
         </RouterLink>
 
         <template v-if="publicVisible">

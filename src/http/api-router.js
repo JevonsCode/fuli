@@ -2,6 +2,7 @@ import { readJson, sendJson } from './response.js';
 import { handleExternalKnowledgeApiRequest } from './external-knowledge-api-router.js';
 import { handleGraphApiRequest } from './graph-api-router.js';
 import { handleEmployeeApiRequest } from './employee-api-router.js';
+import { handleRoundtableApiRequest } from '../roundtables/http-router.js';
 
 export async function handleApiRequest({
   request,
@@ -12,6 +13,7 @@ export async function handleApiRequest({
   connectedKnowledge = null
 }) {
   const url = new URL(request.url, 'http://127.0.0.1');
+  if (await handleRoundtableApiRequest({ request, response, url, service: app.roundtables })) return true;
 
   if (url.pathname === '/api/health' && request.method === 'GET') {
     sendJson(response, 200, {

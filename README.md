@@ -59,7 +59,7 @@ For a one-off task, this source version also supports an isolated **temporary pr
 connected client to coordinate the task with Fuli even when no registered project matches. Fuli
 retains its task history and follows the existing Agent recruitment and executor permissions.
 Reading preferences alone creates nothing. An ambiguous project still needs a choice.
-This behavior is pending the next npm release.
+This behavior is included in the `0.9.0-beta.1` prerelease.
 
 The Agent directory now explains the first-task entry, and task details distinguish assignment
 from actual worker reports. A completion table appears only after real execution is reported;
@@ -69,6 +69,57 @@ an assigned Agent or an ordinary local conversation alone is not worker evidence
 [Agent roles and teams](docs/employee-agents.md) ·
 [Cross-client acceptance](acceptance/cross-client-handoff.md) · [Contribute](CONTRIBUTING.md) ·
 [Report an issue](https://github.com/JevonsCode/fuli/issues/new/choose)
+
+## Agent Roundtable (Beta)
+
+Give independent agents one shared goal, discuss proposals, hand work to implementers, and review
+the result before accepting delivery. Fuli keeps lasting identity and scoped knowledge; the
+roundtable keeps this collaboration's messages, turns, task dependencies, dissent and receipts.
+Workers run on the participants' own computers and pull only their authorized turns.
+
+| Product layer | Availability | Responsibility |
+| --- | --- | --- |
+| Identity and knowledge | Available | Persistent agent roles, relevant context, project scope, provenance and temporal history |
+| Roundtable coordination | Beta | Discussion, planning, implementation, review, synthesis and explicit human acceptance |
+| Runtime adapters | Beta | Codex CLI, Claude Code CLI, Pi with local Ollama, active MCP participation and xAI API; A2A is experimental within supported protocol paths |
+| Delivery across computers | Beta | One coordinator, revocable seat invitations, participant workers and actual execution receipts |
+| Closed platforms and always-on cloud hosting | Planned | Require separate callable integrations and operational verification |
+
+Start a standalone coordinator, then open `http://127.0.0.1:3738/roundtables`:
+
+```bash
+npm install -g fuli-context@beta
+fl roundtable serve --data-dir ./roundtable-data --port 3738
+```
+
+Create a discussion or collaborative task, assign 2–6 seats with one moderator, and create a seat
+invitation. Every participant completes preflight and joins before the owner starts the room.
+Selecting an adapter alone does not launch an agent. A collaborative task needs implementer and
+reviewer roles; writing requires both the owner's explicit workspace permission and the worker
+user's `--allow-write`. Reviews and workers default to read only.
+
+On a participant's computer, keep the invitation in `FULI_ROUNDTABLE_TOKEN`, then run:
+
+```bash
+fl roundtable worker --url https://COORDINATOR --room ROOM_ID --runtime codex --workspace /local/project
+```
+
+Use `claude-code`, `pi`, `grok`, or `a2a` for the corresponding adapter. Pi requires an installed local Ollama model selected with `--model`; see the [beta testing guide](docs/roundtable-beta-testing.md). Grok requires `XAI_API_KEY` and `XAI_MODEL` on the
+worker; A2A requires `--a2a-url`. The coordinator must expose a reachable HTTPS peer endpoint and
+set `--public-url https://COORDINATOR`; keep owner control on local loopback. The invitation UI
+generates participant commands and exposes credentials once without storing them in browser storage.
+
+An MCP participant uses `https://COORDINATOR/roundtable-peer/v1/rooms/ROOM_ID/mcp` with the seat
+credential as Bearer authentication, then actively calls `join_roundtable`, `read_roundtable`,
+`claim_roundtable_turn`, and `submit_roundtable_turn`. A [Grok Team Bot can configure a custom remote
+HTTPS MCP server](https://docs.x.ai/grok-bot/team-bots) through its official settings. This is
+separate from a Grok API seat and does not use an API to wake an existing Bot chat.
+
+Only actual source receipts produce execution rows. Missing model or usage data stays unknown;
+joining, preflight and assignment do not count as execution. Runtime sources are participant
+reports, and the server does not independently verify native process identity. Beta adapters still need live
+verification with the intended credentials, clients and computers. Full A2A conformance,
+cloud availability and arbitrary closed-platform support are not established by protocol tests.
 
 ## npm packages
 
