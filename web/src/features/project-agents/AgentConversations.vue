@@ -5,8 +5,8 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { currentLocale, t } from '@/i18n'
 
 const props = defineProps<{ personalSpaceId: string; agentId: string; projects: Array<{ id: string; name: string }> }>()
-interface Policy { idle_days: number; context_budget: number; enabled: boolean }
-interface Conversation { id: string; summary: string; status: string; revision: number; last_activity: string; archived: boolean; raw_retained: boolean; continuation_prompt?: string }
+interface Policy { compact_after_kb: number; context_budget: number; enabled: boolean }
+interface Conversation { id: string; summary: string; status: string; revision: number; last_activity: string; compacted_through: number; raw_retained: boolean; continuation_prompt?: string }
 interface Message { role: string; content: unknown; kind: string; sequence: number }
 interface MessagePage { events: Message[]; next_cursor?: number; has_more?: boolean }
 interface CopyFeedback { conversationId: string; state: 'copied' | 'fallback' }
@@ -27,8 +27,8 @@ const policyLoading = ref(false)
 const policyError = ref('')
 const saving = ref(false)
 const saved = ref(false)
-const idleDays = ref(7)
-const contextBudget = ref(2000)
+const compactAfterKb = ref(64)
+const contextBudget = ref(4000)
 const enabled = ref(true)
 const copyFeedback = ref<CopyFeedback>()
 let version = 0
@@ -89,7 +89,7 @@ function settingsToggle(event: Event) {
   settingsOpen.value = (event.target as HTMLDetailsElement).open
   if (settingsOpen.value && !policyReady.value && !policyLoading.value && opened.value) void loadPolicy()
 }
-function applyPolicy(value: Policy) { idleDays.value = value.idle_days; contextBudget.value = value.context_budget; enabled.value = value.enabled }
+function applyPolicy(value: Policy) { compactAfterKb.value = value.compact_after_kb; contextBudget.value = value.context_budget; enabled.value = value.enabled }
 async function loadPolicy() {
   const current = ++policyVersion
   policyLoading.value = true; policyError.value = ''; saved.value = false
@@ -102,14 +102,14 @@ async function loadPolicy() {
 async function savePolicy() {
   if (saving.value || !policyReady.value) return
   saved.value = false; policyError.value = ''
-  if (!Number.isInteger(idleDays.value) || idleDays.value < 1 || idleDays.value > 365
+  if (!Number.isInteger(compactAfterKb.value) || compactAfterKb.value < 8 || compactAfterKb.value > 1024
     || !Number.isInteger(contextBudget.value) || contextBudget.value < 512 || contextBudget.value > 16000) {
     policyError.value = t('projectAgents.conversations.invalidPolicy'); return
   }
   const current = policyVersion
   saving.value = true
   try {
-    const value = await putJson<Policy>('/api/agent-conversations/policy', { ...scope(), idleDays: idleDays.value, contextBudget: contextBudget.value, enabled: enabled.value })
+    const value = await putJson<Policy>('/api/agent-conversations/policy', { ...scope(), compactAfterKb: compactAfterKb.value, contextBudget: contextBudget.value, enabled: enabled.value })
     if (current === policyVersion) { applyPolicy(value); saved.value = true }
   } catch (cause) { if (current === policyVersion) policyError.value = failure(cause) }
   finally { if (current === policyVersion) saving.value = false }
@@ -154,7 +154,7 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
         <li v-for="conversation in conversations" :key="conversation.id">
           <button data-read-conversation class="conversation-link" type="button" :aria-pressed="selectedId === conversation.id" :disabled="messagesLoading" @click="readMessages(conversation.id)">
             <strong>{{ conversation.summary || t('projectAgents.conversations.untitled') }}</strong>
-            <span>{{ conversation.archived ? t('projectAgents.conversations.archived') : t('projectAgents.conversations.recent') }} · <time :datetime="conversation.last_activity">{{ date(conversation.last_activity) }}</time></span>
+            <span>{{ conversation.compacted_through > 0 ? t('projectAgents.conversations.compacted') : t('projectAgents.conversations.recent') }} · <time :datetime="conversation.last_activity">{{ date(conversation.last_activity) }}</time></span>
           </button>
           <button v-if="conversation.continuation_prompt" :data-copy-continuation="conversation.id" class="quiet-button continuation-copy" type="button" @click="copyContinuation(conversation)">{{ t('projectAgents.conversations.copyContinuation') }}</button>
           <div v-if="copyFeedback?.conversationId === conversation.id" data-continuation-feedback>
@@ -181,7 +181,7 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
         <form v-if="policyReady" @submit.prevent="savePolicy">
           <fieldset :disabled="saving">
             <label class="capture-toggle"><input v-model="enabled" type="checkbox" />{{ t('projectAgents.conversations.capture') }}</label>
-            <label>{{ t('projectAgents.conversations.idleDays') }}<input v-model.number="idleDays" name="idleDays" type="number" min="1" max="365" required /></label>
+            <label>{{ t('projectAgents.conversations.compactAfterKb') }}<input v-model.number="compactAfterKb" name="compactAfterKb" type="number" min="8" max="1024" required /></label>
             <label>{{ t('projectAgents.conversations.budget') }}<input v-model.number="contextBudget" name="contextBudget" type="number" min="512" max="16000" required /></label>
             <p class="conversation-hint">{{ t('projectAgents.conversations.budgetHint') }}</p>
             <button class="quiet-button" type="submit"><GrowthLoading v-if="saving" variant="inline" :label="t('projectAgents.conversations.saving')" /><span v-else>{{ t('projectAgents.conversations.save') }}</span></button>

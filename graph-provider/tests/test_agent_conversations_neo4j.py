@@ -1,11 +1,10 @@
 """Synthetic data only; requires an explicitly disposable loopback database."""
 import asyncio
-from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from test_project_agent_memory_neo4j import fixture_settings, provider_client, seed_agent
 
 
-def test_conversation_cross_client_replay_isolation_and_policy(monkeypatch):
+def test_conversation_cross_client_replay_isolation_and_policy():
     async def scenario():
         async with provider_client(fixture_settings()) as (client, _):
             space = (await client.post('/v1/spaces', json={'name':'Synthetic conversations', 'kind':'personal'})).json()['id']
@@ -67,24 +66,29 @@ def test_conversation_cross_client_replay_isolation_and_policy(monkeypatch):
             owner = {**scope, 'source_application':None}
             assert (await client.post('/v1/agent-conversations/query', json={**owner,'mode':'list'})).status_code == 200
             assert (await client.post('/v1/agent-conversations/query', json={**scope,'agent_id':'foreign','mode':'events','conversation_id':cid})).status_code == 404
-            # Advance only the recovery clock. Real stored original events remain
-            # unchanged; the default seven-day policy chooses summary-only context.
-            from fuli_graph import store_agent_conversations as conversations
-            from fuli_graph.conversation_context import archived
-            future = (datetime.now(timezone.utc) + timedelta(days=8)).isoformat()
-            with monkeypatch.context() as clock:
-                clock.setattr(conversations, 'archived', lambda last, days: archived(last, days, now=future))
-                aged = (await client.post('/v1/agent-conversations/query', json={**cc,
-                    'conversation_id':cid, 'mode':'context'})).json()
-                assert aged['policy']['idle_days'] == 7
-                assert aged['archived'] is True
-                assert aged['context']['summary'] == 'Second result'
-                assert aged['context']['messages'] == []
-                originals = (await client.post('/v1/agent-conversations/query', json={**cc,
-                    'conversation_id':cid, 'mode':'events'})).json()
-                assert originals['raw_retained'] is True
-                assert any(event['content'] == 'Synthetic task' for event in originals['events'])
-            policy = await client.put('/v1/agent-conversations/policy', json={**owner,'policy':{'idle_days':7,'context_budget':1000,'enabled':False}})
+            # Compaction is by size, not age: past the threshold, older messages
+            # fold into request notes while raw events remain readable.
+            tight = await client.put('/v1/agent-conversations/policy', json={**owner,
+                'policy':{'compact_after_kb':8,'context_budget':4000,'enabled':True}})
+            assert tight.status_code == 200, tight.text
+            bulk = {**cc, 'session_id':'second', 'task_context_token':cc_token, 'events':[
+                dict(event_id=f'bulk-{index}', role='user' if index % 2 == 0 else 'assistant',
+                     content=(f'Request {index}\n' if index % 2 == 0 else '') + 'x' * 1500)
+                for index in range(8)]}
+            folded = await client.post('/v1/agent-conversations/append', json=bulk)
+            assert folded.status_code == 200, folded.text
+            recovered = (await client.post('/v1/agent-conversations/query', json={**cc,
+                'conversation_id':cid, 'mode':'context'})).json()
+            assert recovered['compacted_through'] > 0
+            assert '[' in recovered['context']['summary'] and 'Second result' in recovered['context']['summary']
+            assert '- Synthetic task' in recovered['context']['summary']
+            assert '- Request 0' in recovered['context']['summary']
+            assert all('Request 0' not in message['content'] for message in recovered['context']['messages'])
+            originals = (await client.post('/v1/agent-conversations/query', json={**cc,
+                'conversation_id':cid, 'mode':'events', 'limit':50})).json()
+            assert originals['raw_retained'] is True
+            assert any(event['content'] == 'Synthetic task' for event in originals['events'])
+            policy = await client.put('/v1/agent-conversations/policy', json={**owner,'policy':{'compact_after_kb':64,'context_budget':1000,'enabled':False}})
             assert policy.status_code == 200, policy.text
             assert (await client.post('/v1/agent-conversations/append',json=later)).json()['status'] == 'capture_disabled'
     asyncio.run(scenario())
