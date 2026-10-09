@@ -4,7 +4,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { deleteJson, getJson, postJson } from '@/api/client'
-import SearchableSelect from '@/components/SearchableSelect.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { useModalDialog } from '@/composables/useModalDialog'
 import { currentLocale, t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
@@ -384,7 +384,7 @@ function formatDate(value?: string) {
       </p>
       <form v-if="relationOpen" class="relation-composer relation-composer-form compact-relation-form" @submit.prevent="createRelation">
         <label>{{ t('pages.publicProjects.sourceProject') }}
-          <SearchableSelect
+          <UiSelect
             v-model="relationSource"
             :options="maintainableOptions"
             :label="t('pages.publicProjects.sourceProjectLabel')"
@@ -395,14 +395,14 @@ function formatDate(value?: string) {
           />
         </label>
         <label>{{ t('pages.publicProjects.relation') }}
-          <SearchableSelect
+          <UiSelect
             v-model="relationType"
             :options="relationTypeOptions"
             :label="t('pages.publicProjects.relationTypeLabel')"
           />
         </label>
         <label>{{ t('pages.publicProjects.targetProject') }}
-          <SearchableSelect
+          <UiSelect
             v-model="relationTarget"
             :options="relationTargetOptions"
             :label="t('pages.publicProjects.targetProjectLabel')"

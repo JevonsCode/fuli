@@ -3,7 +3,7 @@ import { computed, ref, useId, watch } from 'vue'
 
 import { postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import SearchableSelect from '@/components/SearchableSelect.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import {
   batchConfirmationBasis,
   quadrantLabel,
@@ -194,7 +194,7 @@ function fail(message: string) {
       <form class="batch-confirm-form" @submit.prevent="confirmBatch">
         <section class="batch-confirm-controls">
           <label>{{ t('knowledge.dialogs.batch.range') }}
-            <SearchableSelect
+            <UiSelect
               v-model="selectedGroupKey"
               :options="groupOptions"
               :label="t('knowledge.dialogs.batch.rangeLabel')"
@@ -211,7 +211,7 @@ function fail(message: string) {
           </div>
           <div class="batch-confirmer-fields">
             <label>{{ t('knowledge.dialogs.batch.confirmer') }}
-              <SearchableSelect
+              <UiSelect
                 v-model="confirmerKind"
                 :options="confirmerOptions"
                 :label="t('knowledge.dialogs.batch.confirmerLabel')"
@@ -333,7 +333,7 @@ function fail(message: string) {
   font-weight: 600;
 }
 
-.batch-confirm-controls :deep(.searchable-select) {
+.batch-confirm-controls :deep(.ui-select) {
   width: 100%;
 }
 

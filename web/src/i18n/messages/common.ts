@@ -21,10 +21,12 @@ export const commonMessages = {
     },
     searchableSelect: {
       placeholder: '请选择',
-      searchPlaceholder: '搜索名称或 ID',
+      searchPlaceholder: '搜索',
       searchAria: '搜索{label}',
       noMatches: '没有匹配项',
-      selectedCount: '已选 {count} 个项目',
+      selectedCount: '已选 {count} 项',
+      invert: '反选',
+      clear: '清空',
     },
     errors: {
       loadFailed: '读取失败，请重试。',
@@ -78,10 +80,12 @@ export const commonMessages = {
     },
     searchableSelect: {
       placeholder: 'Select an option',
-      searchPlaceholder: 'Search name or ID',
+      searchPlaceholder: 'Search',
       searchAria: 'Search {label}',
       noMatches: 'No matching options',
-      selectedCount: '{count} projects selected',
+      selectedCount: '{count} selected',
+      invert: 'Invert',
+      clear: 'Clear',
     },
     errors: {
       loadFailed: 'Could not load. Please retry.',

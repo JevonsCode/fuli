@@ -20,7 +20,7 @@ describe('localized route metadata', () => {
   it('updates the browser title for the active locale', () => {
     setLocale('en-US', { persist: false })
     updateDocumentTitle('routes.knowledge.title')
-    expect(document.title).toBe('Knowledge base · FULI')
+    expect(document.title).toBe('Knowledge · FULI')
   })
 
   it('keeps the organizer header concise', () => {
@@ -54,7 +54,7 @@ describe('localized route metadata', () => {
 
   it('registers the about page', () => {
     expect(router.resolve('/about').name).toBe('about')
-    expect(routeMetaText(router.resolve('/about').meta.title)).toBe('说明')
+    expect(routeMetaText(router.resolve('/about').meta.title)).toBe('关于')
   })
 
   it('localizes the employee workbench title in both supported languages', () => {

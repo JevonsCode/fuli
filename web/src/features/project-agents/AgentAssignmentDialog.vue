@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import { postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import SearchableSelect from '@/components/SearchableSelect.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import type { PersonalProject, ProjectAgentAssignmentRecord, ProjectAgentRecord } from '@/types'
@@ -150,7 +150,7 @@ function createIdempotencyKey() {
       <div class="project-agent-assignment-dialog-fields">
         <label v-if="!editing">
           <span>{{ t('projectAgents.fields.project') }}</span>
-          <SearchableSelect v-model="projectId" control-id="project-agent-assignment-project" :options="projectOptions" :label="t('projectAgents.fields.project')" :placeholder="t('projectAgents.dialog.projectPlaceholder')" :disabled="busy" required />
+          <UiSelect v-model="projectId" control-id="project-agent-assignment-project" :options="projectOptions" :label="t('projectAgents.fields.project')" :placeholder="t('projectAgents.dialog.projectPlaceholder')" :disabled="busy" required />
         </label>
         <label v-else>
           <span>{{ t('projectAgents.fields.project') }}</span>
@@ -158,7 +158,7 @@ function createIdempotencyKey() {
         </label>
         <label v-if="editing && action === 'replace'">
           <span>{{ t('projectAgents.assignmentDialog.replacement') }}</span>
-          <SearchableSelect v-model="replacementAgentId" control-id="project-agent-assignment-replacement" :options="replacementOptions" :label="t('projectAgents.assignmentDialog.replacement')" :placeholder="t('projectAgents.assignmentDialog.replacementPlaceholder')" :disabled="busy" required />
+          <UiSelect v-model="replacementAgentId" control-id="project-agent-assignment-replacement" :options="replacementOptions" :label="t('projectAgents.assignmentDialog.replacement')" :placeholder="t('projectAgents.assignmentDialog.replacementPlaceholder')" :disabled="busy" required />
         </label>
         <label v-if="!editing" class="project-agent-assignment-wide-field">
           <span>{{ t('projectAgents.fields.responsibility') }}</span>

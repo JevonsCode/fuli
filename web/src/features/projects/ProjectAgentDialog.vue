@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import { postJson, putJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import SearchableSelect from '@/components/SearchableSelect.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import type {
@@ -227,7 +227,7 @@ function isValidOccupationEmoji(value: string) {
       <div class="project-agent-dialog-fields">
         <label>
           <span>{{ t('projectAgents.fields.project') }}</span>
-          <SearchableSelect
+          <UiSelect
             v-model="projectId"
             control-id="project-agent-project"
             :options="projectOptions"

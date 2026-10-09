@@ -3,7 +3,7 @@ import { computed, ref, watch, useId } from 'vue'
 
 import { postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import SearchableSelect from '@/components/SearchableSelect.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
@@ -377,7 +377,7 @@ function fail(message: string) {
 
         <section v-else class="knowledge-project-fields">
           <label class="full-width">{{ t('projects.knowledgeDialog.targetPersonalProject') }}
-            <SearchableSelect
+            <UiSelect
               v-model="targetProjectId"
               :options="availableProjectOptions"
               :label="t('projects.knowledgeDialog.targetPersonalProject')"
@@ -396,7 +396,7 @@ function fail(message: string) {
             </span>
           </label>
           <label>{{ t('projects.knowledgeDialog.projectRelation') }}
-            <SearchableSelect
+            <UiSelect
               v-model="relationType"
               :options="relationOptions"
               :label="t('projects.knowledgeDialog.projectRelation')"

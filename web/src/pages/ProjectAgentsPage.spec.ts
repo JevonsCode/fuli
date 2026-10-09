@@ -13,7 +13,7 @@ vi.mock('@/api/client', () => ({ getJson, patchJson, postJson, deleteJson, putJs
 vi.mock('vue-router', async (original) => ({ ...await original<typeof import('vue-router')>(), useRoute: () => route }))
 
 import { useConsoleStore } from '@/stores/console'
-import { SearchableSelectStub } from '@/test-support/SearchableSelectStub'
+import { UiSelectStub } from '@/test-support/UiSelectStub'
 import type { ProjectAgentRecord } from '@/types'
 import ProjectAgentsPage from './ProjectAgentsPage.vue'
 import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
@@ -1073,7 +1073,7 @@ function mountPage(bootstrap = false) {
     store,
     initialState,
     wrapper: mount(ProjectAgentsPage, {
-      global: { plugins: [pinia], stubs: { SearchableSelect: SearchableSelectStub, RouterLink: RouterLinkStub } },
+      global: { plugins: [pinia], stubs: { UiSelect: UiSelectStub, RouterLink: RouterLinkStub } },
     }),
   }
 }

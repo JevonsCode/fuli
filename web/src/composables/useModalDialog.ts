@@ -27,7 +27,12 @@ export function useModalDialog(open: () => boolean, requestClose: () => void) {
         const dialog = dialogRef.value
         if (!dialog) return
         if (!dialog.open) dialog.showModal()
-        const target = initialFocusRef.value ?? focusableElements(dialog)[0]
+        // Prefer an explicit target, then content over the header's close button.
+        const body = dialog.querySelector<HTMLElement>('.ui-dialog__body')
+        const target = initialFocusRef.value
+          ?? dialog.querySelector<HTMLElement>('[autofocus]')
+          ?? (body ? focusableElements(body)[0] : undefined)
+          ?? focusableElements(dialog)[0]
         target?.focus({ preventScroll: true })
       })
       return
@@ -86,7 +91,7 @@ export function useModalDialog(open: () => boolean, requestClose: () => void) {
   return { dialogRef, initialFocusRef, onCancel, onKeydown }
 }
 
-function focusableElements(dialog: HTMLDialogElement) {
+function focusableElements(dialog: HTMLElement) {
   return [...dialog.querySelectorAll<HTMLElement>(focusableSelector)]
     .filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true')
 }

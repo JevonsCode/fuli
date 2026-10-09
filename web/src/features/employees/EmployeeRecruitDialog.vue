@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import SearchableSelect from '@/components/SearchableSelect.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import ProjectScopePicker from './ProjectScopePicker.vue'
 import { employeeAvatarUrl } from './avatars'
 import { useModalDialog } from '@/composables/useModalDialog'
@@ -196,7 +196,7 @@ function scopeKeydown(event: KeyboardEvent) {
       <div class="employee-recruit-body">
       <div v-if="templates.length > 1 && !props.templateId" class="employee-picker-field">
         <span>{{ t('employees.choose') }}</span>
-        <SearchableSelect v-model="templateId" control-id="employee-template" :label="t('employees.choose')" :options="templates.map((entry) => ({ value: entry.id, label: entry.name, meta: entry.role }))" :disabled="busy || selectionLoading" />
+        <UiSelect v-model="templateId" control-id="employee-template" :label="t('employees.choose')" :options="templates.map((entry) => ({ value: entry.id, label: entry.name, meta: entry.role }))" :disabled="busy || selectionLoading" />
       </div>
       <div class="employee-profile">
         <span class="employee-avatar" aria-hidden="true">
@@ -220,8 +220,8 @@ function scopeKeydown(event: KeyboardEvent) {
       <section v-if="supportsPolicy && selected.permissions.includes('session.title')" class="employee-title-settings" :aria-label="t('employees.titles.heading')">
         <h3>{{ t('employees.titles.heading') }}</h3>
         <div class="employee-title-controls">
-          <div class="employee-picker-field"><span>{{ t('employees.titles.mode') }}</span><SearchableSelect v-model="titleMode" control-id="employee-title-mode" :label="t('employees.titles.mode')" :options="titleModeOptions" :disabled="busy || selectionLoading || requiresReload" /></div>
-          <div class="employee-picker-field"><span>{{ t('employees.titles.style') }}</span><SearchableSelect v-model="titleStyle" control-id="employee-title-style" :label="t('employees.titles.style')" :options="titleStyleOptions" :disabled="busy || selectionLoading || requiresReload || titleMode === 'off'" /></div>
+          <div class="employee-picker-field"><span>{{ t('employees.titles.mode') }}</span><UiSelect v-model="titleMode" control-id="employee-title-mode" :label="t('employees.titles.mode')" :options="titleModeOptions" :disabled="busy || selectionLoading || requiresReload" /></div>
+          <div class="employee-picker-field"><span>{{ t('employees.titles.style') }}</span><UiSelect v-model="titleStyle" control-id="employee-title-style" :label="t('employees.titles.style')" :options="titleStyleOptions" :disabled="busy || selectionLoading || requiresReload || titleMode === 'off'" /></div>
         </div>
         <p class="employee-title-preview">{{ t('employees.titles.example') }} <span>【P1｜{{ titleStyle === 'emoji' ? '🔧 ' : '' }}FIX｜{{ t('employees.titles.exampleTask') }}】</span></p>
         <p class="employee-muted">{{ t('employees.titles.boundary') }}</p>
@@ -281,10 +281,8 @@ function scopeKeydown(event: KeyboardEvent) {
 .employee-title-preview { margin: 4px 0 0; color: var(--color-muted); font-size: 12px; overflow-wrap: anywhere; }
 .employee-title-preview span { color: var(--color-ink); }
 .employee-picker-field { display: grid; gap: 7px; margin-bottom: 18px; color: var(--color-ink); font-size: 13px; }
-.employee-picker-field :deep(.searchable-select) { width: 100%; }
-.employee-picker-field :deep(.searchable-select-trigger) { width: 100%; }
-.employee-title-controls :deep(.searchable-select-panel) { width: 100%; min-width: 0; box-sizing: border-box; }
-.employee-title-controls :deep(.searchable-select-option-copy strong) { white-space: normal; overflow-wrap: anywhere; }
+.employee-picker-field :deep(.ui-select) { width: 100%; }
+.employee-picker-field :deep(.ui-select__trigger) { width: 100%; }
 .employee-permissions { margin-top: 20px; font-size: 12px; }
 .employee-permissions strong { color: var(--color-ink); font-weight: 600; }
 .employee-permissions ul { display: flex; flex-wrap: wrap; gap: 4px 18px; padding-left: 16px; margin: 6px 0; }

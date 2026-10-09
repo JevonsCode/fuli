@@ -4,7 +4,7 @@ import UiDisclosure from '@/components/UiDisclosure.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { getJson, putJson } from '@/api/client'
-import SearchableSelect from '@/components/SearchableSelect.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { normalizedConfiguration, setConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
 import {
   CONVERSATION_SOURCE_APPLICATIONS,
@@ -258,7 +258,7 @@ function revealInvalidField(event: Event) {
                     mode: t(`settings.behavior.runtimeModes.${settings?.active.graphRuntimeMode ?? form.graphRuntimeMode}`),
                   }) }}</small>
               </span>
-              <SearchableSelect
+              <UiSelect
                 class="settings-select"
                 control-id="settings-runtime-mode"
                 :model-value="form.graphRuntimeMode"
@@ -269,7 +269,7 @@ function revealInvalidField(event: Event) {
             </div>
             <div class="setting-row select-row">
               <span><strong>{{ t('settings.behavior.language') }}</strong></span>
-              <SearchableSelect
+              <UiSelect
                 class="settings-select"
                 control-id="settings-language"
                 :model-value="locale"
@@ -280,7 +280,7 @@ function revealInvalidField(event: Event) {
             </div>
             <div class="setting-row select-row">
               <span><strong>{{ t('settings.resources.refresh') }}</strong></span>
-              <SearchableSelect
+              <UiSelect
                 class="settings-select"
                 control-id="settings-refresh-interval"
                 :model-value="String(form.resourceRefreshSeconds)"
@@ -347,7 +347,7 @@ function revealInvalidField(event: Event) {
               >
                 <label>
                   <span>{{ t('settings.conversationLaunchers.idFormat') }}</span>
-                  <SearchableSelect
+                  <UiSelect
                     v-model="form.conversationLaunchers[application].idFormat"
                     class="launcher-select"
                     :control-id="`settings-conversation-${application}-id-format`"
@@ -589,9 +589,6 @@ function revealInvalidField(event: Event) {
 .conversation-launcher-fields code { color: var(--color-muted); font-size: 12px; }
 .conversation-launcher-fields :deep(.launcher-select) { width: 100%; height: 40px; min-width: 0; }
 .conversation-launcher-fields input { width: 100%; }
-.conversation-launcher-fields :deep(.launcher-select .searchable-select-current) { align-items: center; }
-.conversation-launcher-fields :deep(.launcher-select .searchable-select-current-label) { font-weight: 500; }
-.conversation-launcher-fields :deep(.launcher-select .searchable-select-panel) { width: 100%; min-width: 0; }
 .setting-list { display: grid; }
 .setting-row {
   min-height: 64px;
@@ -648,15 +645,6 @@ function revealInvalidField(event: Event) {
 .setting-row input[role='switch']:checked::after { transform: translate(17px, -50%); }
 .conversation-launcher-switch input[role='switch']:checked::after { transform: translate(17px, -50%); }
 .select-row .settings-select { width: 180px; min-width: 0; }
-.select-row :deep(.settings-select .searchable-select-current) { align-items: center; }
-.select-row :deep(.settings-select .searchable-select-current-label) { font-weight: 500; }
-.select-row :deep(.settings-select .searchable-select-arrow) {
-  width: 8px;
-  height: 8px;
-  margin-right: 1px;
-  border-width: 1.5px;
-}
-.select-row :deep(.settings-select .searchable-select-panel) { width: 100%; min-width: 0; }
 
 .settings-top-status {
   display: flex;

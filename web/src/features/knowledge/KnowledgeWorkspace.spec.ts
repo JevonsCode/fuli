@@ -618,7 +618,7 @@ describe('KnowledgeWorkspace', () => {
       '/api/graph?spaceId=space-1&limit=360&personalProjectId=project-2',
     ])
     expect(
-      wrapper.get('.personal-context-picker summary .searchable-select-arrow')
+      wrapper.get('.personal-context-picker summary .picker-chevron')
         .attributes('aria-hidden'),
     ).toBe('true')
     wrapper.unmount()

@@ -8,7 +8,7 @@ const postJson = vi.hoisted(() => vi.fn())
 vi.mock('@/api/client', () => ({ getJson, postJson }))
 
 import { useConsoleStore } from '@/stores/console'
-import { SearchableSelectStub } from '@/test-support/SearchableSelectStub'
+import { UiSelectStub } from '@/test-support/UiSelectStub'
 import ReviewPage from './ReviewPage.vue'
 
 type Deferred<T> = {
@@ -89,7 +89,7 @@ function mountReview() {
   const wrapper = mount(ReviewPage, {
     global: {
       plugins: [pinia],
-      stubs: { SearchableSelect: SearchableSelectStub },
+      stubs: { UiSelect: UiSelectStub },
     },
   })
   return { store, refresh, wrapper }

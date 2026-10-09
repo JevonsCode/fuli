@@ -10,7 +10,7 @@ const postJson = vi.hoisted(() => vi.fn())
 vi.mock('@/api/client', () => ({ deleteJson, getJson, postJson }))
 
 import { useConsoleStore } from '@/stores/console'
-import { SearchableSelectStub } from '@/test-support/SearchableSelectStub'
+import { UiSelectStub } from '@/test-support/UiSelectStub'
 import PublicProjectsPage from './PublicProjectsPage.vue'
 
 describe('PublicProjectsPage', () => {
@@ -88,7 +88,7 @@ describe('PublicProjectsPage', () => {
     const wrapper = mount(PublicProjectsPage, {
       global: {
         plugins: [pinia, router],
-        stubs: { SearchableSelect: SearchableSelectStub },
+        stubs: { UiSelect: UiSelectStub },
       },
     })
 
@@ -178,7 +178,7 @@ describe('PublicProjectsPage', () => {
       attachTo: document.body,
       global: {
         plugins: [pinia, router],
-        stubs: { SearchableSelect: SearchableSelectStub },
+        stubs: { UiSelect: UiSelectStub },
       },
     })
 
@@ -262,7 +262,7 @@ describe('PublicProjectsPage', () => {
       attachTo: document.body,
       global: {
         plugins: [pinia, router],
-        stubs: { SearchableSelect: SearchableSelectStub },
+        stubs: { UiSelect: UiSelectStub },
       },
     })
 
@@ -346,7 +346,7 @@ describe('PublicProjectsPage', () => {
     const wrapper = mount(PublicProjectsPage, {
       global: {
         plugins: [pinia, router],
-        stubs: { SearchableSelect: SearchableSelectStub },
+        stubs: { UiSelect: UiSelectStub },
       },
     })
 

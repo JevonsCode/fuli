@@ -43,16 +43,10 @@
   min-width: 160px;
 }
 
-.agents-directory-search input,
-.agents-directory-filters select {
-  box-sizing: border-box;
-  width: 100%;
-}
+.agents-directory-search input { box-sizing: border-box; width: 100%; }
+.agents-directory-select { flex: 0 0 180px; }
 
-.agents-directory-filters > select {
-  width: auto;
-  min-width: 150px;
-}
+
 
 .agents-directory-grid {
   display: grid;

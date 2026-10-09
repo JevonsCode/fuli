@@ -79,8 +79,9 @@ describe('ConsoleLayout', () => {
     expect(wrapper.find('a[href="/project-agents"]').exists()).toBe(true)
 
     expect(wrapper.get('.brand-version').text()).toBe(`v${FULI_VERSION}`)
-    expect(wrapper.get('.nav-about-label').text()).toBe('关于')
-    expect(wrapper.get('.nav-about-label + a').attributes('href')).toBe('/settings')
+    expect(wrapper.get('.nav-section-label').text()).toBe('更多')
+    expect(wrapper.get('a[href="/settings"]').text()).toContain('设置')
+    expect(wrapper.get('a[href="/roundtables"]').text()).toContain('圆桌')
     expect(wrapper.get('a[href="/about"]').attributes('href')).toBe('/about')
     expect(wrapper.get('a[href="/project-agents"]').text()).toContain('Agents')
     expect(wrapper.find('a[href="/public-projects"]').exists()).toBe(false)

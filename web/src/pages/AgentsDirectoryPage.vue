@@ -12,7 +12,7 @@ import {
 import { useAgentRoster } from "@/features/agent-profile/useAgentRoster";
 import ProjectAgentFirstTask from "@/features/project-agents/ProjectAgentFirstTask.vue";
 import { useAgentWorkSummary } from "@/features/agent-profile/useAgentWorkSummary";
-import ProjectScopePicker from "@/features/employees/ProjectScopePicker.vue";
+import UiSelect from "@/components/ui/UiSelect.vue";
 import EmployeeRecruitDialog from "@/features/employees/EmployeeRecruitDialog.vue";
 import { useConsoleStore } from "@/stores/console";
 import { t } from "@/i18n";
@@ -32,8 +32,9 @@ const {
 } = useAgentWorkSummary(space);
 const search = ref(typeof route.query.q === "string" ? route.query.q : "");
 const status = ref("all");
-const selectedProjects = ref<string[] | null>(
-  typeof route.query.project === "string" ? [route.query.project] : null,
+// No selected project means every project.
+const selectedProjects = ref<string[]>(
+  typeof route.query.project === "string" ? [route.query.project] : [],
 );
 const recruiting = ref(false);
 
@@ -43,27 +44,24 @@ const projects = computed(() =>
   ),
 );
 const options = computed(() =>
-  projects.value.map((project) => ({ id: project.project_id, name: project.profile.name })),
+  projects.value.map((project) => ({ value: project.project_id, label: project.profile.name })),
 );
 const projectNames = computed<Record<string, string>>(() =>
-  Object.fromEntries(options.value.map((project) => [project.id, project.name])),
+  Object.fromEntries(options.value.map((project) => [project.value, project.label])),
 );
-const projectSelection = computed({
-  get: () => selectedProjects.value ?? options.value.map((project) => project.id),
-  set: (value: string[]) => {
-    selectedProjects.value =
-      value.length === options.value.length ? null : value;
-  },
-});
+const statusOptions = computed(() => [
+  { value: "all", label: t("agentProfiles.allStatus") },
+  ...["active", "inactive", "archived"].map((value) => ({ value, label: t(`projectAgents.status.${value}`) })),
+]);
 
 const visible = computed(() =>
   agents.value
     .filter(
       (agent) =>
         (status.value === "all" || agent.profile.status === status.value) &&
-        (selectedProjects.value === null ||
+        (!selectedProjects.value.length ||
           profileProjectIds(agent).some((id) =>
-            selectedProjects.value!.includes(id),
+            selectedProjects.value.includes(id),
           )) &&
         fuzzyMatch(
           [
@@ -109,7 +107,7 @@ watch(
 watch(space, (_current, previous) => {
   if (!previous) return;
   search.value = "";
-  selectedProjects.value = null;
+  selectedProjects.value = [];
   status.value = "all";
 });
 
@@ -179,24 +177,20 @@ async function retryDirectory() {
           :placeholder="t('agentProfiles.search')"
         />
       </label>
-      <ProjectScopePicker
-        v-model="projectSelection"
-        :projects="options"
+      <UiSelect
+        v-model="selectedProjects"
+        class="agents-directory-select"
+        multiple
+        :options="options"
         :label="t('employees.filterLabel')"
-        :empty-label="t('employees.filterEmpty')"
-        compact
-        hint=""
+        :placeholder="t('employees.allProjectsFilter')"
       />
-      <select v-model="status" :aria-label="t('projectAgents.fields.status')">
-        <option value="all">{{ t("agentProfiles.allStatus") }}</option>
-        <option
-          v-for="value in ['active', 'inactive', 'archived']"
-          :key="value"
-          :value="value"
-        >
-          {{ t(`projectAgents.status.${value}`) }}
-        </option>
-      </select>
+      <UiSelect
+        v-model="status"
+        class="agents-directory-select"
+        :options="statusOptions"
+        :label="t('projectAgents.fields.status')"
+      />
     </div>
 
     <GrowthLoading

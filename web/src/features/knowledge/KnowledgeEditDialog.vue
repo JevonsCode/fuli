@@ -3,7 +3,7 @@ import { computed, reactive, ref, watch, useId } from 'vue'
 
 import { patchJson, postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import SearchableSelect from '@/components/SearchableSelect.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import { quadrantLabel } from './model'
@@ -453,21 +453,21 @@ function fail(message: string) {
             <label v-else>{{ t('knowledge.dialogs.edit.fact') }}<textarea v-model="form.fact" maxlength="8192" rows="5" /></label>
             <div class="knowledge-taxonomy-fields">
               <label>{{ t('knowledge.dialogs.edit.classification') }}
-                <SearchableSelect
+                <UiSelect
                   v-model="form.currentQuadrant"
                   :options="quadrantOptions"
                   :label="t('knowledge.dialogs.edit.classification')"
                 />
               </label>
               <label>{{ t('knowledge.dialogs.edit.confirmationStatus') }}
-                <SearchableSelect
+                <UiSelect
                   v-model="form.confirmationStatus"
                   :options="confirmationStatusOptions"
                   :label="t('knowledge.dialogs.edit.confirmationStatus')"
                 />
               </label>
               <label>{{ t('knowledge.dialogs.edit.preferenceDimension') }}
-                <SearchableSelect
+                <UiSelect
                   v-model="form.profileAspect"
                   :options="profileAspectOptions"
                   :label="t('knowledge.dialogs.edit.preferenceDimension')"
@@ -492,7 +492,7 @@ function fail(message: string) {
               </label>
               <div class="knowledge-taxonomy-fields">
                 <label>{{ t('knowledge.dialogs.edit.proposer') }}
-                  <SearchableSelect
+                  <UiSelect
                     v-model="form.proposedByKind"
                     :options="proposerOptions"
                     :label="t('knowledge.dialogs.edit.proposer')"
@@ -503,7 +503,7 @@ function fail(message: string) {
                 </label>
                 <template v-if="form.confirmationStatus === 'confirmed'">
                   <label>{{ t('knowledge.dialogs.edit.confirmer') }}
-                    <SearchableSelect
+                    <UiSelect
                       v-model="form.confirmedByKind"
                       :options="confirmerOptions"
                       :label="t('knowledge.dialogs.edit.confirmer')"
@@ -521,14 +521,14 @@ function fail(message: string) {
             <fieldset v-if="!profilePreference" class="knowledge-replacement-fields">
               <legend>{{ t('knowledge.dialogs.edit.crossProjectInheritance') }}</legend>
               <label>{{ t('knowledge.dialogs.edit.inheritanceScope') }}
-                <SearchableSelect
+                <UiSelect
                   v-model="form.inheritanceMode"
                   :options="inheritanceModeOptions"
                   :label="t('knowledge.dialogs.edit.inheritanceScope')"
                 />
               </label>
               <label v-if="form.inheritanceMode === 'selected_projects'">{{ t('knowledge.dialogs.edit.inheritedProjects') }}
-                <SearchableSelect
+                <UiSelect
                   v-model="inheritanceProjectId"
                   :options="projectOptions"
                   :label="t('knowledge.dialogs.edit.inheritedProjects')"
@@ -546,7 +546,7 @@ function fail(message: string) {
               <label>{{ invalid
                 ? t('knowledge.dialogs.edit.historicalReplacement')
                 : t('knowledge.dialogs.edit.activeReplacement') }}
-                <SearchableSelect
+                <UiSelect
                   v-model="replacementItemKey"
                   :options="replacementOptions"
                   :label="t('knowledge.dialogs.edit.replacement')"
@@ -611,7 +611,7 @@ function fail(message: string) {
           <form class="knowledge-editor-form" @submit.prevent="saveAssignment">
             <fieldset class="pending-inputs" :disabled="busy">
             <label>{{ t('knowledge.dialogs.edit.targetProject') }}
-              <SearchableSelect
+              <UiSelect
                 v-model="targetProjectId"
                 :options="projectOptions"
                 :label="t('knowledge.dialogs.edit.targetProject')"
@@ -638,14 +638,14 @@ function fail(message: string) {
           <form class="knowledge-editor-form" @submit.prevent="savePreferenceScope">
             <fieldset class="pending-inputs" :disabled="busy">
             <label>{{ t('knowledge.dialogs.edit.effectiveScope') }}
-              <SearchableSelect
+              <UiSelect
                 v-model="preferenceScope"
                 :options="preferenceScopeOptions"
                 :label="t('knowledge.dialogs.edit.preferenceScope')"
               />
             </label>
             <label v-if="preferenceScope === 'project'">{{ t('knowledge.dialogs.edit.personalProject') }}
-              <SearchableSelect
+              <UiSelect
                 v-model="preferenceProjectId"
                 :options="projectOptions"
                 :label="t('knowledge.dialogs.edit.personalProject')"

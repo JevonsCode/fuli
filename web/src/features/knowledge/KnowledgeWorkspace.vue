@@ -5,7 +5,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
-import SearchableSelect from '@/components/SearchableSelect.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import {
   isLoadingPreviewEnabled,
   useMinimumLoadingDisplay,
@@ -920,7 +920,7 @@ function queryValues(value: unknown) {
     </div>
 
     <div class="graph-toolbar">
-      <SearchableSelect
+      <UiSelect
         :model-value="selectedChoiceKey"
         :options="spaceSelectOptions"
         :label="t('knowledge.workspace.workspace.view.graphSpace')"
@@ -935,7 +935,7 @@ function queryValues(value: unknown) {
           <span>{{ contextIds.length
             ? t('knowledge.workspace.workspace.view.selectedContexts', { count: contextIds.length })
             : t('knowledge.workspace.workspace.view.noneSelected') }}</span>
-          <i class="searchable-select-arrow" aria-hidden="true" />
+          <i class="picker-chevron" aria-hidden="true" />
         </summary>
         <div class="personal-context-panel">
           <strong>{{ t('knowledge.workspace.workspace.view.currentContext') }}</strong>
@@ -1001,28 +1001,28 @@ function queryValues(value: unknown) {
 
     <UiDisclosure v-if="mode === 'directory' && directorySection === 'knowledge'" class="knowledge-filter-disclosure" :title="t('ui.filters')" :open="filters.type !== 'all' || filters.quadrant !== 'all' || filters.profile !== 'all' || filters.humanChange !== 'all'">
       <div class="knowledge-filter-controls">
-        <SearchableSelect
+        <UiSelect
           :model-value="filters.type"
           :options="typeSelectOptions"
           :label="t('knowledge.workspace.workspace.view.contentType')"
           control-id="knowledge-type-filter"
           @update:model-value="updateQuery('type', $event)"
         />
-        <SearchableSelect
+        <UiSelect
           :model-value="filters.quadrant"
           :options="quadrantSelectOptions"
           :label="t('knowledge.workspace.workspace.view.discoveryQuadrant')"
           control-id="knowledge-quadrant-filter"
           @update:model-value="updateQuery('quadrant', $event)"
         />
-        <SearchableSelect
+        <UiSelect
           :model-value="filters.profile"
           :options="profileSelectOptions"
           :label="t('knowledge.workspace.workspace.view.classification')"
           control-id="knowledge-profile-filter"
           @update:model-value="updateQuery('profile', $event)"
         />
-        <SearchableSelect
+        <UiSelect
           :model-value="filters.humanChange"
           :options="humanChangeSelectOptions"
           :label="t('knowledge.workspace.workspace.view.humanChangeStatus')"

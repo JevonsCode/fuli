@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import { putJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import SearchableSelect from '@/components/SearchableSelect.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import type {
@@ -172,7 +172,7 @@ async function save() {
         <template v-else>
           <label><span>{{ t('projectAgents.routing.editor.scope') }}</span><select v-model="scope" :disabled="busy"><option value="space">space</option><option value="project">project</option><option value="task">task</option></select></label>
           <label><span>{{ t('projectAgents.routing.editor.priority') }}</span><input v-model.number="priority" type="number" min="1" max="1000000" :disabled="busy" required /></label>
-          <label v-if="scope === 'project' || scope === 'task'"><span>{{ t('projectAgents.fields.project') }}</span><SearchableSelect v-model="projectId" control-id="executor-rule-project" :options="projectOptions" :label="t('projectAgents.fields.project')" :disabled="busy" /></label>
+          <label v-if="scope === 'project' || scope === 'task'"><span>{{ t('projectAgents.fields.project') }}</span><UiSelect v-model="projectId" control-id="executor-rule-project" :options="projectOptions" :label="t('projectAgents.fields.project')" :disabled="busy" /></label>
           <label v-if="scope === 'task'"><span>{{ t('projectAgents.routing.editor.taskId') }}</span><input v-model="taskId" maxlength="128" :disabled="busy" /></label>
           <label><span>{{ t('projectAgents.routing.editor.workKind') }}</span><input v-model="workKind" maxlength="128" :disabled="busy" required /></label>
           <label class="project-agent-wide-field"><span>{{ t('projectAgents.routing.editor.executorIds') }}</span><textarea v-model="executorAllowList" rows="3" :placeholder="t('projectAgents.routing.editor.executorIdsPlaceholder')" :disabled="busy" required /></label>

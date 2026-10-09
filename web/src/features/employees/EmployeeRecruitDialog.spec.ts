@@ -71,7 +71,7 @@ describe('employee recruitment', () => {
     expect(wrapper.text()).toContain('以后新建的项目')
     expect(wrapper.get('.project-scope-picker').find('select').exists()).toBe(false)
     expect(wrapper.find('select:not([aria-hidden="true"])').exists()).toBe(false)
-    expect(wrapper.findAll('.employee-title-settings .searchable-select')).toHaveLength(2)
+    expect(wrapper.findAll('.employee-title-settings .ui-select')).toHaveLength(2)
     expect(wrapper.get('.project-scope-count').text()).toContain('2 / 共 2')
     await wrapper.get('input[value="project-b"]').setValue(false)
     expect(wrapper.text()).not.toContain('将移出')
