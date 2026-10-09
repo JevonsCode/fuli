@@ -1,16 +1,12 @@
 .attention-nav-status { display: inline-flex; align-items: center; gap: 6px; justify-self: end; }
-.attention-dialog { max-width: none; width: min(980px, calc(100vw - 40px)); max-height: calc(100dvh - 40px); padding: 0; border: 1px solid var(--color-border); border-radius: var(--radius-dialog); background: var(--color-surface); color: var(--color-ink); box-shadow: var(--shadow-dialog); overflow: hidden; }
-.attention-dialog[open] { display: flex; flex-direction: column; height: min(780px, calc(100dvh - 40px)); }
-.attention-dialog::backdrop { background: var(--color-overlay); }
-.attention-header { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; padding: 16px 20px 16px 24px; border-bottom: 1px solid var(--color-border); }
-.attention-header > div { display: flex; align-items: center; gap: 10px; }
-.attention-header h2 { margin: 0; font-size: 18px; letter-spacing: -.02em; }
-.attention-header > button { font-size: 24px; }
-.attention-workspace { flex: 1 1 auto; overflow: hidden; display: grid; grid-template-columns: 280px minmax(0, 1fr); height: min(700px, calc(100dvh - 114px)); min-height: 0; }
+.attention-dialog[open] { height: min(780px, calc(100dvh - 40px)); }
+.attention-dialog .ui-dialog__shell { height: 100%; }
+.attention-dialog .ui-dialog__header { padding-bottom: 16px; border-bottom: 1px solid var(--color-border); }
+.attention-dialog .ui-dialog__body { flex: 1 1 auto; padding: 0; gap: 0; overflow: hidden; }
+.attention-workspace { flex: 1 1 auto; overflow: hidden; display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: 0; }
 .attention-queue { min-width: 0; overflow-y: auto; padding: 12px; background: var(--color-surface-subtle); border-right: 1px solid var(--color-border); overscroll-behavior: contain; }
 .attention-queue-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 8px; font-size: 12px; color: var(--color-muted); }
 .attention-queue-toolbar > span { min-width: 0; overflow-wrap: anywhere; }
-.attention-queue-toolbar > button { font-size: 12px; padding: 6px 8px; flex-shrink: 0; }
 .attention-request-list { display: grid; gap: 6px; }
 .attention-request { display: grid; gap: 7px; width: 100%; min-width: 0; padding: 14px 12px; text-align: left; border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; color: var(--color-ink); cursor: pointer; }
 .attention-request:hover { background: var(--color-surface-hover); }
@@ -23,20 +19,17 @@
 .attention-detail { min-width: 0; overflow-y: auto; padding: 24px 28px; overscroll-behavior: contain; }
 .attention-detail-meta { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; margin-bottom: 20px; color: var(--color-muted); font-size: 12px; overflow-wrap: anywhere; }
 .attention-task-link { display: inline-block; margin-top: 16px; color: var(--color-accent); font-size: 13px; text-underline-offset: 4px; }
-.attention-mobile-picker { display: none; }
+.attention-queue .attention-mobile-picker { display: none; margin-bottom: 8px; }
 .attention-error { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; color: var(--color-danger); background: var(--color-danger-soft); font-size: 13px; }
 .attention-empty { flex: 1; align-content: center; display: grid; justify-items: center; gap: 16px; padding: 72px 24px; text-align: center; color: var(--color-muted); }
 .attention-empty > span { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--color-success-soft); color: var(--color-success); font-size: 24px; }
 .attention-empty p { margin: 0; font-size: 14px; }
 @media (max-width: 640px) {
-  .attention-dialog { max-width: none; width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
-  .attention-dialog[open] { height: calc(100dvh - 16px); }
-  .attention-header { padding: 12px 16px; }
+  .attention-dialog[open] { width: calc(100vw - 16px); height: calc(100dvh - 16px); }
   .attention-workspace { flex: 1 1 auto; overflow: hidden; display: flex; flex-direction: column; height: auto; }
   .attention-queue { flex: 0 0 auto; padding: 8px 16px 12px; border-right: 0; border-bottom: 1px solid var(--color-border); max-height: 185px; }
   .attention-queue-toolbar { padding: 0; }
-  .attention-mobile-picker { display: grid; gap: 6px; font-size: 12px; color: var(--color-muted); }
-  .attention-mobile-picker select { width: 100%; font-size: 16px; }
+  .attention-queue .attention-mobile-picker { display: grid; }
   .attention-request-list { display: none; }
   .attention-detail { padding: 20px 16px; }
   .attention-detail-meta { margin-bottom: 16px; }

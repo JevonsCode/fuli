@@ -6,6 +6,7 @@ vi.mock('@/api/client', () => ({ getJson, postJson }))
 import { attentionTaskHref, useAgentAttention } from './attention-store'
 import AgentHand from './AgentHand.vue'
 import AgentAttentionCenter from './AgentAttentionCenter.vue'
+import { UiSelectStub } from '@/test-support/UiSelectStub'
 
 const item = { requestId: 'request-a', personalSpaceId: 'space-a', personalProjectId: 'project-a', agentId: 'agent-a', taskId: null,
   title: '选择方案', detail: '有两个可行的方案。', requestedAction: '请明确选择 A 或 B。', kind: 'question', status: 'open' as const, revision: 2, createdAt: '2026-09-04T00:00:00Z' }
@@ -129,11 +130,11 @@ describe('Agent attention', () => {
   it('keeps independent drafts while switching requests through the mobile selector', async () => {
     const second = { ...item, requestId: 'request-b', title: '第二个问题' }
     getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents?') ? [] : { items: [item, second], total: 2, counts: {} })
-    const wrapper = mount(AgentAttentionCenter, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [] } })
+    const wrapper = mount(AgentAttentionCenter, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [] }, global: { stubs: { UiSelect: UiSelectStub } } })
     await flushPromises(); useAgentAttention().show(); await flushPromises()
     const textarea = document.querySelector('textarea')!
     textarea.value = '第一个回复'; textarea.dispatchEvent(new Event('input', { bubbles: true })); await flushPromises()
-    const select = document.querySelector('.attention-mobile-picker select') as HTMLSelectElement
+    const select = document.querySelector('select[aria-label]') as HTMLSelectElement
     select.value = 'request-b'; select.dispatchEvent(new Event('change', { bubbles: true })); await flushPromises()
     expect(document.querySelector('textarea')!.value).toBe('')
     select.value = 'request-a'; select.dispatchEvent(new Event('change', { bubbles: true })); await flushPromises()
@@ -156,11 +157,11 @@ describe('Agent attention', () => {
     const second = { ...item, requestId: 'request-b', title: '第二个问题' }
     let items = [item, second]
     getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents?') ? [] : { items, total: 2, counts: {} })
-    const wrapper = mount(AgentAttentionCenter, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [] } })
+    const wrapper = mount(AgentAttentionCenter, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [] }, global: { stubs: { UiSelect: UiSelectStub } } })
     await flushPromises(); const store = useAgentAttention(); store.show(); await flushPromises()
     const textarea = document.querySelector('textarea')!
     textarea.value = '仍需保留的说明'; textarea.dispatchEvent(new Event('input', { bubbles: true })); await flushPromises()
-    const select = document.querySelector('select') as HTMLSelectElement
+    const select = document.querySelector('select[aria-label]') as HTMLSelectElement
     select.value = 'request-b'; select.dispatchEvent(new Event('change', { bubbles: true })); await flushPromises()
     items = [{ ...item, revision: 3 }, second]; await store.refresh(); await flushPromises()
     expect(document.body.textContent).not.toContain('请求已更新')

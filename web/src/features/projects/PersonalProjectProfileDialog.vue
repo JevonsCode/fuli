@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch, useId } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { putJson } from '@/api/client'
-import GrowthLoading from '@/components/GrowthLoading.vue'
-import { useModalDialog } from '@/composables/useModalDialog'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiDialog from '@/components/ui/UiDialog.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
 
@@ -35,15 +36,6 @@ const boundaries = ref('')
 const sources = ref<SourceDraft[]>([])
 const error = ref('')
 const busy = ref(false)
-const dialogTitleId = useId()
-const { dialogRef, onCancel, onKeydown } = useModalDialog(
-  () => Boolean(props.project),
-  () => { if (!busy.value) emit('close') },
-)
-const purposeField = ref<HTMLTextAreaElement | null>(null)
-const scopeField = ref<HTMLTextAreaElement | null>(null)
-const boundariesField = ref<HTMLTextAreaElement | null>(null)
-const sourcesHeading = ref<HTMLElement | null>(null)
 
 const materialTypes = new Set([
   'ProjectPurpose',
@@ -75,19 +67,22 @@ const SOURCE_KIND_VALUES = [
   'issue_tracker',
   'other',
 ] as const
-const sourceKinds = computed(() =>
-  SOURCE_KIND_VALUES.map((value) => [
-    value,
-    value === 'prd' ? 'PRD' : t(`projects.profileDialog.sourceTypes.${value}`),
-  ] as const),
-)
+const sourceKindOptions = computed(() => SOURCE_KIND_VALUES.map((value) => ({
+  value,
+  label: value === 'prd' ? 'PRD' : t(`projects.profileDialog.sourceTypes.${value}`),
+})))
+const lifecycleOptions = computed(() => (['planned', 'active', 'maintenance', 'archived'] as const)
+  .map((value) => ({ value, label: t(`projects.profileDialog.lifecycles.${value}`) })))
+const SENSITIVITY_VALUES = ['normal', 'private', 'restricted'] as const
+const sensitivityOptions = computed(() => SENSITIVITY_VALUES
+  .map((value) => ({ value, label: t(`projects.profileDialog.sensitivities.${value}`) })))
 
 const sourceKindValues = new Set<string>(SOURCE_KIND_VALUES)
-const sensitivityValues = new Set(['normal', 'private', 'restricted'])
+const sensitivityValues = new Set<string>(SENSITIVITY_VALUES)
 
 watch(
   () => [props.project, props.materialType] as const,
-  async ([project]) => {
+  ([project]) => {
     if (!project) return
     const profile = project.profile
     name.value = profile.name
@@ -100,8 +95,6 @@ watch(
       .join('\n')
     sources.value = (profile.sources ?? []).map(normalizeSource)
     error.value = ''
-    await nextTick()
-    focusRelevantField()
   },
   { immediate: true },
 )
@@ -201,151 +194,80 @@ async function save() {
     busy.value = false
   }
 }
-
-function focusRelevantField() {
-  if (props.materialType === 'ProjectPurpose') purposeField.value?.focus()
-  else if (props.materialType === 'ProjectScope') scopeField.value?.focus()
-  else if (props.materialType === 'ProjectBoundary') boundariesField.value?.focus()
-  else if (props.materialType === 'ProjectSource') sourcesHeading.value?.focus()
-}
 </script>
 
 <template>
-  <dialog v-if="project" ref="dialogRef" aria-modal="true" :aria-labelledby="dialogTitleId" @cancel="onCancel" @keydown="onKeydown" class="project-profile-dialog vue-dialog">
-    <form class="project-profile-dialog-shell" @submit.prevent="save">
-      <header class="project-profile-dialog-header">
+  <UiDialog v-if="project" open class="project-profile-dialog" size="lg" form :busy="busy" :error="error"
+    :title="t('projects.profileDialog.title', { material: materialLabel })" :description="t('projects.profileDialog.intro')"
+    @close="emit('close')" @submit="save">
+    <div class="project-profile-fields">
+      <label class="ui-field">{{ t('projects.profileDialog.projectName') }}
+        <input v-model="name" name="project-name" maxlength="160" required />
+      </label>
+      <UiSelect v-model="lifecycle" field name="project-lifecycle" :label="t('projects.profileDialog.lifecycle')" :options="lifecycleOptions" />
+      <label class="ui-field project-profile-wide-field">{{ t('projects.profileDialog.purpose') }}
+        <textarea v-model="purpose" name="project-purpose" maxlength="4096" rows="4" :autofocus="materialType === 'ProjectPurpose'" :placeholder="t('projects.profileDialog.purposePlaceholder')" />
+      </label>
+      <label class="ui-field project-profile-wide-field">{{ t('projects.profileDialog.scope') }}
+        <textarea v-model="scope" name="project-scope" maxlength="4096" rows="4" :autofocus="materialType === 'ProjectScope'" :placeholder="t('projects.profileDialog.scopePlaceholder')" />
+      </label>
+      <label class="ui-field project-profile-wide-field">{{ t('projects.profileDialog.technicalSummary') }}
+        <textarea v-model="technicalSummary" name="project-technical-summary" maxlength="4096" rows="4" :placeholder="t('projects.profileDialog.technicalPlaceholder')" />
+      </label>
+      <label class="ui-field project-profile-wide-field">{{ t('projects.profileDialog.boundary') }}
+        <textarea v-model="boundaries" name="project-boundaries" maxlength="8192" rows="5" :autofocus="materialType === 'ProjectBoundary'" :placeholder="t('projects.profileDialog.boundaryPlaceholder')" />
+        <small class="ui-field-hint">{{ t('projects.profileDialog.boundaryHint') }}</small>
+      </label>
+    </div>
+
+    <section class="project-source-editor">
+      <div class="project-source-editor-heading" tabindex="-1" :autofocus="materialType === 'ProjectSource'">
         <div>
-          <h3 :id="dialogTitleId">{{ t('projects.profileDialog.title', { material: materialLabel }) }}</h3>
-          <p>{{ t('projects.profileDialog.intro') }}</p>
+          <h3>{{ t('projects.profileDialog.sources') }}</h3>
+          <p class="ui-meta">{{ t('projects.profileDialog.sourcesCopy') }}</p>
         </div>
-        <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">
-          {{ t('common.actions.close') }}
-        </button>
-      </header>
-
-      <div class="project-profile-fields">
-        <label>
-          <span>{{ t('projects.profileDialog.projectName') }}</span>
-          <input v-model="name" name="project-name" maxlength="160" required />
-        </label>
-        <label>
-          <span>{{ t('projects.profileDialog.lifecycle') }}</span>
-          <select v-model="lifecycle" name="project-lifecycle">
-            <option value="planned">{{ t('projects.profileDialog.lifecycles.planned') }}</option>
-            <option value="active">{{ t('projects.profileDialog.lifecycles.active') }}</option>
-            <option value="maintenance">{{ t('projects.profileDialog.lifecycles.maintenance') }}</option>
-            <option value="archived">{{ t('projects.profileDialog.lifecycles.archived') }}</option>
-          </select>
-        </label>
-        <label class="project-profile-wide-field">
-          <span>{{ t('projects.profileDialog.purpose') }}</span>
-          <textarea
-            ref="purposeField"
-            v-model="purpose"
-            name="project-purpose"
-            maxlength="4096"
-            rows="4"
-            :placeholder="t('projects.profileDialog.purposePlaceholder')"
-          />
-        </label>
-        <label class="project-profile-wide-field">
-          <span>{{ t('projects.profileDialog.scope') }}</span>
-          <textarea
-            ref="scopeField"
-            v-model="scope"
-            name="project-scope"
-            maxlength="4096"
-            rows="4"
-            :placeholder="t('projects.profileDialog.scopePlaceholder')"
-          />
-        </label>
-        <label class="project-profile-wide-field">
-          <span>{{ t('projects.profileDialog.technicalSummary') }}</span>
-          <textarea
-            v-model="technicalSummary"
-            name="project-technical-summary"
-            maxlength="4096"
-            rows="4"
-            :placeholder="t('projects.profileDialog.technicalPlaceholder')"
-          />
-        </label>
-        <label class="project-profile-wide-field">
-          <span>{{ t('projects.profileDialog.boundary') }}</span>
-          <textarea
-            ref="boundariesField"
-            v-model="boundaries"
-            name="project-boundaries"
-            maxlength="8192"
-            rows="5"
-            :placeholder="t('projects.profileDialog.boundaryPlaceholder')"
-          />
-          <small>{{ t('projects.profileDialog.boundaryHint') }}</small>
-        </label>
+        <UiButton size="sm" @click="addSource">{{ t('projects.profileDialog.addSource') }}</UiButton>
       </div>
+      <div v-if="sources.length" class="project-source-list">
+        <article v-for="(source, index) in sources" :key="source.key" class="project-source-row">
+          <label class="ui-field">{{ t('projects.profileDialog.sourceName') }}
+            <input v-model="source.title" maxlength="512" required />
+          </label>
+          <UiSelect v-model="source.kind" field :label="t('projects.profileDialog.sourceType')" :options="sourceKindOptions" />
+          <label class="ui-field project-source-wide-field">{{ t('projects.profileDialog.sourceUri') }}
+            <input v-model="source.uri" maxlength="2048" :placeholder="t('projects.profileDialog.sourceUriPlaceholder')" />
+          </label>
+          <label class="ui-field project-source-wide-field">{{ t('projects.profileDialog.sourceSummary') }}
+            <textarea v-model="source.summary" maxlength="4096" rows="2" />
+          </label>
+          <UiSelect v-model="source.sensitivity" field :label="t('projects.profileDialog.sensitivity')" :options="sensitivityOptions" />
+          <UiButton class="project-source-remove" size="sm" variant="danger" @click="removeSource(index)">{{ t('common.actions.remove') }}</UiButton>
+        </article>
+      </div>
+      <p v-else class="ui-meta">{{ t('projects.profileDialog.noSources') }}</p>
+    </section>
 
-      <section class="project-source-editor">
-        <div ref="sourcesHeading" class="project-source-editor-heading" tabindex="-1">
-          <div>
-            <h4>{{ t('projects.profileDialog.sources') }}</h4>
-            <p>{{ t('projects.profileDialog.sourcesCopy') }}</p>
-          </div>
-          <button class="secondary-action" type="button" @click="addSource">{{ t('projects.profileDialog.addSource') }}</button>
-        </div>
-        <div v-if="sources.length" class="project-source-list">
-          <article v-for="(source, index) in sources" :key="source.key" class="project-source-row">
-            <label>
-              <span>{{ t('projects.profileDialog.sourceName') }}</span>
-              <input v-model="source.title" maxlength="512" required />
-            </label>
-            <label>
-              <span>{{ t('projects.profileDialog.sourceType') }}</span>
-              <select v-model="source.kind">
-                <option v-for="[value, label] in sourceKinds" :key="value" :value="value">
-                  {{ label }}
-                </option>
-              </select>
-            </label>
-            <label class="project-source-wide-field">
-              <span>{{ t('projects.profileDialog.sourceUri') }}</span>
-              <input v-model="source.uri" maxlength="2048" :placeholder="t('projects.profileDialog.sourceUriPlaceholder')" />
-            </label>
-            <label class="project-source-wide-field">
-              <span>{{ t('projects.profileDialog.sourceSummary') }}</span>
-              <textarea v-model="source.summary" maxlength="4096" rows="2" />
-            </label>
-            <label>
-              <span>{{ t('projects.profileDialog.sensitivity') }}</span>
-              <select v-model="source.sensitivity">
-                <option value="normal">{{ t('projects.profileDialog.sensitivities.normal') }}</option>
-                <option value="private">{{ t('projects.profileDialog.sensitivities.private') }}</option>
-                <option value="restricted">{{ t('projects.profileDialog.sensitivities.restricted') }}</option>
-              </select>
-            </label>
-            <button class="text-action project-source-remove" type="button" @click="removeSource(index)">
-              {{ t('common.actions.remove') }}
-            </button>
-          </article>
-        </div>
-        <p v-else class="project-source-empty">{{ t('projects.profileDialog.noSources') }}</p>
-      </section>
-
-      <p class="project-profile-state-note">
-        {{ t('projects.profileDialog.stateBoundary') }}
-      </p>
-      <p v-if="error" class="project-profile-error" role="alert">{{ error }}</p>
-      <footer class="project-profile-dialog-actions">
-        <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">
-          {{ t('common.actions.cancel') }}
-        </button>
-        <button class="primary-action" type="submit" :disabled="busy">
-          <GrowthLoading
-            v-if="busy"
-            variant="inline"
-            :label="t('projects.profileDialog.saving')"
-          />
-          <template v-else>{{ t('projects.profileDialog.save') }}</template>
-        </button>
-      </footer>
-    </form>
-  </dialog>
+    <p class="ui-meta">{{ t('projects.profileDialog.stateBoundary') }}</p>
+    <template #footer>
+      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</UiButton>
+      <UiButton variant="primary" type="submit" :busy="busy" :busy-label="t('projects.profileDialog.saving')">{{ t('projects.profileDialog.save') }}</UiButton>
+    </template>
+  </UiDialog>
 </template>
+
+<style scoped>
+.project-profile-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.project-profile-wide-field { grid-column: 1 / -1; }
+.project-source-editor { display: grid; gap: 12px; padding-top: 16px; border-top: 1px solid var(--color-border); }
+.project-source-editor-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; outline: 0; }
+.project-source-editor-heading h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.project-source-editor-heading p { margin: 2px 0 0; }
+.project-source-list { display: grid; gap: 10px; }
+.project-source-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 10px; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+.project-source-wide-field { grid-column: 1 / span 2; }
+.project-source-remove { justify-self: end; }
+@media (max-width: 640px) {
+  .project-profile-fields, .project-source-row { grid-template-columns: 1fr; }
+  .project-source-wide-field { grid-column: auto; }
+}
+</style>

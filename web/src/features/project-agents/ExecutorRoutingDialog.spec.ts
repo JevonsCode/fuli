@@ -86,7 +86,7 @@ describe('ExecutorRoutingDialog', () => {
 
     const dialog = wrapper.get('dialog')
     expect(showModal).toHaveBeenCalledTimes(1)
-    expect(document.activeElement).toBe(dialog.get('[data-dialog-initial-focus]').element)
+    expect(dialog.get('.ui-dialog__body').element.contains(document.activeElement)).toBe(true)
 
     await wrapper.setProps({ open: false })
     await flushPromises()

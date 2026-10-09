@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch, useId } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { postJson } from '@/api/client'
-import GrowthLoading from '@/components/GrowthLoading.vue'
-import { useModalDialog } from '@/composables/useModalDialog'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiDialog from '@/components/ui/UiDialog.vue'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { PersonalProject } from '@/types'
@@ -22,11 +22,6 @@ const version = ref('')
 const summary = ref('')
 const error = ref('')
 const busy = ref(false)
-const dialogTitleId = useId()
-const { dialogRef, onCancel, onKeydown } = useModalDialog(
-  () => Boolean(props.project),
-  () => { if (!busy.value) emit('close') },
-)
 
 const publicProject = computed(() =>
   store.state?.projects.find(
@@ -100,34 +95,33 @@ function suggestedVersion(current: string | null) {
 </script>
 
 <template>
-  <dialog v-if="project" ref="dialogRef" aria-modal="true" :aria-labelledby="dialogTitleId" @cancel="onCancel" @keydown="onKeydown" class="publish-dialog vue-dialog">
-    <div class="publish-dialog-shell">
-      <h3 :id="dialogTitleId">{{ t('projects.publishDialog.title') }}</h3>
-      <p class="publish-dialog-intro">
-        <strong>{{ project.profile.name }}</strong>
-        <span>{{ t('projects.publishDialog.warning') }}</span>
-      </p>
-      <div class="publish-release-fields">
-        <label><span>{{ t('projects.publishDialog.version') }}</span><input v-model="version" maxlength="64" :placeholder="t('projects.publishDialog.versionPlaceholder')" /><small>{{ currentVersion ? t('projects.publishDialog.currentVersion', { version: currentVersion }) : t('projects.publishDialog.firstRelease') }}</small></label>
-        <label><span>{{ t('projects.publishDialog.summary') }}</span><textarea v-model="summary" maxlength="4096" rows="4" :placeholder="t('projects.publishDialog.summaryPlaceholder')" /></label>
-      </div>
-      <div class="publish-impact" :aria-label="t('projects.publishDialog.impactAria')">
-        <div><strong>{{ t('projects.publishDialog.discoverable') }}</strong><span>{{ t('projects.publishDialog.discoverableCopy') }}</span></div>
-        <div><strong>{{ t('projects.publishDialog.owner') }}</strong><span>{{ t('projects.publishDialog.ownerCopy') }}</span></div>
-        <div><strong>{{ t('projects.publishDialog.syncProfile') }}</strong><span>{{ t('projects.publishDialog.syncProfileCopy') }}</span></div>
-      </div>
-      <p v-if="error" class="publish-dialog-error" role="alert">{{ error }}</p>
-      <div class="publish-dialog-actions">
-        <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</button>
-        <button class="primary-action" type="button" :disabled="busy" @click="publish">
-          <GrowthLoading
-            v-if="busy"
-            variant="inline"
-            :label="t('projects.publishDialog.publishing')"
-          />
-          <template v-else>{{ t('projects.publishDialog.confirm') }}</template>
-        </button>
-      </div>
-    </div>
-  </dialog>
+  <UiDialog v-if="project" open class="publish-dialog" :title="t('projects.publishDialog.title')"
+    :description="t('projects.publishDialog.warning')" :busy="busy" :error="error" @close="emit('close')">
+    <p class="publish-dialog-project">{{ project.profile.name }}</p>
+    <label class="ui-field">{{ t('projects.publishDialog.version') }}
+      <input v-model="version" maxlength="64" :placeholder="t('projects.publishDialog.versionPlaceholder')" />
+      <small class="ui-field-hint">{{ currentVersion ? t('projects.publishDialog.currentVersion', { version: currentVersion }) : t('projects.publishDialog.firstRelease') }}</small>
+    </label>
+    <label class="ui-field">{{ t('projects.publishDialog.summary') }}
+      <textarea v-model="summary" maxlength="4096" rows="4" :placeholder="t('projects.publishDialog.summaryPlaceholder')" />
+    </label>
+    <dl class="publish-impact" :aria-label="t('projects.publishDialog.impactAria')">
+      <div><dt>{{ t('projects.publishDialog.discoverable') }}</dt><dd>{{ t('projects.publishDialog.discoverableCopy') }}</dd></div>
+      <div><dt>{{ t('projects.publishDialog.owner') }}</dt><dd>{{ t('projects.publishDialog.ownerCopy') }}</dd></div>
+      <div><dt>{{ t('projects.publishDialog.syncProfile') }}</dt><dd>{{ t('projects.publishDialog.syncProfileCopy') }}</dd></div>
+    </dl>
+    <template #footer>
+      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</UiButton>
+      <UiButton variant="primary" :busy="busy" :busy-label="t('projects.publishDialog.publishing')" @click="publish">{{ t('projects.publishDialog.confirm') }}</UiButton>
+    </template>
+  </UiDialog>
 </template>
+
+<style scoped>
+.publish-dialog-project { margin: 0; font-size: 15px; font-weight: 600; }
+.publish-impact { margin: 0; border-block: 1px solid var(--color-border); }
+.publish-impact > div { display: grid; grid-template-columns: 108px 1fr; gap: 14px; padding: 10px 0; font-size: 12px; }
+.publish-impact > div + div { border-top: 1px solid var(--color-border); }
+.publish-impact dt { font-weight: 600; }
+.publish-impact dd { margin: 0; color: var(--color-muted); line-height: 1.5; }
+</style>

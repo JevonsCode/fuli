@@ -52,7 +52,7 @@ describe('PublishProjectDialog', () => {
 
     expect((wrapper.get('input').element as HTMLInputElement).value).toBe('v1.2.4')
     await wrapper.get('textarea').setValue('迁移 Vue 图谱渲染器。')
-    await wrapper.get('.primary-action').trigger('click')
+    await wrapper.get('.ui-button--primary').trigger('click')
     await flushPromises()
 
     expect(postJson).toHaveBeenCalledWith('/api/projects/publish', {

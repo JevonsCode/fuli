@@ -2,7 +2,9 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import { useModalDialog } from '@/composables/useModalDialog'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiDialog from '@/components/ui/UiDialog.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import type { PersonalProject, ProjectAgentRecord } from '@/types'
 import AgentHand from './AgentHand.vue'
@@ -24,7 +26,11 @@ const draft = computed({
   set: value => { if (selected.value) drafts.value[selectedId.value] = { ...value, revision: selected.value.revision } },
 })
 const projectNames = computed(() => new Map(props.projects.map(project => [project.project_id, project.profile.name])))
-const { dialogRef, initialFocusRef, onCancel, onKeydown } = useModalDialog(() => attention.open, () => { if (!busy.value) attention.open = false })
+const requestOptions = computed(() => attention.items.map(item => ({
+  value: item.requestId,
+  label: item.title,
+  meta: `${names.value[item.agentId] || t('attention.agentFallback')} · ${projectNames.value.get(item.personalProjectId) || t('attention.projectFallback')}`,
+})))
 watch(() => props.personalSpaceId, id => {
   operation++; busy.value = ''
   names.value = {}; drafts.value = {}; selectedId.value = ''; responseErrors.value = {}
@@ -72,25 +78,23 @@ async function respond(item: AgentAttention, response: string) {
 <template>
   <button class="space-nav-button attention-nav" :aria-label="attention.total ? `${t('attention.title')} · ${t('attention.count', { count: attention.total })}` : t('attention.title')" type="button" @click="attention.show()"><span class="nav-icon nav-icon-review" aria-hidden="true" /><span>{{ t('attention.title') }}</span><span class="attention-nav-status"><AgentHand passive count-only /><span v-if="attention.error" :title="t('attention.loadError')">!</span></span></button>
   <Teleport to="body">
-    <dialog v-if="attention.open" ref="dialogRef" class="attention-dialog" aria-labelledby="attention-title" @cancel="onCancel" @keydown="onKeydown">
-      <header class="attention-header">
-        <div><h2 id="attention-title">{{ t('attention.title') }}</h2><span class="ui-badge">{{ attention.agentId ? attention.counts[attention.agentId] ?? attention.filteredTotal : attention.total }}</span></div>
-        <button ref="initialFocusRef" class="ui-button ui-button--ghost ui-button--icon" type="button" :disabled="Boolean(busy)" :aria-label="t('attention.close')" @click="attention.open = false">×</button>
-      </header>
-      <div v-if="attention.error" role="alert" class="attention-error"><span>{{ t('attention.loadError') }}</span><button class="ui-button" :disabled="attention.loading" @click="attention.refresh()">{{ t('attention.refresh') }}</button></div>
+    <UiDialog :open="attention.open" class="attention-dialog" size="xl" :busy="Boolean(busy)"
+      :title="t('attention.title')" :description="t('attention.count', { count: attention.agentId ? attention.counts[attention.agentId] ?? attention.filteredTotal : attention.total })"
+      @close="attention.open = false">
+      <div v-if="attention.error" role="alert" class="attention-error"><span>{{ t('attention.loadError') }}</span><UiButton size="sm" :disabled="attention.loading" @click="attention.refresh()">{{ t('attention.refresh') }}</UiButton></div>
       <GrowthLoading v-if="attention.loading && !attention.items.length" variant="page" :label="t('attention.loading')" />
       <div v-else-if="!attention.items.length && !attention.error" class="attention-empty"><span aria-hidden="true">✓</span><p>{{ t('attention.empty') }}</p></div>
       <div v-else-if="attention.items.length" class="attention-workspace" :aria-busy="attention.loading">
         <aside class="attention-queue" :aria-label="t('attention.queue')">
-          <div class="attention-queue-toolbar"><span>{{ attention.agentId ? names[attention.agentId] || t('attention.agentFallback') : t('attention.all') }}</span><button v-if="attention.agentId || !attention.error" class="ui-button ui-button--ghost" :disabled="attention.loading || Boolean(busy)" @click="attention.agentId ? attention.show() : attention.refresh()">{{ attention.agentId ? t('attention.all') : t('attention.refresh') }}</button></div>
-          <label class="attention-mobile-picker">{{ t('attention.selectRequest') }}<select v-model="selectedId" :disabled="Boolean(busy)"><option v-for="item in attention.items" :key="item.requestId" :value="item.requestId">{{ names[item.agentId] || t('attention.agentFallback') }} · {{ projectNames.get(item.personalProjectId) || t('attention.projectFallback') }} — {{ item.title }}</option></select></label>
+          <div class="attention-queue-toolbar"><span>{{ attention.agentId ? names[attention.agentId] || t('attention.agentFallback') : t('attention.all') }}</span><UiButton v-if="attention.agentId || !attention.error" size="sm" variant="ghost" :disabled="attention.loading || Boolean(busy)" @click="attention.agentId ? attention.show() : attention.refresh()">{{ attention.agentId ? t('attention.all') : t('attention.refresh') }}</UiButton></div>
+          <UiSelect v-model="selectedId" class="attention-mobile-picker" field :label="t('attention.selectRequest')" :options="requestOptions" :disabled="Boolean(busy)" />
           <div class="attention-request-list">
             <button v-for="item in attention.items" :key="item.requestId" type="button" class="attention-request" :class="{ 'is-selected': selectedId === item.requestId }" :aria-current="selectedId === item.requestId ? 'true' : undefined" :disabled="Boolean(busy)" @click="selectedId = item.requestId">
               <span class="attention-request-meta">{{ names[item.agentId] || t('attention.agentFallback') }}<span>{{ t(`attention.kinds.${item.kind}`) }}</span></span>
               <strong>{{ item.title }}</strong><span class="attention-request-project">{{ projectNames.get(item.personalProjectId) || t('attention.projectFallback') }}</span>
             </button>
           </div>
-          <button v-if="attention.items.length < attention.filteredTotal" class="ui-button attention-more" type="button" :disabled="attention.loading || Boolean(busy)" @click="attention.more()">{{ t('attention.more') }}</button>
+          <UiButton v-if="attention.items.length < attention.filteredTotal" class="attention-more" :disabled="attention.loading || Boolean(busy)" @click="attention.more()">{{ t('attention.more') }}</UiButton>
         </aside>
         <section v-if="selected" :key="selected.requestId" class="attention-detail">
           <div class="attention-detail-meta"><span>{{ names[selected.agentId] || t('attention.agentFallback') }} · {{ projectNames.get(selected.personalProjectId) || t('attention.projectFallback') }}</span><span class="ui-badge">{{ t(`attention.kinds.${selected.kind}`) }}</span></div>
@@ -98,7 +102,7 @@ async function respond(item: AgentAttention, response: string) {
           <a v-if="selected.taskId && !busy" class="attention-task-link" :href="attentionTaskHref(selected)" @click="attention.open = false">{{ t('attention.task') }} ↗</a>
         </section>
       </div>
-    </dialog>
+    </UiDialog>
   </Teleport>
 </template>
 
