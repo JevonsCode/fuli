@@ -195,23 +195,23 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
 </template>
 
 <style scoped>
-.agent-conversations { margin-block: 20px; color: #39483f; font-size: 14px; }
+.agent-conversations { margin-block: 20px; color: var(--color-ink); font-size: 14px; }
 summary { cursor: pointer; padding-block: 12px; font-weight: 650; }
-summary:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid #315c43; outline-offset: 3px; }
+summary:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
 label { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
-select, input[type=number] { max-width: 100%; border: 1px solid #a8b7ad; border-radius: 6px; padding: 8px; font: inherit; color: inherit; background: #fff; }
+select, input[type=number] { max-width: 100%; border: 1px solid var(--color-border-strong); border-radius: 6px; padding: 8px; font: inherit; color: inherit; background: var(--color-surface); }
 input[type=number] { width: 100px; }
 input[type=checkbox] { width: 18px; height: 18px; }
 fieldset { display: grid; gap: 16px; border: 0; padding: 8px 0; margin: 0; min-width: 0; }
 fieldset button { justify-self: start; }
-.conversation-hint { color: #58675d; line-height: 1.65; margin-block: 12px; }
+.conversation-hint { color: var(--color-muted); line-height: 1.65; margin-block: 12px; }
 ol { padding: 0; list-style: none; margin: 0; }
-.conversation-list > li { border-bottom: 1px solid #dce3de; }
+.conversation-list > li { border-bottom: 1px solid var(--color-border); }
 .continuation-copy { margin-bottom: 12px; }
 .conversation-link { display: grid; gap: 6px; width: 100%; text-align: left; border: 0; padding: 14px 0; font: inherit; color: inherit; background: transparent; cursor: pointer; }
 .conversation-link:hover strong { text-decoration: underline; text-underline-offset: 3px; }
-.conversation-link[aria-pressed=true] strong { color: #315c43; }
-.conversation-link span { color: #58675d; font-size: 12px; }
+.conversation-link[aria-pressed=true] strong { color: var(--color-ink); }
+.conversation-link span { color: var(--color-muted); font-size: 12px; }
 .conversation-link strong { overflow-wrap: anywhere; }
 .conversation-messages { padding-bottom: 16px; }
 .conversation-messages li { padding-block: 12px; }

@@ -336,7 +336,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="view">
-    <div class="section-title"><h3>{{ t('pages.review.personalTitle') }}</h3><p>{{ t('pages.review.personalCopy') }}</p></div>
+    <div class="section-title"><h3>{{ t('pages.review.personalTitle') }}</h3></div>
     <div class="review-list" data-review-queue="personal">
       <GrowthLoading v-if="personalLoading" variant="compact" :label="t('pages.review.loadingPersonal')" />
       <div v-if="personalError" class="review-error" role="alert">
@@ -366,7 +366,7 @@ onBeforeUnmount(() => {
 
     <section v-if="store.state?.capabilities?.reviewProposals && maintainableProjects.length" class="project-section">
       <div class="section-toolbar">
-        <div><h3>{{ t('pages.review.publicTitle') }}</h3><p>{{ t('pages.review.publicCopy') }}</p></div>
+        <div><h3>{{ t('pages.review.publicTitle') }}</h3></div>
         <SearchableSelect
           v-model="reviewProjectId"
           :options="reviewProjectOptions"

@@ -12,13 +12,6 @@ export const preferenceMessages = {
         global: '个人全局',
         projectMeta: '{count} 条项目偏好',
       },
-      summaryGuidance: {
-        conflicts: '正在成对查看疑似冲突；再次点击可返回全部偏好。',
-        pending: '已筛出待确认偏好。点击条目核对依据，再选择确认、纠正或标记失效。',
-        confirmed: '已筛出确认人和确认时间完整的偏好；再次点击可返回全部偏好。',
-        agentConfirmed: '已筛出由实际使用证据形成的 Agent 已确认偏好；它们仍低于人工确认。',
-        default: '点击状态数字可筛选内容；疑似冲突会进入成对处理工作台。',
-      },
       statusSuffix: {
         aiPending: '待 AI 使用时判断',
         conflict: '疑似冲突',
@@ -184,13 +177,6 @@ export const preferenceMessages = {
         all: 'All scopes',
         global: 'Personal global',
         projectMeta: '{count} project preference | {count} project preferences',
-      },
-      summaryGuidance: {
-        conflicts: 'Reviewing possible conflicts in pairs. Click again to return to all preferences.',
-        pending: 'Pending preferences are filtered. Open an item to check its basis, then confirm, correct, or invalidate it.',
-        confirmed: 'Preferences with a complete confirmer and confirmation time are filtered. Click again to return to all preferences.',
-        agentConfirmed: 'Agent-confirmed preferences backed by actual-use evidence are filtered. They remain lower priority than human confirmation.',
-        default: 'Click a status total to filter. Possible conflicts open in the pairwise resolution workbench.',
       },
       statusSuffix: {
         aiPending: 'AI will decide when used',

@@ -96,111 +96,123 @@ const statuses = computed(() => [
 
 <template>
   <section class="label-guide" :aria-label="t('about.labelsAria')">
-      <div class="label-dimension-strip">
-        <article v-for="dimension in dimensions" :key="dimension.key" :data-dimension="dimension.key">
-          <i aria-hidden="true" />
-          <div>
-            <strong>{{ dimension.title }}</strong>
-            <p>{{ dimension.question }}</p>
+    <div class="label-dimension-strip">
+      <article v-for="dimension in dimensions" :key="dimension.key" :data-dimension="dimension.key">
+        <i aria-hidden="true" />
+        <dl>
+          <dt>{{ dimension.title }}</dt>
+          <dd>
+            {{ dimension.question }}
             <small>{{ dimension.timing }}</small>
-          </div>
-        </article>
-      </div>
+          </dd>
+        </dl>
+      </article>
+    </div>
 
-      <div class="label-guide-sheet">
-        <section class="label-guide-section profile-guide">
-          <header>
-            <span>{{ t('about.sections.profile.index') }}</span>
-            <div>
-              <h3>{{ t('about.sections.profile.title') }}</h3>
-              <p>{{ t('about.sections.profile.meta') }}</p>
-            </div>
-          </header>
-          <div class="label-definition-list">
-            <article v-for="profile in profiles" :key="profile.key" class="label-definition-row">
+    <div class="label-guide-sheet">
+      <section class="label-guide-section profile-guide">
+        <header>
+          <span>{{ t('about.sections.profile.index') }}</span>
+          <div>
+            <h3>{{ t('about.sections.profile.title') }}</h3>
+            <p>{{ t('about.sections.profile.meta') }}</p>
+          </div>
+        </header>
+        <dl class="label-definition-list">
+          <div v-for="profile in profiles" :key="profile.key" class="label-definition-row">
+            <dt>
               <span class="label-token profile-token" :data-kind="profile.key">{{ profile.label }}</span>
-              <div>
-                <strong>{{ profile.short }}</strong>
-                <p>{{ profile.description }}</p>
-              </div>
+            </dt>
+            <dd>
+              <strong>{{ profile.short }}</strong>
+              <p>{{ profile.description }}</p>
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="label-guide-section quadrant-guide">
+        <header>
+          <span>{{ t('about.sections.origin.index') }}</span>
+          <div>
+            <h3>{{ t('about.sections.origin.title') }}</h3>
+            <p>{{ t('about.sections.origin.meta') }}</p>
+          </div>
+        </header>
+        <div class="quadrant-explainer">
+          <div class="quadrant-y-axis" aria-hidden="true">
+            <span>{{ t('about.quadrants.aware') }}</span>
+            <strong>{{ t('about.quadrants.awareness') }}</strong>
+            <span>{{ t('about.quadrants.unaware') }}</span>
+          </div>
+          <div class="quadrant-grid" role="group" :aria-label="t('about.sections.origin.title')">
+            <article v-for="quadrant in quadrants" :key="quadrant.key" :data-quadrant="quadrant.key">
+              <span>{{ quadrant.coordinate }}</span>
+              <strong>{{ quadrant.label }}</strong>
+              <p>{{ quadrant.description }}</p>
             </article>
           </div>
-        </section>
-
-        <section class="label-guide-section quadrant-guide">
-          <header>
-            <span>{{ t('about.sections.origin.index') }}</span>
-            <div>
-              <h3>{{ t('about.sections.origin.title') }}</h3>
-              <p>{{ t('about.sections.origin.meta') }}</p>
-            </div>
-          </header>
-          <div class="quadrant-explainer">
-            <div class="quadrant-y-axis" aria-hidden="true">
-              <span>{{ t('about.quadrants.aware') }}</span>
-              <strong>{{ t('about.quadrants.awareness') }}</strong>
-              <span>{{ t('about.quadrants.unaware') }}</span>
-            </div>
-            <div class="quadrant-grid">
-              <article v-for="quadrant in quadrants" :key="quadrant.key" :data-quadrant="quadrant.key">
-                <span>{{ quadrant.coordinate }}</span>
-                <strong>{{ quadrant.label }}</strong>
-                <p>{{ quadrant.description }}</p>
-              </article>
-            </div>
-            <div class="quadrant-x-axis" aria-hidden="true">
-              <span>{{ t('about.quadrants.unmastered') }}</span>
-              <strong>{{ t('about.quadrants.mastery') }}</strong>
-              <span>{{ t('about.quadrants.mastered') }}</span>
-            </div>
-            <div class="quadrant-notes">
-              <p>{{ t('about.quadrants.immutable') }}</p>
-              <p>{{ t('about.quadrants.unclassified') }}</p>
-            </div>
+          <div class="quadrant-x-axis" aria-hidden="true">
+            <span>{{ t('about.quadrants.unmastered') }}</span>
+            <strong>{{ t('about.quadrants.mastery') }}</strong>
+            <span>{{ t('about.quadrants.mastered') }}</span>
           </div>
-        </section>
+          <div class="quadrant-notes">
+            <p>{{ t('about.quadrants.immutable') }}</p>
+            <p>{{ t('about.quadrants.unclassified') }}</p>
+          </div>
+        </div>
+      </section>
 
-        <section class="label-guide-section confirmation-guide">
-          <header>
-            <span>{{ t('about.sections.confirmation.index') }}</span>
-            <div>
-              <h3>{{ t('about.sections.confirmation.title') }}</h3>
-              <p>{{ t('about.sections.confirmation.meta') }}</p>
-            </div>
-          </header>
+      <section class="label-guide-section confirmation-guide">
+        <header>
+          <span>{{ t('about.sections.confirmation.index') }}</span>
           <div>
-            <div class="status-definition-list">
-              <article v-for="status in statuses" :key="status.key" class="status-definition-row">
-                <span class="label-token status-token" :data-status="status.key">{{ status.label }}</span>
-                <p>{{ status.description }}</p>
-                <div>
-                  <span>{{ t('about.statuses.entryCondition') }}</span>
-                  <strong>{{ status.rule }}</strong>
-                </div>
-              </article>
-            </div>
-            <div class="status-boundaries">
-              <p>{{ t('about.statuses.usageBoundary') }}</p>
-              <p>{{ t('about.statuses.resetBoundary') }}</p>
-            </div>
+            <h3>{{ t('about.sections.confirmation.title') }}</h3>
+            <p>{{ t('about.sections.confirmation.meta') }}</p>
           </div>
-        </section>
+        </header>
+        <div class="status-table-wrap">
+          <table class="status-definition-table">
+            <thead>
+              <tr>
+                <th scope="col">{{ t('about.sections.confirmation.title') }}</th>
+                <th scope="col">{{ t('about.statuses.descriptionHeader') }}</th>
+                <th scope="col">{{ t('about.statuses.entryCondition') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="status in statuses" :key="status.key" class="status-definition-row">
+                <th scope="row">
+                  <span class="label-token status-token" :data-status="status.key">{{ status.label }}</span>
+                </th>
+                <td :data-label="t('about.statuses.descriptionHeader')">{{ status.description }}</td>
+                <td :data-label="t('about.statuses.entryCondition')"><strong>{{ status.rule }}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="status-boundaries">
+            <p>{{ t('about.statuses.usageBoundary') }}</p>
+            <p>{{ t('about.statuses.resetBoundary') }}</p>
+          </div>
+        </div>
+      </section>
 
-        <section class="label-example">
-          <div>
-            <span>{{ t('about.example.title') }}</span>
-            <strong>{{ t('about.example.item') }}</strong>
-          </div>
-          <div class="label-example-tags" aria-hidden="true">
-            <span class="label-token profile-token" data-kind="taste">{{ t('about.example.profile') }}</span>
-            <span class="label-token origin-token">{{ t('about.example.origin') }}</span>
-            <span class="label-token status-token" data-status="confirmed">{{ t('about.example.status') }}</span>
-          </div>
-          <p>{{ t('about.example.description') }}</p>
-        </section>
+      <section class="label-example">
+        <div>
+          <span>{{ t('about.example.title') }}</span>
+          <strong>{{ t('about.example.item') }}</strong>
+        </div>
+        <div class="label-example-tags" aria-hidden="true">
+          <span class="label-token profile-token" data-kind="taste">{{ t('about.example.profile') }}</span>
+          <span class="label-token origin-token">{{ t('about.example.origin') }}</span>
+          <span class="label-token status-token" data-status="confirmed">{{ t('about.example.status') }}</span>
+        </div>
+        <p>{{ t('about.example.description') }}</p>
+      </section>
 
-        <p class="label-all-note">{{ t('about.allFilter') }}</p>
-      </div>
+      <p class="label-all-note">{{ t('about.allFilter') }}</p>
+    </div>
   </section>
 </template>
 
@@ -208,31 +220,25 @@ const statuses = computed(() => [
 .label-dimension-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  border: 1px solid #d4dad5;
-  border-radius: 8px;
-  overflow: hidden;
-  background: #fff;
+  border-block: 1px solid var(--color-border);
 }
 
 .label-dimension-strip article {
   min-width: 0;
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-columns: 22px minmax(0, 1fr);
   gap: 11px;
-  padding: 15px 17px;
+  padding: 16px 18px;
 }
 
-.label-dimension-strip article + article {
-  border-left: 1px solid #e1e5e1;
-}
+.label-dimension-strip article + article { border-left: 1px solid var(--color-border); }
 
 .label-dimension-strip i {
   position: relative;
-  width: 27px;
-  height: 27px;
-  border: 1px solid #cdd7d0;
-  border-radius: 7px;
-  background: #f2f6f3;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
 }
 
 .label-dimension-strip i::before,
@@ -242,86 +248,84 @@ const statuses = computed(() => [
 }
 
 .label-dimension-strip [data-dimension="profile"] i::before {
-  inset: 6px;
-  border: 1.5px solid #537461;
+  inset: 5px;
+  border: 1.5px solid var(--color-muted);
   border-radius: 50%;
 }
 
 .label-dimension-strip [data-dimension="profile"] i::after {
+  top: 2px;
+  right: 2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--color-danger);
+}
+
+.label-dimension-strip [data-dimension="origin"] i::before {
+  inset: 4px;
+  border-right: 1px solid var(--color-muted);
+  border-bottom: 1px solid var(--color-muted);
+}
+
+.label-dimension-strip [data-dimension="origin"] i::after {
   top: 4px;
   right: 4px;
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #8f6b59;
-}
-
-.label-dimension-strip [data-dimension="origin"] i::before {
-  inset: 5px;
-  border-right: 1px solid #597266;
-  border-bottom: 1px solid #597266;
-}
-
-.label-dimension-strip [data-dimension="origin"] i::after {
-  top: 5px;
-  right: 5px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #735f79;
+  background: var(--color-muted);
 }
 
 .label-dimension-strip [data-dimension="confirmation"] i::before {
-  top: 6px;
-  left: 6px;
-  width: 13px;
-  height: 7px;
-  border-left: 2px solid #537461;
-  border-bottom: 2px solid #537461;
+  top: 5px;
+  left: 5px;
+  width: 11px;
+  height: 6px;
+  border-left: 2px solid var(--color-muted);
+  border-bottom: 2px solid var(--color-muted);
   transform: rotate(-45deg);
 }
 
-.label-dimension-strip strong,
-.label-dimension-strip p,
+.label-dimension-strip dl,
+.label-dimension-strip dt,
+.label-dimension-strip dd {
+  margin: 0;
+}
+
+.label-dimension-strip dt {
+  color: var(--color-ink);
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.label-dimension-strip dd {
+  margin-top: 3px;
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .label-dimension-strip small {
   display: block;
-}
-
-.label-dimension-strip strong {
-  color: #33443a;
-  font-size: 12px;
-}
-
-.label-dimension-strip p {
-  margin-top: 2px;
-  color: #68736c;
-  font-size: 10px;
-}
-
-.label-dimension-strip small {
   margin-top: 5px;
-  color: #929a94;
-  font-size: 8px;
-  line-height: 1.35;
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .label-guide-sheet {
-  margin-top: 14px;
-  border: 1px solid #d4dad5;
-  border-radius: 8px;
-  overflow: hidden;
-  background: #fff;
+  display: grid;
+  gap: 42px;
+  margin-top: 40px;
 }
 
 .label-guide-section {
   display: grid;
-  grid-template-columns: 160px minmax(0, 1fr);
-  gap: 24px;
-  padding: 24px;
-}
-
-.label-guide-section + .label-guide-section {
-  border-top: 1px solid #e0e4e0;
+  grid-template-columns: 148px minmax(0, 1fr);
+  gap: 26px;
+  padding-top: 28px;
+  border-top: 1px solid var(--color-border);
 }
 
 .label-guide-section > header {
@@ -332,25 +336,29 @@ const statuses = computed(() => [
 }
 
 .label-guide-section > header > span {
-  color: #a0a7a2;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 9px;
+  color: var(--about-gold);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .06em;
 }
 
 .label-guide-section h3 {
-  color: #2e3c34;
+  margin: 0;
+  color: var(--color-ink);
   font-size: 15px;
+  font-weight: 650;
 }
 
 .label-guide-section header p {
-  margin-top: 4px;
-  color: #879089;
-  font-size: 9px;
+  margin-top: 5px;
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
-.label-definition-list,
-.status-definition-list {
+.label-definition-list {
   display: grid;
+  margin: 0;
 }
 
 .label-definition-row {
@@ -358,13 +366,12 @@ const statuses = computed(() => [
   grid-template-columns: 116px minmax(0, 1fr);
   align-items: start;
   gap: 16px;
-  padding: 12px 0;
+  padding: 13px 0;
 }
 
-.label-definition-row + .label-definition-row,
-.status-definition-row + .status-definition-row {
-  border-top: 1px solid #edf0ed;
-}
+.label-definition-row + .label-definition-row { border-top: 1px solid var(--color-border); }
+.label-definition-row dt,
+.label-definition-row dd { margin: 0; }
 
 .label-token {
   width: max-content;
@@ -372,9 +379,12 @@ const statuses = computed(() => [
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border-radius: 999px;
-  padding: 5px 9px;
-  font-size: 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--color-ink);
+  background: var(--color-surface-subtle);
+  font-size: 12px;
   font-weight: 680;
   line-height: 1;
   white-space: nowrap;
@@ -387,34 +397,28 @@ const statuses = computed(() => [
   border-radius: 50%;
   background: currentColor;
   content: '';
-  opacity: .72;
+  opacity: .8;
 }
 
-.profile-token[data-kind="taste"] {
-  color: #7a574b;
-  background: #f5eeeb;
-}
-
-.profile-token[data-kind="personality"] {
-  color: #4f6970;
-  background: #edf3f4;
-}
-
-.profile-token[data-kind="judgment"] {
-  color: #665b7a;
-  background: #f1eef6;
-}
+.profile-token[data-kind="taste"] { color: var(--color-danger); background: var(--color-danger-soft); }
+.profile-token[data-kind="personality"] { color: var(--color-accent); background: var(--color-accent-soft); }
+.profile-token[data-kind="judgment"] { color: var(--color-warning); background: var(--color-warning-soft); }
+.origin-token { color: var(--color-ink); }
+.status-token[data-status="pending"] { color: var(--color-warning); background: var(--color-warning-soft); }
+.status-token[data-status="agent-confirmed"],
+.status-token[data-status="confirmed"] { color: var(--color-success); background: var(--color-success-soft); }
 
 .label-definition-row strong {
-  color: #3f4b44;
-  font-size: 11px;
+  color: var(--color-ink);
+  font-size: 13px;
+  font-weight: 650;
 }
 
 .label-definition-row p {
-  margin-top: 4px;
-  color: #6f7972;
-  font-size: 10px;
-  line-height: 1.55;
+  margin-top: 5px;
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .quadrant-explainer {
@@ -430,13 +434,13 @@ const statuses = computed(() => [
   align-items: center;
   justify-content: space-between;
   padding: 3px 0;
-  color: #8a938d;
-  font-size: 8px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .quadrant-y-axis strong {
-  color: #68736c;
-  font-size: 8px;
+  color: var(--color-muted);
+  font-size: 12px;
   font-weight: 650;
   letter-spacing: .08em;
   text-orientation: upright;
@@ -446,46 +450,38 @@ const statuses = computed(() => [
 .quadrant-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  border: 1px solid #cfd7d1;
-  border-radius: 7px;
   overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
 }
 
 .quadrant-grid article {
-  min-height: 118px;
-  padding: 14px 16px;
+  min-height: 108px;
+  padding: 13px 15px;
+  background: transparent;
 }
 
-.quadrant-grid article:nth-child(2n) {
-  border-left: 1px solid #dce2dd;
-}
-
-.quadrant-grid article:nth-child(n + 3) {
-  border-top: 1px solid #dce2dd;
-}
-
-.quadrant-grid article[data-quadrant="known-unknown"] { background: #f6f2e8; }
-.quadrant-grid article[data-quadrant="known-known"] { background: #edf5f0; }
-.quadrant-grid article[data-quadrant="unknown-unknown"] { background: #f4eff4; }
-.quadrant-grid article[data-quadrant="unknown-known"] { background: #edf4f5; }
+.quadrant-grid article:nth-child(2n) { border-left: 1px solid var(--color-border); }
+.quadrant-grid article:nth-child(n + 3) { border-top: 1px solid var(--color-border); }
 
 .quadrant-grid span {
-  color: #838d86;
-  font-size: 8px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .quadrant-grid strong {
   display: block;
-  margin-top: 7px;
-  color: #35443b;
+  margin-top: 6px;
+  color: var(--color-ink);
   font-size: 13px;
+  font-weight: 650;
 }
 
 .quadrant-grid p {
   max-width: 340px;
-  margin-top: 6px;
-  color: #68736c;
-  font-size: 10px;
+  margin-top: 5px;
+  color: var(--color-muted);
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -496,17 +492,12 @@ const statuses = computed(() => [
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 10px;
-  color: #8a938d;
-  font-size: 8px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .quadrant-x-axis span:last-child { text-align: right; }
-
-.quadrant-x-axis strong {
-  color: #68736c;
-  font-size: 8px;
-  letter-spacing: .08em;
-}
+.quadrant-x-axis strong { color: var(--color-muted); font-size: 12px; font-weight: 650; letter-spacing: .08em; }
 
 .quadrant-notes {
   grid-column: 2;
@@ -519,142 +510,70 @@ const statuses = computed(() => [
 
 .quadrant-notes p,
 .status-boundaries p {
-  color: #77817a;
-  font-size: 9px;
-  line-height: 1.45;
-}
-
-.status-definition-row {
-  display: grid;
-  grid-template-columns: 120px minmax(0, 1fr) minmax(180px, .72fr);
-  align-items: start;
-  gap: 16px;
-  padding: 12px 0;
-}
-
-.status-token[data-status="pending"] {
-  color: #77602f;
-  background: #f7f2e5;
-}
-
-.status-token[data-status="agent-confirmed"] {
-  color: #4d5f78;
-  background: #eef2f7;
-}
-
-.status-token[data-status="confirmed"] {
-  color: #356047;
-  background: #edf6f0;
-}
-
-.status-definition-row > p {
-  color: #67726b;
-  font-size: 10px;
-  line-height: 1.55;
-}
-
-.status-definition-row > div {
-  display: grid;
-  gap: 3px;
-}
-
-.status-definition-row > div span {
-  color: #929a94;
-  font-size: 8px;
-}
-
-.status-definition-row > div strong {
-  color: #4b5750;
-  font-size: 9px;
-  font-weight: 620;
-  line-height: 1.45;
-}
-
-.status-boundaries {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 20px;
-  margin-top: 8px;
-  padding-top: 10px;
-  border-top: 1px solid #edf0ed;
-}
-
-.label-example {
-  display: grid;
-  grid-template-columns: minmax(220px, .8fr) auto minmax(260px, 1fr);
-  align-items: center;
-  gap: 22px;
-  padding: 18px 24px;
-  border-top: 1px solid #dce2dd;
-  background: #f7f9f7;
-}
-
-.label-example > div:first-child {
-  display: grid;
-  gap: 4px;
-}
-
-.label-example > div:first-child span {
-  color: #89928c;
-  font-size: 8px;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-}
-
-.label-example > div:first-child strong {
-  color: #34433a;
-  font-size: 11px;
-}
-
-.label-example-tags {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-}
-
-.origin-token {
-  color: #3f6b55;
-  background: #eaf3ed;
-}
-
-.label-example > p {
-  color: #68736c;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
   line-height: 1.5;
 }
 
-.label-all-note {
-  padding: 12px 24px;
-  border-top: 1px solid #e3e7e3;
-  color: #7b847e;
-  font-size: 9px;
-  text-align: center;
+.status-table-wrap { min-width: 0; }
+.status-definition-table { width: 100%; border-collapse: collapse; }
+.status-definition-table th,
+.status-definition-table td {
+  padding: 13px 12px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.55;
+  text-align: left;
+  vertical-align: top;
 }
 
-@media (max-width: 1180px) {
-  .label-guide-section {
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
-
-  .label-example {
-    grid-template-columns: minmax(210px, .8fr) minmax(0, 1.2fr);
-  }
-
-  .label-example-tags {
-    justify-content: flex-end;
-  }
-
-  .label-example > p {
-    grid-column: 1 / -1;
-  }
+.status-definition-table thead th {
+  padding-top: 0;
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 650;
 }
+
+.status-definition-table tbody th { padding-left: 0; }
+.status-definition-table tbody td:last-child { padding-right: 0; }
+.status-definition-table td strong { color: var(--color-ink); font-size: 12px; font-weight: 620; }
+.status-boundaries { display: flex; flex-wrap: wrap; gap: 6px 20px; padding-top: 12px; }
+
+.label-example {
+  display: grid;
+  grid-template-columns: minmax(180px, .8fr) auto minmax(200px, 1fr);
+  align-items: center;
+  gap: 18px;
+  padding: 20px 0 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.label-example > div:first-child { display: grid; gap: 4px; }
+.label-example > div:first-child span { color: var(--color-muted); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+.label-example > div:first-child strong { color: var(--color-ink); font-size: 12px; font-weight: 620; }
+.label-example-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.label-example > p { color: var(--color-muted); font-size: 12px; line-height: 1.5; }
+.label-all-note { margin: 0; color: var(--color-muted); font-size: 12px; line-height: 1.5; }
 
 @media (max-width: 720px) {
-  .status-definition-row {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
+  .label-dimension-strip { grid-template-columns: 1fr; }
+  .label-dimension-strip article + article { border-top: 1px solid var(--color-border); border-left: 0; }
+  .label-guide-sheet { gap: 34px; margin-top: 32px; }
+  .label-guide-section { grid-template-columns: 1fr; gap: 16px; }
+  .status-definition-table thead { display: none; }
+  .status-definition-table,
+  .status-definition-table tbody,
+  .status-definition-table tr,
+  .status-definition-table th,
+  .status-definition-table td { display: block; }
+  .status-definition-table tbody tr { padding: 15px 0; }
+  .status-definition-table tbody tr + tr { border-top: 1px solid var(--color-border); }
+  .status-definition-table tbody th,
+  .status-definition-table tbody td { padding: 0; border: 0; }
+  .status-definition-table tbody td { margin-top: 9px; }
+  .status-definition-table tbody td::before { display: block; margin-bottom: 2px; color: var(--color-muted); content: attr(data-label); font-size: 12px; font-weight: 650; }
+  .label-example { grid-template-columns: 1fr; gap: 12px; }
+  .label-example-tags { justify-content: flex-start; }
 }
 </style>

@@ -40,9 +40,8 @@ const confirmingItem = ref<KnowledgeItem | null>(null)
 const editingItem = ref<KnowledgeItem | null>(null)
 const batchDialogOpen = ref(false)
 const loadingPreview = isLoadingPreviewEnabled()
-const showInitialLoading = useMinimumLoadingDisplay(computed(() =>
-  loadingPreview || (loading.value && !graph.value),
-))
+const initialLoading = computed(() => loadingPreview || (loading.value && !graph.value))
+const showInitialLoading = useMinimumLoadingDisplay(initialLoading)
 
 const PAGE_SIZE = 100
 const ROW_HEIGHT = 68
@@ -322,11 +321,12 @@ function openReplacement(item: KnowledgeItem) {
       </div>
     </div>
 
-    <GrowthLoading v-if="loading && !loadingMore && !showInitialLoading" variant="inline" :label="t('common.status.loadingKnowledge')" />
+    <GrowthLoading v-if="loading && graph && !loadingMore && !showInitialLoading" variant="inline" :label="t('common.status.loadingKnowledge')" />
     <GrowthLoading
       v-if="showInitialLoading"
       :label="t('common.status.loadingKnowledge')"
     />
+    <div v-else-if="initialLoading" class="view-loading" aria-busy="true" />
     <div
       v-else
       class="organizer-layout"
@@ -471,9 +471,9 @@ function openReplacement(item: KnowledgeItem) {
   align-items: center;
   gap: 2px;
   padding: 2px;
-  border: 1px solid #d7ddd8;
-  border-radius: 7px;
-  background: #f1f4f1;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-subtle);
   overflow-x: auto;
   overflow-y: hidden;
   white-space: nowrap;
@@ -487,8 +487,8 @@ function openReplacement(item: KnowledgeItem) {
 .review-state-filter > span,
 .quadrant-filter > span {
   padding: 0 6px;
-  color: #7a847d;
-  font-size: 8px;
+  color: var(--color-muted);
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -498,48 +498,48 @@ function openReplacement(item: KnowledgeItem) {
   padding: 0 7px;
   border: 0;
   border-radius: 5px;
-  color: #626d66;
+  color: var(--color-muted);
   background: transparent;
-  font-size: 9px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
 .review-state-filter button:hover,
 .quadrant-filter button:hover {
-  color: #35473d;
+  color: var(--color-ink);
   background: rgba(255, 255, 255, .66);
 }
 
 .review-state-filter button.active,
 .quadrant-filter button.active {
-  color: #30483a;
-  background: #fff;
+  color: var(--color-ink);
+  background: var(--color-surface);
   box-shadow: 0 1px 3px rgba(47, 61, 52, .12);
 }
 
 .review-state-filter button.state-pending.active {
-  color: #765d2e;
+  color: var(--color-warning);
 }
 
 .review-state-filter button.state-agent_confirmed.active {
-  color: #4d5f78;
+  color: var(--color-success);
 }
 
 .review-state-filter button.state-confirmed.active {
-  color: #356047;
+  color: var(--color-success);
 }
 
 .review-state-filter button strong,
 .quadrant-filter button strong {
   margin-left: 2px;
-  font-size: 8px;
+  font-size: 12px;
   font-weight: 720;
 }
 
 .organizer-result-summary {
   flex: 0 0 auto;
-  color: #7b847e;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -563,10 +563,10 @@ function openReplacement(item: KnowledgeItem) {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  border: 1px solid #cfd7d1;
-  border-radius: 8px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
   overflow: hidden;
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .organizer-layout.has-selection {
@@ -594,10 +594,10 @@ function openReplacement(item: KnowledgeItem) {
 
 .organizer-table-head {
   padding: 10px 15px;
-  border-bottom: 1px solid #e0e4e0;
-  color: #8b938d;
-  background: #f7f8f6;
-  font-size: 9px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-muted);
+  background: var(--color-surface-subtle);
+  font-size: 12px;
   font-weight: 680;
 }
 
@@ -607,19 +607,19 @@ function openReplacement(item: KnowledgeItem) {
   overflow: hidden;
   padding: 11px 15px;
   border: 0;
-  border-bottom: 1px solid #e8ebe8;
-  color: #4f5952;
-  background: #fff;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-ink);
+  background: var(--color-surface);
   text-align: left;
 }
 
 .organizer-row:hover {
-  background: #f8faf8;
+  background: var(--color-surface);
 }
 
 .organizer-row.selected {
-  background: #f1f6f3;
-  box-shadow: inset 2px 0 #557863;
+  background: var(--color-surface-subtle);
+  box-shadow: inset 2px 0 var(--color-accent);
 }
 
 .organizer-item-copy {
@@ -636,16 +636,16 @@ function openReplacement(item: KnowledgeItem) {
 }
 
 .organizer-item-copy strong {
-  color: #2f3933;
-  font-size: 11px;
+  color: var(--color-ink);
+  font-size: 12px;
   font-weight: 630;
 }
 
 .organizer-item-copy small,
 .organizer-basis,
 .organizer-row time {
-  color: #7b847e;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .quadrant-chip,
@@ -653,7 +653,7 @@ function openReplacement(item: KnowledgeItem) {
   width: fit-content;
   border-radius: 999px;
   padding: 4px 7px;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 650;
   white-space: nowrap;
 }
@@ -661,8 +661,8 @@ function openReplacement(item: KnowledgeItem) {
 .quadrant-chip {
   display: grid;
   gap: 1px;
-  color: #59655e;
-  background: #f0f2ef;
+  color: var(--color-muted);
+  background: var(--color-surface-subtle);
 }
 
 .quadrant-chip small {
@@ -673,38 +673,38 @@ function openReplacement(item: KnowledgeItem) {
 }
 
 .quadrant-chip.known_known {
-  color: #356047;
-  background: #edf6f0;
+  color: var(--color-ink);
+  background: var(--color-surface-subtle);
 }
 
 .quadrant-chip.known_unknown {
-  color: #77602f;
-  background: #f7f2e5;
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
 }
 
 .quadrant-chip.unknown_known {
-  color: #4d5f78;
-  background: #eef2f7;
+  color: var(--color-muted);
+  background: var(--color-surface-subtle);
 }
 
 .quadrant-chip.unknown_unknown {
-  color: #725d70;
-  background: #f5eff4;
+  color: var(--color-muted);
+  background: var(--color-surface-subtle);
 }
 
 .review-chip.state-confirmed {
-  color: #356047;
-  background: #edf6f0;
+  color: var(--color-success);
+  background: var(--color-success-soft);
 }
 
 .review-chip.state-agent_confirmed {
-  color: #4d5f78;
-  background: #eef2f7;
+  color: var(--color-success);
+  background: var(--color-success-soft);
 }
 
 .review-chip.state-pending {
-  color: #77602f;
-  background: #f7f2e5;
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
 }
 
 .organizer-basis {

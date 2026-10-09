@@ -26,6 +26,7 @@ import { createConnection } from 'node:net';
 import { dirname, join, relative } from 'node:path';
 
 import { FULI_VERSION } from '../package-metadata.js';
+import { compareSemanticVersions } from '../semantic-version.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import {
   DEFAULT_RUNTIME_SETTINGS,
@@ -74,6 +75,8 @@ export function createNativeGraphServices({
     const previousState = readProcessState(paths.nativeProcessStatePath) ?? {};
     const databases = {};
     const providers = {};
+    const startedDatabases = {};
+    const startedProviders = {};
     try {
       for (const spec of specs) {
         await prepareInstance(spec);
@@ -94,6 +97,7 @@ export function createNativeGraphServices({
             command: descriptor.neo4jHome,
             startedAt: now().toISOString()
           };
+          startedDatabases[spec.id] = databases[spec.id];
         }
         persistProcessState(databases, providers);
         await waitForDatabase('127.0.0.1', spec.boltPort);
@@ -120,14 +124,20 @@ export function createNativeGraphServices({
             command: descriptor.providerPython,
             startedAt: now().toISOString()
           };
+          startedProviders[spec.id] = providers[spec.id];
         }
       }
       persistProcessState(databases, providers);
       for (const spec of specs) await waitForProvider(spec.providerUrl, fetchImpl, wait);
     } catch (error) {
-      await stopProviderEntries(providers);
-      await stopProviderEntries(databases);
-      persistProcessState({}, {});
+      // A failed compatibility check must not stop services already serving
+      // other sessions. Only processes created by this start may be cleaned up.
+      await stopProviderEntries(startedProviders);
+      await stopProviderEntries(startedDatabases);
+      persistProcessState(
+        { ...(previousState.databases ?? {}), ...withoutStarted(databases, startedDatabases) },
+        { ...(previousState.providers ?? {}), ...withoutStarted(providers, startedProviders) }
+      );
       throw error;
     }
   }
@@ -303,6 +313,7 @@ export async function ensureNativeRuntime(input, dependencies = {}) {
     providerPython
   };
   const saved = deps.readManifest(input.paths.nativeRuntimeManifestPath);
+  assertProviderUpgrade(saved?.providerVersion, expected.providerVersion);
   if (manifestReady(saved, expected, input.paths, deps.pathExists)) return saved;
 
   deps.onProgress(input, `Installing native Neo4j ${NATIVE_NEO4J_VERSION}…`);
@@ -695,20 +706,44 @@ function spawnNativeProvider(spec) {
 
 async function waitForProvider(url, fetchImpl, wait) {
   for (let attempt = 0; attempt < 120; attempt += 1) {
-    if (await providerReady(url, fetchImpl)) return;
+    const readiness = await providerReadiness(url, fetchImpl);
+    if (readiness === 'ready') return;
+    if (readiness === 'incompatible') {
+      throw new Error('The native Graph Provider is incompatible with transcript capture. Upgrade the Provider and restart local services when existing sessions can release them.');
+    }
     if (attempt < 119) await wait(1000);
   }
   throw new Error('The native graph Provider did not become ready after starting.');
 }
 
 async function providerReady(url, fetchImpl) {
+  return await providerReadiness(url, fetchImpl) === 'ready';
+}
+
+async function providerReadiness(url, fetchImpl) {
   try {
     const response = await fetchImpl(`${String(url).replace(/\/$/, '')}/health`, {
       signal: AbortSignal.timeout(2500)
     });
-    return response.ok;
+    if (!response.ok) return 'unavailable';
+    const health = await response.json();
+    return health?.transcript_contract === 1 ? 'ready' : 'incompatible';
   } catch {
-    return false;
+    return 'unavailable';
+  }
+}
+
+function withoutStarted(entries, started) {
+  return Object.fromEntries(Object.entries(entries).filter(([id]) => !Object.hasOwn(started, id)));
+}
+
+function assertProviderUpgrade(installed, requested) {
+  let comparison;
+  try { comparison = compareSemanticVersions(installed, requested); } catch { return; }
+  // SemVer ignores build metadata; Fuli's native revision orders runtime repairs.
+  const revision = value => BigInt(/\+native\.(\d+)$/.exec(value)?.[1] ?? '0');
+  if (comparison > 0 || (comparison === 0 && revision(installed) > revision(requested))) {
+    throw new Error('A newer native Graph Provider is already installed. Refusing an implicit downgrade; use the matching or newer Fuli package.');
   }
 }
 

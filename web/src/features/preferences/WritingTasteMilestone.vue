@@ -91,16 +91,16 @@ function ratio(current: number, target: number) {
   gap: 14px;
   margin-top: 12px;
   padding: 14px 15px;
-  border: 1px solid #d8dfda;
+  border: 1px solid var(--color-border);
   border-radius: 11px;
-  background: #f7f9f7;
+  background: var(--color-surface);
   box-shadow: 0 7px 20px rgba(49, 66, 56, 0.04);
 }
 
 .writing-taste-milestone.status-preview_ready,
 .writing-taste-milestone.status-active {
-  border-color: #cbd9d0;
-  background: #f4f8f5;
+  border-color: var(--color-success-soft);
+  background: var(--color-success-soft);
 }
 
 .writing-taste-milestone__mark {
@@ -112,13 +112,13 @@ function ratio(current: number, target: number) {
   gap: 3px;
   padding: 8px;
   border-radius: 10px;
-  background: #e4ebe6;
+  background: var(--color-surface-subtle);
 }
 
 .writing-taste-milestone__mark span {
   width: 5px;
   border-radius: 3px 3px 1px 1px;
-  background: #668372;
+  background: var(--color-muted);
 }
 
 .writing-taste-milestone__mark span:nth-child(1) { height: 9px; }
@@ -143,22 +143,22 @@ function ratio(current: number, target: number) {
 }
 
 .writing-taste-milestone h2 {
-  color: #304138;
+  color: var(--color-ink);
   font-size: 14px;
 }
 
 .writing-taste-milestone__heading > span {
   padding: 2px 7px;
   border-radius: 999px;
-  background: #e2e9e4;
-  color: #5c7064;
-  font-size: 9px;
+  background: var(--color-surface-subtle);
+  color: var(--color-muted);
+  font-size: 12px;
   font-weight: 750;
 }
 
 .writing-taste-milestone p {
-  color: #707b74;
-  font-size: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -167,7 +167,7 @@ function ratio(current: number, target: number) {
   height: 3px;
   overflow: hidden;
   border-radius: 999px;
-  background: #e0e5e1;
+  background: var(--color-surface-subtle);
 }
 
 .writing-taste-milestone__progress i {
@@ -175,7 +175,7 @@ function ratio(current: number, target: number) {
   width: 100%;
   height: 100%;
   border-radius: inherit;
-  background: #6f8e7c;
+  background: var(--color-muted);
   transform-origin: left;
   transition: transform 180ms ease;
 }
@@ -183,8 +183,8 @@ function ratio(current: number, target: number) {
 .writing-taste-milestone__metrics {
   display: flex;
   gap: 12px;
-  color: #7c857f;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .writing-taste-milestone__action {
@@ -192,18 +192,18 @@ function ratio(current: number, target: number) {
   align-items: center;
   gap: 8px;
   padding: 8px 11px;
-  border: 1px solid #bdcbc2;
-  border-radius: 8px;
-  color: #395347;
-  background: #fff;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  color: var(--color-ink);
+  background: var(--color-surface);
   text-decoration: none;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 750;
 }
 
 .writing-taste-milestone__action:hover {
-  border-color: #8fa697;
-  background: #f9fbf9;
+  border-color: var(--color-muted);
+  background: var(--color-surface);
 }
 
 @media (max-width: 760px) {

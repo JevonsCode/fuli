@@ -82,7 +82,7 @@ describe('ConsoleLayout', () => {
     expect(wrapper.get('.nav-about-label').text()).toBe('关于')
     expect(wrapper.get('.nav-about-label + a').attributes('href')).toBe('/settings')
     expect(wrapper.get('a[href="/about"]').attributes('href')).toBe('/about')
-    expect(wrapper.get('a[href="/project-agents"]').text()).toContain('项目 Agent')
+    expect(wrapper.get('a[href="/project-agents"]').text()).toContain('Agents')
     expect(wrapper.find('a[href="/public-projects"]').exists()).toBe(false)
     expect(wrapper.find('a[href="/review"]').exists()).toBe(false)
     store.state = {
@@ -115,8 +115,8 @@ describe('ConsoleLayout', () => {
 
     await router.push('/settings')
     await flushPromises()
-    expect(wrapper.get('.settings-save-button').text()).toContain('保存设置')
-    expect(wrapper.get('.settings-save-button').attributes('form')).toBe('settings-form')
+    expect(wrapper.get('button[form="settings-form"]').text()).toContain('保存设置')
+    expect(wrapper.get('button[form="settings-form"]').attributes('form')).toBe('settings-form')
 
     router.addRoute({
       path: '/employees/:templateId', component: { template: '<div>Agent board</div>' },

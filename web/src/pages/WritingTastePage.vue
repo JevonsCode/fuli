@@ -5,6 +5,7 @@ import { RouterLink } from 'vue-router'
 import { getJson } from '@/api/client'
 import { readPersonalProfileGraph } from '@/api/personal-profile-graph'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import UiDisclosure from '@/components/UiDisclosure.vue'
 import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay'
 import KnowledgeConfirmDialog from '@/features/knowledge/KnowledgeConfirmDialog.vue'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
@@ -30,9 +31,8 @@ const showAgentPreview = ref(false)
 let loadVersion = 0
 let loadController: AbortController | null = null
 
-const showInitialLoading = useMinimumLoadingDisplay(computed(() =>
-  loading.value && !profile.value,
-))
+const initialLoading = computed(() => loading.value && !profile.value)
+const showInitialLoading = useMinimumLoadingDisplay(initialLoading)
 const profileItems = computed(() => personalProfileItems(graph.value))
 const itemsByKey = computed(() => new Map(
   profileItems.value.map((item) => [`${item.itemKind}:${item.id}`, item]),
@@ -173,9 +173,10 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
       {{ t('writingTaste.page.back') }}
     </RouterLink>
 
-    <GrowthLoading v-if="loading && !showInitialLoading" variant="inline" :label="t('writingTaste.page.loading')" />
+    <GrowthLoading v-if="loading && profile && !showInitialLoading" variant="inline" :label="t('writingTaste.page.loading')" />
     <GrowthLoading v-if="showInitialLoading" :label="t('writingTaste.page.loading')" />
 
+    <div v-else-if="initialLoading" class="view-loading" aria-busy="true" />
     <div v-else-if="!profile" class="writing-taste-unavailable">
       <p :role="loadFailed ? 'alert' : undefined">{{ t(loadFailed ? 'common.errors.loadFailed' : 'writingTaste.page.profileUnavailable') }}</p>
       <button v-if="store.activePersonalSpace" type="button" class="secondary-action" @click="load()">{{ t('common.actions.retry') }}</button>
@@ -244,10 +245,10 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
             <div class="writing-taste-rule__body">
               <h3>{{ rule.title }}</h3>
               <p>{{ rule.instruction }}</p>
-              <small v-if="rule.reason">{{ rule.reason }}</small>
-              <small v-if="rule.contexts.length">
-                {{ t('writingTaste.page.contexts', { contexts: rule.contexts.join('、') }) }}
-              </small>
+              <UiDisclosure v-if="rule.reason || rule.contexts.length" :title="t('ui.details')">
+                <p v-if="rule.reason">{{ rule.reason }}</p>
+                <p v-if="rule.contexts.length">{{ t('writingTaste.page.contexts', { contexts: rule.contexts.join('、') }) }}</p>
+              </UiDisclosure>
             </div>
 
             <footer>
@@ -283,7 +284,6 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
       <section v-if="profile.ready && profile.agent_markdown" class="writing-taste-agent-preview">
         <div>
           <h2>{{ t('writingTaste.page.agentPreviewTitle') }}</h2>
-          <p>{{ t('writingTaste.page.agentPreviewCopy') }}</p>
         </div>
         <button class="secondary-action" type="button" @click="showAgentPreview = !showAgentPreview">
           {{ showAgentPreview
@@ -317,7 +317,7 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
 .writing-taste-view {
   overflow: auto;
   padding: 18px 32px 40px;
-  background: #f7f8f6;
+  background: var(--color-surface-subtle);
 }
 
 .writing-taste-view > :not(.vue-dialog) {
@@ -330,14 +330,14 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
   align-items: center;
   gap: 7px;
   margin-bottom: 14px;
-  color: #65746b;
+  color: var(--color-muted);
   text-decoration: none;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .writing-taste-back:hover {
-  color: #344b3e;
+  color: var(--color-ink);
 }
 
 .writing-taste-hero {
@@ -346,15 +346,15 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
   align-items: center;
   gap: 24px;
   padding: 24px 26px;
-  border: 1px solid #d7ded9;
+  border: 1px solid var(--color-border);
   border-radius: 14px;
-  background: #fff;
+  background: var(--color-surface);
   box-shadow: 0 12px 32px rgba(45, 61, 52, 0.06);
 }
 
 .writing-taste-hero.status-preview_ready,
 .writing-taste-hero.status-active {
-  border-color: #c9d8ce;
+  border-color: var(--color-success-soft);
 }
 
 .writing-taste-hero__copy {
@@ -369,9 +369,9 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
   gap: 6px;
   padding: 3px 8px;
   border-radius: 999px;
-  color: #5c7064;
-  background: #e9eeea;
-  font-size: 9px;
+  color: var(--color-muted);
+  background: var(--color-surface-subtle);
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -379,7 +379,7 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #668572;
+  background: var(--color-muted);
 }
 
 .writing-taste-hero h2,
@@ -388,15 +388,15 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
 }
 
 .writing-taste-hero h2 {
-  color: #2d3e35;
+  color: var(--color-ink);
   font-size: 22px;
   letter-spacing: -0.015em;
 }
 
 .writing-taste-hero p {
   max-width: 680px;
-  color: #6e7972;
-  font-size: 11px;
+  color: var(--color-muted);
+  font-size: 12px;
   line-height: 1.65;
 }
 
@@ -406,12 +406,12 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
   grid-template-columns: auto 1fr;
   align-items: baseline;
   padding: 14px 16px;
-  border-left: 1px solid #e0e5e1;
-  color: #809087;
+  border-left: 1px solid var(--color-border);
+  color: var(--color-muted);
 }
 
 .writing-taste-hero__score strong {
-  color: #3d5b4b;
+  color: var(--color-ink);
   font-size: 28px;
 }
 
@@ -421,7 +421,7 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
 
 .writing-taste-hero__score small {
   grid-column: 1 / -1;
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .writing-taste-readiness {
@@ -438,16 +438,16 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
   align-items: center;
   gap: 8px;
   padding: 10px;
-  border: 1px solid #e0e4e1;
-  border-radius: 9px;
-  color: #89918c;
-  background: #fbfcfb;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  color: var(--color-muted);
+  background: var(--color-surface);
 }
 
 .writing-taste-readiness article.met {
-  color: #577364;
-  border-color: #d3ddd7;
-  background: #f6f9f7;
+  color: var(--color-muted);
+  border-color: var(--color-border-strong);
+  background: var(--color-surface);
 }
 
 .writing-taste-readiness article > span {
@@ -456,14 +456,14 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: #ecefed;
-  font-size: 10px;
+  background: var(--color-surface-subtle);
+  font-size: 12px;
   font-weight: 800;
 }
 
 .writing-taste-readiness article.met > span {
-  color: #fff;
-  background: #6f8c7b;
+  color: var(--color-surface);
+  background: var(--color-muted);
 }
 
 .writing-taste-readiness article div {
@@ -480,12 +480,12 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
 }
 
 .writing-taste-readiness strong {
-  color: #526159;
-  font-size: 9px;
+  color: var(--color-ink);
+  font-size: 12px;
 }
 
 .writing-taste-readiness small {
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .writing-taste-rules {
@@ -501,7 +501,7 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
 
 .writing-taste-rules > header h2 {
   margin: 0;
-  color: #34433b;
+  color: var(--color-ink);
   font-size: 15px;
 }
 
@@ -509,10 +509,10 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
   min-width: 20px;
   padding: 2px 6px;
   border-radius: 999px;
-  color: #6c786f;
-  background: #e5e9e6;
+  color: var(--color-muted);
+  background: var(--color-surface-subtle);
   text-align: center;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -525,17 +525,17 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
   display: grid;
   gap: 10px;
   padding: 15px 17px;
-  border: 1px solid #dce2de;
+  border: 1px solid var(--color-border);
   border-radius: 11px;
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .writing-taste-rule.is-hypothesis {
-  background: #fbfbfa;
+  background: var(--color-surface);
 }
 
 .writing-taste-rule.has-conflict {
-  border-color: #d8b9b5;
+  border-color: var(--color-border-strong);
 }
 
 .writing-taste-rule__status {
@@ -548,21 +548,21 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
 .writing-taste-rule__status span {
   padding: 2px 7px;
   border-radius: 999px;
-  color: #68756d;
-  background: #edf0ee;
-  font-size: 8px;
+  color: var(--color-muted);
+  background: var(--color-surface-subtle);
+  font-size: 12px;
   font-weight: 800;
 }
 
 .writing-taste-rule__status .confirmed,
 .writing-taste-rule__status .observed {
-  color: #466352;
-  background: #e2ebe5;
+  color: var(--color-success);
+  background: var(--color-success-soft);
 }
 
 .writing-taste-rule__status .conflict {
-  color: #874a45;
-  background: #f3e3e1;
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
 }
 
 .writing-taste-rule__body {
@@ -576,19 +576,19 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
 }
 
 .writing-taste-rule h3 {
-  color: #33443b;
+  color: var(--color-ink);
   font-size: 13px;
 }
 
 .writing-taste-rule p {
-  color: #49574f;
-  font-size: 11px;
+  color: var(--color-ink);
+  font-size: 12px;
   line-height: 1.65;
 }
 
 .writing-taste-rule__body small {
-  color: #818a84;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -598,15 +598,15 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
   justify-content: space-between;
   gap: 14px;
   padding-top: 9px;
-  border-top: 1px solid #edf0ee;
+  border-top: 1px solid var(--color-border);
 }
 
 .writing-taste-rule footer > div:first-child {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  color: #89918c;
-  font-size: 8px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .writing-taste-rule__actions {
@@ -617,7 +617,7 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
 .writing-taste-rule__actions button,
 .writing-taste-agent-preview button {
   padding: 6px 10px;
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .writing-taste-empty,
@@ -625,10 +625,10 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
   display: grid;
   min-height: 180px;
   place-items: center;
-  border: 1px dashed #d8ded9;
+  border: 1px dashed var(--color-border);
   border-radius: 11px;
-  color: #7d8780;
-  font-size: 11px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .writing-taste-agent-preview {
@@ -638,9 +638,9 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
   gap: 14px;
   margin-top: 22px;
   padding: 16px 18px;
-  border: 1px solid #d8dfda;
+  border: 1px solid var(--color-border);
   border-radius: 11px;
-  background: #f2f5f3;
+  background: var(--color-surface-subtle);
 }
 
 .writing-taste-agent-preview h2,
@@ -649,14 +649,14 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
 }
 
 .writing-taste-agent-preview h2 {
-  color: #3c4d44;
+  color: var(--color-ink);
   font-size: 13px;
 }
 
 .writing-taste-agent-preview p {
   margin-top: 4px;
-  color: #758078;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -666,9 +666,9 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
   overflow: auto;
   margin: 0;
   padding: 14px;
-  border-radius: 8px;
-  color: #dce7df;
-  background: #26372e;
+  border-radius: var(--radius-control);
+  color: var(--color-surface-subtle);
+  background: var(--color-ink);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font: 10px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -690,7 +690,7 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
   }
 
   .writing-taste-hero__score {
-    border-top: 1px solid #e0e5e1;
+    border-top: 1px solid var(--color-border);
     border-left: 0;
   }
 

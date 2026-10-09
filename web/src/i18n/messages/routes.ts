@@ -1,7 +1,7 @@
 export const routeMessages = {
   'zh-CN': {
     overview: {
-      title: '概览',
+      title: '工作台',
     },
     preferences: {
       title: '协作偏好',
@@ -15,7 +15,7 @@ export const routeMessages = {
       description: '本机私有项目、项目知识与按任务生效的协作偏好。',
     },
     projectAgents: {
-      title: '项目 Agent',
+      title: 'Agents',
     },
     employeeWorkbench: {
       title: '专属 Agent',
@@ -54,7 +54,7 @@ export const routeMessages = {
   },
   'en-US': {
     overview: {
-      title: 'Overview',
+      title: 'Workspace',
     },
     preferences: {
       title: 'Collaboration preferences',
@@ -68,7 +68,7 @@ export const routeMessages = {
       description: 'Private local projects, project knowledge, and task-scoped collaboration preferences.',
     },
     projectAgents: {
-      title: 'Project Agents',
+      title: 'Agents',
     },
     employeeWorkbench: {
       title: 'Specialist Agents',

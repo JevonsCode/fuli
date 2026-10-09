@@ -1,0 +1,54 @@
+/* One control vocabulary for native elements and component adapters. */
+:where(button, input, select, textarea) { font: inherit; }
+:where(button, a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+:where(button):disabled { cursor: not-allowed; opacity: .5; }
+:where(input:not([type=checkbox]):not([type=radio]), select, textarea) {
+  min-width: 0; min-height: 40px; padding: 9px 12px;
+  border: 1px solid var(--color-control-border); border-radius: var(--radius-control);
+  color: var(--color-ink); background: var(--color-surface);
+  font-size: 14px; line-height: 1.5;
+}
+:where(input, textarea)::placeholder { color: var(--color-muted); opacity: 1; }
+:where(input[type=checkbox], input[type=radio]) { accent-color: var(--color-accent); }
+:where(textarea) { resize: vertical; }
+:where(input:not([type=checkbox]):not([type=radio]), textarea, select):focus { border-color: var(--color-accent); }
+.ui-button, .quiet-button, .primary-button, .primary-action, .secondary-action,
+.management-action, .danger-action, .settings-save-button, .toolbar-action, .relation-actions button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 38px; padding: 8px 14px; border: 1px solid var(--color-border);
+  border-radius: var(--radius-control); color: var(--color-ink);
+  background: var(--color-surface); font-size: 13px; font-weight: 550;
+  line-height: 1.4; text-decoration: none; cursor: pointer;
+  transition: background-color var(--motion-fast), border-color var(--motion-fast);
+}
+.ui-button:hover, .quiet-button:hover, .secondary-action:hover, .management-action:hover, .toolbar-action:hover {
+  background: var(--color-surface-hover); border-color: var(--color-border-strong);
+}
+.ui-button--primary, .primary-button, .primary-action, .settings-save-button {
+  color: var(--color-on-accent); background: var(--color-accent); border-color: transparent;
+}
+.ui-button--primary:hover, .primary-button:hover, .primary-action:hover, .settings-save-button:hover {
+  background: var(--color-accent-hover); border-color: transparent;
+}
+.ui-button--ghost { background: transparent; border-color: transparent; }
+.ui-button--danger, .danger-action, .quiet-button.danger { color: var(--color-danger); }
+.ui-button--danger:hover, .danger-action:hover, .quiet-button.danger:hover { background: var(--color-danger-soft); }
+.ui-button--icon { width: 38px; padding: 8px; flex: 0 0 auto; }
+.ui-card { min-width: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
+.ui-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 6px; background: var(--color-surface-subtle); color: var(--color-muted); font-size: 12px; line-height: 1.4; }
+.ui-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ui-empty { padding: 40px 24px; color: var(--color-muted); text-align: center; font-size: 14px; }
+.ui-disclosure { border-top: 1px solid var(--color-border); padding-block: 16px; }
+.ui-disclosure > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; color: var(--color-ink); font-size: 14px; font-weight: 550; }
+.ui-disclosure > summary::-webkit-details-marker { display: none; }
+.ui-disclosure > summary::after { content: ''; width: 7px; height: 7px; border: solid var(--color-muted); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); margin: 0 4px 4px; }
+.ui-disclosure[open] > summary::after { transform: rotate(225deg); margin-top: 5px; }
+.ui-disclosure[open] > summary { margin-bottom: 16px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0s !important; }
+}
+
+.toolbar-action { background: transparent; border-color: transparent; }

@@ -1,6 +1,7 @@
 import { onBeforeUnmount, readonly, ref, watch, type Ref } from 'vue'
 
-export const MINIMUM_LOADING_DISPLAY_MS = 500
+export const LOADING_VISIBILITY_DELAY_MS = 120
+export const MINIMUM_LOADING_DISPLAY_MS = 180
 export const LOADING_PREVIEW_QUERY = 'testLoading'
 
 export function isLoadingPreviewEnabled(
@@ -14,42 +15,82 @@ export function useMinimumLoadingDisplay(
   minimumMs = MINIMUM_LOADING_DISPLAY_MS,
 ) {
   const visible = ref(false)
+  const displayMinimumMs = Math.max(0, minimumMs)
+  const visibilityDelayMs = isLoadingPreviewEnabled() ? 0 : LOADING_VISIBILITY_DELAY_MS
   let visibleSince = 0
+  let showTimer: ReturnType<typeof setTimeout> | null = null
   let hideTimer: ReturnType<typeof setTimeout> | null = null
+  let timerGeneration = 0
+  let unmounted = false
 
-  function cancelScheduledHide() {
-    if (hideTimer === null) return
-    clearTimeout(hideTimer)
-    hideTimer = null
+  function cancelScheduledTimers() {
+    timerGeneration += 1
+    if (showTimer !== null) {
+      clearTimeout(showTimer)
+      showTimer = null
+    }
+    if (hideTimer !== null) {
+      clearTimeout(hideTimer)
+      hideTimer = null
+    }
+  }
+
+  function scheduleShow() {
+    if (visibilityDelayMs === 0) {
+      if (unmounted || !active.value || visible.value) return
+      visibleSince = Date.now()
+      visible.value = true
+      return
+    }
+
+    const generation = timerGeneration
+    showTimer = setTimeout(() => {
+      if (generation !== timerGeneration) return
+      showTimer = null
+      if (unmounted || !active.value || visible.value) return
+      visibleSince = Date.now()
+      visible.value = true
+    }, visibilityDelayMs)
+  }
+
+  function scheduleHide() {
+    const remaining = Math.max(0, displayMinimumMs - (Date.now() - visibleSince))
+    if (remaining === 0) {
+      visible.value = false
+      visibleSince = 0
+      return
+    }
+
+    const generation = timerGeneration
+    hideTimer = setTimeout(() => {
+      if (generation !== timerGeneration) return
+      hideTimer = null
+      if (unmounted || active.value) return
+      visible.value = false
+      visibleSince = 0
+    }, remaining)
   }
 
   watch(
     active,
     (nextActive) => {
-      cancelScheduledHide()
+      cancelScheduledTimers()
 
       if (nextActive) {
-        if (!visible.value) visibleSince = Date.now()
-        visible.value = true
+        if (!visible.value) scheduleShow()
         return
       }
 
       if (!visible.value) return
-      const remaining = Math.max(0, minimumMs - (Date.now() - visibleSince))
-      if (remaining === 0) {
-        visible.value = false
-        return
-      }
-
-      hideTimer = setTimeout(() => {
-        hideTimer = null
-        visible.value = false
-      }, remaining)
+      scheduleHide()
     },
     { immediate: true, flush: 'sync' },
   )
 
-  onBeforeUnmount(cancelScheduledHide)
+  onBeforeUnmount(() => {
+    unmounted = true
+    cancelScheduledTimers()
+  })
 
   return readonly(visible)
 }

@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from typing import Annotated
+from importlib.metadata import version
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 
@@ -238,7 +239,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @application.get('/health')
     async def health() -> dict:
-        return await store.health()
+        return {**await store.health(), 'provider_version': version('fuli-graph-provider'),
+                'transcript_contract': 1}
 
     @application.post('/v1/bootstrap', response_model=BootstrapResult)
     async def bootstrap(

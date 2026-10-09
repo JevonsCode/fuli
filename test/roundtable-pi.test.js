@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -42,7 +42,7 @@ test('Pi file guard denies shell, mutation without grant, outside paths and syml
     assert.equal(guard({ toolName: 'ls', input: {} }), undefined);
     const canonical = { toolName: 'read', input: { path: 'existing.txt' } };
     assert.equal(guard(canonical), undefined);
-    assert.equal(canonical.input.path, join(workspace, 'existing.txt'));
+    assert.equal(canonical.input.path, join(realpathSync(workspace), 'existing.txt'));
     assert.equal(writer({ toolName: 'write', input: { path: 'nested/new.txt' } }), undefined);
     for (const call of [{ toolName: 'bash', input: { command: 'echo unsafe' } }, { toolName: 'write', input: { path: 'new.txt' } },
       { toolName: 'read', input: { path: '../outside/file.txt' } }, { toolName: 'read', input: { path: outside } },

@@ -12,6 +12,7 @@ import {
 } from '../src/native-runtime/runtime.js';
 import { resolveSetupPaths } from '../src/setup/paths.js';
 import { DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
+import { FULI_VERSION } from '../src/package-metadata.js';
 
 test('native runtime installs pinned Neo4j and the Provider once, then reuses them', async () => {
   const root = await mkdtemp(join(tmpdir(), 'fuli-native-runtime-'));
@@ -158,3 +159,19 @@ test('native mode reports its Java 21 prerequisite without suggesting Docker', a
     }
   );
 });
+
+for (const providerVersion of ['99.0.0+native.2', `${FULI_VERSION}+native.3`]) {
+test(`native setup refuses to overwrite newer Provider ${providerVersion} before any mutation`, async () => {
+  const paths = resolveSetupPaths({ dataDir: '/synthetic', packageRoot: '/package' });
+  const mutations = [];
+  await assert.rejects(ensureNativeRuntime({ paths, env: {}, runtimeSettings: DEFAULT_RUNTIME_SETTINGS }, {
+    platform: 'darwin', resolveJavaHome: async () => '/jdk-21', resolveUvCommand: async () => 'uv',
+    providerSourceFingerprint: async () => 'a'.repeat(64), pathExists: () => true,
+    readManifest: () => ({ providerVersion }),
+    installProvider: async () => mutations.push('install'),
+    installNeo4j: async () => mutations.push('database'),
+    writeManifest: () => mutations.push('manifest')
+  }), /newer.*Provider|downgrade/i);
+  assert.deepEqual(mutations, []);
+});
+}

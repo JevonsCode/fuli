@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { MINIMUM_LOADING_DISPLAY_MS } from '@/composables/useMinimumLoadingDisplay'
+import { MINIMUM_LOADING_DISPLAY_MS, LOADING_VISIBILITY_DELAY_MS } from '@/composables/useMinimumLoadingDisplay'
 
 const getJson = vi.hoisted(() => vi.fn())
 const postJson = vi.hoisted(() => vi.fn())
@@ -74,6 +74,9 @@ describe('PersonalProfilePage', () => {
     })
     await flushPromises()
 
+    expect(wrapper.findAll('.growth-loading')).toHaveLength(0)
+    expect(wrapper.findAll('.virtual-directory-list')).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(LOADING_VISIBILITY_DELAY_MS)
     expect(wrapper.findAll('.growth-loading')).toHaveLength(1)
     expect(wrapper.findAll('.virtual-directory-list')).toHaveLength(0)
     expect(wrapper.findAll('.virtual-directory-list__empty')).toHaveLength(0)
@@ -172,6 +175,8 @@ describe('PersonalProfilePage', () => {
     store.state = { ...store.state, activePersonalSpaceId: 'space-b' }
     await flushPromises()
     expect(wrapper.text()).not.toContain('Synthetic old-space preference')
+    expect(wrapper.find('[aria-busy="true"]').exists()).toBe(true)
+    await vi.advanceTimersByTimeAsync(LOADING_VISIBILITY_DELAY_MS)
     expect(wrapper.find('.growth-loading').exists()).toBe(true)
     store.state = { ...store.state, personalSpaces: [] }
     await flushPromises()
@@ -283,7 +288,6 @@ describe('PersonalProfilePage', () => {
     await finishProfileLoading()
 
     expect(wrapper.findAll('.personal-profile-row')).toHaveLength(3)
-    expect(wrapper.get('.virtual-directory-list__watermark').text()).toBe('#001')
     expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001/ 003')
     const scope = wrapper.getComponent(SearchableSelect)
     expect(scope.props('options')).toEqual(expect.arrayContaining([

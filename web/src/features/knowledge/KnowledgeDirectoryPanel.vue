@@ -107,7 +107,6 @@ const selectedMaterialIndex = computed(() => props.selectedItem
       <header class="directory-section-heading">
         <div class="directory-section-copy">
           <strong>{{ t('knowledge.workspace.workspace.view.knowledgeContent') }}</strong>
-          <span>{{ t('knowledge.workspace.workspace.view.knowledgeCopy') }}</span>
         </div>
         <div
           class="knowledge-status-filter"
@@ -238,7 +237,6 @@ const selectedMaterialIndex = computed(() => props.selectedItem
       <header class="directory-section-heading">
         <div class="directory-section-copy">
           <strong>{{ t('knowledge.workspace.workspace.view.projectMaterials') }}</strong>
-          <span>{{ t('knowledge.workspace.workspace.view.materialCopy') }}</span>
         </div>
         <small class="directory-section-count">
           {{ t('common.counts.items', { count: visibleProjectMaterialItems.length }) }}

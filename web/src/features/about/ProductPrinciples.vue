@@ -50,25 +50,27 @@ const boundaries = computed(() => [
 </script>
 
 <template>
-  <section class="product-principles">
-    <header class="principles-lede">
-      <h3>{{ t('about.philosophy.title') }}</h3>
-      <p>{{ t('about.philosophy.intro') }}</p>
-      <p>{{ t('about.philosophy.support') }}</p>
+  <section class="product-principles" aria-labelledby="principles-title">
+    <header class="principles-heading">
+      <span class="principles-index" aria-hidden="true">01</span>
+      <div>
+        <h2 id="principles-title">{{ t('about.philosophy.sectionTitle') }}</h2>
+        <p>{{ t('about.philosophy.support') }}</p>
+      </div>
     </header>
 
     <div class="principle-sequence">
       <article v-for="principle in principles" :key="principle.key">
         <span>{{ principle.index }}</span>
         <div>
-          <h4>{{ principle.title }}</h4>
+          <h3>{{ principle.title }}</h3>
           <p>{{ principle.description }}</p>
         </div>
       </article>
     </div>
 
     <div class="principle-boundaries">
-      <strong>{{ t('about.philosophy.boundariesTitle') }}</strong>
+      <h3>{{ t('about.philosophy.boundariesTitle') }}</h3>
       <div>
         <article v-for="boundary in boundaries" :key="boundary.key">
           <i :data-boundary="boundary.key" aria-hidden="true" />
@@ -82,86 +84,89 @@ const boundaries = computed(() => [
 
 <style scoped>
 .product-principles {
-  overflow: hidden;
-  border: 1px solid #d4dad5;
-  border-radius: 9px;
-  background: #fff;
+  min-width: 0;
 }
 
-.principles-lede {
-  padding: 44px 48px 38px;
+.principles-heading {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+  padding-bottom: 30px;
+  border-bottom: 1px solid var(--color-border);
 }
 
-.principles-lede h3 {
-  max-width: 720px;
-  color: #26352d;
-  font-size: clamp(25px, 3vw, 38px);
+.principles-index {
+  padding-top: 6px;
+  color: var(--about-gold);
+  font-size: 12px;
   font-weight: 650;
-  letter-spacing: -.04em;
-  line-height: 1.12;
+  letter-spacing: .08em;
 }
 
-.principles-lede p {
-  max-width: 820px;
-  color: #66716a;
-  font-size: 13px;
-  line-height: 1.75;
+.principles-heading h2 {
+  margin: 0;
+  color: var(--color-ink);
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 650;
+  letter-spacing: -.03em;
+  line-height: 1.2;
 }
 
-.principles-lede h3 + p { margin-top: 24px; }
-.principles-lede p + p { margin-top: 10px; }
+.principles-heading p {
+  max-width: 680px;
+  margin-top: 10px;
+  color: var(--color-muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
 
 .principle-sequence {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border-top: 1px solid #dde2de;
 }
 
 .principle-sequence article {
-  min-height: 174px;
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
   align-content: start;
   gap: 16px;
-  padding: 28px 32px;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--color-border);
 }
-
-.principle-sequence article:nth-child(2n) { border-left: 1px solid #e2e6e2; }
-.principle-sequence article:nth-child(n + 3) { border-top: 1px solid #e2e6e2; }
 
 .principle-sequence article > span {
   padding-top: 3px;
-  color: #98a19a;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 9px;
+  color: var(--about-gold);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .06em;
 }
 
-.principle-sequence h4,
+.principle-sequence h3,
 .principle-boundaries h4 {
   margin: 0;
-  color: #344239;
-  font-size: 14px;
+  color: var(--color-ink);
+  font-size: 15px;
   font-weight: 680;
 }
 
 .principle-sequence p,
 .principle-boundaries p {
   margin-top: 9px;
-  color: #6c766f;
-  font-size: 11px;
+  color: var(--color-muted);
+  font-size: 13px;
   line-height: 1.7;
 }
 
 .principle-boundaries {
-  padding: 27px 32px 30px;
-  border-top: 1px solid #d9dfda;
-  background: #f5f7f5;
+  padding-top: 30px;
 }
 
-.principle-boundaries > strong {
-  color: #77817a;
-  font-size: 9px;
-  letter-spacing: .1em;
+.principle-boundaries > h3 {
+  margin: 0;
+  color: var(--color-ink);
+  font-size: 14px;
+  font-weight: 650;
 }
 
 .principle-boundaries > div {
@@ -171,29 +176,31 @@ const boundaries = computed(() => [
 }
 
 .principle-boundaries article {
-  position: relative;
   min-width: 0;
-  padding: 0 24px 0 28px;
+  padding: 0 20px;
 }
 
 .principle-boundaries article:first-child { padding-left: 0; }
-.principle-boundaries article + article { border-left: 1px solid #dce2dd; }
+.principle-boundaries article:last-child { padding-right: 0; }
+.principle-boundaries article + article { border-left: 1px solid var(--color-border); }
 
 .principle-boundaries i {
   width: 8px;
   height: 8px;
   display: inline-block;
   margin-bottom: 12px;
-  border: 1.5px solid #577463;
+  border: 1.5px solid var(--color-muted);
   border-radius: 50%;
 }
 
 .principle-boundaries i[data-boundary="authority"] { border-radius: 2px; }
 .principle-boundaries i[data-boundary="scope"] { transform: rotate(45deg); border-radius: 1px; }
 
-@media (max-width: 1180px) {
-  .principles-lede { padding: 36px 34px 32px; }
-  .principle-sequence article { padding: 24px; }
-  .principle-boundaries article { padding-inline: 18px; }
+@media (max-width: 680px) {
+  .principles-heading { gap: 12px; }
+  .principle-sequence article { gap: 12px; padding: 20px 0; }
+  .principle-boundaries > div { grid-template-columns: 1fr; gap: 20px; }
+  .principle-boundaries article { padding: 0; }
+  .principle-boundaries article + article { padding-top: 20px; border-top: 1px solid var(--color-border); border-left: 0; }
 }
 </style>

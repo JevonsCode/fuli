@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { prepareCodexRoundtableConfig } from '../src/agents/codex/roundtable-config.js';
+import { createRoundtableTaskPrompt } from '../src/roundtables/turn-prompt.js';
 
 test('managed and project MCP entries are disabled individually and checked before execution', async () => {
   const calls = [];
@@ -15,6 +16,15 @@ test('managed and project MCP entries are disabled individually and checked befo
   assert.ok(args.includes('windows.sandbox="unelevated"'));
   assert.ok(args.includes('notify=[]'));
   assert.ok(args.includes('sandbox_workspace_write.network_access=false'));
+  const instructions = args.find(option => option.startsWith('developer_instructions='));
+  assert.match(instructions ?? '', /coordinated worker/);
+  assert.match(instructions, /outer host owns.*checkpoints/);
+});
+
+test('shared participant prompt leaves task lifecycle and final user replies to the host', () => {
+  const prompt = createRoundtableTaskPrompt({ phase: 'discussion' });
+  assert.match(prompt, /outer host owns.*checkpoints/);
+  assert.match(prompt, /not a final user-visible reply/);
 });
 
 test('unknown configuration, ambiguous dotted names and residual enabled servers fail closed', async () => {

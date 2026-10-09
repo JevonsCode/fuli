@@ -10,11 +10,11 @@ describe('localized route metadata', () => {
   })
 
   it('translates configured keys while preserving literal metadata', () => {
-    expect(routeMetaText('routes.overview.title')).toBe('概览')
+    expect(routeMetaText('routes.overview.title')).toBe('工作台')
     expect(routeMetaText('Legacy title')).toBe('Legacy title')
 
     setLocale('en-US', { persist: false })
-    expect(routeMetaText('routes.overview.title')).toBe('Overview')
+    expect(routeMetaText('routes.overview.title')).toBe('Workspace')
   })
 
   it('updates the browser title for the active locale', () => {
@@ -42,7 +42,7 @@ describe('localized route metadata', () => {
     const route = router.resolve('/project-agents')
     expect(route.name).toBe('project-agents')
     expect(route.meta.eyebrow).toBe('')
-    expect(routeMetaText(route.meta.title)).toBe('项目 Agent')
+    expect(routeMetaText(route.meta.title)).toBe('Agents')
   })
 
   it('localizes Agent profile and management routes', () => {

@@ -31,6 +31,10 @@ for Agents without an equivalent lifecycle hook. Fuli uses both only for this lo
 never stores or returns them, and resolves the exact local personal project itself. Do not infer
 or guess `personalProjectId` in the Agent.
 
+## Mandatory reply identity
+
+Every final user-visible reply MUST include the current task’s `agent_receipt.markdown` unchanged exactly once. This includes greetings, status-only replies, failures, `retain_nothing`, and capture-disabled tasks. The receipt is independent of whether a memory checkpoint was saved. Never substitute a client name, configured peer, or an earlier task’s owner. If a legacy/unavailable entry supplies no receipt, explicitly state that the FULI Agent identity is unavailable. A receipt with no authorized owner already supplies the correct neutral text.
+
 Apply only `effective_preferences`. Personal-global preferences apply in every user task;
 project-scoped preferences layer on only for the exact selected project. Do not apply items
 listed as conflicts, and do not borrow preferences from a related, similarly named, or guessed

@@ -285,6 +285,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return {
       status: 'generated',
       ...skill,
+      agent_receipt: context.agent_receipt,
       ...(context.task_knowledge_recall
         ? { task_knowledge_recall: context.task_knowledge_recall }
         : {}),

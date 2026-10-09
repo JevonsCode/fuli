@@ -78,6 +78,8 @@ test('task entry automatically restores exactly one durable role and its context
   assert.equal(JSON.stringify(result).includes('private-other-role'), false);
   assert.equal(resolutions, 1);
   assert.equal(result.project_agent_context.knowledge[0].entities.length, 2);
+  assert.equal(result.agent_receipt.required, true);
+  assert.match(result.agent_receipt.markdown, /Engineer/);
 });
 
 test('authenticated project-id task entry restores a role without a host path', async () => {
@@ -106,6 +108,8 @@ test('a rejected explicit role cannot leak private preferences through fallback'
   assert.equal(result.context.project_agent_id, null);
   assert.equal(result.project_agent_context.status, 'agent_unavailable');
   assert.equal(result.effective_preferences.length, 0);
+  assert.equal(result.agent_receipt.markdown, 'FULI Agent：未选定');
+  assert.equal(result.agent_receipt.owner, null);
 });
 
 test('a personalProjectId-only role request cannot bypass Agent authorization', async () => {

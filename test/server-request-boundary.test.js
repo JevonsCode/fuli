@@ -114,6 +114,22 @@ test('workspace deep links revalidate HTML and missing build chunks are not cach
   assert.doesNotMatch(await missing.text(), /<html/i);
 });
 
+test('Agent profile deep links accept dotted identities without serving missing assets as HTML', async (t) => {
+  const { server, url } = await createServer({ app: {}, port: 0 });
+  t.after(() => closeServer(server));
+  for (const path of ['/agents/space-a/employee.jefa', '/agents/space-a/employee%2Ejefa']) {
+    const page = await fetch(`${url}${path}`);
+    assert.equal(page.status, 200);
+    assert.match(page.headers.get('content-type'), /^text\/html/);
+    assert.equal(page.headers.get('cache-control'), 'no-cache');
+  }
+  for (const path of ['/assets/missing.js', '/agents/space-a/employee.jefa/missing.js']) {
+    const missing = await fetch(`${url}${path}`);
+    assert.equal(missing.status, 404);
+    assert.doesNotMatch(await missing.text(), /<html/i);
+  }
+});
+
 test('loopback HTTP never proxies the independent human-review credential', async (t) => {
   let reviewCalls = 0;
   const humanReview = {

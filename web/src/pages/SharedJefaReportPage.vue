@@ -47,14 +47,14 @@ async function load() {
 </template>
 
 <style scoped>
-.shared-jefa-report { height: 100dvh; display: flex; flex-direction: column; min-height: 0; background: #fff; overflow: hidden; }
-.shared-jefa-report > header { display: flex; align-items: center; gap: 16px; padding: 20px 24px; border-bottom: 1px solid #e2e9e4; }
-header strong { color: #315c43; font-size: 22px; }
+.shared-jefa-report { height: 100dvh; display: flex; flex-direction: column; min-height: 0; background: var(--color-surface); overflow: hidden; }
+.shared-jefa-report > header { display: flex; align-items: center; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--color-border); }
+header strong { color: var(--color-ink); font-size: 22px; }
 header h1 { margin: 0; font-size: 18px; }
-header span { margin-left: auto; font-size: 12px; color: #526659; }
+header span { margin-left: auto; font-size: 12px; color: var(--color-muted); }
 .report-state { margin: auto; padding: 24px; text-align: center; }
 .report-state h2 { font-size: 18px; }
-.report-state p { max-width: 44ch; color: #526659; line-height: 1.7; }
-.report-state button { min-height: 44px; padding: 8px 16px; border: 1px solid #bdcbbf; border-radius: 8px; background: #fff; color: #315c43; }
-.report-warning { margin: 12px 24px 0; font-size: 13px; color: #8d5a31; }
+.report-state p { max-width: 44ch; color: var(--color-muted); line-height: 1.7; }
+.report-state button { min-height: 44px; padding: 8px 16px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-ink); }
+.report-warning { margin: 12px 24px 0; font-size: 13px; color: var(--color-warning); }
 </style>

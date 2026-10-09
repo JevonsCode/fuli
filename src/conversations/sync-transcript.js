@@ -1,5 +1,6 @@
 import { initialTranscriptBoundary, readTranscriptBatch } from './transcript-reader.js';
 import { transcriptDigest } from './transcript-guard.js';
+import { lookupTranscriptTask } from './current-task-lookup.js';
 
 const pending = reason => ({ status: 'partial', entryBlocked: true, reason });
 const retryReason = 'Transcript handoff is pending. Retry task entry to continue its saved progress; no new Agent context was supplied';
@@ -9,8 +10,9 @@ export async function syncConversationTranscript(application, input, sourceAppli
   if (!input?.transcript_path) return { status: 'partial', reason: 'Host did not supply a visible transcript' };
   let committedPages = 0;
   try {
-    const task = await application.personal.currentTaskContext({ personal_space_id: application.config.personal.spaceId,
-      session_id: input.session_id, source_application: sourceApplication });
+    const lookup = await lookupTranscriptTask(application, input, sourceApplication);
+    if (lookup.failure) return lookup.failure;
+    const task = lookup.task;
     if (!task?.project_agent_id) return guard?.value ? pending(retryReason) : { status: 'unassigned' };
     const scope = { personal_space_id: application.config.personal.spaceId, personal_project_id: task.personal_project_id,
       agent_id: task.project_agent_id, source_application: sourceApplication };

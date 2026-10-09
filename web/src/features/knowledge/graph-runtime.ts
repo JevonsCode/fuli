@@ -41,10 +41,13 @@ interface GraphEdgeDatum extends d3.SimulationLinkDatum<GraphNodeDatum> {
   raw: KnowledgeEdge
 }
 
-const COLORS = ['#537966', '#867550', '#65758a', '#8a655f', '#6f6a88', '#598080', '#8a765f']
+const COLORS = ['blue', 'teal', 'violet', 'amber', 'rose', 'cyan', 'slate'].map(
+  (name) => `var(--color-chart-${name})`,
+)
 const MIN_SCALE = 0.18
 const MAX_SCALE = 5
 const MAX_FIT_SCALE = 1.5
+const GRAPH_LABEL_COMPACT_SCALE = 0.72
 
 export function renderKnowledgeGraph(
   svg: SVGSVGElement,
@@ -220,7 +223,11 @@ export function renderKnowledgeGraph(
 
   const zoom = d3.zoom<SVGSVGElement, unknown>()
     .scaleExtent([MIN_SCALE, MAX_SCALE])
-    .on('zoom', (event) => viewport.attr('transform', event.transform.toString()))
+    .on('zoom', (event) => {
+      viewport
+        .attr('transform', event.transform.toString())
+        .classed('graph-viewport--compact-labels', event.transform.k < GRAPH_LABEL_COMPACT_SCALE)
+    })
   root.call(zoom).on('dblclick.zoom', null)
 
   const simulation = d3.forceSimulation<GraphNodeDatum>(nodes)
@@ -319,6 +326,10 @@ export function renderKnowledgeGraph(
       event.preventDefault()
       selectEdge(edge)
     })
+    .on('mouseenter.labels', (_event, edge) => setEdgeLabelState(edge, 'hovered', true))
+    .on('mouseleave.labels', (_event, edge) => setEdgeLabelState(edge, 'hovered', false))
+    .on('focus.labels', (_event, edge) => setEdgeLabelState(edge, 'focused', true))
+    .on('blur.labels', (_event, edge) => setEdgeLabelState(edge, 'focused', false))
 
   root.on('click.selection', (event) => {
     if (event.target === svg) clearSelection()
@@ -442,6 +453,10 @@ export function renderKnowledgeGraph(
   function selectEdge(edge: GraphEdgeDatum) {
     highlightEdge(edge)
     callbacks.onEdgeSelect?.(edge.raw)
+  }
+
+  function setEdgeLabelState(edge: GraphEdgeDatum, state: 'hovered' | 'focused', active: boolean) {
+    edgeLabels.filter(({ id }) => id === edge.id).classed(state, active)
   }
 
   function highlightEdge(edge: GraphEdgeDatum) {

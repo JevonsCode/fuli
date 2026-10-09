@@ -68,7 +68,7 @@ test('native graph services start databases before Providers and preserve shutdo
       writeProcessState: (_path, value) => { processState = value; },
       processMatches: async () => true,
       stopProcess: async (pid) => stopped.push(pid),
-      fetchImpl: async () => ({ ok: true })
+      fetchImpl: async () => Response.json({ status: 'ok', transcript_contract: 1 })
     });
 
     await services.start();
@@ -133,6 +133,57 @@ test('native graph services do not signal a PID that no longer belongs to Fuli',
 
   await services.stopProviders();
   assert.equal(signalled, false);
+});
+
+function compatibilityFixture(health, options = {}) {
+  const initial = { databases: { personal: { pid: 4400, command: PATHS.nativeNeo4jHome } },
+    providers: { personal: { pid: 4500, command: '/synthetic/python' } } };
+  let state = structuredClone(initial);
+  const stopped = [], spawned = [], waits = [];
+  const services = createNativeGraphServices({
+    paths: PATHS, runtimeDescriptor: { status: 'ready', mode: 'native', javaHome: '/jdk-21',
+      neo4jHome: PATHS.nativeNeo4jHome, providerPython: '/synthetic/python' }, personalOnly: true,
+    readText: () => ENVIRONMENT, writeText: async () => {}, pathExists: () => true,
+    readSettings: () => DEFAULT_RUNTIME_SETTINGS, waitForDatabase: async () => {},
+    readProcessState: () => state, writeProcessState: (_path, value) => { state = value; },
+    processMatches: async pid => !(options.staleProvider && pid === 4500), stopProcess: async pid => stopped.push(pid),
+    spawnProvider: () => { spawned.push('provider'); return { pid: 4600 }; },
+    spawnDatabase: () => { spawned.push('database'); return { pid: 4700 }; },
+    fetchImpl: async () => Response.json(health), wait: async ms => waits.push(ms)
+  });
+  return { services, initial, stopped, spawned, waits, state: () => state };
+}
+
+test('native readiness rejects a healthy legacy Provider lacking the transcript contract', async () => {
+  const f = compatibilityFixture({ status: 'ok' });
+  assert.equal(await f.services.ready(), false);
+});
+
+test('incompatible reused Provider fails promptly without stopping other sessions or losing their PIDs', async () => {
+  const f = compatibilityFixture({ status: 'ok' });
+  await assert.rejects(f.services.start(), /incompatible|upgrade/i);
+  assert.deepEqual(f.stopped, []);
+  assert.deepEqual(f.spawned, []);
+  assert.deepEqual(f.waits, [], 'A successful but incompatible health response is not retried for two minutes');
+  assert.deepEqual(f.state().databases, f.initial.databases);
+  assert.deepEqual(f.state().providers, f.initial.providers);
+});
+
+test('native readiness accepts the implemented transcript contract', async () => {
+  const f = compatibilityFixture({ status: 'ok', transcript_contract: 1 });
+  assert.equal(await f.services.ready(), true);
+  await f.services.start();
+  assert.deepEqual(f.spawned, []);
+  assert.deepEqual(f.stopped, []);
+});
+
+test('startup failure cleans up only its new Provider while retaining the reused database', async () => {
+  const f = compatibilityFixture({ status: 'ok' }, { staleProvider: true });
+  await assert.rejects(f.services.start(), /incompatible/i);
+  assert.deepEqual(f.spawned, ['provider']);
+  assert.deepEqual(f.stopped, [4600]);
+  assert.deepEqual(f.state().databases, f.initial.databases);
+  assert.notEqual(f.state().providers.personal?.pid, 4600);
 });
 
 test('native graph services can resume databases without waking Providers', async () => {

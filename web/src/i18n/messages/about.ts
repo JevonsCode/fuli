@@ -6,6 +6,7 @@ export const aboutMessages = {
       title: '对话会结束，方法应该留下',
       intro: 'FULI 希望人在与 Agent 的协作中，逐渐沉淀自己的工作流、工作态度、工作个性、判断方式与个人品味。它们不只属于工作，也可以来自生活、兴趣和长期形成的习惯。',
       support: '目标不是保存每一句对话，而是让真正稳定、能够再次发挥作用的经验留下来，并随着一次次使用形成个人项目与方法论。',
+      sectionTitle: '方法如何留下',
       capture: {
         index: '01',
         title: '从真实协作中沉淀',
@@ -47,7 +48,7 @@ export const aboutMessages = {
     credits: {
       title: '开源致谢',
       description: 'FULI 建立在这些开源项目之上。',
-      sourceNote: '标识通过各项目官网或官方 GitHub 资源加载；项目名称、标识和许可证归各自社区与权利人所有。',
+      sourceNote: '项目名称、链接和许可证归各自社区与权利人所有。',
       roles: {
         vue: '界面框架',
         vite: '构建工具',
@@ -62,6 +63,7 @@ export const aboutMessages = {
         mcp: 'Agent 工具协议',
       },
       finale: '让方法与项目，在每一次协作中继续生长。',
+      website: '访问 FULI 官网',
     },
     dimensions: {
       profile: {
@@ -146,6 +148,7 @@ export const aboutMessages = {
     },
     statuses: {
       entryCondition: '进入条件',
+      descriptionHeader: '说明',
       pending: {
         label: '待确认',
         description: 'Agent 提出的内容、推断内容，或缺少确认人和确认时间的旧数据。',
@@ -181,6 +184,7 @@ export const aboutMessages = {
       title: 'Conversations end. Methods should remain.',
       intro: 'FULI helps people gradually retain their workflows, working attitudes, collaboration traits, judgment patterns, and personal taste through real work with Agents. The same idea also applies beyond work—to interests, daily life, and habits formed over time.',
       support: 'The goal is not to preserve every line of a conversation. It is to keep stable experience that can matter again, then let repeated use grow into personal projects and a reusable methodology.',
+      sectionTitle: 'How methods remain',
       capture: {
         index: '01',
         title: 'Learn from real collaboration',
@@ -222,7 +226,7 @@ export const aboutMessages = {
     credits: {
       title: 'Open-source credits',
       description: 'FULI is built on these open-source projects.',
-      sourceNote: 'Marks load from each project’s website or official GitHub resources. Project names, marks, and licenses belong to their respective communities and rights holders.',
+      sourceNote: 'Project names, links, and licenses belong to their respective communities and rights holders.',
       roles: {
         vue: 'Interface framework',
         vite: 'Build tooling',
@@ -237,6 +241,7 @@ export const aboutMessages = {
         mcp: 'Agent tool protocol',
       },
       finale: 'Let methods and projects keep growing through every collaboration.',
+      website: 'Visit the FULI website',
     },
     dimensions: {
       profile: {
@@ -321,6 +326,7 @@ export const aboutMessages = {
     },
     statuses: {
       entryCondition: 'Entry condition',
+      descriptionHeader: 'Description',
       pending: {
         label: 'Pending',
         description: 'Agent-proposed or inferred content, and legacy data without a confirmer and confirmation time.',

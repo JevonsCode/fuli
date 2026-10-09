@@ -47,3 +47,7 @@ Fuli already has an established logo. Use the original artwork at
 `site/assets/fuli-logo.png`, identical to `web/assets/brand/fuli-logo.png`.
 Website redesigns preserve this logo, its colors and proportions. Do not redraw it,
 replace it with an initial, recolor it, or create a new brand mark without an explicit request.
+
+## Local console
+
+The console under `web/` has its own product brief; see [console-product.md](docs/console-product.md).

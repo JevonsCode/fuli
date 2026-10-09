@@ -260,7 +260,7 @@ function formattedDate(value: string) {
   <div class="bole-panel" :aria-busy="loading">
     <div v-if="partialError" class="bole-alert" role="alert">
       <span>{{ t('employees.bole.partialError') }}</span>
-      <button type="button" @click="load">{{ t('employees.retry') }}</button>
+      <button class="quiet-button" type="button" @click="load">{{ t('employees.retry') }}</button>
     </div>
 
     <header class="bole-header">
@@ -275,12 +275,12 @@ function formattedDate(value: string) {
         <div data-testid="people-working"><dt>{{ t('employees.bole.workingNow') }}</dt><dd>{{ loading ? '—' : workingAgentIds.size }}</dd></div>
         <div><dt>{{ t('employees.bole.coveredProjects') }}</dt><dd>{{ loading ? '—' : coveredProjectIds.size }}</dd></div>
       </dl>
-      <button class="bole-refresh" type="button" :disabled="loading" @click="load">{{ t('common.actions.refresh') }}</button>
+      <button class="quiet-button bole-refresh" type="button" :disabled="loading" @click="load">{{ t('common.actions.refresh') }}</button>
     </header>
 
     <div class="bole-controls">
       <div class="bole-filters">
-        <input v-model="search" type="search" class="bole-search" :aria-label="t('employees.bole.search')" :placeholder="t('employees.bole.search')" aria-describedby="bole-search-hint">
+        <input v-model="search" type="search" class="bole-search" :aria-label="t('employees.bole.search')" :placeholder="t('employees.bole.search')">
         <ProjectScopePicker v-model="projectSelection" :projects="projectOptions" :label="t('employees.allProjects.projectFilter')" :all-label="t('employees.bole.allProjects')" :empty-label="t('employees.filterEmpty')" compact hint="" />
         <select v-if="activeView === 'people'" v-model="workFilter" :aria-label="t('employees.bole.workFilter')">
           <option value="all">{{ t('employees.bole.allWork') }}</option>
@@ -288,11 +288,10 @@ function formattedDate(value: string) {
           <option value="idle">{{ t('employees.bole.withoutTask') }}</option>
         </select>
       </div>
-      <p id="bole-search-hint" class="bole-search-hint">{{ t('agentProfiles.hrSearchHint') }}</p>
       <div class="bole-role-filters" role="group" :aria-label="t('employees.bole.distribution')">
         <button type="button" :aria-pressed="!roleFilter" @click="roleFilter = ''">{{ t('employees.bole.allRoles') }}</button>
         <button v-for="item in distribution" :key="item.type" type="button" :aria-pressed="roleFilter === item.type" @click="roleFilter = roleFilter === item.type ? '' : item.type">{{ item.label }} <span>{{ item.count }}</span></button>
-        <button v-if="filtersActive" class="bole-clear" type="button" @click="clearFilters">{{ t('employees.bole.clearFilters') }}</button>
+        <button v-if="filtersActive" class="quiet-button bole-clear" type="button" @click="clearFilters">{{ t('employees.bole.clearFilters') }}</button>
         <span v-if="filtersActive && !loading" class="bole-result-count" role="status">{{ t('employees.bole.resultCount', { count: activeView === 'people' ? filteredAgents.length : filteredRecruitments.length }) }}</span>
       </div>
     </div>
@@ -301,15 +300,15 @@ function formattedDate(value: string) {
       <GrowthLoading v-if="loading" variant="compact" :label="t('employees.bole.loading')" />
       <section v-else-if="activeView === 'people'" aria-labelledby="bole-work-title">
         <p v-if="tasksMayBeTruncated" class="bole-empty" role="status">{{ t('employees.bole.taskLimit') }}</p>
-        <div v-if="filteredAgents.length" class="bole-agent-list">
-          <div class="bole-table-heading" aria-hidden="true"><span>Agent</span><span>{{ t('employees.bole.taskColumn') }}</span><span>{{ t('employees.bole.projectsColumn') }}</span></div>
+        <div v-if="filteredAgents.length" class="ui-card bole-agent-list">
+          <div class="bole-table-heading" aria-hidden="true"><span>{{ t('projectAgents.title') }}</span><span>{{ t('employees.bole.taskColumn') }}</span><span>{{ t('employees.bole.projectsColumn') }}</span></div>
           <article v-for="agent in filteredAgents" :key="agent.id" class="bole-agent-row">
             <div class="bole-agent-identity">
               <span class="bole-agent-mark" aria-hidden="true"><img v-if="avatar(agent.id)" :src="avatar(agent.id)" alt=""><template v-else>{{ agent.emoji }}</template></span>
               <div><strong><AgentName :space-id="personalSpaceId" :agent-id="agent.id" :name="agent.name" /></strong><AgentHand :agent-id="agent.id" /><small>{{ agent.responsibility || typeLabel(agent.type) }}</small></div>
             </div>
             <div class="bole-agent-work">
-              <template v-if="agent.task"><span class="bole-status" :data-status="agent.task.status">{{ statusLabel(agent.task.status) }}</span><p>{{ agent.task.title }}</p></template>
+              <template v-if="agent.task"><span class="ui-badge bole-status" :data-status="agent.task.status">{{ statusLabel(agent.task.status) }}</span><p>{{ agent.task.title }}</p></template>
               <p v-else class="is-idle">{{ t('employees.bole.idle') }}</p>
             </div>
             <div class="bole-agent-projects">
@@ -318,11 +317,11 @@ function formattedDate(value: string) {
             </div>
           </article>
         </div>
-        <p v-else class="bole-empty">{{ t(filtersActive ? 'employees.bole.noMatch' : 'employees.bole.noAgents') }}</p>
+        <p v-else class="ui-empty bole-empty">{{ t(filtersActive ? 'employees.bole.noMatch' : 'employees.bole.noAgents') }}</p>
       </section>
 
       <section v-else aria-labelledby="bole-history-title">
-        <ol v-if="filteredRecruitments.length" class="bole-timeline">
+        <ol v-if="filteredRecruitments.length" class="ui-card bole-timeline">
           <li v-for="recruitment in filteredRecruitments" :key="recruitment.id">
             <div class="bole-recruitment-identity"><strong><AgentName :space-id="personalSpaceId" :agent-id="recruitment.agentId" :name="agentName(recruitment.agentId)" /></strong><small>{{ typeLabel(recruitment.positionKind) }} · {{ projectName(recruitment.projectId) }}</small></div>
             <div class="bole-recruitment-reason">
@@ -332,7 +331,7 @@ function formattedDate(value: string) {
             <time :datetime="recruitment.createdAt">{{ formattedDate(recruitment.createdAt) }}</time>
           </li>
         </ol>
-        <p v-else class="bole-empty">{{ t(filtersActive ? 'employees.bole.noMatch' : 'employees.bole.noRecruitments') }}</p>
+        <p v-else class="ui-empty bole-empty">{{ t(filtersActive ? 'employees.bole.noMatch' : 'employees.bole.noRecruitments') }}</p>
       </section>
     </div>
   </div>

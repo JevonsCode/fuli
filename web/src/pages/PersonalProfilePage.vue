@@ -37,9 +37,8 @@ const store = useConsoleStore()
 const graph = ref<KnowledgeGraph | null>(null)
 const writingTaste = ref<WritingTasteProfile | null>(null)
 const loading = ref(false)
-const showInitialLoading = useMinimumLoadingDisplay(computed(() =>
-  loading.value && !graph.value,
-))
+const initialLoading = computed(() => loading.value && !graph.value)
+const showInitialLoading = useMinimumLoadingDisplay(initialLoading)
 const activeAspect = ref('all')
 const activeScope = ref('all')
 const activeReviewState = ref<'all' | KnowledgeReviewState>('all')
@@ -163,21 +162,6 @@ const agentConfirmedCount = computed(
     (item) => knowledgeReviewState(item) === 'agent_confirmed',
   ).length,
 )
-const summaryGuidance = computed(() => {
-  if (conflictsOnly.value) {
-    return t('preferences.profile.summaryGuidance.conflicts')
-  }
-  if (activeReviewState.value === 'pending') {
-    return t('preferences.profile.summaryGuidance.pending')
-  }
-  if (activeReviewState.value === 'confirmed') {
-    return t('preferences.profile.summaryGuidance.confirmed')
-  }
-  if (activeReviewState.value === 'agent_confirmed') {
-    return t('preferences.profile.summaryGuidance.agentConfirmed')
-  }
-  return t('preferences.profile.summaryGuidance.default')
-})
 
 watch(
   () => store.activePersonalSpace?.id,
@@ -456,7 +440,6 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
           }}
         </small>
       </button>
-      <p>{{ summaryGuidance }}</p>
     </div>
 
     <section
@@ -466,7 +449,6 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
     >
       <div class="preference-conflict-alert-icon" aria-hidden="true">!</div>
       <div>
-        <span>{{ t('preferences.profile.alert.kicker') }}</span>
         <h2>{{ t('preferences.profile.alert.title', { count: conflicts.length }) }}</h2>
         <p>{{ t('preferences.profile.alert.copy') }}</p>
       </div>
@@ -540,11 +522,12 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
       </div>
     </div>
 
-    <GrowthLoading v-if="loading && !showInitialLoading && !conflictsOnly" variant="inline" :label="t('preferences.profile.directory.loading')" />
+    <GrowthLoading v-if="loading && graph && !showInitialLoading && !conflictsOnly" variant="inline" :label="t('preferences.profile.directory.loading')" />
     <GrowthLoading
       v-if="showInitialLoading"
       :label="t('preferences.profile.directory.loading')"
     />
+    <div v-else-if="initialLoading" class="view-loading" aria-busy="true" />
     <section
       v-else-if="conflictsOnly"
       class="preference-conflict-workbench"
@@ -552,10 +535,8 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
     >
       <header>
         <div>
-          <p class="eyebrow">CONFLICT WORKBENCH</p>
           <h2>{{ t('preferences.profile.workbench.title') }}</h2>
         </div>
-        <p>{{ t('preferences.profile.workbench.copy') }}</p>
       </header>
       <div class="preference-conflict-list">
         <article
@@ -738,9 +719,9 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
   gap: 13px;
   margin-top: 12px;
   padding: 12px 14px;
-  border: 1px solid #d6ddd8;
+  border: 1px solid var(--color-border);
   border-radius: 11px;
-  background: #f7f9f7;
+  background: var(--color-surface);
   box-shadow: 0 7px 20px rgba(49, 66, 56, 0.05);
 }
 
@@ -750,8 +731,8 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
   height: 30px;
   place-items: center;
   border-radius: 50%;
-  background: #52685b;
-  color: #fff;
+  background: var(--color-muted);
+  color: var(--color-surface);
   font-size: 16px;
   font-weight: 800;
 }
@@ -762,8 +743,8 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 }
 
 .preference-conflict-alert span {
-  color: #65736b;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -775,13 +756,13 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 }
 
 .preference-conflict-alert h2 {
-  color: #344239;
+  color: var(--color-ink);
   font-size: 14px;
 }
 
 .preference-conflict-alert p {
-  color: #6f7972;
-  font-size: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -806,14 +787,14 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 }
 
 .preference-conflict-workbench h2 {
-  color: #2e3d35;
+  color: var(--color-ink);
   font-size: 17px;
 }
 
 .preference-conflict-workbench > header > p {
   max-width: 520px;
-  color: #778079;
-  font-size: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
   line-height: 1.55;
   text-align: right;
 }
@@ -827,9 +808,9 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
   display: grid;
   gap: 12px;
   padding: 15px;
-  border: 1px solid #d9dfdb;
+  border: 1px solid var(--color-border);
   border-radius: 11px;
-  background: #fff;
+  background: var(--color-surface);
   box-shadow: 0 7px 20px rgba(45, 61, 52, 0.04);
 }
 
@@ -852,21 +833,21 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 
 .preference-conflict-card-heading span,
 .preference-conflict-card footer span {
-  color: #7d8780;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
 }
 
 .preference-conflict-card-heading h3 {
   margin: 0;
-  color: #344239;
+  color: var(--color-ink);
   font-size: 14px;
 }
 
 .preference-conflict-card-heading strong {
-  color: #53685b;
-  font-size: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .preference-conflict-pair {
@@ -882,41 +863,41 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
   align-content: start;
   gap: 6px;
   padding: 12px;
-  border: 1px solid #e0e5e1;
-  border-radius: 8px;
-  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
 }
 
 .preference-conflict-pair > section:first-child {
-  border-color: #c7ddec;
-  background: #f5fafe;
+  border-color: var(--color-border);
+  background: var(--color-surface);
 }
 
 .preference-conflict-pair > section:last-child {
-  border-color: #d8ceeb;
-  background: #faf8fd;
+  border-color: var(--color-border);
+  background: var(--color-surface);
 }
 
 .preference-conflict-pair span,
 .preference-conflict-pair small {
-  color: #7d8780;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .preference-conflict-pair strong {
-  color: #35423a;
-  font-size: 11px;
+  color: var(--color-ink);
+  font-size: 12px;
 }
 
 .preference-conflict-pair p {
-  color: #566159;
-  font-size: 10px;
+  color: var(--color-ink);
+  font-size: 12px;
   line-height: 1.55;
 }
 
 .preference-conflict-pair > i {
   align-self: center;
-  color: #9b9486;
+  color: var(--color-muted);
   font-size: 14px;
   font-style: normal;
   text-align: center;
@@ -924,7 +905,7 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 
 .preference-conflict-card footer {
   padding-top: 11px;
-  border-top: 1px solid #e5e9e6;
+  border-top: 1px solid var(--color-border);
 }
 
 .preference-conflict-card footer > div {
@@ -933,13 +914,13 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 }
 
 .preference-conflict-card footer p {
-  color: #5d625d;
-  font-size: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .preference-conflict-card footer small {
-  color: #758079;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .preference-conflict-card footer button {
@@ -954,28 +935,28 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 }
 
 .preference-conflict-card footer .preference-conflict-actions .secondary-action {
-  color: #5e665f;
-  background: #f5f7f5;
+  color: var(--color-muted);
+  background: var(--color-surface-subtle);
 }
 
 .personal-profile-row.ai-resolved-conflict {
-  border-color: #b8d5c3;
-  background: #f6fbf8;
+  border-color: var(--color-border-strong);
+  background: var(--color-surface);
 }
 
 .personal-profile-row.ai-resolved-conflict .personal-profile-origin strong {
-  color: #39724f;
+  color: var(--color-ink);
 }
 
 .personal-profile-inspector :deep(.inspector-classification.state-pending),
 .personal-profile-inspector :deep(.inspector-classification.state-needs_review) {
-  border-color: #d8dfda;
-  background: #f5f7f5;
+  border-color: var(--color-warning-soft);
+  background: var(--color-warning-soft);
 }
 
 .personal-profile-inspector :deep(.inspector-classification.state-pending strong),
 .personal-profile-inspector :deep(.inspector-classification.state-needs_review strong) {
-  color: #53645a;
+  color: var(--color-warning);
 }
 
 @media (max-width: 860px) {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import UiDisclosure from '@/components/UiDisclosure.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { getJson, putJson } from '@/api/client'
@@ -215,6 +216,11 @@ function formatTime(value: string | undefined) {
     second: '2-digit',
   }).format(new Date(value))
 }
+function revealInvalidField(event: Event) {
+  const field = event.target as HTMLElement
+  let section = field.closest('details')
+  while (section) { section.open = true; section = section.parentElement?.closest('details') ?? null }
+}
 </script>
 
 <template>
@@ -225,69 +231,68 @@ function formatTime(value: string | undefined) {
         <strong v-if="saved">{{ t('settings.saved') }}</strong>
         <span v-if="settings?.restartRequired">{{ t('settings.restartCopy') }}</span>
       </div>
-      <section class="settings-card resource-card">
-        <header class="section-heading">
-          <div>
-            <h3>{{ t('settings.resources.title') }}</h3>
-            <p v-if="resources">{{ t('settings.resources.measuredAt', { time: formatTime(resources.sampledAt) }) }}</p>
-          </div>
-          <button class="quiet-button" type="button" :disabled="loadingResources" @click="loadResources">
-            {{ t('common.actions.refresh') }}
-          </button>
-        </header>
-
-        <GrowthLoading v-if="loadingResources" :variant="resources ? 'inline' : 'compact'" :label="t('settings.resources.loading')" />
-        <p v-if="resourceError" class="settings-error" role="alert">{{ resourceError }}</p>
-        <template v-else-if="resources">
-          <div class="resource-totals">
-            <article>
-              <span>{{ t('settings.resources.memory') }}</span>
-              <strong>{{ formatBytes(resources.memory.usedBytes) }}</strong>
-              <small>{{ t('settings.resources.available', { value: formatBytes(resources.memory.hostFreeBytes) }) }}</small>
-            </article>
-            <article>
-              <span>{{ t('settings.resources.disk') }}</span>
-              <strong>{{ formatBytes(resources.disk.usedBytes) }}</strong>
-              <small>{{ t('settings.resources.available', { value: formatBytes(resources.disk.hostFreeBytes) }) }}</small>
-            </article>
-          </div>
-
-          <div class="resource-breakdowns">
-            <div class="resource-group">
-              <h4>{{ t('settings.resources.memory') }}</h4>
-              <div v-for="component in resources.memory.components" :key="component.id" class="resource-row">
-                <div><span>{{ componentLabel(component) }}</span><strong>{{ formatBytes(component.bytes) }}</strong></div>
-                <i><b :style="{ width: barWidth(component.bytes, memoryMax) }" /></i>
-              </div>
-            </div>
-            <div class="resource-group">
-              <h4>{{ t('settings.resources.disk') }}</h4>
-              <div v-for="component in resources.disk.components" :key="component.id" class="resource-row">
-                <div><span>{{ componentLabel(component) }}</span><strong>{{ formatBytes(component.bytes) }}</strong></div>
-                <i><b :style="{ width: barWidth(component.bytes, diskMax) }" /></i>
-              </div>
-            </div>
-          </div>
-
-          <div class="resource-notes">
-            <span>{{ t('settings.resources.diskMeasuredAt', { time: formatTime(resources.disk.measuredAt) }) }}</span>
-            <span v-if="resources.status === 'partial'">{{ t('settings.resources.partial') }}</span>
-            <span v-if="resources.disk.temporaryBytes">{{ t('settings.resources.temporary', { value: formatBytes(resources.disk.temporaryBytes) }) }}</span>
-            <span>{{ t(resources.exclusions.includes('shared-container-vm-overhead')
-              ? 'settings.resources.exclusionsContainer'
-              : 'settings.resources.exclusionsNative') }}</span>
-          </div>
-        </template>
-      </section>
-
       <GrowthLoading v-if="loading && !form" variant="compact" :label="t('settings.loading')" />
-      <form v-if="form" id="settings-form" class="settings-form" :aria-busy="saving" @submit.prevent="saveSettings">
+      <form v-if="form" id="settings-form" class="settings-form" :aria-busy="saving" @submit.prevent="saveSettings" @invalid.capture="revealInvalidField">
         <fieldset class="settings-fields" :disabled="saving">
-        <section class="settings-card ports-card">
-          <header class="section-heading">
-            <h3>{{ t('settings.ports.title') }}</h3>
-            <span v-if="settings?.restartRequired" class="restart-chip">{{ t('settings.restartRequired') }}</span>
-          </header>
+        <section class="settings-card behavior-card">
+          <h3>{{ t('settings.behavior.title') }}</h3>
+          <div class="setting-list">
+            <label class="setting-row">
+              <span><strong>{{ t('settings.behavior.capture') }}</strong><small>{{ t('settings.behavior.captureMeta') }}</small></span>
+              <input type="checkbox" role="switch" :checked="captureEnabled" @change="toggleCapture" />
+            </label>
+            <label class="setting-row">
+              <span><strong>{{ t('settings.behavior.agentAccess') }}</strong><small>{{ t('settings.behavior.agentAccessMeta') }}</small></span>
+              <input type="checkbox" role="switch" :checked="agentAccessEnabled" @change="toggleAgentAccess" />
+            </label>
+            <label class="setting-row">
+              <span><strong>{{ t('settings.behavior.lanAccess') }}</strong><small>{{ t('settings.behavior.lanAccessMeta') }}</small></span>
+              <input v-model="form.lanAccess" type="checkbox" role="switch" />
+            </label>
+            <div class="setting-row select-row">
+              <span>
+                <strong>{{ t('settings.behavior.runtimeMode') }}</strong>
+                <small>{{ recommendsNativeRuntime
+                  ? t('settings.behavior.runtimeRecommendation')
+                  : t('settings.behavior.runtimeModeMeta', {
+                    mode: t(`settings.behavior.runtimeModes.${settings?.active.graphRuntimeMode ?? form.graphRuntimeMode}`),
+                  }) }}</small>
+              </span>
+              <SearchableSelect
+                class="settings-select"
+                control-id="settings-runtime-mode"
+                :model-value="form.graphRuntimeMode"
+                :options="runtimeModeOptions"
+                :label="t('settings.behavior.runtimeMode')"
+                @update:model-value="updateRuntimeMode"
+              />
+            </div>
+            <div class="setting-row select-row">
+              <span><strong>{{ t('settings.behavior.language') }}</strong></span>
+              <SearchableSelect
+                class="settings-select"
+                control-id="settings-language"
+                :model-value="locale"
+                :options="localeOptions"
+                :label="t('settings.behavior.language')"
+                @update:model-value="updateLocale"
+              />
+            </div>
+            <div class="setting-row select-row">
+              <span><strong>{{ t('settings.resources.refresh') }}</strong></span>
+              <SearchableSelect
+                class="settings-select"
+                control-id="settings-refresh-interval"
+                :model-value="String(form.resourceRefreshSeconds)"
+                :options="refreshOptions"
+                :label="t('settings.resources.refresh')"
+                @update:model-value="updateRefreshInterval"
+              />
+            </div>
+          </div>
+        </section>
+        <UiDisclosure class="settings-card ports-card" :title="t('settings.ports.title')">
+          <span v-if="settings?.restartRequired" class="restart-chip">{{ t('settings.restartRequired') }}</span>
 
           <div class="port-section">
             <h4>{{ t('settings.ports.personal') }}</h4>
@@ -307,10 +312,9 @@ function formatTime(value: string | undefined) {
             </div>
             <p>{{ t('settings.ports.developmentMeta') }}</p>
           </div>
-        </section>
+        </UiDisclosure>
 
-        <section id="conversation-launchers" class="settings-card conversation-launcher-card">
-          <h3>{{ t('settings.conversationLaunchers.title') }}</h3>
+        <UiDisclosure id="conversation-launchers" class="settings-card conversation-launcher-card" :title="t('settings.conversationLaunchers.title')">
           <div class="conversation-launcher-list">
             <article
               v-for="application in conversationApplications"
@@ -376,70 +380,70 @@ function formatTime(value: string | undefined) {
               </div>
             </article>
           </div>
-        </section>
+        </UiDisclosure>
 
-        <section class="settings-card behavior-card">
-          <h3>{{ t('settings.behavior.title') }}</h3>
-          <div class="setting-list">
-            <label class="setting-row">
-              <span><strong>{{ t('settings.behavior.capture') }}</strong><small>{{ t('settings.behavior.captureMeta') }}</small></span>
-              <input type="checkbox" role="switch" :checked="captureEnabled" @change="toggleCapture" />
-            </label>
-            <label class="setting-row">
-              <span><strong>{{ t('settings.behavior.agentAccess') }}</strong><small>{{ t('settings.behavior.agentAccessMeta') }}</small></span>
-              <input type="checkbox" role="switch" :checked="agentAccessEnabled" @change="toggleAgentAccess" />
-            </label>
-            <label class="setting-row">
-              <span><strong>{{ t('settings.behavior.lanAccess') }}</strong><small>{{ t('settings.behavior.lanAccessMeta') }}</small></span>
-              <input v-model="form.lanAccess" type="checkbox" role="switch" />
-            </label>
-            <div class="setting-row select-row">
-              <span>
-                <strong>{{ t('settings.behavior.runtimeMode') }}</strong>
-                <small>{{ recommendsNativeRuntime
-                  ? t('settings.behavior.runtimeRecommendation')
-                  : t('settings.behavior.runtimeModeMeta', {
-                    mode: t(`settings.behavior.runtimeModes.${settings?.active.graphRuntimeMode ?? form.graphRuntimeMode}`),
-                  }) }}</small>
-              </span>
-              <SearchableSelect
-                class="settings-select"
-                control-id="settings-runtime-mode"
-                :model-value="form.graphRuntimeMode"
-                :options="runtimeModeOptions"
-                :label="t('settings.behavior.runtimeMode')"
-                @update:model-value="updateRuntimeMode"
-              />
-            </div>
-            <div class="setting-row select-row">
-              <span><strong>{{ t('settings.behavior.language') }}</strong></span>
-              <SearchableSelect
-                class="settings-select"
-                control-id="settings-language"
-                :model-value="locale"
-                :options="localeOptions"
-                :label="t('settings.behavior.language')"
-                @update:model-value="updateLocale"
-              />
-            </div>
-            <div class="setting-row select-row">
-              <span><strong>{{ t('settings.resources.refresh') }}</strong></span>
-              <SearchableSelect
-                class="settings-select"
-                control-id="settings-refresh-interval"
-                :model-value="String(form.resourceRefreshSeconds)"
-                :options="refreshOptions"
-                :label="t('settings.resources.refresh')"
-                @update:model-value="updateRefreshInterval"
-              />
-            </div>
-          </div>
-        </section>
+
 
         </fieldset>
         <p v-if="loadError" class="settings-error" role="alert">{{ loadError }}</p>
       </form>
-      <p v-else-if="!loading" class="settings-error" role="alert">{{ loadError || t('settings.loadError') }}</p>
+      <section class="settings-card resource-card">
+        <header class="section-heading">
+          <div>
+            <h3>{{ t('settings.resources.title') }}</h3>
+            <p v-if="resources">{{ t('settings.resources.measuredAt', { time: formatTime(resources.sampledAt) }) }}</p>
+          </div>
+          <button class="quiet-button" type="button" :disabled="loadingResources" @click="loadResources">
+            {{ t('common.actions.refresh') }}
+          </button>
+        </header>
+
+        <GrowthLoading v-if="loadingResources" :variant="resources ? 'inline' : 'compact'" :label="t('settings.resources.loading')" />
+        <p v-if="resourceError" class="settings-error" role="alert">{{ resourceError }}</p>
+        <template v-else-if="resources">
+          <div class="resource-totals">
+            <article>
+              <span>{{ t('settings.resources.memory') }}</span>
+              <strong>{{ formatBytes(resources.memory.usedBytes) }}</strong>
+              <small>{{ t('settings.resources.available', { value: formatBytes(resources.memory.hostFreeBytes) }) }}</small>
+            </article>
+            <article>
+              <span>{{ t('settings.resources.disk') }}</span>
+              <strong>{{ formatBytes(resources.disk.usedBytes) }}</strong>
+              <small>{{ t('settings.resources.available', { value: formatBytes(resources.disk.hostFreeBytes) }) }}</small>
+            </article>
+          </div>
+
+          <UiDisclosure :title="t('ui.usageDetails')">
+          <div class="resource-breakdowns">
+            <div class="resource-group">
+              <h4>{{ t('settings.resources.memory') }}</h4>
+              <div v-for="component in resources.memory.components" :key="component.id" class="resource-row">
+                <div><span>{{ componentLabel(component) }}</span><strong>{{ formatBytes(component.bytes) }}</strong></div>
+                <i><b :style="{ width: barWidth(component.bytes, memoryMax) }" /></i>
+              </div>
+            </div>
+            <div class="resource-group">
+              <h4>{{ t('settings.resources.disk') }}</h4>
+              <div v-for="component in resources.disk.components" :key="component.id" class="resource-row">
+                <div><span>{{ componentLabel(component) }}</span><strong>{{ formatBytes(component.bytes) }}</strong></div>
+                <i><b :style="{ width: barWidth(component.bytes, diskMax) }" /></i>
+              </div>
+            </div>
+          </div>
+
+          <div class="resource-notes">
+            <span>{{ t('settings.resources.diskMeasuredAt', { time: formatTime(resources.disk.measuredAt) }) }}</span>
+            <span v-if="resources.status === 'partial'">{{ t('settings.resources.partial') }}</span>
+            <span v-if="resources.disk.temporaryBytes">{{ t('settings.resources.temporary', { value: formatBytes(resources.disk.temporaryBytes) }) }}</span>
+            <span>{{ t(resources.exclusions.includes('shared-container-vm-overhead')
+              ? 'settings.resources.exclusionsContainer'
+              : 'settings.resources.exclusionsNative') }}</span>
+          </div>
+          </UiDisclosure>
+        </template>
+      </section>
+      <p v-if="!loading && !form" class="settings-error" role="alert">{{ loadError || t('settings.loadError') }}</p>
     </div>
   </section>
 </template>
@@ -449,7 +453,7 @@ function formatTime(value: string | undefined) {
 
 .settings-view {
   padding-top: 24px;
-  background: #f7f8f6;
+  background: var(--color-bg);
 }
 
 .settings-content {
@@ -462,10 +466,9 @@ function formatTime(value: string | undefined) {
 .settings-form { display: grid; gap: 18px; }
 
 .settings-card {
-  border: 1px solid #d7ddd8;
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 8px 30px rgb(43 59 50 / 4%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
   padding: 26px;
 }
 
@@ -477,8 +480,8 @@ function formatTime(value: string | undefined) {
   margin-bottom: 22px;
 }
 
-.settings-card h3 { color: #2e3c34; font-size: 19px; }
-.section-heading p { margin-top: 5px; color: #879089; font-size: 11px; }
+.settings-card h3 { color: var(--color-ink); font-size: 16px; }
+.section-heading p { margin-top: 5px; color: var(--color-muted); font-size: 12px; }
 
 .resource-totals {
   display: grid;
@@ -492,14 +495,14 @@ function formatTime(value: string | undefined) {
   align-content: center;
   gap: 7px;
   padding: 20px 22px;
-  border: 1px solid #dce2dd;
+  border: 1px solid var(--color-border);
   border-radius: 10px;
-  background: #f7f9f7;
+  background: var(--color-surface);
 }
 
-.resource-totals span { color: #667169; font-size: 12px; }
-.resource-totals strong { color: #24332a; font-size: clamp(25px, 3vw, 34px); letter-spacing: -.04em; }
-.resource-totals small { color: #8a938d; font-size: 11px; }
+.resource-totals span { color: var(--color-muted); font-size: 12px; }
+.resource-totals strong { color: var(--color-ink); font-size: clamp(25px, 3vw, 34px); letter-spacing: -.04em; }
+.resource-totals small { color: var(--color-muted); font-size: 12px; }
 
 .resource-breakdowns {
   display: grid;
@@ -509,81 +512,67 @@ function formatTime(value: string | undefined) {
 }
 
 .resource-group { display: grid; gap: 13px; }
-.resource-group h4, .port-section h4 { color: #536058; font-size: 12px; }
+.resource-group h4, .port-section h4 { color: var(--color-ink); font-size: 12px; }
 .resource-row { display: grid; gap: 6px; }
-.resource-row > div { display: flex; justify-content: space-between; gap: 12px; color: #67736b; font-size: 11px; }
-.resource-row strong { color: #36443b; font-weight: 650; }
-.resource-row i { height: 5px; overflow: hidden; border-radius: 999px; background: #eef1ee; }
-.resource-row b { display: block; height: 100%; border-radius: inherit; background: #6f8f79; }
-.resource-group:last-child .resource-row b { background: #82958a; }
+.resource-row > div { display: flex; justify-content: space-between; gap: 12px; color: var(--color-muted); font-size: 12px; }
+.resource-row strong { color: var(--color-ink); font-weight: 650; }
+.resource-row i { height: 5px; overflow: hidden; border-radius: 999px; background: var(--color-surface-subtle); }
+.resource-row b { display: block; height: 100%; border-radius: inherit; background: var(--color-muted); }
+.resource-group:last-child .resource-row b { background: var(--color-muted); }
 
 .resource-notes {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 18px;
   margin-top: 22px;
-  color: #8a938d;
-  font-size: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 
 
 .restart-chip {
   padding: 5px 9px;
-  border: 1px solid #d7aa68;
+  border: 1px solid var(--color-warning);
   border-radius: 999px;
-  color: #8d5a18;
-  background: #fff8ec;
-  font-size: 10px;
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+  font-size: 12px;
   font-weight: 700;
 }
 
 .port-section { display: grid; gap: 13px; }
-.port-section + .port-section { margin-top: 25px; padding-top: 22px; border-top: 1px solid #edf0ed; }
+.port-section + .port-section { margin-top: 25px; padding-top: 22px; border-top: 1px solid var(--color-border); }
 .development-section > div { display: flex; align-items: center; gap: 9px; }
 .development-section > div > span {
   padding: 4px 8px;
   border-radius: 999px;
-  color: #78633a;
-  background: #f6f0e4;
-  font-size: 9px;
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+  font-size: 12px;
   font-weight: 700;
 }
-.development-section > p { color: #8b948e; font-size: 10px; }
+.development-section > p { color: var(--color-muted); font-size: 12px; }
 .port-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.port-grid label { display: grid; gap: 7px; color: #59655e; font-size: 11px; }
-.port-grid input, .select-row :deep(.settings-select .searchable-select-trigger) {
-  width: 100%;
-  min-height: 40px;
-  border: 1px solid #ccd4ce;
-  border-radius: 8px;
-  background: #fbfcfb;
-  color: #2f3d34;
-  font: inherit;
-  padding: 0 11px;
-  outline: none;
-}
-.port-grid input:focus, .select-row :deep(.settings-select .searchable-select-trigger:focus-visible) {
-  border-color: #6f8f79;
-  box-shadow: 0 0 0 3px rgb(111 143 121 / 12%);
-}
-.port-grid small { color: #9aa29d; font-size: 9px; }
+.port-grid label { display: grid; gap: 7px; color: var(--color-muted); font-size: 12px; }
+.port-grid input { width: 100%; }
+.port-grid small { color: var(--color-muted); font-size: 12px; }
 
 .behavior-card > h3 { margin-bottom: 14px; }
 .conversation-launcher-card > h3 { margin-bottom: 14px; }
 .conversation-launcher-list { display: grid; }
-.conversation-launcher-row { padding: 16px 0; border-top: 1px solid #edf0ed; }
+.conversation-launcher-row { padding: 16px 0; border-top: 1px solid var(--color-border); }
 .conversation-launcher-row:first-child { border-top: 0; }
 .conversation-launcher-heading {
   min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 20px;
 }
 .conversation-launcher-heading > span { display: grid; gap: 4px; }
-.conversation-launcher-heading strong { color: #354239; font-size: 12px; }
-.conversation-launcher-heading small { color: #8b948e; font-size: 9px; }
-.conversation-launcher-switch { display: flex; align-items: center; gap: 9px; color: #667169; font-size: 10px; }
+.conversation-launcher-heading strong { color: var(--color-ink); font-size: 12px; }
+.conversation-launcher-heading small { color: var(--color-muted); font-size: 12px; }
+.conversation-launcher-switch { display: flex; align-items: center; gap: 9px; color: var(--color-muted); font-size: 12px; }
 .conversation-launcher-switch input[role='switch'] { margin: 0; }
 .conversation-launcher-note {
-  display: block; max-width: 760px; margin-top: 9px; color: #8b948e; font-size: 9px; line-height: 1.45;
+  display: block; max-width: 760px; margin-top: 9px; color: var(--color-muted); font-size: 12px; line-height: 1.45;
 }
 .conversation-launcher-fields {
   display: grid; align-items: start;
@@ -592,23 +581,14 @@ function formatTime(value: string | undefined) {
 }
 .conversation-launcher-fields > label {
   min-width: 0; display: grid; grid-template-rows: 18px 40px; align-content: start;
-  gap: 7px; color: #59655e; font-size: 10px;
+  gap: 7px; color: var(--color-muted); font-size: 12px;
 }
 .conversation-launcher-fields > label > span {
   min-width: 0; display: block; overflow: hidden; line-height: 18px; text-overflow: ellipsis; white-space: nowrap;
 }
-.conversation-launcher-fields code { color: #7b857e; font-size: 9px; }
+.conversation-launcher-fields code { color: var(--color-muted); font-size: 12px; }
 .conversation-launcher-fields :deep(.launcher-select) { width: 100%; height: 40px; min-width: 0; }
-.conversation-launcher-fields input,
-.conversation-launcher-fields :deep(.launcher-select .searchable-select-trigger) {
-  width: 100%; height: 40px; min-height: 40px; box-sizing: border-box;
-  border: 1px solid #ccd4ce; border-radius: 8px;
-  background: #fbfcfb; color: #2f3d34; font: inherit; line-height: 1.2; padding: 0 11px; outline: none;
-}
-.conversation-launcher-fields input:focus,
-.conversation-launcher-fields :deep(.launcher-select .searchable-select-trigger:focus-visible) {
-  border-color: #6f8f79; box-shadow: 0 0 0 3px rgb(111 143 121 / 12%);
-}
+.conversation-launcher-fields input { width: 100%; }
 .conversation-launcher-fields :deep(.launcher-select .searchable-select-current) { align-items: center; }
 .conversation-launcher-fields :deep(.launcher-select .searchable-select-current-label) { font-weight: 500; }
 .conversation-launcher-fields :deep(.launcher-select .searchable-select-panel) { width: 100%; min-width: 0; }
@@ -619,20 +599,20 @@ function formatTime(value: string | undefined) {
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  border-top: 1px solid #edf0ed;
+  border-top: 1px solid var(--color-border);
   cursor: pointer;
 }
 .setting-row:first-child { border-top: 0; }
 .setting-row > span { display: grid; gap: 4px; }
-.setting-row strong { color: #354239; font-size: 12px; }
-.setting-row small { color: #8b948e; font-size: 10px; }
+.setting-row strong { color: var(--color-ink); font-size: 14px; }
+.setting-row small { color: var(--color-muted); font-size: 12px; }
 .setting-row input[role='switch'],
 .conversation-launcher-switch input[role='switch'] {
   width: 38px;
   height: 21px;
   appearance: none;
   border-radius: 999px;
-  background: #cbd2cd;
+  background: var(--color-muted);
   position: relative;
   cursor: pointer;
   transition: background .18s ease;
@@ -645,7 +625,7 @@ function formatTime(value: string | undefined) {
   top: 50%;
   left: 2px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--color-surface);
   box-shadow: 0 0 4px rgb(0 0 0 / 18%);
   transform: translateY(-50%);
   transition: transform .18s ease;
@@ -658,21 +638,16 @@ function formatTime(value: string | undefined) {
   top: 50%;
   left: 2px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--color-surface);
   box-shadow: 0 0 4px rgb(0 0 0 / 18%);
   transform: translateY(-50%);
   transition: transform .18s ease;
 }
 .setting-row input[role='switch']:checked,
-.conversation-launcher-switch input[role='switch']:checked { background: #688b73; }
+.conversation-launcher-switch input[role='switch']:checked { background: var(--color-accent); }
 .setting-row input[role='switch']:checked::after { transform: translate(17px, -50%); }
 .conversation-launcher-switch input[role='switch']:checked::after { transform: translate(17px, -50%); }
 .select-row .settings-select { width: 180px; min-width: 0; }
-.select-row :deep(.settings-select .searchable-select-trigger) {
-  padding: 0 14px 0 11px;
-  border-radius: 8px;
-  background: #fbfcfb;
-}
 .select-row :deep(.settings-select .searchable-select-current) { align-items: center; }
 .select-row :deep(.settings-select .searchable-select-current-label) { font-weight: 500; }
 .select-row :deep(.settings-select .searchable-select-arrow) {
@@ -689,11 +664,11 @@ function formatTime(value: string | undefined) {
   align-items: center;
   gap: 6px 16px;
   padding: 0 4px 2px;
-  color: #7d8780;
-  font-size: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
-.settings-top-status strong { color: #477356; font-weight: 700; }
-.settings-error { padding: 11px 13px; border-radius: 8px; color: #8c3934; background: #fff2f0; font-size: 11px; }
+.settings-top-status strong { color: var(--color-muted); font-weight: 700; }
+.settings-error { padding: 11px 13px; border-radius: var(--radius-control); color: var(--color-danger); background: var(--color-surface); font-size: 12px; }
 
 @media (max-width: 900px) {
   .port-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

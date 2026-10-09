@@ -87,6 +87,13 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
           let sync = await syncConversationTranscript(app, input, 'codex', {
             normalize: normalizeCodexRecord, verify: verifyCodexTranscript
           }, guard);
+          if (event === 'UserPromptSubmit' && !guard?.value
+            && ['current_task_endpoint_unavailable', 'current_task_lookup_unavailable'].includes(sync.code)) {
+            // Before any ownership was read, let the native message proceed
+            // without beginning a Fuli task or restoring/importing history.
+            // Existing guards and all later failures remain fail-closed.
+            return { systemMessage: `Fuli: ${sync.reason}. Message submission is allowed; no saved Agent context was loaded or changed.` };
+          }
           if (event === 'UserPromptSubmit' && sync.entryBlocked) return { decision: 'block', reason: sync.reason };
           const entryGuard = sync.status === 'capture_disabled' ? null : guard;
           if (event === 'UserPromptSubmit' && entryGuard?.value) await entryGuard.write({ ...entryGuard.value, phase: 'beginning' });

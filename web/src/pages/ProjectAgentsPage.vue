@@ -14,6 +14,7 @@ import ProjectAgentFirstTask from '@/features/project-agents/ProjectAgentFirstTa
 import ProjectAgentTaskDiagnostics from '@/features/project-agents/ProjectAgentTaskDiagnostics.vue'
 import EmployeeWorkHistory from '@/features/project-agents/EmployeeWorkHistory.vue'
 import AgentConversations from '@/features/project-agents/AgentConversations.vue'
+import { isAgentTaskDataComplete, taskHasAgent } from '@/features/agent-profile/agent-work-summary'
 import {
   agentValues,
   arrayOf,
@@ -72,6 +73,7 @@ const loading = ref(false)
 const error = ref('')
 // null is the unrestricted view, including employees not assigned to a project yet.
 const projectFilter = ref<string[] | null>(null)
+const projectFilterOverridden = ref(false)
 const statusFilter = ref<StatusFilter>('all')
 const search = ref('')
 const selectedAgentKey = ref('')
@@ -85,6 +87,7 @@ const assignmentAction = ref<'assign' | 'end' | 'replace'>('assign')
 const assignmentTarget = ref<ProjectAgentAssignmentRecord | null>(null)
 const detailLoading = ref(false)
 const detailStates = ref<Record<string, Record<DetailSource, DetailSourceState>>>({})
+const taskListPartial = ref<Record<string, boolean>>({})
 const detailNotice = ref('')
 const activityDay = ref('')
 const cleanupBusy = ref(false)
@@ -134,16 +137,34 @@ const projectById = computed(() => new Map(
   projects.value.map((project) => [project.project_id, project]),
 ))
 const projectOptions = computed(() => projects.value.map((project) => ({ id: project.project_id, name: project.profile.name })))
+const deepLinkAgent = computed(() => {
+  const requestedAgentId = typeof route.query.agent === 'string' ? route.query.agent : ''
+  if (!requestedAgentId) return null
+  return agents.value.find((agent) => agent.personalSpaceId === activeSpaceId.value
+    && (agent.agentId === requestedAgentId || agent.legacyAgentIds?.includes(requestedAgentId))) ?? null
+})
+const deepLinkIsActive = computed(() => Boolean(
+  deepLinkAgent.value
+    && typeof route.query.project === 'string'
+    && typeof route.query.task === 'string'
+    && !projectFilterOverridden.value,
+))
 const filterProjectIds = computed({
   get: () => projectFilter.value ?? projectOptions.value.map((project) => project.id),
   set: (ids: string[]) => {
+    projectFilterOverridden.value = true
     const selected = projectOptions.value.filter((project) => ids.includes(project.id)).map((project) => project.id)
     projectFilter.value = selected.length === projectOptions.value.length ? null : selected
   },
 })
 const singleFilterProjectId = computed(() => projectFilter.value?.length === 1 ? projectFilter.value[0]! : '')
-watch([() => route.query.project, projectOptions], ([project, options]) => {
-  if (typeof project === 'string' && options.some(option => option.id === project)) projectFilter.value = [project]
+watch([() => route.query.project, projectOptions], ([project, options], previous) => {
+  const projectChanged = !previous || project !== previous[0]
+  if (typeof project === 'string' && options.some(option => option.id === project)
+    && (projectChanged || !projectFilterOverridden.value)) {
+    projectFilter.value = [project]
+    if (projectChanged) projectFilterOverridden.value = false
+  }
 }, { immediate: true })
 const statusOptions = computed<Array<{ value: StatusFilter; label: string }>>(() => [
   { value: 'all', label: t('projectAgents.status.all') },
@@ -155,7 +176,8 @@ const filteredAgents = computed(() => {
   const needle = search.value.trim().toLocaleLowerCase(currentLocale())
   return agents.value
     .filter((agent) => projectFilter.value === null
-      || responsibleProjectsFor(agent).some(({ id }) => projectFilter.value!.includes(id)))
+      || responsibleProjectsFor(agent).some(({ id }) => projectFilter.value!.includes(id))
+      || (deepLinkIsActive.value && agent.agentId === deepLinkAgent.value?.agentId))
     .filter((agent) => statusFilter.value === 'all' || agent.profile.status === statusFilter.value)
     .filter((agent) => !needle || searchText(agent).toLocaleLowerCase(currentLocale()).includes(needle))
     .sort(compareAgents)
@@ -195,8 +217,10 @@ watch(activeSpaceId, (spaceId) => {
   ++loadVersion
   ++detailLoadVersion
   detailStates.value = {}
+  taskListPartial.value = {}
   selectedAgentKey.value = ''
   agents.value = []
+  projectFilterOverridden.value = false
   projectFilter.value = typeof route.query.project === 'string' && projectOptions.value.some(option => option.id === route.query.project) ? [route.query.project] : null
   error.value = ''
   if (spaceId) void loadAgents(spaceId)
@@ -206,7 +230,10 @@ watch(filteredAgents, (items) => {
   if (!items.some((agent) => agent.agentId === selectedAgentKey.value)) {
     const linkedAgent = items.find((agent) => agent.agentId === route.query.agent
       || (typeof route.query.agent === 'string' && agent.legacyAgentIds?.includes(route.query.agent)))
-    selectedAgentKey.value = linkedAgent?.agentId ?? items[0]?.agentId ?? ''
+    selectedAgentKey.value = linkedAgent?.agentId
+      ?? (deepLinkIsActive.value ? deepLinkAgent.value?.agentId : undefined)
+      ?? items[0]?.agentId
+      ?? ''
   }
   if (!items.some((agent) => agent.activity?.days.some(({ date }) => date === activityDay.value))) {
     activityDay.value = ''
@@ -287,17 +314,26 @@ async function refreshDetails(agentId = selectedAgentKey.value, spaceId = active
   if (detailRequestIsCurrent(version, agentId, spaceId)) detailLoading.value = false
 }
 async function loadScopedTasks(query: URLSearchParams) {
+  const agentId = query.get('agentId') ?? ''
+  const spaceId = query.get('personalSpaceId') ?? ''
   const project = typeof route.query.project === 'string' ? route.query.project : ''
   const taskId = typeof route.query.task === 'string' ? route.query.task : ''
-  if (project) query = new URLSearchParams([...query, ['personalProjectId', project]])
+  // The provider's Agent filter only matches participants. Read the authorized
+  // space and apply the shared ownership rules so owner-only tasks remain visible.
+  query = new URLSearchParams({ personalSpaceId: spaceId, limit: '200' })
+  if (project) query.set('personalProjectId', project)
   const value = await getJson<unknown>(`/api/project-agent-tasks?${query}`)
-  if (!taskId || !project) return value
-  const tasks = taskValues(value)
-  if (!tasks.some(task => task.taskId === taskId)) {
+  assertReportedCollection(value, ['tasks', 'items'])
+  const belongs = (task: ProjectAgentTaskRecord) =>
+    (!task.personalSpaceId || task.personalSpaceId === spaceId)
+    && (!project || task.personalProjectId === project)
+    && taskHasAgent(task, agentId)
+  const tasks = taskValues(value).filter(belongs)
+  if (taskId && !tasks.some(task => task.taskId === taskId)) {
     const task = normalizeTask(await getJson<unknown>(`/api/project-agent-tasks/${encodeURIComponent(taskId)}?${query}`))
-    if (task && task.personalProjectId === project && task.participants.some(participant => participant.agentId === query.get('agentId'))) tasks.unshift(task)
+    if (task && belongs(task)) tasks.unshift(task)
   }
-  return tasks
+  return { tasks, partial: !isAgentTaskDataComplete(value) }
 }
 watch([() => route.query.task, detailLoading], async ([task, busy]) => {
   if (busy || typeof task !== 'string') return
@@ -341,6 +377,7 @@ function applyDetailResult(agent: ProjectAgentRecord, source: DetailSource, valu
       break
     case 'tasks':
       assertReportedCollection(value, ['tasks', 'items'])
+      taskListPartial.value = { ...taskListPartial.value, [agent.agentId]: unknownRecord(value).partial === true }
       patch = { tasks: taskValues(value) }
       break
     case 'activity': {
@@ -753,10 +790,7 @@ function activityIntensity(day: ProjectAgentActivityDay, activity: ProjectAgentA
 }
 function chooseActivityDay(day: ProjectAgentActivityDay) { activityDay.value = day.date }
 function taskBelongsTo(agent: ProjectAgentRecord, task: ProjectAgentTaskRecord) {
-  return task.ownerAgentId === agent.agentId
-    || task.leadAgentId === agent.agentId
-    || task.coordinatorAgentId === agent.agentId
-    || task.participants.some((participant) => participant.agentId === agent.agentId)
+  return taskHasAgent(task, agent.agentId)
 }
 function attachTasks(items: ProjectAgentRecord[], tasks: ProjectAgentTaskRecord[]) {
   return items.map((agent) => {
@@ -1005,7 +1039,7 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
       </div>
       <div class="project-agent-header-actions">
         <button class="quiet-button" type="button" :disabled="!activeSpaceId" @click="openCreate">{{ t('projectAgents.add') }}</button>
-        <button class="project-agent-add" type="button" :disabled="!activeSpaceId" @click="openRecruit()">{{ t('employees.recruit') }}</button>
+        <button class="primary-button" type="button" :disabled="!activeSpaceId" @click="openRecruit()">{{ t('employees.recruit') }}</button>
       </div>
     </header>
     <EmployeeRecruitDialog :open="recruitDialogOpen" :personal-space-id="activeSpaceId" :projects="projects" :template-id="recruitTemplateId" :default-project-ids="projectFilter ?? []" @close="recruitDialogOpen = false" @recruited="employeeRecruited" />
@@ -1031,14 +1065,14 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
     />
 
     <GrowthLoading v-if="pageLoading" :label="!store.state ? t('common.status.loadingConsole') : t('projectAgents.loading')" />
-    <div v-else-if="pageError" class="project-agents-state is-error" role="alert"><p>{{ pageError }}</p><button class="quiet-button" type="button" @click="retryPage">{{ t('projectAgents.retry') }}</button></div>
-    <div v-else-if="!agents.length" class="project-agents-state"><strong>{{ t('projectAgents.emptyTitle') }}</strong><p>{{ t('projectAgents.emptyCopy') }}</p><button class="project-agent-add" type="button" :disabled="!activeSpaceId" @click="openCreate">{{ t('projectAgents.add') }}</button></div>
-    <div v-else-if="!filteredAgents.length" class="project-agents-state"><strong>{{ t('projectAgents.noMatchTitle') }}</strong><p>{{ t('projectAgents.noMatchCopy') }}</p></div>
-    <div v-else class="project-agents-directory">
+    <div v-else-if="pageError" class="ui-card project-agents-state is-error" role="alert"><p>{{ pageError }}</p><button class="quiet-button" type="button" @click="retryPage">{{ t('projectAgents.retry') }}</button></div>
+    <div v-else-if="!agents.length" class="ui-card project-agents-state"><strong>{{ t('projectAgents.emptyTitle') }}</strong><p>{{ t('projectAgents.emptyCopy') }}</p><button class="primary-button" type="button" :disabled="!activeSpaceId" @click="openCreate">{{ t('projectAgents.add') }}</button></div>
+    <div v-else-if="!filteredAgents.length" class="ui-card project-agents-state"><strong>{{ t('projectAgents.noMatchTitle') }}</strong><p>{{ t('projectAgents.noMatchCopy') }}</p></div>
+    <div v-else class="ui-card project-agents-directory">
       <div class="project-agent-list" role="list" :aria-label="t('projectAgents.listLabel')">
         <div v-for="agent in filteredAgents" :key="agent.agentId" class="project-agent-row-shell">
         <button type="button" class="project-agent-row" :class="{ selected: selectedAgentKey === agent.agentId }" :aria-current="selectedAgentKey === agent.agentId ? 'true' : undefined" @click="selectedAgentKey = agent.agentId">
-          <span class="project-agent-row-heading"><span v-if="agent.profile.occupationEmoji" class="project-agent-occupation-emoji" role="img" :aria-label="`${t('projectAgents.fields.occupationEmoji')}: ${agent.profile.occupationEmoji}`">{{ agent.profile.occupationEmoji }}</span><strong>{{ agent.profile.displayName || agent.profile.name }}</strong><i class="project-agent-kind">{{ agentTypeLabel(agent.profile.agentType) }}</i><i :class="`is-${agent.profile.status}`">{{ t(`projectAgents.status.${agent.profile.status}`) }}</i></span>
+          <span class="project-agent-row-heading"><span v-if="agent.profile.occupationEmoji" class="project-agent-occupation-emoji" role="img" :aria-label="`${t('projectAgents.fields.occupationEmoji')}: ${agent.profile.occupationEmoji}`">{{ agent.profile.occupationEmoji }}</span><strong>{{ agent.profile.displayName || agent.profile.name }}</strong><i class="ui-badge project-agent-kind">{{ agentTypeLabel(agent.profile.agentType) }}</i><i class="ui-badge" :class="`is-${agent.profile.status}`">{{ t(`projectAgents.status.${agent.profile.status}`) }}</i></span>
           <span class="project-agent-row-projects"><b v-for="project in responsibleProjectsFor(agent).slice(0, 3)" :key="project.id">{{ project.name }}</b><b v-if="responsibleProjectsFor(agent).length > 3">+{{ responsibleProjectsFor(agent).length - 3 }}</b><em v-if="!responsibleProjectsFor(agent).length">{{ t('employees.noAssignedProjects') }}</em></span>
           <span class="project-agent-row-responsibility">{{ agent.profile.responsibility || t('projectAgents.notReported') }}</span>
           <span class="project-agent-row-work"><template v-if="currentWork(agent)"><i :class="['project-agent-work-dot', { 'is-live': currentWork(agent)!.status === 'running' }]" aria-hidden="true" />{{ taskStatusLabel(currentWork(agent)!.status) }} · {{ currentWork(agent)!.title }}</template><template v-else-if="agent.workStatus === 'blocked' || agent.workStatus === 'queued'">{{ taskStatusLabel(agent.workStatus) }} · {{ t('projectAgents.detail.stateReported') }}</template><template v-else>{{ t('projectAgents.detail.noRun') }}</template></span>
@@ -1053,7 +1087,7 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
         <section v-if="selectedEmployeeId" class="employee-project-overview" aria-labelledby="employee-project-overview-title">
           <div class="employee-project-overview-heading">
             <div><h4 id="employee-project-overview-title">{{ selectedEmployee?.management?.mode === 'all' ? t('employees.scope.continuousAll') : t('employees.scope.label') }}</h4><p>{{ t('employees.assignedCount', { count: employeeProjects.length }) }}</p></div>
-            <button class="project-agent-add" type="button" @click="openRecruit(selectedEmployeeId)">{{ t('employees.manageProjects') }}</button>
+            <button class="primary-button" type="button" @click="openRecruit(selectedEmployeeId)">{{ t('employees.manageProjects') }}</button>
           </div>
           <div v-if="employeeProjects.length" class="employee-assigned-projects">
             <RouterLink v-for="project in employeeProjects" :key="project.id" :to="`/employees/${encodeURIComponent(selectedEmployeeId)}?project=${encodeURIComponent(project.id)}`">
@@ -1067,11 +1101,12 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
 
 
 
-        <section class="project-agent-detail-section is-responsibility"><h4>{{ t('projectAgents.fields.responsibility') }}</h4><p>{{ selectedAgent.profile.responsibility || t('projectAgents.notReported') }}</p><div v-if="selectedAgent.profile.capabilities.length" class="project-agent-tags"><span v-for="capability in selectedAgent.profile.capabilities" :key="capability">{{ capability }}</span></div></section>
+        <section class="ui-card project-agent-detail-section is-responsibility"><h4>{{ t('projectAgents.fields.responsibility') }}</h4><p>{{ selectedAgent.profile.responsibility || t('projectAgents.notReported') }}</p><div v-if="selectedAgent.profile.capabilities.length" class="project-agent-tags"><span v-for="capability in selectedAgent.profile.capabilities" :key="capability">{{ capability }}</span></div></section>
 
         <div class="project-agent-detail-source" data-detail-section="tasks">
           <ProjectAgentDetailState v-bind="detailState('tasks')" :label="detailLoadingLabel('tasks')" @retry="refreshDetails">
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.tasks') }}</h4><span>{{ selectedAgent.tasks?.length ?? 0 }}</span></div><div v-if="selectedAgent.tasks?.length" class="project-agent-task-list"><article v-for="task in selectedAgent.tasks" :id="`task-${task.taskId}`" :key="task.taskId" class="project-agent-task-card" :class="{ 'is-linked': task.taskId === route.query.task }"><header><div><strong>{{ task.title }}</strong><small>{{ projectName(task.personalProjectId) }}</small></div><i :class="`is-${task.status}`">{{ taskStatusLabel(task.status) }}</i></header><p v-if="task.resultSummary || task.failureReason">{{ task.resultSummary || task.failureReason }}</p><small>{{ t('projectAgents.fields.collaborators') }} · {{ task.participants.length }}</small><div v-if="task.participants.length" class="project-agent-inline-list"><span v-for="participant in task.participants" :key="`${task.taskId}:${participant.agentId}`">{{ agents.find(item => item.agentId === participant.agentId)?.profile.displayName || agents.find(item => item.agentId === participant.agentId)?.profile.name || participant.agentId }} · {{ participantRoleLabel(participant.role) }}</span></div><ProjectAgentTaskDiagnostics :task="task" :project-name="projectName(task.personalProjectId)" /><details class="project-agent-disclosure" data-task-details><summary>{{ t('projectAgents.taskDetails') }}</summary><small>{{ task.taskId }}</small><section v-if="task.executionSummary !== undefined" class="project-agent-execution-summary" :aria-label="t('projectAgents.fields.executionSummary')">
+            <p v-if="taskListPartial[selectedAgent.agentId]" class="project-agent-muted" data-task-partial>{{ t('agentProfiles.partial') }}</p>
+            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.tasks') }}</h4><span>{{ selectedAgent.tasks?.length ?? 0 }}</span></div><div v-if="selectedAgent.tasks?.length" class="project-agent-task-list"><article v-for="task in selectedAgent.tasks" :id="`task-${task.taskId}`" :key="task.taskId" class="ui-card project-agent-task-card" :class="{ 'is-linked': task.taskId === route.query.task }"><header><div><strong>{{ task.title }}</strong><small>{{ projectName(task.personalProjectId) }}</small></div><i class="ui-badge" :class="`is-${task.status}`">{{ taskStatusLabel(task.status) }}</i></header><p v-if="task.resultSummary || task.failureReason">{{ task.resultSummary || task.failureReason }}</p><small>{{ t('projectAgents.fields.collaborators') }} · {{ task.participants.length }}</small><div v-if="task.participants.length" class="project-agent-inline-list"><span v-for="participant in task.participants" :key="`${task.taskId}:${participant.agentId}`">{{ agents.find(item => item.agentId === participant.agentId)?.profile.displayName || agents.find(item => item.agentId === participant.agentId)?.profile.name || participant.agentId }} · {{ participantRoleLabel(participant.role) }}</span></div><ProjectAgentTaskDiagnostics :task="task" :project-name="projectName(task.personalProjectId)" /><details class="ui-disclosure project-agent-disclosure" :open="task.taskId === route.query.task" data-task-details><summary>{{ t('projectAgents.taskDetails') }}</summary><small>{{ task.taskId }}</small><section v-if="task.executionSummary !== undefined" class="project-agent-execution-summary" :aria-label="t('projectAgents.fields.executionSummary')">
 <div class="project-agent-section-heading">
 <h5>{{ t('projectAgents.fields.executionSummary') }}</h5>
 <span>{{ task.executionSummary.length }}</span>
@@ -1124,14 +1159,14 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
 </table>
 </div>
 <p v-else class="project-agent-muted">{{ t('projectAgents.detail.noExecutionSummary') }}</p>
-</section><section v-if="workerEventEvidence(task).length" class="project-agent-worker-event-evidence" :aria-label="t('projectAgents.fields.workerEventEvidence')"><div class="project-agent-section-heading"><h5>{{ t('projectAgents.fields.workerEventEvidence') }}</h5><span>{{ workerEventEvidence(task).length }}</span></div><ul class="project-agent-execution-summary-list"><li v-for="event in workerEventEvidence(task)" :key="`${task.taskId}:worker-event:${event.eventId}`" class="project-agent-worker-event-row"><header><strong><span v-if="workerEventOccupationEmoji(event)" class="project-agent-occupation-emoji" role="img" :aria-label="`${t('projectAgents.fields.occupationEmoji')}: ${workerEventOccupationEmoji(event)}`">{{ workerEventOccupationEmoji(event) }}</span>{{ workerEventLabel(event) }}<small v-if="event.agentId">{{ t('projectAgents.fields.agentId') }} · {{ event.agentId }}</small></strong><i :class="`is-${event.workerStatus || event.status}`">{{ workerEventStatusLabel(event) }}</i></header><dl class="project-agent-execution-summary-meta"><div><dt>{{ t('projectAgents.fields.workSummary') }}</dt><dd>{{ event.summary || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.fields.sourceApplication') }}</dt><dd>{{ sourceLabel(event.sourceApplication) }}</dd></div><div><dt>{{ t('projectAgents.fields.sourceSession') }}</dt><dd>{{ event.sourceSessionId || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.fields.tokenUsage') }}</dt><dd>{{ tokenUsageLabel(event.tokenUsage) }}</dd></div><div v-if="event.actualModelProvider || event.actualModel"><dt>{{ t('projectAgents.fields.actualModel') }}</dt><dd><span v-if="event.actualModelProvider">{{ event.actualModelProvider }}</span><span v-if="event.actualModelProvider && event.actualModel"> · </span><span v-if="event.actualModel">{{ event.actualModel }}</span></dd></div><div><dt>{{ t('projectAgents.fields.reportedAt') }}</dt><dd>{{ formatDate(event.createdAt) }}</dd></div></dl></li></ul></section><small v-if="task.effectiveModelStrategy">{{ t('projectAgents.fields.strategySource') }} · {{ task.modelStrategySource || t('projectAgents.notReported') }} · {{ strategyLabel(task.effectiveModelStrategy) }} · {{ policyLabel(task.effectiveExecutorPolicy) }}</small><div v-if="task.routingDecision" class="project-agent-routing-decision"><div class="project-agent-section-heading"><span>{{ t('projectAgents.fields.reportedStaffingDecision') }}</span><strong>{{ task.routingDecision.outcome || t('projectAgents.notReported') }}</strong></div><small v-if="task.routingDecision.coordinatorAgentId || task.coordinatorAgentId">{{ t('projectAgents.fields.coordinator') }} · {{ task.routingDecision.coordinatorAgentId || task.coordinatorAgentId }}</small><small>{{ t('projectAgents.fields.matchBasis') }} · {{ task.routingDecision.matchBasis?.join(' · ') || t('projectAgents.notReported') }} · {{ task.routingDecision.reason || t('projectAgents.notReported') }}</small><small v-if="task.routingDecision.candidateAgentIds?.length">{{ t('projectAgents.fields.candidateAgents') }} · {{ task.routingDecision.candidateAgentIds.join(' · ') }}</small><small v-if="task.routingDecision.complexity !== null && task.routingDecision.complexity !== undefined">{{ t('projectAgents.fields.complexity') }} · {{ task.routingDecision.complexity }}<span v-if="task.routingDecision.complexityBasis?.length"> · {{ task.routingDecision.complexityBasis.join(' · ') }}</span></small><small v-if="parallelPlanHasEvidence(task.routingDecision.parallelPlan)">{{ t('projectAgents.fields.parallelPlan') }} · {{ task.routingDecision.parallelPlan?.reason || t('projectAgents.notReported') }}<span v-if="task.routingDecision.parallelPlan?.workstreamBoundaries?.length"> · {{ task.routingDecision.parallelPlan.workstreamBoundaries.join(' · ') }}</span></small><small v-if="task.routingDecision.ruleId || task.routingDecision.fallback">{{ task.routingDecision.ruleId || t('projectAgents.notReported') }} · {{ task.routingDecision.fallback || t('projectAgents.notReported') }}</small></div><div class="project-agent-execution-line"><span>{{ t('projectAgents.fields.actualExecution') }}</span><strong v-if="actualExecution(task)">{{ actualExecution(task)?.executor || actualExecution(task)?.provider || t('projectAgents.notReported') }} / {{ actualExecution(task)?.model || t('projectAgents.notReported') }} / {{ sourceLabel(actualExecution(task)?.client) }}</strong><span v-else>{{ t('projectAgents.detail.notReportedActualExecution') }}</span><small v-if="actualExecution(task)?.rule || actualExecution(task)?.fallback">{{ actualExecution(task)?.rule || t('projectAgents.notReported') }} · {{ actualExecution(task)?.fallback || t('projectAgents.notReported') }}</small></div><small v-if="task.runId">{{ t('projectAgents.fields.run') }} · {{ task.runId }}</small><small v-else>{{ t('projectAgents.detail.noRun') }}</small></details></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.detail.noTasks') }}</p></section>
+</section><section v-if="workerEventEvidence(task).length" class="project-agent-worker-event-evidence" :aria-label="t('projectAgents.fields.workerEventEvidence')"><div class="project-agent-section-heading"><h5>{{ t('projectAgents.fields.workerEventEvidence') }}</h5><span>{{ workerEventEvidence(task).length }}</span></div><ul class="project-agent-execution-summary-list"><li v-for="event in workerEventEvidence(task)" :key="`${task.taskId}:worker-event:${event.eventId}`" class="project-agent-worker-event-row"><header><strong><span v-if="workerEventOccupationEmoji(event)" class="project-agent-occupation-emoji" role="img" :aria-label="`${t('projectAgents.fields.occupationEmoji')}: ${workerEventOccupationEmoji(event)}`">{{ workerEventOccupationEmoji(event) }}</span>{{ workerEventLabel(event) }}<small v-if="event.agentId">{{ t('projectAgents.fields.agentId') }} · {{ event.agentId }}</small></strong><i :class="`is-${event.workerStatus || event.status}`">{{ workerEventStatusLabel(event) }}</i></header><dl class="project-agent-execution-summary-meta"><div><dt>{{ t('projectAgents.fields.workSummary') }}</dt><dd>{{ event.summary || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.fields.sourceApplication') }}</dt><dd>{{ sourceLabel(event.sourceApplication) }}</dd></div><div><dt>{{ t('projectAgents.fields.sourceSession') }}</dt><dd>{{ event.sourceSessionId || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.fields.tokenUsage') }}</dt><dd>{{ tokenUsageLabel(event.tokenUsage) }}</dd></div><div v-if="event.actualModelProvider || event.actualModel"><dt>{{ t('projectAgents.fields.actualModel') }}</dt><dd><span v-if="event.actualModelProvider">{{ event.actualModelProvider }}</span><span v-if="event.actualModelProvider && event.actualModel"> · </span><span v-if="event.actualModel">{{ event.actualModel }}</span></dd></div><div><dt>{{ t('projectAgents.fields.reportedAt') }}</dt><dd>{{ formatDate(event.createdAt) }}</dd></div></dl></li></ul></section><small v-if="task.effectiveModelStrategy">{{ t('projectAgents.fields.strategySource') }} · {{ task.modelStrategySource || t('projectAgents.notReported') }} · {{ strategyLabel(task.effectiveModelStrategy) }} · {{ policyLabel(task.effectiveExecutorPolicy) }}</small><div v-if="task.routingDecision" class="project-agent-routing-decision"><div class="project-agent-section-heading"><span>{{ t('projectAgents.fields.reportedStaffingDecision') }}</span><strong>{{ task.routingDecision.outcome || t('projectAgents.notReported') }}</strong></div><small v-if="task.routingDecision.coordinatorAgentId || task.coordinatorAgentId">{{ t('projectAgents.fields.coordinator') }} · {{ task.routingDecision.coordinatorAgentId || task.coordinatorAgentId }}</small><small>{{ t('projectAgents.fields.matchBasis') }} · {{ task.routingDecision.matchBasis?.join(' · ') || t('projectAgents.notReported') }} · {{ task.routingDecision.reason || t('projectAgents.notReported') }}</small><small v-if="task.routingDecision.candidateAgentIds?.length">{{ t('projectAgents.fields.candidateAgents') }} · {{ task.routingDecision.candidateAgentIds.join(' · ') }}</small><small v-if="task.routingDecision.complexity !== null && task.routingDecision.complexity !== undefined">{{ t('projectAgents.fields.complexity') }} · {{ task.routingDecision.complexity }}<span v-if="task.routingDecision.complexityBasis?.length"> · {{ task.routingDecision.complexityBasis.join(' · ') }}</span></small><small v-if="parallelPlanHasEvidence(task.routingDecision.parallelPlan)">{{ t('projectAgents.fields.parallelPlan') }} · {{ task.routingDecision.parallelPlan?.reason || t('projectAgents.notReported') }}<span v-if="task.routingDecision.parallelPlan?.workstreamBoundaries?.length"> · {{ task.routingDecision.parallelPlan.workstreamBoundaries.join(' · ') }}</span></small><small v-if="task.routingDecision.ruleId || task.routingDecision.fallback">{{ task.routingDecision.ruleId || t('projectAgents.notReported') }} · {{ task.routingDecision.fallback || t('projectAgents.notReported') }}</small></div><div class="project-agent-execution-line"><span>{{ t('projectAgents.fields.actualExecution') }}</span><strong v-if="actualExecution(task)">{{ actualExecution(task)?.executor || actualExecution(task)?.provider || t('projectAgents.notReported') }} / {{ actualExecution(task)?.model || t('projectAgents.notReported') }} / {{ sourceLabel(actualExecution(task)?.client) }}</strong><span v-else>{{ t('projectAgents.detail.notReportedActualExecution') }}</span><small v-if="actualExecution(task)?.rule || actualExecution(task)?.fallback">{{ actualExecution(task)?.rule || t('projectAgents.notReported') }} · {{ actualExecution(task)?.fallback || t('projectAgents.notReported') }}</small></div><small v-if="task.runId">{{ t('projectAgents.fields.run') }} · {{ task.runId }}</small><small v-else>{{ t('projectAgents.detail.noRun') }}</small></details></article></div><p v-else-if="!taskListPartial[selectedAgent.agentId]" class="project-agent-muted">{{ t('projectAgents.detail.noTasks') }}</p></section>
           </ProjectAgentDetailState>
         </div>
 
-        <details class="project-agent-disclosure"><summary>{{ t('projectAgents.sections.assignments') }}</summary>
+        <details class="ui-disclosure project-agent-disclosure"><summary>{{ t('projectAgents.sections.assignments') }}</summary>
         <div class="project-agent-detail-source" data-detail-section="assignments">
           <ProjectAgentDetailState v-bind="detailState('assignments')" :label="detailLoadingLabel('assignments')" @retry="refreshDetails">
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.assignments') }}</h4><div class="project-agent-section-tools"><span>{{ assignmentsFor(selectedAgent).length }}</span><button class="quiet-button" type="button" @click="openAssignment(selectedAgent)">{{ t('projectAgents.assignmentDialog.assign') }}</button></div></div><div v-if="assignmentsFor(selectedAgent).length" class="project-agent-assignment-list"><article v-for="assignment in assignmentsFor(selectedAgent)" :key="assignment.assignmentId" class="project-agent-assignment-card"><header><strong>{{ projectName(assignment.personalProjectId) }}</strong><div class="project-agent-card-actions"><i :class="`is-${assignment.status}`">{{ t(`projectAgents.assignmentStatus.${assignment.status}`) }}</i><button v-if="assignment.status === 'active'" class="quiet-button" type="button" @click="openAssignment(selectedAgent, assignment, 'end')">{{ t('projectAgents.assignmentDialog.end') }}</button><button v-if="assignment.status === 'active'" class="quiet-button" type="button" @click="openAssignment(selectedAgent, assignment, 'replace')">{{ t('projectAgents.assignmentDialog.replace') }}</button></div></header><p>{{ assignment.responsibility || t('projectAgents.notReported') }}</p><small v-if="assignment.scope">{{ t('projectAgents.fields.scope') }} · {{ assignment.scope }}</small><small>{{ formatDate(assignment.assignedAt) }} → {{ assignment.endedAt ? formatDate(assignment.endedAt) : t(`projectAgents.assignmentStatus.${assignment.status}`) }}</small><div v-if="assignment.workKinds?.length" class="project-agent-inline-list"><span v-for="workKind in assignment.workKinds" :key="workKind">{{ workKind }}</span></div><div class="project-agent-strategy-note"><span>{{ t('projectAgents.fields.assignmentModel') }}</span><strong>{{ strategyLabel(assignment.modelStrategyOverride) }} · {{ policyLabel(assignment.executorPolicyOverride) }}</strong><small v-if="policyIsLocked(assignment.executorPolicyOverride) && !policyAllowList(assignment.executorPolicyOverride).length">{{ t('projectAgents.strategy.lockedUnavailable') }}</small></div><div v-if="policyAllowList(assignment.executorPolicyOverride).length" class="project-agent-tags"><span v-for="executor in policyAllowList(assignment.executorPolicyOverride)" :key="executor.executorId">{{ executor.label || executor.executorId }}</span></div><small v-if="assignment.reason">{{ t('projectAgents.fields.reason') }} · {{ assignment.reason }}</small></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.detail.noAssignments') }}</p></section>
+            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.assignments') }}</h4><div class="project-agent-section-tools"><span>{{ assignmentsFor(selectedAgent).length }}</span><button class="quiet-button" type="button" @click="openAssignment(selectedAgent)">{{ t('projectAgents.assignmentDialog.assign') }}</button></div></div><div v-if="assignmentsFor(selectedAgent).length" class="project-agent-assignment-list"><article v-for="assignment in assignmentsFor(selectedAgent)" :key="assignment.assignmentId" class="ui-card project-agent-assignment-card"><header><strong>{{ projectName(assignment.personalProjectId) }}</strong><div class="project-agent-card-actions"><i class="ui-badge" :class="`is-${assignment.status}`">{{ t(`projectAgents.assignmentStatus.${assignment.status}`) }}</i><button v-if="assignment.status === 'active'" class="quiet-button" type="button" @click="openAssignment(selectedAgent, assignment, 'end')">{{ t('projectAgents.assignmentDialog.end') }}</button><button v-if="assignment.status === 'active'" class="quiet-button" type="button" @click="openAssignment(selectedAgent, assignment, 'replace')">{{ t('projectAgents.assignmentDialog.replace') }}</button></div></header><p>{{ assignment.responsibility || t('projectAgents.notReported') }}</p><small v-if="assignment.scope">{{ t('projectAgents.fields.scope') }} · {{ assignment.scope }}</small><small>{{ formatDate(assignment.assignedAt) }} → {{ assignment.endedAt ? formatDate(assignment.endedAt) : t(`projectAgents.assignmentStatus.${assignment.status}`) }}</small><div v-if="assignment.workKinds?.length" class="project-agent-inline-list"><span v-for="workKind in assignment.workKinds" :key="workKind">{{ workKind }}</span></div><div class="project-agent-strategy-note"><span>{{ t('projectAgents.fields.assignmentModel') }}</span><strong>{{ strategyLabel(assignment.modelStrategyOverride) }} · {{ policyLabel(assignment.executorPolicyOverride) }}</strong><small v-if="policyIsLocked(assignment.executorPolicyOverride) && !policyAllowList(assignment.executorPolicyOverride).length">{{ t('projectAgents.strategy.lockedUnavailable') }}</small></div><div v-if="policyAllowList(assignment.executorPolicyOverride).length" class="project-agent-tags"><span v-for="executor in policyAllowList(assignment.executorPolicyOverride)" :key="executor.executorId">{{ executor.label || executor.executorId }}</span></div><small v-if="assignment.reason">{{ t('projectAgents.fields.reason') }} · {{ assignment.reason }}</small></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.detail.noAssignments') }}</p></section>
           </ProjectAgentDetailState>
         </div>
         </details>
@@ -1140,7 +1175,7 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
 
 
 
-        <details class="project-agent-disclosure"><summary>{{ t('projectAgents.sections.activity') }}</summary>
+        <details class="ui-disclosure project-agent-disclosure"><summary>{{ t('projectAgents.sections.activity') }}</summary>
         <div class="project-agent-detail-source" data-detail-section="activity">
           <ProjectAgentDetailState v-bind="detailState('activity')" :label="detailLoadingLabel('activity')" @retry="refreshDetails">
             <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.activity') }}</h4><span v-if="selectedActivity">{{ selectedActivity.days.length }}</span></div><div v-if="selectedActivity?.days.length" class="project-agent-heatmap-wrap project-agent-heatmap-viewport"><div class="project-agent-heatmap" role="list" :aria-label="t('projectAgents.activity.aria')"><button v-for="day in selectedActivity.days" :key="day.date" type="button" role="listitem" :class="['project-agent-heat-cell', `intensity-${activityIntensity(day, selectedActivity)}`, { selected: activityDay === day.date }]" :aria-label="`${formatDateOnly(day.date)} · ${day.total}`" :aria-pressed="activityDay === day.date" @click="chooseActivityDay(day)"><span class="sr-only">{{ formatDateOnly(day.date) }} · {{ day.total }}</span></button></div><article v-if="selectedActivityDay" class="project-agent-day-detail"><header><strong>{{ formatDateOnly(selectedActivityDay.date) }}</strong><span>{{ selectedActivityDay.total }}</span></header><p v-if="!selectedActivityDay.tasks?.length" class="project-agent-muted">{{ t('projectAgents.activity.noTasks') }}</p><ul v-else><li v-for="task in selectedActivityDay.tasks" :key="task.taskId"><strong>{{ task.title }}</strong><span>{{ taskStatusLabel(task.status) }} · {{ projectName(task.personalProjectId) }}</span><small>{{ task.summary || t('projectAgents.notReported') }}</small></li></ul></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.activity.empty') }}</p></section>
@@ -1156,17 +1191,17 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
 
         <AgentConversations v-if="selectedAgent.memoryScope === 'reviewed_agent'" :key="selectedAgent.agentId" :personal-space-id="activeSpaceId" :agent-id="selectedAgent.agentId" :projects="employeeProjects" />
         <EmployeeWorkHistory v-if="selectedAgent.memoryScope === 'reviewed_agent'" :personal-space-id="activeSpaceId" :agent-id="selectedAgent.agentId" :projects="employeeProjects" />
-        <details class="project-agent-disclosure"><summary>{{ t('projectAgents.profileDetails') }}</summary>
+        <details class="ui-disclosure project-agent-disclosure"><summary>{{ t('projectAgents.profileDetails') }}</summary>
         <dl class="project-agent-detail-meta"><div><dt>{{ t('projectAgents.fields.assignments') }}</dt><dd>{{ currentAssignmentsFor(selectedAgent).length }}</dd></div><div><dt>{{ t('projectAgents.fields.memoryScope') }}</dt><dd>{{ selectedAgent.memoryScope ?? t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.fields.status') }}</dt><dd>{{ t(`projectAgents.status.${selectedAgent.profile.status}`) }}</dd></div><div><dt>{{ t('projectAgents.fields.recruitment') }}</dt><dd>{{ sourceLabel(selectedAgent.recruitmentSourceApplication) }}<small v-if="selectedAgent.recruitmentReason">{{ selectedAgent.recruitmentReason }}</small></dd></div><div><dt>{{ t('projectAgents.fields.updatedAt') }}</dt><dd>{{ formatDate(selectedAgent.updatedAt) }}</dd></div></dl>
         </details>
-        <details class="project-agent-disclosure" :open="selectedRecruitments.some(item => item.status === 'awaiting_confirmation')"><summary>{{ t('projectAgents.sections.recruitment') }}</summary>
+        <details class="ui-disclosure project-agent-disclosure" :open="selectedRecruitments.some(item => item.status === 'awaiting_confirmation')"><summary>{{ t('projectAgents.sections.recruitment') }}</summary>
         <div class="project-agent-detail-source" data-detail-section="recruitment">
           <ProjectAgentDetailState v-bind="detailState('recruitments')" :label="detailLoadingLabel('recruitments')" @retry="refreshDetails">
-            <section class="project-agent-detail-section" aria-labelledby="project-agent-recruitment-heading"><div class="project-agent-section-heading"><h4 id="project-agent-recruitment-heading">{{ t('projectAgents.sections.recruitment') }}</h4><span>{{ selectedRecruitments.length }}</span></div><div v-if="selectedRecruitments.length" class="project-agent-recruitment-list"><article v-for="recruitment in selectedRecruitments" :key="recruitment.recruitmentId" class="project-agent-recruitment-card"><header><strong>{{ recruitment.positionKind }} · {{ recruitment.workKind || t('projectAgents.notReported') }}</strong><div class="project-agent-card-actions"><i>{{ recruitment.status }}</i><button v-if="recruitment.status === 'awaiting_confirmation'" class="quiet-button" type="button" :disabled="Boolean(recruitmentBusy)" @click="decideRecruitment(recruitment, 'approve')"><GrowthLoading v-if="recruitmentBusy === recruitment.recruitmentId && recruitmentBusyAction === 'approve'" variant="inline" :label="t('projectAgents.recruitment.approving')" /><span v-else>{{ t('projectAgents.recruitment.approve') }}</span></button><button v-if="recruitment.status === 'awaiting_confirmation'" class="quiet-button" type="button" :disabled="Boolean(recruitmentBusy)" @click="decideRecruitment(recruitment, 'cancel')"><GrowthLoading v-if="recruitmentBusy === recruitment.recruitmentId && recruitmentBusyAction === 'cancel'" variant="inline" :label="t('projectAgents.recruitment.cancelling')" /><span v-else>{{ t('projectAgents.recruitment.cancel') }}</span></button></div></header><dl class="project-agent-compact-meta"><div><dt>{{ t('projectAgents.recruitment.hr') }}</dt><dd>{{ recruitment.hrAgentId || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.recruitment.trigger') }}</dt><dd>{{ sourceLabel(recruitment.triggerSourceApplication) }}</dd></div><div><dt>{{ t('projectAgents.recruitment.reason') }}</dt><dd>{{ recruitment.reason || recruitment.reasonCode || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.recruitment.time') }}</dt><dd>{{ formatDate(recruitment.fulfilledAt || recruitment.createdAt) }}</dd></div></dl><small>{{ t('projectAgents.recruitment.testSource') }} · {{ recruitment.testSource || t('projectAgents.notReported') }}</small></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.recruitment.empty') }}</p></section>
+            <section class="project-agent-detail-section" aria-labelledby="project-agent-recruitment-heading"><div class="project-agent-section-heading"><h4 id="project-agent-recruitment-heading">{{ t('projectAgents.sections.recruitment') }}</h4><span>{{ selectedRecruitments.length }}</span></div><div v-if="selectedRecruitments.length" class="project-agent-recruitment-list"><article v-for="recruitment in selectedRecruitments" :key="recruitment.recruitmentId" class="ui-card project-agent-recruitment-card"><header><strong>{{ recruitment.positionKind }} · {{ recruitment.workKind || t('projectAgents.notReported') }}</strong><div class="project-agent-card-actions"><i class="ui-badge">{{ recruitment.status }}</i><button v-if="recruitment.status === 'awaiting_confirmation'" class="quiet-button" type="button" :disabled="Boolean(recruitmentBusy)" @click="decideRecruitment(recruitment, 'approve')"><GrowthLoading v-if="recruitmentBusy === recruitment.recruitmentId && recruitmentBusyAction === 'approve'" variant="inline" :label="t('projectAgents.recruitment.approving')" /><span v-else>{{ t('projectAgents.recruitment.approve') }}</span></button><button v-if="recruitment.status === 'awaiting_confirmation'" class="quiet-button" type="button" :disabled="Boolean(recruitmentBusy)" @click="decideRecruitment(recruitment, 'cancel')"><GrowthLoading v-if="recruitmentBusy === recruitment.recruitmentId && recruitmentBusyAction === 'cancel'" variant="inline" :label="t('projectAgents.recruitment.cancelling')" /><span v-else>{{ t('projectAgents.recruitment.cancel') }}</span></button></div></header><dl class="project-agent-compact-meta"><div><dt>{{ t('projectAgents.recruitment.hr') }}</dt><dd>{{ recruitment.hrAgentId || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.recruitment.trigger') }}</dt><dd>{{ sourceLabel(recruitment.triggerSourceApplication) }}</dd></div><div><dt>{{ t('projectAgents.recruitment.reason') }}</dt><dd>{{ recruitment.reason || recruitment.reasonCode || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.recruitment.time') }}</dt><dd>{{ formatDate(recruitment.fulfilledAt || recruitment.createdAt) }}</dd></div></dl><small>{{ t('projectAgents.recruitment.testSource') }} · {{ recruitment.testSource || t('projectAgents.notReported') }}</small></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.recruitment.empty') }}</p></section>
           </ProjectAgentDetailState>
         </div>
         </details>
-        <details :key="`advanced:${selectedAgent.agentId}`" class="project-agent-disclosure" data-agent-advanced>
+        <details :key="`advanced:${selectedAgent.agentId}`" class="ui-disclosure project-agent-disclosure" data-agent-advanced>
           <summary>{{ t('projectAgents.advanced') }}</summary>
         <div class="project-agent-detail-source" data-detail-section="executors">
           <ProjectAgentDetailState v-bind="detailState('executors')" :label="detailLoadingLabel('executors')" @retry="refreshDetails">
@@ -1185,7 +1220,7 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
         </div>
         <div class="project-agent-detail-source" data-detail-section="learning">
           <ProjectAgentDetailState v-bind="detailState('learning')" :label="detailLoadingLabel('learning')" @retry="refreshDetails">
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.learning') }}</h4><span>{{ selectedLearning.length }}</span></div><div v-if="selectedLearning.length" class="project-agent-learning-list"><article v-for="[key, evidence] in selectedLearning" :key="key" class="project-agent-learning-card"><header><strong>{{ key }}</strong><i>{{ learningLabel(evidence) }}</i></header><small v-if="evidence.personalProjectId || evidence.workKind || evidence.executor || evidence.modelStrategy">{{ projectName(evidence.personalProjectId) }} · {{ evidence.workKind || t('projectAgents.notReported') }} · {{ evidence.executor || t('projectAgents.notReported') }} / {{ evidence.modelStrategy ? strategyLabel(evidence.modelStrategy) : t('projectAgents.notReported') }}</small><p>{{ t('projectAgents.learning.samples', { count: evidence.sampleCount }) }} · {{ t('projectAgents.learning.recent', { count: learningRecent(evidence) }) }}</p><small>{{ evidence.decayBasis || t('projectAgents.learning.decayUnreported') }} · {{ formatDate(evidence.updatedAt) }}</small><div v-if="evidence.outcomes" class="project-agent-inline-list"><span v-for="(count, outcome) in evidence.outcomes" :key="outcome" v-show="count !== undefined">{{ outcome }} · {{ count ?? t('projectAgents.notReported') }}</span><span v-if="evidence.score !== null && evidence.score !== undefined">{{ t('projectAgents.learning.score', { score: scoreValue(evidence) }) }}</span></div><ul v-if="evidence.evidence?.length" class="project-agent-evidence-list"><li v-for="item in evidence.evidence" :key="`${item.evidenceId}:${item.kind}:${item.occurredAt}`"><span>{{ item.kind }} · {{ item.count ?? 0 }} · {{ item.summary || t('projectAgents.notReported') }}</span><button v-if="item.evidenceId" class="quiet-button" type="button" :disabled="Boolean(learningBusy)" @click="updateLearning(evidence, 'ignore', item.evidenceId)"><GrowthLoading v-if="learningBusy === item.evidenceId && learningBusyAction === 'ignore'" variant="inline" :label="t('projectAgents.learning.ignoring')" /><span v-else>{{ t('projectAgents.learning.ignore') }}</span></button></li></ul><div v-if="evidence.learningKey" class="project-agent-learning-actions"><button class="quiet-button" type="button" :disabled="Boolean(learningBusy) || !evidence.personalProjectId || !evidence.workKind || !evidence.executor" @click="updateLearning(evidence, 'reset')"><GrowthLoading v-if="learningBusy === evidence.learningKey && learningBusyAction === 'reset'" variant="inline" :label="t('projectAgents.learning.resetting')" /><span v-else>{{ t('projectAgents.learning.reset') }}</span></button></div></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.learning.empty') }}</p><small class="project-agent-note">{{ t('projectAgents.learning.note') }}</small></section>
+            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.learning') }}</h4><span>{{ selectedLearning.length }}</span></div><div v-if="selectedLearning.length" class="project-agent-learning-list"><article v-for="[key, evidence] in selectedLearning" :key="key" class="ui-card project-agent-learning-card"><header><strong>{{ key }}</strong><i class="ui-badge">{{ learningLabel(evidence) }}</i></header><small v-if="evidence.personalProjectId || evidence.workKind || evidence.executor || evidence.modelStrategy">{{ projectName(evidence.personalProjectId) }} · {{ evidence.workKind || t('projectAgents.notReported') }} · {{ evidence.executor || t('projectAgents.notReported') }} / {{ evidence.modelStrategy ? strategyLabel(evidence.modelStrategy) : t('projectAgents.notReported') }}</small><p>{{ t('projectAgents.learning.samples', { count: evidence.sampleCount }) }} · {{ t('projectAgents.learning.recent', { count: learningRecent(evidence) }) }}</p><small>{{ evidence.decayBasis || t('projectAgents.learning.decayUnreported') }} · {{ formatDate(evidence.updatedAt) }}</small><div v-if="evidence.outcomes" class="project-agent-inline-list"><span v-for="(count, outcome) in evidence.outcomes" :key="outcome" v-show="count !== undefined">{{ outcome }} · {{ count ?? t('projectAgents.notReported') }}</span><span v-if="evidence.score !== null && evidence.score !== undefined">{{ t('projectAgents.learning.score', { score: scoreValue(evidence) }) }}</span></div><ul v-if="evidence.evidence?.length" class="project-agent-evidence-list"><li v-for="item in evidence.evidence" :key="`${item.evidenceId}:${item.kind}:${item.occurredAt}`"><span>{{ item.kind }} · {{ item.count ?? 0 }} · {{ item.summary || t('projectAgents.notReported') }}</span><button v-if="item.evidenceId" class="quiet-button" type="button" :disabled="Boolean(learningBusy)" @click="updateLearning(evidence, 'ignore', item.evidenceId)"><GrowthLoading v-if="learningBusy === item.evidenceId && learningBusyAction === 'ignore'" variant="inline" :label="t('projectAgents.learning.ignoring')" /><span v-else>{{ t('projectAgents.learning.ignore') }}</span></button></li></ul><div v-if="evidence.learningKey" class="project-agent-learning-actions"><button class="quiet-button" type="button" :disabled="Boolean(learningBusy) || !evidence.personalProjectId || !evidence.workKind || !evidence.executor" @click="updateLearning(evidence, 'reset')"><GrowthLoading v-if="learningBusy === evidence.learningKey && learningBusyAction === 'reset'" variant="inline" :label="t('projectAgents.learning.resetting')" /><span v-else>{{ t('projectAgents.learning.reset') }}</span></button></div></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.learning.empty') }}</p><small class="project-agent-note">{{ t('projectAgents.learning.note') }}</small></section>
           </ProjectAgentDetailState>
         </div>
         </details>

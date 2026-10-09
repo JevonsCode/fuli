@@ -47,6 +47,23 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
+  it('reveals an invalid field inside a collapsed settings section', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().runtimeStatus = 'ready'
+    vi.stubGlobal('fetch', vi.fn(async (input) => {
+      if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured })
+      return Response.json({}, { status: 503 })
+    }))
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    await flushPromises()
+    const ports = wrapper.get('.ports-card')
+    expect((ports.element as HTMLDetailsElement).open).toBe(false)
+    await ports.get('input').trigger('invalid')
+    expect((ports.element as HTMLDetailsElement).open).toBe(true)
+    wrapper.unmount()
+  })
+
   it('locks settings and the shared save state until a pending save finishes, rejecting repeat submits', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

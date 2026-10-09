@@ -374,7 +374,7 @@ function formatDate(value?: string) {
 
     <section class="project-section">
       <div class="section-toolbar compact-toolbar relation-section-toolbar">
-        <div><h3>{{ t('pages.publicProjects.relationsTitle') }}</h3><p>{{ t('pages.publicProjects.relationsCopy') }}</p></div>
+        <div><h3>{{ t('pages.publicProjects.relationsTitle') }}</h3></div>
         <button class="primary-action" type="button" :disabled="!relationProjects.length" @click="relationOpen = !relationOpen">
           {{ t('pages.publicProjects.addRelation') }}
         </button>

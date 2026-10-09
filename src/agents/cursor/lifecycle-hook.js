@@ -50,6 +50,7 @@ export async function cursorLifecycleOutput(event, input, invoke) {
       + `get_collaboration_preferences with sessionId=${JSON.stringify(sessionId)}, `
       + 'projectPath=current working directory and taskPrompt=current request '
       + 'to restore the role selected for that exact prompt and its latest project memory. '
+      + 'Every final reply MUST include this task’s agent_receipt.markdown unchanged exactly once, including greetings and capture-disabled tasks. '
       + 'Before finishing, call '
       + `verify_task_checkpoint with sessionId=${JSON.stringify(sessionId)}; use its task_context_token `
       + 'to checkpoint_task_knowledge, including agentMemory if the role context changed. '

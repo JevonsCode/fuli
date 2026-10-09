@@ -547,15 +547,15 @@ function fail(message: string) {
 
 .conflict-pair-context span {
   padding: 6px 9px;
-  border: 1px solid #e1e5e2;
+  border: 1px solid var(--color-border);
   border-radius: 999px;
-  color: #747d77;
-  font-size: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .conflict-pair-context strong {
   margin-left: 4px;
-  color: #3c4941;
+  color: var(--color-ink);
 }
 
 .conflict-comparison {
@@ -570,27 +570,27 @@ function fail(message: string) {
   align-content: start;
   gap: 8px;
   padding: 16px;
-  border: 1px solid #dfe5e1;
+  border: 1px solid var(--color-border);
   border-radius: 10px;
-  background: #f9fbfa;
+  background: var(--color-surface);
 }
 
 .conflict-side-left {
-  border-color: #b8d8ef;
-  background: #f1f8fd;
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-subtle);
 }
 
 .conflict-side-right {
-  border-color: #d2c6ef;
-  background: #f7f4fd;
+  border-color: var(--color-border);
+  background: var(--color-surface);
 }
 
 .conflict-side-heading {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  color: #69736c;
-  font-size: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .conflict-side h4,
@@ -599,13 +599,13 @@ function fail(message: string) {
 }
 
 .conflict-side h4 {
-  color: #2f3d35;
+  color: var(--color-ink);
   font-size: 14px;
 }
 
 .conflict-side p {
   min-height: 48px;
-  color: #45524a;
+  color: var(--color-ink);
   font-size: 12px;
   line-height: 1.6;
   white-space: pre-wrap;
@@ -613,8 +613,8 @@ function fail(message: string) {
 
 .conflict-side small {
   overflow: hidden;
-  color: #7c857f;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -623,9 +623,9 @@ function fail(message: string) {
   justify-self: start;
   padding: 0;
   border: 0;
-  color: #52705f;
+  color: var(--color-muted);
   background: transparent;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .conflict-difference {
@@ -634,9 +634,9 @@ function fail(message: string) {
   gap: 10px;
   margin-top: 12px;
   padding: 12px;
-  border: 1px solid #e5e7e5;
-  border-radius: 9px;
-  background: #fbfcfb;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
 }
 
 .conflict-difference > div {
@@ -647,8 +647,8 @@ function fail(message: string) {
 }
 
 .conflict-difference span {
-  color: #7a837d;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -662,16 +662,16 @@ function fail(message: string) {
 .conflict-difference b {
   padding: 4px 7px;
   border-radius: 5px;
-  color: #46534b;
-  background: #e9efeb;
-  font-size: 10px;
+  color: var(--color-ink);
+  background: var(--color-surface-subtle);
+  font-size: 12px;
   font-weight: 600;
 }
 
 .conflict-difference .muted {
   display: block;
-  color: #929993;
-  font-size: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .conflict-resolution-options {
@@ -688,26 +688,27 @@ function fail(message: string) {
   align-content: start;
   gap: 6px;
   padding: 12px;
-  border: 1px solid #dfe4e0;
-  border-radius: 9px;
-  color: #3d4942;
-  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  color: var(--color-ink);
+  background: var(--color-surface);
   text-align: left;
 }
 
 .conflict-resolution-options > button[aria-pressed='true'] {
-  border-color: #7ba08a;
-  background: #f1f7f3;
-  box-shadow: inset 0 0 0 1px #7ba08a;
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
 }
 
 .conflict-resolution-options strong {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .conflict-resolution-options span {
-  color: #7a837d;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -717,9 +718,9 @@ function fail(message: string) {
   right: 8px;
   padding: 2px 5px;
   border-radius: 999px;
-  color: #376047;
-  background: #dcecdf;
-  font-size: 8px;
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  font-size: 12px;
   font-style: normal;
 }
 
@@ -729,17 +730,17 @@ function fail(message: string) {
   gap: 10px;
   margin-top: 12px;
   padding: 13px;
-  border: 1px solid #dfe5e1;
-  border-radius: 9px;
-  background: #fafcfb;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
 }
 
 .conflict-resolution-detail label,
 .conflict-resolution-reason {
   display: grid;
   gap: 6px;
-  color: #5f6962;
-  font-size: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -757,41 +758,41 @@ function fail(message: string) {
 
 .conflict-inline-options span {
   margin-right: 4px;
-  color: #667169;
-  font-size: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .conflict-inline-options button {
   padding: 5px 8px;
-  border: 1px solid #d9dfdb;
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  color: #58645c;
-  background: #fff;
-  font-size: 10px;
+  color: var(--color-muted);
+  background: var(--color-surface);
+  font-size: 12px;
 }
 
 .conflict-inline-options button[aria-pressed='true'] {
-  border-color: #789986;
-  color: #315141;
-  background: #eaf2ed;
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
 }
 
 .conflict-impact-preview {
-  border-color: #f0d99d;
-  background: #fffaf0;
+  border-color: var(--color-border-strong);
+  background: var(--color-surface);
 }
 
 .conflict-impact-preview span {
-  color: #826b37;
-  font-size: 9px;
+  color: var(--color-warning);
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
 }
 
 .conflict-impact-preview p {
   margin: 0;
-  color: #554d3c;
-  font-size: 11px;
+  color: var(--color-ink);
+  font-size: 12px;
   line-height: 1.55;
 }
 

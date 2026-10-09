@@ -328,8 +328,8 @@ function fail(message: string) {
 .batch-confirmer-fields label {
   display: grid;
   gap: 6px;
-  color: #5f6962;
-  font-size: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -341,24 +341,24 @@ function fail(message: string) {
   display: grid;
   gap: 4px;
   padding: 12px 0;
-  border-top: 1px solid #e1e5e2;
-  border-bottom: 1px solid #e1e5e2;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .batch-group-summary span,
 .batch-group-summary small {
-  color: #89918b;
-  font-size: 8px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .batch-group-summary strong {
-  color: #35443b;
+  color: var(--color-ink);
   font-size: 12px;
 }
 
 .batch-group-summary p {
-  color: #6e7871;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -370,15 +370,15 @@ function fail(message: string) {
 
 .batch-confirm-rule,
 .batch-limit-note {
-  color: #7c857f;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
   line-height: 1.5;
 }
 
 .batch-confirm-review {
   min-width: 0;
   padding-left: 24px;
-  border-left: 1px solid #e1e5e2;
+  border-left: 1px solid var(--color-border);
 }
 
 .batch-review-heading {
@@ -390,21 +390,21 @@ function fail(message: string) {
 }
 
 .batch-review-heading h4 {
-  color: #344239;
+  color: var(--color-ink);
   font-size: 13px;
 }
 
 .batch-review-heading p {
   margin-top: 2px;
-  color: #858e87;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .batch-review-list {
   max-height: 410px;
   overflow: auto;
-  border-top: 1px solid #e3e6e3;
-  border-bottom: 1px solid #e3e6e3;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .batch-review-item {
@@ -412,7 +412,7 @@ function fail(message: string) {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 9px;
   padding: 10px 2px;
-  border-bottom: 1px solid #eceeec;
+  border-bottom: 1px solid var(--color-border);
   cursor: pointer;
 }
 
@@ -431,19 +431,19 @@ function fail(message: string) {
 }
 
 .batch-review-item strong {
-  color: #3a4740;
-  font-size: 10px;
+  color: var(--color-ink);
+  font-size: 12px;
 }
 
 .batch-review-item small {
-  color: #77817a;
-  font-size: 8px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .batch-review-item em {
   overflow: hidden;
-  color: #848d87;
-  font-size: 8px;
+  color: var(--color-muted);
+  font-size: 12px;
   font-style: normal;
   line-height: 1.4;
   text-overflow: ellipsis;
@@ -455,8 +455,8 @@ function fail(message: string) {
   align-items: flex-start;
   gap: 8px;
   margin-top: 12px;
-  color: #4f5d55;
-  font-size: 9px;
+  color: var(--color-ink);
+  font-size: 12px;
   line-height: 1.5;
   cursor: pointer;
 }

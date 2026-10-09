@@ -3,8 +3,9 @@ import test from 'node:test';
 
 import { MCP_INSTRUCTIONS } from '../src/mcp/instructions.js';
 
-test('MCP instructions support hook-provided task context and an exact fallback within 2KB', () => {
+test('MCP instructions support task identity, hook context and an exact fallback within 2KiB', () => {
   assert.ok(Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8') <= 2048);
+  assert.match(MCP_INSTRUCTIONS, /Final replies MUST copy agent_receipt.markdown unchanged once/);
   assert.match(MCP_INSTRUCTIONS, /each user task/i);
   assert.match(MCP_INSTRUCTIONS, /begin_task_context/i);
   assert.match(MCP_INSTRUCTIONS, /hook-provided task context/i);
@@ -14,7 +15,7 @@ test('MCP instructions support hook-provided task context and an exact fallback 
   assert.match(MCP_INSTRUCTIONS, /else before tools\/answer call exactly/is);
   assert.match(MCP_INSTRUCTIONS, /projectPath=cwd/i);
   assert.match(MCP_INSTRUCTIONS, /taskPrompt=current user request/i);
-  assert.match(MCP_INSTRUCTIONS, /all effective_preferences/i);
+  assert.match(MCP_INSTRUCTIONS, /effective_preferences/i);
   assert.match(MCP_INSTRUCTIONS, /personal-global everywhere/i);
   assert.match(MCP_INSTRUCTIONS, /writes?.*actual payload/i);
   assert.match(MCP_INSTRUCTIONS, /final text.*not compliance/i);
@@ -37,7 +38,7 @@ test('MCP instructions support hook-provided task context and an exact fallback 
   assert.match(MCP_INSTRUCTIONS, /match.*candidate only/i);
   assert.match(
     MCP_INSTRUCTIONS,
-    /If supported.*sourceMarker.*otherwise.*noMatchSourceMarker/is
+    /If supported.*sourceMarker.*else.*noMatchSourceMarker/is
   );
   assert.match(
     MCP_INSTRUCTIONS,
@@ -54,11 +55,11 @@ test('MCP instructions support hook-provided task context and an exact fallback 
   assert.match(MCP_INSTRUCTIONS, /coordinate_project_agent_task/);
   assert.match(MCP_INSTRUCTIONS, /Fuli never spawns/i);
   assert.match(MCP_INSTRUCTIONS, /release_runtime_lease.*finally/i);
-  assert.match(MCP_INSTRUCTIONS, /project_management_context: actionable work via authorized manager\+board/i);
-  assert.match(MCP_INSTRUCTIONS, /keep chosen specialist; no excluded projects\/extra model/i);
-  assert.match(MCP_INSTRUCTIONS, /exact current native session, host rename tool, manual-title protection/i);
-  assert.match(MCP_INSTRUCTIONS, /receipt after actual client result/i);
+  assert.match(MCP_INSTRUCTIONS, /project_management_context: authorized manager\+board/i);
+  assert.match(MCP_INSTRUCTIONS, /keep specialist; no excluded projects\/extra model/i);
+  assert.match(MCP_INSTRUCTIONS, /current native session, host tool, protect manual titles/i);
+  assert.match(MCP_INSTRUCTIONS, /receipt after client result/i);
   assert.match(MCP_INSTRUCTIONS, /all workerStatus terminal/i);
   assert.match(MCP_INSTRUCTIONS, /source-labelled cumulative tokens/i);
-  assert.match(MCP_INSTRUCTIONS, /Missing=unknown; no invent\/estimate\/copy totals/i);
+  assert.match(MCP_INSTRUCTIONS, /Missing=unknown; never invent\/estimate\/copy totals/i);
 });

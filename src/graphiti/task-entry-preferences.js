@@ -36,15 +36,14 @@ export async function taskEntryPreferences(application, projectResolution, {
       sourceApplication, sourceSessionId, sessionId })
     : null;
   const managedPreferences = management ? { ...preferences, project_management_context: management } : preferences;
-  if (!selection) return managedPreferences;
-  const context = selection.agent ? await loadProjectAgentContinuity(application, {
+  const context = selection?.agent ? await loadProjectAgentContinuity(application, {
     projectId: projectResolution.personalProjectId, agent: selection.agent,
     sourceApplication, taskPrompt, selectionReason: selection.reason,
     matchBasis: selection.match_basis
   }) : selection;
-  return { ...managedPreferences, project_agent_context: context,
-    ...(selection.agent ? { agent_receipt: taskAgentReceipt(application, {
-      projectId: projectResolution.personalProjectId, agentId: selection.agent.agentId,
-      name: context.role?.name, sourceApplication
-    }) } : {}) };
+  return { ...managedPreferences, ...(context ? { project_agent_context: context } : {}),
+    agent_receipt: taskAgentReceipt(application, {
+      projectId: projectResolution.personalProjectId, agentId: selection?.agent?.agentId ?? null,
+      name: context?.role?.name, sourceApplication
+    }) };
 }

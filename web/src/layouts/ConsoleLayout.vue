@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import GrowthLoading from '@/components/GrowthLoading.vue'
+import UiButton from '@/components/UiButton.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
@@ -25,7 +25,6 @@ const personalProjectsTo = computed(() => personalProjectsPath(activeSpaceId.val
 const knowledgeTo = computed(() => knowledgePath('personal', activeSpaceId.value, 'directory'))
 const title = computed(() => routeMetaText(route.meta.title, 'routes.overview.title'))
 const dedicatedWorkspace = computed(() => route.meta.dedicatedWorkspace === true)
-const publicReady = computed(() => store.publicRuntimeStatus === 'ready')
 const publicRuntimeLabel = computed(() => {
   if (store.publicRuntimeStatus === 'ready') return t('console.services.publicReady')
   if (store.publicRuntimeStatus === 'error') return t('console.services.publicError')
@@ -117,19 +116,19 @@ async function closeMobileNav() {
         <p class="nav-section-label nav-space-label">{{ t('console.navigation.personalSpace') }}</p>
         <RouterLink class="space-nav-button personal-profile-button" to="/preferences" active-class="is-active">
           <span class="nav-icon nav-icon-personal-profile" aria-hidden="true" />
-          <span class="nav-copy"><strong>{{ t('console.navigation.preferences') }}</strong><small>{{ t('console.navigation.preferencesMeta') }}</small></span>
+          <span class="nav-copy"><strong>{{ t('console.navigation.preferences') }}</strong></span>
         </RouterLink>
         <RouterLink class="space-nav-button knowledge-organizer-button" to="/organize" active-class="is-active">
           <span class="nav-icon nav-icon-knowledge-organizer" aria-hidden="true" />
-          <span class="nav-copy"><strong>{{ t('console.navigation.organizer') }}</strong><small>{{ t('console.navigation.organizerMeta') }}</small></span>
+          <span class="nav-copy"><strong>{{ t('console.navigation.organizer') }}</strong></span>
         </RouterLink>
         <RouterLink class="space-nav-button personal-space-button" :to="personalProjectsTo" active-class="is-active">
           <span class="nav-icon nav-icon-personal-project" aria-hidden="true" />
-          <span class="nav-copy"><strong>{{ t('console.navigation.personalProjects') }}</strong><small>{{ t('console.navigation.personalProjectsMeta') }}</small></span>
+          <span class="nav-copy"><strong>{{ t('console.navigation.personalProjects') }}</strong></span>
         </RouterLink>
         <RouterLink class="space-nav-button project-agents-button" to="/project-agents" active-class="is-active">
           <span class="nav-icon nav-icon-project-agent" aria-hidden="true" />
-          <span class="nav-copy"><strong>{{ t('console.navigation.projectAgents') }}</strong><small>{{ t('console.navigation.projectAgentsMeta') }}</small></span>
+          <span class="nav-copy"><strong>{{ t('console.navigation.projectAgents') }}</strong></span>
         </RouterLink>
         <RouterLink class="space-nav-button roundtables-button" to="/roundtables" active-class="is-active">
           <span class="nav-icon nav-icon-project-agent" aria-hidden="true" />
@@ -140,7 +139,7 @@ async function closeMobileNav() {
           <p class="nav-section-label nav-public-label">{{ t('console.navigation.publicSpace') }}</p>
           <RouterLink class="space-nav-button public-space-button" to="/public-projects" active-class="is-active">
             <span class="nav-icon nav-icon-public-project" aria-hidden="true" />
-            <span class="nav-copy"><strong>{{ t('console.navigation.publicProjects') }}</strong><small>{{ t('console.navigation.publicProjectsMeta') }}</small></span>
+            <span class="nav-copy"><strong>{{ t('console.navigation.publicProjects') }}</strong></span>
           </RouterLink>
         </template>
 
@@ -182,16 +181,13 @@ async function closeMobileNav() {
                   : store.runtimeStatus === 'error' ? t('console.services.localError')
                     : t('console.services.localConnecting') }}
               </strong>
-              <small>Graphiti / Neo4j</small>
+
             </div>
           </div>
-          <div class="runtime-status">
-            <span class="status-dot" :class="store.publicRuntimeStatus" />
-            <div>
-              <strong>{{ publicRuntimeLabel }}</strong>
-              <small>{{ publicRuntimeCopy }}</small>
-            </div>
-          </div>
+          <details class="service-details">
+            <summary><span class="status-dot" :class="store.publicRuntimeStatus" />{{ publicRuntimeLabel }}</summary>
+            <div class="runtime-status"><div><small>{{ publicRuntimeCopy }}</small><RouterLink to="/connections">{{ t('console.navigation.connections') }}</RouterLink></div></div>
+          </details>
         </div>
       </div>
     </aside>
@@ -205,31 +201,21 @@ async function closeMobileNav() {
           type="button"
           aria-controls="console-primary-sidebar"
           :aria-expanded="mobileNavOpen"
+          :aria-label="t('console.navigation.openMenu')"
           @click="openMobileNav"
         >
           <span class="mobile-nav-icon" aria-hidden="true" />
-          {{ t('console.navigation.openMenu') }}
         </button>
         <span v-if="dedicatedWorkspace" class="workbench-host-label">FULI</span>
         <div v-else class="topbar-heading">
-          <h2>{{ title }}</h2>
+          <h1>{{ title }}</h1>
         </div>
         <div v-if="!dedicatedWorkspace" class="topbar-actions">
-          <span v-if="publicReady" class="mode-chip">{{ t('console.publicReady') }}</span>
-          <button
-            v-if="route.name === 'settings'"
-            class="settings-save-button"
-            :disabled="store.settingsSaving"
-            form="settings-form"
-            type="submit"
-          >
-            {{ t('settings.save') }}
-          </button>
+          <UiButton v-if="route.name === 'settings'" variant="primary" :disabled="store.settingsSaving" form="settings-form" type="submit">{{ t('settings.save') }}</UiButton>
           <LocaleSwitcher />
-          <button class="quiet-button" type="button" :disabled="store.runtimeStatus === 'loading'" @click="store.refresh">
-            <GrowthLoading v-if="store.runtimeStatus === 'loading'" variant="inline" :label="t('common.status.loadingConsole')" />
-            <span v-else>{{ t('common.actions.refresh') }}</span>
-          </button>
+          <UiButton variant="ghost" icon :disabled="store.runtimeStatus === 'loading'" :aria-label="t('common.actions.refresh')" :title="t('common.actions.refresh')" @click="store.refresh">
+            <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 7a6.5 6.5 0 1 0 .5 5M16 3v4h-4" /></svg>
+          </UiButton>
         </div>
       </header>
 
@@ -255,8 +241,8 @@ async function closeMobileNav() {
 
 <style scoped>
 .topbar--workbench { display: none; }
-.workbench-host-label { color: #58675d; font-size: 12px; font-weight: 600; }
+.workbench-host-label { color: var(--color-muted); font-size: 12px; font-weight: 600; }
 @media (max-width: 920px) {
-  .topbar--workbench { display: flex; justify-content: flex-start; gap: 12px; min-height: 44px; padding: 7px 16px; border: 0; background: #fff; }
+  .topbar--workbench { display: flex; justify-content: flex-start; gap: 12px; min-height: 44px; padding: 7px 16px; border: 0; background: var(--color-surface); }
 }
 </style>

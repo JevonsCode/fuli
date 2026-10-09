@@ -15,16 +15,16 @@ defineProps<{ spaceId: string; agentId: string; name: string }>();
   color: inherit;
   font-weight: 650;
   text-decoration: underline;
-  text-decoration-color: #b5c9bd;
+  text-decoration-color: var(--color-border-strong);
   text-underline-offset: 4px;
   overflow-wrap: anywhere;
 }
 .agent-name-link:hover {
-  color: #24533c;
+  color: var(--color-accent);
   text-decoration-color: currentColor;
 }
 .agent-name-link:focus-visible {
-  outline: 2px solid #315c43;
+  outline: 2px solid var(--color-accent);
   outline-offset: 4px;
   border-radius: 2px;
 }

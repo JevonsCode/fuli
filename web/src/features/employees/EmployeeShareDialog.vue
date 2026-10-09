@@ -131,13 +131,13 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .employee-share-result { display: grid; gap: 12px; }
 .employee-share-result label { display: grid; gap: 8px; font-size: 13px; }
 .employee-share-result > div { display: flex; gap: 16px; align-items: center; }
-.employee-share-result a { color: #315c43; font-size: 13px; }
-.employee-share-local { color: #725a2d; }
-.employee-share-preview { font-weight: 600; color: #315c43; }
-.employee-share-empty { color: #725a2d; line-height: 1.6; }
-.employee-share-active { border-top: 1px solid #e6ece8; padding-top: 16px; }
+.employee-share-result a { color: var(--color-ink); font-size: 13px; }
+.employee-share-local { color: var(--color-warning); }
+.employee-share-preview { font-weight: 600; color: var(--color-ink); }
+.employee-share-empty { color: var(--color-warning); line-height: 1.6; }
+.employee-share-active { border-top: 1px solid var(--color-border); padding-top: 16px; }
 .employee-share-active h3 { margin: 0 0 10px; font-size: 14px; }
 .employee-share-active > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; font-size: 13px; }
 .employee-share-active span { overflow-wrap: anywhere; }
-footer > span { margin-right: auto; color: #526659; font-size: 12px; }
+footer > span { margin-right: auto; color: var(--color-muted); font-size: 12px; }
 </style>

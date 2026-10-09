@@ -2,82 +2,36 @@
   height: 100%;
 }
 
-.primary-nav a {
-  position: relative;
-  display: grid;
-  grid-template-columns: 24px 1fr auto;
-  align-items: center;
-  width: 100%;
-  padding: 9px 10px;
-  border: 0;
-  border-radius: 7px;
-  color: #505852;
-  background: transparent;
-  text-align: left;
-  text-decoration: none;
-  font-size: 13px;
-}
-
-.primary-nav a:hover {
-  background: #e4e7e3;
-}
-
-.primary-nav a:focus-visible {
-  outline: 2px solid #91a398;
-  outline-offset: 1px;
-}
-
-.primary-nav a.is-active {
-  background: #dde4df;
-  color: #243b31;
-  font-weight: 650;
-}
-
-.primary-nav a.space-nav-button {
-  min-height: 52px;
-  padding-block: 8px;
-}
-
-.primary-nav a.personal-space-button.is-active {
-  background: #dde7e1;
-  color: #254234;
-}
-
-.primary-nav a.public-space-button.is-active {
-  background: #e0e6e9;
-  color: #2c414d;
-}
-
 .feedback-message { display: flex; align-items: center; gap: 12px; }
 .feedback-message > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .feedback-dismiss { flex: 0 0 auto; min-width: 44px; min-height: 44px; border: 0; color: inherit; background: transparent; }
 
 .status-dot.idle {
-  background: #aeb5af;
+  background: var(--color-muted);
 }
 
 .provider-row i.disconnected {
-  background: #aeb5af;
+  background: var(--color-muted);
 }
 
 .provider-row i.error {
-  background: #b94e45;
+  background: var(--color-danger);
 }
 
 .provider-row i.ready {
-  background: #3f8b64;
+  background: var(--color-success);
 }
 
 .view-loading {
   min-height: 240px;
   display: grid;
   place-items: center;
-  color: #778079;
+  color: var(--color-muted);
   font-size: 12px;
 }
 
 .inline-error {
-  color: #8b3f38;
+  color: var(--color-danger);
 }
 
 .inspector-meta > div {
@@ -89,8 +43,8 @@
 }
 
 .inspector-placeholder {
-  color: #7b847e;
-  font-size: 11px;
+  color: var(--color-muted);
+  font-size: 12px;
   line-height: 1.55;
 }
 
@@ -131,8 +85,8 @@
 .compact-relation-form label {
   display: grid;
   gap: 5px;
-  color: #67716a;
-  font-size: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .compact-relation-form select {
@@ -149,26 +103,26 @@
   display: grid;
   gap: 4px;
   padding: 11px 12px;
-  border: 1px solid #dfe5e0;
-  border-radius: 8px;
-  background: #f8faf8;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
 }
 
 .compact-relation-preview span {
-  color: #7f8982;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
 }
 
 .compact-relation-preview strong {
-  color: #35483e;
-  font-size: 11px;
+  color: var(--color-ink);
+  font-size: 12px;
 }
 
 .compact-relation-preview p {
-  color: #717b74;
-  font-size: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -176,12 +130,12 @@
   display: grid;
   gap: 7px;
   padding: 18px 0;
-  color: #6f5c59;
-  font-size: 10px;
+  color: var(--color-danger);
+  font-size: 12px;
 }
 
 .project-delete-confirmation strong {
-  color: #493c3a;
+  color: var(--color-ink);
 }
 
 .vue-dialog[open] {
@@ -192,6 +146,8 @@
   width: min(980px, calc(100vw - 64px));
   max-height: calc(100vh - 64px);
   margin: auto;
+  border-radius: var(--radius-dialog);
+  box-shadow: var(--shadow-dialog);
 }
 
 .knowledge-edit-dialog.vue-dialog {
@@ -199,7 +155,7 @@
 }
 
 .vue-dialog::backdrop {
-  background: rgba(23, 31, 27, 0.35);
+  background: var(--color-overlay);
 }
 
 @media (max-width: 1180px) {
@@ -212,9 +168,9 @@
   align-items: center;
   gap: 2px;
   padding: 2px;
-  border: 1px solid #d8ded9;
-  border-radius: 8px;
-  background: #f5f7f5;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-subtle);
 }
 
 .locale-switcher button {
@@ -224,19 +180,19 @@
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #6a746d;
+  color: var(--color-muted);
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
 }
 
 .locale-switcher button:hover {
-  color: #2f5d49;
+  color: var(--color-ink);
 }
 
 .locale-switcher button[aria-pressed='true'] {
-  background: #fff;
-  color: #2f5d49;
+  background: var(--color-surface);
+  color: var(--color-ink);
   box-shadow: 0 1px 2px rgb(32 52 42 / 12%);
 }

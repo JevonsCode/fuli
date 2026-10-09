@@ -382,9 +382,9 @@ function isValidOccupationEmoji(value: string) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid #d5dcd7;
+  border: 1px solid var(--color-border-strong);
   border-radius: 12px;
-  background: #fbfcfb;
+  background: var(--color-surface);
   box-shadow: 0 18px 48px rgb(33 45 38 / 18%);
 }
 
@@ -398,11 +398,11 @@ function isValidOccupationEmoji(value: string) {
 }
 
 .project-agent-dialog-header {
-  border-bottom: 1px solid #e1e6e2;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .project-agent-dialog-header h3 {
-  color: #283a31;
+  color: var(--color-ink);
   font-size: 17px;
 }
 
@@ -420,8 +420,8 @@ function isValidOccupationEmoji(value: string) {
   display: grid;
   align-content: start;
   gap: 6px;
-  color: #626d66;
-  font-size: 11px;
+  color: var(--color-muted);
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -429,10 +429,10 @@ function isValidOccupationEmoji(value: string) {
 .project-agent-dialog-fields select,
 .project-agent-dialog-fields textarea {
   width: 100%;
-  border: 1px solid #ccd5ce;
-  border-radius: 8px;
-  background: #fff;
-  color: #28342d;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-ink);
   padding: 9px 10px;
   font-size: 12px;
   line-height: 1.5;
@@ -445,7 +445,7 @@ function isValidOccupationEmoji(value: string) {
 .project-agent-dialog-fields input:focus-visible,
 .project-agent-dialog-fields select:focus-visible,
 .project-agent-dialog-fields textarea:focus-visible {
-  outline: 2px solid #91a398;
+  outline: 2px solid var(--color-accent);
   outline-offset: 1px;
 }
 
@@ -461,57 +461,57 @@ function isValidOccupationEmoji(value: string) {
   gap: 12px;
   margin: 0;
   padding: 12px;
-  border: 1px solid #dfe5e0;
-  border-radius: 9px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
 }
 
 .project-agent-strategy-fields legend {
   padding: 0 5px;
-  color: #59665d;
-  font-size: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
   font-weight: 700;
 }
 
 .project-agent-strategy-fields > small {
   grid-column: 1 / -1;
-  color: #818a84;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
   line-height: 1.5;
 }
 
 .project-agent-id-note {
   margin-top: -8px;
-  color: #7b847e;
-  font-size: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .project-agent-dialog-error {
   margin: 0 20px;
-  color: #8b3f38;
-  font-size: 11px;
+  color: var(--color-danger);
+  font-size: 12px;
 }
 
 .project-agent-dialog-actions {
   justify-content: flex-end;
-  border-top: 1px solid #e1e6e2;
+  border-top: 1px solid var(--color-border);
 }
 
 .project-agent-primary-action {
   border: 0;
-  border-radius: 8px;
-  background: #344c3d;
-  color: #fff;
+  border-radius: var(--radius-control);
+  background: var(--color-ink);
+  color: var(--color-surface);
   padding: 8px 14px;
   font-size: 12px;
   font-weight: 700;
 }
 
 .project-agent-primary-action:hover {
-  background: #2b4234;
+  background: var(--color-ink);
 }
 
 .project-agent-primary-action:focus-visible {
-  outline: 2px solid #91a398;
+  outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
 

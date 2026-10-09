@@ -1,9 +1,12 @@
+import { ROUNDTABLE_WORKER_BOUNDARY } from '../../roundtables/turn-prompt.js';
+
 // Discover the effective MCP configuration, then disable and verify every entry.
 // Empty TOML tables merge recursively and cannot clear inherited servers.
 export async function prepareCodexRoundtableConfig({ command, workspace, env, signal, runProcess,
   platform = process.platform }) {
   const options = ['--disable', 'plugins', '--disable', 'apps', '--disable', 'multi_agent',
     '-c', 'hooks.enabled=false', '-c', 'notify=[]', '-c', 'project_doc_max_bytes=0',
+    '-c', `developer_instructions=${JSON.stringify(ROUNDTABLE_WORKER_BOUNDARY)}`,
     '-c', 'sandbox_workspace_write.writable_roots=[]', '-c', 'sandbox_workspace_write.network_access=false',
     '-c', 'approval_policy="never"', '-c', 'approvals_reviewer="user"',
     '-c', 'features.browser_use=false', '-c', 'features.computer_use=false',

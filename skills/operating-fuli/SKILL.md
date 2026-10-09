@@ -50,6 +50,10 @@ Read each returned worker's `context.agent.profile.allowedClients` and `executor
 - On partial external sync, preserve the binding, report per-target/source failures, and let the user choose whether to retry.
 - On an unknown tool or missing parity mapping, record the missing capability as a product defect instead of substituting browser automation.
 
+## Mandatory reply identity
+
+Every final user-visible reply MUST include the current task’s `agent_receipt.markdown` unchanged exactly once. This includes greetings, status-only replies, failures, `retain_nothing`, and capture-disabled tasks. The receipt is independent of whether a memory checkpoint was saved. Never substitute a client name, configured peer, or an earlier task’s owner. If a legacy/unavailable entry supplies no receipt, explicitly state that the FULI Agent identity is unavailable. A receipt with no authorized owner already supplies the correct neutral text.
+
 ## Completion response
 
 State what changed, the exact project or item scope, the verification result, and any remaining human-only action. Do not claim success from a configured capability or submitted request alone.

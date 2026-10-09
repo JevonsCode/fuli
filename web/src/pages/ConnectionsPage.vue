@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import UiDisclosure from '@/components/UiDisclosure.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import { deleteJson, getJson, patchJson, postJson } from '@/api/client'
@@ -586,10 +587,6 @@ function readmeHelpUrl(fragment: string) {
 
 <template>
   <section class="view connections-view">
-    <div class="connection-intro">
-      <h3>{{ t('pages.connections.title') }}</h3>
-    </div>
-
     <div class="service-connection-grid" :aria-label="t('pages.connections.statusAria')">
       <article class="service-connection-card" :data-status="personalReady ? 'ready' : 'error'">
         <header>
@@ -597,7 +594,7 @@ function readmeHelpUrl(fragment: string) {
           <div><h3>{{ t('pages.connections.localGraphiti') }}</h3></div>
           <span class="service-state">{{ personalReady ? t('common.status.connected') : t('common.status.connectionError') }}</span>
         </header>
-        <dl><div><dt>{{ t('pages.connections.storage') }}</dt><dd>Neo4j</dd></div><div><dt>{{ t('pages.connections.purpose') }}</dt><dd>{{ t('pages.connections.localPurpose') }}</dd></div></dl>
+        <UiDisclosure :title="t('ui.connectionDetails')"><dl><div><dt>{{ t('pages.connections.storage') }}</dt><dd>Neo4j</dd></div><div><dt>{{ t('pages.connections.purpose') }}</dt><dd>{{ t('pages.connections.localPurpose') }}</dd></div></dl></UiDisclosure>
       </article>
 
       <article class="service-connection-card" :data-status="store.publicRuntimeStatus">
@@ -692,6 +689,7 @@ function readmeHelpUrl(fragment: string) {
         <div v-if="!externalLoading && !bindings.length" class="compact-empty">{{ t('pages.connections.noExternalBindings') }}</div>
       </div>
 
+      <UiDisclosure :title="t('pages.connections.connect')" :open="!bindings.length">
       <form class="external-binding-form" @submit.prevent="createBinding">
         <TextField v-model="form.name" :label="t('pages.connections.bindingName')" data-testid="external-name" required />
         <label>
@@ -797,11 +795,11 @@ function readmeHelpUrl(fragment: string) {
           <span>{{ t('pages.connections.connect') }}</span>
         </button>
       </form>
+      </UiDisclosure>
     </section>
 
-    <section v-if="personalProjects.length" class="conflict-policy-section">
+    <UiDisclosure v-if="personalProjects.length" class="conflict-policy-section" :open="conflictError" :title="t('pages.connections.conflictTitle')">
       <div class="section-title section-title-with-help">
-        <h3>{{ t('pages.connections.conflictTitle') }}</h3>
         <a
           class="section-help-link"
           data-testid="conflict-policy-help"
@@ -843,7 +841,7 @@ function readmeHelpUrl(fragment: string) {
         <p>{{ t('common.errors.loadFailed') }}</p>
         <button class="secondary-action" type="button" @click="loadConflictPolicy">{{ t('common.actions.retry') }}</button>
       </div>
-    </section>
+    </UiDisclosure>
 
     <section v-if="store.state?.capabilities?.subscribeProject" class="connection-subscriptions">
       <div class="section-title"><h3>{{ t('pages.connections.subscriptionsTitle') }} <span class="feature-badge beta">BETA</span></h3></div>

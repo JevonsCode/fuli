@@ -248,23 +248,23 @@ function fail(message: string) {
   display: grid;
   gap: 6px;
   padding: 14px 0;
-  border-top: 1px solid #e1e5e2;
-  border-bottom: 1px solid #e1e5e2;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .knowledge-confirm-summary span,
 .knowledge-confirm-summary small {
-  color: #7d8780;
-  font-size: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .knowledge-confirm-summary strong {
-  color: #29382f;
+  color: var(--color-ink);
   font-size: 16px;
 }
 
 .knowledge-confirm-summary p {
-  color: #606b63;
+  color: var(--color-muted);
   font-size: 12px;
   line-height: 1.65;
 }
@@ -277,8 +277,8 @@ function fail(message: string) {
 .knowledge-confirm-fields label {
   display: grid;
   gap: 6px;
-  color: #59645c;
-  font-size: 11px;
+  color: var(--color-muted);
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -287,8 +287,8 @@ function fail(message: string) {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   gap: 9px;
-  color: #4e5c53;
-  font-size: 11px;
+  color: var(--color-ink);
+  font-size: 12px;
   line-height: 1.5;
 }
 </style>

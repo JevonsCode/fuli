@@ -6,88 +6,100 @@ import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import type { PersonalProject, ProjectAgentRecord } from '@/types'
 import AgentHand from './AgentHand.vue'
+import AttentionReply from './AttentionReply.vue'
+import type { AttentionReplyDraft } from './attention-replies'
 import { attentionTaskHref, useAgentAttention, type AgentAttention } from './attention-store'
 const props = defineProps<{ personalSpaceId: string; projects: PersonalProject[] }>()
 const attention = useAgentAttention()
 const names = ref<Record<string, string>>({})
-const namesLoading = ref(false)
-const drafts = ref<Record<string, string>>({})
+const drafts = ref<Record<string, AttentionReplyDraft & { revision: number }>>({})
+const selectedId = ref('')
 const busy = ref('')
-const responseError = ref('')
+let operation = 0
+const responseErrors = ref<Record<string, string>>({})
+const responseError = computed(() => responseErrors.value[selectedId.value] ?? '')
+const selected = computed(() => attention.items.find(item => item.requestId === selectedId.value))
+const draft = computed({
+  get: () => drafts.value[selectedId.value] ?? { choice: '', text: '' },
+  set: value => { if (selected.value) drafts.value[selectedId.value] = { ...value, revision: selected.value.revision } },
+})
 const projectNames = computed(() => new Map(props.projects.map(project => [project.project_id, project.profile.name])))
 const { dialogRef, initialFocusRef, onCancel, onKeydown } = useModalDialog(() => attention.open, () => { if (!busy.value) attention.open = false })
 watch(() => props.personalSpaceId, id => {
-  names.value = {}
-  namesLoading.value = false
-  drafts.value = {}
+  operation++; busy.value = ''
+  names.value = {}; drafts.value = {}; selectedId.value = ''; responseErrors.value = {}
   attention.setSpace(id === 'current' ? '' : id)
 }, { immediate: true })
 watch(() => attention.open, async open => {
   if (!open) return
-  responseError.value = ''
   const space = attention.spaceId
-  namesLoading.value = true
   try {
     const agents = await getJson<ProjectAgentRecord[]>(`/api/project-agents?${new URLSearchParams({ personalSpaceId: space })}`)
     if (space === attention.spaceId) names.value = Object.fromEntries(agents.map(agent => [agent.agentId, agent.profile.displayName || agent.profile.name]))
-  } catch { /* Request content remains available if the directory is unavailable. */ }
-  finally {
-    if (space === attention.spaceId) namesLoading.value = false
+  } catch { /* Requests remain usable when the directory is unavailable. */ }
+})
+watch(() => attention.items, items => {
+  if (!items.some(item => item.requestId === selectedId.value)) selectedId.value = items[0]?.requestId ?? ''
+  for (const item of items) {
+    const saved = drafts.value[item.requestId]
+    if (saved && saved.revision !== item.revision) {
+      drafts.value[item.requestId] = { choice: '', text: saved.text, revision: item.revision }
+      responseErrors.value[item.requestId] = t('attention.updated')
+    }
   }
 })
 let timer: ReturnType<typeof setInterval> | undefined
 function refreshVisible() { if (document.visibilityState === 'visible' && !attention.loading && !attention.open) void attention.refresh() }
 onMounted(() => { timer = setInterval(refreshVisible, 30000); document.addEventListener('visibilitychange', refreshVisible) })
 onBeforeUnmount(() => { clearInterval(timer); document.removeEventListener('visibilitychange', refreshVisible); attention.setSpace('') })
-async function respond(item: AgentAttention) {
-  if (busy.value || !drafts.value[item.requestId]?.trim()) return
-  busy.value = item.requestId; responseError.value = ''
-  try { await attention.respond(item, drafts.value[item.requestId]!.trim()); delete drafts.value[item.requestId] }
-  catch (cause) { responseError.value = cause instanceof Error ? cause.message : String(cause); await attention.refresh() }
-  finally { busy.value = '' }
+async function respond(item: AgentAttention, response: string) {
+  if (busy.value || !response.trim() || response.length > 4096) return
+  const space = attention.spaceId
+  const currentOperation = ++operation
+  busy.value = item.requestId; delete responseErrors.value[item.requestId]
+  try {
+    await attention.respond(item, response)
+    if (currentOperation === operation && space === attention.spaceId) delete drafts.value[item.requestId]
+  } catch (cause) {
+    if (currentOperation === operation && space === attention.spaceId) {
+      responseErrors.value[item.requestId] = cause instanceof Error ? cause.message : String(cause)
+      await attention.refresh()
+    }
+  } finally { if (currentOperation === operation) busy.value = '' }
 }
 </script>
 
 <template>
-  <button class="space-nav-button attention-nav" type="button" @click="attention.show()"><span>{{ t('attention.title') }}</span><AgentHand passive /><span v-if="attention.error" :title="t('attention.loadError')">!</span></button>
+  <button class="space-nav-button attention-nav" :aria-label="attention.total ? `${t('attention.title')} · ${t('attention.count', { count: attention.total })}` : t('attention.title')" type="button" @click="attention.show()"><span class="nav-icon nav-icon-review" aria-hidden="true" /><span>{{ t('attention.title') }}</span><span class="attention-nav-status"><AgentHand passive count-only /><span v-if="attention.error" :title="t('attention.loadError')">!</span></span></button>
   <Teleport to="body">
-    <dialog v-if="attention.open" ref="dialogRef" class="employee-dialog attention-dialog" aria-labelledby="attention-title" @cancel="onCancel" @keydown="onKeydown">
-      <div class="employee-dialog-shell">
-        <header><h2 id="attention-title">{{ attention.agentId ? names[attention.agentId] || t('attention.title') : t('attention.title') }}</h2><button ref="initialFocusRef" type="button" :disabled="Boolean(busy)" :aria-label="t('attention.close')" @click="attention.open = false">×</button></header>
-        <div class="employee-dialog-body">
-          <div class="attention-toolbar"><button v-if="attention.agentId" type="button" @click="attention.show()">{{ t('attention.all') }}</button><button type="button" :disabled="attention.loading || Boolean(busy)" @click="attention.refresh()">{{ t('attention.refresh') }}</button></div>
-          <p v-if="attention.error" role="alert" class="employee-dialog-error">{{ t('attention.loadError') }} · {{ attention.error }}</p>
-          <p v-if="responseError" role="alert" class="employee-dialog-error">{{ responseError }}</p>
-          <GrowthLoading v-if="namesLoading" variant="inline" :label="t('attention.loadingAgents')" />
-          <GrowthLoading v-if="attention.loading" variant="compact" :label="t('attention.loading')" />
-          <p v-else-if="!attention.items.length && !attention.error">{{ t('attention.empty') }}</p>
-          <article v-for="item in attention.items" :key="item.requestId" class="attention-item">
-            <p class="attention-meta">{{ names[item.agentId] || item.agentId }} · {{ projectNames.get(item.personalProjectId) || item.personalProjectId }} · {{ t(`attention.kinds.${item.kind}`) }}</p>
-            <h3>{{ item.title }}</h3><p>{{ item.detail }}</p>
-            <p class="attention-action">{{ item.requestedAction }}</p>
-            <a v-if="item.taskId" :href="attentionTaskHref(item)" @click="attention.open = false">{{ t('attention.task') }}</a>
-            <form @submit.prevent="respond(item)"><label :for="`attention-${item.requestId}`">{{ t('attention.response') }}</label><textarea :id="`attention-${item.requestId}`" v-model="drafts[item.requestId]" rows="2" maxlength="4096" required :disabled="Boolean(busy)" /><button type="submit" class="primary" :disabled="Boolean(busy) || !drafts[item.requestId]?.trim()"><GrowthLoading v-if="busy === item.requestId" variant="inline" :label="t('attention.sending')" /><span v-else>{{ t('attention.send') }}</span></button></form>
-          </article>
-          <button v-if="attention.items.length < attention.filteredTotal" type="button" :disabled="attention.loading" @click="attention.more()">{{ t('attention.more') }}</button>
-        </div>
+    <dialog v-if="attention.open" ref="dialogRef" class="attention-dialog" aria-labelledby="attention-title" @cancel="onCancel" @keydown="onKeydown">
+      <header class="attention-header">
+        <div><h2 id="attention-title">{{ t('attention.title') }}</h2><span class="ui-badge">{{ attention.agentId ? attention.counts[attention.agentId] ?? attention.filteredTotal : attention.total }}</span></div>
+        <button ref="initialFocusRef" class="ui-button ui-button--ghost ui-button--icon" type="button" :disabled="Boolean(busy)" :aria-label="t('attention.close')" @click="attention.open = false">×</button>
+      </header>
+      <div v-if="attention.error" role="alert" class="attention-error"><span>{{ t('attention.loadError') }}</span><button class="ui-button" :disabled="attention.loading" @click="attention.refresh()">{{ t('attention.refresh') }}</button></div>
+      <GrowthLoading v-if="attention.loading && !attention.items.length" variant="page" :label="t('attention.loading')" />
+      <div v-else-if="!attention.items.length && !attention.error" class="attention-empty"><span aria-hidden="true">✓</span><p>{{ t('attention.empty') }}</p></div>
+      <div v-else-if="attention.items.length" class="attention-workspace" :aria-busy="attention.loading">
+        <aside class="attention-queue" :aria-label="t('attention.queue')">
+          <div class="attention-queue-toolbar"><span>{{ attention.agentId ? names[attention.agentId] || t('attention.agentFallback') : t('attention.all') }}</span><button v-if="attention.agentId || !attention.error" class="ui-button ui-button--ghost" :disabled="attention.loading || Boolean(busy)" @click="attention.agentId ? attention.show() : attention.refresh()">{{ attention.agentId ? t('attention.all') : t('attention.refresh') }}</button></div>
+          <label class="attention-mobile-picker">{{ t('attention.selectRequest') }}<select v-model="selectedId" :disabled="Boolean(busy)"><option v-for="item in attention.items" :key="item.requestId" :value="item.requestId">{{ names[item.agentId] || t('attention.agentFallback') }} · {{ projectNames.get(item.personalProjectId) || t('attention.projectFallback') }} — {{ item.title }}</option></select></label>
+          <div class="attention-request-list">
+            <button v-for="item in attention.items" :key="item.requestId" type="button" class="attention-request" :class="{ 'is-selected': selectedId === item.requestId }" :aria-current="selectedId === item.requestId ? 'true' : undefined" :disabled="Boolean(busy)" @click="selectedId = item.requestId">
+              <span class="attention-request-meta">{{ names[item.agentId] || t('attention.agentFallback') }}<span>{{ t(`attention.kinds.${item.kind}`) }}</span></span>
+              <strong>{{ item.title }}</strong><span class="attention-request-project">{{ projectNames.get(item.personalProjectId) || t('attention.projectFallback') }}</span>
+            </button>
+          </div>
+          <button v-if="attention.items.length < attention.filteredTotal" class="ui-button attention-more" type="button" :disabled="attention.loading || Boolean(busy)" @click="attention.more()">{{ t('attention.more') }}</button>
+        </aside>
+        <section v-if="selected" :key="selected.requestId" class="attention-detail">
+          <div class="attention-detail-meta"><span>{{ names[selected.agentId] || t('attention.agentFallback') }} · {{ projectNames.get(selected.personalProjectId) || t('attention.projectFallback') }}</span><span class="ui-badge">{{ t(`attention.kinds.${selected.kind}`) }}</span></div>
+          <AttentionReply v-model="draft" :item="selected" :busy="busy === selected.requestId" :refreshing="attention.loading" :error="responseError" @submit="respond(selected, $event)" />
+          <a v-if="selected.taskId && !busy" class="attention-task-link" :href="attentionTaskHref(selected)" @click="attention.open = false">{{ t('attention.task') }} ↗</a>
+        </section>
       </div>
     </dialog>
   </Teleport>
 </template>
 
-<style src="../employees/employee-dialog.css"></style>
-<style scoped>
-.attention-nav { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.attention-dialog { width: min(700px, calc(100vw - 32px)); }
-.attention-toolbar { display: flex; gap: 8px; justify-content: flex-end; }
-.attention-item { padding-block: 6px 24px; border-bottom: 1px solid #e0e7e2; overflow-wrap: anywhere; }
-.attention-item:last-child { border-bottom: 0; padding-bottom: 0; }
-.attention-item h3 { font-size: 17px; margin: 8px 0; }
-.attention-item .attention-meta { font-size: 12px; color: #526659; }
-.attention-item .attention-action { font-weight: 650; margin-block: 12px; }
-.attention-item form { display: grid; gap: 8px; margin-top: 16px; }
-.attention-item form button { justify-self: end; }
-.attention-item form label { font-size: 13px; }
-.attention-item a { color: #315c43; }
-@media (max-width: 640px) { .attention-item textarea { font-size: 16px; } }
-</style>
+<style src="./attention.css"></style>

@@ -7,9 +7,12 @@ const phaseDirections = new Map([
 ]);
 
 /** Shared task semantics; runtime-specific output formatting stays in adapters. */
+export const ROUNDTABLE_WORKER_BOUNDARY = 'You are a bounded coordinated worker. The outer host owns task entry, memory checkpoints and the final user-visible reply. Return only the assigned roundtable turn result; this is not a final user-visible reply. Do not invoke task-entry or checkpoint tools, or report blocked solely because those host-owned lifecycle tools are unavailable.';
+
 export function createRoundtableTaskPrompt(context, { allowWrite = false } = {}) {
   return [
     'You are one participant in a Fuli Agent Roundtable. Work only on your assigned current phase and tasks; the room goal describes the overall collaboration.',
+    ROUNDTABLE_WORKER_BOUNDARY,
     `Current phase: ${context?.phase ?? 'unknown'}.`,
     phaseDirections.get(context?.phase) ?? 'The current phase is unknown. Report blocked and request owner clarification.',
     'Completion refers to this current turn, not the whole room. Blocked requires an actual obstacle to this turn, such as missing required input, authentication or permission. Do not report blocked solely because later phases or human acceptance are pending.',

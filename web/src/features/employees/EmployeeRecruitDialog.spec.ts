@@ -141,7 +141,7 @@ describe('employee recruitment', () => {
     mounted.push(navigation)
     await flushPromises()
     expect(navigation.get('a').attributes('href')).toBe('/agents/space-a/employee.jefa')
-    expect(navigation.text()).toContain('项目经理')
+    expect(navigation.text()).toContain('Jefa')
   })
 
   it('does not create a project or invent a running executor when recruiting without a project', async () => {

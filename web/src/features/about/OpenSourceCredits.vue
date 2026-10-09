@@ -8,224 +8,295 @@ const credits = computed(() => [
   {
     name: 'Vue.js',
     role: t('about.credits.roles.vue'),
-    logo: 'https://raw.githubusercontent.com/vuejs/docs/main/src/public/logo.svg',
     url: 'https://vuejs.org/',
   },
   {
     name: 'Vite',
     role: t('about.credits.roles.vite'),
-    logo: 'https://raw.githubusercontent.com/vitejs/vite/main/docs/public/logo-without-border.svg',
     url: 'https://vite.dev/',
   },
   {
     name: 'Pinia',
     role: t('about.credits.roles.pinia'),
-    logo: 'https://raw.githubusercontent.com/vuejs/pinia/v4/packages/docs/public/logo.svg',
     url: 'https://pinia.vuejs.org/',
   },
   {
     name: 'D3.js',
     role: t('about.credits.roles.d3'),
-    logo: 'https://raw.githubusercontent.com/d3/d3-logo/master/d3.svg',
     url: 'https://d3js.org/',
   },
   {
     name: 'Vitest',
     role: t('about.credits.roles.vitest'),
-    logo: 'https://raw.githubusercontent.com/vitest-dev/vitest/main/docs/public/logo-without-border.svg',
     url: 'https://vitest.dev/',
   },
   {
     name: 'Hono',
     role: t('about.credits.roles.hono'),
-    logo: 'https://raw.githubusercontent.com/honojs/website/main/public/images/logo.svg',
     url: 'https://hono.dev/',
   },
   {
     name: 'Neo4j',
     role: t('about.credits.roles.neo4j'),
-    logo: 'https://avatars.githubusercontent.com/u/201120?v=4',
     url: 'https://neo4j.com/',
   },
   {
     name: 'Zod',
     role: t('about.credits.roles.zod'),
-    logo: 'https://raw.githubusercontent.com/colinhacks/zod/main/packages/docs/public/logo/logo_square.png',
     url: 'https://zod.dev/',
   },
   {
     name: 'FastAPI',
     role: t('about.credits.roles.fastapi'),
-    logo: 'https://raw.githubusercontent.com/fastapi/fastapi/master/docs/en/docs/img/favicon.png',
     url: 'https://fastapi.tiangolo.com/',
   },
   {
     name: 'Graphiti',
     role: t('about.credits.roles.graphiti'),
-    logo: 'https://avatars.githubusercontent.com/u/132832125?s=128&v=4',
     url: 'https://github.com/getzep/graphiti',
   },
   {
     name: 'Model Context Protocol',
     role: t('about.credits.roles.mcp'),
-    logo: 'https://raw.githubusercontent.com/modelcontextprotocol/docs/main/favicon.svg',
     url: 'https://modelcontextprotocol.io/',
   },
 ])
 </script>
 
 <template>
-  <section class="open-source-credits">
-    <div class="credits-roll">
-      <header>
-        <h3>{{ t('about.credits.title') }}</h3>
+  <section class="open-source-credits" aria-labelledby="credits-title">
+    <header class="credits-heading">
+      <span class="credits-index" aria-hidden="true">03</span>
+      <div>
+        <h2 id="credits-title">{{ t('about.credits.title') }}</h2>
         <p>{{ t('about.credits.description') }}</p>
-      </header>
+      </div>
+    </header>
 
-      <div class="credit-grid">
+    <ul class="credit-list">
+      <li v-for="credit in credits" :key="credit.name" class="credit-item">
         <a
-          v-for="credit in credits"
-          :key="credit.name"
+          class="credit-row"
           :href="credit.url"
           target="_blank"
           rel="noreferrer"
         >
-          <span class="credit-mark">
-            <img :src="credit.logo" :alt="credit.name" />
-          </span>
-          <span class="credit-copy">
+          <span class="credit-role">{{ credit.role }}</span>
+          <span class="credit-name">
             <strong>{{ credit.name }}</strong>
-            <small>{{ credit.role }}</small>
+            <span class="credit-arrow" aria-hidden="true">↗</span>
           </span>
         </a>
-      </div>
+      </li>
+    </ul>
 
-      <p class="credit-source-note">{{ t('about.credits.sourceNote') }}</p>
-    </div>
+    <p class="credit-source-note">{{ t('about.credits.sourceNote') }}</p>
 
     <footer class="fuli-finale">
-      <div class="finale-brand">
+      <span class="finale-logo-plate">
         <img :src="fuliLogoUrl" alt="" aria-hidden="true" />
-        <div>
-          <strong>{{ t('common.brand') }}</strong>
-          <span>Context Graph</span>
-        </div>
+      </span>
+      <div class="finale-brand">
+        <strong>{{ t('common.brand') }}</strong>
+        <span>Context Graph</span>
       </div>
       <p>{{ t('about.credits.finale') }}</p>
+      <a
+        class="finale-site-link"
+        data-testid="about-website-link"
+        href="https://xn--8ovp9s.xn--m8txu.com/fuli/"
+        target="_blank"
+        rel="noreferrer"
+      >
+        {{ t('about.credits.website') }}
+      </a>
     </footer>
   </section>
 </template>
 
 <style scoped>
 .open-source-credits {
-  overflow: hidden;
-  border: 1px solid #d4dad5;
-  border-radius: 9px;
-  background: #fff;
-}
-
-.credits-roll { padding: 38px 40px 34px; }
-
-.credits-roll header h3 {
-  color: #2e3c34;
-  font-size: 19px;
-}
-
-.credits-roll header p {
-  margin-top: 7px;
-  color: #78817b;
-  font-size: 11px;
-}
-
-.credit-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-top: 28px;
-  border-top: 1px solid #e1e5e1;
-  border-left: 1px solid #e1e5e1;
-}
-
-.credit-grid a {
   min-width: 0;
-  min-height: 118px;
+}
+
+.credits-heading {
   display: grid;
-  grid-template-columns: 46px minmax(0, 1fr);
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+  padding-bottom: 30px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.credits-index {
+  padding-top: 6px;
+  color: var(--about-gold);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .08em;
+}
+
+.credits-heading h2 {
+  margin: 0;
+  color: var(--color-ink);
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 650;
+  letter-spacing: -.03em;
+  line-height: 1.2;
+}
+
+.credits-heading p {
+  margin-top: 10px;
+  color: var(--color-muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.credit-list {
+  display: grid;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--color-border);
+}
+
+.credit-item { display: block; }
+
+.credit-row {
+  display: grid;
+  grid-template-columns: minmax(0, .75fr) minmax(0, 1.25fr);
   align-items: center;
-  gap: 14px;
-  padding: 20px;
-  border-right: 1px solid #e1e5e1;
-  border-bottom: 1px solid #e1e5e1;
+  gap: 20px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--color-border);
   color: inherit;
   text-decoration: none;
+  transition: color var(--motion-fast), background-color var(--motion-fast);
 }
 
-.credit-grid a:hover { background: #f7f9f7; }
-.credit-grid a:focus-visible { outline: 2px solid #7e9487; outline-offset: -2px; }
-
-.credit-mark {
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
+.credit-row:hover {
+  color: var(--color-accent-hover);
+  background: var(--color-surface);
 }
 
-.credit-mark img {
-  width: 34px;
-  height: 34px;
-  object-fit: contain;
+.credit-row:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
 }
 
-.credit-copy { min-width: 0; display: grid; gap: 4px; }
-.credit-copy strong { color: #3a463f; font-size: 11px; }
-.credit-copy small { color: #89918b; font-size: 8px; }
+.credit-role {
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.credit-name {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  color: var(--color-ink);
+  font-size: 15px;
+  font-weight: 650;
+  text-align: right;
+}
+
+.credit-name strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.credit-arrow {
+  flex: 0 0 auto;
+  color: var(--about-gold);
+  font-size: 16px;
+  font-weight: 400;
+}
 
 .credit-source-note {
-  max-width: 760px;
   margin-top: 18px;
-  color: #929a94;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
   line-height: 1.55;
 }
 
 .fuli-finale {
-  min-height: 360px;
   display: grid;
-  place-content: center;
   justify-items: center;
-  padding: 64px 32px;
-  background: #222824;
-  color: #f2f4f2;
+  gap: 16px;
+  margin-top: 88px;
+  padding-top: 72px;
+  border-top: 1px solid var(--color-border);
   text-align: center;
 }
 
-.finale-brand {
-  display: flex;
-  align-items: center;
-  gap: 24px;
+.finale-logo-plate {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--about-logo-surface);
 }
 
-.finale-brand > img {
-  width: 124px;
-  height: 124px;
+.finale-logo-plate img {
+  width: 50px;
+  height: 50px;
   object-fit: contain;
-  filter: grayscale(1) brightness(0) invert(1);
 }
 
-.finale-brand > div { display: grid; gap: 3px; text-align: left; }
-.finale-brand strong { font-size: 34px; letter-spacing: -.04em; }
-.finale-brand span { color: #aeb7b0; font-size: 13px; }
+.finale-brand {
+  display: grid;
+  gap: 4px;
+}
+
+.finale-brand strong {
+  color: var(--color-ink);
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -.03em;
+}
+
+.finale-brand span {
+  color: var(--color-muted);
+  font-size: 12px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
 
 .fuli-finale > p {
-  max-width: 560px;
-  margin-top: 34px;
-  color: #b8c0ba;
-  font-size: 12px;
-  line-height: 1.6;
+  max-width: 420px;
+  color: var(--color-muted);
+  font-size: 14px;
+  line-height: 1.65;
 }
 
-@media (max-width: 1180px) {
-  .credits-roll { padding: 32px 28px; }
-  .credit-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .credit-grid a { padding: 16px; }
+.finale-site-link {
+  margin-top: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--color-accent);
+  color: var(--color-accent);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.finale-site-link:hover {
+  border-color: var(--color-accent-hover);
+  color: var(--color-accent-hover);
+}
+
+.finale-site-link:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 5px;
+}
+
+@media (max-width: 680px) {
+  .credits-heading { gap: 12px; }
+  .credit-row { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 14px; padding: 15px 0; }
+  .credit-name { font-size: 14px; }
+  .fuli-finale { margin-top: 64px; padding-top: 56px; }
 }
 </style>

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import VirtualDirectoryList from './VirtualDirectoryList.vue'
 
 describe('VirtualDirectoryList', () => {
-  it('virtualizes rows and keeps the watermark and scroll position in sync', async () => {
+  it('virtualizes rows and keeps the scroll position in sync', async () => {
     const wrapper = mount(VirtualDirectoryList, {
       props: {
         items: Array.from({ length: 101 }, (_, index) => ({ id: index })),
@@ -27,7 +27,6 @@ describe('VirtualDirectoryList', () => {
     })
 
     expect(wrapper.findAll('.test-row').length).toBeLessThan(101)
-    expect(wrapper.get('.virtual-directory-list__watermark').text()).toBe('#001')
     expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001/ 101')
 
     scroller.element.scrollTop = 68 * 50

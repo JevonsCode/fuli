@@ -2,12 +2,13 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
+import { nextTick } from 'vue'
 import { useConsoleStore } from '@/stores/console'
 import type { ProjectAgentRecord } from '@/types'
 import AgentProfilePage from './AgentProfilePage.vue'
 
-const { getJson, putJson } = vi.hoisted(() => ({ getJson: vi.fn(), putJson: vi.fn() }))
-vi.mock('@/api/client', () => ({ getJson, putJson, patchJson: vi.fn() }))
+const { getJson, postJson, putJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn(), putJson: vi.fn() }))
+vi.mock('@/api/client', () => ({ getJson, postJson, putJson, patchJson: vi.fn() }))
 const mounted: Array<{ unmount: () => void }> = []
 const person = (id: string): ProjectAgentRecord => ({ agentId: id, personalSpaceId: 'space-a',
   createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
@@ -29,7 +30,7 @@ beforeEach(() => {
   store.state = { mode: 'connected', activePersonalSpaceId: 'space-a', personalSpaces: [{ id: 'space-a', name: 'Synthetic space' }],
     personalProjects: ['project-a', 'project-old'].map(id => ({ project_id: id, personal_space_id: 'space-a', profile: { name: id === 'project-a' ? 'Synthetic active project' : 'Synthetic previous project' } })), projects: [], subscriptions: [] }
   store.runtimeStatus = 'ready'
-  getJson.mockReset(); putJson.mockReset()
+  getJson.mockReset(); postJson.mockReset(); putJson.mockReset()
   getJson.mockImplementation(async (url: string) => {
     const parsed = new URL(url, 'http://fixture')
     const id = parsed.searchParams.get('agentId') ?? 'alpha'
@@ -41,6 +42,7 @@ beforeEach(() => {
     throw new Error(`Unexpected request: ${url}`)
   })
   putJson.mockImplementation(async (_url: string, payload: { profile: ProjectAgentRecord['profile'] }) => ({ ...person('alpha'), profile: payload.profile }))
+  postJson.mockImplementation(async (_url: string, payload: { mode: string }) => payload.mode === 'list' ? { conversations: [] } : { events: [] })
 })
 afterEach(() => mounted.splice(0).forEach(wrapper => wrapper.unmount()))
 async function setup(path = '/agents/space-a/alpha') {
@@ -49,11 +51,98 @@ async function setup(path = '/agents/space-a/alpha') {
     { path: '/:pathMatch(.*)*', component: { template: '<div />' } },
   ] })
   await router.push(path)
-  const wrapper = mount(RouterView, { global: { plugins: [router] } })
+  const wrapper = mount(RouterView, { attachTo: document.body, global: { plugins: [router] } })
   mounted.push(wrapper); await flushPromises()
   return { router, wrapper }
 }
 describe('Agent profile integration', () => {
+  it('exposes conversation retention under an accessible secondary tab', async () => {
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (url.startsWith('/api/project-agents?')) return Promise.resolve([{ ...person('alpha'), memoryScope: 'reviewed_agent' }, person('beta'), person('gamma')])
+      return normal(url)
+    })
+    const { wrapper } = await setup()
+    const tab = wrapper.get('[role="tab"][aria-controls="agent-panel-conversations"]')
+    expect(tab.attributes('aria-selected')).toBe('false')
+    await tab.trigger('click')
+    expect(wrapper.get('[role="tabpanel"][id="agent-panel-conversations"]').attributes('aria-hidden')).toBe('false')
+    expect(wrapper.find('.agent-conversations').exists()).toBe(true)
+    const details = wrapper.get('.agent-conversations')
+    ;(details.element as HTMLDetailsElement).open = true
+    await details.trigger('toggle')
+    await flushPromises()
+    expect(postJson).toHaveBeenCalledWith('/api/agent-conversations/query', { personalSpaceId: 'space-a', personalProjectId: 'project-a', agentId: 'alpha', mode: 'list', limit: 20 })
+  })
+
+  it('supports roving keyboard navigation for profile tabs', async () => {
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (url.startsWith('/api/project-agents?')) {
+        return Promise.resolve([{ ...person('alpha'), memoryScope: 'reviewed_agent' }, person('beta'), person('gamma')])
+      }
+      return normal(url)
+    })
+    const { wrapper } = await setup()
+    const tabs = () => wrapper.findAll('[role="tab"]')
+    expect(tabs().map((tab) => tab.attributes('tabindex'))).toEqual(['0', '-1', '-1', '-1', '-1', '-1',])
+
+    const first = tabs()[0]!
+    ;(first.element as HTMLButtonElement).focus()
+    await first.trigger('keydown', { key: 'ArrowRight' })
+    await nextTick()
+    expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('id')).toBe('agent-tab-history')
+    expect(document.activeElement).toBe(wrapper.get('#agent-tab-history').element)
+
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(wrapper.get('#agent-tab-management').element, 'scrollIntoView', { configurable: true, value: scrollIntoView })
+    await wrapper.get('#agent-tab-history').trigger('keydown', { key: 'End' })
+    await nextTick()
+    expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('id')).toBe('agent-tab-management')
+    expect(document.activeElement).toBe(wrapper.get('#agent-tab-management').element)
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' })
+
+    await wrapper.get('#agent-tab-management').trigger('keydown', { key: 'Home' })
+    await nextTick()
+    expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('id')).toBe('agent-tab-overview')
+    expect(document.activeElement).toBe(wrapper.get('#agent-tab-overview').element)
+  })
+
+  it('puts current work first and keeps a long project list compact', async () => {
+    const store = useConsoleStore()
+    const projectIds = ['project-a', 'project-b', 'project-c', 'project-d', 'project-e', 'project-f', 'project-g']
+    store.state!.personalProjects = projectIds.map((id) => ({
+      project_id: id,
+      personal_space_id: 'space-a',
+      profile: { name: `Synthetic ${id}` },
+    }))
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (url.startsWith('/api/project-agent-assignments?')) {
+        return Promise.resolve(projectIds.map((personalProjectId) => ({
+          ...assignment('alpha', 'active', personalProjectId),
+          responsibility: 'Synthetic alpha role',
+        })))
+      }
+      if (url.startsWith('/api/project-agent-tasks?')) {
+        return Promise.resolve([task('active', 'alpha', 'Current evidence', 'running')])
+      }
+      return normal(url)
+    })
+
+    const { wrapper } = await setup()
+    const overview = wrapper.get('#agent-panel-overview')
+    expect(overview.findAll('.agent-resume-section').map((section) => section.classes())).toEqual([
+      expect.arrayContaining(['agent-current-work-section']),
+      expect.arrayContaining(['agent-projects-section']),
+    ])
+    expect(overview.findAll('.agent-current-project-list > .agent-project-item')).toHaveLength(4)
+    expect(overview.find('.agent-project-overflow').exists()).toBe(true)
+    expect(overview.findAll('.agent-project-overflow .agent-project-item')).toHaveLength(3)
+    expect(overview.findAll('.agent-project-link').map((link) => link.attributes('href'))[0]).toBe('/personal/space-a/projects/project-a/graph')
+    expect(overview.findAll('.agent-project-responsibility')).toHaveLength(0)
+  })
+
   it('uses recorded assignments, team policy and actual shared work for its resume', async () => {
     const { wrapper } = await setup()
     expect(wrapper.get('h1').text()).toBe('Aster')
@@ -68,7 +157,32 @@ describe('Agent profile integration', () => {
     const params = getJson.mock.calls.filter(([url]) => url.startsWith('/api/project-agent-tasks?')).map(([url]) => new URL(url, 'http://fixture').searchParams)
     expect(params).toHaveLength(1)
     expect(params[0]!.get('personalSpaceId')).toBe('space-a')
-    expect(params[0]!.get('agentId')).toBe('alpha')
+    expect(params[0]!.get('agentId')).toBeNull()
+    expect(params[0]!.get('limit')).toBe('200')
+  })
+
+  it('includes owner-only work and marks a full task page as partial', async () => {
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (url.startsWith('/api/project-agent-tasks?')) {
+        return Promise.resolve({
+          tasks: [
+            task('foreign', 'beta', 'Foreign task', 'running'),
+            ...Array.from({ length: 199 }, (_, index) => ({
+              ...task(`owner-${index}`, 'alpha', `Owner task ${index}`, 'running'),
+              ownerAgentId: 'alpha',
+              participants: [],
+            })),
+          ],
+        })
+      }
+      return normal(url)
+    })
+    const { wrapper } = await setup()
+    expect(wrapper.findAll('.agent-current-work-list a')).toHaveLength(6)
+    expect(wrapper.find('.agent-profile-partial').exists()).toBe(true)
+    expect(wrapper.find('.agent-current-work-section .agent-current-work-list').exists()).toBe(true)
+    expect(wrapper.get('.agent-current-work-section').text()).not.toContain('Foreign task')
   })
 
   it.each(['/agents/space-a/missing', '/agents/space-b/alpha'])('does not show a profile for %s', async path => {
@@ -88,7 +202,8 @@ describe('Agent profile integration', () => {
   it('ignores late detail responses after navigating to another Agent', async () => {
     const late = deferred<unknown>()
     const normal = getJson.getMockImplementation()!
-    getJson.mockImplementation((url: string) => url.startsWith('/api/project-agent-tasks?') && url.includes('agentId=alpha') ? late.promise : normal(url))
+    let taskCalls = 0
+    getJson.mockImplementation((url: string) => url.startsWith('/api/project-agent-tasks?') && taskCalls++ === 0 ? late.promise : normal(url))
     const { router, wrapper } = await setup()
     await router.push('/agents/space-a/beta'); await flushPromises()
     expect(wrapper.get('h1').text()).toBe('Birch')

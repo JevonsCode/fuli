@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import UiDisclosure from '@/components/UiDisclosure.vue'
 import SearchableSelect from '@/components/SearchableSelect.vue'
 import {
   isLoadingPreviewEnabled,
@@ -72,9 +73,8 @@ const router = useRouter()
 const loading = ref(false)
 const graph = ref<KnowledgeGraph | null>(null)
 const loadingPreview = isLoadingPreviewEnabled()
-const showInitialLoading = useMinimumLoadingDisplay(computed(() =>
-  loadingPreview || (loading.value && !graph.value),
-))
+const initialLoading = computed(() => loadingPreview || (loading.value && !graph.value))
+const showInitialLoading = useMinimumLoadingDisplay(initialLoading)
 const selectedItem = ref<KnowledgeItem | null>(null)
 const graphCanvas = ref<GraphCanvasApi | null>(null)
 const searchDraft = ref(queryValue(route.query.q))
@@ -915,8 +915,8 @@ function queryValues(value: unknown) {
         <button type="button" role="tab" :aria-selected="mode === 'graph'" @click="changeMode('graph')">{{ t('knowledge.workspace.workspace.view.graph') }}</button>
       </div>
       <GrowthLoading v-if="searching && !projectDiscovery?.checking" variant="inline" :label="t('knowledge.workspace.workspace.search.searching')" />
-      <GrowthLoading v-else-if="loading && !showInitialLoading && (mode !== 'graph' || graphView?.nodes.length)" variant="inline" :label="t('common.status.loadingKnowledge')" />
-      <span v-else-if="!showInitialLoading" class="muted">{{ countLabel }}</span>
+      <GrowthLoading v-else-if="loading && graph && !showInitialLoading && (mode !== 'graph' || graphView?.nodes.length)" variant="inline" :label="t('common.status.loadingKnowledge')" />
+      <span v-else-if="mode === 'graph' && !showInitialLoading" class="muted">{{ countLabel }}</span>
     </div>
 
     <div class="graph-toolbar">
@@ -974,7 +974,33 @@ function queryValues(value: unknown) {
         />
       </form>
 
-      <template v-if="mode === 'directory' && directorySection === 'knowledge'">
+
+
+      <div class="graph-view-actions">
+        <button
+          v-if="
+            personalProjectsOnly
+              && activePersonalProject
+              && store.state?.capabilities?.publishProject
+          "
+          class="toolbar-action"
+          type="button"
+          @click="publishingProject = activePersonalProject"
+        >
+          {{ t('knowledge.workspace.workspace.view.publishProject') }}
+        </button>
+        <div v-if="mode === 'graph'" class="graph-controls" role="group" :aria-label="t('knowledge.workspace.workspace.view.graphControls')">
+          <button class="toolbar-action" type="button" :aria-label="t('knowledge.workspace.workspace.view.zoomOut')" @click="graphCanvas?.zoomOut()">−</button>
+          <button class="toolbar-action" type="button" :aria-label="t('knowledge.workspace.workspace.view.zoomIn')" @click="graphCanvas?.zoomIn()">＋</button>
+          <button class="toolbar-action" type="button" @click="graphCanvas?.fit()">{{ t('knowledge.workspace.workspace.view.fit') }}</button>
+          <button class="toolbar-action" type="button" @click="graphCanvas?.reset()">{{ t('knowledge.workspace.workspace.view.reset') }}</button>
+        </div>
+        <button class="toolbar-action ui-button--icon" type="button" :aria-label="t('common.actions.refresh')" :title="t('common.actions.refresh')" @click="loadGraph"><span aria-hidden="true">↻</span></button>
+      </div>
+    </div>
+
+    <UiDisclosure v-if="mode === 'directory' && directorySection === 'knowledge'" class="knowledge-filter-disclosure" :title="t('ui.filters')" :open="filters.type !== 'all' || filters.quadrant !== 'all' || filters.profile !== 'all' || filters.humanChange !== 'all'">
+      <div class="knowledge-filter-controls">
         <SearchableSelect
           :model-value="filters.type"
           :options="typeSelectOptions"
@@ -1003,35 +1029,14 @@ function queryValues(value: unknown) {
           control-id="knowledge-human-change-filter"
           @update:model-value="updateQuery('human', $event)"
         />
-      </template>
-
-      <div class="graph-view-actions">
-        <button
-          v-if="
-            personalProjectsOnly
-              && activePersonalProject
-              && store.state?.capabilities?.publishProject
-          "
-          class="toolbar-action"
-          type="button"
-          @click="publishingProject = activePersonalProject"
-        >
-          {{ t('knowledge.workspace.workspace.view.publishProject') }}
-        </button>
-        <div v-if="mode === 'graph'" class="graph-controls" role="group" :aria-label="t('knowledge.workspace.workspace.view.graphControls')">
-          <button class="toolbar-action" type="button" :aria-label="t('knowledge.workspace.workspace.view.zoomOut')" @click="graphCanvas?.zoomOut()">−</button>
-          <button class="toolbar-action" type="button" :aria-label="t('knowledge.workspace.workspace.view.zoomIn')" @click="graphCanvas?.zoomIn()">＋</button>
-          <button class="toolbar-action" type="button" @click="graphCanvas?.fit()">{{ t('knowledge.workspace.workspace.view.fit') }}</button>
-          <button class="toolbar-action" type="button" @click="graphCanvas?.reset()">{{ t('knowledge.workspace.workspace.view.reset') }}</button>
-        </div>
-        <button class="toolbar-action" type="button" @click="loadGraph">{{ t('common.actions.refresh') }}</button>
       </div>
-    </div>
+    </UiDisclosure>
 
     <GrowthLoading
       v-if="showInitialLoading"
       :label="t('common.status.loadingKnowledge')"
     />
+    <div v-else-if="initialLoading" class="view-loading" aria-busy="true" />
     <div v-else class="knowledge-layout" :class="{ 'has-selection': Boolean(selectedItem) }">
       <KnowledgeDirectoryPanel
         v-if="mode === 'directory'"

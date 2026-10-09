@@ -91,7 +91,7 @@ test('state and API effects live outside page templates', () => {
   assert.match(consoleMessages, /label: '自动沉淀'/);
   assert.match(consoleMessages, /label: 'Agent 使用'/);
   assert.match(consoleMessages, /aria: '允许 Agent 调用 FULI'/);
-  assert.match(layout, /Graphiti \/ Neo4j/);
+  assert.match(connections, /Neo4j/);
 });
 
 test('knowledge directory, graph, filters, context, and exact item links share one feature', () => {
@@ -149,11 +149,11 @@ test('all existing workspace areas have Vue pages and API actions', () => {
   assert.match(review, /\/api\/personal-review/);
   assert.match(review, /\/api\/review/);
   assert.match(review, /pages\.review\.publicTitle/);
-  assert.match(connections, /pages\.connections\.title/);
+  assert.match(connections, /pages\.connections\.statusAria/);
   assert.match(connections, /pages\.connections\.unsubscribe/);
   assert.match(pageMessages, /viewGraph: '查看知识图谱'/);
   assert.match(pageMessages, /publicTitle: '公共项目维护审核'/);
-  assert.match(pageMessages, /title: '服务连接与订阅'/);
+  assert.match(pageMessages, /unsubscribe: '取消订阅'/);
   assert.match(pageMessages, /unsubscribe: '取消订阅'/);
 });
 
@@ -174,9 +174,10 @@ test('connection forms use the shared custom controls', () => {
 });
 
 test('the UI keeps the restrained visual system and routed anchor states', () => {
-  assert.match(css, /background:\s*#f4f5f3/);
-  assert.match(css, /html, body \{ height: 100%; overflow: hidden; \}/);
-  assert.match(vueCss, /\.primary-nav a\.is-active/);
+  assert.match(css, /background:\s*var\(--color-bg\)/);
+  assert.match(css, /html, body, #app \{ height: 100%; \}/);
+  assert.match(css, /html, body \{ overflow: hidden; \}/);
+  assert.match(css, /\.primary-nav > a\.is-active/);
   assert.match(vueCss, /\.vue-knowledge-view/);
   assert.doesNotMatch(`${css}${vueCss}`, /linear-gradient|radial-gradient/);
 });

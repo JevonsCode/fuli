@@ -140,7 +140,6 @@ describe('KnowledgeOrganizerPage', () => {
     expect(wrapper.text()).not.toContain('本页统计只覆盖')
     expect(wrapper.get('.virtual-directory-list__canvas').attributes('style')).toContain('height: 6868px')
     expect(wrapper.findAll('.organizer-row').length).toBeLessThan(101)
-    expect(wrapper.get('.virtual-directory-list__watermark').text()).toBe('#001')
     expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001/ 101')
 
     const directory = wrapper.get('.virtual-directory-list__scroller')
@@ -152,7 +151,6 @@ describe('KnowledgeOrganizerPage', () => {
     await flushPromises()
     expect(wrapper.findAll('.organizer-row')).toHaveLength(1)
     expect(wrapper.get('.organizer-row').text()).toContain('最后一页的知识')
-    expect(wrapper.get('.virtual-directory-list__watermark').text()).toBe('#001')
     expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001/ 001')
     wrapper.unmount()
   })

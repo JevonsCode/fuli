@@ -209,9 +209,6 @@ async function copyEvidenceSession(evidence: EvidenceRecord, index: number) {
 <template>
   <aside class="graph-inspector">
     <template v-if="item">
-      <p class="eyebrow">
-        {{ managementItem ? 'PROJECT MATERIAL' : item.itemKind === 'entity' ? 'ENTITY' : 'RELATIONSHIP' }}
-      </p>
       <h3>{{ item.itemKind === 'entity' ? item.title : rawEdge?.type }}</h3>
       <div class="inspector-identity">
         <span>
@@ -508,7 +505,6 @@ async function copyEvidenceSession(evidence: EvidenceRecord, index: number) {
       </template>
     </template>
     <template v-else>
-      <p class="eyebrow">{{ t('knowledge.workspace.inspector.contentDetails') }}</p>
       <h3>{{ t('knowledge.workspace.inspector.placeholderTitle') }}</h3>
       <p class="inspector-placeholder">{{ t('knowledge.workspace.inspector.placeholderCopy') }}</p>
     </template>

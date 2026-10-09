@@ -1,4 +1,7 @@
 import { createI18n } from 'vue-i18n'
+import { uiMessages } from './messages/ui'
+import { overviewMessages } from './messages/overview'
+import { agentRedesignMessages } from './messages/agent-redesign'
 
 import { agentProfileMessages } from './messages/agent-profiles'
 import { commonMessages } from './messages/common'
@@ -63,6 +66,9 @@ function localeForLanguage(language: string): AppLocale | null {
 
 export const messages = {
   'zh-CN': {
+    ui: uiMessages['zh-CN'],
+    overview: overviewMessages['zh-CN'],
+    agentRedesign: agentRedesignMessages['zh-CN'],
     agentProfiles: agentProfileMessages['zh-CN'],
     attention: attentionMessages['zh-CN'],
     employees: employeeMessages['zh-CN'],
@@ -83,6 +89,9 @@ export const messages = {
     writingTaste: writingTasteMessages['zh-CN'],
   },
   'en-US': {
+    ui: uiMessages['en-US'],
+    overview: overviewMessages['en-US'],
+    agentRedesign: agentRedesignMessages['en-US'],
     agentProfiles: agentProfileMessages['en-US'],
     attention: attentionMessages['en-US'],
     employees: employeeMessages['en-US'],

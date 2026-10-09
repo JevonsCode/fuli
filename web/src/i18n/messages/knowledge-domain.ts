@@ -232,7 +232,7 @@ export const knowledgeDomainMessages = {
     reviewStates: {
       confirmed: 'Confirmed',
       agent_confirmed: 'Agent confirmed',
-      pending: 'Pending confirmation',
+      pending: 'Pending',
     },
     actors: {
       user: 'User',

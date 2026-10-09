@@ -22,7 +22,7 @@ test('external knowledge sections use compact spacing and accessible help links'
 });
 
 test('external knowledge create action uses a flat button and a geometry-based centered icon', () => {
-  const actionStart = connectionStyles.indexOf('.external-create-action {');
+  const actionStart = connectionStyles.indexOf('.external-create-action-icon {');
   const actionEnd = connectionStyles.indexOf('@media', actionStart);
   const actionStyles = connectionStyles.slice(actionStart, actionEnd);
 
@@ -30,7 +30,10 @@ test('external knowledge create action uses a flat button and a geometry-based c
   assert.notEqual(actionEnd, -1);
   assert.doesNotMatch(actionStyles, /linear-gradient/);
   assert.doesNotMatch(actionStyles, /box-shadow/);
-  assert.match(actionStyles, /background:\s*#426f58/);
+  const page = readFileSync('web/src/pages/ConnectionsPage.vue', 'utf8');
+  assert.match(page, /class="primary-action external-create-action"/);
+  const primitives = readFileSync('web/src/styles/primitives.css', 'utf8');
+  assert.match(primitives, /background:\s*var\(--color-accent\)/);
   assert.match(actionStyles, /\.external-create-action-icon::before/);
   assert.match(actionStyles, /left:\s*50%/);
   assert.match(actionStyles, /top:\s*50%/);

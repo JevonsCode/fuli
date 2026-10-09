@@ -4,11 +4,13 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import { i18n } from './i18n'
 import { router } from './router'
+import './styles/tokens.css'
 import '../styles.css'
 import './styles/console-responsive.css'
 import './styles/connections.css'
 import './styles/knowledge-graph.css'
 import './styles/vue.css'
+import './styles/primitives.css'
 
 const app = createApp(App)
 app.use(createPinia())

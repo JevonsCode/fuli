@@ -1,5 +1,5 @@
 <script setup lang="ts">
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   label: string
   variant?: 'page' | 'compact' | 'inline'
 }>(), { variant: 'page' })
@@ -8,35 +8,43 @@ withDefaults(defineProps<{
 <template>
   <span
     class="growth-loading"
-    :class="[`growth-loading--${variant}`, { 'view-loading': variant === 'page' }]"
+    :class="[`growth-loading--${props.variant}`, { 'view-loading': props.variant === 'page' }]"
     role="status"
     aria-live="polite"
     aria-atomic="true"
+    :aria-label="props.label"
   >
     <span class="growth-loading__content">
       <span class="growth-loading__visual" aria-hidden="true">
-        <span class="growth-loading__chart" aria-hidden="true">
-          <span class="growth-loading__bar growth-loading__bar--1"><i /></span>
-          <span class="growth-loading__bar growth-loading__bar--2"><i /></span>
-          <span class="growth-loading__bar growth-loading__bar--3"><i /></span>
-          <span class="growth-loading__bar growth-loading__bar--4"><i /></span>
-          <span class="growth-loading__bar growth-loading__bar--5"><i /></span>
-          <span class="growth-loading__baseline" />
-        </span>
+        <svg
+          class="growth-loading__mark"
+          viewBox="0 0 48 48"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path class="growth-loading__arc growth-loading__arc--1" d="M24 5 A19 19 0 0 1 40.45 33.5" />
+          <path class="growth-loading__arc growth-loading__arc--2" d="M40.45 33.5 A19 19 0 0 1 7.55 33.5" />
+          <path class="growth-loading__arc growth-loading__arc--3" d="M7.55 33.5 A19 19 0 0 1 24 5" />
+        </svg>
       </span>
-      <span class="growth-loading__label">{{ label }}</span>
+      <span class="growth-loading__label">{{ props.label }}</span>
     </span>
   </span>
 </template>
 
 <style scoped>
 .growth-loading {
-  --growth-scale: 1;
+  --growth-loading-size: 48px;
+  display: block;
   min-width: 0;
+  color: var(--color-muted, #667085);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.4;
 }
 
 .growth-loading--compact {
-  --growth-scale: .65;
+  --growth-loading-size: 28px;
   display: grid;
   place-items: center;
   min-height: 104px;
@@ -44,211 +52,109 @@ withDefaults(defineProps<{
 }
 
 .growth-loading--inline {
-  --growth-scale: .28;
+  --growth-loading-size: 16px;
   display: inline-flex;
   max-width: 100%;
   vertical-align: middle;
-  font: inherit;
-}
-
-.growth-loading__visual {
-  display: block;
-  width: calc(126px * var(--growth-scale));
-  height: calc(70px * var(--growth-scale));
-  flex: 0 0 auto;
 }
 
 .growth-loading__content {
   display: grid;
   justify-items: center;
   min-width: 0;
+  gap: 8px;
 }
 
 .growth-loading--inline .growth-loading__content {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
-.growth-loading--inline .growth-loading__label {
-  margin: 0;
-  color: inherit;
-  font: inherit;
+.growth-loading__visual {
+  display: block;
+  width: var(--growth-loading-size);
+  height: var(--growth-loading-size);
+  flex: 0 0 auto;
 }
 
-.growth-loading__chart {
-  position: relative;
-  width: 126px;
-  height: 70px;
-  display: flex;
-  align-items: end;
-  justify-content: center;
-  gap: 7px;
-  padding: 0 8px 7px;
-  contain: layout paint;
-  transform: scale(var(--growth-scale));
-  transform-origin: top left;
+.growth-loading__mark {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
 
-.growth-loading__bar {
-  --rest: 20%;
-  --peak: 76%;
-  --delay: 0s;
-  --tide-delay: 0s;
-  position: relative;
-  z-index: 1;
-  width: 15px;
-  flex: 0 0 15px;
-  overflow: hidden;
-  border: 1px solid rgba(70, 100, 82, .15);
-  border-radius: 5px 5px 3px 3px;
-  background: rgba(255, 255, 255, .48);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .72);
+.growth-loading__arc {
+  --growth-loading-delay: 0s;
+  --growth-loading-start: 0deg;
+  --growth-loading-end: 0deg;
+  fill: none;
+  stroke: var(--color-accent, #2563EB);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3.25;
+  opacity: .32;
+  transform: rotate(var(--growth-loading-start));
+  transform-box: view-box;
+  transform-origin: center;
+  animation: growth-loading-arc 2.4s cubic-bezier(.45, 0, .22, 1) var(--growth-loading-delay) infinite;
+  will-change: transform, opacity;
 }
 
-.growth-loading__bar i {
-  position: absolute;
-  right: 1px;
-  bottom: 1px;
-  left: 1px;
-  height: var(--rest);
-  border-radius: 2px 2px 1px 1px;
-  background: linear-gradient(180deg, #8fae9c 0%, #5f836f 100%);
-  box-shadow: 0 -1px 4px rgba(70, 109, 87, .12);
-  animation: growth-loading-rise 3.2s cubic-bezier(.45, 0, .22, 1) var(--delay) infinite;
-  will-change: height;
+.growth-loading__arc--1 {
+  --growth-loading-start: -12deg;
+  --growth-loading-end: -18deg;
+  --growth-loading-delay: 0s;
 }
 
-.growth-loading__bar i::before {
-  content: '';
-  position: absolute;
-  top: -3px;
-  left: -38%;
-  width: 176%;
-  height: 7px;
-  border-radius: 50%;
-  background: #a5beaf;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35);
-  animation: growth-loading-tide 1.35s ease-in-out var(--tide-delay) infinite alternate;
+.growth-loading__arc--2 {
+  --growth-loading-start: 10deg;
+  --growth-loading-end: 18deg;
+  --growth-loading-delay: .12s;
 }
 
-.growth-loading__bar--1 {
-  --rest: 28%;
-  --peak: 62%;
-  height: 26px;
-}
-
-.growth-loading__bar--2 {
-  --rest: 22%;
-  --peak: 70%;
-  --delay: .12s;
-  --tide-delay: -.12s;
-  height: 35px;
-}
-
-.growth-loading__bar--3 {
-  --rest: 25%;
-  --peak: 78%;
-  --delay: .24s;
-  --tide-delay: -.24s;
-  height: 44px;
-}
-
-.growth-loading__bar--4 {
-  --rest: 20%;
-  --peak: 86%;
-  --delay: .36s;
-  --tide-delay: -.36s;
-  height: 53px;
-}
-
-.growth-loading__bar--5 {
-  --rest: 24%;
-  --peak: 94%;
-  --delay: .48s;
-  --tide-delay: -.48s;
-  height: 62px;
-}
-
-.growth-loading__baseline {
-  position: absolute;
-  right: 4px;
-  bottom: 6px;
-  left: 4px;
-  height: 1px;
-  overflow: hidden;
-  background: linear-gradient(90deg, transparent, rgba(72, 103, 85, .22) 18%, rgba(72, 103, 85, .22) 82%, transparent);
-}
-
-.growth-loading__baseline::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -32%;
-  width: 32%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .92), transparent);
-  animation: growth-loading-reflection 3.2s ease-in-out infinite;
+.growth-loading__arc--3 {
+  --growth-loading-start: -8deg;
+  --growth-loading-end: 24deg;
+  --growth-loading-delay: .24s;
 }
 
 .growth-loading__label {
-  margin-top: 11px;
-  color: #778079;
-  font-size: 12px;
-  line-height: 1.5;
+  color: var(--color-muted, #667085);
+  font-size: 14px;
+  line-height: 1.4;
   text-align: center;
   overflow-wrap: anywhere;
 }
 
-@keyframes growth-loading-rise {
-  0%, 12% {
-    height: var(--rest);
-  }
-
-  50%, 68% {
-    height: var(--peak);
-  }
-
-  100% {
-    height: var(--rest);
-  }
+.growth-loading--inline .growth-loading__label {
+  text-align: left;
 }
 
-@keyframes growth-loading-tide {
-  from {
-    transform: translateX(-5%) rotate(-1deg);
+@keyframes growth-loading-arc {
+  0%, 10% {
+    opacity: .32;
+    transform: rotate(var(--growth-loading-start));
   }
 
-  to {
-    transform: translateX(5%) rotate(1deg);
-  }
-}
-
-@keyframes growth-loading-reflection {
-  0%, 18% {
-    transform: translateX(0);
-    opacity: 0;
+  38%, 60% {
+    opacity: 1;
+    transform: rotate(0deg);
   }
 
-  38%, 68% {
-    opacity: .72;
-  }
-
-  86%, 100% {
-    transform: translateX(420%);
-    opacity: 0;
+  84%, 100% {
+    opacity: .24;
+    transform: rotate(var(--growth-loading-end));
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .growth-loading__bar i {
-    height: var(--peak);
+  .growth-loading__arc {
+    opacity: 1;
+    transform: none;
     animation: none;
-  }
-
-  .growth-loading__bar i::before,
-  .growth-loading__baseline::after {
-    animation: none;
+    will-change: auto;
   }
 }
 </style>

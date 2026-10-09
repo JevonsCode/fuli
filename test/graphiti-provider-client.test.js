@@ -6,6 +6,17 @@ import {
   ProviderRequestError
 } from '../src/graphiti/provider-client.js';
 
+test('current-task lookup bounds its own timeout without increasing a stricter client timeout', async () => {
+  for (const [requestTimeoutMs, lookupTimeoutMs, maximumMs] of [[1000, 15, 250], [15, 1500, 250]]) {
+    const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token', requestTimeoutMs,
+      fetchImpl: async (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })) });
+    const start = performance.now();
+    await assert.rejects(client.currentTaskContext({ session_id: 'synthetic' }, { timeoutMs: lookupTimeoutMs }),
+      error => error instanceof ProviderRequestError && error.code === 'provider_timeout');
+    assert.ok(performance.now() - start < maximumMs);
+  }
+});
+
 test('provider client sends bearer-authenticated structured commits', async () => {
   const calls = [];
   const client = new GraphitiProviderClient({

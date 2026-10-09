@@ -164,6 +164,97 @@ describe('ProjectAgentsPage', () => {
     expect(wrapper.find('.project-agent-row-capabilities').exists()).toBe(false)
   })
 
+  it('opens the linked task diagnostics so a task deep link reveals its target', async () => {
+    route.query = { agent: 'shared-agent', task: 'task-linked' }
+    getJson.mockImplementation((url: string) => {
+      if (url.includes('/api/project-agents?')) return Promise.resolve(agents)
+      if (url.includes('/api/project-agent-tasks?')) return Promise.resolve({ tasks: [{
+        task_id: 'task-linked', title: '查看已链接任务', personal_project_id: 'project-a', status: 'running',
+        participants: [{ agent_id: 'shared-agent', role: 'lead', status: 'running' }], run_id: 'run-linked',
+      }] })
+      return Promise.resolve([])
+    })
+
+    const { wrapper } = mountPage()
+    await flushPromises()
+
+    const task = wrapper.get('#task-task-linked')
+    expect(task.classes()).toContain('is-linked')
+    expect((task.get('[data-task-details]').element as HTMLDetailsElement).open).toBe(true)
+    wrapper.unmount()
+  })
+
+  it.each(['target-agent', 'legacy-target'])('keeps a task deep-link Agent visible when its assignment is in another project (%s)', async (routeAgent) => {
+    route.query = { agent: routeAgent, project: 'project-a', task: 'task-cross-project' }
+    const target = structuredClone(agents[0]!)
+    target.agentId = 'target-agent'
+    target.legacyAgentIds = ['legacy-target']
+    target.profile.name = '目标 Agent'
+    target.assignments = [{ ...target.assignments![0]!, assignmentId: 'target-b', agentId: 'target-agent', personalProjectId: 'project-b' }]
+    const firstProjectAgent = structuredClone(agents[0]!)
+    firstProjectAgent.agentId = 'first-project-agent'
+    firstProjectAgent.profile.name = '项目 A 第一位'
+    firstProjectAgent.assignments = [{ ...firstProjectAgent.assignments![0]!, assignmentId: 'first-a', agentId: 'first-project-agent', personalProjectId: 'project-a' }]
+    getJson.mockImplementation((url: string) => {
+      if (url.includes('/api/project-agents?')) return Promise.resolve([firstProjectAgent, target])
+      if (url.includes('/api/project-agent-tasks?')) return Promise.resolve({ tasks: [{
+        task_id: 'task-cross-project', title: '跨项目任务', personal_project_id: 'project-a', status: 'running',
+        lead_agent_id: 'target-agent', participants: [{ agent_id: 'target-agent', role: 'lead', status: 'running' }],
+      }] })
+      return Promise.resolve([])
+    })
+
+    const { wrapper } = mountPage()
+    await flushPromises()
+
+    expect(wrapper.get('.project-agent-detail-heading h3').text()).toContain('目标 Agent')
+    expect(wrapper.get('#task-task-cross-project').text()).toContain('跨项目任务')
+    expect(wrapper.findAll('.project-agent-row').some(row => row.text().includes('目标 Agent'))).toBe(true)
+
+    const filter = wrapper.get('.project-agents-project-filter')
+    await filter.get('.project-scope-trigger').trigger('click')
+    await filter.get('input[value="project-a"]').setValue(false)
+    expect(wrapper.findAll('.project-agent-row')).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it.each(['owner_agent_id', 'lead_agent_id', 'coordinator_agent_id'])('loads a linked %s-only task omitted by the participant-filtered API', async (identity) => {
+    route.query = { agent: 'shared-agent', project: 'project-a', task: 'ownership-only' }
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (url.startsWith('/api/project-agent-tasks?')) return Promise.resolve([])
+      if (url.startsWith('/api/project-agent-tasks/ownership-only?')) return Promise.resolve({
+        task_id: 'ownership-only', title: '负责人任务', personal_space_id: 'personal-1',
+        personal_project_id: 'project-a', status: 'running', participants: [], [identity]: 'shared-agent',
+      })
+      return original(url)
+    })
+    const { wrapper } = mountPage()
+    await flushPromises()
+    expect(wrapper.get('#task-ownership-only').text()).toContain('负责人任务')
+    const scopedRequest = getJson.mock.calls.map(([url]) => new URL(String(url), 'http://test.local'))
+      .find(url => url.pathname === '/api/project-agent-tasks' && url.searchParams.has('personalProjectId'))!
+    expect(scopedRequest.searchParams.has('agentId')).toBe(false)
+    expect(scopedRequest.searchParams.get('limit')).toBe('200')
+    wrapper.unmount()
+  })
+
+  it('filters space-wide tasks by Agent and marks a partial response without claiming it is empty', async () => {
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (url.startsWith('/api/project-agent-tasks?')) return Promise.resolve({ has_more: true, tasks: [{
+        task_id: 'foreign', title: '其他 Agent 的任务', personal_space_id: 'personal-1',
+        personal_project_id: 'project-a', status: 'running', owner_agent_id: 'someone-else', participants: [],
+      }] })
+      return original(url)
+    })
+    const { wrapper } = mountPage()
+    await flushPromises()
+    expect(wrapper.find('#task-foreign').exists()).toBe(false)
+    expect(wrapper.find('[data-task-partial]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('starts with loading during console bootstrap, never a false empty roster', async () => {
     let finishBootstrap!: (value: unknown) => void
     let finishRoster!: (value: unknown) => void
@@ -536,7 +627,7 @@ describe('ProjectAgentsPage', () => {
       getJson.mockImplementation((url: string) => {
         if (!url.includes('/api/project-agent-tasks?')) return originalGet(url)
         return Promise.resolve({ tasks: [{
-          task_id: 'task-runtime', title: '独立执行器验证', personal_project_id: 'project-a',
+          task_id: 'task-runtime', owner_agent_id: 'shared-agent', title: '独立执行器验证', personal_project_id: 'project-a',
           status: 'blocked', participants: [], execution_summary: [{
             agent_id: 'shared-agent', worker_id: 'worker-a', participant_role: 'lead',
             source_application: 'codex', source_session_id: 'reporter-session',
@@ -569,7 +660,7 @@ describe('ProjectAgentsPage', () => {
 
   it('shows a reported empty execution summary without treating an unreported field as empty', async () => {
     const task = {
-      task_id: 'task-empty-summary', title: '等待执行者', personal_project_id: 'project-a', status: 'running', participants: [], execution_summary: [],
+      task_id: 'task-empty-summary', owner_agent_id: 'shared-agent', title: '等待执行者', personal_project_id: 'project-a', status: 'running', participants: [], execution_summary: [],
     }
     getJson.mockImplementation((url: string) => {
       if (url.includes('/api/project-agents?')) return Promise.resolve(agents)
@@ -607,7 +698,7 @@ describe('ProjectAgentsPage', () => {
 
   it('shows worker event evidence separately when execution summary is absent', async () => {
     const task = {
-      task_id: 'task-worker-event', title: '验证工作进程', personal_project_id: 'project-a', status: 'completed', participants: [],
+      task_id: 'task-worker-event', owner_agent_id: 'shared-agent', title: '验证工作进程', personal_project_id: 'project-a', status: 'completed', participants: [],
       events: [{
         event_id: 'event-worker', task_id: 'task-worker-event', status: 'completed',
         summary: '完成独立验证', worker_id: 'worker-event-1', worker_label: '验证工作进程',
@@ -639,7 +730,7 @@ describe('ProjectAgentsPage', () => {
 
   it('renders the reported staffing decision without treating configured Agents as workers', async () => {
     const task = {
-      task_id: 'task-routing-decision', title: '拆分验证任务', personal_project_id: 'project-a', status: 'running', participants: [],
+      task_id: 'task-routing-decision', owner_agent_id: 'shared-agent', title: '拆分验证任务', personal_project_id: 'project-a', status: 'running', participants: [],
       routing_decision: {
         decision_id: 'decision-1', coordinator_agent_id: 'coordinator-1', complexity: 'high',
         complexity_basis: ['多个独立工作流'], outcome: 'parallel_reuse', reason: '已有能力覆盖',

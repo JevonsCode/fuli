@@ -126,49 +126,49 @@ function toggleProject(id: string) {
 <style scoped>
 .project-scope-picker { position: relative; min-width: 0; margin-bottom: 18px; }
 .project-scope-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
-.project-scope-label { color: #33483c; font-size: 13px; font-weight: 600; }
-.project-scope-count { color: #58675d; font-size: 12px; }
-.project-scope-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #bdcbbf; border-radius: 8px; background: #fff; color: #25392e; font: inherit; text-align: left; cursor: pointer; }
+.project-scope-label { color: var(--color-ink); font-size: 13px; font-weight: 600; }
+.project-scope-count { color: var(--color-muted); font-size: 12px; }
+.project-scope-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-ink); font: inherit; text-align: left; cursor: pointer; }
 .project-scope-trigger svg { flex-shrink: 0; }
 .project-scope-value { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .has-count .project-scope-value { overflow: visible; white-space: normal; line-height: 1.4; }
-.project-scope-multiple { color: #58675d; font-size: 11px; white-space: nowrap; }
-.project-scope-trigger:hover:not(:disabled) { border-color: #315c43; }
-.project-scope-trigger[aria-expanded=true] { border-color: #315c43; }
-.project-scope-trigger:disabled { background: #f2f5f2; color: #65746a; cursor: default; }
-.project-scope-panel { position: absolute; z-index: 5; inset: auto 0 auto; margin-top: 6px; padding: 8px; border: 0; border-radius: 12px; background: #fff; box-shadow: 0 8px 30px #12291c2e; }
-.project-scope-search { display: block; box-sizing: border-box; width: 100%; min-height: 40px; padding: 8px 10px; border: 0; border-radius: 6px; background: #f1f5f2; color: #25392e; font: inherit; }
-.project-scope-search::placeholder { color: #59695f; }
+.project-scope-multiple { color: var(--color-muted); font-size: 12px; white-space: nowrap; }
+.project-scope-trigger:hover:not(:disabled) { border-color: var(--color-ink); }
+.project-scope-trigger[aria-expanded=true] { border-color: var(--color-ink); }
+.project-scope-trigger:disabled { background: var(--color-surface-subtle); color: var(--color-muted); cursor: default; }
+.project-scope-panel { position: absolute; z-index: 5; inset: auto 0 auto; margin-top: 6px; padding: 8px; border: 0; border-radius: 12px; background: var(--color-surface); box-shadow: var(--shadow-popover); }
+.project-scope-search { display: block; box-sizing: border-box; width: 100%; min-height: 40px; padding: 8px 10px; border: 0; border-radius: 6px; background: var(--color-surface-subtle); color: var(--color-ink); font: inherit; }
+.project-scope-search::placeholder { color: var(--color-muted); }
 .project-scope-bulk, .project-scope-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .project-scope-bulk { margin-top: 4px; }
-.project-scope-bulk button, .project-scope-footer button { min-height: 40px; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: #315c43; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
-.project-scope-bulk button:hover:not(:disabled), .project-scope-footer button:hover { background: #edf3ee; }
-.project-scope-bulk button:disabled { color: #65746a; cursor: default; }
+.project-scope-bulk button, .project-scope-footer button { min-height: 40px; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--color-ink); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.project-scope-bulk button:hover:not(:disabled), .project-scope-footer button:hover { background: var(--color-surface-subtle); }
+.project-scope-bulk button:disabled { color: var(--color-muted); cursor: default; }
 .project-scope-list { max-height: min(240px, 32dvh); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
-.project-scope-option { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 8px 10px; border-radius: 6px; color: #344a3c; cursor: pointer; box-sizing: border-box; }
-.project-scope-option:hover { background: #f1f5f2; }
+.project-scope-option { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 8px 10px; border-radius: 6px; color: var(--color-ink); cursor: pointer; box-sizing: border-box; }
+.project-scope-option:hover { background: var(--color-surface-subtle); }
 .project-scope-option > span { min-width: 0; overflow-wrap: anywhere; }
-.project-scope-project-id { display: block; margin-top: 2px; color: #58675d; font-size: 12px; line-height: 1.4; }
-.project-scope-option.is-selected { background: #f1f6f2; color: #244b34; }
-.project-scope-option.is-selected:hover { background: #e7f0e9; }
-.project-scope-option input { appearance: none; display: grid; place-content: center; flex: 0 0 17px; width: 17px; height: 17px; margin: 0; border: 1px solid #8da292; border-radius: 4px; background: #fff; cursor: pointer; }
-.project-scope-option input:checked, .project-scope-option input:indeterminate { border-color: #315c43; background: #315c43; }
-.project-scope-option input:checked::after { content: ''; width: 7px; height: 4px; border-left: 1.6px solid #fff; border-bottom: 1.6px solid #fff; transform: translateY(-1px) rotate(-45deg); }
-.project-scope-option input:indeterminate::after { content: ''; width: 7px; height: 1.5px; background: #fff; }
+.project-scope-project-id { display: block; margin-top: 2px; color: var(--color-muted); font-size: 12px; line-height: 1.4; }
+.project-scope-option.is-selected { background: var(--color-surface-subtle); color: var(--color-accent); }
+.project-scope-option.is-selected:hover { background: var(--color-surface-subtle); }
+.project-scope-option input { appearance: none; display: grid; place-content: center; flex: 0 0 17px; width: 17px; height: 17px; margin: 0; border: 1px solid var(--color-muted); border-radius: 4px; background: var(--color-surface); cursor: pointer; }
+.project-scope-option input:checked, .project-scope-option input:indeterminate { border-color: var(--color-ink); background: var(--color-ink); }
+.project-scope-option input:checked::after { content: ''; width: 7px; height: 4px; border-left: 1.6px solid var(--color-surface); border-bottom: 1.6px solid var(--color-surface); transform: translateY(-1px) rotate(-45deg); }
+.project-scope-option input:indeterminate::after { content: ''; width: 7px; height: 1.5px; background: var(--color-surface); }
 .project-scope-option input:disabled { opacity: .55; cursor: default; }
 .project-scope-all { flex: 1; font-weight: 600; }
-.project-scope-all small { margin-left: 4px; color: #59695f; font-size: 12px; font-weight: 400; }
-.project-scope-footer { padding-top: 4px; color: #59695f; font-size: 12px; }
+.project-scope-all small { margin-left: 4px; color: var(--color-muted); font-size: 12px; font-weight: 400; }
+.project-scope-footer { padding-top: 4px; color: var(--color-muted); font-size: 12px; }
 .project-scope-footer > span { padding-left: 10px; }
-.project-scope-empty { margin: 16px 10px; color: #59695f; font-size: 13px; }
-.project-scope-hint { margin: 7px 0 0; color: #58675d; font-size: 12px; }
+.project-scope-empty { margin: 16px 10px; color: var(--color-muted); font-size: 13px; }
+.project-scope-hint { margin: 7px 0 0; color: var(--color-muted); font-size: 12px; }
 .is-inline .project-scope-panel { position: static; margin: 0; padding: 0; border-radius: 0; box-shadow: none; }
-.is-inline .project-scope-search { min-height: 42px; background: #f3f5f3; }
+.is-inline .project-scope-search { min-height: 42px; background: var(--color-surface-subtle); }
 .is-inline .project-scope-list { display: grid; gap: 3px; }
 .is-inline .project-scope-hint { margin-top: 12px; }
 .is-compact { margin-bottom: 0; font-size: 13px; }
 .is-compact .project-scope-heading { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .is-compact .project-scope-panel { z-index: 10; min-width: min(320px, calc(100vw - 40px)); }
 .is-compact .project-scope-hint { padding: 0 10px 6px; line-height: 1.5; }
-.project-scope-picker :is(button, input):focus-visible { outline: 2px solid #356448; outline-offset: 2px; }
+.project-scope-picker :is(button, input):focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 </style>

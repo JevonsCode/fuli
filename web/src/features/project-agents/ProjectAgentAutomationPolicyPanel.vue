@@ -286,13 +286,13 @@ function stringValue(value: unknown) {
 </template>
 
 <style scoped>
-.project-team { grid-column: 1 / -1; min-width: 0; padding-block: 12px; border-top: 1px solid #dfe5e0; }
+.project-team { grid-column: 1 / -1; min-width: 0; padding-block: 12px; border-top: 1px solid var(--color-border); }
 .project-team-peers { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.project-team-peers > * { padding: 7px 10px; background: #edf3ee; border: 1px solid #cad9cd; border-radius: 6px; color: #31453a; font-size: 12px; }
-.project-team-summary { margin: 9px 0; color: #53665a; font-size: 12px; }
+.project-team-peers > * { padding: 7px 10px; background: var(--color-surface-subtle); border: 1px solid var(--color-border-strong); border-radius: 6px; color: var(--color-ink); font-size: 12px; }
+.project-team-summary { margin: 9px 0; color: var(--color-muted); font-size: 12px; }
 .project-team-members { margin: 10px 0 16px 18px; padding: 0; display: grid; gap: 9px; list-style: none; }
-.project-team-members button { display: grid; gap: 3px; text-align: start; max-width: 100%; background: transparent; border: 0; color: #31453a; }
-.project-team-members span { color: #596b60; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.project-team-members button { display: grid; gap: 3px; text-align: start; max-width: 100%; background: transparent; border: 0; color: var(--color-ink); }
+.project-team-members span { color: var(--color-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .project-team summary { cursor: pointer; font-size: 12px; }
 .team-lead-field { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-block: 14px; }
 .team-lead-field select { max-width: 100%; padding: 7px; }
@@ -305,16 +305,16 @@ function stringValue(value: unknown) {
   align-items: center;
   gap: 14px;
   padding: 11px 0;
-  border-block: 1px solid #dfe5e0;
+  border-block: 1px solid var(--color-border);
 }
 .project-agent-automation-policy > header { min-width: 0; }
-.project-agent-automation-policy h3 { color: #31453a; font-size: 12px; line-height: 1.35; }
+.project-agent-automation-policy h3 { color: var(--color-ink); font-size: 12px; line-height: 1.35; }
 .project-agent-automation-policy header span {
   display: block;
   margin-top: 3px;
   overflow: hidden;
-  color: #68756d;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -332,13 +332,13 @@ function stringValue(value: unknown) {
   padding: 2px 16px;
   cursor: pointer;
 }
-.project-agent-policy-options label + label { border-inline-start: 1px solid #e2e7e3; }
+.project-agent-policy-options label + label { border-inline-start: 1px solid var(--color-border); }
 .project-agent-policy-options label > span { min-width: 0; display: grid; gap: 3px; }
-.project-agent-policy-options strong { color: #3d5045; font-size: 10px; line-height: 1.4; }
+.project-agent-policy-options strong { color: var(--color-ink); font-size: 12px; line-height: 1.4; }
 .project-agent-policy-options small {
   max-width: 54ch;
-  color: #6d7971;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -348,9 +348,9 @@ function stringValue(value: unknown) {
   height: 19px;
   margin: 0;
   appearance: none;
-  border: 1px solid #aeb8b1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 999px;
-  background: #e8ece9;
+  background: var(--color-surface-subtle);
   cursor: pointer;
   transition: background-color 140ms ease-out, border-color 140ms ease-out;
 }
@@ -361,15 +361,15 @@ function stringValue(value: unknown) {
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--color-surface);
   box-shadow: 0 1px 2px rgb(36 55 44 / 22%);
   content: '';
   transition: transform 140ms ease-out;
 }
-.project-agent-policy-options input:checked { border-color: #3f7658; background: #4d8164; }
+.project-agent-policy-options input:checked { border-color: var(--color-ink); background: var(--color-muted); }
 .project-agent-policy-options input:checked::after { transform: translateX(15px); }
 .project-agent-policy-options input:focus-visible {
-  outline: 2px solid #355f49;
+  outline: 2px solid var(--color-accent);
   outline-offset: 3px;
 }
 .project-agent-policy-options input:disabled { cursor: wait; opacity: .62; }
@@ -379,16 +379,16 @@ function stringValue(value: unknown) {
   padding-inline: 16px;
 }
 .project-agent-policy-state, .project-agent-policy-feedback p {
-  color: #66736b;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
   line-height: 1.45;
 }
-.project-agent-policy-feedback p[role='alert'] { color: #874b43; }
+.project-agent-policy-feedback p[role='alert'] { color: var(--color-danger); }
 .project-agent-policy-feedback button {
   margin-inline-start: 6px;
   border: 0;
   padding: 0;
-  color: #355f49;
+  color: var(--color-ink);
   background: transparent;
   font: inherit;
   font-weight: 700;
@@ -398,7 +398,7 @@ function stringValue(value: unknown) {
   .project-agent-automation-policy { grid-template-columns: minmax(0, 1fr); }
   .project-agent-policy-options { grid-template-columns: minmax(0, 1fr); }
   .project-agent-policy-options label { padding: 8px 0; }
-  .project-agent-policy-options label + label { border-inline-start: 0; border-block-start: 1px solid #e2e7e3; }
+  .project-agent-policy-options label + label { border-inline-start: 0; border-block-start: 1px solid var(--color-border); }
   .project-agent-policy-feedback { grid-column: 1; padding-inline: 0; }
 }
 </style>

@@ -14,11 +14,18 @@ export function agentContinuation(projectId, agentId, conversationId = null) {
 
 export function taskAgentReceipt(application, { projectId, agentId, name = null,
   sourceApplication = null, workStatus = null, conversationId = null, persistence = null }) {
-  return { owner: { agent_id: agentId, name,
-    profile_url: agentProfileUrl(application, agentId), source_application: sourceApplication },
+  const owner = agentId ? { agent_id: agentId, name,
+    profile_url: agentProfileUrl(application, agentId), source_application: sourceApplication } : null;
+  const label = String(name?.trim() || agentId).replace(/[\r\n\t]+/g, ' ')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/[\\`*_{}\[\]()!|]/g, '\\$&');
+  const markdown = owner
+    ? `FULI Agent：[${label}](<${owner.profile_url.replace(/[<>\s]/g, encodeURIComponent)}>)`
+    : 'FULI Agent：未选定';
+  return { required: true, markdown, owner,
     personal_project_id: projectId, work_status: workStatus, persistence,
-    continuation: agentContinuation(projectId, agentId, conversationId),
-    guidance: 'Finish with the named owner and profile link, truthful work/memory status and continuation. Add only actually used collaboration_receipt participants (for example Jefa); tools and configured peers are not independent model workers.' };
+    continuation: owner ? agentContinuation(projectId, agentId, conversationId) : null,
+    guidance: 'MUST include agent_receipt.markdown unchanged exactly once in every final user-visible reply, including greetings, status and errors, even when capture is disabled or nothing is retained. Use this task’s receipt; never invent an owner. Report only truthful work/memory status and actually used collaboration_receipt participants; tools and configured peers are not independent model workers.' };
 }
 
 export function employeeCollaborationReceipt(application, context, { tool, permission, sourceApplication }) {

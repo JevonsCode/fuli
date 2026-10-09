@@ -276,3 +276,7 @@ Native `<details>` rows answer adapter-dependent mentions, seven-day archiving v
 - **Don't** imply that every client has a native `@Agent` menu, captures complete transcripts, or supports an unavailable adapter.
 - **Don't** describe the seven-day window as deletion or claim that a team server package is already released.
 - **Don't** add decorative gradients, blur, or elevation outside the established stage material language.
+
+## Local console
+
+The console under `web/` has its own design system; see [console-design.md](docs/console-design.md).

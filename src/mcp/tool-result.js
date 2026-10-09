@@ -19,14 +19,22 @@ const VALIDATION_ERROR_LIMIT = 5;
 
 export function successToolResult(value, { limitBytes = RESULT_LIMIT_BYTES, itemLimit = RESULT_ITEM_LIMIT } = {}) {
   const state = { truncated: false, itemLimit: Number.isInteger(itemLimit) && itemLimit > 0 ? Math.min(itemLimit, 1000) : RESULT_ITEM_LIMIT };
-  const sanitized = sanitize(value, state);
+  // Task identity is a required part of the response, even if preferences or
+  // memory exhaust the delivery budget. Sanitize it before reserving its bytes.
+  const required = {};
+  if (value?.agent_receipt?.required === true) {
+    required.agent_receipt = sanitize(value.agent_receipt, state);
+    if (state.truncated) throw new ApplicationError('validation', 'Cannot deliver the complete required Agent receipt');
+  }
+  const sanitized = sanitize(Object.keys(required).length ? { ...required, ...value } : value, state);
   const candidate = isObject(sanitized) && !Array.isArray(sanitized)
     ? sanitized
     : { result: sanitized };
   const structuredContent = boundedStructuredContent(
     candidate,
     state.truncated,
-    limitBytes
+    limitBytes,
+    required
   );
   return {
     content: [{ type: 'text', text: JSON.stringify(structuredContent) }],
@@ -144,12 +152,16 @@ function sanitize(value, state, seen = new WeakSet(), depth = 0) {
   return sanitized;
 }
 
-function boundedStructuredContent(value, alreadyTruncated, limitBytes) {
+function boundedStructuredContent(value, alreadyTruncated, limitBytes, required) {
   const budget = Number.isInteger(limitBytes) && limitBytes > 0
     ? limitBytes
     : RESULT_LIMIT_BYTES;
   if (!alreadyTruncated && jsonBytes(value) <= budget) return value;
-  return projectObject(value, budget, 0, true);
+  const reserved = { truncated: true, ...required };
+  if (Object.keys(required).length && jsonBytes(reserved) > budget) {
+    throw new ApplicationError('validation', 'Result budget cannot hold the required Agent receipt');
+  }
+  return projectObject(value, budget, 0, true, reserved);
 }
 
 function projectValue(value, budget, depth) {
@@ -192,13 +204,13 @@ function projectArray(value, budget, depth) {
   return projected;
 }
 
-function projectObject(value, budget, depth, root = false) {
-  const projected = root ? { truncated: true } : {};
+function projectObject(value, budget, depth, root = false, reserved = {}) {
+  const projected = root ? { truncated: true, ...reserved } : {};
   let used = jsonBytes(projected);
-  let propertyCount = root ? 1 : 0;
+  let propertyCount = Object.keys(projected).length;
 
   for (const [key, item] of Object.entries(value)) {
-    if (root && key === 'truncated') continue;
+    if (Object.hasOwn(projected, key)) continue;
     const separatorBytes = propertyCount ? 1 : 0;
     const propertyBytes = separatorBytes + jsonBytes(key) + 1;
     const child = projectValue(item, budget - used - propertyBytes, depth + 1);

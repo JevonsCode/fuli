@@ -67,31 +67,13 @@ function updateValue(event: Event) {
   display: grid;
   gap: 5px;
   min-width: 0;
-  color: #68726b;
-  font-size: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .text-field input,
 .text-field textarea {
   width: 100%;
   min-width: 0;
-  border: 1px solid #cfd7d1;
-  border-radius: 6px;
-  padding: 7px 8px;
-  color: #354139;
-  background: #fff;
-  font-size: 11px;
-  outline: none;
-}
-
-.text-field textarea {
-  resize: vertical;
-  line-height: 1.5;
-}
-
-.text-field input:focus,
-.text-field textarea:focus {
-  border-color: #6f8577;
-  box-shadow: 0 0 0 2px rgba(84, 113, 95, .1);
 }
 </style>

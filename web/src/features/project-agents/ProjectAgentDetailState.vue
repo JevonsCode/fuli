@@ -38,16 +38,16 @@ defineEmits<{ retry: [] }>()
   gap: 10px;
   margin-top: 22px;
   padding: 10px 12px;
-  border: 1px solid #e1e6e2;
-  border-radius: 8px;
-  background: #f7f9f7;
-  color: #727d75;
-  font-size: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .project-agent-source-state.is-error {
-  border-color: #ebd5d0;
-  background: #fbf3f1;
-  color: #8c4f49;
+  border-color: var(--color-danger-soft);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
 }
 </style>

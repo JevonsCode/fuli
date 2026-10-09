@@ -11,14 +11,12 @@ const props = withDefaults(defineProps<{
   overscan?: number
   resetKey?: unknown
   activeIndex?: number
-  watermarkPrefix?: string
   itemKey?: (item: T, index: number) => string | number
 }>(), {
   minWidth: '100%',
   overscan: 8,
   resetKey: undefined,
   activeIndex: -1,
-  watermarkPrefix: '#',
   itemKey: undefined,
 })
 
@@ -178,9 +176,6 @@ defineExpose({
               :formatted-index="formatIndex(index + 1)"
             />
           </div>
-          <span class="virtual-directory-list__watermark" aria-hidden="true">
-            {{ watermarkPrefix }}{{ formatIndex(index + 1) }}
-          </span>
         </div>
       </div>
 
@@ -261,25 +256,6 @@ defineExpose({
   z-index: 2;
 }
 
-.virtual-directory-list__watermark {
-  position: absolute;
-  z-index: 1;
-  right: 9px;
-  bottom: -7px;
-  color: rgb(47 57 51 / 5.5%);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 31px;
-  font-weight: 760;
-  line-height: 1;
-  letter-spacing: -.09em;
-  pointer-events: none;
-  user-select: none;
-}
-
-.virtual-directory-list__row.is-active .virtual-directory-list__watermark {
-  color: rgb(53 96 71 / 8%);
-}
-
 .virtual-directory-list__position {
   position: absolute;
   z-index: 4;
@@ -289,21 +265,19 @@ defineExpose({
   align-items: baseline;
   gap: 4px;
   padding: 6px 9px;
-  border: 1px solid rgb(207 215 209 / 78%);
+  border: 1px solid var(--color-border);
   border-radius: 999px;
-  color: #8b938d;
-  background: rgb(255 255 255 / 88%);
-  box-shadow: 0 3px 12px rgb(47 57 51 / 8%);
-  backdrop-filter: blur(8px);
+  color: var(--color-muted);
+  background: var(--color-surface);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1;
   pointer-events: none;
 }
 
 .virtual-directory-list__position strong {
-  color: #425047;
-  font-size: 11px;
+  color: var(--color-ink);
+  font-size: 12px;
   font-weight: 720;
 }
 </style>

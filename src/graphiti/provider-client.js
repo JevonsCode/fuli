@@ -72,8 +72,10 @@ export class GraphitiProviderClient {
       method: operation === 'policy' ? 'PUT' : 'POST', body: input
     });
   }
-  currentTaskContext(input) {
-    return this.#request(`/v1/task-context-sessions/current?${new URLSearchParams(input)}`);
+  currentTaskContext(input, { timeoutMs = this.requestTimeoutMs } = {}) {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new TypeError('Current task timeout must be a positive safe integer');
+    return this.#request(`/v1/task-context-sessions/current?${new URLSearchParams(input)}`,
+      { timeoutMs: Math.min(timeoutMs, this.requestTimeoutMs) });
   }
   health() { return this.#request('/health', { authenticated: false }); }
   listSpaces() { return this.#request('/v1/spaces'); }
@@ -695,7 +697,8 @@ export class GraphitiProviderClient {
     method = 'GET',
     body,
     authenticated = true,
-    workflowObservation = false
+    workflowObservation = false,
+    timeoutMs = this.requestTimeoutMs
   } = {}) {
     const headers = { accept: 'application/json' };
     if (authenticated) headers.authorization = `Bearer ${this.accessToken}`;
@@ -708,7 +711,7 @@ export class GraphitiProviderClient {
     const timeout = setTimeout(() => {
       timedOut = true;
       controller.abort(new Error('Graphiti provider request timed out'));
-    }, this.requestTimeoutMs);
+    }, timeoutMs);
     const callerSignal = activeAgentRequestSignal();
     const signal = callerSignal
       ? AbortSignal.any([controller.signal, callerSignal])
