@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { EmployeeError, employeeAgentId, employeeCapability } from './manifest.js';
+import { EmployeeError, FIXED_EMPLOYEE_AGENT_TYPES, employeeAgentId, employeeCapability } from './manifest.js';
 import {
   activeEmployeeAssignments, employeeAssignmentsVersion,
   parseEmployeeProjectSelection, resolveEmployeeProjectSelection,
@@ -50,6 +50,7 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
         runtimeStatus,
         agentId: owned ? agent.agentId : null,
         agentStatus: owned ? agent.profile.status : null,
+        fixed: Object.hasOwn(FIXED_EMPLOYEE_AGENT_TYPES, manifest.id),
         assignmentsVersion: employeeAssignmentsVersion(owned ? agent : null, stored),
         management, managedProjects,
         assignmentCount: owned ? activeEmployeeAssignments(agent).length : 0,
@@ -116,7 +117,7 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
           name: manifest.name,
           occupationEmoji: manifest.occupationEmoji,
           responsibility: `${manifest.role}：${manifest.description}`,
-          agentType: 'durable', status: 'active',
+          agentType: FIXED_EMPLOYEE_AGENT_TYPES[manifest.id] ?? 'durable', status: 'active',
           capabilities: [...manifest.capabilities, employeeCapability(manifest.id)],
           workKinds: manifest.workKinds,
           initialPreferences: manifest.initialPreferences,

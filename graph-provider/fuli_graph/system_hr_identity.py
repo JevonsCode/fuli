@@ -12,8 +12,8 @@ from fastapi import HTTPException
 
 from .project_agent_models import ProjectAgentProfile
 from .provider_values import now_utc
+from .system_agents import SYSTEM_HR_AGENT_ID
 
-SYSTEM_HR_AGENT_ID = 'employee.bole'
 LEGACY_HR_AGENT_ID = 'fuli-project-hr'
 REFERENCE_FIELDS = (
     'agent_id', 'hr_agent_id', 'lead_agent_id', 'coordinator_agent_id',
