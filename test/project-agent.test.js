@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { mkdirSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
+
+// Project resolution matches the directory name, independent of the checkout folder.
+const PROJECT_PATH = join(mkdtempSync(join(tmpdir(), 'fuli-project-agent-')), 'fuli');
+mkdirSync(PROJECT_PATH);
 
 const CONFIG = {
   version: 1,
@@ -100,7 +107,7 @@ test('project Agent context loads only the selected Agent scope', async () => {
   });
 
   const result = await app.getProjectAgentContext({
-    projectPath: process.cwd(),
+    projectPath: PROJECT_PATH,
     agentId: 'activity-agent',
     queries: ['活动复盘格式']
   });
@@ -185,7 +192,7 @@ test('project Agent context exposes Provider-reported worker execution summaries
   });
 
   const result = await app.getProjectAgentContext({
-    projectPath: process.cwd(),
+    projectPath: PROJECT_PATH,
     agentId: 'activity-agent',
     queries: ['活动复盘格式']
   });
@@ -232,7 +239,7 @@ test('project Agent context refuses a client outside the Agent allow-list', asyn
   });
 
   const result = await app.getProjectAgentContext({
-    projectPath: process.cwd(),
+    projectPath: PROJECT_PATH,
     agentId: 'activity-agent',
     queries: ['活动复盘格式'],
     sourceApplication: 'codex'
@@ -264,7 +271,7 @@ test('project Agent context withholds an inactive Agent profile and execution hi
   });
 
   const result = await app.getProjectAgentContext({
-    projectPath: process.cwd(),
+    projectPath: PROJECT_PATH,
     agentId: 'activity-agent',
     queries: ['活动复盘格式'],
     sourceApplication: 'codex'
@@ -337,7 +344,7 @@ test('project Agent coordinator returns isolated contexts for the Provider-selec
   };
   const result = await app.coordinateProjectAgentTask({
     taskContextToken: 'fuli-task-first-team',
-    projectPath: process.cwd(),
+    projectPath: PROJECT_PATH,
     idempotencyKey: 'coordinate-team-1',
     title: '实现宿主桥接',
     objective: '让持久 Agent 对应按需启动的真实工作进程。',
@@ -390,7 +397,7 @@ test('project Agent coordinator fails closed if Provider cannot confirm a tempor
   });
 
   await assert.rejects(app.coordinateProjectAgentTask({
-    projectPath: process.cwd(),
+    projectPath: PROJECT_PATH,
     idempotencyKey: 'coordinate-unresolved-1',
     title: 'Do not route',
     objective: 'Require an exact project match.',
@@ -428,7 +435,7 @@ test('project Agent coordinator preserves a terminal task status on idempotent r
   });
 
   const result = await app.coordinateProjectAgentTask({
-    projectPath: process.cwd(), idempotencyKey: 'coordinate-completed-1',
+    projectPath: PROJECT_PATH, idempotencyKey: 'coordinate-completed-1',
     title: 'Replay completed work', objective: 'Do not restart completed work.',
     workKind: 'implementation', routingReason: 'Idempotent replay.',
     contextQueries: ['completed work'], sourceApplication: 'codex'
@@ -462,7 +469,7 @@ test('project Agent coordinator preserves a running task status without restarti
   });
 
   const result = await app.coordinateProjectAgentTask({
-    projectPath: process.cwd(), idempotencyKey: 'coordinate-running-1',
+    projectPath: PROJECT_PATH, idempotencyKey: 'coordinate-running-1',
     title: 'Replay running work', objective: 'Do not restart running work.',
     workKind: 'implementation', routingReason: 'Idempotent replay.',
     contextQueries: ['running work'], sourceApplication: 'codex'
@@ -488,7 +495,7 @@ test('project Agent coordinator reports a queued task with no participant as sta
   });
 
   const result = await app.coordinateProjectAgentTask({
-    projectPath: process.cwd(), idempotencyKey: 'coordinate-empty-1',
+    projectPath: PROJECT_PATH, idempotencyKey: 'coordinate-empty-1',
     title: 'No assigned role', objective: 'Do not fabricate a worker.',
     workKind: 'implementation', routingReason: 'Synthetic malformed route.',
     contextQueries: ['staffing'], sourceApplication: 'codex'

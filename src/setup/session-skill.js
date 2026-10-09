@@ -9,10 +9,15 @@ import {
 } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 
+// Windows refuses to rename a directory another process is watching, such as
+// a running Codex app. Those targets are refreshed in place after a backup copy.
+const LOCKED_DIRECTORY_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
+
 export function installSessionSkill(agent, {
   sourcePath,
   backupDir,
-  clock = () => new Date()
+  clock = () => new Date(),
+  rename = renameSync
 }) {
   if (!agent.skillPath) throw new TypeError(`Missing Skill path for ${agent.label}`);
   const sourceEntry = join(sourcePath, 'SKILL.md');
@@ -28,7 +33,14 @@ export function installSessionSkill(agent, {
     const stamp = clock().toISOString().replaceAll(/[:.]/g, '-');
     backupPath = join(backupDir, 'skills', `${agent.id}-${stamp}`, basename(agent.skillPath));
     mkdirSync(dirname(backupPath), { recursive: true });
-    renameSync(agent.skillPath, backupPath);
+    try {
+      rename(agent.skillPath, backupPath);
+    } catch (error) {
+      if (!LOCKED_DIRECTORY_CODES.has(error?.code)) throw error;
+      cpSync(agent.skillPath, backupPath, { recursive: true, errorOnExist: true });
+      replaceDirectoryContents(agent.skillPath, sourcePath);
+      return { status: 'installed', path: agent.skillPath, backupPath };
+    }
   }
 
   const stagingPath = `${agent.skillPath}.fuli-installing`;
@@ -79,6 +91,14 @@ export function removeBundledSkill(agent, {
   }
   remove(agent.skillPath, { recursive: true, force: false });
   return { status: 'removed', path: agent.skillPath };
+}
+
+function replaceDirectoryContents(targetPath, sourcePath) {
+  const sourceFiles = new Set(listFiles(sourcePath));
+  for (const file of listFiles(targetPath)) {
+    if (!sourceFiles.has(file)) rmSync(join(targetPath, file), { force: true });
+  }
+  cpSync(sourcePath, targetPath, { recursive: true, force: true });
 }
 
 function listFiles(root, directory = '') {

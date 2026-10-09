@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { runSetupCommand } from '../src/cli/setup-command.js';
+import { formatSetupResult, runSetupCommand } from '../src/cli/setup-command.js';
 import { applyLocalSetup, planLocalSetup } from '../src/setup/setup.js';
 
 const OPTIONS = Object.freeze({
@@ -468,3 +468,12 @@ function multiAgentPlan() {
     }
   ];
 }
+
+test('setup output explains why an Agent was not fully connected', () => {
+  const output = formatSetupResult({ status: 'partial', runtime: { url: null }, agents: [
+    { label: 'Codex', status: 'partial', message: 'EPERM: operation not permitted' },
+    { label: 'Cursor', status: 'failed' }
+  ] });
+  assert.match(output, /Codex: partially configured \(EPERM: operation not permitted\); retry fuli setup/);
+  assert.match(output, /Cursor: connection failed; retry fuli setup/);
+});
