@@ -8,7 +8,7 @@
 
 **Tech Stack:** Node 24 node:sqlite, MCP SDK, plain JavaScript, Vue 3, existing Fuli application ports.
 
-**验证快照：**2026-10-09，CI 对应提交 `471737c`。完成勾选表示该实现或检查已有证据；真实模型、物理多电脑、视觉验收和发布分别记录，不能由自动测试代替。详见[Beta 验证记录](roundtable-beta-validation.md)。后续提交需要重新完成发布前检查。
+**验证快照：**2026-10-09，最终功能源码 CI 对应提交 `e87637f`。完成勾选表示该实现或检查已有证据；真实模型、物理多电脑、视觉验收和发布分别记录，不能由自动测试代替。详见[Beta 验证记录](roundtable-beta-validation.md)。后续提交需要重新完成发布前检查。
 
 ## Contracts
 
@@ -54,16 +54,16 @@ Files: web/src/features/roundtables/*; web/src/router/index.ts; web/src/layouts/
 - [x] 完成创建、列表 / 详情、席位邀请与复制、消息、控制、任务、分歧、产物和来源回执表；缺失模型 / 用量保持未知。
 - [x] 使用 `GrowthLoading`，加载标签描述实际请求并提供中英文；组件验证刷新失败和草稿保留。
 - [x] 官网和中英文 README 提供能力版图，分别标注已提供、Beta 与待支持；区分 Grok API 和需主动配置的 Grok Bot MCP。
-- [x] Vue typecheck、相关组件测试与构建通过；`471737c` 的 CI 中 Vue 371 项通过。
+- [x] Vue typecheck、相关组件测试与构建通过；`e87637f` 的 CI 中 Vue 371 项通过。
 - [x] 圆桌页面通过 IAB 实际验收：中英文切换、无项目草案、Codex / Pi 席位、Pi 邀请模型输入与凭据隐藏、停止状态；400 × 850 视口实测 `documentWidth = bodyWidth = 400`，无横向溢出，截图核对席位纵向布局。
 - [ ] 官网、其他页面和最终 registry 安装包界面仍待视觉验收。上述页面检查未启动模型、没有执行回执；使用的静态构建早于 Pi 模型 placeholder 更新，不能代替最终构建验收。
 
 ### 6. Verify, review and publish
 Files: acceptance/roundtable-network.js; docs/roundtable-beta-testing.md; package.json; npm-shrinkwrap.json; release notes.
-- [x] `471737c` 的 Linux CI：Node 共 1026 项，1018 通过、0 失败、8 跳过；Vue 371 通过；package smoke、audit 0 漏洞与 Provider 检查通过。
+- [x] `e87637f` 的 Linux CI：Node 共 1041 项，1033 通过、0 失败、8 跳过；Vue 371 通过；package smoke、audit 0 漏洞与 Provider 检查通过。
 - [x] Windows 完整套件的 29 项失败与所比较基线逐项匹配；记录环境边界，不把本机完整套件称为已全部通过。
 - [x] 已进行独立代码审查，core、协议、worker、Codex 隔离和 parser 的多轮问题修复后无 P1 / P2；相关 focused 检查 72/72，后续检查 8/8。
 - [x] Pi 新增 post-format 变更完成独立复审，修复环境继承越界、失败升级、分歧丢失和上下文完整性问题；未发现尚未解决的 P1/P2。
-- [ ] 对最终发布提交重新执行必要检查。
+- [x] 最终功能源码 `e87637f` 重新通过完整 Linux CI、构建与安装包检查，后续验证文档更新另有 CI。
 - [x] 设置 semver 预发布版本；提供 `docs/roundtable-beta-testing.md` 的跨电脑步骤和本页证据范围，保留主工作区用户修改。
 - [ ] 发布 GitHub prerelease / npm beta dist-tag，核实 registry 版本与 tarball，并验证官网部署。

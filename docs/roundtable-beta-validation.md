@@ -1,17 +1,17 @@
 # Agent 圆桌 Beta 验证记录
 
-核验日期：2026-10-09。本页记录已有证据及其范围，发布前仍需核对最终提交。
+核验日期：2026-10-09。本页记录已有证据及其范围；发布与 registry 安装包另行核验。
 圆桌已提供讨论、分工、实施、审查和人工验收的流程；Codex 的完整真实运行停在等待用户验收，未代用户接受交付。Pi 混合圆桌的失败记录另列，未计为完成。
 
 ## CI 与发布前检查
 
-已核验的提交为 [`471737c`](https://github.com/JevonsCode/fuli/commit/471737c00e984833dcf3d801781527a8efdbaea9)，
-[对应 CI](https://github.com/JevonsCode/fuli/actions/runs/37909776638) 已成功结束。
-这些数字属于该提交，后续修改需要重新验证。
+最终功能源码为 [`e87637f`](https://github.com/JevonsCode/fuli/commit/e87637f5c23db29c70a4d5d55594a6ff5db577a2)，
+[对应 CI](https://github.com/JevonsCode/fuli/actions/runs/37918728225) 已成功结束，包含共享阶段提示和 Pi 结果边界修复。
+下列数字属于该提交。随后仅更新验证文档；后续功能修改需要重新验证，发布工作流也再次执行检查。
 
 | 检查 | 结果 | 证据范围 |
 | --- | --- | --- |
-| Node 完整套件 | 1026 项：1018 通过，0 失败，8 跳过 | Linux CI；跳过项没有计为通过 |
+| Node 完整套件 | 1041 项：1033 通过，0 失败，8 跳过 | Linux CI；跳过项没有计为通过 |
 | Vue 套件 | 371 通过 | 组件、状态和交互检查 |
 | Vue typecheck / 构建 | 通过 | 类型及生产资源构建 |
 | Package smoke | 通过 | `npm run test:package` 检查打包产物 |
@@ -22,7 +22,7 @@
 Windows 本机完整套件仍有 29 项失败，失败集合与所比较基线逐项匹配。
 Linux CI 已通过；Windows 完整套件尚未全部通过，环境差异继续保留为验证范围。
 
-Pi 的新增 post-format 路径与共享阶段提示修复已完成独立复审：圆桌回归 87/87、Pi 专项检查 20/20 通过，未发现尚未解决的 P1/P2。真实 Pi grep 工具验证了配置继承导致的越界及其修复；失败状态、产物引用、分歧、取消和上下文预算分别核对。模型正文可靠性仍为试验范围，最终源码的后续 CI 仍待核验。当前 CI、审查和真实 CLI 证据不自动覆盖后续提交，
+Pi 的新增 post-format 路径与共享阶段提示修复已完成独立复审：圆桌回归 87/87、Pi 专项检查 20/20 通过，未发现尚未解决的 P1/P2。真实 Pi grep 工具验证了配置继承导致的越界及其修复；失败状态、产物引用、分歧、取消和上下文预算分别核对。模型正文可靠性仍为试验范围。当前 CI、审查和真实 CLI 证据不自动覆盖后续功能修改，
 GitHub prerelease、npm beta dist-tag、registry / tarball 和官网部署也需分别确认。
 
 ## 真实本机 Codex 圆桌
@@ -92,7 +92,7 @@ Ollama 运行状态均确认 32768；一次真实只读探测的工具内容和�
 
 第三次运行记录为 `output-roundtable-mixed-32k.json`，核验时间 `2026-10-09T10:20:51.281Z`。Codex 主持人的讨论回合 `completed`，Pi 使用 `fuli-roundtable-qwen3-32k:latest` 真实生成输出，并报告用量；但 Pi 错把未来 implementation / review 阶段的 `pending` 任务当作当前 discussion 的阻塞，提交 `blocked`。服务最终为 `discussion` / `waiting_input`，原因 `participant_blocked`。`artifactMatches`、`reviewPassed`、`reachedSynthesis` 均为 false，没有完成实施产物、独立审查或汇总，人工验收未进行。
 
-共享阶段提示修复后的运行记录为 `output-roundtable-mixed-phase-fixed.json`，核验时间 `2026-10-09T10:33:57.477Z`。Codex 讨论回合再次 `completed`；Pi 32K CLI 退出码为 0，出现 `agent_settled`，真实生成 input 2391 / output 108 tokens，但回合结果为 `response_invalid`。服务停在 `discussion` / `waiting_input`，原因 `participant_failed`；没有实际产物校验值、审查或汇总完成证据，人工验收仍未进行。`physicalComputers=1`；取消请求、worker 收尾、协调端关闭及所拥有工作区清理均有完成记录。
+共享阶段提示修复后的运行记录为 `output-roundtable-mixed-phase-fixed.json`，核验时间 `2026-10-09T10:33:57.477Z`。Codex 讨论回合再次 `completed`；Pi 32K CLI 退出码为 0，出现 `agent_settled`，真实生成 input 2391 / output 108 tokens，但原生最终正文验收为 `response_invalid`，尚未进入 formatter。JSONL 会话、模型和用量已解析；日志没有保存最终正文，无法进一步区分 stopReason、空正文或大小限制的具体触发条件。服务停在 `discussion` / `waiting_input`，原因 `participant_failed`；没有实际产物校验值、审查或汇总完成证据，人工验收仍未进行。`physicalComputers=1`；取消请求、worker 收尾、协调端关闭及所拥有工作区清理均有完成记录。
 
 这两次记录证明模型实际运行过，也证明流程仍未通过；CLI 成功退出不等于结果契约有效或协作完成。共享阶段提示已有修复和专项测试证据，Pi 的有效结果与完整混合流程仍需新的真实验证。
 
@@ -114,7 +114,7 @@ IAB 已实际打开圆桌页面，完成中英文切换，并通过界面创建�
 
 在 400 × 850 视口中，实测 `documentWidth = bodyWidth = 400`，没有横向溢出；截图核对了席位的纵向布局。这次验收覆盖上述圆桌页面操作，尚未覆盖官网、其他页面和最终 registry 安装包界面。
 
-页面验收没有启动模型，也没有执行回执，不能作为模型运行或任务完成的证据。验收使用的静态构建早于 Pi 模型 placeholder 从 `gpt-oss:20b` 改为 `qwen3:8b`；该源代码更新另有 focused 组件测试 10 / 10 通过的证据，最终构建仍需复核。
+页面验收没有启动模型，也没有执行回执，不能作为模型运行或任务完成的证据。验收使用的静态构建早于 Pi 模型 placeholder 更新为 `fuli-roundtable-qwen3-32k:latest`；该源代码更新另有 focused 组件测试 10 / 10 通过的证据，最终源码 CI 已构建该更新，registry 安装包界面仍需复核。
 
 Grok API 席位与现有 Grok Bot 分别验收。官方 MCP 配置能力证明有接入方式，
 不证明 Bot 已连接，也不提供由外部 API 唤醒现有 Bot 聊天的证据。
