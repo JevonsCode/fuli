@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  batchFileSpawnOptions,
   compareSemanticVersions,
   resolveGlobalCliPath,
   runUpdateCommand
@@ -286,4 +287,13 @@ test('global CLI resolution supports POSIX and Windows npm roots', () => {
     'C:\\Users\\Test\\AppData\\Roaming\\npm\\node_modules\\fuli-context\\src\\cli.js'
   );
   assert.equal(resolveGlobalCliPath('relative/node_modules', 'linux'), null);
+});
+
+test('Windows npm.cmd runs through a shell only with shell-inert arguments', () => {
+  assert.deepEqual(batchFileSpawnOptions('npm', ['view', 'fuli-context@latest']), {});
+  assert.deepEqual(
+    batchFileSpawnOptions('npm.cmd', ['install', '--global', 'fuli-context@1.2.3', '--no-audit']),
+    { shell: true }
+  );
+  assert.throws(() => batchFileSpawnOptions('npm.cmd', ['view', 'x & calc']), /shell-sensitive/);
 });

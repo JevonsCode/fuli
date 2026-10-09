@@ -234,11 +234,21 @@ function describeProcessFailure(result) {
   return 'unknown process error';
 }
 
+// Node refuses to spawn Windows batch files such as npm.cmd without a shell
+// (CVE-2024-27980). Only fixed, shell-inert arguments may take that path.
+export function batchFileSpawnOptions(command, args) {
+  if (!/\.(?:cmd|bat)$/i.test(command)) return {};
+  const unsafe = args.find((arg) => !/^[\w@./:=-]+$/.test(arg));
+  if (unsafe !== undefined) throw new TypeError(`Refusing to pass a shell-sensitive argument to ${command}`);
+  return { shell: true };
+}
+
 function spawnInherited(command, args, { env }) {
   return spawnSync(command, args, {
     env,
     stdio: 'inherit',
-    windowsHide: true
+    windowsHide: true,
+    ...batchFileSpawnOptions(command, args)
   });
 }
 
@@ -247,7 +257,8 @@ function spawnCaptured(command, args, { env }) {
     env,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true
+    windowsHide: true,
+    ...batchFileSpawnOptions(command, args)
   });
 }
 

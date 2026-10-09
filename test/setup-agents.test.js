@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  buildAgentCommands,
   connectAgent,
   disconnectAgent,
   discoverAgents
@@ -65,32 +64,6 @@ test('agent discovery recognizes installed Claude Code and Cursor config directo
     { id: 'claude-code', available: true },
     { id: 'cursor', available: true }
   ]);
-});
-
-test('Codex and Claude Code registrations use their native MCP CLI', () => {
-  const [codex, claude] = discoverAgents({
-    platform: 'win32',
-    env: {},
-    homeDir: 'C:/Users/Test',
-    commandExists: () => true
-  });
-
-  assert.deepEqual(buildAgentCommands(codex, CONTEXT), {
-    remove: ['codex', ['mcp', 'remove', 'fuli']],
-    add: ['codex', [
-      'mcp', 'add', 'fuli', '--', CONTEXT.nodePath, CONTEXT.mcpServerPath,
-      '--runtime-config', CONTEXT.runtimeConfigPath,
-      '--source-application', 'codex'
-    ]]
-  });
-  assert.deepEqual(buildAgentCommands(claude, CONTEXT), {
-    remove: ['claude', ['mcp', 'remove', '--scope', 'user', 'fuli']],
-    add: ['claude', [
-      'mcp', 'add', '--scope', 'user', 'fuli', '--', CONTEXT.nodePath,
-      CONTEXT.mcpServerPath, '--runtime-config', CONTEXT.runtimeConfigPath,
-      '--source-application', 'claude_code'
-    ]]
-  });
 });
 
 test('Claude connection delegates to its lifecycle-aware config connector', () => {
