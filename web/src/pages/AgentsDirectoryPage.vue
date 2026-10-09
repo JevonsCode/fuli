@@ -11,6 +11,7 @@ import {
 } from "@/features/agent-profile/profile-model";
 import { useAgentRoster } from "@/features/agent-profile/useAgentRoster";
 import AgentHand from "@/features/project-agents/AgentHand.vue";
+import ProjectAgentFirstTask from "@/features/project-agents/ProjectAgentFirstTask.vue";
 import ProjectScopePicker from "@/features/employees/ProjectScopePicker.vue";
 import EmployeeRecruitDialog from "@/features/employees/EmployeeRecruitDialog.vue";
 import { useConsoleStore } from "@/stores/console";
@@ -118,6 +119,10 @@ async function recruited(result: EmployeeRecruitmentResult) {
         </button>
       </div>
     </header>
+    <ProjectAgentFirstTask
+      v-if="!busy && !error && store.runtimeStatus === 'ready' && !projects.length"
+      :personal-space-id="space"
+    />
     <div class="agents-directory-filters">
       <label class="agents-directory-search"
         ><span class="sr-only">{{ t("agentProfiles.search") }}</span

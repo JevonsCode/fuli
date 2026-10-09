@@ -18,12 +18,17 @@ async def adopt_task_agent(store, actor, token, request):
         raise HTTPException(409, 'Task context already has an employee')
     before = json.dumps(record, ensure_ascii=False)
     agent = await authorize_project_agent(store, actor, space, request.personal_project_id,
-                                          request.agent_id, require_active=True, require_memory=True)
+                                          request.agent_id, require_active=True)
     if request.source_application not in json.loads(agent['profile_json']).get('allowed_clients', []):
         raise HTTPException(403, 'Agent is not allowed in this client')
-    memory = await store.get_project_agent_memory(actor, request.personal_space_id,
-                                                  request.personal_project_id, request.agent_id)
-    record.update(project_agent_id=request.agent_id, memory_revision=memory.revision,
+    task_only = agent.get('memory_scope') == 'task_only'
+    if task_only and agent.get('temporary_task_id') != request.task_id:
+        raise HTTPException(409, 'Temporary Agent belongs to another task')
+    memory = None if task_only else await store.get_project_agent_memory(
+        actor, request.personal_space_id, request.personal_project_id, request.agent_id)
+    record.update(project_agent_id=request.agent_id, memory_revision=memory.revision if memory else None,
+                  coordination_task_id=request.task_id,
+                  agent_memory_scope='task_only' if task_only else 'reviewed_agent',
                   work_log_required=True)
     rows, _, _ = await store.runtime.driver.execute_query(
         '''

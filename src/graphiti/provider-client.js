@@ -87,6 +87,9 @@ export class GraphitiProviderClient {
   upsertPersonalProject(input) {
     return this.#request('/v1/personal-projects', { method: 'PUT', body: input });
   }
+  ensureTemporaryProject(input) {
+    return this.#request('/v1/temporary-projects/ensure', { method: 'POST', body: input });
+  }
   listPersonalProjects(personalSpaceId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
     return this.#request(`/v1/personal-projects?${query}`);

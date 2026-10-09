@@ -3,6 +3,7 @@
 from .personal_project_access import authorize_personal_project
 from .project_agent_context_models import ProjectAgentContextResolution
 from .project_agent_task_models import ProjectAgentTaskSubmit
+from .task_context_temporary_owner import temporary_task_owner
 
 
 class StoreProjectAgentContext:
@@ -10,6 +11,9 @@ class StoreProjectAgentContext:
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'reader')
         await authorize_personal_project(self, actor, space, request.personal_project_id)
+        temporary_owner = await temporary_task_owner(self, actor, request)
+        if temporary_owner is not None:
+            return temporary_owner
         owner = None
         if request.session_id and not request.agent_id:
             rows, _, _ = await self.runtime.driver.execute_query(

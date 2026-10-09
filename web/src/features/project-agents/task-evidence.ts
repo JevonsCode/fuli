@@ -285,6 +285,10 @@ function normalizeTaskRoutingDecision(record: UnknownRecord): ProjectAgentRoutin
 
 export function normalizeTask(value: unknown): ProjectAgentTaskRecord | null {
   const record = unknownRecord(value); const taskId = stringOf(record, 'taskId', 'task_id'); if (!taskId) return null
+  const scope = unknownRecord(valueOf(record, 'projectScope', 'project_scope'))
+  const projectScope: ProjectAgentTaskRecord['projectScope'] = scope.type === 'temporary' || scope.type === 'registered'
+    ? { type: scope.type, lifetime: stringOf(scope, 'lifetime', 'lifetime'), ...(typeof scope.persisted === 'boolean' ? { persisted: scope.persisted } : {}) }
+    : undefined
   const reportedActual = normalizeActual(valueOf(record, 'actualExecution', 'actual_execution')) ?? normalizeActual({
     executor: stringOf(record, 'actualExecutor', 'actual_executor'),
     provider: stringOf(record, 'actualModelProvider', 'actual_model_provider'),
@@ -296,7 +300,7 @@ export function normalizeTask(value: unknown): ProjectAgentTaskRecord | null {
   const routingDecision = normalizeRoutingDecision(valueOf(record, 'routingDecision', 'routing_decision'))
     ?? normalizeTaskRoutingDecision(record)
   return {
-    taskId, personalSpaceId: stringOf(record, 'personalSpaceId', 'personal_space_id') ?? undefined, personalProjectId: stringOf(record, 'personalProjectId', 'personal_project_id'),
+    taskId, personalSpaceId: stringOf(record, 'personalSpaceId', 'personal_space_id') ?? undefined, personalProjectId: stringOf(record, 'personalProjectId', 'personal_project_id'), projectScope,
     title: stringOf(record, 'title', 'title') ?? taskId, objective: stringOf(record, 'objective', 'objective'), workKind: stringOf(record, 'workKind', 'work_kind'),
     status: stringOf(record, 'status', 'status') as ProjectAgentTaskStatus, runId: stringOf(record, 'runId', 'run_id'), executionId: stringOf(record, 'executionId', 'execution_id'),
     ownerAgentId: stringOf(record, 'ownerAgentId', 'owner_agent_id'), leadAgentId: stringOf(record, 'leadAgentId', 'lead_agent_id'), coordinatorAgentId: stringOf(record, 'coordinatorAgentId', 'coordinator_agent_id'), hrAgentId: stringOf(record, 'hrAgentId', 'hr_agent_id'), recruitmentId: stringOf(record, 'recruitmentId', 'recruitment_id'), participants: arrayOf(record.participants).map(normalizeParticipant),

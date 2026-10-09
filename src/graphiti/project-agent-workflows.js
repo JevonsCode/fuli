@@ -1,4 +1,5 @@
 import { loadProjectAgentContinuity } from './project-agent-task-entry.js';
+import { resolveCoordinationScope, scopedTaskIdempotencyKey } from './temporary-project-scope.js';
 import {
   executorActualReportRecord,
   executorRecord,
@@ -152,6 +153,9 @@ export async function coordinateProjectAgentTask(
   projectResolution,
   input
 ) {
+  let entryTask = input.taskContextToken
+    ? await application.taskContextRegistry.context(input.taskContextToken, input.sourceApplication) : null;
+  projectResolution = await resolveCoordinationScope(application, projectResolution, input, entryTask);
   const projectId = projectResolution.personalProjectId ??
     projectResolution.personal_project_id ?? null;
   if (!projectId) {
@@ -168,23 +172,28 @@ export async function coordinateProjectAgentTask(
     };
   }
 
-  const entryTask = input.taskContextToken
-    ? await application.taskContextRegistry.context(input.taskContextToken, input.sourceApplication) : null;
+  if (entryTask && projectResolution.scope?.type === 'temporary') {
+    entryTask = await application.taskContextRegistry.context(input.taskContextToken, input.sourceApplication);
+  }
   if (entryTask && entryTask.personalProjectId !== projectId) {
     throw new TypeError('Coordination task context belongs to another project');
   }
   const route = await submitProjectAgentTask(application, {
     personalSpaceId: application.config.personal.spaceId,
     personalProjectId: projectId,
-    idempotencyKey: input.idempotencyKey,
+    idempotencyKey: projectResolution.scope?.type === 'temporary'
+      ? scopedTaskIdempotencyKey(projectId, input) : input.idempotencyKey,
     title: input.title,
     verificationRequired: true,
     objective: input.objective,
     workKind: input.workKind,
     requiredCapabilities: input.requiredCapabilities,
     executorCapabilityHints: input.executorCapabilityHints,
-    duration: input.duration,
-    staffingIntent: input.staffingIntent,
+    duration: projectResolution.scope?.type === 'temporary' ? 'one_off' : input.duration,
+    staffingIntent: projectResolution.scope?.type === 'temporary'
+      && !input.leadAgentId
+      && (!input.staffingIntent || input.staffingIntent === 'reuse_preferred')
+      ? 'temporary' : input.staffingIntent,
     leadAgentId: input.leadAgentId,
     collaboratorAgentIds: input.collaboratorAgentIds,
     coordinatorAgentId: input.coordinatorAgentId,
@@ -193,7 +202,8 @@ export async function coordinateProjectAgentTask(
     modelStrategyOverride: input.modelStrategyOverride,
     executorPolicyOverride: input.executorPolicyOverride,
     sourceApplication: input.sourceApplication,
-    sourceSessionId: input.sourceSessionId,
+    sourceSessionId: projectResolution.scope?.type === 'temporary' && entryTask
+      ? entryTask.sessionId : input.sourceSessionId,
     routingReason: input.routingReason,
     recruitmentProfile: input.recruitmentProfile
   });
@@ -227,10 +237,11 @@ export async function coordinateProjectAgentTask(
   const hostExecutionRequired = route.task.status === 'queued' &&
     workerPlan.length > 0 && contextsReady;
   let adoptedTask = null;
+  const leadMemoryScope = workerPlan.find(worker => worker.agent_id === route.task.leadAgentId)
+    ?.context?.agent?.memoryScope;
   if (entryTask && !entryTask.projectAgentId && contextsReady
       && ['queued', 'running', 'paused', 'blocked', 'awaiting_recruitment'].includes(route.task.status)
-      && workerPlan.find(worker => worker.agent_id === route.task.leadAgentId)
-        ?.context?.agent?.memoryScope === 'reviewed_agent') {
+      && ['reviewed_agent', 'task_only'].includes(leadMemoryScope)) {
     adoptedTask = await application.taskContextRegistry.adoptAgent(input.taskContextToken, {
       personalProjectId: projectId, taskId: route.task.taskId, agentId: route.task.leadAgentId
     }, input.sourceApplication);
@@ -245,10 +256,16 @@ export async function coordinateProjectAgentTask(
     personal_space_id: application.config.personal.spaceId,
     personal_project_id: projectId,
     project_resolution: projectResolution,
+    ...(projectResolution.scope ? { project_scope: projectResolution.scope } : {}),
+    ...(route.task.status === 'awaiting_recruitment' ? {
+      required_action: 'Review the returned recruitment proposal and use decide_project_agent_recruitment with its current revision before starting a worker.'
+    } : {}),
     route,
-    ...(adoptedTask ? { task_context: {
-      task_context_token: adoptedTask.token, project_agent_id: adoptedTask.projectAgentId,
-      memory_revision: adoptedTask.memoryRevision, work_log_required: adoptedTask.workLogRequired
+    ...(adoptedTask || (entryTask && projectResolution.scope) ? { task_context: {
+      task_context_token: (adoptedTask ?? entryTask).token,
+      personal_project_id: projectId, project_agent_id: (adoptedTask ?? entryTask).projectAgentId,
+      memory_revision: (adoptedTask ?? entryTask).memoryRevision,
+      work_log_required: (adoptedTask ?? entryTask).workLogRequired
     } } : {}),
     host_execution_required: hostExecutionRequired,
     host_execution_policy: {

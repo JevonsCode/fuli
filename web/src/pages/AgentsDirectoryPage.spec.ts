@@ -29,6 +29,7 @@ async function setup(path = '/project-agents') {
     { path: '/project-agents', component: AgentsDirectoryPage },
     { path: '/agents/:spaceId/:agentId', component: { template: '<div>Profile destination</div>' } },
     { path: '/employees/bole', component: { template: '<div />' } },
+    { path: '/personal/:spaceId/projects/directory', component: { template: '<div>Project destination</div>' } },
   ] })
   await router.push(path)
   const wrapper = mount(RouterView, { global: { plugins: [router] } })
@@ -37,6 +38,15 @@ async function setup(path = '/project-agents') {
   return { router, wrapper }
 }
 describe('Agent directory integration', () => {
+  it('offers a copyable temporary task prompt at the main directory entry', async () => {
+    const { wrapper } = await setup()
+    const prompt = wrapper.get<HTMLTextAreaElement>('.project-agent-first-task textarea')
+    expect(prompt.element.readOnly).toBe(true)
+    expect(prompt.element.disabled).toBe(false)
+    expect(prompt.element.value).toContain('若尚未关联项目，请使用临时任务项目')
+    expect(wrapper.get('.project-agent-first-task a').attributes('href')).toBe('/personal/space-a/projects/directory')
+  })
+
   it('loads only the roster and sends each name to its own profile', async () => {
     const { router, wrapper } = await setup()
     const links = wrapper.findAll('.agent-directory-name a')
@@ -65,10 +75,12 @@ describe('Agent directory integration', () => {
       throw new Error(`Unexpected request: ${url}`)
     })
     const { wrapper } = await setup('/project-agents?q=aster&project=project-a')
+    expect(wrapper.find('.project-agent-first-task').exists()).toBe(false)
     store.state = readyState; store.runtimeStatus = 'ready'
     await flushPromises()
     expect((wrapper.get('input[type="search"]').element as HTMLInputElement).value).toBe('aster')
     expect(wrapper.findAll('.agent-directory-name a').map(link => link.text())).toEqual(['Aster'])
+    expect(wrapper.find('.project-agent-first-task').exists()).toBe(false)
   })
 
   it('redirects a legacy agent query while preserving the remaining query', async () => {

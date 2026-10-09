@@ -819,6 +819,7 @@ class StoreProjectAgentTasks(
               task_id: $task_id,
               personal_space_id: $personal_space_id,
               personal_project_id: $personal_project_id,
+              scope_type: coalesce(project.scope_type, 'registered'),
               payload_hash: $payload_hash,
               title: $title,
               objective: $objective,

@@ -45,8 +45,16 @@ fuli open
 再把这位 Agent 的接续指令带到连接同一份数据的另一客户端。检查它是否找对项目、恢复上次的工作，
 并在缺少信息时如实说明。支持范围见[Agent 对话与协作说明](docs/agent-conversations-and-collaboration.md)。
 
+临时任务也能交给 Agent：本次源码支持在没有匹配到已登记项目时，建立隔离的**临时项目**，
+继续用 Fuli 协调任务。任务历史会保留，Agent 招募与执行器授权沿用现有规则；
+单纯读取偏好不会创建项目，多个候选项目仍需明确选择。此能力待下一次 npm 发布。
+
+Agent 目录提供首次任务入口，任务详情会区分“已分配”和“收到工作进程报告”。
+只有上报真实执行后才有完成汇总；分配了 Agent、或仅完成普通本机对话，都不等于已运行工作进程。
+
 [工作原理](#项目理念) · [安装](#安装) · [Agent 角色与团队](docs/employee-agents.md) ·
-[反馈问题](https://github.com/JevonsCode/fuli/issues)
+[跨客户端验收](acceptance/cross-client-handoff.md) · [参与贡献](CONTRIBUTING.md) ·
+[反馈问题](https://github.com/JevonsCode/fuli/issues/new/choose)
 
 ## npm 包
 

@@ -1,5 +1,25 @@
 export const projectAgentMessages = {
   'zh-CN': {
+    firstTask: {
+      title: '还没有项目，也可以开始第一个任务',
+      hint: '在已连接 Fuli 的 AI 客户端里打开工作目录，说明要完成的事。目录尚未关联项目时，Fuli 会为这次任务建立独立的临时项目。',
+      promptLabel: '复制到 AI 客户端，并替换括号中的任务',
+      prompt: '请在当前目录用 Fuli 协作完成【要做的事】。若尚未关联项目，请使用临时任务项目。安排合适的 Agent 并实际执行，结束后汇总每个执行者的结果。',
+      outcome: '任务记录会区分项目归属、Agent 分配和实际执行。客户端上报执行结果后，才能看到执行汇总。',
+      registerOptional: '需要长期整理时，再登记项目 →',
+    },
+    diagnostics: {
+      title: '任务启动与执行状态', project: '项目归属', assignment: 'Agent 分配', execution: '实际执行',
+      projectState: { temporary: '独立临时项目', identified: '已关联项目', unresolved: '项目尚未识别' },
+      assignmentState: { assigned: '已记录任务分配', unreported: '尚未记录任务分配' },
+      executionState: { unreported: '尚未收到工作进程报告', queued: '工作进程已排队', running: '工作进程报告运行中', ended: '已收到结束状态', reported: '已收到工作进程报告' },
+      temporaryHint: '这次任务使用独立的临时项目，不会借用其他项目的知识与偏好。',
+      summaryReason: {
+        assignedOnly: '任务已分配，尚未收到实际执行报告，所以还没有执行汇总。请回到发起任务的客户端继续执行并上报结果，再刷新此页。',
+        unassigned: '尚未记录任务分配或实际执行报告，所以还没有执行汇总。请在发起任务的客户端说明任务并开始协作，再刷新此页。',
+        eventsOnly: '已收到工作进程事件，尚未收到执行汇总。下方保留了已有的执行事件。',
+      },
+    },
     advanced: '高级设置与诊断',
     taskDetails: '协作与执行详情',
     profileDetails: 'Agent 资料',
@@ -358,6 +378,26 @@ export const projectAgentMessages = {
     },
   },
   'en-US': {
+    firstTask: {
+      title: 'Start your first task without registering a project',
+      hint: 'Open your working folder in an AI client connected to Fuli and describe the work. If the folder has no project, Fuli creates an isolated temporary project for this task.',
+      promptLabel: 'Copy into your AI client and replace the task in brackets',
+      prompt: 'Use Fuli to complete [the work to do] in the current folder. If no project is linked, use a temporary task project. Assign suitable Agents and run the work, then summarize each executor’s results.',
+      outcome: 'Task records distinguish project scope, Agent assignment, and actual execution. Execution summaries appear after the client reports the work.',
+      registerOptional: 'Register a project later for ongoing work →',
+    },
+    diagnostics: {
+      title: 'Task start and execution status', project: 'Project scope', assignment: 'Agent assignment', execution: 'Actual execution',
+      projectState: { temporary: 'Isolated temporary project', identified: 'Project linked', unresolved: 'Project not identified' },
+      assignmentState: { assigned: 'Task assignment recorded', unreported: 'No task assignment reported' },
+      executionState: { unreported: 'No worker report received', queued: 'Worker queued', running: 'Worker reported running', ended: 'Terminal status received', reported: 'Worker report received' },
+      temporaryHint: 'This task uses an isolated temporary project, without borrowing knowledge or preferences from other projects.',
+      summaryReason: {
+        assignedOnly: 'The task is assigned, but no execution report has arrived, so there is no execution summary yet. Continue the work and report the results in the originating client, then refresh this page.',
+        unassigned: 'No task assignment or execution report has arrived, so there is no execution summary yet. Describe the task and start collaboration in the originating client, then refresh this page.',
+        eventsOnly: 'Worker events have arrived, but the execution summary has not. The existing execution events are shown below.',
+      },
+    },
     advanced: 'Advanced settings and diagnostics',
     taskDetails: 'Collaboration and execution details',
     profileDetails: 'Agent profile',

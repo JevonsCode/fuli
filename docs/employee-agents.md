@@ -4,7 +4,7 @@ An employee template is a reusable role with an optional FULI-hosted or native w
 
 ## User flow
 
-Open **Project Agents → Hire an Agent**, select a template and its responsibility policy, then hire. The custom project picker supports multiple selection, individual exclusions, search, and **Invert selection**. A newly recruited Jefa defaults to **All projects**, including future active projects unless explicitly excluded. **Selected projects** keeps a fixed selection; selecting none in that mode hires without a project. The Agent directory reflects the persistent identity; **Specialist Agents → Jefa** in the sidebar opens its installed board directly. No project is created implicitly. A missing project can be created from the existing personal-project directory.
+Open **Project Agents → Hire an Agent**, select a template and its responsibility policy, then hire. The custom project picker supports multiple selection, individual exclusions, search, and **Invert selection**. A newly recruited Jefa defaults to **All projects**, including future active projects unless explicitly excluded. **Selected projects** keeps a fixed selection; selecting none in that mode hires without a project. The Agent directory reflects the persistent identity; **Specialist Agents → Jefa** in the sidebar opens its installed board directly. Hiring alone does not create a project. Register a lasting project from the personal-project directory, or explicitly coordinate a one-off task to use the temporary scope described below.
 
 Specialist workspaces use a compact host toolbar rather than the generic console heading. They keep the workspace's own navigation and content, plus the host's project switcher and responsibility editor. The selected project is reflected in the URL; an unauthorized explicit deep link is never silently redirected to a different project. Empty assignments, unavailable templates and catalog errors each have an actionable state. The `employee` CLI/API/manifest names are unchanged for compatibility.
 
@@ -17,6 +17,25 @@ The directory's **Filter projects** control supports multi-selection and inversi
 Repeat recruitment is idempotent. Customized profile preferences and executor/model policies are preserved. One employee identity can have multiple project assignments. Reactivating an inactive identity is an explicit action; a conflicting unrelated identity is never overwritten. Recruitment does not start an executor or constitute model usage.
 
 The catalog shows whether a workbench package is actually installed. Identity-only templates need no runtime and remain valid employees without a sidebar workbench. A trusted built-in template may declare `workbench: { "kind": "native", "view": "people" }`; Bole uses this native panel to summarize Agent distribution, current tasks, and timestamped recruitment reasons from the same Project Agent APIs used elsewhere in the console.
+
+## One-off tasks without a registered project
+
+Explicit `coordinate_project_agent_task` calls can create a task-scoped temporary project when
+project resolution is `unmatched` or `not_provided`. Preference reads remain read-only; an
+ambiguous or invalid explicit project is never replaced with a temporary one. Use the exact
+returned project ID for subsequent task operations. Temporary projects do not participate in
+automatic directory matching and do not inherit another project's private context.
+
+The scope is marked `type: temporary`, `lifetime: task`, `persisted: true`: its audit history
+is retained after the task, rather than deleted. Agent staffing defaults to temporary and still
+follows recruitment confirmation, allowed-client and executor policies. A request may therefore
+be `awaiting_recruitment` or blocked before execution. Fuli returns a worker plan; the authorized
+host starts and reports actual workers. Creating the scope or assigning an Agent does not create
+an execution-summary row.
+
+The Agent directory's first-task prompt is usable without registering a project. Task details
+show scope, assignment, worker evidence and why a completion summary is unavailable. Registration
+remains useful for work that should share a stable project identity across future tasks.
 
 ## Local installation
 

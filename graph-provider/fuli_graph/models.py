@@ -371,6 +371,7 @@ class PersonalProjectUpsert(StrictModel):
 class PersonalProjectRecord(StrictModel):
     project_id: str
     personal_space_id: str
+    scope_type: Literal['registered', 'temporary'] = 'registered'
     publication_key: str
     profile: ProjectProfile
     created_at: datetime

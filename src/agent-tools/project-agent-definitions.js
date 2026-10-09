@@ -168,7 +168,7 @@ export const projectAgentTaskSubmitInput = objectSchema({
 ]);
 export const projectAgentTaskCoordinateInput = objectSchema({
   taskContextToken: id,
-  projectPath: boundedString(4096),
+  projectPath: { ...boundedString(4096), description: 'Current absolute directory, when available. An unmatched or omitted path gets an isolated task-scoped temporary project during explicit coordination; ambiguous matches still require selection.' },
   personalProjectId: {
     ...nullableStringSchema(), minLength: 1, maxLength: 128,
     description: 'Explicit existing project ID when the directory has no exact match. A conflicting exact path match is rejected.'
@@ -194,7 +194,7 @@ export const projectAgentTaskCoordinateInput = objectSchema({
   contextLimitPerQuery: integerSchema({ minimum: 1, maximum: 20 }),
   includePendingContext: booleanSchema()
 }, [
-  'projectPath', 'idempotencyKey', 'title', 'objective', 'workKind',
+  'idempotencyKey', 'title', 'objective', 'workKind',
   'routingReason', 'contextQueries'
 ]);
 export const projectAgentTaskActivityInput = objectSchema({

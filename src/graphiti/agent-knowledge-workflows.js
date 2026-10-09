@@ -23,18 +23,26 @@ export async function beginTaskContext(application, {
   requiredCapabilities = []
 }) {
   const continuationToken = /^FULI_CHECKPOINT_REQUIRED: (fuli-task-[a-zA-Z0-9-]{8,128})\b/.exec(taskPrompt ?? '')?.[1];
+  const current = !continuationToken && turnId && application.taskContextRegistry.current
+    ? await application.taskContextRegistry.current(sessionId, sourceApplication) : null;
   const resumed = continuationToken
     ? await application.taskContextRegistry.context(continuationToken, sourceApplication) : null;
+  const scopeRetry = current?.turnId === turnId && current?.projectScope?.type === 'temporary'
+    ? current : null;
   if (resumed && resumed.sessionId !== sessionId) {
     throw validationError('Checkpoint continuation belongs to another host session');
   }
+  const existingTask = resumed ?? scopeRetry;
+  if (existingTask && personalProjectId && existingTask.personalProjectId !== personalProjectId) {
+    throw validationError('Task context belongs to another project');
+  }
   const preferences = await application.getCollaborationPreferences({
-    personalProjectId,
+    personalProjectId: resumed?.personalProjectId ?? scopeRetry?.personalProjectId ?? personalProjectId,
     projectPath,
     sessionId,
-    turnId,
+    turnId: existingTask?.turnId ?? turnId,
     taskPrompt,
-    projectAgentId: resumed?.projectAgentId ?? projectAgentId,
+    projectAgentId: resumed?.projectAgentId ?? scopeRetry?.projectAgentId ?? projectAgentId,
     sourceApplication,
     sourceSessionId,
     workKind,
@@ -45,7 +53,7 @@ export async function beginTaskContext(application, {
   if (resumed && resumed.personalProjectId !== preferences.context.personal_project_id) {
     throw validationError('Checkpoint continuation belongs to another project');
   }
-  const task = resumed ?? await application.taskContextRegistry.begin({
+  const task = resumed ?? scopeRetry ?? await application.taskContextRegistry.begin({
     sessionId,
     turnId,
     personalProjectId: preferences.context.personal_project_id,
@@ -64,6 +72,7 @@ export async function beginTaskContext(application, {
     resumed_checkpoint: Boolean(resumed),
     previous_checkpoint_missing: task.previousCheckpointMissing,
     ...preferences,
+    ...(task.projectScope ? { project_scope: task.projectScope } : {}),
     task_guidance: {
       collaboration: 'Before implementation assess work complexity and required capabilities using plan_agent_collaboration. The stable project lead coordinates qualified specialists and source-lead-approved loans. Use only available authorized clients/models. Ask optional verification-client preference once; after 15 seconds use the recommended authorized task-local default. Persist project/global preferences only after explicit choice. Verify artifacts, record_agent_verification with evidence; after two failures escalate capability. Never claim a model change or worker run from a routing recommendation alone.',
       profile_capture: 'Evaluate durable artifact taste (including writing voice, wording, structure and formatting), stable collaboration personality, and decision preferences separately. Do not default every preference to judgment_preference. Use tasteDomain: writing for writing evidence; retain exact session/turn/time provenance. Agent-inferred personality remains pending. Report actual missing evidence rather than promising automatic progress from use alone.',
@@ -124,7 +133,7 @@ export async function checkpointTaskKnowledge(application, {
     targetKind: 'personal',
     spaceId: application.config.personal.spaceId,
     personalProjectId: task.personalProjectId,
-    projectAgentId: task.projectAgentId ?? null,
+    projectAgentId: task.agentMemoryScope === 'task_only' ? null : task.projectAgentId ?? null,
     sessionId: task.sessionId,
     sourceApplication,
     idempotencyKey: `${task.token}:knowledge`

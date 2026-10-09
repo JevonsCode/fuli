@@ -22,6 +22,7 @@ function fixture(resolution = { status: 'unmatched', personalProjectId: null }, 
       const url = new URL(rawUrl), body = options.body ? JSON.parse(options.body) : null;
       calls.push({ path: url.pathname, query: Object.fromEntries(url.searchParams), body });
       if (url.pathname === '/v1/personal-projects') return Response.json([{ project_id: 'selected-project', profile: { name: 'Synthetic selected project' } }]);
+      if (url.pathname === '/v1/temporary-projects/ensure') return Response.json({ project_id: `temporary-${body.scope_key}`, scope_type: 'temporary' });
       if (denied && ['/v1/project-agents', '/v1/project-agents/synthetic-agent', '/v1/project-agent-tasks'].includes(url.pathname)) return Response.json({ detail: 'Synthetic project access denied' }, { status: 403 });
       if (url.pathname === '/v1/project-agents') return Response.json([]);
       if (url.pathname === '/v1/project-agents/synthetic-agent') return Response.json({ agent_id: 'synthetic-agent', personal_space_id: 'synthetic-space', profile: { name: 'Synthetic Agent', responsibility: 'Check scope.', status: 'active', allowed_clients: ['other'] } });
@@ -39,7 +40,7 @@ test('all three project Agent tool schemas expose an optional bounded explicit p
     const schema = listAgentTools().find(tool => tool.name === name).inputSchema;
     assert.equal(schema.properties.personalProjectId.maxLength, 128, name);
     assert.equal(schema.required.includes('personalProjectId'), false, name);
-    assert.equal(schema.required.includes('projectPath'), true, 'preserve the existing path contract');
+    assert.equal(schema.required.includes('projectPath'), name !== 'coordinate_project_agent_task');
   }
 });
 
@@ -57,11 +58,17 @@ for (const name of TOOLS) {
     }
   });
 
-  test(`${name} keeps unresolved-path behavior when the override is omitted`, async () => {
+  test(`${name} only provisions an unmatched scope for explicit coordination`, async () => {
     const { app, calls } = fixture();
     const result = await callAgentTool(app, name, toolInput(name));
-    assert.equal(result.status, 'project_unresolved');
-    assert.deepEqual(calls.map(call => call.path), ['/v1/personal-projects']);
+    if (name === 'coordinate_project_agent_task') {
+      assert.equal(result.project_scope.type, 'temporary');
+      assert.equal(result.status, 'completed');
+      assert.equal(calls.some(call => call.path === '/v1/temporary-projects/ensure'), true);
+    } else {
+      assert.equal(result.status, 'project_unresolved');
+      assert.deepEqual(calls.map(call => call.path), ['/v1/personal-projects']);
+    }
   });
 
   test(`${name} cannot override a conflicting exact path match`, async () => {

@@ -380,7 +380,7 @@ test('project Agent coordinator returns isolated contexts for the Provider-selec
   );
 });
 
-test('project Agent coordinator never routes work when the local project is unresolved', async () => {
+test('project Agent coordinator fails closed if Provider cannot confirm a temporary scope', async () => {
   const calls = [];
   const app = application(calls, {
     '/v1/personal-projects': [{
@@ -389,7 +389,7 @@ test('project Agent coordinator never routes work when the local project is unre
     }]
   });
 
-  const result = await app.coordinateProjectAgentTask({
+  await assert.rejects(app.coordinateProjectAgentTask({
     projectPath: process.cwd(),
     idempotencyKey: 'coordinate-unresolved-1',
     title: 'Do not route',
@@ -397,11 +397,7 @@ test('project Agent coordinator never routes work when the local project is unre
     workKind: 'verification',
     routingReason: 'Project scope must be exact.',
     contextQueries: ['exact scope']
-  });
-
-  assert.equal(result.status, 'project_unresolved');
-  assert.equal(result.host_execution_required, false);
-  assert.deepEqual(result.worker_plan, []);
+  }), /Provider did not confirm the isolated temporary project/);
   assert.equal(calls.some(({ path }) => path === '/v1/project-agent-tasks'), false);
 });
 

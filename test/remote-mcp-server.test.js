@@ -123,8 +123,8 @@ test('remote MCP requires bearer auth and binds Claude to one project and host s
     requestInit: { headers: { authorization: `Bearer ${TOKEN}` } }
   });
   const client = new Client({ name: 'fuli-remote-test', version: '1.0.0' });
-  await client.connect(transport);
   t.after(() => client.close());
+  await client.connect(transport);
 
   const tools = await client.listTools();
   assert.deepEqual(tools.tools.map(({ name }) => name).sort(), [
@@ -345,8 +345,8 @@ test('remote MCP closes rejected initializations and caps active sessions', asyn
     requestInit: { headers: { authorization: `Bearer ${TOKEN}` } }
   });
   const client = new Client({ name: 'fuli-session-cap-test', version: '1.0.0' });
-  await client.connect(transport);
   t.after(() => client.close());
+  await client.connect(transport);
   assert.equal(remote.stats().activeSessions, 1);
 
   const overflow = await fetch(`${remote.url}/mcp`, {
@@ -374,6 +374,7 @@ test('remote MCP evicts abandoned sessions after the idle TTL', async (t) => {
     requestInit: { headers: { authorization: `Bearer ${TOKEN}` } }
   });
   const client = new Client({ name: 'fuli-session-ttl-test', version: '1.0.0' });
+  t.after(() => client.close());
   await client.connect(transport);
   assert.equal(remote.stats().activeSessions, 1);
   await client.close();
@@ -424,7 +425,10 @@ test('remote MCP accepts a session TTL shorter than the normal sweep interval', 
   assert.equal(remote.stats().activeSessions, 0);
 });
 
-test('remote MCP does not idle-evict a long-running tool response', async (t) => {
+test('remote MCP does not idle-evict a long-running tool response', {
+  timeout: 5_000
+}, async (t) => {
+  let clock = 1_000;
   const started = Promise.withResolvers();
   const release = Promise.withResolvers();
   const remote = await startRemote({
@@ -436,21 +440,28 @@ test('remote MCP does not idle-evict a long-running tool response', async (t) =>
       }
     },
     sessionIdleTtlMs: 20,
-    sessionSweepIntervalMs: 5
+    sessionSweepIntervalMs: 5,
+    now: () => clock
   });
-  t.after(() => remote.close());
+  t.after(() => {
+    release.resolve();
+    return remote.close();
+  });
   const transport = new StreamableHTTPClientTransport(new URL(`${remote.url}/mcp`), {
     requestInit: { headers: { authorization: `Bearer ${TOKEN}` } }
   });
   const client = new Client({ name: 'fuli-long-call-test', version: '1.0.0' });
-  await client.connect(transport);
   t.after(() => client.close());
+  await client.connect(transport);
   const call = client.callTool({
     name: 'get_collaboration_preferences',
     arguments: { sessionId: 'remote', projectPath: '.' }
   });
-  await started.promise;
-  await delay(60);
+  await Promise.race([started.promise, call]);
+  // Advance the idle clock only after dispatch; scheduler load must not expire
+  // the session while this test is still arranging the in-flight request.
+  clock += 60;
+  await delay(20);
   assert.equal(remote.stats().activeSessions, 1);
   release.resolve();
   const result = await call;
@@ -470,6 +481,7 @@ test('remote MCP reclaims an already-expired slot before rejecting a new session
     requestInit: { headers: { authorization: `Bearer ${TOKEN}` } }
   });
   const firstClient = new Client({ name: 'fuli-expired-slot-one', version: '1.0.0' });
+  t.after(() => firstClient.close());
   await firstClient.connect(firstTransport);
   assert.equal(remote.stats().activeSessions, 1);
 
@@ -480,8 +492,8 @@ test('remote MCP reclaims an already-expired slot before rejecting a new session
     requestInit: { headers: { authorization: `Bearer ${TOKEN}` } }
   });
   const secondClient = new Client({ name: 'fuli-expired-slot-two', version: '1.0.0' });
-  await secondClient.connect(secondTransport);
   t.after(() => secondClient.close());
+  await secondClient.connect(secondTransport);
   assert.equal(remote.stats().activeSessions, 1);
   await firstClient.close().catch(() => {});
 });
@@ -500,6 +512,7 @@ test('remote MCP re-resolves a session evicted while a POST body is uploading', 
     requestInit: { headers: { authorization: `Bearer ${TOKEN}` } }
   });
   const client = new Client({ name: 'fuli-upload-eviction-test', version: '1.0.0' });
+  t.after(() => client.close());
   await client.connect(transport);
   const sessionId = transport.sessionId;
   await client.close();
@@ -627,7 +640,7 @@ test('remote MCP absorbs and exposes post-listen server errors', async () => {
 
 test('remote MCP rejects an initialization that finishes connecting after shutdown starts', {
   timeout: 5_000
-}, async () => {
+}, async (t) => {
   const connectStarted = Promise.withResolvers();
   const releaseConnect = Promise.withResolvers();
   const remote = await startRemote({
@@ -638,6 +651,10 @@ test('remote MCP rejects an initialization that finishes connecting after shutdo
       },
       close: async () => {}
     })
+  });
+  t.after(() => {
+    releaseConnect.resolve();
+    return remote.close();
   });
   const responsePromise = rawJsonRequest(`${remote.url}/mcp`, initializeBody(), {
     authorization: `Bearer ${TOKEN}`,
@@ -655,7 +672,7 @@ test('remote MCP rejects an initialization that finishes connecting after shutdo
 
 test('remote MCP lets a dispatched initialization finish within shutdown grace', {
   timeout: 5_000
-}, async () => {
+}, async (t) => {
   const dispatchStarted = Promise.withResolvers();
   const releaseDispatch = Promise.withResolvers();
   const remote = await startRemote({
@@ -677,6 +694,10 @@ test('remote MCP lets a dispatched initialization finish within shutdown grace',
         close: () => mcp.close()
       };
     }
+  });
+  t.after(() => {
+    releaseDispatch.resolve();
+    return remote.close();
   });
   let closing;
   try {
@@ -706,7 +727,7 @@ test('remote MCP lets a dispatched initialization finish within shutdown grace',
 
 test('remote MCP reconciles a response closed before in-flight listeners attach', {
   timeout: 5_000
-}, async () => {
+}, async (t) => {
   const connectStarted = Promise.withResolvers();
   const releaseConnect = Promise.withResolvers();
   const dispatchStarted = Promise.withResolvers();
@@ -731,6 +752,11 @@ test('remote MCP reconciles a response closed before in-flight listeners attach'
       };
     }
   });
+  t.after(() => {
+    releaseConnect.resolve();
+    releaseDispatch.resolve();
+    return remote.close();
+  });
   const body = JSON.stringify(initializeBody());
   const request = httpRequest(`${remote.url}/mcp`, {
     method: 'POST',
@@ -741,6 +767,7 @@ test('remote MCP reconciles a response closed before in-flight listeners attach'
       'content-length': Buffer.byteLength(body)
     }
   });
+  t.after(() => request.destroy());
   request.on('error', () => {});
   request.end(body);
   await connectStarted.promise;
@@ -760,7 +787,7 @@ test('remote MCP reconciles a response closed before in-flight listeners attach'
 
 test('remote MCP removes an initialized session whose response was not delivered', {
   timeout: 5_000
-}, async () => {
+}, async (t) => {
   const connectStarted = Promise.withResolvers();
   const releaseConnect = Promise.withResolvers();
   const dispatchFinished = Promise.withResolvers();
@@ -785,6 +812,10 @@ test('remote MCP removes an initialized session whose response was not delivered
       };
     }
   });
+  t.after(() => {
+    releaseConnect.resolve();
+    return remote.close();
+  });
   const body = JSON.stringify(initializeBody());
   const request = httpRequest(`${remote.url}/mcp`, {
     method: 'POST',
@@ -795,6 +826,7 @@ test('remote MCP removes an initialized session whose response was not delivered
       'content-length': Buffer.byteLength(body)
     }
   });
+  t.after(() => request.destroy());
   request.on('error', () => {});
   request.end(body);
   try {
@@ -817,7 +849,7 @@ test('remote MCP removes an initialized session whose response was not delivered
 
 test('remote MCP does not refresh idle liveness for an aborted POST', {
   timeout: 5_000
-}, async () => {
+}, async (t) => {
   let clock = 1_000;
   const callStarted = Promise.withResolvers();
   const releaseCall = Promise.withResolvers();
@@ -835,10 +867,15 @@ test('remote MCP does not refresh idle liveness for an aborted POST', {
     sessionIdleTtlMs: 1_000,
     sessionSweepIntervalMs: 10
   });
+  t.after(() => {
+    releaseCall.resolve();
+    return remote.close();
+  });
   const transport = new StreamableHTTPClientTransport(new URL(`${remote.url}/mcp`), {
     requestInit: { headers: { authorization: `Bearer ${TOKEN}` } }
   });
   const client = new Client({ name: 'fuli-aborted-call-test', version: '1.0.0' });
+  t.after(() => client.close());
   await client.connect(transport);
   const sessionId = transport.sessionId;
   await client.close();
@@ -863,6 +900,7 @@ test('remote MCP does not refresh idle liveness for an aborted POST', {
       'content-length': Buffer.byteLength(body)
     }
   });
+  t.after(() => request.destroy());
   request.on('error', () => {});
   request.on('response', response => response.resume());
   request.end(body);
@@ -883,8 +921,9 @@ test('remote MCP does not refresh idle liveness for an aborted POST', {
   }
 });
 
-test('remote MCP bounds shutdown even when a client trickles a request body', async () => {
+test('remote MCP bounds shutdown even when a client trickles a request body', async (t) => {
   const remote = await startRemote({ shutdownGraceMs: 20 });
+  t.after(() => remote.close());
   const body = JSON.stringify(initializeBody());
   const request = httpRequest(`${remote.url}/mcp`, {
     method: 'POST',
@@ -894,6 +933,7 @@ test('remote MCP bounds shutdown even when a client trickles a request body', as
       'content-length': Buffer.byteLength(body)
     }
   });
+  t.after(() => request.destroy());
   request.on('error', () => {});
   request.write(body.slice(0, 8));
   await delay(5);
@@ -905,7 +945,7 @@ test('remote MCP bounds shutdown even when a client trickles a request body', as
 
 test('remote MCP lets an in-flight tool response finish within shutdown grace', {
   timeout: 5_000
-}, async () => {
+}, async (t) => {
   const started = Promise.withResolvers();
   const release = Promise.withResolvers();
   const remote = await startRemote({
@@ -918,16 +958,21 @@ test('remote MCP lets an in-flight tool response finish within shutdown grace', 
     },
     shutdownGraceMs: 250
   });
+  t.after(() => {
+    release.resolve();
+    return remote.close();
+  });
   const transport = new StreamableHTTPClientTransport(new URL(`${remote.url}/mcp`), {
     requestInit: { headers: { authorization: `Bearer ${TOKEN}` } }
   });
   const client = new Client({ name: 'fuli-shutdown-drain-test', version: '1.0.0' });
+  t.after(() => client.close());
   await client.connect(transport);
   const call = client.callTool({
     name: 'get_collaboration_preferences',
     arguments: { sessionId: 'remote', projectPath: '.' }
   });
-  await started.promise;
+  await Promise.race([started.promise, call]);
   const closing = remote.close();
   await delay(25);
   release.resolve();
@@ -937,7 +982,7 @@ test('remote MCP lets an in-flight tool response finish within shutdown grace', 
   await client.close().catch(() => {});
 });
 
-test('remote MCP absorbs synchronous session-close failures', async () => {
+test('remote MCP absorbs synchronous session-close failures', async (t) => {
   const app = {
     getCollaborationPreferences: async () => ({
       effective_preferences: [], deferred_conflicts: []
@@ -953,10 +998,12 @@ test('remote MCP absorbs synchronous session-close failures', async () => {
       };
     }
   });
+  t.after(() => remote.close());
   const transport = new StreamableHTTPClientTransport(new URL(`${remote.url}/mcp`), {
     requestInit: { headers: { authorization: `Bearer ${TOKEN}` } }
   });
   const client = new Client({ name: 'fuli-close-failure-test', version: '1.0.0' });
+  t.after(() => client.close());
   await client.connect(transport);
   await remote.close();
   await client.close().catch(() => {});
@@ -964,7 +1011,7 @@ test('remote MCP absorbs synchronous session-close failures', async () => {
 
 test('remote MCP bounds shutdown when a session close never settles', {
   timeout: 2_000
-}, async () => {
+}, async (t) => {
   const remote = await startRemote({
     shutdownGraceMs: 20,
     createMcp: (app, options) => {
@@ -975,10 +1022,12 @@ test('remote MCP bounds shutdown when a session close never settles', {
       };
     }
   });
+  t.after(() => remote.close());
   const transport = new StreamableHTTPClientTransport(new URL(`${remote.url}/mcp`), {
     requestInit: { headers: { authorization: `Bearer ${TOKEN}` } }
   });
   const client = new Client({ name: 'fuli-hung-close-test', version: '1.0.0' });
+  t.after(() => client.close());
   await client.connect(transport);
   const startedAt = Date.now();
   const outcome = await Promise.race([
@@ -994,8 +1043,9 @@ test('remote MCP bounds shutdown when a session close never settles', {
   assert.ok(Date.now() - startedAt < 500, 'session close exceeded the shutdown deadline');
 });
 
-test('remote MCP rejects an initialization whose body finishes after shutdown starts', async () => {
+test('remote MCP rejects an initialization whose body finishes after shutdown starts', async (t) => {
   const remote = await startRemote();
+  t.after(() => remote.close());
   const body = JSON.stringify(initializeBody());
   const splitAt = Math.floor(body.length / 2);
   const responsePromise = new Promise((resolve, reject) => {

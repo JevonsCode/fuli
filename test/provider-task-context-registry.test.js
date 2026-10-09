@@ -20,6 +20,19 @@ function providerRecord(overrides = {}) {
   };
 }
 
+test('Provider registry preserves temporary scope and task-only ownership on recovery', async () => {
+  const projectScope = { type: 'temporary', lifetime: 'task', persisted: true };
+  const registry = new ProviderTaskContextRegistry({
+    currentTaskContext: async input => {
+      assert.equal(input.session_id, 'logical-session');
+      return providerRecord({ project_scope: projectScope, agent_memory_scope: 'task_only' });
+    }
+  }, 'space-1');
+  const current = await registry.current('logical-session', 'claude_code');
+  assert.deepEqual(current.projectScope, projectScope);
+  assert.equal(current.agentMemoryScope, 'task_only');
+});
+
 test('Provider task context records preserve turn and host-session provenance', async () => {
   let received;
   const registry = new ProviderTaskContextRegistry({

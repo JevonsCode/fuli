@@ -18,6 +18,7 @@ from .project_agent_task_models import (
     ProjectAgentWorkerRuntime,
 )
 from .provider_values import native_datetime
+from .temporary_project_scope import TEMPORARY_SCOPE
 
 
 TERMINAL_TASK_STATUSES = {'completed', 'failed', 'cancelled'}
@@ -246,6 +247,7 @@ class StoreProjectAgentTaskReads:
             'task_id': raw['task_id'],
             'personal_space_id': raw['personal_space_id'],
             'personal_project_id': raw['personal_project_id'],
+            'project_scope': dict(TEMPORARY_SCOPE) if raw.get('scope_type') == 'temporary' else None,
             'title': raw['title'],
             'objective': raw['objective'],
             'work_kind': raw['work_kind'],
@@ -366,11 +368,10 @@ class StoreProjectAgentTaskReads:
         task_fallback = task_raw if len(participants) == 1 else {}
         for participant in participants:
             agent_id = participant['agent_id']
-            participant_events = [
+            participant_events = cls._observed_execution_events([
                 event for event in events
                 if event.agent_id == agent_id
-                and cls._is_execution_event(event)
-            ]
+            ])
             agent_name, occupation_emoji = cls._participant_profile(participant)
             worker_groups = {}
             for event in participant_events:
@@ -396,7 +397,7 @@ class StoreProjectAgentTaskReads:
 
             # A configured participant is not execution evidence. Legacy
             # clients may omit worker_id, but they must still have recorded an
-            # Agent-linked running/terminal event or concrete executor/model
+            # Agent-linked running event or concrete executor/model
             # evidence before a summary row exists.
             if not participant_events:
                 continue
@@ -420,11 +421,25 @@ class StoreProjectAgentTaskReads:
             or event.actual_model_provider
             or event.actual_model
             or event.token_usage
-            or event.status in {
-                'running', 'paused', 'awaiting_review', 'blocked',
-                'completed', 'failed', 'cancelled',
-            }
+            or event.worker_runtime
+            or (event.status == 'running' and event.actor_kind != 'hr')
         )
+
+    @classmethod
+    def _observed_execution_events(cls, events):
+        observed = []
+        for event in events:
+            if cls._is_execution_event(event):
+                observed.append(event)
+            elif (observed and event.actor_kind != 'hr'
+                    and event.status in {'paused', 'awaiting_review', 'blocked',
+                                         'completed', 'failed', 'cancelled'}):
+                # Keep legacy completion after a proven start, including old
+                # events whose missing actor kind is read as system. Recruitment,
+                # authorization and cancellation before any start are task
+                # control events, not evidence that a worker executed.
+                observed.append(event)
+        return observed
 
     @classmethod
     def _execution_summary_row(

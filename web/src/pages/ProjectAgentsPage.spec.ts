@@ -117,6 +117,37 @@ describe('ProjectAgentsPage', () => {
       .toBe(false)
   })
 
+  it('offers a temporary first task without requiring project registration', async () => {
+    const { wrapper, store } = mountPage()
+    store.state = { ...store.state!, personalProjects: [] }
+    await flushPromises()
+    const firstTask = wrapper.get('.project-agent-first-task')
+    expect(firstTask.text()).toContain('还没有项目，也可以开始第一个任务')
+    expect(firstTask.get('textarea').element.value).toContain('若尚未关联项目，请使用临时任务项目')
+    expect(firstTask.getComponent(RouterLinkStub).props('to')).toBe('/personal/personal-1/projects/directory')
+    store.state = { ...store.state!, personalProjects: [{ project_id: 'project-a', personal_space_id: 'personal-1', profile: { name: '活动项目', sources: [], boundaries: [] } }] }
+    await nextTick()
+    expect(wrapper.find('.project-agent-first-task').exists()).toBe(false)
+  })
+
+  it('shows temporary task scope and assignment without claiming a worker has started', async () => {
+    const originalGet = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => url.includes('/api/project-agent-tasks?')
+      ? Promise.resolve({ tasks: [{
+        task_id: 'task-temporary', title: '第一次协作', status: 'running', personal_project_id: 'temporary-project',
+        project_scope: { type: 'temporary', lifetime: 'task', persisted: true },
+        participants: [{ agent_id: 'shared-agent', role: 'lead', status: 'running' }], execution_summary: [],
+      }] }) : originalGet(url))
+    const { wrapper } = mountPage()
+    await flushPromises()
+    const diagnostics = wrapper.get('.project-agent-task-diagnostics')
+    expect(diagnostics.get('[data-task-project-state]').text()).toContain('独立临时项目')
+    expect(diagnostics.get('[data-task-assignment-state]').text()).toContain('已记录任务分配')
+    expect(diagnostics.get('[data-task-execution-state]').text()).toContain('尚未收到工作进程报告')
+    expect(diagnostics.element.closest('details')).toBeNull()
+    expect(wrapper.find('.project-agent-execution-summary-table').exists()).toBe(false)
+  })
+
   it('keeps tasks in the overview and advanced configuration closed but reachable', async () => {
     const { wrapper } = mountPage()
     await flushPromises()

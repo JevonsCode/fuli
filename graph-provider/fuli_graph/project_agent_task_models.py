@@ -431,6 +431,7 @@ class ProjectAgentTaskRecord(StrictModel):
     task_id: str
     personal_space_id: str
     personal_project_id: str
+    project_scope: dict | None = None
     title: str
     objective: str
     work_kind: str

@@ -29,6 +29,14 @@ export class ProviderTaskContextRegistry {
     }));
   }
 
+  async current(sessionId, sourceApplication = 'other') {
+    const value = await this.provider.currentTaskContext({
+      personal_space_id: this.personalSpaceId, session_id: sessionId,
+      source_application: sourceApplication
+    });
+    return value?.token ? taskRecord(value) : null;
+  }
+
   async adoptAgent(token, { personalProjectId, taskId, agentId }, sourceApplication = 'other') {
     return taskRecord(await this.provider.adoptTaskContextAgent(token, {
       personal_space_id: this.personalSpaceId, personal_project_id: personalProjectId,
@@ -69,6 +77,8 @@ function taskRecord(value) {
   return {
     token: value.token, sessionId: value.session_id,
     personalProjectId: value.personal_project_id,
+    projectScope: value.project_scope ?? null,
+    agentMemoryScope: value.agent_memory_scope ?? null,
     projectAgentId: value.project_agent_id,
     sourceApplication: value.source_application,
     sourceSessionId: value.source_session_id ?? null,
