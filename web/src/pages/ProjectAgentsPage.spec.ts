@@ -401,7 +401,7 @@ describe('ProjectAgentsPage', () => {
     await dialog.get('input[value="project-b"]').setValue(false)
     expect(dialog.get('.project-scope-count').text()).toContain('1 / 共 2')
     expect(postJson).not.toHaveBeenCalled()
-    await dialog.get('.employee-recruit-heading button').trigger('click')
+    await dialog.get('.ui-dialog__header button').trigger('click')
     await wrapper.get('[data-detail-section="assignments"]').findAll('button')
       .find((button) => button.text() === '分配项目')!.trigger('click')
     await flushPromises()

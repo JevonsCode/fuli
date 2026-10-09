@@ -49,7 +49,7 @@ describe('KnowledgeEditDialog', () => {
 
     const replacementSelect = wrapper
       .findAllComponents({ name: 'UiSelect' })
-      .find((component) => component.props('label') === '替代内容')
+      .find((component) => component.props('label') === '选择当前有效的内容')
     expect(replacementSelect).toBeDefined()
     await replacementSelect!.get('[role="combobox"]').trigger('click')
     const replacementOption = replacementSelect!
@@ -61,7 +61,7 @@ describe('KnowledgeEditDialog', () => {
       .findAll('label')
       .find((label) => label.text().includes('纠正原因'))
     await reasonLabel!.get('textarea').setValue('当前口径已经完成审核。')
-    await wrapper.get('.knowledge-editor-actions button.secondary-action').trigger('click')
+    await wrapper.get('.knowledge-editor-actions button:not([type="submit"])').trigger('click')
     await flushPromises()
 
     expect(patchJson).toHaveBeenCalledWith(

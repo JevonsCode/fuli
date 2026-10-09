@@ -6,7 +6,8 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import ProjectScopePicker from './ProjectScopePicker.vue'
 import { employeeAvatarUrl } from './avatars'
-import { useModalDialog } from '@/composables/useModalDialog'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiDialog from '@/components/ui/UiDialog.vue'
 import { t } from '@/i18n'
 import { personalProjectsPath } from '@/router/paths'
 import type { PersonalProject } from '@/types'
@@ -40,7 +41,6 @@ const error = ref('')
 const success = ref<EmployeeRecruitmentResult | null>(null)
 const catalogTemplates = ref<EmployeeTemplate[]>([])
 const catalogError = ref('')
-const { dialogRef, initialFocusRef, onCancel, onKeydown } = useModalDialog(() => props.open, close)
 const templates = computed(() => props.templateId ? catalogTemplates.value : catalogTemplates.value.filter((entry) => !entry.fixed))
 const selected = computed(() => props.templateId
   ? templates.value.find((entry) => entry.id === props.templateId)
@@ -181,124 +181,91 @@ function scopeKeydown(event: KeyboardEvent) {
 </script>
 
 <template>
-  <dialog v-if="open" ref="dialogRef" class="employee-recruit-dialog" aria-modal="true" aria-labelledby="employee-recruit-title" @cancel="onCancel" @keydown="onKeydown">
-    <header class="employee-recruit-heading">
-      <h2 id="employee-recruit-title">{{ title }}</h2>
-      <button ref="initialFocusRef" type="button" class="quiet-button" :disabled="busy" @click="close">{{ t('employees.close') }}</button>
-    </header>
+  <UiDialog :open="open" class="employee-recruit-dialog" :title="title" :busy="busy" form @close="close" @submit="recruit">
     <GrowthLoading v-if="selectionLoading && !templates.length" variant="compact" :label="t('employees.loading')" />
-    <div v-else-if="catalogError" role="alert" class="employee-message">
+    <div v-else-if="catalogError" role="alert" class="ui-dialog__error employee-message">
       <p>{{ catalogError }}</p>
-      <button class="quiet-button" type="button" @click="reloadSelection(true)">{{ t('employees.retry') }}</button>
+      <UiButton size="sm" @click="reloadSelection(true)">{{ t('employees.retry') }}</UiButton>
     </div>
-    <p v-else-if="!selected">{{ t('employees.noTemplates') }}</p>
-    <form v-else @submit.prevent="recruit">
-      <div class="employee-recruit-body">
-      <div v-if="templates.length > 1 && !props.templateId" class="employee-picker-field">
-        <span>{{ t('employees.choose') }}</span>
-        <UiSelect v-model="templateId" control-id="employee-template" :label="t('employees.choose')" :options="templates.map((entry) => ({ value: entry.id, label: entry.name, meta: entry.role }))" :disabled="busy || selectionLoading" />
-      </div>
+    <p v-else-if="!selected" class="ui-muted">{{ t('employees.noTemplates') }}</p>
+    <template v-else>
+      <UiSelect v-if="templates.length > 1 && !props.templateId" v-model="templateId" class="ui-field" control-id="employee-template" :label="t('employees.choose')" :options="templates.map((entry) => ({ value: entry.id, label: entry.name, meta: entry.role }))" :disabled="busy || selectionLoading" />
       <div class="employee-profile">
         <span class="employee-avatar" aria-hidden="true">
           <img v-if="employeeAvatarUrl(selected.id)" :src="employeeAvatarUrl(selected.id)" alt="" />
           <template v-else>{{ selected.name.slice(0, 1) }}</template>
         </span>
-        <div><h3>{{ selected.name }} <span>{{ selected.role }}</span></h3><p>{{ selected.description }}</p></div>
+        <div>
+          <h3>{{ selected.name }} <span>{{ selected.role }}</span></h3>
+          <p>{{ selected.description }}</p>
+          <p class="ui-meta">{{ selected.capabilities.join(' · ') }}</p>
+        </div>
       </div>
-      <p class="employee-specialties">{{ selected.capabilities.join(' · ') }}</p>
       <GrowthLoading v-if="selectionLoading" variant="compact" :label="t('employees.loadingScope')" />
-      <div v-if="supportsPolicy" class="employee-scope-mode" role="radiogroup" :aria-label="t('employees.scope.rule')" @keydown="scopeKeydown">
-        <button v-for="mode in (['all', 'selected'] as const)" :key="mode" type="button" role="radio" :data-scope="mode" :aria-checked="scopeMode === mode" :tabindex="scopeMode === mode ? 0 : -1" :disabled="busy || selectionLoading || requiresReload" @click="changeScope(mode)">
-          {{ t(`employees.scope.${mode === 'all' ? 'continuousAll' : 'onlySelected'}`) }}
-        </button>
+      <div v-if="supportsPolicy" class="employee-scope">
+        <div class="ui-segmented" role="radiogroup" :aria-label="t('employees.scope.rule')" @keydown="scopeKeydown">
+          <button v-for="mode in (['all', 'selected'] as const)" :key="mode" type="button" role="radio" :data-scope="mode" :aria-checked="scopeMode === mode" :tabindex="scopeMode === mode ? 0 : -1" :disabled="busy || selectionLoading || requiresReload" @click="changeScope(mode)">
+            {{ t(`employees.scope.${mode === 'all' ? 'continuousAll' : 'onlySelected'}`) }}
+          </button>
+        </div>
+        <p class="ui-meta" role="status">{{ scopeMode === 'all' ? t('employees.scope.allHint', { name: selected.name }) : t('employees.scope.selectedHint') }}</p>
       </div>
-      <p v-if="supportsPolicy" class="employee-scope-rule" role="status">{{ scopeMode === 'all' ? t('employees.scope.allHint', { name: selected.name }) : t('employees.scope.selectedHint') }}</p>
       <ProjectScopePicker v-model="selectionIds" :projects="projectOptions" inline :hint="scopeMode === 'all' ? t('employees.scope.excludeHint') : undefined" :disabled="busy || selectionLoading || requiresReload" />
-      <p v-if="scopeMode === 'all' && excludedIds.length" class="employee-muted">{{ t('employees.scope.excludedCount', { count: excludedIds.length }) }}</p>
-      <p v-if="!projectOptions.length" class="employee-muted">{{ t('employees.noProjects') }} <RouterLink :to="personalProjectsPath(personalSpaceId, 'directory')" @click="close">{{ t('employees.createProject') }}</RouterLink></p>
-      <p v-if="removals.length && !success" class="employee-muted">{{ t('employees.scopeRemoved', { count: removals.length }) }}</p>
+      <p v-if="scopeMode === 'all' && excludedIds.length" class="ui-meta">{{ t('employees.scope.excludedCount', { count: excludedIds.length }) }}</p>
+      <p v-if="!projectOptions.length" class="ui-meta">{{ t('employees.noProjects') }} <RouterLink :to="personalProjectsPath(personalSpaceId, 'directory')" @click="close">{{ t('employees.createProject') }}</RouterLink></p>
+      <p v-if="removals.length && !success" class="ui-meta">{{ t('employees.scopeRemoved', { count: removals.length }) }}</p>
       <section v-if="supportsPolicy && selected.permissions.includes('session.title')" class="employee-title-settings" :aria-label="t('employees.titles.heading')">
         <h3>{{ t('employees.titles.heading') }}</h3>
         <div class="employee-title-controls">
-          <div class="employee-picker-field"><span>{{ t('employees.titles.mode') }}</span><UiSelect v-model="titleMode" control-id="employee-title-mode" :label="t('employees.titles.mode')" :options="titleModeOptions" :disabled="busy || selectionLoading || requiresReload" /></div>
-          <div class="employee-picker-field"><span>{{ t('employees.titles.style') }}</span><UiSelect v-model="titleStyle" control-id="employee-title-style" :label="t('employees.titles.style')" :options="titleStyleOptions" :disabled="busy || selectionLoading || requiresReload || titleMode === 'off'" /></div>
+          <UiSelect v-model="titleMode" field control-id="employee-title-mode" :label="t('employees.titles.mode')" :options="titleModeOptions" :disabled="busy || selectionLoading || requiresReload" />
+          <UiSelect v-model="titleStyle" field control-id="employee-title-style" :label="t('employees.titles.style')" :options="titleStyleOptions" :disabled="busy || selectionLoading || requiresReload || titleMode === 'off'" />
         </div>
-        <p class="employee-title-preview">{{ t('employees.titles.example') }} <span>【P1｜{{ titleStyle === 'emoji' ? '🔧 ' : '' }}FIX｜{{ t('employees.titles.exampleTask') }}】</span></p>
-        <p class="employee-muted">{{ t('employees.titles.boundary') }}</p>
+        <p class="ui-meta">{{ t('employees.titles.example') }} <span class="employee-title-example">【P1｜{{ titleStyle === 'emoji' ? '🔧 ' : '' }}FIX｜{{ t('employees.titles.exampleTask') }}】</span></p>
+        <p class="ui-meta">{{ t('employees.titles.boundary') }}</p>
       </section>
       <section class="employee-permissions" :aria-label="t('employees.permissions')">
         <strong>{{ t('employees.permissions') }}</strong>
         <ul><li v-for="permission in selected.permissions" :key="permission">{{ permission === 'board.read' ? t('employees.boardRead') : permission === 'board.write' ? t('employees.boardWrite') : permission === 'session.title' ? t('employees.titles.heading') : permission }}</li></ul>
-        <p>{{ t('employees.noExecutor') }}</p>
+        <p class="ui-meta">{{ t('employees.noExecutor') }}</p>
       </section>
       <p v-if="selected.runtime" class="employee-runtime" :class="{ 'is-warning': selected.runtimeStatus !== 'ready' }">{{ selected.runtimeStatus === 'ready' ? t('employees.hostReady') : t('employees.installRequired') }}</p>
-      <p v-if="error || selected.identityConflict" class="employee-error" role="alert">{{ error || t('employees.errors.identity_conflict') }}</p>
-      <button v-if="requiresReload" type="button" class="quiet-button" :disabled="selectionLoading" @click="reloadSelection()">{{ t('employees.reloadScope') }}</button>
+      <p v-if="error || selected.identityConflict" class="ui-dialog__error" role="alert">{{ error || t('employees.errors.identity_conflict') }}</p>
+      <UiButton v-if="requiresReload" size="sm" :disabled="selectionLoading" @click="reloadSelection()">{{ t('employees.reloadScope') }}</UiButton>
       <div v-if="success" class="employee-success" role="status">
         <strong>{{ t('employees.scopeSaved') }}</strong>
         <p>{{ scopeMode === 'all' ? t('employees.scope.successAll', { count: selectionIds.length }) : selectionIds.length ? t('employees.successMultiple', { count: selectionIds.length }) : t('employees.successUnassigned') }}</p>
       </div>
-      </div>
-      <footer class="employee-recruit-actions">
-        <button class="quiet-button" type="button" :disabled="busy" @click="close">{{ t('employees.cancel') }}</button>
-        <RouterLink v-if="noChange && workbenchLink && !busy && !selectionLoading && !requiresReload && selected.runtimeStatus === 'ready'" class="employee-primary" :to="workbenchLink" @click="close">{{ t('employees.open') }}</RouterLink>
-        <button v-else class="employee-primary" type="submit" :disabled="busy || selectionLoading || requiresReload || !expectedVersion || noChange || selected.identityConflict || !personalSpaceId">
-          <GrowthLoading v-if="busy" variant="inline" :label="actionLabel" />
-          <template v-else>{{ actionLabel }}</template>
-        </button>
-      </footer>
-    </form>
-  </dialog>
+    </template>
+    <template v-if="selected && !catalogError" #footer>
+      <UiButton variant="ghost" :disabled="busy" @click="close">{{ t('employees.cancel') }}</UiButton>
+      <RouterLink v-if="noChange && workbenchLink && !busy && !selectionLoading && !requiresReload && selected.runtimeStatus === 'ready'" class="ui-button ui-button--primary" :to="workbenchLink" @click="close">{{ t('employees.open') }}</RouterLink>
+      <UiButton v-else variant="primary" type="submit" :busy="busy" :busy-label="actionLabel" :disabled="selectionLoading || requiresReload || !expectedVersion || noChange || selected.identityConflict || !personalSpaceId">{{ actionLabel }}</UiButton>
+    </template>
+  </UiDialog>
 </template>
 
 <style scoped>
-.employee-recruit-dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: auto; padding: 0; overflow: hidden; border: 0; border-radius: var(--radius-dialog); background: var(--color-surface); color: var(--color-ink); box-shadow: var(--shadow-dialog); font-size: 14px; line-height: 1.6; }
-.employee-recruit-dialog[open] { display: flex; flex-direction: column; }
-.employee-recruit-dialog > form { display: flex; flex-direction: column; min-height: 0; }
-.employee-recruit-body { min-height: 0; padding: 0 28px 20px; overflow-y: auto; overscroll-behavior: contain; }
-.employee-recruit-dialog > :is(p, .employee-message) { margin: 0 28px 28px; }
-.employee-recruit-dialog::backdrop { background: var(--color-overlay); }
-.employee-recruit-heading { display: flex; flex: 0 0 auto; justify-content: space-between; align-items: center; gap: 16px; padding: 22px 28px; }
-.employee-recruit-heading h2 { margin: 0; font-size: 20px; line-height: 1.4; }
-.employee-profile { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
-.employee-profile h3 { margin: 0 0 4px; font-size: 21px; line-height: 1.35; }
-.employee-profile h3 span { display: inline-block; margin-left: 8px; color: var(--color-muted); font-size: 13px; font-weight: 500; }
-.employee-profile p, .employee-success p { margin: 0; color: var(--color-success); }
-.employee-avatar { display: grid; flex: 0 0 52px; height: 52px; place-items: center; overflow: hidden; border-radius: 14px; background: var(--color-surface-subtle); color: var(--color-ink); font-size: 27px; font-weight: 650; }
+.employee-profile { display: flex; align-items: center; gap: 14px; }
+.employee-profile h3 { margin: 0 0 2px; font-size: 18px; line-height: 1.35; }
+.employee-profile h3 span { margin-left: 8px; color: var(--color-muted); font-size: 13px; font-weight: 500; }
+.employee-profile p { margin: 0; }
+.employee-avatar { display: grid; flex: 0 0 48px; height: 48px; place-items: center; overflow: hidden; border-radius: 14px; background: var(--color-surface-subtle); font-size: 24px; font-weight: 650; }
 .employee-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.employee-specialties { margin: 0 0 24px; color: var(--color-muted); font-size: 12px; }
-.employee-scope-mode { display: flex; gap: 4px; padding: 4px; margin: 0 0 10px; border-radius: 10px; background: var(--color-surface-subtle); }
-.employee-scope-mode button { flex: 1; min-height: 40px; padding: 8px 10px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--color-ink); font: inherit; font-size: 13px; cursor: pointer; }
-.employee-scope-mode button[aria-checked="true"] { background: var(--color-accent-soft); color: var(--color-accent); font-weight: 600; box-shadow: inset 0 0 0 1px var(--color-accent); }
-.employee-scope-mode button:hover:not(:disabled) { color: var(--color-ink); background: var(--color-surface-subtle); }
-.employee-scope-mode button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-.employee-scope-mode button:disabled { opacity: .55; cursor: default; }
-.employee-scope-rule { margin: 0 0 16px; color: var(--color-ink); font-size: 13px; }
-.employee-title-settings { margin-top: 24px; }
-.employee-title-settings h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; }
+.employee-scope { display: grid; gap: 8px; }
+.employee-scope .ui-segmented { display: flex; }
+.employee-scope .ui-segmented > button { flex: 1; }
+.employee-title-settings { display: grid; gap: 8px; }
+.employee-title-settings h3 { margin: 0; font-size: 14px; font-weight: 600; }
 .employee-title-controls { display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px; }
-.employee-title-controls .employee-picker-field { min-width: 0; margin-bottom: 8px; }
-.employee-title-preview { margin: 4px 0 0; color: var(--color-muted); font-size: 12px; overflow-wrap: anywhere; }
-.employee-title-preview span { color: var(--color-ink); }
-.employee-picker-field { display: grid; gap: 7px; margin-bottom: 18px; color: var(--color-ink); font-size: 13px; }
-.employee-picker-field :deep(.ui-select) { width: 100%; }
-.employee-picker-field :deep(.ui-select__trigger) { width: 100%; }
-.employee-permissions { margin-top: 20px; font-size: 12px; }
-.employee-permissions strong { color: var(--color-ink); font-weight: 600; }
-.employee-permissions ul { display: flex; flex-wrap: wrap; gap: 4px 18px; padding-left: 16px; margin: 6px 0; }
-.employee-permissions p, .employee-muted { margin-top: 8px; color: var(--color-muted); font-size: 12px; }
-.employee-runtime { margin: 20px 0 0; color: var(--color-ink); font-size: 12px; }
+.employee-title-example { color: var(--color-ink); overflow-wrap: anywhere; }
+.employee-permissions { font-size: 12px; }
+.employee-permissions strong { font-weight: 600; }
+.employee-permissions ul { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 6px 0; padding-left: 16px; }
+.employee-runtime { margin: 0; font-size: 12px; }
 .employee-runtime.is-warning { color: var(--color-warning); }
-.employee-error { margin-top: 16px; color: var(--color-danger); }
-.employee-success { margin-top: 18px; color: var(--color-success); }
-.employee-recruit-actions { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 12px; padding: 16px 28px; background: var(--color-surface); }
-.employee-recruit-dialog .quiet-button { min-height: 40px; padding: 8px 14px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--color-ink); font: inherit; font-size: 14px; cursor: pointer; }
-.employee-recruit-dialog .quiet-button:hover:not(:disabled) { background: var(--color-surface-subtle); }
-.employee-recruit-dialog .quiet-button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-.employee-primary { display: inline-flex; justify-content: center; align-items: center; min-height: 42px; padding: 9px 20px; border: 0; border-radius: var(--radius-control); background: var(--color-accent); color: var(--color-on-accent); font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; }
-.employee-primary:hover:not(:disabled) { background: var(--color-accent-hover); }
-.employee-primary:disabled { background: var(--color-surface-subtle); color: var(--color-muted); cursor: default; }
-.employee-primary:focus-visible, .employee-recruit-dialog a:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
-.employee-message { display: grid; gap: 12px; justify-items: start; }
-@media (max-width: 540px) { .employee-recruit-heading { padding: 18px 20px; }.employee-recruit-body { padding: 0 20px 18px; }.employee-recruit-actions { padding: 14px 20px; }.employee-recruit-actions .employee-primary { flex: 1; }.employee-profile { align-items: flex-start; }.employee-profile h3 span { display: block; margin: 2px 0 0; }.employee-title-controls { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+.employee-success { color: var(--color-success); }
+.employee-success p { margin: 0; }
+.employee-message { display: grid; gap: 10px; justify-items: start; }
+.employee-message p { margin: 0; }
+@media (max-width: 540px) { .employee-title-controls { grid-template-columns: minmax(0, 1fr); } }
 </style>

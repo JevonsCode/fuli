@@ -2,7 +2,9 @@
 import { computed, ref, watch } from 'vue'
 import { postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import { useModalDialog } from '@/composables/useModalDialog'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiDialog from '@/components/ui/UiDialog.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import { employeeErrorMessage } from './catalog'
 import type { EmployeeBoardItem } from './EmployeeTaskBoard.vue'
@@ -23,7 +25,8 @@ const tags = ref('')
 let version = 0
 let request = { signature: '', id: '' }
 const valid = computed(() => props.canWrite && !loading.value && !error.value && Boolean(project.value) && title.value.trim().length >= 2)
-const { dialogRef, initialFocusRef, onCancel, onKeydown } = useModalDialog(() => props.open, close)
+const projectOptions = computed(() => props.projects.map(option => ({ value: option.id, label: option.name })))
+const priorityOptions = computed(() => ['critical', 'high', 'medium', 'low'].map(value => ({ value, label: t(`employees.task.priorities.${value}`) })))
 watch([() => props.open, () => props.item, () => props.personalSpaceId], () => { void load() }, { immediate: true })
 async function call<T>(tool: string, args: Record<string, unknown>) {
   return postJson<T>('/api/employee-templates/jefa/call', { personalSpaceId: props.personalSpaceId, personalProjectId: project.value, tool, arguments: args })
@@ -66,25 +69,22 @@ function close() { if (!busy.value) emit('close') }
 </script>
 
 <template>
-  <dialog ref="dialogRef" class="employee-dialog" aria-labelledby="employee-task-title" @cancel="onCancel" @keydown="onKeydown">
-    <form class="employee-dialog-shell" @submit.prevent="save">
-      <header><h2 id="employee-task-title">{{ t(item ? 'employees.task.detail' : 'employees.task.create') }}</h2><button type="button" :disabled="busy" :aria-label="t('employees.close')" @click="close">×</button></header>
-      <div class="employee-dialog-body">
-        <GrowthLoading v-if="loading" variant="compact" :label="t('employees.loadingTask')" />
-        <div v-if="error" class="employee-dialog-error" role="alert"><p>{{ error }}</p><button type="button" :disabled="busy" @click="load">{{ t('employees.task.reload') }}</button></div>
-        <template v-if="!loading">
-          <label>{{ t('employees.task.project') }}<select v-model="project" :disabled="Boolean(item) || busy || !canWrite" required><option disabled value="">{{ t('employees.task.chooseProject') }}</option><option v-for="option in projects" :key="option.id" :value="option.id">{{ option.name }}</option></select></label>
-          <label>{{ t('employees.task.title') }}<input ref="initialFocusRef" v-model="title" minlength="2" maxlength="180" required :readonly="!canWrite" :disabled="busy" /></label>
-          <p v-if="baseline" class="employee-task-status">{{ t(`employees.allProjects.status.${baseline.status}`) }}</p>
-          <label>{{ t('employees.task.summary') }}<textarea v-model="summary" rows="4" maxlength="2000" :readonly="!canWrite" :disabled="busy" /></label>
-          <label>{{ t('employees.task.priority') }}<select v-model="priority" :disabled="!canWrite || busy"><option v-for="value in ['critical', 'high', 'medium', 'low']" :key="value" :value="value">{{ t(`employees.task.priorities.${value}`) }}</option></select></label>
-          <label>{{ t('employees.task.criteria') }}<textarea v-model="criteria" rows="3" :readonly="!canWrite" :disabled="busy" /></label>
-          <label>{{ t('employees.task.tags') }}<input v-model="tags" :readonly="!canWrite" :disabled="busy" /></label>
-        </template>
-      </div>
-      <footer><button type="button" :disabled="busy" @click="close">{{ t('employees.close') }}</button><button v-if="canWrite" class="primary" type="submit" :disabled="!valid || busy"><GrowthLoading v-if="busy" variant="inline" :label="t('employees.task.saving')" /><template v-else>{{ t('employees.task.save') }}</template></button></footer>
-    </form>
-  </dialog>
+  <UiDialog :open="open" class="employee-dialog" :title="t(item ? 'employees.task.detail' : 'employees.task.create')" :busy="busy" form @close="close" @submit="save">
+    <GrowthLoading v-if="loading" variant="compact" :label="t('employees.loadingTask')" />
+    <div v-if="error" class="ui-dialog__error employee-dialog-error" role="alert"><p>{{ error }}</p><UiButton size="sm" :disabled="busy" @click="load">{{ t('employees.task.reload') }}</UiButton></div>
+    <template v-if="!loading">
+      <UiSelect v-model="project" field :label="t('employees.task.project')" :placeholder="t('employees.task.chooseProject')" :options="projectOptions" :disabled="Boolean(item) || busy || !canWrite" required />
+      <label class="ui-field">{{ t('employees.task.title') }}<input v-model="title" autofocus minlength="2" maxlength="180" required :readonly="!canWrite" :disabled="busy" /></label>
+      <p v-if="baseline" class="ui-meta">{{ t(`employees.allProjects.status.${baseline.status}`) }}</p>
+      <label class="ui-field">{{ t('employees.task.summary') }}<textarea v-model="summary" rows="4" maxlength="2000" :readonly="!canWrite" :disabled="busy" /></label>
+      <UiSelect v-model="priority" field :label="t('employees.task.priority')" :options="priorityOptions" :disabled="!canWrite || busy" />
+      <label class="ui-field">{{ t('employees.task.criteria') }}<textarea v-model="criteria" rows="3" :readonly="!canWrite" :disabled="busy" /></label>
+      <label class="ui-field">{{ t('employees.task.tags') }}<input v-model="tags" :readonly="!canWrite" :disabled="busy" /></label>
+    </template>
+    <template #footer>
+      <UiButton :disabled="busy" @click="close">{{ t('employees.close') }}</UiButton>
+      <UiButton v-if="canWrite" variant="primary" type="submit" :disabled="!valid" :busy="busy" :busy-label="t('employees.task.saving')">{{ t('employees.task.save') }}</UiButton>
+    </template>
+  </UiDialog>
 </template>
 
-<style src="./employee-dialog.css"></style>

@@ -32,9 +32,9 @@ describe('KnowledgeConfirmDialog', () => {
     const dialog = wrapper.get('dialog')
     expect((dialog.element as HTMLDialogElement).open).toBe(true)
     expect(dialog.attributes('aria-modal')).toBe('true')
-    expect(dialog.attributes('aria-labelledby')).toBe(wrapper.get('h3').attributes('id'))
+    expect(dialog.attributes('aria-labelledby')).toBe(wrapper.get('h2').attributes('id'))
     const buttons = dialog.findAll('button:not([disabled])')
-    expect(document.activeElement).toBe(buttons[0]!.element)
+    expect(document.activeElement).toBe(dialog.get('textarea').element)
     ;(buttons.at(-1)!.element as HTMLElement).focus()
     await dialog.trigger('keydown', { key: 'Tab' })
     expect(document.activeElement).toBe(buttons[0]!.element)
@@ -75,7 +75,7 @@ describe('KnowledgeConfirmDialog', () => {
       },
     })
 
-    expect(wrapper.get('h3').text()).toBe('确认这条偏好')
+    expect(wrapper.get('h2').text()).toBe('确认这条偏好')
     expect(
       (wrapper.get('[name="confirmation-existence-reason"]').element as HTMLTextAreaElement).value,
     )

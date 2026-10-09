@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch, useId } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
 import { patchJson, postJson } from '@/api/client'
-import GrowthLoading from '@/components/GrowthLoading.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiDialog from '@/components/ui/UiDialog.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
-import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import { quadrantLabel } from './model'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
@@ -37,11 +37,6 @@ const emit = defineEmits<{
 const store = useConsoleStore()
 const busy = ref(false)
 const pendingAction = ref<PendingAction | null>(null)
-const dialogTitleId = useId()
-const { dialogRef, onCancel, onKeydown } = useModalDialog(
-  () => Boolean(props.item),
-  () => { if (!busy.value) emit('close') },
-)
 const localError = ref('')
 const assignmentReason = ref('')
 const targetProjectId = ref('')
@@ -431,250 +426,114 @@ function fail(message: string) {
 </script>
 
 <template>
-  <dialog v-if="item" ref="dialogRef" aria-modal="true" :aria-labelledby="dialogTitleId" @cancel="onCancel" @keydown="onKeydown" class="project-dialog knowledge-edit-dialog vue-dialog">
-    <div class="project-dialog-shell">
-      <header class="project-dialog-header">
-        <div>
-          <h3 :id="dialogTitleId">{{ invalid
-            ? t('knowledge.dialogs.edit.titleRestore')
-            : t('knowledge.dialogs.edit.titleCorrect') }}</h3>
-          <p>{{ t('knowledge.dialogs.edit.intro') }}</p>
-        </div>
-        <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">{{ t('common.actions.close') }}</button>
-      </header>
-
-      <div class="knowledge-edit-columns">
-        <section>
-          <h4>{{ t('knowledge.dialogs.edit.currentContent') }}</h4>
-          <form class="knowledge-editor-form" @submit.prevent="saveCorrection">
-            <fieldset class="pending-inputs" :disabled="busy">
-            <label v-if="!relationship">{{ t('knowledge.dialogs.edit.name') }}<input v-model="form.name" maxlength="512" /></label>
-            <label v-if="!relationship">{{ t('knowledge.dialogs.edit.description') }}<textarea v-model="form.summary" maxlength="4096" rows="5" /></label>
-            <label v-else>{{ t('knowledge.dialogs.edit.fact') }}<textarea v-model="form.fact" maxlength="8192" rows="5" /></label>
-            <div class="knowledge-taxonomy-fields">
-              <label>{{ t('knowledge.dialogs.edit.classification') }}
-                <UiSelect
-                  v-model="form.currentQuadrant"
-                  :options="quadrantOptions"
-                  :label="t('knowledge.dialogs.edit.classification')"
-                />
-              </label>
-              <label>{{ t('knowledge.dialogs.edit.confirmationStatus') }}
-                <UiSelect
-                  v-model="form.confirmationStatus"
-                  :options="confirmationStatusOptions"
-                  :label="t('knowledge.dialogs.edit.confirmationStatus')"
-                />
-              </label>
-              <label>{{ t('knowledge.dialogs.edit.preferenceDimension') }}
-                <UiSelect
-                  v-model="form.profileAspect"
-                  :options="profileAspectOptions"
-                  :label="t('knowledge.dialogs.edit.preferenceDimension')"
-                />
-              </label>
+  <UiDialog v-if="item" open class="knowledge-edit-dialog" size="xl" :busy="busy" :error="localError"
+    :title="invalid ? t('knowledge.dialogs.edit.titleRestore') : t('knowledge.dialogs.edit.titleCorrect')"
+    :description="t('knowledge.dialogs.edit.intro')" @close="emit('close')">
+    <div class="knowledge-edit-columns">
+      <section>
+        <h3>{{ t('knowledge.dialogs.edit.currentContent') }}</h3>
+        <form class="knowledge-editor-form" @submit.prevent="saveCorrection">
+          <fieldset class="knowledge-editor-group" :disabled="busy">
+            <label v-if="!relationship" class="ui-field">{{ t('knowledge.dialogs.edit.name') }}<input v-model="form.name" maxlength="512" /></label>
+            <label v-if="!relationship" class="ui-field">{{ t('knowledge.dialogs.edit.description') }}<textarea v-model="form.summary" maxlength="4096" rows="5" /></label>
+            <label v-else class="ui-field">{{ t('knowledge.dialogs.edit.fact') }}<textarea v-model="form.fact" maxlength="8192" rows="5" /></label>
+            <div class="knowledge-field-row">
+              <UiSelect v-model="form.currentQuadrant" field :options="quadrantOptions" :label="t('knowledge.dialogs.edit.classification')" />
+              <UiSelect v-model="form.confirmationStatus" field :options="confirmationStatusOptions" :label="t('knowledge.dialogs.edit.confirmationStatus')" />
+              <UiSelect v-model="form.profileAspect" field :options="profileAspectOptions" :label="t('knowledge.dialogs.edit.preferenceDimension')" />
             </div>
-            <p class="knowledge-classification-warning">
-              {{ t('knowledge.dialogs.edit.originQuadrant', {
-                quadrant: quadrantLabel(item.originQuadrant),
-              }) }}
-            </p>
-            <p v-if="!item.classificationExplicit" class="knowledge-classification-warning">
-              {{ t('knowledge.dialogs.edit.missingQuadrant') }}
-            </p>
-            <fieldset class="knowledge-confirmation-fields">
+            <p class="ui-meta">{{ t('knowledge.dialogs.edit.originQuadrant', { quadrant: quadrantLabel(item.originQuadrant) }) }}</p>
+            <p v-if="!item.classificationExplicit" class="knowledge-warning">{{ t('knowledge.dialogs.edit.missingQuadrant') }}</p>
+            <fieldset class="knowledge-editor-section">
               <legend>{{ t('knowledge.dialogs.edit.basis') }}</legend>
-              <label>{{ t('knowledge.dialogs.edit.whyExists') }}
-                <textarea v-model="form.existenceReason" maxlength="4096" rows="3" required />
-              </label>
-              <label>{{ t('knowledge.dialogs.edit.whyQuadrant') }}
-                <textarea v-model="form.quadrantReason" maxlength="4096" rows="3" required />
-              </label>
-              <div class="knowledge-taxonomy-fields">
-                <label>{{ t('knowledge.dialogs.edit.proposer') }}
-                  <UiSelect
-                    v-model="form.proposedByKind"
-                    :options="proposerOptions"
-                    :label="t('knowledge.dialogs.edit.proposer')"
-                  />
-                </label>
-                <label>{{ t('knowledge.dialogs.edit.proposerDescription') }}
-                  <input v-model="form.proposedByLabel" maxlength="160" :placeholder="t('knowledge.dialogs.edit.proposerPlaceholder')" />
-                </label>
+              <label class="ui-field">{{ t('knowledge.dialogs.edit.whyExists') }}<textarea v-model="form.existenceReason" maxlength="4096" rows="3" required /></label>
+              <label class="ui-field">{{ t('knowledge.dialogs.edit.whyQuadrant') }}<textarea v-model="form.quadrantReason" maxlength="4096" rows="3" required /></label>
+              <div class="knowledge-field-row knowledge-field-row--pair">
+                <UiSelect v-model="form.proposedByKind" field :options="proposerOptions" :label="t('knowledge.dialogs.edit.proposer')" />
+                <label class="ui-field">{{ t('knowledge.dialogs.edit.proposerDescription') }}<input v-model="form.proposedByLabel" maxlength="160" :placeholder="t('knowledge.dialogs.edit.proposerPlaceholder')" /></label>
                 <template v-if="form.confirmationStatus === 'confirmed'">
-                  <label>{{ t('knowledge.dialogs.edit.confirmer') }}
-                    <UiSelect
-                      v-model="form.confirmedByKind"
-                      :options="confirmerOptions"
-                      :label="t('knowledge.dialogs.edit.confirmer')"
-                    />
-                  </label>
-                  <label>{{ t('knowledge.dialogs.edit.confirmerDescription') }}
-                    <input v-model="form.confirmedByLabel" maxlength="160" :placeholder="t('knowledge.dialogs.edit.confirmerPlaceholder')" />
-                  </label>
+                  <UiSelect v-model="form.confirmedByKind" field :options="confirmerOptions" :label="t('knowledge.dialogs.edit.confirmer')" />
+                  <label class="ui-field">{{ t('knowledge.dialogs.edit.confirmerDescription') }}<input v-model="form.confirmedByLabel" maxlength="160" :placeholder="t('knowledge.dialogs.edit.confirmerPlaceholder')" /></label>
                 </template>
               </div>
-              <p>
-                {{ t('knowledge.dialogs.edit.agentConfirmedBoundary') }}
-              </p>
+              <p class="ui-meta">{{ t('knowledge.dialogs.edit.agentConfirmedBoundary') }}</p>
             </fieldset>
-            <fieldset v-if="!profilePreference" class="knowledge-replacement-fields">
+            <fieldset v-if="!profilePreference" class="knowledge-editor-section">
               <legend>{{ t('knowledge.dialogs.edit.crossProjectInheritance') }}</legend>
-              <label>{{ t('knowledge.dialogs.edit.inheritanceScope') }}
-                <UiSelect
-                  v-model="form.inheritanceMode"
-                  :options="inheritanceModeOptions"
-                  :label="t('knowledge.dialogs.edit.inheritanceScope')"
-                />
-              </label>
-              <label v-if="form.inheritanceMode === 'selected_projects'">{{ t('knowledge.dialogs.edit.inheritedProjects') }}
-                <UiSelect
-                  v-model="inheritanceProjectId"
-                  :options="projectOptions"
-                  :label="t('knowledge.dialogs.edit.inheritedProjects')"
-                  searchable
-                />
-              </label>
-              <p>
-                {{ t('knowledge.dialogs.edit.inheritanceBoundary') }}
-              </p>
+              <UiSelect v-model="form.inheritanceMode" field :options="inheritanceModeOptions" :label="t('knowledge.dialogs.edit.inheritanceScope')" />
+              <UiSelect v-if="form.inheritanceMode === 'selected_projects'" v-model="inheritanceProjectId" field :options="projectOptions" :label="t('knowledge.dialogs.edit.inheritedProjects')" searchable />
+              <p class="ui-meta">{{ t('knowledge.dialogs.edit.inheritanceBoundary') }}</p>
             </fieldset>
-            <fieldset class="knowledge-replacement-fields">
-              <legend>{{ invalid
-                ? t('knowledge.dialogs.edit.replacement')
-                : t('knowledge.dialogs.edit.optionalReplacement') }}</legend>
-              <label>{{ invalid
-                ? t('knowledge.dialogs.edit.historicalReplacement')
-                : t('knowledge.dialogs.edit.activeReplacement') }}
-                <UiSelect
-                  v-model="replacementItemKey"
-                  :options="replacementOptions"
-                  :label="t('knowledge.dialogs.edit.replacement')"
-                  searchable
-                />
-              </label>
-              <p>
-                {{ t('knowledge.dialogs.edit.replacementBoundary') }}
-              </p>
+            <fieldset class="knowledge-editor-section">
+              <legend>{{ invalid ? t('knowledge.dialogs.edit.replacement') : t('knowledge.dialogs.edit.optionalReplacement') }}</legend>
+              <UiSelect v-model="replacementItemKey" field :options="replacementOptions" searchable
+                :label="invalid ? t('knowledge.dialogs.edit.historicalReplacement') : t('knowledge.dialogs.edit.activeReplacement')" />
+              <p class="ui-meta">{{ t('knowledge.dialogs.edit.replacementBoundary') }}</p>
             </fieldset>
-            <label>{{ t('knowledge.dialogs.edit.correctionReason') }}<textarea v-model="form.reason" maxlength="2000" rows="3" required /></label>
-            <p v-if="localError" class="publish-dialog-error" role="alert">{{ localError }}</p>
+            <label class="ui-field">{{ t('knowledge.dialogs.edit.correctionReason') }}<textarea v-model="form.reason" maxlength="2000" rows="3" required /></label>
             <div class="knowledge-editor-actions">
-              <button v-if="!invalid" class="secondary-action" type="button" :disabled="busy" @click="changeStatus('invalidate')">
-                <GrowthLoading
-                  v-if="pendingAction === 'invalidate'"
-                  variant="inline"
-                  :label="t('knowledge.dialogs.edit.invalidating')"
-                />
-                <template v-else>{{ t('knowledge.dialogs.edit.invalidate') }}</template>
-              </button>
+              <UiButton v-if="!invalid" variant="danger" :busy="pendingAction === 'invalidate'" :busy-label="t('knowledge.dialogs.edit.invalidating')" @click="changeStatus('invalidate')">{{ t('knowledge.dialogs.edit.invalidate') }}</UiButton>
               <template v-else>
-                <button class="secondary-action" type="button" :disabled="busy" @click="changeStatus('restore')">
-                  <GrowthLoading
-                    v-if="pendingAction === 'restore'"
-                    variant="inline"
-                    :label="t('knowledge.dialogs.edit.restoring')"
-                  />
-                  <template v-else>{{ t('knowledge.dialogs.edit.restore') }}</template>
-                </button>
-                <button class="secondary-action" type="button" :disabled="busy" @click="saveReplacement">
-                  <GrowthLoading
-                    v-if="pendingAction === 'replacement'"
-                    variant="inline"
-                    :label="t('knowledge.dialogs.edit.savingReplacement')"
-                  />
-                  <template v-else>{{ t('knowledge.dialogs.edit.saveReplacement') }}</template>
-                </button>
+                <UiButton :busy="pendingAction === 'restore'" :busy-label="t('knowledge.dialogs.edit.restoring')" @click="changeStatus('restore')">{{ t('knowledge.dialogs.edit.restore') }}</UiButton>
+                <UiButton :busy="pendingAction === 'replacement'" :busy-label="t('knowledge.dialogs.edit.savingReplacement')" @click="saveReplacement">{{ t('knowledge.dialogs.edit.saveReplacement') }}</UiButton>
               </template>
-              <button class="primary-action" type="submit" :disabled="busy">
-                <GrowthLoading
-                  v-if="pendingAction === 'correction'"
-                  variant="inline"
-                  :label="t(form.confirmationStatus === 'confirmed'
-                    ? 'knowledge.dialogs.edit.savingConfirmed'
-                    : 'knowledge.dialogs.edit.savingPending')"
-                />
-                <template v-else>
-                  {{ form.confirmationStatus === 'confirmed'
-                    ? t('knowledge.dialogs.edit.saveConfirmed')
-                    : t('knowledge.dialogs.edit.savePending') }}
-                </template>
-              </button>
+              <UiButton variant="primary" type="submit" :busy="pendingAction === 'correction'"
+                :busy-label="t(form.confirmationStatus === 'confirmed' ? 'knowledge.dialogs.edit.savingConfirmed' : 'knowledge.dialogs.edit.savingPending')">
+                {{ form.confirmationStatus === 'confirmed' ? t('knowledge.dialogs.edit.saveConfirmed') : t('knowledge.dialogs.edit.savePending') }}
+              </UiButton>
             </div>
           </fieldset>
-          </form>
-        </section>
+        </form>
+      </section>
 
-        <section v-if="!profilePreference">
-          <h4>{{ t('knowledge.dialogs.edit.projectOwnership') }}</h4>
-          <p>{{ t('knowledge.dialogs.edit.ownershipCopy') }}</p>
-          <form class="knowledge-editor-form" @submit.prevent="saveAssignment">
-            <fieldset class="pending-inputs" :disabled="busy">
-            <label>{{ t('knowledge.dialogs.edit.targetProject') }}
-              <UiSelect
-                v-model="targetProjectId"
-                :options="projectOptions"
-                :label="t('knowledge.dialogs.edit.targetProject')"
-                searchable
-                required
-              />
-            </label>
-            <label>{{ t('knowledge.dialogs.edit.assignmentReason') }}<textarea v-model="assignmentReason" maxlength="2000" rows="3" required /></label>
-            <button class="primary-action" type="submit" :disabled="busy || projects.length === 0">
-              <GrowthLoading
-                v-if="pendingAction === 'ownership'"
-                variant="inline"
-                :label="t('knowledge.dialogs.edit.changingOwnership')"
-              />
-              <template v-else>{{ t('knowledge.dialogs.edit.adjustOwnership') }}</template>
-            </button>
+      <section v-if="!profilePreference">
+        <h3>{{ t('knowledge.dialogs.edit.projectOwnership') }}</h3>
+        <p class="ui-meta">{{ t('knowledge.dialogs.edit.ownershipCopy') }}</p>
+        <form class="knowledge-editor-form" @submit.prevent="saveAssignment">
+          <fieldset class="knowledge-editor-group" :disabled="busy">
+            <UiSelect v-model="targetProjectId" field :options="projectOptions" :label="t('knowledge.dialogs.edit.targetProject')" searchable required />
+            <label class="ui-field">{{ t('knowledge.dialogs.edit.assignmentReason') }}<textarea v-model="assignmentReason" maxlength="2000" rows="3" required /></label>
+            <div class="knowledge-editor-actions">
+              <UiButton variant="primary" type="submit" :disabled="projects.length === 0" :busy="pendingAction === 'ownership'" :busy-label="t('knowledge.dialogs.edit.changingOwnership')">{{ t('knowledge.dialogs.edit.adjustOwnership') }}</UiButton>
+            </div>
           </fieldset>
-          </form>
-        </section>
+        </form>
+      </section>
 
-        <section v-else>
-          <h4>{{ t('knowledge.dialogs.edit.preferenceScope') }}</h4>
-          <p>{{ t('knowledge.dialogs.edit.preferenceScopeCopy') }}</p>
-          <form class="knowledge-editor-form" @submit.prevent="savePreferenceScope">
-            <fieldset class="pending-inputs" :disabled="busy">
-            <label>{{ t('knowledge.dialogs.edit.effectiveScope') }}
-              <UiSelect
-                v-model="preferenceScope"
-                :options="preferenceScopeOptions"
-                :label="t('knowledge.dialogs.edit.preferenceScope')"
-              />
-            </label>
-            <label v-if="preferenceScope === 'project'">{{ t('knowledge.dialogs.edit.personalProject') }}
-              <UiSelect
-                v-model="preferenceProjectId"
-                :options="projectOptions"
-                :label="t('knowledge.dialogs.edit.personalProject')"
-                searchable
-              />
-            </label>
-            <label>{{ t('knowledge.dialogs.edit.assignmentReason') }}<textarea v-model="preferenceReason" maxlength="2000" rows="3" required /></label>
-            <button class="primary-action" type="submit" :disabled="busy">
-              <GrowthLoading
-                v-if="pendingAction === 'scope'"
-                variant="inline"
-                :label="t('knowledge.dialogs.edit.savingScope')"
-              />
-              <template v-else>{{ t('knowledge.dialogs.edit.saveScope') }}</template>
-            </button>
+      <section v-else>
+        <h3>{{ t('knowledge.dialogs.edit.preferenceScope') }}</h3>
+        <p class="ui-meta">{{ t('knowledge.dialogs.edit.preferenceScopeCopy') }}</p>
+        <form class="knowledge-editor-form" @submit.prevent="savePreferenceScope">
+          <fieldset class="knowledge-editor-group" :disabled="busy">
+            <UiSelect v-model="preferenceScope" field :options="preferenceScopeOptions" :label="t('knowledge.dialogs.edit.effectiveScope')" />
+            <UiSelect v-if="preferenceScope === 'project'" v-model="preferenceProjectId" field :options="projectOptions" :label="t('knowledge.dialogs.edit.personalProject')" searchable />
+            <label class="ui-field">{{ t('knowledge.dialogs.edit.assignmentReason') }}<textarea v-model="preferenceReason" maxlength="2000" rows="3" required /></label>
+            <div class="knowledge-editor-actions">
+              <UiButton variant="primary" type="submit" :busy="pendingAction === 'scope'" :busy-label="t('knowledge.dialogs.edit.savingScope')">{{ t('knowledge.dialogs.edit.saveScope') }}</UiButton>
+            </div>
           </fieldset>
-          </form>
-        </section>
-      </div>
+        </form>
+      </section>
     </div>
-  </dialog>
+  </UiDialog>
 </template>
 
 <style scoped>
-.pending-inputs {
-  display: contents;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
+.knowledge-edit-columns { display: grid; grid-template-columns: 1.15fr .85fr; gap: 28px; }
+.knowledge-edit-columns > section { display: grid; align-content: start; gap: 6px; min-width: 0; }
+.knowledge-edit-columns > section + section { padding-left: 28px; border-left: 1px solid var(--color-border); }
+.knowledge-edit-columns h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.knowledge-edit-columns p { margin: 0; }
+.knowledge-editor-form { margin-top: 10px; }
+.knowledge-editor-group { display: grid; gap: 14px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.knowledge-field-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.knowledge-field-row--pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.knowledge-editor-section { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 14px; border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+.knowledge-editor-section legend { padding: 0 6px; font-size: 12px; font-weight: 600; }
+.knowledge-warning { padding: 8px 10px; border-radius: var(--radius-control); color: var(--color-warning); background: var(--color-warning-soft); font-size: 12px; }
+.knowledge-editor-actions { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 820px) {
+  .knowledge-edit-columns, .knowledge-field-row { grid-template-columns: 1fr; }
+  .knowledge-edit-columns > section + section { padding: 18px 0 0; border-left: 0; border-top: 1px solid var(--color-border); }
 }
 </style>

@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, useId, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { postJson } from '@/api/client'
-import GrowthLoading from '@/components/GrowthLoading.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiDialog from '@/components/ui/UiDialog.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import {
   batchConfirmationBasis,
   quadrantLabel,
 } from '@/features/knowledge/model'
-import { useModalDialog } from '@/composables/useModalDialog'
 import { t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
@@ -35,11 +35,6 @@ const confirmerLabel = ref('')
 const reason = ref('')
 const acknowledged = ref(false)
 const busy = ref(false)
-const dialogTitleId = useId()
-const { dialogRef, onCancel, onKeydown } = useModalDialog(
-  () => true,
-  () => { if (!busy.value) emit('close') },
-)
 const localError = ref('')
 
 const groupOptions = computed(() =>
@@ -181,299 +176,85 @@ function fail(message: string) {
 </script>
 
 <template>
-  <dialog ref="dialogRef" aria-modal="true" :aria-labelledby="dialogTitleId" @cancel="onCancel" @keydown="onKeydown" class="project-dialog batch-confirm-dialog vue-dialog">
-    <div class="project-dialog-shell">
-      <header class="project-dialog-header">
-        <div>
-          <h3 :id="dialogTitleId">{{ t('knowledge.dialogs.batch.title') }}</h3>
-          <p>{{ t('knowledge.dialogs.batch.intro') }}</p>
+  <UiDialog open class="batch-confirm-dialog" size="xl" form :title="t('knowledge.dialogs.batch.title')"
+    :description="t('knowledge.dialogs.batch.intro')" :busy="busy" :error="localError"
+    @close="emit('close')" @submit="confirmBatch">
+    <div class="batch-confirm-layout">
+      <section class="batch-confirm-controls">
+        <UiSelect v-model="selectedGroupKey" field :options="groupOptions" :label="t('knowledge.dialogs.batch.range')" searchable />
+        <div v-if="selectedGroup" class="batch-group-summary">
+          <span class="ui-meta">{{ selectedGroup.kind === 'source' ? t('knowledge.dialogs.batch.sameSource') : t('knowledge.dialogs.batch.sameSession') }}</span>
+          <strong>{{ selectedGroup.label }}</strong>
+          <p>{{ selectedGroup.description }}</p>
+          <small class="ui-meta">#{{ compactIdentity(selectedGroup.value, 28) }}</small>
         </div>
-        <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">{{ t('common.actions.close') }}</button>
-      </header>
-
-      <form class="batch-confirm-form" @submit.prevent="confirmBatch">
-        <section class="batch-confirm-controls">
-          <label>{{ t('knowledge.dialogs.batch.range') }}
-            <UiSelect
-              v-model="selectedGroupKey"
-              :options="groupOptions"
-              :label="t('knowledge.dialogs.batch.rangeLabel')"
-              searchable
-            />
+        <div class="batch-confirmer-fields">
+          <UiSelect v-model="confirmerKind" field :options="confirmerOptions" :label="t('knowledge.dialogs.batch.confirmer')" />
+          <label class="ui-field">{{ t('knowledge.dialogs.batch.confirmerDescription') }}
+            <input v-model="confirmerLabel" maxlength="160" :required="confirmerKind === 'authoritative_source'"
+              :placeholder="confirmerKind === 'user' ? t('knowledge.dialogs.batch.userPlaceholder') : t('knowledge.dialogs.batch.sourcePlaceholder')" />
           </label>
-          <div v-if="selectedGroup" class="batch-group-summary">
-            <span>{{ selectedGroup.kind === 'source'
-              ? t('knowledge.dialogs.batch.sameSource')
-              : t('knowledge.dialogs.batch.sameSession') }}</span>
-            <strong>{{ selectedGroup.label }}</strong>
-            <p>{{ selectedGroup.description }}</p>
-            <small>#{{ compactIdentity(selectedGroup.value, 28) }}</small>
-          </div>
-          <div class="batch-confirmer-fields">
-            <label>{{ t('knowledge.dialogs.batch.confirmer') }}
-              <UiSelect
-                v-model="confirmerKind"
-                :options="confirmerOptions"
-                :label="t('knowledge.dialogs.batch.confirmerLabel')"
-              />
-            </label>
-            <label>{{ t('knowledge.dialogs.batch.confirmerDescription') }}
-              <input
-                v-model="confirmerLabel"
-                maxlength="160"
-                :required="confirmerKind === 'authoritative_source'"
-                :placeholder="confirmerKind === 'user'
-                  ? t('knowledge.dialogs.batch.userPlaceholder')
-                  : t('knowledge.dialogs.batch.sourcePlaceholder')"
-              />
-            </label>
-          </div>
-          <label>{{ t('knowledge.dialogs.batch.basis') }}
-            <textarea
-              v-model="reason"
-              maxlength="2000"
-              rows="3"
-              required
-              :placeholder="t('knowledge.dialogs.batch.basisPlaceholder')"
-            />
-          </label>
-          <p class="batch-confirm-rule">
-            {{ t('knowledge.dialogs.batch.agentBoundary') }}
-          </p>
-        </section>
-
-        <section class="batch-confirm-review">
-          <div class="batch-review-heading">
-            <div>
-              <h4>{{ t('knowledge.dialogs.batch.itemReview') }}</h4>
-              <p>{{ t('knowledge.dialogs.batch.selected', {
-                selected: selectedItems.length,
-                total: reviewableItems.length,
-              }) }}</p>
-            </div>
-            <button class="secondary-action" type="button" @click="toggleAll">
-              {{ allSelected
-                ? t('knowledge.dialogs.batch.clearAll')
-                : t('knowledge.dialogs.batch.selectAll') }}
-            </button>
-          </div>
-          <p v-if="(selectedGroup?.items.length ?? 0) > 200" class="batch-limit-note">
-            {{ t('knowledge.dialogs.batch.limit') }}
-          </p>
-          <div class="batch-review-list">
-            <label
-              v-for="item in reviewableItems"
-              :key="itemKey(item)"
-              class="batch-review-item"
-            >
-              <input v-model="selectedItemKeys" type="checkbox" :value="itemKey(item)" />
-              <span>
-                <strong>{{ item.title }}</strong>
-                <small>{{ quadrantLabel(item.originQuadrant) }} · {{ item.type }}</small>
-                <em>{{ basisFor(item)?.existenceReason }}</em>
-                <em>{{ basisFor(item)?.quadrantReason }}</em>
-              </span>
-            </label>
-          </div>
-          <label class="batch-confirm-acknowledgement">
-            <input v-model="acknowledged" type="checkbox" />
-            <span>{{ t('knowledge.dialogs.batch.acknowledgment') }}</span>
-          </label>
-        </section>
-
-        <p v-if="localError" class="publish-dialog-error" role="alert">{{ localError }}</p>
-        <div class="publish-dialog-actions">
-          <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">
-            {{ t('common.actions.cancel') }}
-          </button>
-          <button
-            class="primary-action"
-            type="submit"
-            :disabled="!canSubmit"
-          >
-            <GrowthLoading
-              v-if="busy"
-              variant="inline"
-              :label="t('knowledge.dialogs.batch.confirming')"
-            />
-            <template v-else>
-              {{ t('knowledge.dialogs.batch.confirmItems', { count: selectedItems.length }) }}
-            </template>
-          </button>
         </div>
-      </form>
+        <label class="ui-field">{{ t('knowledge.dialogs.batch.basis') }}
+          <textarea v-model="reason" maxlength="2000" rows="3" required :placeholder="t('knowledge.dialogs.batch.basisPlaceholder')" />
+        </label>
+        <p class="ui-meta">{{ t('knowledge.dialogs.batch.agentBoundary') }}</p>
+      </section>
+
+      <section class="batch-confirm-review">
+        <div class="batch-review-heading">
+          <div>
+            <h3>{{ t('knowledge.dialogs.batch.itemReview') }}</h3>
+            <p class="ui-meta">{{ t('knowledge.dialogs.batch.selected', { selected: selectedItems.length, total: reviewableItems.length }) }}</p>
+          </div>
+          <UiButton size="sm" variant="ghost" @click="toggleAll">
+            {{ allSelected ? t('knowledge.dialogs.batch.clearAll') : t('knowledge.dialogs.batch.selectAll') }}
+          </UiButton>
+        </div>
+        <p v-if="(selectedGroup?.items.length ?? 0) > 200" class="ui-meta">{{ t('knowledge.dialogs.batch.limit') }}</p>
+        <div class="batch-review-list">
+          <label v-for="item in reviewableItems" :key="itemKey(item)" class="batch-review-item">
+            <input v-model="selectedItemKeys" type="checkbox" :value="itemKey(item)" />
+            <span>
+              <strong>{{ item.title }}</strong>
+              <small>{{ quadrantLabel(item.originQuadrant) }} · {{ item.type }}</small>
+              <em>{{ basisFor(item)?.existenceReason }}</em>
+              <em>{{ basisFor(item)?.quadrantReason }}</em>
+            </span>
+          </label>
+        </div>
+        <label class="ui-check batch-confirm-acknowledgement">
+          <input v-model="acknowledged" type="checkbox" />
+          <span>{{ t('knowledge.dialogs.batch.acknowledgment') }}</span>
+        </label>
+      </section>
     </div>
-  </dialog>
+    <template #footer>
+      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</UiButton>
+      <UiButton variant="primary" type="submit" :disabled="!canSubmit" :busy="busy" :busy-label="t('knowledge.dialogs.batch.confirming')">
+        {{ t('knowledge.dialogs.batch.confirmItems', { count: selectedItems.length }) }}
+      </UiButton>
+    </template>
+  </UiDialog>
 </template>
 
 <style scoped>
-.batch-confirm-dialog {
-  width: min(980px, calc(100vw - 64px));
-}
-
-.batch-confirm-form {
-  display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
-  gap: 24px;
-  padding-top: 20px;
-}
-
-.batch-confirm-controls {
-  display: grid;
-  align-content: start;
-  gap: 14px;
-}
-
-.batch-confirm-controls > label,
-.batch-confirmer-fields label {
-  display: grid;
-  gap: 6px;
-  color: var(--color-muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.batch-confirm-controls :deep(.ui-select) {
-  width: 100%;
-}
-
-.batch-group-summary {
-  display: grid;
-  gap: 4px;
-  padding: 12px 0;
-  border-top: 1px solid var(--color-border);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.batch-group-summary span,
-.batch-group-summary small {
-  color: var(--color-muted);
-  font-size: 12px;
-}
-
-.batch-group-summary strong {
-  color: var(--color-ink);
-  font-size: 12px;
-}
-
-.batch-group-summary p {
-  color: var(--color-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.batch-confirmer-fields {
-  display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
-  gap: 8px;
-}
-
-.batch-confirm-rule,
-.batch-limit-note {
-  color: var(--color-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.batch-confirm-review {
-  min-width: 0;
-  padding-left: 24px;
-  border-left: 1px solid var(--color-border);
-}
-
-.batch-review-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding-bottom: 10px;
-}
-
-.batch-review-heading h4 {
-  color: var(--color-ink);
-  font-size: 13px;
-}
-
-.batch-review-heading p {
-  margin-top: 2px;
-  color: var(--color-muted);
-  font-size: 12px;
-}
-
-.batch-review-list {
-  max-height: 410px;
-  overflow: auto;
-  border-top: 1px solid var(--color-border);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.batch-review-item {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 9px;
-  padding: 10px 2px;
-  border-bottom: 1px solid var(--color-border);
-  cursor: pointer;
-}
-
-.batch-review-item:last-child {
-  border-bottom: 0;
-}
-
-.batch-review-item > input {
-  margin-top: 2px;
-}
-
-.batch-review-item > span {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-}
-
-.batch-review-item strong {
-  color: var(--color-ink);
-  font-size: 12px;
-}
-
-.batch-review-item small {
-  color: var(--color-muted);
-  font-size: 12px;
-}
-
-.batch-review-item em {
-  overflow: hidden;
-  color: var(--color-muted);
-  font-size: 12px;
-  font-style: normal;
-  line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.batch-confirm-acknowledgement {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 12px;
-  color: var(--color-ink);
-  font-size: 12px;
-  line-height: 1.5;
-  cursor: pointer;
-}
-
-.batch-confirm-form > .publish-dialog-error,
-.batch-confirm-form > .publish-dialog-actions {
-  grid-column: 1 / -1;
-}
-
+.batch-confirm-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 24px; }
+.batch-confirm-controls { display: grid; align-content: start; gap: 14px; }
+.batch-group-summary { display: grid; gap: 2px; padding: 10px 12px; border-radius: var(--radius-control); background: var(--color-surface-subtle); font-size: 12px; }
+.batch-group-summary p { margin: 0; color: var(--color-muted); line-height: 1.5; }
+.batch-confirmer-fields { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; }
+.batch-confirm-review { display: grid; align-content: start; gap: 10px; min-width: 0; padding-left: 24px; border-left: 1px solid var(--color-border); }
+.batch-review-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.batch-review-heading h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.batch-review-list { max-height: 410px; overflow: auto; border-block: 1px solid var(--color-border); }
+.batch-review-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px; padding: 10px 2px; border-bottom: 1px solid var(--color-border); cursor: pointer; }
+.batch-review-item:last-child { border-bottom: 0; }
+.batch-review-item > span { display: grid; gap: 3px; min-width: 0; font-size: 12px; }
+.batch-review-item small, .batch-review-item em { color: var(--color-muted); }
+.batch-review-item em { overflow: hidden; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 820px) {
-  .batch-confirm-form {
-    grid-template-columns: 1fr;
-  }
-
-  .batch-confirm-review {
-    padding: 0;
-    border-left: 0;
-  }
+  .batch-confirm-layout { grid-template-columns: 1fr; }
+  .batch-confirm-review { padding: 0; border-left: 0; }
 }
 </style>

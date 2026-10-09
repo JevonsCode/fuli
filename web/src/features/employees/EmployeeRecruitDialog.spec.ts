@@ -261,7 +261,7 @@ describe('employee recruitment', () => {
 
   it('never falls back to a different employee when the requested template is unavailable', async () => {
     const { wrapper } = await setup(projects, { templateId: 'unavailable-role' })
-    expect(wrapper.find('form').exists()).toBe(false)
+    expect(wrapper.find('button[type="submit"]').exists()).toBe(false)
     expect(postJson).not.toHaveBeenCalled()
   })
 })

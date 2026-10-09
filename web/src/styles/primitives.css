@@ -95,6 +95,7 @@
 .ui-empty { padding: 48px 24px; color: var(--color-muted); text-align: center; font-size: 14px; }
 .ui-field { display: grid; gap: 6px; min-width: 0; color: var(--color-ink-soft); font-size: 13px; font-weight: 500; }
 .ui-field > :is(input, textarea, select, .ui-select) { width: 100%; font-weight: 400; }
+.ui-check { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 9px; color: var(--color-ink); font-size: 13px; line-height: 1.5; cursor: pointer; }
 .ui-field-hint { color: var(--color-muted); font-size: 12px; font-weight: 400; }
 .ui-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
@@ -125,7 +126,10 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(2px);
 .ui-dialog__header p { margin-top: 4px; color: var(--color-muted); font-size: 13px; }
 .ui-dialog__body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 18px 24px; display: flex; flex-direction: column; gap: 16px; }
 .ui-dialog__footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 24px; border-top: 1px solid var(--color-border); background: var(--color-bg); }
-.ui-dialog__error { padding: 10px 12px; border-radius: var(--radius-control); color: var(--color-danger); background: var(--color-danger-soft); font-size: 13px; }
+.ui-dialog__error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: var(--radius-control); color: var(--color-danger); background: var(--color-danger-soft); font-size: 13px; }
+.ui-dialog__error p { margin: 0; }
+.ui-dialog__body textarea { resize: vertical; }
+.ui-dialog fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 
 /* Segmented control and tabs */
 .ui-segmented { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--color-surface-subtle); }
@@ -135,7 +139,7 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(2px);
   transition: background-color var(--motion-fast), color var(--motion-fast);
 }
 .ui-segmented > button:hover { color: var(--color-ink); }
-.ui-segmented > button[aria-pressed=true], .ui-segmented > button[aria-selected=true] {
+.ui-segmented > button[aria-pressed=true], .ui-segmented > button[aria-selected=true], .ui-segmented > button[aria-checked=true] {
   color: var(--color-ink); background: var(--color-surface); box-shadow: 0 1px 2px rgb(27 31 29 / 10%);
 }
 .ui-segmented small { margin-left: 4px; color: var(--color-faint); font-variant-numeric: tabular-nums; }

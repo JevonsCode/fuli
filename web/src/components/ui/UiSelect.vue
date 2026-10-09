@@ -12,6 +12,7 @@ export type UiSelectOption = {
 }
 
 // One select for every list choice: pass `multiple` for a string[] model.
+// `field` shows `label` above the control, as a form field.
 const props = withDefaults(defineProps<{
   modelValue: V
   options: readonly UiSelectOption[]
@@ -24,9 +25,10 @@ const props = withDefaults(defineProps<{
   name?: string
   controlId?: string
   size?: 'sm' | 'md'
+  field?: boolean
 }>(), {
   multiple: false, placeholder: undefined, searchable: undefined, disabled: false,
-  required: false, name: undefined, controlId: undefined, size: 'md',
+  required: false, name: undefined, controlId: undefined, size: 'md', field: false,
 })
 
 const emit = defineEmits<{
@@ -165,8 +167,9 @@ function onOptionKeydown(event: KeyboardEvent) {
 </script>
 
 <template>
-  <div ref="root" class="ui-select" :class="[`ui-select--${size}`, { 'is-open': open, 'is-disabled': disabled }]"
+  <div ref="root" class="ui-select" :class="[`ui-select--${size}`, { 'is-open': open, 'is-disabled': disabled, 'ui-field': field }]"
     :data-select-id="controlId" @focusout="onFocusout">
+    <span v-if="field" class="ui-select__label" @click="trigger?.focus()">{{ label }}</span>
     <select class="ui-select__native" :name="name" :required="required" :disabled="disabled" :multiple="multiple"
       tabindex="-1" aria-hidden="true">
       <option v-for="option in options" :key="option.value" :value="option.value" :selected="selected.has(option.value)">{{ option.label }}</option>
