@@ -59,7 +59,7 @@ For a one-off task, this source version also supports an isolated **temporary pr
 connected client to coordinate the task with Fuli even when no registered project matches. Fuli
 retains its task history and follows the existing Agent recruitment and executor permissions.
 Reading preferences alone creates nothing. An ambiguous project still needs a choice.
-This behavior is included in the `0.9.0-beta.1` prerelease.
+This behavior is included in the `0.9.0-beta.2` prerelease.
 
 The Agent directory now explains the first-task entry, and task details distinguish assignment
 from actual worker reports. A completion table appears only after real execution is reported;
