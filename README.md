@@ -75,9 +75,10 @@ an assigned Agent or an ordinary local conversation alone is not worker evidence
 Agents talk to each other directly, the way a lead asks a teammate or a sub-agent. A Codex
 Agent can ask the Agent behind a specific Claude Code conversation, or a FULI Agent that has
 never run yet. Nobody creates rooms or invites participants: an Agent calls `message_agent`,
-Fuli wakes the recipient read-only in its own client (Claude Code forks the conversation,
-Codex resumes it ephemerally, so the original is untouched) and returns its answer. A message
-that cannot be delivered waits in the recipient's inbox for its next task.
+Fuli wakes the recipient read-only in its own client and returns its answer: Claude Code
+forks the conversation; Codex records the exchange in it (or uses a new session while it is
+open in the app). A message that cannot be delivered waits in the recipient's inbox for its
+next task.
 
 Every exchange is kept locally; the console's Roundtable page shows who asked whom, through
 which client, and exactly what was said. Tools and limits: [Agent Roundtable](docs/agent-roundtable.md).

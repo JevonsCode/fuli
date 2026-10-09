@@ -60,9 +60,9 @@ Agent 目录提供首次任务入口，任务详情会区分“已分配”和�
 
 Agent 之间可以直接对话，就像负责人去问一位同事或子 Agent。比如 Codex 里的 Agent 可以问
 某一段 Claude Code 对话里的 Agent，也可以问一位还没运行过的 FULI Agent。不需要人建房间或拉人：
-Agent 调用 `message_agent`，Fuli 在对方自己的客户端里以只读方式唤醒它（Claude Code 会 fork
-原会话，Codex 以 ephemeral 方式续接，原对话不受影响），把回答带回来；暂时唤不醒的消息会在
-对方下次开始任务时出现在它的收件箱里。
+Agent 调用 `message_agent`，Fuli 在对方自己的客户端里以只读方式唤醒它并把回答带回来：
+Claude Code 会 fork 原会话；Codex 会在原对话里记下这次问答（对话正在 Codex 中打开时改用新会话）。
+暂时唤不醒的消息会在对方下次开始任务时出现在它的收件箱里。
 
 每一段往来都保存在本机，控制台的“圆桌”页能看到谁问了谁、通过哪个客户端、原文和回答。
 工具与限制见[圆桌说明](docs/agent-roundtable.md)。

@@ -69,6 +69,20 @@ test('a message that cannot be delivered waits in the inbox until the Agent repl
   assert.equal(roundtable.thread({ threadId: sent.threadId }).messages[1].body, '已看，可以合并');
 });
 
+test('a busy conversation falls back to a new session of the same Agent', async () => {
+  const { roundtable, woken } = fixture({
+    sessions: { 'reviewer-1': [{ source_application: 'codex', session_id: 'cx-9', personal_project_id: 'app', last_active: 'now' }] },
+    wake: async ({ sessionId }) => {
+      if (sessionId) throw Object.assign(new Error('active writer'), { code: 'wake_failed' });
+      return { body: '新会话的回答', sessionId: 'cx-new' };
+    }
+  });
+  const result = await roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'Nova Lane', body: '在吗' });
+  assert.equal(result.status, 'answered');
+  assert.equal(result.via, 'codex:new');
+  assert.deepEqual(woken.map(({ sessionId, cwd }) => [sessionId, cwd]), [['cx-9', '/work/codex/cx-9'], [null, '/work/codex/cx-9']]);
+});
+
 test('a fresh run is used when the recipient has no resumable conversation', async () => {
   const { roundtable, woken } = fixture();
   const result = await roundtable.messageAgent({ taskContextToken: 'token-nova', sourceApplication: 'codex',
@@ -89,11 +103,11 @@ test('names must be unambiguous and threads have a message limit', async () => {
     sourceApplication: 'codex', wait: false }), /message limit/);
 });
 
-test('wake commands resume read-only without changing the original conversation', () => {
+test('wake commands resume read-only; Claude Code forks instead of writing an open session', () => {
   assert.deepEqual(wakeArguments('claude_code', { sessionId: 'cc-session-1' }),
     ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk', '--resume', 'cc-session-1', '--fork-session']);
   assert.deepEqual(wakeArguments('codex', { sessionId: 'cx-session-1' }),
-    ['exec', 'resume', '--json', '--ephemeral', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', 'cx-session-1', '-']);
+    ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', 'cx-session-1', '-']);
   assert.deepEqual(wakeArguments('codex', { cwd: '/work/app' }),
     ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', '/work/app', '-']);
   assert.throws(() => wakeArguments('codex', { sessionId: '--last; rm' }), /Invalid client session id/);

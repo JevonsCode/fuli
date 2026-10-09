@@ -104,10 +104,19 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     if (!delivery) return queued(thread, ask, target, 'no_client');
     store.updateMessage(ask.id, { status: 'delivering', toClient: delivery.client, toSession: delivery.sessionId });
     try {
-      const answer = await wake({ client: delivery.client, sessionId: delivery.sessionId, cwd: delivery.cwd,
-        timeoutMs: Math.min(Math.max(timeoutSeconds, 30), 900) * 1000,
-        prompt: wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: from.client }) });
-      const via = `${delivery.client}:${delivery.sessionId ? 'resume' : 'new'}`;
+      const prompt = wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: from.client });
+      const timeoutMs = Math.min(Math.max(timeoutSeconds, 30), 900) * 1000;
+      let answer, resumed = Boolean(delivery.sessionId);
+      try {
+        answer = await wake({ client: delivery.client, sessionId: delivery.sessionId, cwd: delivery.cwd, timeoutMs, prompt });
+      } catch (error) {
+        // A conversation open in its app, or a sub-agent thread, cannot be resumed;
+        // the same Agent still answers from a new session with its memory.
+        if (!resumed || error.code === 'client_login_required') throw error;
+        resumed = false;
+        answer = await wake({ client: delivery.client, sessionId: null, cwd: delivery.cwd, timeoutMs, prompt });
+      }
+      const via = `${delivery.client}:${resumed ? 'resume' : 'new'}`;
       store.updateMessage(ask.id, { status: 'answered', via });
       const reply = store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent',
         inReplyTo: ask.id, via, from: { agentId: target.agentId, name: label(target), client: delivery.client,

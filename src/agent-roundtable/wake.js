@@ -1,12 +1,13 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { closeSync, existsSync, openSync, readSync, readdirSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 // Wakes the recipient Agent in its own client, headlessly, and returns its
-// final answer. Resuming a conversation answers with that conversation's full
-// context without changing it: Claude Code forks the session and Codex runs
-// the resumed turn ephemerally. Recipients run read-only.
+// final answer with that conversation's full context. Claude Code forks the
+// session so an open window is never written concurrently; Codex records the
+// exchange in the conversation and refuses while it is open in the app.
+// Recipients run read-only.
 export const WAKE_CLIENTS = Object.freeze(['claude_code', 'codex']);
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9-]{7,127}$/;
 
@@ -17,9 +18,8 @@ export function resolveClientCommand(client, { env = process.env, platform = pro
     if (env.FULI_CODEX_BIN) return env.FULI_CODEX_BIN;
     const found = which('codex', platform);
     if (found) return found;
-    const bundled = platform === 'win32'
-      ? join(env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'OpenAI', 'Codex', 'bin', 'codex.exe')
-      : platform === 'darwin' ? '/Applications/Codex.app/Contents/Resources/codex' : null;
+    if (platform === 'win32') return newestBundledCodex(join(env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'OpenAI', 'Codex', 'bin'));
+    const bundled = platform === 'darwin' ? '/Applications/Codex.app/Contents/Resources/codex' : null;
     return bundled && fileExists(bundled) ? bundled : null;
   }
   return null;
@@ -33,7 +33,7 @@ export function wakeArguments(client, { sessionId = null, cwd } = {}) {
   }
   if (client === 'codex') {
     return sessionId
-      ? ['exec', 'resume', '--json', '--ephemeral', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', sessionId, '-']
+      ? ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', sessionId, '-']
       : ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', cwd, '-'];
   }
   throw new TypeError(`Unsupported client: ${client}`);
@@ -80,6 +80,9 @@ export function parseFinalAnswer(client, { code, stdout }) {
       body = event.result ?? '';
       failed ||= Boolean(event.is_error);
     }
+    if (event.error === 'authentication_failed') {
+      throw Object.assign(new Error(`${client} is not logged in on this machine`), { code: 'client_login_required' });
+    }
   }
   if (failed || !completed || !body.trim()) {
     throw Object.assign(new Error(`${client} did not return an answer`), { code: 'wake_failed' });
@@ -123,6 +126,13 @@ function whichCommand(name, platform) {
   // On Windows only real executables can be spawned without a shell.
   return result.stdout.split(/\r?\n/).map((line) => line.trim())
     .find((line) => line && (platform !== 'win32' || /\.exe$/i.test(line))) ?? null;
+}
+
+// The Codex app keeps each CLI version in its own folder; the newest is current.
+function newestBundledCodex(root) {
+  const candidates = [join(root, 'codex.exe'), ...safeList(root).map((entry) => join(root, entry, 'codex.exe'))]
+    .filter((path) => existsSync(path));
+  return candidates.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0] ?? null;
 }
 
 function safeList(directory) {

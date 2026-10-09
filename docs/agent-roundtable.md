@@ -29,8 +29,10 @@ conversations answers (`auto` by default, `new`, or a session ID from `find_agen
    read-only, and waits for its final answer (default 5 minutes, at most 15):
    - Claude Code resumes the conversation with `--resume <id> --fork-session`, so the
      answer has that conversation's full context while the original stays untouched.
-   - Codex runs `codex exec resume <id> --ephemeral` with a read-only sandbox, so the
-     resumed turn is not written back into the original conversation.
+   - Codex runs `codex exec resume <id>` with a read-only sandbox. The question and
+     answer are recorded in that conversation, so it shows up there next time it is
+     opened. Codex refuses while the conversation is open in the app; Fuli then asks
+     the same Agent in a new session instead.
    - Without a resumable conversation, Fuli starts a new session in the caller's
      project directory with `@{agent}`, which loads that Agent's memory and role.
 2. **Inbox.** If the recipient cannot be woken (client not installed, not allowed for
