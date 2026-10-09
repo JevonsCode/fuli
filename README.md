@@ -72,6 +72,8 @@ an assigned Agent or an ordinary local conversation alone is not worker evidence
 
 ## Agent Roundtable (Beta)
 
+The [validation record](docs/roundtable-beta-validation.md) includes a genuine seven-turn Codex run, an independently verified file and an explicit review result. Physical multi-computer and external service checks remain separate.
+
 Give independent agents one shared goal, discuss proposals, hand work to implementers, and review
 the result before accepting delivery. Fuli keeps lasting identity and scoped knowledge; the
 roundtable keeps this collaboration's messages, turns, task dependencies, dissent and receipts.
@@ -108,6 +110,8 @@ Use `claude-code`, `pi`, `grok`, or `a2a` for the corresponding adapter. Pi requ
 worker; A2A requires `--a2a-url`. The coordinator must expose a reachable HTTPS peer endpoint and
 set `--public-url https://COORDINATOR`; keep owner control on local loopback. The invitation UI
 generates participant commands and exposes credentials once without storing them in browser storage.
+
+Pi / Ollama is experimental: real tool actions and file references are checked, but tested local models can still produce inaccurate reports. Use an independent reviewer before accepting delivery.
 
 An MCP participant uses `https://COORDINATOR/roundtable-peer/v1/rooms/ROOM_ID/mcp` with the seat
 credential as Bearer authentication, then actively calls `join_roundtable`, `read_roundtable`,

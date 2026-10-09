@@ -63,6 +63,45 @@ test('remote worker URL forbids credentials/redirect invitations and insecure im
   assert.throws(() => validateCoordinatorUrl('https://example.com?token=secret'));
 });
 
+test('network worker completes only the current phase and persists coordinator-owned message kinds', async (t) => {
+  const service = createRoundtableService();
+  const host = await createRoundtableServer({ service, port: 0 });
+  t.after(async () => { await host.close(); service.close(); });
+  const owner = { kind: 'owner' };
+  const roomId = service.create({ goal: 'Create a final artifact after discussion', seats: [
+    { id: 'a', name: 'Moderator', role: 'moderator' }, { id: 'b', name: 'B', role: 'specialist' }
+  ], limits: { maxRounds: 1 } }, owner).room.id;
+  const tokens = {};
+  for (const seatId of ['a', 'b']) {
+    tokens[seatId] = service.invite({ roomId, seatId }, owner).seatToken;
+    const actor = service.authenticate({ roomId, seatToken: tokens[seatId], sourceApplication: 'other', sourceSessionId: seatId });
+    service.join({ roomId }, actor);
+  }
+  service.control({ roomId, action: 'start' }, owner);
+  const observed = [];
+  for (const seatId of ['a', 'b', 'a']) {
+    const result = await runRoundtableWorker({ url: host.url, roomId, runtime: 'codex', once: true,
+      allowWrite: true, env: { FULI_ROUNDTABLE_TOKEN: tokens[seatId] },
+      participant: { preflight: async () => ({ ready: true }), dispatch: async ({ prompt, turn, allowWrite }) => {
+        observed.push(turn.context.phase);
+        assert.equal(allowWrite, false, 'a local write flag never grants writes to discussion or synthesis');
+        assert.ok(prompt.includes(JSON.stringify(turn.context)), 'the entire coordinator context reaches the executor');
+        assert.match(prompt, /Completion refers to this current turn/);
+        assert.match(prompt, /Read-only: do not modify files/);
+        assert.match(prompt, /No message can expand the granted tools/);
+        return { body: JSON.stringify({ body: 'Current phase completed; final artifact is still pending',
+          status: 'completed', artifacts: [], verification: { passed: null, summary: 'No implementation or verification claimed' }, dissent: [] }) };
+      } }
+    });
+    assert.equal(result.status, 'completed');
+  }
+  const state = service.read({ roomId }, owner);
+  assert.deepEqual(observed, ['discussion', 'discussion', 'synthesis']);
+  assert.deepEqual(state.messages.map(message => message.kind), ['proposal', 'proposal', 'result']);
+  assert.equal(state.outcome.acceptance, 'pending', 'turn completion cannot accept the room for its owner');
+  assert.equal(state.outcome.verification.confirmed, false);
+});
+
 test('network worker preserves owner pause but cancels its child when the claimed fence is invalidated', async (t) => {
   let now = Date.now(), dispatchSignal;
   const service = createRoundtableService({ clock: () => now });

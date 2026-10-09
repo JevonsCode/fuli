@@ -91,7 +91,9 @@ if (!process.argv.includes('--run')) {
     return runRoundtableWorker({ url: host.url, roomId: room.id, runtime: seat.runtime, workspace: directory,
       allowWrite: seat.role === 'implementer', env: workerEnvironment, signal: controller.signal, participant: observedParticipant,
       onEvent: (event) => { const receipt = sanitize({ seat: seat.id, ...event }); workerEvents.push(receipt); console.log(JSON.stringify(receipt)); } }).catch((error) => {
-        const receipt = sanitize({ seat: seat.id, status: 'worker_error', error: error.code ?? error.name, message: error.message });
+        const expectedCleanup = controller.signal.aborted && (error.code === 'ABORT_ERR' || error.name === 'AbortError');
+        const receipt = sanitize({ seat: seat.id, status: expectedCleanup ? 'cleanup_cancelled' : 'worker_error',
+          error: error.code ?? error.name, message: error.message });
         workerEvents.push(receipt); console.log(JSON.stringify(receipt)); return receipt;
       });
   });

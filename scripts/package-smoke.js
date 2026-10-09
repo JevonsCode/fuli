@@ -71,9 +71,12 @@ try {
     'docs/employee-agents.md',
     'docs/agent-interface-architecture.md',
     'docs/roundtable-beta-testing.md',
+    'docs/roundtable-beta-validation.md',
     'docs/roundtable-research.md',
     'src/roundtables/service.js',
     'src/cli/roundtable-command.js',
+    'src/agents/pi/roundtable-participant.js',
+    'src/agents/pi/roundtable-result-format.js',
     'examples/external-knowledge/markdown-folder.mjs',
     'graph-provider/fuli_graph/app.py',
     'skills/capturing-session-knowledge/SKILL.md',
@@ -96,6 +99,7 @@ try {
         'docs/employee-agents.md',
         'docs/agent-interface-architecture.md',
         'docs/roundtable-beta-testing.md',
+        'docs/roundtable-beta-validation.md',
         'docs/roundtable-research.md'
       ].includes(path), `unexpected published documentation file ${path}`);
     }

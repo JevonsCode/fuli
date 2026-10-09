@@ -63,7 +63,7 @@ function mcpUrl() { return `${coordinatorUrl.value.replace(/\/$/, '')}/roundtabl
         <label class="rt-field">{{ copy('参与端本地工作区', 'Worker local workspace') }}<input v-model="workspace" :placeholder="copy('填写参与者电脑上的路径', 'Path on the participant’s computer')" /></label>
         <label v-if="room.seats.find(seat => seat.id === invite?.seatId)?.execution?.permission === 'workspace-write'"><input v-model="allowWrite" type="checkbox" /> {{ copy('工作端用户明确允许写入此工作区', 'The worker’s user explicitly permits writing to this workspace') }}</label>
         <label v-if="room.seats.find(seat => seat.id === invite?.seatId)?.runtime === 'a2a'" class="rt-field">{{ copy('A2A 端点', 'A2A endpoint') }}<input v-model="a2aUrl" type="url" placeholder="https://…" /></label>
-        <label v-if="room.seats.find(seat => seat.id === invite?.seatId)?.runtime === 'pi'" class="rt-field">{{ copy('参与电脑上的 Ollama 模型', 'Ollama model on participant computer') }}<input v-model="piModel" placeholder="gpt-oss:20b" /></label>
+        <label v-if="room.seats.find(seat => seat.id === invite?.seatId)?.runtime === 'pi'" class="rt-field">{{ copy('参与电脑上的 Ollama 模型', 'Ollama model on participant computer') }}<input v-model="piModel" placeholder="fuli-roundtable-qwen3-32k:latest" /></label>
         <p>{{ copy('在参与端 PowerShell 中，先设置环境变量，再启动工作端：', 'In the worker’s PowerShell, set the environment variable and start the worker:') }}</p>
         <pre><code>$env:FULI_ROUNDTABLE_TOKEN = '&lt;{{ copy('粘贴席位凭据', 'PASTE_SEAT_CREDENTIAL') }}&gt;'
 {{ workerCommand() }}</code></pre>

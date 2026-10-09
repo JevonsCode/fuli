@@ -76,7 +76,7 @@ describe('Roundtable UI', () => {
     api.invite.mockResolvedValue({ roomId: room.id, seatId: 'a', seatToken: 'private-pi-seat', expiresAt: '2026-10-09T03:00:00Z' })
     const wrapper = mount(RoundtableSeats, { props: { room } }); wrappers.push(wrapper)
     await wrapper.findAll('button').find(button => button.text() === '邀请参与')!.trigger('click'); await flushPromises()
-    await wrapper.get('input[placeholder="gpt-oss:20b"]').setValue("local'model")
+    await wrapper.get('input[placeholder="fuli-roundtable-qwen3-32k:latest"]').setValue("local'model")
     expect(wrapper.get('pre').text()).toContain("--runtime pi")
     expect(wrapper.get('pre').text()).toContain("--model 'local''model'")
     expect(wrapper.get('pre').text()).not.toContain('private-pi-seat')

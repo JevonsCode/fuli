@@ -58,6 +58,8 @@ Agent 目录提供首次任务入口，任务详情会区分“已分配”和�
 
 ## Agent 圆桌（Beta）
 
+[验证记录](docs/roundtable-beta-validation.md)包含真实的 Codex 七轮协作、独立核对的文件和明确的审查结果。多台物理电脑与外部服务分别验收。
+
 让独立 Agent 围绕同一个目标，先讨论方案，再交接实施和审查，由你验收交付。
 Fuli 管理长期身份与有边界的知识；圆桌保存本次公开消息、回合、任务依赖、分歧与实际回执。
 各参与者在自己的电脑上运行工作端，主动领取获授权的回合。
@@ -92,6 +94,8 @@ fl roundtable worker --url https://COORDINATOR --room ROOM_ID --runtime codex --
 `XAI_API_KEY` 和 `XAI_MODEL`，A2A 需要 `--a2a-url`。跨电脑时，协调端提供可访问的 HTTPS 参与端入口，
 并设置 `--public-url https://COORDINATOR`；所有者控制面保留在本机回环地址。
 邀请界面提供可复制指令，凭据只在当前页面显示一次，不写入浏览器存储。
+
+Pi / Ollama 当前为试验能力：真实工具动作和文件引用受到检查，但已测试的本地模型仍可能输出不准确的报告，交付必须经过独立审查。
 
 MCP 参与者配置 `https://COORDINATOR/roundtable-peer/v1/rooms/ROOM_ID/mcp`，将席位凭据作为
 Bearer 认证秘密保存，再主动调用 `join_roundtable`、`read_roundtable`、

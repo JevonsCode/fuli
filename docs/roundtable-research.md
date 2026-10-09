@@ -14,6 +14,18 @@
 设计；不引入另一套框架来接管 Fuli 的记忆和任务真相。此项是结合本项目架构
 作出的工程判断。
 
+## Fuli / Grok Bot / Codex Dot：事实与取舍
+
+“Codex Dot”是用户的称呼；本次官方资料使用的是 **your dot**，未核实独立的同名产品或专属公开 API。下面分别比较官方 dot 与 Codex 能力。本机只读核查确认 `codex-cli 0.162.0-alpha.2` 提供非交互执行、代码审查、MCP 配置及会话恢复入口；这些入口本身不证明任务已执行，真实 Codex 圆桌回合另见[Beta 验证记录](roundtable-beta-validation.md)。[Codex CLI 官方契约](https://learn.chatgpt.com/docs/cli/reference)
+
+| 产品 / 已核实入口 | 强项与适用取舍 | 当前边界 |
+| --- | --- | --- |
+| Fuli Agent 圆桌 | 用户使用自己的电脑、运行端与凭据，通过独立 CLI / API / MCP / A2A 席位围绕共同目标协作；房间内共享且可追溯的消息、分歧、产物和审查接续 Fuli 的身份与知识范围，最终验收由人决定。 | 已提供 Beta 接入与协调流程，完整真实圆桌证据目前来自一台电脑上的 Codex；多电脑和其他运行端的真实协作分别待验收。尚未提供托管常驻服务、默认第三方通讯平台一键入口，也没有 Grok 原生 Bot 的外部唤醒能力。见[接入步骤](roundtable-beta-testing.md)与[证据范围](roundtable-beta-validation.md)。 |
+| 官方 Grok Bot | 常驻云同事适合持续跟进；官方支持 2–6 位 Bot 群聊、异步交接及内部唤醒，笔记本关闭后仍可继续工作。[协作](https://docs.x.ai/grok-bot/chat-and-collaboration)、[FAQ](https://docs.x.ai/grok-bot/faq) | 同一账户的 Bots 共用云电脑、文件和登录，不构成彼此的安全隔离。Custom Remote HTTPS MCP 提供主动接入 Fuli 的方式，但尚未 live 验收；本次核实的官方文档未建立 Fuli 从外部唤醒现有 Bot 的公开契约。[Team Bots](https://docs.x.ai/grok-bot/team-bots) |
+| 官方 your dot 与 Codex | dot 可在对话之间持续跟进、并行委派，创建或续接本地 Codex 任务，也可使用已配置的 Codex 云环境；它有自己的云电脑，适合由一个助手持续协调工作。[任务与记忆](https://learn.chatgpt.com/docs/dots/tasks-and-memory)、[电脑与应用](https://learn.chatgpt.com/docs/dots/computers-and-apps) | 官方当前说明一次可连接一台个人电脑；本地任务要求该电脑在线且 ChatGPT 应用打开，云任务可在本机离线时运行。该能力不能直接推导为独立厂商 CLI / API / MCP / A2A 席位的通用圆桌契约，也不证明本项目已接通 dot。 |
+
+因此，Fuli 的取舍是让不同运行端保留自己的执行入口、权限和证据，在用户可控的协作记录中完成交付；Grok Bot 和 dot 的常驻托管与内建协调更省运维。长期记忆、多 Agent 和调度并非 Fuli 独有；跨运行端接续、可检查的协作过程和人工权威，才是本项目需要持续验证的价值。
+
 ## 开源方案与取舍
 
 | 方案 / 官方来源 | 当前能力与许可证 | Fuli 应采用什么 | 集成代价与边界 |
@@ -114,6 +126,8 @@ OpenAI-compatible Responses；服务器连接由 xAI 执行，仅 Streaming HTTP
 本项目设计策略，不是 xAI 默认承诺。
 
 ## Beta 验收证据
+
+Pi 官方仓库已迁移到 [earendil-works/pi](https://github.com/earendil-works/pi)，MIT 许可。当前 CLI npm 包为 `@earendil-works/pi-coding-agent`；本适配器需要 >=1.1.0 的项目批准与资源隔离选项。Pi 保留独立执行入口，Ollama 提供本地推理；接入不依赖另一个长期记忆系统。Ollama 的 [Chat API](https://docs.ollama.com/api/chat)支持工具与结构化输出；实际工具调用和最终格式可靠性仍需分开验收。
 
 - 独立本机 CLI 要证明真实提案、审查、修订及任务产物；真实凭据不足记为阻塞。
 - native MCP 席位要证明独立认证会话的跨席位消息和回合流；可复制配置不算已连接。

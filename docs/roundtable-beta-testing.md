@@ -40,14 +40,28 @@ fl roundtable worker --url https://roundtable.example --room ROOM_ID --runtime c
 安装当前官方 Pi（>=1.1.0），检查 Ollama 已安装的模型，选择支持工具调用的模型：
 
 ```powershell
-npm install -g @earendil-works/pi-coding-agent
-ollama list
-fl roundtable worker --url https://roundtable.example --room ROOM_ID --runtime pi --model qwen2.5:14b --workspace C:\work\project
+npm install -g @earendil-works/pi-coding-agent@1.1.0
+ollama pull qwen3:8b
+@'
+FROM qwen3:8b
+PARAMETER num_ctx 32768
+PARAMETER temperature 0
+'@ | Set-Content -LiteralPath .\roundtable.Modelfile -Encoding utf8
+ollama create fuli-roundtable-qwen3-32k -f .\roundtable.Modelfile
+fl roundtable worker --url https://roundtable.example --room ROOM_ID --runtime pi --model fuli-roundtable-qwen3-32k:latest --workspace C:\work\project
 ```
+
+这是本次真实测试使用的模型配置。约需下载 5.2 GB；别名共享原模型权重，只为该模型设置 32K 上下文，不修改 Ollama 的全局设置。基本工具测试使用过 16K；完整圆桌的 16K 请求实测超出预算，因此指南推荐 32K。适配器的最低预检要求为 16K；未配置 `num_ctx` 的默认 4K、8K 或更小窗口会明确返回 `model_context_insufficient`。预检通过不代表任意大小的回合都能容纳，完整请求仍会检查预算。也可以选择自己的已安装工具模型；模型名称和实际上下文由预检读取。
 
 Pi 使用工作端本机 `http://127.0.0.1:11434` 的 Ollama；可用 `FULI_PI_BASE_URL` 指定另一个回环端口的 `/v1` 地址。每次调用自动创建并清理隔离的 Pi 配置，不改你的 `~/.pi/agent`。禁用 shell、继承扩展与 MCP，读/编辑/写工具检查准确工作区及 symlink/junction。这里是工具约束，不是操作系统沙盒。允许写入仍需要双重授权。
 
+当 Pi 已执行完工具、最终报告仍不满足圆桌结果契约时，适配器至多调用一次同一本机 Ollama 来整理结果。整理阶段没有工具，产物引用必须对应实际文件证据；明确失败、阻塞或缺少检查证据不能升级为通过。执行和整理共用回合期限，用量分阶段记录，不推算未知的输入或缓存用量。完整证据超出预算时会明确拒绝运行。
+
+当前 Pi / Ollama 为试验接入。Qwen3 的最新严格检查为 3/4，已有 Qwen2.5:14b 对照为 2/4；曾完成 4/4 的运行不代表稳定性。已实际执行读写和路径拒绝，但模型正文可能与真实工具内容不一致，必须由独立审查者检查文件。详细结果见[验证记录](roundtable-beta-validation.md)。
+
 模型安装、工具执行与正确完成任务是不同的验证。模型可能输出错误产物或自报成功，必须由审查者读取实际产物。模型标称上下文也不等于 Ollama 当前加载上下文，可用 `ollama ps` 检查。
+
+Codex 工作端会读取有效 MCP 配置、逐个禁用并再次验证，无法证明隔离时不执行；同时禁用插件、Apps、Hook、通知和继承的额外写入根。保持现有凭据与模型提供商，不改全局配置。可以用 `FULI_CODEX_REASONING_EFFORT=low` 为本次工作端选择受支持的推理强度，不改变其他会话。
 
 ## Grok Bot 原生参与
 

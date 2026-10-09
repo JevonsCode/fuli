@@ -15,6 +15,7 @@
     "docs/employee-agents.md",
     "docs/agent-interface-architecture.md",
     "docs/roundtable-beta-testing.md",
+    "docs/roundtable-beta-validation.md",
     "docs/roundtable-research.md",
     "examples/external-knowledge/markdown-folder.mjs",
     "graph-provider/Dockerfile",
