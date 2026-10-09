@@ -1,4 +1,5 @@
 const READ_TOOLS = new Set([
+  'discover_roundtable',
   'read_roundtable',
   'get_agent_quality_gate',
   'plan_agent_collaboration', 'list_agent_loans',
@@ -50,7 +51,7 @@ const READ_TOOLS = new Set([
 ]);
 
 const WRITE_TOOLS = new Set([
-  'join_roundtable', 'claim_roundtable_turn', 'submit_roundtable_turn',
+  'join_roundtable', 'claim_roundtable_turn', 'submit_roundtable_turn', 'message_roundtable',
   'record_agent_verification',
   'request_agent_loan', 'decide_agent_loan',
   'resume_agent_conversation', 'update_agent_conversation_policy',
@@ -170,6 +171,7 @@ export function annotationsFor(name) {
       name === 'record_knowledge_usage' || name === 'record_decision_trace' ||
       name === 'record_knowledge_feedback' ||
       name === 'record_workflow_transition_observation' ||
+      name === 'message_roundtable' ||
       name === 'checkpoint_task_knowledge' ||
       name === 'checkpoint_project_agent_memory',
     openWorldHint: name === 'capture_session_knowledge' ||

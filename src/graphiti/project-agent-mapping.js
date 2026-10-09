@@ -380,7 +380,7 @@ export function providerProjectAgentTaskActivity(input) {
   }
   if (hasAny(input, ['tokenUsage', 'token_usage'])) {
     result.token_usage = providerProjectAgentTokenUsage(
-      input.tokenUsage ?? input.token_usage
+      input.tokenUsage !== undefined ? input.tokenUsage : input.token_usage
     );
   }
   if (hasAny(input, ['workerRuntime', 'worker_runtime'])) {

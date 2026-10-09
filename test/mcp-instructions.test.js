@@ -61,5 +61,5 @@ test('MCP instructions support task identity, hook context and an exact fallback
   assert.match(MCP_INSTRUCTIONS, /receipt after client result/i);
   assert.match(MCP_INSTRUCTIONS, /all workerStatus terminal/i);
   assert.match(MCP_INSTRUCTIONS, /source-labelled cumulative tokens/i);
-  assert.match(MCP_INSTRUCTIONS, /Missing=unknown; never invent\/estimate\/copy totals/i);
+  assert.match(MCP_INSTRUCTIONS, /Missing token usage=-.*never invent\/estimate\/copy totals/i);
 });

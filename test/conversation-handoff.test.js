@@ -125,7 +125,7 @@ test('guard serializes same-session hooks and persists only hashes and cursors w
   await f.run(async guard => { assert.equal(guard.value.scanCursor, header.length); });
 });
 
-test('lifecycle blocks an unverified boundary before invoking begin_task_context', async t => {
+test('lifecycle skips unverified context without intercepting the native prompt', async t => {
   const f = await fixture(t, row('user', 'different'));
   let invoked = false;
   const result = await runCodexLifecycleHook(['--event', 'UserPromptSubmit'], {
@@ -135,7 +135,8 @@ test('lifecycle blocks an unverified boundary before invoking begin_task_context
     createLeases: () => ({ withGraphLease: async (_owner, operation) => operation() }),
     callTool: async () => { invoked = true; return {}; }
   });
-  assert.equal(result.decision, 'block');
+  assert.notEqual(result.decision, 'block');
+  assert.equal(result.hookSpecificOutput, undefined);
   assert.equal(invoked, false);
 });
 

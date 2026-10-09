@@ -29,7 +29,7 @@ test('Codex lifecycle config preserves other hooks and deduplicates only Fuli en
   assert.deepEqual(withoutCodexLifecycleHooks(configured), original);
 });
 
-test('Codex Stop adapter blocks the first unfinished checkpoint', async () => {
+test('Codex Stop adapter reports an unfinished checkpoint without blocking', async () => {
   const calls = [];
   const output = await codexStopLifecycleOutput({
     session_id: 'codex-session',
@@ -45,8 +45,7 @@ test('Codex Stop adapter blocks the first unfinished checkpoint', async () => {
   });
 
   assert.deepEqual(output, {
-    decision: 'block',
-    reason: 'FULI_CHECKPOINT_REQUIRED: finish the checkpoint.'
+    systemMessage: 'FULI_CHECKPOINT_REQUIRED: finish the checkpoint.'
   });
   assert.deepEqual(calls, [[
     'verify_task_checkpoint',
@@ -68,12 +67,12 @@ test('Codex Stop adapter bounds Provider-controlled hook messages', async () => 
     reason: `${prefix}${'记'.repeat(10_000)}`
   }));
 
-  assert.equal(output.reason.startsWith(prefix), true);
-  assert.equal(Buffer.byteLength(output.reason, 'utf8') <= 8_000, true);
-  assert.match(output.reason, /truncated/);
+  assert.equal(output.systemMessage.startsWith(prefix), true);
+  assert.equal(Buffer.byteLength(output.systemMessage, 'utf8') <= 8_000, true);
+  assert.match(output.systemMessage, /truncated/);
 });
 
-test('Codex Stop adapter closes an unfinished checkpoint after one continuation', async () => {
+test('Codex Stop adapter never invents a work log when a Stop hook is already active', async () => {
   const calls = [];
   const output = await codexStopLifecycleOutput({
     session_id: 'codex-session',
@@ -90,18 +89,9 @@ test('Codex Stop adapter closes an unfinished checkpoint after one continuation'
       : { status: 'checkpointed', disposition: 'retain_nothing' };
   });
 
-  assert.deepEqual(output, {});
-  assert.deepEqual(calls[1], [
-    'checkpoint_task_knowledge',
-    {
-      taskContextToken: 'fuli-task-synthetic-token',
-      disposition: 'retain_nothing',
-      reason: 'Codex Stop hook fallback after one checkpoint continuation.',
-      workLog: { status: 'incomplete', summary: 'The host stopped before the employee submitted a work summary. Review the prior task before resuming.' },
-      sourceApplication: 'codex',
-      sourceSessionId: 'codex-session'
-    }
-  ]);
+  assert.equal(output.decision, undefined);
+  assert.equal(calls.length, 1);
+
 });
 
 test('Codex lifecycle command emits the exact Stop JSON contract', async () => {
@@ -119,7 +109,7 @@ test('Codex lifecycle command emits the exact Stop JSON contract', async () => {
   });
 
   assert.deepEqual(writes, [
-    '{"decision":"block","reason":"FULI_CHECKPOINT_REQUIRED: finish the checkpoint."}\n'
+    '{"systemMessage":"FULI_CHECKPOINT_REQUIRED: finish the checkpoint."}\n'
   ]);
 });
 
@@ -155,11 +145,10 @@ test('Codex lifecycle cleanup failures cannot corrupt output or skip application
   });
 
   assert.deepEqual(output, {
-    decision: 'block',
-    reason: 'FULI_CHECKPOINT_REQUIRED: checkpoint.'
+    systemMessage: 'FULI_CHECKPOINT_REQUIRED: checkpoint.'
   });
   assert.deepEqual(writes, [
-    '{"decision":"block","reason":"FULI_CHECKPOINT_REQUIRED: checkpoint."}\n'
+    '{"systemMessage":"FULI_CHECKPOINT_REQUIRED: checkpoint."}\n'
   ]);
   assert.equal(closed, 2);
   assert.equal(writes.join('').includes('/private/'), false);
@@ -203,7 +192,7 @@ test('Cursor adapter uses documented events and never reads raw transcript or id
   const start = await cursorLifecycleOutput('sessionStart', input, invoke);
   assert.match(start.additional_context, /get_collaboration_preferences/);
   const stop = await cursorLifecycleOutput('stop', { ...input, status: 'completed' }, invoke);
-  assert.match(stop.followup_message, /^FULI_CHECKPOINT_REQUIRED:/);
+  assert.deepEqual(stop, {});
   assert.deepEqual(await cursorLifecycleOutput('stop', { ...input, status: 'aborted' }, invoke), {});
   assert.equal(JSON.stringify(calls).includes('DO_NOT_'), false);
 });
@@ -229,19 +218,9 @@ test('Cursor session start does not select a role before the first task prompt',
   assert.doesNotMatch(output.additional_context, /Premature project default/);
 });
 
-test('Cursor Stop adapter bounds Provider-controlled follow-up messages', async () => {
-  const prefix = 'FULI_CHECKPOINT_REQUIRED: ';
-  const output = await cursorLifecycleOutput('stop', {
-    conversation_id: 'cursor-conversation',
-    status: 'completed'
-  }, async () => ({
-    status: 'checkpoint_required',
-    reason: `${prefix}${'记'.repeat(10_000)}`
-  }));
-
-  assert.equal(output.followup_message.startsWith(prefix), true);
-  assert.equal(Buffer.byteLength(output.followup_message, 'utf8') <= 8_000, true);
-  assert.match(output.followup_message, /truncated/);
+test('Cursor Stop never requests continuation for a long pending checkpoint', async () => {
+  const output = await cursorLifecycleOutput('stop', { conversation_id: 'cursor-conversation', status: 'completed' }, async () => { throw new Error('Stop must not check or restart a turn'); });
+  assert.deepEqual(output, {});
 });
 
 test('Cursor lifecycle cleanup failures do not escape or disclose local details', async () => {
@@ -323,7 +302,7 @@ test('Codex TOML cleanup removes only a managed handler from a mixed hook group'
 });
 
 
-test('Cursor permits only one checkpoint follow-up and makes read-only failure explicit', async () => {
+test('Cursor does not restart the model or write a checkpoint during Stop', async () => {
   const calls = [];
   const invoke = async (...args) => {
     calls.push(args);
@@ -331,12 +310,9 @@ test('Cursor permits only one checkpoint follow-up and makes read-only failure e
   };
   const input = { conversation_id: 'cursor-read-only', status: 'completed', loop_count: 0 };
   const first = await cursorLifecycleOutput('stop', input, invoke);
-  assert.match(first.followup_message, /read-only/);
-  assert.match(first.followup_message, /checkpoint was not saved/);
-  assert.match(first.followup_message, /do not retry/);
+  assert.deepEqual(first, {});
   for (const loop_count of [1, 2, 3]) {
     assert.deepEqual(await cursorLifecycleOutput('stop', { ...input, loop_count }, invoke), {});
   }
-  assert.equal(calls.length, 1, 'continuations cannot prompt or write a fabricated checkpoint');
-  assert.equal(calls[0][0], 'verify_task_checkpoint');
+  assert.equal(calls.length, 0, 'Stop cannot prompt or write a fabricated checkpoint');
 });

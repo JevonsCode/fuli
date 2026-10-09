@@ -35,6 +35,10 @@ export function createRoundtableStore({ databasePath = ':memory:' } = {}) {
       if (changed.changes !== 1) fail('revision_conflict', 'Roundtable changed; read the current revision', 409);
     },
     appendMessage(roomId, message) { database.prepare('INSERT INTO roundtable_messages(room_id,seq,id,data) VALUES(?,?,?,?)').run(roomId, message.seq, message.id, JSON.stringify(message)); },
+    messageById(roomId, id) {
+      const row = database.prepare('SELECT data FROM roundtable_messages WHERE room_id=? AND id=?').get(roomId, id);
+      return row ? JSON.parse(row.data) : null;
+    },
     messages(roomId, afterSeq = 0, limit = 100) { return database.prepare('SELECT data FROM roundtable_messages WHERE room_id=? AND seq>? ORDER BY seq LIMIT ?').all(roomId, afterSeq, limit).map(row => JSON.parse(row.data)); },
     recentMessages(roomId, limit = 12) { return database.prepare('SELECT data FROM roundtable_messages WHERE room_id=? ORDER BY seq DESC LIMIT ?').all(roomId, limit).reverse().map(row => JSON.parse(row.data)); },
     recordLateEvidence(roomId, attemptId, evidence) { database.prepare('INSERT OR IGNORE INTO roundtable_late_evidence(room_id,attempt_id,data) VALUES(?,?,?)').run(roomId, attemptId, JSON.stringify(evidence)); },

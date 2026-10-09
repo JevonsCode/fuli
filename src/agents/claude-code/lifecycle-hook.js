@@ -37,19 +37,7 @@ export async function claudeLifecycleOutput(event, input, invoke) {
   const check = await invoke('verify_task_checkpoint', { sessionId, ...source });
   const reason = boundedHookMessage(check?.reason);
   if (check?.decision !== 'block' || !reason.trim()) return {};
-  if (input.stop_hook_active === true) {
-    if (typeof check.task_context_token === 'string' && check.task_context_token.trim()) {
-      await invoke('checkpoint_task_knowledge', {
-        taskContextToken: check.task_context_token,
-        disposition: 'retain_nothing',
-        reason: 'Claude Code Stop hook fallback after one checkpoint continuation.',
-        workLog: { status: 'incomplete', summary: 'The host stopped before the employee submitted a work summary. Review the prior task before resuming.' },
-        ...source
-      });
-    }
-    return {};
-  }
-  return { decision: 'block', reason };
+  return { systemMessage: reason };
 }
 
 export function claudeLifecycleUnavailable(event) {
@@ -80,7 +68,7 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
           let sync = await syncConversationTranscript(app, input, 'claude_code', {
             normalize: normalizeClaudeRecord, verify: verifyClaudeTranscript
           }, guard);
-          if (event === 'UserPromptSubmit' && sync.entryBlocked) return { decision: 'block', reason: sync.reason };
+          if (event === 'UserPromptSubmit' && sync.entryBlocked) return { systemMessage: boundedHookMessage(sync.reason) };
           const entryGuard = sync.status === 'capture_disabled' ? null : guard;
           if (event === 'UserPromptSubmit' && entryGuard?.value) await entryGuard.write({ ...entryGuard.value, phase: 'beginning' });
           const output = await claudeLifecycleOutput(event, input, async (name, parameters) => {
@@ -91,12 +79,12 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
           if (event === 'UserPromptSubmit') sync = await claimTranscriptBoundary(app, input, 'claude_code', sync, {
             normalize: normalizeClaudeRecord, verify: verifyClaudeTranscript
           }, entryGuard);
-          if (event === 'UserPromptSubmit' && sync.entryBlocked) return { decision: 'block', reason: sync.reason };
+          if (event === 'UserPromptSubmit' && sync.entryBlocked) return { systemMessage: boundedHookMessage(sync.reason) };
           return withTranscriptNotice(output, sync);
         });
       } catch (error) {
         if (event !== 'UserPromptSubmit' || !app.getCapturePolicy?.().enabled || !input.transcript_path) throw error;
-        return { decision: 'block', reason: error.code === 'EADDRINUSE'
+        return { systemMessage: error.code === 'EADDRINUSE'
           ? 'The session handoff lock is occupied. Retry after the current hook finishes; if it persists, start a new host session and resume the intended Agent.'
           : 'Fuli transcript handoff could not be completed safely. Retry task entry; no previous Agent context was supplied.' };
       }
@@ -127,7 +115,6 @@ async function main() {
     ? configured : 28000;
   const controller = new AbortController();
   let emitted = false;
-  let guarded = false;
   const emit = (output, callback) => {
     if (emitted) return;
     emitted = true;
@@ -137,11 +124,11 @@ async function main() {
   // No prompt, transcript, path or raw exception is written to diagnostics.
   const deadline = setTimeout(() => {
     controller.abort();
-    emit(guarded && event === 'UserPromptSubmit' ? { decision: 'block', reason: 'Fuli transcript handoff timed out. Retry task entry; the previous Agent context was not supplied.' } : claudeLifecycleUnavailable(event), () => process.exit(0));
+    emit(claudeLifecycleUnavailable(event), () => process.exit(0));
   }, timeoutMs);
   const abort = setTimeout(() => controller.abort(), Math.max(1, timeoutMs - 1500));
   try {
-    const output = await runClaudeLifecycleHook(args, { signal: controller.signal, onTranscriptGuard: () => { guarded = true; } });
+    const output = await runClaudeLifecycleHook(args, { signal: controller.signal });
     emit(output);
   } catch {
     emit(claudeLifecycleUnavailable(event));

@@ -5,6 +5,7 @@ export interface RoundtableSeat {
   id: string; name: string; role: RoundtableRole; runtime: RoundtableRuntime
   joinedAt?: RoundtableTime | null; revokedAt?: RoundtableTime | null; status?: string
   sourceApplication?: string | null; sourceSessionId?: string | null
+  selfProfile?: { responsibility?: string; capabilities?: string[]; introduction?: string } | null
   identityKind?: 'standalone' | 'fuli'
   execution?: { permission: 'read-only' | 'workspace-write'; workspace: string | null }
 }
@@ -24,6 +25,7 @@ export interface RoundtableActual {
 }
 export interface RoundtableMessage {
   id: string; seq: number; seatId: string | null; kind: string; body: string; createdAt: RoundtableTime
+  toSeatId?: string | null
   actual?: RoundtableActual | null; artifacts?: unknown[]; turnId?: string; attemptId?: string
   verification?: { reported?: unknown; confirmed?: boolean }
 }

@@ -74,6 +74,97 @@ test('invitation expiry is checked again on every participant action', t => {
   rejectsCode(() => service.claim({ roomId }, actor), 'invite_invalid');
 });
 
+test('invited seats discover public duties, address peers and cannot advance required turns', t => {
+  const { service } = fixture(t);
+  const roomId = create(service, { limits: { maxRounds: 1, maxPeerMessages: 3 } }).room.id;
+  const invitations = Object.fromEntries(['a', 'b'].map(seatId => [seatId, service.invite({ roomId, seatId }, OWNER)]));
+  const clients = Object.fromEntries(Object.entries(invitations).map(([seatId, invitation]) => [seatId, {
+    invitation,
+    actor: service.authenticate({ roomId, seatToken: invitation.seatToken, sourceApplication: 'mcp-client', sourceSessionId: `${seatId}-session` })
+  }]));
+
+  const beforeJoin = service.discover({ roomId }, clients.a.actor);
+  assert.equal(beforeJoin.protocol.version, '1');
+  assert.equal(beforeJoin.nextAction.action, 'join');
+  assert.equal(beforeJoin.ownSeat.selfProfile, null);
+
+  service.join({ roomId, selfProfile: { responsibility: 'moderate discussion', capabilities: ['planning'], introduction: 'A' } }, clients.a.actor);
+  service.join({ roomId, selfProfile: { responsibility: 'implement evidence', capabilities: ['implementation', 'testing'], introduction: 'B' } }, clients.b.actor);
+  const search = service.discover({ roomId, capabilityQuery: 'test' }, clients.a.actor);
+  assert.deepEqual(search.roster.map(seat => seat.id), ['b']);
+  assert.equal(search.roster[0].role, 'specialist');
+  assert.equal(search.roster[0].selfProfile.capabilities[1], 'testing');
+
+  const peer = service.message({ roomId, toSeatId: 'b', body: 'Can you share the test result?', kind: 'question', idempotencyKey: 'peer-1' }, clients.a.actor);
+  assert.equal(peer.message.senderSeatId, 'a');
+  assert.equal(peer.message.toSeatId, 'b');
+  assert.equal(peer.message.turnId, null);
+  assert.equal(peer.room.agentMessageCount, 0);
+  assert.equal(peer.room.peerMessageCount, 1);
+  assert.deepEqual(service.message({ roomId, toSeatId: 'b', body: 'Can you share the test result?', kind: 'question', idempotencyKey: 'peer-1' }, clients.a.actor), peer);
+  rejectsCode(() => service.message({ roomId, toSeatId: 'foreign', body: 'x', idempotencyKey: 'peer-2' }, clients.a.actor), 'seat_not_found');
+  rejectsCode(() => service.message({ roomId, toSeatId: 'b', body: 'x', replyTo: 'missing', idempotencyKey: 'peer-3' }, clients.a.actor), 'message_not_found');
+  rejectsCode(() => service.message({ roomId, toSeatId: 'b', body: 'x'.repeat(4097), idempotencyKey: 'peer-4' }, clients.a.actor), 'invalid_input');
+  const forgedSender = service.message({ roomId, toSeatId: 'b', body: 'x', idempotencyKey: 'peer-5', senderSeatId: 'b' }, clients.a.actor);
+  assert.equal(forgedSender.message.senderSeatId, 'a');
+
+  service.control({ roomId, action: 'start' }, OWNER);
+  const claim = service.claim({ roomId }, clients.a.actor);
+  const addressedDuringTurn = service.message({ roomId, toSeatId: 'a', body: 'A turn is in progress', kind: 'handoff', replyTo: peer.message.id, idempotencyKey: 'peer-6' }, clients.b.actor);
+  assert.equal(service.read({ roomId }, OWNER).currentTurn.id, claim.turnId);
+  assert.equal(service.read({ roomId }, OWNER).currentTurn.status, 'claimed');
+  assert.equal(addressedDuringTurn.room.agentMessageCount, 0);
+  assert.equal(addressedDuringTurn.message.senderSeatId, 'b');
+  assert.equal(addressedDuringTurn.message.replyTo, peer.message.id);
+  assert.equal(service.claim({ roomId }, clients.a.actor), null);
+  service.submit({ roomId, ...claim, context: undefined, idempotencyKey: 'turn-1', body: 'done' }, clients.a.actor);
+});
+
+test('discovery waits on inactive or retry-required own turns', t => {
+  const { service, advance } = fixture(t);
+
+  const pausedRoomId = create(service, { limits: { maxRounds: 1 } }).room.id;
+  const pausedClients = start(service, pausedRoomId);
+  service.control({ roomId: pausedRoomId, action: 'pause' }, OWNER);
+  const paused = service.discover({ roomId: pausedRoomId }, pausedClients.a.actor).nextAction;
+  assert.equal(paused.action, 'wait');
+  assert.equal(paused.required, true);
+  assert.equal(paused.reason, 'owner_paused');
+
+  const timeoutRoomId = create(service, { limits: { maxRounds: 1, turnTimeoutMs: 1000 } }).room.id;
+  const timeoutClients = start(service, timeoutRoomId);
+  const timeoutClaim = service.claim({ roomId: timeoutRoomId }, timeoutClients.a.actor);
+  advance(1000);
+  const timedOut = service.discover({ roomId: timeoutRoomId }, timeoutClients.a.actor).nextAction;
+  assert.equal(timedOut.action, 'wait');
+  assert.equal(timedOut.required, true);
+  assert.equal(timedOut.reason, 'turn_timeout');
+  assert.equal(timedOut.turnId, timeoutClaim.turnId);
+
+  const failedRoomId = create(service, { limits: { maxRounds: 1 } }).room.id;
+  const failedClients = start(service, failedRoomId);
+  const failedClaim = service.claim({ roomId: failedRoomId }, failedClients.a.actor);
+  service.submit({ roomId: failedRoomId, ...failedClaim, context: undefined, idempotencyKey: 'failed-turn', body: 'runtime failed', status: 'failed' }, failedClients.a.actor);
+  const failed = service.discover({ roomId: failedRoomId }, failedClients.a.actor).nextAction;
+  assert.equal(failed.action, 'wait');
+  assert.equal(failed.required, true);
+  assert.equal(failed.reason, 'participant_failed');
+  assert.equal(failed.turnId, failedClaim.turnId);
+});
+
+test('self profile and peer message bounds use UTF-8 bytes and remain invitation scoped', t => {
+  const { service } = fixture(t);
+  const first = create(service).room.id, second = create(service).room.id;
+  const client = participant(service, first, 'a');
+  rejectsCode(() => service.join({ roomId: first, selfProfile: { responsibility: '😀'.repeat(1025) } }, client.actor), 'invalid_input');
+  const other = participant(service, first, 'b');
+  rejectsCode(() => service.message({ roomId: second, toSeatId: 'a', body: 'x', idempotencyKey: 'wrong-room' }, client.actor), 'seat_forbidden');
+  rejectsCode(() => service.message({ roomId: first, toSeatId: 'b', body: '😀'.repeat(1025), idempotencyKey: 'too-large' }, client.actor), 'invalid_input');
+  service.revoke({ roomId: first, seatId: 'a' }, OWNER);
+  rejectsCode(() => service.discover({ roomId: first }, client.actor), 'invite_invalid');
+  assert.equal(service.discover({ roomId: first }, other.actor).roomId, first);
+});
+
 test('ordered turn claims and final submission are atomic and idempotent', t => {
   const { service } = fixture(t), roomId = create(service).room.id;
   const clients = start(service, roomId);

@@ -92,6 +92,7 @@ export function openFederatedGraphApplication({
   config,
   capturePolicyStore,
   agentAccessPolicyStore,
+  tokenUsageResolver,
   fetchImpl = globalThis.fetch,
   env = process.env
 }) {
@@ -105,6 +106,7 @@ export function openFederatedGraphApplication({
     agentAccessPolicyStore: agentAccessPolicyStore ?? new AgentAccessPolicyStore(
       agentAccessPolicyPathForRuntime(runtimeConfigPath)
     ),
+    tokenUsageResolver,
     consoleUrl: sourceConsoleUrl(runtimeConfigPath),
     providerRequestTimeoutMs: providerRequestTimeoutFromEnv(env)
   });
@@ -140,7 +142,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     consoleUrl = sourceConsoleUrl(null),
     projectPathResolver = resolvePersonalProjectPath,
     taskContextRegistry = null,
-    providerRequestTimeoutMs = undefined
+    providerRequestTimeoutMs = undefined,
+    tokenUsageResolver = undefined
   } = {}) {
     super();
     this.graphiti = true;
@@ -149,6 +152,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     this.agentAccessPolicyStore = agentAccessPolicyStore;
     this.consoleUrl = consoleUrl;
     this.projectPathResolver = projectPathResolver;
+    this.tokenUsageResolver = tokenUsageResolver;
     this.personal = new GraphitiProviderClient({
       baseUrl: config.personal.providerUrl,
       accessToken: config.personal.accessToken,

@@ -21,19 +21,18 @@ test('Claude command entry restores context without any host MCP connection', as
   assert.doesNotMatch(JSON.stringify(calls), /DO_NOT/);
 });
 
-test('Claude Stop verifies the same session and gives at most one continuation', async () => {
+test('Claude Stop verifies the same session and provides an advisory without another model turn', async () => {
   const calls = [];
   const invoke = async (name, args) => {
     calls.push([name, args]);
     return { decision: 'block', task_context_token: 'fuli-task-synthetic', reason: 'FULI_CHECKPOINT_REQUIRED: finish' };
   };
   assert.deepEqual(await claudeLifecycleOutput('Stop', input, invoke), {
-    decision: 'block', reason: 'FULI_CHECKPOINT_REQUIRED: finish'
+    systemMessage: 'FULI_CHECKPOINT_REQUIRED: finish'
   });
-  assert.deepEqual(await claudeLifecycleOutput('Stop', { ...input, stop_hook_active: true }, invoke), {});
-  assert.equal(calls.at(-1)[0], 'checkpoint_task_knowledge');
-  assert.equal(calls.at(-1)[1].workLog.status, 'incomplete');
-  assert.equal(calls.at(-1)[1].sourceSessionId, input.session_id);
+  const active = await claudeLifecycleOutput('Stop', { ...input, stop_hook_active: true }, invoke);
+  assert.equal(active.decision, undefined);
+  assert.ok(calls.every(([name]) => name === 'verify_task_checkpoint'));
   assert.deepEqual(await claudeLifecycleOutput('Stop', input, async () => ({ status: 'checkpointed' })), {});
 });
 

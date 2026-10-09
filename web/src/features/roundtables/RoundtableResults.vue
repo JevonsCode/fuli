@@ -20,8 +20,12 @@ function reportText(value: unknown) {
   return value == null ? copy('未报告', 'Not reported') : typeof value === 'string' ? value : JSON.stringify(value, null, 2)
 }
 function usage(value: Record<string, unknown> | null | undefined) {
-  if (!value || !Object.keys(value).length) return copy('未知', 'Unknown')
-  return Object.entries(value).filter(([, count]) => typeof count === 'number').map(([name, count]) => `${name}: ${count}`).join(' · ') || copy('未知', 'Unknown')
+  if (!value || !Object.keys(value).length) return '-'
+  return Object.entries(value).filter((entry): entry is [string, number] => {
+    const count = entry[1]
+    return typeof count === 'number' && Number.isSafeInteger(count) && count >= 0
+  })
+    .map(([name, count]) => `${name}: ${count}`).join(' · ') || '-'
 }
 </script>
 
@@ -33,7 +37,7 @@ function usage(value: Record<string, unknown> | null | undefined) {
     <div v-for="task in snapshot.tasks.filter(item => item.verification != null)" :key="task.id"><details class="rt-advanced"><summary>{{ copy('任务验证报告', 'Task verification report') }} · {{ task.title || task.id }}</summary><p class="rt-message-body">{{ reportText(task.verification) }}</p></details></div>
     <h3>{{ copy('保留的分歧', 'Retained dissent') }}</h3><article v-for="message in dissent" :key="message.id" class="rt-dissent"><strong>{{ seatName(message.seatId) }} · #{{ message.seq }}</strong><p class="rt-message-body">{{ message.body }}</p></article><p v-for="(item, index) in snapshot.outcome?.dissent ?? []" :key="index" class="rt-message-body">{{ dissentText(item) }}</p><p v-if="!dissent.length && !snapshot.outcome?.dissent?.length" class="rt-muted">{{ copy('尚未记录分歧。', 'No dissent recorded.') }}</p>
     <h3>{{ copy('产物引用', 'Artifact references') }}</h3><ul v-if="artifacts.length" class="rt-artifacts"><li v-for="(artifact, index) in artifacts" :key="index">{{ artifactText(artifact) }}</li></ul><p v-else class="rt-muted">{{ copy('尚无产物引用。', 'No artifact references reported.') }}</p>
-    <h3>{{ copy('实际运行回执', 'Actual runtime receipts') }}</h3><p class="rt-muted">{{ copy('只展示提交了运行来源的回执；来源由参与端报告，未独立验证运行时身份。加入、选择平台或配置席位不产生执行行；用量缺失时显示未知。', 'Only submitted runtime source receipts appear here. Sources are participant reports; runtime identity is not independently verified. Joining or configuring a seat does not create an execution row; missing usage stays unknown.') }}</p>
+    <h3>{{ copy('实际运行回执', 'Actual runtime receipts') }}</h3><p class="rt-muted">{{ copy('只展示提交了运行来源的回执；来源由参与端报告，未独立验证运行时身份。加入、选择平台或配置席位不产生执行行；用量缺失时显示 -。', 'Only submitted runtime source receipts appear here. Sources are participant reports; runtime identity is not independently verified. Joining or configuring a seat does not create an execution row; missing usage displays -.') }}</p>
     <div v-if="receipts.length" class="rt-table-scroll"><table data-testid="runtime-receipts"><thead><tr><th>{{ copy('席位 / 消息', 'Seat / message') }}</th><th>{{ copy('报告的应用', 'Reported application') }}</th><th>{{ copy('报告的模型', 'Reported model') }}</th><th>{{ copy('会话', 'Session') }}</th><th>{{ copy('用量', 'Usage') }}</th><th>{{ copy('证据来源', 'Provenance') }}</th><th>{{ copy('时间', 'Time') }}</th></tr></thead><tbody><tr v-for="message in receipts" :key="message.id"><td>{{ seatName(message.seatId) }}<small>#{{ message.seq }} · {{ label(message.kind) }}</small></td><td>{{ message.actual?.applicationLabel || message.actual?.reportedApplication || message.actual?.sourceApplication || copy('未知', 'Unknown') }}</td><td>{{ message.actual?.model || copy('未知', 'Unknown') }}</td><td>{{ message.actual?.sessionId || copy('未知', 'Unknown') }}</td><td>{{ usage(message.actual?.usage) }}</td><td>{{ copy('参与端报告', 'Participant reported') }}<small>{{ copy('身份未独立验证', 'Identity not independently verified') }}</small></td><td>{{ time(message.createdAt) }}</td></tr></tbody></table></div><p v-else class="rt-empty" data-testid="no-runtime-receipts">{{ copy('尚无实际运行回执。', 'No actual runtime receipts yet.') }}</p>
   </section>
 </template>

@@ -22,6 +22,17 @@ function fixture(): RoundtableSnapshot {
 beforeEach(() => { Object.values(api).forEach(mock => mock.mockReset()); api.control.mockResolvedValue({}); api.message.mockResolvedValue({}); setLocale('zh-CN', { persist: false }) })
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.restoreAllMocks() })
 describe('Roundtable UI', () => {
+  it('shows participant responsibilities and addressed handoffs as plain text', () => {
+    const snapshot = fixture()
+    Object.assign(snapshot.room.seats[0]!, { selfProfile: { responsibility: 'Review correctness', capabilities: ['code review'], introduction: '<b>I review code</b>' } })
+    Object.assign(snapshot.messages[0]!, { toSeatId: 'b', kind: 'handoff' })
+    const wrapper = mount(RoundtableDetail, { props: { snapshot, refreshing: false } }); wrappers.push(wrapper)
+    expect(wrapper.text()).toContain('Review correctness')
+    expect(wrapper.text()).toContain('code review')
+    expect(wrapper.text()).toContain('<b>I review code</b>')
+    expect(wrapper.find('.rt-seat b').exists()).toBe(false)
+    expect(wrapper.get('.rt-message strong').text()).toBe('Alice → Bob')
+  })
   it('keeps loaded history and unsent user text after a failed refresh', async () => {
     api.read.mockResolvedValueOnce(fixture()).mockRejectedValueOnce(new Error('Coordinator offline'))
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/roundtables/:roomId', component: RoundtablesPage }] })
@@ -34,14 +45,14 @@ describe('Roundtable UI', () => {
     expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('Preserve my draft')
     expect(wrapper.find('[data-testid="runtime-receipts"]').exists()).toBe(false)
   })
-  it('uses only actual source evidence and shows unknown usage rather than configured adapters', () => {
+  it('uses only actual source evidence and shows a dash for missing usage', () => {
     const snapshot = fixture()
     let wrapper = mount(RoundtableResults, { props: { snapshot } }); wrappers.push(wrapper)
     expect(wrapper.find('[data-testid="no-runtime-receipts"]').exists()).toBe(true)
     snapshot.messages.push({ id: 'm2', seq: 2, seatId: 'b', kind: 'dissent', body: 'Rollback still missing', createdAt: '2026-10-09T01:02:00Z', actual: { sourceApplication: 'actual-host', model: 'reported-model', sessionId: 'session-real', usage: null } })
     wrapper = mount(RoundtableResults, { props: { snapshot } }); wrappers.push(wrapper)
     const table = wrapper.get('[data-testid="runtime-receipts"]')
-    expect(table.text()).toContain('actual-host'); expect(table.text()).toContain('reported-model'); expect(table.text()).toContain('未知')
+    expect(table.text()).toContain('actual-host'); expect(table.text()).toContain('reported-model'); expect(table.find('tbody tr td:nth-child(5)').text()).toBe('-')
     expect(table.text()).not.toContain('claude-code'); expect(table.findAll('tbody tr')).toHaveLength(1)
     expect(wrapper.text()).toContain('Rollback still missing')
   })

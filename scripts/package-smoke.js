@@ -70,9 +70,7 @@ try {
     'docs/agent-conversations-and-collaboration.md',
     'docs/employee-agents.md',
     'docs/agent-interface-architecture.md',
-    'docs/roundtable-beta-testing.md',
-    'docs/roundtable-beta-validation.md',
-    'docs/roundtable-research.md',
+    'docs/roundtable.md',
     'src/roundtables/service.js',
     'src/cli/roundtable-command.js',
     'src/agents/pi/roundtable-participant.js',
@@ -98,9 +96,7 @@ try {
         'docs/agent-conversations-and-collaboration.md',
         'docs/employee-agents.md',
         'docs/agent-interface-architecture.md',
-        'docs/roundtable-beta-testing.md',
-        'docs/roundtable-beta-validation.md',
-        'docs/roundtable-research.md'
+        'docs/roundtable.md'
       ].includes(path), `unexpected published documentation file ${path}`);
     }
     assert.doesNotMatch(path, /^(?:AGENTS|CLAUDE)\.md$/);

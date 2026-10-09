@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createRoundtableStore } from './store.js';
 import { assertMutable, budgetReason, event, fail, finishTurn, newRoom, normalizeLimits, publicRoom, publicSeat, publicTurn, scheduleTurn, TERMINAL_STATUSES, text } from './domain.js';
+import { DISCOVERY_INSTRUCTIONS, ROUNDTABLE_PROTOCOL, nextRoundtableAction, normalizeCapabilityQuery, normalizeSelfProfile, publicRoster } from './profiles.js';
 
 const PROCESS_BOOT_ID = randomUUID();
 const closedIssuers = new Set();
@@ -224,9 +225,92 @@ export function createRoundtableService({ databasePath = ':memory:', clock = Dat
         if (input.seatId && input.seatId !== actor.seatId) fail('seat_forbidden', 'Join only your authenticated seat', 403);
         const seat = room.seats.find(s => s.id === actor.seatId);
         if (room.currentTurn?.status === 'claimed' && room.currentTurn.seatId === seat.id && seat.sourceSessionId !== actor.sourceSessionId) fail('seat_busy', 'Seat has a current attempt in another session', 409);
-        seat.joinedAt = timestamp; seat.joinedInvitationId = authenticated.get(actor).invitationId; seat.sourceApplication = actor.sourceApplication; seat.sourceSessionId = actor.sourceSessionId;
+        const selfProfile = input.selfProfile === undefined ? seat.selfProfile : normalizeSelfProfile(input.selfProfile);
+        seat.joinedAt = timestamp; seat.joinedInvitationId = authenticated.get(actor).invitationId; seat.sourceApplication = actor.sourceApplication; seat.sourceSessionId = actor.sourceSessionId; seat.selfProfile = selfProfile;
         event(room, 'seat_joined', timestamp, { seatId: seat.id, sourceApplication: actor.sourceApplication, sourceSessionId: actor.sourceSessionId, identityVerified: false });
         return () => snapshot(room);
+      }, { participantOnly: true });
+    },
+    discover(input, actor) {
+      return transact(input, actor, (room) => {
+        const seat = room.seats.find(candidate => candidate.id === actor.seatId);
+        const capabilityQuery = normalizeCapabilityQuery(input.capabilityQuery ?? input.query);
+        const roster = publicRoster(room.seats, capabilityQuery).map(publicSeat);
+        const action = nextRoundtableAction(room, seat);
+        const roomView = {
+          id: room.id,
+          goal: room.goal,
+          mode: room.mode,
+          status: room.status,
+          phase: room.phase,
+          round: room.round,
+          stopReason: room.stopReason
+        };
+        return {
+          protocol: ROUNDTABLE_PROTOCOL,
+          protocolVersion: ROUNDTABLE_PROTOCOL.version,
+          version: ROUNDTABLE_PROTOCOL.version,
+          roomId: room.id,
+          room: roomView,
+          goal: room.goal,
+          mode: room.mode,
+          status: room.status,
+          phase: room.phase,
+          round: room.round,
+          ownSeat: publicSeat(seat),
+          roster,
+          capabilityQuery,
+          nextAction: action,
+          instructions: DISCOVERY_INSTRUCTIONS
+        };
+      });
+    },
+    message(input, actor) {
+      const body = text(input.body, 'body', 4096);
+      const key = text(input.idempotencyKey, 'idempotencyKey', 256);
+      return transact(input, actor, (room, timestamp) => {
+        assertMutable(room);
+        const sender = requireJoined(room, actor);
+        const targetSeatId = text(input.toSeatId ?? input.targetSeatId, 'toSeatId', 128);
+        const target = room.seats.find(seat => seat.id === targetSeatId);
+        if (!target) fail('seat_not_found', 'Target seat does not exist in this roundtable', 404);
+        const kind = input.kind ?? 'question';
+        if (!['question', 'handoff'].includes(kind)) fail('invalid_kind', 'Peer messages must be a question or handoff');
+        const replyTo = input.replyTo === undefined || input.replyTo === null ? null : text(input.replyTo, 'replyTo', 256);
+        if (replyTo && !store.messageById(room.id, replyTo)) fail('message_not_found', 'replyTo must reference a message in this roundtable', 404);
+        const fingerprint = inputHash({ roomId: room.id, targetSeatId, kind, body, replyTo });
+        const scope = `peer-message:${room.id}:${sender.id}`;
+        const duplicate = store.getIdempotent(scope, key, fingerprint);
+        if (duplicate) return duplicate;
+        const maxPeerMessages = room.limits.maxPeerMessages ?? 100;
+        const peerMessageCount = room.peerMessageCount ?? 0;
+        if (peerMessageCount >= maxPeerMessages) fail('peer_message_limit', 'Peer message budget is exhausted; required turns remain unaffected', 409);
+        const message = {
+          id: randomUUID(),
+          seq: room.nextSeq++,
+          seatId: sender.id,
+          senderSeatId: sender.id,
+          toSeatId: targetSeatId,
+          targetSeatId,
+          kind,
+          body,
+          replyTo,
+          artifacts: [],
+          verification: null,
+          actual: null,
+          status: 'peer',
+          createdAt: timestamp,
+          turnId: null,
+          attemptId: null,
+          sourceApplication: actor.sourceApplication,
+          sourceSessionId: actor.sourceSessionId
+        };
+        store.appendMessage(room.id, message);
+        room.peerMessageCount = peerMessageCount + 1;
+        event(room, 'peer_message', timestamp, { messageId: message.id, senderSeatId: sender.id, toSeatId: targetSeatId, targetSeatId, kind });
+        const result = { message, room: publicRoom(room), nextAction: nextRoundtableAction(room, sender) };
+        store.saveIdempotent(scope, key, fingerprint, result);
+        return result;
       }, { participantOnly: true });
     },
     claim(input, actor) {
@@ -245,7 +329,7 @@ export function createRoundtableService({ databasePath = ':memory:', clock = Dat
         for (const assigned of tasks) assigned.status = 'running';
         event(room, 'turn_claimed', timestamp, { turnId: turn.id, seatId: seat.id, attemptId });
         const messages = store.recentMessages(room.id, 12);
-        return { turnId: turn.id, attemptId, fence: turn.fence, deadline, context: { roomId: room.id, goal: room.goal, mode: room.mode, phase: room.phase, round: room.round, scope: room.scope, seat: publicSeat(seat), messages, tasks: structuredClone(room.tasks), currentTask: structuredClone(task ?? null), currentTasks: structuredClone(tasks), truncated: room.nextSeq - 1 > messages.length, earlierMessagesAvailable: room.nextSeq - 1 > messages.length } };
+        return { turnId: turn.id, attemptId, fence: turn.fence, deadline, context: { roomId: room.id, goal: room.goal, mode: room.mode, phase: room.phase, round: room.round, scope: room.scope, seat: publicSeat(seat), roster: room.seats.map(publicSeat), messages, tasks: structuredClone(room.tasks), currentTask: structuredClone(task ?? null), currentTasks: structuredClone(tasks), truncated: room.nextSeq - 1 > messages.length, earlierMessagesAvailable: room.nextSeq - 1 > messages.length } };
       }, { participantOnly: true });
       if (!result || !contextProvider || result.context.scope.kind !== 'fuli' || !result.context.seat.shareAgentContext) return result;
       const addContext = context => {

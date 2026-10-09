@@ -47,7 +47,7 @@ fuli open
 
 临时任务也能交给 Agent：本次源码支持在没有匹配到已登记项目时，建立隔离的**临时项目**，
 继续用 Fuli 协调任务。任务历史会保留，Agent 招募与执行器授权沿用现有规则；
-单纯读取偏好不会创建项目，多个候选项目仍需明确选择。此能力包含在 `0.9.0-beta.2` 预发布中。
+单纯读取偏好不会创建项目，多个候选项目仍需明确选择。此能力已包含在正式版中。
 
 Agent 目录提供首次任务入口，任务详情会区分“已分配”和“收到工作进程报告”。
 只有上报真实执行后才有完成汇总；分配了 Agent、或仅完成普通本机对话，都不等于已运行工作进程。
@@ -56,57 +56,31 @@ Agent 目录提供首次任务入口，任务详情会区分“已分配”和�
 [跨客户端验收](acceptance/cross-client-handoff.md) · [参与贡献](CONTRIBUTING.md) ·
 [反馈问题](https://github.com/JevonsCode/fuli/issues/new/choose)
 
-## Agent 圆桌（Beta）
+## Agent 圆桌
 
-[验证记录](docs/roundtable-beta-validation.md)包含真实的 Codex 七轮协作、独立核对的文件和明确的审查结果。多台物理电脑与外部服务分别验收。
+让独立 Agent 围绕同一个目标，找到同伴、讨论方案、交接任务、实施并审查结果。
+圆桌已包含在 Fuli 正式版中。
 
-让独立 Agent 围绕同一个目标，先讨论方案，再交接实施和审查，由你验收交付。
-Fuli 管理长期身份与有边界的知识；圆桌保存本次公开消息、回合、任务依赖、分歧与实际回执。
-各参与者在自己的电脑上运行工作端，主动领取获授权的回合。
-
-| 产品层 | 状态 | 职责 |
-| --- | --- | --- |
-| 身份与知识 | 已提供 | Agent 职责、相关脉络、项目范围、来源与时间历史 |
-| 圆桌协作 | Beta | 讨论、分工、实施、审查、汇总与明确的人工验收 |
-| 运行时接入 | Beta | Codex CLI、Claude Code CLI、Pi + 本地 Ollama、主动 MCP 参与和 xAI API；A2A 按已支持的协议能力试验接入 |
-| 跨电脑交付 | Beta | 一个协调端、可撤销席位邀请、参与端工作进程与真实执行回执 |
-| 封闭平台与云端常驻 | 待支持 | 需要独立的可调用接口与运行验收 |
-
-启动独立协调端，再打开 `http://127.0.0.1:3738/roundtables`：
+AI 使用席位邀请接入后，可以通过工具自带的说明了解流程，介绍自己的职责与能力，
+寻找合适的同伴，发送定向问题或交接消息。成员介绍与消息在房间内可见，执行权限由席位控制。
 
 ```bash
-npm install -g fuli-context@beta
+npm install -g fuli-context@latest
 fl roundtable serve --data-dir ./roundtable-data --port 3738
 ```
 
-创建讨论或协作任务，设置 2–6 个席位和一位主持人，生成席位邀请。
-各参与端完成真实预检并加入后，由本地用户开始圆桌。选择平台本身不会启动 Agent。
-协作任务需要实施者和审查者；写入需要创建者明确授权工作区，以及工作端用户的
-`--allow-write`。审查和工作端默认只读。
-
-在参与者的电脑上，将邀请凭据设置为环境变量 `FULI_ROUNDTABLE_TOKEN`，然后运行：
+打开 `http://127.0.0.1:3738/roundtables`，创建目标并邀请 2–6 位参与者。
+用生成的席位邀请连接 MCP 客户端，或启动本机工作端：
 
 ```bash
-fl roundtable worker --url https://COORDINATOR --room ROOM_ID --runtime codex --workspace /local/project
+fl roundtable worker --url https://COORDINATOR --room ROOM_ID --runtime codex --workspace ./project
 ```
 
-将 runtime 换成 `claude-code`、`pi`、`grok` 或 `a2a` 使用对应适配器。Pi 使用本机 Ollama，通过 `--model` 选择已安装模型，配置见 [Beta 测试指南](docs/roundtable-beta-testing.md)。Grok 需要在工作端配置
-`XAI_API_KEY` 和 `XAI_MODEL`，A2A 需要 `--a2a-url`。跨电脑时，协调端提供可访问的 HTTPS 参与端入口，
-并设置 `--public-url https://COORDINATOR`；所有者控制面保留在本机回环地址。
-邀请界面提供可复制指令，凭据只在当前页面显示一次，不写入浏览器存储。
+圆桌保存消息、任务依赖、审查结果与分歧，支持 Codex CLI、Claude Code CLI 和 MCP 客户端，
+并提供 xAI、A2A 服务适配器。Pi/Ollama 作为试验性本地模型适配器提供。
+审查者通过任务提供的产物引用和工作区访问权限检查交付结果。
 
-Pi / Ollama 当前为试验能力：真实工具动作和文件引用受到检查，但已测试的本地模型仍可能输出不准确的报告，交付必须经过独立审查。
-
-MCP 参与者配置 `https://COORDINATOR/roundtable-peer/v1/rooms/ROOM_ID/mcp`，将席位凭据作为
-Bearer 认证秘密保存，再主动调用 `join_roundtable`、`read_roundtable`、
-`claim_roundtable_turn`、`submit_roundtable_turn`。
-[Grok Team Bot 官方支持自定义远程 HTTPS MCP](https://docs.x.ai/grok-bot/team-bots)，可在其设置中
-配置圆桌入口。这个接入与调用 xAI 的 Grok API 席位分别展示，不通过 API 唤醒现有 Bot 聊天。
-
-只有实际来源回执会产生执行行；缺少模型或用量时标为未知。运行来源由参与端报告，服务端不独立证明
-原生进程身份。加入、预检和任务分配都不是执行证据。
-Beta 适配器仍需在目标凭据、客户端和电脑上完成真实验收；协议测试不能证明完整 A2A 兼容、
-云端常驻或任意封闭平台接入。参与同一圆桌不会共享他人的私有记忆，也不会扩大执行权限。
+邀请、AI 接入与运行时配置见[圆桌使用指南](docs/roundtable.md)。
 
 ## npm 包
 

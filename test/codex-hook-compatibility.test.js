@@ -73,9 +73,11 @@ for (const [name, error] of [
   ['malformed provider JSON', new ProviderRequestError('Invalid JSON', { code: 'provider_invalid_response' })],
   ['unknown parser failure', new SyntaxError('Synthetic parse failure')],
   ['untyped error with misleading properties', Object.assign(new Error('Not Found'), { status: 404, code: 'provider_error', diagnostic: { detail: 'Not Found' } })]
-]) test(`${name} is blocked without retry or task writes`, async t => {
+]) test(`${name} skips Fuli context without intercepting submission or writing tasks`, async t => {
   const f = await fixture(t, async () => { throw error; });
-  assert.equal((await f.run()).decision, 'block');
+  const output = await f.run();
+  assert.notEqual(output.decision, 'block');
+  assert.equal(output.hookSpecificOutput, undefined);
   assert.equal(f.lookups.length, 1);
   assert.deepEqual(f.calls, []);
 });
@@ -109,7 +111,9 @@ for (const phase of ['scan', 'ready', 'beginning', 'claim']) test(`an existing $
   const f = await fixture(t, async () => { throw missing(); });
   const state = { version: 1, phase, owner: transcriptDigest('old-owner'), prompt: transcriptDigest(f.input.prompt), scanCursor: 0, boundary: 0 };
   await withTranscriptGuard(f.runtimeConfigPath, f.input, 'codex', true, guard => guard.write(state));
-  assert.equal((await f.run()).decision, 'block');
+  const output = await f.run();
+  assert.notEqual(output.decision, 'block');
+  assert.equal(output.hookSpecificOutput, undefined);
   assert.deepEqual(f.calls, []);
   await withTranscriptGuard(f.runtimeConfigPath, f.input, 'codex', true, guard => assert.deepEqual(guard.value, state));
 });
@@ -118,14 +122,18 @@ test('an exhausted transient read cannot bypass a pending guard', async t => {
   const f = await fixture(t, async () => { throw transient(); });
   const state = { version: 1, phase: 'scan', owner: transcriptDigest('old-owner'), prompt: transcriptDigest(f.input.prompt), scanCursor: 0 };
   await withTranscriptGuard(f.runtimeConfigPath, f.input, 'codex', true, guard => guard.write(state));
-  assert.equal((await f.run()).decision, 'block');
+  const output = await f.run();
+  assert.notEqual(output.decision, 'block');
+  assert.equal(output.hookSpecificOutput, undefined);
   assert.deepEqual(f.calls, []);
   await withTranscriptGuard(f.runtimeConfigPath, f.input, 'codex', true, guard => assert.deepEqual(guard.value, state));
 });
 
 test('later policy route 404 stays blocked', async t => {
   const f = await fixture(t, async () => ({ token: 'task', project_agent_id: 'agent', personal_project_id: 'project' }), async () => { throw missing(); });
-  assert.equal((await f.run()).decision, 'block');
+  const output = await f.run();
+  assert.notEqual(output.decision, 'block');
+  assert.equal(output.hookSpecificOutput, undefined);
   assert.deepEqual(f.calls, []);
   assert.equal(f.lookups.length, 1);
 });
@@ -133,7 +141,9 @@ test('later policy route 404 stays blocked', async t => {
 for (const task of [{}, [], 'invalid', { token: 'synthetic-task', project_agent_id: 'agent' }]) {
   test(`malformed current context ${JSON.stringify(task)} is blocked before task entry`, async t => {
     const f = await fixture(t, async () => task);
-    assert.equal((await f.run()).decision, 'block');
+    const output = await f.run();
+  assert.notEqual(output.decision, 'block');
+  assert.equal(output.hookSpecificOutput, undefined);
     assert.deepEqual(f.calls, []);
   });
 }
@@ -141,7 +151,9 @@ for (const task of [{}, [], 'invalid', { token: 'synthetic-task', project_agent_
 test('a current context returned for another host session is blocked before restoration', async t => {
   const f = await fixture(t, async () => ({ token: 'synthetic-task', personal_project_id: 'project', project_agent_id: 'agent',
     source_application: 'codex', session_id: 'foreign-session' }));
-  assert.equal((await f.run()).decision, 'block');
+  const output = await f.run();
+  assert.notEqual(output.decision, 'block');
+  assert.equal(output.hookSpecificOutput, undefined);
   assert.deepEqual(f.calls, []);
 });
 
@@ -154,11 +166,13 @@ test('healthy unassigned task entry still obtains the normal context', async t =
 });
 
 for (const [source, run, event] of [['claude_code', runClaudeLifecycleHook, 'UserPromptSubmit']]) {
-  test(`${source} keeps its entry blocked on the missing endpoint`, async t => {
+  test(`${source} permits submission without Fuli context on the missing endpoint`, async t => {
     const f = await fixture(t, async () => { throw missing(); });
     f.dependencies.readInput = async () => ({ ...f.input, conversation_id: f.input.session_id, workspace_roots: [f.input.cwd] });
     const result = await run(['--event', event], f.dependencies);
-    assert.ok(result.decision === 'block' || result.continue === false);
+    assert.notEqual(result.decision, 'block');
+    assert.notEqual(result.continue, false);
+    assert.equal(result.hookSpecificOutput, undefined);
     assert.deepEqual(f.calls, []);
   });
 }

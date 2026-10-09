@@ -288,7 +288,7 @@ worker session (`workerRuntime.sessionId`, or a worker session link only when su
 Label `sourceApplication` and `sourceSessionId` separately as the reporting host. They do not
 identify an external worker; do not substitute them for missing worker evidence.
 Use only the source-labelled cumulative `tokenUsage` reported for that worker. If it is absent,
-show `not reported`; never estimate it or copy a conversation-wide total into a worker row. If no
+show `-`; never estimate it or copy a conversation-wide total into a worker row. If no
 worker session link exists, show `workerRuntime.sessionId` or `not reported`; never invent a link. This applies only
 to Provider-reported actual workers. When empty `executionSummary` is returned, omit rows; an absent
 `executionSummary` also omits rows. Configured, allowed, or available clients/executors are not evidence

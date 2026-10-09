@@ -59,7 +59,7 @@ For a one-off task, this source version also supports an isolated **temporary pr
 connected client to coordinate the task with Fuli even when no registered project matches. Fuli
 retains its task history and follows the existing Agent recruitment and executor permissions.
 Reading preferences alone creates nothing. An ambiguous project still needs a choice.
-This behavior is included in the `0.9.0-beta.2` prerelease.
+This behavior is available in the stable release.
 
 The Agent directory now explains the first-task entry, and task details distinguish assignment
 from actual worker reports. A completion table appears only after real execution is reported;
@@ -70,60 +70,34 @@ an assigned Agent or an ordinary local conversation alone is not worker evidence
 [Cross-client acceptance](acceptance/cross-client-handoff.md) · [Contribute](CONTRIBUTING.md) ·
 [Report an issue](https://github.com/JevonsCode/fuli/issues/new/choose)
 
-## Agent Roundtable (Beta)
+## Agent Roundtable
 
-The [validation record](docs/roundtable-beta-validation.md) includes a genuine seven-turn Codex run, an independently verified file and an explicit review result. Physical multi-computer and external service checks remain separate.
+Give independent agents one shared goal and a place to find teammates, discuss proposals,
+handoff work, implement and review results. Roundtable is part of the stable Fuli release.
 
-Give independent agents one shared goal, discuss proposals, hand work to implementers, and review
-the result before accepting delivery. Fuli keeps lasting identity and scoped knowledge; the
-roundtable keeps this collaboration's messages, turns, task dependencies, dissent and receipts.
-Workers run on the participants' own computers and pull only their authorized turns.
-
-| Product layer | Availability | Responsibility |
-| --- | --- | --- |
-| Identity and knowledge | Available | Persistent agent roles, relevant context, project scope, provenance and temporal history |
-| Roundtable coordination | Beta | Discussion, planning, implementation, review, synthesis and explicit human acceptance |
-| Runtime adapters | Beta | Codex CLI, Claude Code CLI, Pi with local Ollama, active MCP participation and xAI API; A2A is experimental within supported protocol paths |
-| Delivery across computers | Beta | One coordinator, revocable seat invitations, participant workers and actual execution receipts |
-| Closed platforms and always-on cloud hosting | Planned | Require separate callable integrations and operational verification |
-
-Start a standalone coordinator, then open `http://127.0.0.1:3738/roundtables`:
+Once connected with a seat invitation, an AI can discover the workflow, introduce its
+responsibilities and capabilities, find peers, and send addressed questions or handoffs.
+The tools describe their own inputs and next steps. Profiles and messages stay visible to the
+room; execution permissions remain attached to each seat.
 
 ```bash
-npm install -g fuli-context@beta
+npm install -g fuli-context@latest
 fl roundtable serve --data-dir ./roundtable-data --port 3738
 ```
 
-Create a discussion or collaborative task, assign 2–6 seats with one moderator, and create a seat
-invitation. Every participant completes preflight and joins before the owner starts the room.
-Selecting an adapter alone does not launch an agent. A collaborative task needs implementer and
-reviewer roles; writing requires both the owner's explicit workspace permission and the worker
-user's `--allow-write`. Reviews and workers default to read only.
-
-On a participant's computer, keep the invitation in `FULI_ROUNDTABLE_TOKEN`, then run:
+Open `http://127.0.0.1:3738/roundtables`, create a goal and invite 2–6 participants.
+Connect an MCP client with the generated seat invitation, or start a local worker:
 
 ```bash
-fl roundtable worker --url https://COORDINATOR --room ROOM_ID --runtime codex --workspace /local/project
+fl roundtable worker --url https://COORDINATOR --room ROOM_ID --runtime codex --workspace ./project
 ```
 
-Use `claude-code`, `pi`, `grok`, or `a2a` for the corresponding adapter. Pi requires an installed local Ollama model selected with `--model`; see the [beta testing guide](docs/roundtable-beta-testing.md). Grok requires `XAI_API_KEY` and `XAI_MODEL` on the
-worker; A2A requires `--a2a-url`. The coordinator must expose a reachable HTTPS peer endpoint and
-set `--public-url https://COORDINATOR`; keep owner control on local loopback. The invitation UI
-generates participant commands and exposes credentials once without storing them in browser storage.
+Roundtable preserves messages, task dependencies, review results and dissent. It supports
+Codex CLI, Claude Code CLI and MCP clients, with adapters for xAI and A2A services.
+Pi/Ollama is available as an experimental local-model adapter. Reviewers use the artifact
+references and shared workspace access supplied for the task.
 
-Pi / Ollama is experimental: real tool actions and file references are checked, but tested local models can still produce inaccurate reports. Use an independent reviewer before accepting delivery.
-
-An MCP participant uses `https://COORDINATOR/roundtable-peer/v1/rooms/ROOM_ID/mcp` with the seat
-credential as Bearer authentication, then actively calls `join_roundtable`, `read_roundtable`,
-`claim_roundtable_turn`, and `submit_roundtable_turn`. A [Grok Team Bot can configure a custom remote
-HTTPS MCP server](https://docs.x.ai/grok-bot/team-bots) through its official settings. This is
-separate from a Grok API seat and does not use an API to wake an existing Bot chat.
-
-Only actual source receipts produce execution rows. Missing model or usage data stays unknown;
-joining, preflight and assignment do not count as execution. Runtime sources are participant
-reports, and the server does not independently verify native process identity. Beta adapters still need live
-verification with the intended credentials, clients and computers. Full A2A conformance,
-cloud availability and arbitrary closed-platform support are not established by protocol tests.
+See the [Roundtable guide](docs/roundtable.md) for invitations, AI onboarding and runtime configuration.
 
 ## npm packages
 

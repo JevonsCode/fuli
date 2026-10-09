@@ -26,20 +26,9 @@ export async function codexStopLifecycleOutput(input, invoke) {
   if (check?.decision !== 'block' || typeof check.reason !== 'string' || !check.reason.trim()) {
     return {};
   }
-  if (input.stop_hook_active === true) {
-    if (typeof check.task_context_token === 'string' && check.task_context_token.trim()) {
-      await invoke('checkpoint_task_knowledge', {
-        taskContextToken: check.task_context_token,
-        disposition: 'retain_nothing',
-        reason: 'Codex Stop hook fallback after one checkpoint continuation.',
-        workLog: { status: 'incomplete', summary: 'The host stopped before the employee submitted a work summary. Review the prior task before resuming.' },
-        sourceApplication: 'codex',
-        sourceSessionId: sessionId
-      });
-    }
-    return {};
-  }
-  return { decision: 'block', reason: boundedHookMessage(check.reason) };
+  // Checkpoints are advisory to the host. Never force another model turn or
+  // fabricate a work log merely because the user is ending the conversation.
+  return { systemMessage: boundedHookMessage(check.reason) };
 }
 
 export async function codexLifecycleOutput(event, input, invoke) {
@@ -73,6 +62,9 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
   );
   let app;
   let leases;
+  let closing;
+  const cleanup = () => closing ??= Promise.allSettled([closeQuietly(leases), closeQuietly(app)]);
+  dependencies.onCleanup?.(cleanup);
   try {
     app = (dependencies.openApplication ?? openFederatedGraphApplication)({
       runtimeConfigPath
@@ -94,32 +86,31 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
             // Existing guards and all later failures remain fail-closed.
             return { systemMessage: `Fuli: ${sync.reason}. Message submission is allowed; no saved Agent context was loaded or changed.` };
           }
-          if (event === 'UserPromptSubmit' && sync.entryBlocked) return { decision: 'block', reason: sync.reason };
+          if (event === 'UserPromptSubmit' && sync.entryBlocked) return { systemMessage: boundedHookMessage(sync.reason) };
           const entryGuard = sync.status === 'capture_disabled' ? null : guard;
           if (event === 'UserPromptSubmit' && entryGuard?.value) await entryGuard.write({ ...entryGuard.value, phase: 'beginning' });
           const result = await codexLifecycleOutput(event, input, async (name, parameters) => {
-            const context = await invokeTool(app, name, parameters);
+            const context = await invokeTool(app, name, parameters, { signal: dependencies.signal });
             if (name === 'begin_task_context') await recordTranscriptTaskEntry(entryGuard, context);
             return context;
           });
           if (event === 'UserPromptSubmit') sync = await claimTranscriptBoundary(app, input, 'codex', sync, {
             normalize: normalizeCodexRecord, verify: verifyCodexTranscript
           }, entryGuard);
-          if (event === 'UserPromptSubmit' && sync.entryBlocked) return { decision: 'block', reason: sync.reason };
+          if (event === 'UserPromptSubmit' && sync.entryBlocked) return { systemMessage: boundedHookMessage(sync.reason) };
           return withTranscriptNotice(result, sync);
         });
       } catch (error) {
         if (event !== 'UserPromptSubmit' || !app.getCapturePolicy?.().enabled || !input.transcript_path) throw error;
-        return { decision: 'block', reason: error.code === 'EADDRINUSE'
+        return { systemMessage: error.code === 'EADDRINUSE'
           ? 'The session handoff lock is occupied. Retry after the current hook finishes; if it persists, start a new host session and resume the intended Agent.'
           : 'Fuli transcript handoff could not be completed safely. Retry task entry; no previous Agent context was supplied.' };
       }
-    });
+    }, { signal: dependencies.signal });
     write(`${JSON.stringify(output)}\n`);
     return output;
   } finally {
-    await closeQuietly(leases);
-    await closeQuietly(app);
+    await cleanup();
   }
 }
 
@@ -142,13 +133,46 @@ async function readHookInput() {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
-async function main() {
+export async function runCodexLifecycleCommand(args, dependencies = {}) {
+  const configured = Number(args[args.indexOf('--timeout-ms') + 1]);
+  const timeoutMs = args.includes('--timeout-ms') && Number.isSafeInteger(configured) && configured > 0
+    ? Math.min(configured, 5000) : 5000;
+  const controller = new AbortController();
+  let emitted = false;
+  const write = value => {
+    if (emitted) return;
+    emitted = true;
+    (dependencies.write ?? (value => process.stdout.write(value)))(value);
+  };
+  const unavailable = JSON.stringify({ systemMessage: 'Fuli context is unavailable. Continue with the user request; saved context and checkpoint were not verified.' }) + '\n';
+  let cleanup = async () => {};
+  let deadline;
+  const expired = new Promise(resolve => {
+    deadline = setTimeout(async () => {
+      controller.abort();
+      write(unavailable);
+      // A broken dependency must not hold the host open. Give opened leases
+      // and connections a bounded chance to close before the process exits.
+      let grace;
+      await Promise.race([cleanup(), new Promise(done => { grace = setTimeout(done, 250); })]);
+      clearTimeout(grace);
+      resolve({ timedOut: true });
+    }, timeoutMs);
+  });
   try {
-    await runCodexLifecycleHook(process.argv.slice(2));
-  } catch {
-    // Fail open without printing prompts, transcripts, paths or credentials.
-    process.stdout.write('{}\n');
+    const running = runCodexLifecycleHook(args, { ...dependencies, signal: controller.signal, write,
+      onCleanup: close => { cleanup = close; } }).then(() => ({ timedOut: false }), () => {
+      // Never print prompts, transcripts, paths or credentials.
+      write(unavailable);
+      return { timedOut: false };
+    });
+    return await Promise.race([running, expired]);
+  } finally {
+    clearTimeout(deadline);
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const result = await runCodexLifecycleCommand(process.argv.slice(2));
+  if (result.timedOut) process.exit(0);
+}

@@ -1,5 +1,6 @@
 import { loadProjectAgentContinuity } from './project-agent-task-entry.js';
 import { resolveCoordinationScope, scopedTaskIdempotencyKey } from './temporary-project-scope.js';
+import { enrichProjectAgentTaskActivity } from '../agents/token-usage-resolver.js';
 import {
   executorActualReportRecord,
   executorRecord,
@@ -306,8 +307,12 @@ export async function viewProjectAgentTask(application, input) {
 }
 
 export async function recordProjectAgentTaskActivity(application, input) {
+  const activity = await enrichProjectAgentTaskActivity(
+    input,
+    application.tokenUsageResolver
+  );
   const value = await application.personal.recordProjectAgentTaskActivity(
-    providerProjectAgentTaskActivity(input)
+    providerProjectAgentTaskActivity(activity)
   );
   return value?.task ? projectAgentTaskRecord(value.task) : projectAgentTaskRecord(value);
 }

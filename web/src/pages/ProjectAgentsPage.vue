@@ -730,7 +730,8 @@ function tokenUsageSourceLabel(source: ProjectAgentTokenUsage['source']) {
   return t(`projectAgents.tokenSources.${source}`)
 }
 function tokenUsageLabel(usage: ProjectAgentTokenUsage | null | undefined) {
-  if (!usage) return t('projectAgents.notReported')
+  if (!usage || !['executor', 'host', 'dingdong'].includes(usage.source)
+    || !Number.isSafeInteger(usage.totalTokens) || usage.totalTokens < 0) return '-'
   return `${new Intl.NumberFormat(currentLocale()).format(usage.totalTokens)} Token · ${tokenUsageSourceLabel(usage.source)}`
 }
 function executionSummarySessionHref(summary: ProjectAgentTaskExecutionSummary) {

@@ -6,7 +6,6 @@ import { callAgentTool } from '../../agent-tools.js';
 import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js';
 import { openFederatedGraphApplication } from '../../graphiti/federated-application.js';
 import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
-import { boundedHookMessage } from '../lifecycle-message.js';
 
 const EVENTS = new Set(['sessionStart', 'beforeSubmitPrompt', 'stop']);
 
@@ -18,14 +17,9 @@ export async function cursorLifecycleOutput(event, input, invoke) {
   }
   const source = { sourceApplication: 'cursor', sourceSessionId: sessionId };
   if (event === 'stop') {
-    // One host-counted continuation at most; never restart cancelled/error turns.
-    if (input.status !== 'completed' || (input.loop_count ?? 0) >= 1) return {};
-    const check = await invoke('verify_task_checkpoint', { sessionId, ...source });
-    const notice = '\nIf this mode is read-only or checkpoint writes are denied, state that the checkpoint was not saved and do not retry. This is the only checkpoint continuation.';
-    const reason = boundedHookMessage(check.reason, { maxBytes: 8_000 - Buffer.byteLength(notice, 'utf8') });
-    return check.status === 'checkpoint_required' && reason.trim()
-      ? { followup_message: reason + notice }
-      : {};
+    // Cursor has no advisory Stop output. A followup_message would start
+    // another model turn, so pending checkpoints remain available through MCP.
+    return {};
   }
   const roots = input.workspace_roots;
   if (!Array.isArray(roots) || roots.length !== 1 || typeof roots[0] !== 'string') {

@@ -1,6 +1,6 @@
 {
   "name": "fuli-context",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Local-first collaboration relationship graph for AI agents.",
   "type": "module",
   "files": [
@@ -14,9 +14,7 @@
     "docs/agent-conversations-and-collaboration.md",
     "docs/employee-agents.md",
     "docs/agent-interface-architecture.md",
-    "docs/roundtable-beta-testing.md",
-    "docs/roundtable-beta-validation.md",
-    "docs/roundtable-research.md",
+    "docs/roundtable.md",
     "examples/external-knowledge/markdown-folder.mjs",
     "graph-provider/Dockerfile",
     "graph-provider/pyproject.toml",

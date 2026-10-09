@@ -197,7 +197,7 @@ test('bundled session Skill reports only provider-reported worker execution summ
   );
   assert.match(skill, /Markdown table|table.*worker/i);
   assert.match(skill, /Token/i);
-  assert.match(skill, /not reported|unreported/i);
+  assert.match(skill, /(?:show|display)[\s\S]{0,40}`-`/i);
   assert.match(skill, /sourceSessionId|session.*(?:ID|link)/i);
   assert.match(skill, /configured.*(?:allowed|available).*not.*evidence/i);
   assert.match(skill, /empty.*executionSummary.*omit|omit.*empty.*executionSummary/i);

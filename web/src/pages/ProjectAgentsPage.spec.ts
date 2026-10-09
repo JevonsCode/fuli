@@ -696,6 +696,27 @@ describe('ProjectAgentsPage', () => {
     expect(wrapper.find('.project-agent-execution-summary').exists()).toBe(false)
   })
 
+  it('renders a dash when worker token usage is unavailable', async () => {
+    const originalGet = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (!url.includes('/api/project-agent-tasks?')) return originalGet(url)
+      return Promise.resolve({ tasks: [{
+        task_id: 'task-token-missing', owner_agent_id: 'shared-agent',
+        title: '等待用量', personal_project_id: 'project-a', status: 'completed',
+        participants: [], execution_summary: [{
+          agent_id: 'shared-agent', worker_id: 'worker-a', participant_role: 'lead',
+          source_application: 'codex', source_session_id: 'worker-session',
+          status: 'completed', work_summary: '已完成',
+        }],
+      }] })
+    })
+    const { wrapper } = mountPage()
+    await flushPromises()
+
+    const row = wrapper.get('.project-agent-execution-summary-row')
+    expect(row.findAll('td')[4].text()).toBe('-')
+  })
+
   it('shows worker event evidence separately when execution summary is absent', async () => {
     const task = {
       task_id: 'task-worker-event', owner_agent_id: 'shared-agent', title: '验证工作进程', personal_project_id: 'project-a', status: 'completed', participants: [],

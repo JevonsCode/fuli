@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { posix, win32 } from 'node:path';
 
-export const DEFAULT_LIMITS = Object.freeze({ maxRounds: 3, maxMessages: 30, maxDurationMs: 1_800_000, turnTimeoutMs: 300_000 });
+export const DEFAULT_LIMITS = Object.freeze({ maxRounds: 3, maxMessages: 30, maxPeerMessages: 100, maxDurationMs: 1_800_000, turnTimeoutMs: 300_000 });
 export const TERMINAL_STATUSES = new Set(['concluded', 'failed', 'cancelled']);
 const ROLES = new Set(['moderator', 'specialist', 'implementer', 'reviewer']);
 const RUNTIMES = new Set(['mcp', 'codex', 'claude-code', 'pi', 'grok', 'a2a']);
@@ -50,7 +50,7 @@ export function newRoom(input, now) {
       execution.workspace = text(raw.execution.workspace, 'execution.workspace', 4096);
       if (!posix.isAbsolute(execution.workspace) && !win32.isAbsolute(execution.workspace)) fail('invalid_workspace', 'Write permission requires an explicit absolute workspace');
     } else if (raw.execution?.permission && raw.execution.permission !== 'read-only') fail('invalid_permission', 'Unknown execution permission');
-    return { id, name: text(raw.name, 'seat.name', 256), role: raw.role, runtime: raw.runtime ?? 'mcp', agentId: raw.agentId ? text(raw.agentId, 'seat.agentId', 256) : null, shareAgentContext: raw.shareAgentContext === true, identityKind: input.binding && raw.agentId ? 'fuli' : 'standalone', execution, joinedAt: null, joinedInvitationId: null, sourceApplication: null, sourceSessionId: null };
+    return { id, name: text(raw.name, 'seat.name', 256), role: raw.role, runtime: raw.runtime ?? 'mcp', agentId: raw.agentId ? text(raw.agentId, 'seat.agentId', 256) : null, shareAgentContext: raw.shareAgentContext === true, identityKind: input.binding && raw.agentId ? 'fuli' : 'standalone', execution, selfProfile: null, joinedAt: null, joinedInvitationId: null, sourceApplication: null, sourceSessionId: null };
   });
   if (new Set(seats.map(s => s.id)).size !== seats.length) fail('duplicate_seat', 'Seat IDs must be distinct');
   if (seats.filter(s => s.role === 'moderator').length !== 1) fail('invalid_moderator', 'Exactly one moderator is required');
@@ -70,7 +70,7 @@ export function newRoom(input, now) {
   if (input.mode === 'collaboration') {
     for (const seat of seats.filter(s => s.role === 'reviewer')) tasks.push({ id: `${id}:review:${seat.id}`, title: 'Review implementation / 审查实施', instructions: input.goal, seatId: seat.id, phase: 'review', status: 'pending', dependencies: tasks.filter(t => t.phase === 'implementation').map(t => t.id), permission: 'read-only', workspace: null, artifacts: [], verification: null });
   }
-  return { id, goal: text(input.goal, 'goal'), mode: input.mode ?? 'discussion', binding, scope: binding ? { kind: 'fuli', ...binding } : { kind: 'temporary', id: `temporary:${id}`, label: 'Temporary collaboration / 临时协作', identityAuthority: 'standalone' }, seats, limits: normalizeLimits(input.limits), status: 'draft', phase: 'discussion', revision: 0, round: 1, phaseIndex: 0, agentMessageCount: 0, nextSeq: 1, nextTurnNumber: 1, createdAt: now, updatedAt: now, startedAt: null, stopReason: null, currentTurn: null, turns: [], tasks, outcome: null, events: [] };
+  return { id, goal: text(input.goal, 'goal'), mode: input.mode ?? 'discussion', binding, scope: binding ? { kind: 'fuli', ...binding } : { kind: 'temporary', id: `temporary:${id}`, label: 'Temporary collaboration / 临时协作', identityAuthority: 'standalone' }, seats, limits: normalizeLimits(input.limits), status: 'draft', phase: 'discussion', revision: 0, round: 1, phaseIndex: 0, agentMessageCount: 0, peerMessageCount: 0, nextSeq: 1, nextTurnNumber: 1, createdAt: now, updatedAt: now, startedAt: null, stopReason: null, currentTurn: null, turns: [], tasks, outcome: null, events: [] };
 }
 
 function implementationTasks(input, implementers, roomId, goal) {

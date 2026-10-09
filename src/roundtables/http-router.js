@@ -35,7 +35,7 @@ export async function handleRoundtableApiRequest({ request, response, url, servi
 }
 
 export async function handleRoundtablePeerRequest({ request, response, url, service }) {
-  const route = url.pathname.match(/^\/roundtable-peer\/v1\/rooms\/([^/]+)\/(read|join|claim|submit)$/);
+  const route = url.pathname.match(/^\/roundtable-peer\/v1\/rooms\/([^/]+)\/(discover|read|join|claim|submit|message)$/);
   if (!route) return false;
   const roomId = decodeURIComponent(route[1]);
   const actor = service.authenticate({ roomId, seatToken: bearerToken(request),
@@ -44,8 +44,10 @@ export async function handleRoundtablePeerRequest({ request, response, url, serv
     sendJson(response, 415, { error: 'POST application/json required' }); return true;
   }
   const body = await readJson(request);
-  const { actor: _actor, seatToken: _secret, seatId: _seat, sourceApplication: _source, sourceSessionId: _session, ...safe } = body;
-  sendJson(response, 200, await service[route[2]]({ ...safe, roomId }, actor));
+  const { actor: _actor, seatToken: _secret, seatId: _seat, senderSeatId: _senderSeat,
+    sourceApplication: _source, sourceSessionId: _session, ...safe } = body;
+  const methods = { discover: 'discover', read: 'read', join: 'join', claim: 'claim', submit: 'submit', message: 'message' };
+  sendJson(response, 200, await service[methods[route[2]]]({ ...safe, roomId }, actor));
   return true;
 }
 

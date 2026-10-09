@@ -110,7 +110,8 @@ test('candidate Hook subprocesses persist visible history and recover only the s
     { type: 'thinking', thinking: 'PRIVATE_THINKING_NOT_CAPTURED' }, { type: 'text', text: marker }
   ]));
   const stop = await hook('claude-code', 'Stop', { session_id: session, cwd: projectPath, transcript_path: transcript });
-  assert.equal(stop.decision, 'block', 'first Stop asks for the genuine task checkpoint');
+  assert.notEqual(stop.decision, 'block', 'pending checkpoint does not intercept completion');
+  assert.equal(typeof stop.systemMessage, 'string');
   const saved = await query({ mode: 'events', conversation_id: initialized.conversation_id });
   assert.ok(saved.events.some(event => event.content === marker));
   assert.equal(saved.events.filter(event => event.role === 'user' && event.content === prompt).length, 1,

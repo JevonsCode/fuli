@@ -27,7 +27,13 @@ test('independent network participants exchange A -> B -> A, scopes deny owner a
     const response = await post(`/roundtable-peer/v1/rooms/${id}/${operation}`, body, token);
     assert.equal(response.status, 200, await response.clone().text()); return response.json();
   };
-  await peer('join', a); await peer('join', b);
+  await peer('join', a, { selfProfile: { responsibility: 'moderate', capabilities: ['planning'] } });
+  await peer('join', b, { selfProfile: { responsibility: 'implement evidence', capabilities: ['testing'] } });
+  const discovery = await peer('discover', a, { capabilityQuery: 'test' });
+  assert.deepEqual(discovery.roster.map(seat => seat.id), ['b']);
+  const addressed = await peer('message', a, { toSeatId: 'b', body: 'Please share testing evidence', kind: 'question', idempotencyKey: 'http-peer-1' });
+  const addressedRetry = await peer('message', a, { toSeatId: 'b', body: 'Please share testing evidence', kind: 'question', idempotencyKey: 'http-peer-1' });
+  assert.equal(addressedRetry.message.id, addressed.message.id);
   host.service.control({ roomId, action: 'start' }, owner);
   assert.equal(await peer('claim', b), null);
   const first = await peer('claim', a);
@@ -43,7 +49,7 @@ test('independent network participants exchange A -> B -> A, scopes deny owner a
   assert.ok(JSON.stringify(third.context).includes(`B verified ${marker}`));
   await peer('submit', a, { ...third, body: `Synthesis: ${marker}`, idempotencyKey: `turn-${third.attemptId}` });
   const final = await peer('read', b);
-  assert.equal(final.room.status, 'concluded'); assert.equal(final.messages.length, 3);
+  assert.equal(final.room.status, 'concluded'); assert.equal(final.messages.length, 4);
   const other = host.service.create(input, owner).room.id;
   assert.equal((await post(`/roundtable-peer/v1/rooms/${other}/read`, {}, a)).status, 401);
   assert.equal((await post(`/roundtable-peer/v1/rooms/${roomId}/control`, { action: 'start' }, a)).status, 404);

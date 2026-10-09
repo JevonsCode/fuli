@@ -172,12 +172,12 @@ claude --version
 
 | 角色 | 实际 worker 客户端 / executor | 报告宿主 | 工作与最终状态 | 脱敏会话或产物证据 | 累计 token 用量、来源与范围 |
 | --- | --- | --- | --- | --- | --- |
-| 待填写实际角色 | `workerRuntime.application` / 实际 executor，缺失则未知 | `sourceApplication` | 待填写真实结果 | worker 会话 / 产物别名；报告会话单列 | 未知，直到客户端 / executor 返回实际用量 |
+| 待填写实际角色 | `workerRuntime.application` / 实际 executor，缺失则未知 | `sourceApplication` | 待填写真实结果 | worker 会话 / 产物别名；报告会话单列 | `-`，直到客户端 / executor 返回实际用量 |
 
 `sourceApplication` / `sourceSessionId` 标记报告宿主，`workerRuntime.application` /
 `workerRuntime.sessionId` 才标记实际 worker。worker 信息缺失时不能从报告宿主复制或推断。
 token 用量必须标明是哪个客户端、executor run 或 worker 会话的累计值；不要复制主会话总数，
-不要把字符数或恢复预算当 token 数。来源没有提供时写“未知”；明确返回的 0 可以保留为 0。
+不要把字符数或恢复预算当 token 数。来源没有提供时写 `-`；明确返回的 0 可以保留为 0。
 没有实际启动 worker 时不填写虚构执行行，明确写“本次没有 worker 执行证据”。
 
 ## 本次结果模板

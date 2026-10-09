@@ -10,8 +10,8 @@ import { join } from 'node:path';
 
 for (const [name, status, body, blocked, reads] of [
   ['legacy route absence', 404, { detail: 'Not Found' }, false, 1],
-  ['resource absence', 404, { detail: 'Task context is unknown or superseded' }, true, 1],
-  ['permission failure', 403, { detail: 'Forbidden' }, true, 1],
+  ['resource absence', 404, { detail: 'Task context is unknown or superseded' }, false, 1],
+  ['permission failure', 403, { detail: 'Forbidden' }, false, 1],
   ['temporary gateway outage', 503, { detail: 'Synthetic outage' }, false, 2]
 ]) test(`Hook executable handles ${name} through the actual HTTP client`, async t => {
   const requests = [];

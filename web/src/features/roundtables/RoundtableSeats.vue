@@ -47,6 +47,11 @@ function mcpUrl() { return `${coordinatorUrl.value.replace(/\/$/, '')}/roundtabl
     <p class="rt-muted">{{ copy('邀请仅授予一个席位的权限。加入记录是历史证据，当前在线状态由工作端轮询和回合回执确定。', 'An invitation grants access to one seat. Join records are historical evidence; worker polling and turn receipts determine current activity.') }}</p>
     <div class="rt-seats"><article v-for="seat in room.seats" :key="seat.id" class="rt-seat" :class="{ 'rt-seat-current': seat.id === activeSeatId }">
       <div class="rt-section-heading"><strong>{{ seat.name }}</strong><span class="rt-tag">{{ label(seat.role) }}</span></div>
+      <template v-if="seat.selfProfile">
+        <p v-if="seat.selfProfile.responsibility">{{ seat.selfProfile.responsibility }}</p>
+        <p v-if="seat.selfProfile.introduction" class="rt-muted">{{ seat.selfProfile.introduction }}</p>
+        <p v-if="seat.selfProfile.capabilities?.length" class="rt-muted">{{ seat.selfProfile.capabilities.join(' · ') }}</p>
+      </template>
       <p>{{ label(seat.runtime) }}</p><p class="rt-muted">{{ seat.identityKind === 'fuli' ? copy('已绑定 Fuli 身份', 'Bound Fuli identity') : copy('独立任务席位', 'Independent task seat') }}</p>
       <p class="rt-muted">{{ seat.joinedAt ? `${copy('加入于', 'Joined')} ${time(seat.joinedAt)}` : copy('尚无加入记录', 'No join recorded') }}</p>
       <p v-if="seat.execution" class="rt-muted">{{ label(seat.execution.permission) }} · {{ seat.execution.workspace }}</p>
@@ -70,7 +75,7 @@ function mcpUrl() { return `${coordinatorUrl.value.replace(/\/$/, '')}/roundtabl
         <button type="button" @click="copyValue(workerCommand(), 'command')">{{ copied === 'command' ? copy('命令已复制', 'Command copied') : copy('复制工作端命令', 'Copy worker command') }}</button>
         <p class="rt-muted">{{ copy('默认只读。实施写入还需工作端用户明确授权。Grok 需要工作端配置 XAI_API_KEY；A2A 需要配置可验证的端点。', 'Workers default to read only. Writing also requires explicit permission from the worker’s user. Grok requires XAI_API_KEY on the worker; A2A requires a verified endpoint.') }}</p>
       </template>
-      <template v-else><p class="rt-muted">{{ copy('在 MCP 客户端配置下面的远程地址，将席位凭据作为 Bearer 认证秘密保存。Grok Team Bot 可在官方自定义 MCP 设置中配置此地址。', 'Configure this remote URL in the MCP client and save the seat credential as a Bearer authentication secret. Grok Team Bots can configure it through their official custom MCP settings.') }}</p><pre><code>{{ mcpUrl() }}</code></pre><button type="button" @click="copyValue(mcpUrl(), 'mcp')">{{ copied === 'mcp' ? copy('地址已复制', 'URL copied') : copy('复制 MCP 地址', 'Copy MCP URL') }}</button><p class="rt-muted">{{ copy('主动调用 join_roundtable，再通过 read_roundtable、claim_roundtable_turn、submit_roundtable_turn 参与自己的回合；参数 roomId 为下面的圆桌 ID。MCP 不会后台唤醒现有聊天。', 'Actively call join_roundtable, then use read_roundtable, claim_roundtable_turn and submit_roundtable_turn for your own turns, passing the room ID below as roomId. MCP does not wake existing chats in the background.') }}</p></template>
+      <template v-else><p class="rt-muted">{{ copy('在 MCP 客户端配置下面的远程地址，将席位凭据作为 Bearer 认证秘密保存。Grok Team Bot 可在官方自定义 MCP 设置中配置此地址。', 'Configure this remote URL in the MCP client and save the seat credential as a Bearer authentication secret. Grok Team Bots can configure it through their official custom MCP settings.') }}</p><pre><code>{{ mcpUrl() }}</code></pre><button type="button" @click="copyValue(mcpUrl(), 'mcp')">{{ copied === 'mcp' ? copy('地址已复制', 'URL copied') : copy('复制 MCP 地址', 'Copy MCP URL') }}</button><p class="rt-muted">{{ copy('接入后，AI 可通过工具说明自行加入、介绍职责、寻找同伴并参与协作。', 'Once connected, AI can use the tool instructions to join, introduce its role, find peers and collaborate.') }}</p></template>
       <p class="rt-muted">{{ copy('协调端地址', 'Coordinator URL') }}: {{ coordinatorUrl }} · {{ copy('圆桌', 'Room') }}: {{ room.id }} · {{ copy('席位', 'Seat') }}: {{ invite.seatId }}</p>
     </section>
   </section>

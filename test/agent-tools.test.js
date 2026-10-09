@@ -123,7 +123,7 @@ const NAMES = [
   'list_project_review_queue',
   'review_project_proposal',
   'get_graphiti_status',
-  'read_roundtable', 'join_roundtable', 'claim_roundtable_turn', 'submit_roundtable_turn'
+  'discover_roundtable', 'read_roundtable', 'join_roundtable', 'claim_roundtable_turn', 'submit_roundtable_turn', 'message_roundtable'
 ];
 
 test('Agent surface exposes only the Graphiti final-version tools', () => {
