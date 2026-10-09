@@ -8,7 +8,7 @@ import { setLocale } from '@/i18n'
 const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
 vi.mock('@/api/client', () => ({ getJson, postJson }))
 import EmployeeRecruitDialog from './EmployeeRecruitDialog.vue'
-import EmployeeNavigation from './EmployeeNavigation.vue'
+import EmployeeWorkbenchLinks from './EmployeeWorkbenchLinks.vue'
 import { employeeCatalogLoading, employeeTemplates, refreshEmployeeCatalog, type EmployeeTemplate } from './catalog'
 
 const projects: PersonalProject[] = [{
@@ -136,12 +136,11 @@ describe('employee recruitment', () => {
     expect(wrapper.get('footer a').attributes('href')).toBe('/employees/jefa?project=project-a')
     await wrapper.get('form').trigger('submit')
     expect(postJson).toHaveBeenCalledTimes(1)
-    const navigation = mount(EmployeeNavigation, { props: { personalSpaceId: 'space-a' }, global: { plugins: [router] } })
-    expect(navigation.find('.nav-section-label').text()).toBe('专属 Agent')
-    mounted.push(navigation)
+    const links = mount(EmployeeWorkbenchLinks, { props: { personalSpaceId: 'space-a' }, global: { plugins: [router] } })
+    mounted.push(links)
     await flushPromises()
-    expect(navigation.get('a').attributes('href')).toBe('/agents/space-a/employee.jefa')
-    expect(navigation.text()).toContain('Jefa')
+    expect(links.get('a').attributes('href')).toBe('/employees/jefa')
+    expect(links.text()).toContain('Jefa')
   })
 
   it('does not create a project or invent a running executor when recruiting without a project', async () => {

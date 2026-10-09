@@ -41,7 +41,7 @@ const success = ref<EmployeeRecruitmentResult | null>(null)
 const catalogTemplates = ref<EmployeeTemplate[]>([])
 const catalogError = ref('')
 const { dialogRef, initialFocusRef, onCancel, onKeydown } = useModalDialog(() => props.open, close)
-const templates = computed(() => catalogTemplates.value)
+const templates = computed(() => props.templateId ? catalogTemplates.value : catalogTemplates.value.filter((entry) => !entry.fixed))
 const selected = computed(() => props.templateId
   ? templates.value.find((entry) => entry.id === props.templateId)
   : templates.value.find((entry) => entry.id === templateId.value) ?? templates.value[0])

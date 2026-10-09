@@ -18,6 +18,8 @@ export interface EmployeeTemplate {
   assignments: ProjectAgentAssignmentRecord[]
   assignmentsVersion: string
   identityConflict: boolean
+  // Jefa and Bole: provisioned for every space, never hired.
+  fixed?: boolean
   defaultProjectScope?: 'all' | 'selected'
   workbench?: { kind: 'native'; view: 'people' }
   management?: EmployeeManagement

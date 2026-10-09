@@ -41,6 +41,8 @@ const workStatus = computed(() => {
   return "none";
 });
 const workStatusClass = computed(() => `is-${workStatus.value}`);
+// Jefa and Bole are fixed roles every space has.
+const fixedRole = computed(() => ({ coordinator: t("agentProfiles.roles.projectManager"), hr: t("agentProfiles.roles.hr") })[props.agent.profile.agentType as string] ?? "");
 function localized(
   key: string,
   fallback: string,
@@ -82,25 +84,6 @@ const workStatusLabel = computed(() => {
       <span class="agent-portrait small" aria-hidden="true">
         {{ agent.profile.occupationEmoji || name.slice(0, 1) }}
       </span>
-      <div class="agent-card-status-stack">
-        <span
-          class="ui-badge agent-card-status agent-card-membership-status"
-          :class="statusClass"
-          :data-membership-status="agent.profile.status"
-        >
-          {{ membershipStatusLabel }}
-        </span>
-        <span
-          class="ui-badge agent-card-work-status"
-          :class="workStatusClass"
-          :data-work-status="workStatus"
-          :aria-label="`${t('agentRedesign.workStatus.label')} · ${workStatusLabel}`"
-        >
-          {{ workStatusLabel }}
-        </span>
-      </div>
-    </div>
-    <div class="agent-card-body">
       <div class="agent-directory-name">
         <RouterLink
           :to="agentProfilePath(spaceId, agent.agentId)"
@@ -108,16 +91,33 @@ const workStatusLabel = computed(() => {
         >
           {{ name }}
         </RouterLink>
+        <span v-if="fixedRole" class="ui-badge ui-badge--accent agent-card-role">{{ fixedRole }}</span>
         <AgentHand :agent-id="agent.agentId" />
       </div>
-      <p class="agent-card-responsibility">{{ agent.profile.responsibility }}</p>
-      <div v-if="capabilities.length" class="agent-inline-skills">
-        <span v-for="skill in capabilities" :key="skill">{{ skill }}</span>
-      </div>
+      <span
+        v-if="agent.profile.status !== 'active'"
+        class="ui-badge agent-card-status agent-card-membership-status"
+        :class="statusClass"
+        :data-membership-status="agent.profile.status"
+      >
+        {{ membershipStatusLabel }}
+      </span>
+      <span
+        v-if="agent.profile.status === 'active' || !['none', 'loading'].includes(workStatus)"
+        class="agent-card-work-status"
+        :class="workStatusClass"
+        :data-work-status="workStatus"
+        :aria-label="`${t('agentRedesign.workStatus.label')} · ${workStatusLabel}`"
+      >
+        {{ workStatusLabel }}
+      </span>
+    </div>
+    <p class="agent-card-responsibility">{{ agent.profile.responsibility }}</p>
+    <div v-if="capabilities.length" class="agent-inline-skills">
+      <span v-for="skill in capabilities" :key="skill">{{ skill }}</span>
     </div>
     <div class="agent-card-meta">
       <div class="agent-card-projects">
-        <span class="agent-card-meta-label">{{ t("agentProfiles.projects") }}</span>
         <div v-if="projectLabels.length" class="agent-card-project-list">
           <span v-for="project in projectLabels" :key="project" class="ui-badge">
             {{ project }}
@@ -129,12 +129,11 @@ const workStatusLabel = computed(() => {
         <span v-else class="agent-card-no-project">{{ t("agentProfiles.noProject") }}</span>
       </div>
       <RouterLink
-        class="agent-directory-open quiet-button"
+        class="agent-directory-open"
         :to="agentProfilePath(spaceId, agent.agentId)"
         :aria-label="`${name} · ${t('agentProfiles.profile')}`"
       >
-        {{ t("agentProfiles.profile") }}
-        <span aria-hidden="true">↗</span>
+        {{ t("agentProfiles.profile") }} →
       </RouterLink>
     </div>
   </article>

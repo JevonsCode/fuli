@@ -1,12 +1,8 @@
 export const projectAgentMessages = {
   'zh-CN': {
     firstTask: {
-      title: '还没有项目，也可以开始第一个任务',
-      hint: '在已连接 Fuli 的 AI 客户端里打开工作目录，说明要完成的事。目录尚未关联项目时，Fuli 会为这次任务建立独立的临时项目。',
-      promptLabel: '复制到 AI 客户端，并替换括号中的任务',
-      prompt: '请在当前目录用 Fuli 协作完成【要做的事】。若尚未关联项目，请使用临时任务项目。安排合适的 Agent 并实际执行，结束后汇总每个执行者的结果。',
-      outcome: '任务记录会区分项目归属、Agent 分配和实际执行。客户端上报执行结果后，才能看到执行汇总。',
-      registerOptional: '需要长期整理时，再登记项目 →',
+      title: '开始第一个任务',
+      hint: '在已接入 Fuli 的 AI 客户端里，于项目目录中直接提需求。Fuli 会登记项目并安排负责的 Agent。',
     },
     diagnostics: {
       title: '任务启动与执行状态', project: '项目归属', assignment: 'Agent 分配', execution: '实际执行',
@@ -379,12 +375,8 @@ export const projectAgentMessages = {
   },
   'en-US': {
     firstTask: {
-      title: 'Start your first task without registering a project',
-      hint: 'Open your working folder in an AI client connected to Fuli and describe the work. If the folder has no project, Fuli creates an isolated temporary project for this task.',
-      promptLabel: 'Copy into your AI client and replace the task in brackets',
-      prompt: 'Use Fuli to complete [the work to do] in the current folder. If no project is linked, use a temporary task project. Assign suitable Agents and run the work, then summarize each executor’s results.',
-      outcome: 'Task records distinguish project scope, Agent assignment, and actual execution. Execution summaries appear after the client reports the work.',
-      registerOptional: 'Register a project later for ongoing work →',
+      title: 'Start your first task',
+      hint: 'In an AI client connected to Fuli, ask for the work from your project folder. Fuli registers the project and assigns a responsible Agent.',
     },
     diagnostics: {
       title: 'Task start and execution status', project: 'Project scope', assignment: 'Agent assignment', execution: 'Actual execution',

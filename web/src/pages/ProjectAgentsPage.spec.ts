@@ -117,14 +117,13 @@ describe('ProjectAgentsPage', () => {
       .toBe(false)
   })
 
-  it('offers a temporary first task without requiring project registration', async () => {
+  it('explains how to start the first task while no project exists', async () => {
     const { wrapper, store } = mountPage()
     store.state = { ...store.state!, personalProjects: [] }
     await flushPromises()
     const firstTask = wrapper.get('.project-agent-first-task')
-    expect(firstTask.text()).toContain('还没有项目，也可以开始第一个任务')
-    expect(firstTask.get('textarea').element.value).toContain('若尚未关联项目，请使用临时任务项目')
-    expect(firstTask.getComponent(RouterLinkStub).props('to')).toBe('/personal/personal-1/projects/directory')
+    expect(firstTask.text()).toContain('开始第一个任务')
+    expect(firstTask.text()).toContain('安排负责的 Agent')
     store.state = { ...store.state!, personalProjects: [{ project_id: 'project-a', personal_space_id: 'personal-1', profile: { name: '活动项目', sources: [], boundaries: [] } }] }
     await nextTick()
     expect(wrapper.find('.project-agent-first-task').exists()).toBe(false)

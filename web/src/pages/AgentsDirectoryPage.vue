@@ -14,6 +14,8 @@ import ProjectAgentFirstTask from "@/features/project-agents/ProjectAgentFirstTa
 import { useAgentWorkSummary } from "@/features/agent-profile/useAgentWorkSummary";
 import UiSelect from "@/components/ui/UiSelect.vue";
 import EmployeeRecruitDialog from "@/features/employees/EmployeeRecruitDialog.vue";
+import EmployeeWorkbenchLinks from "@/features/employees/EmployeeWorkbenchLinks.vue";
+import { employeeTemplates } from "@/features/employees/catalog";
 import { useConsoleStore } from "@/stores/console";
 import { t } from "@/i18n";
 import type { EmployeeRecruitmentResult } from "@/features/employees/catalog";
@@ -37,6 +39,7 @@ const selectedProjects = ref<string[]>(
   typeof route.query.project === "string" ? [route.query.project] : [],
 );
 const recruiting = ref(false);
+const hireable = computed(() => employeeTemplates.value.some((entry) => !entry.fixed));
 
 const projects = computed(() =>
   (store.state?.personalProjects ?? []).filter(
@@ -142,10 +145,9 @@ async function retryDirectory() {
           variant="inline"
           :label="t('agentRedesign.refreshing')"
         />
-        <RouterLink class="quiet-button" to="/employees/bole">
-          {{ t("agentProfiles.hr") }}
-        </RouterLink>
+        <EmployeeWorkbenchLinks :personal-space-id="space || 'current'" />
         <button
+          v-if="hireable"
           type="button"
           class="primary-button"
           :disabled="!space"
