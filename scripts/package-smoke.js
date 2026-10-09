@@ -70,6 +70,13 @@ try {
     'docs/agent-conversations-and-collaboration.md',
     'docs/employee-agents.md',
     'docs/agent-interface-architecture.md',
+    'docs/roundtable-beta-testing.md',
+    'docs/roundtable-beta-validation.md',
+    'docs/roundtable-research.md',
+    'src/roundtables/service.js',
+    'src/cli/roundtable-command.js',
+    'src/agents/pi/roundtable-participant.js',
+    'src/agents/pi/roundtable-result-format.js',
     'examples/external-knowledge/markdown-folder.mjs',
     'graph-provider/fuli_graph/app.py',
     'skills/capturing-session-knowledge/SKILL.md',
@@ -90,7 +97,10 @@ try {
         'docs/project-agent-memory.md',
         'docs/agent-conversations-and-collaboration.md',
         'docs/employee-agents.md',
-        'docs/agent-interface-architecture.md'
+        'docs/agent-interface-architecture.md',
+        'docs/roundtable-beta-testing.md',
+        'docs/roundtable-beta-validation.md',
+        'docs/roundtable-research.md'
       ].includes(path), `unexpected published documentation file ${path}`);
     }
     assert.doesNotMatch(path, /^(?:AGENTS|CLAUDE)\.md$/);
@@ -123,10 +133,17 @@ try {
   const extension = process.platform === 'win32' ? '.cmd' : '';
   const fl = join(binDir, `fl${extension}`);
   const fuli = join(binDir, `fuli${extension}`);
-  assert.equal(run(fl, ['--version']).trim(), manifest.version);
-  assert.equal(run(fuli, ['--version']).trim(), manifest.version);
-  assert.match(run(fuli, ['--help']), /fuli <command>/);
-  assert.match(run(fuli, ['--help']), /update \[setup options\]/);
+  const installedCommand = (alias, shim, args) => {
+    if (process.platform !== 'win32') return run(shim, args);
+    // Check both generated Windows shims, then execute their installed Node entry.
+    assert.match(readFileSync(shim, 'utf8'), /src[\\/]cli\.js/);
+    return run(process.execPath, [join(installedRoot, installedManifest.bin[alias]), ...args]);
+  };
+  assert.equal(installedCommand('fl', fl, ['--version']).trim(), manifest.version);
+  assert.equal(installedCommand('fuli', fuli, ['--version']).trim(), manifest.version);
+  assert.match(installedCommand('fuli', fuli, ['--help']), /fuli <command>/);
+  assert.match(installedCommand('fuli', fuli, ['--help']), /update \[setup options\]/);
+  assert.match(installedCommand('fl', fl, ['roundtable', '--help']), /worker/);
 
   const { serveStatic } = await import(pathToFileURL(
     join(installedRoot, 'src', 'http', 'static-handler.js')
@@ -144,11 +161,17 @@ try {
     webUi: 'served'
   }, null, 2) + '\n');
 } finally {
+  assert.equal(dirname(resolve(scratch)), resolve(tmpdir()));
+  assert.ok(scratch.startsWith(join(tmpdir(), 'fuli-package-smoke-')));
   rmSync(scratch, { recursive: true, force: true });
 }
 
 function runNpm(args, options = {}) {
-  return execFileSync(npm, args, {
+  // Node cannot execFile npm.cmd. Reuse npm's own CLI entry with argument arrays.
+  const command = process.platform === 'win32' ? process.execPath : npm;
+  const invocation = process.platform === 'win32' ? [process.env.npm_execpath, ...args] : args;
+  if (process.platform === 'win32' && !process.env.npm_execpath) throw new Error('Run package smoke through npm run test:package');
+  return execFileSync(command, invocation, {
     cwd: packageRoot,
     env: cleanEnvironment,
     encoding: 'utf8',

@@ -17,6 +17,9 @@ export function legacyKnowledgeHashPath(hash: string) {
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    { path: '/roundtables', name: 'roundtables', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { publicReport: true, title: 'Agent Roundtable' } },
+    { path: '/roundtables/:roomId', name: 'roundtable-room', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { publicReport: true, title: 'Agent Roundtable' } },
+    { path: '/roundtables/:spaceId/:roomId', name: 'roundtable-project-room', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { publicReport: true, title: 'Agent Roundtable' } },
     { path: '/reports/jefa', name: 'shared-jefa-report', component: () => import('@/pages/SharedJefaReportPage.vue'), meta: { publicReport: true, title: 'employees.share.title' } },
     {
       path: '/',

@@ -12,6 +12,8 @@ General:
   --version, -v
 
 Local service:
+  roundtable serve [--port PORT] [--data-dir DIR] [--public-url HTTPS_URL]
+  roundtable worker --url URL --room ID --runtime codex|claude-code|grok|a2a [--workspace DIR] [--allow-write]
   start [--port PORT] [--open] [--lan|--no-lan] [--rebuild] [--data-dir DIR] [--personal-space NAME]  (checks Agent setup)
   stop [--data-dir DIR]
   restart [--port PORT] [--open] [--lan|--no-lan] [--rebuild] [--data-dir DIR] [--personal-space NAME]

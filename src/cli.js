@@ -10,6 +10,7 @@ import { runLocalRuntimeCommand } from './cli/local-runtime-command.js';
 import { runRemoteMcpCommand } from './cli/remote-mcp-command.js';
 import { runGraphDataCommand } from './cli/graph-data-command.js';
 import { runEmployeeCommand } from './cli/employee-command.js';
+import { runRoundtableCommand } from './cli/roundtable-command.js';
 import { runSetupCommand } from './cli/setup-command.js';
 import { runUninstallCommand } from './cli/uninstall-command.js';
 import { runUpdateCommand } from './cli/update-command.js';
@@ -40,6 +41,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   if (command === 'employee') {
     assertSupportedNodeVersion();
     return runEmployeeCommand(commandArgs, { env });
+  }
+  if (command === 'roundtable') {
+    assertSupportedNodeVersion();
+    return runRoundtableCommand(commandArgs, { env });
   }
   if (command === 'connect-workspace') {
     assertSupportedNodeVersion();

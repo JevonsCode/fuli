@@ -287,7 +287,8 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'review_project_relation', 'list_personal_review_queue', 'review_personal_draft',
     'subscribe_public_project', 'unsubscribe_public_project',
     'list_project_review_queue', 'review_project_proposal',
-    'get_graphiti_status'
+    'get_graphiti_status',
+    'read_roundtable', 'join_roundtable', 'claim_roundtable_turn', 'submit_roundtable_turn'
   ]);
   const preferencesTool = listed.tools.find(
     ({ name }) => name === 'get_collaboration_preferences'

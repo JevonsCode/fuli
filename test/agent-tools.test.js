@@ -122,7 +122,8 @@ const NAMES = [
   'unsubscribe_public_project',
   'list_project_review_queue',
   'review_project_proposal',
-  'get_graphiti_status'
+  'get_graphiti_status',
+  'read_roundtable', 'join_roundtable', 'claim_roundtable_turn', 'submit_roundtable_turn'
 ];
 
 test('Agent surface exposes only the Graphiti final-version tools', () => {
@@ -474,7 +475,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
   const previousTestTools = process.env.FULI_ENABLE_TEST_TOOLS;
   process.env.FULI_ENABLE_TEST_TOOLS = '1';
   try {
-    for (const name of NAMES) await callAgentTool(app, name, { probe: name });
+    for (const name of NAMES.filter((value) => !value.includes('roundtable'))) await callAgentTool(app, name, { probe: name });
   assert.deepEqual(calls.map(([name]) => name), [
     'request-attention', 'list-attention', 'cancel-attention',
     'agent-tasks', 'preference-conflicts',

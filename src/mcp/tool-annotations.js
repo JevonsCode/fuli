@@ -1,4 +1,5 @@
 const READ_TOOLS = new Set([
+  'read_roundtable',
   'get_agent_quality_gate',
   'plan_agent_collaboration', 'list_agent_loans',
   'list_agent_conversations', 'read_agent_conversation', 'get_agent_conversation_policy',
@@ -49,6 +50,7 @@ const READ_TOOLS = new Set([
 ]);
 
 const WRITE_TOOLS = new Set([
+  'join_roundtable', 'claim_roundtable_turn', 'submit_roundtable_turn',
   'record_agent_verification',
   'request_agent_loan', 'decide_agent_loan',
   'resume_agent_conversation', 'update_agent_conversation_policy',
