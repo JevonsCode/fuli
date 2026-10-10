@@ -291,7 +291,7 @@
 .roundtable-overlay .table-center strong { display: block; font-size: 30px; letter-spacing: 0.02em; }
 .roundtable-overlay .whisper {
   position: absolute;
-  max-width: 220px;
+  white-space: nowrap;
   padding: 8px 12px;
   border: 1px solid #2c3a36;
   border-radius: 4px 12px 12px 12px;
@@ -305,9 +305,6 @@
 .roundtable-overlay .whisper-b { left: 48%; top: 74%; border-radius: 12px 4px 12px 12px; }
 .taste-overlay .layer-global { left: 52%; top: 72%; }
 .taste-overlay .layer-project { left: 84%; top: 26%; color: #0f6b55; }
-.team-overlay .team-pm { left: 52%; top: 30%; }
-.team-overlay .team-hr { left: 84%; top: 30%; }
-.team-overlay .team-group { left: 68%; top: 86%; }
 .memory-overlay .mem-recent { left: 54%; top: 26%; }
 .memory-overlay .mem-digest { left: 84%; top: 32%; color: #0f6b55; }
 .memory-overlay .mem-note { left: 68%; top: 84%; font-size: 13px; font-weight: 500; color: #3a7c5c; }
@@ -343,13 +340,52 @@
   .roundtable-overlay .whisper { display: none; }
   .taste-overlay .layer-global { left: 28%; top: 90%; }
   .taste-overlay .layer-project { left: 76%; top: 52%; }
-  .team-overlay .team-pm { left: 22%; top: 54%; }
-  .team-overlay .team-hr { left: 78%; top: 54%; }
-  .team-overlay .team-group { left: 50%; top: 92%; }
   .memory-overlay .mem-recent { left: 24%; top: 52%; }
   .memory-overlay .mem-digest { left: 76%; top: 56%; }
   .memory-overlay .mem-note { left: 50%; top: 92%; font-size: 11px; }
 }
 @media (max-width: 380px) {
   .scene-perspective { --scene-scale: 0.58; }
+}
+
+/* Connector lines and captions are positioned from the projected cards each frame. */
+.links { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; fill: none; stroke: #8bb8a3; stroke-width: 1.25; stroke-linecap: round; }
+.team-overlay .links path { stroke-dasharray: 3 5; }
+.tag {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  padding: 4px 10px;
+  border: 1px solid #d9e6df;
+  border-radius: 999px;
+  background: #fffefbe8;
+  color: #3a5a4b;
+  font-size: 12px;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px #1b1f1d0f;
+}
+.tag[data-place="below"] { transform: translate(-50%, 0); }
+.tag[data-place="right"] { transform: translate(0, -50%); }
+.tag-fixed { border-color: #9cc7b6; color: #0f6b55; }
+.tag-lead { border-radius: 12px; padding: 7px 12px; color: #1b1f1d; font-weight: 600; }
+.tag-lead small { display: block; color: #66706a; font-size: 11px; font-weight: 400; }
+.database-overlay .links { stroke: #5d8a74; }
+.db-note { position: absolute; left: 80%; width: 210px; display: grid; gap: 3px; transform: translateY(-50%); }
+.db-note span { color: #8fa39b; font-size: 11px; letter-spacing: .08em; }
+.db-note strong { color: #e1ece5; font-size: 13px; font-weight: 500; line-height: 1.5; }
+.db-note small { color: #8bc1a8; font-size: 11px; }
+.db-note-a { top: 30%; }
+.db-note-b { top: 43%; }
+.db-note-c { top: 56%; }
+.db-note-d { top: 69%; }
+@media (max-width: 1050px) {
+  .db-note { left: 78%; width: 170px; }
+  .db-note strong { font-size: 12px; }
+  .tag { font-size: 11px; }
+}
+@media (max-width: 700px) {
+  .tag:not(.tag-lead) { display: none; }
+  .db-note { left: 66%; width: 32%; }
+  .db-note strong { font-size: 10px; }
+  .db-note small { display: none; }
+  .db-note-a { top: 54%; } .db-note-b { top: 63%; } .db-note-c { top: 72%; } .db-note-d { top: 81%; }
 }

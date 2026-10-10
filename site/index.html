@@ -29,6 +29,7 @@
         <a href="#agents">Agent</a>
         <a href="#roundtable">圆桌</a>
         <a href="#taste">偏好</a>
+        <a href="#database">数据库</a>
         <a href="#start">安装</a>
         <a class="nav-github" href="https://github.com/JevonsCode/fuli">GitHub</a>
       </nav>
@@ -60,15 +61,24 @@
             <span class="overlay-label layer-global">个人全局<small>每个项目都生效</small></span>
             <span class="overlay-label layer-project">项目<small>只管这个项目</small></span>
           </div>
-          <div class="diagram-overlay team-overlay" data-overlay="team">
-            <span class="overlay-label team-pm">Jefa<small>项目经理</small></span>
-            <span class="overlay-label team-hr">Bole<small>HR</small></span>
-            <span class="overlay-label team-group">项目小组<small>负责人与成员</small></span>
-          </div>
           <div class="diagram-overlay memory-overlay" data-overlay="memory">
             <span class="overlay-label mem-recent">最近原文<small>原样保留</small></span>
             <span class="overlay-label mem-digest">摘要<small>攒够一定量才折叠</small></span>
             <span class="overlay-label mem-note">按量压缩，不按天数遗忘</span>
+          </div>
+          <div class="diagram-overlay team-overlay" data-overlay="team">
+            <svg class="links" aria-hidden="true"><path data-from="0" data-to="8" /><path data-from="4" data-to="8" /><path data-from="8" data-to="9" /><path data-from="8" data-to="10" /><path data-from="8" data-to="11" /></svg>
+            <span class="tag tag-fixed" data-anchor="0">固定在岗 · 拆解目标、维护看板</span>
+            <span class="tag tag-fixed" data-anchor="4">固定在岗 · 招人并写明原因</span>
+            <span class="tag tag-lead" data-anchor="8" data-place="right">项目小组<small>负责人带队</small></span>
+            <span class="tag" data-anchor="10" data-place="below">成员按专长协作 · 各自保留记忆</span>
+          </div>
+          <div class="diagram-overlay database-overlay" data-overlay="database">
+            <svg class="links" aria-hidden="true"><path data-from="11" data-to-note=".db-note-a" /><path data-from="8" data-to-note=".db-note-b" /><path data-from="5" data-to-note=".db-note-c" /><path data-from="2" data-to-note=".db-note-d" /></svg>
+            <div class="db-note db-note-a"><span>接入</span><strong>Codex · Claude Code · Cursor</strong></div>
+            <div class="db-note db-note-b"><span>编排</span><strong>Node · CLI / MCP / HTTP</strong></div>
+            <div class="db-note db-note-c"><span>治理</span><strong>Python Provider · 来源与确认</strong></div>
+            <div class="db-note db-note-d"><span>存储</span><strong>Neo4j 图数据库 · 关系与历史</strong><small>全部在你的电脑上</small></div>
           </div>
         </div>
 
@@ -195,10 +205,24 @@
               <div class="memory-recent"><b>最近原文</b><span></span><span></span><span></span><span></span></div>
             </figure>
           </section>
+
+          <section class="chapter database-chapter" id="database" data-scene="database" aria-labelledby="database-title">
+            <div class="chapter-copy">
+              <p class="eyebrow">数据库</p>
+              <h2 id="database-title">一张图，<br /><em>记住所有关系。</em></h2>
+              <p>偏好、项目、Agent、对话以及它们之间的关系，都存在你本机的 Neo4j 图数据库里，每次变化都留有历史。Agent 通过 CLI、MCP 或 HTTP 取用，每次只取当前任务需要的那一小部分。</p>
+            </div>
+            <figure class="stack static-figure" aria-label="Fuli 的四层结构">
+              <div><span>接入</span><b>Codex · Claude Code · Cursor</b></div>
+              <div><span>编排</span><b>Node · CLI / MCP / HTTP</b></div>
+              <div><span>治理</span><b>Python Provider · 来源与确认</b></div>
+              <div class="stack-db"><span>存储</span><b>Neo4j 图数据库 · 关系与历史</b></div>
+            </figure>
+          </section>
         </div>
 
         <nav class="chapter-nav" aria-label="故事章节" hidden>
-          <a href="#top" aria-label="开始"><i></i></a><a href="#agents" aria-label="负责人"><i></i></a><a href="#handoff" aria-label="接续"><i></i></a><a href="#roundtable" aria-label="圆桌"><i></i></a><a href="#taste" aria-label="偏好"><i></i></a><a href="#team" aria-label="团队"><i></i></a><a href="#memory" aria-label="记忆"><i></i></a>
+          <a href="#top" aria-label="开始"><i></i></a><a href="#agents" aria-label="负责人"><i></i></a><a href="#handoff" aria-label="接续"><i></i></a><a href="#roundtable" aria-label="圆桌"><i></i></a><a href="#taste" aria-label="偏好"><i></i></a><a href="#team" aria-label="团队"><i></i></a><a href="#memory" aria-label="记忆"><i></i></a><a href="#database" aria-label="数据库"><i></i></a>
         </nav>
       </div>
 

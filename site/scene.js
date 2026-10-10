@@ -26,9 +26,15 @@ const sceneLabels = {
     ["留痕", "谁问了谁"], ["唤醒", "原会话"], ["收件箱", "下次接手时"], ["线程", "全程可查"],
   ],
   team: [
-    ["Jefa", "项目经理"], ["看板", "拆解与进展"], ["目标", "交付节奏"], ["找人", "为任务匹配"],
-    ["Bole", "HR"], ["招募", "留下原因"], ["分布", "谁在忙什么"], ["记录", "可审计"],
-    ["Milo", "负责人"], ["Nova", "评审"], ["Ada", "测试"], ["记忆", "各自保留"],
+    ["Jefa", "项目经理 · 固定"], ["看板", "拆解与进展"], ["目标", "交付节奏"], ["找人", "为任务匹配"],
+    ["Bole", "HR · 固定"], ["招募", "留下原因"], ["分布", "谁在忙什么"], ["记录", "可审计"],
+    ["Milo", "项目负责人"], ["Nova", "评审"], ["Ada", "测试"], ["Kai", "文档"],
+  ],
+  database: [
+    ["关系", "Neo4j 图数据库"], ["历史", "Neo4j 图数据库"], ["工作记忆", "Neo4j 图数据库"],
+    ["身份与权限", "Python Provider"], ["来源与确认", "Python Provider"], ["上下文", "Python Provider"],
+    ["CLI", "Node 编排"], ["MCP", "Node 编排"], ["HTTP", "Node 编排"],
+    ["Codex", "接入的客户端"], ["Claude Code", "接入的客户端"], ["Cursor", "接入的客户端"],
   ],
 };
 const icons = [
@@ -37,7 +43,9 @@ const icons = [
   "M4 4h16v12H9l-5 4zM8 8h8M8 12h5",
   "m12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3z",
 ];
-const sceneNames = ["scatter", "owner", "handoff", "roundtable", "taste", "team", "memory"];
+const sceneNames = ["scatter", "owner", "handoff", "roundtable", "taste", "team", "memory", "database"];
+// Night scenes; the database scene also shifts the object left to make room for its layer notes.
+const darkScenes = new Set(["roundtable", "database"]);
 // Rig orientation per scene: rotateX, rotateY, rotateZ, scale.
 const views = [
   [48, -10, -25, 1],
@@ -45,8 +53,9 @@ const views = [
   [30, -8, -6, 1.02],
   [62, 0, 0, 0.92],
   [56, -14, -30, 1],
-  [24, -6, 0, 1.04],
+  [14, -4, 0, 1.06],
   [36, -12, -10, 1.04],
+  [57, 0, -24, 0.85],
 ];
 
 function createFragment([title, detail, material], index) {
@@ -99,10 +108,19 @@ function pose(scene, i) {
     return [70 + ((j % 2) - 0.5) * 128, -30 + (Math.floor(j / 2) - 0.5) * 86, 120, 0, 0, 0, 0.66, 1];
   }
   if (scene === 5) {
-    // Team: PM, HR and the project group, each piece of a group stacked.
-    const group = Math.floor(i / 4), j = i % 4;
-    const center = [[-185, -85], [185, -85], [0, 150]][group];
-    return [center[0] + j * 8, center[1] + j * 9, -j * 20, 0, 0, [-12, 12, 0][group], 0.58, 1 - j * 0.08];
+    // Team as an org chart: the fixed PM and HR on top with their work stacked
+    // behind them, the project lead in the middle, members along the bottom.
+    if (i < 8) {
+      const side = i < 4 ? -1 : 1, j = i % 4;
+      return [side * 168 + j * 7, -150 + j * 8, -j * 18, 0, 0, side * 3, 0.56, j ? 0.8 - j * 0.12 : 1];
+    }
+    if (i === 8) return [0, 18, 24, 0, 0, 0, 0.64, 1];
+    const k = i - 9;
+    return [(k - 1) * 176, 196 + (k === 1 ? 10 : 0), 0, 0, 0, (k - 1) * 3, 0.48, 1];
+  }
+  if (scene === 7) {
+    // Architecture: four horizontal layers, clients on top, Neo4j at the bottom.
+    return [((i % 3) - 1) * 134, 0, (Math.floor(i / 3) - 1.5) * 112, 0, 0, 0, 0.72, 1];
   }
   // Memory: recent messages stay open, older ones fold into one digest stack.
   if (i < 4) return [-150 + ((i % 2) - 0.5) * 106, -14 + (Math.floor(i / 2) - 0.5) * 76, (3 - i) * 10, 0, -8, -4, 0.56, 1];
@@ -121,6 +139,7 @@ export function createScrollScene() {
   const nav = document.querySelector(".chapter-nav");
   const dots = [...nav.querySelectorAll("a")];
   const overlays = [...document.querySelectorAll("[data-overlay]")];
+  const header = document.querySelector(".nav");
   const pieces = fragments.map(createFragment);
   pieces.forEach((piece) => rig.append(piece));
 
@@ -143,11 +162,14 @@ export function createScrollScene() {
     const local = clamp((y - positions[index]) / length);
     const next = Math.min(index + 1, sceneNames.length - 1);
     const t = smooth(clamp((local - 0.43) / 0.48));
-    const darkness = (scene) => (sceneNames[scene] === "roundtable" ? 1 : 0);
+    const darkness = (scene) => (darkScenes.has(sceneNames[scene]) ? 1 : 0);
     const dark = mix(darkness(index), darkness(next), t);
+    const database = mix(sceneNames[index] === "database" ? 1 : 0, sceneNames[next] === "database" ? 1 : 0, t);
+    stage.style.setProperty("--rig-left", `${mix(68, 58, database)}%`);
     stage.style.setProperty("--scene-background", blendColor([246, 245, 241], [17, 23, 24], dark));
     stage.style.setProperty("--scene-label", blendColor([45, 73, 60], [210, 231, 219], dark));
     stage.style.setProperty("--atmosphere-opacity", String(1 - dark * 0.8));
+    header?.classList.toggle("is-dark", dark > 0.5);
     stage.style.setProperty("--shadow-opacity", String(0.6 - dark * 0.5));
     stage.style.setProperty("--word-opacity", String(index === 0 ? (1 - t) * 0.85 : 0));
     stage.style.setProperty("--mobile-scale", String(index === 0 ? mix(0.57, 0.66, t) : 0.66));
@@ -175,6 +197,7 @@ export function createScrollScene() {
       const opacity = scene === index ? 1 - t : scene === next ? t : 0;
       overlay.classList.toggle("is-active", opacity > 0.01);
       overlay.style.opacity = String(opacity);
+      if (opacity > 0.01) attach(overlay);
     });
 
     const current = t > 0.5 ? next : index;
@@ -193,6 +216,34 @@ export function createScrollScene() {
       });
     }
     nav.hidden = y > journey.offsetTop + journey.offsetHeight - window.innerHeight * 0.6;
+  }
+
+  // Labels and connector lines follow the projected cards, so they stay aligned at any size.
+  function attach(overlay) {
+    const bounds = stage.getBoundingClientRect();
+    const box = (element) => {
+      const r = element.getBoundingClientRect();
+      return { left: r.left - bounds.left, right: r.right - bounds.left, top: r.top - bounds.top,
+        bottom: r.bottom - bounds.top, x: (r.left + r.right) / 2 - bounds.left, y: (r.top + r.bottom) / 2 - bounds.top };
+    };
+    for (const label of overlay.querySelectorAll("[data-anchor]")) {
+      const piece = box(pieces[Number(label.dataset.anchor)]);
+      const place = label.dataset.place ?? "above";
+      label.style.left = `${place === "right" ? piece.right + 14 : piece.x}px`;
+      label.style.top = `${place === "below" ? piece.bottom + 14 : place === "right" ? piece.y : piece.top - 14}px`;
+    }
+    for (const path of overlay.querySelectorAll("path[data-from]")) {
+      const from = box(pieces[Number(path.dataset.from)]);
+      if (path.dataset.toNote) {
+        const note = box(overlay.querySelector(path.dataset.toNote));
+        const end = note.left - 10, elbow = end - 16;
+        path.setAttribute("d", `M${from.right + 4} ${from.y} H${elbow} V${note.y} H${end}`);
+      } else {
+        const to = box(pieces[Number(path.dataset.to)]);
+        const startY = from.bottom + 4, endY = to.top - 4, middle = (startY + endY) / 2;
+        path.setAttribute("d", `M${from.x} ${startY} C${from.x} ${middle} ${to.x} ${middle} ${to.x} ${endY}`);
+      }
+    }
   }
 
   function schedule() {
@@ -214,6 +265,7 @@ export function createScrollScene() {
       nav.hidden = !value;
       if (value) measure();
       else {
+        header?.classList.remove("is-dark");
         journey.style.removeProperty("--chapter-ink");
         journey.style.removeProperty("--chapter-soft");
       }

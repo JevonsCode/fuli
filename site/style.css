@@ -210,3 +210,22 @@ figure.window figcaption { padding: 0 20px; }
   html { scroll-behavior: auto; }
   .js .reveal { opacity: 1; transform: none; transition: none; }
 }
+
+/* Chapter numbers, the database chapter and its static fallback. */
+.chapters { counter-reset: chapter; }
+.chapter:not(.hero-chapter) { counter-increment: chapter; }
+.chapter:not(.hero-chapter) .eyebrow::before { content: "0" counter(chapter) "  ·  "; font-family: "Unbounded", var(--sans); font-weight: 500; opacity: .7; white-space: pre; }
+.enhanced .database-chapter .eyebrow, .enhanced .database-chapter h2 em { color: #8bc1a8; }
+.stack { display: grid; gap: 10px; }
+.stack div { display: flex; align-items: baseline; gap: 16px; padding: 16px 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.stack span { color: var(--muted); font-size: 13px; letter-spacing: .08em; }
+.stack b { font-weight: 600; }
+.stack .stack-db { background: var(--night); border-color: var(--night); color: #e9f1ee; }
+.stack .stack-db span { color: #8bc1a8; }
+.nav { transition: border-color .2s, background-color .35s; }
+.nav.is-dark { background: rgb(17 23 24 / 82%); border-bottom-color: #1f2b28; }
+.nav.is-dark .brand, .nav.is-dark nav a { color: #e1ece5; }
+.nav.is-dark .brand b { color: #8fa39b; }
+.nav.is-dark .nav-github { border-color: #2c3a36; background: #16201d; }
+.nav .brand img { border-radius: 50%; transition: background-color .35s; }
+.nav.is-dark .brand img { background: #e9f1ee; }
