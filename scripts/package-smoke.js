@@ -70,11 +70,8 @@ try {
     'docs/agent-conversations-and-collaboration.md',
     'docs/employee-agents.md',
     'docs/agent-interface-architecture.md',
-    'docs/roundtable.md',
-    'src/roundtables/service.js',
-    'src/cli/roundtable-command.js',
-    'src/agents/pi/roundtable-participant.js',
-    'src/agents/pi/roundtable-result-format.js',
+    'docs/agent-roundtable.md',
+    'src/agent-roundtable/service.js',
     'examples/external-knowledge/markdown-folder.mjs',
     'graph-provider/fuli_graph/app.py',
     'skills/capturing-session-knowledge/SKILL.md',
@@ -96,7 +93,7 @@ try {
         'docs/agent-conversations-and-collaboration.md',
         'docs/employee-agents.md',
         'docs/agent-interface-architecture.md',
-        'docs/roundtable.md'
+        'docs/agent-roundtable.md'
       ].includes(path), `unexpected published documentation file ${path}`);
     }
     assert.doesNotMatch(path, /^(?:AGENTS|CLAUDE)\.md$/);
@@ -139,7 +136,6 @@ try {
   assert.equal(installedCommand('fuli', fuli, ['--version']).trim(), manifest.version);
   assert.match(installedCommand('fuli', fuli, ['--help']), /fuli <command>/);
   assert.match(installedCommand('fuli', fuli, ['--help']), /update \[setup options\]/);
-  assert.match(installedCommand('fl', fl, ['roundtable', '--help']), /worker/);
 
   const { serveStatic } = await import(pathToFileURL(
     join(installedRoot, 'src', 'http', 'static-handler.js')

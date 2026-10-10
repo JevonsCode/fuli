@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -47,6 +47,26 @@ test('session Skill keeps a recoverable backup before replacement', () => {
   assert.equal(result.status, 'installed');
   assert.equal(readFileSync(join(result.backupPath, 'SKILL.md'), 'utf8'), 'old\n');
   assert.equal(readFileSync(join(agent.skillPath, 'SKILL.md'), 'utf8').includes('new'), true);
+});
+
+test('session Skill refreshes a locked directory in place after a backup copy', () => {
+  const { root, sourcePath, agent } = fixture();
+  mkdirSync(agent.skillPath, { recursive: true });
+  writeFileSync(join(agent.skillPath, 'SKILL.md'), 'old\n');
+  writeFileSync(join(agent.skillPath, 'stale.md'), 'stale\n');
+
+  const result = installSessionSkill(agent, {
+    sourcePath,
+    backupDir: join(root, 'backups'),
+    rename() {
+      throw Object.assign(new Error('watched'), { code: 'EPERM' });
+    }
+  });
+
+  assert.equal(result.status, 'installed');
+  assert.equal(readFileSync(join(result.backupPath, 'stale.md'), 'utf8'), 'stale\n');
+  assert.equal(readFileSync(join(agent.skillPath, 'SKILL.md'), 'utf8').includes('new'), true);
+  assert.equal(existsSync(join(agent.skillPath, 'stale.md')), false);
 });
 
 test('session Skill is left untouched when already current', () => {

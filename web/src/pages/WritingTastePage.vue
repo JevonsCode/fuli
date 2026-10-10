@@ -320,7 +320,7 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
   background: var(--color-surface-subtle);
 }
 
-.writing-taste-view > :not(.vue-dialog) {
+.writing-taste-view > * {
   width: min(980px, 100%);
   margin-inline: auto;
 }

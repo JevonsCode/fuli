@@ -236,9 +236,14 @@ test('scope modes validate before writes and an upgrade never silently widens an
     await assert.rejects(service.recruit({ templateId: 'jefa', management }));
   }
   assert.equal(writes.length, 0);
-  agents.set('employee.jefa', { agentId: 'employee.jefa', profile: { status: 'active', capabilities: ['fuli.employee:jefa'] }, assignments: [] });
+  // An identity with assignment history keeps its selection; ending the last one is a deliberate veto.
+  agents.set('employee.jefa', { agentId: 'employee.jefa', profile: { status: 'active', capabilities: ['fuli.employee:jefa'] },
+    assignments: [{ personalProjectId: 'project-a', status: 'ended' }] });
   assert.equal((await service.list()).templates[0].management.mode, 'selected');
   await assert.rejects(service.workspace({ templateId: 'jefa', personalProjectId: 'project-a' }), { code: 'assignment_required' });
+  // The fixed system identity nobody has assigned yet manages every project by default.
+  agents.set('employee.jefa', { agentId: 'employee.jefa', profile: { status: 'active', capabilities: ['fuli.employee:jefa'] }, assignments: [] });
+  assert.equal((await service.list()).templates[0].management.mode, 'all');
 });
 
 test('replacing assignments rejects stale selections before writing and supports clearing the current scope', async () => {

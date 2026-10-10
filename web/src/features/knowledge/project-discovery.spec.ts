@@ -44,7 +44,7 @@ describe('personal project search discovery', () => {
       count: 1,
       score: 8,
     })
-    expect(projectDiscoverySummary(discovery)).toContain('其他个人项目中有候选内容')
+    expect(projectDiscoverySummary(discovery)).toContain('其他项目里也有相关内容')
   })
 
   it('stops checking further project batches when the search is aborted', async () => {

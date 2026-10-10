@@ -6,6 +6,7 @@ import {
   ensureGraphRuntime,
   selectDockerEnvironment
 } from '../src/setup/graph-runtime.js';
+import { FULI_VERSION } from '../src/package-metadata.js';
 import { DEFAULT_CONVERSATION_LAUNCHERS } from '../src/system/runtime-settings.js';
 
 const PATHS = Object.freeze({
@@ -596,6 +597,55 @@ test('repeating LAN start restarts the console and rotates its in-memory access 
   assert.equal(spawnedInput.lanAccessToken, 'rotated-access-code');
   assert.equal(result.status, 'started');
   assert.equal(result.lanAccess.accessCode, 'rotated-access-code');
+});
+
+function runningConsoleCase(runningVersion) {
+  const stopped = [];
+  let spawned = 0;
+  const existing = { version: 4, pid: 2727, url: 'http://127.0.0.1:2727', port: 2727 };
+  const run = ensureGraphRuntime({
+    paths: PATHS,
+    personalSpaceName: '我',
+    personalOnly: true,
+    port: 2727,
+    lan: false,
+    noStart: false
+  }, dependencies({
+    readConfig: configuredGraph,
+    readState: () => existing,
+    async fetch(url) {
+      if (url.endsWith('/health')) return response({ status: 'ready' });
+      if (url.includes('/v1/project-agents/system-hr?')) return response({ agent_id: 'employee.bole' });
+      throw new Error(`Unexpected Provider request: ${url}`);
+    },
+    consoleVersion: async () => runningVersion,
+    stopProcess: (pid) => stopped.push(pid),
+    waitForExit: async () => true,
+    spawnWebRuntime() {
+      spawned += 1;
+      return { pid: 2728 };
+    },
+    webHealth: async (url, pid) => url === existing.url && [2727, 2728].includes(pid),
+    isProcessAlive: (pid) => pid === 2727 || pid === 2728,
+    writeState() {}
+  }));
+  return run.then((result) => ({ result, stopped, spawned }));
+}
+
+test('setup keeps a console that already runs this version', async () => {
+  const { result, stopped, spawned } = await runningConsoleCase(FULI_VERSION);
+  assert.equal(result.status, 'running');
+  assert.deepEqual(stopped, []);
+  assert.equal(spawned, 0);
+});
+
+test('setup replaces a console left running by an older install', async () => {
+  for (const runningVersion of ['0.10.0', null]) {
+    const { result, stopped, spawned } = await runningConsoleCase(runningVersion);
+    assert.equal(result.status, 'started');
+    assert.deepEqual(stopped, [2727]);
+    assert.equal(spawned, 1);
+  }
 });
 
 function dependencies(overrides = {}) {

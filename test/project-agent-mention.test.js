@@ -68,7 +68,8 @@ test('an older Provider cannot implicitly make the project manager the developer
   const { run } = fixture([jefa]);
   // The fixture behaves like an older Provider returning its sole employee.
   const app = { config: { personal: { spaceId: 'space' } }, personal: {
-    resolveProjectAgentContext: async () => ({ status: 'ready', agent: jefa })
+    resolveProjectAgentContext: async () => ({ status: 'ready', agent: jefa }),
+    staffDefaultProjectLead: async () => ({ status: 'unassigned', reason: 'team_lead_unavailable' })
   } };
   const result = await resolveTaskEntryAgent(app, { personalProjectId: 'sample' }, {
     agentInvocation: true, agentToolName: 'begin_task_context', sourceApplication: 'cursor', taskPrompt: '优化功能实现'
@@ -77,4 +78,34 @@ test('an older Provider cannot implicitly make the project manager the developer
   assert.equal(result.reason, 'specialist_required');
   assert.equal(result.agent, undefined);
   assert.equal((await run('@Jefa 整理看板')).agent.agentId, 'employee.jefa');
+});
+
+test('a project with nobody to own the task has HR staff its default lead', async () => {
+  const lead = role('lead-1', 'Milo Reed');
+  for (const resolved of [{ status: 'unassigned' }, { status: 'ready', agent: role('employee.jefa', 'Jefa') }]) {
+    const staffed = [];
+    const app = { config: { personal: { spaceId: 'space' } }, personal: {
+      resolveProjectAgentContext: async () => resolved,
+      staffDefaultProjectLead: async input => { staffed.push(input); return { status: 'ready', agent: lead }; }
+    } };
+    const result = await resolveTaskEntryAgent(app, { personalProjectId: 'sample' }, {
+      agentInvocation: true, agentToolName: 'begin_task_context', sourceApplication: 'cursor', taskPrompt: '修复登录'
+    });
+    assert.equal(result.agent.agentId, 'lead-1');
+    assert.deepEqual(staffed, [{ personal_space_id: 'space', personal_project_id: 'sample', source_application: 'cursor' }]);
+  }
+});
+
+test('an explicitly selected Agent is never replaced by a default lead', async () => {
+  let staffed = false;
+  const app = { config: { personal: { spaceId: 'space' } }, personal: {
+    resolveProjectAgentContext: async () => ({ status: 'agent_unavailable' }),
+    staffDefaultProjectLead: async () => { staffed = true; return null; }
+  } };
+  const result = await resolveTaskEntryAgent(app, { personalProjectId: 'sample' }, {
+    agentInvocation: true, agentToolName: 'begin_task_context', sourceApplication: 'cursor',
+    taskPrompt: 'continue', projectAgentId: 'engineer'
+  });
+  assert.equal(staffed, false);
+  assert.equal(result.agent, null);
 });

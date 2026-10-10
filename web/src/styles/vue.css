@@ -10,18 +10,6 @@
   background: var(--color-muted);
 }
 
-.provider-row i.disconnected {
-  background: var(--color-muted);
-}
-
-.provider-row i.error {
-  background: var(--color-danger);
-}
-
-.provider-row i.ready {
-  background: var(--color-success);
-}
-
 .view-loading {
   min-height: 240px;
   display: grid;
@@ -93,7 +81,7 @@
   min-width: 0;
 }
 
-.compact-relation-form .searchable-select {
+.compact-relation-form .ui-select {
   width: 100%;
   min-width: 0;
 }
@@ -124,38 +112,6 @@
   color: var(--color-muted);
   font-size: 12px;
   line-height: 1.5;
-}
-
-.project-delete-confirmation {
-  display: grid;
-  gap: 7px;
-  padding: 18px 0;
-  color: var(--color-danger);
-  font-size: 12px;
-}
-
-.project-delete-confirmation strong {
-  color: var(--color-ink);
-}
-
-.vue-dialog[open] {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  display: grid;
-  width: min(980px, calc(100vw - 64px));
-  max-height: calc(100vh - 64px);
-  margin: auto;
-  border-radius: var(--radius-dialog);
-  box-shadow: var(--shadow-dialog);
-}
-
-.knowledge-edit-dialog.vue-dialog {
-  width: min(1080px, calc(100vw - 64px));
-}
-
-.vue-dialog::backdrop {
-  background: var(--color-overlay);
 }
 
 @media (max-width: 1180px) {

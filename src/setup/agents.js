@@ -72,32 +72,7 @@ export function discoverAgents({
   ].map((agent) => adaptAgentForReviewSkill(agent, { homeDir, pathApi }));
 }
 
-export function buildAgentCommands(agent, context) {
-  const serverArgs = [
-    context.mcpServerPath,
-    '--runtime-config',
-    context.runtimeConfigPath,
-    '--source-application',
-    agent.id === 'claude-code' ? 'claude_code' : agent.id
-  ];
-  const mcpArgs = [context.nodePath, ...serverArgs];
-  if (agent.id === 'codex') {
-    return {
-      remove: [agent.command, ['mcp', 'remove', 'fuli']],
-      add: [agent.command, ['mcp', 'add', 'fuli', '--', ...mcpArgs]]
-    };
-  }
-  if (agent.id === 'claude-code') {
-    return {
-      remove: [agent.command, ['mcp', 'remove', '--scope', 'user', 'fuli']],
-      add: [agent.command, ['mcp', 'add', '--scope', 'user', 'fuli', '--', ...mcpArgs]]
-    };
-  }
-  throw new TypeError(`Unsupported agent: ${agent.id}`);
-}
-
 export function connectAgent(agent, context, {
-  runCommand = defaultRunCommand,
   connectCodexConfig = connectCodex,
   connectClaudeCodeConfig = connectClaudeCode,
   connectCursorConfig = connectCursor
@@ -107,14 +82,7 @@ export function connectAgent(agent, context, {
     return connectClaudeCodeConfig(agent, context);
   }
   if (agent.id === 'cursor') return connectCursorConfig(agent, context);
-
-  const commands = buildAgentCommands(agent, context);
-  runCommand(...commands.remove);
-  const result = runCommand(...commands.add);
-  if (result?.status !== 0) {
-    throw new Error(`Could not connect ${agent.label} to Fuli`);
-  }
-  return { id: agent.id, label: agent.label, status: 'connected' };
+  throw new TypeError(`Unsupported agent: ${agent.id}`);
 }
 
 export function disconnectAgent(agent, {
@@ -138,14 +106,6 @@ export function defaultCommandExists(command, platform = process.platform) {
     stdio: 'ignore'
   });
   return result.status === 0;
-}
-
-function defaultRunCommand(command, args) {
-  return spawnSync(command, args, {
-    encoding: 'utf8',
-    windowsHide: true,
-    stdio: 'pipe'
-  });
 }
 
 function nonEmpty(value) {

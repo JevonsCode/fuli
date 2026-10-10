@@ -29,8 +29,8 @@ describe('share scope', () => {
     const wrapper = await setup()
     await wrapper.get('.project-scope-all input').setValue(true)
     expect(wrapper.get('.employee-share-preview').text()).toContain('0 条公开任务')
-    expect(wrapper.get('.employee-share-empty').text()).toContain('不会改变任务的隐私设置')
-    expect(wrapper.get('footer .primary').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.employee-share-empty').text()).toContain('所选项目暂无公开任务')
+    expect(wrapper.get('footer .ui-button--primary').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).not.toContain('PRIVATE')
     expect(patchJson).not.toHaveBeenCalled()
     const before = getJson.mock.calls.length
@@ -45,10 +45,10 @@ describe('share scope', () => {
       ? { project: { id: url.includes('/project-a/') ? 'project-a' : 'project-b', name: 'Synthetic' }, items: [] } : original(url))
     const wrapper = await setup()
     await wrapper.get('.project-scope-all input').setValue(true)
-    await wrapper.get('footer .primary').trigger('click')
+    await wrapper.get('footer .ui-button--primary').trigger('click')
     await flushPromises()
     expect(patchJson).toHaveBeenCalledTimes(2)
-    expect(wrapper.get('[role="alert"]').text()).toContain('暂无可公开任务')
+    expect(wrapper.get('[role="alert"]').text()).toContain('暂无公开任务')
     expect(wrapper.find('[aria-label="分享链接"]').exists()).toBe(false)
     expect(patchJson.mock.calls.every(([url]) => String(url).endsWith('/sharing'))).toBe(true)
   })
@@ -67,9 +67,9 @@ describe('share scope', () => {
   it('does not enable sharing on opening; all projects produce one report link', async () => {
     const wrapper = await setup()
     expect(patchJson).not.toHaveBeenCalled()
-    expect(wrapper.get('footer .primary').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('footer .ui-button--primary').attributes('disabled')).toBeDefined()
     await wrapper.get('.project-scope-all input').setValue(true)
-    await wrapper.get('footer .primary').trigger('click'); await flushPromises()
+    await wrapper.get('footer .ui-button--primary').trigger('click'); await flushPromises()
     expect(patchJson).toHaveBeenCalledTimes(2)
     const link = (wrapper.get('[aria-label="分享链接"]').element as HTMLInputElement).value
     expect(reportProjects(new URL(link).hash).map(project => project.id)).toEqual(['project-a', 'project-b'])
@@ -81,16 +81,16 @@ describe('share scope', () => {
     let resolvePatch!: (value: unknown) => void
     patchJson.mockImplementationOnce(() => new Promise((resolve) => { resolvePatch = resolve }))
 
-    const pendingClick = wrapper.get('footer .primary').trigger('click')
+    const pendingClick = wrapper.get('footer .ui-button--primary').trigger('click')
     await nextTick()
-    expect(wrapper.find('footer .primary .growth-loading--inline').exists()).toBe(true)
-    expect(wrapper.get('footer .primary .growth-loading__label').text()).toBe('正在生成分享链接…')
+    expect(wrapper.find('footer .ui-button--primary .growth-loading--inline').exists()).toBe(true)
+    expect(wrapper.get('footer .ui-button--primary .growth-loading__label').text()).toBe('正在生成分享链接…')
 
     resolvePatch({ project: { id: 'project-a', publicShareEnabled: true, publicShareSlug: 'share-00000000-0000-0000-0000-000000000001' } })
     await pendingClick
     await flushPromises()
-    expect(wrapper.get('footer .primary').text()).toContain('生成分享链接')
-    expect(wrapper.find('footer .primary .growth-loading--inline').exists()).toBe(false)
+    expect(wrapper.get('footer .ui-button--primary').text()).toContain('生成分享链接')
+    expect(wrapper.find('footer .ui-button--primary .growth-loading--inline').exists()).toBe(false)
     expect(wrapper.find('[aria-label="分享链接"]').exists()).toBe(true)
   })
   it('shows the revoke phase only on the project being revoked', async () => {
@@ -110,8 +110,8 @@ describe('share scope', () => {
     expect(revokeButtons[0]!.find('.growth-loading--inline').exists()).toBe(true)
     expect(revokeButtons[0]!.get('.growth-loading__label').text()).toBe('正在关闭分享…')
     expect(wrapper.findAll('.growth-loading--inline')).toHaveLength(1)
-    expect(wrapper.get('footer .primary').text()).toContain('生成分享链接')
-    expect(wrapper.find('footer .primary .growth-loading--inline').exists()).toBe(false)
+    expect(wrapper.get('footer .ui-button--primary').text()).toContain('生成分享链接')
+    expect(wrapper.find('footer .ui-button--primary .growth-loading--inline').exists()).toBe(false)
 
     resolveRevoke({ project: { id: 'project-a', publicShareEnabled: false } })
     await pendingClick
@@ -123,7 +123,7 @@ describe('share scope', () => {
     const wrapper = await setup()
     await wrapper.get('input[value="project-a"]').setValue(true)
     await wrapper.get('.project-scope-bulk button').trigger('click')
-    await wrapper.get('footer .primary').trigger('click'); await flushPromises()
+    await wrapper.get('footer .ui-button--primary').trigger('click'); await flushPromises()
     expect(patchJson).toHaveBeenCalledExactlyOnceWith('/employee-workspaces/jefa/project-b/api/projects/project-b/sharing', { publicShareEnabled: true, acceptsPublicRequests: false })
     expect(reportProjects(new URL((wrapper.get('[aria-label="分享链接"]').element as HTMLInputElement).value).hash)).toHaveLength(1)
     await wrapper.get('input[value="project-a"]').setValue(true)
@@ -136,7 +136,7 @@ describe('share scope', () => {
     })
     const wrapper = await setup()
     await wrapper.get('.project-scope-all input').setValue(true)
-    await wrapper.get('footer .primary').trigger('click'); await flushPromises()
+    await wrapper.get('footer .ui-button--primary').trigger('click'); await flushPromises()
     expect(wrapper.find('[aria-label="分享链接"]').exists()).toBe(false)
     expect(wrapper.get('[role="alert"]').text()).toContain('部分项目')
     expect(wrapper.get('.employee-share-active').text()).toContain('Alpha')

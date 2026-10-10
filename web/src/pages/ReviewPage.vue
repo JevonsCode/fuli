@@ -3,7 +3,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { getJson, postJson } from '@/api/client'
-import SearchableSelect from '@/components/SearchableSelect.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { formatTime } from '@/features/knowledge/model'
 import { t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
@@ -367,7 +367,7 @@ onBeforeUnmount(() => {
     <section v-if="store.state?.capabilities?.reviewProposals && maintainableProjects.length" class="project-section">
       <div class="section-toolbar">
         <div><h3>{{ t('pages.review.publicTitle') }}</h3></div>
-        <SearchableSelect
+        <UiSelect
           v-model="reviewProjectId"
           :options="reviewProjectOptions"
           :label="t('pages.review.projectLabel')"

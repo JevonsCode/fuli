@@ -3,15 +3,16 @@ import { beforeEach, expect, it, vi } from 'vitest'
 const { postJson, putJson } = vi.hoisted(() => ({ postJson: vi.fn(), putJson: vi.fn() }))
 vi.mock('@/api/client', () => ({ postJson, putJson }))
 import AgentConversations from './AgentConversations.vue'
+import { UiSelectStub } from '@/test-support/UiSelectStub'
 
-const policy = { idle_days: 7, context_budget: 2000, enabled: true }
+const policy = { compact_after_kb: 64, context_budget: 2000, enabled: true }
 const conversation = { id: 'conversation-a', summary: 'Prepare a new page', status: 'completed', revision: 2,
-  last_activity: '2026-09-20T10:00:00Z', archived: true, raw_retained: true, policy,
+  last_activity: '2026-09-20T10:00:00Z', compacted_through: 12, raw_retained: true, policy,
   continuation_prompt: 'Continue @{agent} in project project-a using conversation conversation-a with a fresh task token.' }
 const scope = { personalSpaceId: 'space', agentId: 'agent', personalProjectId: 'project-a' }
 function render() {
   return mount(AgentConversations, { props: { personalSpaceId: 'space', agentId: 'agent',
-    projects: [{ id: 'project-a', name: 'Project A' }, { id: 'project-b', name: 'Project B' }] } })
+    projects: [{ id: 'project-a', name: 'Project A' }, { id: 'project-b', name: 'Project B' }] }, global: { stubs: { UiSelect: UiSelectStub } } })
 }
 async function open(wrapper: ReturnType<typeof render>, selector = 'details') {
   const details = wrapper.get(selector)
@@ -52,11 +53,11 @@ it('loads authoritative policy before editing and saves scoped settings', async 
   const wrapper = render()
   await open(wrapper)
   await open(wrapper, '[data-memory-settings]')
-  expect(wrapper.get<HTMLInputElement>('[name="idleDays"]').element.value).toBe('7')
-  await wrapper.get('[name="idleDays"]').setValue(14)
+  expect(wrapper.get<HTMLInputElement>('[name="compactAfterKb"]').element.value).toBe('64')
+  await wrapper.get('[name="compactAfterKb"]').setValue(128)
   await wrapper.get('form').trigger('submit')
   await flushPromises()
-  expect(putJson).toHaveBeenCalledWith('/api/agent-conversations/policy', { ...scope, idleDays: 14, contextBudget: 2000, enabled: true })
+  expect(putJson).toHaveBeenCalledWith('/api/agent-conversations/policy', { ...scope, compactAfterKb: 128, contextBudget: 2000, enabled: true })
 })
 it('discards stale message responses when switching projects', async () => {
   const wrapper = render()

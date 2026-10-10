@@ -3,510 +3,188 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#f5f5f7" />
-    <meta
-      name="description"
-      content="Fuli 复利，本地优先、跨 AI 工具的长期 Agent 协作层。在 Codex、Claude Code 与 Cursor 之间延续身份、项目职责与工作记忆。换 AI 工具，不用换搭档。"
-    />
-    <meta property="og:title" content="Fuli 复利 · 换 AI 工具，不用换搭档" />
-    <meta
-      property="og:description"
-      content="跨 AI 工具的长期 Agent 协作层。接入同一份可访问的数据，让身份、职责与工作记忆跟着同一位 Agent 延续。本地优先，由你决定。"
-    />
+    <meta name="theme-color" content="#f6f5f1" />
+    <title>Fuli 复利 · 让每一次协作都产生复利</title>
+    <meta name="description" content="Fuli 复利：本地优先的长期 AI Agent 协作层。每个任务都有负责的 Agent，记得你的品味与判断，在 Claude Code、Codex 和 Cursor 之间接续工作，Agent 之间还能直接对话。" />
+    <meta property="og:title" content="Fuli 复利 · 让每一次协作都产生复利" />
+    <meta property="og:description" content="每个任务都有负责的 Agent；换工具不换搭档；Agent 之间直接对话；偏好越用越懂你。本地运行，由你掌控。" />
     <meta property="og:type" content="website" />
-    <meta
-      property="og:image"
-      content="https://xn--8ovp9s.xn--m8txu.com/fuli/assets/fuli-logo.png"
-    />
-    <meta property="og:image:alt" content="Fuli 复利 Logo" />
+    <meta property="og:url" content="https://xn--8ovp9s.xn--m8txu.com/fuli/" />
+    <meta property="og:image" content="https://xn--8ovp9s.xn--m8txu.com/fuli/assets/fuli-logo.png" />
     <meta property="og:locale" content="zh_CN" />
     <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="Fuli 复利 · 换 AI 工具，不用换搭档" />
-    <meta name="twitter:description" content="本地优先、跨 AI 工具的长期 Agent 协作层。延续身份、项目职责与工作记忆。" />
-    <meta name="twitter:image" content="https://xn--8ovp9s.xn--m8txu.com/fuli/assets/fuli-logo.png" />
-    <meta name="twitter:image:alt" content="Fuli 复利 Logo" />
-    <meta property="og:url" content="https://xn--8ovp9s.xn--m8txu.com/fuli/" />
     <link rel="canonical" href="https://xn--8ovp9s.xn--m8txu.com/fuli/" />
     <link rel="icon" href="./assets/fuli-logo.png" type="image/png" />
-    <link
-      rel="preload"
-      href="./assets/unbounded-latin.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
+    <link rel="preload" href="./assets/unbounded-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <script>document.documentElement.classList.add('js')</script>
     <link rel="stylesheet" href="./style.css" />
-    <link rel="stylesheet" href="./scene.css" />
     <script type="module" src="./site.js"></script>
-    <title>Fuli 复利 · 换 AI 工具，不用换搭档</title>
   </head>
   <body>
-    <!--
-THESIS: An Agent's continuity is made from many precise parts. Scroll assembles, opens and
-rearranges those parts to explain the actual system rather than decorate a feature list.
-OWN-WORLD: Porcelain white, carbon black, machined silver and a restrained jade core;
-large Chinese grotesk, tiny engraved labels, physical planes and measured empty space.
-STORY: Assemble identity, open architecture, change client, select memory, confirm taste,
-coordinate people, then start locally with a concrete continuation prompt.
-FIRST VIEWPORT: Left-aligned statement and setup action; a large floating, exploded memory
-object occupies the right two-thirds. A thin navigation remains outside the object.
-FORM: User-pinned Apple-like spatial product narrative overrides direction seed 30e0b479,
-assigned index 4. Continuous native scroll scrubs transforms; no scroll hijacking.
-FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
--->
-    <a class="skip-link" href="#main">跳到正文</a>
-    <header class="site-header">
-      <a class="brand" href="#top" aria-label="Fuli 复利，回到顶部"
-        ><img src="./assets/fuli-logo.png" alt="" width="32" height="32" />
-        <span>Fuli<span class="brand-cn">复利</span></span></a
-      >
-      <nav aria-label="主导航">
-        <a href="#architecture">架构</a><a href="#roundtable">圆桌</a><a href="#memory">记忆</a
-        ><a href="#start">使用</a
-        ><a class="nav-cta" href="https://github.com/JevonsCode/fuli"
-          >GitHub<svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4 12 12 4M4 4h8v8" /></svg
-        ></a>
+    <a class="skip" href="#main">跳到正文</a>
+    <header class="nav">
+      <a class="brand" href="#top" aria-label="Fuli 复利 首页"><img src="./assets/fuli-logo.png" alt="" width="28" height="28" /><span>复利</span><b>FULI</b></a>
+      <nav aria-label="页面导航">
+        <a href="#agents">Agent</a>
+        <a href="#roundtable">圆桌</a>
+        <a href="#taste">偏好</a>
+        <a href="#start">安装</a>
+        <a class="nav-github" href="https://github.com/JevonsCode/fuli">GitHub</a>
       </nav>
     </header>
+
     <main id="main">
-      <div class="journey" id="top">
-        <div class="spatial-stage" aria-hidden="true">
-          <div class="stage-atmosphere"></div>
-          <div class="stage-word">FULI</div>
-          <div class="object-shadow"></div>
-          <div class="scene-perspective">
-            <div class="fragment-rig" id="fragment-rig"></div>
+      <section class="hero" id="top">
+        <svg class="curve" viewBox="0 0 1200 520" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0 500 C 380 490, 620 430, 820 300 S 1100 40, 1200 10" />
+        </svg>
+        <div class="hero-copy">
+          <p class="eyebrow">本地优先 · 开源 · Apache-2.0</p>
+          <h1>让每一次协作，<br />都产生<em>复利</em>。</h1>
+          <p class="lede">Fuli 给你的每个任务安排一位长期 Agent。它记得你的品味与判断，在 Claude Code、Codex 和 Cursor 之间接续工作，遇到问题还能直接去问别的 Agent。</p>
+          <div class="hero-actions">
+            <div class="terminal" data-copy="npm install --global fuli-context && fuli setup">
+              <code><span>$</span> npm install --global fuli-context</code>
+              <code><span>$</span> fuli setup</code>
+              <button type="button" class="copy" aria-label="复制安装命令">复制</button>
+            </div>
+            <a class="button" href="https://github.com/JevonsCode/fuli">在 GitHub 查看 →</a>
           </div>
-          <div class="diagram-overlay" data-overlay="architecture">
-            <svg class="mechanism-paths architecture-paths" aria-hidden="true">
-              <path />
-              <path />
-              <path />
-              <path />
-              <path class="layer-flow" />
-            </svg>
-            <div class="layer-note layer-note-a">
-              <span>接入</span><strong>Codex · Claude Code · Cursor</strong>
-            </div>
-            <div class="layer-note layer-note-b">
-              <span>编排</span><strong>Node · CLI / MCP / HTTP</strong>
-            </div>
-            <div class="layer-note layer-note-c">
-              <span>治理</span><strong>Python Provider</strong>
-            </div>
-            <div class="layer-note layer-note-d">
-              <span>存储</span><strong>Neo4j · 关系与历史</strong>
-            </div>
-          </div>
-          <div class="diagram-overlay client-overlay" data-overlay="continuity">
-            <svg class="mechanism-paths handoff-paths" aria-hidden="true">
-              <defs>
-                <marker
-                  id="handoff-arrow"
-                  markerWidth="6"
-                  markerHeight="6"
-                  refX="5"
-                  refY="3"
-                  orient="auto"
-                >
-                  <path d="M1 1 5 3 1 5" />
-                </marker>
-              </defs>
-              <path class="handoff-route" />
-              <path class="handoff-route" />
-              <path class="handoff-route" />
-            </svg>
-            <span class="client client-a">Codex</span
-            ><span class="client client-b">Claude Code</span
-            ><span class="client client-c">Cursor</span>
-            <div class="identity-label">
-              <span>同一个 Agent</span><strong>Lin</strong
-              ><small>同一份可访问的数据</small>
-            </div>
-          </div>
-          <div class="diagram-overlay memory-overlay" data-overlay="memory">
-            <div class="memory-label recent-label">
-              <strong>7<span>天</span></strong
-              ><span>近期上下文</span>
-            </div>
-            <div class="memory-label archive-label">
-              <strong>更早的记忆</strong><span>归档摘要 · 按需取回</span>
-            </div>
-            <div class="recall-label">本次相关的，才进入上下文。</div>
-          </div>
-          <div class="diagram-overlay taste-overlay" data-overlay="taste">
-            <span>品味</span><span>个性</span><span>判断偏好</span>
-            <div class="confirmation-seal">
-              <svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg>经你确认
-            </div>
-          </div>
-          <div class="diagram-overlay team-overlay" data-overlay="team">
-            <span class="team-label team-hr">HR<small>匹配专长</small></span
-            ><span class="team-label team-lead"
-              >小组长<small>分工与协调</small></span
-            ><span class="team-label team-doer"
-              >专业 Agent<small>执行与验证</small></span
-            ><span class="team-label team-manager"
-              >Jefa<small>进展与交付</small></span
-            >
-          </div>
-        </div>
-        <div class="chapters">
-          <section
-            class="chapter hero-chapter"
-            data-scene="scatter"
-            aria-labelledby="hero-title"
-          >
-            <div class="chapter-copy">
-              <h1 id="hero-title">换 AI 工具，<br />不用换搭档。</h1>
-              <p>
-                跨 AI 工具的长期 Agent 协作层。<br
-                  class="desktop-br"
-                />让身份、职责与工作记忆，随你接续。
-              </p>
-              <div class="hero-actions">
-                <a class="primary-action" href="#start"
-                  >开始使用<svg viewBox="0 0 20 20" aria-hidden="true">
-                    <path d="M4 10h12m-5-5 5 5-5 5" /></svg></a
-                >
-              </div>
-            </div>
-            <a class="scroll-cue" href="#identity" aria-label="查看 Agent 身份">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 4v16m-6-6 6 6 6-6" />
-              </svg>
-            </a>
-          </section>
-          <section
-            class="chapter"
-            id="identity"
-            data-scene="identity"
-            aria-labelledby="identity-title"
-          >
-            <div class="chapter-copy">
-              <h2 id="identity-title">
-                散落的经验。<br /><em>完整的伙伴。</em>
-              </h2>
-              <p>
-                名字、职责、合作记录与期待，<br />组成一个持续成长的 Agent。
-              </p>
-              <p class="detail-copy">
-                任务结束，留下的不只是一次回答。<br />下一次，你仍能找到刚刚的那位伙伴。
-              </p>
-              <div
-                class="static-diagram"
-                aria-label="Agent 由身份、职责、记忆和偏好组成"
-              >
-                <span>身份</span><span>职责</span><span>记忆</span
-                ><span>偏好</span><strong>同一个 Agent</strong>
-              </div>
-            </div>
-          </section>
-          <section
-            class="chapter architecture-chapter"
-            id="architecture"
-            data-scene="architecture"
-            aria-labelledby="architecture-title"
-          >
-            <div class="chapter-copy">
-              <h2 id="architecture-title">
-                展开架构。<br /><em>看见每一层。</em>
-              </h2>
-              <p>你熟悉的工具在上面。<br />持续的关系与记忆，在下面。</p>
-              <dl class="architecture-key">
-                <div>
-                  <dt>接入</dt>
-                  <dd>客户端通过适配器连接 Fuli。</dd>
-                </div>
-                <div>
-                  <dt>编排</dt>
-                  <dd>找到项目、Agent 与相关上下文。</dd>
-                </div>
-                <div>
-                  <dt>治理</dt>
-                  <dd>校验作用域、来源与确认状态。</dd>
-                </div>
-                <div>
-                  <dt>存储</dt>
-                  <dd>保留关系、工作记忆与时间线。</dd>
-                </div>
-              </dl>
-              <div class="static-diagram stacked">
-                <span>Codex / Claude Code / Cursor</span
-                ><span>Node · CLI / MCP / HTTP</span><span>Python Provider</span
-                ><span>Neo4j</span>
-              </div>
-            </div>
-          </section>
-          <section
-            class="chapter"
-            id="continuity"
-            data-scene="continuity"
-            aria-labelledby="continuity-title"
-          >
-            <div class="chapter-copy">
-              <h2 id="continuity-title">
-                换个工具。<br /><em>还是那位搭档。</em>
-              </h2>
-              <p>
-                在 Codex 开始设计，<br />到 Claude Code 继续开发，<br />再把验证交给合适的伙伴。
-              </p>
-              <p class="detail-copy">
-                接入同一份数据，选中同一个 Agent。<br />项目职责和自己的工作脉络随之恢复。
-              </p>
-              <div class="static-diagram">
-                <span>Codex</span><span>Claude Code</span><span>Cursor</span
-                ><strong>同一个 Agent · 同一份可访问的数据</strong>
-              </div>
-              <small class="example-note"
-                >Lin 为演示角色；接续能力由客户端适配器提供。</small
-              >
-            </div>
-          </section>
-          <section
-            class="chapter"
-            id="memory"
-            data-scene="memory"
-            aria-labelledby="memory-title"
-          >
-            <div class="chapter-copy">
-              <h2 id="memory-title">记得更多。<br /><em>带入更少。</em></h2>
-              <p>记忆持续积累。<br />每一次输入，都有边界。</p>
-              <p class="detail-copy">
-                默认保留 7
-                天不活跃窗口内的近期上下文。更早的记录归档为紧凑脉络，相关证据按需取回。
-              </p>
-              <p class="detail-copy">
-                窗口可以调整。保存历史和把历史送入模型，是两件分别控制的事。
-              </p>
-              <div class="static-diagram">
-                <span>7 天内 · 近期上下文</span><span>更早 · 归档摘要</span
-                ><strong>按相关性与预算取用</strong>
-              </div>
-            </div>
-          </section>
-          <section
-            class="chapter"
-            id="taste"
-            data-scene="taste"
-            aria-labelledby="taste-title"
-          >
-            <div class="chapter-copy">
-              <h2 id="taste-title">默契会生长。<br /><em>由你来定义。</em></h2>
-              <p>
-                喜欢怎样的表达，<br />习惯怎样的协作，<br />在取舍时，看重什么。
-              </p>
-              <p class="detail-copy">
-                品味、个性与判断偏好分别沉淀。<br />每条都有来源和范围，推断等待你的确认。
-              </p>
-              <div class="static-diagram">
-                <span>品味</span><span>个性</span><span>判断偏好</span
-                ><strong>来源 · 范围 · 人的确认</strong>
-              </div>
-            </div>
-          </section>
-          <section
-            class="chapter"
-            id="team"
-            data-scene="team"
-            aria-labelledby="team-title"
-          >
-            <div class="chapter-copy">
-              <h2 id="team-title">各有所长。<br /><em>一起向前。</em></h2>
-              <p>
-                HR 找到合适的人。<br />小组长协调分工，专业 Agent 接力。<br />做过什么、和谁合作，都有迹可循。
-              </p>
-              <p class="detail-copy">
-                按任务复杂度选择可用模型，交付后验证。连续两次验证失败，升级能力再尝试。
-              </p>
-              <p class="detail-copy">执行仍需可用且获授权的客户端与执行器。</p>
-              <div class="static-diagram">
-                <span>HR · 匹配</span><span>组长 · 协调</span
-                ><span>Agent · 执行与验证</span
-                ><strong>Jefa · 跟进进展与交付</strong>
-              </div>
-            </div>
-          </section>
-        </div>
-        <nav class="chapter-nav" aria-label="故事章节" hidden>
-          <a href="#top" aria-label="开始" data-chapter="0"><i></i></a
-          ><a href="#identity" aria-label="身份" data-chapter="1"><i></i></a
-          ><a href="#architecture" aria-label="架构" data-chapter="2"><i></i></a
-          ><a href="#continuity" aria-label="接续" data-chapter="3"><i></i></a
-          ><a href="#memory" aria-label="记忆" data-chapter="4"><i></i></a
-          ><a href="#taste" aria-label="默契" data-chapter="5"><i></i></a
-          ><a href="#team" aria-label="协作" data-chapter="6"><i></i></a>
-        </nav>
-      </div>
-      <section class="roundtable-product" id="roundtable" aria-labelledby="roundtable-title">
-        <div class="roundtable-heading"><p class="product-eyebrow">AGENT ROUNDTABLE <span>Beta</span></p><h2 id="roundtable-title">同一个目标。<br /><em>不同的伙伴，一起完成。</em></h2><p>从长期身份和知识出发，围绕目标讨论、分工、实施与审查。<br />每位参与者独立运行，结果带着来源回来，由你验收。</p></div>
-        <div class="roundtable-product-map" aria-label="Fuli 产品能力版图">
-          <article><span class="product-state">已提供</span><small>01 · IDENTITY &amp; KNOWLEDGE</small><h3>身份与知识</h3><p>Agent 职责、项目授权、相关记忆、来源与时间历史。跨工具延续同一位搭档。</p><strong>Fuli Provider · 本地数据</strong></article>
-          <article><span class="product-state beta">Beta</span><small>02 · COORDINATION</small><h3>圆桌协作</h3><p>共同目标、公开讨论、明确回合、任务依赖、保留分歧。暂停、恢复和停止都有记录。</p><strong>讨论 → 分工 → 实施 → 审查 → 验收</strong></article>
-          <article><span class="product-state beta">Beta · 接入范围分别验证</span><small>03 · ADAPTERS</small><h3>开放接入</h3><p>Codex / Claude Code CLI、MCP 与 xAI API。Pi + 本机 Ollama 为 experimental（试验接入）；A2A 以独立适配器试验已支持的协议能力。</p><strong>可调用接口 · 有效凭据 · 执行授权</strong></article>
-          <article><span class="product-state beta">Beta · 多电脑待验收</span><small>04 · DELIVERY</small><h3>跨电脑交付</h3><p>一台协调端，参与端主动领取自己的回合。席位邀请可以撤销，产物与真实回执持续保留；目前完整真实流程在一台电脑上由 Codex 完成。</p><strong>公开消息 · 实际来源 · 人工验收</strong></article>
-        </div>
-        <div class="roundtable-flow" aria-label="协作流程"><span>目标</span><i aria-hidden="true">→</i><span>讨论</span><i aria-hidden="true">→</i><span>分工与实施</span><i aria-hidden="true">→</i><span>独立审查</span><i aria-hidden="true">→</i><strong>你来验收</strong></div>
-        <div class="roundtable-boundaries"><div><h3>已有 Bot，也需要明确接入。</h3><p>Grok API 席位由工作端调用 xAI，和你已有的 Grok Bot 是不同入口。Grok Team Bot 可以在<a href="https://docs.x.ai/grok-bot/team-bots">官方自定义 HTTPS MCP 设置</a>中配置圆桌地址与席位凭据，再主动参与；真实 Bot 接入尚未验收，圆桌不会通过 API 唤醒现有聊天。</p></div><div><h3>能配置，不等于已执行。</h3><p>本机 Codex 已完成讨论、实施、独立审查与汇总，人工验收仍由你进行。Pi + Ollama 的 32K 模型有真实输出，但混合圆桌尚未完成实施、审查和汇总。选定平台和加入席位不算执行；实际来源、模型、会话和用量来自回执，缺失时如实标记。</p></div><div><span class="product-state planned">待支持</span><h3>清楚说明边界。</h3><p>无开放接口的封闭平台、云端常驻、完整 A2A 规范兼容与跨组织协作，仍需独立接入和验收。加入圆桌不会共享其他人的私有记忆，也不会扩大执行权限。</p></div></div>
-        <a class="roundtable-doc-link" href="https://github.com/JevonsCode/fuli/blob/v0.9.0-beta.2/docs/roundtable-beta-testing.md">查看 Beta 使用方式 <span aria-hidden="true">↗</span></a>
-        <a class="roundtable-doc-link" href="https://github.com/JevonsCode/fuli/blob/v0.9.0-beta.2/docs/roundtable-beta-validation.md">查看真实验收记录 <span aria-hidden="true">↗</span></a>
-      </section>
-      <section
-        class="manifesto"
-        id="principles"
-        aria-labelledby="principles-title"
-      >
-        <p class="manifesto-line">
-          工具会更新。<br />模型会进化。<br /><span
-            >你们的默契，<br />值得留下。</span
-          >
-        </p>
-        <h2 id="principles-title" class="sr-only">我们的理念</h2>
-        <div class="principle-notes">
-          <p><strong>本地优先。</strong>个人版连接你自己的数据。</p>
-          <p><strong>按需取用。</strong>让相关上下文进入当下的任务。</p>
-          <p><strong>你来决定。</strong>确认、修订与协作边界始终由人掌握。</p>
         </div>
       </section>
-      <section class="getting-started" id="start" aria-labelledby="start-title">
-        <div class="start-heading">
-          <h2 id="start-title">从下一次对话，<br />开始积累。</h2>
-          <p>在本机建立你的协作空间，<br />再接入你正在使用的 Agent 客户端。</p>
+
+      <section class="band" id="agents" aria-labelledby="agents-title">
+        <div class="band-text">
+          <p class="eyebrow">每个任务</p>
+          <h2 id="agents-title">都有一位负责的 Agent</h2>
+          <p>在项目目录里直接提需求。Fuli 登记项目、请 HR 安排一位负责人，之后这个项目的任务都由它接手。做完时，回复最后一行写清楚谁负责、谁协助。</p>
         </div>
-        <div class="setup-layout">
-          <div class="install-terminal">
-            <div class="terminal-header">
-              <span>Terminal</span
-              ><button id="copy-install" type="button" hidden>
-                复制命令<svg viewBox="0 0 20 20" aria-hidden="true">
-                  <rect x="7" y="7" width="10" height="10" rx="2" />
-                  <path
-                    d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"
-                  />
-                </svg>
-              </button>
-            </div>
-            <pre><code id="install-command">npm install -g fuli-context
-fuli setup
-fuli open</code></pre>
-            <div class="terminal-foot">
-              <span>Node.js 24.12+</span
-              ><span id="copy-status" role="status" aria-live="polite"></span>
+        <figure class="window" aria-label="示例：Claude Code 中一次任务的结尾">
+          <div class="window-bar"><i></i><i></i><i></i><span>Claude Code · 示例</span></div>
+          <div class="window-body">
+            <p class="msg user">修一下登录页记住密码失效的问题</p>
+            <p class="msg agent">已修复：<code>session.ts</code> 在刷新令牌时覆盖了 remember 标记。补了 2 个测试，均通过。</p>
+            <p class="receipt">FULI Agent：负责人 <a>Milo Reed</a> · 协作 <a>Jefa</a>、<a>Nova Lane</a></p>
+          </div>
+          <figcaption>人名与任务均为示例</figcaption>
+        </figure>
+      </section>
+
+      <section class="band band-alt" aria-labelledby="handoff-title">
+        <figure class="handoff" aria-label="示例：从 Claude Code 换到 Codex 继续工作">
+          <div class="window small">
+            <div class="window-bar"><i></i><i></i><i></i><span>Claude Code</span></div>
+            <div class="window-body"><p class="msg agent">登录重构完成一半：接口已拆好，前端还没接。</p></div>
+          </div>
+          <span class="arrow" aria-hidden="true">→</span>
+          <div class="window small">
+            <div class="window-bar"><i></i><i></i><i></i><span>Codex</span></div>
+            <div class="window-body">
+              <p class="msg user">@Milo Reed 继续昨天的登录重构</p>
+              <p class="msg agent">接着做：接口已拆好，剩前端接入和回归测试。</p>
             </div>
           </div>
-          <ol class="setup-steps">
-            <li>
-              <span>1</span>
-              <div>
-                <h3>建立本地空间</h3>
-                <p>安装并运行设置向导，按向导连接 Provider 与数据库。默认模式需要 Docker Compose v2。</p>
-              </div>
-            </li>
-            <li>
-              <span>2</span>
-              <div>
-                <h3>接入常用客户端</h3>
-                <p>
-                  为 Codex、Claude Code 或 Cursor 配置 Fuli
-                  集成，连接同一份可访问的数据。
-                </p>
-              </div>
-            </li>
-            <li>
-              <span>3</span>
-              <div>
-                <h3>找到同一位 Agent</h3>
-                <p>
-                  从个人页复制接续指令，在另一客户端继续。重名时使用稳定 Agent
-                  ID。
-                </p>
-              </div>
-            </li>
-          </ol>
-        </div>
-        <div class="continuation-example">
-          <span>接续示例</span>
-          <p>
-            “请让
-            <strong>Lin</strong> 继续这个项目，<br />先恢复上一次的工作脉络。”
-          </p>
-          <small>示例名字；实际使用个人页提供的 Agent 与会话接续指令。</small>
-        </div>
-        <div class="start-links">
-          <a
-            class="primary-action"
-            href="https://github.com/JevonsCode/fuli/blob/main/README.zh-CN.md"
-            >阅读安装指南<svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M5 15 15 5M5 5h10v10" /></svg></a
-          ><a href="https://github.com/JevonsCode/fuli"
-            >查看开源代码<svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M5 15 15 5M5 5h10v10" /></svg
-          ></a>
+        </figure>
+        <div class="band-text">
+          <p class="eyebrow">跨工具接续</p>
+          <h2 id="handoff-title">换 AI 工具，不用换搭档</h2>
+          <p>同一位 Agent 的职责、工作记忆和最近的对话都留在 Fuli。在另一个客户端 @ 它，它从上次停下的地方继续，不用你重新交代。</p>
         </div>
       </section>
-      <section class="questions" aria-labelledby="questions-title">
-        <h2 id="questions-title">常见问题</h2>
-        <div>
-          <details>
-            <summary>怎样验证它有用，或参与改进？</summary>
-            <p>
-              按<a href="https://github.com/JevonsCode/fuli/blob/main/acceptance/cross-client-handoff.md">跨客户端验收步骤</a>
-              记录记忆恢复、项目隔离和纠正结果。卡住时可提交安装或验收表单；
-              <a href="https://github.com/JevonsCode/fuli/blob/main/CONTRIBUTING.md">贡献指南</a>
-              也列出了文档、测试和首次使用体验的小改进入口。
-            </p>
-          </details>
-          <details>
-            <summary>“长期 Agent”会一直在后台运行吗？</summary>
-            <p>
-              长期保留的是 Agent 的身份、职责与工作脉络。Fuli 在任务需要时组织上下文、协调分工，
-              具体执行依赖可用且获授权的 AI 客户端或执行器；保存一位 Agent 不等于启动后台任务。
-            </p>
-          </details>
-          <details>
-            <summary>任何客户端都能直接 @Agent 吗？</summary>
-            <p>
-              需要先接入 Fuli，并连接同一份可访问的数据。使用 Agent
-              的名字或个人页接续指令；是否有原生 @
-              菜单、能采集多少对话，由具体客户端与适配器决定。
-            </p>
-          </details>
-          <details>
-            <summary>7 天之后，记忆会被删除吗？</summary>
-            <p>
-              7
-              天是默认的不活跃归档窗口，可以配置。更早的工作脉络使用紧凑归档恢复，相关原始记录可按需读取；归档和删除是不同的操作。
-            </p>
-          </details>
-          <details>
-            <summary>它会把每一句话都当成我的偏好吗？</summary>
-            <p>
-              不会。私有对话记录与可信的复用知识分开管理。Agent
-              推断出的偏好保留来源、适用范围与待确认状态，由你决定是否采纳。
-            </p>
-          </details>
+
+      <section class="band" id="roundtable" aria-labelledby="roundtable-title">
+        <div class="band-text">
+          <p class="eyebrow">圆桌</p>
+          <h2 id="roundtable-title">Agent 之间直接对话</h2>
+          <p>Codex 里的 Agent 可以去问某一段 Claude Code 对话里的 Agent，就像负责人问同事、或者调用子 Agent。Fuli 在对方的客户端里唤醒它、带回回答。不用建群，不用你转述。</p>
+          <p class="note">每一段往来都会留痕：谁问了谁、通过哪个客户端、原话是什么。</p>
         </div>
+        <figure class="thread" aria-label="示例：两个 Agent 之间的对话记录">
+          <div class="thread-msg">
+            <span class="face">M</span>
+            <div><p class="by"><b>Milo Reed</b><em>Claude Code</em> 发给 Nova Lane</p><p class="bubble">登录重构的接口改动评审过了吗？有没有要我改的？</p></div>
+          </div>
+          <div class="thread-msg reply">
+            <span class="face">N</span>
+            <div><p class="by"><b>Nova Lane</b><em>Codex</em> 唤醒原会话回答</p><p class="bubble">评审过了。只有一处：刷新令牌失败时要清掉 remember 标记，其余可以合并。</p></div>
+          </div>
+          <figcaption>人名与内容均为示例</figcaption>
+        </figure>
+      </section>
+
+      <section class="band band-alt" id="taste" aria-labelledby="taste-title">
+        <figure class="layers" aria-label="偏好分为个人全局和项目两层">
+          <div class="layer">
+            <h3>个人全局</h3>
+            <p><span class="chip taste">品味</span>界面少用渐变，不要卡片套卡片</p>
+            <p><span class="chip judgment">判断</span>方向性歧义先讨论再动手</p>
+            <p><span class="chip personality">个性</span>习惯直接沟通，希望 Agent 主动推进</p>
+          </div>
+          <div class="layer project">
+            <h3>项目：shop-web</h3>
+            <p><span class="chip judgment">判断</span>未经确认不要推送到 main</p>
+            <p><span class="chip taste">品味</span>文案短句，不用感叹号</p>
+          </div>
+        </figure>
+        <div class="band-text">
+          <p class="eyebrow">偏好</p>
+          <h2 id="taste-title">越用越懂你的品味与判断</h2>
+          <p>你的品味、个性和取舍原则会沉淀下来，分成全局和项目两层：全局的在每个项目生效，项目的只管这个项目。Agent 推断出的偏好要你确认才算数。</p>
+        </div>
+      </section>
+
+      <section class="band" aria-labelledby="team-title">
+        <div class="band-text">
+          <p class="eyebrow">团队</p>
+          <h2 id="team-title">固定的项目经理与 HR</h2>
+          <p>每个空间都自带两位：项目经理 Jefa 拆解目标、维护看板、为任务找人；HR Bole 招人并留下招募记录。负责人和成员组成项目小组，各自保留自己的记忆。</p>
+        </div>
+        <div class="team">
+          <div class="member"><span>🧭</span><b>Jefa</b><small>项目经理</small></div>
+          <div class="member"><span>🔎</span><b>Bole</b><small>HR</small></div>
+          <div class="member lead"><span>M</span><b>Milo Reed</b><small>项目负责人 · 示例</small></div>
+          <div class="member"><span>N</span><b>Nova Lane</b><small>评审 · 示例</small></div>
+        </div>
+      </section>
+
+      <section class="band band-alt" aria-labelledby="memory-title">
+        <figure class="memory" aria-label="对话记忆：较早的消息折叠成摘要，最近的保留原文">
+          <div class="memory-digest"><b>摘要</b><span>10/08 完成 · 接口拆分</span><span>10/09 完成 · 补测试</span><span>更早的请求 · 6 条</span></div>
+          <div class="memory-recent"><b>最近原文</b><span></span><span></span><span></span><span></span></div>
+        </figure>
+        <div class="band-text">
+          <p class="eyebrow">记忆</p>
+          <h2 id="memory-title">按量压缩，不按天数遗忘</h2>
+          <p>每次任务的结果都会进摘要。对话攒到一定量，较早的消息折叠成要点，最近的保留原文。原始记录始终在本机，需要时再取回。</p>
+        </div>
+      </section>
+
+      <section class="principles" aria-label="原则">
+        <div><h3>本地优先</h3><p>知识图谱和对话记录都在你的电脑上，个人偏好不会进入任何共享层。</p></div>
+        <div><h3>人说了算</h3><p>Agent 可以提议、提醒、归纳；确认、修改和删除始终由你决定。</p></div>
+        <div><h3>按需取回</h3><p>不会把全部历史塞给模型，只取与当前任务有关、仍然有效的内容。</p></div>
+      </section>
+
+      <section class="start" id="start" aria-labelledby="start-title">
+        <h2 id="start-title">三条命令开始</h2>
+        <p>需要 Node.js 24.12+ 与 Docker（macOS / Linux 也可用原生模式）。设置向导会先展示计划，再修改环境，并为检测到的 Claude Code、Codex、Cursor 接入 Fuli。</p>
+        <ol>
+          <li><code>npm install --global fuli-context</code></li>
+          <li><code>fuli setup</code></li>
+          <li><code>fuli open</code><span>打开 http://127.0.0.1:2727</span></li>
+        </ol>
+        <div class="oneliner">
+          <p>或者一行安装（会先检查 Node.js 版本）：</p>
+          <code>curl -fsSL https://xn--8ovp9s.xn--m8txu.com/fuli/install.sh | sh</code>
+          <code>irm https://xn--8ovp9s.xn--m8txu.com/fuli/install.ps1 | iex<span>Windows PowerShell</span></code>
+        </div>
+        <p class="start-links"><a class="button" href="https://github.com/JevonsCode/fuli/blob/main/README.zh-CN.md">阅读文档</a><a href="https://www.npmjs.com/package/fuli-context">npm</a><a href="https://github.com/JevonsCode/fuli/releases">更新记录</a></p>
       </section>
     </main>
-    <footer>
-      <a class="footer-brand" href="#top" aria-label="Fuli 复利，回到顶部"
-        ><img
-          src="./assets/fuli-logo.png"
-          alt=""
-          width="36"
-          height="36"
-        />Fuli<span>复利</span></a
-      >
-      <p>让每一次合作，都有复利。</p>
-      <div>
-        <a href="https://github.com/JevonsCode/fuli/releases/tag/v0.8.3"
-          >v0.8.3</a
-        ><a href="https://github.com/JevonsCode/fuli">GitHub</a
-        ><button id="motion-toggle" type="button" aria-pressed="false" hidden>
-          减少动效
-        </button>
-      </div>
+
+    <footer class="footer">
+      <span>© Fuli 复利 · Apache-2.0</span>
+      <span><a href="https://github.com/JevonsCode/fuli">GitHub</a><a href="./v0/">旧版网站</a></span>
     </footer>
   </body>
 </html>

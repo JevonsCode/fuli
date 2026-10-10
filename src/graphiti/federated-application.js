@@ -1,6 +1,7 @@
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { createEmployeeService } from '../employees/service.js';
-import { createFuliRoundtableService } from '../roundtables/application.js';
+import { createAgentRoundtable } from '../agent-roundtable/service.js';
+import { createRoundtableStore } from '../agent-roundtable/store.js';
 
 import { GraphitiProviderClient } from './provider-client.js';
 import {
@@ -79,6 +80,7 @@ import {
 } from './related-project-suggestions.js';
 import { buildUserTasteSkill } from './user-taste-skill.js';
 import { taskEntryPreferences } from './task-entry-preferences.js';
+import { TASK_ENTRY_TOOLS, registerRepositoryProject } from './repository-project-registration.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
 import {
   groupSubscriptions,
@@ -117,7 +119,8 @@ export function openFederatedGraphApplication({
       fetchImpl
     });
     app.employees = createEmployeeService({ app, runtimeConfigPath });
-    app.roundtables = createFuliRoundtableService({ app, dataDir: dirname(runtimeConfigPath) });
+    app.roundtable = createAgentRoundtable({ app,
+      openStore: () => createRoundtableStore(join(dirname(runtimeConfigPath), 'agent-roundtable.sqlite')) });
   }
   return app;
 }
@@ -258,7 +261,12 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     agentInvocation = false,
     agentToolName = 'get_collaboration_preferences'
   } = {}) {
-    const projectResolution = await this.#resolvePreferenceProject({ personalProjectId, projectPath });
+    let projectResolution = await this.#resolvePreferenceProject({ personalProjectId, projectPath });
+    if (projectResolution.repositoryProjectId && agentInvocation && TASK_ENTRY_TOOLS.has(agentToolName)
+      && this.getCapturePolicy().enabled) {
+      // Every task gets a FULI Agent, so a task in an unregistered repository registers it.
+      projectResolution = await registerRepositoryProject(this, projectResolution);
+    }
     return taskEntryPreferences(this, projectResolution, {
       personalProjectId, projectAgentId, projectPath, taskPrompt, sourceApplication,
       sourceSessionId, sessionId, turnId, workKind, requiredCapabilities,
@@ -1152,7 +1160,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
-  close() { this.roundtables?.close(); return this.employees?.close(); }
+  close() { this.roundtable?.close(); return this.employees?.close(); }
 
   async #recordAgentViews(items, toolName) {
     const unique = new Map(items.map((item) => [

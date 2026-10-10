@@ -151,7 +151,7 @@ test('candidate Hook subprocesses persist visible history and recover only the s
   assert.equal(reviewer.project_agent_context.memory.revision, 0);
   assert.doesNotMatch(JSON.stringify(reviewer), /VISIBLE_TRANSCRIPT_SYNTHETIC_MARKER|SYNTHETIC_DURABLE_MEMORY_MARKER/);
   // Disable this Agent's capture through the real Provider, then exercise another Hook pair.
-  await request('/v1/agent-conversations/policy', { ...scope, policy: { idle_days: 7, context_budget: 2000, enabled: false } }, 'PUT');
+  await request('/v1/agent-conversations/policy', { ...scope, policy: { compact_after_kb: 64, context_budget: 2000, enabled: false } }, 'PUT');
   const beforeDisabled = await query({ mode: 'list' });
   const disabledSession = 'synthetic-disabled';
   const disabledPath = join(directory, 'disabled.jsonl');

@@ -2,7 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import { getJson, patchJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import { useModalDialog } from '@/composables/useModalDialog'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiDialog from '@/components/ui/UiDialog.vue'
 import { t } from '@/i18n'
 import ProjectScopePicker from './ProjectScopePicker.vue'
 import { employeeErrorMessage } from './catalog'
@@ -21,7 +22,6 @@ const error = ref('')
 const link = ref('')
 const copied = ref(false)
 let version = 0
-const { dialogRef, initialFocusRef, onCancel, onKeydown } = useModalDialog(() => props.open, close)
 const enabled = computed(() => props.projects.filter(project => states.value[project.id]?.publicShareEnabled))
 const selectedCount = computed(() => selected.value.every(id => counts.value[id] !== undefined)
   ? selected.value.reduce((total, id) => total + counts.value[id]!, 0) : null)
@@ -101,43 +101,44 @@ function close() { if (!busy.value) emit('close') }
 </script>
 
 <template>
-  <dialog ref="dialogRef" class="employee-dialog employee-share-dialog" aria-labelledby="employee-share-title" @cancel="onCancel" @keydown="onKeydown">
-    <div class="employee-dialog-shell">
-      <header><h2 id="employee-share-title">{{ t('employees.share.title') }}</h2><button ref="initialFocusRef" type="button" :disabled="busy" :aria-label="t('employees.close')" @click="close">×</button></header>
-      <div class="employee-dialog-body">
-        <p>{{ t('employees.share.scopeHint') }}</p>
-        <p>{{ t('employees.share.disclosure') }}</p>
-        <GrowthLoading v-if="loading" variant="compact" :label="t('employees.loadingShare')" />
-        <fieldset :disabled="busy || loading"><ProjectScopePicker v-model="selected" :projects="projects" :disabled="busy || loading" inline :label="t('employees.share.projects')" :hint="t('employees.share.selectionHint')" /></fieldset>
-        <p v-if="selected.length && !loading" class="employee-share-preview" role="status">{{ selectedCount === null ? t('employees.shareContent.verifyContent') : t('employees.shareContent.publicCount', { count: selectedCount }) }}</p>
-        <p v-if="selected.length && !loading && selectedCount === 0" class="employee-share-empty">{{ t('employees.shareContent.emptySelection') }}</p>
-        <button type="button" :disabled="busy || loading" @click="load(true)">{{ t('common.actions.refresh') }}</button>
-        <div v-if="error" class="employee-dialog-error" role="alert"><p>{{ error }}</p><button v-if="!busy" type="button" @click="load(true)">{{ t('employees.retry') }}</button></div>
-        <div v-if="link" class="employee-share-result">
-          <label>{{ t('employees.share.link') }}<input :value="link" readonly :aria-label="t('employees.share.link')" @focus="($event.target as HTMLInputElement).select()" /></label>
-          <div><button type="button" @click="copy">{{ t(copied ? 'employees.share.copied' : 'employees.share.copy') }}</button><a :href="link" target="_blank" rel="noreferrer">{{ t('employees.share.preview') }}</a></div>
-        </div>
-        <p v-if="isLocal" class="employee-share-local">{{ t('employees.share.local') }}</p>
-        <section v-if="enabled.length" class="employee-share-active"><h3>{{ t('employees.share.active') }}</h3><div v-for="project in enabled" :key="project.id"><span>{{ project.name }}</span><button type="button" :disabled="busy" @click="revoke(project.id)"><GrowthLoading v-if="busyAction === 'revoke' && busyProjectId === project.id" variant="inline" :label="t('employees.share.revoking')" /><template v-else>{{ t('employees.share.revoke') }}</template></button></div></section>
-      </div>
-      <footer><span>{{ t('employees.scope.count', { selected: selected.length, total: projects.length }) }}</span><button class="primary" type="button" :disabled="!selected.length || busy || loading || selectedCount === 0" @click="generate"><GrowthLoading v-if="busyAction === 'generate'" variant="inline" :label="t('employees.share.generating')" /><template v-else>{{ t('employees.share.generate') }}</template></button></footer>
+  <UiDialog :open="open" class="employee-dialog employee-share-dialog" :title="t('employees.share.title')" :description="t('employees.share.disclosure')" :busy="busy" @close="close">
+    <GrowthLoading v-if="loading" variant="compact" :label="t('employees.loadingShare')" />
+    <fieldset :disabled="busy || loading"><ProjectScopePicker v-model="selected" :projects="projects" :disabled="busy || loading" inline :label="t('employees.share.projects')" :hint="t('employees.share.scopeHint')" /></fieldset>
+    <p v-if="selected.length && !loading" class="employee-share-preview" role="status">
+      {{ selectedCount === null ? t('employees.shareContent.verifyContent') : t('employees.shareContent.publicCount', { count: selectedCount }) }}
+      <UiButton size="sm" variant="ghost" :disabled="busy || loading" @click="load(true)">{{ t('common.actions.refresh') }}</UiButton>
+    </p>
+    <p v-if="selected.length && !loading && selectedCount === 0" class="employee-share-empty">{{ t('employees.shareContent.emptySelection') }}</p>
+    <div v-if="error" class="ui-dialog__error employee-dialog-error" role="alert"><p>{{ error }}</p><UiButton v-if="!busy" size="sm" @click="load(true)">{{ t('employees.retry') }}</UiButton></div>
+    <div v-if="link" class="employee-share-result">
+      <label class="ui-field">{{ t('employees.share.link') }}<input :value="link" readonly :aria-label="t('employees.share.link')" @focus="($event.target as HTMLInputElement).select()" /></label>
+      <div><UiButton size="sm" @click="copy">{{ t(copied ? 'employees.share.copied' : 'employees.share.copy') }}</UiButton><a :href="link" target="_blank" rel="noreferrer">{{ t('employees.share.preview') }}</a></div>
     </div>
-  </dialog>
+    <p v-if="isLocal" class="ui-meta">{{ t('employees.share.local') }}</p>
+    <section v-if="enabled.length" class="employee-share-active">
+      <h3>{{ t('employees.share.active') }}</h3>
+      <div v-for="project in enabled" :key="project.id">
+        <span>{{ project.name }}</span>
+        <UiButton size="sm" variant="ghost" :disabled="busy" :busy="busyAction === 'revoke' && busyProjectId === project.id" :busy-label="t('employees.share.revoking')" @click="revoke(project.id)">{{ t('employees.share.revoke') }}</UiButton>
+      </div>
+    </section>
+    <template #footer>
+      <span class="employee-dialog-count">{{ t('employees.scope.count', { selected: selected.length, total: projects.length }) }}</span>
+      <UiButton variant="primary" :disabled="!selected.length || busy || loading || selectedCount === 0" :busy="busyAction === 'generate'" :busy-label="t('employees.share.generating')" @click="generate">{{ t('employees.share.generate') }}</UiButton>
+    </template>
+  </UiDialog>
 </template>
 
-<style src="./employee-dialog.css"></style>
 <style scoped>
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .employee-share-result { display: grid; gap: 12px; }
-.employee-share-result label { display: grid; gap: 8px; font-size: 13px; }
 .employee-share-result > div { display: flex; gap: 16px; align-items: center; }
 .employee-share-result a { color: var(--color-ink); font-size: 13px; }
-.employee-share-local { color: var(--color-warning); }
-.employee-share-preview { font-weight: 600; color: var(--color-ink); }
+.employee-share-preview { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 600; color: var(--color-ink); }
 .employee-share-empty { color: var(--color-warning); line-height: 1.6; }
 .employee-share-active { border-top: 1px solid var(--color-border); padding-top: 16px; }
 .employee-share-active h3 { margin: 0 0 10px; font-size: 14px; }
 .employee-share-active > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; font-size: 13px; }
 .employee-share-active span { overflow-wrap: anywhere; }
-footer > span { margin-right: auto; color: var(--color-muted); font-size: 12px; }
+.employee-dialog-count { margin-right: auto; color: var(--color-muted); font-size: 12px; }
 </style>

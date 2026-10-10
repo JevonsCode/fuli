@@ -63,17 +63,6 @@ function updateValue(event: Event) {
 </template>
 
 <style scoped>
-.text-field {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-  color: var(--color-muted);
-  font-size: 12px;
-}
-
-.text-field input,
-.text-field textarea {
-  width: 100%;
-  min-width: 0;
-}
+.text-field { display: grid; gap: 6px; min-width: 0; color: var(--color-ink-soft); font-size: 13px; font-weight: 500; }
+.text-field input, .text-field textarea { width: 100%; min-width: 0; font-weight: 400; }
 </style>

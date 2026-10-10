@@ -4,8 +4,8 @@ import UiDisclosure from '@/components/UiDisclosure.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import { deleteJson, getJson, patchJson, postJson } from '@/api/client'
-import SearchableMultiSelect from '@/components/SearchableMultiSelect.vue'
-import SearchableSelect, { type SearchableSelectOption } from '@/components/SearchableSelect.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import type { UiSelectOption } from '@/components/ui/UiSelect.vue'
 import TextField from '@/components/TextField.vue'
 import { currentLocale, t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
@@ -105,14 +105,14 @@ const availableProjectOptions = computed(() =>
     search: identitySearchText(project.id),
   })),
 )
-const connectorOptions = computed<SearchableSelectOption[]>(() =>
+const connectorOptions = computed<UiSelectOption[]>(() =>
   connectors.value.map((connector) => ({
     value: connector.type,
     label: connector.name,
     meta: connector.description,
   })),
 )
-const personalProjectOptions = computed<SearchableSelectOption[]>(() =>
+const personalProjectOptions = computed<UiSelectOption[]>(() =>
   personalProjects.value.map((project) => ({
     value: project.project_id,
     label: project.profile.name,
@@ -120,20 +120,20 @@ const personalProjectOptions = computed<SearchableSelectOption[]>(() =>
     search: identitySearchText(project.project_id),
   })),
 )
-const bindingModeOptions = computed<SearchableSelectOption[]>(() => [
+const bindingModeOptions = computed<UiSelectOption[]>(() => [
   { value: 'hybrid', label: t('pages.connections.mode.hybrid'), disabled: !connectorSupportsMode(form.connectorType, 'hybrid') },
   { value: 'mirror', label: t('pages.connections.mode.mirror'), disabled: !connectorSupportsMode(form.connectorType, 'mirror') },
   { value: 'live', label: t('pages.connections.mode.live'), disabled: !connectorSupportsMode(form.connectorType, 'live') },
 ])
-const mcpTransportOptions = computed<SearchableSelectOption[]>(() => [
+const mcpTransportOptions = computed<UiSelectOption[]>(() => [
   { value: 'http', label: 'Streamable HTTP' },
   { value: 'stdio', label: 'stdio' },
 ])
-const feishuRegionOptions = computed<SearchableSelectOption[]>(() => [
+const feishuRegionOptions = computed<UiSelectOption[]>(() => [
   { value: 'cn', label: 'Feishu' },
   { value: 'global', label: 'Lark' },
 ])
-const conflictModeOptions = computed<SearchableSelectOption[]>(() => [
+const conflictModeOptions = computed<UiSelectOption[]>(() => [
   { value: 'ask_human', label: t('pages.connections.askHuman') },
   { value: 'agent_decide', label: t('pages.connections.agentDecide') },
 ])
@@ -519,7 +519,7 @@ function firstSupportedMode(type: string): ExternalKnowledgeMode {
     .find((mode) => connectorSupportsMode(type, mode)) ?? 'live'
 }
 
-function targetModeOptions(connectorType: string): SearchableSelectOption[] {
+function targetModeOptions(connectorType: string): UiSelectOption[] {
   return (['hybrid', 'mirror', 'live'] as ExternalKnowledgeMode[]).map((mode) => ({
     value: mode,
     label: t(`pages.connections.mode.${mode}`),
@@ -652,7 +652,7 @@ function readmeHelpUrl(fragment: string) {
           <div v-if="editingBindingId === binding.id" class="external-binding-editor">
             <label>
               <span>{{ t('pages.connections.targetProjects') }}</span>
-              <SearchableMultiSelect
+              <UiSelect multiple
                 v-model="editingProjectIds"
                 :control-id="`external-projects-${binding.id}`"
                 :label="t('pages.connections.targetProjects')"
@@ -670,7 +670,7 @@ function readmeHelpUrl(fragment: string) {
                 class="external-target-mode-row"
               >
                 <span>{{ projectName(projectId) }}</span>
-                <SearchableSelect
+                <UiSelect
                   :model-value="editingTargetModes[projectId] ?? binding.mode"
                   :control-id="`external-target-mode-${binding.id}-${projectId}`"
                   :label="t('pages.connections.bindingMode')"
@@ -694,7 +694,7 @@ function readmeHelpUrl(fragment: string) {
         <TextField v-model="form.name" :label="t('pages.connections.bindingName')" data-testid="external-name" required />
         <label>
           <span>{{ t('pages.connections.connector') }}</span>
-          <SearchableSelect
+          <UiSelect
             v-model="form.connectorType"
             control-id="external-connector"
             :label="t('pages.connections.connector')"
@@ -705,7 +705,7 @@ function readmeHelpUrl(fragment: string) {
         </label>
         <label>
           <span>{{ t('pages.connections.targetProjects') }}</span>
-          <SearchableMultiSelect
+          <UiSelect multiple
             v-model="form.personalProjectIds"
             control-id="external-projects"
             :label="t('pages.connections.targetProjects')"
@@ -717,7 +717,7 @@ function readmeHelpUrl(fragment: string) {
         </label>
         <label>
           <span>{{ t('pages.connections.bindingMode') }}</span>
-          <SearchableSelect
+          <UiSelect
             v-model="form.mode"
             control-id="external-binding-mode"
             :label="t('pages.connections.bindingMode')"
@@ -730,7 +730,7 @@ function readmeHelpUrl(fragment: string) {
         <template v-if="form.connectorType === 'mcp'">
           <label>
             <span>{{ t('pages.connections.transport') }}</span>
-            <SearchableSelect
+            <UiSelect
               v-model="form.mcpTransport"
               control-id="external-mcp-transport"
               :label="t('pages.connections.transport')"
@@ -756,7 +756,7 @@ function readmeHelpUrl(fragment: string) {
           <TextField v-model="form.feishuTokenEnv" :label="t('pages.connections.tokenEnv')" required />
           <label>
             <span>{{ t('pages.connections.region') }}</span>
-            <SearchableSelect
+            <UiSelect
               v-model="form.feishuRegion"
               control-id="external-feishu-region"
               :label="t('pages.connections.region')"
@@ -813,7 +813,7 @@ function readmeHelpUrl(fragment: string) {
       <div class="conflict-policy-controls">
         <label>
           <span>{{ t('pages.connections.targetProject') }}</span>
-          <SearchableSelect
+          <UiSelect
             v-model="conflictProjectId"
             control-id="external-conflict-project"
             :label="t('pages.connections.targetProject')"
@@ -824,7 +824,7 @@ function readmeHelpUrl(fragment: string) {
         </label>
         <label>
           <span>{{ t('pages.connections.conflictAction') }}</span>
-          <SearchableSelect
+          <UiSelect
             v-model="conflictMode"
             control-id="external-conflict-mode"
             :label="t('pages.connections.conflictAction')"
@@ -855,7 +855,7 @@ function readmeHelpUrl(fragment: string) {
         <div v-if="!subscriptions.length" class="empty-state">{{ t('pages.connections.noSubscriptions') }}</div>
       </div>
       <form class="subscription-form" @submit.prevent="subscribe">
-        <SearchableSelect
+        <UiSelect
           v-model="selectedProjectKey"
           :options="availableProjectOptions"
           :label="t('pages.connections.sharedProjectLabel')"

@@ -9,7 +9,9 @@ function scenario() {
   const task = taskContextRegistry.begin({ sessionId: 'synthetic-session',
     personalProjectId: 'synthetic-project', projectAgentId: 'synthetic-worker',
     sourceApplication: 'codex', workLogRequired: true });
-  return { app: { taskContextRegistry }, task,
+  const app = { taskContextRegistry, config: { personal: { spaceId: 'synthetic-space' } },
+    listProjectAgents: async () => [] };
+  return { app, task,
     input: { taskContextToken: task.token, sourceApplication: 'codex',
       disposition: 'retain_nothing', reason: 'No new confirmed knowledge.' } };
 }

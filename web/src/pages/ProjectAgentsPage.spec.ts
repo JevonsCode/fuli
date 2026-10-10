@@ -13,7 +13,7 @@ vi.mock('@/api/client', () => ({ getJson, patchJson, postJson, deleteJson, putJs
 vi.mock('vue-router', async (original) => ({ ...await original<typeof import('vue-router')>(), useRoute: () => route }))
 
 import { useConsoleStore } from '@/stores/console'
-import { SearchableSelectStub } from '@/test-support/SearchableSelectStub'
+import { UiSelectStub } from '@/test-support/UiSelectStub'
 import type { ProjectAgentRecord } from '@/types'
 import ProjectAgentsPage from './ProjectAgentsPage.vue'
 import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
@@ -117,14 +117,13 @@ describe('ProjectAgentsPage', () => {
       .toBe(false)
   })
 
-  it('offers a temporary first task without requiring project registration', async () => {
+  it('explains how to start the first task while no project exists', async () => {
     const { wrapper, store } = mountPage()
     store.state = { ...store.state!, personalProjects: [] }
     await flushPromises()
     const firstTask = wrapper.get('.project-agent-first-task')
-    expect(firstTask.text()).toContain('还没有项目，也可以开始第一个任务')
-    expect(firstTask.get('textarea').element.value).toContain('若尚未关联项目，请使用临时任务项目')
-    expect(firstTask.getComponent(RouterLinkStub).props('to')).toBe('/personal/personal-1/projects/directory')
+    expect(firstTask.text()).toContain('开始第一个任务')
+    expect(firstTask.text()).toContain('安排负责的 Agent')
     store.state = { ...store.state!, personalProjects: [{ project_id: 'project-a', personal_space_id: 'personal-1', profile: { name: '活动项目', sources: [], boundaries: [] } }] }
     await nextTick()
     expect(wrapper.find('.project-agent-first-task').exists()).toBe(false)
@@ -402,7 +401,7 @@ describe('ProjectAgentsPage', () => {
     await dialog.get('input[value="project-b"]').setValue(false)
     expect(dialog.get('.project-scope-count').text()).toContain('1 / 共 2')
     expect(postJson).not.toHaveBeenCalled()
-    await dialog.get('.employee-recruit-heading button').trigger('click')
+    await dialog.get('.ui-dialog__header button').trigger('click')
     await wrapper.get('[data-detail-section="assignments"]').findAll('button')
       .find((button) => button.text() === '分配项目')!.trigger('click')
     await flushPromises()
@@ -1073,7 +1072,7 @@ function mountPage(bootstrap = false) {
     store,
     initialState,
     wrapper: mount(ProjectAgentsPage, {
-      global: { plugins: [pinia], stubs: { SearchableSelect: SearchableSelectStub, RouterLink: RouterLinkStub } },
+      global: { plugins: [pinia], stubs: { UiSelect: UiSelectStub, RouterLink: RouterLinkStub } },
     }),
   }
 }

@@ -6,9 +6,18 @@ from .model_validation import reject_credentials
 
 
 class ConversationPolicy(StrictModel):
-    idle_days: int = Field(default=7, ge=1, le=365)
-    context_budget: int = Field(default=2000, ge=512, le=16000)
+    # Fold older messages into the digest once this much unfolded text accumulates.
+    compact_after_kb: int = Field(default=64, ge=8, le=1024)
+    context_budget: int = Field(default=4000, ge=512, le=16000)
     enabled: bool = True
+
+    @model_validator(mode='before')
+    @classmethod
+    def drop_retired_idle_days(cls, value):
+        # Policies saved before size-based compaction carried an inactivity window.
+        if isinstance(value, dict) and 'idle_days' in value:
+            value = {key: item for key, item in value.items() if key != 'idle_days'}
+        return value
 
 
 class ConversationScope(StrictModel):

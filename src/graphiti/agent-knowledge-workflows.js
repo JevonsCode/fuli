@@ -1,4 +1,5 @@
 import { beginConversation, checkpointConversation } from './agent-conversations.js';
+import { taskAgentReceipt } from '../agents/identity-receipt.js';
 import { createHash } from 'node:crypto';
 
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
@@ -92,7 +93,8 @@ export async function checkpointTaskKnowledge(application, {
   workLog = null,
   sourceApplication = 'other',
   personalProjectId = null,
-  remoteSessionId = null
+  remoteSessionId = null,
+  collaborators = []
 }) {
   if (!['capture_candidates', 'retain_nothing'].includes(disposition)) {
     throw validationError('Unknown task knowledge checkpoint disposition');
@@ -122,11 +124,21 @@ export async function checkpointTaskKnowledge(application, {
       'Task checkpoint already has different input; resume the original review or begin a new task context'
     );
   }
+  const team = await taskTeam(application, task, collaborators);
+  const finish = async (result) => {
+    const effectiveLog = workLog ?? { status: 'reported', summary: reason };
+    const conversation = await checkpointConversation(application, task, effectiveLog, team);
+    return { ...result, conversation,
+      agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
+        agentId: task.projectAgentId ?? null, name: team.name, sourceApplication: task.sourceApplication,
+        workStatus: effectiveLog.status, conversationId: conversation?.conversation_id ?? null,
+        persistence: conversation?.status ?? null, collaborators: team.collaborators }),
+      ...(team.ignored.length ? { ignored_collaborators: team.ignored } : {}) };
+  };
   if (task.checkpoint?.phase === 'complete') {
-    return { status: 'checkpointed', disposition, reason,
+    return finish({ status: 'checkpointed', disposition, reason,
       personal_project_id: task.personalProjectId, project_agent_id: task.projectAgentId,
-      replayed: true, capture_status: task.checkpoint.captureStatus,
-      conversation: await checkpointConversation(application, task, workLog ?? { status: 'reported', summary: reason }) };
+      replayed: true, capture_status: task.checkpoint.captureStatus });
   }
   const captureInput = capture ? {
     ...capture,
@@ -181,21 +193,36 @@ export async function checkpointTaskKnowledge(application, {
   await application.taskContextRegistry.checkpoint(taskContextToken, {
     ...checkpoint, captureStatus: captureResult?.status ?? null
   }, sourceApplication);
-  return {
+  return finish({
     status: 'checkpointed',
     disposition,
     reason,
     personal_project_id: task.personalProjectId,
     project_agent_id: task.projectAgentId ?? null,
     capture: captureResult,
-    conversation: await checkpointConversation(application, task, workLog ?? { status: 'reported', summary: reason }),
     agent_memory: memoryResult ? {
       status: memoryResult.status, agentId: memoryResult.agentId,
       checkpointId: memoryResult.checkpointId, revision: memoryResult.revision,
       sourceApplication: memoryResult.sourceApplication,
       sourceSessionId: memoryResult.sourceSessionId, createdAt: memoryResult.createdAt
     } : null
-  };
+  });
+}
+
+// Names the lead and only collaborators that are real, active Agents of this space.
+async function taskTeam(application, task, collaboratorIds) {
+  const requested = [...new Set(collaboratorIds)].filter(id => id !== task.projectAgentId);
+  if (!task.projectAgentId) return { name: null, collaborators: [], ignored: requested };
+  let agents = [];
+  try {
+    agents = await application.listProjectAgents({ personalSpaceId: application.config.personal.spaceId });
+  } catch { /* Attribution metadata never blocks a checkpoint. */ }
+  const byId = new Map(agents.map(agent => [agent.agentId, agent]));
+  const label = agent => agent?.profile.displayName || agent?.profile.name || null;
+  const active = requested.filter(id => byId.get(id)?.profile.status === 'active');
+  return { name: label(byId.get(task.projectAgentId)),
+    collaborators: active.map(id => ({ agentId: id, name: label(byId.get(id)) })),
+    ignored: requested.filter(id => !active.includes(id)) };
 }
 
 function canonicalCheckpoint(value) {

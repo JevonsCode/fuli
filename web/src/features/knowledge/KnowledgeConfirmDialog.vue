@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, useId, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { patchJson } from '@/api/client'
-import GrowthLoading from '@/components/GrowthLoading.vue'
-import { useModalDialog } from '@/composables/useModalDialog'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiDialog from '@/components/ui/UiDialog.vue'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { ConfirmationActor, EvidenceRecord, KnowledgeItem } from '@/types'
@@ -26,11 +26,6 @@ const quadrantReason = ref('')
 const confirmationReason = ref('')
 const acknowledged = ref(false)
 const busy = ref(false)
-const dialogTitleId = useId()
-const { dialogRef, onCancel, onKeydown } = useModalDialog(
-  () => Boolean(props.item),
-  () => { if (!busy.value) emit('close') },
-)
 const localError = ref('')
 const proposedBy = ref<ConfirmationActor>({
   kind: 'import',
@@ -144,151 +139,40 @@ function fail(message: string) {
 </script>
 
 <template>
-  <dialog v-if="item" ref="dialogRef" aria-modal="true" :aria-labelledby="dialogTitleId" @cancel="onCancel" @keydown="onKeydown" class="knowledge-confirm-dialog vue-dialog">
-    <form class="knowledge-confirm-dialog-shell" @submit.prevent="confirmKnowledge">
-      <header class="project-dialog-header">
-        <div>
-          <h3 :id="dialogTitleId">{{ t('knowledge.dialogs.confirm.title', { subject: subjectLabel }) }}</h3>
-          <p>{{ t('knowledge.dialogs.confirm.intro') }}</p>
-        </div>
-        <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">
-          {{ t('common.actions.close') }}
-        </button>
-      </header>
-
-      <section class="knowledge-confirm-summary">
-        <span>{{ item.profileAspect
-          ? t('knowledge.dialogs.confirm.preference')
-          : t('knowledge.dialogs.confirm.knowledge') }}</span>
-        <strong>{{ item.title }}</strong>
-        <p>{{ item.body }}</p>
-        <small>{{ t('knowledge.dialogs.confirm.quadrant', {
-          quadrant: quadrantLabel(item.originQuadrant),
-        }) }}</small>
-      </section>
-
-      <div class="knowledge-confirm-fields">
-        <label>
-          <span>{{ t('knowledge.dialogs.confirm.whyExists') }}</span>
-          <textarea
-            v-model="existenceReason"
-            name="confirmation-existence-reason"
-            maxlength="4096"
-            rows="3"
-            required
-          />
-        </label>
-        <label>
-          <span>{{ t('knowledge.dialogs.confirm.whyQuadrant') }}</span>
-          <textarea
-            v-model="quadrantReason"
-            name="confirmation-quadrant-reason"
-            maxlength="4096"
-            rows="3"
-            required
-          />
-        </label>
-        <label>
-          <span>{{ t('knowledge.dialogs.confirm.confirmationCopy') }}</span>
-          <textarea
-            v-model="confirmationReason"
-            name="confirmation-reason"
-            maxlength="2000"
-            rows="2"
-            required
-          />
-        </label>
-      </div>
-
-      <label class="knowledge-confirm-acknowledgement">
-        <input v-model="acknowledged" name="confirmation-acknowledged" type="checkbox" />
-        <span>{{ t('knowledge.dialogs.confirm.acknowledgment') }}</span>
-      </label>
-
-      <p v-if="localError" class="publish-dialog-error" role="alert">{{ localError }}</p>
-      <footer class="project-profile-dialog-actions">
-        <button class="secondary-action" type="button" :disabled="busy" @click="emit('close')">
-          {{ t('common.actions.cancel') }}
-        </button>
-        <button
-          class="primary-action"
-          type="submit"
-          :disabled="busy || !acknowledged"
-        >
-          <GrowthLoading
-            v-if="busy"
-            variant="inline"
-            :label="t('knowledge.dialogs.confirm.confirming', { subject: subjectLabel })"
-          />
-          <template v-else>
-            {{ t('knowledge.dialogs.confirm.confirmSubject', { subject: subjectLabel }) }}
-          </template>
-        </button>
-      </footer>
-    </form>
-  </dialog>
+  <UiDialog v-if="item" open class="knowledge-confirm-dialog" size="lg" form
+    :title="t('knowledge.dialogs.confirm.title', { subject: subjectLabel })"
+    :description="t('knowledge.dialogs.confirm.intro')"
+    :busy="busy" :error="localError" @close="emit('close')" @submit="confirmKnowledge">
+    <section class="knowledge-confirm-summary">
+      <span class="ui-meta">{{ item.profileAspect ? t('knowledge.dialogs.confirm.preference') : t('knowledge.dialogs.confirm.knowledge') }}</span>
+      <strong>{{ item.title }}</strong>
+      <p>{{ item.body }}</p>
+      <small class="ui-meta">{{ t('knowledge.dialogs.confirm.quadrant', { quadrant: quadrantLabel(item.originQuadrant) }) }}</small>
+    </section>
+    <label class="ui-field">{{ t('knowledge.dialogs.confirm.whyExists') }}
+      <textarea v-model="existenceReason" name="confirmation-existence-reason" maxlength="4096" rows="3" required />
+    </label>
+    <label class="ui-field">{{ t('knowledge.dialogs.confirm.whyQuadrant') }}
+      <textarea v-model="quadrantReason" name="confirmation-quadrant-reason" maxlength="4096" rows="3" required />
+    </label>
+    <label class="ui-field">{{ t('knowledge.dialogs.confirm.confirmationCopy') }}
+      <textarea v-model="confirmationReason" name="confirmation-reason" maxlength="2000" rows="2" required />
+    </label>
+    <label class="ui-check">
+      <input v-model="acknowledged" name="confirmation-acknowledged" type="checkbox" />
+      <span>{{ t('knowledge.dialogs.confirm.acknowledgment') }}</span>
+    </label>
+    <template #footer>
+      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</UiButton>
+      <UiButton variant="primary" type="submit" :disabled="!acknowledged" :busy="busy" :busy-label="t('knowledge.dialogs.confirm.confirming', { subject: subjectLabel })">
+        {{ t('knowledge.dialogs.confirm.confirmSubject', { subject: subjectLabel }) }}
+      </UiButton>
+    </template>
+  </UiDialog>
 </template>
 
 <style scoped>
-.knowledge-confirm-dialog {
-  width: min(680px, calc(100vw - 48px));
-}
-
-.knowledge-confirm-dialog-shell {
-  box-sizing: border-box;
-  min-height: 0;
-  max-height: inherit;
-  display: grid;
-  gap: 18px;
-  padding: 24px;
-  overflow: auto;
-}
-
-.knowledge-confirm-summary {
-  display: grid;
-  gap: 6px;
-  padding: 14px 0;
-  border-top: 1px solid var(--color-border);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.knowledge-confirm-summary span,
-.knowledge-confirm-summary small {
-  color: var(--color-muted);
-  font-size: 12px;
-}
-
-.knowledge-confirm-summary strong {
-  color: var(--color-ink);
-  font-size: 16px;
-}
-
-.knowledge-confirm-summary p {
-  color: var(--color-muted);
-  font-size: 12px;
-  line-height: 1.65;
-}
-
-.knowledge-confirm-fields {
-  display: grid;
-  gap: 14px;
-}
-
-.knowledge-confirm-fields label {
-  display: grid;
-  gap: 6px;
-  color: var(--color-muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.knowledge-confirm-acknowledgement {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: 9px;
-  color: var(--color-ink);
-  font-size: 12px;
-  line-height: 1.5;
-}
+.knowledge-confirm-summary { display: grid; gap: 4px; padding: 12px 14px; border-radius: var(--radius-control); background: var(--color-surface-subtle); }
+.knowledge-confirm-summary strong { font-size: 15px; }
+.knowledge-confirm-summary p { margin: 0; color: var(--color-ink-soft); font-size: 13px; line-height: 1.6; }
 </style>

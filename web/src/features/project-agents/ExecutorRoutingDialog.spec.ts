@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const putJson = vi.hoisted(() => vi.fn())
 vi.mock('@/api/client', () => ({ putJson }))
 
-import { SearchableSelectStub } from '@/test-support/SearchableSelectStub'
+import { UiSelectStub } from '@/test-support/UiSelectStub'
 import type { PersonalProject, ProjectAgentExecutorRef } from '@/types'
 import ExecutorRoutingDialog from './ExecutorRoutingDialog.vue'
 
@@ -49,7 +49,7 @@ describe('ExecutorRoutingDialog', () => {
         open: true, mode: 'rule', personalSpaceId: 'personal-1', projects,
         availableExecutors: [executor],
       },
-      global: { stubs: { SearchableSelect: SearchableSelectStub } },
+      global: { stubs: { UiSelect: UiSelectStub } },
     })
     await wrapper.get('select').setValue('project')
     await wrapper.get('[aria-label="所属项目"]').setValue('project-a')
@@ -86,7 +86,7 @@ describe('ExecutorRoutingDialog', () => {
 
     const dialog = wrapper.get('dialog')
     expect(showModal).toHaveBeenCalledTimes(1)
-    expect(document.activeElement).toBe(dialog.get('[data-dialog-initial-focus]').element)
+    expect(dialog.get('.ui-dialog__body').element.contains(document.activeElement)).toBe(true)
 
     await wrapper.setProps({ open: false })
     await flushPromises()

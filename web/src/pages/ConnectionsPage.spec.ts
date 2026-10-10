@@ -11,7 +11,7 @@ vi.mock('@/api/client', () => ({ deleteJson, getJson, patchJson, postJson }))
 
 import { useConsoleStore } from '@/stores/console'
 import { setLocale } from '@/i18n'
-import { SearchableSelectStub } from '@/test-support/SearchableSelectStub'
+import { UiSelectStub } from '@/test-support/UiSelectStub'
 import ConnectionsPage from './ConnectionsPage.vue'
 
 describe('ConnectionsPage', () => {
@@ -69,7 +69,7 @@ describe('ConnectionsPage', () => {
     const wrapper = mount(ConnectionsPage, {
       global: {
         plugins: [pinia],
-        stubs: { SearchableSelect: SearchableSelectStub },
+        stubs: { UiSelect: UiSelectStub },
       },
     })
 
@@ -186,7 +186,7 @@ describe('ConnectionsPage', () => {
     const wrapper = mount(ConnectionsPage, {
       global: {
         plugins: [pinia],
-        stubs: { SearchableSelect: SearchableSelectStub },
+        stubs: { UiSelect: UiSelectStub },
       },
     })
     await flushPromises()
@@ -208,7 +208,7 @@ describe('ConnectionsPage', () => {
       'Project B · 仅实时',
     )
     await wrapper.get('[data-testid="external-name"]').setValue('Engineering docs')
-    await wrapper.get('[data-select-id="external-projects"] .searchable-select-trigger').trigger('click')
+    await wrapper.get('[data-select-id="external-projects"] .ui-select__trigger').trigger('click')
     await wrapper.findAll('[data-select-id="external-projects"] [role="option"]')[1].trigger('click')
     await wrapper.get('[data-testid="mcp-url"]').setValue('https://mcp.example.test')
     await wrapper.get('[data-testid="mcp-token-env"]').setValue('MCP_READ_TOKEN')
@@ -243,7 +243,7 @@ describe('ConnectionsPage', () => {
     await wrapper.findAll('.external-binding-actions')[0].findAll('button')[2].trigger('click')
     await flushPromises()
     const editor = wrapper.get('.external-binding-editor')
-    await editor.get('.searchable-select-trigger').trigger('click')
+    await editor.get('.ui-select__trigger').trigger('click')
     await editor.findAll('[role="option"]')[1].trigger('click')
     await editor.get('.external-binding-editor-actions .primary-action').trigger('click')
     await flushPromises()
@@ -383,6 +383,6 @@ function mountConflictPage() {
     projects: [], subscriptions: [],
   }
   return mount(ConnectionsPage, { global: {
-    plugins: [pinia], stubs: { SearchableSelect: SearchableSelectStub },
+    plugins: [pinia], stubs: { UiSelect: UiSelectStub },
   } })
 }

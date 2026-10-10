@@ -23,7 +23,7 @@
   grid-column: 1 / 4; grid-row: 1; display: grid; gap: 5px; min-width: 0;
   color: var(--color-muted); font-size: 12px;
 }
-.external-binding-editor .searchable-select { width: 100%; min-width: 0; }
+.external-binding-editor .ui-select { width: 100%; min-width: 0; }
 .external-target-mode-list {
   grid-column: 1 / -1; grid-row: 2; display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px;

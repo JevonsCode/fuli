@@ -2,9 +2,9 @@
 import { computed, ref, watch } from 'vue'
 
 import { postJson } from '@/api/client'
-import GrowthLoading from '@/components/GrowthLoading.vue'
-import SearchableSelect from '@/components/SearchableSelect.vue'
-import { useModalDialog } from '@/composables/useModalDialog'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiDialog from '@/components/ui/UiDialog.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import type { PersonalProject, ProjectAgentAssignmentRecord, ProjectAgentRecord } from '@/types'
 
@@ -39,10 +39,6 @@ const workKinds = ref('')
 const reason = ref('')
 const busy = ref(false)
 const error = ref('')
-const { dialogRef, initialFocusRef, onCancel, onKeydown } = useModalDialog(
-  () => props.open,
-  () => emit('close'),
-)
 
 const editing = computed(() => props.action !== 'assign')
 const projectOptions = computed(() => props.projects.map((project) => ({
@@ -139,61 +135,39 @@ function createIdempotencyKey() {
 </script>
 
 <template>
-  <dialog ref="dialogRef" v-if="open" class="project-agent-assignment-dialog vue-dialog" aria-modal="true" aria-labelledby="project-agent-assignment-dialog-title" @cancel="onCancel" @keydown="onKeydown">
-    <form class="project-agent-assignment-dialog-shell" @submit.prevent="save">
-      <header class="project-agent-assignment-dialog-header">
-        <h3 id="project-agent-assignment-dialog-title">
-          {{ t(`projectAgents.assignmentDialog.${editing ? action : 'assign'}Title`) }}
-        </h3>
-        <button ref="initialFocusRef" data-dialog-initial-focus class="quiet-button" type="button" :disabled="busy" @click="emit('close')">{{ t('common.actions.close') }}</button>
-      </header>
-      <div class="project-agent-assignment-dialog-fields">
-        <label v-if="!editing">
-          <span>{{ t('projectAgents.fields.project') }}</span>
-          <SearchableSelect v-model="projectId" control-id="project-agent-assignment-project" :options="projectOptions" :label="t('projectAgents.fields.project')" :placeholder="t('projectAgents.dialog.projectPlaceholder')" :disabled="busy" required />
-        </label>
-        <label v-else>
-          <span>{{ t('projectAgents.fields.project') }}</span>
-          <input :value="props.assignment ? props.assignment.personalProjectId : ''" disabled />
-        </label>
-        <label v-if="editing && action === 'replace'">
-          <span>{{ t('projectAgents.assignmentDialog.replacement') }}</span>
-          <SearchableSelect v-model="replacementAgentId" control-id="project-agent-assignment-replacement" :options="replacementOptions" :label="t('projectAgents.assignmentDialog.replacement')" :placeholder="t('projectAgents.assignmentDialog.replacementPlaceholder')" :disabled="busy" required />
-        </label>
-        <label v-if="!editing" class="project-agent-assignment-wide-field">
-          <span>{{ t('projectAgents.fields.responsibility') }}</span>
-          <textarea v-model="responsibility" rows="3" maxlength="4096" :disabled="busy" required />
-        </label>
-        <label v-if="!editing">
-          <span>{{ t('projectAgents.fields.scope') }}</span>
-          <input v-model="scope" maxlength="4096" :disabled="busy" />
-        </label>
-        <label v-if="!editing">
-          <span>{{ t('projectAgents.assignmentDialog.workKinds') }}</span>
-          <textarea v-model="workKinds" rows="3" :disabled="busy" :placeholder="t('projectAgents.assignmentDialog.workKindsPlaceholder')" />
-        </label>
-        <label class="project-agent-assignment-wide-field">
-          <span>{{ t('projectAgents.fields.reason') }}</span>
-          <textarea v-model="reason" rows="3" maxlength="2048" :disabled="busy" :placeholder="t('projectAgents.assignmentDialog.reasonPlaceholder')" required />
-        </label>
-      </div>
-      <p v-if="error" class="project-agent-assignment-dialog-error" role="alert">{{ error }}</p>
-      <footer class="project-agent-assignment-dialog-actions">
-        <button class="quiet-button" type="button" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</button>
-        <button class="project-agent-primary-action" type="submit" :disabled="busy">
-          <GrowthLoading v-if="busy" variant="inline" :label="t('projectAgents.assignmentDialog.saving')" />
-          <span v-else>{{ t(`projectAgents.assignmentDialog.${editing ? 'saveChange' : 'saveAssign'}`) }}</span>
-        </button>
-      </footer>
-    </form>
-  </dialog>
+  <UiDialog :open="open" class="project-agent-assignment-dialog" form :busy="busy" :error="error"
+    :title="t(`projectAgents.assignmentDialog.${editing ? action : 'assign'}Title`)" @close="emit('close')" @submit="save">
+    <div class="project-agent-assignment-fields">
+      <UiSelect v-if="!editing" v-model="projectId" field control-id="project-agent-assignment-project" :options="projectOptions" :label="t('projectAgents.fields.project')" :placeholder="t('projectAgents.dialog.projectPlaceholder')" :disabled="busy" required />
+      <label v-else class="ui-field">{{ t('projectAgents.fields.project') }}
+        <input :value="props.assignment ? props.assignment.personalProjectId : ''" disabled />
+      </label>
+      <UiSelect v-if="editing && action === 'replace'" v-model="replacementAgentId" field control-id="project-agent-assignment-replacement" :options="replacementOptions" :label="t('projectAgents.assignmentDialog.replacement')" :placeholder="t('projectAgents.assignmentDialog.replacementPlaceholder')" :disabled="busy" required />
+      <label v-if="!editing" class="ui-field project-agent-assignment-wide">{{ t('projectAgents.fields.responsibility') }}
+        <textarea v-model="responsibility" rows="3" maxlength="4096" :disabled="busy" required />
+      </label>
+      <label v-if="!editing" class="ui-field">{{ t('projectAgents.fields.scope') }}
+        <input v-model="scope" maxlength="4096" :disabled="busy" />
+      </label>
+      <label v-if="!editing" class="ui-field">{{ t('projectAgents.assignmentDialog.workKinds') }}
+        <textarea v-model="workKinds" rows="3" :disabled="busy" :placeholder="t('projectAgents.assignmentDialog.workKindsPlaceholder')" />
+      </label>
+      <label class="ui-field project-agent-assignment-wide">{{ t('projectAgents.fields.reason') }}
+        <textarea v-model="reason" rows="3" maxlength="2048" :disabled="busy" :placeholder="t('projectAgents.assignmentDialog.reasonPlaceholder')" required />
+      </label>
+    </div>
+    <template #footer>
+      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</UiButton>
+      <UiButton variant="primary" type="submit" :busy="busy" :busy-label="t('projectAgents.assignmentDialog.saving')">{{ t(`projectAgents.assignmentDialog.${editing ? 'saveChange' : 'saveAssign'}`) }}</UiButton>
+    </template>
+  </UiDialog>
 </template>
 
 <style scoped>
-.project-agent-assignment-dialog { width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0; border: 0; border-radius: 12px; background: transparent; }
-.project-agent-assignment-dialog-shell { max-height: calc(100vh - 32px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--color-border-strong); border-radius: 12px; background: var(--color-surface); box-shadow: 0 18px 48px rgb(33 45 38 / 18%); }
-.project-agent-assignment-dialog-header, .project-agent-assignment-dialog-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px; }
-.project-agent-assignment-dialog-header { border-bottom: 1px solid var(--color-border); }.project-agent-assignment-dialog-header h3 { color: var(--color-ink); font-size: 16px; }
-.project-agent-assignment-dialog-fields { min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 18px; overflow: auto; }.project-agent-assignment-dialog-fields label { display: grid; gap: 6px; color: var(--color-muted); font-size: 12px; font-weight: 650; }.project-agent-assignment-dialog-fields input, .project-agent-assignment-dialog-fields textarea { width: 100%; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-ink); padding: 8px 9px; font-size: 12px; line-height: 1.5; }.project-agent-assignment-dialog-fields textarea { resize: vertical; }.project-agent-assignment-dialog-fields input:focus-visible, .project-agent-assignment-dialog-fields textarea:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }.project-agent-assignment-wide-field { grid-column: 1 / -1; }.project-agent-assignment-dialog-error { margin: 0 18px; color: var(--color-danger); font-size: 12px; }.project-agent-assignment-dialog-actions { border-top: 1px solid var(--color-border); justify-content: flex-end; }.project-agent-primary-action { border: 0; border-radius: var(--radius-control); background: var(--color-ink); color: var(--color-surface); padding: 8px 13px; font-size: 12px; font-weight: 700; }.project-agent-primary-action:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-@media (max-width: 620px) { .project-agent-assignment-dialog-fields { grid-template-columns: 1fr; }.project-agent-assignment-wide-field { grid-column: auto; } }
+.project-agent-assignment-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.project-agent-assignment-wide { grid-column: 1 / -1; }
+@media (max-width: 620px) {
+  .project-agent-assignment-fields { grid-template-columns: 1fr; }
+  .project-agent-assignment-wide { grid-column: auto; }
+}
 </style>

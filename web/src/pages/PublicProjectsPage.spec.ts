@@ -10,7 +10,7 @@ const postJson = vi.hoisted(() => vi.fn())
 vi.mock('@/api/client', () => ({ deleteJson, getJson, postJson }))
 
 import { useConsoleStore } from '@/stores/console'
-import { SearchableSelectStub } from '@/test-support/SearchableSelectStub'
+import { UiSelectStub } from '@/test-support/UiSelectStub'
 import PublicProjectsPage from './PublicProjectsPage.vue'
 
 describe('PublicProjectsPage', () => {
@@ -88,7 +88,7 @@ describe('PublicProjectsPage', () => {
     const wrapper = mount(PublicProjectsPage, {
       global: {
         plugins: [pinia, router],
-        stubs: { SearchableSelect: SearchableSelectStub },
+        stubs: { UiSelect: UiSelectStub },
       },
     })
 
@@ -99,8 +99,8 @@ describe('PublicProjectsPage', () => {
 
     await cards[0].get('.primary-action').trigger('click')
     await flushPromises()
-    expect(wrapper.get('.project-dialog-shell').text()).toContain('首次发布')
-    expect(wrapper.get('.project-dialog-shell').text()).toContain('PART_OF')
+    expect(wrapper.get('.public-project-details').text()).toContain('首次发布')
+    expect(wrapper.get('.public-project-details').text()).toContain('PART_OF')
 
     await wrapper.get('.relation-section-toolbar .primary-action').trigger('click')
     await wrapper.get('[aria-label="关系来源项目"]').setValue('project-a')
@@ -121,13 +121,13 @@ describe('PublicProjectsPage', () => {
     expect(store.feedback?.message).toContain('等待父项目确认')
 
     await cards[0].get('.management-action').trigger('click')
-    const deletionDialogs = wrapper.findAll('.project-dialog')
+    const deletionDialogs = wrapper.findAll('.public-project-deletion')
     const deletionDialog = deletionDialogs.at(-1)!
     expect(deletionDialog.text()).toContain('输入完整项目名称')
-    expect(deletionDialog.get('.reject').attributes()).toHaveProperty('disabled')
+    expect(deletionDialog.get('.ui-button--danger').attributes()).toHaveProperty('disabled')
     await deletionDialog.get('input').setValue('项目 A')
-    expect(deletionDialog.get('.reject').attributes('disabled')).toBeUndefined()
-    await deletionDialog.get('.reject').trigger('click')
+    expect(deletionDialog.get('.ui-button--danger').attributes('disabled')).toBeUndefined()
+    await deletionDialog.get('.ui-button--danger').trigger('click')
     await flushPromises()
 
     expect(deleteJson).toHaveBeenCalledWith(
@@ -178,7 +178,7 @@ describe('PublicProjectsPage', () => {
       attachTo: document.body,
       global: {
         plugins: [pinia, router],
-        stubs: { SearchableSelect: SearchableSelectStub },
+        stubs: { UiSelect: UiSelectStub },
       },
     })
 
@@ -191,7 +191,7 @@ describe('PublicProjectsPage', () => {
     ])
 
     await wrapper
-      .get('dialog[aria-labelledby="public-project-details-title"] button')
+      .get('.public-project-details button')
       .trigger('click')
     await flushPromises()
     await cards[1].get('.primary-action').trigger('click')
@@ -211,7 +211,7 @@ describe('PublicProjectsPage', () => {
     })
     await flushPromises()
 
-    const details = wrapper.get('dialog[aria-labelledby="public-project-details-title"]')
+    const details = wrapper.get('.public-project-details')
     expect(details.text()).toContain('B-release')
     expect(details.text()).toContain('DEPENDS_ON')
 
@@ -262,7 +262,7 @@ describe('PublicProjectsPage', () => {
       attachTo: document.body,
       global: {
         plugins: [pinia, router],
-        stubs: { SearchableSelect: SearchableSelectStub },
+        stubs: { UiSelect: UiSelectStub },
       },
     })
 
@@ -270,7 +270,7 @@ describe('PublicProjectsPage', () => {
     ;(detailsTrigger.element as HTMLElement).focus()
     await detailsTrigger.trigger('click')
     await flushPromises()
-    const details = wrapper.get('dialog[aria-labelledby="public-project-details-title"]')
+    const details = wrapper.get('.public-project-details')
     expect((details.element as HTMLDialogElement).open).toBe(true)
     expect(document.activeElement).toBe(details.get('button').element)
 
@@ -282,7 +282,7 @@ describe('PublicProjectsPage', () => {
     ;(deletionTrigger.element as HTMLElement).focus()
     await deletionTrigger.trigger('click')
     await flushPromises()
-    const deletion = wrapper.get('dialog[aria-labelledby="public-project-deletion-title"]')
+    const deletion = wrapper.get('.public-project-deletion')
     expect((deletion.element as HTMLDialogElement).open).toBe(true)
     expect(document.activeElement).toBe(deletion.get('input').element)
 
@@ -346,7 +346,7 @@ describe('PublicProjectsPage', () => {
     const wrapper = mount(PublicProjectsPage, {
       global: {
         plugins: [pinia, router],
-        stubs: { SearchableSelect: SearchableSelectStub },
+        stubs: { UiSelect: UiSelectStub },
       },
     })
 
@@ -360,12 +360,12 @@ describe('PublicProjectsPage', () => {
     await fuliCard.get('.primary-action').trigger('click')
     await flushPromises()
     expect(getJson).not.toHaveBeenCalled()
-    expect(wrapper.get('dialog[aria-labelledby="public-project-details-title"]').text())
+    expect(wrapper.get('.public-project-details').text())
       .toContain('该服务不提供版本记录或项目关系')
     expect(wrapper.find('.project-detail-columns').exists()).toBe(false)
 
     await wrapper
-      .get('dialog[aria-labelledby="public-project-details-title"] button')
+      .get('.public-project-details button')
       .trigger('click')
     await flushPromises()
     await graphitiCard.get('.primary-action').trigger('click')
@@ -374,7 +374,7 @@ describe('PublicProjectsPage', () => {
     expect(getJson.mock.calls.every(([url]) =>
       url.includes('graphiti-project') || url.includes('projectId=graphiti-project')))
       .toBe(true)
-    expect(wrapper.get('dialog[aria-labelledby="public-project-details-title"]').text())
+    expect(wrapper.get('.public-project-details').text())
       .toContain('首次发布')
 
     const addRelation = wrapper.get('.relation-section-toolbar .primary-action')

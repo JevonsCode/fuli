@@ -107,13 +107,6 @@
   .topbar-heading h1 { font-size: 22px; }
   .view { padding: 16px 20px 24px; }
 
-  .topbar-description {
-    max-width: none;
-    overflow: visible;
-    text-overflow: clip;
-    white-space: normal;
-  }
-
   .topbar-actions {
     margin-left: auto;
     justify-content: flex-end;
@@ -121,9 +114,4 @@
   }
 
   .feedback { margin: 12px 16px 0; }
-
-  .vue-dialog[open] {
-    width: min(980px, calc(100vw - 24px));
-    max-height: calc(100dvh - 24px);
-  }
 }

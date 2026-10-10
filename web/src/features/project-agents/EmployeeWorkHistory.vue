@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { currentLocale, t } from '@/i18n'
 
 const props = defineProps<{
@@ -62,11 +63,7 @@ function status(value: string) {
 <template>
   <details class="employee-work-history" @toggle="toggle">
     <summary>{{ t('projectAgents.workHistory.title') }}</summary>
-    <label v-if="projects.length">{{ t('projectAgents.fields.project') }}
-      <select v-model="projectId">
-        <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.name }}</option>
-      </select>
-    </label>
+    <UiSelect v-if="projects.length" v-model="projectId" field :label="t('projectAgents.fields.project')" :options="projects.map(project => ({ value: project.id, label: project.name }))" />
     <GrowthLoading v-if="loading" variant="compact" :label="t('projectAgents.workHistory.loading')" />
     <div v-else-if="error" role="alert">
       <p>{{ error }}</p><button type="button" class="quiet-button" @click="load">{{ t('projectAgents.retry') }}</button>

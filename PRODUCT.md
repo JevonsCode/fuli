@@ -17,9 +17,9 @@ The first public website is primarily Chinese.
 - Agents have durable profiles, project responsibilities, working history and expectations.
 - HR helps find and staff agents; project management tracks work and review. Actual execution
   still requires an available, authorized client and executor.
-- Private conversation history is distinct from confirmed reusable knowledge. By default,
-  recent context remains available for seven days of inactivity; older history is archived
-  into compact context. Retrieval is bounded and additional evidence is loaded on demand.
+- Private conversation history is distinct from confirmed reusable knowledge. Once a
+  conversation passes a size threshold, older messages fold into a compact digest while recent
+  messages stay verbatim; nothing is forgotten because of elapsed time. Retrieval is bounded and additional evidence is loaded on demand.
 - Taste, personality and judgment preferences have explicit sources and scopes. Inferred
   preferences require confirmation; people retain authority over what becomes trusted.
 - The personal edition runs locally. A separate team server package is not yet released.

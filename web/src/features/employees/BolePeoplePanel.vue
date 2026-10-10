@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import UiSegmented from '@/components/ui/UiSegmented.vue'
 import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
 import ProjectScopePicker from './ProjectScopePicker.vue'
@@ -53,7 +54,12 @@ const partialError = ref(false)
 const activeView = ref<'people' | 'history'>('people')
 const search = ref('')
 const roleFilter = ref('')
-const workFilter = ref('all')
+const workFilter = ref<'all' | 'working' | 'idle'>('all')
+const workFilterOptions = computed(() => [
+  { value: 'all' as const, label: t('employees.bole.allWork') },
+  { value: 'working' as const, label: t('employees.bole.workingNow') },
+  { value: 'idle' as const, label: t('employees.bole.withoutTask') },
+])
 const selectedProjects = ref<string[] | null>(null)
 const scrollRegion = ref<HTMLElement | null>(null)
 const unassignedKey = '__bole_unassigned__'
@@ -282,11 +288,7 @@ function formattedDate(value: string) {
       <div class="bole-filters">
         <input v-model="search" type="search" class="bole-search" :aria-label="t('employees.bole.search')" :placeholder="t('employees.bole.search')">
         <ProjectScopePicker v-model="projectSelection" :projects="projectOptions" :label="t('employees.allProjects.projectFilter')" :all-label="t('employees.bole.allProjects')" :empty-label="t('employees.filterEmpty')" compact hint="" />
-        <select v-if="activeView === 'people'" v-model="workFilter" :aria-label="t('employees.bole.workFilter')">
-          <option value="all">{{ t('employees.bole.allWork') }}</option>
-          <option value="working">{{ t('employees.bole.workingNow') }}</option>
-          <option value="idle">{{ t('employees.bole.withoutTask') }}</option>
-        </select>
+        <UiSegmented v-if="activeView === 'people'" v-model="workFilter" :label="t('employees.bole.workFilter')" :options="workFilterOptions" />
       </div>
       <div class="bole-role-filters" role="group" :aria-label="t('employees.bole.distribution')">
         <button type="button" :aria-pressed="!roleFilter" @click="roleFilter = ''">{{ t('employees.bole.allRoles') }}</button>

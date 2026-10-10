@@ -15,7 +15,7 @@ vi.mock('@/api/client', () => ({
   patchJson,
 }))
 
-import SearchableSelect from '@/components/SearchableSelect.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { useConsoleStore } from '@/stores/console'
 import PersonalProfilePage from './PersonalProfilePage.vue'
 
@@ -218,8 +218,8 @@ describe('PersonalProfilePage', () => {
     await finishProfileLoading()
 
     expect(wrapper.get('.writing-taste-milestone').text())
-      .toContain('你的写作偏好初稿已形成')
-    expect(wrapper.get('.writing-taste-milestone__action').attributes('href'))
+      .toContain('文风画像 · 初稿')
+    expect(wrapper.get('a.writing-taste-milestone').attributes('href'))
       .toBe('/preferences/writing')
   })
 
@@ -289,7 +289,7 @@ describe('PersonalProfilePage', () => {
 
     expect(wrapper.findAll('.personal-profile-row')).toHaveLength(3)
     expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001/ 003')
-    const scope = wrapper.getComponent(SearchableSelect)
+    const scope = wrapper.getComponent({ name: 'UiSelect' })
     expect(scope.props('options')).toEqual(expect.arrayContaining([
       expect.objectContaining({ value: 'all', label: '全部范围' }),
       expect.objectContaining({ value: 'global', label: '个人全局' }),
@@ -299,7 +299,7 @@ describe('PersonalProfilePage', () => {
     const chooseScope = async (label: string) => {
       await scope.get('[role="combobox"]').trigger('click')
       const option = scope
-        .findAll('.searchable-select-option')
+        .findAll('.ui-select__option')
         .find((candidate) => candidate.text().includes(label))
       expect(option).toBeDefined()
       await option!.trigger('click')

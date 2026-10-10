@@ -6,7 +6,7 @@ const postJson = vi.hoisted(() => vi.fn())
 
 vi.mock('@/api/client', () => ({ putJson, postJson }))
 
-import { SearchableSelectStub } from '@/test-support/SearchableSelectStub'
+import { UiSelectStub } from '@/test-support/UiSelectStub'
 import type { PersonalProject, ProjectAgentRecord } from '@/types'
 import ProjectAgentDialog from './ProjectAgentDialog.vue'
 
@@ -203,7 +203,7 @@ describe('ProjectAgentDialog', () => {
 
   it('does not offer temporary or coordinator for direct identity creation', () => {
     const wrapper = mountDialog()
-    const values = wrapper.findAll('[name="project-agent-type"] option').map((option) => option.attributes('value'))
+    const values = wrapper.findAll('[name="project-agent-type"] option').map((option) => option.attributes('value')).filter(Boolean)
     expect(values).toEqual(['durable', 'hr'])
   })
 
@@ -222,22 +222,22 @@ describe('ProjectAgentDialog', () => {
         defaultProjectId: 'project-a',
         personalSpaceId: 'personal-1',
       },
-      global: { stubs: { SearchableSelect: SearchableSelectStub } },
+      global: { stubs: { UiSelect: UiSelectStub } },
     })
 
     await wrapper.setProps({ open: true })
     await flushPromises()
 
     const dialog = wrapper.get('dialog')
-    const initialFocus = dialog.get('[data-dialog-initial-focus]')
+    const closeButton = dialog.get('.ui-dialog__header button')
     const submit = dialog.get('button[type="submit"]')
     expect(showModal).toHaveBeenCalledTimes(1)
     expect((dialog.element as HTMLDialogElement).open).toBe(true)
-    expect(document.activeElement).toBe(initialFocus.element)
+    expect(dialog.get('.ui-dialog__body').element.contains(document.activeElement)).toBe(true)
 
     ;(submit.element as HTMLElement).focus()
     await dialog.trigger('keydown', { key: 'Tab' })
-    expect(document.activeElement).toBe(initialFocus.element)
+    expect(document.activeElement).toBe(closeButton.element)
 
     await dialog.trigger('cancel')
     expect(wrapper.emitted('close')).toHaveLength(1)
@@ -258,6 +258,6 @@ function mountDialog(agent: ProjectAgentRecord | null = null, overrides: Record<
       defaultProjectId: 'project-a',
       ...overrides,
     },
-    global: { stubs: { SearchableSelect: SearchableSelectStub } },
+    global: { stubs: { UiSelect: UiSelectStub } },
   })
 }

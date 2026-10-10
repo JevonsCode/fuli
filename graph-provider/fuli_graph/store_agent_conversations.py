@@ -5,7 +5,9 @@ import hashlib
 import json
 from fastapi import HTTPException
 from .agent_conversation_models import ConversationPolicy
-from .conversation_context import archived, pack_context
+from .conversation_context import (
+    add_task_result, fold_messages, message_bytes, pack_context, render_digest,
+)
 from .project_agent_access import authorize_project_agent
 from .provider_values import now_utc, stable_uuid
 from .store_transactions import query_store_transaction
@@ -77,13 +79,13 @@ class StoreAgentConversations:
             raise HTTPException(404, 'Conversation not found in this Agent and project')
         record = dict(rows[0]['c'])
         view = self._conversation_view(record, policy)
-        if request.mode == 'context' and view['archived']:
-            return {**view, 'context': pack_context(record.get('summary', ''), [], policy.context_budget)}
         order = 'DESC' if request.mode == 'context' else 'ASC'
+        # Recovery starts after the folded range; reading history still sees everything.
+        after = max(request.after, record.get('compacted_through') or 0) if request.mode == 'context' else request.after
         events, _, _ = await self.runtime.driver.execute_query(
             'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent) '
             'WHERE e.sequence > $after RETURN e.payload AS payload, e.sequence AS sequence '
-            f'ORDER BY e.sequence {order} LIMIT $limit', id=record['id'], after=request.after,
+            f'ORDER BY e.sequence {order} LIMIT $limit', id=record['id'], after=after,
             limit=20 if request.mode == 'context' else request.limit)
         decoded = []
         total = 0
@@ -94,14 +96,51 @@ class StoreAgentConversations:
                 break
             decoded.append(value)
         if request.mode == 'context':
-            return {**view, 'context': pack_context(record.get('summary', ''), list(reversed(decoded)), policy.context_budget)}
+            return {**view, 'context': pack_context(self._digest_text(record), list(reversed(decoded)), policy.context_budget)}
         cursor = decoded[-1]['sequence'] if decoded else request.after
         return {**view, 'events': decoded, 'next_cursor': cursor, 'has_more': cursor < record['revision']}
 
     def _conversation_view(self, record, policy):
         return {key: record.get(key) for key in ('id', 'summary', 'status', 'revision', 'last_activity')} | {
-            'archived': archived(record['last_activity'], policy.idle_days),
+            'compacted_through': record.get('compacted_through') or 0,
+            'unfolded_bytes': record.get('unfolded_bytes') or 0,
             'policy': policy.model_dump(), 'raw_retained': True}
+
+    @staticmethod
+    def _digest_text(record):
+        if record.get('digest'):
+            return render_digest(json.loads(record['digest']))
+        return record.get('summary') or ''
+
+    async def _compact_conversation(self, conversation_id, policy):
+        """Fold older messages into the digest, keeping recent ones verbatim."""
+        rows, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (c:FuliConversation {id: $id}) RETURN c', id=conversation_id)
+        record = dict(rows[0]['c'])
+        threshold = policy.compact_after_kb * 1024
+        if (record.get('unfolded_bytes') or 0) <= threshold:
+            return
+        events, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent) '
+            'WHERE e.sequence > $after RETURN e.payload AS payload, e.sequence AS sequence '
+            'ORDER BY e.sequence', id=conversation_id, after=record.get('compacted_through') or 0)
+        decoded = [decode_event(event) for event in events]
+        if not decoded:
+            return
+        # The newest event always stays verbatim, then as much as fits a quarter.
+        keep_bytes, cut = threshold // 4, len(decoded) - 1
+        kept = message_bytes(decoded[cut])
+        while cut and kept + message_bytes(decoded[cut - 1]) <= keep_bytes:
+            cut -= 1
+            kept += message_bytes(decoded[cut])
+        if not cut:
+            return
+        digest = json.loads(record['digest']) if record.get('digest') else {}
+        await self.runtime.driver.execute_query(
+            'MATCH (c:FuliConversation {id: $id}) '
+            'SET c.digest=$digest, c.compacted_through=$through, c.unfolded_bytes=$kept',
+            id=conversation_id, digest=json.dumps(fold_messages(digest, decoded[:cut]), ensure_ascii=False),
+            through=decoded[cut - 1]['sequence'], kept=kept)
 
     async def append_conversation(self, actor, request):
         if request.initialize_cursor:
@@ -137,6 +176,7 @@ class StoreAgentConversations:
                 "c.last_activity=$now, c.summary='', c.status='reported' "
                 'SET c.serial=coalesce(c.serial,0)+1', id=conversation_id, scope=scope, now=now)
             new_summary = False
+            unfolded = 0
             for event in request.events:
                 digest, payload = encode_event(event)
                 event_id = stable_uuid(conversation_id, request.source_application, request.session_id, event.event_id)
@@ -148,6 +188,7 @@ class StoreAgentConversations:
                     continue
                 if event.kind == 'checkpoint':
                     new_summary = True
+                unfolded += message_bytes(event.model_dump())
                 await store.runtime.driver.execute_query(
                     'MATCH (c:FuliConversation {id: $id}) SET c.revision=c.revision+1, c.last_activity=$now '
                     'CREATE (e:FuliConversationEvent {id: $event_id, digest: $digest, payload: $payload, '
@@ -155,10 +196,21 @@ class StoreAgentConversations:
                     'CREATE (c)-[:HAS_EVENT]->(e)', id=conversation_id, event_id=event_id,
                     digest=digest, payload=payload, now=now, source=request.source_application,
                     task=request.task_context_token)
-            if request.summary is not None and new_summary:
+            if unfolded:
                 await store.runtime.driver.execute_query(
-                    'MATCH (c:FuliConversation {id: $id}) SET c.summary=$summary, c.status=$status',
-                    id=conversation_id, summary=request.summary, status=request.status or 'reported')
+                    'MATCH (c:FuliConversation {id: $id}) '
+                    'SET c.unfolded_bytes=coalesce(c.unfolded_bytes,0)+$bytes',
+                    id=conversation_id, bytes=unfolded)
+            if request.summary is not None and new_summary:
+                rows, _, _ = await store.runtime.driver.execute_query(
+                    'MATCH (c:FuliConversation {id: $id}) RETURN c.digest AS digest', id=conversation_id)
+                digest = json.loads(rows[0]['digest']) if rows[0]['digest'] else {}
+                digest = add_task_result(digest, now, request.status or 'reported', request.summary)
+                await store.runtime.driver.execute_query(
+                    'MATCH (c:FuliConversation {id: $id}) SET c.summary=$summary, c.status=$status, c.digest=$digest',
+                    id=conversation_id, summary=request.summary, status=request.status or 'reported',
+                    digest=json.dumps(digest, ensure_ascii=False))
+            await store._compact_conversation(conversation_id, policy)
             if request.cursor is not None:
                 await store.runtime.driver.execute_query(
                     'MATCH (s:FuliTranscriptCursor {id: $id}) SET s.cursor=$cursor, s.owner_scope=$scope', id=stream, cursor=request.cursor, scope=scope)

@@ -347,13 +347,16 @@ class StoreProjectAgentTasks(
                 reason = 'hr_unavailable'
         self._verify_parallel_plan(request.parallel_plan, participants)
 
-        executor_decision = await self._resolve_executor_if_available(
-            actor,
-            request,
-            lead,
-            model_strategy,
-            model_source,
-            task_id,
+        # Staffing a default lead executes nothing, so it needs no executor.
+        executor_decision = None if request.staffing_intent == 'default_lead' else (
+            await self._resolve_executor_if_available(
+                actor,
+                request,
+                lead,
+                model_strategy,
+                model_source,
+                task_id,
+            )
         )
         if lead and executor_decision and self._executor_decision_blocked(executor_decision):
             routing_outcome = 'blocked'
@@ -904,7 +907,8 @@ class StoreProjectAgentTasks(
             lead_agent_id=lead_agent_id,
             complexity=complexity,
             complexity_basis=complexity_basis,
-            verification_required=request.verification_required,
+            # A staffing record has no artifact to verify.
+            verification_required=request.staffing_intent != 'default_lead',
             model_strategy_json=model_strategy.model_dump_json() if model_strategy else None,
             task_model_strategy_override_json=(
                 request.model_strategy_override.model_dump_json()

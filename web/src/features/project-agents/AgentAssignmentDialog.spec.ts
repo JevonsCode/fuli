@@ -5,7 +5,7 @@ const postJson = vi.hoisted(() => vi.fn())
 
 vi.mock('@/api/client', () => ({ postJson }))
 
-import { SearchableSelectStub } from '@/test-support/SearchableSelectStub'
+import { UiSelectStub } from '@/test-support/UiSelectStub'
 import type { PersonalProject, ProjectAgentAssignmentRecord, ProjectAgentRecord } from '@/types'
 import AgentAssignmentDialog from './AgentAssignmentDialog.vue'
 
@@ -132,7 +132,7 @@ describe('AgentAssignmentDialog', () => {
         projects,
         defaultProjectId: 'project-a',
       },
-      global: { stubs: { SearchableSelect: SearchableSelectStub } },
+      global: { stubs: { UiSelect: UiSelectStub } },
     })
 
     await wrapper.setProps({ open: true })
@@ -140,7 +140,7 @@ describe('AgentAssignmentDialog', () => {
 
     const dialog = wrapper.get('dialog')
     expect(showModal).toHaveBeenCalledTimes(1)
-    expect(document.activeElement).toBe(dialog.get('[data-dialog-initial-focus]').element)
+    expect(dialog.get('.ui-dialog__body').element.contains(document.activeElement)).toBe(true)
 
     await wrapper.setProps({ open: false })
     await flushPromises()
@@ -159,6 +159,6 @@ function mountDialog(options: { action?: 'assign' | 'end' | 'replace'; assignmen
       defaultProjectId: 'project-a',
       ...options,
     },
-    global: { stubs: { SearchableSelect: SearchableSelectStub } },
+    global: { stubs: { UiSelect: UiSelectStub } },
   })
 }

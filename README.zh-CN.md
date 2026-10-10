@@ -22,6 +22,9 @@
 - **搭档留得住：**任务结束后，Agent 的职责、合作记录与工作记忆继续保留。
 - **上下文有边界：**按需取回项目知识、决定与偏好，保留来源、作用域和确认状态。
 - **需要时一起做：**协调不同专长的 Agent，通过可用且获授权的客户端或执行器开展任务，记录真实执行。
+- **每个任务都有负责人：**在项目目录里直接提需求，Fuli 自动登记项目并安排一位负责 Agent；回复最后一行写明谁负责、谁协助。
+- **项目经理与 HR 固定在岗：**Jefa（项目经理）和 Bole（HR）随空间自带，不需要招募。
+- **Agent 之间直接对话：**通过[圆桌](#agent-圆桌)，一个 Agent 可以直接去问另一段对话里的 Agent，往来全程留痕。
 
 这里的“长期”指身份和上下文持续存在。Fuli 负责组织上下文与协调任务，接入的 AI 工具负责执行。
 能采集、接续哪些对话取决于客户端适配器；换工具不会自动获得其他项目的私有记忆。
@@ -41,7 +44,7 @@ fuli open
 
 设置向导会先展示计划，再修改环境。完整要求与 macOS / Linux 原生运行方式见[安装](#安装)。
 
-第一次可以试一次跨工具接续：登记一个本地项目、分配一位 Agent，在一个已接入客户端完成任务，
+第一次可以试一次跨工具接续：在项目目录里提一个需求（Fuli 会登记项目并安排负责 Agent），在一个已接入客户端完成任务，
 再把这位 Agent 的接续指令带到连接同一份数据的另一客户端。检查它是否找对项目、恢复上次的工作，
 并在缺少信息时如实说明。支持范围见[Agent 对话与协作说明](docs/agent-conversations-and-collaboration.md)。
 
@@ -58,29 +61,14 @@ Agent 目录提供首次任务入口，任务详情会区分“已分配”和�
 
 ## Agent 圆桌
 
-让独立 Agent 围绕同一个目标，找到同伴、讨论方案、交接任务、实施并审查结果。
-圆桌已包含在 Fuli 正式版中。
+Agent 之间可以直接对话，就像负责人去问一位同事或子 Agent。比如 Codex 里的 Agent 可以问
+某一段 Claude Code 对话里的 Agent，也可以问一位还没运行过的 FULI Agent。不需要人建房间或拉人：
+Agent 调用 `message_agent`，Fuli 在对方自己的客户端里以只读方式唤醒它并把回答带回来：
+Claude Code 会 fork 原会话；Codex 会在原对话里记下这次问答（对话正在 Codex 中打开时改用新会话）。
+暂时唤不醒的消息会在对方下次开始任务时出现在它的收件箱里。
 
-AI 使用席位邀请接入后，可以通过工具自带的说明了解流程，介绍自己的职责与能力，
-寻找合适的同伴，发送定向问题或交接消息。成员介绍与消息在房间内可见，执行权限由席位控制。
-
-```bash
-npm install -g fuli-context@latest
-fl roundtable serve --data-dir ./roundtable-data --port 3738
-```
-
-打开 `http://127.0.0.1:3738/roundtables`，创建目标并邀请 2–6 位参与者。
-用生成的席位邀请连接 MCP 客户端，或启动本机工作端：
-
-```bash
-fl roundtable worker --url https://COORDINATOR --room ROOM_ID --runtime codex --workspace ./project
-```
-
-圆桌保存消息、任务依赖、审查结果与分歧，支持 Codex CLI、Claude Code CLI 和 MCP 客户端，
-并提供 xAI、A2A 服务适配器。Pi/Ollama 作为试验性本地模型适配器提供。
-审查者通过任务提供的产物引用和工作区访问权限检查交付结果。
-
-邀请、AI 接入与运行时配置见[圆桌使用指南](docs/roundtable.md)。
+每一段往来都保存在本机，控制台的“圆桌”页能看到谁问了谁、通过哪个客户端、原文和回答。
+工具与限制见[圆桌说明](docs/agent-roundtable.md)。
 
 ## npm 包
 
@@ -160,7 +148,7 @@ Agent 在酒店项目工作时先搜索酒店本地知识，再沿显式的 `PAR
 ### 7. 本地优先，公开层不包含个人模型
 
 个人图谱默认留在本机。支持的客户端适配器可保存可见对话，用于私有 Agent 接续；对话记录与
-结构化、可复用的确认知识分开存储，默认使用 7 天不活跃窗口和有界上下文召回。凭据、临时日志
+结构化、可复用的确认知识分开存储，对话累积到一定量（默认 64 KB）后较早的消息折叠成摘要，召回有字节预算。凭据、临时日志
 与原始命令输出不应写入知识图谱。团队共享层只承载经过确认、具有上下文和来源的项目或领域知识，不包含个人的
 品味、个性和判断偏好。
 
@@ -446,6 +434,14 @@ npm install --global fuli-context
 fuli setup
 ```
 
+也可以一行安装，会先检查 Node.js 版本：
+
+```bash
+curl -fsSL https://xn--8ovp9s.xn--m8txu.com/fuli/install.sh | sh
+```
+
+Windows PowerShell：`irm https://xn--8ovp9s.xn--m8txu.com/fuli/install.ps1 | iex`。
+
 `fuli setup` 会先展示操作计划并请求确认，然后检查容器运行时、初始化本机
 Graphiti / Neo4j、创建个人空间、安装配套 Agent Skills，并为检测到的 Agent 注册 `fuli`
 MCP。默认只连接个人 Provider，不会模拟团队共享服务。
@@ -562,14 +558,14 @@ start 和 restart 会继续沿用。
 Kubernetes 或整台容器虚拟机；原生模式会直接停止对应 Provider 和 Neo4j 进程，因此空闲时
 不再保留共享虚拟机开销。
 
-“项目 Agent → 招募员工”支持可复用的默认员工模板。Jefa 是项目经理；Bole 是固定 HR Agent，原生人员面板可查看 Agent 分布、当前工作与招募历史。招募复用持久身份，
+Jefa（项目经理）和 Bole（HR，原生人员面板可查看 Agent 分布、当前工作与招募历史）是每个空间固定在岗的角色，不需要招募。“Agents → 聘请 Agent”提供其他可复用的员工模板。招募复用持久身份，
 按项目单独任职；安装员工包后，侧栏工作台与 API/A2A 共用 FULI 端口，已有 FULI MCP 可发现和调用员工工具。
 招募不等于启动模型，也不改写已有客户端配置。详见[员工包安装与扩展协议](docs/employee-agents.md)。
 
 Project Agent 身份仍是控制面记录，不会每个身份常驻一个进程。角色工作记忆按项目私有、
 版本化地保存在同一个 Neo4j Provider 中；任务入口恢复唯一负责人，结束检查跨 MCP 进程持久化。
 详见[角色记忆、宿主 hooks 与验收边界](docs/project-agent-memory.md)。受支持的 Codex 和
-Claude Code Hook 还会保存可见对话，默认闲置 7 天归档、按预算恢复。跨项目借调与
+Claude Code Hook 还会保存可见对话，累积到一定量后折叠成摘要，按预算恢复。跨项目借调与
 产物验证沿用同一个 Provider；客户端覆盖及模型能力配置见
 [对话与协作](docs/agent-conversations-and-collaboration.md)。实际执行器按 ID 共用租约：
 只有显式注入受管生命周期适配器的执行器才由 Fuli 启停；Codex 等宿主自己拥有的外部执行器

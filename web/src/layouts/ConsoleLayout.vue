@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import UiButton from '@/components/UiButton.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
 import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
-import EmployeeNavigation from '@/features/employees/EmployeeNavigation.vue'
-import { copy as roundtableCopy } from '@/features/roundtables/copy'
 import AgentAttentionCenter from '@/features/project-agents/AgentAttentionCenter.vue'
 import { t } from '@/i18n'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
@@ -107,60 +105,49 @@ async function closeMobileNav() {
       <BrandEasterEgg />
 
       <nav class="primary-nav" :aria-label="t('console.navigation.aria')">
-        <p class="nav-section-label">{{ t('console.navigation.workspace') }}</p>
         <RouterLink to="/" exact-active-class="is-active">
           <span class="nav-icon nav-icon-overview" aria-hidden="true" />
           <span class="nav-label">{{ t('console.navigation.overview') }}</span>
         </RouterLink>
-
-        <p class="nav-section-label nav-space-label">{{ t('console.navigation.personalSpace') }}</p>
-        <RouterLink class="space-nav-button personal-profile-button" to="/preferences" active-class="is-active">
-          <span class="nav-icon nav-icon-personal-profile" aria-hidden="true" />
-          <span class="nav-copy"><strong>{{ t('console.navigation.preferences') }}</strong></span>
-        </RouterLink>
-        <RouterLink class="space-nav-button knowledge-organizer-button" to="/organize" active-class="is-active">
-          <span class="nav-icon nav-icon-knowledge-organizer" aria-hidden="true" />
-          <span class="nav-copy"><strong>{{ t('console.navigation.organizer') }}</strong></span>
-        </RouterLink>
-        <RouterLink class="space-nav-button personal-space-button" :to="personalProjectsTo" active-class="is-active">
-          <span class="nav-icon nav-icon-personal-project" aria-hidden="true" />
-          <span class="nav-copy"><strong>{{ t('console.navigation.personalProjects') }}</strong></span>
-        </RouterLink>
-        <RouterLink class="space-nav-button project-agents-button" to="/project-agents" active-class="is-active">
+        <RouterLink to="/project-agents" active-class="is-active">
           <span class="nav-icon nav-icon-project-agent" aria-hidden="true" />
-          <span class="nav-copy"><strong>{{ t('console.navigation.projectAgents') }}</strong></span>
+          <span class="nav-label">{{ t('console.navigation.projectAgents') }}</span>
         </RouterLink>
-        <RouterLink class="space-nav-button roundtables-button" to="/roundtables" active-class="is-active">
-          <span class="nav-icon nav-icon-project-agent" aria-hidden="true" />
-          <span class="nav-copy"><strong>{{ roundtableCopy('Agent 圆桌', 'Agent Roundtable') }}</strong><small>{{ roundtableCopy('讨论 · 分工 · 结果', 'Discuss · assign · deliver') }}</small></span>
-        </RouterLink>
-
-        <template v-if="publicVisible">
-          <p class="nav-section-label nav-public-label">{{ t('console.navigation.publicSpace') }}</p>
-          <RouterLink class="space-nav-button public-space-button" to="/public-projects" active-class="is-active">
-            <span class="nav-icon nav-icon-public-project" aria-hidden="true" />
-            <span class="nav-copy"><strong>{{ t('console.navigation.publicProjects') }}</strong></span>
-          </RouterLink>
-        </template>
-
-        <EmployeeNavigation :personal-space-id="activeSpaceId" />
         <AgentAttentionCenter :personal-space-id="activeSpaceId" :projects="store.state?.personalProjects ?? []" />
-
-        <p class="nav-section-label nav-tool-label">{{ t('console.navigation.governance') }}</p>
+        <RouterLink to="/roundtables" active-class="is-active">
+          <span class="nav-icon nav-icon-roundtable" aria-hidden="true" />
+          <span class="nav-label">{{ t('console.navigation.roundtables') }}</span>
+        </RouterLink>
+        <RouterLink :to="personalProjectsTo" active-class="is-active">
+          <span class="nav-icon nav-icon-personal-project" aria-hidden="true" />
+          <span class="nav-label">{{ t('console.navigation.personalProjects') }}</span>
+        </RouterLink>
+        <RouterLink to="/preferences" active-class="is-active">
+          <span class="nav-icon nav-icon-personal-profile" aria-hidden="true" />
+          <span class="nav-label">{{ t('console.navigation.preferences') }}</span>
+        </RouterLink>
         <RouterLink :to="knowledgeTo" active-class="is-active">
           <span class="nav-icon nav-icon-knowledge-graph" aria-hidden="true" />
           <span class="nav-label">{{ t('console.navigation.knowledge') }}</span>
+        </RouterLink>
+
+        <p class="nav-section-label">{{ t('console.navigation.more') }}</p>
+        <RouterLink to="/organize" active-class="is-active">
+          <span class="nav-icon nav-icon-knowledge-organizer" aria-hidden="true" />
+          <span class="nav-label">{{ t('console.navigation.organizer') }}</span>
         </RouterLink>
         <RouterLink v-if="reviewVisible" to="/review" active-class="is-active">
           <span class="nav-icon nav-icon-review" aria-hidden="true" />
           <span class="nav-label">{{ t('console.navigation.review') }}</span>
         </RouterLink>
+        <RouterLink v-if="publicVisible" to="/public-projects" active-class="is-active">
+          <span class="nav-icon nav-icon-public-project" aria-hidden="true" />
+          <span class="nav-label">{{ t('console.navigation.publicProjects') }}</span>
+        </RouterLink>
         <RouterLink to="/connections" active-class="is-active">
           <span class="nav-icon nav-icon-connections" aria-hidden="true" />
           <span class="nav-label">{{ t('console.navigation.connections') }}</span>
         </RouterLink>
-
-        <p class="nav-section-label nav-about-label">{{ t('console.navigation.aboutSection') }}</p>
         <RouterLink to="/settings" active-class="is-active">
           <span class="nav-icon nav-icon-settings" aria-hidden="true" />
           <span class="nav-label">{{ t('console.navigation.settings') }}</span>

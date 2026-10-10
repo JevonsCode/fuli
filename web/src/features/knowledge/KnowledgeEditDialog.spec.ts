@@ -10,7 +10,7 @@ vi.mock('@/api/client', () => ({
   postJson,
 }))
 
-import SearchableSelect from '@/components/SearchableSelect.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import KnowledgeEditDialog from './KnowledgeEditDialog.vue'
 import { knowledgeItemFromNode } from './model'
 
@@ -48,12 +48,12 @@ describe('KnowledgeEditDialog', () => {
     })
 
     const replacementSelect = wrapper
-      .findAllComponents(SearchableSelect)
-      .find((component) => component.props('label') === '替代内容')
+      .findAllComponents({ name: 'UiSelect' })
+      .find((component) => component.props('label') === '选择当前有效的内容')
     expect(replacementSelect).toBeDefined()
     await replacementSelect!.get('[role="combobox"]').trigger('click')
     const replacementOption = replacementSelect!
-      .findAll('.searchable-select-option')
+      .findAll('.ui-select__option')
       .find((option) => option.text().includes('当前交付口径'))
     await replacementOption!.trigger('click')
 
@@ -61,7 +61,7 @@ describe('KnowledgeEditDialog', () => {
       .findAll('label')
       .find((label) => label.text().includes('纠正原因'))
     await reasonLabel!.get('textarea').setValue('当前口径已经完成审核。')
-    await wrapper.get('.knowledge-editor-actions button.secondary-action').trigger('click')
+    await wrapper.get('.knowledge-editor-actions button:not([type="submit"])').trigger('click')
     await flushPromises()
 
     expect(patchJson).toHaveBeenCalledWith(
@@ -105,11 +105,11 @@ describe('KnowledgeEditDialog', () => {
     })
 
     const quadrant = wrapper
-      .findAllComponents(SearchableSelect)
+      .findAllComponents({ name: 'UiSelect' })
       .find((component) => component.props('label') === '当前分类')
     await quadrant!.get('[role="combobox"]').trigger('click')
     await quadrant!
-      .findAll('.searchable-select-option')
+      .findAll('.ui-select__option')
       .find((option) => option.text().includes('未知的已知'))!
       .trigger('click')
     const reason = wrapper

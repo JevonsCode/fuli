@@ -20,7 +20,7 @@ describe('localized route metadata', () => {
   it('updates the browser title for the active locale', () => {
     setLocale('en-US', { persist: false })
     updateDocumentTitle('routes.knowledge.title')
-    expect(document.title).toBe('Knowledge base · FULI')
+    expect(document.title).toBe('Knowledge · FULI')
   })
 
   it('keeps the organizer header concise', () => {
@@ -35,7 +35,7 @@ describe('localized route metadata', () => {
     const route = router.resolve('/preferences/writing')
     expect(route.name).toBe('writing-taste')
     expect(route.meta.eyebrow).toBe('')
-    expect(routeMetaText(route.meta.title)).toBe('写作偏好')
+    expect(routeMetaText(route.meta.title)).toBe('文风画像')
   })
 
   it('registers the concise project Agent directory', () => {
@@ -46,7 +46,7 @@ describe('localized route metadata', () => {
   })
 
   it('localizes Agent profile and management routes', () => {
-    expect(routeMetaText(router.resolve('/agents/space/agent').meta.title)).toBe('个人主页')
+    expect(routeMetaText(router.resolve('/agents/space/agent').meta.title)).toBe('主页')
     expect(routeMetaText(router.resolve('/project-agents/manage').meta.title)).toBe('高级管理')
     setLocale('en-US', { persist: false })
     expect(routeMetaText(router.resolve('/agents/space/agent').meta.title)).toBe('Profile')
@@ -54,7 +54,7 @@ describe('localized route metadata', () => {
 
   it('registers the about page', () => {
     expect(router.resolve('/about').name).toBe('about')
-    expect(routeMetaText(router.resolve('/about').meta.title)).toBe('说明')
+    expect(routeMetaText(router.resolve('/about').meta.title)).toBe('关于')
   })
 
   it('localizes the employee workbench title in both supported languages', () => {

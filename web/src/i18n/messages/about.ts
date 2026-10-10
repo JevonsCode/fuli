@@ -4,46 +4,46 @@ export const aboutMessages = {
     labelsAria: '知识标签说明',
     philosophy: {
       title: '对话会结束，方法应该留下',
-      intro: 'FULI 希望人在与 Agent 的协作中，逐渐沉淀自己的工作流、工作态度、工作个性、判断方式与个人品味。它们不只属于工作，也可以来自生活、兴趣和长期形成的习惯。',
-      support: '目标不是保存每一句对话，而是让真正稳定、能够再次发挥作用的经验留下来，并随着一次次使用形成个人项目与方法论。',
+      intro: 'FULI 帮你在与 Agent 的协作中，沉淀自己的工作流、判断方式和品味。',
+      support: '不保存每一句话，只留下稳定、能再次用上的经验。',
       sectionTitle: '方法如何留下',
       capture: {
         index: '01',
         title: '从真实协作中沉淀',
-        description: '偏好、步骤、标准、边界和有效做法来自真实任务；Agent 可以提炼，用户负责确认、纠正或拒绝。',
+        description: '偏好、步骤、标准和边界来自真实任务；Agent 提炼，你来确认。',
       },
       project: {
         index: '02',
         title: '让个人项目逐渐成形',
-        description: '项目可以从聊天、文档、仓库、文件或一句说明开始。Agent 可以建议归属，但项目由用户指定，归错的知识也可以重新调整。',
+        description: '项目可以从对话、文档或仓库开始；归属由你决定，随时可以调整。',
       },
       review: {
         index: '03',
         title: '周期回顾，而不是无限堆积',
-        description: '在合适的周期回顾知识，确认内容、处理冲突、整理分类并识别过期信息；Agent 可以在有余量的周期里，利用剩余 token 辅助完成这些整理。',
+        description: '定期回顾：确认内容、处理冲突、清理过期信息，Agent 可以帮你整理。',
       },
       reuse: {
         index: '04',
         title: '跨 Agent 复用自己的方法',
-        description: '重复出现的流程不必向每个 Agent 重新说明。稳定的方法可以成为全局工作流，也可以只留在特定项目，在不同工具和场景中继续复用。',
+        description: '重复的流程不必反复交代：可以是全局工作流，也可以只属于某个项目。',
       },
       boundariesTitle: '始终保留的边界',
       local: {
         title: '本机优先',
-        description: '个人项目与会话沉淀默认留在本机，只有用户明确提交时才进入公共流程。',
+        description: '个人项目与对话默认只在本机，明确提交才会公开。',
       },
       authority: {
         title: '用户决定',
-        description: 'Agent 可以建议、整理和发现，但项目归属、内容确认与最终取舍由用户决定。',
+        description: 'Agent 可以建议和整理，最终取舍由你决定。',
       },
       scope: {
         title: '按范围复用',
-        description: '通用方法可以跨项目使用；项目特有知识不会因为相似就自动进入另一个项目。',
+        description: '通用方法跨项目复用；项目知识不会因为相似就进入别的项目。',
       },
     },
     labelsIntro: {
       title: '标签体系',
-      description: '同一条知识可以同时拥有偏好类型、发现来源和确认状态；三个维度各自回答不同的问题。',
+      description: '一条知识有三个维度：偏好类型、发现来源、确认状态。',
     },
     credits: {
       title: '开源致谢',
@@ -103,17 +103,17 @@ export const aboutMessages = {
       taste: {
         label: '品味',
         short: '偏爱的结果或风格',
-        description: '界面、文案、产品、架构或工程结果中，用户明确喜欢或排斥的方向。',
+        description: '你明确喜欢或排斥的方向：界面、文案、产品、架构。',
       },
       personality: {
         label: '个性',
         short: '稳定的自我描述',
-        description: '用户明确表达的长期工作或协作特点；Agent 从行为推断时先保持待确认。',
+        description: '你明确说过的长期协作特点；Agent 推断的先待确认。',
       },
       judgment: {
         label: '判断偏好',
         short: '面对取舍时怎么决定',
-        description: '决策条件、优先级、风险倾向，以及在特定情况下需要遵守的边界。',
+        description: '取舍时的条件、优先级、风险倾向和边界。',
       },
     },
     quadrants: {
@@ -131,7 +131,7 @@ export const aboutMessages = {
       knownKnown: {
         label: '明确表达',
         coordinate: '已意识 · 已掌握',
-        description: '被用户、文档或其他来源直接表达的知识、结论或要求。',
+        description: '由你、文档或其他来源直接给出的知识或要求。',
       },
       unknownUnknown: {
         label: '盲点探索',
@@ -144,19 +144,19 @@ export const aboutMessages = {
         description: '从行为、示例、原型或反馈中提炼出的隐性知识。',
       },
       immutable: '发现来源不是可信度。后续确认不会改变它。',
-      unclassified: '“待分类”不是第五象限，只表示旧内容还没有补充发现来源。',
+      unclassified: '“待分类”只表示旧内容还没补充发现来源。',
     },
     statuses: {
       entryCondition: '进入条件',
       descriptionHeader: '说明',
       pending: {
         label: '待确认',
-        description: 'Agent 提出的内容、推断内容，或缺少确认人和确认时间的旧数据。',
+        description: 'Agent 提出或推断的内容，或缺少确认记录的旧数据。',
         rule: '写入时没有有效的用户或权威来源确认',
       },
       agentConfirmed: {
         label: 'Agent 已确认',
-        description: '内容在多个独立任务中实际影响了回答、实现或决策，权重仍低于人工确认。',
+        description: '在多个任务中实际用上了；权重仍低于你的确认。',
         rule: '至少 5 次有效使用、覆盖 3 个任务，并且没有未解决冲突',
       },
       confirmed: {
@@ -165,7 +165,7 @@ export const aboutMessages = {
         rule: '记录确认人、确认时间和确认依据',
       },
       usageBoundary: '检索、查看、进入上下文和自动注入都不算有效使用。',
-      resetBoundary: '内容或分类发生变化后，会回到待确认；同一次修改若由用户或权威来源重新确认则除外。',
+      resetBoundary: '内容或分类变化后回到待确认，除非同时由你重新确认。',
     },
     example: {
       title: '三个维度可以同时存在',
@@ -173,55 +173,55 @@ export const aboutMessages = {
       profile: '品味',
       origin: '明确表达',
       status: '已确认',
-      description: '它是界面结果偏好，由用户直接表达，并由用户确认。三个标签回答的是三件不同的事。',
+      description: '这是你直接表达并确认的界面偏好。三个标签各说一件事。',
     },
-    allFilter: '“全部”只是当前筛选条件，不会写入知识，也不是第四种确认状态或第五种偏好类型。',
+    allFilter: '“全部”只是筛选条件，不是一种状态或类型。',
   },
   'en-US': {
     aria: 'About FULI',
     labelsAria: 'Knowledge label guide',
     philosophy: {
       title: 'Conversations end. Methods should remain.',
-      intro: 'FULI helps people gradually retain their workflows, working attitudes, collaboration traits, judgment patterns, and personal taste through real work with Agents. The same idea also applies beyond work—to interests, daily life, and habits formed over time.',
-      support: 'The goal is not to preserve every line of a conversation. It is to keep stable experience that can matter again, then let repeated use grow into personal projects and a reusable methodology.',
+      intro: 'FULI helps you keep your workflows, judgment, and taste as you work with Agents.',
+      support: 'Not every line of a conversation — only stable experience worth reusing.',
       sectionTitle: 'How methods remain',
       capture: {
         index: '01',
         title: 'Learn from real collaboration',
-        description: 'Preferences, steps, standards, boundaries, and proven practices come from real tasks. Agents may extract them; users confirm, correct, or reject them.',
+        description: 'Preferences, steps, standards, and boundaries come from real tasks. Agents extract; you confirm.',
       },
       project: {
         index: '02',
         title: 'Let personal projects take shape',
-        description: 'A project can begin with a chat, document, repository, file, or a short description. Agents may suggest placement, but users choose the project and can reassign misplaced knowledge.',
+        description: 'A project can start from a chat, document, or repository. You choose where knowledge belongs and can move it any time.',
       },
       review: {
         index: '03',
         title: 'Review periodically, not endlessly accumulate',
-        description: 'At useful intervals, review knowledge, confirm content, resolve conflicts, refine classification, and identify stale information. Agents can use spare token budget to assist with this work.',
+        description: 'Review periodically: confirm, resolve conflicts, and retire stale items. Agents can help.',
       },
       reuse: {
         index: '04',
         title: 'Reuse your method across Agents',
-        description: 'A recurring process should not be re-explained to every Agent. Stable methods can become global workflows or stay project-specific, then remain useful across tools and contexts.',
+        description: 'Stop re-explaining recurring processes: keep them as global workflows or within one project.',
       },
       boundariesTitle: 'Boundaries that remain',
       local: {
         title: 'Local first',
-        description: 'Personal projects and conversation-derived knowledge stay on the device by default. They enter a public flow only after an explicit user submission.',
+        description: 'Personal projects and conversations stay on this device unless you explicitly submit them.',
       },
       authority: {
         title: 'User decides',
-        description: 'Agents may suggest, organize, and discover; users decide project placement, confirmation, and final trade-offs.',
+        description: 'Agents suggest and organize; you make the final call.',
       },
       scope: {
         title: 'Reuse by scope',
-        description: 'General methods may work across projects. Project-specific knowledge never enters another project merely because it looks similar.',
+        description: 'General methods work across projects; project knowledge never leaks into another just because it looks similar.',
       },
     },
     labelsIntro: {
       title: 'Label system',
-      description: 'One item may carry a preference type, discovery source, and confirmation status at the same time. Each dimension answers a different question.',
+      description: 'Each item has three dimensions: preference type, discovery source, and confirmation status.',
     },
     credits: {
       title: 'Open-source credits',
@@ -281,17 +281,17 @@ export const aboutMessages = {
       taste: {
         label: 'Taste',
         short: 'Preferred outcomes or styles',
-        description: 'Directions the user explicitly likes or rejects in UI, writing, product, architecture, or engineering outcomes.',
+        description: 'What you explicitly like or reject in UI, writing, product, or architecture.',
       },
       personality: {
         label: 'Personality',
         short: 'Stable self-description',
-        description: 'Long-term working or collaboration traits explicitly described by the user. Agent inference starts as pending.',
+        description: 'Collaboration traits you stated; Agent inferences start as pending.',
       },
       judgment: {
         label: 'Judgment preference',
         short: 'How trade-offs are decided',
-        description: 'Decision conditions, priorities, risk posture, and boundaries that apply in specific situations.',
+        description: 'Decision conditions, priorities, risk posture, and boundaries.',
       },
     },
     quadrants: {
@@ -309,7 +309,7 @@ export const aboutMessages = {
       knownKnown: {
         label: 'Explicit statement',
         coordinate: 'Aware · mastered',
-        description: 'Knowledge, conclusions, or requirements directly expressed by a user, document, or other source.',
+        description: 'Stated directly by you, a document, or another source.',
       },
       unknownUnknown: {
         label: 'Blind-spot exploration',
@@ -322,19 +322,19 @@ export const aboutMessages = {
         description: 'Tacit knowledge extracted from behavior, examples, prototypes, or feedback.',
       },
       immutable: 'Discovery source is not a truth score. Later confirmation does not change it.',
-      unclassified: '“Unclassified” is not a fifth quadrant. It only marks legacy content whose discovery source is missing.',
+      unclassified: '“Unclassified” only marks legacy content without a discovery source.',
     },
     statuses: {
       entryCondition: 'Entry condition',
       descriptionHeader: 'Description',
       pending: {
         label: 'Pending',
-        description: 'Agent-proposed or inferred content, and legacy data without a confirmer and confirmation time.',
+        description: 'Proposed or inferred by an Agent, or legacy data without a confirmation record.',
         rule: 'No valid user or authoritative-source confirmation at capture time',
       },
       agentConfirmed: {
         label: 'Agent confirmed',
-        description: 'The content materially affected answers, implementation, or decisions across independent tasks. It remains below human confirmation.',
+        description: 'Actually used across several tasks; still ranks below your confirmation.',
         rule: 'At least 5 qualified uses across 3 tasks, with no unresolved conflict',
       },
       confirmed: {
@@ -343,7 +343,7 @@ export const aboutMessages = {
         rule: 'A confirmer, confirmation time, and confirmation basis are recorded',
       },
       usageBoundary: 'Retrieval, viewing, context inclusion, and automatic injection do not count as qualified use.',
-      resetBoundary: 'Content or classification changes return an item to pending unless the same revision is reconfirmed by a user or authoritative source.',
+      resetBoundary: 'Edits return an item to pending unless you reconfirm it in the same change.',
     },
     example: {
       title: 'All three dimensions can coexist',
@@ -351,8 +351,8 @@ export const aboutMessages = {
       profile: 'Taste',
       origin: 'Explicit statement',
       status: 'Confirmed',
-      description: 'It is a UI outcome preference, directly stated by the user and confirmed by the user. Each label answers a different question.',
+      description: 'A UI preference you stated and confirmed. Each label says one thing.',
     },
-    allFilter: '“All” is only the current filter. It is not written to knowledge and is neither a fourth confirmation status nor a fifth preference type.',
+    allFilter: '“All” is just a filter, not a status or type.',
   },
 } as const

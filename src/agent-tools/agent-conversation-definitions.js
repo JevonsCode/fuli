@@ -13,9 +13,9 @@ export const AGENT_CONVERSATION_DEFINITIONS = [
     description: 'Explicitly attach the current task session to an earlier conversation of the SAME Agent and project, returning bounded recovery context. Select the intended Agent at task entry first. Does not transfer files or native runtime state.',
     inputSchema: objectSchema({ taskContextToken: { ...id, maxLength: 160 }, conversationId: id }, ['taskContextToken', 'conversationId']) },
   { name: 'get_agent_conversation_policy', title: 'READ · Conversation policy',
-    description: 'Read idle archival days, recovery context budget and capture switch. Defaults: 7 inactive days and 2000 conservative UTF-8 byte units. Archival preserves originals.',
+    description: 'Read the compaction threshold, recovery context budget and capture switch. Defaults: fold older messages into a digest after 64 KB of unfolded text; recover 4000 conservative UTF-8 bytes. Raw messages are always retained.',
     inputSchema: objectSchema(scope, required) },
   { name: 'update_agent_conversation_policy', title: 'WRITE · Conversation policy',
-    description: 'Configure this Agent and project conversation capture and recovery. No LLM runs during capture or archival. Raw data is retained; inactivity affects default recovery only.',
-    inputSchema: objectSchema({ ...scope, idleDays: integerSchema({ minimum: 1, maximum: 365 }), contextBudget: integerSchema({ minimum: 512, maximum: 16000 }), enabled: booleanSchema() }, [...required, 'idleDays', 'contextBudget', 'enabled']) }
+    description: 'Configure this Agent and project conversation capture and recovery. No LLM runs during capture or compaction. Raw data is retained; compaction only shortens default recovery.',
+    inputSchema: objectSchema({ ...scope, compactAfterKb: integerSchema({ minimum: 8, maximum: 1024 }), contextBudget: integerSchema({ minimum: 512, maximum: 16000 }), enabled: booleanSchema() }, [...required, 'compactAfterKb', 'contextBudget', 'enabled']) }
 ];

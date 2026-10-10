@@ -41,7 +41,12 @@ export async function taskEntryPreferences(application, projectResolution, {
     sourceApplication, taskPrompt, selectionReason: selection.reason,
     matchBasis: selection.match_basis
   }) : selection;
+  // Questions other Agents left for this Agent while it was not running.
+  const waiting = selection?.agent && application.roundtable
+    ? application.roundtable.pending(selection.agent.agentId) : [];
   return { ...managedPreferences, ...(context ? { project_agent_context: context } : {}),
+    ...(waiting.length ? { agent_messages: waiting,
+      agent_messages_guidance: 'Other Agents are waiting for your answers. Reply to each with reply_agent_message.' } : {}),
     agent_receipt: taskAgentReceipt(application, {
       projectId: projectResolution.personalProjectId, agentId: selection?.agent?.agentId ?? null,
       name: context?.role?.name, sourceApplication

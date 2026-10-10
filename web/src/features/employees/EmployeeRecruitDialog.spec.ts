@@ -8,7 +8,7 @@ import { setLocale } from '@/i18n'
 const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
 vi.mock('@/api/client', () => ({ getJson, postJson }))
 import EmployeeRecruitDialog from './EmployeeRecruitDialog.vue'
-import EmployeeNavigation from './EmployeeNavigation.vue'
+import EmployeeWorkbenchLinks from './EmployeeWorkbenchLinks.vue'
 import { employeeCatalogLoading, employeeTemplates, refreshEmployeeCatalog, type EmployeeTemplate } from './catalog'
 
 const projects: PersonalProject[] = [{
@@ -68,10 +68,10 @@ describe('employee recruitment', () => {
     entry.permissions.push('session.title')
     const { wrapper } = await setup()
     expect(wrapper.get('[data-scope="all"]').attributes('aria-checked')).toBe('true')
-    expect(wrapper.text()).toContain('以后新建的项目')
+    expect(wrapper.text()).toContain('以后的项目')
     expect(wrapper.get('.project-scope-picker').find('select').exists()).toBe(false)
     expect(wrapper.find('select:not([aria-hidden="true"])').exists()).toBe(false)
-    expect(wrapper.findAll('.employee-title-settings .searchable-select')).toHaveLength(2)
+    expect(wrapper.findAll('.employee-title-settings .ui-select')).toHaveLength(2)
     expect(wrapper.get('.project-scope-count').text()).toContain('2 / 共 2')
     await wrapper.get('input[value="project-b"]').setValue(false)
     expect(wrapper.text()).not.toContain('将移出')
@@ -85,7 +85,7 @@ describe('employee recruitment', () => {
       mode: 'all', projectIds: [], excludedProjectIds: ['project-b', 'temporarily-unavailable'], titleMode: 'auto', titleStyle: 'emoji',
     }, expectedAssignmentsVersion: 'version-0' })
     expect(postJson.mock.calls[0]![1]).not.toHaveProperty('personalProjectIds')
-    expect(wrapper.text()).toContain('手动改名后暂停覆盖')
+    expect(wrapper.text()).toContain('手动改过的标题不再覆盖')
   })
 
   it('switches to a fixed selection with keyboard access, without silently including future projects', async () => {
@@ -136,12 +136,11 @@ describe('employee recruitment', () => {
     expect(wrapper.get('footer a').attributes('href')).toBe('/employees/jefa?project=project-a')
     await wrapper.get('form').trigger('submit')
     expect(postJson).toHaveBeenCalledTimes(1)
-    const navigation = mount(EmployeeNavigation, { props: { personalSpaceId: 'space-a' }, global: { plugins: [router] } })
-    expect(navigation.find('.nav-section-label').text()).toBe('专属 Agent')
-    mounted.push(navigation)
+    const links = mount(EmployeeWorkbenchLinks, { props: { personalSpaceId: 'space-a' }, global: { plugins: [router] } })
+    mounted.push(links)
     await flushPromises()
-    expect(navigation.get('a').attributes('href')).toBe('/agents/space-a/employee.jefa')
-    expect(navigation.text()).toContain('Jefa')
+    expect(links.get('a').attributes('href')).toBe('/employees/jefa')
+    expect(links.text()).toContain('Jefa')
   })
 
   it('does not create a project or invent a running executor when recruiting without a project', async () => {
@@ -262,7 +261,7 @@ describe('employee recruitment', () => {
 
   it('never falls back to a different employee when the requested template is unavailable', async () => {
     const { wrapper } = await setup(projects, { templateId: 'unavailable-role' })
-    expect(wrapper.find('form').exists()).toBe(false)
+    expect(wrapper.find('button[type="submit"]').exists()).toBe(false)
     expect(postJson).not.toHaveBeenCalled()
   })
 })

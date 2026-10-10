@@ -4,7 +4,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { getJson, postJson } from '@/api/client'
 import { readPersonalProfileGraph } from '@/api/personal-profile-graph'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import SearchableSelect from '@/components/SearchableSelect.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import VirtualDirectoryList from '@/components/VirtualDirectoryList.vue'
 import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay'
 import KnowledgeConfirmDialog from '@/features/knowledge/KnowledgeConfirmDialog.vue'
@@ -25,7 +25,6 @@ import {
   latestItemValue,
   personalProfileItems,
   profileAspectLabel,
-  quadrantLabel,
   reviewStateLabel,
   type KnowledgeReviewState,
 } from '@/features/knowledge/model'
@@ -398,8 +397,7 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
         :aria-pressed="!conflictsOnly && activeReviewState === 'confirmed'"
         @click="toggleReviewState('confirmed')"
       >
-        <strong>{{ confirmedCount }}</strong>{{ t('preferences.profile.summary.confirmed') }}
-        <small>{{ t('preferences.profile.summary.viewRecords') }}</small>
+        {{ t('preferences.profile.summary.confirmed') }}<strong>{{ confirmedCount }}</strong>
       </button>
       <button
         type="button"
@@ -408,8 +406,7 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
         :aria-pressed="!conflictsOnly && activeReviewState === 'agent_confirmed'"
         @click="toggleReviewState('agent_confirmed')"
       >
-        <strong>{{ agentConfirmedCount }}</strong>{{ t('preferences.profile.summary.agentConfirmed') }}
-        <small>{{ t('preferences.profile.summary.belowHuman') }}</small>
+        {{ t('preferences.profile.summary.agentConfirmed') }}<strong>{{ agentConfirmedCount }}</strong>
       </button>
       <button
         type="button"
@@ -418,9 +415,7 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
         :aria-pressed="!conflictsOnly && activeReviewState === 'pending'"
         @click="toggleReviewState('pending')"
       >
-        <strong>{{ observedCount }}</strong>{{ t('preferences.profile.summary.pending') }}
-        <small v-if="observedCount">{{ t('preferences.profile.summary.reviewAndConfirm') }}</small>
-        <small v-else>{{ t('preferences.profile.summary.viewRecords') }}</small>
+        {{ t('preferences.profile.summary.pending') }}<strong>{{ observedCount }}</strong>
       </button>
       <button
         type="button"
@@ -431,14 +426,7 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
         :aria-pressed="conflictsOnly"
         @click="toggleConflictWorkbench()"
       >
-        <strong>{{ conflicts.length }}</strong>{{ t('preferences.profile.summary.conflicts') }}
-        <small>
-          {{
-            conflicts.length
-              ? t('preferences.profile.summary.reviewAndHandle')
-              : t('preferences.profile.summary.viewRecords')
-          }}
-        </small>
+        {{ t('preferences.profile.summary.conflicts') }}<strong>{{ conflicts.length }}</strong>
       </button>
     </div>
 
@@ -462,7 +450,7 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
     <div class="personal-profile-toolbar">
       <div class="personal-profile-filter-groups">
         <div
-          class="personal-profile-filters"
+          class="personal-profile-filters ui-segmented"
           role="group"
           :aria-label="t('preferences.profile.filters.aspectAria')"
         >
@@ -476,13 +464,12 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
             {{ label }}
           </button>
         </div>
-        <SearchableSelect
+        <UiSelect
           v-model="activeScope"
           class="personal-profile-scope-filter"
           control-id="personal-profile-scope"
           :label="t('preferences.profile.filters.scopeLabel')"
           :options="scopeOptions"
-          :search-placeholder="t('preferences.profile.filters.scopeSearch')"
         />
       </div>
       <div class="personal-profile-toolbar-actions">
@@ -656,7 +643,7 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
             <span class="personal-profile-origin">
               <strong :class="{ 'has-conflict': conflictingIds.has(item.id) }">{{ statusLabel(item) }}</strong>
               <small>
-                {{ quadrantLabel(item.originQuadrant) }} · {{ scopeLabel(item) }} ·
+                {{ scopeLabel(item) }} ·
                 {{ t('preferences.profile.directory.sourceCount', { count: item.evidence.length }) }}
               </small>
             </span>

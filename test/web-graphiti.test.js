@@ -34,7 +34,7 @@ const writingTaste = readFileSync('web/src/pages/WritingTastePage.vue', 'utf8');
 const publicProjects = readFileSync('web/src/pages/PublicProjectsPage.vue', 'utf8');
 const review = readFileSync('web/src/pages/ReviewPage.vue', 'utf8');
 const connections = readFileSync('web/src/pages/ConnectionsPage.vue', 'utf8');
-const consoleMessages = readFileSync('web/src/i18n/messages/console.ts', 'utf8');
+const settingsMessages = readFileSync('web/src/i18n/messages/settings.ts', 'utf8');
 const knowledgeMessages = readFileSync(
   'web/src/i18n/messages/knowledge-workspace.ts',
   'utf8'
@@ -88,9 +88,9 @@ test('state and API effects live outside page templates', () => {
   assert.match(settings, /updateAgentAccessPolicy/);
   assert.match(settings, /\/api\/system\/settings/);
   assert.match(settings, /\/api\/system\/resources/);
-  assert.match(consoleMessages, /label: '自动沉淀'/);
-  assert.match(consoleMessages, /label: 'Agent 使用'/);
-  assert.match(consoleMessages, /aria: '允许 Agent 调用 FULI'/);
+  assert.match(settingsMessages, /capture: '自动沉淀'/);
+  assert.match(settingsMessages, /agentAccess: 'Agent 使用'/);
+  assert.match(settingsMessages, /agentAccessMeta: '允许已连接的 Agent 调用 FULI'/);
   assert.match(connections, /Neo4j/);
 });
 
@@ -168,7 +168,7 @@ test('writing taste stays evidence-backed and separates review from Agent use', 
 });
 
 test('connection forms use the shared custom controls', () => {
-  assert.match(connections, /<SearchableSelect/);
+  assert.match(connections, /<UiSelect/);
   assert.match(connections, /<TextField/);
   assert.doesNotMatch(connections, /<(?:input|select|textarea)\b/);
 });

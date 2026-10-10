@@ -761,9 +761,11 @@ class StoreProjectAgentTaskRecruitment:
             request.personal_space_id,
             request.personal_project_id,
         )
+        first_lead = (request.staffing_intent == 'default_lead' and participant_role == 'lead'
+                      and coordination_policy.team_lead_agent_id is None)
         confirmation_mode = (
             'require_confirmation'
-            if coordination_policy.ask_before_recruitment
+            if coordination_policy.ask_before_recruitment and not first_lead
             else 'automatic'
         )
         if not hr_agent_id:

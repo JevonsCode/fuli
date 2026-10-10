@@ -12,20 +12,30 @@ export function agentContinuation(projectId, agentId, conversationId = null) {
     guidance: 'Use a connected client and the same authorized project/Agent. Obtain a fresh task context; never reuse the previous client’s token. This is a FULI prompt, not a native client @ picker registration.' };
 }
 
-export function taskAgentReceipt(application, { projectId, agentId, name = null,
-  sourceApplication = null, workStatus = null, conversationId = null, persistence = null }) {
-  const owner = agentId ? { agent_id: agentId, name,
-    profile_url: agentProfileUrl(application, agentId), source_application: sourceApplication } : null;
+function agentLink(application, agentId, name) {
   const label = String(name?.trim() || agentId).replace(/[\r\n\t]+/g, ' ')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/[\\`*_{}\[\]()!|]/g, '\\$&');
+  return `[${label}](<${agentProfileUrl(application, agentId).replace(/[<>\s]/g, encodeURIComponent)}>)`;
+}
+
+// The reply's attribution line: who led the task and who actually helped.
+export function taskAgentReceipt(application, { projectId, agentId, name = null,
+  sourceApplication = null, workStatus = null, conversationId = null, persistence = null,
+  collaborators = [] }) {
+  const owner = agentId ? { agent_id: agentId, name,
+    profile_url: agentProfileUrl(application, agentId), source_application: sourceApplication } : null;
+  const helpers = owner ? collaborators.filter(item => item.agentId !== agentId) : [];
   const markdown = owner
-    ? `FULI Agent：[${label}](<${owner.profile_url.replace(/[<>\s]/g, encodeURIComponent)}>)`
+    ? `FULI Agent：负责人 ${agentLink(application, agentId, name)}`
+      + (helpers.length ? ` · 协作 ${helpers.map(item => agentLink(application, item.agentId, item.name)).join('、')}` : '')
     : 'FULI Agent：未选定';
   return { required: true, markdown, owner,
+    collaborators: helpers.map(item => ({ agent_id: item.agentId, name: item.name,
+      profile_url: agentProfileUrl(application, item.agentId) })),
     personal_project_id: projectId, work_status: workStatus, persistence,
     continuation: owner ? agentContinuation(projectId, agentId, conversationId) : null,
-    guidance: 'MUST include agent_receipt.markdown unchanged exactly once in every final user-visible reply, including greetings, status and errors, even when capture is disabled or nothing is retained. Use this task’s receipt; never invent an owner. Report only truthful work/memory status and actually used collaboration_receipt participants; tools and configured peers are not independent model workers.' };
+    guidance: 'MUST end every final user-visible reply with agent_receipt.markdown unchanged, exactly once, including greetings, status and errors, even when capture is disabled or nothing is retained. The receipt returned by checkpoint_task_knowledge supersedes the entry receipt because it names actual collaborators. Never invent an owner or a collaborator.' };
 }
 
 export function employeeCollaborationReceipt(application, context, { tool, permission, sourceApplication }) {

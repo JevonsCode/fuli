@@ -2,9 +2,9 @@
 import { computed, ref, watch } from 'vue'
 
 import { putJson } from '@/api/client'
-import GrowthLoading from '@/components/GrowthLoading.vue'
-import SearchableSelect from '@/components/SearchableSelect.vue'
-import { useModalDialog } from '@/composables/useModalDialog'
+import UiButton from '@/components/ui/UiButton.vue'
+import UiDialog from '@/components/ui/UiDialog.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import type {
   PersonalProject,
@@ -49,10 +49,6 @@ const executorAllowList = ref('')
 const reason = ref('')
 const busy = ref(false)
 const error = ref('')
-const { dialogRef, initialFocusRef, onCancel, onKeydown } = useModalDialog(
-  () => props.open,
-  () => emit('close'),
-)
 
 const editingExecutor = computed(() => Boolean(props.executor))
 const titleKey = computed(() => props.mode === 'executor'
@@ -61,6 +57,7 @@ const titleKey = computed(() => props.mode === 'executor'
 const savingLabel = computed(() => props.mode === 'executor'
   ? t('projectAgents.routing.editor.savingExecutor')
   : t('projectAgents.routing.editor.savingRule'))
+const scopeOptions = ['space', 'project', 'task'].map((value) => ({ value, label: value }))
 const projectOptions = computed(() => props.projects.map((project) => ({
   value: project.project_id,
   label: project.profile.name,
@@ -153,172 +150,43 @@ async function save() {
 </script>
 
 <template>
-  <dialog ref="dialogRef" v-if="open" class="project-agent-dialog vue-dialog" aria-modal="true" aria-labelledby="executor-routing-dialog-title" @cancel="onCancel" @keydown="onKeydown">
-    <form class="project-agent-dialog-shell" @submit.prevent="save">
-      <header class="project-agent-dialog-header">
-        <h3 id="executor-routing-dialog-title">{{ t(`projectAgents.routing.editor.${titleKey}`) }}</h3>
-        <button ref="initialFocusRef" data-dialog-initial-focus class="quiet-button" type="button" :disabled="busy" @click="emit('close')">{{ t('common.actions.close') }}</button>
-      </header>
-      <div class="project-agent-dialog-fields">
-        <template v-if="mode === 'executor'">
-          <label><span>{{ t('projectAgents.routing.editor.executorId') }}</span><input v-model="executorId" maxlength="128" :disabled="editingExecutor || busy" required /></label>
-          <label><span>{{ t('projectAgents.routing.editor.displayName') }}</span><input v-model="displayName" maxlength="160" :disabled="busy" required /></label>
-          <label><span>{{ t('projectAgents.routing.editor.executorKind') }}</span><input v-model="executorKind" maxlength="128" :disabled="busy" /></label>
-          <label><span>{{ t('projectAgents.routing.editor.priority') }}</span><input v-model.number="priority" type="number" min="1" max="1000000" :disabled="busy" required /></label>
-          <label class="project-agent-wide-field"><span>{{ t('projectAgents.routing.editor.capabilities') }}</span><textarea v-model="capabilities" rows="3" :disabled="busy" /></label>
-          <label class="project-agent-dialog-check"><input v-model="healthRequired" type="checkbox" :disabled="busy" /> <span>{{ t('projectAgents.routing.editor.healthRequired') }}</span></label>
-          <p class="project-agent-dialog-note project-agent-wide-field">{{ t('projectAgents.routing.editor.evidenceNote') }}</p>
-        </template>
-        <template v-else>
-          <label><span>{{ t('projectAgents.routing.editor.scope') }}</span><select v-model="scope" :disabled="busy"><option value="space">space</option><option value="project">project</option><option value="task">task</option></select></label>
-          <label><span>{{ t('projectAgents.routing.editor.priority') }}</span><input v-model.number="priority" type="number" min="1" max="1000000" :disabled="busy" required /></label>
-          <label v-if="scope === 'project' || scope === 'task'"><span>{{ t('projectAgents.fields.project') }}</span><SearchableSelect v-model="projectId" control-id="executor-rule-project" :options="projectOptions" :label="t('projectAgents.fields.project')" :disabled="busy" /></label>
-          <label v-if="scope === 'task'"><span>{{ t('projectAgents.routing.editor.taskId') }}</span><input v-model="taskId" maxlength="128" :disabled="busy" /></label>
-          <label><span>{{ t('projectAgents.routing.editor.workKind') }}</span><input v-model="workKind" maxlength="128" :disabled="busy" required /></label>
-          <label class="project-agent-wide-field"><span>{{ t('projectAgents.routing.editor.executorIds') }}</span><textarea v-model="executorAllowList" rows="3" :placeholder="t('projectAgents.routing.editor.executorIdsPlaceholder')" :disabled="busy" required /></label>
-          <label class="project-agent-wide-field"><span>{{ t('projectAgents.routing.editor.requiredCapabilities') }}</span><textarea v-model="requiredCapabilities" rows="3" :disabled="busy" /></label>
-          <label class="project-agent-wide-field"><span>{{ t('projectAgents.fields.reason') }}</span><textarea v-model="reason" rows="3" :disabled="busy" required /></label>
-          <p class="project-agent-dialog-note project-agent-wide-field">{{ t('projectAgents.routing.editor.ruleNote') }}</p>
-        </template>
-      </div>
-      <p v-if="error" class="project-agent-dialog-error" role="alert">{{ error }}</p>
-      <footer class="project-agent-dialog-actions">
-        <button class="quiet-button" type="button" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</button>
-        <button class="project-agent-primary-action" type="submit" :disabled="busy">
-          <GrowthLoading v-if="busy" variant="inline" :label="savingLabel" />
-          <span v-else>{{ t('projectAgents.routing.editor.save') }}</span>
-        </button>
-      </footer>
-    </form>
-  </dialog>
+  <UiDialog :open="open" class="executor-routing-dialog" size="lg" form :busy="busy" :error="error"
+    :title="t(`projectAgents.routing.editor.${titleKey}`)" @close="emit('close')" @submit="save">
+    <div class="executor-routing-fields">
+      <template v-if="mode === 'executor'">
+        <label class="ui-field">{{ t('projectAgents.routing.editor.executorId') }}<input v-model="executorId" maxlength="128" :disabled="editingExecutor || busy" required /></label>
+        <label class="ui-field">{{ t('projectAgents.routing.editor.displayName') }}<input v-model="displayName" maxlength="160" :disabled="busy" required /></label>
+        <label class="ui-field">{{ t('projectAgents.routing.editor.executorKind') }}<input v-model="executorKind" maxlength="128" :disabled="busy" /></label>
+        <label class="ui-field">{{ t('projectAgents.routing.editor.priority') }}<input v-model.number="priority" type="number" min="1" max="1000000" :disabled="busy" required /></label>
+        <label class="ui-field executor-routing-wide">{{ t('projectAgents.routing.editor.capabilities') }}<textarea v-model="capabilities" rows="3" :disabled="busy" /></label>
+        <label class="ui-check executor-routing-wide"><input v-model="healthRequired" type="checkbox" :disabled="busy" /><span>{{ t('projectAgents.routing.editor.healthRequired') }}</span></label>
+        <p class="ui-meta executor-routing-wide">{{ t('projectAgents.routing.editor.evidenceNote') }}</p>
+      </template>
+      <template v-else>
+        <UiSelect v-model="scope" field :label="t('projectAgents.routing.editor.scope')" :options="scopeOptions" :disabled="busy" />
+        <label class="ui-field">{{ t('projectAgents.routing.editor.priority') }}<input v-model.number="priority" type="number" min="1" max="1000000" :disabled="busy" required /></label>
+        <UiSelect v-if="scope === 'project' || scope === 'task'" v-model="projectId" field control-id="executor-rule-project" :options="projectOptions" :label="t('projectAgents.fields.project')" :disabled="busy" />
+        <label v-if="scope === 'task'" class="ui-field">{{ t('projectAgents.routing.editor.taskId') }}<input v-model="taskId" maxlength="128" :disabled="busy" /></label>
+        <label class="ui-field">{{ t('projectAgents.routing.editor.workKind') }}<input v-model="workKind" maxlength="128" :disabled="busy" required /></label>
+        <label class="ui-field executor-routing-wide">{{ t('projectAgents.routing.editor.executorIds') }}<textarea v-model="executorAllowList" rows="3" :placeholder="t('projectAgents.routing.editor.executorIdsPlaceholder')" :disabled="busy" required /></label>
+        <label class="ui-field executor-routing-wide">{{ t('projectAgents.routing.editor.requiredCapabilities') }}<textarea v-model="requiredCapabilities" rows="3" :disabled="busy" /></label>
+        <label class="ui-field executor-routing-wide">{{ t('projectAgents.fields.reason') }}<textarea v-model="reason" rows="3" :disabled="busy" required /></label>
+        <p class="ui-meta executor-routing-wide">{{ t('projectAgents.routing.editor.ruleNote') }}</p>
+      </template>
+    </div>
+    <template #footer>
+      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</UiButton>
+      <UiButton variant="primary" type="submit" :busy="busy" :busy-label="savingLabel">{{ t('projectAgents.routing.editor.save') }}</UiButton>
+    </template>
+  </UiDialog>
 </template>
 
 <style scoped>
-.project-agent-dialog {
-  width: min(760px, calc(100vw - 64px));
-  max-height: calc(100vh - 64px);
-  padding: 0;
-  overflow: hidden;
-  border: 0;
-  border-radius: 12px;
-  background: transparent;
+.executor-routing-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.executor-routing-wide { grid-column: 1 / -1; }
+.executor-routing-fields p { margin: 0; }
+@media (max-width: 620px) {
+  .executor-routing-fields { grid-template-columns: 1fr; }
+  .executor-routing-wide { grid-column: auto; }
 }
-
-.project-agent-dialog-shell {
-  max-height: calc(100vh - 64px);
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 12px;
-  background: var(--color-surface);
-  box-shadow: 0 18px 48px rgb(33 45 38 / 18%);
-}
-
-.project-agent-dialog-header,
-.project-agent-dialog-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 18px 20px;
-}
-
-.project-agent-dialog-header {
-  border-bottom: 1px solid var(--color-border);
-}
-
-.project-agent-dialog-header h3 {
-  color: var(--color-ink);
-  font-size: 17px;
-}
-
-.project-agent-dialog-fields {
-  min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  padding: 20px;
-  overflow: auto;
-}
-
-.project-agent-dialog-fields label {
-  min-width: 0;
-  display: grid;
-  align-content: start;
-  gap: 6px;
-  color: var(--color-muted);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.project-agent-dialog-fields input,
-.project-agent-dialog-fields select,
-.project-agent-dialog-fields textarea {
-  width: 100%;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-ink);
-  padding: 9px 10px;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.project-agent-dialog-fields textarea {
-  resize: vertical;
-}
-
-.project-agent-dialog-fields input:focus-visible,
-.project-agent-dialog-fields select:focus-visible,
-.project-agent-dialog-fields textarea:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 1px;
-}
-
-.project-agent-wide-field,
-.project-agent-id-note {
-  grid-column: 1 / -1;
-}
-
-.project-agent-dialog-error {
-  margin: 0 20px;
-  color: var(--color-danger);
-  font-size: 12px;
-}
-
-.project-agent-dialog-actions {
-  justify-content: flex-end;
-  border-top: 1px solid var(--color-border);
-}
-
-.project-agent-primary-action {
-  border: 0;
-  border-radius: var(--radius-control);
-  background: var(--color-ink);
-  color: var(--color-surface);
-  padding: 8px 14px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.project-agent-primary-action:hover {
-  background: var(--color-ink);
-}
-
-.project-agent-primary-action:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-
-.project-agent-primary-action:disabled,
-.project-agent-dialog-fields :disabled {
-  cursor: not-allowed;
-  opacity: .6;
-}
-
-.project-agent-dialog-check { display: flex !important; align-items: center; gap: 7px !important; }
-.project-agent-dialog-check input { width: auto !important; }
-.project-agent-dialog-note { color: var(--color-muted); font-size: 12px; line-height: 1.55; }
 </style>

@@ -35,7 +35,7 @@ describe('PreferenceConflictDialog', () => {
 
     expect(wrapper.text()).toContain('内容互补，优先合并')
     expect(wrapper.get('textarea').element.value).toContain('宽度工具栏')
-    await wrapper.get('.conflict-resolution-actions .primary-action').trigger('click')
+    await wrapper.get('.ui-dialog__footer .ui-button--primary').trigger('click')
     await flushPromises()
 
     expect(patchJson).toHaveBeenCalledTimes(2)
@@ -68,8 +68,8 @@ describe('PreferenceConflictDialog', () => {
     const wrapper = mount(PreferenceConflictDialog, { props: {
       conflict: currentConflict(), personalSpaceId: 'personal-space', projects: [],
     } })
-    await wrapper.get('.conflict-resolution-actions .primary-action').trigger('click')
-    await wrapper.get('.conflict-resolution-actions .primary-action').trigger('click')
+    await wrapper.get('.ui-dialog__footer .ui-button--primary').trigger('click')
+    await wrapper.get('.ui-dialog__footer .ui-button--primary').trigger('click')
     expect(patchJson).toHaveBeenCalledTimes(1)
     expect(wrapper.get('.conflict-inputs').attributes('disabled')).toBeDefined()
     expect(wrapper.get('.growth-loading--inline').text()).toContain('偏好冲突处理')
@@ -106,7 +106,7 @@ describe('PreferenceConflictDialog', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Dashboard 项目')
-    await wrapper.get('.conflict-resolution-actions .primary-action').trigger('click')
+    await wrapper.get('.ui-dialog__footer .ui-button--primary').trigger('click')
     await flushPromises()
 
     expect(postJson).toHaveBeenCalledWith(
@@ -115,7 +115,7 @@ describe('PreferenceConflictDialog', () => {
         personalSpaceId: 'personal-space',
         scope: 'project',
         projectId: 'project-dashboard',
-        reason: '两条偏好适用于不同项目，拆分生效范围并同时保留。',
+        reason: '两条适用于不同项目，拆开范围。',
       },
     )
   })
@@ -145,7 +145,7 @@ describe('PreferenceConflictDialog', () => {
       },
     })
 
-    await wrapper.get('.conflict-resolution-actions .primary-action').trigger('click')
+    await wrapper.get('.ui-dialog__footer .ui-button--primary').trigger('click')
     await flushPromises()
 
     expect(postJson).toHaveBeenCalledWith(

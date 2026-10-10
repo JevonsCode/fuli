@@ -27,7 +27,6 @@
 .project-agent-row-heading .ui-badge.is-active { color: var(--color-accent); }
 .project-agent-row-heading .ui-badge.is-archived { color: var(--color-muted); }
 .project-agent-kind { color: var(--color-muted); }
-.project-agent-row-id { color: var(--color-muted); font-size: 12px; overflow-wrap: anywhere; text-align: right; }
 .project-agent-row-projects { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
 .project-agent-row-projects b, .project-agent-tags span, .project-agent-inline-list span { border-radius: 999px; background: var(--color-surface-subtle); color: var(--color-muted); padding: 3px 7px; font-size: 12px; font-weight: 650; }
 .project-agent-row-projects em { color: var(--color-muted); font-size: 12px; font-style: normal; }

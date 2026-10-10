@@ -25,6 +25,11 @@ its identity, project responsibilities, and relevant working context.
   their sources, scope, and confirmation status.
 - **A team when needed:** coordinate specialist agents and record actual worker execution through
   an available, authorized host client or executor.
+- **Every task has an owner:** ask for work inside a project directory; Fuli registers the project
+  and staffs a lead agent. The reply ends with who led and who helped.
+- **A fixed PM and HR:** Jefa (project manager) and Bole (HR) come with every space; no hiring needed.
+- **Agents talk to each other:** through the [Roundtable](#agent-roundtable), one agent asks another
+  conversation directly, and every exchange is recorded.
 
 “Long-lived” means persistent identity and context. Fuli assembles that context and coordinates
 work; the connected AI tools run it. Client adapters determine which conversations can be captured
@@ -49,8 +54,8 @@ fuli open
 The setup wizard shows its plan before changing your environment. See [Installation](#installation)
 for requirements and the macOS/Linux native runtime option.
 
-To try a cross-tool handoff, register a local project and assign an agent, complete a task through
-one connected client, then use the agent's continuation instruction in another client connected
+To try a cross-tool handoff, ask for a task inside a project directory (Fuli registers the project and
+staffs a lead agent), complete it through one connected client, then use the agent's continuation instruction in another client connected
 to the same data. Check whether it recovers the correct project and prior work, and asks for
 missing context rather than inventing it. See [Agent conversations and collaboration](docs/agent-conversations-and-collaboration.md)
 for supported adapters and boundaries.
@@ -72,32 +77,16 @@ an assigned Agent or an ordinary local conversation alone is not worker evidence
 
 ## Agent Roundtable
 
-Give independent agents one shared goal and a place to find teammates, discuss proposals,
-handoff work, implement and review results. Roundtable is part of the stable Fuli release.
+Agents talk to each other directly, the way a lead asks a teammate or a sub-agent. A Codex
+Agent can ask the Agent behind a specific Claude Code conversation, or a FULI Agent that has
+never run yet. Nobody creates rooms or invites participants: an Agent calls `message_agent`,
+Fuli wakes the recipient read-only in its own client and returns its answer: Claude Code
+forks the conversation; Codex records the exchange in it (or uses a new session while it is
+open in the app). A message that cannot be delivered waits in the recipient's inbox for its
+next task.
 
-Once connected with a seat invitation, an AI can discover the workflow, introduce its
-responsibilities and capabilities, find peers, and send addressed questions or handoffs.
-The tools describe their own inputs and next steps. Profiles and messages stay visible to the
-room; execution permissions remain attached to each seat.
-
-```bash
-npm install -g fuli-context@latest
-fl roundtable serve --data-dir ./roundtable-data --port 3738
-```
-
-Open `http://127.0.0.1:3738/roundtables`, create a goal and invite 2–6 participants.
-Connect an MCP client with the generated seat invitation, or start a local worker:
-
-```bash
-fl roundtable worker --url https://COORDINATOR --room ROOM_ID --runtime codex --workspace ./project
-```
-
-Roundtable preserves messages, task dependencies, review results and dissent. It supports
-Codex CLI, Claude Code CLI and MCP clients, with adapters for xAI and A2A services.
-Pi/Ollama is available as an experimental local-model adapter. Reviewers use the artifact
-references and shared workspace access supplied for the task.
-
-See the [Roundtable guide](docs/roundtable.md) for invitations, AI onboarding and runtime configuration.
+Every exchange is kept locally; the console's Roundtable page shows who asked whom, through
+which client, and exactly what was said. Tools and limits: [Agent Roundtable](docs/agent-roundtable.md).
 
 ## npm packages
 
@@ -510,6 +499,14 @@ npm install --global fuli-context
 fuli setup
 ```
 
+Or use the one-line installer, which checks the Node.js version first:
+
+```bash
+curl -fsSL https://xn--8ovp9s.xn--m8txu.com/fuli/install.sh | sh
+```
+
+On Windows PowerShell: `irm https://xn--8ovp9s.xn--m8txu.com/fuli/install.ps1 | iex`.
+
 `fuli setup` first shows its plan and asks for confirmation. It then checks the container runtime,
 initializes local Graphiti / Neo4j, creates a personal space, installs the companion Agent Skills,
 and registers the `fuli` MCP with detected agents. The default setup connects only the personal
@@ -631,7 +628,7 @@ containers; it does not shut down Rancher Desktop, Docker Desktop, Kubernetes, o
 itself. Native mode directly stops the corresponding Provider and Neo4j processes, so no shared VM
 overhead remains while idle.
 
-**Project Agents → Recruit employee** provides reusable employee templates. Jefa is the project manager; Bole is the built-in HR Agent with a native people panel for Agent distribution, current work, and recruitment history.
+Jefa (project manager) and Bole (HR, with a native people panel for Agent distribution, current work and recruitment history) are fixed roles in every space and are never hired. **Project Agents → Hire an Agent** offers the other reusable employee templates.
 Recruitment reuses a durable identity with separate project assignments. An installed employee workbench,
 API and A2A share the FULI port; existing FULI MCP clients discover and call its tools. Recruitment does not
 start a model or rewrite client settings. See the [employee package and extension contract](docs/employee-agents.md).
@@ -640,8 +637,8 @@ Project Agent identities remain control-plane records rather than one resident p
 Roles now keep versioned, project-private working memory in the same Neo4j Provider. Task entry
 restores one owner across Codex, Claude Code and Cursor; lifecycle checkpoints survive separate
 MCP processes. See [role memory, host hooks and acceptance boundaries](docs/project-agent-memory.md).
-Supported Codex and Claude Code hooks also journal visible conversations, with 7-day inactivity
-archival and bounded recovery. Specialist loans and artifact verification share the same Provider.
+Supported Codex and Claude Code hooks also journal visible conversations. Once unfolded messages pass
+a size threshold (64 KB by default), older ones fold into a digest; recovery stays within a byte budget. Specialist loans and artifact verification share the same Provider.
 See [conversation continuity and collaboration](docs/agent-conversations-and-collaboration.md)
 for client coverage, model capability configuration and acceptance limits.
 Physical executors share leases by executor ID. Fuli starts and stops only executors with an explicitly

@@ -41,13 +41,9 @@ async function setup(path = '/project-agents') {
   return { router, wrapper }
 }
 describe('Agent directory integration', () => {
-  it('offers a copyable temporary task prompt at the main directory entry', async () => {
+  it('explains how to start the first task at the main directory entry', async () => {
     const { wrapper } = await setup()
-    const prompt = wrapper.get<HTMLTextAreaElement>('.project-agent-first-task textarea')
-    expect(prompt.element.readOnly).toBe(true)
-    expect(prompt.element.disabled).toBe(false)
-    expect(prompt.element.value).toContain('若尚未关联项目，请使用临时任务项目')
-    expect(wrapper.get('.project-agent-first-task a').attributes('href')).toBe('/personal/space-a/projects/directory')
+    expect(wrapper.get('.project-agent-first-task').text()).toContain('开始第一个任务')
   })
 
   it('renders membership state and a compact project summary on each card', async () => {
@@ -80,10 +76,10 @@ describe('Agent directory integration', () => {
     expect(links.map(link => [link.text(), link.attributes('href')])).toEqual([
       ['Aster', '/agents/space-a/agent-0'], ['Birch', '/agents/space-a/agent-1'],
     ])
-    expect(getJson.mock.calls).toEqual([
+    expect(getJson.mock.calls).toEqual(expect.arrayContaining([
       ['/api/project-agents?personalSpaceId=space-a'],
       ['/api/project-agent-tasks?personalSpaceId=space-a&limit=200'],
-    ])
+    ]))
     await links[0]!.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/agents/space-a/agent-0')
@@ -95,7 +91,7 @@ describe('Agent directory integration', () => {
     expect(getJson.mock.calls.every(([url]) => [
       '/api/project-agents?personalSpaceId=space-a',
       '/api/project-agent-tasks?personalSpaceId=space-a&limit=200',
-    ].includes(url))).toBe(true)
+    ].includes(url) || String(url).startsWith('/api/employee-templates'))).toBe(true)
   })
 
   it('separates membership state from a reported active work state', async () => {

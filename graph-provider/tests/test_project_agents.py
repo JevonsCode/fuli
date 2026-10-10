@@ -568,9 +568,10 @@ async def test_bole_is_the_fixed_system_hr_identity():
     )
     bole = raw_agent(bole_profile)
     bole['agent_id'] = SYSTEM_HR_AGENT_ID
+    # Jefa read/write, Bole read/write, legacy coordinator retirement,
+    # legacy HR merge, then the Bole read model.
     driver = SequentialDriver([
-        [{'agent': bole}],
-        [],
+        [], [], [], [], [], [],
         [{
             'agent': bole,
             'assignment_rows': [],
@@ -588,10 +589,15 @@ async def test_bole_is_the_fixed_system_hr_identity():
     assert result.profile.name == 'Bole'
     assert result.profile.agent_type == 'hr'
     assert 'fuli.employee:bole' in result.profile.capabilities
-    query, parameters = driver.calls[0]
-    assert "agent.agent_type = 'hr'" in query
-    assert 'agent.system_managed = true' in query
-    assert parameters['agent_id'] == 'employee.bole'
+    writes = [(query, parameters) for query, parameters in driver.calls if 'MERGE (agent' in query]
+    assert [(parameters['agent_id'], parameters['agent_type']) for _, parameters in writes] == [
+        ('employee.jefa', 'coordinator'),
+        ('employee.bole', 'hr'),
+    ]
+    assert all('agent.system_managed = true' in query for query, _ in writes)
+    retire_query, retire_parameters = driver.calls[4]
+    assert "agent.status = 'archived'" in retire_query
+    assert retire_parameters['legacy_id'] == 'fuli-project-coordinator'
 
 
 @pytest.mark.asyncio
@@ -626,7 +632,7 @@ async def test_bole_cannot_be_deactivated_through_profile_upsert():
     profile = project_agent_profile().model_copy(update={
         'agent_type': 'hr', 'status': 'inactive',
     })
-    with pytest.raises(HTTPException, match='system HR must remain active'):
+    with pytest.raises(HTTPException, match='project manager and HR must remain active'):
         await StoreStub(SequentialDriver([])).upsert_project_agent(
             {'id': 'principal-1'},
             ProjectAgentUpsert(

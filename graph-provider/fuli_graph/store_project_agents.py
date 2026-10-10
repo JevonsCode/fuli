@@ -20,11 +20,12 @@ from .project_agent_models import (
 from .provider_values import native_datetime, now_utc, stable_uuid
 from .project_agent_names import agent_display_name
 from .store_transactions import query_store_transaction
+from .system_agents import (
+    SYSTEM_COORDINATOR_AGENT_ID,
+    SYSTEM_HR_AGENT_ID,
+    ensure_system_agents,
+)
 from .system_hr_identity import LEGACY_HR_AGENT_ID, merge_legacy_hr, resolve_hr_alias
-
-
-SYSTEM_COORDINATOR_AGENT_ID = 'fuli-project-coordinator'
-SYSTEM_HR_AGENT_ID = 'employee.bole'
 
 
 class StoreProjectAgents:
@@ -33,132 +34,27 @@ class StoreProjectAgents:
         actor: dict,
         personal_space_id: str,
     ) -> ProjectAgentRecord:
-        self._require_personal()
-        await self.authorize(actor, personal_space_id, 'maintainer')
-        async with query_store_transaction(self) as scoped:
-            await scoped._ensure_system_project_hr_identity(personal_space_id)
-            await merge_legacy_hr(scoped, personal_space_id)
+        await self._ensure_system_agents(actor, personal_space_id)
         return await self.get_project_agent(actor, personal_space_id, None, SYSTEM_HR_AGENT_ID)
-
-    async def _ensure_system_project_hr_identity(self, personal_space_id):
-        profile = ProjectAgentProfile(
-            name='Bole',
-            occupation_emoji='🔎',
-            responsibility=(
-                '维护 Agent 人员分布、当前工作与可审计招募记录，'
-                '并在需要新角色时执行受策略约束的招募。'
-            ),
-            agent_type='hr',
-            work_kinds=['agent-recruitment', 'staffing-review'],
-            capabilities=[
-                'Agent 招募', '人员分布', '工作状态', '招募审计',
-                'fuli.employee:bole',
-            ],
-            initial_preferences=[
-                '每次招募保留任务、原因、触发来源与时间线。',
-                '只展示 Provider 已记录的人员状态，不推测未上报的工作。',
-            ],
-            status='active',
-        )
-        updated_at = now_utc()
-        node_id = stable_uuid(
-            self.settings.provider_id,
-            personal_space_id,
-            'project-agent',
-            SYSTEM_HR_AGENT_ID,
-        )
-        await self.runtime.driver.execute_query(
-            '''
-            MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
-            MERGE (agent:FuliProjectAgent {id: $id})
-            ON CREATE SET agent.agent_id = $agent_id,
-                          agent.created_at = $updated_at,
-                          agent.system_managed = true
-            ON CREATE SET agent.profile_json = $profile_json,
-                          agent.name = $name,
-                          agent.occupation_emoji = $occupation_emoji,
-                          agent.responsibility = $responsibility,
-                          agent.capabilities = $capabilities,
-                          agent.work_kinds = $work_kinds,
-                          agent.agent_type = 'hr',
-                          agent.memory_scope = 'reviewed_agent',
-                          agent.status = 'active',
-                          agent.updated_at = $updated_at
-            MERGE (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(agent)
-            RETURN agent
-            ''',
-            personal_space_id=personal_space_id,
-            id=node_id,
-            agent_id=SYSTEM_HR_AGENT_ID,
-            profile_json=profile.model_dump_json(),
-            name=profile.name,
-            occupation_emoji=profile.occupation_emoji,
-            responsibility=profile.responsibility,
-            capabilities=profile.capabilities,
-            work_kinds=profile.work_kinds,
-            updated_at=updated_at,
-        )
 
     async def ensure_system_project_coordinator(
         self,
         actor: dict,
         personal_space_id: str,
     ) -> ProjectAgentRecord:
+        await self._ensure_system_agents(actor, personal_space_id)
+        return await self.get_project_agent(
+            actor, personal_space_id, None, SYSTEM_COORDINATOR_AGENT_ID,
+        )
+
+    async def _ensure_system_agents(self, actor, personal_space_id):
         self._require_personal()
         await self.authorize(actor, personal_space_id, 'maintainer')
-        profile = ProjectAgentProfile(
-            name='项目协调人',
-            responsibility='评估任务、选择模型策略、路由已有 Agent，并审计职责缺口。',
-            agent_type='coordinator',
-            work_kinds=['task-coordination'],
-            capabilities=['任务评估', '模型策略', 'Agent 路由'],
-            initial_preferences=['质量与可验收完成优先于成本和时间'],
-            status='active',
-        )
-        updated_at = now_utc()
-        node_id = stable_uuid(
-            self.settings.provider_id,
-            personal_space_id,
-            'project-agent',
-            SYSTEM_COORDINATOR_AGENT_ID,
-        )
-        await self.runtime.driver.execute_query(
-            '''
-            MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
-            MERGE (agent:FuliProjectAgent {id: $id})
-            ON CREATE SET agent.agent_id = $agent_id,
-                          agent.created_at = $updated_at,
-                          agent.system_managed = true
-            ON CREATE SET agent.profile_json = $profile_json,
-                          agent.name = $name,
-                          agent.occupation_emoji = $occupation_emoji,
-                          agent.responsibility = $responsibility,
-                          agent.capabilities = $capabilities,
-                          agent.work_kinds = $work_kinds,
-                          agent.agent_type = 'coordinator',
-                          agent.memory_scope = 'reviewed_agent',
-                          agent.status = 'active',
-                          agent.updated_at = $updated_at
-            MERGE (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(agent)
-            RETURN agent
-            ''',
-            personal_space_id=personal_space_id,
-            id=node_id,
-            agent_id=SYSTEM_COORDINATOR_AGENT_ID,
-            profile_json=profile.model_dump_json(),
-            name=profile.name,
-            occupation_emoji=profile.occupation_emoji,
-            responsibility=profile.responsibility,
-            capabilities=profile.capabilities,
-            work_kinds=profile.work_kinds,
-            updated_at=updated_at,
-        )
-        return await self.get_project_agent(
-            actor,
-            personal_space_id,
-            None,
-            SYSTEM_COORDINATOR_AGENT_ID,
-        )
+        async with query_store_transaction(self) as scoped:
+            await ensure_system_agents(
+                scoped.runtime.driver, scoped.settings.provider_id, personal_space_id,
+            )
+            await merge_legacy_hr(scoped, personal_space_id)
 
     async def upsert_project_agent(
         self,
@@ -207,10 +103,13 @@ class StoreProjectAgents:
                 status_code=422,
                 detail='the system HR identity cannot change Agent type',
             )
-        if request.agent_id == SYSTEM_HR_AGENT_ID and request.profile.status != 'active':
+        if (
+            request.agent_id in (SYSTEM_HR_AGENT_ID, SYSTEM_COORDINATOR_AGENT_ID)
+            and request.profile.status != 'active'
+        ):
             raise HTTPException(
                 status_code=422,
-                detail='the system HR must remain active',
+                detail='the project manager and HR must remain active',
             )
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         if request.personal_project_id:
@@ -488,7 +387,7 @@ class StoreProjectAgents:
         if agent_id == SYSTEM_COORDINATOR_AGENT_ID:
             raise HTTPException(
                 status_code=422,
-                detail='the system coordinator cannot be archived',
+                detail='the project manager cannot be archived',
             )
         if agent_id == SYSTEM_HR_AGENT_ID:
             raise HTTPException(
@@ -571,6 +470,8 @@ class StoreProjectAgents:
                   [:HAS_PROJECT_AGENT_IDENTITY]->(agent:FuliProjectAgent)
             WHERE ($agent_id IS NULL OR agent.agent_id = $agent_id)
               AND ($status IS NULL OR agent.status = $status)
+              // A retired system identity stays readable by ID for history only.
+              AND ($agent_id IS NOT NULL OR agent.superseded_by IS NULL)
               AND (
                 $personal_project_id IS NULL
                 OR EXISTS {
