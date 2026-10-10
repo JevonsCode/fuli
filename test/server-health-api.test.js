@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { FULI_VERSION } from '../src/package-metadata.js';
 import { createServer } from '../src/server.js';
 
 test('local console health identifies the service and owning process without querying Providers',
@@ -24,7 +25,8 @@ test('local console health identifies the service and owning process without que
       assert.deepEqual(await response.json(), {
         status: 'ready',
         service: 'fuli-local-console',
-        pid: process.pid
+        pid: process.pid,
+        version: FULI_VERSION
       });
       assert.equal(stateCalled, false);
     } finally {
