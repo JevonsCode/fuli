@@ -5,7 +5,6 @@ export const commonMessages = {
       label: '界面语言',
       chinese: '中文',
       english: 'English',
-      switched: '界面语言已切换为中文。',
     },
     actions: {
       retry: '重试',
@@ -13,10 +12,7 @@ export const commonMessages = {
       refresh: '刷新',
       close: '关闭',
       cancel: '取消',
-      save: '保存',
       remove: '移除',
-      confirm: '确认',
-      search: '搜索',
       viewDetails: '查看详情',
     },
     searchableSelect: {
@@ -55,7 +51,6 @@ export const commonMessages = {
       relationships: '{count} 条关系',
       sources: '{count} 个来源',
       projects: '{count} 个项目',
-      groups: '{count} 组',
     },
   },
   'en-US': {
@@ -64,7 +59,6 @@ export const commonMessages = {
       label: 'Interface language',
       chinese: '中文',
       english: 'English',
-      switched: 'Interface language changed to English.',
     },
     actions: {
       retry: 'Retry',
@@ -72,10 +66,7 @@ export const commonMessages = {
       refresh: 'Refresh',
       close: 'Close',
       cancel: 'Cancel',
-      save: 'Save',
       remove: 'Remove',
-      confirm: 'Confirm',
-      search: 'Search',
       viewDetails: 'View details',
     },
     searchableSelect: {
@@ -114,7 +105,6 @@ export const commonMessages = {
       relationships: '{count} relationship | {count} relationships',
       sources: '{count} source | {count} sources',
       projects: '{count} project | {count} projects',
-      groups: '{count} group | {count} groups',
     },
   },
 } as const

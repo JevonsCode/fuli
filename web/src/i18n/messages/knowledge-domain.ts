@@ -30,12 +30,6 @@ export const knowledgeDomainMessages = {
         unclassified: '旧内容还没有明确记录发现时所属象限。',
       },
     },
-    epistemic: {
-      confirmed: '旧版确认标记',
-      observed: '旧版观察标记',
-      exploratory: '旧版探索标记',
-      unreviewed: '待复核',
-    },
     reviewStates: {
       confirmed: '已确认',
       agent_confirmed: 'Agent 已确认',
@@ -222,12 +216,6 @@ export const knowledgeDomainMessages = {
         unknown_unknown: 'A potential blind spot surfaced during exploration and still awaiting judgment.',
         unclassified: 'Legacy content without an explicit discovery quadrant.',
       },
-    },
-    epistemic: {
-      confirmed: 'Legacy confirmed marker',
-      observed: 'Legacy observed marker',
-      exploratory: 'Legacy exploratory marker',
-      unreviewed: 'Needs review',
     },
     reviewStates: {
       confirmed: 'Confirmed',
