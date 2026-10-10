@@ -47,6 +47,8 @@ export interface JudgmentDecisionRecord {
   personalProjectId: string | null
   kind: JudgmentKind
   target: string
+  title?: string
+  objective?: string
   summary: string
   outcome: JudgmentOutcome
   evidence: string[]

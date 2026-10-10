@@ -12,7 +12,8 @@ function record(overrides: Record<string, unknown> = {}) {
     createdAt: '2026-10-11T08:00:00.000Z',
     personalProjectId: 'project-a',
     kind: 'review',
-    target: 'release checklist',
+    target: 'relationship:synthetic-id',
+    title: 'release checklist',
     summary: 'Needs a human release decision.',
     outcome: 'escalate',
     evidence: ['release owner is missing'],
@@ -58,6 +59,7 @@ describe('JudgmentWorkbench', () => {
     await wrapper.get('[data-filter="human"]').trigger('click')
     expect(wrapper.findAll('[data-decision-card]')).toHaveLength(1)
     expect(wrapper.text()).toContain('release checklist')
+    expect(wrapper.get('[data-decision-card] h3').text()).toBe('release checklist')
   })
 
   it('requests a bounded review with a fresh request ID and shows the result', async () => {
@@ -117,7 +119,7 @@ describe('JudgmentWorkbench', () => {
     const second = deferred<{ records: unknown[] }>()
     getJson.mockReset().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
     const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
-    first.resolve({ records: [record({ id: 'private-a', target: 'Space A decision' })] })
+    first.resolve({ records: [record({ id: 'private-a', title: 'Space A decision' })] })
     await flushPromises()
     expect(wrapper.text()).toContain('Space A decision')
 
@@ -133,14 +135,14 @@ describe('JudgmentWorkbench', () => {
 
   it('ignores a feedback response from a previous personal space', async () => {
     const oldResponse = deferred<ReturnType<typeof record>>()
-    getJson.mockReset().mockResolvedValue({ records: [record({ id: 'private-a', target: 'Space A decision' })] })
+    getJson.mockReset().mockResolvedValue({ records: [record({ id: 'private-a', title: 'Space A decision' })] })
     postJson.mockReset().mockReturnValueOnce(oldResponse.promise)
     const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
     await flushPromises()
     await wrapper.get('[data-feedback="up"]').trigger('click')
     await wrapper.setProps({ personalSpaceId: 'space-b' })
     await wrapper.vm.$nextTick()
-    oldResponse.resolve(record({ id: 'private-a', target: 'Space A response' }))
+    oldResponse.resolve(record({ id: 'private-a', title: 'Space A response' }))
     await flushPromises()
 
     expect(wrapper.text()).not.toContain('Space A response')

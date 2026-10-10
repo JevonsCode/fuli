@@ -271,7 +271,7 @@ function hasDetails(record: JudgmentDecisionRecord) {
         <header class="judgment-record-heading">
           <div>
             <span class="judgment-record-kind">{{ kindLabel(record.kind) }}</span>
-            <h3>{{ record.target }}</h3>
+            <h3>{{ record.title || record.objective || kindLabel(record.kind) }}</h3>
           </div>
           <span class="judgment-outcome" :class="`is-${record.outcome}`">{{ outcomeLabel(record.outcome) }}</span>
         </header>
