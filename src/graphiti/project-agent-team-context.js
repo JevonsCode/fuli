@@ -15,7 +15,10 @@ export async function loadProjectTeamContext(application, personalSpaceId, proje
         && assignment.status === 'active')?.responsibility || agent.profile?.responsibility,
       role: agent.agent_id === policy.team_lead_agent_id ? 'lead' : 'member' }));
   return { lead_agent_id: policy.team_lead_agent_id, roster,
+    user_facing_agent_id: policy.team_lead_agent_id,
+    reporting_lines: roster.filter(agent => agent.role === 'member')
+      .map(agent => ({ agent_id: agent.agent_id, reports_to_agent_id: policy.team_lead_agent_id })),
     unavailable_agent_ids: ids.filter(id => !roster.some(agent => agent.agent_id === id)),
     peer_roles: ['hr', 'project_manager'], worker_started: false,
-    guidance: 'The team lead is the user-facing owner. Split bounded work among team members through an authorized coordination plan; report real worker evidence. HR and project managers remain peers. Team membership grants no new tool, data, executor, or publication permissions.' };
+    guidance: 'The project lead is the sole user-facing owner. Members report results and blockers to this lead; do not skip reporting levels or replace the lead when a member is named. The lead integrates and verifies member reports before reporting to the user. Split bounded work through an authorized coordination plan; report real worker evidence. HR and project managers remain peers. Team membership grants no new tool, data, executor, or publication permissions.' };
 }

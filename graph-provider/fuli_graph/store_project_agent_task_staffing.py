@@ -54,14 +54,15 @@ class StoreProjectAgentTaskStaffing:
             row for row in assignment_rows
             if self._agent_client_allowed(row, request.source_application)
         ]
-        if request.staffing_intent in {'new_durable', 'temporary'}:
+        if request.staffing_intent in {'new_durable', 'temporary', 'default_lead'}:
             return (
                 [],
                 rows,
                 'explicit_temporary_agent'
                 if request.staffing_intent == 'temporary'
                 else 'explicit_new_agent',
-                ['user explicitly requested recruitment'],
+                ['project requires an accountable lead' if request.staffing_intent == 'default_lead'
+                 else 'user explicitly requested recruitment'],
             )
         policy = await self.get_project_agent_coordination_policy(
             actor,

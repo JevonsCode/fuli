@@ -8,7 +8,11 @@ const ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preference
 
 export async function resolveTaskEntryAgent(application, resolution, input) {
   if (!input.agentInvocation || !ENTRY_TOOLS.has(input.agentToolName)) return null;
-  if (!resolution.personalProjectId) return { status: 'project_unresolved', worker_started: false };
+  if (!resolution.personalProjectId) return {
+    status: resolution.status === 'unavailable' ? 'unavailable' : 'project_unresolved',
+    reason: resolution.reason ?? resolution.status,
+    worker_started: false
+  };
   try {
     const mention = await resolveTaskAgentMention(application, resolution.personalProjectId, input);
     if (mention?.status) return mention;
@@ -18,19 +22,33 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
       personal_project_id: resolution.personalProjectId,
       source_application: input.sourceApplication ?? 'other'
     };
-    let value = await application.personal.resolveProjectAgentContext({
+    const contextRequest = {
       ...scope,
       agent_id: mention?.agentId ?? input.projectAgentId ?? null,
       session_id: input.sessionId ?? null,
       turn_id: input.turnId ?? null,
       work_kind: workKind,
       required_capabilities: input.requiredCapabilities ?? []
+    };
+    const delegation = application.roundtable?.taskEntryDelegation?.({
+      sessionId: input.receivingSessionId ?? input.sessionId
     });
+    if (delegation) {
+      contextRequest.delegation_token = delegation.token;
+      contextRequest.delegation_session_id = delegation.sessionId;
+    }
+    let value = await application.personal.resolveProjectAgentContext(contextRequest);
+    if (value?.reason === 'project_lead_required') {
+      await application.personal.staffDefaultProjectLead(scope);
+      // Re-resolve after staffing so a requested specialist is not lost and a
+      // concurrent successful hire is handled without selecting another owner.
+      value = await application.personal.resolveProjectAgentContext(contextRequest);
+    }
     if (!value?.status) throw new Error('Role resolution is unavailable');
     let agent = value.agent ? projectAgentRecord(value.agent) : null;
     const implicit = !mention?.agentId && !input.projectAgentId;
     const peerOnly = agent && implicit && unrelatedPeer(agent, workKind, input.requiredCapabilities);
-    if (implicit && (peerOnly || value.status === 'unassigned')) {
+    if (implicit && value.reason !== 'project_lead_required' && (peerOnly || value.status === 'unassigned')) {
       // Every task gets a FULI Agent: a project without a lead has HR hire one.
       const staffed = await application.personal.staffDefaultProjectLead(scope).catch(() => null);
       if (staffed?.agent) {

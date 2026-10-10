@@ -33,10 +33,11 @@ export function sessionWorkingDirectory(client, sessionId, { home = homedir(), e
 }
 
 export async function wakeAgent({ client, sessionId = null, cwd, prompt, timeoutMs = 300_000,
-  env = process.env, run = runProcess } = {}) {
+  delegationToken = null, env = process.env, run = runProcess } = {}) {
   const command = resolveClientCommand(client, { env });
   if (!command) throw Object.assign(new Error(`${client} is not installed on this machine`), { code: 'client_unavailable' });
   const childEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('FULI_ROUNDTABLE_')));
+  if (delegationToken) childEnv.FULI_ROUNDTABLE_DELEGATION = delegationToken;
   const result = await run(command, wakeArguments(client, { sessionId, cwd }), { cwd, env: childEnv, input: prompt, timeoutMs });
   return parseFinalAnswer(client, result);
 }

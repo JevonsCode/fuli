@@ -92,6 +92,7 @@ const workStatusLabel = computed(() => {
         >
           {{ name }}
         </RouterLink>
+        <span v-if="agent.employeeNumber" class="ui-badge fla-employee-number">FLA {{ agent.employeeNumber }}</span>
         <span v-if="fixedRole" class="ui-badge ui-badge--accent agent-card-role">{{ fixedRole }}</span>
         <AgentHand :agent-id="agent.agentId" />
       </div>

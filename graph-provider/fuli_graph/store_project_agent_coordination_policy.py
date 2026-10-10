@@ -93,6 +93,8 @@ class StoreProjectAgentCoordinationPolicy:
         members = (request.team_member_agent_ids if 'team_member_agent_ids' in request.model_fields_set
                    else current.team_member_agent_ids)
         auto_grow = current.auto_grow_team if request.auto_grow_team is None else request.auto_grow_team
+        if 'team_lead_agent_id' in request.model_fields_set and not lead:
+            raise HTTPException(status_code=422, detail='each project requires a lead; select a replacement instead of clearing the lead')
         if members and not lead:
             raise HTTPException(status_code=422, detail='select a team lead before adding members')
         if lead in members:
@@ -115,9 +117,21 @@ class StoreProjectAgentCoordinationPolicy:
         updated_at = now_utc()
         written, _, _ = await self.runtime.driver.execute_query(
             '''
-            MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})-
+            MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [:CONTAINS_PROJECT]->
                   (project:FuliPersonalProject {project_id: $personal_project_id})
+            OPTIONAL MATCH (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(role:FuliProjectAgent)
+            WHERE role.agent_id IN $team_agent_ids
+            WITH project, role ORDER BY role.agent_id
+            FOREACH (locked IN CASE WHEN role IS NULL THEN [] ELSE [role] END |
+              SET locked._task_lifecycle_lock = true
+              REMOVE locked._task_lifecycle_lock)
+            WITH project, collect(role) AS roles
+            WHERE size(roles) = size($team_agent_ids)
+              AND all(role IN roles WHERE role.status = 'active' AND EXISTS {
+                MATCH (project)-[:HAS_PROJECT_AGENT_ASSIGNMENT]->
+                      (:FuliProjectAgentAssignment {status: 'active'})-[:ASSIGNED_AGENT]->(role)
+              })
             MERGE (policy:FuliProjectAgentCoordinationPolicy {
               policy_id: $policy_id
             })
@@ -147,6 +161,7 @@ class StoreProjectAgentCoordinationPolicy:
             auto_grow_team=auto_grow,
             team_lead_agent_id=lead,
             team_member_agent_ids=members,
+            team_agent_ids=([lead] if lead else []) + members,
             expected_updated_at=current.updated_at,
             updated_at=updated_at,
         )

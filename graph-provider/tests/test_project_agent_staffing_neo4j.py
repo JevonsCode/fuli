@@ -1,4 +1,4 @@
-"""Staffing combinations over public HTTP and an explicitly disposable Neo4j.
+"""Staffing combinations over HTTP, the read-only router, and disposable Neo4j.
 
 Roles, task history and sessions are synthetic. No model process is started;
 these tests prove persisted routing, not product hooks or executor availability.
@@ -50,14 +50,27 @@ async def assign_role(client, scope, agent, capabilities, *, work_kind='implemen
     assert assignment.json()['capabilities'] == capabilities
 
 
-async def resolve_role(client, scope, **changes):
-    response = await client.post('/v1/project-agent-context/resolve', json={
-        **scope, 'source_application': 'codex', 'work_kind': 'implementation',
+async def select_workstream(client, scope, **changes):
+    # Project conversation ownership is now fixed to its configured lead. Test
+    # capability/load/history ranking at the worker-router boundary instead.
+    # Setup and lifecycle writes still use the public authenticated HTTP API.
+    from fuli_graph.project_agent_task_models import ProjectAgentTaskSubmit
+    store = client._transport.app.state.store
+    actor = await store.authenticate(client.headers['Authorization'].removeprefix('Bearer '))
+    space = await store.authorize(actor, scope['personal_space_id'], 'reader')
+    selection = ProjectAgentTaskSubmit(**{
+        **scope, 'idempotency_key': 'synthetic-read-only-selection',
+        'title': 'Inspect worker selection', 'objective': 'Verify persisted worker routing.',
+        'routing_reason': 'Synthetic read-only worker ranking acceptance.',
+        'source_application': 'codex', 'work_kind': 'implementation',
         'required_capabilities': ['coding', 'review'], **changes,
     })
-    assert response.status_code == 200, response.text
-    assert response.json()['worker_started'] is False
-    return response.json()
+    selected, candidates, reason, basis = await store._select_agents(actor, space, selection)
+    agent = await store.get_project_agent(actor, scope['personal_space_id'],
+        scope['personal_project_id'], selected[0]['agent_id']) if selected else None
+    return {'status': 'ready' if agent else 'unassigned',
+            'agent': agent.model_dump() if agent else None, 'reason': reason,
+            'match_basis': basis, 'candidate_count': len(candidates), 'worker_started': False}
 
 
 async def begin_session(client, scope, agent):
@@ -165,14 +178,14 @@ async def test_project_bound_task_and_activity_reads_do_not_cross_projects():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('source', ['codex', 'claude_code', 'cursor'])
-async def test_all_required_capabilities_select_one_lead_in_context_and_task(source):
+async def test_all_required_capabilities_select_one_worker_in_routing_and_task(source):
     async with provider_client(fixture_settings()) as (client, _):
         scope = await create_scope(client)
         await assign_role(client, scope, 'coding-only', ['coding'])
         await assign_role(client, scope, 'review-only', ['review'])
         await assign_role(client, scope, 'fully-qualified', ['coding', 'review'],
                           work_kind='maintenance')
-        selected = await resolve_role(client, scope, source_application=source,
+        selected = await select_workstream(client, scope, source_application=source,
                                       required_capabilities=['CODING', 'Review'])
         assert selected['status'] == 'ready'
         assert selected['agent']['agent_id'] == 'fully-qualified'
@@ -181,7 +194,7 @@ async def test_all_required_capabilities_select_one_lead_in_context_and_task(sou
         assert task['lead_agent_id'] == 'fully-qualified'
         assert [(item['agent_id'], item['role']) for item in task['participants']] == [
             ('fully-qualified', 'lead')]
-        impossible = await resolve_role(client, scope, source_application=source,
+        impossible = await select_workstream(client, scope, source_application=source,
                                         required_capabilities=['coding', 'review', 'absent'])
         assert impossible['status'] == 'unassigned'
         assert impossible['agent'] is None
@@ -195,7 +208,7 @@ async def test_nonempty_assignment_capabilities_override_profile_in_both_directi
                           profile_capabilities=['coding', 'review'])
         await assign_role(client, scope, 'assignment-match', ['coding', 'review'],
                           profile_capabilities=['coding'])
-        selected = await resolve_role(client, scope)
+        selected = await select_workstream(client, scope)
         assert selected['agent']['agent_id'] == 'assignment-match'
         assert selected['agent']['profile']['capabilities'] == ['coding']
         active = [item for item in selected['agent']['assignments'] if item['status'] == 'active']
@@ -243,7 +256,7 @@ async def test_legacy_upsert_reactivates_an_ended_assignment_consistently():
         assert assignments[0]['end_reason'] is None
         assert assignments[0]['replaced_by_assignment_id'] is None
 
-        selected = await resolve_role(client, scope)
+        selected = await select_workstream(client, scope)
         assert selected['status'] == 'ready'
         assert selected['agent']['agent_id'] == 'ended-legacy-role'
 
@@ -701,7 +714,7 @@ async def test_inactive_identity_is_reversible_but_never_routable():
         assert inactive.json()['profile']['status'] == 'inactive'
         assert inactive.json()['assignments'][0]['status'] == 'active'
 
-        unavailable = await resolve_role(client, scope)
+        unavailable = await select_workstream(client, scope)
         assert unavailable['status'] == 'unassigned'
         assert unavailable['agent'] is None
 
@@ -714,7 +727,7 @@ async def test_inactive_identity_is_reversible_but_never_routable():
         assert reactivated.json()['profile']['status'] == 'active'
         assert reactivated.json()['assignments'][0]['status'] == 'active'
 
-        available = await resolve_role(client, scope)
+        available = await select_workstream(client, scope)
         assert available['status'] == 'ready'
         assert available['agent']['agent_id'] == 'inactive-boundary-role'
 
@@ -780,7 +793,7 @@ async def test_legacy_upsert_preserves_an_active_cross_agent_replacement():
             == transition['replacement']['assignment_id']
         )
 
-        selected = await resolve_role(client, scope)
+        selected = await select_workstream(client, scope)
         assert selected['status'] == 'ready'
         assert selected['agent']['agent_id'] == 'replacement-role'
 
@@ -884,7 +897,7 @@ async def test_legacy_upsert_preserves_an_explicit_cross_agent_replacement():
             == transition['replacement']['assignment_id']
         )
 
-        selected = await resolve_role(client, scope)
+        selected = await select_workstream(client, scope)
         assert selected['status'] == 'ready'
         assert selected['agent']['agent_id'] == 'explicit-replacement-role'
 
@@ -977,7 +990,7 @@ async def test_legacy_upsert_preserves_a_transitive_handoff_chain():
             == middle['assignment_id']
         )
 
-        selected = await resolve_role(client, scope)
+        selected = await select_workstream(client, scope)
         assert selected['agent']['agent_id'] == 'chain-current'
         for payload, transition in (
             (first_payload, first.json()),
@@ -1076,7 +1089,7 @@ async def test_empty_assignment_retains_documented_profile_fallback():
         scope = await create_scope(client)
         await assign_role(client, scope, 'profile-fallback', [],
                           profile_capabilities=['coding', 'review'])
-        selected = await resolve_role(client, scope)
+        selected = await select_workstream(client, scope)
         assert selected['agent']['agent_id'] == 'profile-fallback'
         assert selected['agent']['assignments'][0]['capabilities'] == []
 
@@ -1087,17 +1100,17 @@ async def test_live_load_precedes_history_and_history_breaks_equal_load_ties():
         scope = await create_scope(client)
         await assign_role(client, scope, 'first-assigned', ['coding', 'review'])
         await assign_role(client, scope, 'previous-owner', ['coding', 'review'])
-        assert (await resolve_role(client, scope))['agent']['agent_id'] == 'first-assigned'
+        assert (await select_workstream(client, scope))['agent']['agent_id'] == 'first-assigned'
         await record_history(client, scope, 'previous-owner')
-        with_history = await resolve_role(client, scope)
+        with_history = await select_workstream(client, scope)
         assert with_history['agent']['agent_id'] == 'previous-owner'
         assert with_history['reason'] == 'project_continuity'
         assert 'exact work kind: implementation' in with_history['match_basis']
         assert any('selected active task count: 0' in item for item in with_history['match_basis'])
         await begin_session(client, scope, 'previous-owner')
-        assert (await resolve_role(client, scope))['agent']['agent_id'] == 'first-assigned'
+        assert (await select_workstream(client, scope))['agent']['agent_id'] == 'first-assigned'
         await begin_session(client, scope, 'first-assigned')
-        tied = await resolve_role(client, scope)
+        tied = await select_workstream(client, scope)
         assert tied['agent']['agent_id'] == 'previous-owner'
         assert tied['reason'] == 'project_continuity'
 
@@ -1111,7 +1124,7 @@ async def test_work_kind_fit_precedes_lower_load_and_other_work_history():
         await assign_role(client, scope, 'specialist', ['coding', 'review'])
         await record_history(client, scope, 'generalist', work_kind='maintenance')
         await begin_session(client, scope, 'specialist')
-        selected = await resolve_role(client, scope)
+        selected = await select_workstream(client, scope)
         assert selected['agent']['agent_id'] == 'specialist'
         assert selected['reason'] == 'exact_work_kind'
         assert any('selected active task count: 1' in item for item in selected['match_basis'])
@@ -1122,12 +1135,12 @@ async def test_nonsemantic_defaults_report_their_actual_candidate_count_and_work
     async with provider_client(fixture_settings()) as (client, _):
         scope = await create_scope(client)
         await assign_role(client, scope, 'first-role', ['coding'])
-        single = await resolve_role(client, scope, required_capabilities=[], work_kind='unmatched-kind')
+        single = await select_workstream(client, scope, required_capabilities=[], work_kind='unmatched-kind')
         assert single['reason'] == 'sole_active_assignment'
         assert any('no exact work-kind match: unmatched-kind' in item for item in single['match_basis'])
         assert any('continuity only' in item for item in single['match_basis'])
         await assign_role(client, scope, 'second-role', ['coding'])
-        multiple = await resolve_role(client, scope, required_capabilities=[], work_kind='project_context')
+        multiple = await select_workstream(client, scope, required_capabilities=[], work_kind='project_context')
         assert multiple['reason'] == 'project_default'
         assert any('2 eligible project roles' in item for item in multiple['match_basis'])
         assert any('continuity only' in item for item in multiple['match_basis'])
@@ -1135,29 +1148,33 @@ async def test_nonsemantic_defaults_report_their_actual_candidate_count_and_work
 
 
 @pytest.mark.asyncio
-async def test_explicit_role_and_active_owner_do_not_silently_switch_identity():
+async def test_project_lead_owns_user_turns_and_delegated_member_keeps_its_identity():
     async with provider_client(fixture_settings()) as (client, _):
         scope = await create_scope(client)
-        await assign_role(client, scope, 'existing-owner', ['coding'])
-        await assign_role(client, scope, 'qualified-reviewer', ['coding', 'review'])
-        automatic = await resolve_role(client, scope)
-        assert automatic['agent']['agent_id'] == 'qualified-reviewer'
-        await begin_session(client, scope, 'existing-owner')
-        resumed = await resolve_role(client, scope, session_id='synthetic-session-existing-owner',
-                                     turn_id='synthetic-turn-one')
-        assert resumed['agent']['agent_id'] == 'existing-owner'
-        assert resumed['reason'] == 'active_task_owner'
-        explicit = await resolve_role(client, scope, agent_id='existing-owner')
-        assert explicit['agent']['agent_id'] == 'existing-owner'
-        assert explicit['reason'] == 'explicit_agent'
-        reassigned = await resolve_role(client, scope,
-            session_id='synthetic-session-existing-owner', agent_id='qualified-reviewer')
-        assert reassigned['agent']['agent_id'] == 'qualified-reviewer'
-        assert reassigned['reason'] == 'explicit_agent'
-        # Another client does not inherit the first client's active task owner.
-        other = await resolve_role(client, scope, source_application='cursor',
-                                   session_id='synthetic-session-existing-owner')
-        assert other['agent']['agent_id'] == 'qualified-reviewer'
+        await assign_role(client, scope, 'existing-member', ['coding'])
+        await assign_role(client, scope, 'project-lead', ['coding', 'review'])
+        policy = await client.put('/v1/project-agent-coordination-policy', json={
+            **scope, 'team_lead_agent_id': 'project-lead',
+            'team_member_agent_ids': ['existing-member'],
+        })
+        assert policy.status_code == 200, policy.text
+        await begin_session(client, scope, 'existing-member')
+        async def resolve(**changes):
+            response = await client.post('/v1/project-agent-context/resolve', json={
+                **scope, 'source_application': 'codex', **changes,
+            })
+            assert response.status_code == 200, response.text
+            return response.json()
+        resumed = await resolve(session_id='synthetic-session-existing-member', turn_id='synthetic-turn-one')
+        assert resumed['agent']['agent_id'] == 'project-lead'
+        named = await resolve(agent_id='existing-member')
+        assert named['agent']['agent_id'] == 'project-lead'
+        assert named['requested_agent_id'] == 'existing-member'
+        worker = await resolve(agent_id='existing-member', report_to_agent_id='project-lead')
+        assert worker['agent']['agent_id'] == 'existing-member'
+        assert worker['reporting_lead_agent_id'] == 'project-lead'
+        other = await resolve(source_application='cursor', session_id='synthetic-session-existing-member')
+        assert other['agent']['agent_id'] == 'project-lead'
 
 
 @pytest.mark.asyncio
@@ -1201,7 +1218,7 @@ async def test_successful_history_precedes_a_more_recent_failed_lead():
                 assert activity.status_code == 200, activity.text
                 task = activity.json()
             assert task['status'] == outcome
-        selected = await resolve_role(client, scope)
+        selected = await select_workstream(client, scope)
         assert selected['agent']['agent_id'] == 'successful-owner'
         assert selected['reason'] == 'project_continuity'
         assert selected['match_basis'] == [

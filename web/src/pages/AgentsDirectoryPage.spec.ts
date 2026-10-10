@@ -12,6 +12,7 @@ vi.mock('@/api/client', () => ({ getJson, postJson: vi.fn(), patchJson: vi.fn() 
 const mounted: Array<{ unmount: () => void }> = []
 const roster = ['Aster', 'Birch'].map((name, index) => ({
   agentId: `agent-${index}`, personalSpaceId: 'space-a',
+  employeeNumber: `00000${index + 1}`,
   profile: { name, responsibility: 'Synthetic review role', capabilities: ['review'], initialPreferences: [], status: 'active' },
 }))
 beforeEach(() => {
@@ -41,6 +42,11 @@ async function setup(path = '/project-agents') {
   return { router, wrapper }
 }
 describe('Agent directory integration', () => {
+  it('finds an Agent by its employee number', async () => {
+    const { wrapper } = await setup('/project-agents?q=000002')
+    expect(wrapper.findAll('.agent-directory-name a').map(link => link.text())).toEqual(['Birch'])
+    expect(wrapper.get('.fla-employee-number').text()).toBe('FLA 000002')
+  })
   it('explains how to start the first task at the main directory entry', async () => {
     const { wrapper } = await setup()
     expect(wrapper.get('.project-agent-first-task').text()).toContain('开始第一个任务')

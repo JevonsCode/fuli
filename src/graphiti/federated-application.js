@@ -81,6 +81,7 @@ import {
 import { buildUserTasteSkill } from './user-taste-skill.js';
 import { taskEntryPreferences } from './task-entry-preferences.js';
 import { TASK_ENTRY_TOOLS, registerRepositoryProject } from './repository-project-registration.js';
+import { resolveTaskEntryProject } from './task-entry-project-scope.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
 import {
   groupSubscriptions,
@@ -119,7 +120,7 @@ export function openFederatedGraphApplication({
       fetchImpl
     });
     app.employees = createEmployeeService({ app, runtimeConfigPath });
-    app.roundtable = createAgentRoundtable({ app,
+    app.roundtable = createAgentRoundtable({ app, env,
       openStore: () => createRoundtableStore(join(dirname(runtimeConfigPath), 'agent-roundtable.sqlite')) });
   }
   return app;
@@ -267,6 +268,9 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       // Every task gets a FULI Agent, so a task in an unregistered repository registers it.
       projectResolution = await registerRepositoryProject(this, projectResolution);
     }
+    projectResolution = await resolveTaskEntryProject(this, projectResolution, {
+      sessionId, sourceSessionId, sourceApplication, agentInvocation, agentToolName
+    });
     return taskEntryPreferences(this, projectResolution, {
       personalProjectId, projectAgentId, projectPath, taskPrompt, sourceApplication,
       sourceSessionId, sessionId, turnId, workKind, requiredCapabilities,

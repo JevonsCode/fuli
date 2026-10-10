@@ -15,6 +15,7 @@ from .project_agent_context_models import (
 from .agent_conversation_routes import register_agent_conversation_routes
 from .default_project_lead import DefaultProjectLeadRequest
 from .task_context_routes import register_task_context_routes
+from .project_agent_delegations import AgentDelegationIssue, AgentDelegationCheck
 
 
 def register_project_agent_memory_routes(application, store, Actor):
@@ -25,6 +26,18 @@ def register_project_agent_memory_routes(application, store, Actor):
     )
     async def resolve_context(request: ProjectAgentContextRequest, actor: Actor):
         return await store.resolve_project_agent_context(actor, request)
+
+    @application.post('/v1/project-agent-context/delegations')
+    async def issue_delegation(request: AgentDelegationIssue, actor: Actor):
+        return await store.issue_agent_delegation(actor, request)
+
+    @application.post('/v1/project-agent-context/delegations/verify')
+    async def verify_delegation(request: AgentDelegationCheck, actor: Actor):
+        return await store.verify_agent_delegation(actor, request)
+
+    @application.post('/v1/project-agent-context/delegations/revoke')
+    async def revoke_delegation(request: AgentDelegationCheck, actor: Actor):
+        return await store.revoke_agent_delegation(actor, request)
 
     @application.post(
         '/v1/project-agent-context/default-lead', response_model=ProjectAgentContextResolution,

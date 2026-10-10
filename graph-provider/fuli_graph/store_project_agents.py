@@ -5,6 +5,9 @@ from fastapi import HTTPException
 
 from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
+from .project_agent_employee_numbers import (
+    ASSIGN_EMPLOYEE_NUMBERS, EMPLOYEE_NUMBER_LOCK, employee_number_label,
+)
 from .project_agent_models import (
     ProjectAgentAssignmentCreate,
     ProjectAgentAssignmentEnd,
@@ -134,6 +137,7 @@ class StoreProjectAgents:
         records, _, _ = await self.runtime.driver.execute_query(
             '''
             MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
+            ''' + EMPLOYEE_NUMBER_LOCK + '''
             MERGE (agent:FuliProjectAgent {id: $id})
             ON CREATE SET agent.agent_id = $agent_id,
                           agent.created_at = $updated_at,
@@ -143,7 +147,12 @@ class StoreProjectAgents:
             SET agent._profile_upsert_lock = true
             REMOVE agent._profile_upsert_lock
             WITH space, agent
-            WHERE agent.status IS NULL OR agent.status <> 'archived'
+            WHERE (agent.status IS NULL OR agent.status <> 'archived')
+              AND ($status = 'active' OR NOT EXISTS {
+                MATCH (space)-[:CONTAINS_PROJECT]->(:FuliPersonalProject)-
+                      [:HAS_PROJECT_AGENT_COORDINATION_POLICY]->(policy:FuliProjectAgentCoordinationPolicy)
+                WHERE policy.team_lead_agent_id = agent.agent_id
+              })
             SET agent.profile_json = $profile_json,
                 agent.name = $name,
                 agent.occupation_emoji = $occupation_emoji,
@@ -159,6 +168,7 @@ class StoreProjectAgents:
                   agent.recruitment_id, $recruitment_id),
                 agent.updated_at = $updated_at
             MERGE (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(agent)
+            ''' + ASSIGN_EMPLOYEE_NUMBERS + '''
             RETURN agent
             ''',
             personal_space_id=request.personal_space_id,
@@ -182,7 +192,7 @@ class StoreProjectAgents:
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    'archived Project Agents require a dedicated restore operation'
+                    'archived Agents require a dedicated restore operation; project leads must hand off before deactivation'
                 ),
         )
         if request.personal_project_id:
@@ -420,7 +430,12 @@ class StoreProjectAgents:
                              'awaiting_recruitment', 'queued', 'running',
                              'paused', 'blocked', 'awaiting_review'
                            ]] AS open_tasks
-            WHERE agent.status = 'archived' OR size(open_tasks) = 0
+            WHERE (agent.status = 'archived' OR size(open_tasks) = 0)
+              AND NOT EXISTS {
+                MATCH (space)-[:CONTAINS_PROJECT]->(:FuliPersonalProject)-
+                      [:HAS_PROJECT_AGENT_COORDINATION_POLICY]->(policy:FuliProjectAgentCoordinationPolicy)
+                WHERE policy.team_lead_agent_id = agent.agent_id
+              }
             SET agent.status = 'archived',
                 agent.archive_reason = coalesce(agent.archive_reason, $reason),
                 agent.archived_at = coalesce(agent.archived_at, $updated_at),
@@ -446,7 +461,7 @@ class StoreProjectAgents:
         if not records:
             raise HTTPException(
                 status_code=409,
-                detail='Agent is missing or still has non-terminal task work',
+                detail='Agent is missing, has non-terminal task work, or is a project lead; hand off before archiving',
             )
         return await self.get_project_agent(
             actor,
@@ -768,6 +783,11 @@ class StoreProjectAgents:
             WITH project, assignment, agent
             WHERE assignment.status = 'active'
               AND coalesce(assignment.revision, 0) = $expected_revision
+              AND NOT EXISTS {
+                MATCH (project)-[:HAS_PROJECT_AGENT_COORDINATION_POLICY]->
+                      (policy:FuliProjectAgentCoordinationPolicy)
+                WHERE policy.team_lead_agent_id = agent.agent_id
+              }
             SET assignment.status = 'ended',
                 assignment.end_reason = $reason,
                 assignment.ended_at = $updated_at,
@@ -786,7 +806,7 @@ class StoreProjectAgents:
         if not records:
             raise HTTPException(
                 status_code=409,
-                detail='assignment is not active or revision is stale',
+                detail='assignment is not active, revision is stale, or project leadership requires a handoff',
             )
         row = records[0]
         return self._assignment(
@@ -851,6 +871,11 @@ class StoreProjectAgents:
             REMOVE lifecycle_agent._task_lifecycle_lock
             WITH project, ended, ended_agent, replacement_agent,
                  collect(lifecycle_agent) AS locked_agents
+            WHERE ended.status <> 'active' OR NOT EXISTS {
+              MATCH (project)-[:HAS_PROJECT_AGENT_COORDINATION_POLICY]->
+                    (policy:FuliProjectAgentCoordinationPolicy)
+              WHERE policy.team_lead_agent_id = ended_agent.agent_id
+            }
             OPTIONAL MATCH (existing_replacement:FuliProjectAgentAssignment {
               id: $replacement_id
             })
@@ -1075,6 +1100,7 @@ class StoreProjectAgents:
         })
         return ProjectAgentRecord(
             agent_id=raw['agent_id'],
+            employee_number=employee_number_label(raw.get('employee_number')),
             legacy_agent_ids=list(raw.get('legacy_agent_ids') or []),
             personal_space_id=personal_space_id,
             personal_project_id=projection_project_id,

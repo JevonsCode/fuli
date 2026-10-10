@@ -149,6 +149,8 @@ describe('Agent profile integration', () => {
     expect(wrapper.text()).toContain('Synthetic active project')
     expect(wrapper.text()).toContain('Synthetic previous project')
     expect(wrapper.get('.agent-org-lead a').text()).toBe('Birch')
+    expect(wrapper.get('.agent-org-lead').text()).toContain('项目总负责人')
+    expect(wrapper.get('.agent-org-reporting').text()).toContain('成员 → 项目总负责人 → 你')
     expect(wrapper.get('.agent-org-lead a').attributes('href')).toBe('/agents/space-a/beta')
     expect(wrapper.findAll('.agent-org-members a').map(link => link.text())).toEqual(['Aster', 'Cedar'])
     expect(wrapper.findAll('.agent-collaborators a').map(link => link.text())).toEqual(['Birch'])

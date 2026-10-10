@@ -107,6 +107,13 @@ describe('ProjectAgentAutomationPolicyPanel', () => {
     expect(patchJson.mock.lastCall?.[1]).toMatchObject({ teamLeadAgentId: 'lead',
       teamMemberAgentIds: ['member'], expectedUpdatedAt: '2026-09-16T00:00:00Z' })
   })
+
+  it('does not offer an empty lead once the project has a lead', async () => {
+    getJson.mockResolvedValueOnce({ teamLeadAgentId: 'lead', teamMemberAgentIds: ['member'] })
+    const wrapper = mountPanel([agent('lead'), agent('member')])
+    await flushPromises()
+    expect(wrapper.findAll('option').some(option => option.attributes('value') === '')).toBe(false)
+  })
 })
 
 function mountPanel(agents?: ProjectAgentRecord[]) {

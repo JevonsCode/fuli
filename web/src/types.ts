@@ -486,6 +486,7 @@ export interface ProjectAgentLearningEvidence {
 
 export interface ProjectAgentRecord {
   agentId: string
+  employeeNumber?: string | null
   legacyAgentIds?: string[]
   personalSpaceId: string
   personalProjectId?: string | null

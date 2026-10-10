@@ -4,6 +4,8 @@ import test from 'node:test';
 import { callAgentTool } from '../src/agent-tools.js';
 import { checkpointTaskKnowledge } from '../src/graphiti/agent-knowledge-workflows.js';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
+import { taskEntryPreferences } from '../src/graphiti/task-entry-preferences.js';
+import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
 
 // Synthetic data and an HTTP boundary double; real Neo4j coverage is separate.
 const CONFIG = {
@@ -82,6 +84,22 @@ test('task entry automatically restores exactly one durable role and its context
   assert.match(result.agent_receipt.markdown, /Engineer/);
 });
 
+test('hook entry without a turn ID forwards the receiving session with process-only delegation proof', async () => {
+  let resolved;
+  const app = entryApplication({ onResolve: input => { resolved = input; } });
+  app.roundtable = createAgentRoundtable({ app,
+    env: { FULI_ROUNDTABLE_DELEGATION: 'synthetic-invocation-capability-123456' },
+    openStore: () => ({ pendingFor: () => [] }) });
+  await taskEntryPreferences(app, { status: 'matched', personalProjectId: 'sample-project' }, {
+    projectAgentId: 'engineer', sourceApplication: 'cursor', sessionId: 'receiving-fork',
+    agentInvocation: true, agentToolName: 'begin_task_context', taskPrompt: null
+  }, async () => {});
+  assert.equal(resolved.session_id, null); // No reuse of an earlier task owner.
+  assert.equal(resolved.delegation_session_id, 'receiving-fork');
+  assert.equal(resolved.delegation_token, 'synthetic-invocation-capability-123456');
+  assert.equal(resolved.report_to_agent_id, undefined);
+});
+
 test('authenticated project-id task entry restores a role without a host path', async () => {
   let resolutions = 0;
   const app = entryApplication({ onResolve: () => { resolutions += 1; } });
@@ -108,7 +126,7 @@ test('a rejected explicit role cannot leak private preferences through fallback'
   assert.equal(result.context.project_agent_id, null);
   assert.equal(result.project_agent_context.status, 'agent_unavailable');
   assert.equal(result.effective_preferences.length, 0);
-  assert.equal(result.agent_receipt.markdown, 'FULI Agent：未选定');
+  assert.equal(result.agent_receipt.markdown, 'FULI Agent：分配失败（指定 FLA 不可用）');
   assert.equal(result.agent_receipt.owner, null);
 });
 
@@ -385,7 +403,7 @@ function entryApplication({
       const input = options.body ? JSON.parse(options.body) : {};
       if (target.pathname === '/v1/personal-projects') return Response.json([]);
       if (target.pathname === '/v1/project-agent-context/resolve') {
-        onResolve();
+        onResolve(input);
         assert.equal(input.source_application, 'cursor');
         return Response.json({ status: 'ready', reason: 'project_default', match_basis: [],
           agent: { agent_id: 'engineer', personal_space_id: 'test-space',

@@ -33,8 +33,8 @@ async def enroll_recruited_team_member(store, recruitment, profile):
              policy.team_lead_agent_id IS NULL AS needs_lead,
              coalesce(policy.team_lead_agent_id = agent.agent_id, false)
                OR agent.agent_id IN members AS already_member
-        WITH *, enabled AND NOT already_member
-                  AND (needs_lead OR size(members) < 32) AS changed
+        WITH *, NOT already_member
+                  AND (needs_lead OR (enabled AND size(members) < 32)) AS changed
         FOREACH (_ IN CASE WHEN changed THEN [1] ELSE [] END |
           SET policy.team_lead_agent_id = CASE WHEN needs_lead
                 THEN agent.agent_id ELSE policy.team_lead_agent_id END,

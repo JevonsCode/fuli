@@ -7,12 +7,11 @@ export async function taskEntryPreferences(application, projectResolution, {
   sourceSessionId, sessionId, turnId, workKind, requiredCapabilities,
   limit, agentInvocation, agentToolName
 }, recordAgentViews) {
-  const selection = projectPath === null && !personalProjectId && !projectAgentId
-    ? null
-    : await resolveTaskEntryAgent(
+  const selection = await resolveTaskEntryAgent(
       application, projectResolution, { projectAgentId, taskPrompt, sourceApplication,
         sessionId: agentToolName === 'get_collaboration_preferences'
           ? sessionId ?? sourceSessionId : turnId ? sessionId : null,
+        receivingSessionId: sessionId ?? sourceSessionId,
         turnId: agentToolName === 'begin_task_context' ? turnId : null,
         workKind, requiredCapabilities, agentInvocation, agentToolName }
     );
@@ -41,6 +40,14 @@ export async function taskEntryPreferences(application, projectResolution, {
     sourceApplication, taskPrompt, selectionReason: selection.reason,
     matchBasis: selection.match_basis
   }) : selection;
+  if (context && selection?.requested_agent_id) {
+    context.requested_agent_id = selection.requested_agent_id;
+    context.requested_agent_guidance = 'The user requested this project specialist. Keep the project lead as accountable owner; coordinate a scoped workstream for the specialist and receive its report before replying. This request is not evidence that a worker ran. Do not load the specialist’s private memory into the lead context.';
+  }
+  if (context && selection?.reporting_lead_agent_id) {
+    context.reporting_lead_agent_id = selection.reporting_lead_agent_id;
+    context.reporting_guidance = 'This is a delegated member turn. Keep this member identity and private memory isolated. Return results and blockers to the project lead; the lead integrates the final user report.';
+  }
   // Questions other Agents left for this Agent while it was not running.
   const waiting = selection?.agent && application.roundtable
     ? application.roundtable.pending(selection.agent.agentId) : [];
@@ -49,6 +56,7 @@ export async function taskEntryPreferences(application, projectResolution, {
       agent_messages_guidance: 'Other Agents are waiting for your answers. Reply to each with reply_agent_message.' } : {}),
     agent_receipt: taskAgentReceipt(application, {
       projectId: projectResolution.personalProjectId, agentId: selection?.agent?.agentId ?? null,
-      name: context?.role?.name, sourceApplication
+      name: context?.role?.name, sourceApplication,
+      assignmentStatus: selection?.status, assignmentReason: selection?.reason
     }) };
 }

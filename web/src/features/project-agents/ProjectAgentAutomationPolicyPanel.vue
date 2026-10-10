@@ -34,7 +34,7 @@ const eligible = computed(() => (props.agents ?? []).filter(agent =>
     && assignment.personalProjectId === props.personalProjectId)))
 const leaders = eligible
 const leaderOptions = computed(() => [
-  { value: '', label: t('projectAgents.team.noLead') },
+  ...(!policy.value.teamLeadAgentId ? [{ value: '', label: t('projectAgents.team.noLead') }] : []),
   ...leaders.value.map(agent => ({ value: agent.agentId, label: label(agent) })),
 ])
 const members = computed(() => eligible.value.filter(agent => agent.agentId !== teamLead.value))
@@ -103,7 +103,7 @@ async function updatePolicy(
 }
 
 async function saveTeam() {
-  if (busy.value || loadError.value || !teamDirty.value) return
+  if (busy.value || loadError.value || !teamDirty.value || !teamLead.value) return
   await persistPolicy({ ...policy.value }, {
     teamLeadAgentId: teamLead.value || null,
     teamMemberAgentIds: [...teamMembers.value],
@@ -265,7 +265,7 @@ function stringValue(value: unknown) {
           </label>
           <label v-for="agent in members" :key="agent.agentId"><input v-model="teamMembers" type="checkbox" :value="agent.agentId" />{{ label(agent) }}</label>
         </fieldset>
-        <button type="button" :disabled="busy || !teamDirty" @click="saveTeam">{{ t('projectAgents.team.save') }}</button>
+        <button type="button" :disabled="busy || !teamDirty || !teamLead" @click="saveTeam">{{ t('projectAgents.team.save') }}</button>
       </details>
     </div>
     <div class="project-agent-policy-feedback" aria-live="polite">

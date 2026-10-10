@@ -18,6 +18,8 @@ test('team context contains scoped public roles, never another member memory', a
   assert.deepEqual(team.roster.map(agent => agent.agent_id), ['lead', 'member']);
   assert.deepEqual(team.peer_roles, ['hr', 'project_manager']);
   assert.equal(team.worker_started, false);
+  assert.deepEqual(team.reporting_lines, [{ agent_id: 'member', reports_to_agent_id: 'lead' }]);
+  assert.equal(team.user_facing_agent_id, 'lead');
   assert.ok(!JSON.stringify(team).includes('never include'));
 });
 test('team context reports unavailable members instead of restoring ended or other-project assignments', async () => {

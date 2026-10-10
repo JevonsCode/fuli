@@ -22,20 +22,38 @@ function agentLink(application, agentId, name) {
 // The reply's attribution line: who led the task and who actually helped.
 export function taskAgentReceipt(application, { projectId, agentId, name = null,
   sourceApplication = null, workStatus = null, conversationId = null, persistence = null,
-  collaborators = [] }) {
+  collaborators = [], assignmentStatus = null, assignmentReason = null }) {
   const owner = agentId ? { agent_id: agentId, name,
     profile_url: agentProfileUrl(application, agentId), source_application: sourceApplication } : null;
   const helpers = owner ? collaborators.filter(item => item.agentId !== agentId) : [];
   const markdown = owner
     ? `FULI Agent：负责人 ${agentLink(application, agentId, name)}`
       + (helpers.length ? ` · 协作 ${helpers.map(item => agentLink(application, item.agentId, item.name)).join('、')}` : '')
-    : 'FULI Agent：未选定';
+    : unassignedReceipt(assignmentStatus, assignmentReason);
   return { required: true, markdown, owner,
     collaborators: helpers.map(item => ({ agent_id: item.agentId, name: item.name,
       profile_url: agentProfileUrl(application, item.agentId) })),
     personal_project_id: projectId, work_status: workStatus, persistence,
     continuation: owner ? agentContinuation(projectId, agentId, conversationId) : null,
     guidance: 'MUST end every final user-visible reply with agent_receipt.markdown unchanged, exactly once, including greetings, status and errors, even when capture is disabled or nothing is retained. The receipt returned by checkpoint_task_knowledge supersedes the entry receipt because it names actual collaborators. Never invent an owner or a collaborator.' };
+}
+
+function unassignedReceipt(status, reason) {
+  if (!status) return 'FULI Agent：分配未完成（任务没有可用负责人）';
+  if (status === 'project_unresolved') {
+    return reason === 'ambiguous' ? 'FULI Agent：分配待确认（项目归属待确认）'
+      : reason === 'session_identity_required' ? 'FULI Agent：分配失败（缺少会话标识）'
+        : 'FULI Agent：分配失败（项目归属未能恢复）';
+  }
+  const labels = {
+    unavailable: '分配失败（服务或身份恢复不可用）',
+    agent_unavailable: '分配失败（指定 FLA 不可用）',
+    agent_not_found: '分配失败（指定 FLA 不存在）',
+    ambiguous_agent: '分配待确认（存在同名 FLA）',
+    agent_selection_conflict: '分配待确认（FLA 选择冲突）',
+    manual_selection: '分配待确认（需要选择负责人）'
+  };
+  return `FULI Agent：${labels[status] ?? '分配未完成（HR 尚未返回负责人）'}`;
 }
 
 export function employeeCollaborationReceipt(application, context, { tool, permission, sourceApplication }) {

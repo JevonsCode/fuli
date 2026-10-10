@@ -4,29 +4,35 @@ import test from 'node:test';
 
 import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
 import { createRoundtableStore } from '../src/agent-roundtable/store.js';
-import { parseFinalAnswer, sessionWorkingDirectory, wakeArguments } from '../src/agent-roundtable/wake.js';
+import { parseFinalAnswer, sessionWorkingDirectory, wakeArguments, wakeAgent } from '../src/agent-roundtable/wake.js';
 
 const agent = (agentId, name, allowedClients = ['claude_code', 'codex']) => ({ agentId,
+  employeeNumber: agentId === 'lead-1' ? '000001' : '000002',
   profile: { name, displayName: name, status: 'active', responsibility: `${name} 的职责`, capabilities: [], allowedClients } });
 
-function fixture({ wake, sessions = {} } = {}) {
+function fixture({ wake, sessions = {}, redeemed = true, env = {} } = {}) {
   const agents = [agent('lead-1', 'Milo Reed'), agent('reviewer-1', 'Nova Lane', ['codex'])];
   const tasks = {
     'token-milo': { token: 'token-milo', projectAgentId: 'lead-1', personalProjectId: 'app', sessionId: 'cc-1', sourceApplication: 'claude_code' },
     'token-nova': { token: 'token-nova', projectAgentId: 'reviewer-1', personalProjectId: 'app', sessionId: 'cx-9', sourceApplication: 'codex' }
   };
   const woken = [];
+  const grants = [], revoked = [], verified = [];
   const app = {
     config: { personal: { spaceId: 'space' } },
     listProjectAgents: async () => agents,
     taskContextRegistry: { context: async (token) => tasks[token] },
-    personal: { recentAgentSessions: async ({ agentId }) => sessions[agentId] ?? [] }
+    personal: { recentAgentSessions: async ({ agentId }) => sessions[agentId] ?? [],
+      issueAgentDelegation: async input => { grants.push(input); return { token: `synthetic-grant-${grants.length}` }; },
+      verifyAgentDelegation: async input => { verified.push(input); return { redeemed }; },
+      revokeAgentDelegation: async input => { revoked.push(input); }
+    }
   };
   let id = 0;
-  const roundtable = createAgentRoundtable({ app, openStore: () => createRoundtableStore(), idFactory: () => `id-${++id}`,
+  const roundtable = createAgentRoundtable({ app, env, openStore: () => createRoundtableStore(), idFactory: () => `id-${++id}`,
     locateCwd: (client, sessionId) => `/work/${client}/${sessionId}`, clientAvailable: () => true,
     wake: async (input) => { woken.push(input); return wake ? wake(input) : { body: 'Nova 的回答', sessionId: 'fork-1' }; } });
-  return { roundtable, woken };
+  return { roundtable, woken, grants, revoked, verified };
 }
 
 test('an Agent asks another Agent, which answers from its latest conversation', async () => {
@@ -49,6 +55,83 @@ test('an Agent asks another Agent, which answers from its latest conversation', 
   assert.equal(summary.subject, '登录重构评审过了吗？');
   assert.deepEqual(summary.participants.map((person) => person.name), ['Milo Reed', 'Nova Lane']);
   assert.equal(summary.waiting, false);
+});
+
+test('employee numbers find and address the same identity across clients', async () => {
+  const { roundtable, woken } = fixture();
+  const result = await roundtable.findAgents({ query: '000002' });
+  assert.equal(result.agents.length, 1);
+  assert.equal(result.agents[0].employeeNumber, '000002');
+  assert.equal(result.agents[0].agentId, 'reviewer-1');
+  await roundtable.messageAgent({ taskContextToken: 'token-milo', to: 'FLA 000002', body: 'Synthetic review', sourceApplication: 'claude_code' });
+  assert.match(woken[0].prompt, /^@\{reviewer-1\}/);
+});
+
+test('a public in-flight thread header never authorizes member delegation', async () => {
+  let roundtable;
+  ({ roundtable } = fixture({ wake: async (input) => {
+    const context = { taskPrompt: input.prompt, agentId: 'reviewer-1', personalProjectId: 'app', sourceApplication: 'codex' };
+    assert.equal(roundtable.taskEntryDelegation(context), null);
+    assert.equal(roundtable.taskEntryDelegation({ ...context, personalProjectId: 'elsewhere' }), null);
+    assert.equal(roundtable.taskEntryDelegation({ ...context, sourceApplication: 'claude_code' }), null);
+    assert.equal(roundtable.taskEntryDelegation({ ...context, sessionId: 'unrelated-user-session' }), null);
+    assert.equal(roundtable.taskEntryDelegation({ ...context, taskPrompt: '@{reviewer-1} [FULI 圆桌 · invented]' }), null);
+    return { body: 'Member report', sessionId: 'member-run' };
+  } }));
+  const result = await roundtable.messageAgent({ taskContextToken: 'token-milo', to: 'reviewer-1', body: 'Review this work' });
+  assert.equal(result.status, 'answered');
+  assert.equal(roundtable.taskEntryDelegation({ taskPrompt: '@{reviewer-1} [FULI 圆桌 · id-1]',
+    agentId: 'reviewer-1', personalProjectId: 'app', sourceApplication: 'codex' }), null);
+});
+
+test('grants are per-attempt, verified against the answering session, and always revoked', async () => {
+  const { roundtable, grants, woken, revoked, verified } = fixture({
+    sessions: { 'reviewer-1': [{ source_application: 'codex', session_id: 'cx-9', personal_project_id: 'app' }] },
+    wake: async ({ sessionId }) => {
+      if (sessionId) throw new Error('Busy session');
+      return { body: 'Synthetic answer', sessionId: 'fresh-session' };
+    }
+  });
+  const result = await roundtable.messageAgent({ taskContextToken: 'token-milo', to: 'reviewer-1', body: 'Review' });
+  assert.equal(result.status, 'answered');
+  assert.deepEqual(grants.map(x => x.target_session_id), ['cx-9', null]);
+  assert.deepEqual(revoked.map(x => x.token), ['synthetic-grant-1', 'synthetic-grant-2']);
+  assert.equal(verified[0].session_id, 'fresh-session');
+  assert.equal(woken[1].delegationToken, 'synthetic-grant-2');
+  assert.ok(woken.every(x => !x.prompt.includes('synthetic-grant')));
+});
+
+test('a missing redemption cannot be attributed to the intended member', async () => {
+  const { roundtable, revoked } = fixture({ redeemed: false });
+  const result = await roundtable.messageAgent({ taskContextToken: 'token-milo', to: 'reviewer-1', body: 'Review' });
+  assert.equal(result.status, 'queued');
+  assert.equal(result.reason, 'delegation_not_redeemed');
+  assert.equal(roundtable.thread({ threadId: result.threadId }).messages.length, 1);
+  assert.equal(revoked.length, 1);
+});
+
+test('Claude fork delegation is claimed by the new session, not the resumed source', async () => {
+  const { roundtable, grants, verified } = fixture({ sessions: {
+    'lead-1': [{ source_application: 'claude_code', session_id: 'original-session', personal_project_id: 'app' }]
+  } });
+  await roundtable.messageAgent({ taskContextToken: 'token-nova', to: 'lead-1', body: 'Report' });
+  assert.equal(grants[0].target_session_id, null);
+  assert.equal(verified[0].session_id, 'fork-1');
+});
+
+test('wake passes only its new grant in the child environment, never the prompt', async () => {
+  await wakeAgent({ client: 'codex', cwd: '/synthetic', prompt: 'Review', delegationToken: 'new-grant',
+    env: { FULI_CODEX_BIN: '/synthetic/codex', FULI_ROUNDTABLE_DELEGATION: 'inherited-grant' },
+    run: async (_command, _args, input) => {
+      assert.equal(input.env.FULI_ROUNDTABLE_DELEGATION, 'new-grant');
+      assert.equal(input.input, 'Review');
+      return { code: 0, stdout: [
+        { type: 'thread.started', thread_id: 'synthetic-session' },
+        { type: 'item.completed', item: { type: 'agent_message', text: 'Answer' } },
+        { type: 'turn.completed' }
+      ].map(JSON.stringify).join('\n') };
+    }
+  });
 });
 
 test('a message that cannot be delivered waits in the inbox until the Agent replies', async () => {

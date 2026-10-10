@@ -17,8 +17,20 @@ function fixture(agents = [role('engineer', 'Alex Morgan')]) {
   const run = (taskPrompt, extra = {}) => resolveTaskEntryAgent(app,
     { personalProjectId: 'sample' }, { agentInvocation: true,
       agentToolName: 'begin_task_context', sourceApplication: 'cursor', taskPrompt, ...extra });
-  return { run, calls };
+  return { run, calls, app };
 }
+test('roundtable capability and receiving session reach Provider authorization', async () => {
+  const { app, calls, run } = fixture();
+  app.roundtable = { taskEntryDelegation(input) {
+    assert.equal(input.sessionId, 'receiving-session');
+    return { token: 'synthetic-capability-1234567890123456', sessionId: input.sessionId };
+  } };
+  await run('@{engineer} [FULI 圆桌 · synthetic-thread]\nReview this work', { receivingSessionId: 'receiving-session' });
+  const request = calls.find(([name]) => name === 'resolve')[1];
+  assert.equal(request.delegation_token, 'synthetic-capability-1234567890123456');
+  assert.equal(request.delegation_session_id, 'receiving-session');
+  assert.equal(request.report_to_agent_id, undefined);
+});
 test('leading @display name selects the exact current-project Agent before loading memory', async () => {
   const { run, calls } = fixture();
   const result = await run('@Alex Morgan 继续刚才的设计');
@@ -108,4 +120,24 @@ test('an explicitly selected Agent is never replaced by a default lead', async (
   });
   assert.equal(staffed, false);
   assert.equal(result.agent, null);
+});
+
+test('a valid member request staffs a missing project lead then re-resolves the original request', async () => {
+  let hasLead = false;
+  const resolved = [];
+  const app = { config: { personal: { spaceId: 'space' } }, personal: {
+    resolveProjectAgentContext: async input => {
+      resolved.push(input.agent_id);
+      return hasLead ? { status: 'ready', agent: role('lead', 'Project Lead'), requested_agent_id: input.agent_id }
+        : { status: 'unassigned', reason: 'project_lead_required' };
+    },
+    staffDefaultProjectLead: async () => { hasLead = true; return { status: 'ready', agent: role('lead', 'Project Lead') }; }
+  } };
+  const result = await resolveTaskEntryAgent(app, { personalProjectId: 'sample' }, {
+    agentInvocation: true, agentToolName: 'begin_task_context', sourceApplication: 'cursor',
+    projectAgentId: 'member', taskPrompt: 'continue'
+  });
+  assert.equal(result.agent.agentId, 'lead');
+  assert.equal(result.requested_agent_id, 'member');
+  assert.deepEqual(resolved, ['member', 'member']);
 });

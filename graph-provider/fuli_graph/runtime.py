@@ -227,6 +227,10 @@ class GraphitiRuntime:
             'FOR (n:FuliWorkflowReviewPreview) REQUIRE n.token_hash IS UNIQUE'
         )
         await self.driver.execute_query(
+            'CREATE CONSTRAINT fuli_agent_delegation_token IF NOT EXISTS '
+            'FOR (n:FuliAgentDelegation) REQUIRE n.token_hash IS UNIQUE'
+        )
+        await self.driver.execute_query(
             'CREATE CONSTRAINT fuli_workflow_rule_id IF NOT EXISTS '
             'FOR (n:FuliWorkflowRule) REQUIRE n.id IS UNIQUE'
         )
@@ -285,6 +289,9 @@ class GraphitiRuntime:
             'FOR (n:FuliConversationPolicy) REQUIRE n.id IS UNIQUE',
             'CREATE CONSTRAINT fuli_project_agent_id IF NOT EXISTS '
             'FOR (n:FuliProjectAgent) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_employee_number IF NOT EXISTS '
+            'FOR (n:FuliProjectAgent) '
+            'REQUIRE (n.employee_number_space_id, n.employee_number) IS UNIQUE',
             'CREATE CONSTRAINT fuli_agent_attention_id IF NOT EXISTS '
             'FOR (n:FuliAgentAttention) REQUIRE n.id IS UNIQUE',
             'CREATE CONSTRAINT fuli_project_agent_assignment_id IF NOT EXISTS '

@@ -48,7 +48,7 @@ test('the receipt names the lead and each collaborator once, never the lead twic
 test('an unavailable owner is explicit and never fabricated', () => {
   const receipt = taskAgentReceipt(application, { projectId: 'synthetic-project', agentId: null });
   assert.equal(receipt.required, true);
-  assert.equal(receipt.markdown, 'FULI Agent：未选定');
+  assert.equal(receipt.markdown, 'FULI Agent：分配未完成（任务没有可用负责人）');
   assert.equal(receipt.owner, null);
   assert.equal(receipt.continuation, null);
 });

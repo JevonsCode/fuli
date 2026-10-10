@@ -8,6 +8,7 @@ original coordinator reference.
 import json
 
 from .project_agent_models import ProjectAgentProfile
+from .project_agent_employee_numbers import ASSIGN_EMPLOYEE_NUMBERS, EMPLOYEE_NUMBER_LOCK
 from .provider_values import now_utc, stable_uuid
 
 SYSTEM_COORDINATOR_AGENT_ID = 'employee.jefa'
@@ -75,6 +76,7 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
     await driver.execute_query(
         '''
         MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
+        ''' + EMPLOYEE_NUMBER_LOCK + '''
         MERGE (agent:FuliProjectAgent {id: $id})
         ON CREATE SET agent.agent_id = $agent_id,
                       agent.name = $name,
@@ -90,7 +92,7 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
             agent.status = 'active',
             agent.system_managed = true
         MERGE (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(agent)
-        ''',
+        ''' + ASSIGN_EMPLOYEE_NUMBERS + ' RETURN agent',
         space_id=space_id,
         id=node_id,
         agent_id=agent_id,

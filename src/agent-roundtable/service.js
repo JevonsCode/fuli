@@ -10,7 +10,7 @@ const NESTED_ASK_LIMIT = 3;
 // Agents talk to each other directly: an ask wakes the recipient in its own
 // client and returns its answer, or waits in its inbox for its next task.
 export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFactory = randomUUID,
-  locateCwd = sessionWorkingDirectory, clientAvailable = (client) => Boolean(resolveClientCommand(client)) }) {
+  env = process.env, locateCwd = sessionWorkingDirectory, clientAvailable = (client) => Boolean(resolveClientCommand(client)) }) {
   const spaceId = () => app.config.personal.spaceId;
   // Opened on first use: most MCP processes never touch the roundtable.
   let opened = null;
@@ -35,6 +35,9 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     const all = await agents();
     const exact = all.find((agent) => agent.agentId === needle || agent.agentId === decodeURIComponent(needle));
     if (exact) return exact;
+    const number = needle.match(/^(?:FLA\s*)?(\d{6,})$/i)?.[1];
+    const numbered = number && all.find((agent) => agent.employeeNumber === number);
+    if (numbered) return numbered;
     const named = all.filter((agent) => [agent.profile.displayName, agent.profile.name]
       .some((name) => name?.toLowerCase() === needle.toLowerCase()));
     if (named.length === 1) return named[0];
@@ -53,11 +56,12 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
 
   async function findAgents({ query = null, personalProjectId = null } = {}) {
     const needle = query?.trim().toLowerCase();
-    const matches = (await agents()).filter((agent) => !needle || [agent.agentId, agent.profile.displayName,
+    const matches = (await agents()).filter((agent) => !needle || [agent.agentId,
+      agent.employeeNumber ? `FLA ${agent.employeeNumber}` : null, agent.profile.displayName,
       agent.profile.name, agent.profile.responsibility, ...(agent.profile.capabilities ?? [])]
       .some((value) => value?.toLowerCase().includes(needle)));
     return { agents: await Promise.all(matches.slice(0, 20).map(async (agent) => ({
-      agentId: agent.agentId, name: label(agent), responsibility: agent.profile.responsibility,
+      agentId: agent.agentId, employeeNumber: agent.employeeNumber, name: label(agent), responsibility: agent.profile.responsibility,
       clients: (agent.profile.allowedClients ?? []).filter((client) => WAKE_CLIENTS.includes(client)),
       recentConversations: await conversations(agent, personalProjectId)
     }))),
@@ -107,6 +111,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
       to: { agentId: target.agentId, name: label(target) } });
     const nested = history.filter((message) => message.kind === 'ask' && message.status === 'delivering').length;
     if (!wait || nested >= NESTED_ASK_LIMIT) return queued(thread, ask, target, nested ? 'nested_limit' : 'not_waiting');
+    if (!taskContextToken || !from.projectId) return queued(thread, ask, target, 'task_context_required');
     const attempts = await deliveryTargets(target, conversation, from.projectId, projectPath);
     if (!attempts.length) return queued(thread, ask, target, 'no_client');
     const prompt = wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: from.client });
@@ -117,8 +122,20 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
       if (unusable.has(delivery.client)) continue;
       store.updateMessage(ask.id, { status: 'delivering', toClient: delivery.client, toSession: delivery.sessionId });
       let answer;
+      let grant;
       try {
-        answer = await wake({ client: delivery.client, sessionId: delivery.sessionId, cwd: delivery.cwd, timeoutMs, prompt });
+        grant = await app.personal.issueAgentDelegation({ personal_space_id: spaceId(),
+          task_context_token: taskContextToken, source_application: from.client, agent_id: target.agentId,
+          target_application: delivery.client,
+          // Claude resumes into a fork with a new ID. Only Codex resumes in place.
+          target_session_id: delivery.client === 'codex' ? delivery.sessionId : null,
+          lifetime_seconds: timeoutMs / 1000 });
+        answer = await wake({ client: delivery.client, sessionId: delivery.sessionId, cwd: delivery.cwd,
+          timeoutMs, prompt, delegationToken: grant.token });
+        const verified = answer.sessionId && await app.personal.verifyAgentDelegation({
+          personal_space_id: spaceId(), token: grant.token, session_id: answer.sessionId });
+        if (!verified?.redeemed) throw Object.assign(new Error('The receiving session did not restore the Agent'),
+          { code: 'delegation_not_redeemed' });
       } catch (error) {
         failure = error.code ?? 'wake_failed';
         // A missing or logged-out client cannot answer from any session. A conversation
@@ -127,6 +144,11 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
         // A timeout already used the caller's wait.
         if (failure === 'wake_timeout') break;
         continue;
+      } finally {
+        // Even failed or timed-out attempts lose their authority. Expiry remains
+        // the fail-closed backstop if the Provider is temporarily unreachable.
+        if (grant?.token) await app.personal.revokeAgentDelegation({
+          personal_space_id: spaceId(), token: grant.token }).catch(() => {});
       }
       const via = `${delivery.client}:${delivery.sessionId ? 'resume' : 'new'}`;
       store.updateMessage(ask.id, { status: 'answered', via });
@@ -187,7 +209,14 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
         to: { agentId: message.to_agent, name: message.to_name, client: message.to_client } })) };
   }
 
-  return { findAgents, messageAgent, readMessages, replyMessage, threads, thread,
+  function taskEntryDelegation({ sessionId }) {
+    // The public thread header is presentation only. The Provider validates this
+    // process-local capability, including project, recipient, client and session.
+    return env.FULI_ROUNDTABLE_DELEGATION
+      ? { token: env.FULI_ROUNDTABLE_DELEGATION, sessionId: sessionId ?? null } : null;
+  }
+
+  return { findAgents, messageAgent, readMessages, replyMessage, threads, thread, taskEntryDelegation,
     pending: (agentId) => store.pendingFor(spaceId(), agentId).map(inboxItem),
     close: () => opened?.close() };
 }

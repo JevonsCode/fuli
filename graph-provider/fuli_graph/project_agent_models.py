@@ -277,6 +277,7 @@ class ProjectAgentAssignmentReplaceResult(StrictModel):
 
 class ProjectAgentRecord(StrictModel):
     agent_id: str
+    employee_number: str | None = None
     legacy_agent_ids: list[str] = Field(default_factory=list)
     personal_space_id: str
     personal_project_id: str | None = None

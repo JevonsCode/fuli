@@ -71,6 +71,7 @@ const visible = computed(() =>
         fuzzyMatch(
           [
             agentDisplayName(agent),
+            agent.employeeNumber ? `FLA ${agent.employeeNumber}` : "",
             agent.profile.responsibility,
             ...agent.profile.capabilities,
             ...profileProjectIds(agent).map((id) => projectNames.value[id] || id),

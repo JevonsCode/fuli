@@ -14,6 +14,9 @@ const render = (props: Record<string, unknown> = {}) => mount(AgentCard, {
 })
 
 describe('AgentCard projects', () => {
+  it('shows the stable FLA employee number', () => {
+    expect(render({ agent: { ...agent, employeeNumber: '000001' } }).get('.fla-employee-number').text()).toBe('FLA 000001')
+  })
   it('says the Agent manages all projects instead of none when its policy covers every project', () => {
     expect(render({ managesAllProjects: true }).get('.agent-card-projects').text()).toBe('全部项目')
     expect(render().get('.agent-card-projects').text()).toBe('未分配项目')

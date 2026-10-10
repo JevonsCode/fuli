@@ -71,6 +71,8 @@ export function projectAgentRecord(value) {
     Object.hasOwn(profile, 'display_name'));
   copyOptional(result, 'legacyAgentIds', value.legacy_agent_ids,
     Object.hasOwn(value, 'legacy_agent_ids'));
+  copyOptional(result, 'employeeNumber', value.employee_number,
+    Object.hasOwn(value, 'employee_number'));
   copyOptional(result.profile, 'workKinds', profile.work_kinds,
     Object.hasOwn(profile, 'work_kinds'));
   copyOptional(

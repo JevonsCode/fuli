@@ -117,9 +117,9 @@ async def test_context_project_fallback_skips_management_peer_and_keeps_durable_
 
     result = await store.resolve_project_agent_context({'id': 'principal'}, request)
 
-    assert result.status == 'ready'
-    assert result.agent.agent_id == 'developer-a'
-    assert result.reason == 'project_context_fallback'
+    assert result.status == 'unassigned'
+    assert result.agent is None
+    assert result.reason == 'project_lead_required'
 
 
 @pytest.mark.asyncio
@@ -143,9 +143,9 @@ async def test_context_session_peer_owner_does_not_override_unrelated_work():
 
     result = await store.resolve_project_agent_context({'id': 'principal'}, request)
 
-    assert result.status == 'ready'
-    assert result.agent.agent_id == 'developer-a'
-    assert result.reason == 'project_context_fallback'
+    assert result.status == 'unassigned'
+    assert result.agent is None
+    assert result.reason == 'project_lead_required'
 
 
 @pytest.mark.asyncio

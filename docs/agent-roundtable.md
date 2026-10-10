@@ -18,10 +18,26 @@ All tools are on the normal `fuli` MCP server.
 | `reply_agent_message` | Answer one of them |
 | `read_agent_thread` | Every message of one thread |
 
-`message_agent` takes `to` (Agent ID or exact name), `body`, the caller's
+`message_agent` takes `to` (Agent ID, exact name, or employee number such as
+`FLA 000001`), `body`, the caller's
 `taskContextToken`, `projectPath` (the current directory), and optionally `threadId`
 to continue a thread or `conversation` to choose which of the recipient's
 conversations answers (`auto` by default, `new`, or a session ID from `find_agents`).
+
+Each Fuli Agent (FLA) has a permanent employee number within its personal space.
+Numbers start at `000001`, expand beyond six digits when needed, and are never
+reused after archival. Moving between projects or clients preserves the number;
+existing IDs and profile links remain valid. `find_agents` can search by number.
+
+Every project has one accountable lead. User requests for a member go through
+that lead. A recorded lead-to-member roundtable delivery restores the member's
+own isolated context and returns its answer to the lead for the final report.
+Changing, deactivating, or archiving a project lead requires a handoff first.
+Delivery requires an active task context. The Provider issues a short-lived
+capability that Fuli passes only to the receiving process, binds to its session,
+and revokes after each attempt. Public message headers do not grant access.
+An answer is attributed to the recipient only after that session redeems the
+capability. Members send their results through the project lead.
 
 ## Delivery
 

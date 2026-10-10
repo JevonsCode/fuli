@@ -308,6 +308,7 @@ onMounted(() => {
         <div class="agent-resume-intro">
           <div class="agent-resume-name-row">
             <h1>{{ agentDisplayName(agent) }}</h1>
+            <span v-if="agent.employeeNumber" class="ui-badge fla-employee-number">FLA {{ agent.employeeNumber }}</span>
             <span
               class="ui-badge agent-profile-membership"
               :class="`is-${agent.profile.status}`"
@@ -651,6 +652,9 @@ onMounted(() => {
                   :name="personName(team.policy.teamLeadAgentId)"
                 />
               </div>
+              <p v-if="team.policy.teamLeadAgentId" class="agent-org-reporting">
+                {{ t("agentProfiles.reporting") }}
+              </p>
               <div
                 v-if="team.policy.teamMemberAgentIds?.length"
                 class="agent-org-members"
