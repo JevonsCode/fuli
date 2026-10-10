@@ -81,6 +81,30 @@ test('a busy conversation falls back to a new session of the same Agent', async 
   assert.deepEqual(woken.map(({ sessionId, cwd }) => [sessionId, cwd]), [['cx-9', '/work/codex/cx-9'], [null, '/work/codex/cx-9']]);
 });
 
+test('a client that is not logged in hands the message to the Agent\'s next client', async () => {
+  const { roundtable, woken } = fixture({
+    sessions: { 'lead-1': [{ source_application: 'claude_code', session_id: 'cc-7', personal_project_id: 'app', last_active: '2026-10-10T00:00:00Z' }] },
+    wake: ({ client }) => {
+      if (client === 'claude_code') throw Object.assign(new Error('not logged in'), { code: 'client_login_required' });
+      return { body: 'Milo 用 Codex 回答', sessionId: 'cx-new' };
+    }
+  });
+  const result = await roundtable.messageAgent({ taskContextToken: 'token-nova', sourceApplication: 'codex', to: 'Milo Reed', body: '看一下这个 PR？' });
+  assert.equal(result.status, 'answered');
+  assert.equal(result.via, 'codex:new');
+  assert.deepEqual(woken.map(({ client, sessionId }) => `${client}:${sessionId}`), ['claude_code:cc-7', 'codex:null']);
+});
+
+test('a timed-out wake does not start another client', async () => {
+  const { roundtable, woken } = fixture({
+    wake: () => { throw Object.assign(new Error('slow'), { code: 'wake_timeout' }); }
+  });
+  const result = await roundtable.messageAgent({ taskContextToken: 'token-nova', sourceApplication: 'codex', to: 'Milo Reed', body: '在吗？' });
+  assert.equal(result.status, 'queued');
+  assert.equal(result.reason, 'wake_timeout');
+  assert.equal(woken.length, 1);
+});
+
 test('a fresh run is used when the recipient has no resumable conversation', async () => {
   const { roundtable, woken } = fixture();
   const result = await roundtable.messageAgent({ taskContextToken: 'token-nova', sourceApplication: 'codex',

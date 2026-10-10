@@ -35,8 +35,10 @@ conversations answers (`auto` by default, `new`, or a session ID from `find_agen
      the same Agent in a new session instead.
    - Without a resumable conversation, Fuli starts a new session in the caller's
      project directory with `@{agent}`, which loads that Agent's memory and role.
-2. **Inbox.** If the recipient cannot be woken (client not installed, not allowed for
-   that Agent, timeout), the message waits. The next time that Agent starts a task,
+   - If that client is not installed or not logged in on this machine, Fuli tries the
+     Agent's next allowed client. A timeout stops there instead of starting another run.
+2. **Inbox.** If no allowed client can answer (none installed or logged in, or the
+   wake timed out), the message waits. The next time that Agent starts a task,
    task entry includes it under `agent_messages`, and the Agent answers with
    `reply_agent_message`.
 

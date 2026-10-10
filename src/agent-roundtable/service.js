@@ -64,23 +64,30 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     guidance: 'message_agent sends to an Agent (optionally one of its recentConversations) and returns its answer.' };
   }
 
-  // Resume the chosen conversation, else the Agent's latest one, else start fresh.
-  async function deliveryTarget(agent, conversation, projectId, projectPath) {
+  // Ordered attempts: the chosen conversation (or the Agent's latest one), then a
+  // fresh session with the Agent's memory in that client and in its other clients.
+  async function deliveryTargets(agent, conversation, projectId, projectPath) {
     const allowed = (agent.profile.allowedClients ?? []).filter((client) => WAKE_CLIENTS.includes(client) && clientAvailable(client));
+    const explicit = Boolean(conversation) && !['auto', 'new'].includes(conversation);
+    let resumable = null;
     if (conversation !== 'new') {
       const known = await conversations(agent, null);
-      const candidates = conversation && conversation !== 'auto'
+      const candidates = explicit
         ? known.filter((session) => session.sessionId === conversation)
         : known.filter((session) => !projectId || session.projectId === projectId);
       for (const session of candidates) {
         if (!allowed.includes(session.client)) continue;
         const cwd = locateCwd(session.client, session.sessionId);
-        if (cwd) return { client: session.client, sessionId: session.sessionId, cwd };
+        if (cwd) { resumable = { client: session.client, sessionId: session.sessionId, cwd }; break; }
       }
-      if (conversation && conversation !== 'auto') throw validation('That conversation cannot be resumed on this machine');
+      if (explicit && !resumable) throw validation('That conversation cannot be resumed on this machine');
     }
-    const client = WAKE_CLIENTS.find((candidate) => allowed.includes(candidate));
-    return client ? { client, sessionId: null, cwd: projectPath ?? process.cwd() } : null;
+    const freshClients = resumable
+      ? [resumable.client, ...(explicit ? [] : allowed.filter((client) => client !== resumable.client))]
+      : WAKE_CLIENTS.filter((client) => allowed.includes(client));
+    const fresh = freshClients.map((client) => ({ client, sessionId: null,
+      cwd: client === resumable?.client ? resumable.cwd : projectPath ?? resumable?.cwd ?? process.cwd() }));
+    return resumable ? [resumable, ...fresh] : fresh;
   }
 
   async function messageAgent({ taskContextToken = null, sourceApplication, to, body, threadId = null,
@@ -100,33 +107,37 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
       to: { agentId: target.agentId, name: label(target) } });
     const nested = history.filter((message) => message.kind === 'ask' && message.status === 'delivering').length;
     if (!wait || nested >= NESTED_ASK_LIMIT) return queued(thread, ask, target, nested ? 'nested_limit' : 'not_waiting');
-    const delivery = await deliveryTarget(target, conversation, from.projectId, projectPath);
-    if (!delivery) return queued(thread, ask, target, 'no_client');
-    store.updateMessage(ask.id, { status: 'delivering', toClient: delivery.client, toSession: delivery.sessionId });
-    try {
-      const prompt = wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: from.client });
-      const timeoutMs = Math.min(Math.max(timeoutSeconds, 30), 900) * 1000;
-      let answer, resumed = Boolean(delivery.sessionId);
+    const attempts = await deliveryTargets(target, conversation, from.projectId, projectPath);
+    if (!attempts.length) return queued(thread, ask, target, 'no_client');
+    const prompt = wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: from.client });
+    const timeoutMs = Math.min(Math.max(timeoutSeconds, 30), 900) * 1000;
+    const unusable = new Set();
+    let failure = 'wake_failed';
+    for (const delivery of attempts) {
+      if (unusable.has(delivery.client)) continue;
+      store.updateMessage(ask.id, { status: 'delivering', toClient: delivery.client, toSession: delivery.sessionId });
+      let answer;
       try {
         answer = await wake({ client: delivery.client, sessionId: delivery.sessionId, cwd: delivery.cwd, timeoutMs, prompt });
       } catch (error) {
-        // A conversation open in its app, or a sub-agent thread, cannot be resumed;
-        // the same Agent still answers from a new session with its memory.
-        if (!resumed || error.code === 'client_login_required') throw error;
-        resumed = false;
-        answer = await wake({ client: delivery.client, sessionId: null, cwd: delivery.cwd, timeoutMs, prompt });
+        failure = error.code ?? 'wake_failed';
+        // A missing or logged-out client cannot answer from any session. A conversation
+        // open in its app, or a sub-agent thread, still allows a new session.
+        if (['client_login_required', 'client_unavailable'].includes(failure)) unusable.add(delivery.client);
+        // A timeout already used the caller's wait.
+        if (failure === 'wake_timeout') break;
+        continue;
       }
-      const via = `${delivery.client}:${resumed ? 'resume' : 'new'}`;
+      const via = `${delivery.client}:${delivery.sessionId ? 'resume' : 'new'}`;
       store.updateMessage(ask.id, { status: 'answered', via });
       const reply = store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent',
         inReplyTo: ask.id, via, from: { agentId: target.agentId, name: label(target), client: delivery.client,
           session: answer.sessionId }, to: { agentId: from.agent?.agentId, name: ask.from_name, client: from.client, session: from.session } });
       return { status: 'answered', threadId: thread.id, messageId: ask.id, recipient: { agentId: target.agentId, name: label(target) },
         via, reply: reply.body };
-    } catch (error) {
-      store.updateMessage(ask.id, { status: 'queued', error: error.code ?? 'wake_failed' });
-      return queued(thread, ask, target, error.code ?? 'wake_failed');
     }
+    store.updateMessage(ask.id, { status: 'queued', error: failure });
+    return queued(thread, ask, target, failure);
   }
 
   async function readMessages({ taskContextToken, sourceApplication }) {
