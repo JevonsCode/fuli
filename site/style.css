@@ -142,6 +142,10 @@ figure.window figcaption { padding: 0 20px; }
 .start li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; padding: 14px 18px; border: 1px solid #26332f; border-radius: 12px; counter-increment: step; }
 .start li::before { content: counter(step); color: #8bc1a8; font: 600 13px "Unbounded", var(--sans); }
 .start li span { color: #8fa39b; font-size: 14px; }
+.oneliner { display: grid; gap: 8px; max-width: 640px; margin-top: 24px; }
+.oneliner p { margin: 0; color: #8fa39b; font-size: 14px; }
+.oneliner code { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; padding: 12px 18px; border-radius: 12px; background: #16201d; color: #e9f1ee; font-size: 13px; overflow-wrap: anywhere; }
+.oneliner code span { color: #8fa39b; font-family: var(--sans); font-size: 12px; }
 .start-links { display: flex; flex-wrap: wrap; align-items: center; gap: 22px; margin-top: 36px; }
 .start-links .button { background: #e9f1ee; color: var(--night); }
 .start-links .button:hover { background: #8bc1a8; }

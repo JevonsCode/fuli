@@ -434,6 +434,14 @@ npm install --global fuli-context
 fuli setup
 ```
 
+也可以一行安装，会先检查 Node.js 版本：
+
+```bash
+curl -fsSL https://xn--8ovp9s.xn--m8txu.com/fuli/install.sh | sh
+```
+
+Windows PowerShell：`irm https://xn--8ovp9s.xn--m8txu.com/fuli/install.ps1 | iex`。
+
 `fuli setup` 会先展示操作计划并请求确认，然后检查容器运行时、初始化本机
 Graphiti / Neo4j、创建个人空间、安装配套 Agent Skills，并为检测到的 Agent 注册 `fuli`
 MCP。默认只连接个人 Provider，不会模拟团队共享服务。

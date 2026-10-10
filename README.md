@@ -499,6 +499,14 @@ npm install --global fuli-context
 fuli setup
 ```
 
+Or use the one-line installer, which checks the Node.js version first:
+
+```bash
+curl -fsSL https://xn--8ovp9s.xn--m8txu.com/fuli/install.sh | sh
+```
+
+On Windows PowerShell: `irm https://xn--8ovp9s.xn--m8txu.com/fuli/install.ps1 | iex`.
+
 `fuli setup` first shows its plan and asks for confirmation. It then checks the container runtime,
 initializes local Graphiti / Neo4j, creates a personal space, installs the companion Agent Skills,
 and registers the `fuli` MCP with detected agents. The default setup connects only the personal
