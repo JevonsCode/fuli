@@ -21,7 +21,7 @@ ProjectAgentTaskDuration = Literal['ongoing', 'one_off']
 ProjectAgentStaffingIntent = Literal[
     'reuse_preferred',
     # Like reuse_preferred, but a project without a team lead hires its first
-    # lead through HR without waiting for confirmation.
+    # lead through AR without waiting for confirmation.
     'default_lead',
     'new_durable',
     'temporary',

@@ -24,6 +24,9 @@ const task = (id: string, agentId: string, title: string, status = 'completed') 
   resultSummary: 'Recorded test evidence.', updatedAt: '2026-09-01T00:00:00Z',
   participants: [{ agentId, status }, { agentId: 'beta', status }],
 })
+const teamPerson = (agentId: string, name: string) => ({ agentId, name, employeeNumber: null, occupationEmoji: null, responsibility: '', peerRole: false })
+const teamView = (leadId: string, leadName: string, members: Array<[string, string]>) => ({ personalProjectId: 'project-a', status: 'ready', lead: teamPerson(leadId, leadName), unavailableLead: null,
+  members: members.map(([id, name]) => ({ ...teamPerson(id, name), reportsToAgentId: leadId })), collaborators: [], peers: [], unavailableMemberIds: [] })
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { promise, resolve } }
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -39,7 +42,7 @@ beforeEach(() => {
     if (parsed.pathname === '/api/project-agents') return [person('alpha'), person('beta'), person('gamma')]
     if (parsed.pathname === '/api/project-agent-assignments') return [assignment(id), assignment(id, 'ended', 'project-old')]
     if (parsed.pathname === '/api/project-agent-tasks') return [task('done', id, 'Completed evidence'), task('queued', id, 'Only scheduled', 'queued')]
-    if (parsed.pathname === '/api/project-agent-coordination-policy') return { teamLeadAgentId: 'beta', teamMemberAgentIds: ['alpha', 'beta', 'gamma'], personalSpaceId: 'space-a', personalProjectId: 'project-a' }
+    if (parsed.pathname === '/api/project-team') return teamView('beta', 'Birch', [['alpha', 'Aster'], ['gamma', 'Cedar']])
     if (parsed.pathname === '/api/executors') return []
     if (parsed.pathname === '/api/employee-templates') return { templates: [] }
     throw new Error(`Unexpected request: ${url}`)
@@ -157,7 +160,7 @@ describe('Agent profile integration', () => {
     expect(overview.findAll('.agent-current-project-list > .agent-project-item')).toHaveLength(4)
     expect(overview.find('.agent-project-overflow').exists()).toBe(true)
     expect(overview.findAll('.agent-project-overflow .agent-project-item')).toHaveLength(3)
-    expect(overview.findAll('.agent-project-link').map((link) => link.attributes('href'))[0]).toBe('/personal/space-a/projects/project-a/graph')
+    expect(overview.findAll('.agent-project-link').map((link) => link.attributes('href'))[0]).toBe('/personal/space-a/projects/project-a/overview')
     expect(overview.findAll('.agent-project-responsibility')).toHaveLength(0)
   })
 
@@ -233,17 +236,30 @@ describe('Agent profile integration', () => {
     expect(wrapper.get('.agent-work-timeline').text()).toContain('Completed evidence')
   })
 
+  it('says the configured lead is unavailable instead of claiming no team is set', async () => {
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => url.startsWith('/api/project-team?')
+      ? Promise.resolve({ ...teamView('beta', 'Birch', [['alpha', 'Aster']]), status: 'lead_unavailable', lead: null,
+          unavailableLead: { agentId: 'former', name: 'Former Lead' } })
+      : normal(url))
+    const { wrapper } = await setup()
+    const organization = wrapper.get('.agent-organization')
+    expect(organization.get('.agent-org-lead-unavailable').text()).toContain('Former Lead')
+    expect(organization.text()).not.toContain('待配置项目总负责人')
+    expect(organization.findAll('.agent-org-members a').map(link => link.text())).toEqual(['Aster'])
+  })
+
   it('does not restore an old team when its policy arrives after navigation', async () => {
     const late = deferred<unknown>()
     const normal = getJson.getMockImplementation()!
     let policyCalls = 0
     getJson.mockImplementation((url: string) => {
-      if (url.startsWith('/api/project-agent-coordination-policy?') && ++policyCalls === 1) return late.promise
+      if (url.startsWith('/api/project-team?') && ++policyCalls === 1) return late.promise
       return normal(url)
     })
     const { router, wrapper } = await setup()
     await router.push('/agents/space-a/beta'); await flushPromises()
-    late.resolve({ teamLeadAgentId: 'stale-team-lead', teamMemberAgentIds: [] }); await flushPromises()
+    late.resolve(teamView('stale-team-lead', 'stale-team-lead', [])); await flushPromises()
     expect(wrapper.get('h1').text()).toBe('Birch')
     expect(wrapper.get('.agent-org-lead a').text()).toBe('Birch')
     expect(wrapper.text()).not.toContain('stale-team-lead')

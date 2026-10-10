@@ -83,6 +83,6 @@ class StoreDefaultProjectLead:
                 break
         return ProjectAgentContextResolution(
             status='ready', reason='default_project_lead',
-            match_basis=['HR hired the project lead for its first task'],
+            match_basis=['AR hired the project lead for its first task'],
             candidate_count=1, agent=lead,
         )

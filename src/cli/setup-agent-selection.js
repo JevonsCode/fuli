@@ -86,7 +86,7 @@ export function selectedAgentIds(agents, state) {
 
 export function formatAgentCheckboxSelection(agents, state) {
   return [
-    'Multiple supported Agents were detected:',
+    'Clients available for automatic setup:',
     ...agents.map((agent, index) => {
       const pointer = index === state.activeIndex ? '❯' : ' ';
       const checkbox = state.selected[index] ? '[x]' : '[ ]';
@@ -161,7 +161,7 @@ async function promptCheckboxAgentSelection(agents, { input, output }) {
 
 async function promptTextAgentSelection(agents, { input, output }) {
   const terminal = createInterface({ input, output });
-  output.write('Multiple supported Agents were detected:\n');
+  output.write('Clients available for automatic setup:\n');
   for (const [index, agent] of agents.entries()) {
     output.write(`  ${index + 1}. ${agent.label}\n`);
   }

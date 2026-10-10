@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { request as httpRequest } from 'node:http';
 import test from 'node:test';
 
 import { createServer } from '../src/server.js';
@@ -8,6 +9,31 @@ import { createSystemService } from '../src/system/system-service.js';
 import { createAdaptiveRuntimeBroker } from '../src/adaptive-runtime/runtime-broker.js';
 import { createRuntimeLeaseClient } from '../src/adaptive-runtime/lease-client.js';
 import { closeServer, getJson, requestJson } from '../test-support/server.js';
+
+test('connection configuration is uncached and protected by the console request boundary', async () => {
+  let reads = 0;
+  const configuration = { standard: { mcpServers: { fuli: { type: 'stdio', command: 'synthetic-node', args: [] } } } };
+  const system = { clientConnection: () => { reads += 1; return configuration; } };
+  const { server, url } = await createServer({ app: { graphiti: true, close() {} }, system, port: 0 });
+  try {
+    const response = await fetch(`${url}/api/system/client-connection`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await response.json(), configuration);
+    for (const headers of [{ Origin: 'https://foreign.example' }, { Host: 'foreign.example' }]) {
+      const status = await new Promise((resolve, reject) => {
+        const request = httpRequest(`${url}/api/system/client-connection`, { headers }, (response) => {
+          response.resume();
+          response.on('end', () => resolve(response.statusCode));
+        });
+        request.on('error', reject);
+        request.end();
+      });
+      assert.equal(status, 403);
+    }
+    assert.equal(reads, 1);
+  } finally { await closeServer(server); }
+});
 
 test('system API exposes resource samples and validates persisted settings through one service', async () => {
   const updates = [];

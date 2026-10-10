@@ -113,7 +113,7 @@ class StoreProjectAgentCoordinationPolicy:
                 if (profile.status != 'active' or not active_assignment
                         or profile.agent_type != 'durable'
                         or any(cap.startswith('fuli.employee:') for cap in profile.capabilities)):
-                    raise HTTPException(status_code=422, detail='team roles require active durable project assignments; HR and project managers remain peers')
+                    raise HTTPException(status_code=422, detail='team roles require active durable project assignments; AR and project managers remain peers')
         updated_at = now_utc()
         written, _, _ = await self.runtime.driver.execute_query(
             '''

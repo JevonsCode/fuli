@@ -526,7 +526,7 @@ async def test_temporary_agent_cannot_bypass_hr_recruitment():
         update={'agent_type': 'temporary'}
     )
 
-    with pytest.raises(HTTPException, match='audited HR recruitment'):
+    with pytest.raises(HTTPException, match='audited AR recruitment'):
         await store.upsert_project_agent(
             {'id': 'principal-1'},
             ProjectAgentUpsert(
@@ -569,7 +569,7 @@ async def test_bole_is_the_fixed_system_hr_identity():
     bole = raw_agent(bole_profile)
     bole['agent_id'] = SYSTEM_HR_AGENT_ID
     # Jefa, Bole and Tonborg read/write, legacy coordinator retirement,
-    # legacy HR merge, then the Bole read model.
+    # legacy AR merge, then the Bole read model.
     driver = SequentialDriver([
         [], [], [], [], [], [], [], [],
         [{
@@ -619,7 +619,7 @@ async def test_only_bole_system_identity_can_use_hr_type():
 
 @pytest.mark.asyncio
 async def test_bole_system_hr_cannot_be_archived():
-    with pytest.raises(HTTPException, match='system HR cannot be archived'):
+    with pytest.raises(HTTPException, match='system AR cannot be archived'):
         await StoreStub(SequentialDriver([])).archive_project_agent(
             {'id': 'principal-1'},
             'personal-space',
@@ -633,7 +633,7 @@ async def test_bole_cannot_be_deactivated_through_profile_upsert():
     profile = project_agent_profile().model_copy(update={
         'agent_type': 'hr', 'status': 'inactive',
     })
-    with pytest.raises(HTTPException, match='project manager and HR must remain active'):
+    with pytest.raises(HTTPException, match='project manager and AR must remain active'):
         await StoreStub(SequentialDriver([])).upsert_project_agent(
             {'id': 'principal-1'},
             ProjectAgentUpsert(

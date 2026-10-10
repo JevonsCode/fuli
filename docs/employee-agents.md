@@ -1,6 +1,6 @@
 # Specialist Agents
 
-An employee template is a reusable role with an optional FULI-hosted or native workbench. Recruitment reuses the existing durable Project Agent identity and assignment model. Three roles are fixed: **Jefa**, the project manager, **Bole**, the HR Agent, and **Tonborg**, the judgment Agent. They exist in every personal space from the start, manage all projects by default, and are never offered for hire. They require no separate runtime package. See [judgment and autonomy](judgment-and-autonomy.md) for Tonborg's review, feedback, and execution-choice workflow.
+An employee template is a reusable role with an optional FULI-hosted or native workbench. Recruitment reuses the existing durable Project Agent identity and assignment model. Three roles are fixed: **Jefa**, the project manager, **Bole**, the AR (Agent Resources) Agent, and **Tonborg**, the judgment Agent. They exist in every personal space from the start, manage all projects by default, and are never offered for hire. They require no separate runtime package. See [judgment and autonomy](judgment-and-autonomy.md) for Tonborg's review, feedback, and execution-choice workflow.
 
 ## User flow
 
@@ -94,7 +94,7 @@ The optional built-in-only native workbench declaration is `workbench: { "kind":
 
 The reserved identity is `employee.<template-id>`, recognized by the generic `fuli.employee:<template-id>` capability. Preserve this marker when customizing employee profiles. The actual role, history, memory and project assignments remain in FULI's existing Agent model.
 
-`employee.bole` is additionally reserved as the only system HR identity. Its Provider type is `hr`; other identities cannot claim that type. Recruitment history records the coordinating and HR Agent IDs, time, reason, proposed identity and final recruited identity, which powers Bole's people panel without inventing activity.
+`employee.bole` is additionally reserved as the only system AR identity. Its Provider type is `hr`; other identities cannot claim that type. Recruitment history records the coordinating and AR Agent IDs, time, reason, proposed identity and final recruited identity, which powers Bole's people panel without inventing activity.
 
 ## HTTP and MCP
 
@@ -172,7 +172,7 @@ Signing, remote catalog distribution, a runtime sandbox, database migration/unin
 
 ### Bole identity upgrades
 
-Local startup calls the idempotent system-HR endpoint for both fresh and existing installs.
+Local startup calls the idempotent system-AR endpoint for both fresh and existing installs.
 It consolidates the reserved legacy `fuli-project-hr` identity into `employee.bole` in one
 transaction. Names never identify merge targets. The legacy node remains an audit alias;
 assignments, recruitment references, attention and task history follow the canonical Bole.

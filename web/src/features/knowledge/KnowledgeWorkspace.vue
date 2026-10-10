@@ -5,6 +5,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import {
   isLoadingPreviewEnabled,
@@ -29,6 +30,7 @@ import KnowledgeDirectoryPanel from './KnowledgeDirectoryPanel.vue'
 import KnowledgeInspector from './KnowledgeInspector.vue'
 import KnowledgeWorkspaceDialogs from './KnowledgeWorkspaceDialogs.vue'
 import ProjectHierarchyAside from './ProjectHierarchyAside.vue'
+import ProjectOverview from '@/features/projects/ProjectOverview.vue'
 import {
   currentKnowledgeGraph,
   filterKnowledgeItems,
@@ -97,7 +99,6 @@ let searchSequence = 0
 let searchAbortController: AbortController | null = null
 let loadedGraphContextKey: string | null = null
 
-const mode = computed<KnowledgeMode>(() => route.params.mode === 'graph' ? 'graph' : 'directory')
 const scope = computed<KnowledgeScope>(() => {
   if (props.personalProjectsOnly) return 'personal'
   return route.params.scope === 'public' ? 'public' : 'personal'
@@ -106,6 +107,12 @@ const spaceId = computed(() => String(route.params.spaceId ?? store.activePerson
 const projectId = computed(() => {
   const value = route.params.projectId
   return typeof value === 'string' && value ? value : null
+})
+const overviewAvailable = computed(() => props.personalProjectsOnly && Boolean(projectId.value))
+const mode = computed<KnowledgeMode>(() => {
+  if (route.params.mode === 'graph') return 'graph'
+  if (route.params.mode === 'overview' && overviewAvailable.value) return 'overview'
+  return 'directory'
 })
 const contextIds = computed(() => queryValues(route.query.context))
 const graphContextKey = computed(() => JSON.stringify([
@@ -307,7 +314,7 @@ const spaceSelectOptions = computed(() =>
 )
 const editable = computed(() => scope.value === 'personal')
 const activePersonalProject = computed(() =>
-  store.state?.personalProjects?.find(({ project_id }) => project_id === projectId.value) ?? null,
+  personalProjects.value.find(({ project_id }) => project_id === projectId.value) ?? null,
 )
 const manageableSelectedProject = computed(() =>
   projectForMaterial(selectedItem.value),
@@ -402,9 +409,25 @@ async function normalizeRoute() {
     await router.replace({ path, query: route.query })
     return
   }
-  if (route.params.mode !== 'directory' && route.params.mode !== 'graph') {
+  const validMode = route.params.mode === 'directory' || route.params.mode === 'graph'
+    || (route.params.mode === 'overview' && overviewAvailable.value)
+  if (!validMode) {
     await changeMode(props.personalProjectsOnly ? 'graph' : 'directory', true)
   }
+}
+
+// A project's own profile entity opened from the all-projects list is the
+// project itself: show its overview. The ID comes from the Provider's entity
+// attributes and must belong to an authorized project in this space.
+function overviewProjectFor(item: KnowledgeItem | null) {
+  if (!props.personalProjectsOnly || projectId.value || mode.value !== 'directory') return null
+  if (!item || item.itemKind !== 'entity' || item.type !== 'PersonalProject') return null
+  const id = personalProjectIdForItem(item)
+  return personalProjects.value.some(({ project_id }) => project_id === id) ? id : null
+}
+
+async function openProjectOverview(nextProjectId: string, replace: boolean) {
+  await router[replace ? 'replace' : 'push'](personalProjectsPath(spaceId.value, 'overview', nextProjectId))
 }
 
 async function loadGraph() {
@@ -528,7 +551,7 @@ async function applySearchDraft() {
   const draft = searchDraft.value
   const queryText = draft.trim()
   await syncSearchQuery(draft)
-  if (searchDraft.value !== draft || mode.value === 'directory') return
+  if (searchDraft.value !== draft || mode.value !== 'graph') return
   if (!queryText) {
     cancelGraphSearch()
     resetGraphSearchState()
@@ -640,6 +663,11 @@ async function runGraphSearch(queryText: string) {
 }
 
 async function selectItem(item: KnowledgeItem) {
+  const overviewProjectId = overviewProjectFor(item)
+  if (overviewProjectId) {
+    await openProjectOverview(overviewProjectId, false)
+    return
+  }
   selectedItem.value = item
   const path = props.personalProjectsOnly
     ? personalProjectsPath(spaceId.value, mode.value, projectId.value, {
@@ -700,6 +728,11 @@ function selectDeepLinkedItem() {
             )
           : null
     )
+  const overviewProjectId = overviewProjectFor(selectedItem.value)
+  if (overviewProjectId) {
+    void openProjectOverview(overviewProjectId, true)
+    return
+  }
   if (selectedItem.value && mode.value === 'directory') {
     const key = itemKey(selectedItem.value)
     void nextTick(() => {
@@ -720,7 +753,13 @@ function toggleContext(event: Event) {
 }
 
 async function openPersonalProject(nextProjectId: string) {
-  await router.push(personalProjectsPath(spaceId.value, mode.value, nextProjectId))
+  await openProjectOverview(nextProjectId, false)
+}
+
+function editActiveProjectProfile() {
+  if (!activePersonalProject.value) return
+  managingMaterialType.value = 'PersonalProject'
+  managingProject.value = activePersonalProject.value
 }
 
 async function openItemInMode(item: KnowledgeItem, nextMode: KnowledgeMode) {
@@ -820,9 +859,9 @@ function projectForMaterial(item: KnowledgeItem | null) {
   const targetId = directId
     ?? fallbackId
     ?? [...endpointIds].find((id) =>
-      store.state?.personalProjects?.some(({ project_id }) => project_id === id),
+      personalProjects.value.some(({ project_id }) => project_id === id),
     )
-  return store.state?.personalProjects?.find(({ project_id }) => project_id === targetId) ?? null
+  return personalProjects.value.find(({ project_id }) => project_id === targetId) ?? null
 }
 
 async function completeProjectProfileUpdate(project: PersonalProject) {
@@ -834,7 +873,7 @@ async function completeProjectProfileUpdate(project: PersonalProject) {
 }
 
 function publishPersonalProject(nextProjectId: string) {
-  const project = store.state?.personalProjects?.find(
+  const project = personalProjects.value.find(
     ({ project_id }) => project_id === nextProjectId,
   )
   if (project) publishingProject.value = project
@@ -877,7 +916,7 @@ function sourceLabel(item: KnowledgeItem) {
   const evidenceProject = item.evidence.find(({ personal_project_id }) => personal_project_id)
     ?.personal_project_id
   const id = assignment?.project_id ?? evidenceProject
-  const name = store.state?.personalProjects?.find(({ project_id }) => project_id === id)
+  const name = personalProjects.value.find(({ project_id }) => project_id === id)
     ?.profile.name
   const scopeLabel = name
     ? t('knowledge.workspace.workspace.source.primaryProject', { name })
@@ -907,18 +946,42 @@ function queryValues(value: unknown) {
 <template>
   <section
     class="view graph-view vue-knowledge-view"
-    :class="{ 'graph-canvas-active': mode === 'graph' }"
+    :class="{ 'graph-canvas-active': mode === 'graph', 'is-project-overview': mode === 'overview' }"
   >
     <div class="knowledge-view-heading">
       <div class="knowledge-mode-switch" role="tablist" :aria-label="t('knowledge.workspace.workspace.view.modeAria')">
+        <button v-if="overviewAvailable" type="button" role="tab" :aria-selected="mode === 'overview'" @click="changeMode('overview')">{{ t('projects.overview.tab') }}</button>
         <button type="button" role="tab" :aria-selected="mode === 'directory'" @click="changeMode('directory')">{{ t('knowledge.workspace.workspace.view.directory') }}</button>
         <button type="button" role="tab" :aria-selected="mode === 'graph'" @click="changeMode('graph')">{{ t('knowledge.workspace.workspace.view.graph') }}</button>
       </div>
-      <GrowthLoading v-if="searching && !projectDiscovery?.checking" variant="inline" :label="t('knowledge.workspace.workspace.search.searching')" />
-      <GrowthLoading v-else-if="loading && graph && !showInitialLoading && (mode !== 'graph' || graphView?.nodes.length)" variant="inline" :label="t('common.status.loadingKnowledge')" />
-      <span v-else-if="mode === 'graph' && !showInitialLoading" class="muted">{{ countLabel }}</span>
+      <template v-if="mode !== 'overview'">
+        <GrowthLoading v-if="searching && !projectDiscovery?.checking" variant="inline" :label="t('knowledge.workspace.workspace.search.searching')" />
+        <GrowthLoading v-else-if="loading && graph && !showInitialLoading && (mode !== 'graph' || graphView?.nodes.length)" variant="inline" :label="t('common.status.loadingKnowledge')" />
+        <span v-else-if="mode === 'graph' && !showInitialLoading" class="muted">{{ countLabel }}</span>
+      </template>
     </div>
 
+    <template v-if="mode === 'overview'">
+      <ProjectOverview
+        v-if="activePersonalProject"
+        :space-id="spaceId"
+        :project="activePersonalProject"
+        :can-publish="Boolean(store.state?.capabilities?.publishProject)"
+        @edit-profile="editActiveProjectProfile"
+        @publish="publishingProject = activePersonalProject"
+      />
+      <GrowthLoading
+        v-else-if="!store.state && store.runtimeStatus !== 'error' || store.runtimeStatus === 'loading'"
+        :label="t('common.status.loadingConsole')"
+      />
+      <div v-else-if="!store.state" class="project-overview-failed" role="alert">
+        <p>{{ t('common.errors.loadFailed') }}</p>
+        <UiButton @click="store.refresh">{{ t('common.actions.retry') }}</UiButton>
+      </div>
+      <p v-else class="muted" role="status">{{ t('knowledge.workspace.workspace.errors.projectUnknown') }}</p>
+    </template>
+
+    <template v-else>
     <div class="graph-toolbar">
       <UiSelect
         :model-value="selectedChoiceKey"
@@ -1135,6 +1198,7 @@ function queryValues(value: unknown) {
       />
     </div>
     <p v-if="mode === 'graph'" class="graph-hint">{{ t('knowledge.workspace.workspace.view.graphHint') }}</p>
+    </template>
 
     <KnowledgeWorkspaceDialogs
       :editing-item="editingItem"

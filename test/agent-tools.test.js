@@ -81,6 +81,7 @@ const NAMES = [
   'record_project_agent_task_activity',
   'view_project_agent_activity',
   'get_project_agent_coordination_policy',
+  'get_project_team',
   'update_project_agent_coordination_policy',
   'get_project_agent_recruitment_policy',
   'update_project_agent_recruitment_policy',
@@ -125,7 +126,8 @@ const NAMES = [
   'list_project_review_queue',
   'review_project_proposal',
   'get_graphiti_status',
-  'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread'
+  'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
+    'get_agent_message_status', 'cancel_agent_message'
 ];
 
 test('Agent surface exposes only the Graphiti final-version tools', () => {
@@ -416,6 +418,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       calls.push(['view-project-agent-activity', input]),
     getProjectAgentCoordinationPolicy: async (input) =>
       calls.push(['get-project-agent-coordination-policy', input]),
+    getProjectTeam: async (input) => calls.push(['get-project-team', input]),
     updateProjectAgentCoordinationPolicy: async (input) =>
       calls.push(['update-project-agent-coordination-policy', input]),
     getProjectAgentRecruitmentPolicy: async (input) =>
@@ -510,6 +513,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'submit-project-agent-task', 'view-project-agent-task',
     'record-project-agent-task-activity', 'view-project-agent-activity',
     'get-project-agent-coordination-policy',
+    'get-project-team',
     'update-project-agent-coordination-policy',
     'get-project-agent-recruitment-policy', 'update-project-agent-recruitment-policy',
     'list-project-agent-recruitments', 'decide-project-agent-recruitment',

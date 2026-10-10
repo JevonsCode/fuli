@@ -27,7 +27,7 @@ test('profile traits round trip without dropping existing execution settings', (
   assert.deepEqual(providerProjectAgentProfile(stored), stored);
 });
 
-test('HR recruitment submit and proposed profile preserve configured traits', () => {
+test('AR recruitment submit and proposed profile preserve configured traits', () => {
   const profile = { name: 'Synthetic reviewer', responsibility: 'Review changes.', character, expectations };
   for (const field of ['recruitmentProfile', 'recruitment_profile']) {
     const request = providerProjectAgentTaskSubmit({ [field]: profile });
@@ -39,7 +39,7 @@ test('HR recruitment submit and proposed profile preserve configured traits', ()
   }
 });
 
-test('MCP exposes optional bounded character and expectations for profiles and HR', () => {
+test('MCP exposes optional bounded character and expectations for profiles and AR', () => {
   const fields = projectAgentProfile.properties;
   assert.equal(fields.expectations.maxLength, 4096);
   for (const field of ['judgment', 'taste', 'personality']) {

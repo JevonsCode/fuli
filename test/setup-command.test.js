@@ -322,7 +322,7 @@ test('interactive setup lets the user choose multiple detected agents before con
       appliedPlan.agents.filter(({ selected }) => selected).map(({ id }) => id),
       ['claude-code', 'cursor']
     );
-    assert.match(output[0], /Agents: Claude Code, Cursor/);
+    assert.match(output[0], /Automatic client setup: Claude Code, Cursor/);
     assert.doesNotMatch(output[0], /Agent：.*Codex/);
   });
 

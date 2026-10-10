@@ -33,7 +33,7 @@ RECRUITMENT_CLAIM_TTL = timedelta(minutes=2)
 
 
 class StoreProjectAgentTaskRecruitment:
-    """Own the audited HR lifecycle independently from task routing mechanics."""
+    """Own the audited AR lifecycle independently from task routing mechanics."""
 
     async def get_project_agent_recruitment_policy(
         self,
@@ -202,7 +202,7 @@ class StoreProjectAgentTaskRecruitment:
         if not raw.get('hr_agent_id'):
             raise HTTPException(
                 status_code=409,
-                detail='recruitment cannot proceed without an active HR Agent',
+                detail='recruitment cannot proceed without an active AR Agent',
             )
         raw['_guarded_task_id'] = raw['task_id']
         selected = await self._provision_recruitment(actor, raw)
@@ -321,7 +321,7 @@ class StoreProjectAgentTaskRecruitment:
             model_strategy_source=model_source,
             outcome=outcome,
             reason=recruitment['reason_code'],
-            match_basis=['HR recruitment approved and Agent assigned'],
+            match_basis=['AR recruitment approved and Agent assigned'],
             candidate_agent_ids=[routing_selected['agent_id']],
             created_at=now,
             **self._decision_executor_fields(executor_decision),
@@ -333,7 +333,7 @@ class StoreProjectAgentTaskRecruitment:
         )
         explanation = self._routing_explanation(
             recruitment['reason_code'],
-            ['HR recruitment approved and Agent assigned'],
+            ['AR recruitment approved and Agent assigned'],
             executor_decision,
         )
         event_id = stable_uuid(
@@ -445,7 +445,7 @@ class StoreProjectAgentTaskRecruitment:
             decision_id=decision_id,
             decision_json=decision.model_dump_json(),
             event_id=event_id,
-            event_summary=f'HR recruitment approved: {approval_reason}',
+            event_summary=f'AR recruitment approved: {approval_reason}',
             expected_task_revision=expected_task_revision,
             updated_at=now,
         )

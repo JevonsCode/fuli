@@ -4,6 +4,12 @@
   color: var(--color-ink, #1d2129);
 }
 
+.agents-directory {
+  width: 100%;
+  max-width: var(--page-max);
+  margin-inline: auto;
+}
+
 .agents-directory-heading {
   margin-bottom: var(--space-6, 24px);
 }
@@ -128,7 +134,7 @@
 
 .agent-profile-page {
   width: 100%;
-  max-width: 1120px;
+  max-width: min(var(--page-max), 1440px);
   box-sizing: border-box;
   margin: 0 auto;
 }
@@ -353,6 +359,7 @@
 }
 
 .agent-muted,
+.agent-org-lead-unavailable,
 .agent-work-timeline small,
 .agent-collaborators span {
   color: var(--color-muted, #667085);

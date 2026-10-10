@@ -32,6 +32,7 @@ vi.mock('./GraphCanvas.vue', async () => {
 
 import { useConsoleStore } from '@/stores/console'
 import KnowledgeWorkspace from './KnowledgeWorkspace.vue'
+import { t } from '@/i18n'
 
 const purposeId = 'project-profile:project-1:purpose'
 const graph = {
@@ -136,6 +137,132 @@ describe('KnowledgeWorkspace', () => {
     expect(graphCalls.selectItem).toHaveBeenCalledWith('entity', purposeId)
     expect(graphCalls.selectItem.mock.invocationCallOrder.at(-1))
       .toBeGreaterThan(graphCalls.clearSelection.mock.invocationCallOrder.at(-1) ?? 0)
+    wrapper.unmount()
+  })
+
+  it('opens the project overview from an old all-projects project link', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().state = {
+      mode: 'personal_only',
+      activePersonalSpaceId: 'space-1',
+      personalSpaces: [{ id: 'space-1', name: '我' }],
+      personalProjects: [{ personal_space_id: 'space-1', project_id: 'project-1', profile: { name: '项目一' } }],
+      projects: [],
+      subscriptions: [],
+    }
+    getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-team')
+      ? { personalProjectId: 'project-1', status: 'no_lead', lead: null, unavailableLead: null,
+          members: [], collaborators: [], peers: [], unavailableMemberIds: [] }
+      : graph)
+    const page = { template: '<div />' }
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/personal/:spaceId/projects/:projectId/:mode', name: 'personal-project', component: page },
+        { path: '/personal/:spaceId/projects/:mode/:itemKind/:itemId', name: 'personal-projects-item', component: page },
+      ],
+    })
+    await router.push('/personal/space-1/projects/directory/entity/'
+      + encodeURIComponent('personal-project:space-1:project-1'))
+    await router.isReady()
+    const historyLength = router.options.history.state.position
+
+    const wrapper = mount(KnowledgeWorkspace, {
+      props: { personalProjectsOnly: true },
+      global: {
+        plugins: [pinia, router],
+        stubs: {
+          KnowledgeConfirmDialog: true,
+          KnowledgeEditDialog: true,
+          KnowledgeProjectDialog: true,
+          PersonalProjectProfileDialog: true,
+          PublishProjectDialog: true,
+          RouterLink: true,
+        },
+      },
+    })
+    await finishInitialLoading()
+
+    expect(router.currentRoute.value.path).toBe('/personal/space-1/projects/project-1/overview')
+    expect(router.options.history.state.position).toBe(historyLength)
+    expect(wrapper.get('.project-overview h2').text()).toBe('项目一')
+    expect(wrapper.find('.project-material-row').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('waits for console state before saying an overview project is unknown', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.runtimeStatus = 'loading'
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/personal/:spaceId/projects/:projectId/:mode', name: 'personal-project', component: { template: '<div />' } }],
+    })
+    await router.push('/personal/space-1/projects/project-1/overview')
+    await router.isReady()
+    const wrapper = mount(KnowledgeWorkspace, {
+      props: { personalProjectsOnly: true },
+      global: { plugins: [pinia, router], stubs: { KnowledgeWorkspaceDialogs: true, RouterLink: true } },
+    })
+    await flushPromises()
+    const unknown = t('knowledge.workspace.workspace.errors.projectUnknown')
+    expect(wrapper.text()).not.toContain(unknown)
+    expect(wrapper.get('.growth-loading').attributes('aria-label')).toBe(t('common.status.loadingConsole'))
+
+    store.runtimeStatus = 'error'
+    await flushPromises()
+    expect(wrapper.get('.project-overview-failed[role="alert"]').text()).toContain(t('common.errors.loadFailed'))
+    expect(wrapper.text()).not.toContain(unknown)
+
+    store.state = {
+      mode: 'personal_only', activePersonalSpaceId: 'space-1', personalSpaces: [{ id: 'space-1', name: '我' }],
+      personalProjects: [], projects: [], subscriptions: [],
+    }
+    store.runtimeStatus = 'ready'
+    await flushPromises()
+    expect(wrapper.get('[role="status"]').text()).toBe(unknown)
+    wrapper.unmount()
+  })
+
+  it('does not open another space’s project with the same ID from a direct overview URL', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().state = {
+      mode: 'personal_only',
+      activePersonalSpaceId: 'space-1',
+      personalSpaces: [{ id: 'space-1', name: '我' }, { id: 'space-2', name: '其他' }],
+      personalProjects: [{ personal_space_id: 'space-2', project_id: 'project-1', profile: { name: '其他空间项目' } }],
+      projects: [],
+      subscriptions: [],
+    }
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/personal/:spaceId/projects/:projectId/:mode', name: 'personal-project', component: { template: '<div />' } }],
+    })
+    await router.push('/personal/space-1/projects/project-1/overview')
+    await router.isReady()
+
+    const wrapper = mount(KnowledgeWorkspace, {
+      props: { personalProjectsOnly: true },
+      global: {
+        plugins: [pinia, router],
+        stubs: {
+          KnowledgeConfirmDialog: true,
+          KnowledgeEditDialog: true,
+          KnowledgeProjectDialog: true,
+          PersonalProjectProfileDialog: true,
+          PublishProjectDialog: true,
+          RouterLink: true,
+        },
+      },
+    })
+    await finishInitialLoading()
+
+    expect(wrapper.find('.project-overview').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('其他空间项目')
+    expect(getJson.mock.calls.some(([url]) => String(url).startsWith('/api/project-team'))).toBe(false)
     wrapper.unmount()
   })
 

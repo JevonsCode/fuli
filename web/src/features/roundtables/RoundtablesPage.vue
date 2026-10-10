@@ -51,6 +51,7 @@ function delivery(message: RoundtableMessage) {
     const mode = message.via?.split(':')[1]
     return mode && ['resume', 'new', 'inbox'].includes(mode) ? t(`roundtable.via.${mode}`) : ''
   }
+  if (message.via === 'peer' && message.status === 'sent') return t('roundtable.status.remoteQueued')
   return message.status === 'answered' ? '' : t(`roundtable.status.${message.status}`)
 }
 </script>
@@ -130,7 +131,7 @@ function delivery(message: RoundtableMessage) {
 .roundtable-thread-meta { display: grid; justify-items: end; align-content: start; gap: 6px; color: var(--color-faint); font-size: 11px; white-space: nowrap; }
 .roundtable-timeline { display: flex; flex-direction: column; min-height: 0; }
 .roundtable-timeline header { padding: 20px 28px 14px; border-bottom: 1px solid var(--color-border); }
-.roundtable-timeline h2 { font-size: 17px; }
+.roundtable-timeline h2 { font-size: 17px; overflow-wrap: anywhere; }
 .roundtable-timeline ol { flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 20px 28px 32px; list-style: none; display: grid; align-content: start; gap: 18px; }
 .roundtable-message { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; max-width: 760px; }
 .roundtable-message.is-reply { margin-left: 42px; }
@@ -138,6 +139,7 @@ function delivery(message: RoundtableMessage) {
 .roundtable-message.is-reply .roundtable-avatar { color: var(--color-ink-soft); background: var(--color-surface-subtle); }
 .roundtable-bubble { min-width: 0; }
 .roundtable-byline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.roundtable-byline > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .roundtable-byline strong { font-size: 14px; font-weight: 600; }
 .roundtable-body { padding: 12px 14px; border: 1px solid var(--color-border); border-radius: 4px 12px 12px 12px; background: var(--color-bg); color: var(--color-ink); font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .roundtable-message.is-reply .roundtable-body { background: var(--color-surface); }
@@ -147,5 +149,11 @@ function delivery(message: RoundtableMessage) {
   .roundtable-layout { grid-template-columns: minmax(0, 1fr); }
   .roundtable-threads { max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--color-border); }
   .roundtable-message.is-reply { margin-left: 16px; }
+}
+@media (max-width: 480px) {
+  .roundtable-timeline header { padding: 16px; }
+  .roundtable-timeline ol { padding: 16px; }
+  .roundtable-message { gap: 8px; }
+  .roundtable-message.is-reply { margin-left: 8px; }
 }
 </style>

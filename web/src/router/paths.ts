@@ -1,6 +1,6 @@
 import type { LocationQueryRaw } from 'vue-router'
 
-export type KnowledgeMode = 'directory' | 'graph'
+export type KnowledgeMode = 'overview' | 'directory' | 'graph'
 export type KnowledgeScope = 'personal' | 'public'
 
 function segment(value: string) {

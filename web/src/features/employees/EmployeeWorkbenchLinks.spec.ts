@@ -4,7 +4,7 @@ vi.mock('./catalog', async () => {
   const { ref } = await import('vue')
   return { employeeTemplates: ref([
     { id: 'jefa', name: 'Jefa', role: '项目经理', agentId: 'employee.jefa', agentStatus: 'active', runtime: { apiVersion: 1 } },
-    { id: 'bole', name: 'Bole', role: 'HR', agentId: 'employee.bole', agentStatus: 'active', runtime: null, workbench: { kind: 'native', view: 'people' } },
+    { id: 'bole', name: 'Bole', role: 'AR', agentId: 'employee.bole', agentStatus: 'active', runtime: null, workbench: { kind: 'native', view: 'people' } },
     { id: 'idle', name: 'Idle', role: 'Identity only', agentId: 'employee.idle', agentStatus: 'active', runtime: null },
   ]), refreshEmployeeCatalog: vi.fn() }
 })

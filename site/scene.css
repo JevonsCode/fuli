@@ -320,8 +320,8 @@
 }
 @media (max-width: 700px) {
   .scene-perspective {
-    left: 50%;
-    top: 69%;
+    left: var(--rig-left, 50%);
+    top: var(--rig-top, 69%);
     --scene-scale: var(--mobile-scale, 0.66);
     perspective: 900px;
   }
@@ -369,23 +369,20 @@
 .tag-lead { border-radius: 12px; padding: 7px 12px; color: #1b1f1d; font-weight: 600; }
 .tag-lead small { display: block; color: #66706a; font-size: 11px; font-weight: 400; }
 .database-overlay .links { stroke: #5d8a74; }
-.db-note { position: absolute; left: 80%; width: 210px; display: grid; gap: 3px; transform: translateY(-50%); }
+.db-captions { position: absolute; left: 77%; right: var(--gutter); top: 50%; display: grid; gap: 24px; transform: translateY(-50%); }
+.db-note { min-width: 0; display: grid; gap: 4px; }
 .db-note span { color: #8fa39b; font-size: 11px; letter-spacing: .08em; }
 .db-note strong { color: #e1ece5; font-size: 13px; font-weight: 500; line-height: 1.5; }
 .db-note small { color: #8bc1a8; font-size: 11px; }
-.db-note-a { top: 30%; }
-.db-note-b { top: 43%; }
-.db-note-c { top: 56%; }
-.db-note-d { top: 69%; }
 @media (max-width: 1050px) {
-  .db-note { left: 78%; width: 170px; }
-  .db-note strong { font-size: 12px; }
+  .db-captions { left: 64%; top: 68%; }
   .tag { font-size: 11px; }
 }
 @media (max-width: 700px) {
   .tag:not(.tag-lead) { display: none; }
-  .db-note { left: 66%; width: 32%; }
-  .db-note strong { font-size: 10px; }
-  .db-note small { display: none; }
-  .db-note-a { top: 54%; } .db-note-b { top: 63%; } .db-note-c { top: 72%; } .db-note-d { top: 81%; }
+  .db-captions { left: 49%; right: 26px; top: 69%; gap: 18px; }
+  .db-note strong { font-size: 12px; line-height: 1.45; }
+  .db-note span { font-size: 10px; }
+  .db-note small { font-size: 10px; }
+  .database-overlay .links { display: none; }
 }

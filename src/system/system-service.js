@@ -10,9 +10,11 @@ import { createResourceMonitor } from './resource-monitor.js';
 import { createAdaptiveRuntimeBroker } from '../adaptive-runtime/runtime-broker.js';
 import { readAdaptiveRuntimeSettings } from '../adaptive-runtime/settings.js';
 import { createPackageVersionChecker } from './package-version-checker.js';
+import { clientConnectionConfig } from '../setup/client-connection.js';
 
 export function createSystemService({
   paths,
+  runtimeConfigPath = paths.graphRuntimeConfigPath,
   packageRoot,
   activePort,
   activeLan,
@@ -60,6 +62,9 @@ export function createSystemService({
   return {
     getSettings,
     updateSettings,
+    clientConnection: () => Object.fromEntries(['standard', 'vscode', 'server'].map((format) => [
+      format, clientConnectionConfig({ mcpServerPath: paths.mcpServerPath, runtimeConfigPath }, format)
+    ])),
     resources: () => resourceMonitor.sample(),
     versionStatus: () => versionChecker.check(),
     runtimeStatus: () => runtimeBroker.status(),

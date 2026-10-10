@@ -59,7 +59,7 @@ test('Bole is a built-in native specialist instead of an installable package', (
   const entry = registry.get('bole');
   assert.equal(entry.runtimeStatus, 'not_required');
   assert.equal(entry.manifest.name, 'Bole');
-  assert.equal(entry.manifest.role, 'HR');
+  assert.equal(entry.manifest.role, 'AR');
   assert.deepEqual(entry.manifest.workbench, { kind: 'native', view: 'people' });
   assert.equal(entry.manifest.runtime, null);
 });

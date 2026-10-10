@@ -1,6 +1,6 @@
 {
   "name": "fuli-context",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "description": "Local-first collaboration relationship graph for AI agents.",
   "type": "module",
   "files": [
@@ -22,7 +22,8 @@
     "graph-provider/fuli_graph/**/*.py",
     "skills/",
     "compose.graphiti.yml",
-    "docs/judgment-and-autonomy.md"
+    "docs/judgment-and-autonomy.md",
+    "docs/client-connections.md"
   ],
   "bin": {
     "fl": "src/cli.js",
@@ -44,6 +45,7 @@
     "dev:web": "vite",
     "build": "run-s typecheck:web build:web",
     "build:web": "vite build",
+    "build:site": "node scripts/build-site.js",
     "typecheck:web": "vue-tsc --noEmit -p tsconfig.app.json",
     "test:node": "node --test",
     "test:web": "vitest run --config vitest.config.ts",
@@ -79,6 +81,8 @@
     "@a2a-js/sdk": "1.3.0",
     "@hono/node-server": "2.0.12",
     "@modelcontextprotocol/sdk": "^1.31.0",
+    "@peculiar/x509": "2.1.0",
+    "reflect-metadata": "0.2.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {

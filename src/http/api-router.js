@@ -3,6 +3,7 @@ import { handleExternalKnowledgeApiRequest } from './external-knowledge-api-rout
 import { handleGraphApiRequest } from './graph-api-router.js';
 import { handleEmployeeApiRequest } from './employee-api-router.js';
 import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
+import { handlePeerApiRequest } from '../agent-peer/http.js';
 import { handleJudgmentApiRequest } from '../judgment/http.js';
 import { FULI_VERSION } from '../package-metadata.js';
 
@@ -12,9 +13,11 @@ export async function handleApiRequest({
   app,
   system = null,
   externalKnowledge = null,
-  connectedKnowledge = null
+  connectedKnowledge = null,
+  peer = null
 }) {
   const url = new URL(request.url, 'http://127.0.0.1');
+  if (await handlePeerApiRequest({ request, response, url, peer })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
 
   if (url.pathname === '/api/health' && request.method === 'GET') {
@@ -29,6 +32,12 @@ export async function handleApiRequest({
 
   if (system && url.pathname === '/api/system/settings' && request.method === 'GET') {
     sendJson(response, 200, system.getSettings());
+    return true;
+  }
+
+  if (system && url.pathname === '/api/system/client-connection' && request.method === 'GET') {
+    response.setHeader('Cache-Control', 'no-store');
+    sendJson(response, 200, system.clientConnection());
     return true;
   }
 

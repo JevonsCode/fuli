@@ -2,6 +2,7 @@ import { projectAgentRecord } from './project-agent-mapping.js';
 import { agentMemoryView } from './project-agent-memory.js';
 import { planTaskKnowledgeRecall } from './task-knowledge-recall.js';
 import { loadProjectTeamContext } from './project-agent-team-context.js';
+import { isPeerRoleAgent } from './project-team-view.js';
 import { resolveTaskAgentMention } from './project-agent-mention.js';
 
 const ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
@@ -49,14 +50,14 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
     const implicit = !mention?.agentId && !input.projectAgentId;
     const peerOnly = agent && implicit && unrelatedPeer(agent, workKind, input.requiredCapabilities);
     if (implicit && value.reason !== 'project_lead_required' && (peerOnly || value.status === 'unassigned')) {
-      // Every task gets a FULI Agent: a project without a lead has HR hire one.
+      // Every task gets a FULI Agent: a project without a lead has AR hire one.
       const staffed = await application.personal.staffDefaultProjectLead(scope).catch(() => null);
       if (staffed?.agent) {
         value = staffed;
         agent = projectAgentRecord(staffed.agent);
       } else if (peerOnly) {
         return { status: 'unassigned', reason: 'specialist_required', worker_started: false,
-          required_action: 'Use coordinate_project_agent_task to select or recruit a qualified durable owner before implementation. HR and project managers collaborate in their own roles; do not attribute development to them by fallback.' };
+          required_action: 'Use coordinate_project_agent_task to select or recruit a qualified durable owner before implementation. AR and project managers collaborate in their own roles; do not attribute development to them by fallback.' };
       }
     }
     const employeeId = /^employee\.([a-z][a-z0-9-]{0,63})$/.exec(agent?.agentId ?? '')?.[1];
@@ -159,8 +160,7 @@ function boundedRoleText(value, limit) {
 function unrelatedPeer(agent, workKind, required = []) {
   const profile = agent.profile;
   const capabilities = (profile.capabilities ?? []).map(value => value.toLowerCase());
-  const peer = ['employee.jefa', 'employee.bole', 'employee.tonborg', 'fuli-project-hr'].includes(agent.agentId)
-    || profile.agentType === 'hr' || capabilities.some(value => ['fuli.employee:jefa', 'fuli.employee:bole', 'fuli.employee:tonborg'].includes(value));
+  const peer = isPeerRoleAgent({ agentId: agent.agentId, agentType: profile.agentType, capabilities });
   return peer && !(profile.workKinds ?? []).some(kind => kind.toLowerCase() === workKind.toLowerCase())
     && !(required.length && required.every(value => capabilities.includes(value.toLowerCase())));
 }

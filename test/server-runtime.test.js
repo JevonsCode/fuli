@@ -71,6 +71,15 @@ test('Web server exposes the Graphiti facade and graph console', async () => {
       capability: null
     });
 
+    const team = await getJson(
+      `${url}/api/project-team?personalSpaceId=personal-1&personalProjectId=project-a`
+    );
+    assert.equal(team.status, 'no_lead');
+    assert.deepEqual(calls.find(([name]) => name === 'project-team')[1], {
+      personalSpaceId: 'personal-1',
+      personalProjectId: 'project-a'
+    });
+
     const agentInput = {
       personalSpaceId: 'personal-1',
       personalProjectId: 'project-a',
@@ -362,6 +371,10 @@ function graphApp(calls) {
     listProjectAgents: async (input) => {
       calls.push(['project-agent-list', input]);
       return [];
+    },
+    getProjectTeam: async (input) => {
+      calls.push(['project-team', input]);
+      return { status: 'no_lead', lead: null, members: [], collaborators: [], peers: [] };
     },
     upsertProjectAgent: async (input) => {
       calls.push(['project-agent-upsert', input]);

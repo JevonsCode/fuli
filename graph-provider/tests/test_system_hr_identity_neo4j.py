@@ -1,4 +1,4 @@
-"""System HR identity migration against an explicitly disposable Neo4j.
+"""System AR identity migration against an explicitly disposable Neo4j.
 
 The graph is seeded through a separate runtime-compatible driver so the
 fixtures exercise old storage shapes that the HTTP writers no longer emit.
@@ -54,7 +54,7 @@ def _memory_record(space_id, project_id, checkpoint_id):
         'agent_id': LEGACY_HR,
         'revision': 1,
         'memory': {
-            'summary': 'Synthetic legacy HR memory.',
+            'summary': 'Synthetic legacy AR memory.',
             'decisions': ['Preserve the original checkpoint.'],
             'open_threads': ['Verify the canonical Bole alias.'],
             'next_actions': ['Run the migration acceptance test.'],
@@ -100,7 +100,7 @@ async def _seed_fixture(settings, space_id, *, both=False, memory_conflict=False
         sort_keys=True, ensure_ascii=False, separators=(',', ':'),
     ).encode()).hexdigest()
 
-    legacy_profile = _profile('Legacy HR', capability='legacy-capability')
+    legacy_profile = _profile('Legacy AR', capability='legacy-capability')
     canonical_profile = _profile('Existing Bole', capability='canonical-capability')
 
     async with AsyncGraphDatabase.driver(
@@ -112,7 +112,7 @@ async def _seed_fixture(settings, space_id, *, both=False, memory_conflict=False
             '''
             MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
             CREATE (legacy:FuliProjectAgent {
-              id: $legacy_node_id, agent_id: $legacy_id, name: 'Legacy HR',
+              id: $legacy_node_id, agent_id: $legacy_id, name: 'Legacy AR',
               profile_json: $legacy_profile_json, agent_type: 'hr', status: 'active',
               memory_scope: 'reviewed_agent', capabilities: ['legacy-capability'],
               work_kinds: ['staffing-review'], created_at: '2026-01-01T00:00:00Z',
@@ -121,19 +121,19 @@ async def _seed_fixture(settings, space_id, *, both=False, memory_conflict=False
             CREATE (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(legacy)
             CREATE (project:FuliPersonalProject {
               id: $project_node_id, project_id: $project_id,
-              name: 'Synthetic HR project', lifecycle: 'active'
+              name: 'Synthetic AR project', lifecycle: 'active'
             })
             CREATE (space)-[:CONTAINS_PROJECT]->(project)
             CREATE (active:FuliProjectAgentAssignment {
               id: $active_assignment_id, assignment_id: $active_assignment_id,
-              status: 'active', revision: 0, responsibility: 'Current HR review',
+              status: 'active', revision: 0, responsibility: 'Current AR review',
               work_kinds: ['staffing-review'], capabilities: ['legacy-capability'],
               reason: 'Synthetic active history',
               assigned_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z'
             })
             CREATE (ended:FuliProjectAgentAssignment {
               id: $ended_assignment_id, assignment_id: $ended_assignment_id,
-              status: 'ended', revision: 1, responsibility: 'Previous HR review',
+              status: 'ended', revision: 1, responsibility: 'Previous AR review',
               work_kinds: ['staffing-review'], capabilities: ['legacy-capability'],
               reason: 'Synthetic ended history', end_reason: 'Synthetic replacement',
               assigned_at: '2025-01-01T00:00:00Z', updated_at: '2025-02-01T00:00:00Z',
@@ -145,8 +145,8 @@ async def _seed_fixture(settings, space_id, *, both=False, memory_conflict=False
             CREATE (ended)-[:ASSIGNED_AGENT]->(legacy)
             CREATE (task:FuliProjectAgentTask {
               id: $task_id, task_id: $task_id, personal_space_id: $space_id,
-              personal_project_id: $project_id, title: 'Synthetic HR task',
-              objective: 'Exercise every legacy HR reference.', work_kind: 'staffing-review',
+              personal_project_id: $project_id, title: 'Synthetic AR task',
+              objective: 'Exercise every legacy AR reference.', work_kind: 'staffing-review',
               required_capabilities: ['legacy-capability'], status: 'completed', revision: 2,
               routing_outcome: 'assigned_existing', routing_reason: 'Synthetic fixture',
               coordinator_agent_id: $legacy_id, lead_agent_id: $legacy_id,
@@ -184,7 +184,7 @@ async def _seed_fixture(settings, space_id, *, both=False, memory_conflict=False
               id: $attention_id, request_id: $attention_id,
               personal_space_id: $space_id, personal_project_id: $project_id,
               agent_id: $legacy_id, task_id: $task_id, kind: 'review',
-              title: 'Synthetic HR attention', detail: 'Preserve this request.',
+              title: 'Synthetic AR attention', detail: 'Preserve this request.',
               requested_action: 'Review the synthetic assignment.', status: 'open', revision: 0,
               created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z'
             })
@@ -315,7 +315,7 @@ async def _query(settings, query, **parameters):
 async def test_legacy_only_hr_migration_preserves_history_refs_and_memory():
     settings = fixture_settings()
     async with provider_client(settings, raise_app_exceptions=False) as (client, _):
-        space_id = await _create_space(client, 'Synthetic legacy-only HR identity')
+        space_id = await _create_space(client, 'Synthetic legacy-only AR identity')
         fixture = await _seed_fixture(settings, space_id)
 
         ensured = await client.post('/v1/project-agents/system-hr', params={
@@ -339,7 +339,7 @@ async def test_legacy_only_hr_migration_preserves_history_refs_and_memory():
             canonical_id=CANONICAL_HR)
         assert len(rows) == 1
         assert set(rows[0]['legacy_labels']) == {'FuliProjectAgentAlias'}
-        assert json.loads(rows[0]['legacy_profile'])['name'] == 'Legacy HR'
+        assert json.loads(rows[0]['legacy_profile'])['name'] == 'Legacy AR'
         assert rows[0]['legacy_marker'] == 'keep-me'
         assert rows[0]['legacy_ids'] == [LEGACY_HR]
         assert rows[0]['merged_count'] == 1
@@ -434,9 +434,9 @@ async def test_legacy_only_hr_migration_preserves_history_refs_and_memory():
 async def test_both_hr_identities_converge_idempotently_under_concurrent_ensure():
     settings = fixture_settings()
     async with provider_client(settings, raise_app_exceptions=False) as (client, _):
-        space_id = await _create_space(client, 'Synthetic duplicate HR identities')
+        space_id = await _create_space(client, 'Synthetic duplicate AR identities')
         fixture = await _seed_fixture(settings, space_id, both=True)
-        other_space_id = await _create_space(client, 'Synthetic unrelated HR space')
+        other_space_id = await _create_space(client, 'Synthetic unrelated AR space')
 
         await _query(settings, '''
             MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
@@ -506,7 +506,7 @@ async def test_both_hr_identities_converge_idempotently_under_concurrent_ensure(
 async def test_memory_head_conflict_rolls_back_identity_and_checkpoint_changes():
     settings = fixture_settings()
     async with provider_client(settings, raise_app_exceptions=False) as (client, _):
-        space_id = await _create_space(client, 'Synthetic HR memory conflict')
+        space_id = await _create_space(client, 'Synthetic AR memory conflict')
         fixture = await _seed_fixture(settings, space_id, both=True, memory_conflict=True)
 
         before = await _query(settings, '''

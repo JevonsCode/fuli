@@ -11,6 +11,9 @@ import { runRemoteMcpCommand } from './cli/remote-mcp-command.js';
 import { runGraphDataCommand } from './cli/graph-data-command.js';
 import { runEmployeeCommand } from './cli/employee-command.js';
 import { runSetupCommand } from './cli/setup-command.js';
+import { runConnectCommand } from './cli/connect-command.js';
+import { runPeerCommand } from './cli/peer-command.js';
+import { runMcpCommand, startupMessage } from './cli/mcp-command.js';
 import { runUninstallCommand } from './cli/uninstall-command.js';
 import { runUpdateCommand } from './cli/update-command.js';
 import { runWorkspaceConnectionCommand } from './cli/workspace-connection-command.js';
@@ -31,6 +34,19 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     assertSupportedNodeVersion();
     await runSetupCommand(commandArgs, { env });
     return;
+  }
+  if (command === 'connect') {
+    assertSupportedNodeVersion();
+    return runConnectCommand(commandArgs, { env });
+  }
+  if (command === 'peer') {
+    assertSupportedNodeVersion();
+    return runPeerCommand(commandArgs, { env });
+  }
+  if (command === 'mcp') {
+    assertSupportedNodeVersion();
+    try { return await runMcpCommand(commandArgs, { env }); }
+    catch (error) { throw new Error(startupMessage(error)); }
   }
   if (command === 'graph') {
     assertSupportedNodeVersion();

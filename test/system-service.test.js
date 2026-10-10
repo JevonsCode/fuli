@@ -8,7 +8,22 @@ const PATHS = Object.freeze({
   dataDir: '/data',
   graphRuntimeConfigPath: '/data/graph-runtime.json',
   graphRuntimeStatePath: '/data/graph-runtime-state.json',
-  runtimeSettingsPath: '/data/runtime-settings.json'
+  runtimeSettingsPath: '/data/runtime-settings.json',
+  mcpServerPath: '/package/src/mcp-server.js'
+});
+
+test('client configuration exports the actual runtime path without reading credentials', () => {
+  const service = createSystemService({
+    paths: PATHS,
+    runtimeConfigPath: '/custom runtime/settings.json',
+    readJson: () => { throw new Error('must not read credentials'); },
+    resourceMonitor: {}, runtimeBroker: {}, versionChecker: {}
+  });
+  const result = service.clientConnection();
+  assert.equal(result.standard.mcpServers.fuli.args[2], '/custom runtime/settings.json');
+  assert.deepEqual(result.standard.mcpServers.fuli, result.vscode.servers.fuli);
+  assert.deepEqual(result.server, result.standard.mcpServers.fuli);
+  assert.equal(result.server.env, undefined);
 });
 
 test('system settings distinguish immediately applied refresh changes from restart changes', async () => {

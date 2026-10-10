@@ -11,7 +11,8 @@ export const roundtableMessages = {
     waiting: '等待回复',
     to: '发给',
     via: { resume: '唤醒原会话回答', new: '新会话回答', inbox: '在任务中回复' },
-    status: { queued: '排队中，等对方下次开始任务时回复', delivering: '正在唤醒对方…', answered: '已回答', sent: '已送达' },
+    status: { queued: '排队中，等对方下次开始任务时回复', delivering: '正在唤醒对方…', answered: '已回答', sent: '已送达',
+      remoteQueued: '等待对方设备回复', claimed: '对方正在接收', running: '对方正在处理', failed: '未送达', cancelled: '已取消', expired: '已过期', unknown: '结果不明，可能已运行也可能没有' },
   },
   'en-US': {
     threads: 'Agent conversations',
@@ -25,6 +26,7 @@ export const roundtableMessages = {
     waiting: 'Waiting for a reply',
     to: 'to',
     via: { resume: 'answered by waking its conversation', new: 'answered in a new session', inbox: 'replied during a task' },
-    status: { queued: 'Queued until the recipient starts its next task', delivering: 'Waking the recipient…', answered: 'Answered', sent: 'Delivered' },
+    status: { queued: 'Queued until the recipient starts its next task', delivering: 'Waking the recipient…', answered: 'Answered', sent: 'Delivered',
+      remoteQueued: 'Waiting for the other device', claimed: 'Being received', running: 'In progress on the other device', failed: 'Not delivered', cancelled: 'Cancelled', expired: 'Expired', unknown: 'Unknown: it may or may not have run' },
   },
 } as const

@@ -115,6 +115,8 @@ describe('ConsoleLayout', () => {
 
     expect(wrapper.get('.brand-version').text()).toBe(`v${FULI_VERSION}`)
     expect(wrapper.get('.nav-section-label').text()).toBe('更多')
+    expect(wrapper.get('.nav-section-label').element.previousElementSibling?.classList.contains('pinned-agents-nav')).toBe(true)
+    expect(wrapper.get('.pinned-agents-heading').text()).toBe('pin')
     expect(wrapper.get('a[href="/settings"]').text()).toContain('设置')
     expect(wrapper.get('a[href="/roundtables"]').text()).toContain('圆桌')
     expect(wrapper.get('a[href="/about"]').attributes('href')).toBe('/about')

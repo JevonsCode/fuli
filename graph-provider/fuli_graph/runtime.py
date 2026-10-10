@@ -331,6 +331,13 @@ class GraphitiRuntime:
             'FOR (n:FuliProjectAgentExecutorOutcomeReset) REQUIRE n.id IS UNIQUE',
             'CREATE CONSTRAINT fuli_project_agent_executor_observation_id IF NOT EXISTS '
             'FOR (n:FuliProjectAgentExecutorObservation) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_remote_origin_key_space IF NOT EXISTS '
+            'FOR (n:FuliRemoteOriginKey) REQUIRE n.space_id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_remote_agent_origin_message IF NOT EXISTS '
+            'FOR (n:FuliRemoteAgentOrigin) REQUIRE (n.space_id, n.message_id) IS UNIQUE',
+            'CREATE CONSTRAINT fuli_remote_delegation_attempt IF NOT EXISTS '
+            'FOR (n:FuliRemoteDelegationAttempt) '
+            'REQUIRE (n.space_id, n.origin_node, n.origin_message_id, n.origin_attempt_id) IS UNIQUE',
         ):
             await self.driver.execute_query(query)
         for query in (

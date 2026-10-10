@@ -2,6 +2,7 @@ import { planAgentCollaboration, agentLoan, agentVerification } from './agent-co
 import { queryConversations, resumeConversation, updateConversationPolicy } from './agent-conversations.js';
 import { agentProjectResolution } from './agent-knowledge-workflows.js';
 import { listAgentAttention, changeAgentAttention } from './agent-attention.js';
+import { loadProjectTeam } from './project-team-view.js';
 import {
   getProjectAgentMemory,
   agentMemoryView,
@@ -203,6 +204,12 @@ export class ProjectAgentControlPlaneApplication {
   async getProjectAgentCoordinationPolicy(input) {
     this.#assertSpace(input.personalSpaceId);
     return getProjectAgentCoordinationPolicyWorkflow(this, input);
+  }
+
+  async getProjectTeam(input) {
+    this.#assertSpace(input.personalSpaceId);
+    if (!input.personalProjectId) throw new TypeError('personalProjectId is required');
+    return loadProjectTeam(this, input.personalSpaceId, input.personalProjectId);
   }
 
   async updateProjectAgentCoordinationPolicy(input) {

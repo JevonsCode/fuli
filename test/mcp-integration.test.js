@@ -266,7 +266,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'acquire_runtime_lease', 'refresh_runtime_lease', 'release_runtime_lease',
     'submit_project_agent_task',
     'view_project_agent_task', 'record_project_agent_task_activity',
-    'view_project_agent_activity', 'get_project_agent_coordination_policy',
+    'view_project_agent_activity', 'get_project_agent_coordination_policy', 'get_project_team',
     'update_project_agent_coordination_policy', 'get_project_agent_recruitment_policy',
     'update_project_agent_recruitment_policy', 'list_project_agent_recruitments',
     'decide_project_agent_recruitment', 'upsert_executor', 'list_executors',
@@ -289,7 +289,8 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'subscribe_public_project', 'unsubscribe_public_project',
     'list_project_review_queue', 'review_project_proposal',
     'get_graphiti_status',
-    'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread'
+    'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
+    'get_agent_message_status', 'cancel_agent_message'
   ]);
   const preferencesTool = listed.tools.find(
     ({ name }) => name === 'get_collaboration_preferences'

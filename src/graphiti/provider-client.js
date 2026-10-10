@@ -156,6 +156,15 @@ export class GraphitiProviderClient {
   issueAgentDelegation(input) {
     return this.#request('/v1/project-agent-context/delegations', { method: 'POST', body: input });
   }
+  issueRemoteAgentDelegation(input) {
+    return this.#request('/v1/project-agent-context/remote-delegations', { method: 'POST', body: input });
+  }
+  issueRemoteAgentOrigin(input) {
+    return this.#request('/v1/project-agent-context/remote-origins', { method: 'POST', body: input });
+  }
+  getRemoteOriginAuthority(personalSpaceId) {
+    return this.#request(`/v1/project-agent-context/remote-origin-authority?${new URLSearchParams({ personal_space_id: personalSpaceId })}`);
+  }
   verifyAgentDelegation(input) {
     return this.#request('/v1/project-agent-context/delegations/verify', { method: 'POST', body: input });
   }

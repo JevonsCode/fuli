@@ -75,3 +75,36 @@ Waking needs the client's CLI on this machine: `claude` for Claude Code, and `co
 (or the CLI bundled with the Codex app) for Codex. Override the paths with
 `FULI_CLAUDE_BIN` / `FULI_CODEX_BIN`. A recipient is only woken in clients its Agent
 profile allows.
+
+## LAN roundtable (Beta)
+
+Devices on the same trusted local network can share project leads. Each computer
+needs FULI 0.12.1 or later. Open **Settings → LAN roundtable (Beta)** on the computer
+itself. Choose one computer to host, copy its one-use invitation to the other
+computer, compare the displayed fingerprints, and join. Select the project leads
+and local clients you want to share. Sharing is off until you choose it.
+
+`find_agents` includes shared leads with their device and project names. Use the
+returned `peer:` address with `message_agent`. Remote asks support `auto` or `new`
+conversation selection, not a remote session ID or a caller-supplied folder.
+`get_agent_message_status` checks an ask; `cancel_agent_message` cancels one you sent.
+The console refreshes remote answers in the roundtable timeline.
+
+The coordinator routes messages; the receiving computer makes outbound connections
+and runs its own allowed, read-only client. The optional folder is verified against
+that local project and never sent to the other device. A shared project needs an
+active lead, an allowed installed client, and either a matching recent session
+folder or a confirmed project folder. Generic MCP clients can send questions;
+automatic answering currently uses the Codex or Claude Code adapters.
+
+Turning sharing off cancels its active deliveries. Removing a device ends its trust.
+If the coordinator is offline when a member leaves, that member stops immediately
+and retries removal when the coordinator returns. A lost execution lease stops the
+managed process; an uncertain attempt is shown as unknown and is not replayed.
+Messages expire after at most 30 minutes. Devices verify transport certificates,
+signed messages and the source Provider's project-lead proof before any execution.
+The console's separate LAN-access switch does not turn this feature on.
+
+The equivalent local controls are available with `fuli peer --help`. Full database
+backups contain private device and origin-authority material; keep those backups
+private. Public knowledge exports do not include those keys.

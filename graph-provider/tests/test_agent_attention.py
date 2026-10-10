@@ -20,7 +20,7 @@ def test_names_are_stable_and_keep_custom_names_and_explicit_overrides():
     assert agent_display_name('custom', 'Lumi') == 'Lumi'
     assert agent_display_name('custom', '测试工程师', 'My Name') == 'My Name'
     assert agent_display_name('fuli-project-coordinator', '项目协调人') == 'Orion'
-    # Identity migration, not a nickname override, unifies the built-in HR.
+    # Identity migration, not a nickname override, unifies the built-in AR.
     assert agent_display_name('fuli-project-hr', '伯乐') == '伯乐'
     assert agent_display_name('fuli-project-hr', '伯乐', 'Custom') == 'Custom'
     assert agent_display_name('agent-a', 'Release Verifier') == agent_display_name('agent-a', '前端工程师')

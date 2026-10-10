@@ -67,7 +67,8 @@ export function formatSetupPreview(plan, options) {
     `Management UI: ${options.noStart
       ? 'will not start'
       : `http://127.0.0.1:${runtimeSettings.ports.console}`}`,
-    `Agents: ${agentSummary}`
+    `Automatic client setup: ${agentSummary}`,
+    'Other MCP clients: connect after setup with fuli connect (no model required)'
   ];
   if (
     runtimeMode !== 'native' &&
@@ -80,7 +81,7 @@ export function formatSetupPreview(plan, options) {
   return lines.join('\n');
 }
 
-export function formatSetupResult(result) {
+export function formatSetupResult(result, plan) {
   const lines = [result.status === 'ready'
     ? 'Fuli is ready.'
     : 'Fuli started, but one or more Agents are not connected.'];
@@ -106,6 +107,10 @@ export function formatSetupResult(result) {
       : `${agent.label}: connected`);
     for (const step of agent.nextSteps ?? []) lines.push(`${agent.label}: ${step}`);
   }
+  const dataDir = plan?.paths?.dataDir;
+  lines.push('Other MCP clients: run fuli connect and merge the fuli entry into your MCP settings.');
+  if (dataDir) lines.push(`For this installation, use --data-dir ${JSON.stringify(dataDir)}.`);
+  lines.push('MCP provides tools and memory. Automatic conversation capture and wake/resume require a client adapter.');
   return lines.join('\n');
 }
 

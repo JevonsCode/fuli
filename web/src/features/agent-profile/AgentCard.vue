@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 import GrowthLoading from "@/components/GrowthLoading.vue";
+import PinIcon from "@/components/PinIcon.vue";
 import AgentHand from "@/features/project-agents/AgentHand.vue";
 import { t } from "@/i18n";
 import {
@@ -135,16 +136,14 @@ function togglePin() {
         class="agent-card-pin quiet-button"
         data-agent-pin-toggle
         type="button"
-        :aria-label="pinLabel"
+        :aria-label="`${pinLabel} · ${name}`"
         :aria-pressed="Boolean(pinned)"
         :title="pinLabel"
         :disabled="pinPending"
         @click.stop="togglePin"
       >
         <GrowthLoading v-if="pinPending" variant="inline" :label="pinLabel" />
-        <svg v-else viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="m8 4 8 8m-9.5-6.5 9 9m-9-9L4 9l4.5 1.5L12 14l-1.5 4.5L12 20l2-5 4.5-3.5L20 10l-4.5-1.5L14 4.5 12 3z" />
-        </svg>
+        <PinIcon v-else :filled="pinned" />
       </button>
     </div>
     <p class="agent-card-responsibility">{{ agent.profile.responsibility }}</p>
@@ -154,7 +153,7 @@ function togglePin() {
     <div class="agent-card-meta">
       <div class="agent-card-projects">
         <div v-if="projectLabels.length" class="agent-card-project-list">
-          <span v-for="project in projectLabels" :key="project" class="ui-badge">
+          <span v-for="project in projectLabels" :key="project" class="ui-badge agent-card-project-badge" :title="project">
             {{ project }}
           </span>
           <span v-if="projectCount" class="ui-badge agent-card-project-count">
@@ -195,18 +194,22 @@ function togglePin() {
 }
 
 .agent-card-pin svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.5;
+  width: 18px;
+  height: 18px;
 }
 
-.agent-card-pin[aria-pressed="true"] svg {
-  fill: currentColor;
-  stroke: var(--color-on-accent);
+.agent-card-projects {
+  flex: 1;
+}
+
+.agent-card-project-list .agent-card-project-badge {
+  display: block;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agent-card-pin :deep(.growth-loading--inline) {

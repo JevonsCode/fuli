@@ -10,6 +10,7 @@ import './styles/console-responsive.css'
 import './styles/connections.css'
 import './styles/knowledge-graph.css'
 import './styles/vue.css'
+import './styles/project-overview.css'
 import './styles/primitives.css'
 
 const app = createApp(App)

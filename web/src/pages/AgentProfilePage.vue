@@ -26,11 +26,11 @@ import {
 import { employeeTemplates, refreshEmployeeCatalog } from "@/features/employees/catalog";
 import type {
   ProjectAgentAssignmentRecord,
-  ProjectAgentCoordinationPolicy,
   ProjectAgentRecord,
   ProjectAgentTaskRecord,
 } from "@/types";
 import { personalProjectsPath } from "@/router/paths";
+import { readProjectTeam, type ProjectTeam } from "@/features/projects/project-team-api";
 
 type ProfileTab =
   | "overview"
@@ -74,7 +74,7 @@ const assignments = ref<ProjectAgentAssignmentRecord[] | undefined>(undefined);
 const teams = ref<
   Array<{
     projectId: string;
-    policy: ProjectAgentCoordinationPolicy | null;
+    view: ProjectTeam | null;
     error: boolean;
   }>
 >([]);
@@ -222,12 +222,10 @@ watch(
     const organization = await Promise.all(
       ids.map(async (projectId) => {
         try {
-          const policy = await getJson<ProjectAgentCoordinationPolicy>(
-            `/api/project-agent-coordination-policy?${new URLSearchParams({ personalSpaceId: person.personalSpaceId, personalProjectId: projectId })}`,
-          );
-          return { projectId, policy, error: false };
+          const view = await readProjectTeam(person.personalSpaceId, projectId);
+          return { projectId, view, error: false };
         } catch {
-          return { projectId, policy: null, error: true };
+          return { projectId, view: null, error: true };
         }
       }),
     );
@@ -453,7 +451,7 @@ onMounted(() => {
                 <h3>
                   <RouterLink
                     class="agent-project-link"
-                    :to="personalProjectsPath(space, 'graph', id)"
+                    :to="personalProjectsPath(space, 'overview', id)"
                   >
                     {{ projectName(id) }}
                   </RouterLink>
@@ -473,7 +471,7 @@ onMounted(() => {
                   <h3>
                     <RouterLink
                       class="agent-project-link"
-                      :to="personalProjectsPath(space, 'graph', id)"
+                      :to="personalProjectsPath(space, 'overview', id)"
                     >
                       {{ projectName(id) }}
                     </RouterLink>
@@ -513,7 +511,7 @@ onMounted(() => {
                 <h3>
                   <RouterLink
                     class="agent-project-link"
-                    :to="personalProjectsPath(space, 'graph', item.personalProjectId)"
+                    :to="personalProjectsPath(space, 'overview', item.personalProjectId)"
                   >
                     {{ projectName(item.personalProjectId) }}
                   </RouterLink>
@@ -640,38 +638,41 @@ onMounted(() => {
               {{ t("agentProfiles.teamUnavailable") }}
             </p>
             <template
-              v-else-if="
-                team.policy?.teamLeadAgentId ||
-                team.policy?.teamMemberAgentIds?.length
-              "
+              v-else-if="team.view && (team.view.lead || team.view.unavailableLead || team.view.members.length)"
             >
-              <div v-if="team.policy.teamLeadAgentId" class="agent-org-lead">
+              <p
+                v-if="team.view.unavailableLead"
+                class="agent-org-lead-unavailable"
+                role="status"
+              >
+                {{
+                  team.view.unavailableLead.name
+                    ? t("agentProfiles.leadUnavailable", { name: team.view.unavailableLead.name })
+                    : t("agentProfiles.leadUnavailableUnnamed")
+                }}
+              </p>
+              <div v-if="team.view.lead" class="agent-org-lead">
                 <span>{{ t("agentProfiles.lead") }}</span>
                 <AgentName
                   :space-id="space"
-                  :agent-id="team.policy.teamLeadAgentId"
-                  :name="personName(team.policy.teamLeadAgentId)"
+                  :agent-id="team.view.lead.agentId"
+                  :name="team.view.lead.name"
                 />
               </div>
-              <p v-if="team.policy.teamLeadAgentId" class="agent-org-reporting">
+              <p v-if="team.view.lead" class="agent-org-reporting">
                 {{ t("agentProfiles.reporting") }}
               </p>
               <div
-                v-if="team.policy.teamMemberAgentIds?.length"
+                v-if="team.view.members.length"
                 class="agent-org-members"
               >
                 <span>{{ t("agentProfiles.teammates") }}</span>
                 <ul>
-                  <li
-                    v-for="id in [
-                      ...new Set(team.policy.teamMemberAgentIds),
-                    ].filter((id) => id !== team.policy?.teamLeadAgentId)"
-                    :key="id"
-                  >
+                  <li v-for="member in team.view.members" :key="member.agentId">
                     <AgentName
                       :space-id="space"
-                      :agent-id="id"
-                      :name="personName(id)"
+                      :agent-id="member.agentId"
+                      :name="member.name"
                     />
                   </li>
                 </ul>

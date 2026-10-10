@@ -1,5 +1,16 @@
 // Progressive enhancement only: the page is complete without this script.
 import { createScrollScene } from './scene.js'
+import { createLanguageController } from './i18n.js'
+
+const language = createLanguageController({
+  document,
+  languages: navigator.languages?.length ? navigator.languages : [navigator.language],
+  getStorage: () => window.localStorage,
+})
+// Real links also work without JavaScript; carry the current chapter across languages.
+for (const link of document.querySelectorAll('.language-switch a')) {
+  link.addEventListener('click', () => { link.hash = window.location.hash })
+}
 
 const nav = document.querySelector('.nav')
 const onScroll = () => nav?.classList.toggle('scrolled', window.scrollY > 8)
@@ -7,16 +18,17 @@ window.addEventListener('scroll', onScroll, { passive: true })
 onScroll()
 
 // The 3D story runs only with room for it and when motion is welcome.
-const scene = createScrollScene()
+const scene = createScrollScene({ labels: language.labels })
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
-const shortViewport = window.matchMedia('(max-height: 560px)')
+const shortViewport = window.matchMedia('(max-height: 560px), (max-width: 700px) and (max-height: 740px)')
 const motionToggle = document.querySelector('#motion-toggle')
 let userReduced = false
 function applyMotion() {
   const reduced = reducedMotion.matches || userReduced
   scene.setEnabled(!reduced && !shortViewport.matches)
   motionToggle.setAttribute('aria-pressed', String(reduced))
-  motionToggle.textContent = reducedMotion.matches ? '已跟随系统减少动效' : reduced ? '体验滚动动效' : '减少动效'
+  motionToggle.dataset.i18n = reducedMotion.matches ? 'motion.system' : reduced ? 'motion.enable' : 'motion.reduce'
+  motionToggle.textContent = language.t(motionToggle.dataset.i18n)
   motionToggle.disabled = reducedMotion.matches
 }
 motionToggle.hidden = false
@@ -30,17 +42,25 @@ motionToggle.addEventListener('click', () => {
 reducedMotion.addEventListener('change', applyMotion)
 shortViewport.addEventListener('change', applyMotion)
 applyMotion()
+language.subscribe(() => {
+  applyMotion()
+  scene.refresh()
+})
 
 for (const terminal of document.querySelectorAll('[data-copy]')) {
   const button = terminal.querySelector('.copy')
+  const showStatus = key => {
+    button.dataset.i18n = key
+    button.textContent = language.t(key)
+  }
   button?.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(terminal.dataset.copy)
-      button.textContent = '已复制'
+      showStatus('copy.success')
     } catch {
-      button.textContent = '请手动复制'
+      showStatus('copy.error')
     }
-    setTimeout(() => { button.textContent = '复制' }, 1800)
+    setTimeout(() => showStatus('copy.idle'), 1800)
   })
 }
 

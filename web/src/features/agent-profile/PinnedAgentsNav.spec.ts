@@ -51,7 +51,7 @@ describe('PinnedAgentsNav', () => {
     })
 
     expect(wrapper.findAll('.pinned-agent-nav')).toHaveLength(0)
-    expect(wrapper.get('.pinned-agents-empty').text()).toMatch(/No pinned Agents|暂未置顶 Agent/)
+    expect(wrapper.find('.pinned-agents-nav').exists()).toBe(false)
   })
 
   it('keeps loaded links visible while a refresh shows inline progress', () => {
@@ -68,7 +68,7 @@ describe('PinnedAgentsNav', () => {
     })
 
     expect(wrapper.find('.pinned-agent-nav').exists()).toBe(true)
-    expect(wrapper.get('.growth-loading--inline').attributes('aria-label')).toMatch(/Reading pinned Agents|正在读取已置顶 Agent/)
+    expect(wrapper.get('.growth-loading--inline').attributes('aria-label')).toMatch(/Reading pin|正在读取 pin/)
   })
 
   it('shows roster failures instead of presenting an authoritative empty state', async () => {

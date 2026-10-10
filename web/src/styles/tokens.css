@@ -55,4 +55,8 @@
   --text-section: 15px;
   --text-body: 14px;
   --text-meta: 12px;
+  --page-max: 1680px;
+  --measure: 72ch;
+  --page-gutter: clamp(20px, 2.4vw, 56px);
+  --inspector-width: clamp(320px, 24vw, 460px);
 }

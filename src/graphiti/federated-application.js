@@ -2,6 +2,7 @@ import { dirname, join } from 'node:path';
 import { createEmployeeService } from '../employees/service.js';
 import { createAgentRoundtable } from '../agent-roundtable/service.js';
 import { createRoundtableStore } from '../agent-roundtable/store.js';
+import { createPeerPort } from '../agent-peer/peer-port.js';
 import { createJudgmentService } from '../judgment/service.js';
 import { JudgmentStore } from '../judgment/store.js';
 import { createJudgmentEngine } from '../judgment/engine.js';
@@ -125,6 +126,8 @@ export function openFederatedGraphApplication({
     app.employees = createEmployeeService({ app, runtimeConfigPath });
     app.judgment = createJudgmentService({ app, engine: createJudgmentEngine({ app }),
       openStore: () => new JudgmentStore(join(dirname(runtimeConfigPath), 'judgment.sqlite')) });
+    app.peer = createPeerPort({ dataDir: dirname(runtimeConfigPath), provider: app.personal,
+      spaceId: () => app.config.personal.spaceId });
     app.roundtable = createAgentRoundtable({ app, env,
       openStore: () => createRoundtableStore(join(dirname(runtimeConfigPath), 'agent-roundtable.sqlite')) });
   }
@@ -1169,7 +1172,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
-  close() { this.judgment?.close(); this.roundtable?.close(); return this.employees?.close(); }
+  close() { this.judgment?.close(); this.roundtable?.close(); this.peer?.close(); return this.employees?.close(); }
 
   async #recordAgentViews(items, toolName) {
     const unique = new Map(items.map((item) => [

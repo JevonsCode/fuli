@@ -1,4 +1,4 @@
-"""Lossless, exact-ID upgrade of the original HR into the built-in Bole.
+"""Lossless, exact-ID upgrade of the original AR into the built-in Bole.
 
 The old node and its original edges remain an audit source, not another active
 Agent. Only this reserved legacy ID is eligible; names never establish identity.
@@ -103,7 +103,7 @@ async def merge_legacy_hr(store, space_id):
     for edge in edges:
         kind = edge['kind']
         if not re.fullmatch(r'[A-Z][A-Z0-9_]*', kind):
-            raise HTTPException(409, 'Unsupported HR relationship; no data was changed')
+            raise HTTPException(409, 'Unsupported AR relationship; no data was changed')
         start_id = row['canonical_element'] if edge['start_id'] == row['legacy_element'] else edge['start_id']
         end_id = row['canonical_element'] if edge['end_id'] == row['legacy_element'] else edge['end_id']
         copied, _, _ = await driver.execute_query(

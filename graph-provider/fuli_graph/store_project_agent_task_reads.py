@@ -618,7 +618,7 @@ class StoreProjectAgentTaskReads:
         if must_disclose:
             notice = ' '.join(
                 (
-                    f'HR {item.hr_agent_id} recruited '
+                    f'AR {item.hr_agent_id} recruited '
                     f'{item.proposed_profile.name} as a '
                     f'{item.position_kind} {item.participant_role} Agent for '
                     f'{item.proposed_profile.responsibility}. '

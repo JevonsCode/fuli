@@ -1,6 +1,6 @@
 const READ_TOOLS = new Set([
   'get_judgment_policy', 'list_judgments', 'get_agent_pins',
-  'find_agents', 'read_agent_messages', 'read_agent_thread',
+  'find_agents', 'read_agent_messages', 'read_agent_thread', 'get_agent_message_status',
   'get_agent_quality_gate',
   'plan_agent_collaboration', 'list_agent_loans',
   'list_agent_conversations', 'read_agent_conversation', 'get_agent_conversation_policy',
@@ -32,6 +32,7 @@ const READ_TOOLS = new Set([
   'view_project_agent_task',
   'view_project_agent_activity',
   'get_project_agent_coordination_policy',
+  'get_project_team',
   'get_project_agent_recruitment_policy',
   'list_project_agent_recruitments',
   'list_executors',
@@ -52,7 +53,7 @@ const READ_TOOLS = new Set([
 
 const WRITE_TOOLS = new Set([
   'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'pin_agent',
-  'message_agent', 'reply_agent_message',
+  'message_agent', 'reply_agent_message', 'cancel_agent_message',
   'record_agent_verification',
   'request_agent_loan', 'decide_agent_loan',
   'resume_agent_conversation', 'update_agent_conversation_policy',
@@ -172,7 +173,7 @@ export function annotationsFor(name) {
       name === 'record_knowledge_usage' || name === 'record_decision_trace' ||
       name === 'record_knowledge_feedback' ||
       name === 'record_workflow_transition_observation' ||
-      name === 'message_agent' || name === 'reply_agent_message' ||
+      name === 'message_agent' || name === 'reply_agent_message' || name === 'cancel_agent_message' ||
       name === 'checkpoint_task_knowledge' ||
       name === 'checkpoint_project_agent_memory',
     openWorldHint: name === 'review_with_tonborg' || name === 'assess_agent_action' || name === 'assess_task_completion' || name === 'capture_session_knowledge' ||

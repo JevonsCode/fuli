@@ -137,15 +137,6 @@ function retryPinnedAgents() {
           <span class="nav-icon nav-icon-project-agent" aria-hidden="true" />
           <span class="nav-label">{{ t('console.navigation.projectAgents') }}</span>
         </RouterLink>
-        <PinnedAgentsNav
-          :space-id="activeSpaceId"
-          :agents="rosterAgents"
-          :pinned-agent-ids="pinnedAgentIds"
-          :loading="pinsLoading"
-          :roster-loading="rosterLoading"
-          :error="pinnedAgentsError"
-          @retry="retryPinnedAgents"
-        />
         <AgentAttentionCenter :personal-space-id="navigationSpaceId" :projects="store.state?.personalProjects ?? []" />
         <RouterLink to="/roundtables" active-class="is-active">
           <span class="nav-icon nav-icon-roundtable" aria-hidden="true" />
@@ -163,6 +154,16 @@ function retryPinnedAgents() {
           <span class="nav-icon nav-icon-knowledge-graph" aria-hidden="true" />
           <span class="nav-label">{{ t('console.navigation.knowledge') }}</span>
         </RouterLink>
+
+        <PinnedAgentsNav
+          :space-id="activeSpaceId"
+          :agents="rosterAgents"
+          :pinned-agent-ids="pinnedAgentIds"
+          :loading="pinsLoading"
+          :roster-loading="rosterLoading"
+          :error="pinnedAgentsError"
+          @retry="retryPinnedAgents"
+        />
 
         <p class="nav-section-label">{{ t('console.navigation.more') }}</p>
         <RouterLink to="/organize" active-class="is-active">

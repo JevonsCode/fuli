@@ -3,6 +3,7 @@ import { createServer as createHttpServer } from 'node:http';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { createPeerRuntime } from './agent-peer/peer-runtime.js';
 import { handleApiRequest } from './http/api-router.js';
 import { mapHttpError } from './http/error-mapping.js';
 import { localServerAuthority, rejectRequestOutsidePolicy } from './http/request-policy.js';
@@ -57,10 +58,11 @@ export async function createServer(options = {}) {
   let system = null;
   let resourcesClosing = null;
   let stopJudgment = () => {};
+  let peer = null;
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => stopJudgment(), () => system?.close?.(), () => runtime.close()]) {
+      for (const close of [() => stopJudgment(), () => peer?.close(), () => system?.close?.(), () => runtime.close()]) {
         try {
           const pending = close();
           if (pending?.then) await pending;
@@ -92,6 +94,7 @@ export async function createServer(options = {}) {
             packageRoot: PACKAGE_ROOT
           }),
           packageRoot: PACKAGE_ROOT,
+          runtimeConfigPath: localOptions.runtimeConfigPath,
           activePort: port,
           activeLan: lanEnabled,
           executorAdapters: options.executorAdapters
@@ -113,6 +116,7 @@ export async function createServer(options = {}) {
         system,
         externalKnowledge,
         connectedKnowledge,
+        peer,
         authority,
         lanAuthorities: allowedLanAuthorities,
         lanAccessToken: lanToken
@@ -149,6 +153,12 @@ export async function createServer(options = {}) {
     }
     stopJudgment = startJudgmentScheduler({ app: application,
       ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
+    // Resumes only what the owner already turned on; console LAN access never enables it.
+    if (application.peer && options.peer !== false) {
+      peer = createPeerRuntime({ app: application, port: application.peer,
+        onError: (error) => console.error(`LAN roundtable: ${error.code ?? error.message}`) });
+      peer.resume().catch((error) => console.error(`LAN roundtable could not resume: ${error.code ?? error.message}`));
+    }
 
     let closing = null;
     const close = () => {
@@ -195,6 +205,7 @@ async function handleRequest({
   system,
   externalKnowledge,
   connectedKnowledge,
+  peer,
   authority,
   lanAuthorities,
   lanAccessToken
@@ -212,7 +223,8 @@ async function handleRequest({
     app,
     system,
     externalKnowledge,
-    connectedKnowledge
+    connectedKnowledge,
+    peer
   })) return;
   serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
 }

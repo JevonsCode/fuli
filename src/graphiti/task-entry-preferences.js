@@ -42,7 +42,7 @@ export async function taskEntryPreferences(application, projectResolution, {
   }) : selection;
   if (context && selection?.requested_agent_id) {
     context.requested_agent_id = selection.requested_agent_id;
-    context.requested_agent_guidance = 'The user requested this project specialist. Keep the project lead as accountable owner; coordinate a scoped workstream for the specialist and receive its report before replying. This request is not evidence that a worker ran. Do not load the specialist’s private memory into the lead context.';
+    context.requested_agent_guidance = 'The user requested this project specialist, but this session runs as the selected project lead. Keep the lead as accountable owner; coordinate a scoped workstream for the specialist and receive its report before replying. This request is not evidence that a worker ran. Do not load the specialist’s private memory, write memory or checkpoints as the specialist, or reuse another session’s task context. If this session was opened to act as the specialist, tell the user it is running as the lead.';
   }
   if (context && selection?.reporting_lead_agent_id) {
     context.reporting_lead_agent_id = selection.reporting_lead_agent_id;

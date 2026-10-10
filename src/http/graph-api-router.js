@@ -320,6 +320,13 @@ export async function handleGraphApiRequest({
     }));
     return true;
   }
+  if (url.pathname === '/api/project-team' && request.method === 'GET') {
+    sendJson(response, 200, await app.getProjectTeam({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('personalProjectId')
+    }));
+    return true;
+  }
   if (url.pathname === '/api/project-agent-coordination-policy' &&
       (request.method === 'PUT' || request.method === 'PATCH')) {
     sendJson(response, 200, await app.updateProjectAgentCoordinationPolicy(await readJson(request)));

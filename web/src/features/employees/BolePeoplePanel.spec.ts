@@ -173,7 +173,7 @@ describe('Bole people panel', () => {
     await wrapper.get('.bole-search').setValue('发布')
     expect(wrapper.get('.bole-agent-row').text()).toContain('Jefa')
     await wrapper.get('.bole-clear').trigger('click')
-    const roleButton = wrapper.findAll('.bole-role-filters button').find((button) => button.text().includes('HR Agent'))!
+    const roleButton = wrapper.findAll('.bole-role-filters button').find((button) => button.text().includes('AR Agent'))!
     await roleButton.trigger('click')
     expect(wrapper.findAll('.bole-agent-row')).toHaveLength(1)
     expect(wrapper.get('.bole-agent-row').text()).toContain('Bole')
@@ -209,7 +209,7 @@ describe('Bole people panel', () => {
     expect(wrapper.findAll('.bole-timeline li')).toHaveLength(1)
   })
 
-  it('preserves Provider work state instead of attributing HR/coordinator tasks to them', async () => {
+  it('preserves Provider work state instead of attributing AR/coordinator tasks to them', async () => {
     const original = getJson.getMockImplementation()!
     getJson.mockImplementation(async (url: string) => {
       const result = await original(url)

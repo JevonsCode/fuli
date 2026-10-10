@@ -68,11 +68,11 @@ class StoreProjectAgents:
     ) -> ProjectAgentRecord:
         self._require_personal()
         if request.agent_id == LEGACY_HR_AGENT_ID:
-            raise HTTPException(409, 'This HR identity has moved to employee.bole')
+            raise HTTPException(409, 'This AR identity has moved to employee.bole')
         if request.profile.agent_type == 'temporary' and not recruitment_id:
             raise HTTPException(
                 status_code=422,
-                detail='temporary Agents must be created by an audited HR recruitment',
+                detail='temporary Agents must be created by an audited AR recruitment',
             )
         if (
             request.profile.agent_type == 'coordinator'
@@ -88,7 +88,7 @@ class StoreProjectAgents:
         ):
             raise HTTPException(
                 status_code=422,
-                detail='only the system-managed Bole identity may use HR type',
+                detail='only the system-managed Bole identity may use AR type',
             )
         if (
             request.agent_id == SYSTEM_COORDINATOR_AGENT_ID
@@ -104,7 +104,7 @@ class StoreProjectAgents:
         ):
             raise HTTPException(
                 status_code=422,
-                detail='the system HR identity cannot change Agent type',
+                detail='the system AR identity cannot change Agent type',
             )
         if (
             request.agent_id in (SYSTEM_HR_AGENT_ID, SYSTEM_COORDINATOR_AGENT_ID)
@@ -112,7 +112,7 @@ class StoreProjectAgents:
         ):
             raise HTTPException(
                 status_code=422,
-                detail='the project manager and HR must remain active',
+                detail='the project manager and AR must remain active',
             )
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         if request.personal_project_id:
@@ -402,7 +402,7 @@ class StoreProjectAgents:
         if agent_id == SYSTEM_HR_AGENT_ID:
             raise HTTPException(
                 status_code=422,
-                detail='the system HR cannot be archived',
+                detail='the system AR cannot be archived',
             )
         await self.authorize(actor, personal_space_id, 'maintainer')
         if not reason.strip():

@@ -764,7 +764,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'coordinate_project_agent_task',
     title: 'WRITE · Prepare a host-executed Agent team',
-    description: 'Resolve the exact local project, or create an isolated temporary task scope when no project matches, then let the Provider coordinator route one durable task and assemble an isolated context bundle for every selected lead/collaborator. Ambiguous matches require exact selection. Pass the current taskContextToken so temporary scope and a newly recruited lead bind to the owned lifecycle; otherwise provide a stable sourceSessionId and idempotencyKey for retries. Temporary projects retain audit history, never become implicit directory bindings, and default to audited task-only recruitment under the existing HR policy; explicit durable recruitment requests remain explicit. When recruiting, HR should set recruitmentProfile.character from the role responsibilities and preserve user expectations; configured traits must never be presented as proven growth. Fuli persists identity, staffing, and memory scope; the host must start real workers, report their concrete evidence, and finish their lifecycle. A routing recommendation never proves that a worker started.',
+    description: 'Resolve the exact local project, or create an isolated temporary task scope when no project matches, then let the Provider coordinator route one durable task and assemble an isolated context bundle for every selected lead/collaborator. Ambiguous matches require exact selection. Pass the current taskContextToken so temporary scope and a newly recruited lead bind to the owned lifecycle; otherwise provide a stable sourceSessionId and idempotencyKey for retries. Temporary projects retain audit history, never become implicit directory bindings, and default to audited task-only recruitment under the existing AR policy; explicit durable recruitment requests remain explicit. When recruiting, AR should set recruitmentProfile.character from the role responsibilities and preserve user expectations; configured traits must never be presented as proven growth. Fuli persists identity, staffing, and memory scope; the host must start real workers, report their concrete evidence, and finish their lifecycle. A routing recommendation never proves that a worker started.',
     inputSchema: projectAgentTaskCoordinateInput
   },
   {
@@ -792,7 +792,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'submit_project_agent_task',
     title: 'WRITE · Submit a routed Agent task',
-    description: 'Submit one durable task to the FULI control plane. Every new task requires a passed quality gate for its exact artifact revision before completion; use record_agent_verification with actual run evidence. Existing matching durable Agents are preferred; no anonymous temporary Agent is created. The Agent locked executor policy outranks task, assignment, project, and space rules; explicit user priority is never lowered for token savings. The space coordinator, complexity, model strategy, routing decision, boundaries, actual executor/model/rule/fallback audit fields, and any HR disclosure are persisted by the Provider. HR should fill recruitmentProfile.character from role responsibilities, preserve user expectations, and distinguish configured traits from demonstrated growth; never invent past achievements.',
+    description: 'Submit one durable task to the FULI control plane. Every new task requires a passed quality gate for its exact artifact revision before completion; use record_agent_verification with actual run evidence. Existing matching durable Agents are preferred; no anonymous temporary Agent is created. The Agent locked executor policy outranks task, assignment, project, and space rules; explicit user priority is never lowered for token savings. The space coordinator, complexity, model strategy, routing decision, boundaries, actual executor/model/rule/fallback audit fields, and any AR disclosure are persisted by the Provider. AR should fill recruitmentProfile.character from role responsibilities, preserve user expectations, and distinguish configured traits from demonstrated growth; never invent past achievements.',
     inputSchema: projectAgentTaskSubmitInput
   },
   {
@@ -834,9 +834,18 @@ export const GRAPH_TOOL_DEFINITIONS = [
     }, ['personalSpaceId', 'personalProjectId'])
   },
   {
+    name: 'get_project_team',
+    title: 'READ · Get project team',
+    description: 'Read the exact project people view: the one accountable lead, explicit team members reporting to that lead, other Agents with an active assignment as collaborators, and assigned peer roles such as AR or project managers. Ended and archived assignments are excluded; status no_lead or lead_unavailable is reported truthfully. Never includes private memory and never resolves a parent or child project.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      personalProjectId: id
+    }, ['personalSpaceId', 'personalProjectId'])
+  },
+  {
     name: 'update_project_agent_coordination_policy',
     title: 'WRITE · Set project Agent continuity policy',
-    description: 'Persist project collaboration switches and an optional stable team lead with members. HR and employee project managers remain peer roles and cannot be team members. Omitted team fields preserve the current team. Read policy first and send expectedUpdatedAt to prevent overwriting concurrent edits. This changes policy only and never starts a worker.',
+    description: 'Persist project collaboration switches and an optional stable team lead with members. AR and employee project managers remain peer roles and cannot be team members. Omitted team fields preserve the current team. Read policy first and send expectedUpdatedAt to prevent overwriting concurrent edits. This changes policy only and never starts a worker.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectId: id,
@@ -869,7 +878,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'list_project_agent_recruitments',
     title: 'READ · List recruitment records',
-    description: 'List auditable HR recruitment records with trigger client/session, role, capabilities, position kind, reason, status, and created/recruited Agent.',
+    description: 'List auditable AR recruitment records with trigger client/session, role, capabilities, position kind, reason, status, and created/recruited Agent.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectId: nullableStringSchema(),
@@ -880,7 +889,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'decide_project_agent_recruitment',
     title: 'WRITE · Approve or cancel recruitment',
-    description: 'Approve or cancel one pending HR recruitment event with an expected revision. Approval creates only the declared durable or bounded temporary role through the Provider.',
+    description: 'Approve or cancel one pending AR recruitment event with an expected revision. Approval creates only the declared durable or bounded temporary role through the Provider.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectId: id,

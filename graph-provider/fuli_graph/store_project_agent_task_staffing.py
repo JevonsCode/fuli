@@ -84,7 +84,7 @@ class StoreProjectAgentTaskStaffing:
             return [lead], [lead, *members], 'project_team_lead', [
                 'project team lead is the stable conversation owner',
                 f'{len(members)} active team member(s) available for explicit workstreams',
-                'HR and project manager remain peer roles',
+                'AR and project manager remain peer roles',
             ]
         normalized_work_kind = request.work_kind.casefold()
         required = {item.casefold() for item in request.required_capabilities}
@@ -886,7 +886,7 @@ class StoreProjectAgentTaskStaffing:
                 status_code=422,
                 detail=(
                     'parallel work requires at least two active Agents; '
-                    'automatic recruitment needs an active HR Agent, otherwise '
+                    'automatic recruitment needs an active AR Agent, otherwise '
                     'recruit another qualified collaborator or assign enough '
                     'existing Agents before enabling parallel work'
                 ),

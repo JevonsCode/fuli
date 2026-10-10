@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import {
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync
 } from 'node:fs';
@@ -58,6 +59,9 @@ try {
     'npm-shrinkwrap.json',
     'package.json',
     'src/cli.js',
+    'src/cli/connect-command.js',
+    'src/cli/mcp-command.js',
+    'src/setup/client-connection.js',
     'src/cli/update-command.js',
     'src/cli/employee-command.js',
     'src/employees/catalog/jefa.json',
@@ -74,6 +78,7 @@ try {
     'docs/agent-interface-architecture.md',
     'docs/agent-roundtable.md',
     'docs/judgment-and-autonomy.md',
+    'docs/client-connections.md',
     'src/agent-roundtable/service.js',
     'examples/external-knowledge/markdown-folder.mjs',
     'graph-provider/fuli_graph/app.py',
@@ -97,7 +102,8 @@ try {
         'docs/employee-agents.md',
         'docs/agent-interface-architecture.md',
         'docs/agent-roundtable.md',
-        'docs/judgment-and-autonomy.md'
+        'docs/judgment-and-autonomy.md',
+        'docs/client-connections.md'
       ].includes(path), `unexpected published documentation file ${path}`);
     }
     assert.doesNotMatch(path, /^(?:AGENTS|CLAUDE)\.md$/);
@@ -140,6 +146,11 @@ try {
   assert.equal(installedCommand('fuli', fuli, ['--version']).trim(), manifest.version);
   assert.match(installedCommand('fuli', fuli, ['--help']), /fuli <command>/);
   assert.match(installedCommand('fuli', fuli, ['--help']), /update \[setup options\]/);
+  const connection = JSON.parse(installedCommand('fuli', fuli, ['connect', '--data-dir', scratch]));
+  assert.equal(realpathSync(connection.mcpServers.fuli.args[0]), realpathSync(join(installedRoot, 'src', 'mcp-server.js')));
+  assert.equal(connection.mcpServers.fuli.args[2], join(scratch, 'graph-runtime.json'));
+  assert.ok(JSON.parse(installedCommand('fuli', fuli, ['mcp', '--tools']))
+    .some(({ name }) => name === 'get_collaboration_preferences'));
 
   const { serveStatic } = await import(pathToFileURL(
     join(installedRoot, 'src', 'http', 'static-handler.js')

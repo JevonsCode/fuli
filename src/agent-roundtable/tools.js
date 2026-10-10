@@ -13,7 +13,7 @@ export const ROUNDTABLE_TOOL_DEFINITIONS = [
   {
     name: 'message_agent',
     title: 'ROUNDTABLE · Ask another Agent',
-    description: 'Send a message to another Agent, like asking a teammate or a sub-agent. By default Fuli wakes the recipient in its own client (resuming its latest conversation, or one from find_agents) read-only, and returns its answer in reply. If it cannot be woken the message waits in its inbox. Pass the current taskContextToken so the recipient knows who is asking, projectPath as the current working directory, and threadId to continue a thread. Every exchange is recorded for the user.',
+    description: 'Send a message to another Agent, like asking a teammate or a sub-agent. By default Fuli wakes the recipient in its own client (resuming its latest conversation, or one from find_agents) read-only, and returns its answer in reply. If it cannot be woken the message waits in its inbox. Pass the current taskContextToken so the recipient knows who is asking, projectPath as the current working directory, and threadId to continue a thread. A peer:<device>:<binding> address from find_agents asks the shared project lead on another paired device (LAN roundtable Beta, project leads only). Every exchange is recorded for the user.',
     inputSchema: objectSchema({
       taskContextToken: text(160),
       to: text(160),
@@ -43,6 +43,18 @@ export const ROUNDTABLE_TOOL_DEFINITIONS = [
     title: 'ROUNDTABLE · Read a thread',
     description: 'Read every message of one Agent conversation thread.',
     inputSchema: objectSchema({ threadId: text(128) }, ['threadId'])
+  },
+  {
+    name: 'get_agent_message_status',
+    title: 'ROUNDTABLE · Check a message',
+    description: 'Check whether a message you sent or received in the current task\'s project was answered, including asks to a shared project lead on another paired device (LAN roundtable Beta). "unknown" means the receiving device lost track of the attempt; it may or may not have run and is not retried.',
+    inputSchema: objectSchema({ taskContextToken: text(160), messageId: text(128) }, ['taskContextToken', 'messageId'])
+  },
+  {
+    name: 'cancel_agent_message',
+    title: 'ROUNDTABLE · Cancel a message',
+    description: 'Cancel a message the current task\'s Agent sent in this project. A waiting message is withdrawn; one already running on another device is asked to stop.',
+    inputSchema: objectSchema({ taskContextToken: text(160), messageId: text(128) }, ['taskContextToken', 'messageId'])
   }
 ];
 
@@ -56,6 +68,8 @@ export function callRoundtableTool(roundtable, name, input) {
     case 'read_agent_messages': return roundtable.readMessages(input);
     case 'reply_agent_message': return roundtable.replyMessage(input);
     case 'read_agent_thread': return roundtable.thread(input);
+    case 'get_agent_message_status': return roundtable.messageStatus(input);
+    case 'cancel_agent_message': return roundtable.cancelMessage(input);
     default: throw new TypeError(`Unknown roundtable tool: ${name}`);
   }
 }

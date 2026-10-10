@@ -15,7 +15,10 @@ from .project_agent_context_models import (
 from .agent_conversation_routes import register_agent_conversation_routes
 from .default_project_lead import DefaultProjectLeadRequest
 from .task_context_routes import register_task_context_routes
-from .project_agent_delegations import AgentDelegationIssue, AgentDelegationCheck
+from .project_agent_delegations import (
+    AgentDelegationCheck, AgentDelegationIssue, AgentRemoteDelegationIssue,
+)
+from .project_agent_remote_origins import AgentRemoteOriginIssue
 
 
 def register_project_agent_memory_routes(application, store, Actor):
@@ -30,6 +33,20 @@ def register_project_agent_memory_routes(application, store, Actor):
     @application.post('/v1/project-agent-context/delegations')
     async def issue_delegation(request: AgentDelegationIssue, actor: Actor):
         return await store.issue_agent_delegation(actor, request)
+
+    @application.post('/v1/project-agent-context/remote-delegations')
+    async def issue_remote_delegation(request: AgentRemoteDelegationIssue, actor: Actor):
+        return await store.issue_remote_agent_delegation(actor, request)
+
+    @application.post('/v1/project-agent-context/remote-origins')
+    async def issue_remote_origin(request: AgentRemoteOriginIssue, actor: Actor):
+        return await store.issue_remote_agent_origin(actor, request)
+
+    @application.get('/v1/project-agent-context/remote-origin-authority')
+    async def remote_origin_authority(
+        actor: Actor, personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
+    ):
+        return await store.remote_origin_authority(actor, personal_space_id)
 
     @application.post('/v1/project-agent-context/delegations/verify')
     async def verify_delegation(request: AgentDelegationCheck, actor: Actor):

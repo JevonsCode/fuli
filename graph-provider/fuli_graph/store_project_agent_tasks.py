@@ -272,7 +272,7 @@ class StoreProjectAgentTasks(
                     *match_basis,
                     'parallel automatic recruitment: filled '
                     f'{recruited_count} missing participant slot(s)',
-                    'HR recruitment recorded before Agent creation',
+                    'AR recruitment recorded before Agent creation',
                 ]
                 if recruited_lead:
                     model_strategy, model_source = self._effective_model_strategy(
@@ -322,7 +322,7 @@ class StoreProjectAgentTasks(
                     else 'no_match'
                 )
                 match_basis = [
-                    'HR recruitment recorded before Agent creation',
+                    'AR recruitment recorded before Agent creation',
                     *(
                         [
                             'parallel auto-staffing: added '

@@ -66,7 +66,7 @@ function role(project) {
       work_kinds: ['project_context'], capabilities: [] } };
 }
 
-test('unmatched ordinary directory reaches HR and returns a real owner', async () => {
+test('unmatched ordinary directory reaches AR and returns a real owner', async () => {
   const { run, writes, hires } = fixture();
   const result = await run();
   assert.ok(result.agent_receipt.owner);
@@ -97,7 +97,7 @@ test('different sessions and clients get isolated fallback scopes', async () => 
   assert.equal(new Set([a, b, c].map(x => x.context.personal_project_id)).size, 3);
 });
 
-test('a registered lifecycle binding restores its project before HR recruitment', async () => {
+test('a registered lifecycle binding restores its project before AR recruitment', async () => {
   const { run, writes, hires } = fixture({ existing: ['existing-project'], current: {
     personalProjectId: 'existing-project', projectAgentId: 'lead-existing-project'
   } });
@@ -200,7 +200,7 @@ test('a rejected explicit FLA never triggers replacement recruitment', async () 
   assert.equal(hires.length, 0);
 });
 
-test('a failed HR recruitment reports failure and never fabricates an owner', async () => {
+test('a failed AR recruitment reports failure and never fabricates an owner', async () => {
   const { run, app } = fixture();
   app.personal.staffDefaultProjectLead = async () => { throw new Error('Staffing unavailable'); };
   const result = await run();

@@ -7,8 +7,8 @@
   .service-connection-grid { grid-template-columns: minmax(0, 1fr); }
   .service-connection-card dl > div { grid-template-columns: minmax(64px, .3fr) minmax(0, 1fr); }
   .view.vue-personal-profile { padding: 16px; }
-  .personal-profile-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); flex: 0 0 auto; padding: 8px; }
-  .personal-profile-summary > button { min-width: 0; padding: 6px; }
+  .personal-profile-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 0 0 auto; padding: 8px; }
+  .personal-profile-summary > button { min-width: 0; justify-content: space-between; padding: 6px 10px; overflow-wrap: anywhere; }
   .personal-profile-summary > p { grid-column: 1 / -1; margin: 8px 6px 0; }
   .personal-profile-toolbar, .personal-profile-filter-groups { flex-wrap: wrap; gap: 8px; }
   .personal-profile-filter-groups, .personal-profile-toolbar-actions { width: 100%; min-width: 0; }

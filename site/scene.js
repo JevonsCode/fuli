@@ -4,39 +4,7 @@ const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 const mix = (a, b, t) => a + (b - a) * t;
 const smooth = (t) => t * t * (3 - 2 * t);
 
-const fragments = [
-  ["身份", "持续的名字", "jade"],
-  ["职责", "负责的项目", "silver"],
-  ["对话", "最近的原文", "silver"],
-  ["品味", "确认过的偏好", "jade"],
-  ["上下文", "当下相关的脉络", "silver"],
-  ["协作", "谁负责谁协助", "carbon"],
-  ["来源", "保留证据", "silver"],
-  ["判断", "取舍的依据", "silver"],
-  ["记忆", "按量折叠的摘要", "jade"],
-  ["历史", "变化可以追溯", "silver"],
-  ["权限", "明确的作用域", "carbon"],
-  ["期待", "由你来定义", "silver"],
-];
-// Some scenes relabel the same pieces so the object explains that idea.
-const sceneLabels = {
-  roundtable: [
-    ["Milo", "Claude Code"], ["Nova", "Codex"], ["Jefa", "项目经理"], ["Bole", "HR"],
-    ["Lyra", "Codex"], ["Ada", "Cursor"], ["提问", "Milo → Nova"], ["回答", "Nova → Milo"],
-    ["留痕", "谁问了谁"], ["唤醒", "原会话"], ["收件箱", "下次接手时"], ["线程", "全程可查"],
-  ],
-  team: [
-    ["Jefa", "项目经理 · 固定"], ["看板", "拆解与进展"], ["目标", "交付节奏"], ["找人", "为任务匹配"],
-    ["Bole", "HR · 固定"], ["招募", "留下原因"], ["分布", "谁在忙什么"], ["记录", "可审计"],
-    ["Milo", "项目负责人"], ["Nova", "评审"], ["Ada", "测试"], ["Kai", "文档"],
-  ],
-  database: [
-    ["关系", "Neo4j 图数据库"], ["历史", "Neo4j 图数据库"], ["工作记忆", "Neo4j 图数据库"],
-    ["身份与权限", "Python Provider"], ["来源与确认", "Python Provider"], ["上下文", "Python Provider"],
-    ["CLI", "Node 编排"], ["MCP", "Node 编排"], ["HTTP", "Node 编排"],
-    ["Codex", "接入的客户端"], ["Claude Code", "接入的客户端"], ["Cursor", "接入的客户端"],
-  ],
-};
+const materials = ["jade","silver","silver","jade","silver","carbon","silver","silver","jade","silver","carbon","silver"];
 const icons = [
   "M16 8a4 4 0 1 1-8 0a4 4 0 0 1 8 0M4 21v-2a8 8 0 0 1 16 0v2",
   "M3 7h7l2 3h9v10H3z",
@@ -48,7 +16,7 @@ const sceneNames = ["scatter", "owner", "handoff", "roundtable", "taste", "team"
 const darkScenes = new Set(["roundtable", "database"]);
 // Rig orientation per scene: rotateX, rotateY, rotateZ, scale.
 const views = [
-  [48, -10, -25, 1],
+  [48, -10, -25, 0.9],
   [52, -8, -26, 1.12],
   [30, -8, -6, 1.02],
   [62, 0, 0, 0.92],
@@ -58,9 +26,9 @@ const views = [
   [57, 0, -24, 0.85],
 ];
 
-function createFragment([title, detail, material], index) {
+function createFragment([title, detail], index) {
   const item = document.createElement("div");
-  item.className = `fragment fragment-${material}`;
+  item.className = `fragment fragment-${materials[index]}`;
   const face = document.createElement("div");
   face.className = "fragment-face fragment-front";
   // Static illustration text only; nothing user-supplied reaches innerHTML.
@@ -108,7 +76,7 @@ function pose(scene, i) {
     return [70 + ((j % 2) - 0.5) * 128, -30 + (Math.floor(j / 2) - 0.5) * 86, 120, 0, 0, 0, 0.66, 1];
   }
   if (scene === 5) {
-    // Team as an org chart: the fixed PM and HR on top with their work stacked
+    // Team as an org chart: the fixed PM and AR on top with their work stacked
     // behind them, the project lead in the middle, members along the bottom.
     if (i < 8) {
       const side = i < 4 ? -1 : 1, j = i % 4;
@@ -131,7 +99,7 @@ function blendColor(a, b, t) {
   return `rgb(${a.map((value, i) => Math.round(mix(value, b[i], t))).join(" ")})`;
 }
 
-export function createScrollScene() {
+export function createScrollScene({ labels }) {
   const journey = document.querySelector(".journey");
   const rig = document.querySelector("#fragment-rig");
   const stage = document.querySelector(".spatial-stage");
@@ -140,7 +108,7 @@ export function createScrollScene() {
   const dots = [...nav.querySelectorAll("a")];
   const overlays = [...document.querySelectorAll("[data-overlay]")];
   const header = document.querySelector(".nav");
-  const pieces = fragments.map(createFragment);
+  const pieces = labels('default').map(createFragment);
   pieces.forEach((piece) => rig.append(piece));
 
   let enabled = false, scheduled = false, positions = [], heights = [], active = -1;
@@ -165,7 +133,11 @@ export function createScrollScene() {
     const darkness = (scene) => (darkScenes.has(sceneNames[scene]) ? 1 : 0);
     const dark = mix(darkness(index), darkness(next), t);
     const database = mix(sceneNames[index] === "database" ? 1 : 0, sceneNames[next] === "database" ? 1 : 0, t);
-    stage.style.setProperty("--rig-left", `${mix(68, 58, database)}%`);
+    const narrow = window.innerWidth <= 700;
+    const stacked = window.innerWidth <= 1050;
+    const storyLeft = narrow ? 50 : index === 0 ? mix(72, 68, t) : 68;
+    stage.style.setProperty("--rig-left", `${mix(storyLeft, narrow ? 25 : stacked ? 32 : 58, database)}%`);
+    stage.style.setProperty("--rig-top", `${mix(narrow ? 69 : 52, narrow ? 70 : stacked ? 68 : 52, database)}%`);
     stage.style.setProperty("--scene-background", blendColor([246, 245, 241], [17, 23, 24], dark));
     stage.style.setProperty("--scene-label", blendColor([45, 73, 60], [210, 231, 219], dark));
     stage.style.setProperty("--atmosphere-opacity", String(1 - dark * 0.8));
@@ -176,7 +148,8 @@ export function createScrollScene() {
     journey.style.setProperty("--chapter-ink", blendColor([27, 31, 29], [245, 245, 247], dark));
     journey.style.setProperty("--chapter-soft", blendColor([58, 64, 60], [186, 196, 195], dark));
 
-    const view = views[index].map((value, j) => mix(value, views[next][j], t));
+    const sceneView = scene => scene === 7 && narrow ? [57, 0, -24, 0.6] : views[scene];
+    const view = sceneView(index).map((value, j) => mix(value, sceneView(next)[j], t));
     rig.style.transform = `rotateX(${view[0]}deg) rotateY(${view[1]}deg) rotateZ(${view[2]}deg) scale(${view[3]})`;
     pieces.forEach((piece, i) => {
       const a = pose(index, i), b = pose(next, i);
@@ -203,9 +176,9 @@ export function createScrollScene() {
     const current = t > 0.5 ? next : index;
     if (current !== active) {
       active = current;
-      const labels = sceneLabels[sceneNames[current]];
+      const currentLabels = labels(sceneNames[current]);
       pieces.forEach((piece, i) => {
-        const [title, detail] = labels?.[i] ?? fragments[i];
+        const [title, detail] = currentLabels[i];
         piece.querySelector(".fragment-heading>span").textContent = title;
         piece.querySelector(".fragment-detail").textContent = detail;
       });
@@ -259,6 +232,10 @@ export function createScrollScene() {
   document.fonts?.ready.then(measure);
 
   return {
+    refresh() {
+      active = -1;
+      measure();
+    },
     setEnabled(value) {
       enabled = value;
       document.body.classList.toggle("enhanced", value);

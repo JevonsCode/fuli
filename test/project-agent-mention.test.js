@@ -92,7 +92,7 @@ test('an older Provider cannot implicitly make the project manager the developer
   assert.equal((await run('@Jefa 整理看板')).agent.agentId, 'employee.jefa');
 });
 
-test('a project with nobody to own the task has HR staff its default lead', async () => {
+test('a project with nobody to own the task has AR staff its default lead', async () => {
   const lead = role('lead-1', 'Milo Reed');
   for (const resolved of [{ status: 'unassigned' }, { status: 'ready', agent: role('employee.jefa', 'Jefa') }]) {
     const staffed = [];

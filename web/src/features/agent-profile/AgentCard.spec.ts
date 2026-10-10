@@ -39,6 +39,6 @@ describe('AgentCard projects', () => {
 
     expect(toggle.attributes('aria-pressed')).toBe('true')
     expect(toggle.attributes('disabled')).toBeDefined()
-    expect(wrapper.get('.growth-loading').attributes('aria-label')).toMatch(/Saving Agent pin|正在保存 Agent 置顶/)
+    expect(wrapper.get('.growth-loading').attributes('aria-label')).toMatch(/Saving pin|正在保存 pin/)
   })
 })

@@ -271,7 +271,7 @@ function taskMeta(task: ProjectAgentTaskRecord) {
         </div>
         <ul v-else class="overview-project-list">
           <li v-for="project in recentProjectItems" :key="project.id" class="overview-recent-project" data-testid="overview-recent-project">
-            <RouterLink :to="personalProjectsPath(activeSpaceId, 'graph', project.id)">
+            <RouterLink :to="personalProjectsPath(activeSpaceId, 'overview', project.id)">
               <strong>{{ project.name }}</strong>
               <span>{{ project.updatedAt ? t('overview.projects.updated', { date: formatDate(project.updatedAt) }) : t('overview.projects.noActivity') }}</span>
             </RouterLink>
@@ -302,7 +302,7 @@ function taskMeta(task: ProjectAgentTaskRecord) {
 </template>
 
 <style scoped>
-.overview-content-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); gap: 40px; align-items: start; max-width: 1240px; }
+.overview-content-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); gap: 40px; align-items: start; max-width: var(--page-max); }
 .overview-column { display: grid; gap: 36px; min-width: 0; }
 .overview-section { min-width: 0; }
 .overview-section-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 30px; padding-bottom: 10px; border-bottom: 1px solid var(--color-border); }

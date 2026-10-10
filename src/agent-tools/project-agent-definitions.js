@@ -61,7 +61,7 @@ export const projectAgentProfile = objectSchema({
       taste: { type: 'string', maxLength: 2048, default: '' },
       personality: { type: 'string', maxLength: 2048, default: '' }
     }),
-    description: 'HR-configured judgment, taste and personality based on role responsibilities. These are intended working traits, not evidence of observed growth or performance.'
+    description: 'AR-configured judgment, taste and personality based on role responsibilities. These are intended working traits, not evidence of observed growth or performance.'
   },
   expectations: {
     type: 'string', maxLength: 4096, default: '',

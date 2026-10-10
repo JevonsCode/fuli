@@ -1,37 +1,41 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#f6f5f1" />
-    <title>Fuli 复利 · 让每一次协作都产生复利</title>
-    <meta name="description" content="Fuli 复利：本地优先的长期 AI Agent 协作层。每个任务都有负责的 Agent，记得你的品味与判断，在 Claude Code、Codex 和 Cursor 之间接续工作，Agent 之间还能直接对话。" />
-    <meta property="og:title" content="Fuli 复利 · 让每一次协作都产生复利" />
-    <meta property="og:description" content="每个任务都有负责的 Agent；换工具不换搭档；Agent 之间直接对话；偏好越用越懂你。本地运行，由你掌控。" />
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://xn--8ovp9s.xn--m8txu.com/fuli/" />
-    <meta property="og:image" content="https://xn--8ovp9s.xn--m8txu.com/fuli/assets/fuli-logo.png" />
-    <meta property="og:locale" content="zh_CN" />
-    <meta name="twitter:card" content="summary" />
-    <link rel="canonical" href="https://xn--8ovp9s.xn--m8txu.com/fuli/" />
-    <link rel="icon" href="./assets/fuli-logo.png" type="image/png" />
-    <link rel="preload" href="./assets/unbounded-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f6f5f1">
+    <title data-i18n="meta.title">FULI 复利 · AI Agent 记忆与跨客户端协作</title>
+    <meta data-i18n-content="meta.description" name="description" content="FULI 复利是跨客户端的长期 AI Agent 协作层，通过标准 MCP 连接兼容客户端，为任务安排负责人，保存工作记忆、项目知识与偏好，让 Agent 接续协作。">
+    <meta data-i18n-content="meta.title" property="og:title" content="FULI 复利 · AI Agent 记忆与跨客户端协作">
+    <meta data-i18n-content="meta.social" property="og:description" content="每个任务都有负责的 Agent；换工具不换搭档；Agent 之间直接对话；偏好越用越懂你。本地运行，由你掌控。">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://xn--8ovp9s.xn--m8txu.com/fuli/">
+    <meta property="og:image" content="https://xn--8ovp9s.xn--m8txu.com/fuli/assets/fuli-logo.png">
+    <meta data-i18n-content="meta.locale" property="og:locale" content="zh_CN">
+    <meta name="twitter:card" content="summary">
+    <link rel="canonical" href="https://xn--8ovp9s.xn--m8txu.com/fuli/">
+    <link rel="icon" href="./assets/fuli-logo.png" type="image/png">
+    <link rel="preload" href="./assets/unbounded-latin.woff2" as="font" type="font/woff2" crossorigin="">
     <script>document.documentElement.classList.add('js')</script>
-    <link rel="stylesheet" href="./style.css" />
-    <link rel="stylesheet" href="./scene.css" />
+    <link rel="stylesheet" href="./style.css">
+    <link rel="stylesheet" href="./scene.css">
     <script type="module" src="./site.js"></script>
   </head>
   <body>
-    <a class="skip" href="#main">跳到正文</a>
+    <a data-i18n="nav.skip" class="skip" href="#main">跳到正文</a>
     <header class="nav">
-      <a class="brand" href="#top" aria-label="Fuli 复利 首页"><img src="./assets/fuli-logo.png" alt="" width="28" height="28" /><span>复利</span><b>FULI</b></a>
-      <nav aria-label="页面导航">
-        <a href="#agents">Agent</a>
-        <a href="#roundtable">圆桌</a>
-        <a href="#taste">偏好</a>
-        <a href="#database">数据库</a>
-        <a href="#start">安装</a>
+      <a data-i18n-aria-label="nav.home" class="brand" href="#top" aria-label="Fuli 复利 首页"><img src="./assets/fuli-logo.png" alt="" width="28" height="28"><span>复利</span><b>FULI</b></a>
+      <nav data-i18n-aria-label="nav.label" aria-label="页面导航">
+        <a data-i18n="nav.agents" href="#agents">Agent</a>
+        <a data-i18n="nav.roundtable" href="#roundtable">圆桌</a>
+        <a data-i18n="nav.preferences" href="#taste">偏好</a>
+        <a data-i18n="nav.database" href="#database">数据库</a>
+        <a data-i18n="nav.install" href="#start">安装</a>
         <a class="nav-github" href="https://github.com/JevonsCode/fuli">GitHub</a>
+      <div data-i18n-aria-label="nav.language" aria-label="语言" role="group" class="language-switch">
+          <a href="./zh/" lang="zh-CN" hreflang="zh-Hans" data-locale="zh-CN" aria-current="true">中文</a>
+          <a href="./en/" lang="en" hreflang="en" data-locale="en" aria-label="English">EN</a>
+        </div>
       </nav>
     </header>
 
@@ -44,97 +48,100 @@
           <div class="scene-perspective"><div class="fragment-rig" id="fragment-rig"></div></div>
 
           <div class="diagram-overlay" data-overlay="owner">
-            <div class="receipt-plate">FULI Agent：负责人 <b>Milo Reed</b> · 协作 <b>Jefa</b>、<b>Nova</b></div>
+            <div data-i18n-html="diagram.receipt" class="receipt-plate">FULI Agent：负责人 <b>Milo Reed</b> · 协作 <b>Jefa</b>、<b>Nova</b></div>
           </div>
           <div class="diagram-overlay handoff-overlay" data-overlay="handoff">
-            <span class="overlay-label client-left">Claude Code<small>昨天做到一半</small></span>
-            <span class="overlay-label agent-center"><small>同一位 Agent</small><strong>Milo</strong></span>
-            <span class="overlay-label client-right">Codex<small>今天接着做</small></span>
+            <span class="overlay-label client-left">Claude Code<small data-i18n="diagram.yesterday">昨天做到一半</small></span>
+            <span class="overlay-label agent-center"><small data-i18n="diagram.sameAgent">同一位 Agent</small><strong>Milo</strong></span>
+            <span class="overlay-label client-right">Codex<small data-i18n="diagram.today">今天接着做</small></span>
             <i class="handoff-arrow"></i>
           </div>
           <div class="diagram-overlay roundtable-overlay" data-overlay="roundtable">
-            <span class="overlay-label table-center"><small>Agent 之间</small><strong>圆桌</strong></span>
-            <p class="whisper whisper-a"><b>Milo → Nova</b>接口评审过了吗？</p>
-            <p class="whisper whisper-b"><b>Nova → Milo</b>过了，只有一处要改。</p>
+            <span class="overlay-label table-center"><small data-i18n="diagram.betweenAgents">Agent 之间</small><strong data-i18n="nav.roundtable">圆桌</strong></span>
+            <p data-i18n-html="diagram.question" class="whisper whisper-a"><b>Milo → Nova</b>接口评审过了吗？</p>
+            <p data-i18n-html="diagram.answer" class="whisper whisper-b"><b>Nova → Milo</b>过了，只有一处要改。</p>
           </div>
           <div class="diagram-overlay taste-overlay" data-overlay="taste">
-            <span class="overlay-label layer-global">个人全局<small>每个项目都生效</small></span>
-            <span class="overlay-label layer-project">项目<small>只管这个项目</small></span>
+            <span data-i18n-html="diagram.global" class="overlay-label layer-global">个人全局<small>每个项目都生效</small></span>
+            <span data-i18n-html="diagram.project" class="overlay-label layer-project">项目<small>只管这个项目</small></span>
           </div>
           <div class="diagram-overlay memory-overlay" data-overlay="memory">
-            <span class="overlay-label mem-recent">最近原文<small>原样保留</small></span>
-            <span class="overlay-label mem-digest">摘要<small>攒够一定量才折叠</small></span>
-            <span class="overlay-label mem-note">按量压缩，不按天数遗忘</span>
+            <span data-i18n-html="diagram.recent" class="overlay-label mem-recent">最近原文<small>原样保留</small></span>
+            <span data-i18n-html="diagram.digest" class="overlay-label mem-digest">摘要<small>攒够一定量才折叠</small></span>
+            <span data-i18n="diagram.memory" class="overlay-label mem-note">工作要点与原始记录，一起保留</span>
           </div>
           <div class="diagram-overlay team-overlay" data-overlay="team">
             <svg class="links" aria-hidden="true"><path data-from="0" data-to="8" /><path data-from="4" data-to="8" /><path data-from="8" data-to="9" /><path data-from="8" data-to="10" /><path data-from="8" data-to="11" /></svg>
-            <span class="tag tag-fixed" data-anchor="0">固定在岗 · 拆解目标、维护看板</span>
-            <span class="tag tag-fixed" data-anchor="4">固定在岗 · 招人并写明原因</span>
-            <span class="tag tag-lead" data-anchor="8" data-place="right">项目小组<small>负责人带队</small></span>
-            <span class="tag" data-anchor="10" data-place="below">成员按专长协作 · 各自保留记忆</span>
+            <span data-i18n="diagram.pm" class="tag tag-fixed" data-anchor="0">固定在岗 · 拆解目标、维护看板</span>
+            <span data-i18n="diagram.hr" class="tag tag-fixed" data-anchor="4">固定在岗 · 招人并写明原因</span>
+            <span data-i18n-html="diagram.lead" class="tag tag-lead" data-anchor="8" data-place="right">项目小组<small>负责人带队</small></span>
+            <span data-i18n="diagram.members" class="tag" data-anchor="10" data-place="below">成员按专长协作 · 各自保留记忆</span>
           </div>
           <div class="diagram-overlay database-overlay" data-overlay="database">
             <svg class="links" aria-hidden="true"><path data-from="11" data-to-note=".db-note-a" /><path data-from="8" data-to-note=".db-note-b" /><path data-from="5" data-to-note=".db-note-c" /><path data-from="2" data-to-note=".db-note-d" /></svg>
-            <div class="db-note db-note-a"><span>接入</span><strong>Codex · Claude Code · Cursor</strong></div>
-            <div class="db-note db-note-b"><span>编排</span><strong>Node · CLI / MCP / HTTP</strong></div>
-            <div class="db-note db-note-c"><span>治理</span><strong>Python Provider · 来源与确认</strong></div>
-            <div class="db-note db-note-d"><span>存储</span><strong>Neo4j 图数据库 · 关系与历史</strong><small>全部在你的电脑上</small></div>
+
+            <div class="db-captions">
+              <div class="db-note db-note-a"><span data-i18n="architecture.clients">接入</span><strong data-i18n="architecture.compatibleClients">兼容 MCP 的客户端</strong></div>
+              <div class="db-note db-note-b"><span data-i18n="architecture.orchestration">编排</span><strong>Node · CLI / MCP / HTTP</strong></div>
+              <div class="db-note db-note-c"><span data-i18n="architecture.governance">治理</span><strong data-i18n="architecture.provider">Python Provider · 来源与确认</strong></div>
+              <div class="db-note db-note-d"><span data-i18n="architecture.storage">存储</span><strong data-i18n="architecture.graph">Neo4j 图数据库 · 关系与历史</strong><small data-i18n="architecture.local">全部在你的电脑上</small></div>
+            </div>
           </div>
         </div>
 
         <div class="chapters">
           <section class="chapter hero-chapter" data-scene="scatter" aria-labelledby="hero-title">
             <div class="chapter-copy">
-              <p class="eyebrow">本地优先 · 开源 · Apache-2.0</p>
-              <h1 id="hero-title">让每一次协作，<br />都产生<em>复利</em>。</h1>
-              <p class="lede">Fuli 给你的每个任务安排一位长期 Agent。它记得你的品味与判断，在 Claude Code、Codex 和 Cursor 之间接续工作，遇到问题还能直接去问别的 Agent。</p>
+
+              <h1 data-i18n-html="hero.title" id="hero-title">让每一次协作，<br>都产生<em>复利</em>。</h1>
+              <p data-i18n="hero.description" class="lede">Fuli 给你的每个任务安排一位长期 Agent。它记得你的品味与判断，在接入的 AI 客户端之间接续工作，遇到问题还能直接去问别的 Agent。</p>
               <div class="hero-actions">
                 <div class="terminal" data-copy="npm install --global fuli-context && fuli setup">
                   <code><span>$</span> npm install --global fuli-context</code>
                   <code><span>$</span> fuli setup</code>
-                  <button type="button" class="copy" aria-label="复制安装命令">复制</button>
+                  <button data-i18n-aria-label="copy.label" data-i18n="copy.idle" type="button" class="copy" aria-label="复制安装命令">复制</button>
                 </div>
               </div>
             </div>
-            <a class="scroll-cue" href="#agents" aria-label="往下看">
+            <a data-i18n-aria-label="nav.scroll" class="scroll-cue" href="#agents" aria-label="往下看">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16m-6-6 6 6 6-6" /></svg>
             </a>
           </section>
 
           <section class="chapter" id="agents" data-scene="owner" aria-labelledby="agents-title">
             <div class="chapter-copy">
-              <p class="eyebrow">每个任务</p>
-              <h2 id="agents-title">散落的经验，<br /><em>拼成一位负责的 Agent。</em></h2>
-              <p>在项目目录里直接提需求。Fuli 登记项目、请 HR 安排一位负责人，之后这个项目的任务都由它接手。做完时，回复最后一行写清楚谁负责、谁协助。</p>
+              <p data-i18n="agents.eyebrow" class="eyebrow">每个任务</p>
+              <h2 data-i18n-html="agents.title" id="agents-title">散落的经验，<br><em>拼成一位负责的 Agent。</em></h2>
+              <p data-i18n="agents.description">在项目目录里直接提需求。Fuli 登记项目、请 AR 安排一位负责人，之后这个项目的任务都由它接手。做完时，回复最后一行写清楚谁负责、谁协助。</p>
             </div>
-            <figure class="window static-figure" aria-label="示例：Claude Code 中一次任务的结尾">
-              <div class="window-bar"><i></i><i></i><i></i><span>Claude Code · 示例</span></div>
+            <figure data-i18n-aria-label="agents.example" class="window static-figure" aria-label="示例：Claude Code 中一次任务的结尾">
+              <div class="window-bar"><i></i><i></i><i></i><span data-i18n="agents.client">Claude Code · 示例</span></div>
               <div class="window-body">
-                <p class="msg user">修一下登录页记住密码失效的问题</p>
-                <p class="msg agent">已修复：<code>session.ts</code> 在刷新令牌时覆盖了 remember 标记。补了 2 个测试，均通过。</p>
-                <p class="receipt">FULI Agent：负责人 <a>Milo Reed</a> · 协作 <a>Jefa</a>、<a>Nova Lane</a></p>
+                <p data-i18n="agents.request" class="msg user">修一下登录页记住密码失效的问题</p>
+                <p data-i18n-html="agents.reply" class="msg agent">已修复：<code>session.ts</code> 在刷新令牌时覆盖了 remember 标记。补了 2 个测试，均通过。</p>
+                <p data-i18n-html="agents.receipt" class="receipt">FULI Agent：负责人 <a>Milo Reed</a> · 协作 <a>Jefa</a>、<a>Nova Lane</a></p>
               </div>
-              <figcaption>人名与任务均为示例</figcaption>
+              <figcaption data-i18n="agents.caption">人名与任务均为示例</figcaption>
             </figure>
           </section>
 
           <section class="chapter" id="handoff" data-scene="handoff" aria-labelledby="handoff-title">
             <div class="chapter-copy">
-              <p class="eyebrow">跨工具接续</p>
-              <h2 id="handoff-title">换 AI 工具，<br /><em>不用换搭档。</em></h2>
-              <p>同一位 Agent 的职责、工作记忆和最近的对话都留在 Fuli。在另一个客户端 @ 它，它从上次停下的地方继续，不用你重新交代。</p>
+              <p data-i18n="handoff.eyebrow" class="eyebrow">跨工具接续</p>
+              <h2 data-i18n-html="handoff.title" id="handoff-title">换 AI 工具，<br><em>不用换搭档。</em></h2>
+              <p data-i18n="handoff.description">同一位 Agent 的职责、工作记忆和最近的对话都留在 Fuli。在另一个客户端 @ 它，它从上次停下的地方继续，不用你重新交代。</p>
             </div>
-            <figure class="handoff static-figure" aria-label="示例：从 Claude Code 换到 Codex 继续工作">
+            <figure data-i18n-aria-label="handoff.example" class="handoff static-figure" aria-label="示例：从 Claude Code 换到 Codex 继续工作">
               <div class="window small">
                 <div class="window-bar"><i></i><i></i><i></i><span>Claude Code</span></div>
-                <div class="window-body"><p class="msg agent">登录重构完成一半：接口已拆好，前端还没接。</p></div>
+                <div class="window-body"><p data-i18n="handoff.previous" class="msg agent">登录重构完成一半：接口已拆好，前端还没接。</p></div>
               </div>
               <span class="arrow" aria-hidden="true">→</span>
               <div class="window small">
                 <div class="window-bar"><i></i><i></i><i></i><span>Codex</span></div>
                 <div class="window-body">
-                  <p class="msg user">@Milo Reed 继续昨天的登录重构</p>
-                  <p class="msg agent">接着做：接口已拆好，剩前端接入和回归测试。</p>
+                  <p data-i18n="handoff.request" class="msg user">@Milo Reed 继续昨天的登录重构</p>
+                  <p data-i18n="handoff.reply" class="msg agent">接着做：接口已拆好，剩前端接入和回归测试。</p>
                 </div>
               </div>
             </figure>
@@ -142,116 +149,118 @@
 
           <section class="chapter roundtable-chapter" id="roundtable" data-scene="roundtable" aria-labelledby="roundtable-title">
             <div class="chapter-copy">
-              <p class="eyebrow">圆桌</p>
-              <h2 id="roundtable-title">Agent 之间，<br /><em>直接对话。</em></h2>
-              <p>Codex 里的 Agent 可以去问某一段 Claude Code 对话里的 Agent，就像负责人问同事、或者调用子 Agent。Fuli 在对方的客户端里唤醒它、带回回答。不用建群，不用你转述，每段往来都留痕。</p>
+              <p data-i18n="nav.roundtable" class="eyebrow">圆桌</p>
+              <h2 data-i18n-html="roundtable.title" id="roundtable-title">Agent 之间，<br><em>直接对话。</em></h2>
+              <p data-i18n="roundtable.description">Codex 里的 Agent 可以去问某一段 Claude Code 对话里的 Agent，就像负责人问同事、或者调用子 Agent。Fuli 在对方的客户端里唤醒它、带回回答。不用建群，不用你转述，每段往来都留痕。</p>
             </div>
-            <figure class="thread static-figure" aria-label="示例：两个 Agent 之间的对话记录">
+            <figure data-i18n-aria-label="roundtable.example" class="thread static-figure" aria-label="示例：两个 Agent 之间的对话记录">
               <div class="thread-msg">
                 <span class="face">M</span>
-                <div><p class="by"><b>Milo Reed</b><em>Claude Code</em> 发给 Nova Lane</p><p class="bubble">登录重构的接口改动评审过了吗？有没有要我改的？</p></div>
+                <div><p data-i18n-html="roundtable.from" class="by"><b>Milo Reed</b><em>Claude Code</em> 发给 Nova Lane</p><p data-i18n="roundtable.question" class="bubble">登录重构的接口改动评审过了吗？有没有要我改的？</p></div>
               </div>
               <div class="thread-msg reply">
                 <span class="face">N</span>
-                <div><p class="by"><b>Nova Lane</b><em>Codex</em> 唤醒原会话回答</p><p class="bubble">评审过了。只有一处：刷新令牌失败时要清掉 remember 标记，其余可以合并。</p></div>
+                <div><p data-i18n-html="roundtable.to" class="by"><b>Nova Lane</b><em>Codex</em> 唤醒原会话回答</p><p data-i18n="roundtable.answer" class="bubble">评审过了。只有一处：刷新令牌失败时要清掉 remember 标记，其余可以合并。</p></div>
               </div>
-              <figcaption>人名与内容均为示例</figcaption>
+              <figcaption data-i18n="roundtable.caption">人名与内容均为示例</figcaption>
             </figure>
           </section>
 
           <section class="chapter" id="taste" data-scene="taste" aria-labelledby="taste-title">
             <div class="chapter-copy">
-              <p class="eyebrow">偏好</p>
-              <h2 id="taste-title">越用越懂你的<br /><em>品味与判断。</em></h2>
-              <p>你的品味、个性和取舍原则会沉淀下来，分成全局和项目两层：全局的在每个项目生效，项目的只管这个项目。Agent 推断出的偏好要你确认才算数。</p>
+              <p data-i18n="nav.preferences" class="eyebrow">偏好</p>
+              <h2 data-i18n-html="taste.title" id="taste-title">越用越懂你的<br><em>品味与判断。</em></h2>
+              <p data-i18n="taste.description">你的品味、个性和取舍原则会沉淀下来，分成全局和项目两层：全局的在每个项目生效，项目的只管这个项目。Agent 推断出的偏好要你确认才算数。</p>
             </div>
-            <figure class="layers static-figure" aria-label="偏好分为个人全局和项目两层">
+            <figure data-i18n-aria-label="taste.example" class="layers static-figure" aria-label="偏好分为个人全局和项目两层">
               <div class="layer">
-                <h3>个人全局</h3>
-                <p><span class="chip taste">品味</span>界面少用渐变，不要卡片套卡片</p>
-                <p><span class="chip judgment">判断</span>方向性歧义先讨论再动手</p>
-                <p><span class="chip personality">个性</span>习惯直接沟通，希望 Agent 主动推进</p>
+                <h3 data-i18n="taste.personal">个人全局</h3>
+                <p data-i18n-html="taste.design"><span class="chip taste">品味</span>界面少用渐变，不要卡片套卡片</p>
+                <p data-i18n-html="taste.judgment"><span class="chip judgment">判断</span>方向性歧义先讨论再动手</p>
+                <p data-i18n-html="taste.style"><span class="chip personality">个性</span>习惯直接沟通，希望 Agent 主动推进</p>
               </div>
               <div class="layer project">
-                <h3>项目：shop-web</h3>
-                <p><span class="chip judgment">判断</span>未经确认不要推送到 main</p>
-                <p><span class="chip taste">品味</span>文案短句，不用感叹号</p>
+                <h3 data-i18n="taste.project">项目：shop-web</h3>
+                <p data-i18n-html="taste.rule"><span class="chip judgment">判断</span>未经确认不要推送到 main</p>
+                <p data-i18n-html="taste.copy"><span class="chip taste">品味</span>文案短句，不用感叹号</p>
               </div>
             </figure>
           </section>
 
           <section class="chapter" id="team" data-scene="team" aria-labelledby="team-title">
             <div class="chapter-copy">
-              <p class="eyebrow">团队</p>
-              <h2 id="team-title">项目经理与 HR，<br /><em>固定在岗。</em></h2>
-              <p>每个空间都自带两位：项目经理 Jefa 拆解目标、维护看板、为任务找人；HR Bole 招人并留下招募记录。负责人和成员组成项目小组，各自保留自己的记忆。</p>
+              <p data-i18n="team.eyebrow" class="eyebrow">团队</p>
+              <h2 data-i18n-html="team.title" id="team-title">项目经理与 AR，<br><em>固定在岗。</em></h2>
+              <p data-i18n="team.description">每个空间都自带项目经理 Jefa 和 AR Bole。Jefa 拆解目标、维护看板、为任务找人；Bole 招人并留下招募记录。负责人和成员组成项目小组，各自保留自己的记忆。</p>
             </div>
             <div class="team static-figure">
-              <div class="member"><span>🧭</span><b>Jefa</b><small>项目经理</small></div>
-              <div class="member"><span>🔎</span><b>Bole</b><small>HR</small></div>
-              <div class="member lead"><span>M</span><b>Milo Reed</b><small>项目负责人 · 示例</small></div>
-              <div class="member"><span>N</span><b>Nova Lane</b><small>评审 · 示例</small></div>
+              <div class="member"><span>🧭</span><b>Jefa</b><small data-i18n="team.pm">项目经理</small></div>
+              <div class="member"><span>🔎</span><b>Bole</b><small>AR</small></div>
+              <div class="member lead"><span>M</span><b>Milo Reed</b><small data-i18n="team.owner">项目负责人 · 示例</small></div>
+              <div class="member"><span>N</span><b>Nova Lane</b><small data-i18n="team.review">评审 · 示例</small></div>
             </div>
           </section>
 
           <section class="chapter" id="memory" data-scene="memory" aria-labelledby="memory-title">
             <div class="chapter-copy">
-              <p class="eyebrow">记忆</p>
-              <h2 id="memory-title">按量压缩，<br /><em>不按天数遗忘。</em></h2>
-              <p>每次任务的结果都会进摘要。对话攒到一定量，较早的消息折叠成要点，最近的保留原文。原始记录始终在本机，需要时再取回。</p>
+              <p data-i18n="memory.eyebrow" class="eyebrow">记忆</p>
+              <h2 data-i18n-html="memory.title" id="memory-title">记住工作要点，<br><em>接着上次继续。</em></h2>
+              <p data-i18n="memory.description">每次任务的结果都会进摘要。对话攒到一定量，较早的消息折叠成要点，最近的保留原文。原始记录始终在本机，需要时再取回。</p>
             </div>
-            <figure class="memory static-figure" aria-label="对话记忆：较早的消息折叠成摘要，最近的保留原文">
-              <div class="memory-digest"><b>摘要</b><span>10/08 完成 · 接口拆分</span><span>10/09 完成 · 补测试</span><span>更早的请求 · 6 条</span></div>
-              <div class="memory-recent"><b>最近原文</b><span></span><span></span><span></span><span></span></div>
+            <figure data-i18n-aria-label="memory.example" class="memory static-figure" aria-label="对话记忆：较早的消息折叠成摘要，最近的保留原文">
+              <div class="memory-digest"><b data-i18n="memory.summary">摘要</b><span data-i18n="memory.taskOne">10/08 完成 · 接口拆分</span><span data-i18n="memory.taskTwo">10/09 完成 · 补测试</span><span data-i18n="memory.earlier">更早的请求 · 6 条</span></div>
+              <div class="memory-recent"><b data-i18n="memory.recent">最近原文</b><span></span><span></span><span></span><span></span></div>
             </figure>
           </section>
 
           <section class="chapter database-chapter" id="database" data-scene="database" aria-labelledby="database-title">
             <div class="chapter-copy">
-              <p class="eyebrow">数据库</p>
-              <h2 id="database-title">一张图，<br /><em>记住所有关系。</em></h2>
-              <p>偏好、项目、Agent、对话以及它们之间的关系，都存在你本机的 Neo4j 图数据库里，每次变化都留有历史。Agent 通过 CLI、MCP 或 HTTP 取用，每次只取当前任务需要的那一小部分。</p>
+              <p data-i18n="nav.database" class="eyebrow">数据库</p>
+              <h2 data-i18n-html="database.title" id="database-title">一张图，<br><em>记住所有关系。</em></h2>
+              <p data-i18n="database.description">偏好、项目、Agent、对话以及它们之间的关系，都存在你本机的 Neo4j 图数据库里，每次变化都留有历史。Agent 通过 CLI、MCP 或 HTTP 取用，每次只取当前任务需要的那一小部分。</p>
             </div>
-            <figure class="stack static-figure" aria-label="Fuli 的四层结构">
-              <div><span>接入</span><b>Codex · Claude Code · Cursor</b></div>
-              <div><span>编排</span><b>Node · CLI / MCP / HTTP</b></div>
-              <div><span>治理</span><b>Python Provider · 来源与确认</b></div>
-              <div class="stack-db"><span>存储</span><b>Neo4j 图数据库 · 关系与历史</b></div>
+            <figure data-i18n-aria-label="database.example" class="stack static-figure" aria-label="Fuli 的四层结构">
+              <div><span data-i18n="architecture.clients">接入</span><b data-i18n="architecture.compatibleClients">兼容 MCP 的客户端</b></div>
+              <div><span data-i18n="architecture.orchestration">编排</span><b>Node · CLI / MCP / HTTP</b></div>
+              <div><span data-i18n="architecture.governance">治理</span><b data-i18n="architecture.provider">Python Provider · 来源与确认</b></div>
+              <div class="stack-db"><span data-i18n="architecture.storage">存储</span><b data-i18n="architecture.graph">Neo4j 图数据库 · 关系与历史</b></div>
             </figure>
           </section>
         </div>
 
-        <nav class="chapter-nav" aria-label="故事章节" hidden>
-          <a href="#top" aria-label="开始"><i></i></a><a href="#agents" aria-label="负责人"><i></i></a><a href="#handoff" aria-label="接续"><i></i></a><a href="#roundtable" aria-label="圆桌"><i></i></a><a href="#taste" aria-label="偏好"><i></i></a><a href="#team" aria-label="团队"><i></i></a><a href="#memory" aria-label="记忆"><i></i></a><a href="#database" aria-label="数据库"><i></i></a>
+        <nav data-i18n-aria-label="chapters.label" class="chapter-nav" aria-label="故事章节" hidden>
+          <a data-i18n-aria-label="chapters.start" href="#top" aria-label="开始"><i></i></a><a data-i18n-aria-label="chapters.owner" href="#agents" aria-label="负责人"><i></i></a><a data-i18n-aria-label="chapters.handoff" href="#handoff" aria-label="接续"><i></i></a><a data-i18n-aria-label="chapters.roundtable" href="#roundtable" aria-label="圆桌"><i></i></a><a data-i18n-aria-label="chapters.preferences" href="#taste" aria-label="偏好"><i></i></a><a data-i18n-aria-label="chapters.team" href="#team" aria-label="团队"><i></i></a><a data-i18n-aria-label="chapters.memory" href="#memory" aria-label="记忆"><i></i></a><a data-i18n-aria-label="chapters.database" href="#database" aria-label="数据库"><i></i></a>
         </nav>
       </div>
 
-      <section class="principles" aria-label="原则">
-        <div><h3>本地优先</h3><p>知识图谱和对话记录都在你的电脑上，个人偏好不会进入任何共享层。</p></div>
-        <div><h3>人说了算</h3><p>Agent 可以提议、提醒、归纳；确认、修改和删除始终由你决定。</p></div>
-        <div><h3>按需取回</h3><p>不会把全部历史塞给模型，只取与当前任务有关、仍然有效的内容。</p></div>
+      <section data-i18n-aria-label="principles.label" class="principles" aria-label="原则">
+        <div><h3 data-i18n="principles.local">本地优先</h3><p data-i18n="principles.localBody">知识图谱和对话记录都在你的电脑上，个人偏好不会进入任何共享层。</p></div>
+        <div><h3 data-i18n="principles.control">人说了算</h3><p data-i18n="principles.controlBody">Agent 可以提议、提醒、归纳；确认、修改和删除始终由你决定。</p></div>
+        <div><h3 data-i18n="principles.context">按需取回</h3><p data-i18n="principles.contextBody">不会把全部历史塞给模型，只取与当前任务有关、仍然有效的内容。</p></div>
       </section>
 
       <section class="start" id="start" aria-labelledby="start-title">
-        <h2 id="start-title">三条命令开始</h2>
-        <p>需要 Node.js 24.12+ 与 Docker（macOS / Linux 也可用原生模式）。设置向导会先展示计划，再修改环境，并为检测到的 Claude Code、Codex、Cursor 接入 Fuli。</p>
+        <h2 data-i18n="start.title" id="start-title">三条命令开始</h2>
+        <p data-i18n="start.description">需要 Node.js 24.12+ 与 Docker（macOS / Linux 也可用原生模式）。安装无需模型；向导会为检测到的 Codex、Claude Code、Cursor 自动配置，其他 MCP 客户端可复制配置接入。</p>
         <ol>
           <li><code>npm install --global fuli-context</code></li>
           <li><code>fuli setup</code></li>
-          <li><code>fuli open</code><span>打开 http://127.0.0.1:2727</span></li>
+          <li><code>fuli open</code><span data-i18n="start.open">打开 http://127.0.0.1:2727</span></li>
         </ol>
         <div class="oneliner">
-          <p>或者一行安装（会先检查 Node.js 版本）：</p>
+          <p data-i18n="start.oneliner">或者一行安装（会先检查 Node.js 版本）：</p>
           <code>curl -fsSL https://xn--8ovp9s.xn--m8txu.com/fuli/install.sh | sh</code>
           <code>irm https://xn--8ovp9s.xn--m8txu.com/fuli/install.ps1 | iex<span>Windows PowerShell</span></code>
         </div>
-        <p class="start-links"><a class="button" href="https://github.com/JevonsCode/fuli/blob/main/README.zh-CN.md">阅读文档</a><a href="https://www.npmjs.com/package/fuli-context">npm</a><a href="https://github.com/JevonsCode/fuli/releases">更新记录</a></p>
+        <p data-i18n="start.connect">其他客户端：运行 fuli connect，或在设置中复制 MCP 配置。</p>
+        <p data-i18n="start.capabilities">通用接入提供工具与记忆；自动采集对话、唤醒会话取决于客户端适配。</p>
+        <p class="start-links"><a data-i18n-href="start.docsUrl" data-i18n="start.docs" class="button" href="https://github.com/JevonsCode/fuli/blob/main/README.zh-CN.md">阅读文档</a><a data-i18n="start.connectionGuide" href="https://github.com/JevonsCode/fuli/blob/main/docs/client-connections.md">客户端接入说明</a><a data-i18n="start.releases" href="https://github.com/JevonsCode/fuli/releases">更新记录</a></p>
       </section>
     </main>
 
     <footer class="footer">
-      <span>© Fuli 复利 · Apache-2.0</span>
-      <span><button type="button" id="motion-toggle" hidden>减少动效</button><a href="https://github.com/JevonsCode/fuli">GitHub</a><a href="./v0/">旧版网站</a></span>
+      <span data-i18n="footer.copyright">© Fuli 复利 · Apache-2.0</span>
+      <span><button data-i18n="motion.reduce" type="button" id="motion-toggle" hidden>减少动效</button><a href="https://github.com/JevonsCode/fuli">GitHub</a><a data-i18n="footer.previous" href="./v0/">旧版网站</a></span>
     </footer>
   </body>
 </html>

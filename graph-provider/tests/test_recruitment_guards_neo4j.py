@@ -22,7 +22,7 @@ async def hr_profile(client, scope, status='active'):
         })
         assert response.status_code == 200, response.text
         return
-    # Built-in HR cannot be disabled through public writers. Inject only the
+    # Built-in AR cannot be disabled through public writers. Inject only the
     # historical/inconsistent storage state these guard tests must withstand.
     settings = fixture_settings()  # refuses non-disposable/non-loopback graphs
     async with AsyncGraphDatabase.driver(settings.neo4j_uri,
@@ -125,7 +125,7 @@ async def test_approval_rechecks_hr_active_status_before_any_provisioning(hr_sta
             f'/v1/project-agent-recruitments/{recruitment["recruitment_id"]}/decision',
             json={**scope, 'recruitment_id': recruitment['recruitment_id'],
                   'decision': 'approve', 'expected_revision': recruitment['revision'],
-                  'reason': 'Synthetic approval after HR status change.'},
+                  'reason': 'Synthetic approval after AR status change.'},
         )
         assert decision.status_code == 409, decision.text
         assert (await recruitments(client, scope))[0] == recruitment
@@ -227,7 +227,7 @@ async def test_pending_confirmation_can_be_cancelled_when_hr_is_inactive_or_arch
             f'/v1/project-agent-recruitments/{recruitment["recruitment_id"]}/decision',
             json={**scope, 'recruitment_id': recruitment['recruitment_id'],
                   'decision': 'cancel', 'expected_revision': recruitment['revision'],
-                  'reason': f'Synthetic cancellation while HR status is {hr_status}.'},
+                  'reason': f'Synthetic cancellation while AR status is {hr_status}.'},
         )
         assert decision.status_code == 200, decision.text
         cancelled = decision.json()

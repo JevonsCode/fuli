@@ -3,7 +3,7 @@ name: Deploy website
 on:
   push:
     branches: [main]
-    paths: ["site/**", ".github/workflows/pages.yml"]
+    paths: ["site/**", "scripts/build-site.js", "test/site-*.test.js", "package.json", "npm-shrinkwrap.json", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -23,10 +23,17 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node --test test/site-*.test.js
+      - run: npm run build:site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: site
+          path: dist/site
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4

@@ -5,9 +5,10 @@ from .project_agent_context_models import ProjectAgentContextResolution
 from .project_agent_task_models import ProjectAgentTaskSubmit
 from .task_context_temporary_owner import temporary_task_owner
 from .project_agent_delegations import StoreAgentDelegations
+from .project_agent_remote_origins import StoreRemoteAgentOrigins
 
 
-class StoreProjectAgentContext(StoreAgentDelegations):
+class StoreProjectAgentContext(StoreAgentDelegations, StoreRemoteAgentOrigins):
     async def resolve_project_agent_context(self, actor, request):
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'reader')
@@ -68,7 +69,7 @@ class StoreProjectAgentContext(StoreAgentDelegations):
             )
             if selected and not self._implicit_owner_allowed(selected[0], fallback_selection):
                 selected, reason, basis = [], 'no_match', [
-                    'management or HR peer cannot own unrelated project context implicitly',
+                    'management or AR peer cannot own unrelated project context implicitly',
                 ]
             if selected:
                 reason = 'project_context_fallback'

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "id": "bole",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "name": "Bole",
-  "role": "HR",
+  "role": "AR",
   "description": "查看 Agent 人员分布、当前工作和带时间与原因的招募记录。",
   "occupationEmoji": "🔎",
   "defaultProjectScope": "all",

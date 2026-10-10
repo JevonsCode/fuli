@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
+import UiDisclosure from '@/components/UiDisclosure.vue'
 import { t } from '@/i18n'
 import {
   classificationExplanation,
@@ -210,16 +211,6 @@ async function copyEvidenceSession(evidence: EvidenceRecord, index: number) {
   <aside class="graph-inspector">
     <template v-if="item">
       <h3>{{ item.itemKind === 'entity' ? item.title : rawEdge?.type }}</h3>
-      <div class="inspector-identity">
-        <span>
-          {{ managementItem
-            ? t('knowledge.workspace.inspector.ids.projection')
-            : item.itemKind === 'entity'
-              ? t('knowledge.workspace.inspector.ids.node')
-              : t('knowledge.workspace.inspector.ids.relationship') }}
-        </span>
-        <code>{{ item.id }}</code>
-      </div>
       <p class="muted">{{ item.body }}</p>
 
       <section v-if="managementItem" class="inspector-project-material">
@@ -280,18 +271,7 @@ async function copyEvidenceSession(evidence: EvidenceRecord, index: number) {
 
       <dl class="inspector-meta">
         <div><dt>{{ t('knowledge.workspace.inspector.fields.type') }}</dt><dd>{{ item.type }}</dd></div>
-        <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.originQuadrant') }}</dt><dd>{{ quadrantLabel(item.originQuadrant) }}</dd></div>
-        <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.currentQuadrant') }}</dt><dd>{{ quadrantLabel(item.currentQuadrant) }}</dd></div>
-        <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.quadrantExplanation') }}</dt><dd>{{ quadrantDescription(item.originQuadrant) }}</dd></div>
         <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.confirmationStatus') }}</dt><dd>{{ reviewStateLabel(item) }}</dd></div>
-        <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.confidence') }}</dt><dd>{{ percentage(item.confidenceScore) }}</dd></div>
-        <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.utility') }}</dt><dd>{{ percentage(item.utilityScore) }}</dd></div>
-        <div v-if="!managementItem">
-          <dt>{{ t('knowledge.workspace.inspector.fields.materialUse') }}</dt><dd>{{ t('knowledge.workspace.inspector.useCount', {
-            uses: item.qualifiedUseCount,
-            tasks: item.distinctTaskCount,
-          }) }}</dd>
-        </div>
         <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.recentUse') }}</dt><dd>{{ formatTime(item.lastUsedAt) }}</dd></div>
         <div v-if="!managementItem && !item.profileAspect">
           <dt>{{ t('knowledge.workspace.inspector.fields.inheritance') }}</dt><dd>{{ inheritanceLabel(item) }}</dd>
@@ -311,6 +291,34 @@ async function copyEvidenceSession(evidence: EvidenceRecord, index: number) {
           ? t('knowledge.workspace.inspector.historical')
           : t('common.status.current') }}</dd></div>
       </dl>
+
+      <UiDisclosure class="inspector-technical" :title="t('knowledge.workspace.inspector.technicalDetails')">
+        <dl class="inspector-meta">
+          <div class="inspector-identity">
+            <dt>
+              {{ managementItem
+                ? t('knowledge.workspace.inspector.ids.projection')
+                : item.itemKind === 'entity'
+                  ? t('knowledge.workspace.inspector.ids.node')
+                  : t('knowledge.workspace.inspector.ids.relationship') }}
+            </dt>
+            <dd><code>{{ item.id }}</code></dd>
+          </div>
+          <template v-if="!managementItem">
+            <div><dt>{{ t('knowledge.workspace.inspector.fields.originQuadrant') }}</dt><dd>{{ quadrantLabel(item.originQuadrant) }}</dd></div>
+            <div><dt>{{ t('knowledge.workspace.inspector.fields.currentQuadrant') }}</dt><dd>{{ quadrantLabel(item.currentQuadrant) }}</dd></div>
+            <div><dt>{{ t('knowledge.workspace.inspector.fields.quadrantExplanation') }}</dt><dd>{{ quadrantDescription(item.originQuadrant) }}</dd></div>
+            <div><dt>{{ t('knowledge.workspace.inspector.fields.confidence') }}</dt><dd>{{ percentage(item.confidenceScore) }}</dd></div>
+            <div><dt>{{ t('knowledge.workspace.inspector.fields.utility') }}</dt><dd>{{ percentage(item.utilityScore) }}</dd></div>
+            <div>
+              <dt>{{ t('knowledge.workspace.inspector.fields.materialUse') }}</dt><dd>{{ t('knowledge.workspace.inspector.useCount', {
+                uses: item.qualifiedUseCount,
+                tasks: item.distinctTaskCount,
+              }) }}</dd>
+            </div>
+          </template>
+        </dl>
+      </UiDisclosure>
 
       <template v-if="!managementItem">
         <h4 class="inspector-subtitle">{{ t('knowledge.workspace.inspector.basisTitle') }}</h4>

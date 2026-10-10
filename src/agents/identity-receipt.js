@@ -53,7 +53,7 @@ function unassignedReceipt(status, reason) {
     agent_selection_conflict: '分配待确认（FLA 选择冲突）',
     manual_selection: '分配待确认（需要选择负责人）'
   };
-  return `FULI Agent：${labels[status] ?? '分配未完成（HR 尚未返回负责人）'}`;
+  return `FULI Agent：${labels[status] ?? '分配未完成（AR 尚未返回负责人）'}`;
 }
 
 export function employeeCollaborationReceipt(application, context, { tool, permission, sourceApplication }) {

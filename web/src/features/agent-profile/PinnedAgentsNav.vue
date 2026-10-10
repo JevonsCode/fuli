@@ -30,8 +30,7 @@ function localized(key: string, fallback: string) {
   return agentPinsText(key, fallback)
 }
 
-const title = computed(() => localized('navigation.title', 'Pinned Agents'))
-const empty = computed(() => localized('navigation.empty', 'No pinned Agents'))
+const title = computed(() => localized('navigation.title', 'pin'))
 const loadingLabel = computed(() => localized('loading', 'Reading pinned Agents…'))
 const rosterLoadingLabel = computed(() => t('agentProfiles.loading'))
 const retryLabel = computed(() => localized('retry', 'Retry'))
@@ -39,17 +38,12 @@ const isLoading = computed(() => props.loading || Boolean(props.rosterLoading))
 </script>
 
 <template>
-  <section v-if="spaceId" class="pinned-agents-nav" aria-labelledby="pinned-agents-heading">
+  <section v-if="spaceId && pinnedAgents.length" class="pinned-agents-nav" aria-labelledby="pinned-agents-heading">
     <div class="pinned-agents-heading-row">
       <h2 id="pinned-agents-heading" class="pinned-agents-heading">{{ title }}</h2>
       <GrowthLoading v-if="isLoading && pinnedAgents.length" variant="inline" :label="props.rosterLoading && !props.loading ? rosterLoadingLabel : loadingLabel" />
     </div>
-    <GrowthLoading v-if="isLoading && !pinnedAgents.length" variant="compact" :label="props.rosterLoading && !props.loading ? rosterLoadingLabel : loadingLabel" />
-    <div v-else-if="error" class="pinned-agents-error" role="alert">
-      <span>{{ error }}</span>
-      <button class="quiet-button" type="button" @click="emit('retry')">{{ retryLabel }}</button>
-    </div>
-    <ul v-else-if="pinnedAgents.length" class="pinned-agents-list">
+    <ul class="pinned-agents-list">
       <li v-for="agent in pinnedAgents" :key="agent.agentId">
         <RouterLink
           class="pinned-agent-nav"
@@ -63,8 +57,11 @@ const isLoading = computed(() => props.loading || Boolean(props.rosterLoading))
         </RouterLink>
       </li>
     </ul>
-    <p v-else class="pinned-agents-empty">{{ empty }}</p>
   </section>
+  <div v-if="spaceId && error" class="pinned-agents-error" role="alert">
+    <span>{{ error }}</span>
+    <button class="quiet-button" type="button" @click="emit('retry')">{{ retryLabel }}</button>
+  </div>
 </template>
 
 <style scoped>
@@ -81,8 +78,7 @@ const isLoading = computed(() => props.loading || Boolean(props.rosterLoading))
   color: var(--color-faint);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: .08em;
-  text-transform: uppercase;
+  letter-spacing: .02em;
 }
 
 .pinned-agents-heading-row {
@@ -150,7 +146,6 @@ const isLoading = computed(() => props.loading || Boolean(props.rosterLoading))
   font-size: 13px;
 }
 
-.pinned-agents-empty,
 .pinned-agents-error {
   margin: 0 10px;
   color: var(--color-muted);
@@ -168,11 +163,6 @@ const isLoading = computed(() => props.loading || Boolean(props.rosterLoading))
   min-height: var(--control-height-sm);
   padding: 4px 9px;
   font-size: 12px;
-}
-
-.pinned-agents-nav :deep(.growth-loading--compact) {
-  min-height: 58px;
-  padding: 6px;
 }
 
 .pinned-agents-nav :deep(.growth-loading__label) {

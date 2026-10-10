@@ -1,4 +1,4 @@
-"""Fixed Jefa (project manager) and Bole (HR) roles against a disposable Neo4j."""
+"""Fixed Jefa (project manager) and Bole (AR) roles against a disposable Neo4j."""
 
 import json
 from uuid import uuid4
@@ -8,6 +8,41 @@ import pytest
 from fuli_graph.provider_values import stable_uuid
 from test_project_agent_memory_neo4j import fixture_settings, provider_client
 from test_system_hr_identity_neo4j import _create_space, _query
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('responsibility, expected', [
+    ('HR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录。',
+     'AR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录。'),
+    ('HR：这是用户自定义的职责。', 'HR：这是用户自定义的职责。'),
+])
+async def test_bole_role_copy_upgrade_preserves_custom_profile_and_employee_number(responsibility, expected):
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await _create_space(client, 'Synthetic Bole role upgrade')
+        params = {'personal_space_id': space_id}
+        original = await client.post('/v1/project-agents/system-hr', params=params)
+        assert original.status_code == 200, original.text
+        profile = {**original.json()['profile'], 'responsibility': responsibility,
+                   'expectations': 'Keep this custom expectation.'}
+        await _query(settings, '''
+            MATCH (:FuliSpace {id: $space_id})-[:HAS_PROJECT_AGENT_IDENTITY]->
+                  (agent:FuliProjectAgent {agent_id: 'employee.bole'})
+            SET agent.profile_json = $profile_json, agent.responsibility = $responsibility
+            ''', space_id=space_id, profile_json=json.dumps(profile), responsibility=responsibility)
+        for _ in range(2):
+            upgraded = await client.post('/v1/project-agents/system-hr', params=params)
+            assert upgraded.status_code == 200, upgraded.text
+            assert upgraded.json()['profile']['responsibility'] == expected
+            assert upgraded.json()['profile']['expectations'] == profile['expectations']
+            assert upgraded.json()['profile']['agent_type'] == 'hr'
+            assert upgraded.json()['employee_number'] == original.json()['employee_number']
+        rows = await _query(settings, '''
+            MATCH (:FuliSpace {id: $space_id})-[:HAS_PROJECT_AGENT_IDENTITY]->
+                  (agent:FuliProjectAgent {agent_id: 'employee.bole'})
+            RETURN agent.responsibility AS responsibility
+            ''', space_id=space_id)
+        assert rows[0]['responsibility'] == expected
 
 
 @pytest.mark.asyncio

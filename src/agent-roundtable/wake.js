@@ -33,12 +33,14 @@ export function sessionWorkingDirectory(client, sessionId, { home = homedir(), e
 }
 
 export async function wakeAgent({ client, sessionId = null, cwd, prompt, timeoutMs = 300_000,
-  delegationToken = null, env = process.env, run = runProcess } = {}) {
+  delegationToken = null, peerDepth = null, env = process.env, run = runProcess, signal, onSpawn } = {}) {
   const command = resolveClientCommand(client, { env });
   if (!command) throw Object.assign(new Error(`${client} is not installed on this machine`), { code: 'client_unavailable' });
   const childEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('FULI_ROUNDTABLE_')));
   if (delegationToken) childEnv.FULI_ROUNDTABLE_DELEGATION = delegationToken;
-  const result = await run(command, wakeArguments(client, { sessionId, cwd }), { cwd, env: childEnv, input: prompt, timeoutMs });
+  if (peerDepth) childEnv.FULI_ROUNDTABLE_PEER_DEPTH = String(peerDepth);
+  const result = await run(command, wakeArguments(client, { sessionId, cwd }),
+    { cwd, env: childEnv, input: prompt, timeoutMs, signal, onSpawn });
   return parseFinalAnswer(client, result);
 }
 
@@ -62,10 +64,17 @@ export function parseFinalAnswer(client, { code, stdout }) {
 }
 
 // Owns exactly one child process tree and never touches unrelated clients.
-export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutputBytes = 4_000_000 }) {
+export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutputBytes = 4_000_000, signal, onSpawn }) {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(Object.assign(new Error('The delivery was cancelled before it started'), { code: 'cancelled', started: false }));
+      return;
+    }
     const child = spawn(command, args, { cwd, env, shell: false, windowsHide: true,
       detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'ignore'] });
+    child.once('spawn', () => onSpawn?.());
+    signal?.addEventListener('abort', () => finish(Object.assign(new Error('The delivery was cancelled'),
+      { code: 'cancelled', reason: String(signal.reason ?? 'cancelled') })), { once: true });
     let output = '', bytes = 0, settled = false;
     const kill = () => {
       if (!child.pid) return;

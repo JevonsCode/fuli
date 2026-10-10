@@ -1,4 +1,4 @@
-"""Fixed roles: Jefa (project manager), Bole (HR), and Tonborg (judgment).
+"""Fixed roles: Jefa (project manager), Bole (AR), and Tonborg (judgment).
 
 Jefa also coordinates task routing, replacing the earlier separate coordinator
 identity. That legacy node is retired, not deleted, so old tasks keep their
@@ -15,6 +15,8 @@ SYSTEM_COORDINATOR_AGENT_ID = 'employee.jefa'
 LEGACY_COORDINATOR_AGENT_ID = 'fuli-project-coordinator'
 SYSTEM_HR_AGENT_ID = 'employee.bole'
 SYSTEM_JUDGMENT_AGENT_ID = 'employee.tonborg'
+# Upgrade only the former built-in copy; custom responsibilities are user data.
+LEGACY_HR_RESPONSIBILITY = 'HR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录。'
 
 
 def coordinator_profile() -> ProjectAgentProfile:
@@ -37,7 +39,7 @@ def hr_profile() -> ProjectAgentProfile:
     return ProjectAgentProfile(
         name='Bole',
         occupation_emoji='🔎',
-        responsibility='HR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录。',
+        responsibility='AR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录。',
         agent_type='hr',
         work_kinds=['agent-recruitment', 'staffing-review'],
         capabilities=['Agent 招募', '人员分布', '工作状态', '招募审计', 'fuli.employee:bole'],
@@ -86,8 +88,13 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
         id=node_id,
     )
     profile = default
+    upgrade_responsibility = False
     if rows and rows[0]['profile_json']:
         stored = json.loads(rows[0]['profile_json'])
+        upgrade_responsibility = (agent_id == SYSTEM_HR_AGENT_ID
+                                  and stored.get('responsibility') == LEGACY_HR_RESPONSIBILITY)
+        if upgrade_responsibility:
+            stored['responsibility'] = default.responsibility
         profile = ProjectAgentProfile.model_validate(
             {**stored, 'agent_type': default.agent_type, 'status': 'active'}
         )
@@ -107,6 +114,8 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
                       agent.created_at = $now,
                       agent.updated_at = $now
         SET agent.profile_json = $profile_json,
+            agent.responsibility = CASE WHEN $upgrade_responsibility
+              THEN $responsibility ELSE agent.responsibility END,
             agent.agent_type = $agent_type,
             agent.status = 'active',
             agent.system_managed = true
@@ -119,6 +128,7 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
         name=profile.name,
         occupation_emoji=profile.occupation_emoji,
         responsibility=profile.responsibility,
+        upgrade_responsibility=upgrade_responsibility,
         capabilities=profile.capabilities,
         work_kinds=profile.work_kinds,
         agent_type=profile.agent_type,

@@ -7,6 +7,8 @@ import { getJson, putJson } from '@/api/client'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import { normalizedConfiguration, setConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
 import JudgmentPolicySettings from '@/features/judgment/JudgmentPolicySettings.vue'
+import ClientConnectionSettings from '@/features/settings/ClientConnectionSettings.vue'
+import PeerSettings from '@/features/settings/PeerSettings.vue'
 import {
   CONVERSATION_SOURCE_APPLICATIONS,
   sourceApplicationName,
@@ -295,6 +297,8 @@ function revealInvalidField(event: Event) {
         <section class="settings-card judgment-settings-card">
           <JudgmentPolicySettings />
         </section>
+        <ClientConnectionSettings />
+        <PeerSettings />
         <UiDisclosure class="settings-card ports-card" :title="t('settings.ports.title')">
           <span v-if="settings?.restartRequired" class="restart-chip">{{ t('settings.restartRequired') }}</span>
 
@@ -461,13 +465,18 @@ function revealInvalidField(event: Event) {
 }
 
 .settings-content {
-  width: min(1120px, 100%);
+  width: min(var(--page-max), 100%);
   margin: 0 auto;
   display: grid;
   gap: 18px;
 }
 
-.settings-form { display: grid; gap: 18px; }
+.settings-form { display: grid; gap: 18px; align-items: start; }
+
+@media (min-width: 1440px) {
+  .settings-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settings-form > .settings-error { grid-column: 1 / -1; }
+}
 
 .settings-card {
   border: 1px solid var(--color-border);

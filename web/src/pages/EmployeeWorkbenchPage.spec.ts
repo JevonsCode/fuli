@@ -442,7 +442,7 @@ describe('employee workbench', () => {
   it('opens Bole as a native people panel without requiring a project or runtime iframe', async () => {
     getJson.mockImplementation(async (url: string) => {
       if (url.startsWith('/api/employee-templates?')) return { templates: [{
-        id: 'bole', name: 'Bole', role: 'HR', workbench: { kind: 'native', view: 'people' }, runtime: null,
+        id: 'bole', name: 'Bole', role: 'AR', workbench: { kind: 'native', view: 'people' }, runtime: null,
         runtimeStatus: 'not_required', capabilities: ['人员配置'], permissions: ['agents.read'],
         agentId: 'employee.bole', agentStatus: 'active', assignmentsVersion: 'version-bole', assignments: [],
       }] }
@@ -498,7 +498,7 @@ describe('employee workbench', () => {
     expect(wrapper.text()).not.toContain('这位专属 Agent 暂不可用')
 
     resolveCatalog({ templates: [{
-      id: 'bole', name: 'Bole', role: 'HR', workbench: { kind: 'native', view: 'people' }, runtime: null,
+      id: 'bole', name: 'Bole', role: 'AR', workbench: { kind: 'native', view: 'people' }, runtime: null,
       runtimeStatus: 'not_required', capabilities: ['人员配置'], permissions: ['agents.read'],
       agentId: 'employee.bole', agentStatus: 'active', assignmentsVersion: 'version-bole', assignments: [],
     }] })

@@ -16,9 +16,10 @@
 
 **Switch AI tools. Keep your agent.**
 
-Fuli is a local-first collaboration layer for long-lived agents across AI tools. Connect Codex,
-Claude Code, and Cursor to the same accessible Fuli data, select the same agent, and continue with
-its identity, project responsibilities, and relevant working context.
+Fuli is a collaboration layer for long-lived agents across MCP-compatible AI clients. Connect
+your tools to the same accessible Fuli data, select the same agent, and continue with its identity,
+project responsibilities, and relevant working context. Codex, Claude Code and Cursor have
+automatic setup; other clients use `fuli connect`. See [client connections](docs/client-connections.md).
 
 - **A lasting teammate:** keep an agent's role, collaboration history, and working memory between tasks.
 - **Context with boundaries:** retrieve relevant project knowledge, decisions, and preferences with
@@ -27,7 +28,7 @@ its identity, project responsibilities, and relevant working context.
   an available, authorized host client or executor.
 - **Every task has an owner:** ask for work inside a project directory; Fuli registers the project
   and staffs a lead agent. The reply ends with who led and who helped.
-- **A fixed PM and HR:** Jefa (project manager) and Bole (HR) come with every space; no hiring needed.
+- **A fixed PM and AR:** Jefa (project manager) and Bole (AR, Agent Resources) come with every space; no hiring needed.
 - **Agents talk to each other:** through the [Roundtable](#agent-roundtable), one agent asks another
   conversation directly, and every exchange is recorded.
 
@@ -628,7 +629,7 @@ containers; it does not shut down Rancher Desktop, Docker Desktop, Kubernetes, o
 itself. Native mode directly stops the corresponding Provider and Neo4j processes, so no shared VM
 overhead remains while idle.
 
-Jefa (project manager) and Bole (HR, with a native people panel for Agent distribution, current work and recruitment history) are fixed roles in every space and are never hired. **Project Agents → Hire an Agent** offers the other reusable employee templates.
+Jefa (project manager) and Bole (AR, with a native people panel for Agent distribution, current work and recruitment history) are fixed roles in every space and are never hired. **Project Agents → Hire an Agent** offers the other reusable employee templates.
 Recruitment reuses a durable identity with separate project assignments. An installed employee workbench,
 API and A2A share the FULI port; existing FULI MCP clients discover and call its tools. Recruitment does not
 start a model or rewrite client settings. See the [employee package and extension contract](docs/employee-agents.md).
