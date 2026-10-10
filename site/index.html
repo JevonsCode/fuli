@@ -18,6 +18,7 @@
     <link rel="preload" href="./assets/unbounded-latin.woff2" as="font" type="font/woff2" crossorigin />
     <script>document.documentElement.classList.add('js')</script>
     <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./scene.css" />
     <script type="module" src="./site.js"></script>
   </head>
   <body>
@@ -34,130 +35,172 @@
     </header>
 
     <main id="main">
-      <section class="hero" id="top">
-        <svg class="curve" viewBox="0 0 1200 520" preserveAspectRatio="none" aria-hidden="true">
-          <path d="M0 500 C 380 490, 620 430, 820 300 S 1100 40, 1200 10" />
-        </svg>
-        <div class="hero-copy">
-          <p class="eyebrow">本地优先 · 开源 · Apache-2.0</p>
-          <h1>让每一次协作，<br />都产生<em>复利</em>。</h1>
-          <p class="lede">Fuli 给你的每个任务安排一位长期 Agent。它记得你的品味与判断，在 Claude Code、Codex 和 Cursor 之间接续工作，遇到问题还能直接去问别的 Agent。</p>
-          <div class="hero-actions">
-            <div class="terminal" data-copy="npm install --global fuli-context && fuli setup">
-              <code><span>$</span> npm install --global fuli-context</code>
-              <code><span>$</span> fuli setup</code>
-              <button type="button" class="copy" aria-label="复制安装命令">复制</button>
+      <div class="journey" id="top">
+        <div class="spatial-stage" aria-hidden="true">
+          <div class="stage-atmosphere"></div>
+          <div class="stage-word">FULI</div>
+          <div class="object-shadow"></div>
+          <div class="scene-perspective"><div class="fragment-rig" id="fragment-rig"></div></div>
+
+          <div class="diagram-overlay" data-overlay="owner">
+            <div class="receipt-plate">FULI Agent：负责人 <b>Milo Reed</b> · 协作 <b>Jefa</b>、<b>Nova</b></div>
+          </div>
+          <div class="diagram-overlay handoff-overlay" data-overlay="handoff">
+            <span class="overlay-label client-left">Claude Code<small>昨天做到一半</small></span>
+            <span class="overlay-label agent-center"><small>同一位 Agent</small><strong>Milo</strong></span>
+            <span class="overlay-label client-right">Codex<small>今天接着做</small></span>
+            <i class="handoff-arrow"></i>
+          </div>
+          <div class="diagram-overlay roundtable-overlay" data-overlay="roundtable">
+            <span class="overlay-label table-center"><small>Agent 之间</small><strong>圆桌</strong></span>
+            <p class="whisper whisper-a"><b>Milo → Nova</b>接口评审过了吗？</p>
+            <p class="whisper whisper-b"><b>Nova → Milo</b>过了，只有一处要改。</p>
+          </div>
+          <div class="diagram-overlay taste-overlay" data-overlay="taste">
+            <span class="overlay-label layer-global">个人全局<small>每个项目都生效</small></span>
+            <span class="overlay-label layer-project">项目<small>只管这个项目</small></span>
+          </div>
+          <div class="diagram-overlay team-overlay" data-overlay="team">
+            <span class="overlay-label team-pm">Jefa<small>项目经理</small></span>
+            <span class="overlay-label team-hr">Bole<small>HR</small></span>
+            <span class="overlay-label team-group">项目小组<small>负责人与成员</small></span>
+          </div>
+          <div class="diagram-overlay memory-overlay" data-overlay="memory">
+            <span class="overlay-label mem-recent">最近原文<small>原样保留</small></span>
+            <span class="overlay-label mem-digest">摘要<small>攒够一定量才折叠</small></span>
+            <span class="overlay-label mem-note">按量压缩，不按天数遗忘</span>
+          </div>
+        </div>
+
+        <div class="chapters">
+          <section class="chapter hero-chapter" data-scene="scatter" aria-labelledby="hero-title">
+            <div class="chapter-copy">
+              <p class="eyebrow">本地优先 · 开源 · Apache-2.0</p>
+              <h1 id="hero-title">让每一次协作，<br />都产生<em>复利</em>。</h1>
+              <p class="lede">Fuli 给你的每个任务安排一位长期 Agent。它记得你的品味与判断，在 Claude Code、Codex 和 Cursor 之间接续工作，遇到问题还能直接去问别的 Agent。</p>
+              <div class="hero-actions">
+                <div class="terminal" data-copy="npm install --global fuli-context && fuli setup">
+                  <code><span>$</span> npm install --global fuli-context</code>
+                  <code><span>$</span> fuli setup</code>
+                  <button type="button" class="copy" aria-label="复制安装命令">复制</button>
+                </div>
+              </div>
             </div>
-            <a class="button" href="https://github.com/JevonsCode/fuli">在 GitHub 查看 →</a>
-          </div>
-        </div>
-      </section>
+            <a class="scroll-cue" href="#agents" aria-label="往下看">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16m-6-6 6 6 6-6" /></svg>
+            </a>
+          </section>
 
-      <section class="band" id="agents" aria-labelledby="agents-title">
-        <div class="band-text">
-          <p class="eyebrow">每个任务</p>
-          <h2 id="agents-title">都有一位负责的 Agent</h2>
-          <p>在项目目录里直接提需求。Fuli 登记项目、请 HR 安排一位负责人，之后这个项目的任务都由它接手。做完时，回复最后一行写清楚谁负责、谁协助。</p>
-        </div>
-        <figure class="window" aria-label="示例：Claude Code 中一次任务的结尾">
-          <div class="window-bar"><i></i><i></i><i></i><span>Claude Code · 示例</span></div>
-          <div class="window-body">
-            <p class="msg user">修一下登录页记住密码失效的问题</p>
-            <p class="msg agent">已修复：<code>session.ts</code> 在刷新令牌时覆盖了 remember 标记。补了 2 个测试，均通过。</p>
-            <p class="receipt">FULI Agent：负责人 <a>Milo Reed</a> · 协作 <a>Jefa</a>、<a>Nova Lane</a></p>
-          </div>
-          <figcaption>人名与任务均为示例</figcaption>
-        </figure>
-      </section>
-
-      <section class="band band-alt" aria-labelledby="handoff-title">
-        <figure class="handoff" aria-label="示例：从 Claude Code 换到 Codex 继续工作">
-          <div class="window small">
-            <div class="window-bar"><i></i><i></i><i></i><span>Claude Code</span></div>
-            <div class="window-body"><p class="msg agent">登录重构完成一半：接口已拆好，前端还没接。</p></div>
-          </div>
-          <span class="arrow" aria-hidden="true">→</span>
-          <div class="window small">
-            <div class="window-bar"><i></i><i></i><i></i><span>Codex</span></div>
-            <div class="window-body">
-              <p class="msg user">@Milo Reed 继续昨天的登录重构</p>
-              <p class="msg agent">接着做：接口已拆好，剩前端接入和回归测试。</p>
+          <section class="chapter" id="agents" data-scene="owner" aria-labelledby="agents-title">
+            <div class="chapter-copy">
+              <p class="eyebrow">每个任务</p>
+              <h2 id="agents-title">散落的经验，<br /><em>拼成一位负责的 Agent。</em></h2>
+              <p>在项目目录里直接提需求。Fuli 登记项目、请 HR 安排一位负责人，之后这个项目的任务都由它接手。做完时，回复最后一行写清楚谁负责、谁协助。</p>
             </div>
-          </div>
-        </figure>
-        <div class="band-text">
-          <p class="eyebrow">跨工具接续</p>
-          <h2 id="handoff-title">换 AI 工具，不用换搭档</h2>
-          <p>同一位 Agent 的职责、工作记忆和最近的对话都留在 Fuli。在另一个客户端 @ 它，它从上次停下的地方继续，不用你重新交代。</p>
-        </div>
-      </section>
+            <figure class="window static-figure" aria-label="示例：Claude Code 中一次任务的结尾">
+              <div class="window-bar"><i></i><i></i><i></i><span>Claude Code · 示例</span></div>
+              <div class="window-body">
+                <p class="msg user">修一下登录页记住密码失效的问题</p>
+                <p class="msg agent">已修复：<code>session.ts</code> 在刷新令牌时覆盖了 remember 标记。补了 2 个测试，均通过。</p>
+                <p class="receipt">FULI Agent：负责人 <a>Milo Reed</a> · 协作 <a>Jefa</a>、<a>Nova Lane</a></p>
+              </div>
+              <figcaption>人名与任务均为示例</figcaption>
+            </figure>
+          </section>
 
-      <section class="band" id="roundtable" aria-labelledby="roundtable-title">
-        <div class="band-text">
-          <p class="eyebrow">圆桌</p>
-          <h2 id="roundtable-title">Agent 之间直接对话</h2>
-          <p>Codex 里的 Agent 可以去问某一段 Claude Code 对话里的 Agent，就像负责人问同事、或者调用子 Agent。Fuli 在对方的客户端里唤醒它、带回回答。不用建群，不用你转述。</p>
-          <p class="note">每一段往来都会留痕：谁问了谁、通过哪个客户端、原话是什么。</p>
-        </div>
-        <figure class="thread" aria-label="示例：两个 Agent 之间的对话记录">
-          <div class="thread-msg">
-            <span class="face">M</span>
-            <div><p class="by"><b>Milo Reed</b><em>Claude Code</em> 发给 Nova Lane</p><p class="bubble">登录重构的接口改动评审过了吗？有没有要我改的？</p></div>
-          </div>
-          <div class="thread-msg reply">
-            <span class="face">N</span>
-            <div><p class="by"><b>Nova Lane</b><em>Codex</em> 唤醒原会话回答</p><p class="bubble">评审过了。只有一处：刷新令牌失败时要清掉 remember 标记，其余可以合并。</p></div>
-          </div>
-          <figcaption>人名与内容均为示例</figcaption>
-        </figure>
-      </section>
+          <section class="chapter" id="handoff" data-scene="handoff" aria-labelledby="handoff-title">
+            <div class="chapter-copy">
+              <p class="eyebrow">跨工具接续</p>
+              <h2 id="handoff-title">换 AI 工具，<br /><em>不用换搭档。</em></h2>
+              <p>同一位 Agent 的职责、工作记忆和最近的对话都留在 Fuli。在另一个客户端 @ 它，它从上次停下的地方继续，不用你重新交代。</p>
+            </div>
+            <figure class="handoff static-figure" aria-label="示例：从 Claude Code 换到 Codex 继续工作">
+              <div class="window small">
+                <div class="window-bar"><i></i><i></i><i></i><span>Claude Code</span></div>
+                <div class="window-body"><p class="msg agent">登录重构完成一半：接口已拆好，前端还没接。</p></div>
+              </div>
+              <span class="arrow" aria-hidden="true">→</span>
+              <div class="window small">
+                <div class="window-bar"><i></i><i></i><i></i><span>Codex</span></div>
+                <div class="window-body">
+                  <p class="msg user">@Milo Reed 继续昨天的登录重构</p>
+                  <p class="msg agent">接着做：接口已拆好，剩前端接入和回归测试。</p>
+                </div>
+              </div>
+            </figure>
+          </section>
 
-      <section class="band band-alt" id="taste" aria-labelledby="taste-title">
-        <figure class="layers" aria-label="偏好分为个人全局和项目两层">
-          <div class="layer">
-            <h3>个人全局</h3>
-            <p><span class="chip taste">品味</span>界面少用渐变，不要卡片套卡片</p>
-            <p><span class="chip judgment">判断</span>方向性歧义先讨论再动手</p>
-            <p><span class="chip personality">个性</span>习惯直接沟通，希望 Agent 主动推进</p>
-          </div>
-          <div class="layer project">
-            <h3>项目：shop-web</h3>
-            <p><span class="chip judgment">判断</span>未经确认不要推送到 main</p>
-            <p><span class="chip taste">品味</span>文案短句，不用感叹号</p>
-          </div>
-        </figure>
-        <div class="band-text">
-          <p class="eyebrow">偏好</p>
-          <h2 id="taste-title">越用越懂你的品味与判断</h2>
-          <p>你的品味、个性和取舍原则会沉淀下来，分成全局和项目两层：全局的在每个项目生效，项目的只管这个项目。Agent 推断出的偏好要你确认才算数。</p>
-        </div>
-      </section>
+          <section class="chapter roundtable-chapter" id="roundtable" data-scene="roundtable" aria-labelledby="roundtable-title">
+            <div class="chapter-copy">
+              <p class="eyebrow">圆桌</p>
+              <h2 id="roundtable-title">Agent 之间，<br /><em>直接对话。</em></h2>
+              <p>Codex 里的 Agent 可以去问某一段 Claude Code 对话里的 Agent，就像负责人问同事、或者调用子 Agent。Fuli 在对方的客户端里唤醒它、带回回答。不用建群，不用你转述，每段往来都留痕。</p>
+            </div>
+            <figure class="thread static-figure" aria-label="示例：两个 Agent 之间的对话记录">
+              <div class="thread-msg">
+                <span class="face">M</span>
+                <div><p class="by"><b>Milo Reed</b><em>Claude Code</em> 发给 Nova Lane</p><p class="bubble">登录重构的接口改动评审过了吗？有没有要我改的？</p></div>
+              </div>
+              <div class="thread-msg reply">
+                <span class="face">N</span>
+                <div><p class="by"><b>Nova Lane</b><em>Codex</em> 唤醒原会话回答</p><p class="bubble">评审过了。只有一处：刷新令牌失败时要清掉 remember 标记，其余可以合并。</p></div>
+              </div>
+              <figcaption>人名与内容均为示例</figcaption>
+            </figure>
+          </section>
 
-      <section class="band" aria-labelledby="team-title">
-        <div class="band-text">
-          <p class="eyebrow">团队</p>
-          <h2 id="team-title">固定的项目经理与 HR</h2>
-          <p>每个空间都自带两位：项目经理 Jefa 拆解目标、维护看板、为任务找人；HR Bole 招人并留下招募记录。负责人和成员组成项目小组，各自保留自己的记忆。</p>
-        </div>
-        <div class="team">
-          <div class="member"><span>🧭</span><b>Jefa</b><small>项目经理</small></div>
-          <div class="member"><span>🔎</span><b>Bole</b><small>HR</small></div>
-          <div class="member lead"><span>M</span><b>Milo Reed</b><small>项目负责人 · 示例</small></div>
-          <div class="member"><span>N</span><b>Nova Lane</b><small>评审 · 示例</small></div>
-        </div>
-      </section>
+          <section class="chapter" id="taste" data-scene="taste" aria-labelledby="taste-title">
+            <div class="chapter-copy">
+              <p class="eyebrow">偏好</p>
+              <h2 id="taste-title">越用越懂你的<br /><em>品味与判断。</em></h2>
+              <p>你的品味、个性和取舍原则会沉淀下来，分成全局和项目两层：全局的在每个项目生效，项目的只管这个项目。Agent 推断出的偏好要你确认才算数。</p>
+            </div>
+            <figure class="layers static-figure" aria-label="偏好分为个人全局和项目两层">
+              <div class="layer">
+                <h3>个人全局</h3>
+                <p><span class="chip taste">品味</span>界面少用渐变，不要卡片套卡片</p>
+                <p><span class="chip judgment">判断</span>方向性歧义先讨论再动手</p>
+                <p><span class="chip personality">个性</span>习惯直接沟通，希望 Agent 主动推进</p>
+              </div>
+              <div class="layer project">
+                <h3>项目：shop-web</h3>
+                <p><span class="chip judgment">判断</span>未经确认不要推送到 main</p>
+                <p><span class="chip taste">品味</span>文案短句，不用感叹号</p>
+              </div>
+            </figure>
+          </section>
 
-      <section class="band band-alt" aria-labelledby="memory-title">
-        <figure class="memory" aria-label="对话记忆：较早的消息折叠成摘要，最近的保留原文">
-          <div class="memory-digest"><b>摘要</b><span>10/08 完成 · 接口拆分</span><span>10/09 完成 · 补测试</span><span>更早的请求 · 6 条</span></div>
-          <div class="memory-recent"><b>最近原文</b><span></span><span></span><span></span><span></span></div>
-        </figure>
-        <div class="band-text">
-          <p class="eyebrow">记忆</p>
-          <h2 id="memory-title">按量压缩，不按天数遗忘</h2>
-          <p>每次任务的结果都会进摘要。对话攒到一定量，较早的消息折叠成要点，最近的保留原文。原始记录始终在本机，需要时再取回。</p>
+          <section class="chapter" id="team" data-scene="team" aria-labelledby="team-title">
+            <div class="chapter-copy">
+              <p class="eyebrow">团队</p>
+              <h2 id="team-title">项目经理与 HR，<br /><em>固定在岗。</em></h2>
+              <p>每个空间都自带两位：项目经理 Jefa 拆解目标、维护看板、为任务找人；HR Bole 招人并留下招募记录。负责人和成员组成项目小组，各自保留自己的记忆。</p>
+            </div>
+            <div class="team static-figure">
+              <div class="member"><span>🧭</span><b>Jefa</b><small>项目经理</small></div>
+              <div class="member"><span>🔎</span><b>Bole</b><small>HR</small></div>
+              <div class="member lead"><span>M</span><b>Milo Reed</b><small>项目负责人 · 示例</small></div>
+              <div class="member"><span>N</span><b>Nova Lane</b><small>评审 · 示例</small></div>
+            </div>
+          </section>
+
+          <section class="chapter" id="memory" data-scene="memory" aria-labelledby="memory-title">
+            <div class="chapter-copy">
+              <p class="eyebrow">记忆</p>
+              <h2 id="memory-title">按量压缩，<br /><em>不按天数遗忘。</em></h2>
+              <p>每次任务的结果都会进摘要。对话攒到一定量，较早的消息折叠成要点，最近的保留原文。原始记录始终在本机，需要时再取回。</p>
+            </div>
+            <figure class="memory static-figure" aria-label="对话记忆：较早的消息折叠成摘要，最近的保留原文">
+              <div class="memory-digest"><b>摘要</b><span>10/08 完成 · 接口拆分</span><span>10/09 完成 · 补测试</span><span>更早的请求 · 6 条</span></div>
+              <div class="memory-recent"><b>最近原文</b><span></span><span></span><span></span><span></span></div>
+            </figure>
+          </section>
         </div>
-      </section>
+
+        <nav class="chapter-nav" aria-label="故事章节" hidden>
+          <a href="#top" aria-label="开始"><i></i></a><a href="#agents" aria-label="负责人"><i></i></a><a href="#handoff" aria-label="接续"><i></i></a><a href="#roundtable" aria-label="圆桌"><i></i></a><a href="#taste" aria-label="偏好"><i></i></a><a href="#team" aria-label="团队"><i></i></a><a href="#memory" aria-label="记忆"><i></i></a>
+        </nav>
+      </div>
 
       <section class="principles" aria-label="原则">
         <div><h3>本地优先</h3><p>知识图谱和对话记录都在你的电脑上，个人偏好不会进入任何共享层。</p></div>
@@ -184,7 +227,7 @@
 
     <footer class="footer">
       <span>© Fuli 复利 · Apache-2.0</span>
-      <span><a href="https://github.com/JevonsCode/fuli">GitHub</a><a href="./v0/">旧版网站</a></span>
+      <span><button type="button" id="motion-toggle" hidden>减少动效</button><a href="https://github.com/JevonsCode/fuli">GitHub</a><a href="./v0/">旧版网站</a></span>
     </footer>
   </body>
 </html>
