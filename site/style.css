@@ -46,17 +46,19 @@ code { font-family: var(--mono); font-size: .92em; }
 .nav nav a:hover { color: var(--jade); }
 .nav .nav-github { padding: 6px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
 
-/* Hero */
-.hero { position: relative; overflow: hidden; padding: clamp(72px, 12vh, 140px) var(--gutter) clamp(80px, 14vh, 150px); }
-.curve { position: absolute; inset: auto 0 0 0; width: 100%; height: 72%; pointer-events: none; }
-.curve path { fill: none; stroke: var(--jade-line); stroke-width: 2; stroke-dasharray: 1600; stroke-dashoffset: 0; vector-effect: non-scaling-stroke; }
-.js .curve path { stroke-dashoffset: 1600; animation: draw 2.4s .2s cubic-bezier(.4, 0, .2, 1) forwards; }
-@keyframes draw { to { stroke-dashoffset: 0; } }
-.hero-copy { position: relative; max-width: 820px; }
+/* Story chapters. Without the 3D stage each is a band: copy beside a product mock. */
+.journey { position: relative; }
+.spatial-stage { display: none; }
+.chapter { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: center; gap: clamp(32px, 6vw, 96px); padding: clamp(72px, 12vh, 128px) var(--gutter); border-top: 1px solid var(--line); }
+.hero-chapter { grid-template-columns: minmax(0, 1fr); padding-block: clamp(72px, 14vh, 150px); border-top: 0; }
+.chapter-copy { position: relative; z-index: 3; max-width: 540px; }
+.hero-chapter .chapter-copy { max-width: 820px; }
 .eyebrow { color: var(--jade); font-size: 13px; font-weight: 600; letter-spacing: .08em; }
-h1 { margin-top: 18px; font-size: clamp(42px, 7vw, 88px); font-weight: 700; line-height: 1.12; letter-spacing: -.035em; }
-h1 em { font-style: normal; color: var(--jade); }
-.lede { max-width: 620px; margin-top: 26px; color: var(--ink-soft); font-size: clamp(17px, 1.6vw, 20px); line-height: 1.8; }
+h1 { margin-top: 18px; font-size: clamp(42px, 6.4vw, 84px); font-weight: 700; line-height: 1.12; letter-spacing: -.035em; color: var(--chapter-ink, var(--ink)); }
+h1 em, h2 em { font-style: normal; color: var(--jade); }
+h2 { margin-top: 12px; font-size: clamp(30px, 3.6vw, 52px); font-weight: 680; line-height: 1.18; letter-spacing: -.03em; color: var(--chapter-ink, var(--ink)); }
+.chapter-copy > p:not(.eyebrow) { margin-top: 22px; color: var(--chapter-soft, var(--ink-soft)); font-size: clamp(16px, 1.3vw, 18px); }
+.chapter-copy > p.lede { max-width: 620px; font-size: clamp(17px, 1.6vw, 20px); line-height: 1.8; }
 .hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; margin-top: 40px; }
 .terminal { position: relative; display: grid; gap: 2px; padding: 16px 92px 16px 20px; border-radius: 14px; background: var(--night); color: #e9f1ee; box-shadow: 0 20px 50px rgb(17 23 24 / 18%); }
 .terminal code { white-space: nowrap; }
@@ -65,19 +67,54 @@ h1 em { font-style: normal; color: var(--jade); }
 .copy:hover { background: #1b2422; }
 .button { display: inline-flex; align-items: center; padding: 12px 22px; border-radius: 999px; background: var(--ink); color: #fff; text-decoration: none; font-size: 15px; font-weight: 550; transition: background .2s; }
 .button:hover { background: var(--jade); }
-
-/* Bands: one idea each, text beside a small product mock */
-.band { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: center; gap: clamp(32px, 6vw, 96px); padding: clamp(72px, 12vh, 128px) var(--gutter); border-top: 1px solid var(--line); }
-.band-alt { background: var(--surface); }
-.band-alt .band-text { order: 2; }
-.band-text { max-width: 520px; }
-h2 { margin-top: 12px; font-size: clamp(30px, 3.6vw, 46px); font-weight: 680; line-height: 1.2; letter-spacing: -.025em; }
-.band-text p:not(.eyebrow) { margin-top: 20px; color: var(--ink-soft); font-size: 17px; }
-.band-text .note { color: var(--muted); font-size: 15px; }
+.scroll-cue { display: none; }
 figcaption { margin-top: 10px; color: var(--faint); font-size: 12px; }
 
+.chapter-nav { position: fixed; right: 22px; top: 50%; z-index: 6; display: flex; flex-direction: column; gap: 2px; transform: translateY(-50%); }
+.chapter-nav[hidden] { display: none; }
+.chapter-nav a { display: grid; width: 25px; height: 25px; place-items: center; }
+.chapter-nav i { width: 5px; height: 5px; border-radius: 50%; background: #9da6a4; transition: height .2s, background .2s; }
+.chapter-nav a[aria-current="step"] i { height: 18px; border-radius: 4px; background: var(--jade); }
+.chapter-nav a:hover i { background: var(--jade); }
+
+/* The plain document is complete; the scroll story is an enhancement. */
+.enhanced .spatial-stage { position: sticky; top: 0; display: block; width: 100%; height: 100svh; min-height: 620px; overflow: hidden; contain: layout paint; pointer-events: none; background: var(--scene-background, var(--paper)); }
+.enhanced .chapters { position: relative; margin-top: -100svh; }
+.enhanced .chapter { display: block; height: 155svh; padding: 0 var(--gutter); border-top: 0; background: transparent; }
+.enhanced .static-figure { display: none; }
+.enhanced .chapter-copy { position: sticky; top: 28svh; width: 40%; max-width: 500px; opacity: var(--copy-opacity, 1); transform: translateY(var(--copy-y, 0px)); will-change: opacity, transform; }
+.enhanced .hero-chapter { height: 135svh; }
+.enhanced .hero-chapter .chapter-copy { top: 24svh; width: 46%; max-width: 580px; }
+.enhanced .chapter:last-child { height: 140svh; }
+.enhanced .scroll-cue { position: absolute; top: calc(100svh - 76px); left: 50%; z-index: 4; display: grid; width: 48px; height: 48px; place-items: center; color: var(--muted); transform: translateX(-50%); }
+.scroll-cue svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; animation: cue 2.4s ease-in-out infinite; }
+@keyframes cue { 0%, 100% { opacity: .35; transform: translateY(-3px); } 50% { opacity: 1; transform: translateY(3px); } }
+.enhanced .roundtable-chapter .eyebrow, .enhanced .roundtable-chapter h2 em { color: #8bc1a8; }
+.footer button { margin-left: 18px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; }
+.footer button:hover { color: var(--jade); }
+.footer button:disabled { cursor: default; opacity: .7; }
+
+@media (max-width: 1050px) {
+  .enhanced .chapter-copy { width: 44%; }
+  .enhanced .hero-chapter .chapter-copy { width: 52%; }
+  .enhanced .terminal { padding-right: 20px; padding-bottom: 52px; }
+  .enhanced .copy { top: auto; bottom: 10px; translate: none; }
+  .enhanced .terminal code { white-space: normal; }
+}
+@media (max-width: 700px) {
+  .enhanced .spatial-stage { min-height: 580px; }
+  .enhanced .chapter { height: 150svh; padding: 0 22px; }
+  .enhanced .chapter-copy, .enhanced .hero-chapter .chapter-copy { top: 10svh; width: 100%; max-width: 380px; }
+  .enhanced .chapter-copy > p:not(.eyebrow) { font-size: 15px; margin-top: 14px; }
+  .enhanced h2 { font-size: 32px; }
+  .enhanced .hero-chapter h1 { font-size: 40px; }
+  .enhanced .hero-actions { display: none; }
+  .enhanced .scroll-cue { top: calc(100svh - 64px); }
+  .chapter-nav { right: 4px; top: auto; bottom: 18px; transform: none; gap: 0; }
+  .chapter-nav a { width: 22px; height: 21px; }
+}
+
 .window { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 24px 60px rgb(27 31 29 / 8%); overflow: hidden; }
-.band-alt .window { background: var(--paper); }
 figure.window { padding-bottom: 14px; }
 figure.window figcaption { padding: 0 20px; }
 .window-bar { display: flex; align-items: center; gap: 6px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
@@ -159,8 +196,7 @@ figure.window figcaption { padding: 0 20px; }
 .js .reveal.is-visible { opacity: 1; transform: none; }
 
 @media (max-width: 880px) {
-  .band { grid-template-columns: minmax(0, 1fr); }
-  .band-alt .band-text { order: 0; }
+  .chapter { grid-template-columns: minmax(0, 1fr); }
   .handoff .window:first-child, .handoff .window:last-child { width: 100%; }
   .principles { grid-template-columns: minmax(0, 1fr); }
   .memory { grid-template-columns: minmax(0, 1fr); }
@@ -172,6 +208,5 @@ figure.window figcaption { padding: 0 20px; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .js .curve path { animation: none; stroke-dashoffset: 0; }
   .js .reveal { opacity: 1; transform: none; transition: none; }
 }
