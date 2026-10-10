@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
-import { EmployeeError } from './manifest.js';
+import { EmployeeError, FIXED_EMPLOYEE_AGENT_TYPES } from './manifest.js';
 
 const projectId = z.string().min(1).max(256);
 export const employeeManagementSchema = z.object({
@@ -73,7 +73,9 @@ export function managementFor(manifest, agent, stored) {
   }
   // Upgrades preserve existing authorization. Only a new recruitment uses the
   // template default; an existing employee opts in by saving the new all rule.
-  return { revision: 0, mode: agent ? 'selected' : manifest.defaultProjectScope ?? 'selected',
+  // A fixed role nobody has assigned yet is still in its template default.
+  const configured = agent && !(Object.hasOwn(FIXED_EMPLOYEE_AGENT_TYPES, manifest.id) && !agent.assignments?.length);
+  return { revision: 0, mode: configured ? 'selected' : manifest.defaultProjectScope ?? 'selected',
     projectIds: [...new Set((agent?.assignments ?? []).filter(a => a.status === 'active').map(a => a.personalProjectId))],
     excludedProjectIds: [], titleMode: manifest.taskEntry ? 'auto' : 'suggest', titleStyle: 'emoji' };
 }
