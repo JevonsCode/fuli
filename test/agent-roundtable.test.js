@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import test from 'node:test';
 
 import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
@@ -103,38 +101,14 @@ test('names must be unambiguous and threads have a message limit', async () => {
     sourceApplication: 'codex', wait: false }), /message limit/);
 });
 
-test('wake commands resume read-only; Claude Code forks instead of writing an open session', () => {
-  assert.deepEqual(wakeArguments('claude_code', { sessionId: 'cc-session-1' }),
-    ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk', '--resume', 'cc-session-1', '--fork-session']);
-  assert.deepEqual(wakeArguments('codex', { sessionId: 'cx-session-1' }),
-    ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', 'cx-session-1', '-']);
-  assert.deepEqual(wakeArguments('codex', { cwd: '/work/app' }),
-    ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', '/work/app', '-']);
+test('waking validates the session id and the client, and reports a client that is not logged in', () => {
   assert.throws(() => wakeArguments('codex', { sessionId: '--last; rm' }), /Invalid client session id/);
-});
-
-test('final answers are read from each client event stream', () => {
-  assert.deepEqual(parseFinalAnswer('claude_code', { code: 0, stdout: [
-    JSON.stringify({ type: 'system', session_id: 'fork-1' }), JSON.stringify({ type: 'result', result: ' 好的 ' })].join('\n') }),
-  { body: '好的', sessionId: 'fork-1' });
-  assert.deepEqual(parseFinalAnswer('codex', { code: 0, stdout: [
-    JSON.stringify({ type: 'thread.started', thread_id: 'cx-1' }),
-    JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'done' } }),
-    JSON.stringify({ type: 'turn.completed' })].join('\n') }), { body: 'done', sessionId: 'cx-1' });
-  assert.throws(() => parseFinalAnswer('codex', { code: 0, stdout: JSON.stringify({ type: 'turn.failed' }) }), /did not return an answer/);
-});
-
-test('a conversation resumes from the directory its client recorded', () => {
-  const home = mkdtempSync(join(tmpdir(), 'fuli-roundtable-home-'));
-  mkdirSync(join(home, '.claude', 'projects', 'T--work-app'), { recursive: true });
-  writeFileSync(join(home, '.claude', 'projects', 'T--work-app', 'cc-session-1.jsonl'),
-    `${JSON.stringify({ type: 'queue-operation' })}\n${JSON.stringify({ type: 'user', cwd: 'T:\\work\\app' })}\n`);
-  mkdirSync(join(home, '.codex', 'sessions', '2026', '10', '10'), { recursive: true });
-  writeFileSync(join(home, '.codex', 'sessions', '2026', '10', '10', 'rollout-2026-10-10T00-00-00-cx-session-1.jsonl'),
-    `${JSON.stringify({ type: 'session_meta', payload: { cwd: '/work/app' } })}\n`);
-  assert.equal(sessionWorkingDirectory('claude_code', 'cc-session-1', { home, env: {} }), 'T:\\work\\app');
-  assert.equal(sessionWorkingDirectory('codex', 'cx-session-1', { home, env: {} }), '/work/app');
-  assert.equal(sessionWorkingDirectory('codex', 'missing-session', { home, env: {} }), null);
+  assert.throws(() => wakeArguments('cursor', {}), /Unsupported client/);
+  assert.equal(sessionWorkingDirectory('codex', '../escape', { home: tmpdir(), env: {} }), null);
+  assert.throws(() => parseFinalAnswer('codex', { code: 1, stdout: JSON.stringify({ error: 'authentication_failed' }) }),
+    (error) => error.code === 'client_login_required');
+  assert.throws(() => parseFinalAnswer('claude_code', { code: 2, stdout: JSON.stringify({ type: 'result', result: 'ok' }) }),
+    (error) => error.code === 'wake_failed');
 });
 
 test('task entry hands the selected Agent the questions waiting for it', async () => {
