@@ -40,6 +40,8 @@ const selectedProjects = ref<string[]>(
 );
 const recruiting = ref(false);
 const hireable = computed(() => employeeTemplates.value.some((entry) => !entry.fixed));
+const managesAllProjects = (agentId: string) => employeeTemplates.value
+  .some((entry) => entry.agentId === agentId && entry.management?.mode === "all");
 
 const projects = computed(() =>
   (store.state?.personalProjects ?? []).filter(
@@ -229,6 +231,7 @@ async function retryDirectory() {
           :agent="agent"
           :space-id="space"
           :project-names="projectNames"
+          :manages-all-projects="managesAllProjects(agent.agentId)"
           :work-summary="workSummaryFor(agent.agentId)"
           :work-state="workState"
         />

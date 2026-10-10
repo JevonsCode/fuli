@@ -18,6 +18,7 @@ const props = defineProps<{
   agent: ProjectAgentRecord;
   spaceId: string;
   projectNames?: Record<string, string>;
+  managesAllProjects?: boolean;
   workSummary?: AgentWorkSummary;
   workState?: AgentWorkSummaryState;
 }>();
@@ -126,6 +127,7 @@ const workStatusLabel = computed(() => {
             +{{ projectCount }}
           </span>
         </div>
+        <span v-else-if="managesAllProjects" class="ui-badge">{{ t("agentProfiles.allProjects") }}</span>
         <span v-else class="agent-card-no-project">{{ t("agentProfiles.noProject") }}</span>
       </div>
       <RouterLink
