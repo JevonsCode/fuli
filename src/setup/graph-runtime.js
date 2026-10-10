@@ -24,6 +24,7 @@ import {
   LAN_ACCESS_USERNAME,
   lanConsoleUrls
 } from '../server/lan-access.js';
+import { FULI_VERSION } from '../package-metadata.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import {
   DEFAULT_RUNTIME_SETTINGS,
@@ -177,10 +178,12 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   const existing = activeRuntimeState;
   if (isGraphRuntimeState(existing) && deps.isProcessAlive(existing.pid)) {
     const healthy = await deps.webHealth(existing.url, existing.pid, existing.version);
+    // A console left running by an older install keeps serving old code until replaced.
     if (
       healthy &&
       existing.port === runtimeSettings.ports.console &&
-      exposureMatches(existing, { lan, lanAddresses })
+      exposureMatches(existing, { lan, lanAddresses }) &&
+      await deps.consoleVersion(existing.url) === FULI_VERSION
     ) {
       if (adaptiveRuntimeSettings.enabled) {
         await notifyAdaptiveRuntime(existing.url, deps.fetch);
@@ -190,7 +193,7 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     if (!healthy) throw new Error('Recorded Fuli Graphiti runtime is not healthy');
     deps.stopProcess(existing.pid);
     if (!await deps.waitForExit(existing.pid)) {
-      throw new Error('Fuli Graphiti console did not stop before changing exposure mode');
+      throw new Error('Fuli Graphiti console did not stop before restarting');
     }
   }
   const lanAccessToken = lan ? deps.createLanAccessToken() : null;
@@ -569,6 +572,7 @@ function graphDependencies(overrides) {
     isProcessAlive,
     stopProcess,
     webHealth: checkLocalConsoleHealth,
+    consoleVersion: readLocalConsoleVersion,
     discoverLanAddresses,
     createLanAccessToken: secret,
     waitForExit: waitForProcessExit,
@@ -598,6 +602,15 @@ async function notifyAdaptiveRuntime(url, fetchImpl) {
     });
   } catch {
     // Lease expiry remains the safety net if setup cannot release explicitly.
+  }
+}
+
+export async function readLocalConsoleVersion(url) {
+  try {
+    const response = await fetch(`${url}/api/health`, { signal: AbortSignal.timeout(2500) });
+    return response.ok ? (await response.json())?.version ?? null : null;
+  } catch {
+    return null;
   }
 }
 

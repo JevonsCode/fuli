@@ -3,6 +3,7 @@ import { handleExternalKnowledgeApiRequest } from './external-knowledge-api-rout
 import { handleGraphApiRequest } from './graph-api-router.js';
 import { handleEmployeeApiRequest } from './employee-api-router.js';
 import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
+import { FULI_VERSION } from '../package-metadata.js';
 
 export async function handleApiRequest({
   request,
@@ -19,7 +20,8 @@ export async function handleApiRequest({
     sendJson(response, 200, {
       status: 'ready',
       service: 'fuli-local-console',
-      pid: process.pid
+      pid: process.pid,
+      version: FULI_VERSION
     });
     return true;
   }
