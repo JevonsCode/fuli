@@ -227,6 +227,13 @@ async def test_task_entry_resolves_one_role_without_creating_a_worker():
         space_id = space.json()['id']
         await seed_agent(client, space_id, agent='engineer')
         await seed_agent(client, space_id, agent='reviewer')
+        policy = await client.put('/v1/project-agent-coordination-policy', json={
+            'personal_space_id': space_id,
+            'personal_project_id': 'sample-project',
+            'team_lead_agent_id': 'engineer',
+            'team_member_agent_ids': ['reviewer'],
+        })
+        assert policy.status_code == 200, policy.text
         response = await client.post('/v1/project-agent-context/resolve', json={
             'personal_space_id': space_id, 'personal_project_id': 'sample-project',
             'source_application': 'cursor', 'work_kind': 'implementation',
@@ -244,7 +251,7 @@ async def test_task_entry_resolves_one_role_without_creating_a_worker():
 
 
 @pytest.mark.asyncio
-async def test_context_fallback_discloses_that_no_specialist_matched():
+async def test_context_resolution_requires_an_accountable_lead_before_fallback():
     settings = fixture_settings()
     async with provider_client(settings) as (client, _):
         space = await client.post('/v1/spaces', json={
@@ -259,15 +266,17 @@ async def test_context_fallback_discloses_that_no_specialist_matched():
         }
         response = await client.post('/v1/project-agent-context/resolve', json=request)
         assert response.status_code == 200, response.text
-        assert response.json()['status'] == 'ready'
-        assert response.json()['reason'] == 'project_context_fallback'
-        assert 'design_review' in ' '.join(response.json()['match_basis'])
+        assert response.json()['status'] == 'unassigned'
+        assert response.json()['reason'] == 'project_lead_required'
+        assert response.json()['agent'] is None
+        assert 'accountable lead' in ' '.join(response.json()['match_basis'])
         assert response.json()['worker_started'] is False
         required = await client.post('/v1/project-agent-context/resolve', json={
             **request, 'required_capabilities': ['absent-capability'],
         })
         assert required.status_code == 200, required.text
         assert required.json()['status'] == 'unassigned'
+        assert required.json()['reason'] == 'project_lead_required'
         assert required.json()['agent'] is None
 
 
@@ -397,7 +406,7 @@ async def test_memory_isolated_by_project_agent_and_personal_space():
 
 
 @pytest.mark.asyncio
-async def test_automatic_owner_balances_live_sessions_before_continuity():
+async def test_project_lead_owns_context_across_live_sessions():
     settings = fixture_settings()
     async with provider_client(settings) as (client, _):
         space = await client.post('/v1/spaces', json={
@@ -406,12 +415,20 @@ async def test_automatic_owner_balances_live_sessions_before_continuity():
         space_id = space.json()['id']
         await seed_agent(client, space_id, agent='engineer')
         await seed_agent(client, space_id, agent='reviewer')
+        policy = await client.put('/v1/project-agent-coordination-policy', json={
+            'personal_space_id': space_id,
+            'personal_project_id': 'sample-project',
+            'team_lead_agent_id': 'engineer',
+            'team_member_agent_ids': ['reviewer'],
+        })
+        assert policy.status_code == 200, policy.text
         context = {'personal_space_id': space_id, 'personal_project_id': 'sample-project',
             'source_application': 'codex', 'work_kind': 'implementation',
             'required_capabilities': ['coding']}
         first = await client.post('/v1/project-agent-context/resolve', json=context)
         assert first.status_code == 200, first.text
         assert first.json()['agent']['agent_id'] == 'engineer'
+        assert first.json()['reason'] == 'project_team_lead'
         begun = await client.put('/v1/task-contexts', json={
             'personal_space_id': space_id, 'personal_project_id': 'sample-project',
             'project_agent_id': 'engineer', 'session_id': 'busy-codex-session',
@@ -426,7 +443,10 @@ async def test_automatic_owner_balances_live_sessions_before_continuity():
         next_host = await client.post('/v1/project-agent-context/resolve',
             json={**context, 'source_application': 'cursor'})
         assert next_host.status_code == 200, next_host.text
-        assert next_host.json()['agent']['agent_id'] == 'reviewer'
+        assert next_host.json()['agent']['agent_id'] == 'engineer'
+        assert next_host.json()['reason'] == 'project_team_lead'
         unqualified = await client.post('/v1/project-agent-context/resolve',
             json={**context, 'required_capabilities': ['absent-capability']})
-        assert unqualified.json()['status'] == 'unassigned'
+        assert unqualified.json()['status'] == 'ready'
+        assert unqualified.json()['agent']['agent_id'] == 'engineer'
+        assert unqualified.json()['reason'] == 'project_team_lead'

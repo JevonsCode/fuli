@@ -13,10 +13,11 @@ from .system_hr_identity import LEGACY_HR_AGENT_ID
 
 IMPLICIT_PEER_AGENT_IDS = frozenset({
     'employee.jefa',
+    'employee.tonborg',
     SYSTEM_HR_AGENT_ID.casefold(),
     LEGACY_HR_AGENT_ID.casefold(),
 })
-IMPLICIT_PEER_CAPABILITIES = frozenset({'fuli.employee:jefa', 'fuli.employee:bole'})
+IMPLICIT_PEER_CAPABILITIES = frozenset({'fuli.employee:jefa', 'fuli.employee:bole', 'fuli.employee:tonborg'})
 IMPLICIT_PEER_AGENT_TYPES = frozenset({'hr'})
 
 

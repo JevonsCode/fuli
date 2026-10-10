@@ -201,6 +201,9 @@ CALL {
   WITH space, valid_entities
   UNWIND valid_entities AS valid
   WITH space, valid.item AS item, valid.row AS row
+  ORDER BY 'entity:' + row.item_id
+  SET item.fuli_ai_review_lock_version =
+        coalesce(item.fuli_ai_review_lock_version, 0) + 1
   SET item.fuli_epistemic_status = 'confirmed',
       item.fuli_confirmation_status = 'confirmed',
       item.fuli_confirmation_basis_json = row.confirmation_basis_json
@@ -223,6 +226,9 @@ CALL {
   WITH space, valid_relationships
   UNWIND valid_relationships AS valid
   WITH space, valid.item AS item, valid.row AS row
+  ORDER BY 'relationship:' + row.item_id
+  SET item.fuli_ai_review_lock_version =
+        coalesce(item.fuli_ai_review_lock_version, 0) + 1
   SET item.fuli_epistemic_status = 'confirmed',
       item.fuli_confirmation_status = 'confirmed',
       item.fuli_confirmation_basis_json = row.confirmation_basis_json

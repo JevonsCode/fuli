@@ -20,6 +20,7 @@ import { createServerApplication } from './server/application-lifecycle.js';
 import { listenServer } from './server/listen.js';
 import { resolveSetupPaths } from './setup/paths.js';
 import { createSystemService } from './system/system-service.js';
+import { startJudgmentScheduler } from './judgment/scheduler.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -55,11 +56,15 @@ export async function createServer(options = {}) {
   let connectedKnowledge;
   let system = null;
   let resourcesClosing = null;
+  let stopJudgment = () => {};
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => system?.close?.(), () => runtime.close()]) {
-        try { await close(); } catch (error) { failures.push(error); }
+      for (const close of [() => stopJudgment(), () => system?.close?.(), () => runtime.close()]) {
+        try {
+          const pending = close();
+          if (pending?.then) await pending;
+        } catch (error) { failures.push(error); }
       }
       if (failures.length === 1) throw failures[0];
       if (failures.length > 1) {
@@ -142,6 +147,8 @@ export async function createServer(options = {}) {
       await new Promise((resolveClose) => server.close(resolveClose));
       await failStartup(new Error('Server did not bind to a valid local authority'));
     }
+    stopJudgment = startJudgmentScheduler({ app: application,
+      ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
 
     let closing = null;
     const close = () => {

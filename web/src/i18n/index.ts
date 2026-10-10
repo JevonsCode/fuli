@@ -20,6 +20,8 @@ import { writingTasteMessages } from './messages/writing-taste'
 import { employeeMessages } from './messages/employees'
 import { attentionMessages } from './messages/attention'
 import { roundtableMessages } from './messages/roundtable'
+import { agentPinsMessages } from './messages/agent-pins'
+import { judgmentMessages } from './messages/judgment'
 
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const
 export type AppLocale = typeof SUPPORTED_LOCALES[number]
@@ -67,6 +69,8 @@ function localeForLanguage(language: string): AppLocale | null {
 
 export const messages = {
   'zh-CN': {
+    judgment: judgmentMessages['zh-CN'],
+    agentPins: agentPinsMessages['zh-CN'],
     ui: uiMessages['zh-CN'],
     overview: overviewMessages['zh-CN'],
     agentRedesign: agentRedesignMessages['zh-CN'],
@@ -91,6 +95,8 @@ export const messages = {
     writingTaste: writingTasteMessages['zh-CN'],
   },
   'en-US': {
+    judgment: judgmentMessages['en-US'],
+    agentPins: agentPinsMessages['en-US'],
     ui: uiMessages['en-US'],
     overview: overviewMessages['en-US'],
     agentRedesign: agentRedesignMessages['en-US'],

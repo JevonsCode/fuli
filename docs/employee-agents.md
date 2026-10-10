@@ -1,6 +1,6 @@
 # Specialist Agents
 
-An employee template is a reusable role with an optional FULI-hosted or native workbench. Recruitment reuses the existing durable Project Agent identity and assignment model. Two roles are fixed: **Jefa**, the project manager, and **Bole**, the HR Agent. Both exist in every personal space from the start, manage all projects by default, cannot be archived or replaced by another coordinator or `hr` identity, and are never offered for hire. Neither requires a separate runtime package.
+An employee template is a reusable role with an optional FULI-hosted or native workbench. Recruitment reuses the existing durable Project Agent identity and assignment model. Three roles are fixed: **Jefa**, the project manager, **Bole**, the HR Agent, and **Tonborg**, the judgment Agent. They exist in every personal space from the start, manage all projects by default, and are never offered for hire. They require no separate runtime package. See [judgment and autonomy](judgment-and-autonomy.md) for Tonborg's review, feedback, and execution-choice workflow.
 
 ## User flow
 

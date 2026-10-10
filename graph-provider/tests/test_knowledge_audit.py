@@ -37,6 +37,7 @@ async def test_human_change_starts_a_new_unseen_version():
     )
 
     query, parameters = driver.calls[0]
+    assert 'fuli_ai_review_lock_version' in query
     assert "item.fuli_human_change_status = 'unseen'" in query
     assert 'coalesce(item.fuli_human_change_version, 0) + 1' in query
     assert parameters['reason'] == '人工修正分类'
@@ -332,6 +333,7 @@ async def test_negative_evidence_flags_human_confirmed_knowledge_without_overrid
     )
 
     query, parameters = driver.calls[1]
+    assert 'fuli_ai_review_lock_version' in query
     assert "action = 'knowledge_feedback'" in query
     assert 'item.fuli_requires_attention = true' in query
     assert parameters['next_confirmation_status'] == 'confirmed'

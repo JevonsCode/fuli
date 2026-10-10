@@ -33,6 +33,7 @@ export const knowledgeDomainMessages = {
     reviewStates: {
       confirmed: '已确认',
       agent_confirmed: 'Agent 已确认',
+      ai_reviewed: 'Tonborg 已审',
       pending: '待确认',
     },
     actors: {
@@ -91,6 +92,7 @@ export const knowledgeDomainMessages = {
       legacyUnclassified: '旧内容没有发现来源，保存前需要补充。',
       confirmed: '{actor}于 {time} 确认；本次确认同时覆盖知识内容和象限归类。',
       agentConfirmed: '多个任务实际用上后，于 {time} 由 Agent 确认；权重仍低于你的确认。',
+      aiReviewed: 'Tonborg 已基于当前版本完成审阅；这不是人工确认。',
       pending: '{actor}提出，等待确认。',
       legacyPending: '旧数据缺少确认记录，已归入待确认。',
       legacyBasisMissing: '旧数据 · 确认人和时间缺失',
@@ -220,6 +222,7 @@ export const knowledgeDomainMessages = {
     reviewStates: {
       confirmed: 'Confirmed',
       agent_confirmed: 'Agent confirmed',
+      ai_reviewed: 'Tonborg reviewed',
       pending: 'Pending',
     },
     actors: {
@@ -278,6 +281,7 @@ export const knowledgeDomainMessages = {
       legacyUnclassified: 'Legacy item without a discovery source; add one before saving.',
       confirmed: '{actor} confirmed this at {time}. The confirmation covers both the content and its quadrant classification.',
       agentConfirmed: 'Agent confirmed at {time} after use across tasks; still ranks below your confirmation.',
+      aiReviewed: 'Tonborg reviewed the current version; this is not a human confirmation.',
       pending: 'Proposed by {actor}; awaiting confirmation.',
       legacyPending: 'Legacy data without a confirmation record; treated as pending.',
       legacyBasisMissing: 'Legacy data · confirmer and time missing',

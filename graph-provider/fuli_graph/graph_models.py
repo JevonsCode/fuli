@@ -55,6 +55,13 @@ class GraphNode(StrictModel):
     last_human_changed_at: datetime | None = None
     last_agent_viewed_at: datetime | None = None
     last_agent_reviewed_at: datetime | None = None
+    ai_review_evidence_token: str | None = None
+    ai_assessment: dict[str, Any] | None = None
+    ai_review_scope: str | None = None
+    ai_review_project_id: str | None = None
+    ai_reviewed_at: datetime | None = None
+    ai_review_id: str | None = None
+    ai_review_decision_id: str | None = None
     utility_score: float = Field(default=0, ge=0, le=1)
     confidence_score: float = Field(default=0.5, ge=0, le=1)
     qualified_use_count: int = Field(default=0, ge=0)
@@ -109,6 +116,13 @@ class GraphEdge(StrictModel):
     last_human_changed_at: datetime | None = None
     last_agent_viewed_at: datetime | None = None
     last_agent_reviewed_at: datetime | None = None
+    ai_review_evidence_token: str | None = None
+    ai_assessment: dict[str, Any] | None = None
+    ai_review_scope: str | None = None
+    ai_review_project_id: str | None = None
+    ai_reviewed_at: datetime | None = None
+    ai_review_id: str | None = None
+    ai_review_decision_id: str | None = None
     utility_score: float = Field(default=0, ge=0, le=1)
     confidence_score: float = Field(default=0.5, ge=0, le=1)
     qualified_use_count: int = Field(default=0, ge=0)

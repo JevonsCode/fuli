@@ -234,6 +234,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'update_external_knowledge_conflict_policy', 'defer_preference_conflict',
     'delete_public_project',
     'list_employee_templates', 'recruit_employee', 'list_employee_tools', 'call_employee_tool',
+    'get_judgment_policy', 'list_judgments', 'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'get_agent_pins', 'pin_agent',
     'begin_task_context',
     'checkpoint_task_knowledge',
     'verify_task_checkpoint',

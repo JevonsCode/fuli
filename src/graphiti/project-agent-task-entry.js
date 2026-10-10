@@ -159,8 +159,8 @@ function boundedRoleText(value, limit) {
 function unrelatedPeer(agent, workKind, required = []) {
   const profile = agent.profile;
   const capabilities = (profile.capabilities ?? []).map(value => value.toLowerCase());
-  const peer = ['employee.jefa', 'employee.bole', 'fuli-project-hr'].includes(agent.agentId)
-    || profile.agentType === 'hr' || capabilities.some(value => ['fuli.employee:jefa', 'fuli.employee:bole'].includes(value));
+  const peer = ['employee.jefa', 'employee.bole', 'employee.tonborg', 'fuli-project-hr'].includes(agent.agentId)
+    || profile.agentType === 'hr' || capabilities.some(value => ['fuli.employee:jefa', 'fuli.employee:bole', 'fuli.employee:tonborg'].includes(value));
   return peer && !(profile.workKinds ?? []).some(kind => kind.toLowerCase() === workKind.toLowerCase())
     && !(required.length && required.every(value => capabilities.includes(value.toLowerCase())));
 }

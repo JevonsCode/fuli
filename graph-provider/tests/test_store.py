@@ -82,13 +82,9 @@ async def test_structured_supersession_stores_the_exact_replacement_relationship
     assert "old.fuli_replaced_by_item_kind = 'relationship'" in query
     assert 'NOT (old.uuid IN $relationship_ids)' in query
     assert 'assignment.project_id = $personal_project_id' in query
-    assert (
-        'old_episode.fuli_personal_project_id =\n'
-        '                              $personal_project_id'
-    ) in query
-    assert (
-        'agent_episode.fuli_project_agent_id = $project_agent_id'
-    ) in query
+    assert 'old_episode.fuli_personal_project_id =' in query
+    assert '$personal_project_id' in query
+    assert 'agent_episode.fuli_project_agent_id = $project_agent_id' in query
     assert parameters['space_id'] == 'personal-space'
     assert parameters['personal_project_id'] == 'project-a'
     assert parameters['source_uri'] == (
@@ -97,6 +93,10 @@ async def test_structured_supersession_stores_the_exact_replacement_relationship
     assert 'fuli_source_uri: $source_uri' in query
     assert 'ON CREATE SET entity.group_id' in query
     assert 'ON CREATE SET edge.group_id' in query
+    assert "ORDER BY 'entity:' + row.uuid" in query
+    assert "ORDER BY 'relationship:' + row.uuid" in query
+    assert 'WITH superseded_edges, collect(existing) AS candidate_existing' in query
+    assert "ORDER BY 'relationship:' + lock_edge.uuid" in query
     assert 'coalesce(edge.episodes, []) + $episode_id' in query
     assert parameters['superseded_relationships'] == [{
         'key': 'old-rule',

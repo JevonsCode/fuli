@@ -4,6 +4,13 @@ import { activeTestToolsEnabled } from '../app/agent-request-context.js';
 import { agentInterfaceCatalog } from './interface-catalog.js';
 
 const HANDLERS = Object.freeze({
+  get_judgment_policy: (app, input) => app.judgment.policy(input),
+  list_judgments: (app, input) => app.judgment.records(input),
+  review_with_tonborg: (app, input) => app.judgment.review(input),
+  assess_agent_action: (app, input) => app.judgment.assess(input),
+  assess_task_completion: (app, input) => app.judgment.accept(input),
+  get_agent_pins: (app, input) => app.judgment.pins(input),
+  pin_agent: (app, input) => app.judgment.pin(input),
   get_agent_quality_gate: (app, input) => app.agentVerification('query', input),
   record_agent_verification: (app, input) => app.agentVerification('record', input),
   plan_agent_collaboration: (app, input) => app.planAgentCollaboration(input),

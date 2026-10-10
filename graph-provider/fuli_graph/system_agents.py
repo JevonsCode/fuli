@@ -1,4 +1,4 @@
-"""The two fixed roles every personal space has: Jefa (project manager) and Bole (HR).
+"""Fixed roles: Jefa (project manager), Bole (HR), and Tonborg (judgment).
 
 Jefa also coordinates task routing, replacing the earlier separate coordinator
 identity. That legacy node is retired, not deleted, so old tasks keep their
@@ -14,6 +14,7 @@ from .provider_values import now_utc, stable_uuid
 SYSTEM_COORDINATOR_AGENT_ID = 'employee.jefa'
 LEGACY_COORDINATOR_AGENT_ID = 'fuli-project-coordinator'
 SYSTEM_HR_AGENT_ID = 'employee.bole'
+SYSTEM_JUDGMENT_AGENT_ID = 'employee.tonborg'
 
 
 def coordinator_profile() -> ProjectAgentProfile:
@@ -48,9 +49,27 @@ def hr_profile() -> ProjectAgentProfile:
     )
 
 
+def judgment_profile() -> ProjectAgentProfile:
+    return ProjectAgentProfile(
+        name='Tonborg',
+        occupation_emoji='⚖️',
+        responsibility='判断官：依照用户偏好审核日常事项、建议客户端和模型，保留判断依据与反馈。',
+        agent_type='durable',
+        work_kinds=['judgment', 'knowledge-review', 'executor-selection'],
+        capabilities=['判断审核', '执行器选择', '判断反馈', 'fuli.employee:tonborg'],
+        initial_preferences=[
+            '用户明确偏好优先；只把相关范围的历史反馈用于当前判断。',
+            '不把模型建议当作已执行，不把 AI 审核冒充用户确认。',
+            '保持项目总负责人与汇报关系。',
+        ],
+        status='active',
+    )
+
+
 SYSTEM_PROFILES = {
     SYSTEM_COORDINATOR_AGENT_ID: coordinator_profile,
     SYSTEM_HR_AGENT_ID: hr_profile,
+    SYSTEM_JUDGMENT_AGENT_ID: judgment_profile,
 }
 
 

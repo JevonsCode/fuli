@@ -24,7 +24,7 @@ class StoreProjectAgentAttention:
             self, actor, space, request.personal_project_id, agent_id,
             require_active=True,
             allow_unassigned=agent_id in {
-                'employee.bole', 'employee.jefa', 'fuli-project-coordinator',
+                'employee.bole', 'employee.jefa', 'employee.tonborg', 'fuli-project-coordinator',
             },
         )
         if request.task_id:

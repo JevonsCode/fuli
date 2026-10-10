@@ -5,6 +5,7 @@ const WORKFLOW_OBSERVATION_TOOL = 'record_workflow_transition_observation';
 const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message',
   'get_agent_quality_gate', 'record_agent_verification',
+  'assess_task_completion',
   'plan_agent_collaboration', 'request_agent_loan', 'decide_agent_loan', 'list_agent_loans',
   'list_agent_conversations', 'read_agent_conversation', 'resume_agent_conversation',
   'get_agent_conversation_policy', 'update_agent_conversation_policy',

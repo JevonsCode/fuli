@@ -3,6 +3,7 @@ import { handleExternalKnowledgeApiRequest } from './external-knowledge-api-rout
 import { handleGraphApiRequest } from './graph-api-router.js';
 import { handleEmployeeApiRequest } from './employee-api-router.js';
 import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
+import { handleJudgmentApiRequest } from '../judgment/http.js';
 import { FULI_VERSION } from '../package-metadata.js';
 
 export async function handleApiRequest({
@@ -93,6 +94,7 @@ export async function handleApiRequest({
   if (handledExternal) return true;
 
   const graphRequest = async () =>
+    await handleJudgmentApiRequest({ request, response, url, app }) ||
     await handleEmployeeApiRequest({ request, response, url, app }) ||
     await handleGraphApiRequest({ request, response, url, app });
   if (system?.withGraphRuntimeLease && (

@@ -211,11 +211,25 @@ async def reassign_knowledge_item(
     assignment_id = existing.id if existing else _stable_uuid(
         space['id'], 'knowledge-assignment', request.item_kind, item_id
     )
+    item_match = (
+        'MATCH (item:Entity {uuid: $item_id, group_id: $group_id})'
+        if request.item_kind == 'entity'
+        else (
+            'MATCH ()-[item:RELATES_TO '
+            '{uuid: $item_id, group_id: $group_id}]->()'
+        )
+    )
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
         MATCH (space)-[:CONTAINS_PROJECT]->
               (target:FuliPersonalProject {project_id: $target_project_id})
+        '''
+        + item_match
+        + '''
+        SET item.fuli_ai_review_lock_version =
+              coalesce(item.fuli_ai_review_lock_version, 0) + 1
+        WITH space, target
         MERGE (assignment:FuliKnowledgeAssignment {
           space_id: $space_id,
           item_kind: $item_kind,
@@ -236,6 +250,7 @@ async def reassign_knowledge_item(
         RETURN assignment
         ''',
         space_id=space['id'],
+        group_id=space['group_id'],
         target_project_id=request.target_project_id,
         item_kind=request.item_kind,
         item_id=item_id,
@@ -712,6 +727,8 @@ async def _update_item(store, space, item_id, item_kind, value, embedding):
     if item_kind == 'entity':
         query = '''
         MATCH (item:Entity {uuid: $item_id, group_id: $group_id})
+        SET item.fuli_ai_review_lock_version =
+              coalesce(item.fuli_ai_review_lock_version, 0) + 1
         SET item.name = $name,
             item.summary = $summary,
             item.fuli_invalid_at = $invalid_at,
@@ -744,6 +761,8 @@ async def _update_item(store, space, item_id, item_kind, value, embedding):
     else:
         query = '''
         MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()
+        SET item.fuli_ai_review_lock_version =
+              coalesce(item.fuli_ai_review_lock_version, 0) + 1
         SET item.fact = $fact,
             item.invalid_at = $invalid_at,
             item.fuli_origin_quadrant = $origin_quadrant,
@@ -844,12 +863,16 @@ async def _update_preference_scope(
     if item_kind == 'entity':
         query = '''
         MATCH (item:Entity {uuid: $item_id, group_id: $group_id})
+        SET item.fuli_ai_review_lock_version =
+              coalesce(item.fuli_ai_review_lock_version, 0) + 1
         SET item.fuli_preference_scope = $scope,
             item.fuli_preference_project_id = $project_id
         '''
     else:
         query = '''
         MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()
+        SET item.fuli_ai_review_lock_version =
+              coalesce(item.fuli_ai_review_lock_version, 0) + 1
         SET item.fuli_preference_scope = $scope,
             item.fuli_preference_project_id = $project_id
         '''

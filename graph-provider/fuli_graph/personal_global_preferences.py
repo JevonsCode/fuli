@@ -1116,7 +1116,9 @@ OPTIONAL MATCH (old_assertion:Entity {
 })
 SET preview.used_at = $changed_at
 FOREACH (_ IN CASE WHEN old_assertion IS NULL THEN [] ELSE [1] END |
-  SET old_assertion.fuli_invalid_at = $changed_at,
+  SET old_assertion.fuli_ai_review_lock_version =
+        coalesce(old_assertion.fuli_ai_review_lock_version, 0) + 1,
+      old_assertion.fuli_invalid_at = $changed_at,
       old_assertion.expired_at = $changed_at
 )
 SET current.candidate_version = $candidate_version,
@@ -1176,6 +1178,8 @@ FOREACH (_ IN CASE WHEN $global_assertion_id IS NULL THEN [] ELSE [1] END |
                 assertion.fuli_distinct_task_count = 0,
                 assertion.fuli_usage_generation = 1,
                 assertion.fuli_invalid_at = null
+  SET assertion.fuli_ai_review_lock_version =
+        coalesce(assertion.fuli_ai_review_lock_version, 0) + 1
   MERGE (episode:Episodic {uuid: $episode_id})
   ON CREATE SET episode.group_id = $group_id,
                 episode.name = 'Personal-global preference human review',

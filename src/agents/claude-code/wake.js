@@ -8,6 +8,13 @@ import { firstField, listDirectory } from '../session-log.js';
 export const claudeCodeWake = Object.freeze({
   id: 'claude_code',
 
+  judgmentArgs({ quality }) {
+    return ['-p', '--output-format', 'stream-json', '--verbose', '--safe-mode',
+      '--tools', '', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
+      '--setting-sources', '', '--no-session-persistence', '--permission-mode', 'dontAsk',
+      '--effort', quality === 'economy' ? 'low' : quality === 'balanced' ? 'medium' : 'high'];
+  },
+
   resolveCommand({ env, which, platform }) {
     return env.FULI_CLAUDE_BIN || which('claude', platform);
   },

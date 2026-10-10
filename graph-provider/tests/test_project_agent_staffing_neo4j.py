@@ -1159,6 +1159,7 @@ async def test_project_lead_owns_user_turns_and_delegated_member_keeps_its_ident
         })
         assert policy.status_code == 200, policy.text
         await begin_session(client, scope, 'existing-member')
+        lead_context = await begin_session(client, scope, 'project-lead')
         async def resolve(**changes):
             response = await client.post('/v1/project-agent-context/resolve', json={
                 **scope, 'source_application': 'codex', **changes,
@@ -1170,7 +1171,20 @@ async def test_project_lead_owns_user_turns_and_delegated_member_keeps_its_ident
         named = await resolve(agent_id='existing-member')
         assert named['agent']['agent_id'] == 'project-lead'
         assert named['requested_agent_id'] == 'existing-member'
-        worker = await resolve(agent_id='existing-member', report_to_agent_id='project-lead')
+        delegation = await client.post('/v1/project-agent-context/delegations', json={
+            'personal_space_id': scope['personal_space_id'],
+            'task_context_token': lead_context['token'],
+            'source_application': 'codex',
+            'agent_id': 'existing-member',
+            'target_application': 'codex',
+            'target_session_id': 'synthetic-delegated-member',
+        })
+        assert delegation.status_code == 200, delegation.text
+        worker = await resolve(
+            agent_id='existing-member',
+            delegation_token=delegation.json()['token'],
+            delegation_session_id='synthetic-delegated-member',
+        )
         assert worker['agent']['agent_id'] == 'existing-member'
         assert worker['reporting_lead_agent_id'] == 'project-lead'
         other = await resolve(source_application='cursor', session_id='synthetic-session-existing-member')

@@ -12,6 +12,7 @@ import EmployeeTaskBoard from '@/features/employees/EmployeeTaskBoard.vue'
 import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
 import EmployeeTaskDialog from '@/features/employees/EmployeeTaskDialog.vue'
 import BolePeoplePanel from '@/features/employees/BolePeoplePanel.vue'
+import JudgmentWorkbench from '@/features/judgment/JudgmentWorkbench.vue'
 import { projectBoardFilterKey } from '@/features/employees/project-board-filter'
 
 const mounted: Array<{ unmount: () => void }> = []
@@ -459,6 +460,26 @@ describe('employee workbench', () => {
     expect(wrapper.find('.employee-manage-projects').exists()).toBe(false)
     expect(wrapper.vm.$route.query.project).toBeUndefined()
     expect(getJson.mock.calls.some(([url]) => String(url).includes('/workspace?'))).toBe(false)
+  })
+
+  it('opens Tonborg as the native judgment workbench and keeps profile navigation available', async () => {
+    getJson.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/employee-templates?')) return { templates: [{
+        id: 'tonborg', name: 'Tonborg', role: '判断顾问', workbench: { kind: 'native', view: 'judgment' }, runtime: null,
+        runtimeStatus: 'not_required', capabilities: ['判断'], permissions: ['judgment.review'],
+        agentId: 'employee.tonborg', agentStatus: 'active', assignmentsVersion: 'version-tonborg', assignments: [],
+      }] }
+      if (url.startsWith('/api/judgment/records?')) return { records: [] }
+      throw new Error(`unexpected URL: ${url}`)
+    })
+
+    const wrapper = await setup('/employees/tonborg?project=project-a')
+
+    expect(wrapper.findComponent(JudgmentWorkbench).props('personalSpaceId')).toBe('space-a')
+    expect(wrapper.find('iframe').exists()).toBe(false)
+    expect(wrapper.findComponent(EmployeeRecruitDialog).exists()).toBe(false)
+    expect(wrapper.get('.employee-native-link').attributes('href')).toBe('/agents/space-a/employee.tonborg')
+    expect(wrapper.vm.$route.query.project).toBeUndefined()
   })
 
   it('keeps the first catalog request in a loading state instead of showing an unavailable Agent', async () => {

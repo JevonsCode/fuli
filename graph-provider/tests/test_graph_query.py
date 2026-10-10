@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 import pytest
 
 from fuli_graph.graph_query import _edge_query, _graph_edge, _graph_node, _node_query
+from fuli_graph.ai_review import ai_review_evidence_token
 
 
 @pytest.mark.parametrize('scope,project_id,agent_id', [
@@ -56,6 +57,157 @@ def test_graph_queries_include_preference_agent_ownership(project_scoped, pagina
     assert 'edge.fuli_preference_agent_id AS preference_agent_id' in _edge_query(
         project_scoped, paginated
     )
+
+
+@pytest.mark.parametrize('project_scoped', [False, True])
+@pytest.mark.parametrize('paginated', [False, True])
+def test_graph_queries_include_version_bound_ai_review_projection(project_scoped, paginated):
+    node_query = _node_query(project_scoped, paginated)
+    edge_query = _edge_query(project_scoped, paginated)
+
+    assert 'node.fuli_ai_review_evidence_token AS ai_review_evidence_token' in node_query
+    assert 'node.fuli_ai_assessment_json AS ai_assessment_json' in node_query
+    assert 'node.fuli_ai_review_scope AS ai_review_scope' in node_query
+    assert 'node.fuli_ai_review_project_id AS ai_review_project_id' in node_query
+    assert 'edge.fuli_ai_review_evidence_token AS ai_review_evidence_token' in edge_query
+    assert 'edge.fuli_ai_assessment_json AS ai_assessment_json' in edge_query
+    assert 'edge.fuli_ai_review_scope AS ai_review_scope' in edge_query
+    assert 'edge.fuli_ai_review_project_id AS ai_review_project_id' in edge_query
+
+
+def test_graph_projection_hides_stale_ai_review_but_keeps_matching_provenance():
+    item = {
+        'item_kind': 'entity',
+        'item_id': 'entity-1',
+        'title': 'Release notes',
+        'content': 'Prefer concise release notes.',
+        'valid_at': None,
+        'invalid_at': None,
+        'confirmation_status': 'pending',
+        'confirmation_basis_json': None,
+        'profile_aspect': None,
+        'preference_scope': None,
+        'preference_project_id': None,
+        'preference_agent_id': None,
+        'inheritance_mode': 'local_only',
+        'current_quadrant': 'known_known',
+        'requires_attention': False,
+        'negative_evidence_count': 0,
+        'human_change_version': 1,
+        'project_ids': [],
+    }
+    token = ai_review_evidence_token(
+        item, scope='all', personal_project_id=None, has_conflict=False
+    )
+    record = {
+        'id': item['item_id'],
+        'name': item['title'],
+        'type': 'Entity',
+        'group_id': 'personal-group',
+        'summary': item['content'],
+        'confirmation_status': 'pending',
+        'confirmation_state_explicit': False,
+        'current_quadrant': 'known_known',
+        'requires_attention': False,
+        'negative_evidence_count': 0,
+        'human_change_version': 1,
+        'attributes_json': '{}',
+        'episodes': [],
+        'ai_review_evidence_token': token,
+        'ai_assessment_json': (
+            '{"outcome":"approve","summary":"Still useful",'
+            '"evidence":["Direct item"],"confidence":0.8,"client":"codex"}'
+        ),
+    }
+
+    node = _graph_node(record, {}, {}, {}, {}, {})
+    assert node.ai_assessment['outcome'] == 'approve'
+    assert node.ai_assessment['client'] == 'codex'
+
+    stale = _graph_node({**record, 'summary': 'Changed after review.'}, {}, {}, {}, {}, {})
+    assert stale.ai_assessment is None
+    conflicted = _graph_node(
+        record,
+        {}, {}, {}, {}, {},
+        preference_conflicts={
+            'entity-1': [{
+                'status': 'ai_pending',
+                'preference_project_id': None,
+            }],
+        },
+    )
+    assert conflicted.ai_assessment is None
+
+
+def test_graph_projection_uses_persisted_project_review_scope_for_all_space_view():
+    item = {
+        'item_kind': 'entity',
+        'item_id': 'entity-project-review',
+        'title': 'Project review fact',
+        'content': 'The project review fact is current.',
+        'valid_at': None,
+        'invalid_at': None,
+        'confirmation_status': 'pending',
+        'confirmation_basis_json': None,
+        'profile_aspect': None,
+        'preference_scope': None,
+        'preference_project_id': None,
+        'preference_agent_id': None,
+        'inheritance_mode': 'local_only',
+        'current_quadrant': 'known_known',
+        'requires_attention': False,
+        'negative_evidence_count': 0,
+        'human_change_version': 1,
+        'attributes_json': '{}',
+        'project_ids': ['project-a'],
+    }
+    token = ai_review_evidence_token(
+        item, scope='project', personal_project_id='project-a', has_conflict=False
+    )
+    record = {
+        'id': item['item_id'],
+        'name': item['title'],
+        'type': 'Entity',
+        'group_id': 'personal-group',
+        'summary': item['content'],
+        'confirmation_status': 'pending',
+        'confirmation_state_explicit': False,
+        'current_quadrant': 'known_known',
+        'requires_attention': False,
+        'negative_evidence_count': 0,
+        'human_change_version': 1,
+        'attributes_json': '{}',
+        'project_ids': ['project-a'],
+        'episodes': [],
+        'ai_review_evidence_token': token,
+        'ai_review_scope': 'project',
+        'ai_review_project_id': 'project-a',
+        'ai_assessment_json': (
+            '{"outcome":"approve","summary":"Project fact is current",'
+            '"evidence":["Direct item"],"confidence":0.8}'
+        ),
+    }
+
+    all_space = _graph_node(record, {}, {}, {}, {}, {})
+    assert all_space.ai_assessment['outcome'] == 'approve'
+    assert all_space.ai_review_scope == 'project'
+    assert all_space.ai_review_project_id == 'project-a'
+
+    project_view = _graph_node(
+        record,
+        {}, {}, {}, {}, {},
+        review_scope='project',
+        personal_project_id='project-a',
+    )
+    assert project_view.ai_assessment['outcome'] == 'approve'
+
+    unrelated_project_view = _graph_node(
+        record,
+        {}, {}, {}, {}, {},
+        review_scope='project',
+        personal_project_id='project-b',
+    )
+    assert unrelated_project_view.ai_assessment is None
 
 
 def test_graph_record_projection_parses_shared_json_attributes():

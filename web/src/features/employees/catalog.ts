@@ -18,10 +18,10 @@ export interface EmployeeTemplate {
   assignments: ProjectAgentAssignmentRecord[]
   assignmentsVersion: string
   identityConflict: boolean
-  // Jefa and Bole: provisioned for every space, never hired.
+  // Fixed roles are provisioned for every space, never hired.
   fixed?: boolean
   defaultProjectScope?: 'all' | 'selected'
-  workbench?: { kind: 'native'; view: 'people' }
+  workbench?: { kind: 'native'; view: 'people' | 'judgment' }
   management?: EmployeeManagement
   managedProjects?: { id: string; name: string }[]
 }

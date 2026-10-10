@@ -10,6 +10,8 @@ import EmployeeTaskDialog from '@/features/employees/EmployeeTaskDialog.vue'
 import EmployeeShareDialog from '@/features/employees/EmployeeShareDialog.vue'
 import { employeeAvatarUrl } from '@/features/employees/avatars'
 import { useProjectBoardFilter } from '@/features/employees/project-board-filter'
+import JudgmentWorkbench from '@/features/judgment/JudgmentWorkbench.vue'
+import { agentProfilePath } from '@/features/agent-profile/profile-model'
 import { useConsoleStore } from '@/stores/console'
 import { t } from '@/i18n'
 import { employeeTemplates, employeeCatalogError, employeeCatalogLoading, employeeErrorMessage, refreshEmployeeCatalog, type EmployeeWorkspace } from '@/features/employees/catalog'
@@ -35,7 +37,13 @@ const selectedTask = ref<EmployeeBoardItem | null>(null)
 const personalSpaceId = computed(() => store.activePersonalSpace?.id ?? '')
 const templateId = computed(() => String(route.params.templateId ?? ''))
 const template = computed(() => employeeTemplates.value.find((entry) => entry.id === templateId.value))
-const isNativePeople = computed(() => template.value?.workbench?.kind === 'native' && template.value.workbench.view === 'people')
+const nativeWorkbenchView = computed(() => {
+  const workbench = template.value?.workbench
+  return workbench?.kind === 'native' ? (workbench as { view?: string }).view ?? null : null
+})
+const isNativePeople = computed(() => nativeWorkbenchView.value === 'people')
+const isNativeJudgment = computed(() => nativeWorkbenchView.value === 'judgment')
+const isNativeWorkbench = computed(() => isNativePeople.value || isNativeJudgment.value)
 const isJefa = computed(() => templateId.value === 'jefa')
 const pageLoading = computed(() => (!store.state
   && (store.runtimeStatus === 'idle' || store.runtimeStatus === 'loading'))
@@ -100,8 +108,8 @@ const projectOptions = computed(() => supportsAllProjects.value
   : managedProjectOptions.value)
 let version = 0
 watch([templateId, personalSpaceId], () => { excludedProjectIds.value = []; taskOpen.value = false; shareOpen.value = false; selectedTask.value = null })
-watch([projectOptions, () => route.query.project, () => route.query.empty, templateId, isNativePeople], () => {
-  if (isNativePeople.value) {
+watch([projectOptions, () => route.query.project, () => route.query.empty, templateId, isNativeWorkbench], () => {
+  if (isNativeWorkbench.value) {
     ++version
     projectId.value = ''
     loading.value = false
@@ -126,7 +134,7 @@ watch([projectOptions, () => route.query.project, () => route.query.empty, templ
   }
 }, { immediate: true })
 watch([templateId, projectId, personalSpaceId, supportsAllProjects, catalogReady], () => {
-  if (!isNativePeople.value && catalogReady.value) void loadWorkspace()
+  if (!isNativeWorkbench.value && catalogReady.value) void loadWorkspace()
 }, { immediate: true })
 watch(employeeCatalogLoading, (catalogLoading) => {
   // Only the first catalog read gates the workbench. A management dialog refresh
@@ -143,7 +151,7 @@ watch(employeeCatalogLoading, (catalogLoading) => {
 }, { immediate: true })
 watch(projectFilter.invalidScope, (invalid) => { if (!invalid && isJefa.value && catalogReady.value) void loadWorkspace() })
 watch(managedProjectSignature, (signature, previous) => {
-  if (signature === previous || !catalogReady.value || isNativePeople.value) return
+  if (signature === previous || !catalogReady.value || isNativeWorkbench.value) return
   void loadWorkspace()
 })
 async function loadWorkspace() {
@@ -153,7 +161,7 @@ async function loadWorkspace() {
   failedProjectIds.value = []
   boardActionError.value = ''
   error.value = ''
-  if (isNativePeople.value || !template.value || !projectId.value || !personalSpaceId.value) { loading.value = false; return }
+  if (isNativeWorkbench.value || !template.value || !projectId.value || !personalSpaceId.value) { loading.value = false; return }
   if (isJefa.value && !supportsAllProjects.value) { loading.value = false; return }
   if (isJefa.value && projectFilter.invalidScope.value) { loading.value = false; return }
   if (employeeCatalogLoading.value) {
@@ -307,19 +315,23 @@ async function projectsSaved() {
         </button>
       </div>
       <div class="employee-workbench-actions">
-        <button v-if="template && !isNativePeople" class="employee-manage-projects" type="button" :disabled="!personalSpaceId" @click="manageProjectsOpen = true">
+        <RouterLink v-if="isNativeWorkbench && template?.agentId && personalSpaceId" class="employee-native-link" :to="agentProfilePath(personalSpaceId, template.agentId)" :title="t('agentProfiles.profile')">
+          {{ t('agentProfiles.profile') }}
+        </RouterLink>
+        <button v-if="template && !isNativeWorkbench" class="employee-manage-projects" type="button" :disabled="!personalSpaceId" @click="manageProjectsOpen = true">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>
           {{ t('employees.manageProjects') }}
         </button>
       </div>
     </header>
-    <EmployeeRecruitDialog v-if="!isNativePeople" :open="manageProjectsOpen" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" :template-id="templateId" @close="manageProjectsOpen = false" @recruited="projectsSaved" />
+    <EmployeeRecruitDialog v-if="!isNativeWorkbench" :open="manageProjectsOpen" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" :template-id="templateId" @close="manageProjectsOpen = false" @recruited="projectsSaved" />
     <EmployeeTaskDialog v-if="isJefa" :open="taskOpen" :item="selectedTask" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" :default-project-id="visibleProjectIds.length === 1 ? visibleProjectIds[0] : undefined" :personal-space-id="personalSpaceId" :can-write="template?.permissions.includes('board.write') ?? false" @close="taskOpen = false" @saved="loadWorkspace" />
     <EmployeeShareDialog v-if="isJefa" :open="shareOpen" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" @close="shareOpen = false" />
     <GrowthLoading v-if="pageLoading" :label="pageLoadingLabel" />
     <div v-else-if="visibleError" class="employee-workbench-state" role="alert"><p>{{ visibleError }}</p><button class="quiet-button" type="button" @click="retry">{{ t('employees.retry') }}</button></div>
     <div v-else-if="!template" class="employee-workbench-state"><p>{{ t('employees.unavailable') }}</p><RouterLink to="/project-agents">{{ t('employees.backToAgents') }}</RouterLink></div>
     <BolePeoplePanel v-else-if="isNativePeople" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" />
+    <JudgmentWorkbench v-else-if="isNativeJudgment" :personal-space-id="personalSpaceId" />
     <div v-else-if="isJefa && template.runtimeStatus !== 'ready'" class="employee-workbench-state"><p>{{ t('employees.installRequired') }}</p><small>{{ t('employees.installHelp') }}</small></div>
     <div v-else-if="!projectId" class="employee-workbench-state"><h2>{{ t('employees.emptyWorkbench') }}</h2><p>{{ t('employees.manageHint') }}</p><button class="quiet-button" type="button" @click="manageProjectsOpen = true">{{ t('employees.manageProjects') }}</button></div>
     <EmployeeTaskBoard
@@ -356,6 +368,9 @@ async function projectsSaved() {
 .employee-workbench-toolbar h1 { margin: 0; color: var(--color-ink); font-size: 18px; font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
 .employee-workbench-toolbar h1 span { margin-left: 8px; color: var(--color-muted); font-size: 12px; font-weight: 400; }
 .employee-workbench-actions { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.employee-native-link { display: inline-flex; align-items: center; min-height: 40px; padding: 8px 10px; border-radius: var(--radius-control); color: var(--color-ink); font-size: 13px; text-decoration: none; }
+.employee-native-link:hover { background: var(--color-surface-subtle); }
+.employee-native-link:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
 .employee-manage-projects, .employee-back-to-all { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 8px 10px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--color-ink); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
 .employee-manage-projects:hover:not(:disabled), .employee-back-to-all:hover { background: var(--color-surface-subtle); }
 .employee-manage-projects:disabled { color: var(--color-muted); cursor: default; }

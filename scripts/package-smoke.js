@@ -62,6 +62,8 @@ try {
     'src/cli/employee-command.js',
     'src/employees/catalog/jefa.json',
     'src/employees/catalog/bole.json',
+    'src/employees/catalog/tonborg.json',
+    'src/judgment/service.js',
     'src/setup/neo4j-memory-profile.js',
     'dist/web/index.html',
     'docs/external-knowledge-architecture.md',
@@ -71,6 +73,7 @@ try {
     'docs/employee-agents.md',
     'docs/agent-interface-architecture.md',
     'docs/agent-roundtable.md',
+    'docs/judgment-and-autonomy.md',
     'src/agent-roundtable/service.js',
     'examples/external-knowledge/markdown-folder.mjs',
     'graph-provider/fuli_graph/app.py',
@@ -93,7 +96,8 @@ try {
         'docs/agent-conversations-and-collaboration.md',
         'docs/employee-agents.md',
         'docs/agent-interface-architecture.md',
-        'docs/agent-roundtable.md'
+        'docs/agent-roundtable.md',
+        'docs/judgment-and-autonomy.md'
       ].includes(path), `unexpected published documentation file ${path}`);
     }
     assert.doesNotMatch(path, /^(?:AGENTS|CLAUDE)\.md$/);

@@ -25,6 +25,7 @@ async def test_every_space_has_fixed_project_manager_and_hr():
         roles = {agent['agent_id']: agent['profile']['agent_type'] for agent in listed.json()}
         assert roles['employee.jefa'] == 'coordinator'
         assert roles['employee.bole'] == 'hr'
+        assert roles['employee.tonborg'] == 'durable'
 
         archived = await client.request('DELETE', '/v1/project-agents/employee.jefa', params={
             'personal_space_id': space_id, 'reason': 'try to remove the PM',

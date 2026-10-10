@@ -29,16 +29,16 @@
 }
 
 /* Checkbox and radio */
-:where(input[type=checkbox], input[type=radio]) {
+:where(input[type=checkbox]:not([role=switch]), input[type=radio]) {
   appearance: none; flex: 0 0 auto; width: 16px; height: 16px; margin: 0;
   border: 1.5px solid var(--color-control-border); background: var(--color-surface);
   display: inline-grid; place-content: center; cursor: pointer;
   transition: background-color var(--motion-fast), border-color var(--motion-fast);
 }
-:where(input[type=checkbox]) { border-radius: 4px; }
+:where(input[type=checkbox]:not([role=switch])) { border-radius: 4px; }
 :where(input[type=radio]) { border-radius: 50%; }
-:where(input[type=checkbox], input[type=radio]):checked { border-color: var(--color-accent); background: var(--color-accent); }
-:where(input[type=checkbox]):checked::after {
+:where(input[type=checkbox]:not([role=switch]), input[type=radio]):checked { border-color: var(--color-accent); background: var(--color-accent); }
+:where(input[type=checkbox]:not([role=switch])):checked::after {
   content: ''; width: 9px; height: 5px; margin-top: -2px;
   border: solid var(--color-on-accent); border-width: 0 0 2px 2px; transform: rotate(-45deg);
 }

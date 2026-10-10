@@ -80,6 +80,7 @@ async def test_apply_promotes_and_invalidates_duplicates_in_one_mutation_query()
 
     mutation_query, parameters = driver.calls[-1]
     assert 'CREATE (promotion:FuliCommonKnowledgePromotion' in mutation_query
+    assert 'ORDER BY lock_item.kind + \':\' + lock_item.item.uuid' in mutation_query
     assert "canonical.fuli_inheritance_mode = 'descendants'" in mutation_query
     assert 'pair.item.fuli_invalid_at = $changed_at' in mutation_query
     assert 'CREATE (revision:FuliKnowledgeRevision' in mutation_query

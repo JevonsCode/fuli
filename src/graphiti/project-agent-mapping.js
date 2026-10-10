@@ -343,6 +343,8 @@ export function projectAgentTokenUsage(value) {
 export function providerProjectAgentTaskActivity(input) {
   const result = withoutUndefined({
     artifact_revision: input.artifactRevision ?? input.artifact_revision,
+    expected_verification_attempt_id: input.expectedVerificationAttemptId,
+    judgment_task_context_token: input.judgmentTaskContextToken,
     personal_space_id: input.personalSpaceId ?? input.personal_space_id,
     personal_project_id: input.personalProjectId ?? input.personal_project_id,
     task_id: input.taskId ?? input.task_id,

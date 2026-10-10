@@ -773,6 +773,11 @@ export interface KnowledgeNode {
   last_human_changed_at?: string | null
   last_agent_viewed_at?: string | null
   last_agent_reviewed_at?: string | null
+  ai_review_evidence_token?: string | null
+  ai_assessment?: KnowledgeAIAssessment | null
+  ai_reviewed_at?: string | null
+  ai_review_id?: string | null
+  ai_review_decision_id?: string | null
   utility_score?: number
   confidence_score?: number
   qualified_use_count?: number
@@ -820,6 +825,11 @@ export interface KnowledgeEdge {
   last_human_changed_at?: string | null
   last_agent_viewed_at?: string | null
   last_agent_reviewed_at?: string | null
+  ai_review_evidence_token?: string | null
+  ai_assessment?: KnowledgeAIAssessment | null
+  ai_reviewed_at?: string | null
+  ai_review_id?: string | null
+  ai_review_decision_id?: string | null
   utility_score?: number
   confidence_score?: number
   qualified_use_count?: number
@@ -849,6 +859,16 @@ export interface KnowledgeGraph {
   next_offset?: number | null
 }
 
+export interface KnowledgeAIAssessment {
+  outcome: 'approve' | 'escalate'
+  summary: string
+  evidence: string[]
+  confidence: number
+  client?: string | null
+  model?: string | null
+  session_id?: string | null
+}
+
 export type KnowledgeItem = {
   id: string
   itemKind: 'entity' | 'relationship'
@@ -874,6 +894,11 @@ export type KnowledgeItem = {
   lastHumanChangedAt: string | null
   lastAgentViewedAt: string | null
   lastAgentReviewedAt: string | null
+  aiReviewEvidenceToken: string | null
+  aiAssessment: KnowledgeAIAssessment | null
+  aiReviewedAt: string | null
+  aiReviewId: string | null
+  aiReviewDecisionId: string | null
   utilityScore: number
   confidenceScore: number
   qualifiedUseCount: number

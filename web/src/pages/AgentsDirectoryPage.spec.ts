@@ -7,8 +7,8 @@ import { useConsoleStore } from '@/stores/console'
 import { t } from '@/i18n'
 import AgentsDirectoryPage from './AgentsDirectoryPage.vue'
 
-const { getJson } = vi.hoisted(() => ({ getJson: vi.fn() }))
-vi.mock('@/api/client', () => ({ getJson, postJson: vi.fn(), patchJson: vi.fn() }))
+const { getJson, putJson } = vi.hoisted(() => ({ getJson: vi.fn(), putJson: vi.fn() }))
+vi.mock('@/api/client', () => ({ getJson, putJson, postJson: vi.fn(), patchJson: vi.fn() }))
 const mounted: Array<{ unmount: () => void }> = []
 const roster = ['Aster', 'Birch'].map((name, index) => ({
   agentId: `agent-${index}`, personalSpaceId: 'space-a',
@@ -24,8 +24,11 @@ beforeEach(() => {
   getJson.mockImplementation(async (url: string) => {
     if (url === '/api/project-agents?personalSpaceId=space-a') return roster
     if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') return []
+    if (url === '/api/agent-pins?personalSpaceId=space-a') return { revision: 1, agentIds: ['agent-0'] }
     throw new Error(`Unexpected detail request: ${url}`)
   })
+  putJson.mockReset()
+  putJson.mockResolvedValue({ revision: 2, agentIds: [] })
 })
 afterEach(() => mounted.splice(0).forEach(wrapper => wrapper.unmount()))
 async function setup(path = '/project-agents') {
@@ -97,7 +100,26 @@ describe('Agent directory integration', () => {
     expect(getJson.mock.calls.every(([url]) => [
       '/api/project-agents?personalSpaceId=space-a',
       '/api/project-agent-tasks?personalSpaceId=space-a&limit=200',
+      '/api/agent-pins?personalSpaceId=space-a',
     ].includes(url) || String(url).startsWith('/api/employee-templates'))).toBe(true)
+  })
+
+  it('toggles a card pin without changing the profile route', async () => {
+    const { router, wrapper } = await setup()
+    const toggle = wrapper.findAll('[data-agent-pin-toggle]')[0]!
+
+    expect(toggle.attributes('aria-pressed')).toBe('true')
+    await toggle.trigger('click')
+    await flushPromises()
+
+    expect(putJson).toHaveBeenCalledWith('/api/agent-pins', {
+      personalSpaceId: 'space-a',
+      agentId: 'agent-0',
+      pinned: false,
+      expectedRevision: 1,
+    })
+    expect(router.currentRoute.value.path).toBe('/project-agents')
+    expect(wrapper.findAll('[data-agent-pin-toggle]')[0]!.attributes('aria-pressed')).toBe('false')
   })
 
   it('separates membership state from a reported active work state', async () => {

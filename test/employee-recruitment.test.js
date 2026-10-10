@@ -10,7 +10,7 @@ import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 
 const manifest = parseEmployeeManifest(JSON.parse(readFileSync(new URL('../src/employees/catalog/jefa.json', import.meta.url))));
 
-function fixture() {
+function fixture(selectedManifest = manifest) {
   const agents = new Map();
   const writes = [];
   const projects = ['project-a', 'project-b', 'project:空 格'].map((id) => ({ project_id: id, profile: { name: id, lifecycle: 'active' } }));
@@ -44,8 +44,8 @@ function fixture() {
     }
   };
   const registry = {
-    catalog: () => [{ manifest, runtimeStatus: 'ready' }],
-    get(id) { if (id !== 'jefa') throw new TypeError('Unknown template'); return { manifest, runtimeStatus: 'ready' }; },
+    catalog: () => [{ manifest: selectedManifest, runtimeStatus: 'ready' }],
+    get(id) { if (id !== selectedManifest.id) throw new TypeError('Unknown template'); return { manifest: selectedManifest, runtimeStatus: 'ready' }; },
     async runtime() { return {
       describeTools: () => [{ name: 'read_board', permission: 'board.read' }],
       callTool: async (_tool, _args, context) => ({ projectId: context.project.id }),
@@ -56,6 +56,32 @@ function fixture() {
   app.employees = createEmployeeService({ app, registry });
   return { app, agents, writes, projects, registry, service: app.employees };
 }
+
+test('Tonborg creates its scoped memory assignment only after authorization and preserves its all-project rule', async t => {
+  const tonborg = parseEmployeeManifest(JSON.parse(readFileSync(new URL('../src/employees/catalog/tonborg.json', import.meta.url))));
+  const { service, agents, writes, app } = fixture(tonborg);
+  t.after(() => service.close());
+  agents.set('employee.tonborg', { agentId: 'employee.tonborg', assignments: [], profile: {
+    status: 'active', allowedClients: ['codex'], capabilities: tonborg.capabilities,
+    responsibility: tonborg.description, workKinds: tonborg.workKinds,
+  } });
+  const input = { templateId: 'tonborg', personalProjectId: 'project-a', sourceApplication: 'codex' };
+  await service.authorize(input);
+  assert.equal(writes.length, 0);
+  await assert.rejects(service.authorize({ ...input, sourceApplication: 'claude_code', ensureAssignment: true }), { status: 403 });
+  assert.equal(writes.length, 0);
+  await service.authorize({ ...input, ensureAssignment: true });
+  await service.authorize({ ...input, ensureAssignment: true });
+  assert.equal(agents.get('employee.tonborg').assignments.length, 1);
+  assert.equal((await service.list()).templates[0].management.mode, 'all');
+  await service.authorize({ ...input, personalProjectId: 'project-b', ensureAssignment: true });
+  assert.equal(agents.get('employee.tonborg').assignments.length, 2);
+  const ended = agents.get('employee.tonborg').assignments[0];
+  await app.endProjectAgentAssignment({ assignmentId: ended.assignmentId, expectedRevision: 0 });
+  const count = writes.length;
+  await assert.rejects(service.authorize({ ...input, ensureAssignment: true }), { status: 403 });
+  assert.equal(writes.length, count);
+});
 
 test('a successful employee tool call supplies truthful collaboration evidence', async (t) => {
   const { service } = fixture();

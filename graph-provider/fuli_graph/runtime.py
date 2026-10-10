@@ -656,6 +656,10 @@ class GraphitiRuntime:
                OR item.fuli_usage_generation IS NULL
                OR item.fuli_inheritance_mode IS NULL
                OR item.fuli_inherited_project_ids IS NULL
+            WITH item
+            ORDER BY 'entity:' + item.uuid
+            SET item.fuli_ai_review_lock_version =
+                  coalesce(item.fuli_ai_review_lock_version, 0) + 1
             SET item.fuli_utility_score =
                   coalesce(item.fuli_utility_score, 0.0),
                 item.fuli_confidence_score = coalesce(
@@ -688,6 +692,10 @@ class GraphitiRuntime:
                OR item.fuli_usage_generation IS NULL
                OR item.fuli_inheritance_mode IS NULL
                OR item.fuli_inherited_project_ids IS NULL
+            WITH item
+            ORDER BY 'relationship:' + item.uuid
+            SET item.fuli_ai_review_lock_version =
+                  coalesce(item.fuli_ai_review_lock_version, 0) + 1
             SET item.fuli_utility_score =
                   coalesce(item.fuli_utility_score, 0.0),
                 item.fuli_confidence_score = coalesce(

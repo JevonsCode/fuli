@@ -51,7 +51,12 @@ export async function taskEntryPreferences(application, projectResolution, {
   // Questions other Agents left for this Agent while it was not running.
   const waiting = selection?.agent && application.roundtable
     ? application.roundtable.pending(selection.agent.agentId) : [];
+  const judgmentPolicy = application.judgment?.store().policy(application.config.personal.spaceId, projectResolution.personalProjectId ?? '');
   return { ...managedPreferences, ...(context ? { project_agent_context: context } : {}),
+    ...(judgmentPolicy ? { judgment_context: { agentId: 'employee.tonborg', policy: judgmentPolicy,
+      guidance: judgmentPolicy.mode === 'manual'
+        ? 'Tonborg is available for advice via assess_agent_action; retain human review.'
+        : 'Before choosing a new subagent, session, client or model, use assess_agent_action with the exact project, Agent and task. Use its eligible recommendation within the saved policy; recheck host capability before dispatch. Do not ask again for an already delegated routine choice. Escalations, user rules and locked executor policies still apply. For an awaiting-review FULI task, its accountable lead can use assess_task_completion with exact task/artifact revision and real verification evidence. Jefa human acceptance and external publication remain separate. Recommendations are not permissions or execution receipts.' } } : {}),
     ...(waiting.length ? { agent_messages: waiting,
       agent_messages_guidance: 'Other Agents are waiting for your answers. Reply to each with reply_agent_message.' } : {}),
     agent_receipt: taskAgentReceipt(application, {

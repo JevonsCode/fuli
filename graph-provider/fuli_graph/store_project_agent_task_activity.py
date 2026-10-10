@@ -41,6 +41,19 @@ class StoreProjectAgentTaskActivity:
             space,
             request.personal_project_id,
         )
+        if request.judgment_task_context_token:
+            # Match the task-context lifecycle lock order: session, then task.
+            # A new host turn cannot supersede the checked token before commit.
+            contexts, _, _ = await self.runtime.driver.execute_query(
+                '''
+                MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
+                      [:HAS_TASK_CONTEXT_SESSION]->(session:FuliTaskContextSession)-
+                      [:HAS_CONTEXT]->(context:FuliTaskContext {token: $token})
+                SET session.write_serial = coalesce(session.write_serial, 0) + 1
+                RETURN context.token AS token
+                ''', space_id=request.personal_space_id, token=request.judgment_task_context_token)
+            if not contexts:
+                raise HTTPException(403, 'Judgment acceptance context is unavailable')
         # Acquire the task's write lock before reading its revision, transition
         # state or idempotency events. A transaction alone permits two concurrent
         # readers to validate the same revision before either obtains a lock.
@@ -96,6 +109,19 @@ class StoreProjectAgentTaskActivity:
             if (not request.artifact_revision or raw_task.get('quality_gate') != 'passed'
                 or raw_task.get('verified_artifact_revision') != request.artifact_revision):
                 raise HTTPException(409, 'Verify this exact artifact revision before completing the task')
+        if request.expected_verification_attempt_id is not None:
+            if (request.status != 'completed' or raw_task.get('quality_gate') != 'passed'
+                or raw_task.get('verified_attempt_id') != request.expected_verification_attempt_id
+                or raw_task.get('verified_artifact_revision') != request.artifact_revision):
+                raise HTTPException(409, 'Verification evidence changed before task acceptance')
+            if not request.judgment_task_context_token or not request.source_application:
+                raise HTTPException(403, 'Judgment acceptance requires a current lead context')
+            context = await self.get_task_context(actor, request.personal_space_id,
+                request.judgment_task_context_token, request.source_application)
+            if (context.get('personal_project_id') != request.personal_project_id
+                or context.get('project_agent_id') != raw_task.get('lead_agent_id')
+                or request.agent_id != raw_task.get('lead_agent_id')):
+                raise HTTPException(403, 'Judgment acceptance requires the current accountable lead')
         self._validate_task_transition(
             raw_task.get('status'),
             request.status,

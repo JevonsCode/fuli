@@ -301,6 +301,32 @@ describe('knowledge model', () => {
     expect(knowledgeReviewState(item)).toBe('pending')
   })
 
+  it('counts an effective Tonborg assessment separately without calling it confirmation', () => {
+    const item = knowledgeItemFromNode({
+      id: 'tonborg-reviewed',
+      name: 'Current project rule',
+      type: 'Decision',
+      ai_review_evidence_token: 'a'.repeat(64),
+      ai_assessment: {
+        outcome: 'approve',
+        summary: 'The current version remains useful.',
+        evidence: ['Direct item content'],
+        confidence: 0.84,
+        client: 'codex',
+        model: 'gpt-6',
+      },
+      ai_reviewed_at: '2026-08-01T10:00:00Z',
+    })
+
+    expect(knowledgeReviewState(item)).toBe('ai_reviewed')
+    expect(reviewStateLabel(item)).toBe('Tonborg 已审')
+    expect(item.confirmationStatus).toBe('pending')
+    expect(item.aiAssessment?.model).toBe('gpt-6')
+
+    item.aiAssessment = null
+    expect(knowledgeReviewState(item)).toBe('pending')
+  })
+
   it('groups only pending classified knowledge by exact source and session', () => {
     const evidence = {
       id: 'episode-1',

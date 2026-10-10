@@ -4,6 +4,7 @@ from .graph_projection import (
     management_projection,
     personal_project_projection,
 )
+from .ai_review import effective_ai_review
 from .graph_models import GraphEdge, GraphNode, GraphResult
 from .models import (
     ConfirmationBasis,
@@ -82,6 +83,7 @@ async def read_graph(
     assignments = await _read_assignments(store, space_id, item_ids)
     references = await read_project_references(store, space_id, item_ids)
     conflicts = await read_knowledge_conflicts(store, space_id, item_ids)
+    preference_conflicts = await _read_preference_conflicts(store, space_id, item_ids)
     audits = await read_knowledge_audits(store, space_id, item_ids)
     knowledge_nodes = [
         _graph_node(
@@ -92,6 +94,9 @@ async def read_graph(
             references,
             conflicts,
             audits,
+            preference_conflicts=preference_conflicts,
+            review_scope='project' if project else 'all',
+            personal_project_id=personal_project_id,
         )
         for record in node_records
     ]
@@ -104,6 +109,9 @@ async def read_graph(
             references,
             conflicts,
             audits,
+            preference_conflicts=preference_conflicts,
+            review_scope='project' if project else 'all',
+            personal_project_id=personal_project_id,
         )
         for record in edge_records
     ]
@@ -229,6 +237,13 @@ def _node_query(project_scoped: bool, paginated: bool = False) -> str:
                node.fuli_last_human_changed_at AS last_human_changed_at,
                node.fuli_last_agent_viewed_at AS last_agent_viewed_at,
                node.fuli_last_agent_reviewed_at AS last_agent_reviewed_at,
+               node.fuli_ai_review_evidence_token AS ai_review_evidence_token,
+               node.fuli_ai_assessment_json AS ai_assessment_json,
+               node.fuli_ai_review_scope AS ai_review_scope,
+               node.fuli_ai_review_project_id AS ai_review_project_id,
+               node.fuli_ai_reviewed_at AS ai_reviewed_at,
+               node.fuli_ai_review_id AS ai_review_id,
+               node.fuli_ai_review_decision_id AS ai_review_decision_id,
                coalesce(node.fuli_utility_score, 0.0) AS utility_score,
                coalesce(node.fuli_confidence_score, 0.5) AS confidence_score,
                coalesce(node.fuli_qualified_use_count, 0)
@@ -345,6 +360,13 @@ def _edge_query(project_scoped: bool, paginated: bool = False) -> str:
                edge.fuli_last_human_changed_at AS last_human_changed_at,
                edge.fuli_last_agent_viewed_at AS last_agent_viewed_at,
                edge.fuli_last_agent_reviewed_at AS last_agent_reviewed_at,
+               edge.fuli_ai_review_evidence_token AS ai_review_evidence_token,
+               edge.fuli_ai_assessment_json AS ai_assessment_json,
+               edge.fuli_ai_review_scope AS ai_review_scope,
+               edge.fuli_ai_review_project_id AS ai_review_project_id,
+               edge.fuli_ai_reviewed_at AS ai_reviewed_at,
+               edge.fuli_ai_review_id AS ai_review_id,
+               edge.fuli_ai_review_decision_id AS ai_review_decision_id,
                coalesce(edge.fuli_utility_score, 0.0) AS utility_score,
                coalesce(edge.fuli_confidence_score, 0.5) AS confidence_score,
                coalesce(edge.fuli_qualified_use_count, 0)
@@ -462,6 +484,31 @@ async def _read_assignments(store, space_id: str, item_ids: list[str]):
     return result
 
 
+async def _read_preference_conflicts(store, space_id: str, item_ids: list[str]):
+    if not item_ids:
+        return {}
+    records, _, _ = await store.runtime.driver.execute_query(
+        '''
+        MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
+              [:HAS_PREFERENCE_CONFLICT]->
+              (conflict:FuliPreferenceConflict {status: 'ai_pending'})
+        WHERE conflict.left_item_id IN $item_ids
+           OR conflict.right_item_id IN $item_ids
+        RETURN conflict
+        ''',
+        space_id=space_id,
+        item_ids=item_ids,
+        routing_='r',
+    )
+    result = {}
+    for record in records:
+        value = dict(record['conflict'])
+        for item_id in (value.get('left_item_id'), value.get('right_item_id')):
+            if item_id in item_ids:
+                result.setdefault(item_id, []).append(value)
+    return result
+
+
 def _graph_node(
     record,
     evidence,
@@ -470,12 +517,27 @@ def _graph_node(
     references,
     conflicts,
     audits=None,
+    *,
+    preference_conflicts=None,
+    review_scope: str = 'all',
+    personal_project_id: str | None = None,
 ) -> GraphNode:
     episode_ids = record.get('episodes') or []
     status, basis, confidence, confirmation_explicit = _confirmation_projection(
         record
     )
     attributes = json_object(record.get('attributes_json'))
+    ai_assessment = _effective_ai_projection(
+        record,
+        item_kind='entity',
+        evidence=evidence,
+        assignments=assignments,
+        references=references,
+        conflicts=conflicts,
+        preference_conflicts=preference_conflicts or {},
+        review_scope=review_scope,
+        personal_project_id=personal_project_id,
+    )
     return GraphNode(
         id=record['id'],
         name=record['name'],
@@ -516,6 +578,14 @@ def _graph_node(
         last_agent_reviewed_at=_native_datetime(
             record.get('last_agent_reviewed_at')
         ),
+        ai_review_evidence_token=record.get('ai_review_evidence_token'),
+        ai_assessment=ai_assessment,
+        ai_review_scope=record.get('ai_review_scope'),
+        ai_review_project_id=record.get('ai_review_project_id'),
+        ai_reviewed_at=_native_datetime(record.get('ai_reviewed_at'))
+        if ai_assessment is not None else None,
+        ai_review_id=record.get('ai_review_id'),
+        ai_review_decision_id=record.get('ai_review_decision_id'),
         utility_score=float(record.get('utility_score') or 0),
         confidence_score=confidence,
         qualified_use_count=int(record.get('qualified_use_count') or 0),
@@ -550,12 +620,27 @@ def _graph_edge(
     references,
     conflicts,
     audits=None,
+    *,
+    preference_conflicts=None,
+    review_scope: str = 'all',
+    personal_project_id: str | None = None,
 ) -> GraphEdge:
     episode_ids = record.get('episodes') or []
     status, basis, confidence, confirmation_explicit = _confirmation_projection(
         record
     )
     attributes = json_object(record.get('attributes_json'))
+    ai_assessment = _effective_ai_projection(
+        record,
+        item_kind='relationship',
+        evidence=evidence,
+        assignments=assignments,
+        references=references,
+        conflicts=conflicts,
+        preference_conflicts=preference_conflicts or {},
+        review_scope=review_scope,
+        personal_project_id=personal_project_id,
+    )
     return GraphEdge(
         id=record['id'],
         source=record['source'],
@@ -598,6 +683,14 @@ def _graph_edge(
         last_agent_reviewed_at=_native_datetime(
             record.get('last_agent_reviewed_at')
         ),
+        ai_review_evidence_token=record.get('ai_review_evidence_token'),
+        ai_assessment=ai_assessment,
+        ai_review_scope=record.get('ai_review_scope'),
+        ai_review_project_id=record.get('ai_review_project_id'),
+        ai_reviewed_at=_native_datetime(record.get('ai_reviewed_at'))
+        if ai_assessment is not None else None,
+        ai_review_id=record.get('ai_review_id'),
+        ai_review_decision_id=record.get('ai_review_decision_id'),
         utility_score=float(record.get('utility_score') or 0),
         confidence_score=confidence,
         qualified_use_count=int(record.get('qualified_use_count') or 0),
@@ -658,3 +751,127 @@ def _confirmation_projection(record) -> tuple[
         and basis is not None
     )
     return status, basis, confidence, explicit
+
+
+def _field_value(value, name: str, default=None):
+    if isinstance(value, dict):
+        return value.get(name, default)
+    return getattr(value, name, default)
+
+
+def _effective_ai_projection(
+    record,
+    *,
+    item_kind: str,
+    evidence,
+    assignments,
+    references,
+    conflicts,
+    preference_conflicts,
+    review_scope: str,
+    personal_project_id: str | None,
+) -> dict | None:
+    # The display scope may be broader than the scope used to produce the
+    # assessment. Validate against the persisted review scope so a
+    # project-bound token remains effective in an authorized all-space view.
+    stored_review_scope = record.get('ai_review_scope')
+    stored_review_project_id = record.get('ai_review_project_id')
+    validation_scope = stored_review_scope or review_scope
+    validation_project_id = (
+        stored_review_project_id
+        if stored_review_project_id is not None
+        else personal_project_id
+    )
+    if (
+        stored_review_project_id is not None
+        and review_scope in {'project', 'preferences_project'}
+        and personal_project_id != stored_review_project_id
+    ):
+        return None
+    project_scoped_review = validation_scope in {'project', 'preferences_project'}
+    item_id = record['id']
+    project_ids = {
+        str(project_id)
+        for project_id in (record.get('project_ids') or [])
+        if project_id
+    }
+    preference_project_id = record.get('preference_project_id')
+    if preference_project_id:
+        project_ids.add(str(preference_project_id))
+    for assignment in assignments.get(item_id, []):
+        project_id = _field_value(assignment, 'project_id')
+        if project_id:
+            project_ids.add(str(project_id))
+    for reference in references.get(item_id, []):
+        project_id = _field_value(reference, 'project_id')
+        if project_id and _field_value(reference, 'status') == 'active':
+            project_ids.add(str(project_id))
+    for episode_id in record.get('episodes') or []:
+        project_id = _field_value(evidence.get(episode_id), 'personal_project_id')
+        if project_id:
+            project_ids.add(str(project_id))
+
+    scoped_conflict = False
+    for conflict in conflicts.get(item_id, []):
+        if _field_value(conflict, 'status') != 'pending':
+            continue
+        if not project_scoped_review or validation_project_id is None:
+            scoped_conflict = True
+            break
+        target_project_id = _field_value(conflict, 'target_project_id')
+        source_project_id = _field_value(conflict, 'source_project_id')
+        if validation_project_id in {target_project_id, source_project_id}:
+            scoped_conflict = True
+            break
+    if not scoped_conflict:
+        for conflict in preference_conflicts.get(item_id, []):
+            if _field_value(conflict, 'status') != 'ai_pending':
+                continue
+            if not project_scoped_review or validation_project_id is None:
+                scoped_conflict = True
+                break
+            if _field_value(conflict, 'preference_project_id') == validation_project_id:
+                scoped_conflict = True
+                break
+
+    item = {
+        'item_kind': item_kind,
+        'item_id': item_id,
+        'title': (
+            record.get('name') or item_id
+            if item_kind == 'entity'
+            else record.get('type') or 'RELATES_TO'
+        ),
+        'content': (
+            record.get('summary') or ''
+            if item_kind == 'entity'
+            else record.get('fact') or ''
+        ),
+        'valid_at': record.get('valid_at'),
+        'invalid_at': record.get('invalid_at'),
+        'confirmation_status': record.get('confirmation_status'),
+        'confirmation_basis_json': record.get('confirmation_basis_json'),
+        'profile_aspect': record.get('profile_aspect'),
+        'preference_scope': record.get('preference_scope'),
+        'preference_project_id': preference_project_id,
+        'preference_agent_id': record.get('preference_agent_id'),
+        'inheritance_mode': record.get('inheritance_mode') or 'local_only',
+        'current_quadrant': record.get('current_quadrant') or 'known_known',
+        'utility_score': record.get('utility_score'),
+        'confidence_score': record.get('confidence_score'),
+        'qualified_use_count': record.get('qualified_use_count'),
+        'distinct_task_count': record.get('distinct_task_count'),
+        'negative_evidence_count': record.get('negative_evidence_count'),
+        'requires_attention': record.get('requires_attention') is True,
+        'human_change_version': record.get('human_change_version') or 0,
+        'attributes_json': record.get('attributes_json'),
+        'project_ids': sorted(project_ids),
+    }
+    return effective_ai_review(
+        item,
+        stored_token=record.get('ai_review_evidence_token'),
+        stored_assessment=record.get('ai_assessment_json'),
+        scope=validation_scope,
+        personal_project_id=validation_project_id,
+        has_conflict=scoped_conflict,
+    )

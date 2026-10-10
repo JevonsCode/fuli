@@ -186,7 +186,8 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
     // All-project policy also covers projects without a materialized assignment.
     const agents = await app.listProjectAgents({ personalSpaceId: spaceId });
     const agent = agents.find((entry) => entry.agentId === employeeAgentId(manifest.id));
-    const management = managementFor(manifest, agent, managementStore.read(spaceId, manifest.id));
+    const stored = managementStore.read(spaceId, manifest.id);
+    const management = managementFor(manifest, agent, stored);
     if (input.sourceApplication && Array.isArray(agent?.profile.allowedClients) && !agent.profile.allowedClients.includes(input.sourceApplication)) {
       throw new EmployeeError('This employee is not enabled for the current Agent client', 403, 'assignment_required');
     }
@@ -195,6 +196,24 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
       !policyAllowsProject(management, selectedProject.id) ||
       (management.mode !== 'all' && !(agent.assignments ?? []).some((entry) => entry.personalProjectId === selectedProject.id && entry.status === 'active'))) {
       throw new EmployeeError('Recruit this employee into the selected project first', 403, 'assignment_required');
+    }
+    if (manifest.id === 'tonborg' && input.ensureAssignment === true &&
+      !activeEmployeeAssignments(agent).some(entry => entry.personalProjectId === selectedProject.id)) {
+      // Provider memory is project-scoped. Preserve the already authorized all
+      // rule before its first concrete assignment, without launching a worker.
+      if (!stored) managementStore.write(spaceId, manifest.id, managementWithoutRevision(management), 0);
+      const history = (agent.assignments ?? []).filter(entry => entry.personalProjectId === selectedProject.id);
+      const generation = history.map(entry => `${entry.assignmentId}:${entry.revision ?? 0}`).sort();
+      const key = createHash('sha256').update(JSON.stringify([manifest.id, selectedProject.id, generation])).digest('hex');
+      await app.createProjectAgentAssignment({
+        personalSpaceId: spaceId, personalProjectId: selectedProject.id, agentId: agent.agentId,
+        idempotencyKey: `employee-assignment:${key}`, responsibility: agent.profile.responsibility,
+        workKinds: agent.profile.workKinds ?? manifest.workKinds, capabilities: agent.profile.capabilities,
+        reason: 'Initialize authorized Tonborg project memory',
+      });
+      // Assignment storage is asynchronous; a concurrent scope/client change
+      // must be observed before any judgment evidence is read.
+      return authorize({ ...input, ensureAssignment: false });
     }
     return { personalSpaceId: spaceId, project: selectedProject, agentId: agent.agentId, management };
   }

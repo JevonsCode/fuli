@@ -362,6 +362,8 @@ async def test_batch_confirmation_updates_one_source_group_with_individual_revis
     query, parameters = driver.calls[-1]
     assert 'valid_count = size(items)' in query
     assert "action: 'batch_confirm'" in query
+    assert query.count("ORDER BY 'entity:' + row.item_id") == 1
+    assert query.count("ORDER BY 'relationship:' + row.item_id") == 1
     assert parameters['group_kind'] == 'source'
     assert parameters['group_value'] == 'episode-1'
     assert all('"confirmed_by"' in row['confirmation_basis_json']
@@ -453,6 +455,7 @@ async def test_assignment_override_moves_one_item_without_rewriting_episode_evid
 
     assignment_query, parameters = driver.calls[-1]
     assert 'FuliKnowledgeAssignment' in assignment_query
+    assert 'fuli_ai_review_lock_version' in assignment_query
     assert 'Episodic' not in assignment_query
     assert parameters['previous_project_id'] == 'project-a'
     assert result.project_id == 'project-b'
@@ -693,6 +696,16 @@ async def test_cross_project_conflict_is_recorded_pending_without_changing_prima
     assert result.source_project_id == 'project-b'
     assert result.reference.status == 'pending_conflict'
     assert result.conflict.status == 'pending'
+    assert any(
+        'FuliKnowledgeProjectReference' in query
+        and 'fuli_ai_review_lock_version' in query
+        for query, _ in driver.calls
+    )
+    assert any(
+        'FuliKnowledgeConflict' in query
+        and 'fuli_ai_review_lock_version' in query
+        for query, _ in driver.calls
+    )
     assert any('PERSONAL_PROJECT_RELATION' in query for query, _ in driver.calls)
     assert not any('FuliKnowledgeAssignment' in query and 'SET assignment' in query
                    for query, _ in driver.calls)

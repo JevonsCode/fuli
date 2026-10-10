@@ -86,6 +86,11 @@ const reviewChoices = computed<Array<{
     hint: t('knowledge.workspace.organizer.review.agentConfirmedHint'),
   },
   {
+    value: 'ai_reviewed',
+    label: t('knowledge.domain.reviewStates.ai_reviewed'),
+    hint: t('knowledge.domain.confirmation.aiReviewed'),
+  },
+  {
     value: 'confirmed',
     label: t('knowledge.domain.reviewStates.confirmed'),
     hint: t('knowledge.workspace.organizer.review.confirmedHint'),
@@ -529,6 +534,10 @@ function openReplacement(item: KnowledgeItem) {
   color: var(--color-success);
 }
 
+.review-state-filter button.state-ai_reviewed.active {
+  color: var(--color-accent);
+}
+
 .review-state-filter button strong,
 .quadrant-filter button strong {
   margin-left: 2px;
@@ -705,6 +714,11 @@ function openReplacement(item: KnowledgeItem) {
 .review-chip.state-pending {
   color: var(--color-warning);
   background: var(--color-warning-soft);
+}
+
+.review-chip.state-ai_reviewed {
+  color: var(--color-accent);
+  background: var(--color-surface-subtle);
 }
 
 .organizer-basis {

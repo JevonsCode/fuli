@@ -3,7 +3,8 @@ export function startKnowledgeReview(app, input) {
   return app.personal.startKnowledgeReview({
     personal_space_id: input.personalSpaceId,
     scope: input.scope,
-    personal_project_id: input.personalProjectId ?? null
+    personal_project_id: input.personalProjectId ?? null,
+    ...(input.reviewer ? { reviewer: input.reviewer } : {})
   });
 }
 
@@ -12,7 +13,8 @@ export function listKnowledgeReviewCandidates(app, input) {
   return app.personal.listKnowledgeReviewCandidates({
     personal_space_id: input.personalSpaceId,
     review_id: input.reviewId,
-    limit: input.limit
+    limit: input.limit,
+    ...(input.offset !== undefined ? { offset: input.offset } : {})
   });
 }
 
@@ -23,7 +25,9 @@ export function recordKnowledgeReviewProgress(app, input) {
     review_id: input.reviewId,
     candidate_key: input.candidateKey,
     outcome: input.outcome,
-    note: input.note ?? null
+    note: input.note ?? null,
+    ...(input.aiReviewEvidenceToken ? { ai_review_evidence_token: input.aiReviewEvidenceToken } : {}),
+    ...(input.aiAssessment ? { ai_assessment: input.aiAssessment } : {})
   });
 }
 

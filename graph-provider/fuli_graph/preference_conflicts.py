@@ -19,6 +19,18 @@ from .models import (
 from .provider_values import native_datetime as _native_datetime
 
 
+def _item_match(item_kind: str, variable: str, id_parameter: str) -> str:
+    if item_kind == 'entity':
+        return (
+            f'MATCH ({variable}:Entity '
+            f'{{uuid: ${id_parameter}, group_id: $group_id}})'
+        )
+    return (
+        f'MATCH ()-[{variable}:RELATES_TO '
+        f'{{uuid: ${id_parameter}, group_id: $group_id}}]->()'
+    )
+
+
 async def defer_preference_conflict(
     store,
     actor: dict,
@@ -44,9 +56,42 @@ async def defer_preference_conflict(
     )
     _validate_pair_scope(left, right, request)
     deferred_at = datetime.now(timezone.utc)
+    left_match = _item_match(
+        request.left_item_kind, 'left', 'left_item_id'
+    )
+    right_match = _item_match(
+        request.right_item_kind, 'right', 'right_item_id'
+    )
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
+        '''
+        + left_match
+        + '\n        '
+        + right_match
+        + '''
+        WITH space,
+             CASE
+               WHEN $left_item_kind + ':' + left.uuid =
+                    $right_item_kind + ':' + right.uuid
+                 THEN [{kind: $left_item_kind, item: left}]
+               WHEN $left_item_kind + ':' + left.uuid <
+                    $right_item_kind + ':' + right.uuid
+                 THEN [
+                   {kind: $left_item_kind, item: left},
+                   {kind: $right_item_kind, item: right}
+                 ]
+               ELSE [
+                 {kind: $right_item_kind, item: right},
+                 {kind: $left_item_kind, item: left}
+               ]
+             END AS lock_items
+        UNWIND lock_items AS lock_item
+        WITH space, lock_item
+        ORDER BY lock_item.kind + ':' + lock_item.item.uuid
+        SET lock_item.item.fuli_ai_review_lock_version =
+              coalesce(lock_item.item.fuli_ai_review_lock_version, 0) + 1
+        WITH space, collect(lock_item) AS _locked_items
         MERGE (conflict:FuliPreferenceConflict {id: $conflict_id})
         ON CREATE SET conflict.personal_space_id = $space_id,
                       conflict.preference_key = $preference_key,
@@ -70,6 +115,7 @@ async def defer_preference_conflict(
         RETURN conflict
         ''',
         space_id=space['id'],
+        group_id=space['group_id'],
         conflict_id=request.conflict_id,
         preference_key=request.preference_key,
         preference_scope=request.preference_scope,
@@ -160,10 +206,12 @@ async def resolve_preference_conflict(
     return await _complete(
         store,
         space['id'],
+        space['group_id'],
         conflict_id,
         request.resolution,
         request.reason,
         request.operation_actor,
+        conflict,
     )
 
 
@@ -179,14 +227,16 @@ async def complete_preference_conflict(
         request.personal_space_id,
         'maintainer',
     )
-    await _read_conflict(store, space['id'], conflict_id)
+    conflict = await _read_conflict(store, space['id'], conflict_id)
     return await _complete(
         store,
         space['id'],
+        space['group_id'],
         conflict_id,
         request.resolution,
         request.reason,
         request.operation_actor,
+        conflict,
     )
 
 
@@ -305,17 +355,52 @@ async def _split_scope(store, actor, space, conflict, left, right, request):
 async def _complete(
     store,
     space_id,
+    group_id,
     conflict_id,
     resolution,
     reason,
     resolved_by,
+    conflict: PreferenceConflictRecord,
 ):
     resolved_at = datetime.now(timezone.utc)
+    left_match = _item_match(
+        conflict.left_item_kind, 'left', 'left_item_id'
+    )
+    right_match = _item_match(
+        conflict.right_item_kind, 'right', 'right_item_id'
+    )
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
               [:HAS_PREFERENCE_CONFLICT]->
               (conflict:FuliPreferenceConflict {id: $conflict_id})
+        '''
+        + left_match
+        + '\n        '
+        + right_match
+        + '''
+        WITH conflict,
+             CASE
+               WHEN $left_item_kind + ':' + left.uuid =
+                    $right_item_kind + ':' + right.uuid
+                 THEN [{kind: $left_item_kind, item: left}]
+               WHEN $left_item_kind + ':' + left.uuid <
+                    $right_item_kind + ':' + right.uuid
+                 THEN [
+                   {kind: $left_item_kind, item: left},
+                   {kind: $right_item_kind, item: right}
+                 ]
+               ELSE [
+                 {kind: $right_item_kind, item: right},
+                 {kind: $left_item_kind, item: left}
+               ]
+             END AS lock_items
+        UNWIND lock_items AS lock_item
+        WITH conflict, lock_item
+        ORDER BY lock_item.kind + ':' + lock_item.item.uuid
+        SET lock_item.item.fuli_ai_review_lock_version =
+              coalesce(lock_item.item.fuli_ai_review_lock_version, 0) + 1
+        WITH conflict, collect(lock_item) AS _locked_items
         SET conflict.status = 'resolved',
             conflict.resolution = $resolution,
             conflict.resolved_by = $resolved_by,
@@ -325,7 +410,12 @@ async def _complete(
         RETURN conflict
         ''',
         space_id=space_id,
+        group_id=group_id,
         conflict_id=conflict_id,
+        left_item_id=conflict.left_item_id,
+        left_item_kind=conflict.left_item_kind,
+        right_item_id=conflict.right_item_id,
+        right_item_kind=conflict.right_item_kind,
         resolution=resolution,
         resolved_by=resolved_by,
         reason=reason,

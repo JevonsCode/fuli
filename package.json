@@ -1,6 +1,6 @@
 {
   "name": "fuli-context",
-  "version": "0.11.1",
+  "version": "0.12.0",
   "description": "Local-first collaboration relationship graph for AI agents.",
   "type": "module",
   "files": [
@@ -21,7 +21,8 @@
     "graph-provider/fuli_graph/*.py",
     "graph-provider/fuli_graph/**/*.py",
     "skills/",
-    "compose.graphiti.yml"
+    "compose.graphiti.yml",
+    "docs/judgment-and-autonomy.md"
   ],
   "bin": {
     "fl": "src/cli.js",

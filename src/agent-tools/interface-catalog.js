@@ -1,4 +1,10 @@
 const UI_MUTATION_PARITY = Object.freeze([
+  agent('PUT /api/agent-pins', 'pin_agent'),
+  local('PUT /api/judgment/policy', 'Autonomy grants delegated authority and requires the local user.'),
+  local('POST /api/judgment/feedback', 'Votes and reasons are human feedback, never model-generated approval.'),
+  agent('POST /api/judgment/review', 'review_with_tonborg'),
+  agent('POST /api/judgment/assess', 'assess_agent_action'),
+  agent('POST /api/judgment/accept', 'assess_task_completion'),
   agent('POST /api/agent-conversations/query', 'list_agent_conversations', 'read_agent_conversation', 'get_agent_conversation_policy'),
   agent('PUT /api/agent-conversations/policy', 'update_agent_conversation_policy'),
   agent('POST /api/agent-attention', 'request_agent_attention'),

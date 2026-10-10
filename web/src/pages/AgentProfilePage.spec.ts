@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { nextTick } from 'vue'
 import { useConsoleStore } from '@/stores/console'
+import { employeeTemplates } from '@/features/employees/catalog'
 import type { ProjectAgentRecord } from '@/types'
 import AgentProfilePage from './AgentProfilePage.vue'
 
@@ -31,6 +32,7 @@ beforeEach(() => {
     personalProjects: ['project-a', 'project-old'].map(id => ({ project_id: id, personal_space_id: 'space-a', profile: { name: id === 'project-a' ? 'Synthetic active project' : 'Synthetic previous project' } })), projects: [], subscriptions: [] }
   store.runtimeStatus = 'ready'
   getJson.mockReset(); postJson.mockReset(); putJson.mockReset()
+  employeeTemplates.value = []
   getJson.mockImplementation(async (url: string) => {
     const parsed = new URL(url, 'http://fixture')
     const id = parsed.searchParams.get('agentId') ?? 'alpha'
@@ -39,6 +41,7 @@ beforeEach(() => {
     if (parsed.pathname === '/api/project-agent-tasks') return [task('done', id, 'Completed evidence'), task('queued', id, 'Only scheduled', 'queued')]
     if (parsed.pathname === '/api/project-agent-coordination-policy') return { teamLeadAgentId: 'beta', teamMemberAgentIds: ['alpha', 'beta', 'gamma'], personalSpaceId: 'space-a', personalProjectId: 'project-a' }
     if (parsed.pathname === '/api/executors') return []
+    if (parsed.pathname === '/api/employee-templates') return { templates: [] }
     throw new Error(`Unexpected request: ${url}`)
   })
   putJson.mockImplementation(async (_url: string, payload: { profile: ProjectAgentRecord['profile'] }) => ({ ...person('alpha'), profile: payload.profile }))
@@ -56,6 +59,21 @@ async function setup(path = '/agents/space-a/alpha') {
   return { router, wrapper }
 }
 describe('Agent profile integration', () => {
+  it('loads a fixed role workbench on a direct profile visit without a cached catalog', async () => {
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (url.startsWith('/api/project-agents?')) return Promise.resolve([person('employee.tonborg')])
+      if (url.startsWith('/api/employee-templates?')) return Promise.resolve({ templates: [{
+        id: 'tonborg', name: 'Tonborg', agentId: 'employee.tonborg', agentStatus: 'active',
+        workbench: { kind: 'native', view: 'judgment' },
+      }] })
+      return normal(url)
+    })
+    const { wrapper } = await setup('/agents/space-a/employee.tonborg')
+    expect(getJson).toHaveBeenCalledWith('/api/employee-templates?personalSpaceId=space-a')
+    expect(wrapper.find('a[href="/employees/tonborg"]').exists()).toBe(true)
+  })
+
   it('exposes conversation retention under an accessible secondary tab', async () => {
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => {

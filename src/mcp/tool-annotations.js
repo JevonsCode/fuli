@@ -1,4 +1,5 @@
 const READ_TOOLS = new Set([
+  'get_judgment_policy', 'list_judgments', 'get_agent_pins',
   'find_agents', 'read_agent_messages', 'read_agent_thread',
   'get_agent_quality_gate',
   'plan_agent_collaboration', 'list_agent_loans',
@@ -50,6 +51,7 @@ const READ_TOOLS = new Set([
 ]);
 
 const WRITE_TOOLS = new Set([
+  'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'pin_agent',
   'message_agent', 'reply_agent_message',
   'record_agent_verification',
   'request_agent_loan', 'decide_agent_loan',
@@ -148,7 +150,7 @@ export function annotationsFor(name) {
   return {
     readOnlyHint: readOnly,
     destructiveHint: DESTRUCTIVE_TOOLS.has(name),
-    idempotentHint: readOnly || name === 'recruit_employee' || name === 'upsert_personal_project' ||
+    idempotentHint: readOnly || name === 'review_with_tonborg' || name === 'assess_agent_action' || name === 'assess_task_completion' || name === 'recruit_employee' || name === 'upsert_personal_project' ||
       name === 'upsert_project_agent' ||
       name === 'delete_project_agent' ||
       name === 'cleanup_test_project_agents' ||
@@ -173,7 +175,7 @@ export function annotationsFor(name) {
       name === 'message_agent' || name === 'reply_agent_message' ||
       name === 'checkpoint_task_knowledge' ||
       name === 'checkpoint_project_agent_memory',
-    openWorldHint: name === 'capture_session_knowledge' ||
+    openWorldHint: name === 'review_with_tonborg' || name === 'assess_agent_action' || name === 'assess_task_completion' || name === 'capture_session_knowledge' ||
       name === 'discover_external_knowledge_sources' ||
       name === 'create_external_knowledge_binding' ||
       name === 'check_external_knowledge_binding' ||

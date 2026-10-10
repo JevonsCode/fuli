@@ -27,6 +27,19 @@ The first public website is primarily Chinese.
   project/agent identity. It is not a promise of native mention menus or complete transcripts
   from every client.
 
+## Interaction principles
+
+- Keep every human interaction simple, easy to understand and short. Prefer a useful
+  default and one obvious next action; reveal advanced choices only when needed.
+- Let people delegate routine decisions within their chosen scope. Ask only for missing
+  information or authority that changes the outcome, and do not repeat settled questions.
+- Keep decision reasons and outcomes inspectable. Feedback should take one click, with
+  an optional reason; do not require a form to express agreement or disagreement.
+- Use familiar icons for simple actions such as closing navigation and pinning, with
+  accessible names and tooltips. Keep text where an icon alone would be ambiguous.
+- Preserve explicit authorization and honest execution states. Fewer steps must not hide
+  consequences, fabricate confirmation or present a recommendation as completed work.
+
 ## Website
 
 An expressive, diagram-led scrolling explanation with clear short copy. Motion illustrates

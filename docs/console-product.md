@@ -18,6 +18,7 @@ Preserve existing local-first data, bilingual Chinese/English UI, scoped APIs, c
 Retain the FULI name and logo. The approved redesign uses a light, restrained, precise visual language inspired by familiar Apple and Google tools. Prioritize short labels, task clarity, reusable controls, card-based agent browsing and progressive disclosure.
 
 ## Product Principles
+- Make every human interaction simple and easy, with as few steps as possible: useful defaults, one clear action, optional detail and one-click feedback.
 - Real tasks and pending decisions lead the home page.
 - Reduce explanations without hiding essential actions or warnings.
 - Display observed states and data; never fabricate activity or progress.

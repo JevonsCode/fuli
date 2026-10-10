@@ -630,6 +630,8 @@ def _human_change_query(item_kind: str) -> str:
     return f'''
         MATCH (space:FuliSpace {{id: $space_id, kind: 'personal'}})
         {_item_match(item_kind)}
+        SET item.fuli_ai_review_lock_version =
+              coalesce(item.fuli_ai_review_lock_version, 0) + 1
         SET item.fuli_human_edited = true,
             item.fuli_human_change_version =
               coalesce(item.fuli_human_change_version, 0) + 1,
@@ -797,6 +799,8 @@ def _knowledge_feedback_query(item_kind: str) -> str:
         MATCH (space:FuliSpace {{id: $space_id, kind: 'personal'}})
         {_item_match(item_kind)}
         WHERE coalesce(item.fuli_usage_generation, 1) = $usage_generation
+        SET item.fuli_ai_review_lock_version =
+              coalesce(item.fuli_ai_review_lock_version, 0) + 1
         MERGE (audit:FuliKnowledgeAudit {{id: $audit_id}})
         ON CREATE SET audit.space_id = $space_id,
                       audit.item_id = $item_id,
@@ -850,6 +854,8 @@ def _usage_score_update_query(item_kind: str) -> str:
     return f'''
         {_item_match(item_kind)}
         WHERE coalesce(item.fuli_usage_generation, 1) = $usage_generation
+        SET item.fuli_ai_review_lock_version =
+              coalesce(item.fuli_ai_review_lock_version, 0) + 1
         SET item.fuli_utility_score = $utility_score,
             item.fuli_confidence_score = $confidence_score,
             item.fuli_qualified_use_count = $qualified_use_count,

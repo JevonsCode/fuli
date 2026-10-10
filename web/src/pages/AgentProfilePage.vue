@@ -23,7 +23,7 @@ import {
   normalizeTask,
   unknownRecord,
 } from "@/features/project-agents/task-evidence";
-import { employeeTemplates } from "@/features/employees/catalog";
+import { employeeTemplates, refreshEmployeeCatalog } from "@/features/employees/catalog";
 import type {
   ProjectAgentAssignmentRecord,
   ProjectAgentCoordinationPolicy,
@@ -162,6 +162,7 @@ watch(
     showSettings.value = false;
     activeTab.value = "overview";
     if (!person) return;
+    void refreshEmployeeCatalog(person.personalSpaceId);
     detailsLoading.value = true;
     assignments.value = person.assignments;
     const params = new URLSearchParams({

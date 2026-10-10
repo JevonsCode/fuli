@@ -149,17 +149,31 @@ async def merge_legacy_hr(store, space_id):
         '''MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
            MATCH (n) WHERE n.group_id = space.group_id
              AND (n:Entity OR n:Episodic)
-           FOREACH (_ IN CASE WHEN n.fuli_project_agent_id = $legacy_id THEN [1] ELSE [] END |
-             SET n.fuli_project_agent_id = $canonical_id, n.hr_identity_original_agent_id = $legacy_id)
-           FOREACH (_ IN CASE WHEN n.fuli_preference_agent_id = $legacy_id THEN [1] ELSE [] END |
-             SET n.fuli_preference_agent_id = $canonical_id, n.hr_identity_original_agent_id = $legacy_id)''',
+             AND (n.fuli_project_agent_id = $legacy_id
+                  OR n.fuli_preference_agent_id = $legacy_id)
+           WITH n
+           ORDER BY CASE WHEN n:Entity THEN 'entity:' ELSE 'episodic:' END +
+                    coalesce(n.uuid, '')
+           SET n.fuli_ai_review_lock_version =
+                 coalesce(n.fuli_ai_review_lock_version, 0) + 1,
+               n.fuli_project_agent_id = CASE
+                 WHEN n.fuli_project_agent_id = $legacy_id
+                 THEN $canonical_id ELSE n.fuli_project_agent_id END,
+               n.fuli_preference_agent_id = CASE
+                 WHEN n.fuli_preference_agent_id = $legacy_id
+                 THEN $canonical_id ELSE n.fuli_preference_agent_id END,
+               n.hr_identity_original_agent_id = $legacy_id''',
         **scope,
     )
     await driver.execute_query(
         '''MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
            MATCH ()-[edge:RELATES_TO]->() WHERE edge.group_id = space.group_id
              AND edge.fuli_preference_agent_id = $legacy_id
-           SET edge.fuli_preference_agent_id = $canonical_id,
+           WITH edge
+           ORDER BY 'relationship:' + coalesce(edge.uuid, '')
+           SET edge.fuli_ai_review_lock_version =
+                 coalesce(edge.fuli_ai_review_lock_version, 0) + 1,
+               edge.fuli_preference_agent_id = $canonical_id,
                edge.hr_identity_original_agent_id = $legacy_id''', **scope,
     )
     await driver.execute_query(

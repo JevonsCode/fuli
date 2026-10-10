@@ -11,7 +11,11 @@ import type {
   HumanChangeStatus,
 } from '@/types'
 
-export type KnowledgeReviewState = 'confirmed' | 'agent_confirmed' | 'pending'
+export type KnowledgeReviewState =
+  | 'confirmed'
+  | 'agent_confirmed'
+  | 'ai_reviewed'
+  | 'pending'
 
 const MANAGEMENT_TYPES = new Set([
   'ProjectSpace',
@@ -347,19 +351,23 @@ export function formatTime(value?: string | null) {
 export function knowledgeReviewState(item: KnowledgeItem): KnowledgeReviewState {
   const basis = item.confirmationBasis
   if (
-    !item.confirmationExplicit
-    || !basis?.confirmed_by
-    || !basis.confirmed_at
-  ) return 'pending'
-  if (
+    item.confirmationExplicit
+    && basis?.confirmed_by
+    && basis.confirmed_at
+    &&
     item.confirmationStatus === 'confirmed'
     && ['user', 'authoritative_source'].includes(basis.confirmed_by.kind)
   ) return 'confirmed'
   if (
+    item.confirmationExplicit
+    && basis?.confirmed_by
+    && basis.confirmed_at
+    &&
     item.confirmationStatus === 'agent_confirmed'
     && basis.confirmed_by.kind === 'agent'
     && Boolean(basis.agent_policy_version)
   ) return 'agent_confirmed'
+  if (item.aiAssessment && item.aiReviewEvidenceToken) return 'ai_reviewed'
   return 'pending'
 }
 
@@ -508,6 +516,9 @@ export function classificationExplanation(item: KnowledgeItem) {
       time: formatTime(basis.confirmed_at),
     })
   }
+  if (knowledgeReviewState(item) === 'ai_reviewed') {
+    return t('knowledge.domain.confirmation.aiReviewed')
+  }
   if (basis) {
     return t('knowledge.domain.confirmation.pending', {
       actor: confirmationActorLabel(basis.proposed_by),
@@ -518,6 +529,9 @@ export function classificationExplanation(item: KnowledgeItem) {
 
 export function confirmationBasisSummary(item: KnowledgeItem) {
   const basis = item.confirmationBasis
+  if (knowledgeReviewState(item) === 'ai_reviewed') {
+    return t('knowledge.domain.confirmation.aiReviewed')
+  }
   if (!basis) return t('knowledge.domain.confirmation.legacyBasisMissing')
   if (knowledgeReviewState(item) === 'confirmed') {
     return `${confirmationActorLabel(basis.confirmed_by)} · ${formatTime(basis.confirmed_at)}`
@@ -556,6 +570,11 @@ function commonItem(item: KnowledgeNode | KnowledgeEdge) {
     lastHumanChangedAt: item.last_human_changed_at ?? null,
     lastAgentViewedAt: item.last_agent_viewed_at ?? null,
     lastAgentReviewedAt: item.last_agent_reviewed_at ?? null,
+    aiReviewEvidenceToken: item.ai_review_evidence_token ?? null,
+    aiAssessment: item.ai_assessment ?? null,
+    aiReviewedAt: item.ai_reviewed_at ?? null,
+    aiReviewId: item.ai_review_id ?? null,
+    aiReviewDecisionId: item.ai_review_decision_id ?? null,
     utilityScore: item.utility_score ?? 0,
     confidenceScore: item.confidence_score ?? 0.5,
     qualifiedUseCount: item.qualified_use_count ?? 0,

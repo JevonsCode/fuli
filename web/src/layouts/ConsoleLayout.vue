@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch, watchEffect } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
 import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
 import AgentAttentionCenter from '@/features/project-agents/AgentAttentionCenter.vue'
+import PinnedAgentsNav from '@/features/agent-profile/PinnedAgentsNav.vue'
+import { AGENT_PINS_KEY, AGENT_ROSTER_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
+import { useAgentRoster } from '@/features/agent-profile/useAgentRoster'
 import { t } from '@/i18n'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { personalProjectsPath, knowledgePath } from '@/router/paths'
@@ -18,9 +21,21 @@ const mobileNavOpen = ref(false)
 const mobileNavToggleRef = ref<HTMLButtonElement | null>(null)
 const mobileNavCloseRef = ref<HTMLButtonElement | null>(null)
 
-const activeSpaceId = computed(() => store.activePersonalSpace?.id ?? 'current')
-const personalProjectsTo = computed(() => personalProjectsPath(activeSpaceId.value, 'graph'))
-const knowledgeTo = computed(() => knowledgePath('personal', activeSpaceId.value, 'directory'))
+const activeSpaceId = computed(() => store.activePersonalSpace?.id ?? '')
+const navigationSpaceId = computed(() => activeSpaceId.value || 'current')
+const personalProjectsTo = computed(() => personalProjectsPath(navigationSpaceId.value, 'graph'))
+const knowledgeTo = computed(() => knowledgePath('personal', navigationSpaceId.value, 'directory'))
+const agentRoster = useAgentRoster(activeSpaceId)
+const agentPins = useAgentPins(activeSpaceId)
+const rosterAgents = agentRoster.agents
+const rosterLoading = agentRoster.loading
+const rosterError = agentRoster.error
+const pinnedAgentIds = agentPins.agentIds
+const pinsLoading = agentPins.loading
+const pinsError = agentPins.error
+const pinnedAgentsError = computed(() => pinsError.value || rosterError.value)
+provide(AGENT_ROSTER_KEY, agentRoster)
+provide(AGENT_PINS_KEY, agentPins)
 const title = computed(() => routeMetaText(route.meta.title, 'routes.overview.title'))
 const dedicatedWorkspace = computed(() => route.meta.dedicatedWorkspace === true)
 const publicRuntimeLabel = computed(() => {
@@ -83,6 +98,13 @@ async function closeMobileNav() {
   mobileNavToggleRef.value?.focus({ preventScroll: true })
 }
 
+function retryPinnedAgents() {
+  void Promise.all([
+    agentRoster.load(),
+    agentPins.load({ force: true }),
+  ])
+}
+
 </script>
 
 <template>
@@ -98,9 +120,11 @@ async function closeMobileNav() {
         ref="mobileNavCloseRef"
         class="mobile-nav-close quiet-button"
         type="button"
+        :aria-label="t('console.navigation.closeMenu')"
+        :title="t('console.navigation.closeMenu')"
         @click="closeMobileNav"
       >
-        {{ t('console.navigation.closeMenu') }}
+        <span class="mobile-nav-close-icon" aria-hidden="true" />
       </button>
       <BrandEasterEgg />
 
@@ -113,7 +137,16 @@ async function closeMobileNav() {
           <span class="nav-icon nav-icon-project-agent" aria-hidden="true" />
           <span class="nav-label">{{ t('console.navigation.projectAgents') }}</span>
         </RouterLink>
-        <AgentAttentionCenter :personal-space-id="activeSpaceId" :projects="store.state?.personalProjects ?? []" />
+        <PinnedAgentsNav
+          :space-id="activeSpaceId"
+          :agents="rosterAgents"
+          :pinned-agent-ids="pinnedAgentIds"
+          :loading="pinsLoading"
+          :roster-loading="rosterLoading"
+          :error="pinnedAgentsError"
+          @retry="retryPinnedAgents"
+        />
+        <AgentAttentionCenter :personal-space-id="navigationSpaceId" :projects="store.state?.personalProjects ?? []" />
         <RouterLink to="/roundtables" active-class="is-active">
           <span class="nav-icon nav-icon-roundtable" aria-hidden="true" />
           <span class="nav-label">{{ t('console.navigation.roundtables') }}</span>
@@ -229,6 +262,23 @@ async function closeMobileNav() {
 <style scoped>
 .topbar--workbench { display: none; }
 .workbench-host-label { color: var(--color-muted); font-size: 12px; font-weight: 600; }
+.mobile-nav-close-icon {
+  position: relative;
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+.mobile-nav-close-icon::before,
+.mobile-nav-close-icon::after {
+  content: '';
+  position: absolute;
+  top: 7px;
+  left: 1px;
+  width: 14px;
+  border-top: 1.5px solid currentColor;
+}
+.mobile-nav-close-icon::before { transform: rotate(45deg); }
+.mobile-nav-close-icon::after { transform: rotate(-45deg); }
 @media (max-width: 920px) {
   .topbar--workbench { display: flex; justify-content: flex-start; gap: 12px; min-height: 44px; padding: 7px 16px; border: 0; background: var(--color-surface); }
 }

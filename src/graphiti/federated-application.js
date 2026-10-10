@@ -2,6 +2,9 @@ import { dirname, join } from 'node:path';
 import { createEmployeeService } from '../employees/service.js';
 import { createAgentRoundtable } from '../agent-roundtable/service.js';
 import { createRoundtableStore } from '../agent-roundtable/store.js';
+import { createJudgmentService } from '../judgment/service.js';
+import { JudgmentStore } from '../judgment/store.js';
+import { createJudgmentEngine } from '../judgment/engine.js';
 
 import { GraphitiProviderClient } from './provider-client.js';
 import {
@@ -120,6 +123,8 @@ export function openFederatedGraphApplication({
       fetchImpl
     });
     app.employees = createEmployeeService({ app, runtimeConfigPath });
+    app.judgment = createJudgmentService({ app, engine: createJudgmentEngine({ app }),
+      openStore: () => new JudgmentStore(join(dirname(runtimeConfigPath), 'judgment.sqlite')) });
     app.roundtable = createAgentRoundtable({ app, env,
       openStore: () => createRoundtableStore(join(dirname(runtimeConfigPath), 'agent-roundtable.sqlite')) });
   }
@@ -1164,7 +1169,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
-  close() { this.roundtable?.close(); return this.employees?.close(); }
+  close() { this.judgment?.close(); this.roundtable?.close(); return this.employees?.close(); }
 
   async #recordAgentViews(items, toolName) {
     const unique = new Map(items.map((item) => [

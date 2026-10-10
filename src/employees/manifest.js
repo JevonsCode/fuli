@@ -29,7 +29,7 @@ export const employeeManifestSchema = z.object({
   }).strict().optional(),
   workbench: z.object({
     kind: z.literal('native'),
-    view: z.literal('people')
+    view: z.enum(['people', 'judgment'])
   }).strict().optional(),
   runtime: z.object({
     apiVersion: z.literal(1),
@@ -45,7 +45,7 @@ export function parseEmployeeManifest(value) {
 }
 
 // Built-in roles every personal space has; the Provider provisions their identities.
-export const FIXED_EMPLOYEE_AGENT_TYPES = Object.freeze({ jefa: 'coordinator', bole: 'hr' });
+export const FIXED_EMPLOYEE_AGENT_TYPES = Object.freeze({ jefa: 'coordinator', bole: 'hr', tonborg: 'durable' });
 
 export const employeeAgentId = (id) => `employee.${identifier.parse(id)}`;
 export const employeeCapability = (id) => `fuli.employee:${identifier.parse(id)}`;

@@ -9,7 +9,7 @@ import {
   fuzzyMatch,
   profileProjectIds,
 } from "@/features/agent-profile/profile-model";
-import { useAgentRoster } from "@/features/agent-profile/useAgentRoster";
+import { agentPinsText, useAgentPinsState, useAgentRosterState } from "@/features/agent-profile/agent-pins";
 import ProjectAgentFirstTask from "@/features/project-agents/ProjectAgentFirstTask.vue";
 import { useAgentWorkSummary } from "@/features/agent-profile/useAgentWorkSummary";
 import UiSelect from "@/components/ui/UiSelect.vue";
@@ -24,7 +24,12 @@ const store = useConsoleStore();
 const route = useRoute();
 const router = useRouter();
 const space = computed(() => store.activePersonalSpace?.id ?? "");
-const { agents, loading, error, load } = useAgentRoster(space);
+const { agents, loading, error, load } = useAgentRosterState(space);
+const agentPins = useAgentPinsState(space);
+const pinnedAgentIds = agentPins.agentIds;
+const pinSavingAgentId = agentPins.savingAgentId;
+const pinError = agentPins.error;
+const pinRetryLabel = computed(() => agentPinsText("retry", "Retry"));
 const {
   summaries: workSummaries,
   loading: workLoading,
@@ -88,6 +93,10 @@ const busy = computed(
     store.runtimeStatus === "loading",
 );
 const workSummaryFor = (agentId: string) => workSummaries.value[agentId];
+
+async function toggleAgentPin(agentId: string, pinned: boolean) {
+  await agentPins.setPinned(agentId, pinned);
+}
 
 onMounted(() => {
   if (store.runtimeStatus === "idle") void store.refresh();
@@ -160,6 +169,12 @@ async function retryDirectory() {
         </button>
       </div>
     </header>
+    <p v-if="pinError" class="agent-directory-pin-error" role="alert">
+      <span>{{ pinError }}</span>
+      <button class="quiet-button" type="button" @click="agentPins.load({ force: true })">
+        {{ pinRetryLabel }}
+      </button>
+    </p>
     <ProjectAgentFirstTask
       v-if="!busy && !error && store.runtimeStatus === 'ready' && !projects.length"
       :personal-space-id="space"
@@ -235,6 +250,9 @@ async function retryDirectory() {
           :manages-all-projects="managesAllProjects(agent.agentId)"
           :work-summary="workSummaryFor(agent.agentId)"
           :work-state="workState"
+          :pinned="pinnedAgentIds.includes(agent.agentId)"
+          :pin-pending="pinSavingAgentId === agent.agentId"
+          @toggle-pin="toggleAgentPin(agent.agentId, $event)"
         />
       </li>
     </ul>
@@ -251,3 +269,21 @@ async function retryDirectory() {
 </template>
 
 <style src="@/features/agent-profile/agent-profile.css" />
+
+<style scoped>
+.agent-directory-pin-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3, 12px);
+  margin: calc(var(--space-6, 24px) * -1) 0 var(--space-4, 16px);
+  color: var(--color-danger);
+  font-size: 13px;
+}
+
+.agent-directory-pin-error .quiet-button {
+  min-height: var(--control-height-sm);
+  padding: 4px 9px;
+  font-size: 12px;
+}
+</style>

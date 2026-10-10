@@ -63,7 +63,7 @@ describe('KnowledgeOrganizerPage', () => {
     expect(wrapper.get('.organizer-toolbar').element.closest('template')).toBeNull()
     expect(wrapper.get('.organizer-layout').element.closest('template')).toBeNull()
     expect(wrapper.findAll('.quadrant-filter button')).toHaveLength(5)
-    expect(wrapper.findAll('.review-state-filter button')).toHaveLength(4)
+    expect(wrapper.findAll('.review-state-filter button')).toHaveLength(5)
 
     const toolbarActions = wrapper.get('.organizer-toolbar-actions')
     expect(toolbarActions.find('.organizer-result-summary').exists()).toBe(true)
@@ -152,6 +152,76 @@ describe('KnowledgeOrganizerPage', () => {
     expect(wrapper.findAll('.organizer-row')).toHaveLength(1)
     expect(wrapper.get('.organizer-row').text()).toContain('最后一页的知识')
     expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001/ 001')
+    wrapper.unmount()
+  })
+
+  it('counts and filters effective Tonborg reviews, then returns them to pending after invalidation', async () => {
+    const reviewed = {
+      ...knowledgeNode(1, 'Tonborg item'),
+      ai_review_evidence_token: 'a'.repeat(64),
+      ai_assessment: {
+        outcome: 'approve',
+        summary: 'Current version is useful.',
+        evidence: ['Direct item content'],
+        confidence: 0.8,
+        client: 'codex',
+      },
+    }
+    const pending = knowledgeNode(2, 'Pending item')
+    getJson
+      .mockResolvedValueOnce({
+        space_id: 'personal-space',
+        nodes: [reviewed, pending],
+        edges: [],
+        truncated: false,
+        next_offset: null,
+      })
+      .mockResolvedValueOnce({
+        space_id: 'personal-space',
+        nodes: [
+          { ...reviewed, ai_assessment: null },
+          pending,
+        ],
+        edges: [],
+        truncated: false,
+        next_offset: null,
+      })
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.state = {
+      mode: 'personal_only',
+      activePersonalSpaceId: 'personal-space',
+      personalSpaces: [{ id: 'personal-space', name: '我' }],
+      personalProjects: [],
+      projects: [],
+      subscriptions: [],
+    }
+
+    const wrapper = mount(KnowledgeOrganizerPage, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          KnowledgeBatchConfirmDialog: true,
+          KnowledgeConfirmDialog: true,
+          KnowledgeEditDialog: true,
+          KnowledgeInspector: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-review-state="ai_reviewed"] strong').text()).toBe('1')
+    expect(wrapper.get('[data-review-state="pending"] strong').text()).toBe('1')
+    await wrapper.get('[data-review-state="ai_reviewed"]').trigger('click')
+    expect(wrapper.findAll('.organizer-row')).toHaveLength(1)
+    expect(wrapper.get('.organizer-row').text()).toContain('Tonborg item')
+
+    await wrapper.get('.organizer-toolbar-actions .toolbar-action').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-review-state="ai_reviewed"] strong').text()).toBe('0')
+    expect(wrapper.get('[data-review-state="pending"] strong').text()).toBe('2')
     wrapper.unmount()
   })
 

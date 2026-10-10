@@ -494,6 +494,8 @@ class ProjectAgentTaskRecord(StrictModel):
 
 class ProjectAgentTaskActivityCreate(StrictModel):
     artifact_revision: str | None = Field(default=None, min_length=1, max_length=160)
+    expected_verification_attempt_id: str | None = Field(default=None, min_length=1, max_length=256)
+    judgment_task_context_token: str | None = Field(default=None, min_length=1, max_length=256)
     personal_space_id: str = Field(min_length=1, max_length=128)
     personal_project_id: str = Field(min_length=1, max_length=128)
     task_id: str = Field(min_length=1, max_length=128)

@@ -24,3 +24,23 @@ def test_quality_models_use_the_same_strategy_capability_and_health_rules_as_exe
                 executor_policy_json=json.dumps(dict(mode='locked', locked_executor_ids=['allowed','broken'])))
     models = asyncio.run(Store()._quality_models({},request,task))
     assert [(m['executor_id'],m['model']) for m in models] == [('allowed','qualified')]
+
+
+def test_quality_gate_exposes_only_the_actual_current_verified_attempt():
+    attempt = dict(attempt_id='attempt', outcome='pass', artifact_revision='artifact', evidence_refs=['test-report'],
+                   capability_tier=1, verifier_id='reviewer', executor_id='executor', provider='synthetic', model='observed')
+    class Driver:
+        async def execute_query(self, *args, **kwargs):
+            return [{'record_json': json.dumps(attempt), 'run_id': 'actual-run'}], None, None
+    class Store(StoreAgentVerification):
+        runtime = SimpleNamespace(driver=Driver())
+        async def _quality_task(self, *args):
+            return {'complexity': 'simple'}
+        async def _quality_models(self, *args):
+            return []
+    request = SimpleNamespace(task_id='task', personal_space_id='space', artifact_revision='artifact')
+    gate = asyncio.run(Store().query_agent_quality({}, request))
+    assert gate['verified_attempt']['run_id'] == 'actual-run'
+    assert gate['verified_attempt']['verifier_id'] == 'reviewer'
+    request.artifact_revision = 'changed'
+    assert asyncio.run(Store().query_agent_quality({}, request))['verified_attempt'] is None

@@ -6,6 +6,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { getJson, putJson } from '@/api/client'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import { normalizedConfiguration, setConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
+import JudgmentPolicySettings from '@/features/judgment/JudgmentPolicySettings.vue'
 import {
   CONVERSATION_SOURCE_APPLICATIONS,
   sourceApplicationName,
@@ -290,6 +291,9 @@ function revealInvalidField(event: Event) {
               />
             </div>
           </div>
+        </section>
+        <section class="settings-card judgment-settings-card">
+          <JudgmentPolicySettings />
         </section>
         <UiDisclosure class="settings-card ports-card" :title="t('settings.ports.title')">
           <span v-if="settings?.restartRequired" class="restart-chip">{{ t('settings.restartRequired') }}</span>
@@ -605,8 +609,12 @@ function revealInvalidField(event: Event) {
 .setting-row small { color: var(--color-muted); font-size: 12px; }
 .setting-row input[role='switch'],
 .conversation-launcher-switch input[role='switch'] {
+  flex: 0 0 auto;
   width: 38px;
   height: 21px;
+  margin: 0;
+  padding: 0;
+  border: 0;
   appearance: none;
   border-radius: 999px;
   background: var(--color-muted);
@@ -614,22 +622,11 @@ function revealInvalidField(event: Event) {
   cursor: pointer;
   transition: background .18s ease;
 }
-.setting-row input[role='switch']::after {
-  content: '';
-  position: absolute;
-  width: 17px;
-  height: 17px;
-  top: 50%;
-  left: 2px;
-  border-radius: 50%;
-  background: var(--color-surface);
-  box-shadow: 0 0 4px rgb(0 0 0 / 18%);
-  transform: translateY(-50%);
-  transition: transform .18s ease;
-}
+.setting-row input[role='switch']::after,
 .conversation-launcher-switch input[role='switch']::after {
   content: '';
   position: absolute;
+  box-sizing: border-box;
   width: 17px;
   height: 17px;
   top: 50%;
@@ -642,7 +639,7 @@ function revealInvalidField(event: Event) {
 }
 .setting-row input[role='switch']:checked,
 .conversation-launcher-switch input[role='switch']:checked { background: var(--color-accent); }
-.setting-row input[role='switch']:checked::after { transform: translate(17px, -50%); }
+.setting-row input[role='switch']:checked::after,
 .conversation-launcher-switch input[role='switch']:checked::after { transform: translate(17px, -50%); }
 .select-row .settings-select { width: 180px; min-width: 0; }
 

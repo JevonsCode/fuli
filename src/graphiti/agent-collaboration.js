@@ -30,11 +30,17 @@ export async function planAgentCollaboration(application, input) {
   }
   candidates.sort((a, b) => Number(a.requiresLoan) - Number(b.requiresLoan) || Number(b.workMatch) - Number(a.workMatch)
     || a.activeTasks - b.activeTasks || a.agentId.localeCompare(b.agentId));
+  const preferencePrompt = verificationPreference({ executors, rules, projectId: task.personalProjectId,
+    lockedExecutorIds: currentAgent.profile?.executorPolicy?.mode === 'locked' ? currentAgent.profile.executorPolicy.lockedExecutorIds : null });
+  const judgmentPolicy = await application.judgment?.policy({ personalSpaceId: spaceId, personalProjectId: task.personalProjectId });
+  if (judgmentPolicy && judgmentPolicy.mode !== 'manual' && preferencePrompt.choiceSource !== 'user_rule') {
+    Object.assign(preferencePrompt, { shouldAsk: false, recommendedExecutorId: null, choiceSource: 'tonborg',
+      guidance: 'The user delegated routine executor choices to Tonborg. Call assess_agent_action for the selected specialist before dispatch; ask only when its outcome requires user input. Recheck runtime availability and preserve the real execution receipt.' });
+  }
   return { teamLeadId: policy.team_lead_agent_id, currentAgentId: task.projectAgentId,
     candidates: candidates.slice(0, 8), pendingLoans: loans.loans?.filter(loan => loan.status === 'requested') ?? [],
     executionStarted: false,
-    preferencePrompt: verificationPreference({ executors, rules, projectId: task.personalProjectId,
-      lockedExecutorIds: currentAgent.profile?.executorPolicy?.mode === 'locked' ? currentAgent.profile.executorPolicy.lockedExecutorIds : null }),
+    preferencePrompt,
     guidance: 'Keep the project lead as owner. Choose a qualified specialist. For another project, the destination lead calls request_agent_loan; the source lead approves with decide_agent_loan in its own scoped task. Then coordinate_project_agent_task with the borrowed Agent. Share only the bounded task brief and authorized artifacts. Record actual workers. Verify each artifact; use record_agent_verification. Two failed attempts at one capability tier require escalation, not another identical retry. A selected model is not proof of execution or success.' };
 }
 

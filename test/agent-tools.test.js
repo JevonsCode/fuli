@@ -30,6 +30,7 @@ const NAMES = [
   'recruit_employee',
   'list_employee_tools',
   'call_employee_tool',
+  'get_judgment_policy', 'list_judgments', 'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'get_agent_pins', 'pin_agent',
   'begin_task_context',
   'checkpoint_task_knowledge',
   'verify_task_checkpoint',
@@ -311,6 +312,7 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
 test('Agent surface dispatches every tool through the Graphiti facade', async () => {
   const calls = [];
   const app = {
+    judgment: Object.fromEntries(['policy', 'records', 'review', 'assess', 'accept', 'pins', 'pin'].map(name => [name, async input => calls.push([`judgment-${name}`, input])])),
     queryAgentConversations: async input => calls.push(['conversations-' + input.mode, input]),
     resumeAgentConversation: async input => calls.push(['conversation-resume', input]),
     updateAgentConversationPolicy: async input => calls.push(['conversation-policy', input]),
@@ -486,6 +488,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'external-targets', 'external-delete', 'external-conflict-policy',
     'external-update-policy', 'defer-preference-conflict', 'delete-public-project',
     'employee-list', 'employee-recruit', 'employee-tools', 'employee-call',
+    'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin',
     'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'taste-skill', 'resolve-preference-conflict',
     'capture', 'workflow-observation', 'decision-trace', 'search', 'connected-search',

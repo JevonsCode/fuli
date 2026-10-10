@@ -36,6 +36,7 @@ import {
 } from './project-agent-definitions.js';
 import { PROJECT_AGENT_MEMORY_DEFINITIONS, workingMemorySchema } from './project-agent-memory-definitions.js';
 import { EMPLOYEE_TOOL_DEFINITIONS } from './employee-definitions.js';
+import { JUDGMENT_TOOL_DEFINITIONS } from './judgment-definitions.js';
 import { AGENT_INTERFACE_DEFINITIONS } from './interface-definitions.js';
 import { AGENT_ATTENTION_DEFINITIONS } from './agent-attention-definitions.js';
 
@@ -287,6 +288,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   ...AGENT_ATTENTION_DEFINITIONS,
   ...AGENT_INTERFACE_DEFINITIONS,
   ...EMPLOYEE_TOOL_DEFINITIONS,
+  ...JUDGMENT_TOOL_DEFINITIONS,
   {
     name: 'begin_task_context',
     title: 'LIFECYCLE · Begin a Fuli-aware task',

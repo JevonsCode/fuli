@@ -325,6 +325,8 @@ class StoreKnowledge:
             await self.runtime.driver.execute_query(
                 '''
                 UNWIND $entities AS row
+                WITH row
+                ORDER BY 'entity:' + row.uuid
                 MERGE (entity:Entity {uuid: row.uuid})
                 ON CREATE SET entity.group_id = $group_id,
                     entity.name = row.name,
@@ -365,6 +367,8 @@ class StoreKnowledge:
                     entity.fuli_preference_project_id = row.preference_project_id,
                     entity.fuli_preference_agent_id = row.preference_agent_id,
                     entity.fuli_attributes_json = row.attributes_json
+                SET entity.fuli_ai_review_lock_version =
+                      coalesce(entity.fuli_ai_review_lock_version, 0) + 1
                 WITH count(entity) AS entity_count
                 CREATE (episode:Episodic {
                   uuid: $episode_id,
@@ -392,12 +396,95 @@ class StoreKnowledge:
                 })
                 WITH episode
                 UNWIND $entities AS row
+                WITH episode, row
+                ORDER BY 'entity:' + row.uuid
                 MATCH (entity:Entity {uuid: row.uuid})
                 MERGE (episode)-[mention:MENTIONS {uuid: row.mention_uuid}]->(entity)
                 SET mention.group_id = $group_id,
                     mention.created_at = $created_at
                 WITH episode
+                CALL {
+                  WITH episode
+                  OPTIONAL MATCH ()-[old:RELATES_TO {group_id: $group_id}]->()
+                  WITH collect(old) AS candidate_olds
+                  UNWIND candidate_olds AS old
+                  WITH old
+                  WHERE old IS NOT NULL
+                    AND old.invalid_at IS NULL
+                    AND NOT (old.uuid IN $relationship_ids)
+                    AND (
+                      EXISTS {
+                        MATCH (:FuliSpace {id: $space_id})-
+                              [:HAS_KNOWLEDGE_ASSIGNMENT]->
+                              (assignment:FuliKnowledgeAssignment {
+                                item_kind: 'relationship',
+                                item_id: old.uuid
+                              })
+                        WHERE assignment.project_id = $personal_project_id
+                      }
+                      OR (
+                        NOT EXISTS {
+                          MATCH (:FuliSpace {id: $space_id})-
+                                [:HAS_KNOWLEDGE_ASSIGNMENT]->
+                                (:FuliKnowledgeAssignment {
+                                  item_kind: 'relationship',
+                                  item_id: old.uuid
+                                })
+                        }
+                        AND EXISTS {
+                          MATCH (old_episode:Episodic {group_id: $group_id})
+                          WHERE old_episode.uuid IN coalesce(old.episodes, [])
+                            AND (
+                              old_episode.fuli_personal_project_id =
+                                $personal_project_id
+                              OR (
+                                old_episode.fuli_personal_project_id IS NULL
+                                AND $personal_project_id IS NULL
+                              )
+                            )
+                        }
+                      )
+                    )
+                    AND EXISTS {
+                      MATCH (agent_episode:Episodic {group_id: $group_id})
+                      WHERE agent_episode.uuid IN coalesce(old.episodes, [])
+                        AND (
+                          agent_episode.fuli_project_agent_id = $project_agent_id
+                          OR (
+                            agent_episode.fuli_project_agent_id IS NULL
+                            AND $project_agent_id IS NULL
+                          )
+                        )
+                    }
+                    AND any(
+                      replacement IN $superseded_relationships
+                      WHERE replacement.key = old.fuli_key
+                    )
+                  WITH collect(old) AS superseded_edges
+                  OPTIONAL MATCH ()-[existing:RELATES_TO {
+                    group_id: $group_id
+                  }]->()
+                  WITH superseded_edges, collect(existing) AS candidate_existing
+                  RETURN superseded_edges,
+                         [edge IN candidate_existing
+                          WHERE edge IS NOT NULL
+                            AND edge.uuid IN $relationship_ids]
+                           AS existing_edges
+                }
+                CALL {
+                  WITH superseded_edges, existing_edges
+                  UNWIND superseded_edges + existing_edges AS lock_edge
+                  WITH lock_edge
+                  WHERE lock_edge IS NOT NULL
+                  ORDER BY 'relationship:' + lock_edge.uuid
+                  SET lock_edge.fuli_ai_review_lock_version =
+                        coalesce(lock_edge.fuli_ai_review_lock_version, 0) + 1
+                  RETURN count(*) AS _locked_relationship_count
+                }
+                WITH episode, superseded_edges
                 UNWIND $relationships AS row
+                WITH episode, superseded_edges, row
+                ORDER BY 'relationship:' + row.uuid
                 MATCH (source:Entity {uuid: row.source_uuid})
                 MATCH (target:Entity {uuid: row.target_uuid})
                 MERGE (source)-[edge:RELATES_TO {uuid: row.uuid}]->(target)
@@ -435,73 +522,26 @@ class StoreKnowledge:
                     edge.fuli_workflow_confirmation_authority =
                       row.workflow_confirmation_authority,
                     edge.fuli_workflow_session_authority =
-                      row.workflow_session_authority
+                      row.workflow_session_authority,
+                    edge.fuli_ai_review_lock_version = 1
                 SET edge.episodes =
                   CASE WHEN $episode_id IN coalesce(edge.episodes, [])
                        THEN edge.episodes
                        ELSE coalesce(edge.episodes, []) + $episode_id END
-                WITH count(edge) AS edge_count
-                OPTIONAL MATCH ()-[old:RELATES_TO {group_id: $group_id}]->()
-                WHERE old.invalid_at IS NULL
-                  AND NOT (old.uuid IN $relationship_ids)
-                  AND (
-                    EXISTS {
-                      MATCH (:FuliSpace {id: $space_id})-
-                            [:HAS_KNOWLEDGE_ASSIGNMENT]->
-                            (assignment:FuliKnowledgeAssignment {
-                              item_kind: 'relationship',
-                              item_id: old.uuid
-                            })
-                      WHERE assignment.project_id = $personal_project_id
-                    }
-                    OR (
-                      NOT EXISTS {
-                        MATCH (:FuliSpace {id: $space_id})-
-                              [:HAS_KNOWLEDGE_ASSIGNMENT]->
-                              (:FuliKnowledgeAssignment {
-                                item_kind: 'relationship',
-                                item_id: old.uuid
-                              })
-                      }
-                      AND EXISTS {
-                        MATCH (old_episode:Episodic {group_id: $group_id})
-                        WHERE old_episode.uuid IN coalesce(old.episodes, [])
-                          AND (
-                            old_episode.fuli_personal_project_id =
-                              $personal_project_id
-                            OR (
-                              old_episode.fuli_personal_project_id IS NULL
-                              AND $personal_project_id IS NULL
-                            )
-                          )
-                      }
-                    )
-                  )
-                  AND EXISTS {
-                    MATCH (agent_episode:Episodic {group_id: $group_id})
-                    WHERE agent_episode.uuid IN coalesce(old.episodes, [])
-                      AND (
-                        agent_episode.fuli_project_agent_id = $project_agent_id
-                        OR (
-                          agent_episode.fuli_project_agent_id IS NULL
-                          AND $project_agent_id IS NULL
-                        )
-                      )
-                  }
-                  AND any(
+                WITH episode, superseded_edges, count(edge) AS edge_count
+                CALL {
+                  WITH superseded_edges
+                  UNWIND superseded_edges AS old
+                  WITH old, head([
                     replacement IN $superseded_relationships
-                    WHERE replacement.key = old.fuli_key
-                  )
-                WITH edge_count, old, head([
-                  replacement IN $superseded_relationships
-                  WHERE replacement.key = old.fuli_key | replacement
-                ]) AS replacement
-                FOREACH (_ IN CASE WHEN old IS NULL THEN [] ELSE [1] END |
+                    WHERE replacement.key = old.fuli_key | replacement
+                  ]) AS replacement
                   SET old.invalid_at = $reference_time,
                       old.expired_at = $created_at,
                       old.fuli_replaced_by_item_id = replacement.replacement_id,
                       old.fuli_replaced_by_item_kind = 'relationship'
-                )
+                  RETURN count(*) AS _superseded_relationship_count
+                }
                 RETURN edge_count
                 ''',
                 entities=[

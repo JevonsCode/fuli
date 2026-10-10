@@ -330,6 +330,18 @@ def _promotion_query(item_kind):
         WITH space, parent, canonical, direct_children,
              collect({{item: duplicate, spec: duplicate_spec}}) AS duplicate_pairs
         WHERE size(duplicate_pairs) = size($duplicate_specs)
+        WITH space, parent, canonical, direct_children, duplicate_pairs,
+             [{{kind: $item_kind, item: canonical}}] +
+             [pair IN duplicate_pairs |
+                {{kind: $item_kind, item: pair.item}}] AS lock_items
+        UNWIND lock_items AS lock_item
+        WITH space, parent, canonical, direct_children,
+             duplicate_pairs, lock_item
+        ORDER BY lock_item.kind + ':' + lock_item.item.uuid
+        SET lock_item.item.fuli_ai_review_lock_version =
+              coalesce(lock_item.item.fuli_ai_review_lock_version, 0) + 1
+        WITH space, parent, canonical, direct_children,
+             duplicate_pairs, collect(lock_item) AS _locked_items
         SET canonical.fuli_inheritance_mode = 'descendants',
             canonical.fuli_inherited_project_ids = []
         {duplicate_update}

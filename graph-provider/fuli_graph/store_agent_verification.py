@@ -43,7 +43,7 @@ class StoreAgentVerification:
         task = await self._quality_task(actor, request)
         rows, _, _ = await self.runtime.driver.execute_query(
             'MATCH (t:FuliProjectAgentTask {task_id:$task, personal_space_id:$space})-[:HAS_VERIFICATION]->(v:FuliAgentVerification) '
-            'RETURN v.record_json AS record_json ORDER BY v.sequence', task=request.task_id, space=request.personal_space_id)
+            'RETURN v.record_json AS record_json, v.run_id AS run_id ORDER BY v.sequence', task=request.task_id, space=request.personal_space_id)
         models = await self._quality_models(actor, request, task)
         result = evaluate_quality_policy(complexity=task.get('complexity') or 'standard',
             current_strategy=json.loads(task.get('effective_model_strategy_json') or '{"mode":"adaptive"}'),
@@ -53,7 +53,12 @@ class StoreAgentVerification:
         if selected:
             selected['executor_id'] = next(model['executor_id'] for model in models
                 if all(model.get(key) == selected[key] for key in ('provider', 'model', 'capability_tier', 'cost_rank')))
-        return {**result, 'evidence_authority': 'host_reported_test_evidence',
+        verified = next((row for row in rows if json.loads(row['record_json']).get('attempt_id') == result['verified_attempt_id']), None)
+        attempt = json.loads(verified['record_json']) if verified else None
+        if attempt:
+            attempt = {key: attempt.get(key) for key in ('attempt_id', 'artifact_revision', 'outcome', 'evidence_refs', 'verifier_id', 'executor_id', 'provider', 'model')}
+            attempt['run_id'] = verified.get('run_id')
+        return {**result, 'verified_attempt': attempt, 'evidence_authority': 'host_reported_test_evidence',
             'execution_started': False, 'guidance': 'Only complete the task after passed for the current artifact revision. Blocked means no authorized preflighted model proves the required capability tier. Model selection does not prove execution.'}
 
     async def record_agent_verification(self, actor, request):
@@ -92,7 +97,8 @@ class StoreAgentVerification:
                 raise HTTPException(409, 'An execution run cannot count as two verification attempts')
             identifier = stable_uuid('verification', request.personal_space_id, request.task_id, request.attempt_id)
             record = dict(attempt_id=request.attempt_id, outcome=request.outcome, artifact_revision=request.artifact_revision,
-                evidence_refs=request.evidence_refs, capability_tier=observed['capability_tier'], verifier_id=context['project_agent_id'])
+                evidence_refs=request.evidence_refs, capability_tier=observed['capability_tier'], verifier_id=context['project_agent_id'],
+                executor_id=request.executor_id, provider=request.provider, model=request.model)
             fingerprint = store._payload_hash(request)
             rows, _, _ = await store.runtime.driver.execute_query(
                 'MATCH (t:FuliProjectAgentTask {task_id:$task, personal_space_id:$space}) '
@@ -106,6 +112,7 @@ class StoreAgentVerification:
             result = await store.query_agent_quality(actor, request)
             await store.runtime.driver.execute_query(
                 'MATCH (t:FuliProjectAgentTask {task_id:$task, personal_space_id:$space}) '
-                'SET t.quality_gate=$status, t.verified_artifact_revision=$revision',
-                task=request.task_id, space=request.personal_space_id, status=result['status'], revision=request.artifact_revision)
+                'SET t.quality_gate=$status, t.verified_artifact_revision=$revision, t.verified_attempt_id=$attempt',
+                task=request.task_id, space=request.personal_space_id, status=result['status'], revision=request.artifact_revision,
+                attempt=result.get('verified_attempt_id'))
             return result

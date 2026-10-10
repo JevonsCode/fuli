@@ -66,6 +66,25 @@ async def test_new_task_cannot_complete_without_its_exact_verified_revision(arti
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('actual_attempt', [None, 'newer-attempt'])
+async def test_judgment_acceptance_rechecks_the_verification_attempt_under_task_lock(actual_attempt):
+    store = ActivityStore({
+        'task': {'task_id': 'task-a', 'personal_project_id': 'project-a', 'status': 'awaiting_review',
+                 'revision': 1, 'verification_required': True, 'quality_gate': 'passed',
+                 'verified_artifact_revision': 'artifact', 'verified_attempt_id': actual_attempt},
+        'participant_rows': [{'agent_id': 'agent-a', 'role': 'lead'}], 'event_rows': [],
+    })
+    request = ProjectAgentTaskActivityCreate(
+        personal_space_id='personal-space', personal_project_id='project-a', task_id='task-a',
+        idempotency_key='accept-exact-verification', status='completed', summary='Tonborg acceptance.',
+        agent_id='agent-a', artifact_revision='artifact', expected_verification_attempt_id='approved-attempt',
+    )
+    with pytest.raises(HTTPException, match='Verification evidence changed'):
+        await store.record_project_agent_task_activity({'id': 'principal'}, request)
+    assert store.runtime.driver.event_calls == []
+
+
+@pytest.mark.asyncio
 async def test_legacy_persisted_task_without_quality_field_keeps_its_original_contract():
     # Simulate an already persisted pre-quality-gate task, never a newly submitted task.
     store = ActivityStore({

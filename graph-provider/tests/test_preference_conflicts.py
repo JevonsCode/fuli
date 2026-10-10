@@ -46,6 +46,9 @@ async def test_human_can_defer_one_exact_preference_pair_until_ai_needs_it():
     assert result.requested_by == 'human'
     defer_query, parameters = driver.calls[-1]
     assert 'FuliPreferenceConflict' in defer_query
+    assert 'fuli_ai_review_lock_version' in defer_query
+    assert 'ORDER BY lock_item.kind + \':\' + lock_item.item.uuid' in defer_query
+    assert "$left_item_kind + ':' + left.uuid" in defer_query
     assert parameters['left_item_id'] == 'left'
     assert parameters['right_item_id'] == 'right'
     assert parameters['requested_by'] == 'human'
@@ -95,6 +98,10 @@ async def test_ai_keep_left_invalidates_right_and_marks_the_resolution():
     assert update_parameters['replaced_by_item_id'] == 'left'
     complete_query, complete_parameters = driver.calls[-1]
     assert "conflict.status = 'resolved'" in complete_query
+    assert 'ORDER BY lock_item.kind + \':\' + lock_item.item.uuid' in complete_query
+    assert "$left_item_kind + ':' + left.uuid" in complete_query
+    assert complete_parameters['left_item_id'] == 'left'
+    assert complete_parameters['right_item_id'] == 'right'
     assert complete_parameters['resolved_by'] == 'agent'
 
 

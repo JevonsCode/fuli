@@ -6,10 +6,10 @@ const settingsPage = readFileSync('web/src/pages/SettingsPage.vue', 'utf8');
 
 test('settings switches center their knob vertically in both states', () => {
   const baseRule = settingsPage.match(
-    /\.setting-row input\[role='switch'\]::after\s*\{(?<body>[^}]*)\}/
+    /\.setting-row input\[role='switch'\]::after(?:,\s*\.conversation-launcher-switch input\[role='switch'\]::after)?\s*\{(?<body>[^}]*)\}/
   );
   const checkedRule = settingsPage.match(
-    /\.setting-row input\[role='switch'\]:checked::after\s*\{(?<body>[^}]*)\}/
+    /\.setting-row input\[role='switch'\]:checked::after(?:,\s*\.conversation-launcher-switch input\[role='switch'\]:checked::after)?\s*\{(?<body>[^}]*)\}/
   );
 
   assert.ok(baseRule?.groups?.body);

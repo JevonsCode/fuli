@@ -578,11 +578,25 @@ async def _upsert_reference(
         space['id'], 'knowledge-reference', item_kind, item_id, project_id
     )
     changed_at = datetime.now(timezone.utc)
+    item_match = (
+        'MATCH (item:Entity {uuid: $item_id, group_id: $group_id})'
+        if item_kind == 'entity'
+        else (
+            'MATCH ()-[item:RELATES_TO '
+            '{uuid: $item_id, group_id: $group_id}]->()'
+        )
+    )
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
         MATCH (space)-[:CONTAINS_PROJECT]->
               (target:FuliPersonalProject {project_id: $project_id})
+        '''
+        + item_match
+        + '''
+        SET item.fuli_ai_review_lock_version =
+              coalesce(item.fuli_ai_review_lock_version, 0) + 1
+        WITH space, target
         MERGE (reference:FuliKnowledgeProjectReference {
           space_id: $space_id,
           item_kind: $item_kind,
@@ -604,6 +618,7 @@ async def _upsert_reference(
         space_id=space['id'],
         item_kind=item_kind,
         item_id=item_id,
+        group_id=space['group_id'],
         project_id=project_id,
         reference_id=reference_id,
         source_project_id=source_project_id,
@@ -635,6 +650,31 @@ async def _upsert_conflict(
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
+        MATCH (item:Entity {uuid: $item_id, group_id: $group_id})
+        MATCH (target_item:Entity {
+          uuid: $target_item_id,
+          group_id: $group_id
+        })
+        WITH space,
+             CASE
+               WHEN item.uuid = target_item.uuid
+                 THEN [{kind: 'entity', item: item}]
+               WHEN item.uuid < target_item.uuid
+                 THEN [
+                   {kind: 'entity', item: item},
+                   {kind: 'entity', item: target_item}
+                 ]
+               ELSE [
+                 {kind: 'entity', item: target_item},
+                 {kind: 'entity', item: item}
+               ]
+             END AS lock_items
+        UNWIND lock_items AS lock_item
+        WITH space, lock_item
+        ORDER BY lock_item.kind + ':' + lock_item.item.uuid
+        SET lock_item.item.fuli_ai_review_lock_version =
+              coalesce(lock_item.item.fuli_ai_review_lock_version, 0) + 1
+        WITH space, collect(lock_item) AS _locked_items
         MERGE (conflict:FuliKnowledgeConflict {id: $conflict_id})
         ON CREATE SET conflict.created_at = $changed_at
         SET conflict.space_id = $space_id,
@@ -651,6 +691,7 @@ async def _upsert_conflict(
         RETURN conflict
         ''',
         space_id=space['id'],
+        group_id=space['group_id'],
         conflict_id=conflict_id,
         item_id=item_id,
         target_item_id=target_item_id,
