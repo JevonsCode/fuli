@@ -25,6 +25,11 @@ its identity, project responsibilities, and relevant working context.
   their sources, scope, and confirmation status.
 - **A team when needed:** coordinate specialist agents and record actual worker execution through
   an available, authorized host client or executor.
+- **Every task has an owner:** ask for work inside a project directory; Fuli registers the project
+  and staffs a lead agent. The reply ends with who led and who helped.
+- **A fixed PM and HR:** Jefa (project manager) and Bole (HR) come with every space; no hiring needed.
+- **Agents talk to each other:** through the [Roundtable](#agent-roundtable), one agent asks another
+  conversation directly, and every exchange is recorded.
 
 “Long-lived” means persistent identity and context. Fuli assembles that context and coordinates
 work; the connected AI tools run it. Client adapters determine which conversations can be captured
@@ -49,8 +54,8 @@ fuli open
 The setup wizard shows its plan before changing your environment. See [Installation](#installation)
 for requirements and the macOS/Linux native runtime option.
 
-To try a cross-tool handoff, register a local project and assign an agent, complete a task through
-one connected client, then use the agent's continuation instruction in another client connected
+To try a cross-tool handoff, ask for a task inside a project directory (Fuli registers the project and
+staffs a lead agent), complete it through one connected client, then use the agent's continuation instruction in another client connected
 to the same data. Check whether it recovers the correct project and prior work, and asks for
 missing context rather than inventing it. See [Agent conversations and collaboration](docs/agent-conversations-and-collaboration.md)
 for supported adapters and boundaries.
@@ -615,7 +620,7 @@ containers; it does not shut down Rancher Desktop, Docker Desktop, Kubernetes, o
 itself. Native mode directly stops the corresponding Provider and Neo4j processes, so no shared VM
 overhead remains while idle.
 
-**Project Agents → Recruit employee** provides reusable employee templates. Jefa is the project manager; Bole is the built-in HR Agent with a native people panel for Agent distribution, current work, and recruitment history.
+Jefa (project manager) and Bole (HR, with a native people panel for Agent distribution, current work and recruitment history) are fixed roles in every space and are never hired. **Project Agents → Hire an Agent** offers the other reusable employee templates.
 Recruitment reuses a durable identity with separate project assignments. An installed employee workbench,
 API and A2A share the FULI port; existing FULI MCP clients discover and call its tools. Recruitment does not
 start a model or rewrite client settings. See the [employee package and extension contract](docs/employee-agents.md).
@@ -624,8 +629,8 @@ Project Agent identities remain control-plane records rather than one resident p
 Roles now keep versioned, project-private working memory in the same Neo4j Provider. Task entry
 restores one owner across Codex, Claude Code and Cursor; lifecycle checkpoints survive separate
 MCP processes. See [role memory, host hooks and acceptance boundaries](docs/project-agent-memory.md).
-Supported Codex and Claude Code hooks also journal visible conversations, with 7-day inactivity
-archival and bounded recovery. Specialist loans and artifact verification share the same Provider.
+Supported Codex and Claude Code hooks also journal visible conversations. Once unfolded messages pass
+a size threshold (64 KB by default), older ones fold into a digest; recovery stays within a byte budget. Specialist loans and artifact verification share the same Provider.
 See [conversation continuity and collaboration](docs/agent-conversations-and-collaboration.md)
 for client coverage, model capability configuration and acceptance limits.
 Physical executors share leases by executor ID. Fuli starts and stops only executors with an explicitly
