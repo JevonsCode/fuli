@@ -156,6 +156,14 @@ describe('ConsoleLayout', () => {
     await flushPromises()
     expect(wrapper.get('button[form="settings-form"]').text()).toContain('保存设置')
     expect(wrapper.get('button[form="settings-form"]').attributes('form')).toBe('settings-form')
+    store.settingsSaveState = 'applying'
+    await flushPromises()
+    expect(wrapper.get('.settings-save-progress').text()).toBe('正在应用设置…')
+    expect(wrapper.get('button[form="settings-form"]').attributes('disabled')).toBeDefined()
+    store.settingsSaveState = 'saved'
+    await flushPromises()
+    expect(wrapper.get('button[form="settings-form"]').text()).toBe('已保存')
+    expect(wrapper.find('.settings-save-progress').exists()).toBe(false)
 
     router.addRoute({
       path: '/employees/:templateId', component: { template: '<div>Agent board</div>' },

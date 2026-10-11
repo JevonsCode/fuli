@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { employeeAvatarUrl } from "@/features/employees/avatars";
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 import GrowthLoading from "@/components/GrowthLoading.vue";
@@ -102,7 +103,8 @@ function togglePin() {
   <article class="ui-card agent-card">
     <div class="agent-card-topline">
       <span class="agent-portrait small" aria-hidden="true">
-        {{ agent.profile.occupationEmoji || name.slice(0, 1) }}
+        <img v-if="employeeAvatarUrl(agent.agentId)" :src="employeeAvatarUrl(agent.agentId)" alt="" />
+        <template v-else>{{ agent.profile.occupationEmoji || name.slice(0, 1) }}</template>
       </span>
       <div class="agent-directory-name">
         <RouterLink

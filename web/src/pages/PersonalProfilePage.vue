@@ -430,22 +430,24 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
       </button>
     </div>
 
-    <section
-      v-if="conflicts.length && !conflictsOnly && activeReviewState === 'all'"
-      class="preference-conflict-alert"
-      :aria-label="t('preferences.profile.alert.aria')"
-    >
-      <div class="preference-conflict-alert-icon" aria-hidden="true">!</div>
-      <div>
-        <h2>{{ t('preferences.profile.alert.title', { count: conflicts.length }) }}</h2>
-        <p>{{ t('preferences.profile.alert.copy') }}</p>
-      </div>
-      <button class="primary-action" type="button" @click="toggleConflictWorkbench(true)">
-        {{ t('preferences.profile.alert.action') }}
-      </button>
-    </section>
+    <div v-if="writingTaste || (conflicts.length && !conflictsOnly && activeReviewState === 'all')" class="personal-profile-notices">
+      <section
+        v-if="conflicts.length && !conflictsOnly && activeReviewState === 'all'"
+        class="preference-conflict-alert"
+        :aria-label="t('preferences.profile.alert.aria')"
+      >
+        <div class="preference-conflict-alert-icon" aria-hidden="true">!</div>
+        <div>
+          <h2>{{ t('preferences.profile.alert.title', { count: conflicts.length }) }}</h2>
+          <p>{{ t('preferences.profile.alert.copy') }}</p>
+        </div>
+        <button class="primary-action" type="button" @click="toggleConflictWorkbench(true)">
+          {{ t('preferences.profile.alert.action') }}
+        </button>
+      </section>
 
-    <WritingTasteMilestone :profile="writingTaste" />
+      <WritingTasteMilestone :profile="writingTaste" />
+    </div>
 
     <div class="personal-profile-toolbar">
       <div class="personal-profile-filter-groups">
@@ -699,12 +701,18 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 </template>
 
 <style scoped>
+.personal-profile-notices {
+  display: grid;
+  flex: 0 0 auto;
+  gap: var(--space-4);
+  margin-block: var(--space-4) var(--space-6);
+}
+
 .preference-conflict-alert {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 13px;
-  margin-top: 12px;
   padding: 12px 14px;
   border: 1px solid var(--color-border);
   border-radius: 11px;

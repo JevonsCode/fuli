@@ -40,7 +40,7 @@ export const judgmentMessages = {
       claude_code: 'Claude Code',
     },
     workbench: {
-      aria: 'Tonborg 判断工作台',
+      aria: 'Tonborg 决策工作台',
       title: '判断工作台',
       subtitle: '查看近期判断并决定下一步。',
       all: '全部',
@@ -145,7 +145,7 @@ export const judgmentMessages = {
       claude_code: 'Claude Code',
     },
     workbench: {
-      aria: 'Tonborg judgment workbench',
+      aria: 'Tonborg decision workbench',
       title: 'Judgment workbench',
       subtitle: 'Review recent decisions and choose what happens next.',
       all: 'All',

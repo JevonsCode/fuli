@@ -661,6 +661,15 @@ export interface SystemSettingsResult {
   configured: RuntimeSettings
   active: RuntimeSettings
   restartRequired: boolean
+  apply?: SettingsApplyStatus | null
+}
+
+export interface SettingsApplyStatus {
+  id: string
+  status: 'applying' | 'applied' | 'failed'
+  port: number
+  error?: string
+  rolledBack?: boolean
 }
 
 export interface ResourceComponent {

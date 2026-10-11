@@ -80,6 +80,7 @@
   display: grid; width: 72px; height: 72px; flex: 0 0 72px; place-items: center;
   border-radius: 20px; background: var(--color-accent-soft); color: var(--color-accent); font-size: 34px; line-height: 1;
 }
+.agent-portrait img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .agent-portrait.small { width: 40px; height: 40px; flex-basis: 40px; border-radius: 11px; font-size: 19px; }
 .agent-directory-name { display: flex; flex: 1; min-width: 0; align-items: center; gap: 8px; font-size: 16px; font-weight: 650; }
 .agent-directory-name a { min-width: 0; overflow: hidden; color: var(--color-ink); text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }

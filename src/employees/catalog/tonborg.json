@@ -3,7 +3,7 @@
   "id": "tonborg",
   "version": "1.0.0",
   "name": "Tonborg",
-  "role": "判断官",
+  "role": "决策员",
   "description": "根据你的偏好与判断记录处理日常审核，为任务建议客户端和模型。",
   "occupationEmoji": "⚖️",
   "defaultProjectScope": "all",

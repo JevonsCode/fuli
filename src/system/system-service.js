@@ -11,6 +11,7 @@ import { createAdaptiveRuntimeBroker } from '../adaptive-runtime/runtime-broker.
 import { readAdaptiveRuntimeSettings } from '../adaptive-runtime/settings.js';
 import { createPackageVersionChecker } from './package-version-checker.js';
 import { clientConnectionConfig } from '../setup/client-connection.js';
+import { createSettingsApplier } from './settings-apply.js';
 
 export function createSystemService({
   paths,
@@ -21,6 +22,7 @@ export function createSystemService({
   readJson = readJsonFile,
   readSettings = readRuntimeSettings,
   writeSettings = writeRuntimeSettings,
+  settingsApplier = createSettingsApplier({ paths, writeSettings }),
   executorAdapters = new Map(),
   versionChecker = createPackageVersionChecker(),
   runtimeBroker = createAdaptiveRuntimeBroker({
@@ -51,17 +53,32 @@ export function createSystemService({
   function getSettings() {
     const active = activeSettings();
     const configured = readSettings(paths.runtimeSettingsPath, { fallback: active });
-    return settingsResult(configured, active);
+    return { ...settingsResult(configured, active), apply: settingsApplier.status() };
   }
 
-  function updateSettings(input) {
-    const configured = writeSettings(paths.runtimeSettingsPath, input);
-    return settingsResult(configured, activeSettings());
+  async function updateSettings(input) {
+    const configured = normalizeRuntimeSettings(input, { strict: true });
+    const active = activeSettings();
+    const result = settingsResult(configured, active);
+    if (settingsApplier.status()?.status === 'applying') {
+      throw new TypeError('Settings are already being applied. Please wait.');
+    }
+    if (result.restartRequired) {
+      const previous = readSettings(paths.runtimeSettingsPath, { fallback: active });
+      result.apply = await settingsApplier.prepare(configured, {
+        ...previous, ports: active.ports, lanAccess: active.lanAccess, graphRuntimeMode: active.graphRuntimeMode,
+      });
+    } else {
+      writeSettings(paths.runtimeSettingsPath, configured);
+    }
+    return result;
   }
 
   return {
     getSettings,
     updateSettings,
+    startSettingsApply: (id) => settingsApplier.start(id),
+    settingsApplyStatus: () => settingsApplier.status(),
     clientConnection: () => Object.fromEntries(['standard', 'vscode', 'server'].map((format) => [
       format, clientConnectionConfig({ mcpServerPath: paths.mcpServerPath, runtimeConfigPath }, format)
     ])),
@@ -103,7 +120,10 @@ export function settingsFromActiveRuntime({
   const personalProvider = urlPort(graphConfig?.personal?.providerUrl);
   if (personalProvider !== null) ports.personalProvider = personalProvider;
   const managedWorkspace = (graphConfig?.workspaces ?? []).find((workspace) =>
-    workspace?.managedDevelopment === true || isLoopbackProvider(workspace?.providerUrl)
+    workspace?.managedDevelopment === true || (
+      isLoopbackProvider(workspace?.providerUrl)
+      && [8788, settings.ports.workspaceProvider].includes(urlPort(workspace?.providerUrl))
+    )
   );
   const workspaceProvider = urlPort(managedWorkspace?.providerUrl);
   if (workspaceProvider !== null) ports.workspaceProvider = workspaceProvider;

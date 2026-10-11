@@ -47,6 +47,27 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
+  it('reports a failed save in the persistent global feedback and unlocks retry', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.runtimeStatus = 'ready'
+    vi.stubGlobal('fetch', vi.fn(async (input, init) => {
+      if (init?.method === 'PUT') return Response.json({ error: 'Port unavailable' }, { status: 400 })
+      if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured })
+      return Response.json({}, { status: 503 })
+    }))
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    await flushPromises()
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(store.feedback?.tone).toBe('error')
+    expect(store.feedback?.message).toContain('Port unavailable')
+    expect(store.settingsSaving).toBe(false)
+    expect(wrapper.get('.settings-fields').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
   it('reveals an invalid field inside a collapsed settings section', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -86,10 +107,11 @@ describe('SettingsPage', () => {
     expect(saves).toBe(1)
     expect(store.settingsSaving).toBe(true)
     expect(wrapper.get('.settings-fields').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('.growth-loading--inline').text()).toContain('保存运行设置')
+    expect(store.settingsSaveState).toBe('saving')
     finish(Response.json({ configured, active: configured }))
     await flushPromises()
     expect(store.settingsSaving).toBe(false)
+    expect(store.feedback).toEqual({ tone: 'success', message: '设置已保存并生效' })
     expect(wrapper.get('.settings-fields').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('.growth-loading--inline').exists()).toBe(false)
     wrapper.unmount()
@@ -115,7 +137,7 @@ describe('SettingsPage', () => {
       requests.push({ url, init })
       if (url === '/api/system/settings' && init?.method === 'PUT') {
         const next = JSON.parse(String(init.body))
-        return Response.json({ configured: next, active: configured, restartRequired: true })
+        return Response.json({ configured: next, active: next, restartRequired: false })
       }
       if (url === '/api/system/settings') {
         return Response.json({ configured, active: configured, restartRequired: false })
@@ -216,8 +238,8 @@ describe('SettingsPage', () => {
       appName: 'Cursor',
       urlTemplate: 'cursor://conversation/{id}',
     })
-    expect(wrapper.get('.settings-top-status').text()).toContain('设置已保存')
-    expect(wrapper.text()).toContain('需要重启')
+    expect(store.feedback?.message).toContain('设置已保存并生效')
+    expect(wrapper.text()).not.toContain('需要重启')
     wrapper.unmount()
   })
 })

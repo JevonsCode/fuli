@@ -14,6 +14,15 @@ const render = (props: Record<string, unknown> = {}) => mount(AgentCard, {
 })
 
 describe('AgentCard projects', () => {
+  it.each(['jefa', 'bole', 'tonborg'])('uses the %s portrait instead of its occupation icon', (id) => {
+    const wrapper = render({ agent: { ...agent, agentId: `employee.${id}`, profile: { ...agent.profile, occupationEmoji: '⚖️' } } })
+    expect(wrapper.get('.agent-portrait img').attributes('src')).toContain(`${id}-avatar.webp`)
+    expect(wrapper.get('.agent-portrait').text()).toBe('')
+  })
+  it('keeps the occupation icon for an Agent without a portrait', () => {
+    const wrapper = render({ agent: { ...agent, agentId: 'custom', profile: { ...agent.profile, occupationEmoji: '🔧' } } })
+    expect(wrapper.get('.agent-portrait').text()).toBe('🔧')
+  })
   it('shows the stable FLA employee number', () => {
     expect(render({ agent: { ...agent, employeeNumber: '000001' } }).get('.fla-employee-number').text()).toBe('FLA 000001')
   })

@@ -752,3 +752,30 @@ function syntheticRuntimeClock() {
     }
   };
 }
+
+test('saving acknowledges before applying once and readiness exposes only the matching completed operation', async () => {
+  let started = 0;
+  let status = 'applying';
+  const apply = () => ({ id: 'test-operation', port: 3030, status });
+  const system = {
+    updateSettings: async () => ({ restartRequired: true, apply: apply() }),
+    startSettingsApply: () => { started += 1; },
+    settingsApplyStatus: apply,
+  };
+  const { server, url } = await createServer({ app: { graphiti: true, close() {} }, system, port: 0 });
+  try {
+    const saved = await requestJson(`${url}/api/system/settings`, { method: 'PUT', body: {} });
+    assert.equal(saved.body.apply.status, 'applying');
+    assert.equal(started, 1);
+    assert.equal((await fetch(`${url}/api/system/settings/ready.svg?id=test-operation`)).status, 503);
+    status = 'applied';
+    assert.equal((await fetch(`${url}/api/system/settings/ready.svg?id=wrong-operation`)).status, 503);
+    const ready = await fetch(`${url}/api/system/settings/ready.svg?id=test-operation`);
+    assert.equal(ready.status, 200);
+    assert.equal(ready.headers.get('cache-control'), 'no-store');
+    assert.equal(ready.headers.get('content-type'), 'image/svg+xml');
+    assert.equal((await fetch(`${url}/api/system/settings/ready.svg?id=test-operation`, {
+      headers: { Origin: 'https://foreign.example' },
+    })).status, 403);
+  } finally { await closeServer(server); }
+});

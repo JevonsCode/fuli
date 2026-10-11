@@ -562,7 +562,7 @@ start 和 restart 会继续沿用。
 Kubernetes 或整台容器虚拟机；原生模式会直接停止对应 Provider 和 Neo4j 进程，因此空闲时
 不再保留共享虚拟机开销。
 
-Jefa（项目经理）、Bole（AR，Agent Resources）和 Tonborg（判断者）是每个空间自带的角色，
+Jefa（项目经理）、Bole（AR，Agent Resources）和 Tonborg（决策员）是每个空间自带的角色，
 不需要招募。Bole 的工作台可查看人员安排、当前工作与招募历史；Tonborg 的工作台可查看判断与反馈。
 “Agents → 聘请 Agent”提供其他可复用的员工模板。招募复用持久身份，
 按项目单独任职；安装员工包后，侧栏工作台与 API/A2A 共用 FULI 端口，已有 FULI MCP 可发现和调用员工工具。

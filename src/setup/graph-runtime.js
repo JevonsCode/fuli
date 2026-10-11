@@ -196,7 +196,7 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
       throw new Error('Fuli Graphiti console did not stop before restarting');
     }
   }
-  const lanAccessToken = lan ? deps.createLanAccessToken() : null;
+  const lanAccessToken = lan ? input.lanAccessToken || deps.createLanAccessToken() : null;
   const child = deps.spawnWebRuntime({
     paths: input.paths,
     nodePath: process.execPath,

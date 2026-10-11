@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { employeeAvatarUrl } from "@/features/employees/avatars";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { getJson } from "@/api/client";
@@ -302,7 +303,8 @@ onMounted(() => {
     <template v-else>
       <header class="ui-card agent-resume-header">
         <span class="agent-portrait" aria-hidden="true">
-          {{ agent.profile.occupationEmoji || agentDisplayName(agent).slice(0, 1) }}
+          <img v-if="employeeAvatarUrl(agent.agentId)" :src="employeeAvatarUrl(agent.agentId)" alt="" />
+          <template v-else>{{ agent.profile.occupationEmoji || agentDisplayName(agent).slice(0, 1) }}</template>
         </span>
         <div class="agent-resume-intro">
           <div class="agent-resume-name-row">

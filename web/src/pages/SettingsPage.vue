@@ -3,12 +3,13 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-import { getJson, putJson } from '@/api/client'
+import { ApiError, getJson, putJson } from '@/api/client'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import { normalizedConfiguration, setConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
 import JudgmentPolicySettings from '@/features/judgment/JudgmentPolicySettings.vue'
 import ClientConnectionSettings from '@/features/settings/ClientConnectionSettings.vue'
 import PeerSettings from '@/features/settings/PeerSettings.vue'
+import { waitForSettingsApply } from '@/features/settings/settings-apply'
 import {
   CONVERSATION_SOURCE_APPLICATIONS,
   sourceApplicationName,
@@ -29,11 +30,11 @@ const settings = ref<SystemSettingsResult | null>(null)
 const form = ref<RuntimeSettings | null>(null)
 const resources = ref<ResourceSnapshot | null>(null)
 const loading = ref(true)
-const saving = computed({ get: () => store.settingsSaving, set: (value: boolean) => { store.settingsSaving = value } })
+const saving = computed(() => store.settingsSaving)
 const loadingResources = ref(false)
 const loadError = ref('')
 const resourceError = ref('')
-const saved = ref(false)
+const saveController = new AbortController()
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 const personalPortKeys: Array<keyof RuntimePorts> = [
@@ -88,7 +89,18 @@ onMounted(async () => {
   loading.value = false
 })
 
-onBeforeUnmount(stopPolling)
+onBeforeUnmount(() => {
+  stopPolling()
+  saveController.abort()
+  if (saving.value) store.settingsSaveState = 'idle'
+})
+
+watch(form, () => {
+  if (store.settingsSaveState === 'saved') {
+    store.settingsSaveState = 'idle'
+    store.clearFeedback()
+  }
+}, { deep: true, flush: 'sync' })
 
 watch(
   () => form.value?.resourceRefreshSeconds,
@@ -102,13 +114,23 @@ async function loadSettings() {
     form.value = { ...structuredClone(result.configured), conversationLaunchers: normalizedConfiguration(result.configured.conversationLaunchers) }
     setConversationLauncherConfiguration(result.configured.conversationLaunchers)
     loadError.value = ''
+    const url = new URL(window.location.href)
+    if (result.apply?.status === 'applying') {
+      store.settingsSaveState = 'applying'
+      await finishApplying(result)
+    } else if (result.apply?.status === 'applied' && url.searchParams.get('settingsApplied') === result.apply.id) {
+      store.settingsSaveState = 'saved'
+      store.notify(t('settings.saved'))
+      url.searchParams.delete('settingsApplied')
+      window.history.replaceState(window.history.state, '', url)
+    }
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : t('settings.loadError')
   }
 }
 
 async function loadResources() {
-  if (loadingResources.value || document.visibilityState === 'hidden') return
+  if (saving.value || loadingResources.value || document.visibilityState === 'hidden') return
   loadingResources.value = true
   try {
     resources.value = await getJson<ResourceSnapshot>('/api/system/resources')
@@ -124,20 +146,46 @@ async function loadResources() {
 
 async function saveSettings() {
   if (!form.value || saving.value) return
-  saving.value = true
-  saved.value = false
+  store.settingsSaveState = 'saving'
+  store.clearFeedback()
   try {
     const result = await putJson<SystemSettingsResult>('/api/system/settings', form.value)
     settings.value = result
     form.value = { ...structuredClone(result.configured), conversationLaunchers: normalizedConfiguration(result.configured.conversationLaunchers) }
     setConversationLauncherConfiguration(result.configured.conversationLaunchers)
-    saved.value = true
     loadError.value = ''
-    window.setTimeout(() => { saved.value = false }, 2400)
+    if (result.restartRequired) {
+      if (!result.apply) throw new Error(t('settings.applyUnavailable'))
+      store.settingsSaveState = 'applying'
+      await finishApplying(result)
+    } else {
+      store.settingsSaveState = 'saved'
+      store.notify(t('settings.saved'))
+    }
   } catch (error) {
-    loadError.value = error instanceof Error ? error.message : t('settings.saveError')
-  } finally {
-    saving.value = false
+    if (saveController.signal.aborted) return
+    store.settingsSaveState = 'error'
+    let reason = error instanceof Error ? error.message : t('settings.saveError')
+    if (error instanceof ApiError && error.detail) {
+      try { reason = JSON.parse(error.detail).error || reason } catch { /* Plain-text API error. */ }
+    }
+    store.reportError(new Error(reason))
+  }
+}
+
+async function finishApplying(result: SystemSettingsResult) {
+  if (!result.apply) return
+  try {
+    const completed = await waitForSettingsApply(result.apply, saveController.signal)
+    if (completed.url) { window.location.assign(completed.url); return }
+    settings.value = completed.settings ?? result
+    store.settingsSaveState = 'saved'
+    store.notify(t('settings.saved'))
+    void store.refresh()
+  } catch (error) {
+    if (saveController.signal.aborted) return
+    store.settingsSaveState = 'error'
+    store.reportError(error)
   }
 }
 
@@ -229,11 +277,6 @@ function revealInvalidField(event: Event) {
 <template>
   <section class="view settings-view" :aria-label="t('settings.aria')">
     <div class="settings-content">
-      <GrowthLoading v-if="saving" variant="inline" :label="t('settings.saving')" />
-      <div v-if="saved || settings?.restartRequired" class="settings-top-status" role="status">
-        <strong v-if="saved">{{ t('settings.saved') }}</strong>
-        <span v-if="settings?.restartRequired">{{ t('settings.restartCopy') }}</span>
-      </div>
       <GrowthLoading v-if="loading && !form" variant="compact" :label="t('settings.loading')" />
       <form v-if="form" id="settings-form" class="settings-form" :aria-busy="saving" @submit.prevent="saveSettings" @invalid.capture="revealInvalidField">
         <fieldset class="settings-fields" :disabled="saving">
@@ -300,7 +343,6 @@ function revealInvalidField(event: Event) {
         <ClientConnectionSettings />
         <PeerSettings />
         <UiDisclosure class="settings-card ports-card" :title="t('settings.ports.title')">
-          <span v-if="settings?.restartRequired" class="restart-chip">{{ t('settings.restartRequired') }}</span>
 
           <div class="port-section">
             <h4>{{ t('settings.ports.personal') }}</h4>
@@ -457,7 +499,7 @@ function revealInvalidField(event: Event) {
 </template>
 
 <style scoped>
-.settings-fields { display: contents; min-width: 0; border: 0; margin: 0; padding: 0; }
+.settings-fields { display: grid; gap: var(--space-6); min-width: 0; border: 0; margin: 0; padding: 0; }
 
 .settings-view {
   padding-top: 24px;
@@ -465,20 +507,18 @@ function revealInvalidField(event: Event) {
 }
 
 .settings-content {
-  width: min(var(--page-max), 100%);
+  width: min(1040px, 100%);
+  min-width: 0;
   margin: 0 auto;
   display: grid;
-  gap: 18px;
+  gap: var(--space-6);
 }
 
-.settings-form { display: grid; gap: 18px; align-items: start; }
-
-@media (min-width: 1440px) {
-  .settings-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .settings-form > .settings-error { grid-column: 1 / -1; }
-}
+.settings-form { display: grid; min-width: 0; gap: var(--space-6); }
 
 .settings-card {
+  min-width: 0;
+  container-type: inline-size;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   background: var(--color-surface);
@@ -544,16 +584,6 @@ function revealInvalidField(event: Event) {
 
 
 
-.restart-chip {
-  padding: 5px 9px;
-  border: 1px solid var(--color-warning);
-  border-radius: 999px;
-  color: var(--color-warning);
-  background: var(--color-warning-soft);
-  font-size: 12px;
-  font-weight: 700;
-}
-
 .port-section { display: grid; gap: 13px; }
 .port-section + .port-section { margin-top: 25px; padding-top: 22px; border-top: 1px solid var(--color-border); }
 .development-section > div { display: flex; align-items: center; gap: 9px; }
@@ -568,7 +598,7 @@ function revealInvalidField(event: Event) {
 .development-section > p { color: var(--color-muted); font-size: 12px; }
 .port-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .port-grid label { display: grid; gap: 7px; color: var(--color-muted); font-size: 12px; }
-.port-grid input { width: 100%; }
+.port-grid input { width: 100%; min-width: 0; }
 .port-grid small { color: var(--color-muted); font-size: 12px; }
 
 .behavior-card > h3 { margin-bottom: 14px; }
@@ -579,29 +609,29 @@ function revealInvalidField(event: Event) {
 .conversation-launcher-heading {
   min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 20px;
 }
-.conversation-launcher-heading > span { display: grid; gap: 4px; }
+.conversation-launcher-heading > span { display: grid; min-width: 0; gap: 4px; overflow-wrap: anywhere; }
 .conversation-launcher-heading strong { color: var(--color-ink); font-size: 12px; }
 .conversation-launcher-heading small { color: var(--color-muted); font-size: 12px; }
-.conversation-launcher-switch { display: flex; align-items: center; gap: 9px; color: var(--color-muted); font-size: 12px; }
+.conversation-launcher-switch { display: flex; flex: 0 0 auto; align-items: center; gap: 9px; color: var(--color-muted); font-size: 12px; }
 .conversation-launcher-switch input[role='switch'] { margin: 0; }
 .conversation-launcher-note {
   display: block; max-width: 760px; margin-top: 9px; color: var(--color-muted); font-size: 12px; line-height: 1.45;
 }
 .conversation-launcher-fields {
   display: grid; align-items: start;
-  grid-template-columns: minmax(150px, .7fr) minmax(160px, .8fr) minmax(280px, 1.5fr);
+  grid-template-columns: minmax(0, .7fr) minmax(0, .8fr) minmax(0, 1.5fr);
   gap: 12px; margin-top: 14px;
 }
 .conversation-launcher-fields > label {
-  min-width: 0; display: grid; grid-template-rows: 18px 40px; align-content: start;
+  min-width: 0; display: grid; grid-template-rows: auto 40px; align-content: start;
   gap: 7px; color: var(--color-muted); font-size: 12px;
 }
 .conversation-launcher-fields > label > span {
-  min-width: 0; display: block; overflow: hidden; line-height: 18px; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0; display: block; line-height: 18px; overflow-wrap: anywhere;
 }
 .conversation-launcher-fields code { color: var(--color-muted); font-size: 12px; }
 .conversation-launcher-fields :deep(.launcher-select) { width: 100%; height: 40px; min-width: 0; }
-.conversation-launcher-fields input { width: 100%; }
+.conversation-launcher-fields input { width: 100%; min-width: 0; }
 .setting-list { display: grid; }
 .setting-row {
   min-height: 64px;
@@ -613,7 +643,7 @@ function revealInvalidField(event: Event) {
   cursor: pointer;
 }
 .setting-row:first-child { border-top: 0; }
-.setting-row > span { display: grid; gap: 4px; }
+.setting-row > span { display: grid; min-width: 0; gap: 4px; }
 .setting-row strong { color: var(--color-ink); font-size: 14px; }
 .setting-row small { color: var(--color-muted); font-size: 12px; }
 .setting-row input[role='switch'],
@@ -650,31 +680,25 @@ function revealInvalidField(event: Event) {
 .conversation-launcher-switch input[role='switch']:checked { background: var(--color-accent); }
 .setting-row input[role='switch']:checked::after,
 .conversation-launcher-switch input[role='switch']:checked::after { transform: translate(17px, -50%); }
-.select-row .settings-select { width: 180px; min-width: 0; }
+.select-row .settings-select { flex: 0 0 180px; width: 180px; min-width: 0; }
 
-.settings-top-status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 16px;
-  padding: 0 4px 2px;
-  color: var(--color-muted);
-  font-size: 12px;
-}
-.settings-top-status strong { color: var(--color-muted); font-weight: 700; }
 .settings-error { padding: 11px 13px; border-radius: var(--radius-control); color: var(--color-danger); background: var(--color-surface); font-size: 12px; }
 
-@media (max-width: 900px) {
+@container (max-width: 640px) {
   .port-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .conversation-launcher-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .conversation-launcher-template { grid-column: 1 / -1; }
+  .resource-breakdowns { grid-template-columns: minmax(0, 1fr); }
+}
+
+@container (max-width: 420px) {
+  .resource-totals, .port-grid, .conversation-launcher-fields { grid-template-columns: minmax(0, 1fr); }
+  .conversation-launcher-template { grid-column: auto; }
+  .select-row { align-items: flex-start; flex-direction: column; padding: 14px 0; }
+  .select-row .settings-select { flex: auto; width: 100%; }
 }
 
 @media (max-width: 680px) {
-  .settings-card { padding: 20px; }
-  .resource-totals, .resource-breakdowns, .port-grid, .conversation-launcher-fields { grid-template-columns: 1fr; }
-  .conversation-launcher-template { grid-column: auto; }
-  .select-row { align-items: flex-start; flex-direction: column; padding: 14px 0; }
-  .select-row .settings-select { width: 100%; }
+  .settings-card { padding: var(--space-4); }
 }
 </style>

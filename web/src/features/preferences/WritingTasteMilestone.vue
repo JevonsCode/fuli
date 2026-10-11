@@ -56,8 +56,8 @@ function ratio(current: number, target: number) {
 
 <style scoped>
 .writing-taste-milestone {
-  display: grid; grid-template-columns: auto 120px auto 1fr; align-items: center; gap: 14px;
-  margin-bottom: 18px; padding: 10px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-card);
+  display: grid; grid-template-columns: auto 120px minmax(0, 1fr) auto; align-items: center; gap: 14px;
+  padding: 14px; border: 1px solid var(--color-border); border-radius: var(--radius-card);
   color: var(--color-ink); background: var(--color-surface); text-decoration: none; font-size: 13px;
   transition: border-color var(--motion-fast);
 }
@@ -68,5 +68,9 @@ function ratio(current: number, target: number) {
 .writing-taste-milestone__progress i { display: block; height: 100%; background: var(--color-accent); transform-origin: left; }
 .writing-taste-milestone__action { justify-self: end; color: var(--color-accent); font-size: 13px; font-weight: 550; }
 .status-preview_ready, .status-active { border-color: var(--color-accent-line); background: var(--color-accent-soft); }
-@media (max-width: 720px) { .writing-taste-milestone { grid-template-columns: 1fr auto; } .writing-taste-milestone__progress, .writing-taste-milestone small { grid-column: 1 / -1; } }
+@media (max-width: 720px) {
+  .writing-taste-milestone { grid-template-columns: minmax(0, 1fr) auto; }
+  .writing-taste-milestone__action { grid-column: 2; grid-row: 1; }
+  .writing-taste-milestone__progress, .writing-taste-milestone small { grid-column: 1 / -1; }
+}
 </style>

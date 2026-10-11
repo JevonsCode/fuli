@@ -17,6 +17,7 @@ SYSTEM_HR_AGENT_ID = 'employee.bole'
 SYSTEM_JUDGMENT_AGENT_ID = 'employee.tonborg'
 # Upgrade only the former built-in copy; custom responsibilities are user data.
 LEGACY_HR_RESPONSIBILITY = 'HR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录。'
+LEGACY_JUDGMENT_RESPONSIBILITY = '判断官：依照用户偏好审核日常事项、建议客户端和模型，保留判断依据与反馈。'
 
 
 def coordinator_profile() -> ProjectAgentProfile:
@@ -55,7 +56,7 @@ def judgment_profile() -> ProjectAgentProfile:
     return ProjectAgentProfile(
         name='Tonborg',
         occupation_emoji='⚖️',
-        responsibility='判断官：依照用户偏好审核日常事项、建议客户端和模型，保留判断依据与反馈。',
+        responsibility='决策员：依照用户偏好审核日常事项、建议客户端和模型，保留判断依据与反馈。',
         agent_type='durable',
         work_kinds=['judgment', 'knowledge-review', 'executor-selection'],
         capabilities=['判断审核', '执行器选择', '判断反馈', 'fuli.employee:tonborg'],
@@ -91,8 +92,12 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
     upgrade_responsibility = False
     if rows and rows[0]['profile_json']:
         stored = json.loads(rows[0]['profile_json'])
-        upgrade_responsibility = (agent_id == SYSTEM_HR_AGENT_ID
-                                  and stored.get('responsibility') == LEGACY_HR_RESPONSIBILITY)
+        upgrade_responsibility = (
+            (agent_id == SYSTEM_HR_AGENT_ID
+             and stored.get('responsibility') == LEGACY_HR_RESPONSIBILITY)
+            or (agent_id == SYSTEM_JUDGMENT_AGENT_ID
+                and stored.get('responsibility') == LEGACY_JUDGMENT_RESPONSIBILITY)
+        )
         if upgrade_responsibility:
             stored['responsibility'] = default.responsibility
         profile = ProjectAgentProfile.model_validate(
@@ -134,6 +139,25 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
         agent_type=profile.agent_type,
         now=now,
     )
+    if agent_id == SYSTEM_JUDGMENT_AGENT_ID:
+        # Active project duties may still contain the former built-in copy.
+        # Keep custom duties and ended assignments as the user recorded them.
+        await driver.execute_query(
+            '''
+            MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
+                  [:CONTAINS_PROJECT]->(:FuliPersonalProject)-
+                  [:HAS_PROJECT_AGENT_ASSIGNMENT]->(assignment:FuliProjectAgentAssignment)-
+                  [:ASSIGNED_AGENT]->(:FuliProjectAgent {id: $id})
+            WHERE assignment.status = 'active'
+              AND assignment.responsibility = $legacy_responsibility
+            SET assignment.responsibility = $responsibility,
+                assignment.revision = coalesce(assignment.revision, 0) + 1,
+                assignment.updated_at = $now
+            ''',
+            space_id=space_id, id=node_id,
+            legacy_responsibility=LEGACY_JUDGMENT_RESPONSIBILITY,
+            responsibility=default.responsibility, now=now,
+        )
 
 
 async def retire_legacy_coordinator(driver, space_id):

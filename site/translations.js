@@ -2,7 +2,7 @@
 export const messages = {
   "zh-CN": {
     "meta.title": "FULI 复利 · AI Agent 记忆与跨客户端协作",
-    "meta.description": "FULI 复利通过标准 MCP 连接 AI 客户端，让长期 Agent 延续身份、记忆与项目职责。内置 Jefa 项目经理、Bole AR（Agent Resources）和判断者 Tonborg，按你的偏好协作。",
+    "meta.description": "FULI 复利通过标准 MCP 连接 AI 客户端，让长期 Agent 延续身份、记忆与项目职责。内置 Jefa 项目经理、Bole AR（Agent Resources）和决策员 Tonborg，按你的偏好协作。",
     "meta.social": "换工具不换搭档。长期 Agent 保留记忆，圆桌连接协作，Tonborg 按你的偏好协助判断。",
     "meta.locale": "zh_CN",
     "nav.skip": "跳到正文",
@@ -84,7 +84,7 @@ export const messages = {
     "team.description": "每个空间自带三位专职 Agent：Jefa 项目经理管目标与进展，Bole AR（Agent Resources）负责招募与人员安排，Tonborg 负责判断。项目由一位负责人带队，成员按分工协作，各自保留记忆。",
     "team.pm": "项目经理",
     "team.ar": "AR（Agent Resources）",
-    "team.judge": "判断者",
+    "team.judge": "决策员",
     "team.owner": "项目负责人 · 示例",
     "team.review": "评审 · 示例",
     "team.testing": "测试 · 示例",
@@ -219,7 +219,7 @@ export const messages = {
     "team.description": "Every space comes with three specialists: Jefa manages goals and progress, Bole handles AR (Agent Resources) for recruiting and staffing, and Tonborg helps with judgment. Each project has one lead and a team of specialists, each with their own memory.",
     "team.pm": "Project manager",
     "team.ar": "AR (Agent Resources)",
-    "team.judge": "Judgment",
+    "team.judge": "Decision specialist",
     "team.owner": "Project lead · Example",
     "team.review": "Reviewer · Example",
     "team.testing": "Testing · Example",

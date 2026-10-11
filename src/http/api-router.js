@@ -31,6 +31,7 @@ export async function handleApiRequest({
   }
 
   if (system && url.pathname === '/api/system/settings' && request.method === 'GET') {
+    response.setHeader('Cache-Control', 'no-store');
     sendJson(response, 200, system.getSettings());
     return true;
   }
@@ -42,7 +43,33 @@ export async function handleApiRequest({
   }
 
   if (system && url.pathname === '/api/system/settings' && request.method === 'PUT') {
-    sendJson(response, 200, system.updateSettings(await readJson(request)));
+    const result = await system.updateSettings(await readJson(request));
+    if (result.apply?.status === 'applying') {
+      // Flush the acknowledgement before the detached worker stops this server.
+      let started = false;
+      const start = () => {
+        if (started) return;
+        started = true;
+        system.startSettingsApply(result.apply.id);
+      };
+      response.once('finish', start);
+      response.once('close', start);
+    }
+    sendJson(response, 200, result);
+    return true;
+  }
+
+  // An image load can confirm readiness across a console port change without
+  // granting another origin access to authenticated JSON or widening CORS.
+  if (system && url.pathname === '/api/system/settings/ready.svg' && request.method === 'GET') {
+    const apply = system.settingsApplyStatus?.();
+    response.setHeader('Cache-Control', 'no-store');
+    if (apply?.id !== url.searchParams.get('id') || apply.status !== 'applied') {
+      sendJson(response, 503, { error: 'Settings are not ready' });
+      return true;
+    }
+    response.writeHead(200, { 'content-type': 'image/svg+xml', 'x-content-type-options': 'nosniff' });
+    response.end('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>');
     return true;
   }
 

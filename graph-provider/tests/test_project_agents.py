@@ -568,10 +568,10 @@ async def test_bole_is_the_fixed_system_hr_identity():
     )
     bole = raw_agent(bole_profile)
     bole['agent_id'] = SYSTEM_HR_AGENT_ID
-    # Jefa, Bole and Tonborg read/write, legacy coordinator retirement,
-    # legacy AR merge, then the Bole read model.
+    # Jefa, Bole and Tonborg read/write, Tonborg role-copy upgrade,
+    # legacy coordinator retirement, legacy AR merge, then the Bole read model.
     driver = SequentialDriver([
-        [], [], [], [], [], [], [], [],
+        [], [], [], [], [], [], [], [], [],
         [{
             'agent': bole,
             'assignment_rows': [],
@@ -596,7 +596,10 @@ async def test_bole_is_the_fixed_system_hr_identity():
         ('employee.tonborg', 'durable'),
     ]
     assert all('agent.system_managed = true' in query for query, _ in writes)
-    retire_query, retire_parameters = driver.calls[6]
+    retire_query, retire_parameters = next(
+        (query, parameters) for query, parameters in driver.calls
+        if parameters.get('legacy_id') == 'fuli-project-coordinator'
+    )
     assert "agent.status = 'archived'" in retire_query
     assert retire_parameters['legacy_id'] == 'fuli-project-coordinator'
 

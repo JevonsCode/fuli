@@ -33,6 +33,7 @@ describe('PinnedAgentsNav', () => {
 
     expect(wrapper.findAll('.pinned-agent-nav')).toHaveLength(1)
     expect(wrapper.get('.pinned-agent-nav').text()).toContain('Bole')
+    expect(wrapper.get('.pinned-agent-portrait img').attributes('src')).toContain('bole-avatar.webp')
     expect(wrapper.findComponent(RouterLinkStub).props('to')).toBe('/agents/space-a/employee.bole')
     expect(wrapper.text()).not.toContain('employee.unknown')
   })

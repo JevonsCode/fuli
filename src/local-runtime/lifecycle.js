@@ -30,6 +30,7 @@ export async function startLocalRuntime(input, dependencies = {}) {
     personalSpaceName: input.personalSpaceName,
     port: input.port,
     lan: input.lan === true,
+    lanAccessToken: input.lanAccessToken,
     runtimeSettings,
     previousRuntimeMode: input.previousRuntimeMode,
     personalOnly: !managesDevelopmentWorkspace,

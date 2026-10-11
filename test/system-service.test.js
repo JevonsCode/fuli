@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createSystemService } from '../src/system/system-service.js';
+import { createSystemService, settingsFromActiveRuntime } from '../src/system/system-service.js';
 import { DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
 
 const PATHS = Object.freeze({
@@ -10,6 +10,14 @@ const PATHS = Object.freeze({
   graphRuntimeStatePath: '/data/graph-runtime-state.json',
   runtimeSettingsPath: '/data/runtime-settings.json',
   mcpServerPath: '/package/src/mcp-server.js'
+});
+
+test('an independently connected loopback workspace is not a managed development port', () => {
+  const active = settingsFromActiveRuntime({
+    state: { runtimeSettings: DEFAULT_RUNTIME_SETTINGS, port: 2727 },
+    graphConfig: { workspaces: [{ providerUrl: 'http://127.0.0.1:8789' }] },
+  });
+  assert.equal(active.ports.workspaceProvider, 8788);
 });
 
 test('client configuration exports the actual runtime path without reading credentials', () => {
@@ -42,6 +50,7 @@ test('system settings distinguish immediately applied refresh changes from resta
   const service = createSystemService({
     paths: PATHS,
     packageRoot: '/package',
+    settingsApplier: { status: () => null, prepare: async () => ({ id: 'test-apply', status: 'applying' }) },
     activePort: 2727,
     activeLan: false,
     readJson(path, fallback) {
@@ -58,13 +67,13 @@ test('system settings distinguish immediately applied refresh changes from resta
     versionChecker: { check: async () => ({ updateAvailable: true }) }
   });
 
-  const refreshOnly = service.updateSettings({
+  const refreshOnly = await service.updateSettings({
     ...configured,
     resourceRefreshSeconds: 30
   });
   assert.equal(refreshOnly.restartRequired, false);
 
-  const launcherOnly = service.updateSettings({
+  const launcherOnly = await service.updateSettings({
     ...configured,
     conversationLaunchers: {
       ...configured.conversationLaunchers,
@@ -78,12 +87,13 @@ test('system settings distinguish immediately applied refresh changes from resta
   });
   assert.equal(launcherOnly.restartRequired, false);
 
-  const changedPort = service.updateSettings({
+  const changedPort = await service.updateSettings({
     ...configured,
     ports: { ...configured.ports, console: 3030 }
   });
   assert.equal(changedPort.active.ports.console, 2727);
   assert.equal(changedPort.configured.ports.console, 3030);
   assert.equal(changedPort.restartRequired, true);
+  assert.equal(changedPort.apply.status, 'applying');
   assert.deepEqual(await service.versionStatus(), { updateAvailable: true });
 });

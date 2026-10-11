@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { employeeAvatarUrl } from '@/features/employees/avatars'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
@@ -51,7 +52,8 @@ const isLoading = computed(() => props.loading || Boolean(props.rosterLoading))
           :aria-label="`${agentDisplayName(agent)} · ${t('agentProfiles.profile')}`"
         >
           <span class="pinned-agent-portrait" aria-hidden="true">
-            {{ agent.profile.occupationEmoji || agentDisplayName(agent).slice(0, 1) }}
+            <img v-if="employeeAvatarUrl(agent.agentId)" :src="employeeAvatarUrl(agent.agentId)" alt="" />
+            <template v-else>{{ agent.profile.occupationEmoji || agentDisplayName(agent).slice(0, 1) }}</template>
           </span>
           <span class="pinned-agent-name">{{ agentDisplayName(agent) }}</span>
         </RouterLink>
@@ -137,6 +139,8 @@ const isLoading = computed(() => props.loading || Boolean(props.rosterLoading))
   font-size: 12px;
   line-height: 1;
 }
+
+.pinned-agent-portrait img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 
 .pinned-agent-name {
   min-width: 0;

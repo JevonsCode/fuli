@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch, watchEffect } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
@@ -231,8 +232,9 @@ function retryPinnedAgents() {
         <div v-else class="topbar-heading">
           <h1>{{ title }}</h1>
         </div>
-        <div v-if="!dedicatedWorkspace" class="topbar-actions">
-          <UiButton v-if="route.name === 'settings'" variant="primary" :disabled="store.settingsSaving" form="settings-form" type="submit">{{ t('settings.save') }}</UiButton>
+        <div v-if="!dedicatedWorkspace" class="topbar-actions" :class="{ 'settings-actions': route.name === 'settings' }">
+          <GrowthLoading v-if="route.name === 'settings' && store.settingsSaving" class="settings-save-progress" variant="inline" :label="t(store.settingsSaveState === 'applying' ? 'settings.applying' : 'settings.saving')" />
+          <UiButton v-if="route.name === 'settings'" variant="primary" :disabled="store.settingsSaving" form="settings-form" type="submit">{{ t(store.settingsSaveState === 'saved' ? 'settings.savedShort' : 'settings.save') }}</UiButton>
           <LocaleSwitcher />
           <UiButton variant="ghost" icon :disabled="store.runtimeStatus === 'loading'" :aria-label="t('common.actions.refresh')" :title="t('common.actions.refresh')" @click="store.refresh">
             <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 7a6.5 6.5 0 1 0 .5 5M16 3v4h-4" /></svg>
@@ -246,8 +248,8 @@ function retryPinnedAgents() {
         v-if="store.feedback"
         class="feedback feedback-message"
         :class="{ success: store.feedback.tone === 'success' }"
-        role="status"
-        aria-live="polite"
+        :role="store.feedback.tone === 'error' ? 'alert' : 'status'"
+        :aria-live="store.feedback.tone === 'error' ? 'assertive' : 'polite'"
       >
         <span>{{ store.feedback.message }}</span>
         <button class="feedback-dismiss" type="button" :aria-label="t('common.actions.close')" @click="store.clearFeedback">×</button>
@@ -261,6 +263,10 @@ function retryPinnedAgents() {
 </template>
 
 <style scoped>
+.settings-actions { min-width: 0; max-width: 100%; flex-shrink: 1; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 680px) {
+  .settings-save-progress { flex-basis: 100%; justify-content: flex-end; }
+}
 .topbar--workbench { display: none; }
 .workbench-host-label { color: var(--color-muted); font-size: 12px; font-weight: 600; }
 .mobile-nav-close-icon {

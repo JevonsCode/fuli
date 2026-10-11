@@ -465,7 +465,7 @@ describe('employee workbench', () => {
   it('opens Tonborg as the native judgment workbench and keeps profile navigation available', async () => {
     getJson.mockImplementation(async (url: string) => {
       if (url.startsWith('/api/employee-templates?')) return { templates: [{
-        id: 'tonborg', name: 'Tonborg', role: '判断顾问', workbench: { kind: 'native', view: 'judgment' }, runtime: null,
+        id: 'tonborg', name: 'Tonborg', role: '决策员', workbench: { kind: 'native', view: 'judgment' }, runtime: null,
         runtimeStatus: 'not_required', capabilities: ['判断'], permissions: ['judgment.review'],
         agentId: 'employee.tonborg', agentStatus: 'active', assignmentsVersion: 'version-tonborg', assignments: [],
       }] }
@@ -475,6 +475,8 @@ describe('employee workbench', () => {
 
     const wrapper = await setup('/employees/tonborg?project=project-a')
 
+    expect(wrapper.get('h1').text()).toContain('决策员')
+    expect(wrapper.get('.employee-workbench-mark img').attributes('src')).toContain('tonborg-avatar.webp')
     expect(wrapper.findComponent(JudgmentWorkbench).props('personalSpaceId')).toBe('space-a')
     expect(wrapper.find('iframe').exists()).toBe(false)
     expect(wrapper.findComponent(EmployeeRecruitDialog).exists()).toBe(false)
