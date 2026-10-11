@@ -121,7 +121,7 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
         [{ ...agent, skillPath: agent.projectSkillPath }, plan.paths.projectSkillPath],
         [{ ...agent, skillPath: agent.reviewSkillPath }, plan.paths.reviewSkillPath],
         [{ ...agent, skillPath: agent.operationSkillPath }, plan.paths.operationSkillPath]
-      ]) {
+      ].filter(([target]) => target.skillPath)) {
         skills.push(await installSkill(target, {
           sourcePath,
           backupDir: plan.paths.backupDir

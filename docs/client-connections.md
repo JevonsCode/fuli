@@ -25,6 +25,28 @@ directory, or `--runtime-config FILE` for an explicit runtime configuration.
 `args` for clients with their own configuration editor. Paths with spaces remain
 individual JSON arguments; do not paste them as an unquoted shell command.
 
+## Claude Desktop and other chat apps
+
+`fuli setup` detects Claude Desktop (Windows and macOS) and adds a `fuli` entry to
+`claude_desktop_config.json`, keeping its other settings and servers and backing up the
+file first. Quit and reopen Claude Desktop afterwards; it only reads the file at launch.
+
+Chat apps load every tool schema into each conversation, so Claude Desktop gets the
+**chat profile** (`--tool-profile chat`): 20 tools for preferences, project knowledge,
+recording, completion checkpoints, conversation recovery and the Roundtable, about
+40 KB of schema instead of about 200 KB for all 141 tools. Management (executors,
+routing, publishing, recruitment) stays in the console. Its conversations are attributed
+to `claude`. For another chat-style client, print the same entry with
+`fuli connect --profile chat --source-application claude` (or the matching source).
+
+Claude Desktop has no lifecycle hooks, so task entry and the closing attribution line
+depend on the Agent following FULI's instructions, and visible conversations are not
+captured automatically.
+
+The generated paths go through the active Node location (for example nvm's
+`C:\nvm4w\nodejs`) rather than a versioned install folder, so switching Node
+versions with a version manager does not break client configuration.
+
 Clients that only ask for a command can use `fuli mcp` if `fuli` is on their PATH.
 `fuli mcp --tools` lists the available tool contract without starting a task.
 Configuration export is read-only: it neither modifies client settings nor
@@ -54,7 +76,7 @@ is not proof that task entry or completion ran.
 | Capability | Generic MCP | Current dedicated adapters |
 | --- | --- | --- |
 | Tools, authorized preferences and working memory | Available through tool calls | Shared behavior |
-| Automatic configuration and bundled instructions | Merge generated configuration | Codex, Claude Code, Cursor |
+| Automatic configuration and bundled instructions | Merge generated configuration | Codex, Claude Code, Cursor; Claude Desktop (configuration only, chat profile) |
 | Task entry and completion hooks | Agent follows instructions; no guaranteed hook | Host-specific adapters; Cursor has a limited completion reminder |
 | Automatic visible conversation capture | No | Supported Codex and Claude Code transcript formats |
 | Roundtable wake/resume | Messages can wait for the recipient's next task | Codex and Claude Code CLIs |

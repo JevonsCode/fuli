@@ -19,7 +19,8 @@
 Fuli is a collaboration layer for long-lived agents across MCP-compatible AI clients. Connect
 your tools to the same accessible Fuli data, select the same agent, and continue with its identity,
 project responsibilities, and relevant working context. Use `fuli connect` for standard MCP
-configuration, or automatic setup where a client adapter is available. See [client connections](docs/client-connections.md).
+configuration, or automatic setup where a client adapter is available (Codex, Claude Code, Cursor, and Claude
+Desktop with a compact chat tool profile). See [client connections](docs/client-connections.md).
 
 - **A lasting teammate:** keep an agent's role, collaboration history, and working memory between tasks.
 - **Context with boundaries:** retrieve relevant project knowledge, decisions, and preferences with

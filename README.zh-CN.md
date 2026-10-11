@@ -18,7 +18,8 @@
 
 复利是跨兼容 MCP 客户端的长期 Agent 协作层。让 AI 工具接入同一份可访问的 Fuli 数据，
 选中同一位 Agent，就能延续它的身份、项目职责和相关工作脉络。运行 `fuli connect` 获取标准
-MCP 配置，有适配器的客户端还支持自动配置。详见[客户端接入](docs/client-connections.md)。
+MCP 配置，有适配器的客户端还支持自动配置（Codex、Claude Code、Cursor，以及使用精简聊天工具集的 Claude
+桌面版）。详见[客户端接入](docs/client-connections.md)。
 
 - **搭档留得住：**任务结束后，Agent 的职责、合作记录与工作记忆继续保留。
 - **上下文有边界：**按需取回项目知识、决定与偏好，保留来源、作用域和确认状态。

@@ -2,7 +2,9 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const DEFAULT_PACKAGE_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+import { stablePackageRoot } from './stable-package-root.js';
+
+const DEFAULT_PACKAGE_ROOT = stablePackageRoot(dirname(dirname(dirname(fileURLToPath(import.meta.url)))));
 
 export function resolveSetupPaths({
   dataDir = null,

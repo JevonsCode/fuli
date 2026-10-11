@@ -7,6 +7,7 @@ import {
   connectClaudeCode,
   disconnectClaudeCode
 } from './claude-code-config.js';
+import { connectClaudeDesktop, disconnectClaudeDesktop } from './claude-desktop-config.js';
 import { connectCursor, disconnectCursor } from './cursor-config.js';
 import { connectCodex, disconnectCodex } from './codex-config.js';
 import { adaptAgentForReviewSkill } from './review-skill-adapters.js';
@@ -69,32 +70,51 @@ export function discoverAgents({
         fileExists(cursorHome)
       )
     }
-  ].map((agent) => adaptAgentForReviewSkill(agent, { homeDir, pathApi }));
+  ].map((agent) => adaptAgentForReviewSkill(agent, { homeDir, pathApi }))
+    .concat(claudeDesktop({ platform, env, homeDir, pathApi, fileExists }) ?? []);
+}
+
+// The chat app: MCP only, no hooks or Skills. Its config lives beside its app data.
+function claudeDesktop({ platform, env, homeDir, pathApi, fileExists }) {
+  const appData = platform === 'win32' ? nonEmpty(env.APPDATA)
+    : platform === 'darwin' ? pathApi.join(homeDir, 'Library', 'Application Support') : null;
+  if (!appData) return null;
+  const configDir = pathApi.join(appData, 'Claude');
+  return {
+    id: 'claude-desktop',
+    label: 'Claude Desktop',
+    configPath: pathApi.join(configDir, 'claude_desktop_config.json'),
+    available: Boolean(fileExists(configDir))
+  };
 }
 
 export function connectAgent(agent, context, {
   connectCodexConfig = connectCodex,
   connectClaudeCodeConfig = connectClaudeCode,
-  connectCursorConfig = connectCursor
+  connectCursorConfig = connectCursor,
+  connectClaudeDesktopConfig = connectClaudeDesktop
 } = {}) {
   if (agent.id === 'codex') return connectCodexConfig(agent, context);
   if (agent.id === 'claude-code') {
     return connectClaudeCodeConfig(agent, context);
   }
   if (agent.id === 'cursor') return connectCursorConfig(agent, context);
+  if (agent.id === 'claude-desktop') return connectClaudeDesktopConfig(agent, context);
   throw new TypeError(`Unsupported agent: ${agent.id}`);
 }
 
 export function disconnectAgent(agent, {
   disconnectCodexConfig = disconnectCodex,
   disconnectClaudeCodeConfig = disconnectClaudeCode,
-  disconnectJsonConfig = disconnectCursor
+  disconnectJsonConfig = disconnectCursor,
+  disconnectClaudeDesktopConfig = disconnectClaudeDesktop
 } = {}) {
   if (agent.id === 'codex') return disconnectCodexConfig(agent);
   if (agent.id === 'claude-code') return disconnectClaudeCodeConfig(agent);
   if (agent.id === 'cursor') {
     return disconnectJsonConfig(agent);
   }
+  if (agent.id === 'claude-desktop') return disconnectClaudeDesktopConfig(agent);
   throw new TypeError(`Unsupported agent: ${agent.id}`);
 }
 

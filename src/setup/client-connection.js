@@ -1,5 +1,13 @@
+import { toolNamesForProfile } from '../mcp/tool-profiles.js';
+import { normalizeMcpSourceApplication } from '../mcp/session-id.js';
+
 // Configuration only: no client discovery, file writes, credentials or model calls.
-export function clientConnectionConfig({ nodePath = process.execPath, mcpServerPath, runtimeConfigPath }, format = 'standard') {
+export function clientConnectionConfig({ nodePath = process.execPath, mcpServerPath, runtimeConfigPath }, format = 'standard', {
+  profile = 'full',
+  sourceApplication = 'other'
+} = {}) {
+  toolNamesForProfile(profile);
+  normalizeMcpSourceApplication(sourceApplication);
   if (!['standard', 'vscode', 'server'].includes(format)) {
     throw new TypeError('Connection format must be standard, vscode or server');
   }
@@ -9,7 +17,8 @@ export function clientConnectionConfig({ nodePath = process.execPath, mcpServerP
   const server = {
     type: 'stdio',
     command: nodePath,
-    args: [mcpServerPath, '--runtime-config', runtimeConfigPath, '--source-application', 'other']
+    args: [mcpServerPath, '--runtime-config', runtimeConfigPath, '--source-application', sourceApplication,
+      ...(profile === 'full' ? [] : ['--tool-profile', profile])]
   };
   if (format === 'server') return server;
   return { [format === 'vscode' ? 'servers' : 'mcpServers']: { fuli: server } };

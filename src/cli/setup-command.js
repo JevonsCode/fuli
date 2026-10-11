@@ -102,9 +102,11 @@ export function formatSetupResult(result, plan) {
       lines.push(`${agent.label}: ${state}${agent.message ? ` (${agent.message})` : ''}; retry fuli setup`);
       continue;
     }
-    lines.push(agent.newTaskRequired
-      ? `${agent.label}: connected; create or reopen a task to load the new configuration`
-      : `${agent.label}: connected`);
+    lines.push(agent.restartRequired
+      ? `${agent.label}: connected; quit and reopen the app to load Fuli`
+      : agent.newTaskRequired
+        ? `${agent.label}: connected; create or reopen a task to load the new configuration`
+        : `${agent.label}: connected`);
     for (const step of agent.nextSteps ?? []) lines.push(`${agent.label}: ${step}`);
   }
   const dataDir = plan?.paths?.dataDir;
