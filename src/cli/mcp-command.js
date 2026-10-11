@@ -12,6 +12,7 @@ import {
 import { runStdio } from '../mcp/runtime.js';
 import { prepareDirectAgentToolCall } from '../mcp/direct-call.js';
 import { normalizeMcpSourceApplication } from '../mcp/session-id.js';
+import { toolNamesForProfile } from '../mcp/tool-profiles.js';
 import { applicationErrorMessage } from '../mcp/tool-result.js';
 
 export async function runMcpCommand(args, { env = process.env } = {}) {
@@ -42,7 +43,8 @@ export async function runMcpCommand(args, { env = process.env } = {}) {
     runtimeConfigPath,
     sourceApplication: configuredSourceApplication
       ? normalizeMcpSourceApplication(configuredSourceApplication)
-      : undefined
+      : undefined,
+    toolNames: toolNamesForProfile(args.includes('--tool-profile') ? requiredOption(args, '--tool-profile') : 'full')
   });
 }
 
@@ -92,7 +94,7 @@ export function startupMessage(error) {
 
 function helpText() {
   return 'Usage: fuli mcp [--runtime-config <graph-runtime.json>] ' +
-    '[--source-application <codex|claude|claude_code|cursor|kiro|other>]\n' +
+    '[--source-application <codex|claude|claude_code|cursor|kiro|other>] [--tool-profile <full|chat>]\n' +
     '       fuli mcp --tools\n' +
     '       fuli mcp --runtime-config <graph-runtime.json> ' +
     '--call <tool> [--input <json>]\n';

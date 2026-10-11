@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { replaceFuliTable } from './codex-config.js';
 import { isCodexBootstrapCurrent } from './codex-bootstrap.js';
 import { hasCurrentClaudeCodeHooks } from './claude-code-config.js';
+import { CLAUDE_DESKTOP_SERVER_ARGS } from './claude-desktop-config.js';
 import {
   hasCodexTomlHookDefinitions,
   hasCurrentCodexLifecycleHooks,
@@ -27,7 +28,7 @@ export function inspectAgentInstallations(agents, context, {
       [context.projectSkillPath, agent.projectSkillPath],
       [context.reviewSkillPath, agent.reviewSkillPath],
       [context.operationSkillPath, agent.operationSkillPath]
-    ];
+    ].filter(([, targetPath]) => targetPath);
     const skillsPresent = skillPairs.some(([, targetPath]) => fileExists(targetPath));
     const skillsCurrent = skillPairs.every(
       ([sourcePath, targetPath]) => skillCurrent(sourcePath, targetPath)
@@ -89,8 +90,9 @@ function inspectRegistration(agent, context, readers) {
       context.mcpServerPath,
       '--runtime-config',
       context.runtimeConfigPath,
-      '--source-application',
-      agent.id === 'claude-code' ? 'claude_code' : agent.id
+      ...(agent.id === 'claude-desktop'
+        ? CLAUDE_DESKTOP_SERVER_ARGS
+        : ['--source-application', agent.id === 'claude-code' ? 'claude_code' : agent.id])
     ]
   };
   try {

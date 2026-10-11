@@ -7,12 +7,13 @@ import {
 import { openFederatedGraphApplication } from '../graphiti/federated-application.js';
 import { createMcpServer } from './create-mcp-server.js';
 
-export async function runStdio({ runtimeConfigPath, sourceApplication }) {
+export async function runStdio({ runtimeConfigPath, sourceApplication, toolNames = null }) {
   const app = openFederatedGraphApplication({ runtimeConfigPath });
   const leaseClient = createRuntimeLeaseClient({ runtimeConfigPath });
   bindRuntimeLeaseAgentTools(app, leaseClient);
   const server = createServerOrClose(app, createMcpServer, {
     sourceApplication,
+    toolNames,
     withRuntimeLease: leaseClient.withGraphLease
   });
   const transport = new StdioServerTransport();
