@@ -606,6 +606,7 @@ and tells you to run `fuli setup`; it never applies setup changes implicitly.
 | `--adaptive-memory` | Enable on-demand wake and staged idle sleep, coordinated by the management service |
 | `--no-adaptive-memory` | Disable idle sleep and keep graph services running |
 | `--skip-agents` | Do not change agent configuration or Skills |
+| `--connected-only` | Refresh only clients that already have a Fuli MCP entry; used automatically by update |
 | `--no-start` | Initialize the Provider without starting the UI |
 | `--personal-only` | Use only the personal Provider; this is the default |
 | `--with-dev-public` | Start a development shared Provider for local integration work only |
@@ -691,9 +692,15 @@ Update:
 fuli update
 ```
 
-The update flow verifies that it will not downgrade the installation, stops the old services,
-installs `fuli-context@latest`, and refreshes agent integrations. Existing knowledge, configuration
-backups, and Neo4j volumes remain intact. Reuse any custom setup options during updates.
+The update flow shows the running CLI, Node, PATH launchers, and npm installation target. If the
+current version is already latest, it exits without reinstalling or restarting services. Otherwise,
+it verifies that it will not downgrade, stops the old services, installs the latest version, and
+refreshes only clients with an existing Fuli MCP entry. Existing knowledge, configuration backups,
+and Neo4j volumes remain intact. Reuse any custom setup options during updates.
+
+Reconnect Fuli in already-open clients, or restart those clients and open a new task, to load the
+new MCP process. To repair existing integrations without upgrading, run
+`fuli setup --yes --connected-only`. Use normal `fuli setup` to connect a new client.
 
 Uninstall:
 

@@ -47,6 +47,7 @@ ProjectAgentRoutingOutcome = Literal[
     'blocked',
 ]
 ProjectAgentRoutingReason = Literal[
+    'project_team_lead',
     'explicit_agent',
     'project_continuity',
     'project_default',

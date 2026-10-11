@@ -10,6 +10,7 @@ import {
 import { quoteShellArgument } from './shell-argument.js';
 import { parseUpdateOptions } from '../setup/options.js';
 import { runLocalRuntimeCommand } from './local-runtime-command.js';
+import { formatUpdateInstallation, inspectUpdateInstallation, updateEnvironment } from './update-installation.js';
 import {
   compareSemanticVersions,
   parseSemanticVersion
@@ -21,9 +22,10 @@ const LATEST_PACKAGE = `${FULI_PACKAGE_NAME}@latest`;
 
 export async function runUpdateCommand(args = [], dependencies = {}) {
   const options = parseUpdateOptions(args);
-  const env = dependencies.env ?? process.env;
   const platform = dependencies.platform ?? process.platform;
   const nodePath = dependencies.nodePath ?? process.execPath;
+  const originalEnv = dependencies.env ?? process.env;
+  const env = updateEnvironment(originalEnv, nodePath, platform);
   const npmCommand = dependencies.npmCommand ??
     (platform === 'win32' ? 'npm.cmd' : 'npm');
   const confirm = dependencies.confirm ?? confirmInTerminal;
@@ -36,13 +38,17 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
     (() => queryLatestVersion(npmCommand, runCaptured, env));
 
   write(formatUpdatePreview(options));
-  if (!options.yes && !await confirm()) {
-    write('Cancelled. No changes were made.');
-    return { status: 'cancelled' };
-  }
-
+  const inspectInstallation = dependencies.inspectInstallation ?? inspectUpdateInstallation;
+  const installation = inspectInstallation({ env: originalEnv, platform });
+  write(formatUpdateInstallation(installation, { nodePath, npmCommand }));
   const latestVersion = resolveLatestVersion();
-  if (compareSemanticVersions(latestVersion, FULI_VERSION) < 0) {
+  const comparison = compareSemanticVersions(latestVersion, FULI_VERSION);
+  if (comparison === 0) {
+    const result = { status: 'current', previousVersion: FULI_VERSION, version: FULI_VERSION };
+    write(formatUpdateResult(result));
+    return result;
+  }
+  if (comparison < 0) {
     const result = {
       status: 'ahead',
       previousVersion: FULI_VERSION,
@@ -53,6 +59,22 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
     return result;
   }
 
+  const globalRootResult = runCaptured(npmCommand, ['root', '--global'], { env });
+  if (!processSucceeded(globalRootResult)) {
+    throw new Error(`Could not locate the npm installation target (${describeProcessFailure(globalRootResult)}). Local services were not stopped.`);
+  }
+  const globalRoot = String(globalRootResult.stdout ?? '').trim();
+  const cliPath = resolveGlobalCliPath(globalRoot, platform);
+  if (!cliPath) throw new Error('npm returned an invalid global directory. Local services were not stopped.');
+  const recoveryCommand = formatSetupRecoveryCommand(args, platform, [nodePath, cliPath]);
+  write(`Update target: ${cliPath}`);
+  if (installation.cliPath && installation.cliPath !== cliPath) {
+    write('The running CLI path differs from the npm target. This command updates the npm target above.');
+  }
+  if (!options.yes && !await confirm()) {
+    write('Cancelled. No changes were made.');
+    return { status: 'cancelled' };
+  }
   const stopArgs = options.dataDir ? ['--data-dir', options.dataDir] : [];
   const stopped = await stopRuntime('stop', stopArgs, { env, write });
   if (stopped.status === 'partial') {
@@ -75,61 +97,53 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
     throw new Error([
       `Global package installation failed (${describeProcessFailure(installed)}). ` +
         'Knowledge data was not deleted.',
-      `Run npm install --global ${LATEST_PACKAGE}, then run fuli setup --yes.`
+      'Local services were stopped and have not been restarted.',
+      `Run npm install --global ${selectedPackage}, then run ${recoveryCommand}.`
     ].join('\n'));
   }
 
-  const globalRootResult = runCaptured(npmCommand, ['root', '--global'], { env });
-  if (!processSucceeded(globalRootResult)) {
-    throw postInstallError(
-      `Could not locate the global npm directory (${describeProcessFailure(globalRootResult)})`,
-      args,
-      platform
-    );
-  }
-  const globalRoot = String(globalRootResult.stdout ?? '').trim();
-  const cliPath = resolveGlobalCliPath(globalRoot, platform);
-  if (!cliPath || !fileExists(cliPath)) {
-    throw postInstallError('The new CLI file is missing; reinstall the global package', args, platform);
+  if (!fileExists(cliPath)) {
+    throw postInstallError('The new CLI file is missing; reinstall the global package', recoveryCommand);
   }
 
   const versionResult = runCaptured(nodePath, [cliPath, '--version'], { env });
   if (!processSucceeded(versionResult)) {
     throw postInstallError(
       `The new CLI could not start (${describeProcessFailure(versionResult)})`,
-      args,
-      platform
+      recoveryCommand
     );
   }
   const version = String(versionResult.stdout ?? '').trim();
-  if (!version) throw postInstallError('The new CLI returned no version', args, platform);
+  if (!version) throw postInstallError('The new CLI returned no version', recoveryCommand);
   if (compareSemanticVersions(version, latestVersion) !== 0) {
     throw postInstallError(
       `The new CLI version ${version} does not match the npm latest version ${latestVersion} ` +
         'confirmed before the update',
-      args,
-      platform
+      recoveryCommand
     );
   }
 
   write('Refreshing local services, Agent integrations, and Skills with the new CLI...');
-  const setupArgs = ['setup', '--yes', ...args.filter((arg) => arg !== '--yes')];
+  const setupArgs = ['setup', '--yes', '--connected-only', ...args.filter((arg) =>
+    arg !== '--yes' && arg !== '--connected-only')];
   const setupResult = runInherited(nodePath, [cliPath, ...setupArgs], { env });
   if (!processSucceeded(setupResult)) {
     throw postInstallError(
       `The new version was installed, but setup did not complete ` +
         `(${describeProcessFailure(setupResult)})`,
-      args,
-      platform
+      recoveryCommand
     );
   }
 
   const result = {
-    status: version === FULI_VERSION ? 'current' : 'updated',
+    status: 'updated',
     previousVersion: FULI_VERSION,
     version
   };
   write(formatUpdateResult(result));
+  if (options.skipAgents) {
+    write('Existing conversations may still use the previous MCP process. Reconnect Fuli in your client or restart the client, then open a new task. Running conversations were not restarted automatically.');
+  }
   return result;
 }
 
@@ -138,8 +152,8 @@ export function formatUpdatePreview(options) {
     'Ready to update Fuli',
     `npm package: ${LATEST_PACKAGE}`,
     options.noStart
-      ? 'Local UI: stop safely and keep stopped after the update'
-      : 'Local services: stop safely and restart with the new version',
+      ? 'If an upgrade is available: stop the local UI safely and keep it stopped'
+      : 'If an upgrade is available: stop local services safely and restart with the new version',
     options.dataDir
       ? `Data: preserve ${options.dataDir}`
       : 'Data: preserve the current default data directory',
@@ -149,7 +163,7 @@ export function formatUpdatePreview(options) {
       : options.adaptiveMemory ? 'enable' : 'disable'}`,
     `Agent integrations and Skills: ${options.skipAgents
       ? 'skip refresh as requested'
-      : 'refresh through setup in the new version'}`
+      : 'refresh through setup in the new version; only already connected clients'}`
   ].join('\n');
 }
 
@@ -162,7 +176,7 @@ export function formatUpdateResult(result) {
     ].join('');
   }
   if (result.status === 'current') {
-    return `Fuli is already at the latest version (${result.version}); local integrations refreshed.`;
+    return `Fuli is already at the latest version (${result.version}); no installation or service restart needed. To repair existing integrations, run fuli setup --yes --connected-only.`;
   }
   return `Fuli updated from ${result.previousVersion} to ${result.version}.`;
 }
@@ -173,10 +187,10 @@ export function resolveGlobalCliPath(globalRoot, platform = process.platform) {
   return path.join(globalRoot.trim(), FULI_PACKAGE_NAME, 'src', 'cli.js');
 }
 
-function postInstallError(message, args, platform) {
+function postInstallError(message, recoveryCommand) {
   return new Error([
     `${message}. Knowledge data was not deleted.`,
-    `Run again: ${formatSetupRecoveryCommand(args, platform)}`
+    `Run again: ${recoveryCommand}`
   ].join('\n'));
 }
 
@@ -204,11 +218,12 @@ function queryLatestVersion(npmCommand, runCaptured, env) {
   return version;
 }
 
-function formatSetupRecoveryCommand(args, platform) {
+function formatSetupRecoveryCommand(args, platform, launcher) {
   const forwarded = args
-    .filter((arg) => arg !== '--yes')
+    .filter((arg) => arg !== '--yes' && arg !== '--connected-only')
     .map((arg) => formatCommandArgument(arg, platform));
-  return ['fuli', 'setup', '--yes', ...forwarded].join(' ');
+  return [...launcher.map((arg) => formatCommandArgument(arg, platform)),
+    'setup', '--yes', '--connected-only', ...forwarded].join(' ');
 }
 
 function formatCommandArgument(value, platform) {
@@ -238,7 +253,7 @@ function describeProcessFailure(result) {
 // (CVE-2024-27980). Only fixed, shell-inert arguments may take that path.
 export function batchFileSpawnOptions(command, args) {
   if (!/\.(?:cmd|bat)$/i.test(command)) return {};
-  const unsafe = args.find((arg) => !/^[\w@./:=-]+$/.test(arg));
+  const unsafe = args.find((arg) => !/^[\w@./:=+-]+$/.test(arg));
   if (unsafe !== undefined) throw new TypeError(`Refusing to pass a shell-sensitive argument to ${command}`);
   return { shell: true };
 }

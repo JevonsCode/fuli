@@ -5,15 +5,23 @@ import {
   batchFileSpawnOptions,
   compareSemanticVersions,
   resolveGlobalCliPath,
-  runUpdateCommand
+  runUpdateCommand as runUpdate
 } from '../src/cli/update-command.js';
 import { FULI_VERSION } from '../src/package-metadata.js';
+
+const runUpdateCommand = (args, dependencies) => runUpdate(args, {
+  env: { PATH: '/test/bin' },
+  inspectInstallation: () => ({ cliPath: '/test/package/src/cli.js', launchers: [] }),
+  runCaptured: () => ({ status: 0, stdout: '/test/npm/node_modules' }),
+  ...dependencies
+});
 
 test('update cancellation has no side effects', async () => {
   const output = [];
   let stopped = false;
   let spawned = false;
   const result = await runUpdateCommand([], {
+    resolveLatestVersion: () => '9.8.7',
     confirm: async () => false,
     stopRuntime: async () => {
       stopped = true;
@@ -80,6 +88,7 @@ test('update installs latest globally and runs setup from the newly installed pa
         command: 'npm',
         args: ['view', 'fuli-context@latest', 'version', '--json']
       },
+      { kind: 'captured', command: 'npm', args: ['root', '--global'] },
       { kind: 'stop', command: 'stop', args: ['--data-dir', 'D:/Fuli Data'] },
       {
         kind: 'inherited',
@@ -92,7 +101,6 @@ test('update installs latest globally and runs setup from the newly installed pa
           '--no-fund'
         ]
       },
-      { kind: 'captured', command: 'npm', args: ['root', '--global'] },
       { kind: 'exists', path: cliPath },
       {
         kind: 'captured',
@@ -106,6 +114,7 @@ test('update installs latest globally and runs setup from the newly installed pa
           cliPath,
           'setup',
           '--yes',
+          '--connected-only',
           '--data-dir', 'D:/Fuli Data',
           '--port', '3199',
           '--memory-profile', 'low',
@@ -120,7 +129,7 @@ test('update installs latest globally and runs setup from the newly installed pa
     });
     assert.match(output.join('\n'), /refresh through setup in the new version/);
     assert.match(output.join('\n'), /Neo4j memory: low/);
-    assert.match(output.at(-1), /9\.8\.7/);
+    assert.match(output.join('\n'), /9\.8\.7/);
     assert.doesNotMatch(output.join('\n'), /[\p{Script=Han}]/u);
   });
 
@@ -134,7 +143,7 @@ test('update aborts before npm when the old console identity cannot be verified'
         spawned = true;
         return { status: 0 };
       },
-      resolveLatestVersion: () => FULI_VERSION,
+      resolveLatestVersion: () => '9.8.7',
       write: () => {}
       }),
       /update did not start/
@@ -147,10 +156,10 @@ test('update reports a manual recovery path when npm installation fails', async 
     runUpdateCommand(['--yes'], {
       stopRuntime: async () => ({ status: 'stopped' }),
       runInherited: () => ({ status: 1 }),
-      resolveLatestVersion: () => FULI_VERSION,
+      resolveLatestVersion: () => '9.8.7',
       write: () => {}
     }),
-    /npm install --global fuli-context@latest/
+    /npm install --global fuli-context@9\.8\.7/
   );
 });
 
@@ -176,7 +185,7 @@ test('update preserves setup flags in the recovery command after installation', 
       fileExists: () => true,
       write: () => {}
     }),
-    /fuli setup --yes --data-dir 'D:\/Fuli Data' --no-start/
+    /\/usr\/bin\/node \/usr\/lib\/node_modules\/fuli-context\/src\/cli.js setup --yes --connected-only --data-dir 'D:\/Fuli Data' --no-start/
   );
 });
 
@@ -201,19 +210,20 @@ test('Windows recovery output preserves backslashes in a quoted data path', asyn
     }),
     (error) => {
       assert.ok(error.message.includes(
-        'fuli setup --yes --data-dir "C:\\Fuli Data"'
+        'C:\\Node\\node.exe C:\\npm\\node_modules\\fuli-context\\src\\cli.js setup --yes --connected-only --data-dir "C:\\Fuli Data"'
       ));
       return true;
     }
   );
 });
 
-test('update reports current when npm latest matches the running version', async () => {
-  const result = await runUpdateCommand(['--yes', '--skip-agents'], {
+test('update reports current without confirmation when npm latest matches the running version', async () => {
+  const result = await runUpdateCommand(['--skip-agents'], {
+    confirm: async () => assert.fail('current version must not ask for permission to modify'),
     platform: 'linux',
-    stopRuntime: async () => ({ status: 'stopped' }),
+    stopRuntime: async () => assert.fail('current version must not stop services'),
     resolveLatestVersion: () => FULI_VERSION,
-    runInherited: () => ({ status: 0 }),
+    runInherited: () => assert.fail('current version must not reinstall or run setup'),
     runCaptured: (command) => command === 'npm'
       ? { status: 0, stdout: '/usr/lib/node_modules\n' }
       : { status: 0, stdout: `${FULI_VERSION}\n` },
@@ -269,6 +279,42 @@ test('update checks npm latest before stopping the local service', async () => {
   assert.equal(stopped, false);
 });
 
+test('an unreadable npm installation target cannot interrupt running services', async () => {
+  await assert.rejects(runUpdateCommand(['--yes'], {
+    resolveLatestVersion: () => '9.8.7',
+    runCaptured: () => ({ status: 1 }),
+    stopRuntime: async () => assert.fail('target must be checked before stopping'),
+    runInherited: () => assert.fail('target must be checked before installing'),
+    write: () => {}
+  }), /Local services were not stopped/);
+});
+
+test('a checkout CLI shows the different npm target before asking for confirmation', async () => {
+  const output = [];
+  await runUpdateCommand([], {
+    resolveLatestVersion: () => '9.8.7',
+    inspectInstallation: () => ({ cliPath: '/checkout/src/cli.js', launchers: [] }),
+    confirm: async () => {
+      assert.match(output.join('\n'), /running CLI path differs from the npm target/);
+      return false;
+    },
+    write: (line) => output.push(line)
+  });
+});
+
+test('skip-agents still reminds users that an upgraded MCP process needs reconnecting', async () => {
+  const output = [];
+  await runUpdateCommand(['--yes', '--skip-agents'], {
+    resolveLatestVersion: () => '9.8.7',
+    runCaptured: (command, args) => ({ status: 0, stdout: args.includes('--version') ? '9.8.7' : '/test/npm/node_modules' }),
+    runInherited: () => ({ status: 0 }),
+    stopRuntime: async () => ({ status: 'stopped' }),
+    fileExists: () => true,
+    write: (line) => output.push(line)
+  });
+  assert.match(output.join('\n'), /Existing conversations.*previous MCP process/);
+});
+
 test('semantic version comparison handles releases and prereleases', () => {
   assert.equal(compareSemanticVersions('0.3.0', '0.2.0'), 1);
   assert.equal(compareSemanticVersions('0.3.0', '0.3.0'), 0);
@@ -296,4 +342,5 @@ test('Windows npm.cmd runs through a shell only with shell-inert arguments', () 
     { shell: true }
   );
   assert.throws(() => batchFileSpawnOptions('npm.cmd', ['view', 'x & calc']), /shell-sensitive/);
+  assert.deepEqual(batchFileSpawnOptions('npm.cmd', ['install', 'fuli-context@1.2.4+build.1']), { shell: true });
 });

@@ -20,7 +20,11 @@ export async function runSetupCommand(args, dependencies = {}) {
   const selectAgents = dependencies.selectAgents ?? promptAgentSelection;
   const write = dependencies.write ?? writeLine;
   let plan = planSetup(options, dependencies);
-  if (shouldPromptForAgentSelection(plan, options)) {
+  if (options.connectedOnly) {
+    plan = applyAgentSelection(plan, plan.agents.filter((agent) =>
+      ['current', 'outdated'].includes(agent.integrationDetails?.mcp)
+    ).map(({ id }) => id));
+  } else if (shouldPromptForAgentSelection(plan, options)) {
     const detected = plan.agents.filter(({ available }) => available);
     plan = applyAgentSelection(plan, await selectAgents(detected));
   }
@@ -36,7 +40,7 @@ export async function runSetupCommand(args, dependencies = {}) {
     onProgress: write
   });
   write(formatSetupResult(result, plan));
-  return result;
+  return { ...result, exitCode: result.status === 'partial' ? 1 : 0 };
 }
 
 export function formatSetupPreview(plan, options) {
@@ -78,6 +82,12 @@ export function formatSetupPreview(plan, options) {
       'Recommendation: native mode avoids shared VM memory on this low-memory Mac; ' +
       'select it with --runtime-mode native');
   }
+  if (options.connectedOnly) {
+    for (const agent of available.filter((agent) => agent.selected === false && agent.skillPath &&
+      ['current', 'outdated'].includes(agent.integrationDetails?.skills))) {
+      lines.push(`${agent.label}: skipped because there is no Fuli MCP entry; existing Skills were left unchanged. Run fuli setup to reconnect.`);
+    }
+  }
   return lines.join('\n');
 }
 
@@ -108,6 +118,10 @@ export function formatSetupResult(result, plan) {
         ? `${agent.label}: connected; create or reopen a task to load the new configuration`
         : `${agent.label}: connected`);
     for (const step of agent.nextSteps ?? []) lines.push(`${agent.label}: ${step}`);
+  }
+  if (result.agents.some((agent) => agent.status === 'connected' &&
+    !agent.restartRequired && !agent.newTaskRequired)) {
+    lines.push('After a package upgrade, reconnect Fuli in already-open clients or restart the clients, then open a new task. Existing MCP processes are not replaced automatically.');
   }
   const dataDir = plan?.paths?.dataDir;
   lines.push('Other MCP clients: run fuli connect and merge the fuli entry into your MCP settings.');

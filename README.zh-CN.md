@@ -536,6 +536,7 @@ HTTPS 公网部署。
 | `--adaptive-memory` | 启用按需唤醒和分阶段休眠；保存后由管理服务协调 |
 | `--no-adaptive-memory` | 关闭按需休眠，让图服务保持运行 |
 | `--skip-agents` | 不修改 Agent 配置或 Skills |
+| `--connected-only` | 仅刷新已有 Fuli MCP 配置的客户端；update 自动使用此选项 |
 | `--no-start` | 初始化 Provider，但不启动管理界面 |
 | `--personal-only` | 只使用个人 Provider；默认模式 |
 | `--with-dev-public` | 同时启动开发用公共 Provider，仅用于开发或联调 |
@@ -610,9 +611,15 @@ dump 使用项目固定的 Neo4j 5.26 格式，适合在 Fuli 两种运行模式
 fuli update
 ```
 
-更新会先确认不会降级，再停止旧服务、安装 `fuli-context@latest` 并刷新 Agent 接入。
+更新会显示当前 CLI、Node、PATH 中的启动入口和 npm 安装目标。已是最新版时直接结束，
+不会重复安装或重启服务。需要升级时先确认不会降级，再停止旧服务、安装最新版本，
+仅刷新已有 Fuli MCP 配置的客户端。
 既有知识、配置备份和 Neo4j 数据卷会保留。使用过自定义 setup 选项时，更新时应继续传入
 相同选项。
+
+已打开的客户端需要重新连接 Fuli MCP，或重启客户端后新建任务，才能加载新进程。
+只需修复已有接入时，运行 `fuli setup --yes --connected-only`；接入新客户端仍使用普通
+`fuli setup`。
 
 卸载：
 

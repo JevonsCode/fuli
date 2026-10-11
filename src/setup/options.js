@@ -12,6 +12,7 @@ const BOOLEAN_OPTIONS = Object.freeze({
   '--yes': 'yes',
   '--codex-only': 'codexOnly',
   '--skip-agents': 'skipAgents',
+  '--connected-only': 'connectedOnly',
   '--no-start': 'noStart'
 });
 

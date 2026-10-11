@@ -32,8 +32,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   }
   if (command === 'setup') {
     assertSupportedNodeVersion();
-    await runSetupCommand(commandArgs, { env });
-    return;
+    return runSetupCommand(commandArgs, { env });
   }
   if (command === 'connect') {
     assertSupportedNodeVersion();

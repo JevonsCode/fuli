@@ -32,6 +32,42 @@ const SAVED_RUNTIME_SETTINGS = Object.freeze({
   resourceRefreshSeconds: 10
 });
 
+test('connected-only setup refreshes existing MCP clients, not newly detected or skill-only clients', async () => {
+  const output = [];
+  const agents = [
+    { id: 'codex', available: true, integrationDetails: { mcp: 'current' } },
+    { id: 'cursor', available: true, integrationDetails: { mcp: 'outdated' } },
+    { id: 'claude-code', label: 'Claude Code', available: true, skillPath: '/client/skills', integrationStatus: 'update_available', integrationDetails: { mcp: 'missing', skills: 'outdated' } },
+    { id: 'claude-desktop', label: 'Claude Desktop', available: true, integrationStatus: 'not_connected', integrationDetails: { mcp: 'missing', skills: 'current' } }
+  ];
+  await runSetupCommand(['--yes', '--connected-only'], {
+    planSetup: () => ({ ...samplePlan(), agents }),
+    applySetup: async (plan) => {
+      assert.deepEqual(plan.agents.filter(({ selected }) => selected).map(({ id }) => id), ['codex', 'cursor']);
+      return { status: 'ready', runtime: {}, agents: [] };
+    },
+    write: (line) => output.push(line)
+  });
+  assert.match(output.join('\n'), /Claude Code: skipped.*no Fuli MCP entry/);
+  assert.doesNotMatch(output.join('\n'), /Claude Desktop: skipped/);
+});
+
+test('setup reminds existing clients to reconnect after a manual package upgrade even when config is unchanged', () => {
+  const output = formatSetupResult({ status: 'ready', runtime: {}, agents: [
+    { label: 'Example client', status: 'connected', newTaskRequired: false }
+  ] });
+  assert.match(output, /After a package upgrade, reconnect Fuli/);
+});
+
+test('partial setup returns a failure exit code for automated updates', async () => {
+  const result = await runSetupCommand(['--yes'], {
+    planSetup: () => samplePlan(),
+    applySetup: async () => ({ status: 'partial', runtime: {}, agents: [] }),
+    write: () => {}
+  });
+  assert.equal(result.exitCode, 1);
+});
+
 test('personal-only preview explains that public controls stay disconnected', () => {
   const output = [];
   return runSetupCommand(['--personal-only'], {

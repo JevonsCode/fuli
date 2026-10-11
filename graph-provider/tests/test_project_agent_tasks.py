@@ -339,7 +339,8 @@ async def test_parallel_staffing_uses_qualified_candidates_and_caps_at_boundarie
     assert len({item['agent_id'] for item in participants}) == 3
 
 
-def test_route_result_exposes_the_selected_agent_when_supplied():
+@pytest.mark.parametrize('routing_reason', ['exact_work_kind', 'project_team_lead'])
+def test_route_result_exposes_the_selected_agent_when_supplied(routing_reason):
     now = datetime.now(UTC)
     task = ProjectAgentTaskRecord(
         task_id='task-a',
@@ -354,7 +355,7 @@ def test_route_result_exposes_the_selected_agent_when_supplied():
         status='queued',
         revision=0,
         routing_outcome='assigned_existing',
-        routing_reason='exact_work_kind',
+        routing_reason=routing_reason,
         routing_explanation='exact work kind: verification',
         coordinator_agent_id='coordinator-a',
         complexity='simple',
@@ -366,7 +367,7 @@ def test_route_result_exposes_the_selected_agent_when_supplied():
             selected_model_strategy=None,
             model_strategy_source='coordinator',
             outcome='assigned_existing',
-            reason='exact_work_kind',
+            reason=routing_reason,
             created_at=now,
         ),
         created_at=now,
