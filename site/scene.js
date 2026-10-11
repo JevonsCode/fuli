@@ -76,15 +76,14 @@ function pose(scene, i) {
     return [70 + ((j % 2) - 0.5) * 128, -30 + (Math.floor(j / 2) - 0.5) * 86, 120, 0, 0, 0, 0.66, 1];
   }
   if (scene === 5) {
-    // Team as an org chart: the fixed PM and AR on top with their work stacked
-    // behind them, the project lead in the middle, members along the bottom.
-    if (i < 8) {
-      const side = i < 4 ? -1 : 1, j = i % 4;
-      return [side * 168 + j * 7, -150 + j * 8, -j * 18, 0, 0, side * 3, 0.56, j ? 0.8 - j * 0.12 : 1];
+    // Three peer specialists support the project lead; project members report to the lead.
+    if (i < 9) {
+      const column = Math.floor(i / 3) - 1, j = i % 3;
+      return [column * 192 + j * 7, -150 + j * 8, -j * 18, 0, 0, column * 3, 0.56, j ? 0.8 - j * 0.12 : 1];
     }
-    if (i === 8) return [0, 18, 24, 0, 0, 0, 0.64, 1];
-    const k = i - 9;
-    return [(k - 1) * 176, 196 + (k === 1 ? 10 : 0), 0, 0, 0, (k - 1) * 3, 0.48, 1];
+    if (i === 9) return [0, 18, 24, 0, 0, 0, 0.64, 1];
+    const side = i === 10 ? -1 : 1;
+    return [side * 116, 196, 0, 0, 0, side * 3, 0.48, 1];
   }
   if (scene === 7) {
     // Architecture: four horizontal layers, clients on top, Neo4j at the bottom.

@@ -53,7 +53,7 @@ test('sitemap and machine-readable summaries describe the same public product', 
   assert.match(files.get('llms.txt'), /AI agent/);
   assert.ok(files.get('llms.txt').includes(base + 'en/index.md'));
   const markdown = files.get('en/index.md');
-  assert.match(markdown, /Claude Code/);
+  assert.match(markdown, /MCP/);
   assert.match(markdown, /npm install --global fuli-context/);
   assert.match(markdown, /Neo4j/);
   assert.doesNotMatch(markdown, /<script|<style/);

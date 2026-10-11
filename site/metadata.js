@@ -20,7 +20,7 @@ export function structuredData(locale, pageUrl) {
         downloadUrl: 'https://www.npmjs.com/package/fuli-context',
         sameAs: ['https://github.com/JevonsCode/fuli', 'https://www.npmjs.com/package/fuli-context'],
         image: SITE_URL + 'assets/fuli-logo.png',
-        featureList: ['agents', 'handoff', 'roundtable', 'taste', 'memory', 'database'].map(key => copy[key + '.description']),
+        featureList: ['agents', 'handoff', 'roundtable', 'taste', 'team', 'memory', 'database'].map(key => copy[key + '.description']),
       },
       {
         '@type': 'WebSite',

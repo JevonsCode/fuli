@@ -18,8 +18,8 @@
 
 Fuli is a collaboration layer for long-lived agents across MCP-compatible AI clients. Connect
 your tools to the same accessible Fuli data, select the same agent, and continue with its identity,
-project responsibilities, and relevant working context. Codex, Claude Code and Cursor have
-automatic setup; other clients use `fuli connect`. See [client connections](docs/client-connections.md).
+project responsibilities, and relevant working context. Use `fuli connect` for standard MCP
+configuration, or automatic setup where a client adapter is available. See [client connections](docs/client-connections.md).
 
 - **A lasting teammate:** keep an agent's role, collaboration history, and working memory between tasks.
 - **Context with boundaries:** retrieve relevant project knowledge, decisions, and preferences with
@@ -28,7 +28,11 @@ automatic setup; other clients use `fuli connect`. See [client connections](docs
   an available, authorized host client or executor.
 - **Every task has an owner:** ask for work inside a project directory; Fuli registers the project
   and staffs a lead agent. The reply ends with who led and who helped.
-- **A fixed PM and AR:** Jefa (project manager) and Bole (AR, Agent Resources) come with every space; no hiring needed.
+- **Three built-in specialists:** Jefa manages projects, Bole handles AR (Agent Resources) for
+  recruiting and staffing, and Tonborg helps with judgment. Every space starts with all three.
+- **Judgment guided by your preferences:** [Tonborg](docs/judgment-and-autonomy.md) reviews items
+  within your chosen autonomy level and recommends clients and models. Each decision has a log;
+  a thumbs up, thumbs down or short reason helps guide future judgments.
 - **Agents talk to each other:** through the [Roundtable](#agent-roundtable), one agent asks another
   conversation directly, and every exchange is recorded.
 
@@ -629,14 +633,16 @@ containers; it does not shut down Rancher Desktop, Docker Desktop, Kubernetes, o
 itself. Native mode directly stops the corresponding Provider and Neo4j processes, so no shared VM
 overhead remains while idle.
 
-Jefa (project manager) and Bole (AR, with a native people panel for Agent distribution, current work and recruitment history) are fixed roles in every space and are never hired. **Project Agents → Hire an Agent** offers the other reusable employee templates.
+Jefa (project manager), Bole (AR, Agent Resources), and Tonborg (judgment) are built-in roles in every
+space and are never hired. Bole's workbench shows staffing, current work, and recruitment history;
+Tonborg's workbench shows decisions and feedback. **Project Agents → Hire an Agent** offers the other reusable employee templates.
 Recruitment reuses a durable identity with separate project assignments. An installed employee workbench,
 API and A2A share the FULI port; existing FULI MCP clients discover and call its tools. Recruitment does not
 start a model or rewrite client settings. See the [employee package and extension contract](docs/employee-agents.md).
 
 Project Agent identities remain control-plane records rather than one resident process per identity.
 Roles now keep versioned, project-private working memory in the same Neo4j Provider. Task entry
-restores one owner across Codex, Claude Code and Cursor; lifecycle checkpoints survive separate
+restores one owner across connected MCP clients; lifecycle checkpoints survive separate
 MCP processes. See [role memory, host hooks and acceptance boundaries](docs/project-agent-memory.md).
 Supported Codex and Claude Code hooks also journal visible conversations. Once unfolded messages pass
 a size threshold (64 KB by default), older ones fold into a digest; recovery stays within a byte budget. Specialist loans and artifact verification share the same Provider.

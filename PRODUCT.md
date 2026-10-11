@@ -2,21 +2,23 @@
 
 Fuli is a local-first collaboration relationship graph for people working with AI agents.
 Its personal edition connects project context, durable agent identity, working memory,
-confirmed preferences and evidence across supported clients such as Codex, Claude Code
-and Cursor. A client adapter determines which visible conversation content can be captured.
+confirmed preferences and evidence across MCP-compatible clients. A client adapter determines
+which visible conversation content can be captured and which sessions can be resumed.
 
 ## People and outcomes
 
 The public website addresses developers and small project teams who repeatedly explain
 the same project to different agents. It should make continuity, collaboration and growing
 shared understanding tangible, then lead to the repository and personal-edition setup.
-The first public website is primarily Chinese.
+The public website supports Chinese and English, with language detection and a manual switch.
 
 ## Product truth
 
 - Agents have durable profiles, project responsibilities, working history and expectations.
-- HR helps find and staff agents; project management tracks work and review. Actual execution
-  still requires an available, authorized client and executor.
+- Each space includes Jefa for project management, Bole for AR (Agent Resources: recruiting
+  and staffing), and Tonborg for judgment guided by preferences and feedback. Tonborg reviews
+  within the chosen autonomy level and recommends clients and models. Actual execution still
+  requires an available, authorized client and executor.
 - Private conversation history is distinct from confirmed reusable knowledge. Once a
   conversation passes a size threshold, older messages fold into a compact digest while recent
   messages stay verbatim; nothing is forgotten because of elapsed time. Retrieval is bounded and additional evidence is loaded on demand.
@@ -46,6 +48,10 @@ An expressive, diagram-led scrolling explanation with clear short copy. Motion i
 how context connects and persists; it must respect reduced-motion preferences. Keep all
 essential information accessible without JavaScript. Demonstration people and tasks are
 explicitly fictional. Publish only public product facts, never private project data.
+
+Describe client compatibility by capability, not a fixed list of brands. Keep brand names in
+specific setup instructions and adapter documentation. Explain AR as Agent Resources on first
+mention, and include Tonborg alongside Jefa and Bole in the public product story.
 
 Use familiar icons for self-evident actions, with accessible names. The hero uses one
 centered down arrow, not multiple scroll instructions. Remove copy that merely describes
