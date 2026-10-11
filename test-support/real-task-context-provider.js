@@ -19,7 +19,7 @@ export async function realTaskContextProvider(t) {
   await new Promise(resolveClose => socket.close(resolveClose));
   const url = `http://127.0.0.1:${port}`;
   const bootstrap = randomUUID();
-  const provider = spawn(resolve('graph-provider/.venv/bin/python'), [
+  const provider = spawn(process.env.FULI_TEST_PYTHON ?? resolve('graph-provider/.venv/bin/python'), [
     '-m', 'uvicorn', 'fuli_graph.app:app', '--host', '127.0.0.1', '--port', String(port), '--log-level', 'error'
   ], { cwd: resolve('graph-provider'), env: {
     PATH: process.env.PATH, PYTHONUNBUFFERED: '1', GRAPHITI_TELEMETRY_ENABLED: 'false',
@@ -64,6 +64,11 @@ export async function realTaskContextProvider(t) {
       allowed_clients: ['codex', 'claude'], work_kinds: ['implementation'],
       capabilities: ['coding']
     } }, 'PUT');
+  await request('/v1/project-agent-coordination-policy', {
+    personal_space_id: space.id, personal_project_id: projectId,
+    ask_before_recruitment: false, auto_reuse_previous_agent: true, auto_grow_team: false,
+    team_lead_agent_id: 'engineer', team_member_agent_ids: []
+  }, 'PUT');
   const context = { personal_space_id: space.id, personal_project_id: projectId,
     project_agent_id: 'engineer', session_id: `synthetic-session-${randomUUID()}`,
     token: `fuli-task-${randomUUID()}`, source_application: 'codex', turn_id: 'turn-one' };

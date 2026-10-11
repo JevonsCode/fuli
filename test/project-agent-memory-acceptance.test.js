@@ -71,6 +71,11 @@ test('real Neo4j + HTTP Provider + independent MCP hosts retain one role across 
         allowed_clients: ['codex', 'claude', 'claude_code', 'cursor'], work_kinds: [workKind], capabilities: [capability] }
     }, { token, method: 'PUT' });
   }
+  await request('/v1/project-agent-coordination-policy', {
+    personal_space_id: space.id, personal_project_id: projectId,
+    ask_before_recruitment: false, auto_reuse_previous_agent: true, auto_grow_team: false,
+    team_lead_agent_id: 'engineer', team_member_agent_ids: ['reviewer', 'backup-engineer']
+  }, { token, method: 'PUT' });
   const runtimeConfigPath = join(directory, 'graph-runtime.json');
   writeFileSync(runtimeConfigPath, JSON.stringify({ version: 1,
     personal: { providerUrl, accessToken: token, principalId: principal.principal_id, spaceId: space.id },

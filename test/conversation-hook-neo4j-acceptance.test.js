@@ -63,6 +63,17 @@ test('candidate Hook subprocesses persist visible history and recover only the s
       profile: { name: `Synthetic ${agentId}`, responsibility: 'Maintain the synthetic fixture.',
         allowed_clients: ['claude_code', 'codex'], work_kinds: [workKind], capabilities: [capability] } }, 'PUT');
   }
+  let team;
+  async function selectLead(agentId) {
+    team = await request('/v1/project-agent-coordination-policy', {
+      personal_space_id: space.id, personal_project_id: projectId,
+      ask_before_recruitment: false, auto_reuse_previous_agent: true, auto_grow_team: false,
+      team_lead_agent_id: agentId,
+      team_member_agent_ids: ['engineer', 'reviewer'].filter(id => id !== agentId),
+      ...(team ? { expected_updated_at: team.updated_at } : {})
+    }, 'PUT');
+  }
+  await selectLead('engineer');
   const runtimeConfigPath = join(directory, 'graph-runtime.json');
   await writeFile(runtimeConfigPath, JSON.stringify({ version: 1,
     personal: { providerUrl, accessToken, principalId: principal.principal_id, spaceId: space.id }, workspaces: []
@@ -143,6 +154,9 @@ test('candidate Hook subprocesses persist visible history and recover only the s
   const reviewSession = 'synthetic-review';
   const reviewPath = join(directory, 'review.jsonl');
   const reviewPrompt = 'Code review the synthetic component.';
+  // Work kind preserves the team lead; explicitly select the other synthetic
+  // lead before checking that its private history and memory stay isolated.
+  await selectLead('reviewer');
   await writeFile(reviewPath, claudeRow(reviewSession, 'user', reviewPrompt));
   const reviewer = context(await hook('claude-code', 'UserPromptSubmit', { session_id: reviewSession,
     cwd: projectPath, transcript_path: reviewPath, prompt: reviewPrompt }));
@@ -151,6 +165,7 @@ test('candidate Hook subprocesses persist visible history and recover only the s
   assert.equal(reviewer.project_agent_context.memory.revision, 0);
   assert.doesNotMatch(JSON.stringify(reviewer), /VISIBLE_TRANSCRIPT_SYNTHETIC_MARKER|SYNTHETIC_DURABLE_MEMORY_MARKER/);
   // Disable this Agent's capture through the real Provider, then exercise another Hook pair.
+  await selectLead('engineer');
   await request('/v1/agent-conversations/policy', { ...scope, policy: { compact_after_kb: 64, context_budget: 2000, enabled: false } }, 'PUT');
   const beforeDisabled = await query({ mode: 'list' });
   const disabledSession = 'synthetic-disabled';
