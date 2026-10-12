@@ -69,7 +69,7 @@ def register_project_agent_memory_routes(application, store, Actor):
         agent_id: str,
         actor: Actor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
-        personal_project_id: Annotated[str, Query(min_length=1, max_length=128)],
+        personal_project_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
         limit: Annotated[int, Query(ge=1, le=10)] = 1,
     ):
         return await store.get_project_agent_memory(

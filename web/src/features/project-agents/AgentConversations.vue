@@ -36,10 +36,10 @@ let version = 0
 let messageVersion = 0
 let policyVersion = 0
 let copyVersion = 0
-function scope() { return { personalSpaceId: props.personalSpaceId, personalProjectId: projectId.value, agentId: props.agentId } }
+function scope() { return { personalSpaceId: props.personalSpaceId, personalProjectId: projectId.value || null, agentId: props.agentId } }
 function failure(cause: unknown) { return cause instanceof Error ? cause.message : t('projectAgents.conversations.loadFailed') }
 watch(() => [props.agentId, props.personalSpaceId, props.projects.map(project => project.id).join('\n')], () => {
-  const next = props.projects.some(project => project.id === projectId.value) ? projectId.value : props.projects[0]?.id ?? ''
+  const next = (opened.value && projectId.value === '') ? '' : props.projects.some(project => project.id === projectId.value) ? projectId.value : props.projects[0]?.id ?? ''
   if (next !== projectId.value) projectId.value = next
   else void load()
 }, { immediate: true })
@@ -53,7 +53,7 @@ async function load() {
   copyFeedback.value = undefined
   policyReady.value = false; policyLoading.value = false; policyError.value = ''; saved.value = false; saving.value = false
   loading.value = false; messagesLoading.value = false; hasMore.value = false
-  if (!opened.value || !projectId.value) return
+  if (!opened.value) return
   loading.value = true
   if (settingsOpen.value) void loadPolicy()
   try {
@@ -70,7 +70,7 @@ function toggle(event: Event) {
   else { ++version; ++messageVersion; ++policyVersion; ++copyVersion; copyFeedback.value = undefined; settingsOpen.value = false }
 }
 async function readMessages(id: string, more = false) {
-  if (messagesLoading.value || !projectId.value) return
+  if (messagesLoading.value) return
   const current = ++messageVersion
   selectedId.value = id; messagesError.value = ''; messagesLoading.value = true
   if (!more) { messages.value = []; nextCursor.value = undefined; hasMore.value = false }
@@ -145,7 +145,7 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
   <details class="agent-conversations" @toggle="toggle">
     <summary>{{ t('projectAgents.conversations.title') }}</summary>
     <template v-if="opened">
-      <UiSelect v-if="projects.length" v-model="projectId" field :label="t('projectAgents.fields.project')" :options="projects.map(project => ({ value: project.id, label: project.name }))" />
+      <UiSelect v-model="projectId" field :label="t('projectAgents.conversations.scope')" :options="[{ value: '', label: t('projectAgents.conversations.global') }, ...projects.map(project => ({ value: project.id, label: project.name }))]" />
       <p class="conversation-hint">{{ t('projectAgents.conversations.hint') }}</p>
       <GrowthLoading v-if="loading" variant="compact" :label="t('projectAgents.conversations.loading')" />
       <div v-else-if="error" role="alert"><p>{{ error }}</p><button data-retry-list class="quiet-button" type="button" @click="load">{{ t('projectAgents.retry') }}</button></div>
@@ -174,7 +174,7 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
         </li>
       </ol>
       <p v-else>{{ t('projectAgents.conversations.empty') }}</p>
-      <details v-if="projectId" data-memory-settings @toggle.stop="settingsToggle">
+      <details data-memory-settings @toggle.stop="settingsToggle">
         <summary>{{ t('projectAgents.conversations.settings') }}</summary>
         <GrowthLoading v-if="policyLoading" variant="compact" :label="t('projectAgents.conversations.loadingPolicy')" />
         <form v-if="policyReady" @submit.prevent="savePolicy">

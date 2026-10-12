@@ -29,7 +29,7 @@ class StoreTaskContexts:
         if request.project_agent_id:
             agent = await authorize_project_agent(
                 self, actor, space, request.personal_project_id,
-                request.project_agent_id, require_active=True,
+                request.project_agent_id, require_active=True, allow_global=True,
             )
             allowed_clients = json.loads(agent['profile_json']).get('allowed_clients', [])
             if request.source_application not in allowed_clients:
@@ -151,7 +151,7 @@ class StoreTaskContexts:
         # still supersede a successfully prepared context; complete is separate.
         async with query_store_transaction(self) as scoped:
             record = await scoped._checkpoint_task_context(actor, token, request)
-            if not record['project_agent_id'] or not record['personal_project_id']:
+            if not record['project_agent_id']:
                 raise HTTPException(status_code=409, detail='Task has no durable Agent memory target')
             memory = await scoped.write_project_agent_memory(actor, ProjectAgentMemoryWrite(
                 personal_space_id=request.personal_space_id,
@@ -183,7 +183,7 @@ class StoreTaskContexts:
         # content is already immutable under the memory checkpoint's payload hash.
         # The existing checkpoint lets pre-upgrade claims retry without new writes.
         memory_checkpoint_id = None
-        if (record['project_agent_id'] and record['personal_project_id']
+        if (record['project_agent_id']
                 and record.get('agent_memory_scope') != 'task_only'):
             memory_checkpoint_id = stable_uuid(await self._resolved_agent_memory_id(
                 request.personal_space_id, record['personal_project_id'],

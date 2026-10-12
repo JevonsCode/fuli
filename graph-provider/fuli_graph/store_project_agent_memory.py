@@ -27,7 +27,7 @@ class StoreProjectAgentMemory:
         self._require_personal()
         space = await self.authorize(actor, personal_space_id, 'reader')
         agent = await authorize_project_agent(
-            self, actor, space, personal_project_id, agent_id, require_memory=True,
+            self, actor, space, personal_project_id, agent_id, require_memory=True, allow_global=True,
         )
         records, _, _ = await self.runtime.driver.execute_query(
             '''
@@ -51,6 +51,7 @@ class StoreProjectAgentMemory:
             personal_space_id=personal_space_id,
             personal_project_id=personal_project_id,
             agent_id=agent['agent_id'],
+            scope='private_agent_global' if personal_project_id is None else 'private_agent_project',
             revision=current.revision if current else 0,
             current=current,
             history=history,
@@ -65,12 +66,14 @@ class StoreProjectAgentMemory:
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         agent = await authorize_project_agent(
             self, actor, space, request.personal_project_id, request.agent_id,
-            require_active=True, require_memory=True,
+            require_active=True, require_memory=True, allow_global=True,
         )
         allowed_clients = json.loads(agent['profile_json']).get('allowed_clients', [])
         if request.source_application not in allowed_clients:
             raise HTTPException(status_code=403, detail='Agent is not allowed in this client')
         if request.task_id:
+            if request.personal_project_id is None:
+                raise HTTPException(422, 'Project task cannot be attached to global Agent memory')
             task_rows, _, _ = await self.runtime.driver.execute_query(
                 '''
                 MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})-
@@ -116,12 +119,13 @@ class StoreProjectAgentMemory:
                   [:HAS_PROJECT_AGENT_IDENTITY]->(agent:FuliProjectAgent {
                     agent_id: $agent_id, status: 'active'
                   })
-            MATCH (space)-[:CONTAINS_PROJECT]->
+            OPTIONAL MATCH (space)-[:CONTAINS_PROJECT]->
                   (project:FuliPersonalProject {project_id: $project_id})-
                   [:HAS_PROJECT_AGENT_ASSIGNMENT]->
                   (:FuliProjectAgentAssignment {status: 'active'})-[:ASSIGNED_AGENT]->(agent)
-            WHERE coalesce(agent.memory_scope, 'reviewed_agent') <> 'task_only'
             WITH DISTINCT space, project, agent
+            WHERE ($project_id IS NULL OR project IS NOT NULL)
+              AND coalesce(agent.memory_scope, 'reviewed_agent') <> 'task_only'
             MERGE (head:FuliProjectAgentMemory {id: $memory_id})
             ON CREATE SET head.revision = 0,
                           head.personal_space_id = $space_id,
@@ -129,7 +133,9 @@ class StoreProjectAgentMemory:
                           head.agent_id = $agent_id
             SET head.write_serial = coalesce(head.write_serial, 0) + 1
             MERGE (agent)-[:HAS_WORKING_MEMORY]->(head)
-            MERGE (project)-[:HAS_AGENT_WORKING_MEMORY]->(head)
+            FOREACH (target IN CASE WHEN project IS NULL THEN [] ELSE [project] END |
+              MERGE (target)-[:HAS_AGENT_WORKING_MEMORY]->(head)
+            )
             WITH head
             OPTIONAL MATCH (head)-[:HAS_MEMORY_CHECKPOINT]->
                   (existing:FuliProjectAgentMemoryCheckpoint {id: $checkpoint_id})
@@ -188,8 +194,9 @@ class StoreProjectAgentMemory:
             rows, _, _ = await self.runtime.driver.execute_query(
                 '''MATCH (:FuliSpace {id: $space_id})-[:HAS_PROJECT_AGENT_IDENTITY]->
                          (:FuliProjectAgent {agent_id: $agent_id})-[:HAS_WORKING_MEMORY]->
-                         (head:FuliProjectAgentMemory {personal_space_id: $space_id,
-                           personal_project_id: $project_id})
+                         (head:FuliProjectAgentMemory {personal_space_id: $space_id})
+                   WHERE head.personal_project_id = $project_id
+                      OR ($project_id IS NULL AND head.personal_project_id IS NULL)
                    RETURN DISTINCT head.id AS id''',
                 space_id=space_id, project_id=project_id, agent_id=agent_id, routing_='r')
             if len(rows) > 1:
@@ -199,6 +206,9 @@ class StoreProjectAgentMemory:
         return self._agent_memory_id(space_id, project_id, agent_id)
 
     def _agent_memory_id(self, space_id, project_id, agent_id):
+        if project_id is None:
+            return stable_uuid(self.settings.provider_id, space_id, agent_id,
+                               'global-working-memory')
         return stable_uuid(
             self.settings.provider_id, space_id, project_id, agent_id, 'working-memory',
         )

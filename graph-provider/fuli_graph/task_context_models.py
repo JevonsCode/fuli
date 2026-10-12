@@ -21,12 +21,6 @@ class TaskContextBegin(StrictModel):
     memory_revision: int | None = Field(default=None, ge=0)
     work_log_required: bool = False
 
-    @model_validator(mode='after')
-    def require_project_for_agent(self):
-        if self.project_agent_id and not self.personal_project_id:
-            raise ValueError('Agent lifecycle requires an exact project')
-        return self
-
 
 class TaskContextAgentMemory(StrictModel):
     expected_revision: int = Field(ge=0)

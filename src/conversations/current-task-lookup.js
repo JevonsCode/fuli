@@ -14,7 +14,8 @@ export async function lookupTranscriptTask(application, input, sourceApplication
         || typeof task.token !== 'string' || !task.token
         || !Object.hasOwn(task, 'project_agent_id')
         || (task.project_agent_id !== null && (typeof task.project_agent_id !== 'string'
-          || !task.project_agent_id || typeof task.personal_project_id !== 'string' || !task.personal_project_id))
+          || !task.project_agent_id
+          || (task.personal_project_id !== null && (typeof task.personal_project_id !== 'string' || !task.personal_project_id))))
         || (task.session_id !== undefined && task.session_id !== input.session_id)
         || (task.source_application !== undefined && task.source_application !== sourceApplication)
         || (task.personal_space_id !== undefined && task.personal_space_id !== application.config.personal.spaceId))) {

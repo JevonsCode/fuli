@@ -29,7 +29,7 @@ export async function taskEntryPreferences(application, projectResolution, {
     },
     (items, toolName) => recordAgentViews(items, toolName)
   );
-  const management = application.employees && agentInvocation &&
+  const management = projectResolution.personalProjectId && application.employees && agentInvocation &&
     ['begin_task_context', 'get_collaboration_preferences'].includes(agentToolName)
     ? await application.employees.taskEntry({ personalProjectId: projectResolution.personalProjectId,
       sourceApplication, sourceSessionId, sessionId })
