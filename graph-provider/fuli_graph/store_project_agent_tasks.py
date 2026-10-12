@@ -489,7 +489,10 @@ class StoreProjectAgentTasks(
                 WHERE ($personal_project_id IS NULL
                        OR task.personal_project_id = $personal_project_id)
                   AND ($status IS NULL OR task.status = $status)
-                  AND ($agent_id IS NULL OR EXISTS {
+                  AND ($agent_id IS NULL
+                       OR task.lead_agent_id = $agent_id
+                       OR task.coordinator_agent_id = $agent_id
+                       OR EXISTS {
                     MATCH (task)-[:HAS_PARTICIPANT]->
                           (:FuliProjectAgent {agent_id: $agent_id})
                   })

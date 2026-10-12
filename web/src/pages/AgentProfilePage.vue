@@ -170,6 +170,7 @@ watch(
     assignments.value = person.assignments;
     const params = new URLSearchParams({
       personalSpaceId: person.personalSpaceId,
+      agentId: person.agentId,
     });
     const assignmentParams = new URLSearchParams({
       personalSpaceId: person.personalSpaceId,
