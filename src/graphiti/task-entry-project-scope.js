@@ -7,6 +7,10 @@ export async function resolveTaskEntryProject(application, resolution, input) {
   if (!input.agentInvocation || !TASK_ENTRY_TOOLS.has(input.agentToolName)
     || resolution.personalProjectId || resolution.repositoryProjectId
     || !['unmatched', 'not_provided'].includes(resolution.status)) return resolution;
+  // An explicit FLA outside a project uses its independent global context.
+  if (input.projectAgentId || String(input.taskPrompt ?? '').trimStart().startsWith('@')) {
+    return { status: 'global', basis: 'explicit_agent', personalProjectId: null };
+  }
   // A known native session is stronger than an MCP process ID. Never use an
   // older process assignment to override a different, explicitly known chat.
   const identity = input.sessionId ?? input.sourceSessionId;
@@ -17,7 +21,12 @@ export async function resolveTaskEntryProject(application, resolution, input) {
   try {
     for (const sessionId of sessions) {
       const context = await application.taskContextRegistry?.current?.(sessionId, source);
-      if (!context?.personalProjectId || context.projectScope?.type === 'temporary') continue;
+      if (context?.projectScope?.type === 'temporary') continue;
+      if (context?.personalProjectId === null && context.projectAgentId) {
+        return { status: 'global', basis: 'host_session_context', personalProjectId: null,
+          globalAgentId: context.projectAgentId };
+      }
+      if (!context?.personalProjectId) continue;
       const project = await application.personal.getPersonalProject(spaceId, context.personalProjectId);
       if (project?.scope_type !== 'temporary') {
         return matched(context.personalProjectId, 'host_session_context');

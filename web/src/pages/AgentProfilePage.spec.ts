@@ -96,6 +96,60 @@ describe('Agent profile integration', () => {
     expect(postJson).toHaveBeenCalledWith('/api/agent-conversations/query', { personalSpaceId: 'space-a', personalProjectId: 'project-a', agentId: 'alpha', mode: 'list', limit: 20 })
   })
 
+  it('queries conversations and memory only in the viewed Agent active projects', async () => {
+    const store = useConsoleStore()
+    store.state!.personalProjects!.unshift({ project_id: 'unrelated', personal_space_id: 'space-a', profile: { name: 'Unrelated conversation project' } })
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (url.startsWith('/api/project-agents?')) return Promise.resolve([{ ...person('alpha'), memoryScope: 'reviewed_agent' }])
+      return normal(url)
+    })
+    postJson.mockImplementation(async (_url, body) => {
+      if (body.personalProjectId !== 'project-a') throw new Error('project Agent not found')
+      return body.mode === 'policy'
+        ? { compact_after_kb: 64, context_budget: 4000, enabled: true }
+        : { conversations: [] }
+    })
+    const { wrapper } = await setup()
+    await wrapper.get('#agent-tab-conversations').trigger('click')
+    const details = wrapper.get('.agent-conversations')
+    ;(details.element as HTMLDetailsElement).open = true
+    await details.trigger('toggle')
+    await flushPromises()
+    expect(postJson).toHaveBeenCalledWith('/api/agent-conversations/query', { personalSpaceId: 'space-a', personalProjectId: 'project-a', agentId: 'alpha', mode: 'list', limit: 20 })
+    await details.get('[role="combobox"]').trigger('click')
+    expect(details.findAll('[role="option"]').map(option => option.text())).toEqual(['全局', 'Synthetic active project'])
+    const settings = details.get('[data-memory-settings]')
+    ;(settings.element as HTMLDetailsElement).open = true
+    await settings.trigger('toggle')
+    await flushPromises()
+    expect(postJson).toHaveBeenLastCalledWith('/api/agent-conversations/query', { personalSpaceId: 'space-a', personalProjectId: 'project-a', agentId: 'alpha', mode: 'policy' })
+    expect(details.find('[role="alert"]').exists()).toBe(false)
+    expect(settings.find('form').exists()).toBe(true)
+  })
+
+  it('uses global context while assignments load or when none are active', async () => {
+    const pending = deferred<unknown>()
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (url.startsWith('/api/project-agents?')) return Promise.resolve([{ ...person('alpha'), memoryScope: 'reviewed_agent' }])
+      if (url.startsWith('/api/project-agent-assignments?')) return pending.promise
+      return normal(url)
+    })
+    const { wrapper } = await setup()
+    await wrapper.get('#agent-tab-conversations').trigger('click')
+    const details = wrapper.get('.agent-conversations')
+    ;(details.element as HTMLDetailsElement).open = true
+    await details.trigger('toggle')
+    await flushPromises()
+    expect(postJson).toHaveBeenCalledWith('/api/agent-conversations/query', { personalSpaceId: 'space-a', personalProjectId: null, agentId: 'alpha', mode: 'list', limit: 20 })
+    pending.resolve([assignment('alpha', 'ended')])
+    await flushPromises()
+    expect(postJson.mock.calls.every(([, body]) => body.personalProjectId === null)).toBe(true)
+    expect(details.find('[role="combobox"]').exists()).toBe(true)
+    expect(details.find('[data-memory-settings]').exists()).toBe(true)
+  })
+
   it('supports roving keyboard navigation for profile tabs', async () => {
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => {

@@ -60,9 +60,6 @@ const projects = computed(() =>
     (item) => item.personal_space_id === space.value,
   ),
 );
-const employeeProjects = computed(() =>
-  projects.value.map((item) => ({ id: item.project_id, name: item.profile.name })),
-);
 const projectName = (id: string) =>
   projects.value.find((item) => item.project_id === id)?.profile.name || id;
 const personName = (id: string) => {
@@ -110,6 +107,11 @@ const currentProjects = computed(() =>
         assignments: assignments.value ?? agent.value.assignments,
       })
     : [],
+);
+const conversationProjects = computed(() =>
+  projects.value
+    .filter((item) => currentProjects.value.includes(item.project_id))
+    .map((item) => ({ id: item.project_id, name: item.profile.name })),
 );
 const visibleCurrentProjects = computed(() => currentProjects.value.slice(0, 4));
 const remainingCurrentProjects = computed(() => currentProjects.value.slice(4));
@@ -719,7 +721,7 @@ onMounted(() => {
             :key="agent.agentId"
             :personal-space-id="space"
             :agent-id="agent.agentId"
-            :projects="employeeProjects"
+            :projects="conversationProjects"
           />
         </section>
       </section>

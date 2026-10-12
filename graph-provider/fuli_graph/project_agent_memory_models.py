@@ -37,7 +37,7 @@ class ProjectAgentWorkingMemory(StrictModel):
 
 class ProjectAgentMemoryWrite(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
-    personal_project_id: str = Field(min_length=1, max_length=128)
+    personal_project_id: str | None = Field(default=None, min_length=1, max_length=128)
     agent_id: str = Field(min_length=1, max_length=128)
     expected_revision: int = Field(ge=0)
     idempotency_key: str = Field(min_length=8, max_length=256)
@@ -55,7 +55,7 @@ class ProjectAgentMemoryWrite(StrictModel):
 class ProjectAgentMemoryRecord(StrictModel):
     checkpoint_id: str
     personal_space_id: str
-    personal_project_id: str
+    personal_project_id: str | None
     agent_id: str
     revision: int = Field(ge=1)
     memory: ProjectAgentWorkingMemory
@@ -77,9 +77,9 @@ class EmployeeWorkLogRecord(StrictModel):
 
 class ProjectAgentMemoryView(StrictModel):
     personal_space_id: str
-    personal_project_id: str
+    personal_project_id: str | None
     agent_id: str
-    scope: Literal['private_agent_project'] = 'private_agent_project'
+    scope: Literal['private_agent_project', 'private_agent_global'] = 'private_agent_project'
     storage: Literal['neo4j'] = 'neo4j'
     authority: Literal['working_context_not_confirmed_knowledge'] = (
         'working_context_not_confirmed_knowledge'

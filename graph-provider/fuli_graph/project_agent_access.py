@@ -8,19 +8,21 @@ async def authorize_project_agent(
     store,
     actor: dict,
     space: dict,
-    project_id: str,
+    project_id: str | None,
     agent_id: str,
     *,
     require_active: bool = False,
     allow_unassigned: bool = False,
     require_memory: bool = False,
+    allow_global: bool = False,
 ) -> dict:
-    if not project_id:
+    if not project_id and not (allow_global and project_id is None):
         raise HTTPException(
             status_code=422,
             detail='project Agent access requires a personal project',
         )
-    await authorize_personal_project(store, actor, space, project_id)
+    if project_id is not None:
+        await authorize_personal_project(store, actor, space, project_id)
     agent_id = await resolve_hr_alias(store, space['id'], agent_id)
     records, _, _ = await store.runtime.driver.execute_query(
         '''
@@ -33,7 +35,7 @@ async def authorize_project_agent(
               (assignment:FuliProjectAgentAssignment {status: 'active'})-
               [:ASSIGNED_AGENT]->(agent)
         WITH agent, collect(DISTINCT assignment.assignment_id) AS assignment_ids
-        WHERE $allow_unassigned OR size(assignment_ids) > 0
+        WHERE $project_id IS NULL OR $allow_unassigned OR size(assignment_ids) > 0
         RETURN agent, head(assignment_ids) AS assignment_id
         ''',
         space_id=space['id'],

@@ -156,7 +156,7 @@ export async function checkpointTaskKnowledge(application, {
   let memoryResult = null;
   let memoryRequest = null;
   if (agentMemory) {
-    if (!task.projectAgentId || !task.personalProjectId) {
+    if (!task.projectAgentId) {
       throw validationError('Task has no durable project Agent; do not guess a memory target');
     }
     const prepared = await prepareProjectAgentMemory(application, {

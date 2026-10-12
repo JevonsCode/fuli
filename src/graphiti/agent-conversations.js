@@ -3,7 +3,7 @@ import { agentContinuation, taskAgentReceipt } from '../agents/identity-receipt.
 
 export function conversationScope(application, input) {
   return { personal_space_id: application.config.personal.spaceId,
-    personal_project_id: input.personalProjectId, agent_id: input.agentId ?? input.projectAgentId,
+    personal_project_id: input.personalProjectId ?? null, agent_id: input.agentId ?? input.projectAgentId,
     source_application: input.ownerInspection ? null : input.sourceApplication ?? 'other' };
 }
 export function conversationTask(application, task) {
@@ -16,7 +16,7 @@ const unavailable = () => ({ status: 'unsaved', retryable: true,
   guidance: 'Conversation persistence is unavailable. Do not claim this conversation was saved; retry after the Provider recovers.' });
 
 export async function beginConversation(application, task) {
-  if (!task.projectAgentId || !task.personalProjectId) return { status: 'unassigned' };
+  if (!task.projectAgentId) return { status: 'unassigned' };
   if (!application.getCapturePolicy?.().enabled) return { status: 'capture_disabled' };
   try {
     const scope = conversationScope(application, task);
@@ -40,7 +40,7 @@ export async function beginConversation(application, task) {
 }
 
 export async function checkpointConversation(application, task, workLog, team = null) {
-  if (!task.projectAgentId || !task.personalProjectId) return { status: 'unassigned' };
+  if (!task.projectAgentId) return { status: 'unassigned' };
   if (!application.getCapturePolicy?.().enabled) return { status: 'capture_disabled' };
   try {
     const result = await application.personal.conversation('append', {
