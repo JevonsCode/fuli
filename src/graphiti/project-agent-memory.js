@@ -81,7 +81,7 @@ export async function prepareProjectAgentMemory(application, input) {
   if (!policy.enabled) return { status: 'capture_disabled', capturePolicy: policy };
   return { request: {
     personal_space_id: input.personalSpaceId,
-    personal_project_id: input.personalProjectId,
+    personal_project_id: input.personalProjectId ?? null,
     agent_id: input.agentId,
     expected_revision: input.expectedRevision,
     idempotency_key: input.idempotencyKey,
@@ -100,7 +100,7 @@ export async function prepareProjectAgentMemory(application, input) {
 async function requireAgentMemoryAccess(application, input) {
   const agent = await application.getProjectAgent(input);
   if (agent.profile.status !== 'active' || agent.memoryScope !== 'reviewed_agent') {
-    throw new ApplicationError(ApplicationErrorCode.VALIDATION, 'An active durable Agent assignment is required for working memory');
+    throw new ApplicationError(ApplicationErrorCode.VALIDATION, 'An active durable Agent is required for working memory');
   }
   if (!(agent.profile.allowedClients ?? []).includes(input.sourceApplication ?? 'other')) {
     throw new ApplicationError(ApplicationErrorCode.VALIDATION, 'This client is not allowed to load the Agent memory');

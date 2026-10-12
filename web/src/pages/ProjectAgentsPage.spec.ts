@@ -367,6 +367,54 @@ describe('ProjectAgentsPage', () => {
     expect(wrapper.findAll('.project-agent-row')).toHaveLength(1)
   })
 
+  it.each([true, false])('scopes employee conversations to actual assignments (assigned=%s)', async (assigned) => {
+    const employee = structuredClone(agents[0]!)
+    employee.agentId = 'employee.concierge'
+    employee.personalProjectId = null
+    employee.memoryScope = 'reviewed_agent'
+    employee.profile.capabilities = ['fuli.employee:concierge']
+    employee.assignments = assigned
+      ? [{ ...employee.assignments![0]!, agentId: employee.agentId }]
+      : []
+    const template = {
+      id: 'concierge', version: '1.0.0', name: 'Synthetic concierge', role: 'Manager', description: 'Synthetic test employee',
+      capabilities: [], permissions: [], runtime: null, runtimeStatus: 'not_required',
+      agentId: employee.agentId, agentStatus: 'active', assignments: employee.assignments, assignmentsVersion: 'version-0', identityConflict: false,
+      management: { mode: 'all', projectIds: [], excludedProjectIds: [], titleMode: 'off', titleStyle: 'text' },
+      managedProjects: [{ id: 'project-b', name: 'Project B' }, { id: 'project-a', name: 'Project A' }],
+    }
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (url.includes('/api/project-agents?')) return Promise.resolve([employee])
+      if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: employee.assignments })
+      if (url.includes('/api/employee-templates?')) return Promise.resolve({ templates: [template] })
+      return original(url)
+    })
+    postJson.mockResolvedValue({ conversations: [] })
+    const { wrapper } = mountPage()
+    await flushPromises()
+    try {
+      const conversations = wrapper.get('.agent-conversations')
+      ;(conversations.element as HTMLDetailsElement).open = true
+      await conversations.trigger('toggle')
+      await flushPromises()
+      if (assigned) {
+        expect(postJson).toHaveBeenCalledExactlyOnceWith('/api/agent-conversations/query', {
+          personalSpaceId: 'personal-1', personalProjectId: 'project-a', agentId: employee.agentId, mode: 'list', limit: 20,
+        })
+        expect(conversations.findAll('option').map(option => option.attributes('value')).filter(Boolean)).toEqual(['project-a'])
+      } else {
+        expect(postJson).toHaveBeenCalledExactlyOnceWith('/api/agent-conversations/query', {
+          personalSpaceId: 'personal-1', personalProjectId: null, agentId: employee.agentId, mode: 'list', limit: 20,
+        })
+        expect(conversations.find('select').exists()).toBe(true)
+        expect(conversations.find('[data-memory-settings]').exists()).toBe(true)
+      }
+      // Workbench management still covers all projects; conversation access does not create assignments.
+      expect(wrapper.findAll('.employee-assigned-projects a')).toHaveLength(2)
+    } finally { wrapper.unmount() }
+  })
+
   it('opens the inline multi-project editor directly for employee roles, including future templates', async () => {
     const employee = structuredClone(agents[0]!)
     employee.agentId = 'employee.concierge'

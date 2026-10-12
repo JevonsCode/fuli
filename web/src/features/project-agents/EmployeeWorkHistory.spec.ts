@@ -54,3 +54,13 @@ it('offers retry on read failure and reloads the same employee scope', async () 
   expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   expect(wrapper.text()).toContain('Recovered summary')
 })
+
+it('loads global work records without inventing a project assignment', async () => {
+  getJson.mockResolvedValue({ workLog: [record('Global work completed.')] })
+  const wrapper = mountHistory()
+  await wrapper.setProps({ projects: [] })
+  await open(wrapper)
+  expect(getJson).toHaveBeenCalledWith('/api/project-agents/agent/memory?personalSpaceId=space')
+  expect(wrapper.text()).toContain('Global work completed.')
+  wrapper.unmount()
+})

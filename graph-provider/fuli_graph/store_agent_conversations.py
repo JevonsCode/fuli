@@ -27,9 +27,11 @@ class StoreAgentConversations:
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer' if write else 'reader')
         agent = await authorize_project_agent(self, actor, space, request.personal_project_id,
-            request.agent_id, require_active=write, require_memory=True)
+            request.agent_id, require_active=write, require_memory=True, allow_global=True)
         if request.source_application is not None and request.source_application not in json.loads(agent['profile_json']).get('allowed_clients', []):
             raise HTTPException(403, 'Agent is not allowed in this client')
+        if request.personal_project_id is None:
+            return stable_uuid('global-conversation-scope', space['id'], agent['agent_id'])
         return stable_uuid('conversation-scope', space['id'], request.personal_project_id, agent['agent_id'])
 
     async def _conversation_task(self, actor, request):

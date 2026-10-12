@@ -9,6 +9,7 @@ const ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preference
 
 export async function resolveTaskEntryAgent(application, resolution, input) {
   if (!input.agentInvocation || !ENTRY_TOOLS.has(input.agentToolName)) return null;
+  if (resolution.status === 'global') return resolveGlobalAgent(application, resolution, input);
   if (!resolution.personalProjectId) return {
     status: resolution.status === 'unavailable' ? 'unavailable' : 'project_unresolved',
     reason: resolution.reason ?? resolution.status,
@@ -78,6 +79,26 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
   }
 }
 
+// Global selection uses only the space identity; no project lead, assignment or
+// model is fabricated. A project-resolved request never enters this path.
+async function resolveGlobalAgent(application, resolution, input) {
+  try {
+    const mention = await resolveTaskAgentMention(application, null, input);
+    if (mention?.status) return mention;
+    const id = mention?.agentId ?? input.projectAgentId ?? resolution.globalAgentId;
+    if (!id) return { status: 'unassigned', worker_started: false };
+    const value = await application.personal.getProjectAgent(application.config.personal.spaceId, null, id);
+    const agent = projectAgentRecord(value);
+    if (agent.profile.status !== 'active'
+      || !(agent.profile.allowedClients ?? []).includes(input.sourceApplication ?? 'other')) {
+      return { status: 'agent_unavailable', worker_started: false };
+    }
+    return { status: 'ready', reason: 'global_agent', agent, worker_started: false };
+  } catch {
+    return { status: 'unavailable', worker_started: false };
+  }
+}
+
 export async function loadProjectAgentContinuity(application, {
   projectId, agent, sourceApplication = 'other', taskPrompt = null,
   selectionReason = null, matchBasis = [], includeKnowledge = true
@@ -88,17 +109,19 @@ export async function loadProjectAgentContinuity(application, {
   const queries = (planned.queries.length ? planned.queries
     : [agent.profile.responsibility || 'project requirements architecture decisions']).slice(0, 2);
   const requests = [
-    ['team', loadProjectTeamContext(application, scope.personalSpaceId, projectId)],
     ['memory', agent.memoryScope === 'reviewed_agent'
       ? application.personal.getProjectAgentMemory({ ...scope, limit: 1 })
       : Promise.resolve(null)],
-    ['project', application.personal.getPersonalProject(scope.personalSpaceId, projectId)],
-    ['tasks', application.personal.listProjectAgentTasks({ ...scope, limit: 4 })],
-    ['knowledge', includeKnowledge ? Promise.all(queries.map(query => application.searchKnowledge({
-      personalSpaceId: scope.personalSpaceId, personalProjectId: projectId,
-      projectAgentId: agent.agentId, query, limit: 4, includePending: false,
-      agentInvocation: true, agentToolName: 'automatic_project_agent_context'
-    }))) : Promise.resolve([])]
+    ...(projectId ? [
+      ['team', loadProjectTeamContext(application, scope.personalSpaceId, projectId)],
+      ['project', application.personal.getPersonalProject(scope.personalSpaceId, projectId)],
+      ['tasks', application.personal.listProjectAgentTasks({ ...scope, limit: 4 })],
+      ['knowledge', includeKnowledge ? Promise.all(queries.map(query => application.searchKnowledge({
+        personalSpaceId: scope.personalSpaceId, personalProjectId: projectId,
+        projectAgentId: agent.agentId, query, limit: 4, includePending: false,
+        agentInvocation: true, agentToolName: 'automatic_project_agent_context'
+      }))) : Promise.resolve([])]
+    ] : [])
   ];
   const results = await Promise.allSettled(requests.map(([, promise]) => promise));
   const data = {};

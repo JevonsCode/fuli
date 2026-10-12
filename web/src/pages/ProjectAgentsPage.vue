@@ -189,6 +189,8 @@ const selectedEmployeeId = computed(() => selectedAgent.value ? employeeTemplate
 const selectedEmployee = computed(() => employeeTemplates.value.find(entry => entry.id === selectedEmployeeId.value))
 const employeeProjects = computed(() => selectedAgent.value ? responsibleProjectsFor(selectedAgent.value)
   .filter((project) => projectById.value.get(project.id)?.profile.lifecycle !== 'archived') : [])
+const conversationProjects = computed(() => selectedAgent.value ? currentAssignmentsFor(selectedAgent.value)
+  .map(assignment => ({ id: assignment.personalProjectId, name: projectName(assignment.personalProjectId) })) : [])
 const activeCount = computed(() => agents.value.filter(({ profile }) => profile.status === 'active').length)
 const assignmentCount = computed(() => agents.value.reduce(
   (count, agent) => count + currentAssignmentsFor(agent).length,
@@ -1190,8 +1192,8 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
 
 
 
-        <AgentConversations v-if="selectedAgent.memoryScope === 'reviewed_agent'" :key="selectedAgent.agentId" :personal-space-id="activeSpaceId" :agent-id="selectedAgent.agentId" :projects="employeeProjects" />
-        <EmployeeWorkHistory v-if="selectedAgent.memoryScope === 'reviewed_agent'" :personal-space-id="activeSpaceId" :agent-id="selectedAgent.agentId" :projects="employeeProjects" />
+        <AgentConversations v-if="selectedAgent.memoryScope === 'reviewed_agent'" :key="selectedAgent.agentId" :personal-space-id="activeSpaceId" :agent-id="selectedAgent.agentId" :projects="conversationProjects" />
+        <EmployeeWorkHistory v-if="selectedAgent.memoryScope === 'reviewed_agent'" :personal-space-id="activeSpaceId" :agent-id="selectedAgent.agentId" :projects="conversationProjects" />
         <details class="ui-disclosure project-agent-disclosure"><summary>{{ t('projectAgents.profileDetails') }}</summary>
         <dl class="project-agent-detail-meta"><div><dt>{{ t('projectAgents.fields.assignments') }}</dt><dd>{{ currentAssignmentsFor(selectedAgent).length }}</dd></div><div><dt>{{ t('projectAgents.fields.memoryScope') }}</dt><dd>{{ selectedAgent.memoryScope ?? t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.fields.status') }}</dt><dd>{{ t(`projectAgents.status.${selectedAgent.profile.status}`) }}</dd></div><div><dt>{{ t('projectAgents.fields.recruitment') }}</dt><dd>{{ sourceLabel(selectedAgent.recruitmentSourceApplication) }}<small v-if="selectedAgent.recruitmentReason">{{ selectedAgent.recruitmentReason }}</small></dd></div><div><dt>{{ t('projectAgents.fields.updatedAt') }}</dt><dd>{{ formatDate(selectedAgent.updatedAt) }}</dd></div></dl>
         </details>

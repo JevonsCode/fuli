@@ -37,18 +37,13 @@ async def read_collaboration_context(
             personal_project_id,
         )
     if project_agent_id:
-        if not personal_project_id:
-            raise HTTPException(
-                status_code=422,
-                detail='project Agent preferences require a personal project',
-            )
         agent = await authorize_project_agent(
             store,
             actor,
             space,
             personal_project_id,
             project_agent_id,
-            require_memory=True,
+            require_memory=True, allow_global=True,
         )
         project_agent_id = agent['agent_id']
     project_scopes = await _project_scopes(

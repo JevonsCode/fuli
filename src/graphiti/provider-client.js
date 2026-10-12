@@ -140,9 +140,9 @@ export class GraphitiProviderClient {
   }
   getProjectAgentMemory({ personalSpaceId, personalProjectId, agentId, limit = 1 }) {
     const query = new URLSearchParams({
-      personal_space_id: personalSpaceId, personal_project_id: personalProjectId,
-      limit: String(limit)
+      personal_space_id: personalSpaceId, limit: String(limit)
     });
+    if (personalProjectId !== null && personalProjectId !== undefined) query.set('personal_project_id', personalProjectId);
     return this.#request(`/v1/project-agents/${encodeURIComponent(agentId)}/memory?${query}`);
   }
   writeProjectAgentMemory(input) {

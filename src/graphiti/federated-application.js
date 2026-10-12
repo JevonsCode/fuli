@@ -277,7 +277,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       projectResolution = await registerRepositoryProject(this, projectResolution);
     }
     projectResolution = await resolveTaskEntryProject(this, projectResolution, {
-      sessionId, sourceSessionId, sourceApplication, agentInvocation, agentToolName
+      sessionId, sourceSessionId, sourceApplication, agentInvocation, agentToolName, projectAgentId, taskPrompt
     });
     return taskEntryPreferences(this, projectResolution, {
       personalProjectId, projectAgentId, projectPath, taskPrompt, sourceApplication,

@@ -22,7 +22,7 @@ class ConversationPolicy(StrictModel):
 
 class ConversationScope(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
-    personal_project_id: str = Field(min_length=1, max_length=128)
+    personal_project_id: str | None = Field(default=None, min_length=1, max_length=128)
     agent_id: str = Field(min_length=1, max_length=128)
     source_application: SourceApplication | None = None
 
