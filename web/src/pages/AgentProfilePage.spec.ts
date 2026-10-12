@@ -234,8 +234,24 @@ describe('Agent profile integration', () => {
     const params = getJson.mock.calls.filter(([url]) => url.startsWith('/api/project-agent-tasks?')).map(([url]) => new URL(url, 'http://fixture').searchParams)
     expect(params).toHaveLength(1)
     expect(params[0]!.get('personalSpaceId')).toBe('space-a')
-    expect(params[0]!.get('agentId')).toBeNull()
+    expect(params[0]!.get('agentId')).toBe('alpha')
     expect(params[0]!.get('limit')).toBe('200')
+  })
+
+  it('loads older Agent work without unrelated space tasks consuming the limit', async () => {
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      const parsed = new URL(url, 'http://fixture')
+      if (parsed.pathname === '/api/project-agent-tasks') {
+        return Promise.resolve(parsed.searchParams.get('agentId') === 'alpha'
+          ? [task('older', 'alpha', 'Older relevant work', 'running')]
+          : Array.from({ length: 200 }, (_, index) => task(`other-${index}`, 'beta', 'Unrelated work')))
+      }
+      return normal(url)
+    })
+    const { wrapper } = await setup()
+    expect(wrapper.get('.agent-current-work-section').text()).toContain('Older relevant work')
+    expect(wrapper.find('.agent-profile-partial').exists()).toBe(false)
   })
 
   it('includes owner-only work and marks a full task page as partial', async () => {
