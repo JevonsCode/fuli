@@ -2,7 +2,7 @@
 import { withTranscriptGuard } from '../../conversations/transcript-guard.js';
 import { guidanceDirectoryFor, hookTaskContextOutput } from '../../conversations/hook-task-context.js';
 import { syncConversationTranscript, withTranscriptNotice, claimTranscriptBoundary, recordTranscriptTaskEntry } from '../../conversations/sync-transcript.js';
-import { normalizeCodexRecord, verifyCodexTranscript } from './conversation-transcript.js';
+import { CODEX_COMPACTION_PATTERN, normalizeCodexRecord, verifyCodexTranscript } from './conversation-transcript.js';
 
 import { callAgentTool } from '../../agent-tools.js';
 import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js';
@@ -39,7 +39,8 @@ export async function codexLifecycleOutput(event, input, invoke, { guidanceDirec
     sourceApplication: 'codex', sourceSessionId: input.session_id });
   return hookTaskContextOutput(context, { hookEventName: event,
     label: 'Fuli task context. Apply effective_preferences and checkpoint with taskContextToken.',
-    guidanceDirectory });
+    guidanceDirectory, session: { sessionId: input.session_id, sourceApplication: 'codex',
+      transcriptPath: input.transcript_path ?? null, compactionPattern: CODEX_COMPACTION_PATTERN } });
 }
 
 export async function runCodexLifecycleHook(args, dependencies = {}) {

@@ -2,7 +2,7 @@
 import { withTranscriptGuard } from '../../conversations/transcript-guard.js';
 import { guidanceDirectoryFor, hookTaskContextOutput } from '../../conversations/hook-task-context.js';
 import { syncConversationTranscript, withTranscriptNotice, claimTranscriptBoundary, recordTranscriptTaskEntry } from '../../conversations/sync-transcript.js';
-import { normalizeClaudeRecord, verifyClaudeTranscript } from './conversation-transcript.js';
+import { CLAUDE_COMPACTION_PATTERN, normalizeClaudeRecord, verifyClaudeTranscript } from './conversation-transcript.js';
 
 import { callAgentTool } from '../../agent-tools.js';
 import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js';
@@ -30,7 +30,9 @@ export async function claudeLifecycleOutput(event, input, invoke, { guidanceDire
     return hookTaskContextOutput(context, {
       hookEventName: event,
       label: 'Fuli task context. Read full context; apply effective_preferences. Finish with checkpoint_task_knowledge and a truthful workLog.',
-      guidanceDirectory
+      guidanceDirectory,
+      session: { sessionId, sourceApplication: 'claude_code', transcriptPath: input.transcript_path ?? null,
+        compactionPattern: CLAUDE_COMPACTION_PATTERN }
     });
   }
   const check = await invoke('verify_task_checkpoint', { sessionId, ...source });

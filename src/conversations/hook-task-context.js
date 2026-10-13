@@ -2,6 +2,8 @@ import { dirname, join } from 'node:path';
 
 import { hookAdditionalContextToolResult } from '../mcp/tool-result.js';
 import { writeGuidanceFile } from './guidance-file-store.js';
+import { applySessionDelivery } from './session-delivery.js';
+import { readSessionDelivery, writeSessionDelivery } from './session-delivery-store.js';
 import { GUIDANCE_READ_WHEN, renderGuidanceMarkdown, separateStaticGuidance } from './task-context-guidance.js';
 import { withoutRedundantEntryFields } from './task-entry-trim.js';
 import { compactTaskContext } from './task-context-view.js';
@@ -15,7 +17,9 @@ export function guidanceDirectoryFor(runtimeConfigPath) {
 // Shared by every Agent hook: the entry carries task data and per-turn rules
 // inline, and generic guidance prose by a stable file reference. Without a
 // directory, or when the file cannot be verified, the full guidance stays inline.
-export function hookTaskContextOutput(context, { hookEventName, label, guidanceDirectory = null }) {
+// With a host session (session: { sessionId, sourceApplication, transcriptPath,
+// compactionPattern }), unchanged rules and preferences are referenced by digest.
+export function hookTaskContextOutput(context, { hookEventName, label, guidanceDirectory = null, session = null }) {
   let delivered = withoutRedundantEntryFields(compactTaskContext(context));
   if (guidanceDirectory) {
     const { context: inline, guidance } = separateStaticGuidance(delivered);
@@ -28,7 +32,25 @@ export function hookTaskContextOutput(context, { hookEventName, label, guidanceD
       }
     }
   }
-  return JSON.parse(hookAdditionalContextToolResult(delivered, {
+  const sessionDelivery = guidanceDirectory && session
+    ? planSessionDelivery(delivered, { ...session, directory: guidanceDirectory }) : null;
+  const result = hookAdditionalContextToolResult(sessionDelivery?.context ?? delivered, {
     hookEventName, label, limitBytes: HOOK_LIMIT_BYTES, itemLimit: 1000
-  }).content[0].text);
+  });
+  // A truncated entry was not delivered in full, so later turns must not reference it.
+  if (sessionDelivery && !result.structuredContent.truncated) sessionDelivery.commit();
+  return JSON.parse(result.content[0].text);
+}
+
+function planSessionDelivery(context, session) {
+  try {
+    const { previous, reset } = readSessionDelivery(session);
+    const result = applySessionDelivery(context, previous, { reset });
+    return { context: result.context, commit: () => {
+      try { writeSessionDelivery(session, result.delivered); } catch { /* next entry is delivered in full */ }
+    } };
+  } catch {
+    // Unknown session state always delivers the complete entry.
+    return null;
+  }
 }

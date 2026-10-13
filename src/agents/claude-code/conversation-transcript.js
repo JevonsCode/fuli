@@ -1,3 +1,6 @@
+// Claude appends this system record when it compacts the conversation.
+export const CLAUDE_COMPACTION_PATTERN = /"subtype"\s*:\s*"compact_boundary"/;
+
 // Claude JSONL v1; thinking/redacted_thinking are intentionally never persisted.
 export function normalizeClaudeRecord(record, sessionId) {
   if (record?.sessionId !== sessionId || !['user', 'assistant'].includes(record.type)) return [];
