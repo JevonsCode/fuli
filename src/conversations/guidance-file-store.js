@@ -13,6 +13,7 @@ export function writeGuidanceFile(directory, markdown, { now = Date.now() } = {}
   const path = join(directory, `task-guidance-${digest}.md`);
   if (readMatching(path, markdown)) {
     touch(path, now);
+    pruneStaleGuidance(directory, path, now);
     return { path, digest };
   }
   mkdirSync(directory, { recursive: true });

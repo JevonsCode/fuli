@@ -1,6 +1,7 @@
 // Hook entries are re-sent every turn, so they omit fields that only repeat
-// another inline value or report diagnostics the model never acts on. The MCP
-// fallback keeps the complete compact context for explicit recovery.
+// another inline value or report diagnostics the model never acts on. Fields
+// that can carry staffing rules, such as match_basis, stay. The MCP fallback
+// keeps the complete compact context for explicit recovery.
 const MEMORY_ENVELOPE_FIELDS = ['personalSpaceId', 'personalProjectId', 'agentId', 'storage'];
 
 export function withoutRedundantEntryFields(value) {
@@ -25,7 +26,6 @@ export function withoutRedundantEntryFields(value) {
 
   const agent = context.project_agent_context;
   if (agent && typeof agent === 'object') {
-    delete agent.match_basis;
     delete agent.directorySnapshot;
     if (agent.execution_agent_id === agent.project_agent_id) delete agent.execution_agent_id;
     if (agent.execution_reason === agent.selection_reason) delete agent.execution_reason;

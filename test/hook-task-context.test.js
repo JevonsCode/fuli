@@ -96,8 +96,10 @@ test('hook entry omits repeated identifiers and diagnostics while keeping coordi
   assert.deepEqual(context.agent_receipt.continuation, { prompt: 'continue' });
   assert.deepEqual(context.context, { personal_project_id: 'p1', global_preference_count: 1 });
   const agent = context.project_agent_context;
-  assert.deepEqual(Object.keys(agent).sort(), ['guidance', 'memory', 'project_agent_id', 'project_brief', 'role',
-    'selection_reason']);
+  assert.deepEqual(Object.keys(agent).sort(), ['guidance', 'match_basis', 'memory', 'project_agent_id', 'project_brief',
+    'role', 'selection_reason']);
+  // Staffing rules such as "do not recruit a replacement" travel in match_basis.
+  assert.deepEqual(agent.match_basis, ['lead']);
   assert.deepEqual(agent.role, { name: 'Test' });
   assert.deepEqual(agent.project_brief, { name: 'p1' });
   assert.deepEqual(agent.memory, { scope: 'private_agent_project', revision: 2, current: null, view: 'preview',
@@ -127,6 +129,12 @@ test('guidance files are verified before reuse and stale versions are pruned', (
   utimesSync(first.path, old, old);
   mkdirSync(join(directory, 'unrelated'));
   const second = writeGuidanceFile(directory, '# rules v2\n', { now });
+  assert.deepEqual(readdirSync(directory).sort(), [second.path.split(/[\\/]/).at(-1), 'unrelated'].sort());
+
+  // Reusing the current version also prunes versions left unused.
+  const stale = writeGuidanceFile(directory, '# rules v1\n', { now });
+  utimesSync(stale.path, old, old);
+  writeGuidanceFile(directory, '# rules v2\n', { now });
   assert.deepEqual(readdirSync(directory).sort(), [second.path.split(/[\\/]/).at(-1), 'unrelated'].sort());
 
   // A reference is returned only for a verified file; otherwise the caller stays inline.
