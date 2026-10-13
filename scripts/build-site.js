@@ -1,8 +1,9 @@
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { parseHTML } from 'linkedom';
 import { createLanguageController } from '../site/i18n.js';
 import { SITE_URL, structuredData } from '../site/metadata.js';
+import { isMainModule } from '../src/system/main-module.js';
 
 const variants = [['', 'zh-CN'], ['zh/', 'zh-CN'], ['en/', 'en']];
 const alternates = [['zh-Hans', 'zh/'], ['en', 'en/'], ['x-default', '']];
@@ -85,7 +86,7 @@ export async function buildSite() {
   return fileURLToPath(output);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
   await buildSite();
   console.log('Built website in dist/site');
 }
