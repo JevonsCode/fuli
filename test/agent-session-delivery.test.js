@@ -132,7 +132,9 @@ test('Claude moves oversized preferences to a file and accepts a full read of it
     + read('read-5') + result('read-5', ''));
   assert.ok((await enter()).context.effective_preferences_file);
   // Claude may return the text as content blocks with line numbers.
-  appendFileSync(transcript, read('read-6', {}, file.file.replace(/\\/g, '/'))
+  // Windows paths compare without case or separator differences.
+  const samePath = process.platform === 'win32' ? file.file.replace(/\\/g, '/').toUpperCase() : file.file;
+  appendFileSync(transcript, read('read-6', {}, samePath)
     + result('read-6', [{ type: 'text', text: fileText.split('\n').map((line, index) => `${index + 1}\t${line}`).join('\n') }]));
   const later = await enter();
   assert.equal(later.context.effective_preferences_file, undefined);

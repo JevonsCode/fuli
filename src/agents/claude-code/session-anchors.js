@@ -25,7 +25,7 @@ export function claudeDeliveredTokens(transcriptPath, sessionId, { readTail = re
     try {
       for (const line of readTail(transcriptPath).split('\n')) {
         if (!line.includes('compact_boundary') && !line.includes('hook_additional_context')
-          && !line.includes('task-preferences-') && !pendingReads.size) continue;
+          && !/task-preferences-/i.test(line) && !pendingReads.size) continue;
         let record;
         try { record = JSON.parse(line); } catch { continue; }
         if (record?.type === 'system' && record.subtype === 'compact_boundary') {
