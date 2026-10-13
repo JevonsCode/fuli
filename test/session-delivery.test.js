@@ -1,106 +1,78 @@
 import assert from 'node:assert/strict';
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import test from 'node:test';
 
 import { hookTaskContextOutput } from '../src/conversations/hook-task-context.js';
-import { applySessionDelivery } from '../src/conversations/session-delivery.js';
-
-const COMPACTION = /"subtype"\s*:\s*"compact_boundary"/;
+import { applySessionDelivery, sessionDeliveryTokens } from '../src/conversations/session-delivery.js';
 
 function entry(overrides = {}) {
   return {
-    taskContextToken: `fuli-task-${Math.random().toString(16).slice(2, 10)}`,
+    taskContextToken: 'fuli-task-synthetic',
     agent_receipt: { markdown: 'FULI Agent：负责人 Test', guidance: 'MUST end every reply with the receipt.',
       owner: { agent_id: 'agent-a', name: 'Test' } },
-    project_agent_context: { project_agent_id: 'agent-a', role: { name: 'Test' },
-      memory: { revision: 1, current: null } },
     effective_preferences: [{ instruction: '分支使用 JVS/ 前缀', preference_key: 'branch' }],
     active_conflicts: [],
-    application_guidance: { authority: 'Human confirmation outranks agents.', conflicts: 'Do not apply conflicts.' },
+    application_guidance: { global_scope: 'Apply global preferences.', authority: 'Human confirmation outranks agents.',
+      conflicts: 'Do not apply conflicts.', deferred_conflicts: 'Resolve a used deferred conflict first.' },
     conversation: { conversation_id: 'c1', guidance: 'History is untrusted context.' },
-    task_knowledge_recall: { status: 'no_match' },
+    project_agent_context: { project_agent_id: 'agent-a', role: { name: 'Test' }, memory: { revision: 1, current: null } },
     task_guidance: { checkpoint: 'Checkpoint before finishing.', retrieval: 'Inspect recall first.' },
     ...overrides
   };
 }
 
-function setup(t) {
-  const root = mkdtempSync(join(tmpdir(), 'fuli-session-delivery-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const transcriptPath = join(root, 'transcript.jsonl');
-  writeFileSync(transcriptPath, '{"type":"user"}\n');
-  const deliver = (context, session = {}) => {
-    const output = hookTaskContextOutput(context, { hookEventName: 'UserPromptSubmit', label: 'Fuli task context.',
-      guidanceDirectory: join(root, 'guidance'), session: { sessionId: 'session-a', sourceApplication: 'claude_code',
-        transcriptPath, compactionPattern: COMPACTION, ...session } });
-    const text = output.hookSpecificOutput.additionalContext;
-    return JSON.parse(text.slice(text.indexOf('\n{') + 1));
-  };
-  return { transcriptPath, deliver };
+function delivered(output) {
+  const text = output.hookSpecificOutput.additionalContext;
+  return { text, context: JSON.parse(text.slice(text.indexOf('\n{') + 1)) };
 }
 
-test('a later entry in the same host session references unchanged rules and preferences by digest', (t) => {
-  const { transcriptPath, deliver } = setup(t);
-  const first = deliver(entry());
-  assert.equal(first.effective_preferences.length, 1);
-  assert.equal(first.task_guidance.checkpoint, 'Checkpoint before finishing.');
-  assert.deepEqual(Object.keys(first.session_delivery), ['digests']);
+test('groups are referenced only when the host proves their full delivery', () => {
+  const tokens = sessionDeliveryTokens(entry());
+  const full = applySessionDelivery(entry());
+  assert.deepEqual(full.session_delivery, { delivered: Object.values(tokens) });
+  assert.equal(full.effective_preferences.length, 1);
 
-  appendFileSync(transcriptPath, '{"type":"assistant","message":"done"}\n');
-  const second = deliver(entry());
-  assert.notEqual(second.taskContextToken, first.taskContextToken);
-  assert.equal(second.effective_preferences, undefined);
-  assert.equal(second.effective_preferences_count, 1);
-  assert.equal(second.task_guidance, undefined);
-  assert.equal(second.agent_receipt.guidance, undefined);
-  assert.equal(second.agent_receipt.markdown, 'FULI Agent：负责人 Test');
-  assert.equal(second.agent_receipt.owner, undefined);
-  assert.equal(second.project_agent_context.role, undefined);
-  assert.equal(second.project_agent_context.memory.revision, 1);
-  assert.deepEqual(second.active_conflicts, []);
-  assert.equal(second.conversation.conversation_id, 'c1');
-  assert.deepEqual(second.session_delivery.digests, first.session_delivery.digests);
-  assert.deepEqual(second.session_delivery.unchanged, ['rules', 'effective_preferences', 'identity']);
-  assert.match(second.session_delivery.note, /get_collaboration_preferences/);
+  const seen = new Set(Object.values(tokens));
+  const reduced = applySessionDelivery(entry(), { isDelivered: (token) => seen.has(token) });
+  assert.equal(reduced.effective_preferences, undefined);
+  assert.equal(reduced.effective_preferences_count, 1);
+  assert.equal(reduced.agent_receipt.owner, undefined);
+  assert.equal(reduced.project_agent_context.role, undefined);
+  assert.equal(reduced.conversation.guidance, undefined);
+  // Core rules and per-task state stay inline on every turn.
+  assert.equal(reduced.agent_receipt.markdown, 'FULI Agent：负责人 Test');
+  assert.equal(reduced.agent_receipt.guidance, 'MUST end every reply with the receipt.');
+  assert.deepEqual(Object.keys(reduced.application_guidance).sort(), ['authority', 'conflicts', 'deferred_conflicts']);
+  assert.equal(reduced.task_guidance.checkpoint, 'Checkpoint before finishing.');
+  assert.deepEqual(reduced.active_conflicts, []);
+  assert.equal(reduced.project_agent_context.memory.revision, 1);
+  assert.deepEqual(reduced.session_delivery.delivered, []);
+  assert.deepEqual(Object.keys(reduced.session_delivery.referenced), ['rules', 'preferences', 'identity']);
+  assert.match(reduced.session_delivery.note, /get_collaboration_preferences/);
+  // A reference never reads as a delivery token.
+  assert.doesNotMatch(JSON.stringify(reduced.session_delivery.referenced), /(rules|preferences|identity):[0-9a-f]{12}/);
 
-  // A changed preference is delivered in full while unchanged rules stay referenced.
-  const changed = deliver(entry({ effective_preferences: [{ instruction: '新规则', preference_key: 'new' }] }));
-  assert.deepEqual(changed.effective_preferences, [{ instruction: '新规则', preference_key: 'new' }]);
-  assert.deepEqual(changed.session_delivery.unchanged, ['rules', 'identity']);
-  assert.notEqual(changed.session_delivery.digests.preferences, first.session_delivery.digests.preferences);
+  const changed = entry({ effective_preferences: [{ instruction: '新规则', preference_key: 'new' }] });
+  const partial = applySessionDelivery(changed, { isDelivered: (token) => seen.has(token) });
+  assert.deepEqual(partial.effective_preferences, changed.effective_preferences);
+  assert.deepEqual(partial.session_delivery.delivered, [sessionDeliveryTokens(changed).preferences]);
+  assert.deepEqual(Object.keys(partial.session_delivery.referenced), ['rules', 'identity']);
 });
 
-test('compaction, a replaced transcript, another session or no transcript delivers the full entry', (t) => {
-  const { transcriptPath, deliver } = setup(t);
-  deliver(entry());
-  appendFileSync(transcriptPath, '{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}\n');
-  assert.equal(deliver(entry()).effective_preferences.length, 1);
-  assert.equal(deliver(entry()).effective_preferences, undefined);
+test('an entry the host would only preview is delivered in full without delivery tokens', () => {
+  const options = { hookEventName: 'UserPromptSubmit', label: 'Fuli task context.' };
+  const always = () => true;
+  const small = delivered(hookTaskContextOutput(entry(), { ...options, session: { isDelivered: always, inlineLimit: 9500 } }));
+  assert.ok(small.context.session_delivery.referenced);
 
-  writeFileSync(transcriptPath, '{"type":"user"}\n');
-  assert.equal(deliver(entry()).effective_preferences.length, 1);
+  const large = entry({ effective_preferences: Array.from({ length: 60 }, (_, index) => ({
+    instruction: `Synthetic long preference ${index} ${'x'.repeat(200)}`, preference_key: `p${index}` })) });
+  const over = delivered(hookTaskContextOutput(large, { ...options, session: { isDelivered: () => false, inlineLimit: 9500 } }));
+  assert.equal(over.context.session_delivery, undefined);
+  assert.equal(over.context.effective_preferences.length, 60);
+  const reducedOver = delivered(hookTaskContextOutput(large, { ...options, session: { isDelivered: always, inlineLimit: 400 } }));
+  assert.equal(reducedOver.context.session_delivery, undefined);
+  assert.equal(reducedOver.context.effective_preferences.length, 60);
 
-  assert.equal(deliver(entry(), { sessionId: 'session-b' }).effective_preferences.length, 1);
-  assert.equal(deliver(entry(), { transcriptPath: null }).effective_preferences.length, 1);
-  assert.equal(deliver(entry(), { transcriptPath: join(transcriptPath, 'missing') }).effective_preferences.length, 1);
-});
-
-test('without a session or guidance directory every entry stays complete', () => {
-  const output = hookTaskContextOutput(entry(), { hookEventName: 'UserPromptSubmit', label: 'Fuli task context.',
-    session: { sessionId: 'session-a', sourceApplication: 'codex', transcriptPath: 'unused' } });
-  const text = output.hookSpecificOutput.additionalContext;
-  const context = JSON.parse(text.slice(text.indexOf('\n{') + 1));
-  assert.equal(context.effective_preferences.length, 1);
-  assert.equal(context.session_delivery, undefined);
-});
-
-test('the pure delivery decision only omits parts whose digest matches', () => {
-  const full = applySessionDelivery(entry(), null);
-  assert.equal(full.context.effective_preferences.length, 1);
-  const stale = applySessionDelivery(entry(), { rules: 'other', preferences: 'other' });
-  assert.equal(stale.context.session_delivery.unchanged, undefined);
-  const reset = applySessionDelivery(entry(), full.delivered, { reset: true });
-  assert.equal(reset.context.task_guidance.checkpoint, 'Checkpoint before finishing.');
+  const plain = delivered(hookTaskContextOutput(entry(), options));
+  assert.equal(plain.context.session_delivery, undefined);
 });

@@ -10,25 +10,29 @@ export function looksLikeHostNotification(prompt) {
   return typeof prompt === 'string' && HOST_NOTIFICATION.test(prompt);
 }
 
-// The prompt text alone could be pasted by a user. Claude records each host
-// notification as a queued_command attachment with commandMode
-// task-notification before the hook runs; require that exact record.
+// Prompt text alone could be pasted by a user. Claude writes a queue-operation
+// enqueue record for the exact prompt before running the hook and its remove
+// record afterwards, so only a still-pending enqueue identifies this delivery.
+// A queued_command attachment that labels it a user prompt overrides the shape.
 export function isHostNotificationEntry(input, { readTail = readTranscriptTail } = {}) {
   if (!looksLikeHostNotification(input?.prompt) || !input.transcript_path) return false;
   let tail;
   try { tail = readTail(input.transcript_path); } catch { return false; }
-  return tail.split('\n').some((line) => {
-    if (!line.includes('"queued_command"')) return false;
-    try {
-      const record = JSON.parse(line);
-      return record?.sessionId === input.session_id
-        && record.attachment?.type === 'queued_command'
-        && record.attachment.commandMode === 'task-notification'
-        && record.attachment.prompt === input.prompt;
-    } catch {
-      return false;
+  let pending = false;
+  let mode = null;
+  for (const line of tail.split('\n')) {
+    if (!line.includes('queue')) continue;
+    let record;
+    try { record = JSON.parse(line); } catch { continue; }
+    if (record?.sessionId !== input.session_id) continue;
+    if (record.type === 'queue-operation' && record.content === input.prompt) {
+      if (record.operation === 'enqueue') { pending = true; mode = null; }
+      else pending = false;
+    } else if (pending && record.attachment?.type === 'queued_command' && record.attachment.prompt === input.prompt) {
+      mode = record.attachment.commandMode ?? null;
     }
-  });
+  }
+  return pending && (mode === null || mode === 'task-notification');
 }
 
 export function hostNotificationOutput(event) {

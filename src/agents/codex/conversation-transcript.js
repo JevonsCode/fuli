@@ -1,6 +1,3 @@
-// Codex appends this rollout item when it compacts the conversation.
-export const CODEX_COMPACTION_PATTERN = /"type"\s*:\s*"compacted"/;
-
 // Codex rollout v1: visible response items only; event_msg mirrors are omitted.
 export function normalizeCodexRecord(record) {
   if (record?.type !== 'response_item') return [];

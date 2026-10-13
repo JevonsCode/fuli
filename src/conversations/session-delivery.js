@@ -1,58 +1,59 @@
 import { createHash } from 'node:crypto';
 
 // Within one host session, earlier Fuli entries stay in the conversation.
-// Repeating unchanged rules, preferences and identity every turn only grows the context,
-// so later entries reference the earlier full delivery by digest. Anything
-// uncertain (no prior state, compaction, a changed digest) delivers in full.
-const RULE_PATHS = [
-  ['agent_receipt', 'guidance'],
-  ['application_guidance'],
-  ['conversation', 'guidance'],
-  ['project_agent_context', 'guidance'],
-  ['task_guidance'],
-  ['preference_field_defaults'],
-  ['static_guidance']
-];
-const PREFERENCE_PATHS = [['effective_preferences']];
-// Who acts and under which standing policy; the receipt markdown stays inline.
-const IDENTITY_PATHS = [
-  ['agent_receipt', 'owner'],
-  ['agent_receipt', 'continuation'],
-  ['project_agent_context', 'role'],
-  ['project_agent_context', 'project_brief'],
-  ['project_agent_context', 'match_basis'],
-  ['judgment_context', 'policy']
-];
+// Repeating unchanged rules, preferences and identity every turn only grows the
+// context, so an entry may reference a group by digest, but only when the host
+// adapter proves that a full delivery of exactly that group is still visible.
+// Core rules stay inline on every turn: the receipt, human authority,
+// conflicts and the checkpoint contract are never referenced away.
+const GROUPS = {
+  rules: [
+    ['application_guidance', 'global_scope'],
+    ['application_guidance', 'project_scope'],
+    ['application_guidance', 'agent_scope'],
+    ['conversation', 'guidance'],
+    ['project_agent_context', 'guidance'],
+    ['task_guidance', 'retrieval'],
+    ['preference_field_defaults'],
+    ['static_guidance']
+  ],
+  preferences: [['effective_preferences']],
+  identity: [
+    ['agent_receipt', 'owner'],
+    ['agent_receipt', 'continuation'],
+    ['project_agent_context', 'role'],
+    ['project_agent_context', 'project_brief'],
+    ['project_agent_context', 'match_basis'],
+    ['judgment_context', 'policy']
+  ]
+};
 
-export function sessionDeliveryDigests(context) {
-  return { rules: digestOf(pick(context, RULE_PATHS)), preferences: digestOf(pick(context, PREFERENCE_PATHS)),
-    identity: digestOf(pick(context, IDENTITY_PATHS)) };
+// "group:digest" tokens mark full deliveries. References use a different
+// shape, so a reference can never be mistaken for a delivery.
+export const DELIVERY_TOKEN = /\b(rules|preferences|identity):([0-9a-f]{12})\b/g;
+
+export function sessionDeliveryTokens(context) {
+  return Object.fromEntries(Object.entries(GROUPS)
+    .map(([group, paths]) => [group, `${group}:${digestOf(pick(context, paths))}`]));
 }
 
-// previous: the digests recorded with the last full delivery in this session,
-// or null when unknown. reset: the host compacted or replaced the history.
-export function applySessionDelivery(context, previous, { reset = false } = {}) {
-  const digests = sessionDeliveryDigests(context);
-  // A full entry names its digests so a later reference can be matched to it.
-  const full = { context: { ...context, session_delivery: { digests } }, delivered: digests };
-  if (!previous || reset) return full;
-  const unchanged = Object.keys(digests).filter((key) => previous[key] === digests[key]);
-  if (!unchanged.length) return full;
+// isDelivered(token): the adapter's proof that the full group is visible.
+export function applySessionDelivery(context, { isDelivered = () => false } = {}) {
+  const tokens = sessionDeliveryTokens(context);
+  const referenced = Object.keys(tokens).filter((group) => isDelivered(tokens[group]));
+  const delivered = Object.keys(tokens).filter((group) => !referenced.includes(group)).map((group) => tokens[group]);
+  if (!referenced.length) return { ...context, session_delivery: { delivered } };
   const reduced = structuredClone(context);
-  if (unchanged.includes('rules')) omit(reduced, RULE_PATHS);
-  if (unchanged.includes('identity')) omit(reduced, IDENTITY_PATHS);
-  if (unchanged.includes('preferences')) {
-    reduced.effective_preferences_count = context.effective_preferences?.length ?? 0;
-    omit(reduced, PREFERENCE_PATHS);
-  }
+  for (const group of referenced) omit(reduced, GROUPS[group]);
+  if (referenced.includes('preferences')) reduced.effective_preferences_count = context.effective_preferences?.length ?? 0;
   reduced.session_delivery = {
-    digests,
-    unchanged: unchanged.map((key) => key === 'preferences' ? 'effective_preferences' : key),
-    note: 'Unchanged parts are identical to an earlier Fuli entry in this host session with the same digests and '
-      + 'still apply. If that entry is no longer visible in this conversation, call get_collaboration_preferences '
-      + 'with this sessionId before relying on omitted rules or preferences.'
+    delivered,
+    referenced: Object.fromEntries(referenced.map((group) => [group, tokens[group].split(':')[1]])),
+    note: 'Referenced groups are unchanged from an earlier full Fuli entry in this conversation that carried the '
+      + 'same group:digest in session_delivery.delivered; they still apply. If that entry is not visible to you, '
+      + 'call get_collaboration_preferences with this sessionId before relying on omitted rules or preferences.'
   };
-  return { context: reduced, delivered: digests };
+  return reduced;
 }
 
 function pick(context, paths) {

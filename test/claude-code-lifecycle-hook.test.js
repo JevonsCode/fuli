@@ -147,7 +147,8 @@ test('Claude blocked handoff supplies exact host fallback identity without bypas
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test('Claude host task notifications continue the current task only with transcript evidence', async (t) => {
+
+test('Claude host task notifications continue the current task only while the host has them queued', async (t) => {
   const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
@@ -155,36 +156,40 @@ test('Claude host task notifications continue the current task only with transcr
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const notification = '<task-notification>\n<task-id>b3c99mjxe</task-id>\n<status>completed</status>\n</task-notification>';
   const transcript = join(root, 'session.jsonl');
-  const queued = (prompt, commandMode, sessionId = input.session_id) => JSON.stringify({ type: 'attachment', sessionId,
-    attachment: { type: 'queued_command', prompt, commandMode, origin: { kind: commandMode } } });
+  const queue = (operation, content = notification, sessionId = input.session_id) =>
+    JSON.stringify({ type: 'queue-operation', operation, sessionId, content });
+  const attachment = (commandMode, prompt = notification) => JSON.stringify({ type: 'attachment', sessionId: input.session_id,
+    attachment: { type: 'queued_command', prompt, commandMode } });
   const entry = { ...input, prompt: notification, transcript_path: transcript };
   const neverInvoked = async () => { throw new Error('A host notification must not invoke Fuli tools'); };
 
-  writeFileSync(transcript, `${queued(notification, 'task-notification')}\n`);
-  const output = await claudeLifecycleOutput('UserPromptSubmit', entry, neverInvoked);
-  assert.match(output.hookSpecificOutput.additionalContext, /not a new user task/);
+  // Claude enqueues the notification before the hook runs; the attachment may not be flushed yet.
+  for (const lines of [[queue('enqueue')], [queue('enqueue'), attachment('task-notification')]]) {
+    writeFileSync(transcript, lines.join('\n'));
+    const output = await claudeLifecycleOutput('UserPromptSubmit', entry, neverInvoked);
+    assert.match(output.hookSpecificOutput.additionalContext, /not a new user task/);
+  }
   let opened = false;
   const direct = await runClaudeLifecycleHook(['--event', 'UserPromptSubmit'], {
     readInput: async () => entry,
     resolveRuntimeOptions: () => { opened = true; return { runtimeConfigPath: 'DO_NOT_OPEN' }; }
   });
-  assert.deepEqual(direct, output);
+  assert.match(direct.hookSpecificOutput.additionalContext, /not a new user task/);
   assert.equal(opened, false);
 
-  // Without the host's own queued notification record the same text is a user task.
-  const begins = async (transcriptLines, path = transcript) => {
-    writeFileSync(transcript, transcriptLines.join('\n'));
+  const begins = async (lines, path = transcript) => {
+    writeFileSync(transcript, lines.join('\n'));
     const calls = [];
     await claudeLifecycleOutput('UserPromptSubmit', { ...entry, transcript_path: path }, async (name) => {
       calls.push(name); return { taskContextToken: 'fuli-task-synthetic' };
     });
     return calls;
   };
+  // Same text typed or pasted by the user is a new task.
   assert.deepEqual(await begins(['{"type":"user","message":{"content":"pasted"}}']), ['begin_task_context']);
-  assert.deepEqual(await begins([queued(notification, 'prompt')]), ['begin_task_context']);
-  assert.deepEqual(await begins([queued(`${notification}\nPlease check the config`, 'task-notification')]),
-    ['begin_task_context']);
-  assert.deepEqual(await begins([queued(notification, 'task-notification', 'another-session')]), ['begin_task_context']);
-  assert.deepEqual(await begins([queued(notification, 'task-notification')], join(root, 'missing.jsonl')),
-    ['begin_task_context']);
+  assert.deepEqual(await begins([queue('enqueue'), attachment('prompt')]), ['begin_task_context']);
+  assert.deepEqual(await begins([queue('enqueue'), attachment('task-notification'), queue('remove')]), ['begin_task_context']);
+  assert.deepEqual(await begins([queue('enqueue', `${notification}\nPlease check the config`)]), ['begin_task_context']);
+  assert.deepEqual(await begins([queue('enqueue', notification, 'another-session')]), ['begin_task_context']);
+  assert.deepEqual(await begins([queue('enqueue')], join(root, 'missing.jsonl')), ['begin_task_context']);
 });
