@@ -146,3 +146,26 @@ test('Claude blocked handoff supplies exact host fallback identity without bypas
     await withTranscriptGuard(runtimeConfigPath, native, 'claude_code', true, guard => assert.deepEqual(guard.value, guardState));
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test('Claude host task notifications continue the current task without a new entry', async () => {
+  const notification = '<task-notification>\n<task-id>b3c99mjxe</task-id>\n<status>completed</status>\n</task-notification>';
+  const output = await claudeLifecycleOutput('UserPromptSubmit', { ...input, prompt: notification }, async () => {
+    throw new Error('A host notification must not invoke Fuli tools');
+  });
+  assert.equal(output.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
+  assert.match(output.hookSpecificOutput.additionalContext, /not a new user task/);
+
+  let opened = false;
+  const direct = await runClaudeLifecycleHook(['--event', 'UserPromptSubmit'], {
+    readInput: async () => ({ ...input, prompt: notification }),
+    resolveRuntimeOptions: () => { opened = true; return { runtimeConfigPath: 'DO_NOT_OPEN' }; }
+  });
+  assert.deepEqual(direct, output);
+  assert.equal(opened, false);
+
+  // A user prompt that merely mentions the tag is still a new task.
+  const calls = [];
+  await claudeLifecycleOutput('UserPromptSubmit', { ...input, prompt: 'Explain <task-notification> tags' },
+    async (name) => { calls.push(name); return { taskContextToken: 'fuli-task-synthetic' }; });
+  assert.deepEqual(calls, ['begin_task_context']);
+});

@@ -9,6 +9,7 @@ import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js
 import { openFederatedGraphApplication } from '../../graphiti/federated-application.js';
 import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
 import { isMainModule } from '../../system/main-module.js';
+import { hostNotificationOutput, isHostNotificationPrompt } from './host-notification.js';
 import { boundedHookMessage } from '../lifecycle-message.js';
 
 export async function claudeLifecycleOutput(event, input, invoke, { guidanceDirectory = null } = {}) {
@@ -22,6 +23,7 @@ export async function claudeLifecycleOutput(event, input, invoke, { guidanceDire
     if (typeof input.cwd !== 'string' || !input.cwd.trim() || typeof input.prompt !== 'string') {
       throw new TypeError('Claude task entry requires cwd and prompt');
     }
+    if (isHostNotificationPrompt(input.prompt)) return hostNotificationOutput(event);
     const context = await invoke('begin_task_context', {
       sessionId, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192), ...source
     });
@@ -53,6 +55,8 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
   const event = args[args.indexOf('--event') + 1];
   const input = await (dependencies.readInput ?? readHookInput)();
   if (dependencies.invoke) return claudeLifecycleOutput(event, input, dependencies.invoke);
+  // No transcript sync or Provider call: the next user prompt catches up.
+  if (event === 'UserPromptSubmit' && isHostNotificationPrompt(input?.prompt)) return hostNotificationOutput(event);
   const { runtimeConfigPath } = (dependencies.resolveRuntimeOptions ?? resolveGraphRuntimeOptions)(
     args, dependencies.env ?? process.env
   );
