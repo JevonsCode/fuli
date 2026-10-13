@@ -141,3 +141,25 @@ test('a valid member request staffs a missing project lead then re-resolves the 
   assert.equal(result.requested_agent_id, 'member');
   assert.deepEqual(resolved, ['member', 'member']);
 });
+
+test('lead conversation ownership keeps the unstaffed execution decision visible', async () => {
+  let staffed = false;
+  const app = { config: { personal: { spaceId: 'space' } }, personal: {
+    resolveProjectAgentContext: async () => ({
+      status: 'ready', reason: 'project_team_lead', agent: role('lead', 'Synthetic Lead'),
+      execution_reason: 'project_team_gap', execution_agent_id: null,
+      match_basis: ['Execution is not staffed: use coordinate_project_agent_task to open HR recruitment.']
+    }),
+    staffDefaultProjectLead: async () => { staffed = true; return null; }
+  } };
+  const result = await resolveTaskEntryAgent(app, { personalProjectId: 'sample' }, {
+    agentInvocation: true, agentToolName: 'begin_task_context', sourceApplication: 'cursor',
+    taskPrompt: 'verify the export'
+  });
+  assert.equal(result.agent.agentId, 'lead');
+  assert.equal(result.execution_reason, 'project_team_gap');
+  assert.equal(result.execution_agent_id, null);
+  assert.equal(result.worker_started, false);
+  assert.equal(staffed, false);
+  assert.ok(result.match_basis.some(item => item.includes('coordinate_project_agent_task')));
+});

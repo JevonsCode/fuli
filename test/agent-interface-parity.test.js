@@ -7,6 +7,8 @@ import ts from 'typescript';
 
 import { callAgentTool, listAgentTools } from '../src/agent-tools.js';
 import { agentInterfaceCatalog } from '../src/agent-tools/interface-catalog.js';
+import { normalizeAgentSessionInput } from '../src/mcp/session-id.js';
+import { annotationsFor } from '../src/mcp/tool-annotations.js';
 import { jsonSchemaToZod } from '../src/mcp/tool-schema.js';
 
 test('every statically declared console mutation has an interface parity entry', () => {
@@ -192,6 +194,20 @@ test('Agent interface catalog lists roundtable reads and requested-Agent identit
     'PUT /api/peer/shares', 'POST /api/peer/devices/:nodeId/revoke', 'POST /api/peer/disable']) {
     assert.equal(byRoute.get(route)?.access, 'local_user_only', route);
   }
+});
+
+test('Agent memory export is a read workflow beside the console memory route', () => {
+  const memory = agentInterfaceCatalog().readWorkflows.find(({ domain }) => domain === 'agent-memory');
+  assert.deepEqual(memory.toolNames, ['get_project_agent_memory', 'export_project_agent_memory']);
+  assert.deepEqual(memory.readRoutes, ['GET /api/project-agents/:agentId/memory',
+    'GET /api/project-agents/:agentId/memory/export']);
+  assert.match(memory.guidance, /never imported/);
+  const tool = listAgentTools().find(({ name }) => name === 'export_project_agent_memory');
+  assert.equal(annotationsFor(tool.name).readOnlyHint, true);
+  // No file path, and the source client is injected by the trusted host only.
+  assert.deepEqual(Object.keys(tool.inputSchema.properties).sort(), ['agentId', 'personalProjectId', 'personalSpaceId']);
+  assert.equal(normalizeAgentSessionInput(tool.name, { agentId: 'a', personalSpaceId: 's', sourceApplication: 'codex' },
+    null, 'fuli-host-synthetic', undefined, 'cursor').sourceApplication, 'cursor');
 });
 
 test('list_agent_interfaces returns the same parity contract exposed in code', async () => {

@@ -43,8 +43,8 @@ export const AGENT_INTERFACE_DEFINITIONS = [
   {
     name: 'list_agent_interfaces',
     title: 'READ · List Agent interface parity',
-    description: 'List the durable Agent-control contract for FULI UI data mutations and read workflows. Each operation names the exact structured tool to call, or an explicit local-user-only trust boundary. Use this catalog instead of browser automation when choosing how to read or change FULI data.',
-    inputSchema: objectSchema({}),
+    description: 'Discover FULI tool names and interface trust boundaries. The default directory omits schemas. In the chat profile pass one exact toolName to expose that original named tool and read its complete executable schema, then call the original name under normal host permissions. If the host does not refresh tools/list_changed, reconnect using the full profile. No local-user-only boundary is made Agent-callable.',
+    inputSchema: objectSchema({ toolName: id }),
   },
   {
     name: 'get_capture_policy',

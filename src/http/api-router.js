@@ -42,6 +42,12 @@ export async function handleApiRequest({
     return true;
   }
 
+  if (system && url.pathname === '/api/system/client-connection/status' && request.method === 'GET') {
+    response.setHeader('Cache-Control', 'no-store');
+    sendJson(response, 200, system.clientConnectionStatus());
+    return true;
+  }
+
   if (system && url.pathname === '/api/system/settings' && request.method === 'PUT') {
     const result = await system.updateSettings(await readJson(request));
     if (result.apply?.status === 'applying') {

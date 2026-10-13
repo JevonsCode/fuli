@@ -106,6 +106,9 @@ class StoreKnowledge:
         personal_project_id: str | None = None,
         limit: int = 100,
         project_agent_id: str | None = None,
+        session_id: str | None = None,
+        work_kind: str | None = None,
+        workflow: str | None = None,
     ) -> CollaborationContextResult:
         return await read_collaboration_context(
             self,
@@ -114,6 +117,9 @@ class StoreKnowledge:
             personal_project_id,
             limit,
             project_agent_id,
+            session_id,
+            work_kind,
+            workflow,
         )
 
     async def _commit_episode(

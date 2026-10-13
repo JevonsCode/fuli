@@ -35,6 +35,29 @@ test('connection configuration is uncached and protected by the console request 
   } finally { await closeServer(server); }
 });
 
+test('client connection status is a separate uncached read that leaves the export intact', async () => {
+  const status = { scope: 'configuration', observedAt: '2026-10-13T08:00:00.000Z', historySaved: true,
+    clients: [{ id: 'codex', label: 'Codex', status: 'removed', previouslyConnected: true, changes: [] }] };
+  let observed = 0;
+  const system = { clientConnection: () => ({ standard: {} }), clientConnectionStatus: () => { observed += 1; return status; } };
+  const { server, url } = await createServer({ app: { graphiti: true, close() {} }, system, port: 0 });
+  try {
+    const response = await fetch(`${url}/api/system/client-connection/status`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await response.json(), status);
+    assert.deepEqual(await (await fetch(`${url}/api/system/client-connection`)).json(), { standard: {} });
+    const foreign = await new Promise((resolve, reject) => {
+      const request = httpRequest(`${url}/api/system/client-connection/status`, { headers: { Origin: 'https://foreign.example' } },
+        (reply) => { reply.resume(); reply.on('end', () => resolve(reply.statusCode)); });
+      request.on('error', reject);
+      request.end();
+    });
+    assert.equal(foreign, 403);
+    assert.equal(observed, 1);
+  } finally { await closeServer(server); }
+});
+
 test('system API exposes resource samples and validates persisted settings through one service', async () => {
   const updates = [];
   const configured = {

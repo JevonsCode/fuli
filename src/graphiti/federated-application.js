@@ -6,6 +6,8 @@ import { createPeerPort } from '../agent-peer/peer-port.js';
 import { createJudgmentService } from '../judgment/service.js';
 import { JudgmentStore } from '../judgment/store.js';
 import { createJudgmentEngine } from '../judgment/engine.js';
+import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
+import { withTaskMemorySnapshot } from './project-agent-memory.js';
 
 import { GraphitiProviderClient } from './provider-client.js';
 import {
@@ -83,7 +85,7 @@ import {
   relatedProjectGuidance
 } from './related-project-suggestions.js';
 import { buildUserTasteSkill } from './user-taste-skill.js';
-import { taskEntryPreferences } from './task-entry-preferences.js';
+import { taskEntryPreferences, finishTaskEntryPreferences } from './task-entry-preferences.js';
 import { TASK_ENTRY_TOOLS, registerRepositoryProject } from './repository-project-registration.js';
 import { resolveTaskEntryProject } from './task-entry-project-scope.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
@@ -118,11 +120,14 @@ export function openFederatedGraphApplication({
     providerRequestTimeoutMs: providerRequestTimeoutFromEnv(env)
   });
   if (typeof runtimeConfigPath === 'string' && runtimeConfigPath) {
+    const paths = resolveSetupPaths({ dataDir: dirname(runtimeConfigPath) });
     attachExternalKnowledgeRuntime(app, {
-      paths: resolveSetupPaths({ dataDir: dirname(runtimeConfigPath) }),
+      paths,
       env,
       fetchImpl
     });
+    app.agentSnapshots = createAgentDirectorySnapshots({ root: paths.agentDirectoryRoot,
+      providerIdentity: resolved.personal.providerUrl });
     app.employees = createEmployeeService({ app, runtimeConfigPath });
     app.judgment = createJudgmentService({ app, engine: createJudgmentEngine({ app }),
       openStore: () => new JudgmentStore(join(dirname(runtimeConfigPath), 'judgment.sqlite')) });
@@ -188,7 +193,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async checkpointTaskKnowledge(input) {
-    return checkpointTaskKnowledgeWorkflow(this, input);
+    return withTaskMemorySnapshot(this, await checkpointTaskKnowledgeWorkflow(this, input));
   }
 
   verifyTaskCheckpoint({ sessionId, sourceApplication = 'other' }) {
@@ -265,6 +270,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     sessionId = null,
     turnId = null,
     workKind = null,
+    workflow = null,
     requiredCapabilities = [],
     limit = 100,
     agentInvocation = false,
@@ -279,11 +285,13 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     projectResolution = await resolveTaskEntryProject(this, projectResolution, {
       sessionId, sourceSessionId, sourceApplication, agentInvocation, agentToolName, projectAgentId, taskPrompt
     });
-    return taskEntryPreferences(this, projectResolution, {
+    const preferences = await taskEntryPreferences(this, projectResolution, {
       personalProjectId, projectAgentId, projectPath, taskPrompt, sourceApplication,
-      sourceSessionId, sessionId, turnId, workKind, requiredCapabilities,
+      sourceSessionId, sessionId, turnId, workKind, workflow, requiredCapabilities,
       limit, agentInvocation, agentToolName
     }, (items, toolName) => this.#recordAgentViews(items, toolName));
+    return finishTaskEntryPreferences(this, preferences, { agentInvocation, agentToolName,
+      sessionId, sourceApplication, sourceSessionId, taskPrompt });
   }
 
   async getUserTasteSkill({

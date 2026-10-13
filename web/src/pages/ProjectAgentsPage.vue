@@ -12,6 +12,7 @@ import ProjectAgentAutomationPolicyPanel from '@/features/project-agents/Project
 import ProjectAgentDetailState from '@/features/project-agents/ProjectAgentDetailState.vue'
 import ProjectAgentFirstTask from '@/features/project-agents/ProjectAgentFirstTask.vue'
 import ProjectAgentTaskDiagnostics from '@/features/project-agents/ProjectAgentTaskDiagnostics.vue'
+import TaskExecutionPlan from '@/features/project-agents/TaskExecutionPlan.vue'
 import EmployeeWorkHistory from '@/features/project-agents/EmployeeWorkHistory.vue'
 import AgentConversations from '@/features/project-agents/AgentConversations.vue'
 import { isAgentTaskDataComplete, taskHasAgent } from '@/features/agent-profile/agent-work-summary'
@@ -77,6 +78,11 @@ const projectFilterOverridden = ref(false)
 const statusFilter = ref<StatusFilter>('all')
 const search = ref('')
 const selectedAgentKey = ref('')
+const expandedTasks = ref(new Set<string>())
+function toggleTaskDetails(taskId: string, event: Event) {
+  if ((event.target as HTMLDetailsElement).open) expandedTasks.value.add(taskId)
+  else expandedTasks.value.delete(taskId)
+}
 watch(() => route.query.agent, id => { if (typeof id === 'string') selectedAgentKey.value = id }, { immediate: true })
 const dialogOpen = ref(false)
 const recruitDialogOpen = ref(false)
@@ -1109,7 +1115,9 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
         <div class="project-agent-detail-source" data-detail-section="tasks">
           <ProjectAgentDetailState v-bind="detailState('tasks')" :label="detailLoadingLabel('tasks')" @retry="refreshDetails">
             <p v-if="taskListPartial[selectedAgent.agentId]" class="project-agent-muted" data-task-partial>{{ t('agentProfiles.partial') }}</p>
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.tasks') }}</h4><span>{{ selectedAgent.tasks?.length ?? 0 }}</span></div><div v-if="selectedAgent.tasks?.length" class="project-agent-task-list"><article v-for="task in selectedAgent.tasks" :id="`task-${task.taskId}`" :key="task.taskId" class="ui-card project-agent-task-card" :class="{ 'is-linked': task.taskId === route.query.task }"><header><div><strong>{{ task.title }}</strong><small>{{ projectName(task.personalProjectId) }}</small></div><i class="ui-badge" :class="`is-${task.status}`">{{ taskStatusLabel(task.status) }}</i></header><p v-if="task.resultSummary || task.failureReason">{{ task.resultSummary || task.failureReason }}</p><small>{{ t('projectAgents.fields.collaborators') }} · {{ task.participants.length }}</small><div v-if="task.participants.length" class="project-agent-inline-list"><span v-for="participant in task.participants" :key="`${task.taskId}:${participant.agentId}`">{{ agents.find(item => item.agentId === participant.agentId)?.profile.displayName || agents.find(item => item.agentId === participant.agentId)?.profile.name || participant.agentId }} · {{ participantRoleLabel(participant.role) }}</span></div><ProjectAgentTaskDiagnostics :task="task" :project-name="projectName(task.personalProjectId)" /><details class="ui-disclosure project-agent-disclosure" :open="task.taskId === route.query.task" data-task-details><summary>{{ t('projectAgents.taskDetails') }}</summary><small>{{ task.taskId }}</small><section v-if="task.executionSummary !== undefined" class="project-agent-execution-summary" :aria-label="t('projectAgents.fields.executionSummary')">
+            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.tasks') }}</h4><span>{{ selectedAgent.tasks?.length ?? 0 }}</span></div><div v-if="selectedAgent.tasks?.length" class="project-agent-task-list"><article v-for="task in selectedAgent.tasks" :id="`task-${task.taskId}`" :key="task.taskId" class="ui-card project-agent-task-card" :class="{ 'is-linked': task.taskId === route.query.task }"><header><div><strong>{{ task.title }}</strong><small>{{ projectName(task.personalProjectId) }}</small></div><i class="ui-badge" :class="`is-${task.status}`">{{ taskStatusLabel(task.status) }}</i></header><p v-if="task.resultSummary || task.failureReason">{{ task.resultSummary || task.failureReason }}</p><small>{{ t('projectAgents.fields.collaborators') }} · {{ task.participants.length }}</small><div v-if="task.participants.length" class="project-agent-inline-list"><span v-for="participant in task.participants" :key="`${task.taskId}:${participant.agentId}`">{{ agents.find(item => item.agentId === participant.agentId)?.profile.displayName || agents.find(item => item.agentId === participant.agentId)?.profile.name || participant.agentId }} · {{ participantRoleLabel(participant.role) }}</span></div><ProjectAgentTaskDiagnostics :task="task" :project-name="projectName(task.personalProjectId)" /><details class="ui-disclosure project-agent-disclosure" :open="task.taskId === route.query.task" @toggle="toggleTaskDetails(task.taskId, $event)" data-task-details><summary>{{ t('projectAgents.taskDetails') }}</summary>
+<TaskExecutionPlan :task="task" :personal-space-id="activeSpaceId" :active="expandedTasks.has(task.taskId)" />
+<small>{{ task.taskId }}</small><section v-if="task.executionSummary !== undefined" class="project-agent-execution-summary" :aria-label="t('projectAgents.fields.executionSummary')">
 <div class="project-agent-section-heading">
 <h5>{{ t('projectAgents.fields.executionSummary') }}</h5>
 <span>{{ task.executionSummary.length }}</span>

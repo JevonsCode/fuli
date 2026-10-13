@@ -109,7 +109,10 @@ test('real Neo4j + HTTP Provider + independent MCP hosts retain one role across 
         } });
         assert.equal(continued.isError, undefined, JSON.stringify(continued));
         assert.equal(continued.structuredContent.conversation_id, conversationId);
-        assert.match(continued.structuredContent.context.summary, /Synthetic/);
+        // The latest result is the current checkpoint, separate from historical excerpts.
+        assert.deepEqual(continued.structuredContent.context.latest_checkpoint,
+          { status: 'completed', summary: `Synthetic milestone ${revision}.`, truncated: false });
+        assert.equal(continued.structuredContent.context.summary_role, 'historical');
       }
       const sameTurn = await connection.client.callTool({ name: 'begin_task_context', arguments: {
         sessionId, turnId: 'synthetic-turn-one', projectPath, taskPrompt: 'Implement the synthetic service.',
@@ -121,6 +124,10 @@ test('real Neo4j + HTTP Provider + independent MCP hosts retain one role across 
         sessionId, projectPath, taskPrompt: 'Implement the synthetic service.'
       } });
       assert.equal(fallback.structuredContent.context.project_agent_id, 'engineer');
+      assert.equal(fallback.isError, undefined, JSON.stringify(fallback));
+      assert.notEqual(fallback.structuredContent.taskContextToken, tokenForTask);
+      assert.equal(fallback.structuredContent.previous_checkpoint_missing, true);
+      tokenForTask = fallback.structuredContent.taskContextToken;
     } finally { await connection.close(); }
 
     // A separate Node/MCP process performs Stop and final memory write.

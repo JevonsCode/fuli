@@ -6,6 +6,7 @@ from typing import Annotated, Any
 from fastapi import FastAPI, HTTPException, Query
 
 from .project_agent_memory_routes import register_project_agent_memory_routes
+from .task_notifications import register_task_notification_routes
 
 from .project_agent_models import (
     ProjectAgentAssignmentCreate,
@@ -60,6 +61,7 @@ def register_project_agent_routes(
     """Attach Project Agent routes while keeping ``create_app`` orchestration small."""
 
     register_project_agent_memory_routes(application, store, Actor)
+    notify_task_change = register_task_notification_routes(application, store, Actor)
     from .project_agent_attention_routes import register_project_agent_attention_routes
     register_project_agent_attention_routes(application, store, Actor)
 
@@ -276,7 +278,10 @@ def register_project_agent_routes(
     ) -> ProjectAgentTaskRecord:
         if task_id != request.task_id:
             raise HTTPException(status_code=422, detail='task ID does not match path')
-        return await store.record_project_agent_task_activity(actor, request)
+        task = await store.record_project_agent_task_activity(actor, request)
+        # The store's transaction has committed before readers are notified.
+        notify_task_change(request.personal_space_id, task_id)
+        return task
 
     @application.get(
         '/v1/project-agents/{agent_id}/activity',

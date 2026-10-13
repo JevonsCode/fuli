@@ -3,6 +3,7 @@ import type {
   ProjectAgentActualExecution,
   ProjectAgentAssignmentRecord,
   ProjectAgentExecutorPolicy,
+  ProjectAgentExecutionPlan,
   ProjectAgentModelStrategy,
   ProjectAgentParallelPlan,
   ProjectAgentRecord,
@@ -203,6 +204,7 @@ export function normalizeEvent(value: unknown): ProjectAgentTaskEvent | null {
   const record = unknownRecord(value)
   const eventId = stringOf(record, 'eventId', 'event_id'); const taskId = stringOf(record, 'taskId', 'task_id')
   if (!eventId || !taskId) return null
+  const executionPlan = valueOf(record, 'executionPlan', 'execution_plan')
   const reportedActual = normalizeActual(valueOf(record, 'actualExecution', 'actual_execution'))
     ?? normalizeActual({
       executor: stringOf(record, 'actualExecutor', 'actual_executor'),
@@ -218,6 +220,7 @@ export function normalizeEvent(value: unknown): ProjectAgentTaskEvent | null {
   return {
     eventId, taskId, agentId: stringOf(record, 'agentId', 'agent_id'), status: stringOf(record, 'status', 'status') as ProjectAgentTaskStatus,
     actorKind: stringOf(record, 'actorKind', 'actor_kind') ?? undefined, summary: stringOf(record, 'summary', 'summary') ?? '',
+    executionPlan: Array.isArray(unknownRecord(executionPlan).steps) ? executionPlan as ProjectAgentExecutionPlan : null,
     sourceApplication: stringOf(record, 'sourceApplication', 'source_application') as ConversationSourceApplication | null,
     sourceSessionId: stringOf(record, 'sourceSessionId', 'source_session_id'),
     sourceSessionUrl: stringOf(record, 'sourceSessionUrl', 'source_session_url'),

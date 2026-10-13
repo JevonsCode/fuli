@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import { readJsonFile } from '../storage/json-file.js';
 import {
   DEFAULT_RUNTIME_SETTINGS,
@@ -11,6 +13,8 @@ import { createAdaptiveRuntimeBroker } from '../adaptive-runtime/runtime-broker.
 import { readAdaptiveRuntimeSettings } from '../adaptive-runtime/settings.js';
 import { createPackageVersionChecker } from './package-version-checker.js';
 import { clientConnectionConfig } from '../setup/client-connection.js';
+import { discoverAgents } from '../setup/agents.js';
+import { createClientConnectionObserver } from './client-connection-status.js';
 import { createSettingsApplier } from './settings-apply.js';
 
 export function createSystemService({
@@ -23,6 +27,20 @@ export function createSystemService({
   readSettings = readRuntimeSettings,
   writeSettings = writeRuntimeSettings,
   settingsApplier = createSettingsApplier({ paths, writeSettings }),
+  clientObserver = createClientConnectionObserver({
+    discover: () => discoverAgents(),
+    // The same expected integration that `fuli setup` installs.
+    context: {
+      nodePath: process.execPath,
+      mcpServerPath: paths.mcpServerPath,
+      runtimeConfigPath,
+      sessionSkillPath: paths.sessionSkillPath,
+      projectSkillPath: paths.projectSkillPath,
+      reviewSkillPath: paths.reviewSkillPath,
+      operationSkillPath: paths.operationSkillPath
+    },
+    historyPath: join(paths.dataDir, 'client-connection-observations.json')
+  }),
   executorAdapters = new Map(),
   versionChecker = createPackageVersionChecker(),
   runtimeBroker = createAdaptiveRuntimeBroker({
@@ -82,6 +100,7 @@ export function createSystemService({
     clientConnection: () => Object.fromEntries(['standard', 'vscode', 'server'].map((format) => [
       format, clientConnectionConfig({ mcpServerPath: paths.mcpServerPath, runtimeConfigPath }, format)
     ])),
+    clientConnectionStatus: () => clientObserver.observe(),
     resources: () => resourceMonitor.sample(),
     versionStatus: () => versionChecker.check(),
     runtimeStatus: () => runtimeBroker.status(),

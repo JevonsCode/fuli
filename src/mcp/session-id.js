@@ -4,6 +4,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const WORKFLOW_OBSERVATION_TOOL = 'record_workflow_transition_observation';
 const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message',
+  'get_agent_message_status', 'cancel_agent_message',
   'get_agent_quality_gate', 'record_agent_verification',
   'assess_task_completion',
   'plan_agent_collaboration', 'request_agent_loan', 'decide_agent_loan', 'list_agent_loans',
@@ -22,6 +23,7 @@ const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   'submit_project_agent_task',
   'get_project_agent_context',
   'get_project_agent_memory',
+  'export_project_agent_memory',
   'checkpoint_project_agent_memory',
   'record_project_agent_task_activity',
   'preflight_executor',

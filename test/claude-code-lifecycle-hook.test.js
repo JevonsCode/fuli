@@ -91,10 +91,58 @@ test('Claude hook deadline returns an explicit degraded context even when stdin 
   assert.match(JSON.parse(stdout).systemMessage, /not verified/);
 });
 
+test('Claude runtime failure preserves a known native session for fallback without private diagnostics', () => {
+  const result = spawnSync(process.execPath, ['src/agents/claude-code/lifecycle-hook.js',
+    '--event', 'UserPromptSubmit', '--runtime-config', '/synthetic/private-missing.json'], {
+    input: JSON.stringify(input), encoding: 'utf8', timeout: 5000
+  });
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, '');
+  const context = JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
+  assert.match(context, /sessionId="synthetic-claude-session"/);
+  assert.match(context, /get_collaboration_preferences/);
+  assert.doesNotMatch(result.stdout, /DO_NOT|private-missing|Synthetic hook verification/);
+});
+
 test('Claude command quotes shell metacharacters and never interpolates user input', () => {
   const command = claudeLifecycleCommand({ nodePath: "/synthetic/node's bin/node",
     mcpServerPath: '/synthetic/$(touch do-not-run)/mcp-server.js', runtimeConfigPath: '/synthetic/runtime.json' }, 'Stop', 30);
   assert.match(command, /'\\''/);
   assert.match(command, /'\/synthetic\/\$\(touch do-not-run\)/);
   assert.doesNotMatch(command, /\$\{prompt\}|\$\{session_id\}/);
+});
+
+test('Claude blocked handoff supplies exact host fallback identity without bypassing the guard', async () => {
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { withTranscriptGuard, transcriptDigest } = await import('../src/conversations/transcript-guard.js');
+  const directory = await mkdtemp(join(tmpdir(), 'jvs-a-claude-fallback-'));
+  const runtimeConfigPath = join(directory, 'runtime.json');
+  const native = { ...input, transcript_path: join(directory, 'missing.jsonl') };
+  const guardState = { version: 1, phase: 'claim', owner: transcriptDigest('old-token'),
+    nextOwner: transcriptDigest('interrupted-token'), prompt: transcriptDigest(native.prompt), scanCursor: 0, boundary: 0 };
+  const calls = [];
+  try {
+    await withTranscriptGuard(runtimeConfigPath, native, 'claude_code', true, guard => guard.write(guardState));
+    const output = await runClaudeLifecycleHook(['--event', 'UserPromptSubmit'], {
+      readInput: async () => native,
+      resolveRuntimeOptions: () => ({ runtimeConfigPath }),
+      createLeases: () => ({ withGraphLease: async (_owner, operation) => operation() }),
+      openApplication: () => ({ config: { personal: { spaceId: 'synthetic-space' } },
+        getCapturePolicy: () => ({ enabled: true }), personal: {
+          currentTaskContext: async () => ({ token: 'externally-replaced-token', project_agent_id: 'engineer', personal_project_id: 'project' }),
+          conversation: async (_operation, query) => query.mode === 'policy' ? { enabled: true } : { initialized: true, cursor: 0 }
+        } }),
+      callTool: async (_app, name) => calls.push(name)
+    });
+    assert.match(output.systemMessage, /ownership changed/);
+    assert.equal(output.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
+    const context = output.hookSpecificOutput.additionalContext;
+    assert.match(context, /get_collaboration_preferences/);
+    assert.match(context, /synthetic-claude-session/);
+    assert.doesNotMatch(context, /old-token|interrupted-token|externally-replaced-token|missing.jsonl/);
+    assert.deepEqual(calls, []);
+    await withTranscriptGuard(runtimeConfigPath, native, 'claude_code', true, guard => assert.deepEqual(guard.value, guardState));
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });

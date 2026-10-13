@@ -366,6 +366,7 @@ test('explicit worker context carries the same character and expectations as aut
   assert.deepEqual(result.role_instructions.initial_preferences, ['Use concise summaries.']);
   assert.equal(result.effective_preferences[0].instruction, 'Verify changes before finishing.');
   assert.equal(result.working_memory.revision, 3);
+  assert.equal(result.global_working_memory.revision, 5);
 });
 
 test('automatic task entry gives legacy profiles empty character and expectation defaults', async () => {
@@ -388,12 +389,156 @@ test('automatic task entry bounds profile prose and ignores unsupported characte
   assert.equal(result.project_agent_context.role.expectations, 'e'.repeat(4096));
 });
 
+test('project task entry restores the same employee global and project memory as separate layers', async () => {
+  const reads = [];
+  const app = entryApplication({ onMemoryRead: target => reads.push(target.searchParams.get('personal_project_id')) });
+  const result = await callAgentTool(app, 'get_collaboration_preferences', {
+    projectPath: '/synthetic/sample-project', taskPrompt: 'Continue.', sourceApplication: 'cursor'
+  });
+  const context = result.project_agent_context;
+  assert.deepEqual(reads.sort(), [null, 'sample-project'].sort());
+  assert.equal(context.status, 'ready');
+  assert.deepEqual([context.memory.scope, context.memory.personalProjectId, context.memory.revision],
+    ['private_agent_project', 'sample-project', 3]);
+  assert.deepEqual([context.global_memory.scope, context.global_memory.personalProjectId, context.global_memory.revision],
+    ['private_agent_global', null, 5]);
+  assert.equal(context.memory.current.memory.summary, 'Continue the Aster migration.');
+  assert.equal(context.global_memory.current.memory.summary, 'Synthetic global working method.');
+  assert.deepEqual(context.unavailable_components, []);
+});
+
+test('task-only employees receive neither persistent memory layer', async () => {
+  let memoryReads = 0;
+  const app = entryApplication({ memoryScope: 'task_only', onMemoryRead: () => { memoryReads += 1; } });
+  const result = await callAgentTool(app, 'get_collaboration_preferences', {
+    projectPath: '/synthetic/sample-project', taskPrompt: 'Continue.', sourceApplication: 'cursor'
+  });
+  assert.equal(memoryReads, 0);
+  assert.equal(result.project_agent_context.memory, null);
+  assert.equal(result.project_agent_context.global_memory, null);
+  assert.equal(result.project_agent_context.status, 'ready');
+});
+
+for (const [layer, failure] of [['global_memory', 'unavailable'], ['global_memory', 'malformed'],
+  ['memory', 'unavailable']]) {
+  test(`a ${failure} ${layer} layer is reported without hiding the healthy layer`, async () => {
+    const app = entryApplication({ memoryOverride: (project, value) =>
+      (project === null) === (layer === 'global_memory')
+        ? (failure === 'unavailable' ? new Response('{}', { status: 503 }) : { ...value, current: { revision: 1 } })
+        : value });
+    const context = (await callAgentTool(app, 'get_collaboration_preferences', {
+      projectPath: '/synthetic/sample-project', taskPrompt: 'Continue.', sourceApplication: 'cursor'
+    })).project_agent_context;
+    const healthy = layer === 'memory' ? 'global_memory' : 'memory';
+    assert.equal(context.status, 'degraded');
+    assert.deepEqual(context.unavailable_components, [layer]);
+    assert.equal(context[layer], null);
+    assert.equal(context[healthy].revision, healthy === 'memory' ? 3 : 5);
+  });
+}
+
+for (const invalid of [null, false, 0]) {
+  test(`a ${JSON.stringify(invalid)} persistent memory response degrades only its own layer`, async () => {
+    for (const global of [true, false]) {
+      const app = entryApplication({ memoryOverride: (project, value) =>
+        (project === null) === global ? invalid : value });
+      const context = (await callAgentTool(app, 'get_collaboration_preferences', {
+        projectPath: '/synthetic/sample-project', taskPrompt: 'Continue.', sourceApplication: 'cursor'
+      })).project_agent_context;
+      const [rejected, healthy] = global ? ['global_memory', 'memory'] : ['memory', 'global_memory'];
+      assert.equal(context.status, 'degraded');
+      assert.deepEqual(context.unavailable_components, [rejected]);
+      assert.equal(context[rejected], null);
+      assert.equal(context[healthy].revision, global ? 3 : 5);
+    }
+  });
+}
+
+test('a valid empty revision-0 scoped view in both layers remains ready', async () => {
+  const app = entryApplication({ memoryOverride: (_project, value) =>
+    ({ ...value, revision: 0, current: null, history: [] }) });
+  const context = (await callAgentTool(app, 'get_collaboration_preferences', {
+    projectPath: '/synthetic/sample-project', taskPrompt: 'Continue.', sourceApplication: 'cursor'
+  })).project_agent_context;
+  assert.equal(context.status, 'ready');
+  assert.deepEqual(context.unavailable_components, []);
+  assert.deepEqual([context.memory.revision, context.memory.current], [0, null]);
+  assert.deepEqual([context.global_memory.revision, context.global_memory.current], [0, null]);
+});
+
+for (const [name, mutate] of [
+  ['another employee', value => ({ ...value, agent_id: 'reviewer' })],
+  ['another project', value => ({ ...value, personal_project_id: 'other-project' })],
+  ['another space', value => ({ ...value, personal_space_id: 'other-space' })],
+  ['the wrong scope', value => ({ ...value, scope: value.scope === 'private_agent_global' ? 'private_agent_project' : 'private_agent_global' })],
+  ['undeclared identity', ({ agent_id: _agent, personal_project_id: _project, ...value }) => value],
+  ['a foreign checkpoint', value => ({ ...value, current: { ...value.current, agent_id: 'reviewer' } })]
+]) {
+  test(`task entry rejects a memory response for ${name} in either layer`, async () => {
+    for (const global of [true, false]) {
+      const app = entryApplication({ memoryOverride: (project, value) =>
+        (project === null) === global ? mutate(value) : value });
+      const context = (await callAgentTool(app, 'get_collaboration_preferences', {
+        projectPath: '/synthetic/sample-project', taskPrompt: 'Continue.', sourceApplication: 'cursor'
+      })).project_agent_context;
+      const rejected = global ? 'global_memory' : 'memory';
+      assert.deepEqual(context.unavailable_components, [rejected]);
+      assert.equal(context[rejected], null);
+      assert.equal(JSON.stringify(context).includes('reviewer'), false);
+    }
+  });
+}
+
+test('task begin binds the checkpoint revision to the project layer, never the global layer', async () => {
+  const begun = [];
+  const app = entryApplication();
+  app.getCapturePolicy = () => ({ enabled: false });
+  app.taskContextRegistry = { begin: async input => { begun.push(input); return { token: 'fuli-task-synthetic-dual', checkpoint: null }; } };
+  const result = await callAgentTool(app, 'begin_task_context', {
+    sessionId: 'synthetic-session', projectPath: '/synthetic/sample-project',
+    taskPrompt: 'Continue.', sourceApplication: 'cursor'
+  });
+  assert.equal(begun[0].personalProjectId, 'sample-project');
+  assert.equal(begun[0].memoryRevision, 3);
+  assert.equal(result.project_agent_context.global_memory.revision, 5);
+});
+
+test('preference fallback creates a fresh checkpointable task only with an explicit host session', async () => {
+  const app = entryApplication();
+  app.getCapturePolicy = () => ({ enabled: false });
+  const { TaskContextRegistry } = await import('./fixtures/in-memory-task-context-registry.js');
+  let next = 0;
+  app.taskContextRegistry = new TaskContextRegistry({ tokenFactory: () => `fuli-task-fallback-${++next}` });
+  const input = { sessionId: 'synthetic-native-session', projectPath: '/synthetic/sample-project',
+    taskPrompt: 'Continue.', sourceApplication: 'cursor' };
+  const first = await callAgentTool(app, 'get_collaboration_preferences', input);
+  assert.equal(first.taskContextToken, 'fuli-task-fallback-1');
+  assert.equal(first.checkpoint_required, true);
+  assert.equal(app.taskContextRegistry.context(first.taskContextToken, 'cursor').projectAgentId, 'engineer');
+  assert.equal(app.taskContextRegistry.context(first.taskContextToken, 'cursor').memoryRevision, 3);
+  app.taskContextRegistry.checkpoint(first.taskContextToken, { fingerprint: 'first' }, 'cursor');
+  const second = await callAgentTool(app, 'get_collaboration_preferences', input);
+  assert.equal(second.taskContextToken, 'fuli-task-fallback-2');
+  assert.equal(second.previous_checkpoint_missing, false);
+  const third = await callAgentTool(app, 'get_collaboration_preferences', input);
+  assert.notEqual(third.taskContextToken, second.taskContextToken);
+  assert.equal(third.previous_checkpoint_missing, true);
+  const missing = await callAgentTool(app, 'get_collaboration_preferences', {
+    ...input, sessionId: undefined, sourceSessionId: 'fuli-host-process-only'
+  });
+  assert.equal(missing.taskContextToken, undefined);
+  assert.equal(missing.task_lifecycle.reason, 'native_session_required');
+  assert.equal(next, 3);
+});
+
 function entryApplication({
   onResolve = () => {},
   onMemoryRead = () => {},
   denied = false,
   malformedMemory = false,
   omitMemoryScope = false,
+  memoryScope = 'reviewed_agent',
+  memoryOverride = (_project, value) => value,
   profileFields = {}
 } = {}) {
   return new FederatedGraphApplication(CONFIG, {
@@ -408,7 +553,7 @@ function entryApplication({
         return Response.json({ status: 'ready', reason: 'project_default', match_basis: [],
           agent: { agent_id: 'engineer', personal_space_id: 'test-space',
             personal_project_id: 'sample-project',
-            ...(omitMemoryScope ? {} : { memory_scope: 'reviewed_agent' }),
+            ...(omitMemoryScope ? {} : { memory_scope: memoryScope }),
             profile: { name: 'Engineer', responsibility: 'Maintain Aster.',
               status: 'active', allowed_clients: denied ? ['codex'] : ['cursor'], initial_preferences: [], ...profileFields } } });
       }
@@ -420,10 +565,20 @@ function entryApplication({
             confirmation_status: 'confirmed' }], agent_preferences: [] });
       }
       if (target.pathname === '/v1/project-agents/engineer/memory') {
-        onMemoryRead();
-        return Response.json({ revision: 3, current: { revision: 3, agent_id: 'engineer',
-          ...(malformedMemory ? {} : { memory: { summary: 'Continue the Aster migration.' } }) }, history: [],
-          scope: 'private_agent_project', storage: 'neo4j' });
+        onMemoryRead(target);
+        const project = target.searchParams.get('personal_project_id');
+        // Synthetic Provider views carry the same explicit identity as the real contract.
+        const value = project === null
+          ? { personal_space_id: 'test-space', personal_project_id: null, agent_id: 'engineer',
+            revision: 5, current: { revision: 5, agent_id: 'engineer', personal_project_id: null,
+              memory: { summary: 'Synthetic global working method.' } }, history: [],
+            scope: 'private_agent_global', storage: 'neo4j' }
+          : { personal_space_id: 'test-space', personal_project_id: project, agent_id: 'engineer',
+            revision: 3, current: { revision: 3, agent_id: 'engineer',
+              ...(malformedMemory ? {} : { memory: { summary: 'Continue the Aster migration.' } }) }, history: [],
+            scope: 'private_agent_project', storage: 'neo4j' };
+        const response = memoryOverride(project, value);
+        return response instanceof Response ? response : Response.json(response);
       }
       if (target.pathname === '/v1/personal-projects/sample-project') {
         return Response.json({ profile: { name: 'Aster', purpose: 'A synthetic sample.' } });

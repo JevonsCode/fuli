@@ -23,6 +23,22 @@ async function fixture(t, currentTaskContext, conversation = async () => { throw
   t.after(() => rm(directory, { recursive: true, force: true }));
   const runtimeConfigPath = join(directory, 'runtime.json');
   const input = { session_id: randomUUID(), cwd: directory, prompt: 'synthetic retry', transcript_path: join(directory, 'missing.jsonl') };
+  // The real mutex hashes session namespaces into loopback ports. Synthetic
+  // namespaces may collide with unrelated parallel fixtures or test services;
+  // choose an available one before testing Provider behavior, without changing
+  // the production guard's fail-closed handling of a genuine collision.
+  let namespaceReady = false;
+  for (let attempt = 0; attempt < 16; attempt++) {
+    try {
+      await withTranscriptGuard(runtimeConfigPath, input, 'codex', true, async () => {});
+      namespaceReady = true;
+      break;
+    } catch (error) {
+      if (error.code !== 'EADDRINUSE') throw error;
+      input.session_id = randomUUID();
+    }
+  }
+  assert.equal(namespaceReady, true, 'Could not select an available synthetic transcript namespace');
   const calls = [], lookups = [];
   let closed = 0;
   const app = {
@@ -78,7 +94,7 @@ for (const [name, error] of [
   const output = await f.run();
   assert.notEqual(output.decision, 'block');
   assert.equal(output.hookSpecificOutput, undefined);
-  assert.equal(f.lookups.length, 1);
+  assert.equal(f.lookups.length, 1, JSON.stringify(output));
   assert.deepEqual(f.calls, []);
 });
 
@@ -161,7 +177,7 @@ test('healthy unassigned task entry still obtains the normal context', async t =
   const f = await fixture(t, async () => null);
   const result = await f.run();
   assert.notEqual(result.decision, 'block');
-  assert.deepEqual(f.calls, ['begin_task_context']);
+  assert.deepEqual(f.calls, ['begin_task_context'], JSON.stringify(result));
   assert.ok(result.hookSpecificOutput);
 });
 
@@ -172,7 +188,9 @@ for (const [source, run, event] of [['claude_code', runClaudeLifecycleHook, 'Use
     const result = await run(['--event', event], f.dependencies);
     assert.notEqual(result.decision, 'block');
     assert.notEqual(result.continue, false);
-    assert.equal(result.hookSpecificOutput, undefined);
+    assert.equal(result.hookSpecificOutput.hookEventName, event);
+    assert.match(result.hookSpecificOutput.additionalContext, /No valid Hook task context/);
+    assert.ok(result.hookSpecificOutput.additionalContext.includes(JSON.stringify(f.input.session_id)));
     assert.deepEqual(f.calls, []);
   });
 }

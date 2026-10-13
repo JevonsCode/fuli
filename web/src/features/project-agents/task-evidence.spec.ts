@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { normalizeEvent, normalizeExecutionSummary, normalizeTask, normalizeWorkerRuntime } from './task-evidence'
 
 describe('worker runtime evidence', () => {
+  it.each(['executionPlan', 'execution_plan'])('preserves optional plan snapshots and withdrawals from %s', key => {
+    for (const steps of [[], [{ id: 'verify', title: 'Synthetic check', status: 'completed' }]]) {
+      expect(normalizeTask({ task_id: 'task-a', events: [{ event_id: 'event-a', task_id: 'task-a', [key]: { steps } }] })?.events?.[0]?.executionPlan)
+        .toEqual({ steps })
+    }
+    expect(normalizeEvent({ event_id: 'old-event', task_id: 'task-a' })?.executionPlan).toBeNull()
+  })
   it.each(['projectScope', 'project_scope'])('preserves explicit temporary project scope from %s', (key) => {
     expect(normalizeTask({ task_id: 'task-a', [key]: { type: 'temporary', lifetime: 'task', persisted: true } })?.projectScope)
       .toEqual({ type: 'temporary', lifetime: 'task', persisted: true })

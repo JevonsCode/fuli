@@ -4,6 +4,7 @@ import { replaceFuliTable } from './codex-config.js';
 import { isCodexBootstrapCurrent } from './codex-bootstrap.js';
 import { hasCurrentClaudeCodeHooks } from './claude-code-config.js';
 import { CLAUDE_DESKTOP_SERVER_ARGS } from './claude-desktop-config.js';
+import { installedToolProfile } from './installed-tool-profile.js';
 import {
   hasCodexTomlHookDefinitions,
   hasCurrentCodexLifecycleHooks,
@@ -113,6 +114,8 @@ function inspectRegistration(agent, context, readers) {
     const config = readers.readJson(agent.configPath);
     const server = config?.mcpServers?.fuli;
     const present = Boolean(server && typeof server === 'object' && !Array.isArray(server));
+    if (agent.id === 'claude-code') expected.args.push('--tool-profile',
+      installedToolProfile(server?.args, context.toolProfile));
     return {
       present,
       current: present &&
