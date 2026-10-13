@@ -65,7 +65,7 @@ test('saved checkpoint returns a named profile and a portable same-Agent continu
     profile: { name: 'Internal role', display_name: 'Alex Morgan', status: 'active', allowed_clients: ['codex'] } });
   const result = await checkpointConversation(app, task, { summary: 'Verified result', status: 'completed' });
   assert.equal(result.receipt.owner.name, 'Alex Morgan');
-  assert.equal(result.receipt.owner.profile_url, 'http://127.0.0.1:3999/agents/personal/engineer');
+  assert.equal(result.receipt.owner.profile_url, 'http://127.0.0.1:3999/a/engineer');
   assert.equal(result.receipt.work_status, 'completed');
   assert.equal(result.receipt.continuation.conversation_id, 'conversation-one');
   assert.match(result.receipt.continuation.prompt, /^@\{engineer\}/);

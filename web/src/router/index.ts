@@ -95,6 +95,8 @@ export const router = createRouter({
       meta: { eyebrow: '', title: 'routes.projectAgents.title' },
     },
     { path: '/agents/:spaceId/:agentId', name: 'agent-profile', component: () => import('@/pages/AgentProfilePage.vue'), meta: { eyebrow: '', title: 'agentProfiles.profile' } },
+    // Short receipt link: the same profile in the active personal space.
+    { path: '/a/:agentId', name: 'agent-profile-short', component: () => import('@/pages/AgentProfilePage.vue'), meta: { eyebrow: '', title: 'agentProfiles.profile' } },
     { path: '/project-agents/manage', name: 'agent-management', component: () => import('@/pages/ProjectAgentsPage.vue'), meta: { eyebrow: '', title: 'agentProfiles.advanced' } },
     {
       path: '/employees/:templateId',

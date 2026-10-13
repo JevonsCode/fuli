@@ -56,6 +56,7 @@ afterEach(() => mounted.splice(0).forEach(wrapper => wrapper.unmount()))
 async function setup(path = '/agents/space-a/alpha') {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/agents/:spaceId/:agentId', component: AgentProfilePage },
+    { path: '/a/:agentId', component: AgentProfilePage },
     { path: '/:pathMatch(.*)*', component: { template: '<div />' } },
   ] })
   await router.push(path)
@@ -64,6 +65,12 @@ async function setup(path = '/agents/space-a/alpha') {
   return { router, wrapper }
 }
 describe('Agent profile integration', () => {
+  it('opens the short receipt link in the active personal space', async () => {
+    const { wrapper } = await setup('/a/beta')
+    expect(wrapper.get('h1').text()).toBe('Birch')
+    const other = await setup('/agents/space-b/beta')
+    expect(other.wrapper.find('h1').exists()).toBe(false)
+  })
   it('shows an explicitly reported plan within the current work card', async () => {
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => url.startsWith('/api/project-agent-tasks?')

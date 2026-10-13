@@ -19,7 +19,7 @@ test('generated taste Skills preserve the current task receipt', async () => {
 test('every task receives a required, directly renderable owner receipt', () => {
   const receipt = taskAgentReceipt(application, owner);
   assert.equal(receipt.required, true);
-  assert.equal(receipt.markdown, 'FULI Agent：负责人 [Alex Morgan](<http://127.0.0.1:3999/agents/synthetic-space/engineer>)');
+  assert.equal(receipt.markdown, 'FULI Agent：负责人 [Alex Morgan](<http://127.0.0.1:3999/a/engineer>)');
   assert.match(receipt.guidance, /every final user-visible reply/i);
   assert.match(receipt.guidance, /greetings/i);
   assert.match(receipt.guidance, /exactly once/i);
@@ -39,9 +39,9 @@ test('the receipt names the lead and each collaborator once, never the lead twic
     { agentId: 'employee.jefa', name: 'Jefa' }, { agentId: 'engineer', name: 'Alex Morgan' },
     { agentId: 'reviewer', name: 'Nova Reed' }
   ] });
-  assert.equal(receipt.markdown, 'FULI Agent：负责人 [Alex Morgan](<http://127.0.0.1:3999/agents/synthetic-space/engineer>)'
-    + ' · 协作 [Jefa](<http://127.0.0.1:3999/agents/synthetic-space/employee.jefa>)、'
-    + '[Nova Reed](<http://127.0.0.1:3999/agents/synthetic-space/reviewer>)');
+  assert.equal(receipt.markdown, 'FULI Agent：负责人 [Alex Morgan](<http://127.0.0.1:3999/a/engineer>)'
+    + ' · 协作 [Jefa](<http://127.0.0.1:3999/a/employee.jefa>)、'
+    + '[Nova Reed](<http://127.0.0.1:3999/a/reviewer>)');
   assert.deepEqual(receipt.collaborators.map(item => item.agent_id), ['employee.jefa', 'reviewer']);
 });
 

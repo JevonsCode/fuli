@@ -1,7 +1,9 @@
 import { sourceConsoleUrl } from '../graphiti/source-marker.js';
 
+// Receipts print this link in every final reply, so it uses the short route that
+// resolves in the active personal space; /agents/:spaceId/:agentId still works.
 export function agentProfileUrl(application, agentId) {
-  return `${application.consoleUrl ?? sourceConsoleUrl(null)}/agents/${encodeURIComponent(application.config.personal.spaceId)}/${encodeURIComponent(agentId)}`;
+  return `${application.consoleUrl ?? sourceConsoleUrl(null)}/a/${encodeURIComponent(agentId)}`;
 }
 
 export function agentContinuation(projectId, agentId, conversationId = null) {

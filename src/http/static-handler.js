@@ -79,6 +79,6 @@ function faviconFilePath() {
 
 function shouldServeApplication(pathname) {
   // Agent identities (for example employee.jefa) are route parameters, not assets.
-  const agentProfile = /^\/agents\/[^/]+\/[^/]+\/?$/.test(pathname);
+  const agentProfile = /^\/(agents\/[^/]+|a)\/[^/]+\/?$/.test(pathname);
   return !pathname.startsWith('/api/') && (agentProfile || extname(pathname) === '');
 }

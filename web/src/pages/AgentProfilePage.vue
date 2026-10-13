@@ -47,7 +47,7 @@ const store = useConsoleStore();
 const space = computed(() => store.activePersonalSpace?.id ?? "");
 const { agents, loading, error, load } = useAgentRoster(space);
 const agent = computed(() =>
-  route.params.spaceId === space.value
+  (route.params.spaceId ?? space.value) === space.value
     ? agents.value.find(
         (item) =>
           item.personalSpaceId === space.value &&
