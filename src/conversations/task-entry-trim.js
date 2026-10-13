@@ -3,6 +3,16 @@
 // that can carry staffing rules, such as match_basis, stay. The MCP fallback
 // keeps the complete compact context for explicit recovery.
 const MEMORY_ENVELOPE_FIELDS = ['personalSpaceId', 'personalProjectId', 'agentId', 'storage'];
+// Scope fields at their non-inherited defaults; the entry states the defaults once.
+const PREFERENCE_DEFAULTS = {
+  inherited_from_project_id: (value) => value === null,
+  scope_distance: (value) => value === 0,
+  scope_path: (value) => Array.isArray(value) && !value.length,
+  inherited_project_ids: (value) => Array.isArray(value) && !value.length,
+  inheritance_mode: (value) => value === 'local_only'
+};
+export const PREFERENCE_DEFAULTS_NOTE = 'Omitted preference scope fields mean local_only, scope_distance 0, '
+  + 'not inherited and no inherited projects.';
 
 export function withoutRedundantEntryFields(value) {
   if (!value || typeof value !== 'object') return value;
@@ -16,6 +26,24 @@ export function withoutRedundantEntryFields(value) {
     if (receipt.continuation.personal_project_id === receipt.personal_project_id) {
       delete receipt.continuation.personal_project_id;
     }
+  }
+
+  if (Array.isArray(context.effective_preferences)) {
+    let omitted = false;
+    for (const preference of context.effective_preferences) {
+      for (const [key, isDefault] of Object.entries(PREFERENCE_DEFAULTS)) {
+        if (Object.hasOwn(preference, key) && isDefault(preference[key])) {
+          delete preference[key];
+          omitted = true;
+        }
+      }
+    }
+    if (omitted) context.preference_field_defaults = PREFERENCE_DEFAULTS_NOTE;
+  }
+
+  const recall = context.task_knowledge_recall;
+  if (recall?.noMatchSourceMarker && JSON.stringify(recall.noMatchSourceMarker) === JSON.stringify(recall.sourceMarker)) {
+    recall.noMatchSourceMarker = 'same as sourceMarker';
   }
 
   if (context.context) {

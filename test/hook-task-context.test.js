@@ -144,3 +144,22 @@ test('guidance files are verified before reuse and stale versions are pruned', (
   writeFileSync(join(occupied, 'keep'), '');
   assert.throws(() => writeGuidanceFile(directory, '# rules v3\n', { now }));
 });
+
+test('hook entry states preference scope defaults once instead of per preference', (t) => {
+  const source = taskContext();
+  const local = { instruction: 'Local rule', preference_key: 'local', inherited_from_project_id: null,
+    scope_distance: 0, scope_path: [], inheritance_mode: 'local_only', inherited_project_ids: [] };
+  const inherited = { instruction: 'Parent rule', preference_key: 'parent', inherited_from_project_id: 'parent',
+    scope_distance: 1, scope_path: ['p1', 'parent'], inheritance_mode: 'descendants', inherited_project_ids: [] };
+  source.effective_preferences = [local, inherited];
+  const marker = { required: true, status: 'no_match', leadMarkdown: '**[◇ FULI · 已检索，未命中](http://127.0.0.1:2727/)**' };
+  source.task_knowledge_recall = { status: 'no_match', sourceMarker: marker, noMatchSourceMarker: { ...marker } };
+
+  const { context } = delivered(hookTaskContextOutput(source, options(tempDirectory(t, 'fuli-defaults-'))));
+  assert.deepEqual(context.effective_preferences[0], { instruction: 'Local rule', preference_key: 'local' });
+  assert.deepEqual(context.effective_preferences[1], { instruction: 'Parent rule', preference_key: 'parent',
+    inherited_from_project_id: 'parent', scope_distance: 1, scope_path: ['p1', 'parent'], inheritance_mode: 'descendants' });
+  assert.match(context.preference_field_defaults, /local_only, scope_distance 0/);
+  assert.deepEqual(context.task_knowledge_recall.sourceMarker, marker);
+  assert.equal(context.task_knowledge_recall.noMatchSourceMarker, 'same as sourceMarker');
+});
