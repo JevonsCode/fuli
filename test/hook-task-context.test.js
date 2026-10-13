@@ -161,5 +161,5 @@ test('hook entry states preference scope defaults once instead of per preference
     inherited_from_project_id: 'parent', scope_distance: 1, scope_path: ['p1', 'parent'], inheritance_mode: 'descendants' });
   assert.match(context.preference_field_defaults, /local_only, scope_distance 0/);
   assert.deepEqual(context.task_knowledge_recall.sourceMarker, marker);
-  assert.equal(context.task_knowledge_recall.noMatchSourceMarker, 'same as sourceMarker');
+  assert.deepEqual(context.task_knowledge_recall.noMatchSourceMarker, marker);
 });

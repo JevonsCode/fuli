@@ -1,3 +1,5 @@
+import { compactKnowledgeItems, KNOWLEDGE_ITEM_DEFAULTS_NOTE } from '../graphiti/knowledge-item-view.js';
+
 // Hook entries are re-sent every turn, so they omit fields that only repeat
 // another inline value or report diagnostics the model never acts on. Fields
 // that can carry staffing rules, such as match_basis, stay. The MCP fallback
@@ -42,8 +44,10 @@ export function withoutRedundantEntryFields(value) {
   }
 
   const recall = context.task_knowledge_recall;
-  if (recall?.noMatchSourceMarker && JSON.stringify(recall.noMatchSourceMarker) === JSON.stringify(recall.sourceMarker)) {
-    recall.noMatchSourceMarker = 'same as sourceMarker';
+  if (recall?.facts?.length || recall?.entities?.length) {
+    recall.facts = compactKnowledgeItems(recall.facts);
+    recall.entities = compactKnowledgeItems(recall.entities);
+    recall.item_field_defaults = KNOWLEDGE_ITEM_DEFAULTS_NOTE;
   }
 
   if (context.context) {

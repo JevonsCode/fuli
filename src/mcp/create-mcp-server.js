@@ -1,4 +1,5 @@
 import { compactTaskContext } from '../conversations/task-context-view.js';
+import { compactKnowledgeToolResult } from './knowledge-result-view.js';
 import { employeeToolCatalogResult } from './employee-tool-catalog.js';
 import { agentToolCatalogResult } from './agent-tool-catalog.js';
 import { toolNamesForProfile } from './tool-profiles.js';
@@ -271,7 +272,7 @@ async function invokeTool(tool, input, requestContext = null) {
       list_preference_conflicts: 1000, list_external_knowledge_bindings: 200,
       get_collaboration_preferences: 1000 })[tool.definition.name];
     const result = successToolResult(tool.definition.name === 'get_collaboration_preferences'
-      ? compactTaskContext(value) : value, { limitBytes, itemLimit });
+      ? compactTaskContext(value) : compactKnowledgeToolResult(tool.definition.name, value), { limitBytes, itemLimit });
     if (COMPLETE_RESULT_TOOLS.has(tool.definition.name) && result.structuredContent.truncated) {
       throw new ApplicationError(ApplicationErrorCode.VALIDATION, 'The export is too large to deliver completely');
     }
