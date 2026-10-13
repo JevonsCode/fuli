@@ -113,15 +113,27 @@ test('Claude moves oversized preferences to a file and accepts a full read of it
   assert.match(readFileSync(file.file, 'utf8'), /## 40\. p39\n\nSynthetic preference 39/);
   assert.equal(first.context.session_delivery.delivered.some((token) => token.startsWith('preferences:')), false);
 
-  const read = (id, extra = {}) => `${JSON.stringify({ type: 'assistant', sessionId: SESSION, isSidechain: false,
-    message: { content: [{ type: 'tool_use', id, name: 'Read', input: { file_path: file.file, ...extra } }] } })}\n`;
-  const result = (id, isError = false) => `${JSON.stringify({ type: 'user', sessionId: SESSION, isSidechain: false,
-    message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: isError, content: 'preferences' }] } })}\n`;
-  appendFileSync(transcript, recorded(first.text));
-  // A failed or partial read is not delivery.
-  appendFileSync(transcript, read('read-1') + result('read-1', true) + read('read-2', { limit: 10 }) + result('read-2'));
+  const fileText = readFileSync(file.file, 'utf8');
+  const read = (id, extra = {}, path = file.file) => `${JSON.stringify({ type: 'assistant', sessionId: SESSION,
+    isSidechain: false, message: { content: [{ type: 'tool_use', id, name: 'Read', input: { file_path: path, ...extra } }] } })}\n`;
+  const result = (id, content = fileText, isError = false) => `${JSON.stringify({ type: 'user', sessionId: SESSION,
+    isSidechain: false, message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: isError, content }] } })}\n`;
+
+  // Before any entry announced the file, even a complete read proves nothing.
+  appendFileSync(transcript, read('read-0') + result('read-0'));
   assert.ok((await enter()).context.effective_preferences_file);
-  appendFileSync(transcript, read('read-3') + result('read-3'));
+  appendFileSync(transcript, recorded(first.text));
+  // Failed, partial, truncated or unrelated reads are not delivery.
+  const sameName = join(root, 'repo', file.file.split(/[\\/]/).at(-1));
+  appendFileSync(transcript, read('read-1') + result('read-1', fileText, true)
+    + read('read-2', { offset: 0 }) + result('read-2')
+    + read('read-3') + result('read-3', fileText.slice(0, 200))
+    + read('read-4', {}, sameName) + result('read-4')
+    + read('read-5') + result('read-5', ''));
+  assert.ok((await enter()).context.effective_preferences_file);
+  // Claude may return the text as content blocks with line numbers.
+  appendFileSync(transcript, read('read-6', {}, file.file.replace(/\\/g, '/'))
+    + result('read-6', [{ type: 'text', text: fileText.split('\n').map((line, index) => `${index + 1}\t${line}`).join('\n') }]));
   const later = await enter();
   assert.equal(later.context.effective_preferences_file, undefined);
   assert.equal(later.context.effective_preferences, undefined);
