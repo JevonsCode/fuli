@@ -89,3 +89,42 @@ test('Codex has no delivery proof yet, so every entry stays complete', async (t)
   assert.equal(second.context.effective_preferences.length, 1);
   assert.equal(second.context.session_delivery, undefined);
 });
+
+test('Claude moves oversized preferences to a file and accepts a full read of it as delivery', async (t) => {
+  const { readFileSync } = await import('node:fs');
+  const root = mkdtempSync(join(tmpdir(), 'fuli-claude-overflow-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const transcript = join(root, 'session.jsonl');
+  writeFileSync(transcript, '{"type":"user"}\n');
+  const many = () => ({ ...context(), effective_preferences: Array.from({ length: 40 }, (_, index) => ({
+    instruction: `Synthetic preference ${index}: ${'规则说明'.repeat(60)}`, preference_key: `p${index}`,
+    preference_scope: 'global' })) });
+  const input = { session_id: SESSION, cwd: root, prompt: 'Synthetic prompt.', transcript_path: transcript };
+  const enter = async () => entryContext(await claudeLifecycleOutput('UserPromptSubmit', input, async () => many(),
+    { guidanceDirectory: join(root, 'guidance') }));
+
+  const first = await enter();
+  assert.ok(first.text.length <= 9500);
+  const file = first.context.effective_preferences_file;
+  assert.equal(first.context.effective_preferences, undefined);
+  assert.equal(file.count, 40);
+  assert.equal(file.index[3].key, 'p3');
+  assert.match(file.must_read, /Read this file in full/);
+  assert.match(readFileSync(file.file, 'utf8'), /## 40\. p39\n\nSynthetic preference 39/);
+  assert.equal(first.context.session_delivery.delivered.some((token) => token.startsWith('preferences:')), false);
+
+  const read = (id, extra = {}) => `${JSON.stringify({ type: 'assistant', sessionId: SESSION, isSidechain: false,
+    message: { content: [{ type: 'tool_use', id, name: 'Read', input: { file_path: file.file, ...extra } }] } })}\n`;
+  const result = (id, isError = false) => `${JSON.stringify({ type: 'user', sessionId: SESSION, isSidechain: false,
+    message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: isError, content: 'preferences' }] } })}\n`;
+  appendFileSync(transcript, recorded(first.text));
+  // A failed or partial read is not delivery.
+  appendFileSync(transcript, read('read-1') + result('read-1', true) + read('read-2', { limit: 10 }) + result('read-2'));
+  assert.ok((await enter()).context.effective_preferences_file);
+  appendFileSync(transcript, read('read-3') + result('read-3'));
+  const later = await enter();
+  assert.equal(later.context.effective_preferences_file, undefined);
+  assert.equal(later.context.effective_preferences, undefined);
+  assert.equal(later.context.effective_preferences_count, 40);
+  assert.deepEqual(Object.keys(later.context.session_delivery.referenced).sort(), ['identity', 'preferences', 'rules']);
+});

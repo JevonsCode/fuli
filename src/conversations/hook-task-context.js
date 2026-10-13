@@ -2,6 +2,7 @@ import { dirname, join } from 'node:path';
 
 import { hookAdditionalContextToolResult } from '../mcp/tool-result.js';
 import { writeGuidanceFile } from './guidance-file-store.js';
+import { movePreferencesToFile } from './preference-file.js';
 import { applySessionDelivery } from './session-delivery.js';
 import { GUIDANCE_READ_WHEN, renderGuidanceMarkdown, separateStaticGuidance } from './task-context-guidance.js';
 import { withoutRedundantEntryFields } from './task-entry-trim.js';
@@ -36,16 +37,25 @@ export function hookTaskContextOutput(context, { hookEventName, label, guidanceD
     hookEventName, label, limitBytes: HOOK_LIMIT_BYTES, itemLimit: 1000
   }).content[0].text);
   if (!session) return render(delivered);
-  let output;
   try {
-    output = render(applySessionDelivery(delivered, session));
+    const applied = applySessionDelivery(delivered, session);
+    const output = render(applied);
+    if (fits(output, session)) return output;
+    // Too large to show inline: preferences move to a file the model must read.
+    const moved = guidanceDirectory ? movePreferencesToFile(applied, guidanceDirectory) : null;
+    const reduced = moved && render(moved);
+    if (reduced && fits(reduced, session)) return reduced;
   } catch {
-    return render(delivered);
+    // Unknown delivery state always falls back to the complete entry.
   }
-  const text = output.hookSpecificOutput.additionalContext;
   // Over the host's inline budget the model sees only a preview, and a
   // truncated entry is incomplete: deliver everything without delivery tokens.
-  const complete = !text.includes('Context delivery is incomplete');
-  return complete && (!session.inlineLimit || text.length <= session.inlineLimit) ? output : render(delivered);
+  return render(delivered);
+}
+
+function fits(output, session) {
+  const text = output.hookSpecificOutput.additionalContext;
+  return !text.includes('Context delivery is incomplete')
+    && (!session.inlineLimit || text.length <= session.inlineLimit);
 }
 
