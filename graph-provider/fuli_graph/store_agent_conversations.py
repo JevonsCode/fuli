@@ -98,9 +98,15 @@ class StoreAgentConversations:
                 break
             decoded.append(value)
         if request.mode == 'context':
-            return {**view, 'context': pack_context(self._digest_text(record), list(reversed(decoded)), policy.context_budget)}
+            summary = self._digest_text(record, policy.context_budget // 2)
+            checkpoint = {'status': record.get('status') or 'reported', 'summary': record.get('summary')}
+            return {**view, 'context': pack_context(summary, list(reversed(decoded)), policy.context_budget, checkpoint)}
         cursor = decoded[-1]['sequence'] if decoded else request.after
-        return {**view, 'events': decoded, 'next_cursor': cursor, 'has_more': cursor < record['revision']}
+        page = {**view, 'events': decoded, 'next_cursor': cursor, 'has_more': cursor < record['revision']}
+        if request.after == 0:
+            # The first history page shows what compaction extracted and where it came from.
+            page['digest'] = json.loads(record['digest']) if record.get('digest') else None
+        return page
 
     def _conversation_view(self, record, policy):
         return {key: record.get(key) for key in ('id', 'summary', 'status', 'revision', 'last_activity')} | {
@@ -109,10 +115,15 @@ class StoreAgentConversations:
             'policy': policy.model_dump(), 'raw_retained': True}
 
     @staticmethod
-    def _digest_text(record):
-        if record.get('digest'):
-            return render_digest(json.loads(record['digest']))
-        return record.get('summary') or ''
+    def _digest_text(record, budget=None):
+        """Historical recovery text; the latest checkpoint is returned separately."""
+        if not record.get('digest'):
+            return ''
+        digest = json.loads(record['digest'])
+        tasks = digest.get('tasks', [])
+        if tasks and tasks[-1]['summary'] == record.get('summary'):
+            digest = {**digest, 'tasks': tasks[:-1]}
+        return render_digest(digest, budget)
 
     async def _compact_conversation(self, conversation_id, policy):
         """Fold older messages into the digest, keeping recent ones verbatim."""

@@ -3,6 +3,8 @@ export function normalizeCodexRecord(record) {
   if (record?.type !== 'response_item') return [];
   const item = record.payload;
   if (item?.type === 'message' && ['user', 'assistant'].includes(item.role)) {
+    // Analysis can also be encoded as a message instead of a reasoning item.
+    if (item.role === 'assistant' && item.channel === 'analysis') return [];
     const content = (item.content ?? []).filter(block => ['input_text', 'output_text'].includes(block.type))
       .map(block => block.text ?? '').join('\n');
     return content ? [{ role: item.role, kind: 'message', content }] : [];

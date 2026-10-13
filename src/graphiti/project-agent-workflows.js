@@ -612,6 +612,7 @@ export async function getProjectAgentContext(
     active_conflicts: preferences.active_conflicts,
     knowledge_results: results,
     working_memory: continuity.memory,
+    global_working_memory: continuity.global_memory ?? null,
     project_brief: continuity.project_brief,
     recent_tasks: continuity.recent_tasks,
     continuity_status: continuity.status,

@@ -28,12 +28,79 @@ async function fixture(t, content) {
   return path;
 }
 
+test('Codex excludes analysis messages while retaining visible and legacy message channels', () => {
+  for (const channel of ['analysis', 'commentary', 'final', null, undefined]) {
+    const payload = { type: 'message', role: 'assistant', channel,
+      content: [{ type: 'output_text', text: 'Synthetic assistant text' }] };
+    const events = normalizeCodexRecord({ type: 'response_item', payload });
+    assert.deepEqual(events, channel === 'analysis' ? []
+      : [{ role: 'assistant', kind: 'message', content: 'Synthetic assistant text' }]);
+  }
+});
+
+test('Codex transcript sync skips analysis text and advances past it without losing visible work', async t => {
+  const message = (channel, text) => JSON.stringify({ type: 'response_item', payload: {
+    type: 'message', role: 'assistant', channel, content: [{ type: 'output_text', text }]
+  } }) + '\n';
+  const path = await fixture(t, row('user', 'Synthetic task')
+    + message('analysis', 'Synthetic hidden text')
+    + message('commentary', 'Synthetic progress') + message('final', 'Synthetic result')
+    + message('analysis', 'Synthetic hidden tail'));
+  let cursor = 0;
+  const saved = [];
+  const application = { config: { personal: { spaceId: 'space' } }, getCapturePolicy: () => ({ enabled: true }), personal: {
+    currentTaskContext: async () => ({ personal_project_id: 'project', project_agent_id: 'agent', token: 'task' }),
+    conversation: async (operation, request) => {
+      if (request.mode === 'policy') return { enabled: true };
+      if (request.mode === 'session') return { cursor, initialized: true };
+      if (operation === 'append') {
+        saved.push(...request.events);
+        cursor = request.cursor;
+        return { status: 'saved' };
+      }
+    }
+  } };
+  const input = { transcript_path: path, session_id: 'current' };
+  assert.equal((await syncConversationTranscript(application, input, 'codex', adapter)).status, 'saved');
+  assert.deepEqual(saved.map(event => event.content), ['Synthetic task', 'Synthetic progress', 'Synthetic result']);
+  const afterSync = await readTranscriptBatch(path, 'current', cursor, adapter);
+  assert.deepEqual(afterSync.events, []);
+  assert.equal(afterSync.cursor, cursor);
+  assert.equal(afterSync.hasMore, false);
+});
+
 test('first capture excludes prior tasks and picks the latest matching prompt', async t => {
   const path = await fixture(t, row('user', 'current prompt') + row('assistant', 'unrelated old work') + row('user', 'current prompt'));
   const cursor = await initialTranscriptBoundary(path, 'current', 'current prompt', adapter);
   const batch = await readTranscriptBatch(path, 'current', cursor, adapter);
   assert.deepEqual(batch.events.map(e => e.content), ['current prompt']);
   assert.equal(await initialTranscriptBoundary(path, 'current', 'not written yet', adapter), batch.cursor);
+});
+
+for (const state of ['missing', 'empty']) {
+  test(`first task can claim a ${state} transcript before the host writes it`, async t => {
+    const path = await fixture(t, '');
+    if (state === 'missing') await rm(path);
+    else await writeFile(path, '');
+    const cursor = await initialTranscriptBoundary(path, 'current', 'first task', adapter);
+    assert.equal(cursor, 0);
+    await writeFile(path, JSON.stringify({ type: 'session_meta', payload: { id: 'current' } }) + '\n'
+      + row('user', 'first task') + row('assistant', 'first result'));
+    const batch = await readTranscriptBatch(path, 'current', cursor, adapter);
+    assert.deepEqual(batch.events.map(event => event.content), ['first task', 'first result']);
+    await assert.rejects(readTranscriptBatch(path, 'another-session', cursor, adapter));
+  });
+}
+
+test('initial boundary still rejects partial headers and symlinks', async t => {
+  const path = await fixture(t, '');
+  await writeFile(path, '{"type":"session_meta"');
+  await assert.rejects(initialTranscriptBoundary(path, 'current', 'first task', adapter));
+  const link = path + '.link';
+  await symlink(path, link);
+  await assert.rejects(initialTranscriptBoundary(link, 'current', 'first task', adapter));
+  await rm(path);
+  await assert.rejects(initialTranscriptBoundary(link, 'current', 'first task', adapter));
 });
 
 test('reader retries incomplete writes, preserves unicode, and rejects foreign sessions and symlinks', async t => {

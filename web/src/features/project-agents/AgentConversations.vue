@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { postJson, putJson } from '@/api/client'
+import { onBeforeUnmount, ref, watch } from 'vue'
+import { getJson, postJson, putJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import { currentLocale, t } from '@/i18n'
@@ -9,8 +9,13 @@ const props = defineProps<{ personalSpaceId: string; agentId: string; projects: 
 interface Policy { compact_after_kb: number; context_budget: number; enabled: boolean }
 interface Conversation { id: string; summary: string; status: string; revision: number; last_activity: string; compacted_through: number; raw_retained: boolean; continuation_prompt?: string }
 interface Message { role: string; content: unknown; kind: string; sequence: number }
-interface MessagePage { events: Message[]; next_cursor?: number; has_more?: boolean }
+interface DigestEntry { kind: string; text: string; sources: Array<{ role: string; sequence: number }>; truncated?: boolean }
+interface Digest { notes?: string[]; entries?: DigestEntry[]; omitted?: number }
+interface MessagePage { events: Message[]; next_cursor?: number; has_more?: boolean; digest?: Digest | null }
+interface WorkingMemory { summary: string; decisions: string[]; openThreads: string[]; nextActions: string[] }
+interface MemoryView { revision: number; current: { revision: number; createdAt: string; sourceApplication: string; memory: WorkingMemory } | null }
 interface CopyFeedback { conversationId: string; state: 'copied' | 'fallback' }
+interface MemoryExport { filename: string; markdown: string }
 const projectId = ref('')
 const opened = ref(false)
 const settingsOpen = ref(false)
@@ -19,10 +24,14 @@ const loading = ref(false)
 const error = ref('')
 const selectedId = ref('')
 const messages = ref<Message[]>([])
+const digest = ref<Digest | null>(null)
 const messagesLoading = ref(false)
 const messagesError = ref('')
 const nextCursor = ref<number>()
 const hasMore = ref(false)
+const memory = ref<MemoryView>()
+const memoryLoading = ref(false)
+const memoryError = ref('')
 const policyReady = ref(false)
 const policyLoading = ref(false)
 const policyError = ref('')
@@ -32,10 +41,14 @@ const compactAfterKb = ref(64)
 const contextBudget = ref(4000)
 const enabled = ref(true)
 const copyFeedback = ref<CopyFeedback>()
+const exporting = ref(false)
+const exportFeedback = ref<'done' | 'failed'>()
 let version = 0
 let messageVersion = 0
 let policyVersion = 0
 let copyVersion = 0
+let memoryVersion = 0
+let exportVersion = 0
 function scope() { return { personalSpaceId: props.personalSpaceId, personalProjectId: projectId.value || null, agentId: props.agentId } }
 function failure(cause: unknown) { return cause instanceof Error ? cause.message : t('projectAgents.conversations.loadFailed') }
 watch(() => [props.agentId, props.personalSpaceId, props.projects.map(project => project.id).join('\n')], () => {
@@ -49,31 +62,71 @@ async function load() {
   ++messageVersion
   ++policyVersion
   ++copyVersion
-  conversations.value = []; messages.value = []; selectedId.value = ''; error.value = ''; messagesError.value = ''
+  ++memoryVersion
+  conversations.value = []; messages.value = []; digest.value = null; selectedId.value = ''; error.value = ''; messagesError.value = ''
+  memory.value = undefined; memoryError.value = ''; memoryLoading.value = false
+  resetExport()
   copyFeedback.value = undefined
   policyReady.value = false; policyLoading.value = false; policyError.value = ''; saved.value = false; saving.value = false
   loading.value = false; messagesLoading.value = false; hasMore.value = false
   if (!opened.value) return
   loading.value = true
   if (settingsOpen.value) void loadPolicy()
+  void loadMemory()
   try {
     const value = await postJson<{ conversations: Conversation[] }>('/api/agent-conversations/query', { ...scope(), mode: 'list', limit: 20 })
     if (current === version) conversations.value = value.conversations
   } catch (cause) { if (current === version) error.value = failure(cause) }
   finally { if (current === version) loading.value = false }
 }
+// Reviewed working memory for exactly the selected scope, through the existing inspection API.
+async function loadMemory() {
+  const current = ++memoryVersion
+  memoryLoading.value = true; memoryError.value = ''; memory.value = undefined
+  try {
+    const query = new URLSearchParams({ personalSpaceId: props.personalSpaceId })
+    if (projectId.value) query.set('personalProjectId', projectId.value)
+    const value = await getJson<MemoryView>(`/api/project-agents/${encodeURIComponent(props.agentId)}/memory?${query}`)
+    if (current === memoryVersion) memory.value = { revision: value?.revision ?? 0, current: value?.current ?? null }
+  } catch (cause) { if (current === memoryVersion) memoryError.value = cause instanceof Error ? cause.message : t('projectAgents.conversations.memoryFailed') }
+  finally { if (current === memoryVersion) memoryLoading.value = false }
+}
+function resetExport() { ++exportVersion; exporting.value = false; exportFeedback.value = undefined }
+// A pending export answered after the view is gone must never start a download.
+onBeforeUnmount(() => { ++exportVersion })
+// Download a fresh database export of exactly the selected scope. A response for
+// a scope, Agent or panel that is no longer shown is dropped, never saved.
+async function exportMemory() {
+  if (exporting.value) return
+  const current = ++exportVersion
+  exporting.value = true; exportFeedback.value = undefined
+  try {
+    const query = new URLSearchParams({ personalSpaceId: props.personalSpaceId })
+    if (projectId.value) query.set('personalProjectId', projectId.value)
+    const value = await getJson<MemoryExport>(`/api/project-agents/${encodeURIComponent(props.agentId)}/memory/export?${query}`)
+    if (current !== exportVersion) return
+    if (typeof value?.markdown !== 'string' || typeof value.filename !== 'string') throw new Error('Invalid export')
+    const url = URL.createObjectURL(new Blob([value.markdown], { type: 'text/markdown;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url; link.download = value.filename
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+    exportFeedback.value = 'done'
+  } catch { if (current === exportVersion) exportFeedback.value = 'failed' }
+  finally { if (current === exportVersion) exporting.value = false }
+}
 function toggle(event: Event) {
   const next = (event.target as HTMLDetailsElement).open
   if (next === opened.value) return
   opened.value = next
   if (next) void load()
-  else { ++version; ++messageVersion; ++policyVersion; ++copyVersion; copyFeedback.value = undefined; settingsOpen.value = false }
+  else { ++version; ++messageVersion; ++policyVersion; ++copyVersion; ++memoryVersion; resetExport(); copyFeedback.value = undefined; settingsOpen.value = false }
 }
 async function readMessages(id: string, more = false) {
   if (messagesLoading.value) return
   const current = ++messageVersion
   selectedId.value = id; messagesError.value = ''; messagesLoading.value = true
-  if (!more) { messages.value = []; nextCursor.value = undefined; hasMore.value = false }
+  if (!more) { messages.value = []; digest.value = null; nextCursor.value = undefined; hasMore.value = false }
   try {
     const page = await postJson<MessagePage>('/api/agent-conversations/query', {
       ...scope(), mode: 'events', conversationId: id, limit: 20,
@@ -81,6 +134,7 @@ async function readMessages(id: string, more = false) {
     })
     if (current !== messageVersion) return
     messages.value = more ? [...messages.value, ...page.events] : page.events
+    if (!more) digest.value = page.digest ?? null
     nextCursor.value = page.next_cursor
     hasMore.value = page.has_more === true && page.next_cursor !== undefined
   } catch (cause) { if (current === messageVersion) messagesError.value = failure(cause) }
@@ -123,6 +177,12 @@ function role(value: string) {
   return ['user', 'assistant', 'tool'].includes(value) ? t(`projectAgents.conversations.${value}`) : value
 }
 function content(value: unknown) { return typeof value === 'string' ? value : JSON.stringify(value, null, 2) }
+function entryKind(value: string) {
+  return t(`projectAgents.conversations.kinds.${['request', 'decision', 'correction', 'open', 'method'].includes(value) ? value : 'request'}`)
+}
+function client(value: string) {
+  return t(`projectAgents.clients.${['codex', 'claude', 'claude_code', 'cursor', 'gemini_cli', 'kiro'].includes(value) ? value : 'other'}`)
+}
 async function copyContinuation(conversation: Conversation) {
   const prompt = conversation.continuation_prompt
   if (!prompt) return
@@ -147,6 +207,32 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
     <template v-if="opened">
       <UiSelect v-model="projectId" field :label="t('projectAgents.conversations.scope')" :options="[{ value: '', label: t('projectAgents.conversations.global') }, ...projects.map(project => ({ value: project.id, label: project.name }))]" />
       <p class="conversation-hint">{{ t('projectAgents.conversations.hint') }}</p>
+      <section data-working-memory class="working-memory" :aria-label="t('projectAgents.conversations.memoryTitle')">
+        <div class="memory-heading">
+          <h3>{{ t('projectAgents.conversations.memoryTitle') }}</h3>
+          <button data-export-memory class="ui-button memory-export" type="button" :disabled="exporting" :aria-busy="exporting"
+            :title="t('projectAgents.conversations.exportMemory')" :aria-label="t('projectAgents.conversations.exportMemory')" @click="exportMemory">
+            <GrowthLoading v-if="exporting" variant="inline" :label="t('projectAgents.conversations.exportingMemory')" />
+            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11" /><path d="m7 10 5 5 5-5" /><path d="M5 20h14" /></svg>
+          </button>
+        </div>
+        <p v-if="exportFeedback === 'done'" data-export-feedback role="status" class="conversation-hint">{{ t('projectAgents.conversations.exportedMemory') }}</p>
+        <p v-else-if="exportFeedback === 'failed'" data-export-feedback role="alert" class="conversation-hint">{{ t('projectAgents.conversations.exportMemoryFailed') }}</p>
+        <GrowthLoading v-if="memoryLoading" variant="compact" :label="t('projectAgents.conversations.loadingMemory')" />
+        <div v-else-if="memoryError" role="alert"><p>{{ memoryError }}</p><button data-retry-memory class="quiet-button" type="button" @click="loadMemory">{{ t('projectAgents.retry') }}</button></div>
+        <template v-else-if="memory?.current">
+          <p class="conversation-hint">{{ t('projectAgents.conversations.memoryMeta', { revision: memory.current.revision, source: client(memory.current.sourceApplication), time: date(memory.current.createdAt) }) }}</p>
+          <p class="memory-summary">{{ memory.current.memory.summary }}</p>
+          <template v-for="group in (['decisions', 'openThreads', 'nextActions'] as const)" :key="group">
+            <template v-if="memory.current.memory[group].length">
+              <h4>{{ t(`projectAgents.conversations.memory.${group}`) }}</h4>
+              <ul><li v-for="(note, index) in memory.current.memory[group]" :key="index">{{ note }}</li></ul>
+            </template>
+          </template>
+          <p class="conversation-hint">{{ t('projectAgents.conversations.memoryAuthority') }}</p>
+        </template>
+        <p v-else-if="memory" class="conversation-hint">{{ t('projectAgents.conversations.memoryEmpty') }}</p>
+      </section>
       <GrowthLoading v-if="loading" variant="compact" :label="t('projectAgents.conversations.loading')" />
       <div v-else-if="error" role="alert"><p>{{ error }}</p><button data-retry-list class="quiet-button" type="button" @click="load">{{ t('projectAgents.retry') }}</button></div>
       <ol v-else-if="conversations.length" class="conversation-list">
@@ -165,7 +251,19 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
           </div>
           <div v-if="selectedId === conversation.id" class="conversation-messages">
             <p v-if="conversation.raw_retained" class="conversation-hint">{{ t('projectAgents.conversations.rawRetained') }}</p>
-            <ol><li v-for="message in messages" :key="message.sequence"><strong>{{ role(message.role) }}</strong><pre>{{ content(message.content) }}</pre></li></ol>
+            <section v-if="digest && (digest.entries?.length || digest.notes?.length || digest.omitted)" data-conversation-digest class="conversation-digest">
+              <h4>{{ t('projectAgents.conversations.digestTitle') }}</h4>
+              <p class="conversation-hint">{{ t('projectAgents.conversations.digestHint') }}</p>
+              <ul>
+                <li v-for="(note, index) in digest.notes ?? []" :key="`note:${index}`"><span class="digest-kind">{{ entryKind('request') }}</span>{{ note }}</li>
+                <li v-for="(entry, index) in digest.entries ?? []" :key="`entry:${index}:${entry.sources[0]?.sequence}`">
+                  <span class="digest-kind">{{ entryKind(entry.kind) }}</span>{{ entry.text }}
+                  <span class="digest-source">{{ entry.sources.map(source => `${role(source.role)} #${source.sequence}`).join(' · ') }}<template v-if="entry.truncated"> · {{ t('projectAgents.conversations.truncated') }}</template></span>
+                </li>
+              </ul>
+              <p v-if="digest.omitted" class="conversation-hint">{{ t('projectAgents.conversations.omitted', { count: digest.omitted }) }}</p>
+            </section>
+            <ol><li v-for="message in messages" :key="message.sequence"><strong>{{ role(message.role) }} #{{ message.sequence }}</strong><pre>{{ content(message.content) }}</pre></li></ol>
             <GrowthLoading v-if="messagesLoading" variant="compact" :label="t('projectAgents.conversations.loadingMessages')" />
             <div v-else-if="messagesError" role="alert"><p>{{ messagesError }}</p><button class="quiet-button" type="button" @click="readMessages(conversation.id, messages.length > 0)">{{ t('projectAgents.retry') }}</button></div>
             <button v-else-if="hasMore" data-more-messages class="quiet-button" type="button" @click="readMessages(conversation.id, true)">{{ t('projectAgents.conversations.more') }}</button>
@@ -214,6 +312,16 @@ ol { padding: 0; list-style: none; margin: 0; }
 .conversation-link strong { overflow-wrap: anywhere; }
 .conversation-messages { padding-bottom: 16px; }
 .conversation-messages li { padding-block: 12px; }
+.working-memory, .conversation-digest { border-left: 3px solid var(--color-border); padding-left: 12px; margin-block: 16px; }
+.working-memory h3, .conversation-digest h4, .working-memory h4 { font-size: inherit; margin-block: 8px; }
+.memory-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.memory-export { width: 32px; height: 32px; flex: 0 0 32px; padding: 6px; }
+.memory-export svg { width: 18px; height: 18px; }
+.working-memory ul, .conversation-digest ul { margin: 0; padding-left: 18px; line-height: 1.65; overflow-wrap: anywhere; }
+.conversation-digest li { padding-block: 4px; }
+.memory-summary { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; }
+.digest-kind { font-weight: 650; margin-right: 8px; }
+.digest-source { display: block; color: var(--color-muted); font-size: 12px; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.65; max-height: 320px; overflow: auto; margin-block: 8px; }
 textarea { width: 100%; box-sizing: border-box; border: 1px solid #a8b7ad; border-radius: 6px; padding: 8px; font: inherit; color: inherit; background: #fff; resize: vertical; }
 button:disabled { cursor: wait; opacity: .65; }

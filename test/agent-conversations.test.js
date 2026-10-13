@@ -81,6 +81,47 @@ test('metadata failure does not misreport a saved conversation as unsaved', asyn
   assert.equal(result.receipt.owner.name, null);
   assert.equal(result.receipt.owner.agent_id, 'engineer');
 });
+const latestCheckpoint = { status: 'completed', summary: 'Completed "v2" export; validation passed.', truncated: false };
+function checkpointFixture() {
+  const { app, calls } = fixture();
+  const original = app.personal.conversation;
+  app.personal.conversation = async (operation, input) => {
+    if (input.mode === 'context') return { id: 'previous', summary: 'outer unbounded copy', status: 'completed',
+      context: { summary: 'TODO: stale excerpt', summary_role: 'historical', latest_checkpoint: latestCheckpoint, messages: [] } };
+    return original(operation, input);
+  };
+  return { app, calls };
+}
+test('automatic recovery keeps the latest checkpoint separate from historical excerpts', async () => {
+  const { app } = checkpointFixture();
+  const result = await beginConversation(app, task);
+  assert.deepEqual(result.recovery.latest_checkpoint, latestCheckpoint);
+  assert.equal(result.recovery.summary_role, 'historical');
+  assert.match(result.guidance, /latest_checkpoint/);
+  assert.match(result.guidance, /historical/i);
+});
+test('explicit resume from a fresh client keeps the bounded latest checkpoint and states the handoff boundary', async () => {
+  const { app } = checkpointFixture();
+  const fresh = { ...task, token: 'fuli-task-fresh-claude', sourceApplication: 'claude_code', sessionId: 'claude-session' };
+  app.taskContextRegistry.context = async (token, source) => {
+    assert.equal(token, fresh.token); assert.equal(source, 'claude_code'); return fresh;
+  };
+  const calls = [];
+  const original = app.personal.conversation;
+  app.personal.conversation = async (operation, input) => { calls.push({ operation, input }); return original(operation, input); };
+  const result = await resumeConversation(app, { taskContextToken: fresh.token, conversationId: 'previous', sourceApplication: 'claude_code' });
+  assert.equal(calls[0].input.task_context_token, fresh.token);
+  assert.equal(calls[0].input.source_application, 'claude_code');
+  assert.deepEqual(result.context.latest_checkpoint, latestCheckpoint);
+  assert.equal(result.summary, undefined, 'the unbounded outer summary is not repeated');
+  assert.match(result.guidance, /latest_checkpoint/);
+  assert.match(result.guidance, /files/i);
+});
+test('resume rejects when the Provider refuses the fresh task scope or client', async () => {
+  const { app } = fixture();
+  app.personal.conversation = async () => { throw Object.assign(new Error('Agent is not allowed in this client'), { status: 403 }); };
+  await assert.rejects(resumeConversation(app, { taskContextToken: task.token, conversationId: 'previous', sourceApplication: 'codex' }), /not allowed/);
+});
 test('resume uses current task binding, not caller supplied project or session', async () => {
   const { app, calls } = fixture();
   await resumeConversation(app, { taskContextToken: task.token, conversationId: 'previous', sourceApplication: 'codex' });

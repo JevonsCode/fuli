@@ -19,12 +19,23 @@ IMPLICIT_PEER_AGENT_IDS = frozenset({
 })
 IMPLICIT_PEER_CAPABILITIES = frozenset({'fuli.employee:jefa', 'fuli.employee:bole', 'fuli.employee:tonborg'})
 IMPLICIT_PEER_AGENT_TYPES = frozenset({'hr'})
+# Routing reasons produced inside a configured project team roster.
+TEAM_ROUTING_REASONS = frozenset({'project_team_lead', 'project_team_member', 'project_team_gap'})
+# A user decision is pending: manual selection, or a qualified/configured Agent
+# exists but is unavailable to this client. Never recruit a silent replacement.
+HOLD_RECRUITMENT_REASONS = frozenset({'manual_agent_selection', 'agent_unavailable'})
 
 
 class StoreProjectAgentTaskStaffing:
     """Keep task routing's staffing mechanics separate from task persistence."""
 
-    async def _select_agents(self, actor, space, request):
+    async def _select_agents(self, actor, space, request, *, conversation=False):
+        """Select who executes; ``conversation`` selects the accountable owner.
+
+        A configured team lead owns every project conversation, but ownership is
+        not execution fitness. Task routing therefore picks a qualified team
+        member, or reports a gap that the caller turns into HR recruitment.
+        """
         if request.staffing_intent == 'unassigned':
             return [], [], 'explicit_unassigned', ['user explicitly left task unassigned']
         assignment_rows = await self._assignment_candidates(
@@ -81,11 +92,15 @@ class StoreProjectAgentTaskStaffing:
                 return [], rows, 'agent_unavailable', ['configured team lead is unavailable; select or replace the lead']
             member_ids = set(getattr(policy, 'team_member_agent_ids', []))
             members = [row for row in rows if row['agent_id'] in member_ids]
-            return [lead], [lead, *members], 'project_team_lead', [
-                'project team lead is the stable conversation owner',
-                f'{len(members)} active team member(s) available for explicit workstreams',
-                'AR and project manager remain peer roles',
-            ]
+            if conversation:
+                return [lead], [lead, *members], 'project_team_lead', [
+                    'project team lead is the stable conversation owner',
+                    f'{len(members)} active team member(s) available for explicit workstreams',
+                    'AR and project manager remain peer roles',
+                ]
+            return await self._select_team_executor(
+                lead, members, member_ids, assignment_rows, request,
+            )
         normalized_work_kind = request.work_kind.casefold()
         required = {item.casefold() for item in request.required_capabilities}
         eligible = [row for row in rows if required.issubset({
@@ -96,34 +111,16 @@ class StoreProjectAgentTaskStaffing:
             if self._implicit_owner_allowed(row, request)
         ]
         candidates, history = await self._rank_agent_candidates(implicit_eligible, request)
-        # Continuity may break a tie between qualified specialists; it must
-        # never override a capability requirement or a stronger work-kind fit.
-        continuity_pool = implicit_eligible
-        if candidates:
-            best_work_match = normalized_work_kind in {
-                item.casefold() for item in candidates[0].get('work_kinds', [])
-            }
-            continuity_pool = [row for row in candidates if (
-                normalized_work_kind in {item.casefold() for item in row.get('work_kinds', [])}
-            ) == best_work_match]
-        if continuity_pool:
-            least_busy = min(self._metric_int(row.get('active_task_count')) for row in continuity_pool)
-            continuity_pool = [row for row in continuity_pool
-                if self._metric_int(row.get('active_task_count')) == least_busy]
-        continuity, project_history = await self._rank_project_continuity(
-            continuity_pool,
-            request,
+        selected, continuity_basis = await self._project_continuity_choice(
+            candidates, implicit_eligible, request,
         )
-        if continuity:
-            selected = continuity[0]
+        if selected:
             remaining = [
                 row for row in candidates or implicit_eligible
                 if row['agent_id'] != selected['agent_id']
             ]
             return [selected], [selected, *remaining], 'project_continuity', [
-                self._project_history_match_basis(
-                    project_history.get(selected['agent_id']),
-                ),
+                continuity_basis,
                 *self._automatic_selection_basis(selected, request),
             ]
         if not candidates:
@@ -184,6 +181,93 @@ class StoreProjectAgentTaskStaffing:
         match_basis.extend(item for item in self._automatic_selection_basis(selected, request)
                            if item not in match_basis)
         return [selected], candidates, reason, match_basis
+
+    async def _project_continuity_choice(self, candidates, pool, request):
+        """Return the effective previous task lead among equally fit, least-busy roles."""
+
+        # Continuity may break a tie between qualified specialists; it must
+        # never override a capability requirement or a stronger work-kind fit.
+        work_kind = request.work_kind.casefold()
+        continuity_pool = pool
+        if candidates:
+            best_work_match = work_kind in {
+                item.casefold() for item in candidates[0].get('work_kinds', [])
+            }
+            continuity_pool = [row for row in candidates if (
+                work_kind in {item.casefold() for item in row.get('work_kinds', [])}
+            ) == best_work_match]
+        if continuity_pool:
+            least_busy = min(self._metric_int(row.get('active_task_count')) for row in continuity_pool)
+            continuity_pool = [row for row in continuity_pool
+                if self._metric_int(row.get('active_task_count')) == least_busy]
+        continuity, project_history = await self._rank_project_continuity(continuity_pool, request)
+        if not continuity:
+            return None, None
+        selected = continuity[0]
+        return selected, self._project_history_match_basis(project_history.get(selected['agent_id']))
+
+    async def _select_team_executor(self, lead, members, member_ids, assignment_rows, request):
+        """Keep execution inside the team roster; the lead stays accountable.
+
+        Uses the ordinary fit, load, work-kind history and project continuity
+        ranking. Project continuity counts task leads (executors), not the
+        configured lead's coordinator role, so a member that executed earlier
+        project work keeps it among equally fit, equally loaded roles.
+        """
+
+        team = [lead, *members]
+        if request.work_kind.casefold() == 'project_context' and not request.required_capabilities:
+            ranked, history = [lead], {}
+        else:
+            ranked, history = await self._rank_agent_candidates(team, request)
+        accountable = f'project team lead {lead["agent_id"]} remains accountable'
+        if not ranked:
+            if any(
+                row['agent_id'] in member_ids
+                and not self._agent_client_allowed(row, request.source_application)
+                and self._fits_work(row, request)
+                for row in assignment_rows
+            ):
+                return [], team, 'agent_unavailable', [
+                    accountable,
+                    'qualified team member is unavailable to source client: '
+                    f'{request.source_application or "other"}',
+                ]
+            required = ', '.join(request.required_capabilities) or 'none'
+            return [], team, 'project_team_gap', [
+                f'{accountable}; no active team member fits work kind '
+                f'{request.work_kind} with required capabilities: {required}',
+            ]
+        continuity_choice, continuity_basis = (None, None) if ranked == [lead] else (
+            await self._project_continuity_choice(ranked, ranked, request)
+        )
+        selected = continuity_choice or ranked[0]
+        ordered = [*ranked, *(row for row in team if row not in ranked)]
+        candidates = [selected, *(row for row in ordered if row['agent_id'] != selected['agent_id'])]
+        if selected['agent_id'] == lead['agent_id']:
+            basis = ['project team lead is the stable conversation owner and fits this work']
+            reason = 'project_team_lead'
+        else:
+            basis = [f'{accountable}; selected the best-fitting team member']
+            reason = 'project_team_member'
+        if continuity_basis:
+            basis.append(continuity_basis)
+        history_basis = self._history_match_basis(history.get(selected['agent_id']), request.work_kind)
+        if history_basis:
+            basis.append(history_basis)
+        basis.extend(self._automatic_selection_basis(selected, request))
+        return [selected], candidates, reason, basis
+
+    @staticmethod
+    def _fits_work(row, request):
+        """Required capabilities are mandatory; a work kind or capability set must match."""
+
+        required = {item.casefold() for item in request.required_capabilities}
+        if not required.issubset({item.casefold() for item in row.get('capabilities', [])}):
+            return False
+        return bool(required) or request.work_kind.casefold() in {
+            item.casefold() for item in row.get('work_kinds', [])
+        }
 
     @classmethod
     def _implicit_owner_allowed(cls, row, request):
@@ -700,7 +784,7 @@ class StoreProjectAgentTaskStaffing:
             return []
         if (
             request.staffing_intent == 'unassigned'
-            or routing_reason == 'manual_agent_selection'
+            or routing_reason in HOLD_RECRUITMENT_REASONS
         ):
             return []
 
@@ -875,13 +959,13 @@ class StoreProjectAgentTaskStaffing:
         )
 
     @staticmethod
-    def _verify_parallel_plan(plan: ProjectAgentParallelPlan, participants: list[dict]):
+    def _verify_parallel_plan(plan: ProjectAgentParallelPlan, participants: list[dict], *, require_staffed=True):
         if plan.enabled and len(participants) > len(plan.workstream_boundaries):
             raise HTTPException(
                 status_code=422,
                 detail='parallel work exceeds declared workstream boundaries',
             )
-        if plan.enabled and len(participants) < 2:
+        if plan.enabled and require_staffed and len(participants) < 2:
             raise HTTPException(
                 status_code=422,
                 detail=(

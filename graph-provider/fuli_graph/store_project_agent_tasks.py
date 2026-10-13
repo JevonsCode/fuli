@@ -20,7 +20,11 @@ from .store_project_agents import SYSTEM_COORDINATOR_AGENT_ID
 from .store_project_agent_task_reads import StoreProjectAgentTaskReads
 from .store_project_agent_task_persistence import StoreProjectAgentTaskPersistence
 from .store_project_agent_task_recruitment import StoreProjectAgentTaskRecruitment
-from .store_project_agent_task_staffing import StoreProjectAgentTaskStaffing
+from .store_project_agent_task_staffing import (
+    HOLD_RECRUITMENT_REASONS,
+    StoreProjectAgentTaskStaffing,
+    TEAM_ROUTING_REASONS,
+)
 from .store_project_agent_coordination_policy import StoreProjectAgentCoordinationPolicy
 from .store_project_agent_task_activity import StoreProjectAgentTaskActivity, TERMINAL_TASK_STATUSES
 from .store_transactions import TransactionQueryDriver, query_store_transaction
@@ -123,6 +127,15 @@ class StoreProjectAgentTasks(
             request,
         )
         lead = selected[0] if selected else None
+        team_lead_agent_id = None
+        if reason in TEAM_ROUTING_REASONS or reason == 'agent_unavailable':
+            policy = await self.get_project_agent_coordination_policy(
+                actor, request.personal_space_id, request.personal_project_id,
+            )
+            team_lead_agent_id = getattr(policy, 'team_lead_agent_id', None)
+        # A configured team that cannot staff this client holds the task for a
+        # user decision: nobody is added from outside the roster meanwhile.
+        team_hold = reason == 'agent_unavailable' and bool(team_lead_agent_id)
         participants = []
         if lead:
             participants.append({
@@ -142,12 +155,13 @@ class StoreProjectAgentTasks(
         if (
             request.parallel_plan.enabled
             and request.staffing_intent != 'unassigned'
+            and not team_hold
         ):
             parallel_candidates = await self._parallel_staffing_candidates(
                 request,
                 candidates,
                 participants,
-                **({'team_only': True} if reason == 'project_team_lead' else {}),
+                **({'team_only': True} if reason in TEAM_ROUTING_REASONS else {}),
             )
             candidate_ids = {item['agent_id'] for item in candidates}
             candidates.extend(
@@ -185,11 +199,14 @@ class StoreProjectAgentTasks(
             routing_reason=reason,
             recruitment_slots=parallel_recruitment_slots,
         )
-        self._verify_parallel_plan(request.parallel_plan, projected_participants)
+        # A held task staffs nobody yet, so only its two-Agent minimum waits
+        # for the user's decision; the boundary limit still applies.
+        self._verify_parallel_plan(request.parallel_plan, projected_participants,
+                                   require_staffed=not team_hold)
 
         will_open_recruitment = (
             request.staffing_intent != 'unassigned'
-            and reason != 'manual_agent_selection'
+            and reason not in HOLD_RECRUITMENT_REASONS
             and (
                 bool(parallel_recruitment_slots) or not lead
                 or request.staffing_intent in {'new_durable', 'temporary'}
@@ -207,6 +224,11 @@ class StoreProjectAgentTasks(
             request.personal_space_id,
         )
         coordinator_agent_id = request.coordinator_agent_id or coordinator.agent_id
+        if not request.coordinator_agent_id and team_lead_agent_id:
+            # The configured project lead coordinates and receives the report
+            # for work it delegates to a member, asks HR to staff, or that is
+            # blocked because the qualified member is unavailable to this client.
+            coordinator_agent_id = team_lead_agent_id
 
         model_strategy, model_source = self._effective_model_strategy(
             request,
@@ -221,8 +243,8 @@ class StoreProjectAgentTasks(
             reason = 'explicit_unassigned'
             routing_outcome = 'unassigned'
             task_status = 'blocked'
-        elif reason == 'manual_agent_selection':
-            routing_outcome = 'unassigned'
+        elif reason in HOLD_RECRUITMENT_REASONS:
+            routing_outcome = 'unassigned' if reason == 'manual_agent_selection' else 'blocked'
             task_status = 'blocked'
         elif parallel_recruitment_slots:
             recruited_count = 0
@@ -319,6 +341,7 @@ class StoreProjectAgentTasks(
                     if request.staffing_intent == 'temporary'
                     else 'explicit_new_agent'
                     if request.staffing_intent == 'new_durable'
+                    else reason if reason == 'project_team_gap'
                     else 'no_match'
                 )
                 match_basis = [
@@ -345,7 +368,7 @@ class StoreProjectAgentTasks(
                 routing_outcome = 'blocked'
                 task_status = 'blocked'
                 reason = 'hr_unavailable'
-        self._verify_parallel_plan(request.parallel_plan, participants)
+        self._verify_parallel_plan(request.parallel_plan, participants, require_staffed=not team_hold)
 
         # Staffing a default lead executes nothing, so it needs no executor.
         executor_decision = None if request.staffing_intent == 'default_lead' else (

@@ -35,6 +35,31 @@ test('self-contained tasks without durable-context signals skip automatic recall
   });
 });
 
+test('model token usage does not recall authentication methods', () => {
+  for (const prompt of ['检查 Token 消耗成本，减少工具 Schema tokens',
+    'Measure input token usage and cache token cost', '优化 Token P0']) {
+    assert.deepEqual(planTaskKnowledgeRecall(prompt).trigger_categories, [], prompt);
+  }
+  assert.ok(planTaskKnowledgeRecall('How do I configure an access token for login?')
+    .trigger_categories.includes('access_authentication'));
+});
+
+test('negated delivery instructions do not recall a release runbook', () => {
+  for (const prompt of ['优化性能，不提交、不发布、不推送到 GitHub。',
+    '禁止提交代码，暂不部署。', 'Do not commit or publish this change.',
+    '分析工具成本，不要发版和上线']) {
+    assert.equal(planTaskKnowledgeRecall(prompt).trigger_categories.includes('release_delivery'), false, prompt);
+  }
+  assert.ok(planTaskKnowledgeRecall('不要提交代码，但需要部署测试版本')
+    .trigger_categories.includes('release_delivery'));
+  assert.ok(planTaskKnowledgeRecall('无需确认直接发布')
+    .trigger_categories.includes('release_delivery'));
+  assert.ok(planTaskKnowledgeRecall('不要过度封装并部署到测试环境')
+    .trigger_categories.includes('release_delivery'));
+  assert.ok(planTaskKnowledgeRecall('先不要发布。测试通过后发布新版本。')
+    .trigger_categories.includes('release_delivery'));
+});
+
 test('self-contained workflow optimization does not trigger generic runbook recall', () => {
   const prompt = '分析并优化 Analytics Dashboard Builder 的搭建、局部修改与询问速度和流程，测试 model-k3 可行性；禁止提交代码。';
   const plan = planTaskKnowledgeRecall(prompt);

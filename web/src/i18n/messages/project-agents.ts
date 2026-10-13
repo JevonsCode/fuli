@@ -1,5 +1,9 @@
 export const projectAgentMessages = {
   'zh-CN': {
+    executionPlan: {
+      title: '执行框架', reported: 'Agent 上报', updated: '最近更新', unavailable: '更新暂不可用',
+      status: { pending: '待开始', in_progress: '进行中', awaiting_review: '待检查', completed: '已完成', blocked: '受阻', skipped: '已跳过' },
+    },
     firstTask: {
       title: '开始第一个任务',
       hint: '在已接入 Fuli 的 AI 客户端里，于项目目录中直接提需求。Fuli 会登记项目并安排负责的 Agent。',
@@ -33,6 +37,17 @@ export const projectAgentMessages = {
       user: '用户', assistant: 'Agent', tool: '工具',
       copyContinuation: '复制接续指令', copiedContinuation: '已复制接续指令。',
       copyContinuationFailed: '自动复制失败，请手动选择下方指令并复制。', manualContinuation: '接续指令',
+      memoryTitle: '工作记忆', loadingMemory: '正在读取工作记忆…', memoryFailed: '工作记忆读取失败，请重试。',
+      memoryEmpty: '当前范围还没有经过检查点保存的工作记忆。',
+      memoryMeta: '版本 {revision} · {source} · {time}',
+      memoryAuthority: '工作记忆是任务检查点保存的工作上下文，不等于经人工确认的知识。',
+      exportMemory: '将当前范围的工作记忆导出为 Markdown', exportingMemory: '正在导出工作记忆…',
+      exportedMemory: '已从数据库读取最新内容并开始下载。FULI 仍是权威来源，对文件的修改不会被导入。',
+      exportMemoryFailed: '工作记忆导出失败，请重试。',
+      memory: { decisions: '决定', openThreads: '未完成事项', nextActions: '下一步' },
+      digestTitle: '压缩摘录', digestHint: '自动摘录，未经核实：按固定规则从较早消息中摘取的原句，不是工作记忆，可能遗漏或误分类；以下方原文为准。',
+      kinds: { request: '请求', decision: '决定', correction: '更正', open: '未完成', method: '方法' },
+      truncated: '已截断', omitted: '另有 {count} 行未摘录或因容量被移除，可在原文中查看。',
     },
     workHistory: {
       title: '工作记录', loading: '正在读取员工工作记录…', loadFailed: '工作记录读取失败，请重试。',
@@ -357,6 +372,10 @@ export const projectAgentMessages = {
     },
   },
   'en-US': {
+    executionPlan: {
+      title: 'Execution plan', reported: 'Reported by Agent', updated: 'Last update', unavailable: 'Updates temporarily unavailable',
+      status: { pending: 'Pending', in_progress: 'In progress', awaiting_review: 'Awaiting review', completed: 'Completed', blocked: 'Blocked', skipped: 'Skipped' },
+    },
     firstTask: {
       title: 'Start your first task',
       hint: 'In an AI client connected to Fuli, ask for the work from your project folder. Fuli registers the project and assigns a responsible Agent.',
@@ -390,6 +409,17 @@ export const projectAgentMessages = {
       user: 'User', assistant: 'Agent', tool: 'Tool',
       copyContinuation: 'Copy continuation', copiedContinuation: 'Continuation copied.',
       copyContinuationFailed: 'Could not copy automatically. Select and copy the instruction below.', manualContinuation: 'Continuation instruction',
+      memoryTitle: 'Working memory', loadingMemory: 'Loading working memory…', memoryFailed: 'Could not load working memory. Try again.',
+      memoryEmpty: 'No checkpointed working memory in this scope yet.',
+      memoryMeta: 'Revision {revision} · {source} · {time}',
+      memoryAuthority: 'Working memory is task-checkpointed working context, not human-confirmed knowledge.',
+      exportMemory: 'Export this scope’s working memory as Markdown', exportingMemory: 'Exporting working memory…',
+      exportedMemory: 'Download started from a fresh database read. FULI stays the source of truth; edits to the file are not imported.',
+      exportMemoryFailed: 'Could not export working memory. Try again.',
+      memory: { decisions: 'Decisions', openThreads: 'Open work', nextActions: 'Next actions' },
+      digestTitle: 'Compacted extract', digestHint: 'Automatic extract, not verified: original lines picked from earlier messages by fixed rules. It is not working memory and may miss or mislabel content; the originals below are authoritative.',
+      kinds: { request: 'Request', decision: 'Decision', correction: 'Correction', open: 'Open', method: 'Method' },
+      truncated: 'truncated', omitted: '{count} more lines were not extracted or were dropped for space; see the originals.',
     },
     workHistory: {
       title: 'Work history', loading: 'Loading employee work records…', loadFailed: 'Could not load work records. Try again.',

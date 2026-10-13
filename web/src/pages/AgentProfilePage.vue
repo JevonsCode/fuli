@@ -10,6 +10,7 @@ import UiDisclosure from "@/components/UiDisclosure.vue";
 import AgentName from "@/features/agent-profile/AgentName.vue";
 import AgentProfileSettings from "@/features/agent-profile/AgentProfileSettings.vue";
 import AgentConversations from "@/features/project-agents/AgentConversations.vue";
+import TaskExecutionPlan from "@/features/project-agents/TaskExecutionPlan.vue";
 import {
   agentDisplayName,
   collaboratorsFor,
@@ -436,6 +437,7 @@ onMounted(() => {
                   {{ task.title }}
                 </RouterLink>
                 <span class="ui-badge">{{ t(`projectAgents.taskStatus.${task.status}`) }}</span>
+                <TaskExecutionPlan :task="task" :personal-space-id="space" :active="activeTab === 'overview'" />
               </li>
             </ul>
             <p v-else-if="!detailsLoading && !partial" class="agent-muted">

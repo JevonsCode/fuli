@@ -11,6 +11,7 @@ import {
   recallTaskKnowledge,
   TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE
 } from './task-knowledge-recall.js';
+import { preferenceAppliesToTask } from './preference-task-scope.js';
 
 export async function getCollaborationPreferences(
   application,
@@ -18,6 +19,10 @@ export async function getCollaborationPreferences(
   {
     projectAgentId = null,
     taskPrompt = null,
+    sessionId = null,
+    sourceSessionId = null,
+    workKind = null,
+    workflow = null,
     limit = 100,
     agentInvocation = false,
     agentToolName = 'get_collaboration_preferences'
@@ -30,7 +35,8 @@ export async function getCollaborationPreferences(
       application.config.personal.spaceId,
       resolvedProjectId,
       limit,
-      projectAgentId
+      projectAgentId,
+      { sessionId, sourceSessionId, workKind, workflow }
     ),
     application.personal.listPreferenceConflicts(
       application.config.personal.spaceId,
@@ -42,6 +48,8 @@ export async function getCollaborationPreferences(
     result,
     queuedConflicts
   );
+  const taskScope = { sessionId, sourceSessionId, workKind, workflow };
+  const effectivePreferences = (result.effective_preferences ?? []).filter(item => preferenceAppliesToTask(item, taskScope));
   const taskKnowledgeRecall = taskPrompt === null
     ? null
     : await recallTaskKnowledge(application, projectResolution, taskPrompt);
@@ -50,7 +58,7 @@ export async function getCollaborationPreferences(
       ...(result.global_preferences ?? []),
       ...(result.project_preferences ?? []),
       ...(result.agent_preferences ?? [])
-    ];
+    ].filter(item => preferenceAppliesToTask(item, taskScope));
     await recordAgentViews(items.map(({ id, item_kind: itemKind }) => ({
       item_id: id,
       item_kind: itemKind
@@ -63,6 +71,7 @@ export async function getCollaborationPreferences(
   if (!agentInvocation) {
     return {
       ...result,
+      effective_preferences: effectivePreferences,
       deferred_conflicts: deferredConflicts,
       application_guidance: applicationGuidance,
       project_resolution: agentProjectResolution(projectResolution),
@@ -70,13 +79,15 @@ export async function getCollaborationPreferences(
     };
   }
   return {
-    effective_preferences: (result.effective_preferences ?? [])
+    effective_preferences: effectivePreferences
       .map(agentCollaborationPreference),
     deferred_conflicts: deferredConflicts.map(agentDeferredPreferenceConflict),
     active_conflicts: activePreferenceConflicts(result),
     application_guidance: applicationGuidance,
     ...(taskKnowledgeRecall ? { task_knowledge_recall: taskKnowledgeRecall } : {}),
-    context: preferenceContext(result, deferredConflicts, projectResolution)
+    context: { ...preferenceContext(result, deferredConflicts, projectResolution),
+      task_scope_excluded_count: (result.task_scope_excluded_count ?? 0) + (result.effective_preferences ?? []).length - effectivePreferences.length,
+      task_scope_filter: result.task_scope_filtered ? 'provider_before_conflicts' : 'legacy_projection' }
   };
 }
 

@@ -138,7 +138,9 @@ test('Claude Code requires always-loaded Fuli plus task lifecycle hooks', () => 
     '--runtime-config',
     CONTEXT.runtimeConfigPath,
     '--source-application',
-    'claude_code'
+    'claude_code',
+    '--tool-profile',
+    'chat'
   ];
   const configs = new Map([
     [claude.configPath, {

@@ -8,6 +8,7 @@ import { handleApiRequest } from './http/api-router.js';
 import { mapHttpError } from './http/error-mapping.js';
 import { localServerAuthority, rejectRequestOutsidePolicy } from './http/request-policy.js';
 import { sendJson } from './http/response.js';
+import { closeTaskEventStreams } from './http/task-events-api-router.js';
 import { serveStatic } from './http/static-handler.js';
 import { DEFAULT_FULI_PORT } from './defaults.js';
 import { resolveGraphRuntimeOptions } from './graphiti/runtime-config.js';
@@ -163,6 +164,7 @@ export async function createServer(options = {}) {
     let closing = null;
     const close = () => {
       closing ??= new Promise((resolve, reject) => {
+        closeTaskEventStreams(server);
         server.close((error) => error && error.code !== 'ERR_SERVER_NOT_RUNNING'
           ? reject(error) : resolve());
       }).then(closeResources);

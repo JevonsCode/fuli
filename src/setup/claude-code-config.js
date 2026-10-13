@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { claudeLifecycleCommand, isClaudeLifecycleCommand } from '../agents/claude-code/lifecycle-hooks.js';
+import { installedToolProfile } from './installed-tool-profile.js';
 
 import {
   readJsonFile,
@@ -30,6 +31,7 @@ export function connectClaudeCode(agent, context, {
   assertObject(current.mcpServers ?? {}, 'Claude Code mcpServers');
   assertHookSettings(settings.hooks ?? {});
   assertPermissionSettings(settings.permissions ?? {});
+  const profile = installedToolProfile(current.mcpServers?.fuli?.args, context.toolProfile);
 
   const next = {
     ...current,
@@ -43,7 +45,9 @@ export function connectClaudeCode(agent, context, {
           '--runtime-config',
           context.runtimeConfigPath,
           '--source-application',
-          'claude_code'
+          'claude_code',
+          '--tool-profile',
+          profile
         ],
         alwaysLoad: true
       }

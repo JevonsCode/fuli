@@ -1,21 +1,40 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
-import { t } from '@/i18n'
+import { currentLocale, t } from '@/i18n'
 
 type Format = 'standard' | 'vscode' | 'server'
+type ClientStatus = 'connected' | 'changed' | 'skills_left' | 'removed' | 'not_connected' | 'not_detected' | 'unknown'
+type ClientChange = { from: ClientStatus, to: ClientStatus, detectedAt: string }
+type ClientObservation = { id: string, label: string, status: ClientStatus, previouslyConnected: boolean,
+  changes: ClientChange[], lastKnownStatus?: ClientStatus | null }
+type ConnectionStatus = { observedAt: string, historySaved: boolean, clients: ClientObservation[] }
+// Re-read configuration this often while the card is open and the page visible.
+const RECHECK_MS = 15_000
+
 const configuration = ref<Record<Format, object> | null>(null)
 const format = ref<Format>('standard')
 const loading = ref(false)
 const error = ref('')
 const feedback = ref<'copied' | 'manual' | ''>('')
+const observation = ref<ConnectionStatus | null>(null)
+const checking = ref(false)
+const checkError = ref(false)
+let active = false
+let unmounted = false
+// Bumped whenever the view closes or hides, so a response requested before then is dropped.
+let generation = 0
+let timer: ReturnType<typeof setTimeout> | undefined
 const text = computed(() => configuration.value ? JSON.stringify(configuration.value[format.value], null, 2) : '')
 const options = computed(() => (['standard', 'vscode', 'server'] as const).map((value) => ({
   value, label: t(`settings.connection.formats.${value}`),
 })))
+const clients = computed(() => (observation.value?.clients ?? []).filter((client) => client.status !== 'not_detected'))
+const icons: Record<ClientStatus, string> = { connected: '✓', changed: '!', skills_left: '!', removed: '×',
+  not_connected: '○', not_detected: '○', unknown: '?' }
 
 async function load() {
   if (loading.value) return
@@ -26,7 +45,74 @@ async function load() {
   finally { loading.value = false }
 }
 function opened(event: Event) {
-  if ((event.target as HTMLDetailsElement).open && !configuration.value && !loading.value && !error.value) void load()
+  // A toggle queued by the browser can arrive after unmount; never restart then.
+  if (unmounted) return
+  const open = (event.target as HTMLDetailsElement).open
+  if (open && !configuration.value && !loading.value && !error.value) void load()
+  if (open) start()
+  else stop()
+}
+const watching = () => active && !unmounted && document.visibilityState === 'visible'
+// One request at a time; a response older than the shown one, or requested
+// before the view closed or hid, never replaces it.
+async function check() {
+  if (checking.value || !watching()) return
+  clearTimeout(timer)
+  checking.value = true
+  const requested = generation
+  let fresh = false
+  try {
+    const next = await getJson<ConnectionStatus>('/api/system/client-connection/status')
+    fresh = requested === generation
+    if (fresh && (!observation.value || next.observedAt >= observation.value.observedAt)) observation.value = next
+    if (fresh) checkError.value = false
+  } catch {
+    fresh = requested === generation
+    if (fresh) checkError.value = true
+  } finally {
+    checking.value = false
+    // A dropped response is replaced at once if the view is watched again.
+    if (fresh) schedule()
+    else void check()
+  }
+}
+function schedule() {
+  clearTimeout(timer)
+  if (watching()) timer = setTimeout(() => void check(), RECHECK_MS)
+}
+function returned() {
+  if (document.visibilityState === 'visible') void check()
+  else {
+    generation += 1
+    clearTimeout(timer)
+  }
+}
+function start() {
+  if (active) return
+  active = true
+  document.addEventListener('visibilitychange', returned)
+  window.addEventListener('focus', returned)
+  void check()
+}
+function stop() {
+  active = false
+  generation += 1
+  clearTimeout(timer)
+  document.removeEventListener('visibilitychange', returned)
+  window.removeEventListener('focus', returned)
+}
+onBeforeUnmount(() => {
+  unmounted = true
+  stop()
+})
+function formatTime(value: string) {
+  return new Date(value).toLocaleString(currentLocale(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+function explanation(client: ClientObservation) {
+  if (client.status === 'unknown' && client.lastKnownStatus) {
+    return t('settings.connection.clients.unknownWithLast', { status: t(`settings.connection.clients.status.${client.lastKnownStatus}`) })
+  }
+  return t(`settings.connection.clients.explain.${client.status}`)
 }
 function select(value: string) {
   if (value === 'standard' || value === 'vscode' || value === 'server') {
@@ -47,6 +133,40 @@ async function copy() {
 <template>
   <UiDisclosure class="settings-card connection-settings" :title="t('settings.connection.title')" @toggle="opened">
     <p>{{ t('settings.connection.description') }}</p>
+    <section class="client-status" :aria-label="t('settings.connection.clients.title')">
+      <div class="client-status__header">
+        <h3>{{ t('settings.connection.clients.title') }}</h3>
+        <button class="ui-button client-status__refresh" type="button" data-refresh-clients :disabled="checking"
+          :title="t('settings.connection.clients.refresh')" :aria-label="t('settings.connection.clients.refresh')" @click="check">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8" /><path d="M4 3v5h5" /><path d="M4 13a8 8 0 0 0 14.6 4.5L20 16" /><path d="M20 21v-5h-5" /></svg>
+        </button>
+      </div>
+      <GrowthLoading v-if="checking && !observation" variant="compact" :label="t('settings.connection.clients.checking')" />
+      <p v-if="checkError" role="alert">{{ t('settings.connection.clients.checkError') }}</p>
+      <ul v-if="observation">
+        <li v-for="client in clients" :key="client.id" :data-client-status="client.status"
+          :class="`client-status__item client-status__item--${client.status}`">
+          <span class="client-status__icon" aria-hidden="true">{{ icons[client.status] }}</span>
+          <div>
+            <strong>{{ client.label }}</strong>
+            <span class="client-status__label">{{ t(`settings.connection.clients.status.${client.status}`) }}</span>
+            <p>{{ explanation(client) }}</p>
+            <p v-if="client.changes.length" class="client-status__change">
+              {{ t('settings.connection.clients.lastChange', {
+                from: t(`settings.connection.clients.status.${client.changes.at(-1)!.from}`),
+                to: t(`settings.connection.clients.status.${client.changes.at(-1)!.to}`),
+                time: formatTime(client.changes.at(-1)!.detectedAt) }) }}
+            </p>
+          </div>
+        </li>
+        <li v-if="!clients.length">{{ t('settings.connection.clients.none') }}</li>
+      </ul>
+      <p v-if="observation" class="client-status__meta" role="status">
+        {{ t('settings.connection.clients.observedAt', { time: formatTime(observation.observedAt) }) }}
+        {{ t('settings.connection.clients.boundary') }}
+        <template v-if="!observation.historySaved">{{ t('settings.connection.clients.historyUnsaved') }}</template>
+      </p>
+    </section>
     <GrowthLoading v-if="loading" variant="compact" :label="t('settings.connection.loading')" />
     <div v-if="error" role="alert">
       <span>{{ error }}</span>
@@ -78,4 +198,26 @@ async function copy() {
 .connection-copy svg { width: 20px; height: 20px; }
 textarea { display: block; box-sizing: border-box; width: 100%; min-width: 0; resize: vertical; font: 12px/1.65 var(--font-mono, monospace); overflow-wrap: anywhere; }
 .connection-settings a { font-size: 13px; }
+.client-status { margin: 16px 0; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+.client-status__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.client-status h3 { font-size: 14px; margin: 0; }
+.client-status__refresh { width: 32px; height: 32px; flex: 0 0 32px; padding: 6px; }
+.client-status__refresh svg { width: 18px; height: 18px; }
+.client-status ul { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; }
+.client-status__item { display: flex; gap: 10px; align-items: flex-start; min-width: 0; }
+.client-status__item > div { min-width: 0; overflow-wrap: anywhere; }
+.client-status__item p { margin: 2px 0 0; }
+.client-status__icon { flex: 0 0 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center;
+  font-size: 12px; font-weight: 600; border: 1px solid currentColor; color: var(--color-muted); }
+.client-status__item--connected .client-status__icon { color: var(--color-success, #2f7d4f); }
+.client-status__item--removed .client-status__icon,
+.client-status__item--changed .client-status__icon,
+.client-status__item--skills_left .client-status__icon { color: var(--color-warning, #a5650b); }
+.client-status__label { margin-left: 8px; font-size: 13px; color: var(--color-muted); }
+.connection-settings .client-status__change, .connection-settings .client-status__meta { font-size: 12px; }
+.connection-settings .client-status__meta { margin: 10px 0 0; }
+@media (max-width: 560px) {
+  .client-status { padding: 10px; }
+  .client-status__label { display: block; margin-left: 0; }
+}
 </style>

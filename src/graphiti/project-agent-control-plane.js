@@ -5,8 +5,10 @@ import { listAgentAttention, changeAgentAttention } from './agent-attention.js';
 import { loadProjectTeam } from './project-team-view.js';
 import {
   getProjectAgentMemory,
-  agentMemoryView,
-  checkpointProjectAgentMemory
+  inspectProjectAgentMemory,
+  checkpointProjectAgentMemory,
+  exportProjectAgentMemory,
+  exportInspectedProjectAgentMemory
 } from './project-agent-memory.js';
 import {
   authorizeExecutor as authorizeExecutorWorkflow,
@@ -105,12 +107,23 @@ export class ProjectAgentControlPlaneApplication {
     // which model clients an employee is allowed to run in. Provider access
     // still validates the exact personal space, project and assignment.
     this.#assertSpace(input.personalSpaceId);
-    return agentMemoryView(await this.personal.getProjectAgentMemory(input));
+    return inspectProjectAgentMemory(this, input);
   }
 
   async checkpointProjectAgentMemory(input) {
     this.#assertSpace(input.personalSpaceId);
     return checkpointProjectAgentMemory(this, input);
+  }
+
+  async exportProjectAgentMemory(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return exportProjectAgentMemory(this, input);
+  }
+
+  async exportInspectedProjectAgentMemory(input) {
+    // Same owner authority as inspectProjectAgentMemory.
+    this.#assertSpace(input.personalSpaceId);
+    return exportInspectedProjectAgentMemory(this, input);
   }
 
   async upsertProjectAgent(input) {
@@ -189,6 +202,11 @@ export class ProjectAgentControlPlaneApplication {
   async viewProjectAgentTask(input) {
     this.#assertSpace(input.personalSpaceId);
     return viewProjectAgentTaskWorkflow(this, input);
+  }
+
+  openProjectAgentTaskEvents(input, options) {
+    this.#assertSpace(input.personalSpaceId);
+    return this.personal.openProjectAgentTaskEvents(input.personalSpaceId, options);
   }
 
   async recordProjectAgentTaskActivity(input) {

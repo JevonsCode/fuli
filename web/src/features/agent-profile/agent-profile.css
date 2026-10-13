@@ -334,8 +334,9 @@
   padding: 0;
 }
 
-.agent-current-work-list li {
-  display: flex;
+.agent-current-work-list > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3, 12px);
@@ -631,8 +632,8 @@
     font-size: 28px;
   }
 
-  .agent-current-work-list li {
+  .agent-current-work-list > li {
     align-items: flex-start;
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
 }

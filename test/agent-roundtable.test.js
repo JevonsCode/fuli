@@ -14,14 +14,19 @@ function fixture({ wake, sessions = {}, redeemed = true, env = {} } = {}) {
   const agents = [agent('lead-1', 'Milo Reed'), agent('reviewer-1', 'Nova Lane', ['codex'])];
   const tasks = {
     'token-milo': { token: 'token-milo', projectAgentId: 'lead-1', personalProjectId: 'app', sessionId: 'cc-1', sourceApplication: 'claude_code' },
-    'token-nova': { token: 'token-nova', projectAgentId: 'reviewer-1', personalProjectId: 'app', sessionId: 'cx-9', sourceApplication: 'codex' }
+    'token-nova': { token: 'token-nova', projectAgentId: 'reviewer-1', personalProjectId: 'app', sessionId: 'cx-9', sourceApplication: 'codex' },
+    'token-foreign': { token: 'token-foreign', projectAgentId: 'lead-1', personalProjectId: 'other-app', sessionId: 'cc-2', sourceApplication: 'claude_code' }
   };
   const woken = [];
   const grants = [], revoked = [], verified = [];
   const app = {
     config: { personal: { spaceId: 'space' } },
     listProjectAgents: async () => agents,
-    taskContextRegistry: { context: async (token) => tasks[token] },
+    // Like the Provider, a token resolves only for the client that began it.
+    taskContextRegistry: { context: async (token, client) => {
+      if (tasks[token] && client && client !== tasks[token].sourceApplication) throw new Error('Task context not found for this client');
+      return tasks[token];
+    } },
     personal: { recentAgentSessions: async ({ agentId }) => sessions[agentId] ?? [],
       issueAgentDelegation: async input => { grants.push(input); return { token: `synthetic-grant-${grants.length}` }; },
       verifyAgentDelegation: async input => { verified.push(input); return { redeemed }; },
@@ -150,6 +155,20 @@ test('a message that cannot be delivered waits in the inbox until the Agent repl
   assert.equal(roundtable.thread({ threadId: sent.threadId }).messages[1].body, '已看，可以合并');
 });
 
+test('status and cancel work from each client’s own task and reject another project’s task', async () => {
+  const { roundtable } = fixture({ wake: async () => { throw Object.assign(new Error('offline'), { code: 'client_unavailable' }); } });
+  const sent = await roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code',
+    to: 'reviewer-1', body: '请复核测试' });
+  // Recipient on Codex and sender on Claude Code both read the status.
+  assert.equal((await roundtable.messageStatus({ taskContextToken: 'token-nova', sourceApplication: 'codex', messageId: sent.messageId })).status, 'queued');
+  assert.equal((await roundtable.messageStatus({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', messageId: sent.messageId })).status, 'queued');
+  await assert.rejects(roundtable.cancelMessage({ taskContextToken: 'token-nova', sourceApplication: 'codex', messageId: sent.messageId }), /No such message sent/);
+  await assert.rejects(roundtable.messageStatus({ taskContextToken: 'token-foreign', sourceApplication: 'claude_code', messageId: sent.messageId }), /current project/);
+  await assert.rejects(roundtable.cancelMessage({ taskContextToken: 'token-foreign', sourceApplication: 'claude_code', messageId: sent.messageId }), /current project/);
+  const cancelled = await roundtable.cancelMessage({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', messageId: sent.messageId });
+  assert.equal(cancelled.status, 'cancelled');
+});
+
 test('a busy conversation falls back to a new session of the same Agent', async () => {
   const { roundtable, woken } = fixture({
     sessions: { 'reviewer-1': [{ source_application: 'codex', session_id: 'cx-9', personal_project_id: 'app', last_active: 'now' }] },
@@ -239,4 +258,35 @@ test('task entry hands the selected Agent the questions waiting for it', async (
   }, async () => {});
   assert.deepEqual(result.agent_messages, waiting);
   assert.match(result.agent_messages_guidance, /reply_agent_message/);
+});
+
+test('task entry delivers the unstaffed execution decision beside the lead context', async () => {
+  const { taskEntryPreferences } = await import('../src/graphiti/task-entry-preferences.js');
+  const guidance = 'Execution is not staffed: no team member fits this work. Use coordinate_project_agent_task to open HR recruitment for the missing role; the project recruitment confirmation policy applies.';
+  const application = {
+    config: { personal: { spaceId: 'space' } }, consoleUrl: 'http://127.0.0.1:2727',
+    personal: {
+      resolveProjectAgentContext: async () => ({ status: 'ready', reason: 'project_team_lead',
+        execution_reason: 'project_team_gap', execution_agent_id: null,
+        match_basis: ['project team lead is the stable conversation owner', guidance],
+        agent: { agent_id: 'lead-1', profile: { name: 'Synthetic Lead', status: 'active',
+          allowed_clients: ['codex'], work_kinds: ['planning'] } } }),
+      staffDefaultProjectLead: async () => { throw new Error('must not staff a replacement lead'); },
+      getProjectAgentMemory: async () => null, getPersonalProject: async () => null,
+      listProjectAgentTasks: async () => [], getProjectAgentCoordinationPolicy: async () => ({}),
+      collaborationPreferences: async () => ({ effective_preferences: [] }), listPreferenceConflicts: async () => []
+    },
+    searchKnowledge: async () => ({ facts: [], entities: [] })
+  };
+  const result = await taskEntryPreferences(application, { status: 'matched', personalProjectId: 'app' }, {
+    projectPath: '/work/app', taskPrompt: 'verify the export', sourceApplication: 'codex', agentInvocation: true,
+    agentToolName: 'begin_task_context', sessionId: 's', turnId: 't'
+  }, async () => {});
+  const context = result.project_agent_context;
+  assert.equal(context.project_agent_id, 'lead-1');
+  assert.equal(context.selection_reason, 'project_team_lead');
+  assert.equal(context.execution_reason, 'project_team_gap');
+  assert.equal(context.execution_agent_id, null);
+  assert.equal(context.worker_started, false);
+  assert.ok(context.match_basis.includes(guidance));
 });

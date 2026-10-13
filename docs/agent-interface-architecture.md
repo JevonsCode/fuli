@@ -78,6 +78,17 @@ currently project-assigned item globally accessible. Explicit project references
 inheritance and genuine personal-global knowledge keep their existing scope rules; records
 without scope metadata fail closed.
 
+Agent working-memory export (`export_project_agent_memory`, catalog read workflow
+`agent-memory`) returns generated Markdown for one scope from a fresh database read. It reuses
+the `get_project_agent_memory` authority, including host-injected source clients and the strict
+scope validator, takes no output path, writes no export file (existing authorized local
+directory snapshots may refresh), and is not offered to remote connectors. Its MCP result
+budget (512 KiB) holds the largest valid identity plus one memory layer; a result that would
+still be truncated fails explicitly instead of returning a partial file. Memory reads,
+checkpoints and task entry report directory status in the public `directorySnapshot` field;
+the generic MCP omission of internal `snapshot` keys is unchanged.
+The console route `GET /api/project-agents/:agentId/memory/export` uses owner inspection authority.
+
 ## Human-only boundaries
 
 The following operations intentionally remain local-user-only:
