@@ -23,9 +23,11 @@ test('a checkpoint records knowledge usage for its own task without a separate c
     toolName: 'checkpoint_task_knowledge', items: usage }]);
   assert.deepEqual(result.knowledge_usage, { status: 'recorded', result: { recorded: 1 } });
 
-  // A replay records the same idempotent events again; different usage is a different checkpoint.
+  // A replay never records again: a later item generation must not be credited with old evidence.
   const replay = await checkpointTaskKnowledge(app, { ...input, knowledgeUsage: usage });
   assert.equal(replay.replayed, true);
+  assert.equal(calls.length, 1);
+  assert.equal(replay.knowledge_usage.status, 'not_repeated');
   await assert.rejects(checkpointTaskKnowledge(app, { ...input,
     knowledgeUsage: [{ ...usage[0], useKind: 'cited' }] }), /different input/);
 });

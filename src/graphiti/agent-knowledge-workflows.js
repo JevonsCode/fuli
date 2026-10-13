@@ -143,8 +143,7 @@ export async function checkpointTaskKnowledge(application, {
   const finish = async (result) => {
     const effectiveLog = workLog ?? { status: 'reported', summary: reason };
     const conversation = await checkpointConversation(application, task, effectiveLog, team);
-    const usage = knowledgeUsage?.length ? await recordTaskKnowledgeUsage(application, task, knowledgeUsage) : null;
-    return { ...result, conversation, ...(usage ? { knowledge_usage: usage } : {}),
+    return { ...result, conversation,
       agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
         agentId: task.projectAgentId ?? null, name: team.name, sourceApplication: task.sourceApplication,
         workStatus: effectiveLog.status, conversationId: conversation?.conversation_id ?? null,
@@ -154,7 +153,11 @@ export async function checkpointTaskKnowledge(application, {
   if (task.checkpoint?.phase === 'complete') {
     return finish({ status: 'checkpointed', disposition, reason,
       personal_project_id: task.personalProjectId, project_agent_id: task.projectAgentId,
-      replayed: true, capture_status: task.checkpoint.captureStatus });
+      replayed: true, capture_status: task.checkpoint.captureStatus,
+      // Usage events are bound to the item generation at recording time; a
+      // replay must not credit a later generation with the original evidence.
+      ...(knowledgeUsage?.length ? { knowledge_usage: { status: 'not_repeated',
+        reason: 'Recorded only with the original checkpoint; if that response reported a failure, use record_knowledge_usage.' } } : {}) });
   }
   const captureInput = capture ? {
     ...capture,
@@ -206,6 +209,7 @@ export async function checkpointTaskKnowledge(application, {
   }
   const captureResult = captureInput
     ? await application.captureSessionKnowledge(captureInput) : null;
+  const usage = knowledgeUsage?.length ? await recordTaskKnowledgeUsage(application, task, knowledgeUsage) : null;
   await application.taskContextRegistry.checkpoint(taskContextToken, {
     ...checkpoint, captureStatus: captureResult?.status ?? null
   }, sourceApplication);
@@ -216,6 +220,7 @@ export async function checkpointTaskKnowledge(application, {
     personal_project_id: task.personalProjectId,
     project_agent_id: task.projectAgentId ?? null,
     capture: captureResult,
+    ...(usage ? { knowledge_usage: usage } : {}),
     agent_memory: memoryResult ? {
       status: memoryResult.status, agentId: memoryResult.agentId,
       checkpointId: memoryResult.checkpointId, revision: memoryResult.revision,
@@ -225,9 +230,10 @@ export async function checkpointTaskKnowledge(application, {
   });
 }
 
-// Usage evidence rides on the checkpoint to save a model round trip. Events are
-// idempotent per item, task and use kind, so a replayed checkpoint is safe; a
-// failure is reported and never blocks the completed checkpoint.
+// Usage evidence rides on the checkpoint to save a model round trip. It is
+// recorded once, before the checkpoint completes (a retry of an incomplete
+// checkpoint is idempotent for the same item generation); a failure is reported
+// and never blocks the checkpoint.
 async function recordTaskKnowledgeUsage(application, task, items) {
   try {
     const recorded = await application.recordKnowledgeUsage({ personalSpaceId: application.config.personal.spaceId,
