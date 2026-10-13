@@ -47,17 +47,18 @@ test('multi-query project search states repeated guidance and markers once', () 
       entities: [{ ...essentials, ...defaults }] })],
     related_project_suggestions: [], related_project_guidance: null });
 
-  assert.deepEqual(view.results[0], { query: 'a', sourceMarker: marker, noMatchSourceMarker: marker,
-    retrievalGuidance: guidance, facts: [], entities: [] });
-  assert.equal(view.results[1].retrievalGuidance, 'same as results[0].retrievalGuidance');
+  // Result-level fields keep their shape; only the repeated guidance becomes an object reference.
+  assert.deepEqual(view.results[0], result('a'));
+  assert.deepEqual(view.results[1].retrievalGuidance, { same_as: 'results[0].retrievalGuidance' });
+  assert.deepEqual(view.results[1].requestedProjectIds, []);
   assert.equal(view.results[1].partial, true);
   assert.deepEqual(view.results[1].failedProjectIds, ['team-x']);
   assert.equal(view.results[1].entities[0].human_edited, undefined);
   assert.match(view.item_field_defaults, /not human-edited/);
-  assert.equal(view.related_project_suggestions, undefined);
+  assert.deepEqual(view.related_project_suggestions, []);
 
   const single = compactKnowledgeToolResult('search_knowledge_graph', result('only'));
-  assert.deepEqual(single.noMatchSourceMarker, marker);
+  assert.deepEqual(single, result('only'));
   assert.equal(single.item_field_defaults, undefined);
   const untouched = { results: [result('x')] };
   assert.equal(compactKnowledgeToolResult('get_project_agent_memory', untouched), untouched);
