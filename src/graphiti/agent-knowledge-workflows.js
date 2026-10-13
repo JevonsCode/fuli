@@ -107,7 +107,8 @@ export async function checkpointTaskKnowledge(application, {
   sourceApplication = 'other',
   personalProjectId = null,
   remoteSessionId = null,
-  collaborators = []
+  collaborators = [],
+  knowledgeUsage = null
 }) {
   if (!['capture_candidates', 'retain_nothing'].includes(disposition)) {
     throw validationError('Unknown task knowledge checkpoint disposition');
@@ -130,7 +131,8 @@ export async function checkpointTaskKnowledge(application, {
     throw validationError('This employee needs a workLog summary and status before finishing; retain_nothing only skips knowledge capture.');
   }
   const fingerprint = createHash('sha256').update(JSON.stringify(
-    canonicalCheckpoint({ disposition, reason, capture, agentMemory, ...(workLog ? { workLog } : {}) })
+    canonicalCheckpoint({ disposition, reason, capture, agentMemory, ...(workLog ? { workLog } : {}),
+      ...(knowledgeUsage?.length ? { knowledgeUsage } : {}) })
   )).digest('hex');
   if (task.checkpoint && task.checkpoint.fingerprint !== fingerprint) {
     throw validationError(
@@ -141,7 +143,8 @@ export async function checkpointTaskKnowledge(application, {
   const finish = async (result) => {
     const effectiveLog = workLog ?? { status: 'reported', summary: reason };
     const conversation = await checkpointConversation(application, task, effectiveLog, team);
-    return { ...result, conversation,
+    const usage = knowledgeUsage?.length ? await recordTaskKnowledgeUsage(application, task, knowledgeUsage) : null;
+    return { ...result, conversation, ...(usage ? { knowledge_usage: usage } : {}),
       agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
         agentId: task.projectAgentId ?? null, name: team.name, sourceApplication: task.sourceApplication,
         workStatus: effectiveLog.status, conversationId: conversation?.conversation_id ?? null,
@@ -220,6 +223,19 @@ export async function checkpointTaskKnowledge(application, {
       sourceSessionId: memoryResult.sourceSessionId, createdAt: memoryResult.createdAt
     } : null
   });
+}
+
+// Usage evidence rides on the checkpoint to save a model round trip. Events are
+// idempotent per item, task and use kind, so a replayed checkpoint is safe; a
+// failure is reported and never blocks the completed checkpoint.
+async function recordTaskKnowledgeUsage(application, task, items) {
+  try {
+    const recorded = await application.recordKnowledgeUsage({ personalSpaceId: application.config.personal.spaceId,
+      taskId: task.token, sessionId: task.sessionId, toolName: 'checkpoint_task_knowledge', items });
+    return { status: 'recorded', result: recorded };
+  } catch (error) {
+    return { status: 'failed', items: items.length, error: error?.code ?? 'usage_not_recorded' };
+  }
 }
 
 // Names the lead and only collaborators that are real, active Agents of this space.

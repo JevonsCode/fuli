@@ -308,7 +308,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'checkpoint_task_knowledge',
     title: 'LIFECYCLE · Finish knowledge review',
-    description: 'Complete exactly one end-of-task knowledge review. An assigned employee must include workLog with a concise result summary and truthful status even with retain_nothing. Include agentMemory with the loaded revision and merged notes when durable role memory changed. Use capture_candidates only for a small durable batch supported by the task; captured Agent proposals remain pending unless the payload contains valid human or authoritative-source confirmation. Use retain_nothing when the turn produced no reusable knowledge. Never store raw transcripts, guesses, temporary logs, credentials, or disposable output. List in collaborators the Agent IDs that actually contributed (employee tools called, coordinated workers, Roundtable participants); unknown or inactive IDs are ignored. End the final reply with the returned agent_receipt.markdown, which names the lead and those collaborators.',
+    description: 'Complete exactly one end-of-task knowledge review. An assigned employee must include workLog with a concise result summary and truthful status even with retain_nothing. Include agentMemory with the loaded revision and merged notes when durable role memory changed. Use capture_candidates only for a small durable batch supported by the task; captured Agent proposals remain pending unless the payload contains valid human or authoritative-source confirmation. Use retain_nothing when the turn produced no reusable knowledge. Never store raw transcripts, guesses, temporary logs, credentials, or disposable output. List in collaborators the Agent IDs that actually contributed (employee tools called, coordinated workers, Roundtable participants); unknown or inactive IDs are ignored. Put knowledge items that materially shaped the answer or action in knowledgeUsage (same rules as record_knowledge_usage) instead of a separate call. End the final reply with the returned agent_receipt.markdown, which names the lead and those collaborators.',
     inputSchema: objectSchema({
       taskContextToken: id,
       disposition: enumSchema(['capture_candidates', 'retain_nothing']),
@@ -322,7 +322,12 @@ export const GRAPH_TOOL_DEFINITIONS = [
         expectedRevision: integerSchema({ minimum: 0 }),
         memory: workingMemorySchema
       }, ['expectedRevision', 'memory']),
-      collaborators: arraySchema(boundedString(128), { maxItems: 16 })
+      collaborators: arraySchema(boundedString(128), { maxItems: 16 }),
+      knowledgeUsage: arraySchema(objectSchema({
+        itemId: id,
+        itemKind: knowledgeItemKind,
+        useKind: enumSchema(['cited', 'applied'])
+      }, ['itemId', 'itemKind', 'useKind']), { minItems: 1, maxItems: 200 })
     }, ['taskContextToken', 'disposition', 'reason'])
   },
   {
