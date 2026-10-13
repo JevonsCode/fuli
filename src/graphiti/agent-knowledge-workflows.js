@@ -107,8 +107,7 @@ export async function checkpointTaskKnowledge(application, {
   sourceApplication = 'other',
   personalProjectId = null,
   remoteSessionId = null,
-  collaborators = [],
-  knowledgeUsage = null
+  collaborators = []
 }) {
   if (!['capture_candidates', 'retain_nothing'].includes(disposition)) {
     throw validationError('Unknown task knowledge checkpoint disposition');
@@ -131,8 +130,7 @@ export async function checkpointTaskKnowledge(application, {
     throw validationError('This employee needs a workLog summary and status before finishing; retain_nothing only skips knowledge capture.');
   }
   const fingerprint = createHash('sha256').update(JSON.stringify(
-    canonicalCheckpoint({ disposition, reason, capture, agentMemory, ...(workLog ? { workLog } : {}),
-      ...(knowledgeUsage?.length ? { knowledgeUsage } : {}) })
+    canonicalCheckpoint({ disposition, reason, capture, agentMemory, ...(workLog ? { workLog } : {}) })
   )).digest('hex');
   if (task.checkpoint && task.checkpoint.fingerprint !== fingerprint) {
     throw validationError(
@@ -153,11 +151,7 @@ export async function checkpointTaskKnowledge(application, {
   if (task.checkpoint?.phase === 'complete') {
     return finish({ status: 'checkpointed', disposition, reason,
       personal_project_id: task.personalProjectId, project_agent_id: task.projectAgentId,
-      replayed: true, capture_status: task.checkpoint.captureStatus,
-      // Usage events are bound to the item generation at recording time; a
-      // replay must not credit a later generation with the original evidence.
-      ...(knowledgeUsage?.length ? { knowledge_usage: { status: 'not_repeated',
-        reason: 'Recorded only with the original checkpoint; if that response reported a failure, use record_knowledge_usage.' } } : {}) });
+      replayed: true, capture_status: task.checkpoint.captureStatus });
   }
   const captureInput = capture ? {
     ...capture,
@@ -212,7 +206,6 @@ export async function checkpointTaskKnowledge(application, {
   await application.taskContextRegistry.checkpoint(taskContextToken, {
     ...checkpoint, captureStatus: captureResult?.status ?? null
   }, sourceApplication);
-  const usage = knowledgeUsage?.length ? await recordTaskKnowledgeUsage(application, task, knowledgeUsage) : null;
   return finish({
     status: 'checkpointed',
     disposition,
@@ -220,7 +213,6 @@ export async function checkpointTaskKnowledge(application, {
     personal_project_id: task.personalProjectId,
     project_agent_id: task.projectAgentId ?? null,
     capture: captureResult,
-    ...(usage ? { knowledge_usage: usage } : {}),
     agent_memory: memoryResult ? {
       status: memoryResult.status, agentId: memoryResult.agentId,
       checkpointId: memoryResult.checkpointId, revision: memoryResult.revision,
@@ -228,21 +220,6 @@ export async function checkpointTaskKnowledge(application, {
       sourceSessionId: memoryResult.sourceSessionId, createdAt: memoryResult.createdAt
     } : null
   });
-}
-
-// Usage evidence rides on the checkpoint to save a model round trip. It is
-// recorded once, right after the checkpoint completes: a failed checkpoint
-// write records nothing, and a replay never records again, so evidence is never
-// credited to a later item generation. A crash in between under-counts rather
-// than mis-credits; a usage failure is reported and never blocks the checkpoint.
-async function recordTaskKnowledgeUsage(application, task, items) {
-  try {
-    const recorded = await application.recordKnowledgeUsage({ personalSpaceId: application.config.personal.spaceId,
-      taskId: task.token, sessionId: task.sessionId, toolName: 'checkpoint_task_knowledge', items });
-    return { status: 'recorded', result: recorded };
-  } catch (error) {
-    return { status: 'failed', items: items.length, error: error?.code ?? 'usage_not_recorded' };
-  }
 }
 
 // Names the lead and only collaborators that are real, active Agents of this space.
