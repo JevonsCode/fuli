@@ -28,10 +28,8 @@ const GROUPS = {
   ]
 };
 
-// "group:digest" tokens mark full deliveries. References use a different
-// shape, so a reference can never be mistaken for a delivery.
-export const DELIVERY_TOKEN = /\b(rules|preferences|identity):([0-9a-f]{12})\b/g;
-
+// "group:digest" tokens in session_delivery.delivered mark full deliveries;
+// references are listed separately under session_delivery.referenced.
 export function sessionDeliveryTokens(context) {
   return Object.fromEntries(Object.entries(GROUPS)
     .map(([group, paths]) => [group, `${group}:${digestOf(pick(context, paths))}`]));

@@ -8,6 +8,7 @@ import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-hook.
 import { claudeDeliveredTokens } from '../src/agents/claude-code/session-anchors.js';
 import { codexLifecycleOutput } from '../src/agents/codex/lifecycle-hook.js';
 
+const SESSION = 'synthetic-claude';
 const context = () => ({ taskContextToken: 'fuli-task-synthetic',
   effective_preferences: [{ instruction: 'synthetic preference', preference_key: 'p' }],
   task_guidance: { checkpoint: 'Checkpoint before finishing.' } });
@@ -18,14 +19,16 @@ function entryContext(output) {
 }
 
 // Claude records each injected context as a hook_additional_context attachment.
-const recorded = (text) => `${JSON.stringify({ type: 'attachment', attachment: { type: 'hook_additional_context', content: [text] } })}\n`;
+const recorded = (text, overrides = {}) => `${JSON.stringify({ type: 'attachment', sessionId: SESSION,
+  isSidechain: false, attachment: { type: 'hook_additional_context', hookEvent: 'UserPromptSubmit', content: [text] },
+  ...overrides })}\n`;
 
 test('Claude references a group only after the transcript records its full delivery', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'fuli-claude-session-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const transcript = join(root, 'session.jsonl');
   writeFileSync(transcript, '{"type":"user"}\n');
-  const input = { session_id: 'synthetic-claude', cwd: root, prompt: 'Synthetic prompt.', transcript_path: transcript };
+  const input = { session_id: SESSION, cwd: root, prompt: 'Synthetic prompt.', transcript_path: transcript };
   const enter = async () => entryContext(await claudeLifecycleOutput('UserPromptSubmit', input, async () => context()));
 
   const first = await enter();
@@ -44,19 +47,33 @@ test('Claude references a group only after the transcript records its full deliv
   appendFileSync(transcript, recorded(second.text));
   assert.equal((await enter()).context.effective_preferences.length, 1);
 
-  // Delivery tokens quoted outside a hook record prove nothing.
-  writeFileSync(transcript, `${JSON.stringify({ type: 'user', message: { content: first.text } })}\n`);
-  assert.equal((await enter()).context.effective_preferences.length, 1);
+  // Tokens quoted outside this session's own Fuli entry prove nothing.
+  for (const lines of [
+    `${JSON.stringify({ type: 'user', sessionId: SESSION, message: { content: first.text } })}\n`,
+    recorded(first.text, { sessionId: 'another-session' }),
+    recorded(first.text, { isSidechain: true }),
+    recorded(`Other hook output quoting ${first.text}`),
+    `${recorded(first.text).slice(0, -20)}\n`
+  ]) {
+    writeFileSync(transcript, lines);
+    assert.equal((await enter()).context.effective_preferences.length, 1);
+  }
 });
 
-test('Claude delivery proof reads only the recent transcript and fails closed', (t) => {
+test('Claude delivery proof reads only delivered tokens and fails closed', (t) => {
   const root = mkdtempSync(join(tmpdir(), 'fuli-claude-anchor-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  assert.equal(claudeDeliveredTokens(null)('rules:0123456789ab'), false);
-  assert.equal(claudeDeliveredTokens(join(root, 'missing.jsonl'))('rules:0123456789ab'), false);
-  const tail = recorded('{"session_delivery":{"delivered":["rules:0123456789ab"]}}');
-  assert.equal(claudeDeliveredTokens('synthetic', { readTail: () => tail })('rules:0123456789ab'), true);
-  assert.equal(claudeDeliveredTokens('synthetic', { readTail: () => { throw new Error('unreadable'); } })('rules:0123456789ab'), false);
+  const token = 'rules:0123456789ab';
+  assert.equal(claudeDeliveredTokens(null, SESSION)(token), false);
+  assert.equal(claudeDeliveredTokens(join(root, 'missing.jsonl'), SESSION)(token), false);
+  const entry = (sessionDelivery, extra = {}) =>
+    recorded(`Fuli task context.\n${JSON.stringify({ session_delivery: sessionDelivery, ...extra })}`);
+  const proof = (tail) => claudeDeliveredTokens('synthetic', SESSION, { readTail: () => tail })(token);
+  assert.equal(proof(entry({ delivered: [token] })), true);
+  assert.equal(proof(entry({ delivered: [] })), false);
+  assert.equal(proof(entry({ referenced: { rules: '0123456789ab' } }, { note: token })), false);
+  assert.equal(proof(`${entry({ delivered: [token] })}${JSON.stringify({ type: 'system', subtype: 'compact_boundary' })}\n`), false);
+  assert.equal(claudeDeliveredTokens('synthetic', SESSION, { readTail: () => { throw new Error('unreadable'); } })(token), false);
 });
 
 test('Codex has no delivery proof yet, so every entry stays complete', async (t) => {
@@ -66,7 +83,7 @@ test('Codex has no delivery proof yet, so every entry stays complete', async (t)
   const input = { session_id: 'synthetic-codex', cwd: root, prompt: 'Synthetic prompt.', transcript_path: transcript };
   const first = entryContext(await codexLifecycleOutput('UserPromptSubmit', input, async () => context(),
     { guidanceDirectory: join(root, 'guidance') }));
-  writeFileSync(transcript, recorded(first.text));
+  writeFileSync(transcript, recorded(first.text, { sessionId: 'synthetic-codex' }));
   const second = entryContext(await codexLifecycleOutput('UserPromptSubmit', input, async () => context(),
     { guidanceDirectory: join(root, 'guidance') }));
   assert.equal(second.context.effective_preferences.length, 1);

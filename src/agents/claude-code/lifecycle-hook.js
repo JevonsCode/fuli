@@ -32,7 +32,7 @@ export async function claudeLifecycleOutput(event, input, invoke, { guidanceDire
       hookEventName: event,
       label: 'Fuli task context. Read full context; apply effective_preferences. Finish with checkpoint_task_knowledge and a truthful workLog.',
       guidanceDirectory,
-      session: { isDelivered: claudeDeliveredTokens(input.transcript_path), inlineLimit: CLAUDE_INLINE_LIMIT }
+      session: { isDelivered: claudeDeliveredTokens(input.transcript_path, sessionId), inlineLimit: CLAUDE_INLINE_LIMIT }
     });
   }
   const check = await invoke('verify_task_checkpoint', { sessionId, ...source });
