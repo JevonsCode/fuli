@@ -209,10 +209,10 @@ export async function checkpointTaskKnowledge(application, {
   }
   const captureResult = captureInput
     ? await application.captureSessionKnowledge(captureInput) : null;
-  const usage = knowledgeUsage?.length ? await recordTaskKnowledgeUsage(application, task, knowledgeUsage) : null;
   await application.taskContextRegistry.checkpoint(taskContextToken, {
     ...checkpoint, captureStatus: captureResult?.status ?? null
   }, sourceApplication);
+  const usage = knowledgeUsage?.length ? await recordTaskKnowledgeUsage(application, task, knowledgeUsage) : null;
   return finish({
     status: 'checkpointed',
     disposition,
@@ -231,9 +231,10 @@ export async function checkpointTaskKnowledge(application, {
 }
 
 // Usage evidence rides on the checkpoint to save a model round trip. It is
-// recorded once, before the checkpoint completes (a retry of an incomplete
-// checkpoint is idempotent for the same item generation); a failure is reported
-// and never blocks the checkpoint.
+// recorded once, right after the checkpoint completes: a failed checkpoint
+// write records nothing, and a replay never records again, so evidence is never
+// credited to a later item generation. A crash in between under-counts rather
+// than mis-credits; a usage failure is reported and never blocks the checkpoint.
 async function recordTaskKnowledgeUsage(application, task, items) {
   try {
     const recorded = await application.recordKnowledgeUsage({ personalSpaceId: application.config.personal.spaceId,

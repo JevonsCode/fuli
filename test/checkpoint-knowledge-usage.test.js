@@ -43,3 +43,19 @@ test('a usage failure is reported and never undoes the checkpoint', async () => 
   const none = await checkpointTaskKnowledge(plain.app, plain.input);
   assert.equal(none.knowledge_usage, undefined);
 });
+
+test('a failed checkpoint write records no usage; the completing retry records it once', async () => {
+  const calls = [];
+  const { app, input } = scenario(async (request) => { calls.push(request); return { recorded: 1 }; });
+  const complete = app.taskContextRegistry.checkpoint.bind(app.taskContextRegistry);
+  let failures = 1;
+  app.taskContextRegistry.checkpoint = (...args) => {
+    if (failures-- > 0) throw new Error('Provider write failed');
+    return complete(...args);
+  };
+  await assert.rejects(checkpointTaskKnowledge(app, { ...input, knowledgeUsage: usage }), /Provider write failed/);
+  assert.equal(calls.length, 0);
+  const retried = await checkpointTaskKnowledge(app, { ...input, knowledgeUsage: usage });
+  assert.equal(retried.knowledge_usage.status, 'recorded');
+  assert.equal(calls.length, 1);
+});
