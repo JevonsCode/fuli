@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { pathToFileURL } from 'node:url';
+import { isMainModule } from '../system/main-module.js';
 
 import { DEFAULT_FULI_PORT } from '../defaults.js';
 import { ensureGraphRuntime } from '../setup/graph-runtime.js';
@@ -35,7 +35,7 @@ function numberOption(args, flag, fallback) {
   return parsed;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
   main().catch((error) => {
     process.stderr.write(`${error.message}\n`);
     process.exitCode = 1;

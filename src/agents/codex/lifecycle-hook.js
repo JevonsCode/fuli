@@ -4,13 +4,12 @@ import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { syncConversationTranscript, withTranscriptNotice, claimTranscriptBoundary, recordTranscriptTaskEntry } from '../../conversations/sync-transcript.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from './conversation-transcript.js';
 import { hookAdditionalContextToolResult } from '../../mcp/tool-result.js';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { callAgentTool } from '../../agent-tools.js';
 import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js';
 import { openFederatedGraphApplication } from '../../graphiti/federated-application.js';
 import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
+import { isMainModule } from '../../system/main-module.js';
 import { boundedHookMessage } from '../lifecycle-message.js';
 
 export async function codexStopLifecycleOutput(input, invoke) {
@@ -172,7 +171,7 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   const result = await runCodexLifecycleCommand(process.argv.slice(2));
   if (result.timedOut) process.exit(0);
 }

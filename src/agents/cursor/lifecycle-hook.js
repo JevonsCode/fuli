@@ -1,10 +1,9 @@
 #!/usr/bin/env node
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { callAgentTool } from '../../agent-tools.js';
 import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js';
 import { openFederatedGraphApplication } from '../../graphiti/federated-application.js';
+import { isMainModule } from '../../system/main-module.js';
 import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
 
 const EVENTS = new Set(['sessionStart', 'beforeSubmitPrompt', 'stop']);
@@ -126,4 +125,4 @@ async function main() {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
+if (isMainModule(import.meta.url)) await main();
