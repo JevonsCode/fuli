@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 import { withTranscriptGuard } from '../../conversations/transcript-guard.js';
-import { compactTaskContext } from '../../conversations/task-context-view.js';
+import { guidanceDirectoryFor, hookTaskContextOutput } from '../../conversations/hook-task-context.js';
 import { syncConversationTranscript, withTranscriptNotice, claimTranscriptBoundary, recordTranscriptTaskEntry } from '../../conversations/sync-transcript.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from './conversation-transcript.js';
-import { hookAdditionalContextToolResult } from '../../mcp/tool-result.js';
 
 import { callAgentTool } from '../../agent-tools.js';
 import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js';
@@ -30,7 +29,7 @@ export async function codexStopLifecycleOutput(input, invoke) {
   return { systemMessage: boundedHookMessage(check.reason) };
 }
 
-export async function codexLifecycleOutput(event, input, invoke) {
+export async function codexLifecycleOutput(event, input, invoke, { guidanceDirectory = null } = {}) {
   if (event === 'Stop') return codexStopLifecycleOutput(input, invoke);
   if (!input?.session_id || typeof input.cwd !== 'string' || typeof input.prompt !== 'string') {
     throw new TypeError('Codex task entry requires session, cwd and prompt');
@@ -38,9 +37,9 @@ export async function codexLifecycleOutput(event, input, invoke) {
   const context = await invoke('begin_task_context', { sessionId: input.session_id,
     turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192),
     sourceApplication: 'codex', sourceSessionId: input.session_id });
-  return JSON.parse(hookAdditionalContextToolResult(compactTaskContext(context), { hookEventName: event,
+  return hookTaskContextOutput(context, { hookEventName: event,
     label: 'Fuli task context. Apply effective_preferences and checkpoint with taskContextToken.',
-    limitBytes: 128 * 1024, itemLimit: 1000 }).content[0].text);
+    guidanceDirectory });
 }
 
 export async function runCodexLifecycleHook(args, dependencies = {}) {
@@ -92,7 +91,7 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
             const context = await invokeTool(app, name, parameters, { signal: dependencies.signal });
             if (name === 'begin_task_context') await recordTranscriptTaskEntry(entryGuard, context);
             return context;
-          });
+          }, { guidanceDirectory: guidanceDirectoryFor(runtimeConfigPath) });
           if (event === 'UserPromptSubmit') sync = await claimTranscriptBoundary(app, input, 'codex', sync, {
             normalize: normalizeCodexRecord, verify: verifyCodexTranscript
           }, entryGuard);

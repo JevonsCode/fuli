@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { withTranscriptGuard } from '../../conversations/transcript-guard.js';
-import { compactTaskContext } from '../../conversations/task-context-view.js';
+import { guidanceDirectoryFor, hookTaskContextOutput } from '../../conversations/hook-task-context.js';
 import { syncConversationTranscript, withTranscriptNotice, claimTranscriptBoundary, recordTranscriptTaskEntry } from '../../conversations/sync-transcript.js';
 import { normalizeClaudeRecord, verifyClaudeTranscript } from './conversation-transcript.js';
 
@@ -8,11 +8,10 @@ import { callAgentTool } from '../../agent-tools.js';
 import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js';
 import { openFederatedGraphApplication } from '../../graphiti/federated-application.js';
 import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
-import { hookAdditionalContextToolResult } from '../../mcp/tool-result.js';
 import { isMainModule } from '../../system/main-module.js';
 import { boundedHookMessage } from '../lifecycle-message.js';
 
-export async function claudeLifecycleOutput(event, input, invoke) {
+export async function claudeLifecycleOutput(event, input, invoke, { guidanceDirectory = null } = {}) {
   if (!['UserPromptSubmit', 'Stop'].includes(event)) throw new TypeError('Unsupported Claude lifecycle event');
   const sessionId = input?.session_id;
   if (typeof sessionId !== 'string' || !sessionId.trim() || sessionId.length > 256) {
@@ -26,12 +25,11 @@ export async function claudeLifecycleOutput(event, input, invoke) {
     const context = await invoke('begin_task_context', {
       sessionId, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192), ...source
     });
-    return JSON.parse(hookAdditionalContextToolResult(compactTaskContext(context), {
+    return hookTaskContextOutput(context, {
       hookEventName: event,
       label: 'Fuli task context. Read full context; apply effective_preferences. Finish with checkpoint_task_knowledge and a truthful workLog.',
-      limitBytes: 128 * 1024,
-      itemLimit: 1000
-    }).content[0].text);
+      guidanceDirectory
+    });
   }
   const check = await invoke('verify_task_checkpoint', { sessionId, ...source });
   const reason = boundedHookMessage(check?.reason);
@@ -78,7 +76,7 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
             const context = await (dependencies.callTool ?? callAgentTool)(app, name, parameters, request);
             if (name === 'begin_task_context') await recordTranscriptTaskEntry(entryGuard, context);
             return context;
-          });
+          }, { guidanceDirectory: guidanceDirectoryFor(runtimeConfigPath) });
           if (event === 'UserPromptSubmit') sync = await claimTranscriptBoundary(app, input, 'claude_code', sync, {
             normalize: normalizeClaudeRecord, verify: verifyClaudeTranscript
           }, entryGuard);
