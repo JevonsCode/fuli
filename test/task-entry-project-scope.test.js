@@ -17,7 +17,7 @@ function fixture({ resolution = { status: 'unmatched', personalProjectId: null }
   app.taskContextRegistry = { current: async () => {
     if (lookupError) throw lookupError;
     return current;
-  } };
+  }, begin: async input => ({ ...input, token: 'fuli-task-synthetic-fallback' }) };
   app.upsertPersonalProject = async input => {
     writes.push(input);
     projects.set(input.projectId, { project_id: input.projectId,
@@ -218,9 +218,12 @@ test('an explicit global FLA keeps its identity and memory without provisioning 
   app.personal.getProjectAgent = async (_, project, id) => {
     assert.equal(project, null); assert.equal(id, agent.agent_id); return agent;
   };
+  const memoryReads = [];
   app.personal.getProjectAgentMemory = async input => {
     assert.equal(input.personalProjectId, null);
-    return { revision: 0, scope: 'private_agent_global', personal_project_id: null };
+    memoryReads.push(input);
+    return { revision: 0, scope: 'private_agent_global', personal_project_id: null,
+      personal_space_id: 'synthetic-space', agent_id: agent.agent_id };
   };
   for (const input of [{ projectAgentId: agent.agent_id }, { taskPrompt: '@{global-engineer} Continue.' }]) {
     const result = await run(input);
@@ -228,11 +231,15 @@ test('an explicit global FLA keeps its identity and memory without provisioning 
     assert.equal(result.context.project_agent_id, agent.agent_id);
     assert.equal(result.project_agent_context.status, 'ready');
     assert.equal(result.project_agent_context.memory.scope, 'private_agent_global');
+    // Global entry memory is already the global layer; it is not fetched twice.
+    assert.equal(Object.hasOwn(result.project_agent_context, 'global_memory'), false);
     assert.equal(result.project_agent_context.project_brief, null);
     assert.deepEqual(result.project_agent_context.recent_tasks, []);
     assert.equal(result.agent_receipt.owner.agent_id, agent.agent_id);
   }
   assert.deepEqual([writes.length, hires.length, resolutions.length], [0, 0, 0]);
+  // Two entry calls, one global-layer read each.
+  assert.equal(memoryReads.length, 2);
 });
 
 test('a global host session resumes the same FLA without creating a project', async () => {

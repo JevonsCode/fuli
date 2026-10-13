@@ -1,5 +1,7 @@
 import { compactTaskContext } from '../conversations/task-context-view.js';
 import { employeeToolCatalogResult } from './employee-tool-catalog.js';
+import { agentToolCatalogResult } from './agent-tool-catalog.js';
+import { toolNamesForProfile } from './tool-profiles.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   CallToolRequestSchema,
@@ -61,6 +63,9 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   list_project_agent_assignments: 32 * 1024,
   get_project_agent_context: 64 * 1024,
   get_project_agent_memory: 128 * 1024,
+  // A valid identity (UTF-8, JSON-escaped) plus one memory layer fits; a larger
+  // result fails instead of returning a partial Markdown file.
+  export_project_agent_memory: 512 * 1024,
   checkpoint_project_agent_memory: 64 * 1024,
   coordinate_project_agent_task: 256 * 1024,
   acquire_runtime_lease: 4 * 1024,
@@ -80,6 +85,8 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   list_workflow_candidates: 32 * 1024,
   recommend_next_workflow_steps: 32 * 1024
 });
+// A truncated result would be a misleading partial file, so these fail instead.
+const COMPLETE_RESULT_TOOLS = new Set(['export_project_agent_memory']);
 
 export function createMcpServer(
   app,
@@ -91,6 +98,7 @@ export function createMcpServer(
     hostSessionId = null,
     instructions = MCP_INSTRUCTIONS,
     toolNames = null,
+    toolProfile = 'full',
     prepareToolInput = (_name, input) => input,
     registerResources = true
   } = {}
@@ -104,22 +112,30 @@ export function createMcpServer(
     sourceApplication
   );
   const nativeThreadId = authoritativeSourceApplication === 'codex' ? nativeCodexThreadId(env) : null;
+  const effectiveHostSessionId = hostSessionId ?? mcpHostSessionId(authoritativeSourceApplication === 'codex' ? env : {});
+  const projectActionPreviews = createProjectActionPreviewTokens();
   const tools = createToolMap(
     app,
-    createProjectActionPreviewTokens(),
+    projectActionPreviews,
     nativeThreadId,
-    hostSessionId ?? mcpHostSessionId(authoritativeSourceApplication === 'codex' ? env : {}),
+    effectiveHostSessionId,
     clock,
     authoritativeSourceApplication,
     withRuntimeLease,
-    toolNames,
+    toolNames ?? toolNamesForProfile(toolProfile),
     prepareToolInput,
     env
   );
   for (const tool of tools.values()) registerTool(server, tool);
   if (!tools.size) registerEmptyToolList(server);
   if (registerResources) registerFuliContextResources(server, app, { withRuntimeLease });
-  registerCallHandler(server, tools);
+  // Only the named chat profile expands on demand. Restricted custom/remote
+  // allow-lists remain a security boundary. Every call keeps its original name.
+  const isChatProfile = toolProfile === 'chat' && toolNames === null;
+  const onDemandTools = isChatProfile ? createToolMap(app,
+    projectActionPreviews, nativeThreadId, effectiveHostSessionId,
+    clock, authoritativeSourceApplication, withRuntimeLease, null, prepareToolInput, env) : null;
+  registerCallHandler(server, tools, onDemandTools);
   return server;
 }
 
@@ -161,6 +177,8 @@ function createToolMap(
     .filter((definition) => includeTestTools || !isTestOnlyToolName(definition.name))
     .map((definition) => [definition.name, {
     definition,
+    catalogDefinitions: definition.name === 'list_agent_interfaces' ? definitions.filter(item =>
+      includeTestTools || !isTestOnlyToolName(item.name)) : null,
     schema: jsonSchemaToZod(definition.inputSchema),
     invoke: (input, requestContext = null) => {
       requestContext?.signal?.throwIfAborted?.();
@@ -198,7 +216,7 @@ function registerTool(server, tool) {
   }, (input, extra) => invokeTool(tool, input, extra));
 }
 
-function registerCallHandler(server, tools) {
+function registerCallHandler(server, tools, onDemandTools) {
   server.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const tool = tools.get(request.params.name);
     if (!tool) {
@@ -217,7 +235,16 @@ function registerCallHandler(server, tools) {
         }))
       );
     }
-    return invokeTool(tool, parsed.data, extra);
+    const result = await invokeTool(tool, parsed.data, extra);
+    if (!result.isError && tool.definition.name === 'list_agent_interfaces' && parsed.data.toolName && onDemandTools) {
+      const discovered = onDemandTools.get(parsed.data.toolName);
+      if (!discovered) return errorToolResult(new ApplicationError(ApplicationErrorCode.NOT_FOUND, 'Unknown Fuli tool'));
+      if (!tools.has(discovered.definition.name)) {
+        tools.set(discovered.definition.name, discovered);
+        registerTool(server, discovered); // SDK sends tools/list_changed.
+      }
+    }
+    return result;
   });
 }
 
@@ -226,6 +253,9 @@ async function invokeTool(tool, input, requestContext = null) {
     const value = await tool.invoke(input, requestContext);
     auditLifecycleTool(tool.definition.name);
     const limitBytes = TOOL_RESULT_LIMIT_BYTES[tool.definition.name];
+    if (tool.definition.name === 'list_agent_interfaces') {
+      return agentToolCatalogResult(value, tool.catalogDefinitions, input.toolName, limitBytes);
+    }
     if (tool.definition.name === 'list_employee_tools') {
       return employeeToolCatalogResult(value, { limitBytes });
     }
@@ -240,8 +270,12 @@ async function invokeTool(tool, input, requestContext = null) {
     const itemLimit = ({ list_agent_interfaces: 200, list_project_agent_tasks: 200,
       list_preference_conflicts: 1000, list_external_knowledge_bindings: 200,
       get_collaboration_preferences: 1000 })[tool.definition.name];
-    return successToolResult(tool.definition.name === 'get_collaboration_preferences'
+    const result = successToolResult(tool.definition.name === 'get_collaboration_preferences'
       ? compactTaskContext(value) : value, { limitBytes, itemLimit });
+    if (COMPLETE_RESULT_TOOLS.has(tool.definition.name) && result.structuredContent.truncated) {
+      throw new ApplicationError(ApplicationErrorCode.VALIDATION, 'The export is too large to deliver completely');
+    }
+    return result;
   } catch (error) {
     return errorToolResult(error);
   }

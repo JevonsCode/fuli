@@ -29,6 +29,7 @@ const READ_TOOLS = new Set([
   'list_project_agent_assignments',
   'get_project_agent_context',
   'get_project_agent_memory',
+  'export_project_agent_memory',
   'view_project_agent_task',
   'view_project_agent_activity',
   'get_project_agent_coordination_policy',

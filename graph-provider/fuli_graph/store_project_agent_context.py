@@ -61,11 +61,13 @@ class StoreProjectAgentContext(StoreAgentDelegations, StoreRemoteAgentOrigins):
             if owner_row and not self._implicit_owner_allowed(owner_row, selection):
                 owner = None
                 selection = selection.model_copy(update={'lead_agent_id': None})
-        selected, candidates, reason, basis = await self._select_agents(actor, space, selection)
+        selected, candidates, reason, basis = await self._select_agents(
+            actor, space, selection, conversation=True,
+        )
         if not selected and reason == 'no_match' and not request.required_capabilities:
             fallback_selection = selection.model_copy(update={'work_kind': 'project_context'})
             selected, candidates, reason, basis = await self._select_agents(
-                actor, space, fallback_selection,
+                actor, space, fallback_selection, conversation=True,
             )
             if selected and not self._implicit_owner_allowed(selected[0], fallback_selection):
                 selected, reason, basis = [], 'no_match', [
@@ -115,6 +117,28 @@ class StoreProjectAgentContext(StoreAgentDelegations, StoreRemoteAgentOrigins):
                     basis = ['The project lead owns the task; requested members report results to this lead.']
         if owner and selected and owner == selected[0]['agent_id']:
             reason, basis = 'active_task_owner', ['reuse the owner of this host session task']
+        execution_reason = execution_agent_id = None
+        if selected and selected[0]['agent_id'] == project_lead and not delegated and not request.agent_id:
+            # Owning the conversation is not execution fitness. Report the
+            # task router's choice so the lead can coordinate or recruit.
+            executor, _, execution_reason, execution_basis = await self._select_agents(
+                actor, space, selection.model_copy(update={'lead_agent_id': None}),
+            )
+            execution_agent_id = executor[0]['agent_id'] if executor else None
+            if execution_reason == 'project_team_member':
+                basis = [*basis, *execution_basis,
+                    f'Execution is not staffed yet: use coordinate_project_agent_task so team member '
+                    f'{execution_agent_id} runs this work and reports to the project lead.']
+            elif execution_reason == 'project_team_gap':
+                basis = [*basis, *execution_basis,
+                    'Execution is not staffed: no team member fits this work. Use '
+                    'coordinate_project_agent_task to open HR recruitment for the missing role; '
+                    'the project recruitment confirmation policy applies.']
+            elif execution_reason == 'agent_unavailable':
+                basis = [*basis, *execution_basis,
+                    'Execution is not staffed: a qualified or configured Agent is unavailable to '
+                    'this client. Do not recruit a replacement; ask the user to use an allowed '
+                    'client, change that Agent\'s client access or adjust the team.']
         agent = await self.get_project_agent(
             actor, request.personal_space_id, request.personal_project_id,
             selected[0]['agent_id'],
@@ -132,4 +156,6 @@ class StoreProjectAgentContext(StoreAgentDelegations, StoreRemoteAgentOrigins):
             agent=agent, reason=reason, match_basis=basis, candidate_count=len(candidates),
             requested_agent_id=requested_agent_id,
             reporting_lead_agent_id=reporting_lead_agent_id,
+            execution_reason=execution_reason,
+            execution_agent_id=execution_agent_id,
         )

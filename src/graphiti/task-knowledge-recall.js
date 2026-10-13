@@ -17,7 +17,7 @@ const RECALL_INTENTS = Object.freeze([
   },
   {
     category: 'access_authentication',
-    pattern: /(?:认证|登录|凭据|身份|令牌|密钥|credential|authentication|authorization|login|token|ssh)/iu,
+    pattern: /(?:认证|登录|凭据|身份|令牌|密钥|credential|authentication|authorization|login|(?:access|auth|api|bearer|refresh|id)[\s_-]*token|ssh)/iu,
     queries: ['认证 登录 凭据 身份 credential authentication SSH token runbook']
   },
   {
@@ -65,7 +65,9 @@ export function planTaskKnowledgeRecall(taskPrompt) {
       queries: []
     };
   }
-  const matched = RECALL_INTENTS.filter(({ pattern }) => pattern.test(prompt));
+  const matched = RECALL_INTENTS.filter(({ category, pattern }) => pattern.test(
+    category === 'release_delivery' ? positiveDeliveryClauses(prompt) : prompt
+  ));
   if (!matched.length) {
     return { status: 'not_needed', trigger_categories: [], queries: [] };
   }
@@ -77,6 +79,17 @@ export function planTaskKnowledgeRecall(taskPrompt) {
     trigger_categories: matched.map(({ category }) => category),
     queries: unique(queries).slice(0, MAX_QUERIES)
   };
+}
+
+// Negation is local to a clause. Positive later clauses remain candidates;
+// this plans recall only and never grants permission to perform delivery.
+function positiveDeliveryClauses(prompt) {
+  const action = '(?:提交|发布|发版|上线|部署|推送|再推|release|publish|push|deploy|ship|rollout|commit)';
+  const target = '(?:\\s*(?:代码|变更|code|changes?|this change|(?:到|to\\s+)\\s*GitHub))?';
+  const negated = new RegExp('(?:不要|不用|不必|无需|不得|禁止|暂不|别|不|\\bdo\\s+not\\b|\\bdon\'t\\b|\\bnever\\b|\\bno\\b)'
+    + '(?:\\s|再次|再|需要|执行|进行|要|会|自动|直接)*' + action + target
+    + '(?:\\s*(?:和|或|以及|并|、|\\band\\b|\\bor\\b)\\s*' + action + target + ')*', 'giu');
+  return prompt.replace(negated, ' ');
 }
 
 export async function recallTaskKnowledge(application, resolution, taskPrompt) {

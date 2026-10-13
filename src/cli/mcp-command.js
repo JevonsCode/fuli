@@ -12,7 +12,6 @@ import {
 import { runStdio } from '../mcp/runtime.js';
 import { prepareDirectAgentToolCall } from '../mcp/direct-call.js';
 import { normalizeMcpSourceApplication } from '../mcp/session-id.js';
-import { toolNamesForProfile } from '../mcp/tool-profiles.js';
 import { applicationErrorMessage } from '../mcp/tool-result.js';
 
 export async function runMcpCommand(args, { env = process.env } = {}) {
@@ -44,7 +43,7 @@ export async function runMcpCommand(args, { env = process.env } = {}) {
     sourceApplication: configuredSourceApplication
       ? normalizeMcpSourceApplication(configuredSourceApplication)
       : undefined,
-    toolNames: toolNamesForProfile(args.includes('--tool-profile') ? requiredOption(args, '--tool-profile') : 'full')
+    toolProfile: args.includes('--tool-profile') ? requiredOption(args, '--tool-profile') : 'full'
   });
 }
 

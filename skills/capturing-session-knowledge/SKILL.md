@@ -31,6 +31,14 @@ for Agents without an equivalent lifecycle hook. Fuli uses both only for this lo
 never stores or returns them, and resolves the exact local personal project itself. Do not infer
 or guess `personalProjectId` in the Agent.
 
+Pass the actual native `sessionId` when the host or this turn's Hook supplies it; never guess
+one or use an MCP process ID. With `sessionId` and `taskPrompt`, the fallback also starts a fresh
+durable task and returns its `taskContextToken` for the final checkpoint. An existing pending
+task is not proof that its Hook context reached this turn. If `task_lifecycle.status=not_started`,
+preferences are available but checkpoint ownership is not established; report the missing
+host identity or prompt rather than reusing an earlier token. A blocked transcript handoff
+remains unverified even if the preference fallback and task-summary checkpoint succeed.
+
 ## Mandatory reply identity
 
 Every final user-visible reply MUST include the current task’s `agent_receipt.markdown` unchanged exactly once. This includes greetings, status-only replies, failures, `retain_nothing`, and capture-disabled tasks. The receipt is independent of whether a memory checkpoint was saved. Never substitute a client name, configured peer, or an earlier task’s owner. If a legacy/unavailable entry supplies no receipt, explicitly state that the FULI Agent identity is unavailable. A receipt with no authorized owner already supplies the correct neutral text.

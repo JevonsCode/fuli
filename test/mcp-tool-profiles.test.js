@@ -25,7 +25,7 @@ test('the chat profile is a small subset of real tools that keeps memory and Rou
 test('connect prints the requested profile and source application', () => {
   const paths = { nodePath: '/node', mcpServerPath: '/fuli/src/mcp-server.js', runtimeConfigPath: '/data/graph-runtime.json' };
   assert.deepEqual(clientConnectionConfig(paths, 'server').args,
-    ['/fuli/src/mcp-server.js', '--runtime-config', '/data/graph-runtime.json', '--source-application', 'other']);
+    ['/fuli/src/mcp-server.js', '--runtime-config', '/data/graph-runtime.json', '--source-application', 'other', '--tool-profile', 'full']);
   assert.deepEqual(clientConnectionConfig(paths, 'server', { profile: 'chat', sourceApplication: 'claude' }).args,
     ['/fuli/src/mcp-server.js', '--runtime-config', '/data/graph-runtime.json', '--source-application', 'claude', '--tool-profile', 'chat']);
   assert.throws(() => clientConnectionConfig(paths, 'server', { profile: 'tiny' }), /Unknown MCP tool profile/);

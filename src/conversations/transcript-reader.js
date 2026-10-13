@@ -6,9 +6,17 @@ const WINDOW = 512 * 1024;
 // Start capture at this task, never import an existing file's unrelated past.
 // Read only a bounded tail; a prompt not yet written by the host starts at EOF.
 export async function initialTranscriptBoundary(path, sessionId, prompt, adapter) {
-  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  let file;
+  try { file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW); }
+  catch (error) {
+    // The first prompt hook can precede file creation. There is no old history
+    // to exclude; the reader still verifies the session before importing bytes.
+    if (error.code === 'ENOENT') return 0;
+    throw error;
+  }
   try {
     const { size } = await file.stat();
+    if (size === 0) return 0;
     const header = Buffer.alloc(Math.min(WINDOW, size));
     await file.read(header, 0, header.length, 0);
     const firstEnd = header.indexOf(10);

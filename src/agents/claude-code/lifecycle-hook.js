@@ -29,7 +29,7 @@ export async function claudeLifecycleOutput(event, input, invoke) {
     });
     return JSON.parse(hookAdditionalContextToolResult(compactTaskContext(context), {
       hookEventName: event,
-      label: 'Fuli task context. Apply effective_preferences and use taskContextToken for the final checkpoint.',
+      label: 'Fuli task context. Read full context; apply effective_preferences. Finish with checkpoint_task_knowledge and a truthful workLog.',
       limitBytes: 128 * 1024,
       itemLimit: 1000
     }).content[0].text);
@@ -40,11 +40,15 @@ export async function claudeLifecycleOutput(event, input, invoke) {
   return { systemMessage: reason };
 }
 
-export function claudeLifecycleUnavailable(event) {
-  const warning = 'Fuli context is unavailable; memory recovery and task checkpoint are not verified. '
+export function claudeLifecycleUnavailable(event, input = null, reason = null) {
+  const warning = reason ?? 'Fuli context is unavailable; memory recovery and task checkpoint are not verified. '
     + 'Continue with the user request and use Fuli MCP when it becomes available.';
+  const sessionId = input?.session_id;
+  const fallback = typeof sessionId === 'string' && sessionId.trim() && sessionId.length <= 256
+    ? ` No valid Hook task context was supplied. First call get_collaboration_preferences with sessionId=${JSON.stringify(sessionId)}, projectPath=current working directory and taskPrompt=current user request. Use its fresh taskContextToken for checkpoint_task_knowledge with a truthful workLog. Native transcript capture remains unverified; do not reuse an old token or claim this Hook delivered task context.`
+    : '';
   return event === 'UserPromptSubmit'
-    ? { systemMessage: warning, hookSpecificOutput: { hookEventName: event, additionalContext: warning } }
+    ? { systemMessage: warning, hookSpecificOutput: { hookEventName: event, additionalContext: warning + fallback } }
     : { systemMessage: warning };
 }
 
@@ -68,7 +72,7 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
           let sync = await syncConversationTranscript(app, input, 'claude_code', {
             normalize: normalizeClaudeRecord, verify: verifyClaudeTranscript
           }, guard);
-          if (event === 'UserPromptSubmit' && sync.entryBlocked) return { systemMessage: boundedHookMessage(sync.reason) };
+          if (event === 'UserPromptSubmit' && sync.entryBlocked) return claudeLifecycleUnavailable(event, input, boundedHookMessage(sync.reason));
           const entryGuard = sync.status === 'capture_disabled' ? null : guard;
           if (event === 'UserPromptSubmit' && entryGuard?.value) await entryGuard.write({ ...entryGuard.value, phase: 'beginning' });
           const output = await claudeLifecycleOutput(event, input, async (name, parameters) => {
@@ -79,14 +83,14 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
           if (event === 'UserPromptSubmit') sync = await claimTranscriptBoundary(app, input, 'claude_code', sync, {
             normalize: normalizeClaudeRecord, verify: verifyClaudeTranscript
           }, entryGuard);
-          if (event === 'UserPromptSubmit' && sync.entryBlocked) return { systemMessage: boundedHookMessage(sync.reason) };
+          if (event === 'UserPromptSubmit' && sync.entryBlocked) return claudeLifecycleUnavailable(event, input, boundedHookMessage(sync.reason));
           return withTranscriptNotice(output, sync);
         });
       } catch (error) {
         if (event !== 'UserPromptSubmit' || !app.getCapturePolicy?.().enabled || !input.transcript_path) throw error;
-        return { systemMessage: error.code === 'EADDRINUSE'
+        return claudeLifecycleUnavailable(event, input, error.code === 'EADDRINUSE'
           ? 'The session handoff lock is occupied. Retry after the current hook finishes; if it persists, start a new host session and resume the intended Agent.'
-          : 'Fuli transcript handoff could not be completed safely. Retry task entry; no previous Agent context was supplied.' };
+          : 'Fuli transcript handoff could not be completed safely. Retry task entry; no previous Agent context was supplied.');
       }
     }, request);
   } finally {
@@ -114,6 +118,7 @@ async function main() {
   const timeoutMs = Number.isSafeInteger(configured) && configured > 0 && configured <= 2_147_483_647
     ? configured : 28000;
   const controller = new AbortController();
+  let input = null;
   let emitted = false;
   const emit = (output, callback) => {
     if (emitted) return;
@@ -124,14 +129,15 @@ async function main() {
   // No prompt, transcript, path or raw exception is written to diagnostics.
   const deadline = setTimeout(() => {
     controller.abort();
-    emit(claudeLifecycleUnavailable(event), () => process.exit(0));
+    emit(claudeLifecycleUnavailable(event, input), () => process.exit(0));
   }, timeoutMs);
   const abort = setTimeout(() => controller.abort(), Math.max(1, timeoutMs - 1500));
   try {
-    const output = await runClaudeLifecycleHook(args, { signal: controller.signal });
+    const output = await runClaudeLifecycleHook(args, { signal: controller.signal,
+      readInput: async () => { input = await readHookInput(); return input; } });
     emit(output);
   } catch {
-    emit(claudeLifecycleUnavailable(event));
+    emit(claudeLifecycleUnavailable(event, input));
   } finally {
     clearTimeout(abort);
     clearTimeout(deadline);

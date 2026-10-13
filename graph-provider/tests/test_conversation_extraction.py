@@ -1,0 +1,181 @@
+"""Deterministic extractive compaction; all fixtures are synthetic test data."""
+import json
+
+from fuli_graph.conversation_context import (
+    ENTRY_BYTES, add_task_result, fold_messages, pack_context, render_digest,
+)
+
+
+def message(sequence, role, content, kind='message'):
+    return {'sequence': sequence, 'role': role, 'content': content, 'kind': kind}
+
+
+def texts(digest):
+    return [entry['text'] for entry in digest['entries']]
+
+
+def test_keeps_decision_after_title_line_and_assistant_method():
+    digest = fold_messages({}, [
+        message(1, 'user', 'Synthetic login redirect\nWe decided to keep the session cookie.\nunrelated chatter'),
+        message(2, 'assistant', 'Sure.\nMethod: replay the redirect with a fixture token.\nok'),
+        message(3, 'tool', 'Decision: tool output is never retained'),
+    ])
+    assert 'Synthetic login redirect' in texts(digest)
+    decision = next(entry for entry in digest['entries'] if entry['text'].startswith('We decided'))
+    assert decision['kind'] == 'decision'
+    assert decision['sources'] == [{'role': 'user', 'sequence': 1}]
+    method = next(entry for entry in digest['entries'] if entry['kind'] == 'method')
+    assert method['text'] == 'Method: replay the redirect with a fixture token.'
+    assert method['sources'] == [{'role': 'assistant', 'sequence': 2}]
+    assert not any('tool output' in text for text in texts(digest))
+    assert not any(text in ('Sure.', 'ok', 'unrelated chatter') for text in texts(digest))
+    assert digest['omitted'] == 3
+
+
+def test_later_correction_and_unresolved_work_do_not_erase_older_sources():
+    digest = fold_messages({}, [message(1, 'user', 'Plan\nDecision: use port 3000.')])
+    digest = fold_messages(digest, [
+        message(5, 'user', 'Status\nCorrection: actually use port 4000 instead.'),
+        message(6, 'assistant', 'Done\nTODO: migrate the remaining fixture config.'),
+    ])
+    kinds = {entry['text']: entry['kind'] for entry in digest['entries']}
+    assert kinds['Decision: use port 3000.'] == 'decision'
+    assert kinds['Correction: actually use port 4000 instead.'] == 'correction'
+    assert kinds['TODO: migrate the remaining fixture config.'] == 'open'
+    text = render_digest(digest)
+    assert text.index('port 3000') < text.index('port 4000')
+    assert 'user #1' in text and 'user #5' in text and 'assistant #6' in text
+
+
+def test_repeated_compaction_dedups_additively_and_stays_bounded():
+    digest = {}
+    for round_index in range(30):
+        base = round_index * 10
+        digest = fold_messages(digest, [
+            message(base + 1, 'user', f'Synthetic round {round_index} ' + 'context ' * 25 + '\nDecision: keep raw history.'),
+            message(base + 2, 'assistant', f'Note {round_index}\nUnresolved: verify round {round_index}.'),
+        ])
+    decision = [entry for entry in digest['entries'] if entry['text'] == 'Decision: keep raw history.']
+    assert len(decision) == 1
+    assert decision[0]['sources'][-1] == {'role': 'user', 'sequence': 291}
+    assert len(decision[0]['sources']) <= 4
+    size = sum(len(entry['text'].encode()) for entry in digest['entries'])
+    assert size <= 6000
+    assert digest['omitted'] > 0
+    # Open work outranks request titles, so old titles are evicted first.
+    assert 'Unresolved: verify round 29.' in texts(digest)
+    assert 'Unresolved: verify round 0.' in texts(digest)
+    assert not any(text.startswith('Synthetic round 0 ') for text in texts(digest))
+    assert any(text.startswith('Synthetic round 29 ') for text in texts(digest))
+
+
+def test_unicode_lines_are_bounded_by_utf8_bytes_and_marked_truncated():
+    digest = fold_messages({}, [message(1, 'user', '决定：' + '保留原始记录' * 100)])
+    entry = digest['entries'][0]
+    assert entry['kind'] == 'decision'
+    assert len(entry['text'].encode()) <= ENTRY_BYTES
+    assert entry['text'].endswith('…') and entry['truncated'] is True
+    entry['text'].encode().decode()  # never splits a code point
+
+
+def test_legacy_digest_remains_readable_and_new_entries_append():
+    legacy = {'tasks': [], 'notes': ['修复登录跳转']}
+    legacy = add_task_result(legacy, '2026-10-01T00:00:00+00:00', 'completed', 'Synthetic result')
+    digest = fold_messages(legacy, [message(9, 'user', 'Next: confirm the 待办 list')])
+    assert digest['notes'] == ['修复登录跳转']
+    text = render_digest(digest)
+    assert text.startswith('[2026-10-01 completed] Synthetic result')
+    assert 'Earlier requests:\n- 修复登录跳转' in text
+    assert '- Next: confirm the 待办 list [open, user #9]' in text
+    assert 'not verified' in text
+
+
+def test_render_budget_prefers_decisions_and_reports_omissions():
+    events = [message(index, 'user', f'Context line number {index} ' + 'x' * 120) for index in range(1, 30)]
+    events.append(message(40, 'assistant', 'Final\nDecision: ship the extractive digest.'))
+    digest = fold_messages({}, events)
+    text = render_digest(digest, 600)
+    assert len(text.encode()) <= 600
+    assert 'Decision: ship the extractive digest. [decision, assistant #40]' in text
+    assert 'omitted' in text
+    packed = pack_context(render_digest(digest, 1000), [], 2000)
+    assert len(json.dumps(packed, ensure_ascii=False, separators=(',', ':')).encode()) <= 2000
+
+
+def test_truncated_lines_with_shared_prefix_are_not_conflated():
+    prefix = 'Decision: ' + 'shared synthetic prefix ' * 12
+    digest = fold_messages({}, [
+        message(1, 'user', f'Title\n{prefix} keep the A path'),
+        message(2, 'assistant', f'Title two\n{prefix} keep the B path'),
+    ])
+    decisions = [entry for entry in digest['entries'] if entry['kind'] == 'decision']
+    assert len(decisions) == 2
+    assert [entry['sources'] for entry in decisions] == [[{'role': 'user', 'sequence': 1}],
+                                                        [{'role': 'assistant', 'sequence': 2}]]
+
+
+def test_same_source_is_not_repeated_and_fenced_code_counts_as_omitted():
+    digest = fold_messages({}, [message(3, 'user', 'Decision: keep it.\nDecision: keep it.\n```\nprint(1)\n```')])
+    assert digest['entries'][0]['sources'] == [{'role': 'user', 'sequence': 3}]
+    assert digest['omitted'] == 1  # the code line; fence markers are not content
+    digest = fold_messages(digest, [message(3, 'user', 'Decision: keep it.')])
+    assert digest['entries'][0]['sources'] == [{'role': 'user', 'sequence': 3}]
+
+
+def test_render_budget_bounds_oversized_tasks_and_keeps_newer_decisions():
+    oversized = {'tasks': [{'at': '2026-10-01', 'status': 'completed', 'summary': 'Synthetic long summary ' * 100}]}
+    text = render_digest(oversized, 600)
+    assert len(text.encode()) <= 600
+    assert 'Synthetic long summary' in text and '…' in text
+    assert 'truncated' in text
+    mixed = add_task_result({}, '2026-10-01T00:00:00+00:00', 'completed', 'Synthetic result ' * 60)
+    for index in range(10):
+        mixed = add_task_result(mixed, f'2026-10-{index + 2:02d}T00:00:00+00:00', 'completed', f'Task {index} ' * 20)
+    mixed = fold_messages({**mixed, 'notes': ['Legacy synthetic note']}, [
+        message(50, 'assistant', 'Wrap\nDecision: keep the newest decision visible.')])
+    text = render_digest(mixed, 800)
+    assert len(text.encode()) <= 800
+    assert 'Decision: keep the newest decision visible. [decision, assistant #50]' in text
+    assert '[2026-10-11 completed] Task 9' in text
+    assert 'omitted' in text
+
+
+def test_dedup_keeps_case_and_internal_whitespace_distinct():
+    digest = fold_messages({}, [
+        message(1, 'user', 'Decision: use case-sensitive key ABC'),
+        message(2, 'user', 'Decision: use case-sensitive key abc'),
+        message(3, 'assistant', 'Decision: set value "a  b"'),
+        message(4, 'assistant', 'Decision: set value "a b"'),
+        message(5, 'user', 'Decision: use case-sensitive key ABC'),
+    ])
+    assert texts(digest) == ['Decision: use case-sensitive key ABC', 'Decision: use case-sensitive key abc',
+                             'Decision: set value "a  b"', 'Decision: set value "a b"']
+    assert digest['entries'][0]['sources'] == [{'role': 'user', 'sequence': 1}, {'role': 'user', 'sequence': 5}]
+
+
+def test_large_batch_evicts_by_priority_and_recency_and_counts_omissions():
+    # Synthetic batch: one message with thousands of unique open-work lines.
+    lines = '\n'.join(f'TODO: synthetic item {index:05d}' for index in range(20000))
+    digest = fold_messages({}, [
+        message(1, 'user', 'Synthetic title\nDecision: keep the oldest decision.'),
+        message(2, 'assistant', 'Method: an early method.'),
+        message(3, 'user', lines),
+    ])
+    kept = texts(digest)
+    assert len(kept) == 80
+    assert sum(len(text.encode()) for text in kept) <= 6000
+    # Title and method are evicted first; then the oldest equal-priority lines, so the decision too.
+    assert kept == [f'TODO: synthetic item {index:05d}' for index in range(19920, 20000)]
+    assert digest['omitted'] == 20003 - 80
+
+
+def test_eviction_keeps_display_order_and_high_priority_when_bytes_bound():
+    events = [message(index, 'user', f'Synthetic title {index} ' + 'x' * 200) for index in range(1, 40)]
+    events.append(message(50, 'assistant', 'Decision: survive byte eviction.'))
+    events.append(message(51, 'user', 'Newest title ' + 'y' * 200))
+    digest = fold_messages({}, events)
+    kept = texts(digest)
+    assert kept[-2:] == ['Decision: survive byte eviction.', 'Newest title ' + 'y' * 200]
+    assert kept[:-2] == [f'Synthetic title {index} ' + 'x' * 200 for index in range(42 - len(kept), 40)]
+    assert sum(len(text.encode()) for text in kept) <= 6000
+    assert digest['omitted'] == 41 - len(kept)

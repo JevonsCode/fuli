@@ -15,6 +15,7 @@ export function agentCollaborationPreference(item) {
   }
   for (const field of [
     'attributes',
+    'preference_qualifiers',
     'weight',
     'reason',
     'confirmation_basis',

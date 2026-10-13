@@ -298,3 +298,80 @@ def confirmation_basis(status='confirmed'):
             if agent_confirmed else {}
         ),
     })
+
+
+@pytest.mark.asyncio
+async def test_collaboration_context_preserves_structured_scope_qualifiers():
+    node = preference_node('scoped-rule', 'scoped-rule', 'Scoped rule', 'Use only in the matching workflow.')
+    node['attributes_json'] = json.dumps({
+        'sessionId': 'synthetic-session', 'workflow': 'implementation',
+        'custom_condition': {'unknown': 'retain'}, 'preferenceKey': 'scoped-rule', 'weight': 0.5,
+    })
+    result = await read_collaboration_context(
+        StoreStub(SequentialDriver([[node], []])), {'id': 'principal-1'}, 'personal-space'
+    )
+    assert result.effective_preferences[0].preference_qualifiers == {
+        'sessionId': 'synthetic-session', 'workflow': 'implementation',
+        'custom_condition': {'unknown': 'retain'},
+    }
+
+
+@pytest.mark.asyncio
+async def test_scope_filter_runs_before_override_and_retains_global_same_key():
+    global_rule = preference_node('global', 'global', 'Global rule', 'Always apply globally.', preference_key='same-key')
+    project_rule = preference_node('other-session', 'project', 'Session rule', 'Only for another session.',
+                                   scope='project', project_id='project-a', preference_key='same-key')
+    project_rule['attributes_json'] = json.dumps({'preferenceKey': 'same-key', 'sessionId': 'session-b'})
+    store = StoreStub(SequentialDriver([
+        [{'project': {'project_id': 'project-a'}}], [], [global_rule, project_rule], []
+    ]))
+    result = await read_collaboration_context(store, {'id': 'principal-1'}, 'personal-space', 'project-a',
+                                            session_id='session-a')
+    assert [item.id for item in result.effective_preferences] == ['global']
+    assert result.overridden_global_ids == []
+    assert result.task_scope_excluded_count == 1
+
+
+@pytest.mark.asyncio
+async def test_workflow_scope_requires_its_own_explicit_metadata_and_keeps_unknown_conditions():
+    rows = [
+        preference_node('business', 'business', 'Business workflow', 'Business rule'),
+        preference_node('work-kind', 'work-kind', 'Work kind', 'Kind rule'),
+        preference_node('unknown', 'unknown', 'Unknown condition', 'Keep unknown condition'),
+    ]
+    for row, attributes in zip(rows, [
+        {'workflow': 'timesheet'}, {'workKind': 'review'}, {'workflow': {'custom': 'unknown'}},
+    ]):
+        row['attributes_json'] = json.dumps(attributes)
+    result = await read_collaboration_context(
+        StoreStub(SequentialDriver([rows, []])), {'id': 'principal-1'}, 'personal-space',
+        work_kind='implementation'
+    )
+    assert {item.id for item in result.effective_preferences} == {'business', 'unknown'}
+    result = await read_collaboration_context(
+        StoreStub(SequentialDriver([rows, []])), {'id': 'principal-1'}, 'personal-space',
+        work_kind='implementation', workflow='leave-request'
+    )
+    assert {item.id for item in result.effective_preferences} == {'unknown'}
+
+@pytest.mark.asyncio
+async def test_explicit_legacy_session_scope_is_filtered_before_same_key_override():
+    session = '12345678-1234-1234-1234-123456789abc'
+    global_rule = preference_node('global', 'global', 'Global', 'Always apply.', preference_key='same-key')
+    scoped = preference_node('legacy', 'legacy', 'Legacy', f'仅在 Codex 会话 {session} 中适用；不扩大权限。',
+                             scope='project', project_id='project-a', preference_key='same-key')
+    for actual, expected in [('other-session', ['global']), (session, ['legacy']), (None, ['legacy'])]:
+        result = await read_collaboration_context(
+            StoreStub(SequentialDriver([[{'project': {'project_id': 'project-a'}}], [], [global_rule, scoped], []])),
+            {'id': 'principal-1'}, 'personal-space', 'project-a', session_id=actual)
+        assert [item.id for item in result.effective_preferences] == expected
+
+@pytest.mark.asyncio
+async def test_legacy_provenance_and_ambiguous_conditions_do_not_narrow_scope():
+    session = '12345678-1234-1234-1234-123456789abc'
+    rows = [preference_node('source', 'source', 'Source', 'General rule'),
+            preference_node('ambiguous', 'ambiguous', 'Ambiguous', f'仅在 Codex 会话 {session} 或其他会话中适用。')]
+    rows[0]['attributes_json'] = json.dumps({'sourceSessionId': session})
+    result = await read_collaboration_context(StoreStub(SequentialDriver([rows, []])),
+                                             {'id': 'principal-1'}, 'personal-space', session_id='other-session')
+    assert {item.id for item in result.effective_preferences} == {'source', 'ambiguous'}

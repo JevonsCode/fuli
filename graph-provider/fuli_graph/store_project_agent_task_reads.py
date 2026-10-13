@@ -11,6 +11,7 @@ from .project_agent_task_models import (
     ProjectAgentRoutingDecisionRecord,
     ProjectAgentTaskExecutionSummary,
     ProjectAgentTaskEventRecord,
+    ProjectAgentExecutionPlan,
     ProjectAgentTaskParticipantRecord,
     ProjectAgentTaskRecord,
     ProjectAgentTaskRouteResult,
@@ -241,6 +242,8 @@ class StoreProjectAgentTaskReads:
                 if name in ProjectAgentTaskEventRecord.model_fields:
                     fields[name] = event.get(name)
             fields.update(self._event_json_fields(event))
+            if event.get('execution_plan_json'):
+                fields['execution_plan'] = ProjectAgentExecutionPlan.model_validate_json(event['execution_plan_json'])
             events.append(ProjectAgentTaskEventRecord(**fields))
         events.sort(key=lambda item: item.created_at)
         fields = {

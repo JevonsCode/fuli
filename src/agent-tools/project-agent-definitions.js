@@ -197,7 +197,20 @@ export const projectAgentTaskCoordinateInput = objectSchema({
   'idempotencyKey', 'title', 'objective', 'workKind',
   'routingReason', 'contextQueries'
 ]);
+const executionPlan = objectSchema({
+  steps: arraySchema(objectSchema({
+    id: boundedString(64),
+    title: boundedString(240),
+    status: enumSchema(['pending', 'in_progress', 'awaiting_review', 'completed', 'blocked', 'skipped']),
+    detail: { ...nullableStringSchema(), maxLength: 1000 }
+  }, ['id', 'title', 'status']), { maxItems: 40 })
+}, ['steps']);
+
 export const projectAgentTaskActivityInput = objectSchema({
+  executionPlan: {
+    ...executionPlan,
+    description: 'Optional explicit execution plan snapshot. Reuse step IDs when updating progress. Omit when no plan exists; steps: [] explicitly withdraws a previous plan. Report public steps only, never private reasoning. Step completion is Agent-reported progress, not human acceptance of the task.'
+  },
   artifactRevision: { ...stringSchema(), minLength: 1, maxLength: 160 },
   personalSpaceId: id,
   personalProjectId: id,

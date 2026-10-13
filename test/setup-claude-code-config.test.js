@@ -57,7 +57,9 @@ test('Claude Code connection keeps unrelated config and installs deterministic t
           '--runtime-config',
           CONTEXT.runtimeConfigPath,
           '--source-application',
-          'claude_code'
+          'claude_code',
+          '--tool-profile',
+          'chat'
         ],
         alwaysLoad: true
       }
@@ -91,6 +93,26 @@ test('Claude Code connection keeps unrelated config and installs deterministic t
       statusMessage: 'Checking Fuli task checkpoint'
     }]
   });
+});
+
+test('Claude Code setup preserves an explicitly selected full tool profile', () => {
+  const writes = new Map();
+  connectClaudeCode(AGENT, CONTEXT, {
+    readConfig: path => path === AGENT.configPath ? { mcpServers: { fuli: {
+      args: ['old-server', '--tool-profile', 'full']
+    } } } : {},
+    writeConfig: (path, value) => writes.set(path, value)
+  });
+  assert.deepEqual(writes.get(AGENT.configPath).mcpServers.fuli.args.slice(-2), ['--tool-profile', 'full']);
+});
+
+test('Claude Code setup rejects a missing explicit profile value before writing', () => {
+  let writes = 0;
+  assert.throws(() => connectClaudeCode(AGENT, CONTEXT, {
+    readConfig: path => path === AGENT.configPath ? { mcpServers: { fuli: { args: ['--tool-profile'] } } } : {},
+    writeConfig: () => { writes++; }
+  }), /tool profile/);
+  assert.equal(writes, 0);
 });
 
 test('Claude Code hook timeout can be increased by an isolated acceptance runtime', () => {

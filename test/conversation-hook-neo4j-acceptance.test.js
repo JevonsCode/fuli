@@ -144,13 +144,34 @@ test('candidate Hook subprocesses persist visible history and recover only the s
   const codexSession = 'synthetic-second';
   const codexPath = join(directory, 'second.jsonl');
   const nextPrompt = 'Implement the next synthetic change.';
-  await writeFile(codexPath, JSON.stringify({ type: 'session_meta', payload: { id: codexSession } }) + '\n' +
-    JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: nextPrompt }] } }) + '\n');
+  // A new native session may run its entry hook before creating the transcript.
   const next = context(await hook('codex', 'UserPromptSubmit', { session_id: codexSession,
     turn_id: 'turn-two', cwd: projectPath, transcript_path: codexPath, prompt: nextPrompt }));
   assert.equal(next.context.project_agent_id, 'engineer');
-  assert.ok(next.conversation.recovery.messages.some(message => message.content === marker));
+  assert.equal(next.conversation.recovery.messages, undefined);
+  assert.equal(next.conversation.recovery.messagesOmitted, true);
+  assert.equal(next.conversation.recovery.latest_checkpoint.summary, 'Synthetic Hook flow verified.');
+  // Hot-path history is deferred, not lost: the authorized original-name read
+  // retrieves the prior conversation, which differs from the new conversation.
+  const historyApplication = openFederatedGraphApplication({ runtimeConfigPath });
+  try {
+    const history = await callAgentTool(historyApplication, 'read_agent_conversation', {
+      personalSpaceId: space.id, personalProjectId: projectId, agentId: 'engineer',
+      conversationId: next.conversation.recovered_from, sourceApplication: 'codex',
+      sourceSessionId: codexSession, limit: 20
+    });
+    assert.ok(history.events.some(message => message.content === marker));
+  } finally { await historyApplication.close(); }
   assert.equal(next.project_agent_context.memory.current.memory.summary, 'SYNTHETIC_DURABLE_MEMORY_MARKER');
+  await writeFile(codexPath, JSON.stringify({ type: 'session_meta', payload: { id: codexSession } }) + '\n' +
+    JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: nextPrompt }] } }) + '\n' +
+    JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'assistant', channel: 'final',
+      content: [{ type: 'output_text', text: 'SYNTHETIC_FIRST_TURN_RESULT' }] } }) + '\n');
+  await hook('codex', 'Stop', { session_id: codexSession, cwd: projectPath, transcript_path: codexPath });
+  const codexSessionRecord = await query({ source_application: 'codex', mode: 'session', session_id: codexSession });
+  const codexSaved = await query({ source_application: 'codex', mode: 'events', conversation_id: codexSessionRecord.conversation_id });
+  assert.ok(codexSaved.events.some(event => event.content === 'SYNTHETIC_FIRST_TURN_RESULT'));
+  assert.equal(codexSaved.events.filter(event => event.role === 'user' && event.content === nextPrompt).length, 1);
   const reviewSession = 'synthetic-review';
   const reviewPath = join(directory, 'review.jsonl');
   const reviewPrompt = 'Code review the synthetic component.';

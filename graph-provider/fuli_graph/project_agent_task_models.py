@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import AliasChoices, Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_serializer, model_validator
 
 from .model_validation import (
     normalize_source_session_url,
@@ -48,6 +48,10 @@ ProjectAgentRoutingOutcome = Literal[
 ]
 ProjectAgentRoutingReason = Literal[
     'project_team_lead',
+    # The accountable team lead keeps ownership; a qualified member executes,
+    # or the roster has no qualified member and HR recruitment is opened.
+    'project_team_member',
+    'project_team_gap',
     'explicit_agent',
     'project_continuity',
     'project_default',
@@ -350,7 +354,33 @@ class ProjectAgentTaskExecutionSummary(StrictModel):
         return _unique_text(value, 'tools used') if value is not None else None
 
 
+class ProjectAgentPlanStep(StrictModel):
+    id: str = Field(min_length=1, max_length=64)
+    title: str = Field(min_length=1, max_length=240)
+    status: Literal['pending', 'in_progress', 'awaiting_review', 'completed', 'blocked', 'skipped']
+    detail: str | None = Field(default=None, max_length=1000)
+
+    @field_validator('id', 'title')
+    @classmethod
+    def nonblank(cls, value):
+        if not value.strip():
+            raise ValueError('Plan step ID and title must not be blank')
+        return value.strip()
+
+
+class ProjectAgentExecutionPlan(StrictModel):
+    steps: list[ProjectAgentPlanStep] = Field(max_length=40)
+
+    @field_validator('steps')
+    @classmethod
+    def unique_steps(cls, steps):
+        if len({step.id for step in steps}) != len(steps):
+            raise ValueError('Plan step IDs must be unique')
+        return steps
+
+
 class ProjectAgentTaskEventRecord(StrictModel):
+    execution_plan: ProjectAgentExecutionPlan | None = None
     event_id: str
     task_id: str
     agent_id: str | None = None
@@ -494,6 +524,16 @@ class ProjectAgentTaskRecord(StrictModel):
 
 
 class ProjectAgentTaskActivityCreate(StrictModel):
+    execution_plan: ProjectAgentExecutionPlan | None = None
+
+    @model_serializer(mode='wrap')
+    def serialize_optional_plan(self, handler):
+        payload = handler(self)
+        # Keep fingerprints of pre-plan activity requests valid across upgrades.
+        if self.execution_plan is None:
+            payload.pop('execution_plan', None)
+        return payload
+
     artifact_revision: str | None = Field(default=None, min_length=1, max_length=160)
     expected_verification_attempt_id: str | None = Field(default=None, min_length=1, max_length=256)
     judgment_task_context_token: str | None = Field(default=None, min_length=1, max_length=256)
