@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 // Within one host session, earlier Fuli entries stay in the conversation.
-// Repeating unchanged rules and preferences every turn only grows the context,
+// Repeating unchanged rules, preferences and identity every turn only grows the context,
 // so later entries reference the earlier full delivery by digest. Anything
 // uncertain (no prior state, compaction, a changed digest) delivers in full.
 const RULE_PATHS = [
@@ -14,9 +14,19 @@ const RULE_PATHS = [
   ['static_guidance']
 ];
 const PREFERENCE_PATHS = [['effective_preferences']];
+// Who acts and under which standing policy; the receipt markdown stays inline.
+const IDENTITY_PATHS = [
+  ['agent_receipt', 'owner'],
+  ['agent_receipt', 'continuation'],
+  ['project_agent_context', 'role'],
+  ['project_agent_context', 'project_brief'],
+  ['project_agent_context', 'match_basis'],
+  ['judgment_context', 'policy']
+];
 
 export function sessionDeliveryDigests(context) {
-  return { rules: digestOf(pick(context, RULE_PATHS)), preferences: digestOf(pick(context, PREFERENCE_PATHS)) };
+  return { rules: digestOf(pick(context, RULE_PATHS)), preferences: digestOf(pick(context, PREFERENCE_PATHS)),
+    identity: digestOf(pick(context, IDENTITY_PATHS)) };
 }
 
 // previous: the digests recorded with the last full delivery in this session,
@@ -30,6 +40,7 @@ export function applySessionDelivery(context, previous, { reset = false } = {}) 
   if (!unchanged.length) return full;
   const reduced = structuredClone(context);
   if (unchanged.includes('rules')) omit(reduced, RULE_PATHS);
+  if (unchanged.includes('identity')) omit(reduced, IDENTITY_PATHS);
   if (unchanged.includes('preferences')) {
     reduced.effective_preferences_count = context.effective_preferences?.length ?? 0;
     omit(reduced, PREFERENCE_PATHS);

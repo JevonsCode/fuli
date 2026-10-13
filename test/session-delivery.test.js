@@ -12,7 +12,10 @@ const COMPACTION = /"subtype"\s*:\s*"compact_boundary"/;
 function entry(overrides = {}) {
   return {
     taskContextToken: `fuli-task-${Math.random().toString(16).slice(2, 10)}`,
-    agent_receipt: { markdown: 'FULI Agent：负责人 Test', guidance: 'MUST end every reply with the receipt.' },
+    agent_receipt: { markdown: 'FULI Agent：负责人 Test', guidance: 'MUST end every reply with the receipt.',
+      owner: { agent_id: 'agent-a', name: 'Test' } },
+    project_agent_context: { project_agent_id: 'agent-a', role: { name: 'Test' },
+      memory: { revision: 1, current: null } },
     effective_preferences: [{ instruction: '分支使用 JVS/ 前缀', preference_key: 'branch' }],
     active_conflicts: [],
     application_guidance: { authority: 'Human confirmation outranks agents.', conflicts: 'Do not apply conflicts.' },
@@ -53,16 +56,19 @@ test('a later entry in the same host session references unchanged rules and pref
   assert.equal(second.task_guidance, undefined);
   assert.equal(second.agent_receipt.guidance, undefined);
   assert.equal(second.agent_receipt.markdown, 'FULI Agent：负责人 Test');
+  assert.equal(second.agent_receipt.owner, undefined);
+  assert.equal(second.project_agent_context.role, undefined);
+  assert.equal(second.project_agent_context.memory.revision, 1);
   assert.deepEqual(second.active_conflicts, []);
   assert.equal(second.conversation.conversation_id, 'c1');
   assert.deepEqual(second.session_delivery.digests, first.session_delivery.digests);
-  assert.deepEqual(second.session_delivery.unchanged, ['rules', 'effective_preferences']);
+  assert.deepEqual(second.session_delivery.unchanged, ['rules', 'effective_preferences', 'identity']);
   assert.match(second.session_delivery.note, /get_collaboration_preferences/);
 
   // A changed preference is delivered in full while unchanged rules stay referenced.
   const changed = deliver(entry({ effective_preferences: [{ instruction: '新规则', preference_key: 'new' }] }));
   assert.deepEqual(changed.effective_preferences, [{ instruction: '新规则', preference_key: 'new' }]);
-  assert.deepEqual(changed.session_delivery.unchanged, ['rules']);
+  assert.deepEqual(changed.session_delivery.unchanged, ['rules', 'identity']);
   assert.notEqual(changed.session_delivery.digests.preferences, first.session_delivery.digests.preferences);
 });
 
