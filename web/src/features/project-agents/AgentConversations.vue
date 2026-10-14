@@ -178,7 +178,7 @@ function role(value: string) {
 }
 function content(value: unknown) { return typeof value === 'string' ? value : JSON.stringify(value, null, 2) }
 function entryKind(value: string) {
-  return t(`projectAgents.conversations.kinds.${['request', 'decision', 'correction', 'open', 'method'].includes(value) ? value : 'request'}`)
+  return t(`projectAgents.conversations.kinds.${['request', 'decision', 'correction', 'open', 'method', 'outcome'].includes(value) ? value : 'request'}`)
 }
 function client(value: string) {
   return t(`projectAgents.clients.${['codex', 'claude', 'claude_code', 'cursor', 'gemini_cli', 'kiro'].includes(value) ? value : 'other'}`)

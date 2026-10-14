@@ -70,6 +70,7 @@ it('shows compacted extraction with source references distinct from originals', 
     next_cursor: 1, has_more: false, digest: { tasks: [], notes: ['Legacy request'], omitted: 4, entries: [
       { kind: 'decision', text: 'Decision: use port 3000', sources: [{ role: 'user', sequence: 1 }] },
       { kind: 'correction', text: 'Correction: use port 4000 instead', sources: [{ role: 'assistant', sequence: 7 }], truncated: true },
+      { kind: 'outcome', text: 'Fixed the linked-install entry check', sources: [{ role: 'assistant', sequence: 9 }] },
     ] } })
   await wrapper.get('[data-read-conversation]').trigger('click')
   await flushPromises()
@@ -80,6 +81,8 @@ it('shows compacted extraction with source references distinct from originals', 
   expect(digest.text()).toContain('用户 #1')
   expect(digest.text()).toContain('Agent #7')
   expect(digest.text()).toContain('已截断')
+  expect(digest.text()).toContain('结论')
+  expect(digest.text()).toContain('Fixed the linked-install entry check')
   expect(digest.text()).toContain('Legacy request')
   expect(digest.text()).toContain('4')
   // The original record remains readable alongside its sequence number.

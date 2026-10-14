@@ -179,3 +179,74 @@ def test_eviction_keeps_display_order_and_high_priority_when_bytes_bound():
     assert kept[:-2] == [f'Synthetic title {index} ' + 'x' * 200 for index in range(42 - len(kept), 40)]
     assert sum(len(text.encode()) for text in kept) <= 6000
     assert digest['omitted'] == 41 - len(kept)
+
+
+def test_interim_narration_is_dropped_and_only_labelled_interim_lines_survive():
+    digest = fold_messages({}, [
+        message(1, 'user', 'Synthetic: shrink the hook entry'),
+        message(2, 'assistant', 'Writing the file directly instead.\nNow rerunning the tests.'),
+        message(3, 'tool', '{"call_id":"t1"}', kind='tool_result'),
+        message(4, 'assistant', 'Checking the transcript next.\nRoot cause: the entry check compares link and real paths.'),
+        message(5, 'assistant', 'Done.\n- Fixed the entry check for linked installs.\n'
+                                '| Item | Before | After |\n|---|---|---|\n| Entry | 14,794 | 8,180 |\n'
+                                '**Kept unchanged:** the Codex tool profile.\nThanks for waiting.'),
+    ])
+    kinds = {entry['text']: entry['kind'] for entry in digest['entries']}
+    assert 'Writing the file directly instead.' not in kinds
+    assert 'Now rerunning the tests.' not in kinds
+    assert kinds['Root cause: the entry check compares link and real paths.'] == 'outcome'
+    assert kinds['Fixed the entry check for linked installs.'] == 'outcome'
+    assert kinds['| Entry | 14,794 | 8,180 |'] == 'outcome'
+    assert kinds['**Kept unchanged:** the Codex tool profile.'] == 'outcome'
+    assert '|---|---|---|' not in kinds
+    assert 'Done.' not in kinds and 'Thanks for waiting.' not in kinds
+    assert '[outcome, assistant #5]' in render_digest(digest)
+
+
+def test_each_user_message_starts_a_new_turn_and_a_fold_boundary_ends_one():
+    digest = fold_messages({}, [
+        message(1, 'user', 'First request'),
+        message(2, 'assistant', '- Interim list item is narration.'),
+        message(3, 'assistant', '- First turn conclusion.'),
+        message(4, 'user', 'Second request'),
+        message(5, 'assistant', '- Cut by the fold boundary, so treated as final.'),
+    ])
+    found = texts(digest)
+    assert 'Interim list item is narration.' not in found
+    assert 'First turn conclusion.' in found
+    assert 'Cut by the fold boundary, so treated as final.' in found
+
+
+def test_a_tight_budget_keeps_the_lead_points_of_a_long_reply():
+    reply = '\n'.join(['**Key finding:** the hook never ran on linked installs.']
+                      + [f'- Detail {index}: ' + 'measured value ' * 6 for index in range(40)])
+    digest = fold_messages({}, [message(1, 'user', 'Synthetic report'), message(2, 'assistant', reply)])
+    text = render_digest(digest, 600)
+    assert '**Key finding:** the hook never ran on linked installs.' in text
+    assert 'Detail 0:' in text and 'Detail 39:' not in text
+
+
+def test_long_development_session_keeps_its_decisions_not_its_narration():
+    # Synthetic replay of the failure found in a real session: many progress
+    # messages between tool calls, then one summarising reply.
+    narration = ['Checking why the console fails to start.', 'Writing the file directly instead.',
+                 'Next: tests for the session dedupe.', 'Partial apply (escape issue). Finishing the edits.',
+                 'Rerunning the full suite in the background.'] * 6
+    events = [message(1, 'user', 'Continue the P0 and P1 work on this branch.')]
+    for index, text in enumerate(narration, start=2):
+        events.append(message(index, 'assistant', text))
+        events.append(message(index, 'tool', '{}', kind='tool_result'))
+    events.append(message(100, 'assistant', '\n'.join([
+        '**Most important finding: hooks never ran on this machine**',
+        '- Linked installs failed the entry check, so no context was injected. Fixed.',
+        '- Unchanged rules and preferences are referenced only with transcript proof.',
+        '- The Codex tool profile stays full: both profiles cost 22,995 input tokens.',
+        '- Usage bundling into the checkpoint was reverted after review.',
+        '1. **Trust the hooks in Codex** with /hooks; this needs the user.',
+    ])))
+    digest = fold_messages({}, events)
+    text = render_digest(digest, 2000)
+    for kept in ('hooks never ran', 'Linked installs', 'transcript proof', '22,995', 'reverted', '/hooks'):
+        assert kept in text, kept
+    for dropped in ('Checking why', 'directly instead', 'session dedupe', 'escape issue', 'full suite'):
+        assert dropped not in text, dropped

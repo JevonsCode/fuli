@@ -46,7 +46,7 @@ export const projectAgentMessages = {
       exportMemoryFailed: '工作记忆导出失败，请重试。',
       memory: { decisions: '决定', openThreads: '未完成事项', nextActions: '下一步' },
       digestTitle: '压缩摘录', digestHint: '自动摘录，未经核实：按固定规则从较早消息中摘取的原句，不是工作记忆，可能遗漏或误分类；以下方原文为准。',
-      kinds: { request: '请求', decision: '决定', correction: '更正', open: '未完成', method: '方法' },
+      kinds: { request: '请求', decision: '决定', correction: '更正', open: '未完成', method: '方法', outcome: '结论' },
       truncated: '已截断', omitted: '另有 {count} 行未摘录或因容量被移除，可在原文中查看。',
     },
     workHistory: {
@@ -418,7 +418,7 @@ export const projectAgentMessages = {
       exportMemoryFailed: 'Could not export working memory. Try again.',
       memory: { decisions: 'Decisions', openThreads: 'Open work', nextActions: 'Next actions' },
       digestTitle: 'Compacted extract', digestHint: 'Automatic extract, not verified: original lines picked from earlier messages by fixed rules. It is not working memory and may miss or mislabel content; the originals below are authoritative.',
-      kinds: { request: 'Request', decision: 'Decision', correction: 'Correction', open: 'Open', method: 'Method' },
+      kinds: { request: 'Request', decision: 'Decision', correction: 'Correction', open: 'Open', method: 'Method', outcome: 'Outcome' },
       truncated: 'truncated', omitted: '{count} more lines were not extracted or were dropped for space; see the originals.',
     },
     workHistory: {

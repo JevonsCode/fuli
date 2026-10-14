@@ -4,9 +4,13 @@ Older messages fold into a bounded digest once the unfolded text passes a size
 threshold; raw events are always retained. Folding is extractive: it keeps the
 first line of each user request plus user/assistant lines that match explicit
 decision, correction, open-work or method markers, each with its source role
-and sequence. It does not understand meaning, so it can miss unmarked content
-and mislabel marked lines; omissions are counted and the raw history remains the
-authority. Sizes are conservative UTF-8 bytes.
+and sequence. An assistant turn is read by position: the final reply before the
+next user message is the turn's conclusion, so its structured summary lines
+(list items, table rows, bold-led lines) are kept as outcomes; interim messages
+written while tools run are progress narration, so only explicitly labelled
+lines survive from them. It does not understand meaning, so it can miss
+unmarked content and mislabel marked lines; omissions are counted and the raw
+history remains the authority. Sizes are conservative UTF-8 bytes.
 """
 import json
 import re
@@ -26,8 +30,17 @@ MARKERS = (
                         r'|\bnext(\s+steps?)?\s*:|待办|未解决|待确认|下一步|遗留|阻塞|未完成', re.I)),
     ('method', re.compile(r'\b(method|approach|steps?|workaround|procedure|how to)\b|方法|步骤|方案|做法', re.I)),
 )
-# Lower value is evicted first; within a priority, the least recently seen goes first.
-PRIORITY = {'request': 0, 'method': 1, 'decision': 2, 'correction': 2, 'open': 2}
+# Interim narration keeps only lines that name their kind explicitly.
+LABELLED = re.compile(
+    r'^\W{0,4}(decision|decided|correction|root cause|conclusion|result|todo|open question|unresolved|blocked'
+    r'|决定|决策|结论|根因|原因|更正|纠正|待办|未解决|阻塞)\s*[:：]', re.I)
+# Structured lines of a final reply: list items, table rows and bold-led lines.
+STRUCTURED = re.compile(r'^([-*•]\s+|\d+[.)、]\s*|\|.*\||\*\*)')
+TABLE_RULE = re.compile(r'^\|[\s|:-]+\|$')
+# Lower value is evicted first; within a priority, the least recently seen goes
+# first. Within one assistant reply the later lines go first, because a reply
+# leads with its most important points.
+PRIORITY = {'request': 0, 'method': 1, 'decision': 2, 'correction': 2, 'open': 2, 'outcome': 2}
 
 
 def message_bytes(event):
@@ -49,8 +62,9 @@ def add_task_result(digest, at, status, summary):
     return {**digest, 'tasks': tasks[-DIGEST_TASKS:]}
 
 
-def extract_lines(event):
-    """Yield (kind, line) candidates and the count of lines left out."""
+def extract_lines(event, position='final'):
+    """Yield (kind, line) candidates and the count of lines left out.
+    position applies to assistant messages: 'final' or 'interim'."""
     lines, fenced, omitted = [], False, 0
     for part in event['content'].splitlines():
         line = part.strip()
@@ -62,15 +76,40 @@ def extract_lines(event):
         elif line:
             lines.append(line)
     found = []
+    assistant = event['role'] == 'assistant'
     for index, line in enumerate(lines):
+        if assistant and position == 'interim' and not LABELLED.search(line):
+            omitted += 1  # progress narration
+            continue
         kind = next((name for name, pattern in MARKERS if pattern.search(line)), None)
         if kind is None and index == 0 and event['role'] == 'user':
             kind = 'request'
+        if kind is None and assistant and (LABELLED.search(line) or (
+                position == 'final' and STRUCTURED.search(line) and not TABLE_RULE.match(line))):
+            kind = 'outcome'
         if kind is None:
             omitted += 1
         else:
-            found.append((kind, line))
+            found.append((kind, re.sub(r'^[-*•]\s+', '', line)))
     return found, omitted
+
+
+def assistant_positions(events):
+    """Map each assistant message's sequence to 'interim' when another assistant
+    message follows it before the next user message; the last one is 'final'.
+    A turn cut by a fold boundary ends at the boundary."""
+    positions, pending = {}, None
+    for event in events:
+        if event.get('kind', 'message') != 'message' or event['role'] not in ('user', 'assistant'):
+            continue
+        if event['role'] == 'assistant':
+            if pending is not None:
+                positions[pending] = 'interim'
+            pending = event['sequence']
+            positions[pending] = 'final'
+        else:
+            pending = None
+    return positions
 
 
 def last_sequence(entry):
@@ -78,7 +117,11 @@ def last_sequence(entry):
 
 
 def evict_order(entries):
-    return sorted(range(len(entries)), key=lambda i: (PRIORITY[entries[i]['kind']], last_sequence(entries[i])))
+    def key(i):
+        entry = entries[i]
+        order = -i if entry['sources'][-1]['role'] == 'assistant' else i
+        return PRIORITY[entry['kind']], last_sequence(entry), order
+    return sorted(range(len(entries)), key=key)
 
 
 def fold_messages(digest, events):
@@ -87,10 +130,11 @@ def fold_messages(digest, events):
     # Truncated text is only a prefix, so it never identifies a line for dedup.
     index = {entry['text']: entry for entry in entries if not entry.get('truncated')}
     omitted = digest.get('omitted', 0)
+    positions = assistant_positions(events)
     for event in events:
         if event['role'] not in ('user', 'assistant') or event.get('kind', 'message') != 'message':
             continue
-        found, skipped = extract_lines(event)
+        found, skipped = extract_lines(event, positions.get(event['sequence'], 'final'))
         omitted += skipped
         source = {'role': event['role'], 'sequence': event['sequence']}
         for kind, line in found:
