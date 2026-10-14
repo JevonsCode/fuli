@@ -163,8 +163,10 @@ def fold_messages(digest, events, positions=None):
             text, truncated = bounded_text(line)
             existing = None if truncated else index.get(text)
             if existing:
-                if event['role'] == 'user':
-                    existing['user'] = True  # survives the bounded source list below
+                # Fix the user flag before the bounded source list below can
+                # trim away a user source, including in digests folded earlier.
+                if event['role'] == 'user' or any(item['role'] == 'user' for item in existing['sources']):
+                    existing['user'] = True
                 if source not in existing['sources']:
                     # Additive dedup: keep the first source and the newest ones.
                     sources = [*existing['sources'], source]
@@ -298,8 +300,13 @@ def pack_context(summary, events, budget, checkpoint=None):
     # A cut checkpoint may borrow what the historical summary left unused.
     current = result['latest_checkpoint']
     if current and current['truncated'] and size() < budget * 3 // 4:
-        result['latest_checkpoint'] = latest_checkpoint(checkpoint, budget // 4 + budget * 3 // 4 - size())
-        if size() > budget * 3 // 4:
+        limit = budget // 4 + budget * 3 // 4 - size()
+        while limit > budget // 4:
+            result['latest_checkpoint'] = latest_checkpoint(checkpoint, limit)
+            if size() <= budget * 3 // 4:
+                break
+            limit -= max(64, (size() - budget * 3 // 4))
+        else:
             result['latest_checkpoint'] = current
     for event in reversed(events):
         if not message_bytes(event):

@@ -340,3 +340,22 @@ def test_a_cut_checkpoint_borrows_what_the_summary_left_unused():
     crowded = pack_context(lambda limit: 'x' * limit, [], 4000, checkpoint)
     assert crowded['latest_checkpoint']['truncated'] is True
     assert crowded['truncated'] is True
+
+
+def test_an_older_digest_keeps_user_priority_when_its_user_source_is_trimmed():
+    legacy = {'entries': [{'kind': 'decision', 'text': 'Decision: keep the raw history.', 'sources': [
+        {'role': 'assistant', 'sequence': 1}, {'role': 'user', 'sequence': 2},
+        {'role': 'assistant', 'sequence': 3}, {'role': 'assistant', 'sequence': 4}]}]}
+    digest = fold_messages(legacy, [message(5, 'assistant', 'Decision: keep the raw history.')])
+    entry = digest['entries'][0]
+    assert entry['user'] is True
+    assert {'role': 'user', 'sequence': 2} not in entry['sources']
+
+
+def test_checkpoint_borrowing_shrinks_to_fit_instead_of_giving_up():
+    checkpoint = {'status': 'incomplete', 'summary': '中' * 2000}
+    packed = pack_context(lambda limit: 'Short digest.', [], 4000, checkpoint)
+    borrowed = len(packed['latest_checkpoint']['summary'].encode())
+    plain = len(pack_context('Short digest.' * 80, [], 4000, checkpoint)['latest_checkpoint']['summary'].encode())
+    assert borrowed > plain
+    assert len(json.dumps(packed, ensure_ascii=False, separators=(',', ':')).encode()) <= 4000
