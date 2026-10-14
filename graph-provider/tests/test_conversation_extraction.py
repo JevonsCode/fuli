@@ -2,7 +2,7 @@
 import json
 
 from fuli_graph.conversation_context import (
-    ENTRY_BYTES, OUTCOME_LINES, add_task_result, assistant_positions, fold_messages, pack_context, render_digest,
+    ENTRY_BYTES, ASSISTANT_LINES, add_task_result, assistant_positions, fold_messages, pack_context, render_digest,
 )
 
 
@@ -274,8 +274,8 @@ def test_long_lists_are_capped_per_reply_and_user_corrections_outrank_them():
     digest = fold_messages({}, events)
     found = texts(digest)
     assert 'Correction: never touch the production config.' in found
-    assert not any(text.startswith(f'Part 11 note {OUTCOME_LINES} ') for text in found)
-    assert sum(text.startswith('Part 11 ') for text in found) == OUTCOME_LINES
+    assert not any(text.startswith(f'Part 11 note {ASSISTANT_LINES} ') for text in found)
+    assert sum(text.startswith('Part 11 ') for text in found) == ASSISTANT_LINES
     assert len(found) <= 80
 
 
@@ -302,3 +302,41 @@ def test_a_fold_boundary_uses_the_messages_kept_after_it():
               message(3, 'assistant', '- The real conclusion after the cut.')]
     folded = fold_messages({}, events[:2], assistant_positions(events))
     assert 'Progress list before the cut.' not in texts(folded)
+
+
+def test_a_user_statement_keeps_its_priority_after_its_source_list_is_trimmed():
+    events = [message(1, 'user', 'Synthetic'), message(2, 'assistant', 'Decision: keep the raw history.'),
+              message(3, 'user', 'Decision: keep the raw history.')]
+    for turn in range(4):
+        events += [message(10 + turn * 2, 'user', f'Turn {turn}'),
+                   message(11 + turn * 2, 'assistant', 'Decision: keep the raw history.')]
+    for turn in range(5):
+        events += [message(40 + turn * 2, 'user', f'List {turn}'),
+                   message(41 + turn * 2, 'assistant', '\n'.join(f'- List {turn} item {index}' for index in range(30)))]
+    digest = fold_messages({}, events)
+    entry = next(entry for entry in digest['entries'] if entry['text'] == 'Decision: keep the raw history.')
+    assert entry['user'] is True
+    assert all(source['role'] == 'assistant' for source in entry['sources'][1:])
+
+
+def test_every_assistant_line_counts_toward_the_reply_limit():
+    digest = fold_messages({}, [message(1, 'user', 'Synthetic'), message(2, 'assistant',
+                                '\n'.join(f'**Result**: item {index}' for index in range(100)))])
+    assert sum(text.startswith('**Result**') for text in texts(digest)) == ASSISTANT_LINES
+
+
+def test_table_headers_with_keywords_are_not_classified():
+    digest = fold_messages({}, [message(1, 'user', 'Synthetic'), message(2, 'assistant',
+                                '| Decision | Before | After |\n|---|---|---|\n| Entry | 14,794 | 8,180 |')])
+    assert texts(digest) == ['Synthetic', '| Entry | 14,794 | 8,180 |']
+
+
+def test_a_cut_checkpoint_borrows_what_the_summary_left_unused():
+    checkpoint = {'status': 'incomplete', 'summary': 'Synthetic outcome. ' * 120}
+    packed = pack_context(lambda limit: 'Short digest.', [], 4000, checkpoint)
+    assert packed['latest_checkpoint']['truncated'] is False
+    assert packed['truncated'] is False
+    assert len(json.dumps(packed, ensure_ascii=False, separators=(',', ':')).encode()) <= 4000
+    crowded = pack_context(lambda limit: 'x' * limit, [], 4000, checkpoint)
+    assert crowded['latest_checkpoint']['truncated'] is True
+    assert crowded['truncated'] is True

@@ -36,12 +36,12 @@ LABELLED = re.compile(
     r'|决定|决策|结论|根因|原因|更正|纠正|待办|未解决|阻塞)\s*[:：]', re.I)
 LIST_PREFIX = re.compile(r'^([-*•]\s+|\d+[.)、]\s*)')
 # Structured lines of a final reply: list items, table rows and bold-led lines.
-# A long reply contributes only its leading ones, so ordinary lists cannot
-# crowd out other turns.
+# An assistant message contributes at most its leading lines, so ordinary lists
+# cannot crowd out other turns.
 STRUCTURED = re.compile(r'^([-*•]\s+|\d+[.)、]\s*|\|.*\||\*\*)')
 TABLE_ROW = re.compile(r'^\|.*\|$')
 TABLE_RULE = re.compile(r'^\|[\s|:-]+\|$')
-OUTCOME_LINES = 20
+ASSISTANT_LINES = 20
 # Lower value is evicted first; within a priority, the least recently seen goes
 # first. Within one assistant reply the later lines go first, because a reply
 # leads with its most important points. A user's own decisions, corrections and
@@ -89,8 +89,12 @@ def extract_lines(event, position='final'):
             lines.append(line)
     found = []
     assistant = event['role'] == 'assistant'
-    structured = 0
     for index, line in enumerate(lines):
+        # Table rules and header rows state nothing on their own.
+        header = TABLE_ROW.match(line) and index + 1 < len(lines) and TABLE_RULE.match(lines[index + 1])
+        if TABLE_RULE.match(line) or header:
+            omitted += 1
+            continue
         labelled = assistant and is_labelled(line)
         if assistant and position == 'interim' and not labelled:
             omitted += 1  # progress narration
@@ -98,13 +102,10 @@ def extract_lines(event, position='final'):
         kind = next((name for name, pattern in MARKERS if pattern.search(line)), None)
         if kind is None and index == 0 and event['role'] == 'user':
             kind = 'request'
-        if kind is None and labelled:
+        if kind is None and assistant and (labelled or (position == 'final' and STRUCTURED.search(line))):
             kind = 'outcome'
-        if kind is None and assistant and position == 'final' and STRUCTURED.search(line):
-            header = TABLE_ROW.match(line) and index + 1 < len(lines) and TABLE_RULE.match(lines[index + 1])
-            if not TABLE_RULE.match(line) and not header and structured < OUTCOME_LINES:
-                kind = 'outcome'
-                structured += 1
+        if kind is not None and assistant and len(found) >= ASSISTANT_LINES:
+            kind = None  # one reply cannot fill the digest
         if kind is None:
             omitted += 1
         else:
@@ -139,7 +140,8 @@ def evict_order(entries):
     def key(i):
         entry = entries[i]
         order = -i if entry['sources'][-1]['role'] == 'assistant' else i
-        user = entry['kind'] in USER_STATEMENTS and any(source['role'] == 'user' for source in entry['sources'])
+        user = entry['kind'] in USER_STATEMENTS and (
+            entry.get('user', False) or any(source['role'] == 'user' for source in entry['sources']))
         return PRIORITY[entry['kind']] + user, last_sequence(entry), order
     return sorted(range(len(entries)), key=key)
 
@@ -161,12 +163,16 @@ def fold_messages(digest, events, positions=None):
             text, truncated = bounded_text(line)
             existing = None if truncated else index.get(text)
             if existing:
+                if event['role'] == 'user':
+                    existing['user'] = True  # survives the bounded source list below
                 if source not in existing['sources']:
                     # Additive dedup: keep the first source and the newest ones.
                     sources = [*existing['sources'], source]
                     existing['sources'] = sources[:1] + sources[1:][-(ENTRY_SOURCES - 1):]
                 continue
             entry = {'kind': kind, 'text': text, 'sources': [source]}
+            if event['role'] == 'user':
+                entry['user'] = True
             if truncated:
                 entry['truncated'] = True
             else:
@@ -266,7 +272,7 @@ def pack_context(summary, events, budget, checkpoint=None):
     # The digest is historical excerpts; latest_checkpoint is the current result.
     result = {'summary': '', 'messages': [], 'truncated': False, 'summary_role': 'historical',
               'latest_checkpoint': latest_checkpoint(checkpoint, budget // 4)}
-    result['truncated'] = bool(result['latest_checkpoint'] and result['latest_checkpoint']['truncated'])
+    cut = False
     def size():
         return json_bytes(result)
     # Reserve half for recent messages, measured as serialized JSON so escapes
@@ -282,13 +288,19 @@ def pack_context(summary, events, budget, checkpoint=None):
         while too_large():
             limit -= max(64, limit // 8)
             result['summary'] = summary(limit) or '' if limit > 64 else ''
-            result['truncated'] = True
+            cut = True
     else:
         # A pre-rendered text can only lose its oldest characters.
         result['summary'] = summary or ''
         while too_large():
             result['summary'] = result['summary'][64:]
-            result['truncated'] = True
+            cut = True
+    # A cut checkpoint may borrow what the historical summary left unused.
+    current = result['latest_checkpoint']
+    if current and current['truncated'] and size() < budget * 3 // 4:
+        result['latest_checkpoint'] = latest_checkpoint(checkpoint, budget // 4 + budget * 3 // 4 - size())
+        if size() > budget * 3 // 4:
+            result['latest_checkpoint'] = current
     for event in reversed(events):
         if not message_bytes(event):
             continue
@@ -296,6 +308,7 @@ def pack_context(summary, events, budget, checkpoint=None):
         result['messages'].insert(0, item)
         if size() > budget:
             result['messages'].pop(0)
-            result['truncated'] = True
+            cut = True
             break
+    result['truncated'] = cut or bool(result['latest_checkpoint'] and result['latest_checkpoint']['truncated'])
     return result
