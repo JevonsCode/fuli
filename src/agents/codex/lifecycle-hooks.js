@@ -215,15 +215,18 @@ function isManagedCodexHook(hook) {
 function codexStopCommand(context, event = 'Stop') {
   const script = context.codexLifecycleHookPath ??
     join(dirname(context.mcpServerPath), 'agents', 'codex', 'lifecycle-hook.js');
-  return [
-    context.nodePath,
-    script,
-    COMMAND_MARKER,
-    '--runtime-config',
-    context.runtimeConfigPath,
-    '--event',
-    event
-  ].map(value => quoteShellArgument(value, context.platform)).join(' ');
+  const args = [script, COMMAND_MARKER, '--runtime-config', context.runtimeConfigPath, '--event', event]
+    .map(value => quoteShellArgument(value, context.platform));
+  return [codexExecutable(context.nodePath, context.platform), ...args].join(' ');
+}
+
+// Codex runs hook commands through PowerShell on Windows, where a quoted path
+// followed by arguments is a parse error (the hook exits 1 before Node starts).
+// A plain path works in PowerShell and cmd alike; a path that needs quoting
+// uses PowerShell's call operator.
+function codexExecutable(path, platform = process.platform) {
+  if (platform !== 'win32') return quoteShellArgument(path, platform);
+  return /^[A-Za-z0-9_:.\\/-]+$/.test(path) ? path : `& ${quoteShellArgument(path, platform)}`;
 }
 
 function normalizeText(value) {
