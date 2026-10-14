@@ -34,13 +34,25 @@ MARKERS = (
 LABELLED = re.compile(
     r'^\W{0,4}(decision|decided|correction|root cause|conclusion|result|todo|open question|unresolved|blocked'
     r'|决定|决策|结论|根因|原因|更正|纠正|待办|未解决|阻塞)\s*[:：]', re.I)
+LIST_PREFIX = re.compile(r'^([-*•]\s+|\d+[.)、]\s*)')
 # Structured lines of a final reply: list items, table rows and bold-led lines.
+# A long reply contributes only its leading ones, so ordinary lists cannot
+# crowd out other turns.
 STRUCTURED = re.compile(r'^([-*•]\s+|\d+[.)、]\s*|\|.*\||\*\*)')
+TABLE_ROW = re.compile(r'^\|.*\|$')
 TABLE_RULE = re.compile(r'^\|[\s|:-]+\|$')
+OUTCOME_LINES = 20
 # Lower value is evicted first; within a priority, the least recently seen goes
 # first. Within one assistant reply the later lines go first, because a reply
-# leads with its most important points.
+# leads with its most important points. A user's own decisions, corrections and
+# open work outrank anything an Agent wrote.
 PRIORITY = {'request': 0, 'method': 1, 'decision': 2, 'correction': 2, 'open': 2, 'outcome': 2}
+USER_STATEMENTS = ('decision', 'correction', 'open')
+
+
+def is_labelled(line):
+    # "1. TODO: x", "- **Decision**: x" and "Decision: x" name their kind alike.
+    return bool(LABELLED.search(LIST_PREFIX.sub('', line).replace('**', '')))
 
 
 def message_bytes(event):
@@ -77,16 +89,22 @@ def extract_lines(event, position='final'):
             lines.append(line)
     found = []
     assistant = event['role'] == 'assistant'
+    structured = 0
     for index, line in enumerate(lines):
-        if assistant and position == 'interim' and not LABELLED.search(line):
+        labelled = assistant and is_labelled(line)
+        if assistant and position == 'interim' and not labelled:
             omitted += 1  # progress narration
             continue
         kind = next((name for name, pattern in MARKERS if pattern.search(line)), None)
         if kind is None and index == 0 and event['role'] == 'user':
             kind = 'request'
-        if kind is None and assistant and (LABELLED.search(line) or (
-                position == 'final' and STRUCTURED.search(line) and not TABLE_RULE.match(line))):
+        if kind is None and labelled:
             kind = 'outcome'
+        if kind is None and assistant and position == 'final' and STRUCTURED.search(line):
+            header = TABLE_ROW.match(line) and index + 1 < len(lines) and TABLE_RULE.match(lines[index + 1])
+            if not TABLE_RULE.match(line) and not header and structured < OUTCOME_LINES:
+                kind = 'outcome'
+                structured += 1
         if kind is None:
             omitted += 1
         else:
@@ -97,7 +115,8 @@ def extract_lines(event, position='final'):
 def assistant_positions(events):
     """Map each assistant message's sequence to 'interim' when another assistant
     message follows it before the next user message; the last one is 'final'.
-    A turn cut by a fold boundary ends at the boundary."""
+    Pass every known event, including those not yet folded, so a turn cut by a
+    fold boundary is judged with what followed it."""
     positions, pending = {}, None
     for event in events:
         if event.get('kind', 'message') != 'message' or event['role'] not in ('user', 'assistant'):
@@ -120,17 +139,18 @@ def evict_order(entries):
     def key(i):
         entry = entries[i]
         order = -i if entry['sources'][-1]['role'] == 'assistant' else i
-        return PRIORITY[entry['kind']], last_sequence(entry), order
+        user = entry['kind'] in USER_STATEMENTS and any(source['role'] == 'user' for source in entry['sources'])
+        return PRIORITY[entry['kind']] + user, last_sequence(entry), order
     return sorted(range(len(entries)), key=key)
 
 
-def fold_messages(digest, events):
+def fold_messages(digest, events, positions=None):
     entries = [{**entry, 'sources': list(entry['sources'])} for entry in digest.get('entries', [])]
     # Lines are already trimmed; exact equality keeps case and inner spacing significant.
     # Truncated text is only a prefix, so it never identifies a line for dedup.
     index = {entry['text']: entry for entry in entries if not entry.get('truncated')}
     omitted = digest.get('omitted', 0)
-    positions = assistant_positions(events)
+    positions = positions or assistant_positions(events)
     for event in events:
         if event['role'] not in ('user', 'assistant') or event.get('kind', 'message') != 'message':
             continue
@@ -249,13 +269,26 @@ def pack_context(summary, events, budget, checkpoint=None):
     result['truncated'] = bool(result['latest_checkpoint'] and result['latest_checkpoint']['truncated'])
     def size():
         return json_bytes(result)
-    result['summary'] = summary or ''
     # Reserve half for recent messages, measured as serialized JSON so escapes
-    # count; keep the newest digest lines. The checkpoint comes out of the other half.
-    while result['summary'] and (len(json.dumps(result['summary'], ensure_ascii=False).encode()) > budget // 2
-                                 or size() > budget * 3 // 4):
-        result['summary'] = result['summary'][64:]
-        result['truncated'] = True
+    # count. The checkpoint comes out of the other half.
+    def too_large():
+        return result['summary'] and (len(json.dumps(result['summary'], ensure_ascii=False).encode()) > budget // 2
+                                      or size() > budget * 3 // 4)
+    if callable(summary):
+        # A renderer re-selects lines by priority at a smaller byte budget, so
+        # escapes never cost the lead points of a reply.
+        limit = budget // 2
+        result['summary'] = summary(limit) or ''
+        while too_large():
+            limit -= max(64, limit // 8)
+            result['summary'] = summary(limit) or '' if limit > 64 else ''
+            result['truncated'] = True
+    else:
+        # A pre-rendered text can only lose its oldest characters.
+        result['summary'] = summary or ''
+        while too_large():
+            result['summary'] = result['summary'][64:]
+            result['truncated'] = True
     for event in reversed(events):
         if not message_bytes(event):
             continue

@@ -3,10 +3,11 @@ import base64
 import gzip
 import hashlib
 import json
+from functools import partial
 from fastapi import HTTPException
 from .agent_conversation_models import ConversationPolicy
 from .conversation_context import (
-    add_task_result, fold_messages, message_bytes, pack_context, render_digest,
+    add_task_result, assistant_positions, fold_messages, message_bytes, pack_context, render_digest,
 )
 from .project_agent_access import authorize_project_agent
 from .provider_values import now_utc, stable_uuid
@@ -98,7 +99,8 @@ class StoreAgentConversations:
                 break
             decoded.append(value)
         if request.mode == 'context':
-            summary = self._digest_text(record, policy.context_budget // 2)
+            # A renderer lets pack_context re-select lines when escapes enlarge them.
+            summary = partial(self._digest_text, record)
             checkpoint = {'status': record.get('status') or 'reported', 'summary': record.get('summary')}
             return {**view, 'context': pack_context(summary, list(reversed(decoded)), policy.context_budget, checkpoint)}
         cursor = decoded[-1]['sequence'] if decoded else request.after
@@ -152,7 +154,9 @@ class StoreAgentConversations:
         await self.runtime.driver.execute_query(
             'MATCH (c:FuliConversation {id: $id}) '
             'SET c.digest=$digest, c.compacted_through=$through, c.unfolded_bytes=$kept',
-            id=conversation_id, digest=json.dumps(fold_messages(digest, decoded[:cut]), ensure_ascii=False),
+            # Turn positions look past the fold boundary into the messages kept verbatim.
+            id=conversation_id, digest=json.dumps(fold_messages(digest, decoded[:cut], assistant_positions(decoded)),
+                                                  ensure_ascii=False),
             through=decoded[cut - 1]['sequence'], kept=kept)
 
     async def append_conversation(self, actor, request):

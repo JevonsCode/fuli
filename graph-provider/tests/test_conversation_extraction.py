@@ -2,7 +2,7 @@
 import json
 
 from fuli_graph.conversation_context import (
-    ENTRY_BYTES, add_task_result, fold_messages, pack_context, render_digest,
+    ENTRY_BYTES, OUTCOME_LINES, add_task_result, assistant_positions, fold_messages, pack_context, render_digest,
 )
 
 
@@ -250,3 +250,55 @@ def test_long_development_session_keeps_its_decisions_not_its_narration():
         assert kept in text, kept
     for dropped in ('Checking why', 'directly instead', 'session dedupe', 'escape issue', 'full suite'):
         assert dropped not in text, dropped
+
+
+def test_packed_context_rerenders_instead_of_cutting_the_lead_point():
+    # Windows paths double in JSON; a pre-rendered text would lose its first lines.
+    lead = r'**Root finding:** C:\nvm4w\nodejs\node_modules\fuli-context hooks never ran.'
+    details = [rf'- Detail {index}: C:\Users\synthetic\AppData\Local\Fuli\file-{index}.md' for index in range(30)]
+    digest = fold_messages({}, [message(1, 'user', 'Synthetic report'), message(2, 'assistant', '\n'.join([lead, *details]))])
+    packed = pack_context(lambda limit: render_digest(digest, limit), [], 2000,
+                          {'status': 'completed', 'summary': 'Synthetic checkpoint'})
+    assert lead in packed['summary']
+    assert packed['summary'].startswith('Extracted from earlier messages')
+    assert len(json.dumps(packed, ensure_ascii=False, separators=(',', ':')).encode()) <= 2000
+    assert packed['latest_checkpoint']['summary'] == 'Synthetic checkpoint'
+
+
+def test_long_lists_are_capped_per_reply_and_user_corrections_outrank_them():
+    events = [message(1, 'user', 'Synthetic task\nCorrection: never touch the production config.')]
+    for turn in range(12):
+        base = 10 + turn * 2
+        events.append(message(base, 'user', f'Continue part {turn}'))
+        events.append(message(base + 1, 'assistant', '\n'.join(f'- Part {turn} note {index}' for index in range(100))))
+    digest = fold_messages({}, events)
+    found = texts(digest)
+    assert 'Correction: never touch the production config.' in found
+    assert not any(text.startswith(f'Part 11 note {OUTCOME_LINES} ') for text in found)
+    assert sum(text.startswith('Part 11 ') for text in found) == OUTCOME_LINES
+    assert len(found) <= 80
+
+
+def test_labels_survive_list_numbering_and_bold_in_interim_messages():
+    digest = fold_messages({}, [
+        message(1, 'user', 'Synthetic'),
+        message(2, 'assistant', '1. TODO: rebuild the provider image.\n- **Decision**: keep raw history.\nworking on it'),
+        message(3, 'assistant', 'Final.'),
+    ])
+    kinds = {entry['text']: entry['kind'] for entry in digest['entries']}
+    assert kinds['1. TODO: rebuild the provider image.'] == 'open'
+    assert kinds['**Decision**: keep raw history.'] == 'decision'
+    assert 'working on it' not in kinds
+
+
+def test_table_headers_are_not_outcomes():
+    digest = fold_messages({}, [message(1, 'user', 'Synthetic'), message(2, 'assistant',
+                                '| Item | Before | After |\n|---|---|---|\n| Entry | 14,794 | 8,180 |')])
+    assert texts(digest) == ['Synthetic', '| Entry | 14,794 | 8,180 |']
+
+
+def test_a_fold_boundary_uses_the_messages_kept_after_it():
+    events = [message(1, 'user', 'Synthetic'), message(2, 'assistant', '- Progress list before the cut.'),
+              message(3, 'assistant', '- The real conclusion after the cut.')]
+    folded = fold_messages({}, events[:2], assistant_positions(events))
+    assert 'Progress list before the cut.' not in texts(folded)
