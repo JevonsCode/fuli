@@ -210,7 +210,7 @@ export function spawnWindowsNativeDatabase(spec) {
 }
 
 export function spawnWindowsNativeProvider(spec) {
-  return spawnOwned(spec.python, ['-m', 'uvicorn', 'fuli_graph.app:app', '--host', '127.0.0.1',
+  return spawnOwned(spec.python, ['-B', '-X', 'utf8', '-m', 'uvicorn', 'fuli_graph.app:app', '--host', '127.0.0.1',
     '--port', String(spec.port), '--app-dir', spec.sourcePath],
   spec.environment, spec.logPath, { provider: true });
 }

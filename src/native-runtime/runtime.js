@@ -27,7 +27,7 @@ import { dirname, join, relative } from 'node:path';
 
 import { FULI_VERSION } from '../package-metadata.js';
 import { compareSemanticVersions } from '../semantic-version.js';
-import { resolveWindowsNativeBundle } from './windows-assets.js';
+import { readWindowsNativeBundle, resolveWindowsNativeBundle } from './windows-assets.js';
 import {
   assertWindowsNativePortOwner, runWindowsNeo4j, spawnWindowsNativeDatabase,
   spawnWindowsNativeProvider, stopWindowsNativeProcess, windowsNativeProcessMatches,
@@ -304,7 +304,8 @@ export async function ensureNativeRuntime(input, dependencies = {}) {
   const deps = nativeDependencies(dependencies);
   if (deps.platform === 'win32') {
     const saved = deps.readManifest(input.paths.nativeRuntimeManifestPath);
-    const assets = deps.resolveWindowsNativeBundle(input.bundle ?? saved, {
+    const assets = deps.resolveWindowsNativeBundle(input.bundle
+      ?? deps.readWindowsNativeBundle(dirname(input.paths.graphComposePath)) ?? saved, {
       providerSource: join(dirname(input.paths.graphComposePath), 'graph-provider')
     });
     const providerFingerprint = await deps.providerSourceFingerprint(assets.providerSource);
@@ -441,6 +442,7 @@ function nativeDependencies(overrides) {
     resolveJavaHome,
     resolveUvCommand,
     resolveWindowsNativeBundle,
+    readWindowsNativeBundle,
     installNeo4j,
     installProvider,
     providerSourceFingerprint,

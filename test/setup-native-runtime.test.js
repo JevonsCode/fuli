@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
@@ -166,6 +166,45 @@ test('Windows native setup resolves explicit existing assets and an external Pro
   assert.deepEqual(await ensureNativeRuntime({ paths: { ...paths, nativePersonalDir: join(root, '中文') }, bundle }, deps), first);
   await writeFile(join(bundle.javaHome, 'release'), 'JAVA_VERSION="17.0.0"\n');
   await assert.rejects(ensureNativeRuntime({ paths, bundle }, deps), /Java 21/);
+});
+
+test('Windows portable bundle discovery rebinds cached assets after a stopped directory move', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'fuli-portable-discovery-'));
+  assert.equal(dirname(resolve(root)), resolve(tmpdir()));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const source = join(root, '中文 portable');
+  const moved = join(root, '已搬移 portable');
+  const manifest = { version: 1, platform: 'win32', arch: 'x64', providerPackaging: 'embedded',
+    javaHome: 'runtime/jre21', neo4jHome: 'runtime/neo4j', providerPython: 'runtime/python/python.exe',
+    providerSource: 'runtime/python/Lib/site-packages', dataDir: 'data' };
+  for (const name of ['runtime/jre21/bin/java.exe', 'runtime/jre21/lib/modules',
+    'runtime/neo4j/conf/neo4j.conf', 'runtime/neo4j/lib/neo4j-kernel-5.26.0.jar',
+    'runtime/neo4j/lib/neo4j-5.26.0.jar', 'runtime/python/python.exe', 'runtime/python/python312.zip',
+    'runtime/python/Lib/site-packages/fuli_graph/app.py']) {
+    const path = join(source, name);
+    await mkdir(dirname(path), { recursive: true }); await writeFile(path, 'fixture');
+  }
+  await writeFile(join(source, 'runtime/jre21/release'), 'JAVA_VERSION="21.0.12.1"\n');
+  await writeFile(join(source, 'runtime/python/python312._pth'), 'python312.zip\n.\nLib/site-packages\nimport site\n');
+  await writeFile(join(source, 'native-bundle.json'), JSON.stringify(manifest));
+  const pathsFor = (packageRoot, extra = {}) => resolveSetupPaths({ packageRoot, platform: 'win32', env: {}, ...extra });
+  const paths = pathsFor(source);
+  assert.equal(paths.dataDir, join(source, 'data'));
+  assert.equal(pathsFor(source, { env: { FULI_DATA_DIR: join(root, 'external') } }).dataDir, join(root, 'external'));
+  assert.equal(pathsFor(source, { dataDir: join(root, 'explicit'), env: { FULI_DATA_DIR: join(root, 'external') } }).dataDir,
+    join(root, 'explicit'));
+  const deps = { platform: 'win32', providerSourceFingerprint: async () => 'a'.repeat(64),
+    installProvider: async () => assert.fail('A portable Provider must not install at runtime') };
+  const first = await ensureNativeRuntime({ paths }, deps);
+  assert.equal(first.providerPackaging, 'embedded');
+  await rename(source, moved);
+  const nextPaths = pathsFor(moved);
+  const next = await ensureNativeRuntime({ paths: nextPaths }, deps);
+  assert.equal(next.providerPython, join(moved, manifest.providerPython));
+  assert.equal(next.providerSource, join(moved, manifest.providerSource));
+  assert.equal(next.providerFingerprint, first.providerFingerprint);
+  await writeFile(join(moved, 'native-bundle.json'), JSON.stringify({ ...manifest, javaHome: '../outside' }));
+  assert.throws(() => pathsFor(moved), /inside the bundle/);
 });
 
 test('native mode reports its Java 21 prerequisite without suggesting Docker', async () => {

@@ -1,5 +1,30 @@
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
+
+export function readWindowsNativeBundle(packageRoot) {
+  const path = join(packageRoot, 'native-bundle.json');
+  if (!existsSync(path)) return null;
+  const manifest = JSON.parse(readFileSync(path, 'utf8'));
+  if (manifest.version !== 1 || manifest.platform !== 'win32' || manifest.arch !== 'x64'
+      || manifest.providerPackaging !== 'embedded') {
+    throw new Error('The Windows portable bundle manifest is not supported.');
+  }
+  const root = realpathSync(packageRoot);
+  const paths = Object.fromEntries(['neo4jHome', 'javaHome', 'providerPython', 'providerSource', 'dataDir']
+    .map(key => {
+      const value = manifest[key];
+      if (typeof value !== 'string' || !value.trim() || isAbsolute(value)) {
+        throw new Error('Portable bundle paths must be relative: ' + key);
+      }
+      const resolved = resolve(root, value);
+      const local = relative(root, resolved);
+      if (!local || local.startsWith('..') || isAbsolute(local)) {
+        throw new Error('Portable bundle paths must stay inside the bundle: ' + key);
+      }
+      return [key, resolved];
+    }));
+  return { ...paths, bundleRoot: root, providerPackaging: 'embedded', assetSource: 'portable' };
+}
 
 // This accepts supplied assets; downloading and installer defaults are separate.
 // An external Python (including a venv) is not a verified portable Provider.
@@ -20,7 +45,26 @@ export function resolveWindowsNativeBundle(bundle, { providerSource } = {}) {
   if (versions.length !== 1 || !existsSync(join(assets.neo4jHome, 'lib', 'neo4j-' + versions[0] + '.jar'))) {
     throw new Error('The supplied Windows Neo4j assets must contain one complete Community 5.26 runtime.');
   }
+  const source = realpathSync(resolve(bundle.providerSource ?? providerSource));
+  const embedded = bundle.providerPackaging === 'embedded';
+  if (embedded) {
+    const pythonHome = resolve(assets.providerPython, '..');
+    const pth = join(pythonHome, 'python312._pth');
+    if (!bundle.bundleRoot || !existsSync(pth) || !existsSync(join(pythonHome, 'python312.zip'))
+        || existsSync(join(pythonHome, 'pyvenv.cfg')) || !existsSync(join(source, 'fuli_graph', 'app.py'))) {
+      throw new Error('The portable Provider requires an isolated embedded Python and vendored application.');
+    }
+    for (const path of [...Object.values(assets), source]) {
+      const local = relative(realpathSync(bundle.bundleRoot), path);
+      if (local.startsWith('..') || isAbsolute(local)) throw new Error('Portable assets must stay inside the bundle.');
+    }
+    const entries = readFileSync(pth, 'utf8').split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith('#'));
+    if (entries.some(line => !['python312.zip', '.', 'Lib/site-packages', 'import site'].includes(line))
+        || !entries.includes('Lib/site-packages')) {
+      throw new Error('The portable Python search path must contain only bundled dependencies.');
+    }
+  }
   return { ...assets, platform: 'win32', neo4jVersion: versions[0], javaVersion,
-    providerSource: realpathSync(resolve(bundle.providerSource ?? providerSource)),
-    providerPackaging: 'external', assetSource: 'provided' };
+    providerSource: source,
+    providerPackaging: embedded ? 'embedded' : 'external', assetSource: embedded ? 'portable' : 'provided' };
 }
