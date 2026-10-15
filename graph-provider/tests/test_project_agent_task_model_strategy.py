@@ -18,8 +18,9 @@ def task(**updates):
 
 @pytest.mark.parametrize(('complexity', 'mode'), [('simple', 'fast'), ('standard', 'balanced'), ('complex', 'deep')])
 @pytest.mark.parametrize('source', ['task', 'assignment', 'agent', 'coordinator'])
-def test_adaptive_strategy_resolves_complexity_after_precedence(complexity, mode, source):
-    automatic = ProjectAgentModelStrategy(mode='adaptive', reasoning_effort='high', capability_hints=['testing'])
+@pytest.mark.parametrize('effort', ['high', 'max'])
+def test_adaptive_strategy_resolves_complexity_after_precedence(complexity, mode, source, effort):
+    automatic = ProjectAgentModelStrategy(mode='adaptive', reasoning_effort=effort, capability_hints=['testing'])
     selected = {'profile': ProjectAgentProfile(name='Verifier', responsibility='Verify work.', default_model_strategy=automatic)}
     request = task(complexity_hint=complexity)
     coordinator = ProjectAgentModelStrategy(mode='deep')
@@ -33,7 +34,7 @@ def test_adaptive_strategy_resolves_complexity_after_precedence(complexity, mode
         coordinator = automatic
     strategy, provenance = StoreProjectAgentTasks._effective_model_strategy(request, selected, coordinator)
     assert (strategy.mode, provenance) == (mode, source)
-    assert strategy.reasoning_effort == 'high'
+    assert strategy.reasoning_effort == effort
     assert strategy.capability_hints == ['testing']
     assert automatic.mode == 'adaptive'
 

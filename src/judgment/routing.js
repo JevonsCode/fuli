@@ -56,6 +56,7 @@ export async function assessRouting({ app, judge, context, service, input: raw }
         client: e.executorKind, models: (e.availableModels ?? []).map(m => ({ ...m, sourceApplication: m.sourceApplication ?? e.executorKind }))
           .filter(m => m.available && m.sourceApplication && agent.profile.allowedClients?.includes(m.sourceApplication)
             && (!m.strategyModes?.length || strategy.mode === 'adaptive' || m.strategyModes.includes(strategy.mode))
+            && (strategy.reasoningEffort !== 'max' || (Array.isArray(m.reasoningEfforts) && m.reasoningEfforts.includes('max')))
             && (!m.reasoningEfforts?.length || !strategy.reasoningEffort || strategy.reasoningEffort === 'default' || m.reasoningEfforts.includes(strategy.reasoningEffort))
             && (strategy.capabilityHints ?? []).every(hint => m.capabilities?.some(value => value.toLowerCase() === hint.toLowerCase()))) })).filter(e => e.models.length);
     let conversations = [];

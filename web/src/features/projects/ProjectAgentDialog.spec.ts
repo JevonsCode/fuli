@@ -187,6 +187,18 @@ describe('ProjectAgentDialog', () => {
     )
   })
 
+  it.each([null, 'balanced', 'adaptive'] as const)('preserves explicit max and capability hints when editing mode %s', async mode => {
+    const strategy = { mode: 'deep' as const, reasoningEffort: 'max' as const, capabilityHints: ['review'] }
+    const original = { ...savedAgent, profile: { ...savedAgent.profile, defaultModelStrategy: strategy } }
+    const wrapper = mountDialog(original)
+    await wrapper.get('[name="project-agent-name"]').setValue('Renamed Agent')
+    if (mode) await wrapper.get('[name="project-agent-model-mode"]').setValue(mode)
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(putJson.mock.calls[0][1].profile.defaultModelStrategy).toEqual({ ...strategy, mode: mode ?? 'deep' })
+    expect(original.profile.defaultModelStrategy).toEqual(strategy)
+    wrapper.unmount()
+  })
+
   it('creates a space-level identity without requiring a project', async () => {
     const wrapper = mountDialog(null, { projects: [], defaultProjectId: null, personalSpaceId: 'personal-1' })
     await wrapper.get('[name="project-agent-id"]').setValue('space-agent')

@@ -22,10 +22,13 @@ import {
   providerProjectAgentTaskActivity
 } from '../src/graphiti/project-agent-mapping.js';
 import {
+  executorModel,
+  projectAgentModelStrategy,
   projectAgentProfile,
   projectAgentTaskActivityInput,
   projectAgentTaskSubmitInput
 } from '../src/agent-tools/project-agent-definitions.js';
+import { jsonSchemaToZod } from '../src/mcp/tool-schema.js';
 import {
   listExecutors,
   listProjectAgentRoutingLearning,
@@ -46,6 +49,23 @@ test('legacy recruitment policy warnings survive the Node mapping', () => {
   assert.equal('policyStatus' in projectAgentRecruitmentPolicyRecord({
     personal_space_id: 'legacy-provider'
   }), false, 'old Provider metadata is unknown, not fabricated');
+});
+
+test('max effort and all five executor capabilities survive MCP validation and Provider mapping', () => {
+  const efforts = ['default', 'low', 'medium', 'high', 'max'];
+  const strategy = { mode: 'deep', reasoningEffort: 'max', capabilityHints: ['review'] };
+  assert.equal(jsonSchemaToZod(projectAgentModelStrategy).safeParse(strategy).success, true);
+  assert.equal(jsonSchemaToZod(projectAgentModelStrategy).safeParse({ ...strategy, reasoningEffort: 'unknown' }).success, false);
+  const observed = { provider: 'synthetic', model: 'Synthetic.Provider/Exact-Model@2026', reasoningEfforts: efforts };
+  const parsed = jsonSchemaToZod(executorModel).parse(observed);
+  assert.equal(jsonSchemaToZod(executorModel).safeParse({ ...observed, reasoningEfforts: ['unknown'] }).success, false);
+  const payload = providerExecutor({ personalSpaceId: 'space-1', executorId: 'synthetic',
+    displayName: 'Synthetic executor', idempotencyKey: 'max-contract-1', advertisedModels: [parsed] });
+  const returned = executorRecord({ advertised_models: payload.advertised_models }).advertisedModels[0];
+  assert.equal(returned.model, observed.model);
+  assert.deepEqual(returned.reasoningEfforts, efforts);
+  const profile = providerProjectAgentProfile({ name: 'Synthetic', responsibility: 'Verify.', defaultModelStrategy: strategy });
+  assert.deepEqual(projectAgentProfileRecord(profile).defaultModelStrategy, strategy);
 });
 
 test('task route mapping preserves every recruitment slot for new clients', () => {

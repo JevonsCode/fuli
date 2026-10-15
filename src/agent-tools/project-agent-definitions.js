@@ -48,7 +48,7 @@ const projectAgentExecutorPolicy = objectSchema({
 });
 export const projectAgentModelStrategy = objectSchema({
   mode: enumSchema(['adaptive', 'fast', 'balanced', 'deep']),
-  reasoningEffort: enumSchema(['default', 'low', 'medium', 'high']),
+  reasoningEffort: enumSchema(['default', 'low', 'medium', 'high', 'max']),
   capabilityHints: arraySchema(boundedString(128), { maxItems: 16 })
 });
 export const projectAgentProfile = objectSchema({
@@ -272,7 +272,7 @@ export const executorModel = objectSchema({
   model: boundedString(256),
   capabilities: arraySchema(boundedString(512), { maxItems: 32 }),
   strategyModes: arraySchema(enumSchema(['adaptive', 'fast', 'balanced', 'deep']), { maxItems: 4 }),
-  reasoningEfforts: arraySchema(enumSchema(['default', 'low', 'medium', 'high']), { maxItems: 4 }),
+  reasoningEfforts: arraySchema(enumSchema(['default', 'low', 'medium', 'high', 'max']), { maxItems: 5 }),
   available: booleanSchema(),
   observedAt: nullableStringSchema(),
   sourceApplication,

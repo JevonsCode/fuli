@@ -156,9 +156,9 @@ class ProjectAgentExecutorModelRecord(StrictModel):
         default_factory=list,
         max_length=4,
     )
-    reasoning_efforts: list[Literal['default', 'low', 'medium', 'high']] = Field(
+    reasoning_efforts: list[Literal['default', 'low', 'medium', 'high', 'max']] = Field(
         default_factory=list,
-        max_length=4,
+        max_length=5,
     )
     available: bool = True
     observed_at: datetime | None = None

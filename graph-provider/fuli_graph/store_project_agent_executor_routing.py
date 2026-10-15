@@ -606,7 +606,7 @@ class StoreProjectAgentExecutorRouting:
                 or strategy.mode == 'adaptive'
             )
             effort_ok = (
-                not model.reasoning_efforts
+                (not model.reasoning_efforts and strategy.reasoning_effort != 'max')
                 or strategy.reasoning_effort in model.reasoning_efforts
                 or strategy.reasoning_effort == 'default'
             )

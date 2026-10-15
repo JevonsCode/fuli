@@ -72,7 +72,7 @@ export type ProjectAgentTaskStatus =
   | 'cancelled'
 
 export type ProjectAgentModelMode = 'adaptive' | 'fast' | 'balanced' | 'deep'
-export type ProjectAgentReasoningEffort = 'default' | 'low' | 'medium' | 'high'
+export type ProjectAgentReasoningEffort = 'default' | 'low' | 'medium' | 'high' | 'max'
 export type ProjectAgentModelSelectionMode = 'flexible' | 'locked'
 
 export interface ProjectAgentExecutorModel {
