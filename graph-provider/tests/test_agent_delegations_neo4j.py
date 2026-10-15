@@ -556,14 +556,10 @@ async def test_worker_mcp_stdio_uses_own_identity_and_rechecks_provider_after_cl
                         'search_current_project_knowledge', 'list_agent_conversations', 'read_agent_conversation']}}
             script = r'''
 import assert from 'node:assert/strict';
-import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 const fixture = JSON.parse(process.env.FULI_WORKER_MCP_FIXTURE);
-const bootstrap = `import { runStdio } from ${JSON.stringify(pathToFileURL(resolve('src/mcp/runtime.js')).href)};
-  await runStdio({runtimeConfigPath: process.env.FULI_WORKER_CONFIG,
-    worker: JSON.parse(process.env.FULI_WORKER_DESCRIPTOR), sourceApplication:'codex'});`;
 async function request(path, body, method = 'POST', capability = false) {
   const response = await fetch(fixture.providerUrl + path, { method,
     headers: {authorization: `Bearer ${fixture.accessToken}`, 'content-type':'application/json',
@@ -575,9 +571,9 @@ async function request(path, body, method = 'POST', capability = false) {
 async function connect() {
   const client = new Client({name:'synthetic-worker-host',version:'1'});
   const transport = new StdioClientTransport({ command:process.execPath,
-    args:['--input-type=module','-e',bootstrap], cwd:process.cwd(), stderr:'pipe',
+    args:[resolve('src/cli.js'),'mcp','--worker','--runtime-config',fixture.configPath], cwd:process.cwd(), stderr:'pipe',
     env:{...process.env, CODEX_THREAD_ID:'019fc6ed-02a5-7832-8821-68e3b03e7ce3',
-      FULI_WORKER_CONFIG:fixture.configPath, FULI_WORKER_DESCRIPTOR:JSON.stringify(fixture.descriptor)} });
+      FULI_WORKER_DESCRIPTOR:JSON.stringify(fixture.descriptor)} });
   let stderr = ''; transport.stderr?.on('data', chunk => {stderr += chunk;});
   await client.connect(transport);
   return {client, close: async () => {await client.close(); assert.equal(stderr.includes(fixture.descriptor.capability),false);}};

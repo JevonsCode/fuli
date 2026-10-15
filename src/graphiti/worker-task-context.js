@@ -3,12 +3,7 @@ import { taskRecord } from '../mcp/provider-task-context-registry.js';
 import { beginTaskFromPreferences } from './agent-knowledge-workflows.js';
 import { projectAgentRecord } from './project-agent-mapping.js';
 import { selectedTaskEntryPreferences } from './task-entry-preferences.js';
-
-const WORKER_TOOLS = new Set([
-  'begin_task_context', 'get_collaboration_preferences', 'verify_task_checkpoint',
-  'checkpoint_task_knowledge', 'search_current_project_knowledge',
-  'get_project_agent_memory', 'list_agent_conversations', 'read_agent_conversation'
-]);
+import { validateWorkerDescriptor } from './worker-descriptor.js';
 const OWN_LAYER_TOOLS = new Set([
   'get_project_agent_memory', 'list_agent_conversations', 'read_agent_conversation'
 ]);
@@ -25,17 +20,7 @@ const SOURCE_FIELDS = new Set([
 // Explicit host composition only. No environment detection, parent identity or
 // process-local authorization cache: every business call re-enters the Provider.
 export function createWorkerTaskContext(application, descriptor) {
-  const { runId, personalProjectId, capability, projectPath, taskPrompt, toolNames } = descriptor ?? {};
-  for (const [name, value, maximum] of [['runId', runId, 128], ['personalProjectId', personalProjectId, 128],
-    ['projectPath', projectPath, 4096], ['taskPrompt', taskPrompt, 8192]]) {
-    if (typeof value !== 'string' || !value.trim() || value.length > maximum) {
-      throw new TypeError(`Worker ${name} is required and must be bounded`);
-    }
-  }
-  if (typeof capability !== 'string' || capability.length < 32) throw new TypeError('Worker runtime capability is required');
-  if (!Array.isArray(toolNames) || toolNames.some(name => !WORKER_TOOLS.has(name))) {
-    throw new TypeError('Worker toolNames must be an explicit supported tool allowlist');
-  }
+  const { runId, personalProjectId, capability, projectPath, taskPrompt, toolNames } = validateWorkerDescriptor(descriptor);
   const scope = { personal_space_id: application.config.personal.spaceId, personal_project_id: personalProjectId };
   const allowed = Object.freeze([...new Set(toolNames)]);
   let located;
