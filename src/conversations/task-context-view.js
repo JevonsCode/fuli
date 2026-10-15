@@ -2,18 +2,11 @@ const SUMMARY_PREVIEW = 800;
 const NOTE_COUNT_PREVIEW = 3;
 const NOTE_PREVIEW = 160;
 
-// Preserve every effective instruction; remove evidence envelopes from the hot
-// path. Full records remain available through explicit read tools.
+// Preserve every effective instruction and Provider-budgeted conversation raw
+// window. Other evidence envelopes remain available through explicit read tools.
 export function compactTaskContext(value) {
   if (!value || typeof value !== 'object') return value;
   const result = { ...value };
-  const recovery = value.conversation?.recovery;
-  if (recovery) result.conversation = { ...value.conversation, recovery: { ...recovery,
-    messages: undefined,
-    messagesOmitted: Boolean(recovery.messages?.length),
-    view: 'preview',
-    guidance: 'Historical messages are on demand. Read read_agent_conversation using recovered_from (or conversation_id when absent) before relying on omitted history; latest_checkpoint is the current saved result.'
-  } };
   const retrieval = value.application_guidance?.knowledge_retrieval;
   if (retrieval && JSON.stringify(retrieval) === JSON.stringify(value.task_knowledge_recall?.guidance)) {
     result.task_knowledge_recall = { ...value.task_knowledge_recall, guidance: undefined,

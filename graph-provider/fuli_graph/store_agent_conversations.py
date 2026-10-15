@@ -12,6 +12,10 @@ from .project_agent_access import authorize_project_agent
 from .provider_values import now_utc, stable_uuid
 from .store_transactions import query_store_transaction
 
+CONTEXT_PAGE_EVENTS = 50
+CONTEXT_SCAN_EVENTS = 1000
+CONTEXT_DECODE_BYTES = 512 * 1024
+
 
 def encode_event(event):
     raw = json.dumps(event.model_dump(), ensure_ascii=False, sort_keys=True).encode()
@@ -81,14 +85,18 @@ class StoreAgentConversations:
             raise HTTPException(404, 'Conversation not found in this Agent and project')
         record = dict(rows[0]['c'])
         view = self._conversation_view(record, policy)
-        order = 'DESC' if request.mode == 'context' else 'ASC'
-        # Recovery starts after the folded range; reading history still sees everything.
-        after = max(request.after, record.get('compacted_through') or 0) if request.mode == 'context' else request.after
+        if request.mode == 'context':
+            decoded, omitted, scan_truncated = await self._context_events(record, request.after)
+            checkpoint = {'status': record.get('status') or 'reported', 'summary': record.get('summary')}
+            return {**view, 'context': pack_context('', decoded, policy.context_budget, checkpoint,
+                conversation_id=record['id'], revision=record['revision'],
+                omitted_sequence=omitted, scan_truncated=scan_truncated)}
         events, _, _ = await self.runtime.driver.execute_query(
             'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent) '
-            'WHERE e.sequence > $after RETURN e.payload AS payload, e.sequence AS sequence '
-            f'ORDER BY e.sequence {order} LIMIT $limit', id=record['id'], after=after,
-            limit=20 if request.mode == 'context' else request.limit)
+            'WHERE e.sequence > $after AND e.sequence <= $revision '
+            'RETURN e.payload AS payload, e.sequence AS sequence '
+            'ORDER BY e.sequence ASC LIMIT $limit', id=record['id'], after=request.after,
+            revision=record['revision'], limit=request.limit)
         decoded = []
         total = 0
         for event in events:
@@ -97,16 +105,47 @@ class StoreAgentConversations:
             if total > 512 * 1024 and decoded:
                 break
             decoded.append(value)
-        if request.mode == 'context':
-            summary = self._digest_text(record, policy.context_budget // 2)
-            checkpoint = {'status': record.get('status') or 'reported', 'summary': record.get('summary')}
-            return {**view, 'context': pack_context(summary, list(reversed(decoded)), policy.context_budget, checkpoint)}
         cursor = decoded[-1]['sequence'] if decoded else request.after
         page = {**view, 'events': decoded, 'next_cursor': cursor, 'has_more': cursor < record['revision']}
         if request.after == 0:
             # The first history page shows what compaction extracted and where it came from.
             page['digest'] = json.loads(record['digest']) if record.get('digest') else None
         return page
+
+    async def _context_events(self, record, after):
+        """Read a fixed revision backwards; folding never deletes raw recovery.
+
+        Stop at the third visible user message, not the third journal event.
+        Bounded scans also cover long tool/checkpoint-only stretches.
+        """
+        before, scanned, total, users, decoded = record['revision'] + 1, 0, 0, 0, []
+        while scanned < CONTEXT_SCAN_EVENTS:
+            rows, _, _ = await self.runtime.driver.execute_query(
+                'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent) '
+                'WHERE e.sequence > $after AND e.sequence <= $revision AND e.sequence < $before '
+                'RETURN e.payload AS payload, e.sequence AS sequence '
+                'ORDER BY e.sequence DESC LIMIT $limit', id=record['id'], after=after,
+                revision=record['revision'], before=before,
+                limit=min(CONTEXT_PAGE_EVENTS, CONTEXT_SCAN_EVENTS - scanned))
+            if not rows:
+                return list(reversed(decoded)), None, False
+            for row in rows:
+                value = decode_event(row)
+                total += len(json.dumps(value, ensure_ascii=False).encode())
+                if total > CONTEXT_DECODE_BYTES:
+                    return list(reversed(decoded)), row['sequence'], True
+                scanned += 1
+                before = row['sequence']
+                if value['role'] not in ('user', 'assistant') or value.get('kind', 'message') != 'message':
+                    continue
+                decoded.append(value)
+                users += value['role'] == 'user'
+                if users == 3:
+                    omitted = before - 1 if before > after + 1 else None
+                    return list(reversed(decoded)), omitted, False
+            if before <= after + 1:
+                return list(reversed(decoded)), None, False
+        return list(reversed(decoded)), before - 1, True
 
     def _conversation_view(self, record, policy):
         return {key: record.get(key) for key in ('id', 'summary', 'status', 'revision', 'last_activity')} | {

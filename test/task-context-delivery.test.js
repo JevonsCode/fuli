@@ -126,19 +126,19 @@ test('compact preference qualifiers omit retrieval aliases while retaining unkno
   assert.deepEqual(view.effective_preferences[0].attributes, { tasteDomain: 'writing' });
 });
 
-test('compact entry defers recovered message bodies while preserving the current result and read coordinates', async () => {
+test('compact entry preserves Provider-bounded raw messages, flags and source read coordinates', async () => {
   const { compactTaskContext } = await import('../src/conversations/task-context-view.js');
   const checkpoint = { status: 'reported', summary: 'Keep the latest truthful result complete.' };
-  const original = { conversation: { conversation_id: 'conversation-a', revision: 8,
-    recovery: { summary: 'Historical summary', summary_role: 'historical', truncated: false,
-      messages: [{ content: 'Long historical body '.repeat(1000) }], latest_checkpoint: checkpoint } },
+  const original = { conversation: { conversation_id: 'new-conversation', recovered_from: 'source-conversation', revision: 1,
+    recovery: { conversation_id: 'source-conversation', revision: 8, summary: '', summary_role: 'historical', truncated: true,
+      omitted_sequence: 2, scan_truncated: false,
+      messages: [{ sequence: 3, role: 'assistant', content: 'Recent visible historical message.' }], latest_checkpoint: checkpoint } },
     taskContextToken: 'fuli-task-synthetic-history', effective_preferences: [{ instruction: 'Complete mandatory rule.' }] };
   const view = compactTaskContext(original);
-  assert.equal(view.conversation.recovery.messages, undefined);
-  assert.equal(view.conversation.recovery.view, 'preview');
-  assert.equal(view.conversation.recovery.messagesOmitted, true);
-  assert.match(view.conversation.recovery.guidance, /read_agent_conversation/);
-  assert.equal(view.conversation.conversation_id, 'conversation-a');
+  assert.deepEqual(view.conversation.recovery, original.conversation.recovery);
+  assert.equal(view.conversation.recovery.messagesOmitted, undefined);
+  assert.equal(view.conversation.recovered_from, 'source-conversation');
+  assert.equal(view.conversation.conversation_id, 'new-conversation');
   assert.deepEqual(view.conversation.recovery.latest_checkpoint, checkpoint);
   assert.equal(original.conversation.recovery.messages.length, 1);
 });
