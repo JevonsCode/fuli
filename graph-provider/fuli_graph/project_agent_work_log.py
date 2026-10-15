@@ -8,7 +8,9 @@ async def read_employee_work_log(store, space_id, project_id, agent_id):
         '''
         MATCH (:FuliSpace {id: $space_id})-[:HAS_TASK_CONTEXT_SESSION]->
               (session:FuliTaskContextSession)-[:HAS_CONTEXT]->(task:FuliTaskContext)
-        WHERE task.personal_project_id = $project_id AND task.project_agent_id = $agent_id
+        WHERE (task.personal_project_id = $project_id
+               OR ($project_id IS NULL AND task.personal_project_id IS NULL))
+          AND task.project_agent_id = $agent_id
         RETURN task.record_json AS record_json, task.completed AS completed,
                task.agent_memory_claimed AS memory_updated,
                task.token = session.current_token AS current

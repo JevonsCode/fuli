@@ -18,7 +18,7 @@ const error = ref('')
 const records = ref<WorkRecord[]>([])
 let version = 0
 watch(() => [props.agentId, props.personalSpaceId, props.projects.map(project => project.id).join('\n')], () => {
-  const next = props.projects.some(project => project.id === projectId.value)
+  const next = (opened.value && projectId.value === '') ? '' : props.projects.some(project => project.id === projectId.value)
     ? projectId.value : props.projects[0]?.id ?? ''
   if (next !== projectId.value) projectId.value = next
   else void load()
@@ -30,10 +30,11 @@ async function load() {
   records.value = []
   error.value = ''
   loading.value = false
-  if (!opened.value || !projectId.value) return
+  if (!opened.value) return
   loading.value = true
   try {
-    const query = new URLSearchParams({ personalSpaceId: props.personalSpaceId, personalProjectId: projectId.value })
+    const query = new URLSearchParams({ personalSpaceId: props.personalSpaceId })
+    if (projectId.value) query.set('personalProjectId', projectId.value)
     const value = await getJson<{ workLog?: WorkRecord[] }>(`/api/project-agents/${encodeURIComponent(props.agentId)}/memory?${query}`)
     if (current === version) records.value = value.workLog ?? []
   } catch (cause) {
@@ -63,7 +64,7 @@ function status(value: string) {
 <template>
   <details class="employee-work-history" @toggle="toggle">
     <summary>{{ t('projectAgents.workHistory.title') }}</summary>
-    <UiSelect v-if="projects.length" v-model="projectId" field :label="t('projectAgents.fields.project')" :options="projects.map(project => ({ value: project.id, label: project.name }))" />
+    <UiSelect v-model="projectId" field :label="t('projectAgents.conversations.scope')" :options="[{ value: '', label: t('projectAgents.conversations.global') }, ...projects.map(project => ({ value: project.id, label: project.name }))]" />
     <GrowthLoading v-if="loading" variant="compact" :label="t('projectAgents.workHistory.loading')" />
     <div v-else-if="error" role="alert">
       <p>{{ error }}</p><button type="button" class="quiet-button" @click="load">{{ t('projectAgents.retry') }}</button>

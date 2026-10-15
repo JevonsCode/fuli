@@ -34,6 +34,13 @@ test('client configuration exports the actual runtime path without reading crede
   assert.equal(result.server.env, undefined);
 });
 
+test('connection status delegates to its observer and never changes the export', () => {
+  const service = createSystemService({ paths: PATHS, resourceMonitor: {}, runtimeBroker: {}, versionChecker: {},
+    clientObserver: { observe: () => ({ scope: 'configuration', clients: [] }) } });
+  assert.deepEqual(service.clientConnectionStatus(), { scope: 'configuration', clients: [] });
+  assert.equal(service.clientConnection().server.args[0], PATHS.mcpServerPath);
+});
+
 test('system settings distinguish immediately applied refresh changes from restart changes', async () => {
   let configured = structuredClone(DEFAULT_RUNTIME_SETTINGS);
   const state = {

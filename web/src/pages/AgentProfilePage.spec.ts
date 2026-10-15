@@ -10,6 +10,7 @@ import AgentProfilePage from './AgentProfilePage.vue'
 
 const { getJson, postJson, putJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn(), putJson: vi.fn() }))
 vi.mock('@/api/client', () => ({ getJson, postJson, putJson, patchJson: vi.fn() }))
+vi.mock('@/features/project-agents/task-updates', () => ({ subscribeTaskUpdates: () => () => {} }))
 const mounted: Array<{ unmount: () => void }> = []
 const person = (id: string): ProjectAgentRecord => ({ agentId: id, personalSpaceId: 'space-a',
   createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
@@ -45,6 +46,7 @@ beforeEach(() => {
     if (parsed.pathname === '/api/project-team') return teamView('beta', 'Birch', [['alpha', 'Aster'], ['gamma', 'Cedar']])
     if (parsed.pathname === '/api/executors') return []
     if (parsed.pathname === '/api/employee-templates') return { templates: [] }
+    if (parsed.pathname === `/api/project-agents/${id}/memory`) return { revision: 0, current: null, history: [], workLog: [] }
     throw new Error(`Unexpected request: ${url}`)
   })
   putJson.mockImplementation(async (_url: string, payload: { profile: ProjectAgentRecord['profile'] }) => ({ ...person('alpha'), profile: payload.profile }))
@@ -62,6 +64,17 @@ async function setup(path = '/agents/space-a/alpha') {
   return { router, wrapper }
 }
 describe('Agent profile integration', () => {
+  it('shows an explicitly reported plan within the current work card', async () => {
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => url.startsWith('/api/project-agent-tasks?')
+      ? Promise.resolve([{ ...task('active-plan', 'alpha', 'Synthetic planned task', 'running'), events: [{
+        event_id: 'plan', task_id: 'active-plan', status: 'running', summary: 'Synthetic plan', created_at: '2026-10-13T01:00:00Z',
+        execution_plan: { steps: [{ id: 'check', title: '核对执行结果', status: 'in_progress' }] },
+      }] }]) : normal(url))
+    const { wrapper } = await setup()
+    expect(wrapper.get('.agent-current-work-list [data-execution-plan]').text()).toContain('核对执行结果')
+    expect(wrapper.get('.agent-current-work-list [data-execution-plan]').text()).toContain('进行中')
+  })
   it('loads a fixed role workbench on a direct profile visit without a cached catalog', async () => {
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => {
@@ -94,6 +107,62 @@ describe('Agent profile integration', () => {
     await details.trigger('toggle')
     await flushPromises()
     expect(postJson).toHaveBeenCalledWith('/api/agent-conversations/query', { personalSpaceId: 'space-a', personalProjectId: 'project-a', agentId: 'alpha', mode: 'list', limit: 20 })
+  })
+
+  it('queries conversations and memory only in the viewed Agent active projects', async () => {
+    const store = useConsoleStore()
+    store.state!.personalProjects!.unshift({ project_id: 'unrelated', personal_space_id: 'space-a', profile: { name: 'Unrelated conversation project' } })
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (url.startsWith('/api/project-agents?')) return Promise.resolve([{ ...person('alpha'), memoryScope: 'reviewed_agent' }])
+      return normal(url)
+    })
+    postJson.mockImplementation(async (_url, body) => {
+      if (body.personalProjectId !== 'project-a') throw new Error('project Agent not found')
+      return body.mode === 'policy'
+        ? { compact_after_kb: 64, context_budget: 4000, enabled: true }
+        : { conversations: [] }
+    })
+    const { wrapper } = await setup()
+    await wrapper.get('#agent-tab-conversations').trigger('click')
+    const details = wrapper.get('.agent-conversations')
+    ;(details.element as HTMLDetailsElement).open = true
+    await details.trigger('toggle')
+    await flushPromises()
+    expect(postJson).toHaveBeenCalledWith('/api/agent-conversations/query', { personalSpaceId: 'space-a', personalProjectId: 'project-a', agentId: 'alpha', mode: 'list', limit: 20 })
+    expect(getJson).toHaveBeenCalledWith('/api/project-agents/alpha/memory?personalSpaceId=space-a&personalProjectId=project-a')
+    expect(details.get('[data-working-memory]').text()).toContain('当前范围还没有经过检查点保存的工作记忆')
+    await details.get('[role="combobox"]').trigger('click')
+    expect(details.findAll('[role="option"]').map(option => option.text())).toEqual(['全局', 'Synthetic active project'])
+    const settings = details.get('[data-memory-settings]')
+    ;(settings.element as HTMLDetailsElement).open = true
+    await settings.trigger('toggle')
+    await flushPromises()
+    expect(postJson).toHaveBeenLastCalledWith('/api/agent-conversations/query', { personalSpaceId: 'space-a', personalProjectId: 'project-a', agentId: 'alpha', mode: 'policy' })
+    expect(details.find('[role="alert"]').exists()).toBe(false)
+    expect(settings.find('form').exists()).toBe(true)
+  })
+
+  it('uses global context while assignments load or when none are active', async () => {
+    const pending = deferred<unknown>()
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (url.startsWith('/api/project-agents?')) return Promise.resolve([{ ...person('alpha'), memoryScope: 'reviewed_agent' }])
+      if (url.startsWith('/api/project-agent-assignments?')) return pending.promise
+      return normal(url)
+    })
+    const { wrapper } = await setup()
+    await wrapper.get('#agent-tab-conversations').trigger('click')
+    const details = wrapper.get('.agent-conversations')
+    ;(details.element as HTMLDetailsElement).open = true
+    await details.trigger('toggle')
+    await flushPromises()
+    expect(postJson).toHaveBeenCalledWith('/api/agent-conversations/query', { personalSpaceId: 'space-a', personalProjectId: null, agentId: 'alpha', mode: 'list', limit: 20 })
+    pending.resolve([assignment('alpha', 'ended')])
+    await flushPromises()
+    expect(postJson.mock.calls.every(([, body]) => body.personalProjectId === null)).toBe(true)
+    expect(details.find('[role="combobox"]').exists()).toBe(true)
+    expect(details.find('[data-memory-settings]').exists()).toBe(true)
   })
 
   it('supports roving keyboard navigation for profile tabs', async () => {
@@ -180,8 +249,24 @@ describe('Agent profile integration', () => {
     const params = getJson.mock.calls.filter(([url]) => url.startsWith('/api/project-agent-tasks?')).map(([url]) => new URL(url, 'http://fixture').searchParams)
     expect(params).toHaveLength(1)
     expect(params[0]!.get('personalSpaceId')).toBe('space-a')
-    expect(params[0]!.get('agentId')).toBeNull()
+    expect(params[0]!.get('agentId')).toBe('alpha')
     expect(params[0]!.get('limit')).toBe('200')
+  })
+
+  it('loads older Agent work without unrelated space tasks consuming the limit', async () => {
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      const parsed = new URL(url, 'http://fixture')
+      if (parsed.pathname === '/api/project-agent-tasks') {
+        return Promise.resolve(parsed.searchParams.get('agentId') === 'alpha'
+          ? [task('older', 'alpha', 'Older relevant work', 'running')]
+          : Array.from({ length: 200 }, (_, index) => task(`other-${index}`, 'beta', 'Unrelated work')))
+      }
+      return normal(url)
+    })
+    const { wrapper } = await setup()
+    expect(wrapper.get('.agent-current-work-section').text()).toContain('Older relevant work')
+    expect(wrapper.find('.agent-profile-partial').exists()).toBe(false)
   })
 
   it('includes owner-only work and marks a full task page as partial', async () => {

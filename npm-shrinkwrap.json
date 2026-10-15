@@ -14,6 +14,7 @@
         "@modelcontextprotocol/sdk": "^1.31.0",
         "@peculiar/x509": "2.1.0",
         "reflect-metadata": "0.2.2",
+        "smol-toml": "1.9.1",
         "zod": "^4.4.3"
       },
       "bin": {
@@ -5075,6 +5076,18 @@
       },
       "funding": {
         "url": "https://github.com/sponsors/isaacs"
+      }
+    },
+    "node_modules/smol-toml": {
+      "version": "1.9.1",
+      "resolved": "https://registry.npmjs.org/smol-toml/-/smol-toml-1.9.1.tgz",
+      "integrity": "sha512-j7WyPdf0CJoutMzMoPLF/bVXHtKZIT9Rb4eGeEbWw8X2t5oirjPgpL+OpaENZrILYaXqYwnVH+qgUwVbl+pUJQ==",
+      "license": "BSD-3-Clause",
+      "engines": {
+        "node": ">= 18"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/cyyynthia"
       }
     },
     "node_modules/source-map-js": {

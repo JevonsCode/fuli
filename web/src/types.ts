@@ -251,6 +251,15 @@ export interface ProjectAgentParallelPlan {
   workstreamBoundaries?: string[]
 }
 
+export interface ProjectAgentExecutionPlan {
+  steps: Array<{
+    id: string
+    title: string
+    status: 'pending' | 'in_progress' | 'awaiting_review' | 'completed' | 'blocked' | 'skipped'
+    detail?: string | null
+  }>
+}
+
 export interface ProjectAgentTaskEvent {
   eventId: string
   taskId: string
@@ -258,6 +267,7 @@ export interface ProjectAgentTaskEvent {
   status: ProjectAgentTaskStatus
   actorKind?: 'agent' | 'human' | 'system' | 'hr' | string
   summary: string
+  executionPlan?: ProjectAgentExecutionPlan | null
   sourceApplication?: ConversationSourceApplication | null
   sourceSessionId?: string | null
   sourceSessionUrl?: string | null

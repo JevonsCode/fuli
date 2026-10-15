@@ -12,6 +12,7 @@ import ProjectAgentAutomationPolicyPanel from '@/features/project-agents/Project
 import ProjectAgentDetailState from '@/features/project-agents/ProjectAgentDetailState.vue'
 import ProjectAgentFirstTask from '@/features/project-agents/ProjectAgentFirstTask.vue'
 import ProjectAgentTaskDiagnostics from '@/features/project-agents/ProjectAgentTaskDiagnostics.vue'
+import TaskExecutionPlan from '@/features/project-agents/TaskExecutionPlan.vue'
 import EmployeeWorkHistory from '@/features/project-agents/EmployeeWorkHistory.vue'
 import AgentConversations from '@/features/project-agents/AgentConversations.vue'
 import { isAgentTaskDataComplete, taskHasAgent } from '@/features/agent-profile/agent-work-summary'
@@ -77,6 +78,11 @@ const projectFilterOverridden = ref(false)
 const statusFilter = ref<StatusFilter>('all')
 const search = ref('')
 const selectedAgentKey = ref('')
+const expandedTasks = ref(new Set<string>())
+function toggleTaskDetails(taskId: string, event: Event) {
+  if ((event.target as HTMLDetailsElement).open) expandedTasks.value.add(taskId)
+  else expandedTasks.value.delete(taskId)
+}
 watch(() => route.query.agent, id => { if (typeof id === 'string') selectedAgentKey.value = id }, { immediate: true })
 const dialogOpen = ref(false)
 const recruitDialogOpen = ref(false)
@@ -189,6 +195,8 @@ const selectedEmployeeId = computed(() => selectedAgent.value ? employeeTemplate
 const selectedEmployee = computed(() => employeeTemplates.value.find(entry => entry.id === selectedEmployeeId.value))
 const employeeProjects = computed(() => selectedAgent.value ? responsibleProjectsFor(selectedAgent.value)
   .filter((project) => projectById.value.get(project.id)?.profile.lifecycle !== 'archived') : [])
+const conversationProjects = computed(() => selectedAgent.value ? currentAssignmentsFor(selectedAgent.value)
+  .map(assignment => ({ id: assignment.personalProjectId, name: projectName(assignment.personalProjectId) })) : [])
 const activeCount = computed(() => agents.value.filter(({ profile }) => profile.status === 'active').length)
 const assignmentCount = computed(() => agents.value.reduce(
   (count, agent) => count + currentAssignmentsFor(agent).length,
@@ -1107,7 +1115,9 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
         <div class="project-agent-detail-source" data-detail-section="tasks">
           <ProjectAgentDetailState v-bind="detailState('tasks')" :label="detailLoadingLabel('tasks')" @retry="refreshDetails">
             <p v-if="taskListPartial[selectedAgent.agentId]" class="project-agent-muted" data-task-partial>{{ t('agentProfiles.partial') }}</p>
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.tasks') }}</h4><span>{{ selectedAgent.tasks?.length ?? 0 }}</span></div><div v-if="selectedAgent.tasks?.length" class="project-agent-task-list"><article v-for="task in selectedAgent.tasks" :id="`task-${task.taskId}`" :key="task.taskId" class="ui-card project-agent-task-card" :class="{ 'is-linked': task.taskId === route.query.task }"><header><div><strong>{{ task.title }}</strong><small>{{ projectName(task.personalProjectId) }}</small></div><i class="ui-badge" :class="`is-${task.status}`">{{ taskStatusLabel(task.status) }}</i></header><p v-if="task.resultSummary || task.failureReason">{{ task.resultSummary || task.failureReason }}</p><small>{{ t('projectAgents.fields.collaborators') }} · {{ task.participants.length }}</small><div v-if="task.participants.length" class="project-agent-inline-list"><span v-for="participant in task.participants" :key="`${task.taskId}:${participant.agentId}`">{{ agents.find(item => item.agentId === participant.agentId)?.profile.displayName || agents.find(item => item.agentId === participant.agentId)?.profile.name || participant.agentId }} · {{ participantRoleLabel(participant.role) }}</span></div><ProjectAgentTaskDiagnostics :task="task" :project-name="projectName(task.personalProjectId)" /><details class="ui-disclosure project-agent-disclosure" :open="task.taskId === route.query.task" data-task-details><summary>{{ t('projectAgents.taskDetails') }}</summary><small>{{ task.taskId }}</small><section v-if="task.executionSummary !== undefined" class="project-agent-execution-summary" :aria-label="t('projectAgents.fields.executionSummary')">
+            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.tasks') }}</h4><span>{{ selectedAgent.tasks?.length ?? 0 }}</span></div><div v-if="selectedAgent.tasks?.length" class="project-agent-task-list"><article v-for="task in selectedAgent.tasks" :id="`task-${task.taskId}`" :key="task.taskId" class="ui-card project-agent-task-card" :class="{ 'is-linked': task.taskId === route.query.task }"><header><div><strong>{{ task.title }}</strong><small>{{ projectName(task.personalProjectId) }}</small></div><i class="ui-badge" :class="`is-${task.status}`">{{ taskStatusLabel(task.status) }}</i></header><p v-if="task.resultSummary || task.failureReason">{{ task.resultSummary || task.failureReason }}</p><small>{{ t('projectAgents.fields.collaborators') }} · {{ task.participants.length }}</small><div v-if="task.participants.length" class="project-agent-inline-list"><span v-for="participant in task.participants" :key="`${task.taskId}:${participant.agentId}`">{{ agents.find(item => item.agentId === participant.agentId)?.profile.displayName || agents.find(item => item.agentId === participant.agentId)?.profile.name || participant.agentId }} · {{ participantRoleLabel(participant.role) }}</span></div><ProjectAgentTaskDiagnostics :task="task" :project-name="projectName(task.personalProjectId)" /><details class="ui-disclosure project-agent-disclosure" :open="task.taskId === route.query.task" @toggle="toggleTaskDetails(task.taskId, $event)" data-task-details><summary>{{ t('projectAgents.taskDetails') }}</summary>
+<TaskExecutionPlan :task="task" :personal-space-id="activeSpaceId" :active="expandedTasks.has(task.taskId)" />
+<small>{{ task.taskId }}</small><section v-if="task.executionSummary !== undefined" class="project-agent-execution-summary" :aria-label="t('projectAgents.fields.executionSummary')">
 <div class="project-agent-section-heading">
 <h5>{{ t('projectAgents.fields.executionSummary') }}</h5>
 <span>{{ task.executionSummary.length }}</span>
@@ -1190,8 +1200,8 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
 
 
 
-        <AgentConversations v-if="selectedAgent.memoryScope === 'reviewed_agent'" :key="selectedAgent.agentId" :personal-space-id="activeSpaceId" :agent-id="selectedAgent.agentId" :projects="employeeProjects" />
-        <EmployeeWorkHistory v-if="selectedAgent.memoryScope === 'reviewed_agent'" :personal-space-id="activeSpaceId" :agent-id="selectedAgent.agentId" :projects="employeeProjects" />
+        <AgentConversations v-if="selectedAgent.memoryScope === 'reviewed_agent'" :key="selectedAgent.agentId" :personal-space-id="activeSpaceId" :agent-id="selectedAgent.agentId" :projects="conversationProjects" />
+        <EmployeeWorkHistory v-if="selectedAgent.memoryScope === 'reviewed_agent'" :personal-space-id="activeSpaceId" :agent-id="selectedAgent.agentId" :projects="conversationProjects" />
         <details class="ui-disclosure project-agent-disclosure"><summary>{{ t('projectAgents.profileDetails') }}</summary>
         <dl class="project-agent-detail-meta"><div><dt>{{ t('projectAgents.fields.assignments') }}</dt><dd>{{ currentAssignmentsFor(selectedAgent).length }}</dd></div><div><dt>{{ t('projectAgents.fields.memoryScope') }}</dt><dd>{{ selectedAgent.memoryScope ?? t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.fields.status') }}</dt><dd>{{ t(`projectAgents.status.${selectedAgent.profile.status}`) }}</dd></div><div><dt>{{ t('projectAgents.fields.recruitment') }}</dt><dd>{{ sourceLabel(selectedAgent.recruitmentSourceApplication) }}<small v-if="selectedAgent.recruitmentReason">{{ selectedAgent.recruitmentReason }}</small></dd></div><div><dt>{{ t('projectAgents.fields.updatedAt') }}</dt><dd>{{ formatDate(selectedAgent.updatedAt) }}</dd></div></dl>
         </details>

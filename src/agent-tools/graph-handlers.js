@@ -141,6 +141,7 @@ const HANDLERS = Object.freeze({
     app.replaceProjectAgentAssignment(input),
   get_project_agent_context: (app, input) => app.getProjectAgentContext(input),
   get_project_agent_memory: (app, input) => app.getProjectAgentMemory(input),
+  export_project_agent_memory: (app, input) => app.exportProjectAgentMemory(input),
   checkpoint_project_agent_memory: (app, input) => app.checkpointProjectAgentMemory(input),
   coordinate_project_agent_task: (app, input) =>
     app.coordinateProjectAgentTask(input),

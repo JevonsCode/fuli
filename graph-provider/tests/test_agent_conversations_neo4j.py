@@ -80,7 +80,11 @@ def test_conversation_cross_client_replay_isolation_and_policy():
             recovered = (await client.post('/v1/agent-conversations/query', json={**cc,
                 'conversation_id':cid, 'mode':'context'})).json()
             assert recovered['compacted_through'] > 0
-            assert '[' in recovered['context']['summary'] and 'Second result' in recovered['context']['summary']
+            # The current checkpoint is separate from historical excerpts after compaction.
+            assert recovered['context']['summary_role'] == 'historical'
+            assert recovered['context']['latest_checkpoint'] == {
+                'status': 'completed', 'summary': 'Second result', 'truncated': False}
+            assert 'First result' in recovered['context']['summary']
             assert '- Synthetic task' in recovered['context']['summary']
             assert '- Request 0' in recovered['context']['summary']
             assert all('Request 0' not in message['content'] for message in recovered['context']['messages'])

@@ -51,6 +51,7 @@ export function resolveSetupPaths({
       'connectors'
     ),
     backupDir: join(resolvedDataDir, 'backups', 'agents'),
+    agentDirectoryRoot: join(resolvedDataDir, 'agents'),
     graphBackupDir: join(resolvedDataDir, 'backups', 'graph'),
     logPath: join(resolvedDataDir, 'logs', 'runtime.log'),
     serverPath: join(root, 'src', 'server.js'),

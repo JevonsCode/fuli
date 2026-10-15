@@ -22,6 +22,10 @@ export function successToolResult(value, { limitBytes = RESULT_LIMIT_BYTES, item
   // Task identity is a required part of the response, even if preferences or
   // memory exhaust the delivery budget. Sanitize it before reserving its bytes.
   const required = {};
+  for (const key of ['taskContextToken', 'task_context_token']) {
+    if (typeof value?.[key] === 'string') required[key] = sanitize(value[key], state);
+  }
+  if (typeof value?.checkpoint_required === 'boolean') required.checkpoint_required = value.checkpoint_required;
   if (value?.agent_receipt?.required === true) {
     required.agent_receipt = sanitize(value.agent_receipt, state);
     if (state.truncated) throw new ApplicationError('validation', 'Cannot deliver the complete required Agent receipt');

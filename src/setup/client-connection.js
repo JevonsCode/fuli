@@ -18,7 +18,7 @@ export function clientConnectionConfig({ nodePath = process.execPath, mcpServerP
     type: 'stdio',
     command: nodePath,
     args: [mcpServerPath, '--runtime-config', runtimeConfigPath, '--source-application', sourceApplication,
-      ...(profile === 'full' ? [] : ['--tool-profile', profile])]
+      '--tool-profile', profile]
   };
   if (format === 'server') return server;
   return { [format === 'vscode' ? 'servers' : 'mcpServers']: { fuli: server } };

@@ -30,4 +30,8 @@ class ProjectAgentContextResolution(StrictModel):
     agent: ProjectAgentRecord | None = None
     requested_agent_id: str | None = None
     reporting_lead_agent_id: str | None = None
+    # Who would execute this work if coordinated now. Deterministic routing
+    # only: no task, recruitment or worker exists until the caller coordinates.
+    execution_reason: str | None = None
+    execution_agent_id: str | None = None
     worker_started: Literal[False] = False

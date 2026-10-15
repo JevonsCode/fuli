@@ -1,5 +1,6 @@
 import { ApplicationError } from '../app/application-error.js';
 import { activeAgentRequestSignal } from '../app/agent-request-context.js';
+import { preferenceTaskSession } from './preference-task-scope.js';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
@@ -140,9 +141,9 @@ export class GraphitiProviderClient {
   }
   getProjectAgentMemory({ personalSpaceId, personalProjectId, agentId, limit = 1 }) {
     const query = new URLSearchParams({
-      personal_space_id: personalSpaceId, personal_project_id: personalProjectId,
-      limit: String(limit)
+      personal_space_id: personalSpaceId, limit: String(limit)
     });
+    if (personalProjectId !== null && personalProjectId !== undefined) query.set('personal_project_id', personalProjectId);
     return this.#request(`/v1/project-agents/${encodeURIComponent(agentId)}/memory?${query}`);
   }
   writeProjectAgentMemory(input) {
@@ -283,6 +284,10 @@ export class GraphitiProviderClient {
         method: 'POST', body: input
       }
     );
+  }
+  openProjectAgentTaskEvents(personalSpaceId, { signal } = {}) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    return this.#request(`/v1/project-agent-task-events?${query}`, { stream: true, signal });
   }
   listProjectAgentActivity({
     personalSpaceId,
@@ -702,7 +707,8 @@ export class GraphitiProviderClient {
     personalSpaceId,
     personalProjectId = null,
     limit = 100,
-    projectAgentId = null
+    projectAgentId = null,
+    taskScope = {}
   ) {
     const query = new URLSearchParams({
       personal_space_id: personalSpaceId,
@@ -710,6 +716,10 @@ export class GraphitiProviderClient {
     });
     if (personalProjectId) query.set('personal_project_id', personalProjectId);
     if (projectAgentId) query.set('project_agent_id', projectAgentId);
+    for (const [key, value] of Object.entries({ session_id: preferenceTaskSession(taskScope),
+      work_kind: taskScope.workKind, workflow: taskScope.workflow })) {
+      if (value) query.set(key, value);
+    }
     return this.#request(`/v1/collaboration-preferences?${query}`);
   }
   graph(spaceId, limit = 500, personalProjectId = null, offset = null) {
@@ -724,9 +734,11 @@ export class GraphitiProviderClient {
     body,
     authenticated = true,
     workflowObservation = false,
+    stream = false,
+    signal: requestSignal = activeAgentRequestSignal(),
     timeoutMs = this.requestTimeoutMs
   } = {}) {
-    const headers = { accept: 'application/json' };
+    const headers = { accept: stream ? 'text/event-stream' : 'application/json' };
     if (authenticated) headers.authorization = `Bearer ${this.accessToken}`;
     if (workflowObservation) {
       headers['x-fuli-workflow-observation-token'] = this.#workflowObservationToken;
@@ -738,7 +750,7 @@ export class GraphitiProviderClient {
       timedOut = true;
       controller.abort(new Error('Graphiti provider request timed out'));
     }, timeoutMs);
-    const callerSignal = activeAgentRequestSignal();
+    const callerSignal = requestSignal;
     const signal = callerSignal
       ? AbortSignal.any([controller.signal, callerSignal])
       : controller.signal;
@@ -751,7 +763,7 @@ export class GraphitiProviderClient {
         body: body === undefined ? undefined : JSON.stringify(body),
         signal
       });
-      payload = await parseResponse(response);
+      if (!stream || !response.ok) payload = await parseResponse(response);
     } catch (error) {
       if (error instanceof ProviderRequestError) throw error;
       if (!timedOut && callerSignal?.aborted) {
@@ -789,7 +801,11 @@ export class GraphitiProviderClient {
         }
       );
     }
-    return payload;
+    if (stream && !response.headers.get('content-type')?.includes('text/event-stream')) {
+      await response.body?.cancel();
+      throw invalidResponse('Graphiti provider did not return a task event stream.');
+    }
+    return stream ? response : payload;
   }
 }
 

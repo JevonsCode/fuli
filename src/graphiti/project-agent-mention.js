@@ -1,4 +1,4 @@
-// Only an explicit leading mention selects a role. Matching uses this project's
+// Only an explicit leading mention selects a role. Matching uses the current scope's
 // directory, never fuzzy search or another Agent's memory. Provider authorization
 // still runs after matching, including for inactive or client-restricted names.
 export async function resolveTaskAgentMention(application, projectId, input) {
@@ -22,7 +22,7 @@ export async function resolveTaskAgentMention(application, projectId, input) {
   const longest = Math.max(0, ...matches.map(match => match.length));
   const exact = matches.filter(match => match.length === longest);
   const failure = status => ({ status, worker_started: false,
-    required_action: 'Select an exact current-project Agent with @{agentId}; use list_project_agents to resolve names. Do not load a different Agent as fallback.' });
+    required_action: 'Select an exact Agent in the current scope with @{agentId}; use list_project_agents to resolve names. Do not load a different Agent as fallback.' });
   if (!exact.length) return failure('agent_not_found');
   if (exact.length > 1) return { ...failure('ambiguous_agent'),
     candidates: exact.slice(0, 8).map(({ agent }) => ({ agent_id: agent.agent_id,

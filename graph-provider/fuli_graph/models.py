@@ -868,6 +868,7 @@ class CollaborationPreferenceItem(StrictModel):
     preference_project_id: str | None = None
     preference_agent_id: str | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
+    preference_qualifiers: dict[str, Any] = Field(default_factory=dict)
     weight: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
     reason: str | None = None
     confirmation_basis: ConfirmationBasis
@@ -898,6 +899,8 @@ class CollaborationContextResult(StrictModel):
     project_preferences: list[CollaborationPreferenceItem] = Field(default_factory=list)
     agent_preferences: list[CollaborationPreferenceItem] = Field(default_factory=list)
     effective_preferences: list[CollaborationPreferenceItem] = Field(default_factory=list)
+    task_scope_excluded_count: int = Field(default=0, ge=0)
+    task_scope_filtered: bool = False
     conflicts: list[CollaborationPreferenceConflict] = Field(default_factory=list)
     overridden_global_ids: list[str] = Field(default_factory=list)
     overridden_inherited_ids: list[str] = Field(default_factory=list)

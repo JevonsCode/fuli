@@ -1,10 +1,19 @@
 import { taskAgentReceipt } from '../agents/identity-receipt.js';
+import { beginTaskFromPreferences } from './agent-knowledge-workflows.js';
 import { getCollaborationPreferences as getCollaborationPreferencesWorkflow } from './collaboration-preference-workflow.js';
 import { resolveTaskEntryAgent, loadProjectAgentContinuity } from './project-agent-task-entry.js';
 
+export function finishTaskEntryPreferences(application, preferences, input) {
+  if (!input.agentInvocation || input.agentToolName !== 'get_collaboration_preferences') return preferences;
+  if (!input.sessionId || typeof input.taskPrompt !== 'string') return { ...preferences,
+    task_lifecycle: { status: 'not_started', reason: !input.sessionId ? 'native_session_required' : 'task_prompt_required',
+      guidance: 'Preferences were loaded, but no task token was created. Supply the current host sessionId and taskPrompt to get_collaboration_preferences. Do not guess a session ID, use an MCP process ID or reuse an earlier task token.' } };
+  return beginTaskFromPreferences(application, preferences, input);
+}
+
 export async function taskEntryPreferences(application, projectResolution, {
   personalProjectId, projectAgentId, projectPath, taskPrompt, sourceApplication,
-  sourceSessionId, sessionId, turnId, workKind, requiredCapabilities,
+  sourceSessionId, sessionId, turnId, workKind, workflow, requiredCapabilities,
   limit, agentInvocation, agentToolName
 }, recordAgentViews) {
   const selection = await resolveTaskEntryAgent(
@@ -23,13 +32,17 @@ export async function taskEntryPreferences(application, projectResolution, {
     {
       projectAgentId: selectedAgentId,
       taskPrompt,
+      sessionId,
+      sourceSessionId,
+      workKind,
+      workflow,
       limit,
       agentInvocation,
       agentToolName
     },
     (items, toolName) => recordAgentViews(items, toolName)
   );
-  const management = application.employees && agentInvocation &&
+  const management = projectResolution.personalProjectId && application.employees && agentInvocation &&
     ['begin_task_context', 'get_collaboration_preferences'].includes(agentToolName)
     ? await application.employees.taskEntry({ personalProjectId: projectResolution.personalProjectId,
       sourceApplication, sourceSessionId, sessionId })
@@ -47,6 +60,12 @@ export async function taskEntryPreferences(application, projectResolution, {
   if (context && selection?.reporting_lead_agent_id) {
     context.reporting_lead_agent_id = selection.reporting_lead_agent_id;
     context.reporting_guidance = 'This is a delegated member turn. Keep this member identity and private memory isolated. Return results and blockers to the project lead; the lead integrates the final user report.';
+  }
+  // Conversation ownership is not execution staffing: deliver the Provider's
+  // deterministic execution choice; no task, hire or worker exists yet.
+  if (context && selection?.execution_reason) {
+    context.execution_reason = selection.execution_reason;
+    context.execution_agent_id = selection.execution_agent_id ?? null;
   }
   // Questions other Agents left for this Agent while it was not running.
   const waiting = selection?.agent && application.roundtable

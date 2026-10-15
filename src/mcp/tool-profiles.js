@@ -2,6 +2,7 @@
 // into each conversation, so they get only the day-to-day memory, preference and
 // Roundtable tools; management stays in the console and the full profile.
 const CHAT_TOOLS = Object.freeze([
+  'list_agent_interfaces',
   'get_collaboration_preferences',
   'get_user_taste_skill',
   'search_current_project_knowledge',

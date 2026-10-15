@@ -296,6 +296,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
     inputSchema: objectSchema({
       sessionId: id,
       turnId: id,
+      workflow: boundedString(128),
       projectPath: boundedString(4096),
       personalProjectId: nullableStringSchema(),
       projectAgentId: nullableStringSchema(),
@@ -333,7 +334,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'get_collaboration_preferences',
     title: 'READ FIRST · Load task collaboration preferences',
-    description: 'Fallback for Agents or tasks without begin_task_context hook context. When no hook context was supplied, call this exact tool name at the start of every user task before any other tool or answer; never substitute a project action tool. Do not call it redundantly when the entry hook already supplied preferences. Pass projectPath as the current working directory and taskPrompt as the current user request. Fuli uses both transiently, never stores or returns them, resolves one exact registered local project, and performs bounded automatic recall only when the request signals stable prior context. Inspect task_knowledge_recall before asking the user to repeat a project fact or method. On a miss, search_current_project_knowledge with one to four focused action, artifact, target-system, or identifier queries; never use the full conversational request as the only query. Apply effective_preferences before answering or constructing tool arguments. Resolve only relevant deferred_conflicts first. For write tools, enforce preferences in the actual payload; the final answer is not compliance. Personal-global preferences always apply; conflicted, pending, invalid, ambiguous-project, and unrelated-project items never auto-apply. Automatic injection does not count as usage evidence. personalProjectId remains an explicit compatibility override. Include the returned agent_receipt.markdown unchanged exactly once in every final reply, including greetings and capture-disabled tasks; never reuse an earlier owner.',
+    description: 'Fallback for Agents or tasks without begin_task_context hook context. When no hook context was supplied, call this exact tool name at the start of every user task before any other tool or answer; never substitute a project action tool. Do not call it redundantly when the entry hook already supplied preferences. Pass projectPath as the current working directory and taskPrompt as the current user request. Pass the actual native sessionId when the host or this turn’s Hook supplies it; never guess one or use an MCP process ID. With sessionId and taskPrompt, this fallback creates a fresh durable task and returns taskContextToken for checkpoint_task_knowledge with a truthful workLog. It never reuses a pending task as proof of Hook delivery. Without a native sessionId or prompt, task_lifecycle reports not_started; preferences are available but checkpoint ownership is unverified. Do not reuse an old token. A blocked transcript handoff remains unverified even after a successful fallback checkpoint. Fuli uses both transiently, never stores or returns them, resolves one exact registered local project, and performs bounded automatic recall only when the request signals stable prior context. Inspect task_knowledge_recall before asking the user to repeat a project fact or method. On a miss, search_current_project_knowledge with one to four focused action, artifact, target-system, or identifier queries; never use the full conversational request as the only query. Apply effective_preferences before answering or constructing tool arguments. Resolve only relevant deferred_conflicts first. For write tools, enforce preferences in the actual payload; the final answer is not compliance. Personal-global preferences always apply; conflicted, pending, invalid, ambiguous-project, and unrelated-project items never auto-apply. Automatic injection does not count as usage evidence. personalProjectId remains an explicit compatibility override. Before substantial implementation, use plan_agent_collaboration and follow its divisionPlan with bounded worker briefs; small edits and command-only checks need no artificial split. Include the returned agent_receipt.markdown unchanged exactly once in every final reply, including greetings and capture-disabled tasks; never reuse an earlier owner.',
     inputSchema: objectSchema({
       sessionId: id,
       projectPath: boundedString(4096),
@@ -341,6 +342,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
       personalProjectId: nullableStringSchema(),
       projectAgentId: nullableStringSchema(),
       workKind: boundedString(128),
+      workflow: boundedString(128),
       requiredCapabilities: arraySchema(boundedString(512), { maxItems: 16 }),
       limit: integerSchema({ minimum: 1, maximum: 200 })
     }, ['projectPath'])

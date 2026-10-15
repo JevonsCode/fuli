@@ -1,5 +1,9 @@
 export const projectAgentMessages = {
   'zh-CN': {
+    executionPlan: {
+      title: '执行框架', reported: 'Agent 上报', updated: '最近更新', unavailable: '更新暂不可用',
+      status: { pending: '待开始', in_progress: '进行中', awaiting_review: '待检查', completed: '已完成', blocked: '受阻', skipped: '已跳过' },
+    },
     firstTask: {
       title: '开始第一个任务',
       hint: '在已接入 Fuli 的 AI 客户端里，于项目目录中直接提需求。Fuli 会登记项目并安排负责的 Agent。',
@@ -20,12 +24,12 @@ export const projectAgentMessages = {
     taskDetails: '协作与执行详情',
     profileDetails: 'Agent 资料',
     conversations: {
-      title: '对话与记忆', hint: '跨客户端继续工作时，按需恢复相关上下文。',
+      title: '对话与记忆', scope: '上下文范围', global: '全局', hint: '跨客户端继续工作时，按需恢复相关上下文。',
       loading: '正在读取对话记录…', loadFailed: '对话记录读取失败，请重试。',
-      empty: '这个项目还没有保存的对话。', untitled: '未命名对话', compacted: '已压缩', recent: '近期',
+      empty: '当前范围还没有保存的对话。', untitled: '未命名对话', compacted: '已压缩', recent: '近期',
       rawRetained: '压缩不会删除原文。', loadingMessages: '正在读取对话原文…',
       more: '读取后续消息', noMessages: '尚无可读取的原始消息。',
-      settings: '记忆设置', loadingPolicy: '正在读取记忆设置…', capture: '保存这个 Agent 在本项目的对话',
+      settings: '记忆设置', loadingPolicy: '正在读取记忆设置…', capture: '保存这个 Agent 在当前范围的对话',
       compactAfterKb: '累计多少 KB 后压缩', budget: '恢复上下文预算',
       budgetHint: '对话累计超过阈值后，较早的消息折叠成摘要；原文始终保留。',
       invalidPolicy: '压缩阈值须为 8–1024 KB，预算须为 512–16000。',
@@ -33,6 +37,17 @@ export const projectAgentMessages = {
       user: '用户', assistant: 'Agent', tool: '工具',
       copyContinuation: '复制接续指令', copiedContinuation: '已复制接续指令。',
       copyContinuationFailed: '自动复制失败，请手动选择下方指令并复制。', manualContinuation: '接续指令',
+      memoryTitle: '工作记忆', loadingMemory: '正在读取工作记忆…', memoryFailed: '工作记忆读取失败，请重试。',
+      memoryEmpty: '当前范围还没有经过检查点保存的工作记忆。',
+      memoryMeta: '版本 {revision} · {source} · {time}',
+      memoryAuthority: '工作记忆是任务检查点保存的工作上下文，不等于经人工确认的知识。',
+      exportMemory: '将当前范围的工作记忆导出为 Markdown', exportingMemory: '正在导出工作记忆…',
+      exportedMemory: '已从数据库读取最新内容并开始下载。FULI 仍是权威来源，对文件的修改不会被导入。',
+      exportMemoryFailed: '工作记忆导出失败，请重试。',
+      memory: { decisions: '决定', openThreads: '未完成事项', nextActions: '下一步' },
+      digestTitle: '压缩摘录', digestHint: '自动摘录，未经核实：按固定规则从较早消息中摘取的原句，不是工作记忆，可能遗漏或误分类；以下方原文为准。',
+      kinds: { request: '请求', decision: '决定', correction: '更正', open: '未完成', method: '方法' },
+      truncated: '已截断', omitted: '另有 {count} 行未摘录或因容量被移除，可在原文中查看。',
     },
     workHistory: {
       title: '工作记录', loading: '正在读取员工工作记录…', loadFailed: '工作记录读取失败，请重试。',
@@ -357,6 +372,10 @@ export const projectAgentMessages = {
     },
   },
   'en-US': {
+    executionPlan: {
+      title: 'Execution plan', reported: 'Reported by Agent', updated: 'Last update', unavailable: 'Updates temporarily unavailable',
+      status: { pending: 'Pending', in_progress: 'In progress', awaiting_review: 'Awaiting review', completed: 'Completed', blocked: 'Blocked', skipped: 'Skipped' },
+    },
     firstTask: {
       title: 'Start your first task',
       hint: 'In an AI client connected to Fuli, ask for the work from your project folder. Fuli registers the project and assigns a responsible Agent.',
@@ -377,12 +396,12 @@ export const projectAgentMessages = {
     taskDetails: 'Collaboration and execution details',
     profileDetails: 'Agent profile',
     conversations: {
-      title: 'Conversations and memory', hint: 'Resume across clients with relevant context loaded on demand.',
+      title: 'Conversations and memory', scope: 'Context scope', global: 'Global', hint: 'Resume across clients with relevant context loaded on demand.',
       loading: 'Loading conversations…', loadFailed: 'Could not load conversations. Try again.',
-      empty: 'No saved conversations for this project yet.', untitled: 'Untitled conversation', compacted: 'Compacted', recent: 'Recent',
+      empty: 'No saved conversations in this scope yet.', untitled: 'Untitled conversation', compacted: 'Compacted', recent: 'Recent',
       rawRetained: 'Compaction never deletes originals.', loadingMessages: 'Loading original messages…',
       more: 'Load next messages', noMessages: 'No original messages available yet.',
-      settings: 'Memory settings', loadingPolicy: 'Loading memory settings…', capture: 'Save this Agent’s conversations in this project',
+      settings: 'Memory settings', loadingPolicy: 'Loading memory settings…', capture: 'Save this Agent’s conversations in this scope',
       compactAfterKb: 'Compact after (KB)', budget: 'Context recovery budget',
       budgetHint: 'Past the threshold, earlier messages fold into a digest; originals are always kept.',
       invalidPolicy: 'Use 8–1024 KB for compaction and 512–16000 for the budget.',
@@ -390,6 +409,17 @@ export const projectAgentMessages = {
       user: 'User', assistant: 'Agent', tool: 'Tool',
       copyContinuation: 'Copy continuation', copiedContinuation: 'Continuation copied.',
       copyContinuationFailed: 'Could not copy automatically. Select and copy the instruction below.', manualContinuation: 'Continuation instruction',
+      memoryTitle: 'Working memory', loadingMemory: 'Loading working memory…', memoryFailed: 'Could not load working memory. Try again.',
+      memoryEmpty: 'No checkpointed working memory in this scope yet.',
+      memoryMeta: 'Revision {revision} · {source} · {time}',
+      memoryAuthority: 'Working memory is task-checkpointed working context, not human-confirmed knowledge.',
+      exportMemory: 'Export this scope’s working memory as Markdown', exportingMemory: 'Exporting working memory…',
+      exportedMemory: 'Download started from a fresh database read. FULI stays the source of truth; edits to the file are not imported.',
+      exportMemoryFailed: 'Could not export working memory. Try again.',
+      memory: { decisions: 'Decisions', openThreads: 'Open work', nextActions: 'Next actions' },
+      digestTitle: 'Compacted extract', digestHint: 'Automatic extract, not verified: original lines picked from earlier messages by fixed rules. It is not working memory and may miss or mislabel content; the originals below are authoritative.',
+      kinds: { request: 'Request', decision: 'Decision', correction: 'Correction', open: 'Open', method: 'Method' },
+      truncated: 'truncated', omitted: '{count} more lines were not extracted or were dropped for space; see the originals.',
     },
     workHistory: {
       title: 'Work history', loading: 'Loading employee work records…', loadFailed: 'Could not load work records. Try again.',

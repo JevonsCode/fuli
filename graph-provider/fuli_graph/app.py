@@ -879,6 +879,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             Query(min_length=1, max_length=128),
         ] = None,
         limit: Annotated[int, Query(ge=1, le=200)] = 100,
+        session_id: Annotated[str | None, Query(min_length=1, max_length=256)] = None,
+        work_kind: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
+        workflow: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
     ) -> CollaborationContextResult:
         return await store.collaboration_context(
             actor,
@@ -886,6 +889,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             personal_project_id,
             limit,
             project_agent_id,
+            session_id,
+            work_kind,
+            workflow,
         )
 
     @application.get('/v1/spaces/{space_id}/graph', response_model=GraphResult)

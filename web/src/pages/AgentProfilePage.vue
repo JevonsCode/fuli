@@ -10,6 +10,7 @@ import UiDisclosure from "@/components/UiDisclosure.vue";
 import AgentName from "@/features/agent-profile/AgentName.vue";
 import AgentProfileSettings from "@/features/agent-profile/AgentProfileSettings.vue";
 import AgentConversations from "@/features/project-agents/AgentConversations.vue";
+import TaskExecutionPlan from "@/features/project-agents/TaskExecutionPlan.vue";
 import {
   agentDisplayName,
   collaboratorsFor,
@@ -60,9 +61,6 @@ const projects = computed(() =>
     (item) => item.personal_space_id === space.value,
   ),
 );
-const employeeProjects = computed(() =>
-  projects.value.map((item) => ({ id: item.project_id, name: item.profile.name })),
-);
 const projectName = (id: string) =>
   projects.value.find((item) => item.project_id === id)?.profile.name || id;
 const personName = (id: string) => {
@@ -110,6 +108,11 @@ const currentProjects = computed(() =>
         assignments: assignments.value ?? agent.value.assignments,
       })
     : [],
+);
+const conversationProjects = computed(() =>
+  projects.value
+    .filter((item) => currentProjects.value.includes(item.project_id))
+    .map((item) => ({ id: item.project_id, name: item.profile.name })),
 );
 const visibleCurrentProjects = computed(() => currentProjects.value.slice(0, 4));
 const remainingCurrentProjects = computed(() => currentProjects.value.slice(4));
@@ -168,6 +171,7 @@ watch(
     assignments.value = person.assignments;
     const params = new URLSearchParams({
       personalSpaceId: person.personalSpaceId,
+      agentId: person.agentId,
     });
     const assignmentParams = new URLSearchParams({
       personalSpaceId: person.personalSpaceId,
@@ -433,6 +437,7 @@ onMounted(() => {
                   {{ task.title }}
                 </RouterLink>
                 <span class="ui-badge">{{ t(`projectAgents.taskStatus.${task.status}`) }}</span>
+                <TaskExecutionPlan :task="task" :personal-space-id="space" :active="activeTab === 'overview'" />
               </li>
             </ul>
             <p v-else-if="!detailsLoading && !partial" class="agent-muted">
@@ -719,7 +724,7 @@ onMounted(() => {
             :key="agent.agentId"
             :personal-space-id="space"
             :agent-id="agent.agentId"
-            :projects="employeeProjects"
+            :projects="conversationProjects"
           />
         </section>
       </section>

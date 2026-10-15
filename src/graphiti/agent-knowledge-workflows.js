@@ -21,6 +21,7 @@ export async function beginTaskContext(application, {
   sourceSessionId = null,
   projectAgentId = null,
   workKind = null,
+  workflow = null,
   requiredCapabilities = []
 }) {
   const continuationToken = /^FULI_CHECKPOINT_REQUIRED: (fuli-task-[a-zA-Z0-9-]{8,128})\b/.exec(taskPrompt ?? '')?.[1];
@@ -47,6 +48,7 @@ export async function beginTaskContext(application, {
     sourceApplication,
     sourceSessionId,
     workKind,
+    workflow,
     requiredCapabilities,
     agentInvocation: true,
     agentToolName: 'begin_task_context'
@@ -54,7 +56,17 @@ export async function beginTaskContext(application, {
   if (resumed && resumed.personalProjectId !== preferences.context.personal_project_id) {
     throw validationError('Checkpoint continuation belongs to another project');
   }
-  const task = resumed ?? scopeRetry ?? await application.taskContextRegistry.begin({
+  return beginTaskFromPreferences(application, preferences, {
+    sessionId, turnId, sourceApplication, sourceSessionId
+  }, { existingTask, resumed: Boolean(resumed) });
+}
+
+// Hook and model fallback share the same durable lifecycle. A stored pending
+// task is not evidence that its context reached this model turn.
+export async function beginTaskFromPreferences(application, preferences, {
+  sessionId, turnId = null, sourceApplication = 'other', sourceSessionId = null
+}, { existingTask = null, resumed = false } = {}) {
+  const task = existingTask ?? await application.taskContextRegistry.begin({
     sessionId,
     turnId,
     personalProjectId: preferences.context.personal_project_id,
@@ -75,7 +87,8 @@ export async function beginTaskContext(application, {
     ...preferences,
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
     task_guidance: {
-      collaboration: 'Before implementation assess work complexity and required capabilities using plan_agent_collaboration. The stable project lead coordinates qualified specialists and source-lead-approved loans. Use only available authorized clients/models. Ask optional verification-client preference once; after 15 seconds use the recommended authorized task-local default. Persist project/global preferences only after explicit choice. Verify artifacts, record_agent_verification with evidence; after two failures escalate capability. Never claim a model change or worker run from a routing recommendation alone.',
+      execution_plan: 'When you have an explicit execution plan for a durable project task, share its public steps through record_project_agent_task_activity.executionPlan and update their statuses as work progresses. Reuse step IDs and report the full current plan; steps: [] withdraws it. This is optional: do not invent a plan, infer progress percentages, or expose private reasoning. Step completion does not replace verification or human acceptance.',
+      collaboration: 'Before implementation use plan_agent_collaboration with taskSize and all known implementationAgentIds. Follow its divisionPlan: standard work keeps a main FLA plus a different FLA for independent acceptance; complex work adds at most one explicitly bounded independentWork. Small low-impact edits, coupled changes and command-only checks need no artificial split. Keep coupled implementation together while separating meaningful acceptance once artifacts are stable. The stable project lead decomposes, integrates and delivers. Reuse qualified specialists; use approved loans or existing HR flow on a gap. Give workers bounded briefs and necessary artifact references, not the full conversation; retrieve at most 3 results per query initially and expand only on a specific gap. Use only authorized clients/models and assess_agent_action under existing user policies. Publish assigned scopes and dependencies through the optional execution plan and report real worker/model/usage; unknown tokens stay unknown. Verify artifacts with record_agent_verification and evidence; after two failures escalate capability. Recommendations, command runs and configured peers alone are not independent worker execution.',
       profile_capture: 'Evaluate durable artifact taste (including writing voice, wording, structure and formatting), stable collaboration personality, and decision preferences separately. Do not default every preference to judgment_preference. Use tasteDomain: writing for writing evidence; retain exact session/turn/time provenance. Agent-inferred personality remains pending. Report actual missing evidence rather than promising automatic progress from use alone.',
       human_attention: 'When the selected Project Agent needs a human answer, decision, review or permission, use request_agent_attention with the exact current space/project/Agent IDs, a stable idempotency key and a specific requestedAction. Never raise a hand for ordinary running, queueing or automatic retries. Read list_agent_attention with status=resolved for replies; cancel obsolete requests with cancel_agent_attention. A response does not grant permission or accept task completion.',
       retrieval: 'Inspect task_knowledge_recall before asking for a stable project fact or method again. On a miss, use search_current_project_knowledge with focused action, artifact, target-system, or identifier queries; never use the full conversational request as the only query.',
@@ -156,7 +169,7 @@ export async function checkpointTaskKnowledge(application, {
   let memoryResult = null;
   let memoryRequest = null;
   if (agentMemory) {
-    if (!task.projectAgentId || !task.personalProjectId) {
+    if (!task.projectAgentId) {
       throw validationError('Task has no durable project Agent; do not guess a memory target');
     }
     const prepared = await prepareProjectAgentMemory(application, {

@@ -342,6 +342,7 @@ export function projectAgentTokenUsage(value) {
 
 export function providerProjectAgentTaskActivity(input) {
   const result = withoutUndefined({
+    execution_plan: input.executionPlan ?? input.execution_plan,
     artifact_revision: input.artifactRevision ?? input.artifact_revision,
     expected_verification_attempt_id: input.expectedVerificationAttemptId,
     judgment_task_context_token: input.judgmentTaskContextToken,
@@ -489,6 +490,7 @@ export function projectAgentTaskParticipantRecord(value = {}) {
 
 export function projectAgentTaskEventRecord(value = {}) {
   const result = {
+    ...(value.execution_plan != null ? { executionPlan: value.execution_plan } : {}),
     eventId: value.event_id,
     taskId: value.task_id,
     agentId: value.agent_id ?? null,

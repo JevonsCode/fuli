@@ -8,8 +8,10 @@ const patchJson = vi.hoisted(() => vi.fn())
 const postJson = vi.hoisted(() => vi.fn())
 const deleteJson = vi.hoisted(() => vi.fn())
 const route = vi.hoisted(() => ({ query: {} as Record<string, string> }))
+const subscription = vi.hoisted(() => ({ subscribe: vi.fn(() => vi.fn()) }))
 
 vi.mock('@/api/client', () => ({ getJson, patchJson, postJson, deleteJson, putJson: vi.fn() }))
+vi.mock('@/features/project-agents/task-updates', () => ({ subscribeTaskUpdates: subscription.subscribe }))
 vi.mock('vue-router', async (original) => ({ ...await original<typeof import('vue-router')>(), useRoute: () => route }))
 
 import { useConsoleStore } from '@/stores/console'
@@ -127,6 +129,33 @@ describe('ProjectAgentsPage', () => {
     store.state = { ...store.state!, personalProjects: [{ project_id: 'project-a', personal_space_id: 'personal-1', profile: { name: '活动项目', sources: [], boundaries: [] } }] }
     await nextTick()
     expect(wrapper.find('.project-agent-first-task').exists()).toBe(false)
+  })
+
+  it('subscribes to a task plan only while its execution details are expanded', async () => {
+    subscription.subscribe.mockClear()
+    const normal = getJson.getMockImplementation()!
+    const task = { taskId: 'plan-task', title: 'Synthetic plan task', status: 'running', personalProjectId: 'project-a',
+      participants: [{ agentId: 'shared-agent', role: 'lead', status: 'running' }], events: [{
+        eventId: 'plan', taskId: 'plan-task', status: 'running', summary: 'Synthetic plan', createdAt: '2026-10-13T01:00:00Z',
+        executionPlan: { steps: [{ id: 'check', title: '核对计划更新', status: 'in_progress' }] },
+      }] }
+    getJson.mockImplementation((url: string) => url.includes('/api/project-agent-tasks?')
+      ? Promise.resolve([task]) : url.includes('/api/project-agent-tasks/plan-task?') ? Promise.resolve(task) : normal(url))
+    const { wrapper } = mountPage()
+    try {
+      await flushPromises()
+      const details = wrapper.get('[data-task-details]')
+      expect(details.get('[data-execution-plan]').text()).toContain('核对计划更新')
+      expect(subscription.subscribe).not.toHaveBeenCalled()
+      ;(details.element as HTMLDetailsElement).open = true
+      await details.trigger('toggle')
+      await flushPromises()
+      expect(subscription.subscribe).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ taskId: 'plan-task' }))
+      const unsubscribe = subscription.subscribe.mock.results.at(-1)!.value
+      ;(details.element as HTMLDetailsElement).open = false
+      await details.trigger('toggle')
+      expect(unsubscribe).toHaveBeenCalledOnce()
+    } finally { wrapper.unmount() }
   })
 
   it('shows temporary task scope and assignment without claiming a worker has started', async () => {
@@ -365,6 +394,54 @@ describe('ProjectAgentsPage', () => {
 
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(wrapper.findAll('.project-agent-row')).toHaveLength(1)
+  })
+
+  it.each([true, false])('scopes employee conversations to actual assignments (assigned=%s)', async (assigned) => {
+    const employee = structuredClone(agents[0]!)
+    employee.agentId = 'employee.concierge'
+    employee.personalProjectId = null
+    employee.memoryScope = 'reviewed_agent'
+    employee.profile.capabilities = ['fuli.employee:concierge']
+    employee.assignments = assigned
+      ? [{ ...employee.assignments![0]!, agentId: employee.agentId }]
+      : []
+    const template = {
+      id: 'concierge', version: '1.0.0', name: 'Synthetic concierge', role: 'Manager', description: 'Synthetic test employee',
+      capabilities: [], permissions: [], runtime: null, runtimeStatus: 'not_required',
+      agentId: employee.agentId, agentStatus: 'active', assignments: employee.assignments, assignmentsVersion: 'version-0', identityConflict: false,
+      management: { mode: 'all', projectIds: [], excludedProjectIds: [], titleMode: 'off', titleStyle: 'text' },
+      managedProjects: [{ id: 'project-b', name: 'Project B' }, { id: 'project-a', name: 'Project A' }],
+    }
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (url.includes('/api/project-agents?')) return Promise.resolve([employee])
+      if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: employee.assignments })
+      if (url.includes('/api/employee-templates?')) return Promise.resolve({ templates: [template] })
+      return original(url)
+    })
+    postJson.mockResolvedValue({ conversations: [] })
+    const { wrapper } = mountPage()
+    await flushPromises()
+    try {
+      const conversations = wrapper.get('.agent-conversations')
+      ;(conversations.element as HTMLDetailsElement).open = true
+      await conversations.trigger('toggle')
+      await flushPromises()
+      if (assigned) {
+        expect(postJson).toHaveBeenCalledExactlyOnceWith('/api/agent-conversations/query', {
+          personalSpaceId: 'personal-1', personalProjectId: 'project-a', agentId: employee.agentId, mode: 'list', limit: 20,
+        })
+        expect(conversations.findAll('option').map(option => option.attributes('value')).filter(Boolean)).toEqual(['project-a'])
+      } else {
+        expect(postJson).toHaveBeenCalledExactlyOnceWith('/api/agent-conversations/query', {
+          personalSpaceId: 'personal-1', personalProjectId: null, agentId: employee.agentId, mode: 'list', limit: 20,
+        })
+        expect(conversations.find('select').exists()).toBe(true)
+        expect(conversations.find('[data-memory-settings]').exists()).toBe(true)
+      }
+      // Workbench management still covers all projects; conversation access does not create assignments.
+      expect(wrapper.findAll('.employee-assigned-projects a')).toHaveLength(2)
+    } finally { wrapper.unmount() }
   })
 
   it('opens the inline multi-project editor directly for employee roles, including future templates', async () => {

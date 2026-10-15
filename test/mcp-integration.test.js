@@ -254,7 +254,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'search_human_knowledge_changes', 'review_human_knowledge_change',
     'list_knowledge_spaces', 'upsert_personal_project', 'list_personal_projects',
     'upsert_project_agent', 'list_project_agents', 'get_project_agent_context',
-    'get_project_agent', 'get_project_agent_memory', 'checkpoint_project_agent_memory',
+    'get_project_agent', 'get_project_agent_memory', 'export_project_agent_memory', 'checkpoint_project_agent_memory',
   'list_agent_conversations', 'read_agent_conversation', 'resume_agent_conversation',
   'get_agent_conversation_policy', 'update_agent_conversation_policy',
   'get_agent_quality_gate', 'record_agent_verification', 'plan_agent_collaboration',

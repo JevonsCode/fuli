@@ -14,6 +14,19 @@ test('Claude remote connector has distinct authoritative client attribution', ()
   assert.equal(normalizeMcpSourceApplication('claude'), 'claude');
 });
 
+test('message status and cancel use the trusted host client exactly like message_agent', () => {
+  for (const name of ['message_agent', 'get_agent_message_status', 'cancel_agent_message']) {
+    for (const [nativeThreadId, host, client] of [[NATIVE_THREAD_ID, NATIVE_THREAD_ID, 'codex'], [null, 'claude-host', 'claude_code']]) {
+      const forged = { taskContextToken: 'fuli-task-synthetic', messageId: 'message-1',
+        sourceApplication: 'cursor', source_application: 'cursor', sourceSessionId: 'forged' };
+      const actual = normalizeAgentSessionInput(name, forged, nativeThreadId, host, undefined, client);
+      assert.equal(actual.sourceApplication, client, name);
+      assert.equal(actual.sourceSessionId, host, name);
+      assert.equal('source_application' in actual, false, name);
+    }
+  }
+});
+
 test('employee tool calls receive host-bound native session identity, never caller attribution', () => {
   const actual = normalizeAgentSessionInput('call_employee_tool', {
     templateId: 'jefa', sourceApplication: 'other', sourceSessionId: 'forged-session', sourceSessionVerified: false,

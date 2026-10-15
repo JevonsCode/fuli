@@ -1,5 +1,6 @@
 from collections import defaultdict
 from math import isfinite
+import re
 
 from fastapi import HTTPException
 
@@ -12,7 +13,7 @@ from .models import (
 )
 from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
-from .provider_values import json_object, native_datetime as _native_datetime
+from .provider_values import json_object, native_datetime as _native_datetime, preference_qualifiers
 
 
 async def read_collaboration_context(
@@ -22,6 +23,9 @@ async def read_collaboration_context(
     personal_project_id: str | None = None,
     limit: int = 100,
     project_agent_id: str | None = None,
+    session_id: str | None = None,
+    work_kind: str | None = None,
+    workflow: str | None = None,
 ) -> CollaborationContextResult:
     space = await store.authorize(actor, space_id, 'reader')
     if space['kind'] != 'personal':
@@ -37,18 +41,13 @@ async def read_collaboration_context(
             personal_project_id,
         )
     if project_agent_id:
-        if not personal_project_id:
-            raise HTTPException(
-                status_code=422,
-                detail='project Agent preferences require a personal project',
-            )
         agent = await authorize_project_agent(
             store,
             actor,
             space,
             personal_project_id,
             project_agent_id,
-            require_memory=True,
+            require_memory=True, allow_global=True,
         )
         project_agent_id = agent['agent_id']
     project_scopes = await _project_scopes(
@@ -105,6 +104,9 @@ async def read_collaboration_context(
         *edges,
         *(item for item in nodes if item.id not in edge_endpoint_ids),
     ]
+    scoped_items = [item for item in items if _applies_to_task(item, session_id, work_kind, workflow)]
+    task_scope_excluded_count = len(items) - len(scoped_items)
+    items = scoped_items
     items.sort(key=_sort_key)
     if len(items) > limit:
         truncated = True
@@ -178,6 +180,8 @@ async def read_collaboration_context(
         project_preferences=project_preferences,
         agent_preferences=agent_preferences,
         effective_preferences=effective_preferences,
+        task_scope_excluded_count=task_scope_excluded_count,
+        task_scope_filtered=True,
         conflicts=[*global_conflicts, *project_conflicts, *agent_conflicts],
         overridden_global_ids=overridden_global_ids,
         overridden_inherited_ids=overridden_inherited_ids,
@@ -185,6 +189,32 @@ async def read_collaboration_context(
         overridden_lower_authority_ids=overridden_lower_authority_ids,
         truncated=truncated,
     )
+
+
+def _applies_to_task(item, session_id, work_kind, workflow):
+    qualifiers = {**item.attributes, **json_object(item.attributes.get('preference_qualifiers')),
+                  **item.preference_qualifiers}
+    conditions = [
+        (qualifiers.get('sessionId', qualifiers.get('session_id', qualifiers.get('sessionIds', qualifiers.get('session_ids', _legacy_session(item.instruction))))), session_id),
+        (qualifiers.get('workKind', qualifiers.get('work_kind', qualifiers.get('workKinds', qualifiers.get('work_kinds')))), work_kind),
+        (qualifiers.get('workflow', qualifiers.get('workflows')), workflow),
+    ]
+    for condition, actual in conditions:
+        values = [condition] if isinstance(condition, str) and condition.strip() else (
+            condition if isinstance(condition, list) and condition and
+            all(isinstance(value, str) and value.strip() for value in condition) else None
+        )
+        if values and actual and actual not in values:
+            return False
+    return True
+
+
+def _legacy_session(instruction):
+    # Read compatibility only; provenance/ambiguous business prose never scopes.
+    match = re.match(r'^仅(?:在|适用于)\s*(?:Codex|Claude Code|Cursor)\s*会话\s+'
+                     r'([a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12})'
+                     r'\s*(?:中|的|后续|[，,：:])', instruction or '')
+    return match[1] if match else None
 
 
 async def _project_scopes(store, space, personal_project_id):
@@ -436,6 +466,7 @@ def _preference_item(
         preference_project_id=project_id,
         preference_agent_id=agent_id,
         attributes=attributes,
+        preference_qualifiers=preference_qualifiers(attributes),
         weight=weight,
         reason=reason,
         confirmation_basis=basis,
