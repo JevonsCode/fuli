@@ -188,6 +188,11 @@ export class GraphitiProviderClient {
       method: 'PUT', body: input
     });
   }
+  bindTaskContextCoordinationTask(token, input) {
+    return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}/coordination-tasks`, {
+      method: 'PUT', body: input
+    });
+  }
   getTaskContext(token, query) {
     return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}?${new URLSearchParams(query)}`);
   }

@@ -3,7 +3,7 @@ from copy import deepcopy
 import pytest
 from pydantic import ValidationError
 
-from fuli_graph.task_context_models import TaskContextBegin, TaskContextCheckpoint
+from fuli_graph.task_context_models import TaskContextBegin, TaskContextCheckpoint, TaskContextCoordinationTask
 
 
 def test_task_context_begin_preserves_bounded_host_session_provenance():
@@ -20,6 +20,15 @@ def test_task_context_begin_preserves_bounded_host_session_provenance():
 
     assert value.source_session_id == 'mcp-host-session'
     assert value.model_dump(mode='json')['source_session_id'] == 'mcp-host-session'
+
+
+def test_coordination_binding_accepts_only_scope_and_task_identity_not_owner_or_session_claims():
+    payload = {'personal_space_id': 'space-1', 'personal_project_id': 'project-1',
+               'source_application': 'codex', 'task_id': 'coordination-1'}
+    assert TaskContextCoordinationTask.model_validate(payload).model_dump() == payload
+    for extra in [{'agent_id': 'forged-owner'}, {'source_session_id': 'guessed-session'}, {'task_id': ''}]:
+        with pytest.raises(ValidationError):
+            TaskContextCoordinationTask.model_validate({**payload, **extra})
 
 
 def scoped_checkpoint():

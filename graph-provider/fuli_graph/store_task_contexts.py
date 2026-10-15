@@ -15,11 +15,18 @@ from .provider_values import now_utc, stable_uuid
 from .project_agent_memory_models import ProjectAgentMemoryWrite
 from .store_transactions import query_store_transaction
 from .task_context_adoption import adopt_task_agent
+from .task_context_coordination import bind_coordination_task, task_context_json, task_context_record
 
 
 class StoreTaskContexts:
     async def adopt_task_context_agent(self, actor, token, request):
-        return await adopt_task_agent(self, actor, token, request)
+        async with query_store_transaction(self) as scoped:
+            await bind_coordination_task(scoped, actor, token, request)
+            await adopt_task_agent(scoped, actor, token, request)
+            return await scoped.get_task_context(actor, request.personal_space_id, token, request.source_application)
+
+    async def bind_task_context_coordination_task(self, actor, token, request):
+        return await bind_coordination_task(self, actor, token, request)
 
     async def begin_task_context(self, actor, request):
         self._require_personal()
@@ -64,6 +71,7 @@ class StoreTaskContexts:
                 MATCH (session)-[:HAS_CONTEXT]->(saved:FuliTaskContext)
                 WHERE saved.token = coalesce(retry.token, $token)
                 RETURN saved.record_json AS record_json,
+                       [(saved)-[:COORDINATES_TASK]->(linked:FuliProjectAgentTask) | linked.task_id] AS coordination_task_ids,
                        saved.token = session.current_token AS is_current,
                        previous IS NOT NULL AND NOT coalesce(previous.completed, false)
                            AND previous.token <> saved.token AS previous_checkpoint_missing
@@ -84,7 +92,7 @@ class StoreTaskContexts:
                 detail='Task context token is already in use') from error
         if not rows[0]['is_current']:
             raise HTTPException(status_code=409, detail='Task turn has been superseded')
-        saved = json.loads(rows[0]['record_json'])
+        saved = task_context_record(rows[0])
         for field in ('personal_project_id', 'project_agent_id', 'source_application', 'turn_id'):
             if saved[field] != getattr(request, field):
                 raise HTTPException(status_code=409, detail='Task turn already has another context')
@@ -95,9 +103,10 @@ class StoreTaskContexts:
         await self.authorize(actor, space_id, 'reader')
         rows, _, _ = await self.runtime.driver.execute_query(
             'MATCH (s:FuliTaskContextSession {id: $id})-[:HAS_CONTEXT]->(t:FuliTaskContext) '
-            'WHERE t.token=s.current_token RETURN t.record_json AS record_json',
+            'WHERE t.token=s.current_token RETURN t.record_json AS record_json, '
+            '[(t)-[:COORDINATES_TASK]->(linked:FuliProjectAgentTask) | linked.task_id] AS coordination_task_ids',
             id=self._task_session_id(space_id, source_application, session_id))
-        return json.loads(rows[0]['record_json']) if rows else None
+        return task_context_record(rows[0]) if rows else None
 
     async def recent_agent_sessions(self, actor, space_id, agent_id, project_id, limit):
         """The host conversations an Agent most recently worked in, newest first."""
@@ -134,12 +143,13 @@ class StoreTaskContexts:
                   [:HAS_TASK_CONTEXT_SESSION]->(session:FuliTaskContextSession)-
                   [:HAS_CONTEXT]->(task:FuliTaskContext {token: $token})
             WHERE session.current_token = task.token
-            RETURN task.record_json AS record_json
+            RETURN task.record_json AS record_json,
+                   [(task)-[:COORDINATES_TASK]->(linked:FuliProjectAgentTask) | linked.task_id] AS coordination_task_ids
             ''', space_id=space_id, token=token, routing_='r',
         )
         if not rows:
             raise HTTPException(status_code=404, detail='Task context is unknown or superseded')
-        record = json.loads(rows[0]['record_json'])
+        record = task_context_record(rows[0])
         if record['source_application'] != source_application:
             raise HTTPException(status_code=404, detail='Task context not found for this client')
         return record
@@ -221,9 +231,10 @@ class StoreTaskContexts:
                   task.work_log_json = $work_log_json,
                   task.completed = $completed, task.disposition = $disposition, task.reason = $reason
             )
-            RETURN matches, task.record_json AS record_json
+            RETURN matches, task.record_json AS record_json,
+                   [(task)-[:COORDINATES_TASK]->(linked:FuliProjectAgentTask) | linked.task_id] AS coordination_task_ids
             ''', space_id=request.personal_space_id, token=token,
-            fingerprint=request.fingerprint, record_json=json.dumps(record, ensure_ascii=False),
+            fingerprint=request.fingerprint, record_json=task_context_json(record),
             disposition=request.disposition, reason=request.reason,
             completed=request.phase == 'complete',
             is_prepare=request.phase == 'prepare',
@@ -234,7 +245,7 @@ class StoreTaskContexts:
         )
         if not rows or not rows[0]['matches']:
             raise HTTPException(status_code=409, detail='Task checkpoint conflicts or was superseded')
-        return json.loads(rows[0]['record_json'])
+        return task_context_record(rows[0])
 
     async def verify_task_checkpoint(self, actor, space_id, session_id, source_application):
         self._require_personal()

@@ -44,6 +44,13 @@ export class ProviderTaskContextRegistry {
     }));
   }
 
+  async bindCoordinationTask(token, { personalProjectId, taskId }, sourceApplication = 'other') {
+    return taskRecord(await this.provider.bindTaskContextCoordinationTask(token, {
+      personal_space_id: this.personalSpaceId, personal_project_id: personalProjectId,
+      task_id: taskId, source_application: sourceApplication
+    }));
+  }
+
   prepare(token, checkpoint, sourceApplication = 'other', agentMemory = null) {
     return this.#write(token, checkpoint, 'prepare', sourceApplication, agentMemory);
   }
@@ -81,6 +88,8 @@ function taskRecord(value) {
     projectScope: value.project_scope ?? null,
     agentMemoryScope: value.agent_memory_scope ?? null,
     projectAgentId: value.project_agent_id,
+    coordinationTaskId: value.coordination_task_id ?? null,
+    coordinationTaskIds: value.coordination_task_ids ?? (value.coordination_task_id ? [value.coordination_task_id] : []),
     sourceApplication: value.source_application,
     sourceSessionId: value.source_session_id ?? null,
     turnId: value.turn_id ?? null,

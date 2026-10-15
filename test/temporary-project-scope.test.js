@@ -73,7 +73,8 @@ test('temporary projects never participate in directory matching', () => {
 test('a bound context keeps task identity and provenance stable across MCP process sessions', async () => {
   const { application, calls } = fixture();
   let task = { personalProjectId: null, projectAgentId: null, sessionId: 'stable-host-session' };
-  application.taskContextRegistry = { context: async () => task };
+  application.taskContextRegistry = { context: async () => task,
+    bindCoordinationTask: async (_token, input) => ({ ...task, coordinationTaskIds: [input.taskId] }) };
   const ensure = application.personal.ensureTemporaryProject;
   application.personal.ensureTemporaryProject = async input => {
     const project = await ensure(input);

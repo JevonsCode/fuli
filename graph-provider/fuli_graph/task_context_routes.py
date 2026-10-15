@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import Query
 
 from .models import SourceApplication
-from .task_context_models import TaskContextBegin, TaskContextCheckpoint, TaskContextAdoptAgent
+from .task_context_models import TaskContextBegin, TaskContextCheckpoint, TaskContextAdoptAgent, TaskContextCoordinationTask
 
 
 def register_task_context_routes(application, store, Actor):
@@ -27,6 +27,10 @@ def register_task_context_routes(application, store, Actor):
     @application.put('/v1/task-contexts/{token}/agent')
     async def adopt_agent(token: str, request: TaskContextAdoptAgent, actor: Actor):
         return await store.adopt_task_context_agent(actor, token, request)
+
+    @application.put('/v1/task-contexts/{token}/coordination-tasks')
+    async def bind_coordination_task(token: str, request: TaskContextCoordinationTask, actor: Actor):
+        return await store.bind_task_context_coordination_task(actor, token, request)
 
     @application.put('/v1/task-contexts')
     async def begin_context(request: TaskContextBegin, actor: Actor):

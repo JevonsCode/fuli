@@ -27,11 +27,14 @@ class TaskContextAgentMemory(StrictModel):
     memory: ProjectAgentWorkingMemory
 
 
-class TaskContextAdoptAgent(StrictModel):
+class TaskContextCoordinationTask(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     personal_project_id: str = Field(min_length=1, max_length=128)
     source_application: SourceApplication
     task_id: str = Field(min_length=1, max_length=128)
+
+
+class TaskContextAdoptAgent(TaskContextCoordinationTask):
     agent_id: str = Field(min_length=1, max_length=128)
 
 

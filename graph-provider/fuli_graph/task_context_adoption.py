@@ -4,6 +4,7 @@ import json
 
 from fastapi import HTTPException
 from .project_agent_access import authorize_project_agent
+from .task_context_coordination import task_context_json
 
 
 async def adopt_task_agent(store, actor, token, request):
@@ -13,10 +14,11 @@ async def adopt_task_agent(store, actor, token, request):
     if record['personal_project_id'] != request.personal_project_id:
         raise HTTPException(409, 'Task context belongs to another project')
     if record.get('project_agent_id'):
-        if record['project_agent_id'] == request.agent_id:
+        if (record['project_agent_id'] == request.agent_id
+                and record.get('coordination_task_id') == request.task_id):
             return record
         raise HTTPException(409, 'Task context already has an employee')
-    before = json.dumps(record, ensure_ascii=False)
+    before = task_context_json(record)
     agent = await authorize_project_agent(store, actor, space, request.personal_project_id,
                                           request.agent_id, require_active=True)
     if request.source_application not in json.loads(agent['profile_json']).get('allowed_clients', []):
@@ -59,12 +61,13 @@ async def adopt_task_agent(store, actor, token, request):
         RETURN context.record_json AS record_json
         ''', space_id=request.personal_space_id, project_id=request.personal_project_id,
         task_id=request.task_id, agent_id=request.agent_id, token=token,
-        before=before, record_json=json.dumps(record, ensure_ascii=False), profile_json=agent['profile_json'],
+        before=before, record_json=task_context_json(record), profile_json=agent['profile_json'],
     )
     if not rows:
         latest = await store.get_task_context(actor, request.personal_space_id, token,
                                               request.source_application)
-        if latest.get('project_agent_id') == request.agent_id:
+        if (latest.get('project_agent_id') == request.agent_id
+                and latest.get('coordination_task_id') == request.task_id):
             return latest
         raise HTTPException(409, 'Task employee claim changed, completed, or is not the routed lead')
     return json.loads(rows[0]['record_json'])

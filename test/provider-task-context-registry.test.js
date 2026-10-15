@@ -121,6 +121,41 @@ test('Provider registry rejects malformed durable task records', async () => {
   );
 });
 
+test('coordination bindings survive the TaskContext port and another registry without changing owner', async () => {
+  let saved = providerRecord({ coordination_task_id: 'original-adoption',
+    coordination_task_ids: ['original-adoption', 'task-first'] });
+  const calls = [];
+  const provider = {
+    bindTaskContextCoordinationTask: async (token, input) => {
+      calls.push({ token, input });
+      saved = { ...saved, coordination_task_ids: [...new Set([...saved.coordination_task_ids, input.task_id])] };
+      return saved;
+    },
+    getTaskContext: async () => saved
+  };
+  const first = new ProviderTaskContextRegistry(provider, 'space-1');
+  const linked = await first.bindCoordinationTask('fuli-task-provider-token', {
+    personalProjectId: 'project-1', taskId: 'task-second'
+  }, 'claude_code');
+  assert.deepEqual(calls, [{ token: 'fuli-task-provider-token', input: {
+    personal_space_id: 'space-1', personal_project_id: 'project-1',
+    source_application: 'claude_code', task_id: 'task-second'
+  } }]);
+  const second = new ProviderTaskContextRegistry(provider, 'space-1');
+  const recovered = await second.context(linked.token, 'claude_code');
+  assert.equal(recovered.projectAgentId, 'agent-1');
+  assert.equal(recovered.coordinationTaskId, 'original-adoption');
+  assert.deepEqual(recovered.coordinationTaskIds, ['original-adoption', 'task-first', 'task-second']);
+});
+
+test('legacy adoption pointer is preserved in the TaskContext view', async () => {
+  const registry = new ProviderTaskContextRegistry({ getTaskContext: async () =>
+    providerRecord({ coordination_task_id: 'original-adoption' }) }, 'space-1');
+  const recovered = await registry.context('fuli-task-provider-token', 'claude_code');
+  assert.equal(recovered.coordinationTaskId, 'original-adoption');
+  assert.deepEqual(recovered.coordinationTaskIds, ['original-adoption']);
+});
+
 test('scoped capture receipts survive completion and recovery through another Provider registry', async () => {
   let saved;
   const receipts = [{ scope: 'personal_global', personal_project_id: null, status: 'committed',

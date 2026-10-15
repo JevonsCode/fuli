@@ -161,6 +161,17 @@ test('control-plane provider client uses durable task and activity routes', asyn
   });
 });
 
+test('task coordination binding client uses the narrow TaskContext route', async () => {
+  const calls = [];
+  const client = providerClient(calls, {});
+  const body = { personal_space_id: 'space-1', personal_project_id: 'project-1',
+    source_application: 'codex', task_id: 'coordination-1' };
+  await client.bindTaskContextCoordinationTask('fuli-task-parent', body);
+  assert.deepEqual(calls.map(({ path, options, body }) => ({ path, method: options.method, body })), [{
+    path: '/v1/task-contexts/fuli-task-parent/coordination-tasks', method: 'PUT', body
+  }]);
+});
+
 test('project-bound task and activity workflows preserve the project scope', async () => {
   const calls = [];
   const application = {
