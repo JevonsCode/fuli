@@ -1,5 +1,6 @@
 import { ApplicationError } from '../app/application-error.js';
 import { activeAgentRequestSignal } from '../app/agent-request-context.js';
+import { preferenceTaskSession } from './preference-task-scope.js';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
@@ -715,7 +716,7 @@ export class GraphitiProviderClient {
     });
     if (personalProjectId) query.set('personal_project_id', personalProjectId);
     if (projectAgentId) query.set('project_agent_id', projectAgentId);
-    for (const [key, value] of Object.entries({ session_id: taskScope.sessionId ?? taskScope.sourceSessionId,
+    for (const [key, value] of Object.entries({ session_id: preferenceTaskSession(taskScope),
       work_kind: taskScope.workKind, workflow: taskScope.workflow })) {
       if (value) query.set(key, value);
     }

@@ -7,9 +7,15 @@ export function legacyPreferenceSession(instruction) {
     : undefined;
 }
 
+// A generated MCP process identity does not identify the user's conversation.
+export function preferenceTaskSession(context = {}) {
+  return context.sessionId ?? (context.sourceSessionId?.startsWith('fuli-host-')
+    ? undefined : context.sourceSessionId);
+}
+
 export function preferenceAppliesToTask(item, context = {}) {
   const qualifiers = { ...item.attributes, ...item.attributes?.preference_qualifiers, ...item.preference_qualifiers };
-  const sessionId = context.sessionId ?? context.sourceSessionId;
+  const sessionId = preferenceTaskSession(context);
   const hasSessionCondition = ['sessionId', 'session_id', 'sessionIds', 'session_ids']
     .some(key => Object.hasOwn(qualifiers, key));
   const tests = [

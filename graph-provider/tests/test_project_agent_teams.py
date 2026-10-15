@@ -416,6 +416,20 @@ async def test_no_team_unavailable_match_keeps_system_coordinator():
 
 
 @pytest.mark.asyncio
+async def test_no_team_unavailable_parallel_match_is_saved_as_blocked():
+    store = TeamSubmitStore([candidate('member', ['verification'], ['test execution'],
+        allowed_clients=['claude_code'])], lead=None, members=[])
+    await store.submit_project_agent_task({'id': 'principal'},
+        task_request(source_application='codex', parallel_plan=two_stream_plan()))
+    task = store.tasks[-1]
+    assert task['status'] == 'blocked'
+    assert task['routing_reason'] == 'agent_unavailable'
+    assert task['coordinator_agent_id'] == 'coordinator'
+    assert task['participants'] == []
+    assert store.recruitments == {}
+
+
+@pytest.mark.asyncio
 async def test_parallel_team_work_keeps_the_qualified_member_as_lead_and_the_roster_closed():
     store = TeamSubmitStore([candidate('outside', ['verification'], ['test execution']),
         candidate('lead', ['planning'], ['planning']),

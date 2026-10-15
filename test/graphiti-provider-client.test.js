@@ -18,6 +18,21 @@ test('preference reads transmit explicit task dimensions independently without s
   assert.equal(url.searchParams.has('taskPrompt'), false);
 });
 
+test('preference reads omit MCP process identities but preserve native session scope', async () => {
+  let url;
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async value => { url = new URL(value); return jsonResponse(200, {}); } });
+  await client.collaborationPreferences('synthetic-space', null, 100, null,
+    { sourceSessionId: 'fuli-host-process' });
+  assert.equal(url.searchParams.has('session_id'), false);
+  await client.collaborationPreferences('synthetic-space', null, 100, null,
+    { sessionId: 'native-session', sourceSessionId: 'fuli-host-process' });
+  assert.equal(url.searchParams.get('session_id'), 'native-session');
+  await client.collaborationPreferences('synthetic-space', null, 100, null,
+    { sourceSessionId: 'native-source-session' });
+  assert.equal(url.searchParams.get('session_id'), 'native-source-session');
+});
+
 test('current-task lookup bounds its own timeout without increasing a stricter client timeout', async () => {
   for (const [requestTimeoutMs, lookupTimeoutMs, maximumMs] of [[1000, 15, 250], [15, 1500, 250]]) {
     const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token', requestTimeoutMs,

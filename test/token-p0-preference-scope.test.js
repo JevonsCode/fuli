@@ -1,9 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { getCollaborationPreferences } from '../src/graphiti/collaboration-preference-workflow.js';
+import { normalizeAgentSessionInput } from '../src/mcp/session-id.js';
 
 const rule = (id, qualifiers = {}) => ({ id, item_kind: 'entity', instruction: `Rule ${id}`,
   preference_key: id, preference_scope: 'global', preference_qualifiers: qualifiers });
+
+test('an MCP process identity does not exclude preferences for an unknown native session', async () => {
+  const { preferenceAppliesToTask } = await import('../src/graphiti/preference-task-scope.js');
+  const item = rule('native-session', { sessionId: 'saved-session' });
+  for (const source of ['claude_code', 'cursor']) {
+    const input = normalizeAgentSessionInput('get_collaboration_preferences', {}, null,
+      'fuli-host-process', undefined, source);
+    assert.equal(preferenceAppliesToTask(item, input), true);
+    assert.equal(preferenceAppliesToTask(item, { ...input, sessionId: 'other-session' }), false);
+    assert.equal(preferenceAppliesToTask(item, { ...input, sessionId: 'saved-session' }), true);
+  }
+  assert.equal(preferenceAppliesToTask(item, { sourceSessionId: 'other-session' }), false);
+});
 
 test('task entry filters only definite structured session/workflow mismatches without capping global rules', async () => {
   const items = [rule('current-session', { sessionId: 'session-a' }),

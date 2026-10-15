@@ -43,7 +43,8 @@ def test_context_budget_counts_multibyte_and_never_returns_tool_payloads():
     assert result['truncated']
 
 
-@pytest.mark.parametrize('summary', ['\\' * 2000, '"引号"\n' * 800, '任务' * 3000])
+@pytest.mark.parametrize('summary', ['\\' * 2000, '"引号"\n' * 800, '任务' * 3000],
+                         ids=['backslashes', 'quoted-multibyte', 'multibyte'])
 def test_context_json_stays_within_budget_for_escaped_and_unicode_summaries(summary):
     import json
     for budget in (512, 4000):

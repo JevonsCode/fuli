@@ -133,9 +133,9 @@ class StoreProjectAgentTasks(
                 actor, request.personal_space_id, request.personal_project_id,
             )
             team_lead_agent_id = getattr(policy, 'team_lead_agent_id', None)
-        # A configured team that cannot staff this client holds the task for a
-        # user decision: nobody is added from outside the roster meanwhile.
-        team_hold = reason == 'agent_unavailable' and bool(team_lead_agent_id)
+        # A qualified Agent unavailable to this client holds the task for a
+        # user decision, whether or not a project team is configured.
+        staffing_hold = reason == 'agent_unavailable'
         participants = []
         if lead:
             participants.append({
@@ -155,7 +155,7 @@ class StoreProjectAgentTasks(
         if (
             request.parallel_plan.enabled
             and request.staffing_intent != 'unassigned'
-            and not team_hold
+            and not staffing_hold
         ):
             parallel_candidates = await self._parallel_staffing_candidates(
                 request,
@@ -202,7 +202,7 @@ class StoreProjectAgentTasks(
         # A held task staffs nobody yet, so only its two-Agent minimum waits
         # for the user's decision; the boundary limit still applies.
         self._verify_parallel_plan(request.parallel_plan, projected_participants,
-                                   require_staffed=not team_hold)
+                                   require_staffed=not staffing_hold)
 
         will_open_recruitment = (
             request.staffing_intent != 'unassigned'
@@ -368,7 +368,7 @@ class StoreProjectAgentTasks(
                 routing_outcome = 'blocked'
                 task_status = 'blocked'
                 reason = 'hr_unavailable'
-        self._verify_parallel_plan(request.parallel_plan, participants, require_staffed=not team_hold)
+        self._verify_parallel_plan(request.parallel_plan, participants, require_staffed=not staffing_hold)
 
         # Staffing a default lead executes nothing, so it needs no executor.
         executor_decision = None if request.staffing_intent == 'default_lead' else (
