@@ -3,14 +3,13 @@ import { withTranscriptGuard } from '../../conversations/transcript-guard.js';
 import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { syncConversationTranscript, withTranscriptNotice, claimTranscriptBoundary, recordTranscriptTaskEntry } from '../../conversations/sync-transcript.js';
 import { normalizeClaudeRecord, verifyClaudeTranscript } from './conversation-transcript.js';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { callAgentTool } from '../../agent-tools.js';
 import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js';
 import { openFederatedGraphApplication } from '../../graphiti/federated-application.js';
 import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
 import { hookAdditionalContextToolResult } from '../../mcp/tool-result.js';
+import { isMainModule } from '../../system/main-module.js';
 import { boundedHookMessage } from '../lifecycle-message.js';
 
 export async function claudeLifecycleOutput(event, input, invoke) {
@@ -144,4 +143,4 @@ async function main() {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
+if (isMainModule(import.meta.url)) await main();

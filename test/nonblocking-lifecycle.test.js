@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { codexStopLifecycleOutput, runCodexLifecycleCommand } from '../src/agents/codex/lifecycle-hook.js';
 import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-hook.js';
 import { cursorLifecycleOutput } from '../src/agents/cursor/lifecycle-hook.js';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 for (const [host, run] of [
   ['Codex', (input, invoke) => codexStopLifecycleOutput(input, invoke)],
@@ -55,4 +55,61 @@ test('Codex deadline releases opened resources even when a Provider ignores canc
   assert.deepEqual(closed.sort(), ['app', 'lease']);
   assert.equal(writes.length, 1);
   assert.notEqual(JSON.parse(writes[0]).decision, 'block');
+});
+
+test('Codex command failure preserves a known native session for checkpointable fallback', () => {
+  const result = spawnSync(process.execPath, ['src/agents/codex/lifecycle-hook.js',
+    '--event', 'UserPromptSubmit', '--runtime-config', '/synthetic/private-missing.json'], {
+    input: JSON.stringify({ session_id: 'synthetic-native-session', cwd: '/synthetic/private-project',
+      prompt: 'PRIVATE_PROMPT', transcript_path: 'PRIVATE_TRANSCRIPT' }),
+    encoding: 'utf8', timeout: 5000
+  });
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, '');
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.hookSpecificOutput?.hookEventName, 'UserPromptSubmit');
+  const context = output.hookSpecificOutput.additionalContext;
+  assert.match(context, /get_collaboration_preferences/);
+  assert.match(context, /sessionId="synthetic-native-session"/);
+  assert.match(context, /fresh taskContextToken/);
+  assert.match(context, /truthful workLog/);
+  assert.match(context, /do not reuse an old token/);
+  assert.doesNotMatch(result.stdout, /PRIVATE_|private-project|private-missing/);
+  assert.notEqual(output.decision, 'block');
+});
+
+test('Codex command deadline retains the parsed native session and emits fallback once', async () => {
+  const writes = [];
+  const result = await runCodexLifecycleCommand(['--event', 'UserPromptSubmit', '--timeout-ms', '20'], {
+    readInput: async () => ({ session_id: 'synthetic-timeout-session', cwd: '/private-project', prompt: 'PRIVATE_PROMPT' }),
+    invoke: async () => new Promise(() => {}),
+    write: value => writes.push(value)
+  });
+  assert.equal(result.timedOut, true);
+  assert.equal(writes.length, 1);
+  const output = JSON.parse(writes[0]);
+  assert.equal(output.hookSpecificOutput?.hookEventName, 'UserPromptSubmit');
+  assert.match(output.hookSpecificOutput.additionalContext, /sessionId="synthetic-timeout-session"/);
+  assert.match(output.hookSpecificOutput.additionalContext, /checkpoint_task_knowledge/);
+  assert.doesNotMatch(writes[0], /PRIVATE_PROMPT|private-project/);
+  assert.notEqual(output.decision, 'block');
+});
+
+test('Codex command never guesses a fallback session or supplies entry context at Stop', async () => {
+  for (const [event, session_id] of [
+    ['UserPromptSubmit', undefined], ['UserPromptSubmit', ' '],
+    ['UserPromptSubmit', 'x'.repeat(257)], ['UserPromptSubmit', 42], ['Stop', 'synthetic-native-session']
+  ]) {
+    const writes = [];
+    await runCodexLifecycleCommand(['--event', event], {
+      readInput: async () => ({ session_id, cwd: '/private-project', prompt: 'PRIVATE_PROMPT' }),
+      invoke: async () => { throw new Error('PRIVATE_FAILURE'); },
+      write: value => writes.push(value)
+    });
+    assert.equal(writes.length, 1);
+    const output = JSON.parse(writes[0]);
+    assert.equal(output.hookSpecificOutput, undefined);
+    assert.doesNotMatch(writes[0], /PRIVATE_|private-project|sessionId=/);
+    assert.notEqual(output.decision, 'block');
+  }
 });

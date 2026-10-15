@@ -10,6 +10,7 @@ import { localServerAuthority, rejectRequestOutsidePolicy } from './http/request
 import { sendJson } from './http/response.js';
 import { closeTaskEventStreams } from './http/task-events-api-router.js';
 import { serveStatic } from './http/static-handler.js';
+import { isMainModule } from './system/main-module.js';
 import { DEFAULT_FULI_PORT } from './defaults.js';
 import { resolveGraphRuntimeOptions } from './graphiti/runtime-config.js';
 import { isFetchBlockedPort } from './server/blocked-ports.js';
@@ -231,7 +232,7 @@ async function handleRequest({
   serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (isMainModule(import.meta.url)) {
   runProgram(process.argv.slice(2)).catch((error) => {
     console.error(error.message);
     process.exitCode = 1;

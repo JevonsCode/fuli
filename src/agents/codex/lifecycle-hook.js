@@ -4,13 +4,12 @@ import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { syncConversationTranscript, withTranscriptNotice, claimTranscriptBoundary, recordTranscriptTaskEntry } from '../../conversations/sync-transcript.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from './conversation-transcript.js';
 import { hookAdditionalContextToolResult } from '../../mcp/tool-result.js';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { callAgentTool } from '../../agent-tools.js';
 import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js';
 import { openFederatedGraphApplication } from '../../graphiti/federated-application.js';
 import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
+import { isMainModule } from '../../system/main-module.js';
 import { boundedHookMessage } from '../lifecycle-message.js';
 
 export async function codexStopLifecycleOutput(input, invoke) {
@@ -133,7 +132,22 @@ async function readHookInput() {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
+function codexLifecycleUnavailable(event, input) {
+  const warning = 'Fuli context is unavailable. Continue with the user request; saved context and checkpoint were not verified.';
+  const sessionId = input?.session_id;
+  if (event !== 'UserPromptSubmit' || typeof sessionId !== 'string' || !sessionId.trim() || sessionId.length > 256) {
+    return { systemMessage: warning };
+  }
+  // The host supplied this identity before the failure. A process-local MCP
+  // session cannot replace it when the Agent falls back to the preferences tool.
+  const fallback = ` No valid Hook task context was supplied. First call get_collaboration_preferences with sessionId=${JSON.stringify(sessionId)}, projectPath=current working directory and taskPrompt=current user request. Use its fresh taskContextToken for checkpoint_task_knowledge with a truthful workLog. Native transcript capture remains unverified; do not reuse an old token or claim this Hook delivered task context.`;
+  return { systemMessage: warning, hookSpecificOutput: {
+    hookEventName: event, additionalContext: warning + fallback
+  } };
+}
+
 export async function runCodexLifecycleCommand(args, dependencies = {}) {
+  const event = args[args.indexOf('--event') + 1];
   const configured = Number(args[args.indexOf('--timeout-ms') + 1]);
   const timeoutMs = args.includes('--timeout-ms') && Number.isSafeInteger(configured) && configured > 0
     ? Math.min(configured, 5000) : 5000;
@@ -144,13 +158,15 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
     emitted = true;
     (dependencies.write ?? (value => process.stdout.write(value)))(value);
   };
-  const unavailable = JSON.stringify({ systemMessage: 'Fuli context is unavailable. Continue with the user request; saved context and checkpoint were not verified.' }) + '\n';
+  let input = null;
+  const readInput = dependencies.readInput ?? readHookInput;
+  const unavailable = () => `${JSON.stringify(codexLifecycleUnavailable(event, input))}\n`;
   let cleanup = async () => {};
   let deadline;
   const expired = new Promise(resolve => {
     deadline = setTimeout(async () => {
       controller.abort();
-      write(unavailable);
+      write(unavailable());
       // A broken dependency must not hold the host open. Give opened leases
       // and connections a bounded chance to close before the process exits.
       let grace;
@@ -161,9 +177,10 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
   });
   try {
     const running = runCodexLifecycleHook(args, { ...dependencies, signal: controller.signal, write,
+      readInput: async () => { input = await readInput(); return input; },
       onCleanup: close => { cleanup = close; } }).then(() => ({ timedOut: false }), () => {
       // Never print prompts, transcripts, paths or credentials.
-      write(unavailable);
+      write(unavailable());
       return { timedOut: false };
     });
     return await Promise.race([running, expired]);
@@ -172,7 +189,7 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   const result = await runCodexLifecycleCommand(process.argv.slice(2));
   if (result.timedOut) process.exit(0);
 }
