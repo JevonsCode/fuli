@@ -67,3 +67,27 @@ def test_task_checkpoint_rejects_inconsistent_or_non_metadata_capture_receipts(c
         payload.update(change)
     with pytest.raises(ValidationError):
         TaskContextCheckpoint.model_validate(payload)
+
+
+def test_worker_run_prepare_accepts_only_ids_strategy_and_host_capability_hash():
+    from fuli_graph.project_agent_worker_models import WorkerRunPrepare, WorkerRunSession
+    payload = {'personal_space_id': 'space-1', 'personal_project_id': 'project-1',
+        'task_context_token': 'fuli-task-12345678', 'source_application': 'codex',
+        'task_id': 'coordination-1', 'agent_id': 'member', 'worker_id': 'worker-1',
+        'executor_id': 'executor-1', 'target_application': 'codex',
+        'provider': 'openai', 'model': 'gpt-6.1-sol',
+        'model_strategy': {'mode': 'deep', 'reasoning_effort': 'max'},
+        'idempotency_key': 'worker-attempt-1', 'runtime_capability_hash': 'a' * 64}
+    value = WorkerRunPrepare.model_validate(payload)
+    assert value.model == 'gpt-6.1-sol' and value.model_strategy.reasoning_effort == 'max'
+    for change in [{'worker_plan': {}}, {'runtime_capability': 'must-not-be-stored'},
+                   {'runtime_capability_hash': 'bad'}, {'bootstrap_lifetime_seconds': 0}]:
+        with pytest.raises(ValidationError):
+            WorkerRunPrepare.model_validate({**payload, **change})
+    session = {'personal_space_id': 'space-1', 'personal_project_id': 'project-1',
+               'source_application': 'codex', 'session_id': 'real-worker-session'}
+    assert WorkerRunSession.model_validate(session).session_id == 'real-worker-session'
+    for change in [{'turn_id': 'another-prompt'}, {'project_agent_id': 'forged-owner'},
+                   {'token': 'fuli-task-inherited-parent'}, {'session_id': '   '}]:
+        with pytest.raises(ValidationError):
+            WorkerRunSession.model_validate({**session, **change})

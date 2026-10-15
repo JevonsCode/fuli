@@ -17,6 +17,7 @@ from .store_projects import StoreProjects
 from .store_publication import StorePublication
 from .store_records import StoreRecords
 from .store_task_contexts import StoreTaskContexts
+from .store_project_agent_worker_runs import StoreProjectAgentWorkerRuns
 
 
 class GraphStore(
@@ -31,6 +32,7 @@ class GraphStore(
     StoreProjectAgentContext,
     StoreDefaultProjectLead,
     StoreTaskContexts,
+    StoreProjectAgentWorkerRuns,
     StoreProjectAgentExecutors,
     StoreProjectAgentTasks,
     StorePublication,

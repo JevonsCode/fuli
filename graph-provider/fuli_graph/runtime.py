@@ -304,6 +304,12 @@ class GraphitiRuntime:
             'FOR (n:FuliTaskContextSession) REQUIRE n.id IS UNIQUE',
             'CREATE CONSTRAINT fuli_task_context_id IF NOT EXISTS '
             'FOR (n:FuliTaskContext) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_worker_run_id IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentWorkerRun) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_worker_capability IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentWorkerRun) REQUIRE n.runtime_capability_hash IS UNIQUE',
+            'CREATE CONSTRAINT fuli_project_agent_worker_session IF NOT EXISTS '
+            'FOR (n:FuliProjectAgentWorkerRun) REQUIRE (n.target_application, n.actual_session_id) IS UNIQUE',
             'CREATE INDEX fuli_task_context_agent_scope IF NOT EXISTS '
             'FOR (n:FuliTaskContext) ON (n.personal_space_id, n.project_agent_id)',
             'CREATE CONSTRAINT fuli_project_agent_task_id IF NOT EXISTS '

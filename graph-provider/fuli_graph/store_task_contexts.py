@@ -30,6 +30,40 @@ class StoreTaskContexts:
 
     async def begin_task_context(self, actor, request):
         self._require_personal()
+        await self.authorize(actor, request.personal_space_id, 'maintainer')
+        async with query_store_transaction(self) as scoped:
+            session_id = scoped._task_session_id(request.personal_space_id, request.source_application, request.session_id)
+            await scoped._lock_task_context_session(session_id)
+            await scoped._link_task_context_sessions(request.personal_space_id, [session_id])
+            return await scoped._begin_task_context(actor, request)
+
+    async def _lock_task_context_session(self, session_id):
+        # One completed query per ID: a batch MERGE can lock Space before the
+        # sorted sessions, defeating the apparent ORDER BY in a caller.
+        # Lock before the read-dependent increment: its automatic locking can
+        # deadlock with a concurrent transaction creating HAS_CONTEXT relations.
+        await self.runtime.driver.execute_query('''
+            MERGE (session:FuliTaskContextSession {id: $id})
+            SET session._fuli_write_lock = true REMOVE session._fuli_write_lock
+            WITH session
+            SET session.write_serial = coalesce(session.write_serial, 0) + 1
+            RETURN session.id AS id
+            ''', id=session_id)
+
+    async def _link_task_context_sessions(self, space_id, session_ids):
+        # Call only after every involved session is locked. CREATE avoids a
+        # relationship MERGE's implicit Space locks during session acquisition.
+        await self.runtime.driver.execute_query('''
+            MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
+            UNWIND $session_ids AS session_id
+            MATCH (session:FuliTaskContextSession {id: session_id})
+            WHERE NOT EXISTS { MATCH (space)-[:HAS_TASK_CONTEXT_SESSION]->(session) }
+            CREATE (space)-[:HAS_TASK_CONTEXT_SESSION]->(session)
+            RETURN count(session) AS linked
+            ''', space_id=space_id, session_ids=session_ids)
+
+    async def _begin_task_context(self, actor, request, *, worker_run_id=None, agent_memory_scope=None):
+        self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         if request.personal_project_id:
             await authorize_personal_project(self, actor, space, request.personal_project_id)
@@ -43,14 +77,25 @@ class StoreTaskContexts:
                 raise HTTPException(status_code=403, detail='Agent is not allowed in this client')
         record = request.model_dump(mode='json')
         record.update(checkpoint=None, created_at=now_utc().isoformat())
+        if worker_run_id:
+            record['agent_memory_scope'] = agent_memory_scope
         try:
             rows, _, _ = await self.runtime.driver.execute_query(
                 '''
-                MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
-                MERGE (session:FuliTaskContextSession {id: $session_id})
-                SET session.write_serial = coalesce(session.write_serial, 0) + 1
-                MERGE (space)-[:HAS_TASK_CONTEXT_SESSION]->(session)
+                MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
+                      [:HAS_TASK_CONTEXT_SESSION]->(session:FuliTaskContextSession {id: $session_id})
                 WITH session
+                OPTIONAL MATCH (session)-[:BOUND_WORKER_RUN]->(worker_run:FuliProjectAgentWorkerRun)
+                WITH session, worker_run
+                WHERE ($worker_run_id IS NULL AND worker_run IS NULL AND NOT EXISTS {
+                         MATCH (:FuliProjectAgentWorkerRun {target_application: $application,
+                                                           actual_session_id: $actual_session}) })
+                   OR (worker_run.id = $worker_run_id AND worker_run.state IN ['sealed', 'admitted']
+                       AND worker_run.personal_space_id = $space_id AND worker_run.agent_id = $agent_id
+                       AND worker_run.personal_project_id = $project_id
+                       AND worker_run.target_application = $application
+                       AND worker_run.actual_session_id = $actual_session
+                       AND $turn_id = 'worker-run:' + worker_run.id)
                 OPTIONAL MATCH (session)-[:HAS_CONTEXT]->(previous:FuliTaskContext)
                 WHERE previous.token = session.current_token
                 WITH session, previous
@@ -83,6 +128,8 @@ class StoreTaskContexts:
                 context_id=stable_uuid(request.personal_space_id, request.token),
                 token=request.token, turn_id=request.turn_id,
                 project_id=request.personal_project_id, agent_id=request.project_agent_id,
+                worker_run_id=worker_run_id, application=request.source_application,
+                actual_session=request.session_id,
                 created_at=now_utc(),
                 record_json=json.dumps(record, ensure_ascii=False),
             )
@@ -90,6 +137,8 @@ class StoreTaskContexts:
             # Tokens are space-wide handles; never attach one to another session.
             raise HTTPException(status_code=409,
                 detail='Task context token is already in use') from error
+        if not rows:
+            raise HTTPException(409, 'Task session is unavailable for this context entry')
         if not rows[0]['is_current']:
             raise HTTPException(status_code=409, detail='Task turn has been superseded')
         saved = task_context_record(rows[0])
@@ -104,8 +153,11 @@ class StoreTaskContexts:
         rows, _, _ = await self.runtime.driver.execute_query(
             'MATCH (s:FuliTaskContextSession {id: $id})-[:HAS_CONTEXT]->(t:FuliTaskContext) '
             'WHERE t.token=s.current_token RETURN t.record_json AS record_json, '
+            'head([(t)-[:FOR_WORKER_RUN]->(run:FuliProjectAgentWorkerRun) | run.id]) AS worker_run_id, '
             '[(t)-[:COORDINATES_TASK]->(linked:FuliProjectAgentTask) | linked.task_id] AS coordination_task_ids',
             id=self._task_session_id(space_id, source_application, session_id))
+        if rows and rows[0].get('worker_run_id'):
+            await self.guard_worker_task_context(actor, space_id, json.loads(rows[0]['record_json'])['token'])
         return task_context_record(rows[0]) if rows else None
 
     async def recent_agent_sessions(self, actor, space_id, agent_id, project_id, limit):
@@ -144,6 +196,7 @@ class StoreTaskContexts:
                   [:HAS_CONTEXT]->(task:FuliTaskContext {token: $token})
             WHERE session.current_token = task.token
             RETURN task.record_json AS record_json,
+                   head([(task)-[:FOR_WORKER_RUN]->(run:FuliProjectAgentWorkerRun) | run.id]) AS worker_run_id,
                    [(task)-[:COORDINATES_TASK]->(linked:FuliProjectAgentTask) | linked.task_id] AS coordination_task_ids
             ''', space_id=space_id, token=token, routing_='r',
         )
@@ -152,15 +205,18 @@ class StoreTaskContexts:
         record = task_context_record(rows[0])
         if record['source_application'] != source_application:
             raise HTTPException(status_code=404, detail='Task context not found for this client')
+        if rows[0].get('worker_run_id'):
+            await self.guard_worker_task_context(actor, space_id, token)
         return record
 
     async def checkpoint_task_context(self, actor, token, request):
-        if request.agent_memory is None:
-            return await self._checkpoint_task_context(actor, token, request)
         # A rejected preparation cannot commit memory. A later host turn may
         # still supersede a successfully prepared context; complete is separate.
         async with query_store_transaction(self) as scoped:
+            await scoped.guard_worker_task_context(actor, request.personal_space_id, token, for_write=True)
             record = await scoped._checkpoint_task_context(actor, token, request)
+            if request.agent_memory is None:
+                return record
             if not record['project_agent_id']:
                 raise HTTPException(status_code=409, detail='Task has no durable Agent memory target')
             memory = await scoped.write_project_agent_memory(actor, ProjectAgentMemoryWrite(
@@ -256,7 +312,9 @@ class StoreTaskContexts:
                   [:HAS_TASK_CONTEXT_SESSION]->(session:FuliTaskContextSession {id: $session_id})-
                   [:HAS_CONTEXT]->(task:FuliTaskContext)
             WHERE task.token = session.current_token
-            RETURN task.record_json AS record_json, task.completed AS completed
+            OPTIONAL MATCH (task)-[:FOR_WORKER_RUN]->(run:FuliProjectAgentWorkerRun)
+            RETURN task.record_json AS record_json, task.completed AS completed,
+                   run.state AS worker_run_state
             ''', space_id=space_id,
             session_id=self._task_session_id(space_id, source_application, session_id),
             routing_='r',
@@ -266,6 +324,10 @@ class StoreTaskContexts:
         record = json.loads(rows[0]['record_json'])
         if rows[0]['completed']:
             return {'status': 'checkpointed', 'disposition': record['checkpoint']['disposition']}
+        run_state = rows[0].get('worker_run_state')
+        if run_state in {'closed', 'revoked'}:
+            return {'status': f'worker_run_{run_state}',
+                'guidance': f'Worker run is {run_state}; no checkpoint is required. Do not block.'}
         return {
             'status': 'checkpoint_required', 'decision': 'block',
             'task_context_token': record['token'],
