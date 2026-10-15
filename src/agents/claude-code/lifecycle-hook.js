@@ -3,6 +3,7 @@ import { withTranscriptGuard } from '../../conversations/transcript-guard.js';
 import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { syncConversationTranscript, withTranscriptNotice, claimTranscriptBoundary, recordTranscriptTaskEntry } from '../../conversations/sync-transcript.js';
 import { normalizeClaudeRecord, verifyClaudeTranscript } from './conversation-transcript.js';
+import { hostNotificationOutput, isHostNotificationEntry } from './host-notification.js';
 
 import { callAgentTool } from '../../agent-tools.js';
 import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js';
@@ -23,6 +24,7 @@ export async function claudeLifecycleOutput(event, input, invoke) {
     if (typeof input.cwd !== 'string' || !input.cwd.trim() || typeof input.prompt !== 'string') {
       throw new TypeError('Claude task entry requires cwd and prompt');
     }
+    if (isHostNotificationEntry(input)) return hostNotificationOutput(event);
     const context = await invoke('begin_task_context', {
       sessionId, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192), ...source
     });
@@ -54,6 +56,7 @@ export function claudeLifecycleUnavailable(event, input = null, reason = null) {
 export async function runClaudeLifecycleHook(args, dependencies = {}) {
   const event = args[args.indexOf('--event') + 1];
   const input = await (dependencies.readInput ?? readHookInput)();
+  if (event === 'UserPromptSubmit' && isHostNotificationEntry(input)) return hostNotificationOutput(event);
   if (dependencies.invoke) return claudeLifecycleOutput(event, input, dependencies.invoke);
   const { runtimeConfigPath } = (dependencies.resolveRuntimeOptions ?? resolveGraphRuntimeOptions)(
     args, dependencies.env ?? process.env
