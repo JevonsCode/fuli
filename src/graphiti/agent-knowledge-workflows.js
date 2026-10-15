@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { agentMemoryRecord, prepareProjectAgentMemory } from './project-agent-memory.js';
+import { normalizeTaskCaptures, taskCaptureInput, taskCaptureReceipt, taskCaptureReviewPaths, taskCaptureStatus } from './task-knowledge-routing.js';
 
 import { onlineSourceUri } from './source-uri.js';
 import {
@@ -90,6 +91,7 @@ export async function beginTaskFromPreferences(application, preferences, {
       execution_plan: 'When you have an explicit execution plan for a durable project task, share its public steps through record_project_agent_task_activity.executionPlan and update their statuses as work progresses. Reuse step IDs and report the full current plan; steps: [] withdraws it. This is optional: do not invent a plan, infer progress percentages, or expose private reasoning. Step completion does not replace verification or human acceptance.',
       collaboration: 'Before implementation use plan_agent_collaboration with taskSize and all known implementationAgentIds. Follow its divisionPlan: standard work keeps a main FLA plus a different FLA for independent acceptance; complex work adds at most one explicitly bounded independentWork. Small low-impact edits, coupled changes and command-only checks need no artificial split. Keep coupled implementation together while separating meaningful acceptance once artifacts are stable. The stable project lead decomposes, integrates and delivers. Reuse qualified specialists; use approved loans or existing HR flow on a gap. Give workers bounded briefs and necessary artifact references, not the full conversation; retrieve at most 3 results per query initially and expand only on a specific gap. Use only authorized clients/models and assess_agent_action under existing user policies. Publish assigned scopes and dependencies through the optional execution plan and report real worker/model/usage; unknown tokens stay unknown. Verify artifacts with record_agent_verification and evidence; after two failures escalate capability. Recommendations, command runs and configured peers alone are not independent worker execution.',
       profile_capture: 'Evaluate durable artifact taste (including writing voice, wording, structure and formatting), stable collaboration personality, and decision preferences separately. Do not default every preference to judgment_preference. Use tasteDomain: writing for writing evidence; retain exact session/turn/time provenance. Agent-inferred personality remains pending. Report actual missing evidence rather than promising automatic progress from use alone.',
+      knowledge_routing: 'At completion choose retain_nothing with a reason, or one capture plus captureRouting with explicit personal_global/current_project scopes. Partition every entity/relationship key exactly once; relationships stay with their endpoints. Category and scope are separate: a project-limited preference stays current_project; global scope requires explicit sourceExcerpt evidence in capture or its routing entry. For global capture use standalone preference entities, for example type PersonalPreference with profileAspect taste and no relationships. Never label a Person or Project anchor as a preference merely to pass validation. If scope is uncertain, ask the user or use the existing knowledge confirmation UI; never infer global scope from profileAspect. Every routed AI proposal remains pending. Returned item IDs and review_paths open the existing human confirmation flow; a source excerpt is evidence for review, not machine-verified global applicability. Keep private employee working context in agentMemory, separate from shared project knowledge.',
       human_attention: 'When the selected Project Agent needs a human answer, decision, review or permission, use request_agent_attention with the exact current space/project/Agent IDs, a stable idempotency key and a specific requestedAction. Never raise a hand for ordinary running, queueing or automatic retries. Read list_agent_attention with status=resolved for replies; cancel obsolete requests with cancel_agent_attention. A response does not grant permission or accept task completion.',
       retrieval: 'Inspect task_knowledge_recall before asking for a stable project fact or method again. On a miss, use search_current_project_knowledge with focused action, artifact, target-system, or identifier queries; never use the full conversational request as the only query.',
       checkpoint: 'The task owner checkpoints once after integration. Coordinated workers return results and evidence to the coordinator; they must not begin or checkpoint an inherited parent context. Before finishing the owned task, call checkpoint_task_knowledge with capture_candidates or retain_nothing. For an assigned employee include workLog with a concise result summary and truthful status (completed, incomplete, failed, no_change, or reported), even when there is no knowledge to capture. When durable role context changed, also include agentMemory with the loaded revision and bounded merged notes. Do not overwrite from truncated context or store raw transcripts.'
@@ -102,6 +104,7 @@ export async function checkpointTaskKnowledge(application, {
   disposition,
   reason,
   capture = null,
+  captureRouting = null,
   agentMemory = null,
   workLog = null,
   sourceApplication = 'other',
@@ -119,18 +122,20 @@ export async function checkpointTaskKnowledge(application, {
   if (remoteSessionId && task.sessionId !== remoteSessionId) {
     throw validationError('Task checkpoint belongs to another remote session');
   }
+  const scopedCaptures = captureRouting === null ? null : normalizeTaskCaptures(task, capture, captureRouting);
   if (disposition === 'capture_candidates') {
-    if (!capture) {
+    if (!capture && !scopedCaptures) {
       throw validationError('capture_candidates requires a bounded capture payload');
     }
-  } else if (capture) {
+  } else if (capture || scopedCaptures) {
     throw validationError('retain_nothing cannot include a capture payload');
   }
   if (task.workLogRequired && !workLog && !agentMemory) {
     throw validationError('This employee needs a workLog summary and status before finishing; retain_nothing only skips knowledge capture.');
   }
   const fingerprint = createHash('sha256').update(JSON.stringify(
-    canonicalCheckpoint({ disposition, reason, capture, agentMemory, ...(workLog ? { workLog } : {}) })
+    canonicalCheckpoint({ disposition, reason, capture: scopedCaptures ? null : capture,
+      ...(scopedCaptures ? { captures: scopedCaptures } : {}), agentMemory, ...(workLog ? { workLog } : {}) })
   )).digest('hex');
   if (task.checkpoint && task.checkpoint.fingerprint !== fingerprint) {
     throw validationError(
@@ -151,9 +156,10 @@ export async function checkpointTaskKnowledge(application, {
   if (task.checkpoint?.phase === 'complete') {
     return finish({ status: 'checkpointed', disposition, reason,
       personal_project_id: task.personalProjectId, project_agent_id: task.projectAgentId,
-      replayed: true, capture_status: task.checkpoint.captureStatus });
+      replayed: true, capture_status: task.checkpoint.captureStatus,
+      ...(task.checkpoint.captureResults ? { capture_results: taskCaptureReviewPaths(application.config.personal.spaceId, task.checkpoint.captureResults) } : {}) });
   }
-  const captureInput = capture ? {
+  const captureInput = capture && !scopedCaptures ? {
     ...capture,
     targetKind: 'personal',
     spaceId: application.config.personal.spaceId,
@@ -166,6 +172,12 @@ export async function checkpointTaskKnowledge(application, {
   // Local validation has no side effects. Reject correctable input before
   // binding an immutable checkpoint or advancing the Agent's memory revision.
   if (captureInput) application.validateCaptureSessionKnowledge(captureInput);
+  const scopedInputs = scopedCaptures?.map(batch => ({ scope: batch.scope,
+    input: taskCaptureInput(application.config.personal.spaceId, task, batch) }));
+  for (const batch of scopedInputs ?? []) application.validateCaptureSessionKnowledge(batch.input);
+  // The Provider owns the full commit model and scope authorization. Validate
+  // every scoped batch before claiming the checkpoint or advancing memory.
+  if (scopedInputs) await application.preflightPersonalKnowledgeCaptures(scopedInputs.map(batch => batch.input));
   let memoryResult = null;
   let memoryRequest = null;
   if (agentMemory) {
@@ -203,8 +215,16 @@ export async function checkpointTaskKnowledge(application, {
   }
   const captureResult = captureInput
     ? await application.captureSessionKnowledge(captureInput) : null;
+  const captureResults = scopedInputs ? [] : null;
+  for (const batch of scopedInputs ?? []) {
+    const result = await application.captureSessionKnowledge(batch.input);
+    captureResults.push(taskCaptureReceipt(batch.scope, batch.input, result));
+  }
+  const captureStatus = captureResults
+    ? taskCaptureStatus(captureResults)
+    : captureResult?.status ?? null;
   await application.taskContextRegistry.checkpoint(taskContextToken, {
-    ...checkpoint, captureStatus: captureResult?.status ?? null
+    ...checkpoint, captureStatus, ...(captureResults ? { captureResults } : {})
   }, sourceApplication);
   return finish({
     status: 'checkpointed',
@@ -213,6 +233,7 @@ export async function checkpointTaskKnowledge(application, {
     personal_project_id: task.personalProjectId,
     project_agent_id: task.projectAgentId ?? null,
     capture: captureResult,
+    ...(captureResults ? { capture_status: captureStatus, capture_results: taskCaptureReviewPaths(application.config.personal.spaceId, captureResults) } : {}),
     agent_memory: memoryResult ? {
       status: memoryResult.status, agentId: memoryResult.agentId,
       checkpointId: memoryResult.checkpointId, revision: memoryResult.revision,

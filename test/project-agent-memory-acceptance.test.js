@@ -9,6 +9,7 @@ import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { connectMcp } from '../test-support/mcp-client.js';
+import { realTaskContextProvider } from '../test-support/real-task-context-provider.js';
 
 const enabled = process.env.FULI_TEST_NEO4J_EPHEMERAL === '1' && process.env.FULI_TEST_NEO4J_URI;
 
@@ -207,3 +208,112 @@ async function freePort() {
   await new Promise(resolveClose => socket.close(resolveClose));
   return port;
 }
+
+test('real scoped checkpoint candidates require synthetic human confirmation before another MCP client recalls them', {
+  skip: !enabled, timeout: 120_000
+}, async t => {
+  const fixture = await realTaskContextProvider(t);
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-scoped-capture-mcp-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const runtimeConfigPath = join(directory, 'graph-runtime.json');
+  writeFileSync(runtimeConfigPath, JSON.stringify(fixture.config), { mode: 0o600 });
+  const spaceId = fixture.context.personal_space_id, projectId = fixture.context.personal_project_id;
+  await fixture.request('/v1/personal-projects', { personal_space_id: spaceId, project_id: 'other-project',
+    profile: { name: 'Synthetic unrelated project', lifecycle: 'active' } }, 'PUT');
+  const episode = (key, preference) => ({ idempotencyKey: key, name: key,
+    sourceKind: 'synthetic_acceptance_fixture', sourceDescription: 'Synthetic proposal, not a real user preference or project fact.',
+    sourceExcerpt: preference ? 'Synthetic user explicitly requests this preference across all projects.' : 'Synthetic project-local fact.',
+    referenceTime: '2026-10-16T00:00:00.000Z', entities: [{ key, name: `RoutingFixtureScope ${key}`,
+      type: preference ? 'PersonalPreference' : 'ProjectKnowledge', summary: `RoutingFixtureScope ${key}`,
+      originQuadrant: 'known_known', confirmationStatus: 'pending', profileAspect: preference ? 'taste' : null,
+      confirmationBasis: { existenceReason: 'Synthetic fixture observation.', quadrantReason: 'Explicit synthetic test input.',
+        proposedBy: { kind: 'agent', label: 'Synthetic MCP client' } },
+      attributes: preference ? { preferenceKey: key, instruction: `RoutingFixtureScope ${key}` } : {} }], relationships: [] });
+  const globalCapture = episode('global-preference', true), projectCapture = episode('project-fact', false);
+  const input = { taskContextToken: fixture.context.token, disposition: 'capture_candidates',
+    reason: 'Retain two synthetic pending candidates in their explicit scopes.',
+    agentMemory: { expectedRevision: 0, memory: { summary: 'Synthetic scoped capture milestone.' } },
+    workLog: { status: 'completed', summary: 'Synthetic scoped review completed.' },
+    capture: { ...globalCapture, entities: [...globalCapture.entities, ...projectCapture.entities] }, captureRouting: [
+      { scope: 'personal_global', entityKeys: ['global-preference'], relationshipKeys: [] },
+      { scope: 'current_project', entityKeys: ['project-fact'], relationshipKeys: [], sourceExcerpt: projectCapture.sourceExcerpt }
+    ] };
+  const call = async (connection, name, args) => {
+    const result = await connection.client.callTool({ name, arguments: args });
+    assert.notEqual(result.isError, true, JSON.stringify(result));
+    return result.structuredContent;
+  };
+  let receipts;
+  const initialMemory = await fixture.memory();
+  const writer = await connectMcp(runtimeConfigPath, { sourceApplication: 'codex' });
+  try {
+    for (const invalidKind of ['attributes', 'inheritance']) {
+      const invalid = structuredClone(input);
+      const entity = invalid.capture.entities[0];
+      if (invalidKind === 'attributes') entity.attributes = Object.fromEntries(
+        Array.from({ length: 33 }, (_, index) => [`synthetic${index}`, 'fixture']));
+      else { entity.inheritanceMode = 'selected_projects'; entity.inheritedProjectIds = []; }
+      const rejected = await writer.client.callTool({ name: 'checkpoint_task_knowledge', arguments: invalid });
+      assert.equal(rejected.isError, true, `Provider must reject invalid ${invalidKind}`);
+      assert.match(JSON.stringify(rejected), invalidKind === 'attributes' ? /at most 32 attributes/ : /selected_projects/);
+      const context = await fixture.request(`/v1/task-contexts/${fixture.context.token}?${new URLSearchParams({
+        personal_space_id: spaceId, source_application: 'codex' })}`, undefined, 'GET');
+      assert.equal(context.checkpoint, null, 'invalid later scope must not prepare or bind a fingerprint');
+      const memory = await fixture.memory();
+      assert.equal(memory.revision, 0, 'invalid later scope must not advance private memory');
+      assert.deepEqual(memory.work_log, initialMemory.work_log,
+        'the initial running task remains without a submitted work log');
+      const graph = await call(writer, 'search_knowledge_graph', { personalSpaceId: spaceId,
+        personalProjectId: projectId, query: 'RoutingFixtureScope', includePending: true, limit: 20 });
+      const pending = JSON.stringify(graph);
+      assert.equal(pending.includes('global-preference') || pending.includes('project-fact'), false,
+        'neither scope may commit before all Provider models validate');
+    }
+    const saved = await call(writer, 'checkpoint_task_knowledge', input);
+    receipts = saved.capture_results;
+    assert.equal(saved.agent_memory.revision, 1);
+    assert.equal(receipts.length, 2);
+    assert.ok(receipts.every(item => item.status === 'committed' && item.episode_id && item.review_paths.length));
+  } finally { await writer.close(); }
+  const globalId = receipts.find(item => item.scope === 'personal_global').entity_ids[0];
+  const projectIdForFact = receipts.find(item => item.scope === 'current_project').entity_ids[0];
+  const reader = await connectMcp(runtimeConfigPath, { sourceApplication: 'claude' });
+  try {
+    const search = (personalProjectId, includePending = false) => call(reader, 'search_knowledge_graph', {
+      personalSpaceId: spaceId, personalProjectId, query: 'RoutingFixtureScope', includePending, limit: 20 });
+    const hidden = JSON.stringify(await search(projectId));
+    assert.equal(hidden.includes(globalId) || hidden.includes(projectIdForFact), false);
+    const pending = JSON.stringify(await search(projectId, true));
+    assert.ok(pending.includes(globalId) && pending.includes(projectIdForFact), 'pending IDs must exist in the real graph');
+    const preferences = await call(reader, 'get_collaboration_preferences', { projectPath: directory, personalProjectId: projectId });
+    assert.equal(preferences.effective_preferences.some(item => item.preference_key === 'global-preference'), false);
+    // This is synthetic human input through the same Provider operation used
+    // by KnowledgeConfirmDialog. It is not a real human approval or model run.
+    for (const [id, scopeProject] of [[globalId, null], [projectIdForFact, projectId]]) {
+      await fixture.request(`/v1/knowledge/items/${id}`, { personal_space_id: spaceId,
+        personal_project_id: scopeProject, item_kind: 'entity', action: 'confirm', operation_actor: 'human',
+        reason: 'Synthetic human fixture confirmation.', confirmation_status: 'confirmed',
+        confirmation_basis: { existence_reason: 'Synthetic fixture evidence.', quadrant_reason: 'Explicit test data.',
+          proposed_by: { kind: 'agent', label: 'Synthetic MCP client' },
+          confirmed_by: { kind: 'user', label: 'Synthetic human fixture' }, confirmed_at: '2026-10-16T00:00:01Z' } }, 'PATCH');
+    }
+    const confirmed = JSON.stringify(await search(projectId));
+    assert.ok(confirmed.includes(globalId) && confirmed.includes(projectIdForFact));
+    const otherProject = JSON.stringify(await search('other-project'));
+    assert.ok(otherProject.includes(globalId));
+    assert.equal(otherProject.includes(projectIdForFact), false, 'project knowledge must not become global');
+    const applied = await call(reader, 'get_collaboration_preferences', { projectPath: directory, personalProjectId: projectId });
+    assert.ok(applied.effective_preferences.some(item => item.preference_key === 'global-preference'
+      && item.preference_scope === 'global' && item.confirmation_status === 'confirmed'),
+    JSON.stringify(applied.effective_preferences));
+    const foreign = await reader.client.callTool({ name: 'checkpoint_task_knowledge', arguments: input });
+    assert.equal(foreign.isError, true, 'another client cannot reuse the writer task token');
+  } finally { await reader.close(); }
+  const replay = await connectMcp(runtimeConfigPath, { sourceApplication: 'codex' });
+  try {
+    const saved = await call(replay, 'checkpoint_task_knowledge', input);
+    assert.equal(saved.replayed, true);
+    assert.deepEqual(saved.capture_results, receipts);
+    assert.equal((await fixture.memory()).revision, 1, 'receipt replay must not advance private memory twice');
+  } finally { await replay.close(); }
+});

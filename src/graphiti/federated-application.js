@@ -8,6 +8,7 @@ import { JudgmentStore } from '../judgment/store.js';
 import { createJudgmentEngine } from '../judgment/engine.js';
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 import { withTaskMemorySnapshot } from './project-agent-memory.js';
+import { preflightTaskCaptures } from './task-knowledge-routing.js';
 
 import { GraphitiProviderClient } from './provider-client.js';
 import {
@@ -61,7 +62,8 @@ import {
   assertPublicKnowledgeEligible,
   providerConfirmationActor,
   providerConfirmationBasis,
-  providerEpisode
+  providerEpisode,
+  providerPersonalCommit
 } from './knowledge-provider-mapping.js';
 import { providerProjectProfile } from './project-profile-mapping.js';
 import {
@@ -209,6 +211,10 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     if (this.getCapturePolicy().enabled) this.#prepareKnowledgeCapture(input);
   }
 
+  async preflightPersonalKnowledgeCaptures(inputs) {
+    return preflightTaskCaptures(this.personal, inputs, input => this.#prepareKnowledgeCapture(input));
+  }
+
   async captureSessionKnowledge(input) {
     const capturePolicy = this.getCapturePolicy();
     if (!capturePolicy.enabled) {
@@ -218,14 +224,9 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
         capturePolicy
       };
     }
-    const { episode, workspace } = this.#prepareKnowledgeCapture(input);
+    const { episode, workspace, commit } = this.#prepareKnowledgeCapture(input);
     if (input.targetKind === 'personal') {
-      const result = await this.personal.commit({
-        space_id: input.spaceId,
-        personal_project_id: input.personalProjectId ?? null,
-        project_agent_id: input.projectAgentId ?? null,
-        episode
-      });
+      const result = await this.personal.commit(commit);
       return { route: 'personal', ...result };
     }
     const draft = await this.personal.createPublicationDraft({
@@ -1215,13 +1216,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     assertNoCredentials(input);
     const episode = providerEpisode(input);
     if (input.targetKind === 'personal') {
-      if (input.spaceId !== this.config.personal.spaceId) {
-        throw new ApplicationError(
-          ApplicationErrorCode.VALIDATION,
-          'Personal capture target must be the active personal space'
-        );
-      }
-      return { episode };
+      return { episode, commit: providerPersonalCommit(input, episode, this.config.personal.spaceId) };
     }
     if (input.projectAgentId) {
       throw new ApplicationError(

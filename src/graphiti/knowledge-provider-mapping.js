@@ -1,6 +1,14 @@
 import { ApplicationError } from '../app/application-error.js';
 import { onlineSourceUri } from './source-uri.js';
 
+export function providerPersonalCommit(input, episode, activeSpaceId) {
+  if (input.spaceId !== activeSpaceId) {
+    throw new ApplicationError('validation', 'Personal capture target must be the active personal space');
+  }
+  return { space_id: input.spaceId, personal_project_id: input.personalProjectId ?? null,
+    project_agent_id: input.projectAgentId ?? null, episode };
+}
+
 export function providerEpisode(input) {
   assertReasoningSummaries(input.entities, 'entities');
   assertReasoningSummaries(input.relationships, 'relationships');

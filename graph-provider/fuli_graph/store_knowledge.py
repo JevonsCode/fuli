@@ -23,6 +23,26 @@ from .workflow_candidates import materialize_workflow_candidates
 
 class StoreKnowledge:
     async def commit_personal(self, actor: dict, request: KnowledgeCommit) -> CommitResult:
+        space, request = await self._authorize_personal_commit(actor, request)
+        return await self._commit_episode(
+            space,
+            request.episode,
+            personal_project_id=request.personal_project_id,
+            project_agent_id=request.project_agent_id,
+        )
+
+    async def preflight_personal_commits(
+        self, actor: dict, requests: list[KnowledgeCommit],
+    ) -> dict:
+        # FastAPI validates every existing KnowledgeCommit/StructuredEpisode
+        # before this read-only authorization pass. No embedding or write runs.
+        for request in requests:
+            await self._authorize_personal_commit(actor, request)
+        return {'status': 'validated', 'count': len(requests)}
+
+    async def _authorize_personal_commit(
+        self, actor: dict, request: KnowledgeCommit,
+    ) -> tuple[dict, KnowledgeCommit]:
         self._require_personal()
         space = await self.authorize(actor, request.space_id, 'maintainer')
         if space['kind'] != 'personal':
@@ -42,12 +62,7 @@ class StoreKnowledge:
                 require_memory=True,
             )
             request = request.model_copy(update={'project_agent_id': agent['agent_id']})
-        return await self._commit_episode(
-            space,
-            request.episode,
-            personal_project_id=request.personal_project_id,
-            project_agent_id=request.project_agent_id,
-        )
+        return space, request
 
     async def commit_workflow_observation(
         self,

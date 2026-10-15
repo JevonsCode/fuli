@@ -523,6 +523,9 @@ export class GraphitiProviderClient {
   commit(input) {
     return this.#request('/v1/knowledge/commits', { method: 'POST', body: input });
   }
+  preflightCommits(inputs) {
+    return this.#request('/v1/knowledge/commits/preflight', { method: 'POST', body: inputs });
+  }
   recordWorkflowObservation(input) {
     if (!this.#workflowObservationToken) {
       throw new TypeError('MCP host workflow observation credential is not configured');

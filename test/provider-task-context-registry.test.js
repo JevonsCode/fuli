@@ -120,3 +120,20 @@ test('Provider registry rejects malformed durable task records', async () => {
     /Provider did not return a durable task context/
   );
 });
+
+test('scoped capture receipts survive completion and recovery through another Provider registry', async () => {
+  let saved;
+  const receipts = [{ scope: 'personal_global', personal_project_id: null, status: 'committed',
+    episode_id: 'episode-global', entity_ids: ['preference-global'], relationship_ids: [] }];
+  const provider = {
+    checkpointTaskContext: async (_token, input) => { saved = providerRecord({ checkpoint: input }); return saved; },
+    getTaskContext: async () => saved
+  };
+  const first = new ProviderTaskContextRegistry(provider, 'space-1');
+  await first.checkpoint('fuli-task-provider-token', { disposition: 'capture_candidates',
+    reason: 'Pending preference candidates.', fingerprint: 'b'.repeat(64),
+    captureStatus: 'committed', captureResults: receipts }, 'claude_code');
+  assert.deepEqual(saved.checkpoint.capture_results, receipts);
+  const next = new ProviderTaskContextRegistry(provider, 'space-1');
+  assert.deepEqual((await next.context('fuli-task-provider-token', 'claude_code')).checkpoint.captureResults, receipts);
+});

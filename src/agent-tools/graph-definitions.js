@@ -318,6 +318,13 @@ export const GRAPH_TOOL_DEFINITIONS = [
         summary: boundedString(2000)
       }, ['status', 'summary']),
       capture: objectSchema(captureEpisodeFields, captureEpisodeRequired),
+      captureRouting: arraySchema(objectSchema({
+        scope: enumSchema(['personal_global', 'current_project']),
+        entityKeys: arraySchema(id, { minItems: 1, maxItems: 128 }),
+        relationshipKeys: arraySchema(id, { maxItems: 256 }),
+        sourceExcerpt: shortText
+      }, ['scope', 'entityKeys', 'relationshipKeys']), { minItems: 1, maxItems: 2,
+        description: 'Use with one capture. Partition every entity/relationship key exactly once into unique scopes; each scope needs an entity, and relationships stay with their endpoints. Shared episode metadata; optional sourceExcerpt overrides its evidence. Global requires preferences with explicit global evidence; project-limited preferences stay current_project, which requires the registered task project. Ask when scope is uncertain. All routed proposals remain pending; saved IDs open existing human confirmation.' }),
       agentMemory: objectSchema({
         expectedRevision: integerSchema({ minimum: 0 }),
         memory: workingMemorySchema

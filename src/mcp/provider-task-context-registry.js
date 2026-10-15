@@ -64,6 +64,7 @@ export class ProviderTaskContextRegistry {
       personal_space_id: this.personalSpaceId, source_application: sourceApplication,
       phase, disposition: value.disposition, reason: value.reason,
       fingerprint: value.fingerprint, capture_status: value.captureStatus ?? null,
+      ...(value.captureResults ? { capture_results: value.captureResults } : {}),
       ...(value.workLog ? { work_log: value.workLog } : {}),
       ...(agentMemory ? { agent_memory: agentMemory } : {})
     }));
@@ -88,7 +89,8 @@ function taskRecord(value) {
     agentMemory: value.agent_memory ?? null,
     previousCheckpointMissing: Boolean(value.previous_checkpoint_missing),
     checkpoint: value.checkpoint ? {
-      ...value.checkpoint, captureStatus: value.checkpoint.capture_status
+      ...value.checkpoint, captureStatus: value.checkpoint.capture_status,
+      ...(value.checkpoint.capture_results ? { captureResults: value.checkpoint.capture_results } : {})
     } : null
   };
 }

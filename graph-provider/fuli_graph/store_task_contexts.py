@@ -174,9 +174,15 @@ class StoreTaskContexts:
         )
         if record.get('work_log_required') and request.work_log is None:
             raise HTTPException(422, 'Employee work summary is required before checkpointing')
+        if any(item.scope == 'current_project'
+               and item.personal_project_id != record.get('personal_project_id')
+               for item in request.capture_results or []):
+            raise HTTPException(422, 'Capture receipt belongs to another project')
         checkpoint = request.model_dump(mode='json', exclude={
             'personal_space_id', 'source_application', 'agent_memory',
         })
+        if request.capture_results is None:
+            checkpoint.pop('capture_results', None)
         # Complete retries must preserve the original completion timestamp/result.
         record['checkpoint'] = checkpoint
         # Bind memory presence independently of the caller's fingerprint. Its
