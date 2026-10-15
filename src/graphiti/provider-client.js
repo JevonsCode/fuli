@@ -78,6 +78,30 @@ export class GraphitiProviderClient {
     return this.#request(`/v1/task-context-sessions/current?${new URLSearchParams(input)}`,
       { timeoutMs: Math.min(timeoutMs, this.requestTimeoutMs) });
   }
+  getProjectAgentWorkerRun(runId, { personal_space_id, personal_project_id }, { capability, signal } = {}) {
+    const query = new URLSearchParams({ personal_space_id, personal_project_id });
+    return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}?${query}`, { capability, signal });
+  }
+  admitProjectAgentWorkerContext(runId, { personal_space_id, personal_project_id, source_application, session_id }, { capability, signal } = {}) {
+    return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/contexts`, {
+      capability, signal, method: 'POST', body: { personal_space_id, personal_project_id, source_application, session_id }
+    });
+  }
+  async #workerRequest(path, { capability, signal = activeAgentRequestSignal(), ...options } = {}) {
+    if (typeof capability !== 'string' || capability.length < 32) {
+      throw new TypeError('Worker runtime capability is required');
+    }
+    try {
+      return await this.#request(path, { ...options, signal, workerCapability: capability });
+    } catch (error) {
+      // A capability must never be reflected by Provider detail, abort reason or cause.
+      const cancelled = signal?.aborted;
+      const code = cancelled ? 'request_cancelled' : error instanceof ProviderRequestError ? error.code : 'provider_unavailable';
+      const message = cancelled ? 'Worker admission was cancelled.'
+        : code === 'provider_timeout' ? 'Worker admission timed out.' : 'Worker admission failed.';
+      throw new ProviderRequestError(message, { code, status: cancelled ? 0 : error.status ?? 0 });
+    }
+  }
   health() { return this.#request('/health', { authenticated: false }); }
   listSpaces() { return this.#request('/v1/spaces'); }
   createSpace(input) { return this.#request('/v1/spaces', { method: 'POST', body: input }); }
@@ -742,6 +766,7 @@ export class GraphitiProviderClient {
     body,
     authenticated = true,
     workflowObservation = false,
+    workerCapability = null,
     stream = false,
     signal: requestSignal = activeAgentRequestSignal(),
     timeoutMs = this.requestTimeoutMs
@@ -751,6 +776,7 @@ export class GraphitiProviderClient {
     if (workflowObservation) {
       headers['x-fuli-workflow-observation-token'] = this.#workflowObservationToken;
     }
+    if (workerCapability !== null) headers['x-fuli-worker-capability'] = workerCapability;
     if (body !== undefined) headers['content-type'] = 'application/json';
     const controller = new AbortController();
     let timedOut = false;

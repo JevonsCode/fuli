@@ -78,7 +78,7 @@ export class ProviderTaskContextRegistry {
   }
 }
 
-function taskRecord(value) {
+export function taskRecord(value) {
   if (typeof value?.token !== 'string' || !value?.session_id) {
     throw new TypeError('Provider did not return a durable task context');
   }

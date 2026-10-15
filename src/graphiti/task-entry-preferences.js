@@ -11,11 +11,9 @@ export function finishTaskEntryPreferences(application, preferences, input) {
   return beginTaskFromPreferences(application, preferences, input);
 }
 
-export async function taskEntryPreferences(application, projectResolution, {
-  personalProjectId, projectAgentId, projectPath, taskPrompt, sourceApplication,
-  sourceSessionId, sessionId, turnId, workKind, workflow, requiredCapabilities,
-  limit, agentInvocation, agentToolName
-}, recordAgentViews) {
+export async function taskEntryPreferences(application, projectResolution, input, recordAgentViews) {
+  const { projectAgentId, taskPrompt, sourceApplication, sourceSessionId, sessionId,
+    turnId, workKind, requiredCapabilities, agentInvocation, agentToolName } = input;
   const selection = await resolveTaskEntryAgent(
       application, projectResolution, { projectAgentId, taskPrompt, sourceApplication,
         sessionId: agentToolName === 'get_collaboration_preferences'
@@ -24,6 +22,14 @@ export async function taskEntryPreferences(application, projectResolution, {
         turnId: agentToolName === 'begin_task_context' ? turnId : null,
         workKind, requiredCapabilities, agentInvocation, agentToolName }
     );
+  return selectedTaskEntryPreferences(application, projectResolution, input, selection, recordAgentViews);
+}
+
+// Selection/admission belongs to the caller; preference and continuity projection is shared.
+export async function selectedTaskEntryPreferences(application, projectResolution, {
+  projectAgentId, taskPrompt, sourceApplication, sourceSessionId, sessionId,
+  workKind, workflow, limit, agentInvocation, agentToolName
+}, selection, recordAgentViews, { includeManagement = true, includeMessages = true } = {}) {
   // A rejected explicit role must not leak its private preferences via fallback.
   const selectedAgentId = selection ? selection.agent?.agentId ?? null : projectAgentId;
   const preferences = await getCollaborationPreferencesWorkflow(
@@ -42,7 +48,7 @@ export async function taskEntryPreferences(application, projectResolution, {
     },
     (items, toolName) => recordAgentViews(items, toolName)
   );
-  const management = projectResolution.personalProjectId && application.employees && agentInvocation &&
+  const management = includeManagement && projectResolution.personalProjectId && application.employees && agentInvocation &&
     ['begin_task_context', 'get_collaboration_preferences'].includes(agentToolName)
     ? await application.employees.taskEntry({ personalProjectId: projectResolution.personalProjectId,
       sourceApplication, sourceSessionId, sessionId })
@@ -68,7 +74,7 @@ export async function taskEntryPreferences(application, projectResolution, {
     context.execution_agent_id = selection.execution_agent_id ?? null;
   }
   // Questions other Agents left for this Agent while it was not running.
-  const waiting = selection?.agent && application.roundtable
+  const waiting = includeMessages && selection?.agent && application.roundtable
     ? application.roundtable.pending(selection.agent.agentId) : [];
   const judgmentPolicy = application.judgment?.store().policy(application.config.personal.spaceId, projectResolution.personalProjectId ?? '');
   return { ...managedPreferences, ...(context ? { project_agent_context: context } : {}),

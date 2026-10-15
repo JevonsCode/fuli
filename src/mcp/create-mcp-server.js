@@ -10,6 +10,7 @@ import {
 
 import { callAgentTool, listAgentTools } from '../agent-tools.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
+import { runWithAgentRequestContext } from '../app/agent-request-context.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { MCP_INSTRUCTIONS } from './instructions.js';
 import { createProjectActionPreviewTokens } from './project-action-preview-tokens.js';
@@ -100,9 +101,16 @@ export function createMcpServer(
     toolNames = null,
     toolProfile = 'full',
     prepareToolInput = (_name, input) => input,
-    registerResources = true
+    registerResources = true,
+    workerTaskContext = null
   } = {}
 ) {
+  if (workerTaskContext !== null && (!Array.isArray(workerTaskContext.toolNames) ||
+      typeof workerTaskContext.admit !== 'function' || typeof workerTaskContext.prepareInput !== 'function' ||
+      typeof workerTaskContext.entry !== 'function' ||
+      (toolNames !== null && (!Array.isArray(toolNames) || toolNames.some(name => !workerTaskContext.toolNames.includes(name)))))) {
+    throw new TypeError('Worker MCP tools must stay within the admitted allowlist');
+  }
   const server = new McpServer(
     { name: 'fuli', version: FULI_VERSION },
     { instructions }
@@ -122,16 +130,17 @@ export function createMcpServer(
     clock,
     authoritativeSourceApplication,
     withRuntimeLease,
-    toolNames ?? toolNamesForProfile(toolProfile),
+    toolNames ?? workerTaskContext?.toolNames ?? toolNamesForProfile(toolProfile),
     prepareToolInput,
-    env
+    env,
+    workerTaskContext
   );
   for (const tool of tools.values()) registerTool(server, tool);
   if (!tools.size) registerEmptyToolList(server);
-  if (registerResources) registerFuliContextResources(server, app, { withRuntimeLease });
+  if (registerResources && !workerTaskContext) registerFuliContextResources(server, app, { withRuntimeLease });
   // Only the named chat profile expands on demand. Restricted custom/remote
   // allow-lists remain a security boundary. Every call keeps its original name.
-  const isChatProfile = toolProfile === 'chat' && toolNames === null;
+  const isChatProfile = !workerTaskContext && toolProfile === 'chat' && toolNames === null;
   const onDemandTools = isChatProfile ? createToolMap(app,
     projectActionPreviews, nativeThreadId, effectiveHostSessionId,
     clock, authoritativeSourceApplication, withRuntimeLease, null, prepareToolInput, env) : null;
@@ -154,7 +163,8 @@ function createToolMap(
   withRuntimeLease,
   toolNames,
   prepareToolInput,
-  env = process.env
+  env = process.env,
+  workerTaskContext = null
 ) {
   const commonKnowledgePreviews = createCommonKnowledgePreviewTokens();
   if (toolNames !== null && !Array.isArray(toolNames)) {
@@ -177,6 +187,7 @@ function createToolMap(
     .filter((definition) => includeTestTools || !isTestOnlyToolName(definition.name))
     .map((definition) => [definition.name, {
     definition,
+    worker: Boolean(workerTaskContext),
     catalogDefinitions: definition.name === 'list_agent_interfaces' ? definitions.filter(item =>
       includeTestTools || !isTestOnlyToolName(item.name)) : null,
     schema: jsonSchemaToZod(definition.inputSchema),
@@ -184,7 +195,17 @@ function createToolMap(
       requestContext?.signal?.throwIfAborted?.();
       return withRuntimeLease(
         `mcp-tool:${definition.name}`,
-        () => invokeAgentTool(
+        () => workerTaskContext ? runWithAgentRequestContext(requestContext, async () => {
+          const admitted = await workerTaskContext.admit(requestContext ?? {});
+          requestContext?.signal?.throwIfAborted?.();
+          const prepared = workerTaskContext.prepareInput(definition.name,
+            prepareToolInput(definition.name, input), admitted);
+          if (['begin_task_context', 'get_collaboration_preferences'].includes(definition.name)) {
+            return workerTaskContext.entry(admitted, definition.name);
+          }
+          return invokeAgentTool(app, definition.name, prepared, projectActionPreviews,
+            commonKnowledgePreviews, requestContext);
+        }) : invokeAgentTool(
           app,
           definition.name,
           normalizeAgentSessionInput(
@@ -277,7 +298,8 @@ async function invokeTool(tool, input, requestContext = null) {
     }
     return result;
   } catch (error) {
-    return errorToolResult(error);
+    return errorToolResult(tool.worker && requestContext?.signal?.aborted
+      ? new ApplicationError('request_cancelled', 'Worker call was cancelled.') : error);
   }
 }
 

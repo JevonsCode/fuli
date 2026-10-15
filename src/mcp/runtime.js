@@ -5,13 +5,16 @@ import {
   createRuntimeLeaseClient
 } from '../adaptive-runtime/lease-client.js';
 import { openFederatedGraphApplication } from '../graphiti/federated-application.js';
+import { createWorkerTaskContext } from '../graphiti/worker-task-context.js';
 import { createMcpServer } from './create-mcp-server.js';
 
-export async function runStdio({ runtimeConfigPath, sourceApplication, toolNames = null, toolProfile = 'full' }) {
+export async function runStdio({ runtimeConfigPath, sourceApplication, toolNames = null, toolProfile = 'full', worker = null }) {
   const app = openFederatedGraphApplication({ runtimeConfigPath });
   const leaseClient = createRuntimeLeaseClient({ runtimeConfigPath });
   bindRuntimeLeaseAgentTools(app, leaseClient);
-  const server = createServerOrClose(app, createMcpServer, {
+  const server = createServerOrClose(app, (application, options) => createMcpServer(application, {
+    ...options, workerTaskContext: worker === null ? null : createWorkerTaskContext(application, worker)
+  }), {
     sourceApplication,
     toolNames,
     toolProfile,

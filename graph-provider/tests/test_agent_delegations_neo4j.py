@@ -494,3 +494,172 @@ async def test_worker_checkpoint_without_memory_and_close_keep_session_before_ru
         for phase in ['prepare', 'complete']:
             refused = await client.put(f'/v1/task-contexts/{own["token"]}/checkpoint', json={**checkpoint, 'phase': phase})
             assert refused.status_code == 409, refused.text
+
+
+@pytest.mark.asyncio
+async def test_worker_mcp_stdio_uses_own_identity_and_rechecks_provider_after_close(tmp_path):
+    """Real stdio + HTTP + Neo4j, synthetic sessions only; no native model runs."""
+    import os
+    from pathlib import Path
+    import shutil
+    import socket
+    import uvicorn
+
+    async with provider_client(fixture_settings()) as (client, access_token):
+        scope, payload, headers, path, session = await sealed_worker_run(client)
+        project = scope['personal_project_id']
+        histories = {}
+        for label, agent, project_id in [('project', 'specialist', project), ('global', 'specialist', None),
+                                         ('foreign', 'owner', project)]:
+            own_scope = {**scope, 'personal_project_id': project_id, 'agent_id': agent, 'source_application': 'codex'}
+            token, native_session = 'fuli-task-history-' + label, 'synthetic-history-' + label
+            created = await client.put('/v1/task-contexts', json={**scope, 'personal_project_id': project_id,
+                'project_agent_id': agent, 'source_application': 'codex', 'session_id': native_session, 'token': token})
+            assert created.status_code == 200, created.text
+            history = await client.post('/v1/agent-conversations/append', json={**own_scope,
+                'session_id': native_session, 'task_context_token': token,
+                'events': [{'event_id': label, 'role': 'user', 'kind': 'message', 'content': 'SYNTHETIC_' + label}]})
+            assert history.status_code == 200, history.text
+            histories[label] = history.json()['conversation_id']
+            if agent == 'specialist':
+                saved = await client.put('/v1/project-agents/specialist/memory', json={**own_scope,
+                    'expected_revision': 0, 'idempotency_key': 'synthetic-memory-' + label,
+                    'memory': {'summary': 'SYNTHETIC_MEMORY_' + label}})
+                assert saved.status_code == 200, saved.text
+        foreign = await client.post('/v1/agent-conversations/query', json={**scope,
+            'agent_id': 'specialist', 'source_application': 'codex', 'mode': 'events',
+            'conversation_id': histories['foreign']})
+        assert foreign.status_code == 404, foreign.text
+        listener = socket.socket()
+        listener.bind(('127.0.0.1', 0))
+        port = listener.getsockname()[1]
+        config_path = tmp_path / 'graph-runtime.json'
+        config_path.write_text(json.dumps({'version': 1, 'workspaces': [], 'personal': {
+            'providerUrl': f'http://127.0.0.1:{port}', 'accessToken': access_token,
+            'principalId': 'synthetic-worker-host', 'spaceId': scope['personal_space_id']}}), encoding='utf-8')
+        server = uvicorn.Server(uvicorn.Config(client._transport.app, lifespan='off', log_level='error'))
+        serving = asyncio.create_task(server.serve(sockets=[listener]))
+        try:
+            for _ in range(100):
+                if server.started:
+                    break
+                await asyncio.sleep(0.01)
+            assert server.started
+            fixture = {'configPath': str(config_path), 'providerUrl': f'http://127.0.0.1:{port}',
+                'accessToken': access_token, 'scope': scope, 'path': path, 'histories': histories,
+                'parentToken': payload['task_context_token'], 'actualSession': session['session_id'],
+                'descriptor': {'runId': path.rsplit('/', 1)[1], 'personalProjectId': project,
+                    'capability': headers['x-fuli-worker-capability'], 'projectPath': str(tmp_path),
+                    'taskPrompt': 'Implement the bounded synthetic worker fixture.',
+                    'toolNames': ['begin_task_context', 'get_collaboration_preferences', 'verify_task_checkpoint',
+                        'checkpoint_task_knowledge', 'get_project_agent_memory',
+                        'search_current_project_knowledge', 'list_agent_conversations', 'read_agent_conversation']}}
+            script = r'''
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+const fixture = JSON.parse(process.env.FULI_WORKER_MCP_FIXTURE);
+const bootstrap = `import { runStdio } from ${JSON.stringify(pathToFileURL(resolve('src/mcp/runtime.js')).href)};
+  await runStdio({runtimeConfigPath: process.env.FULI_WORKER_CONFIG,
+    worker: JSON.parse(process.env.FULI_WORKER_DESCRIPTOR), sourceApplication:'codex'});`;
+async function request(path, body, method = 'POST', capability = false) {
+  const response = await fetch(fixture.providerUrl + path, { method,
+    headers: {authorization: `Bearer ${fixture.accessToken}`, 'content-type':'application/json',
+      ...(capability ? {'x-fuli-worker-capability': fixture.descriptor.capability} : {})},
+    ...(body ? {body: JSON.stringify(body)} : {}) });
+  assert.equal(response.ok, true, `Synthetic HTTP ${response.status}`);
+  return response.json();
+}
+async function connect() {
+  const client = new Client({name:'synthetic-worker-host',version:'1'});
+  const transport = new StdioClientTransport({ command:process.execPath,
+    args:['--input-type=module','-e',bootstrap], cwd:process.cwd(), stderr:'pipe',
+    env:{...process.env, CODEX_THREAD_ID:'019fc6ed-02a5-7832-8821-68e3b03e7ce3',
+      FULI_WORKER_CONFIG:fixture.configPath, FULI_WORKER_DESCRIPTOR:JSON.stringify(fixture.descriptor)} });
+  let stderr = ''; transport.stderr?.on('data', chunk => {stderr += chunk;});
+  await client.connect(transport);
+  return {client, close: async () => {await client.close(); assert.equal(stderr.includes(fixture.descriptor.capability),false);}};
+}
+const call = async (client,name,args) => (await client.callTool({name,arguments:args}));
+const own = {personalSpaceId:fixture.scope.personal_space_id, agentId:'specialist'};
+const entryArgs = {sessionId:'forged-parent-session',projectPath:'/forged/path',
+  taskPrompt:'Forged model prompt',workKind:'forged',workflow:'forged'};
+const first = await connect(); let ownToken;
+try {
+  assert.equal((await first.client.listTools()).tools.length,8);
+  const run = await request(fixture.path + '?' + new URLSearchParams(fixture.scope), null, 'GET', true);
+  assert.equal(run.state,'sealed','initialization must not admit');
+  const entry = await call(first.client,'get_collaboration_preferences',entryArgs);
+  assert.notEqual(entry.isError,true,JSON.stringify(entry));
+  const data = entry.structuredContent;
+  ownToken = data.taskContextToken;
+  assert.notEqual(ownToken,fixture.parentToken);
+  assert.equal(data.context.project_agent_id,'specialist');
+  assert.equal(data.project_agent_context.memory.current.memory.summary,'SYNTHETIC_MEMORY_project');
+  assert.equal(data.project_agent_context.global_memory.current.memory.summary,'SYNTHETIC_MEMORY_global');
+  assert.equal(data.conversation.recovery.messages[0].content,'SYNTHETIC_project');
+  const admitted = await request(fixture.path + '?' + new URLSearchParams(fixture.scope), null, 'GET', true);
+  const context = await request('/v1/task-contexts/' + ownToken + '?' + new URLSearchParams({
+    personal_space_id:fixture.scope.personal_space_id,source_application:'codex'}), null,'GET');
+  assert.equal(admitted.actual_session_id,fixture.actualSession);
+  assert.equal(context.session_id,fixture.actualSession);
+  assert.equal(context.source_session_id,fixture.actualSession);
+  assert.equal(context.turn_id,'worker-run:' + fixture.descriptor.runId);
+  for (const [layer,project] of [['project',fixture.scope.personal_project_id],['global',null]]) {
+    const scope = {...own,personalProjectId:project};
+    const memory = await call(first.client,'get_project_agent_memory',scope);
+    assert.equal(memory.structuredContent.current.memory.summary,'SYNTHETIC_MEMORY_' + layer);
+    const list = await call(first.client,'list_agent_conversations',scope);
+    assert.ok(list.structuredContent.conversations.some(item => item.id === fixture.histories[layer]));
+    const history = await call(first.client,'read_agent_conversation',{...scope,conversationId:fixture.histories[layer]});
+    assert.equal(history.structuredContent.events[0].content,'SYNTHETIC_' + layer);
+  }
+  const foreign = await call(first.client,'read_agent_conversation',{...own,
+    personalProjectId:fixture.scope.personal_project_id,conversationId:fixture.histories.foreign});
+  assert.equal(foreign.isError,true);
+  const checkpoint = await call(first.client,'checkpoint_task_knowledge',{taskContextToken:fixture.parentToken,
+    disposition:'retain_nothing',reason:'Synthetic worker boundary only.',
+    workLog:{status:'reported',summary:'Synthetic own worker MCP checkpoint.'},
+    agentMemory:{expectedRevision:1,memory:{summary:'SYNTHETIC_WORKER_UPDATED'}}});
+  assert.notEqual(checkpoint.isError,true,JSON.stringify(checkpoint));
+  assert.equal(checkpoint.structuredContent.agent_memory.revision,2);
+  const parent = await request('/v1/task-contexts/' + fixture.parentToken + '?' + new URLSearchParams({
+    personal_space_id:fixture.scope.personal_space_id,source_application:'codex'}), null,'GET');
+  assert.equal(parent.checkpoint,null);
+} finally {await first.close();}
+const restarted = await connect();
+try {
+  const entry = await call(restarted.client,'begin_task_context',entryArgs);
+  assert.equal(entry.structuredContent.taskContextToken,ownToken);
+  await request(fixture.path + '/close',{...fixture.scope,reason:'Synthetic host closes its attempt.'},'POST',true);
+  assert.equal((await call(restarted.client,'read_agent_conversation',{...own,
+    personalProjectId:fixture.scope.personal_project_id,conversationId:fixture.histories.project})).isError,true);
+  assert.equal((await call(restarted.client,'checkpoint_task_knowledge',{taskContextToken:ownToken,
+    disposition:'retain_nothing',reason:'Must reject after close.',
+    workLog:{status:'reported',summary:'Must not save.'},
+    agentMemory:{expectedRevision:2,memory:{summary:'MUST_NOT_WRITE'}}})).isError,true);
+} finally {await restarted.close();}
+console.log(JSON.stringify({stdio:true,ownIdentity:true,projectAndGlobal:true,foreignHistoryDenied:true,
+  parentUnchanged:true,restartTokenStable:true,closedReadAndWriteDenied:true}));
+'''
+            process = await asyncio.create_subprocess_exec(shutil.which('node'), '--input-type=module', '-e', script,
+                cwd=Path(__file__).resolve().parents[2], env={**os.environ, 'FULI_WORKER_MCP_FIXTURE': json.dumps(fixture)},
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), 120)
+            except BaseException:
+                process.kill()
+                await process.wait()
+                raise
+            assert headers['x-fuli-worker-capability'] not in stderr.decode()
+            assert process.returncode == 0, stderr.decode()
+            assert all(json.loads(stdout.decode()).values())
+            memory = await client.get('/v1/project-agents/specialist/memory', params={**scope, 'limit': 1})
+            assert memory.json()['revision'] == 2
+            assert memory.json()['current']['memory']['summary'] == 'SYNTHETIC_WORKER_UPDATED'
+        finally:
+            server.should_exit = True
+            await asyncio.wait_for(serving, 10)
+            listener.close()
