@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 
 import {
@@ -104,8 +104,8 @@ test('native runtime reinstalls the Provider when packaged source content change
   assert.deepEqual(unchanged, first);
   assert.equal(changed.providerFingerprint, 'b'.repeat(64));
   assert.deepEqual(installedSources, [
-    join('/package', 'graph-provider'),
-    join('/package', 'graph-provider')
+    join(dirname(paths.graphComposePath), 'graph-provider'),
+    join(dirname(paths.graphComposePath), 'graph-provider')
   ]);
 });
 
@@ -139,6 +139,33 @@ test('native Provider refresh forces only the packaged Provider to reinstall', (
     '--reinstall-package', 'fuli-graph-provider',
     '/package/graph-provider'
   ]);
+});
+
+test('Windows native setup resolves explicit existing assets and an external Provider without installing', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'fuli-native-assets-'));
+  assert.equal(dirname(resolve(root)), resolve(tmpdir()));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const paths = resolveSetupPaths({ dataDir: join(root, 'data'), packageRoot: process.cwd() });
+  const bundle = { javaHome: join(root, 'jre21'), neo4jHome: join(root, 'neo4j'),
+    providerPython: join(root, 'external-python', 'python.exe') };
+  const files = [join(bundle.javaHome, 'bin', 'java.exe'), join(bundle.javaHome, 'lib', 'modules'),
+    join(bundle.neo4jHome, 'conf', 'neo4j.conf'), join(bundle.neo4jHome, 'lib', 'neo4j-kernel-5.26.0.jar'),
+    join(bundle.neo4jHome, 'lib', 'neo4j-5.26.0.jar'), bundle.providerPython];
+  for (const file of files) { await mkdir(dirname(file), { recursive: true }); await writeFile(file, 'fixture'); }
+  await writeFile(join(bundle.javaHome, 'release'), 'JAVA_VERSION="21.0.12.1"\n');
+  const installed = [];
+  const deps = { platform: 'win32', providerSourceFingerprint: async () => 'a'.repeat(64),
+    installNeo4j: async () => installed.push('database'), installProvider: async () => installed.push('provider') };
+  const first = await ensureNativeRuntime({ paths, bundle }, deps);
+  assert.equal(first.neo4jVersion, '5.26.0');
+  assert.equal(first.javaVersion, '21.0.12.1');
+  assert.equal(first.providerPackaging, 'external');
+  assert.equal(first.platform, 'win32');
+  assert.deepEqual(await ensureNativeRuntime({ paths }, deps), first);
+  assert.deepEqual(installed, []);
+  assert.deepEqual(await ensureNativeRuntime({ paths: { ...paths, nativePersonalDir: join(root, '中文') }, bundle }, deps), first);
+  await writeFile(join(bundle.javaHome, 'release'), 'JAVA_VERSION="17.0.0"\n');
+  await assert.rejects(ensureNativeRuntime({ paths, bundle }, deps), /Java 21/);
 });
 
 test('native mode reports its Java 21 prerequisite without suggesting Docker', async () => {

@@ -27,6 +27,12 @@ import { dirname, join, relative } from 'node:path';
 
 import { FULI_VERSION } from '../package-metadata.js';
 import { compareSemanticVersions } from '../semantic-version.js';
+import { resolveWindowsNativeBundle } from './windows-assets.js';
+import {
+  assertWindowsNativePortOwner, runWindowsNeo4j, spawnWindowsNativeDatabase,
+  spawnWindowsNativeProvider, stopWindowsNativeProcess, windowsNativeProcessMatches,
+  waitForWindowsNativeDatabase
+} from './windows-processes.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import {
   DEFAULT_RUNTIME_SETTINGS,
@@ -47,6 +53,7 @@ const DOWNLOAD_TIMEOUT_MS = 30 * 60_000;
 
 export function createNativeGraphServices({
   paths,
+  platform = process.platform,
   runtimeDescriptor = null,
   personalOnly = null,
   readText = (path) => readFile(path, 'utf8'),
@@ -55,14 +62,15 @@ export function createNativeGraphServices({
   markInitialized = secureMarker,
   readJson = (path) => readJsonFile(path, null),
   readSettings = readRuntimeSettings,
-  run = runCommand,
-  waitForDatabase = waitForTcp,
-  spawnDatabase = spawnNativeDatabase,
-  spawnProvider = spawnNativeProvider,
+  run = platform === 'win32' ? runWindowsNeo4j : runCommand,
+  waitForDatabase = platform === 'win32' ? waitForWindowsNativeDatabase : waitForTcp,
+  spawnDatabase = platform === 'win32' ? spawnWindowsNativeDatabase : spawnNativeDatabase,
+  spawnProvider = platform === 'win32' ? spawnWindowsNativeProvider : spawnNativeProvider,
   readProcessState = (path) => readJsonFile(path, null),
   writeProcessState = writeJsonFileAtomic,
-  processMatches = processMatchesCommand,
-  stopProcess = stopOwnedProcess,
+  processMatches = platform === 'win32' ? windowsNativeProcessMatches : processMatchesCommand,
+  stopProcess = platform === 'win32' ? stopWindowsNativeProcess : stopOwnedProcess,
+  verifyPortOwner = platform === 'win32' ? assertWindowsNativePortOwner : async () => {},
   fetchImpl = globalThis.fetch,
   wait = delay,
   now = () => new Date()
@@ -84,23 +92,25 @@ export function createNativeGraphServices({
         if (
           Number.isInteger(existing?.pid) &&
           typeof existing.command === 'string' &&
-          await processMatches(existing.pid, existing.command)
+          await processMatches(existing.pid, existing.command, existing)
         ) {
           databases[spec.id] = existing;
         } else {
-          const child = spawnDatabase(databaseSpec(spec));
+          const child = await spawnDatabase(databaseSpec(spec));
           if (!Number.isInteger(child?.pid)) {
             throw new Error(`The native ${spec.id} Neo4j process did not return a process ID.`);
           }
           databases[spec.id] = {
             pid: child.pid,
-            command: descriptor.neo4jHome,
+            command: child.command ?? descriptor.neo4jHome,
+            ...(child.ownership ? child : {}),
             startedAt: now().toISOString()
           };
           startedDatabases[spec.id] = databases[spec.id];
         }
         persistProcessState(databases, providers);
-        await waitForDatabase('127.0.0.1', spec.boltPort);
+        await waitForDatabase('127.0.0.1', spec.boltPort, databases[spec.id]);
+        await verifyPortOwner(databases[spec.id], spec.boltPort);
       }
       if (!startProviders) {
         persistProcessState(databases, providers);
@@ -111,24 +121,29 @@ export function createNativeGraphServices({
         if (
           Number.isInteger(existing?.pid) &&
           typeof existing.command === 'string' &&
-          await processMatches(existing.pid, existing.command)
+          await processMatches(existing.pid, existing.command, existing)
         ) {
           providers[spec.id] = existing;
         } else {
-          const child = spawnProvider(providerSpec(spec));
+          const child = await spawnProvider(providerSpec(spec));
           if (!Number.isInteger(child?.pid)) {
             throw new Error(`The native ${spec.id} Provider did not return a process ID.`);
           }
           providers[spec.id] = {
             pid: child.pid,
-            command: descriptor.providerPython,
+            command: child.command ?? descriptor.providerPython,
+            ...(child.ownership ? child : {}),
             startedAt: now().toISOString()
           };
           startedProviders[spec.id] = providers[spec.id];
         }
       }
       persistProcessState(databases, providers);
-      for (const spec of specs) await waitForProvider(spec.providerUrl, fetchImpl, wait);
+      for (const spec of specs) {
+        await waitForProvider(spec.providerUrl, fetchImpl, wait, providers[spec.id]);
+        await verifyPortOwner(providers[spec.id], spec.providerPort);
+      }
+      persistProcessState(databases, providers);
     } catch (error) {
       // A failed compatibility check must not stop services already serving
       // other sessions. Only processes created by this start may be cleaned up.
@@ -161,7 +176,7 @@ export function createNativeGraphServices({
     const state = readProcessState(paths.nativeProcessStatePath) ?? {};
     if (Object.keys(state.databases ?? {}).length > 0) {
       await stopProviderEntries(state.databases);
-    } else {
+    } else if (platform !== 'win32') {
       // Compatibility with native runtimes created before database PIDs were recorded.
       for (const spec of await serviceSpecs()) {
         await run(join(descriptor.neo4jHome, 'bin', 'neo4j'), ['stop'], {
@@ -202,6 +217,7 @@ export function createNativeGraphServices({
       instanceDir: spec.instanceDir,
       httpPort: spec.httpPort,
       boltPort: spec.boltPort,
+      relativeDirectories: platform === 'win32',
       memory: spec.memory
     }));
     const marker = join(spec.instanceDir, '.password-initialized');
@@ -216,7 +232,7 @@ export function createNativeGraphServices({
     return {
       ...process.env,
       JAVA_HOME: descriptor.javaHome,
-      NEO4J_HOME: descriptor.neo4jHome,
+      NEO4J_HOME: platform === 'win32' ? spec.instanceDir : descriptor.neo4jHome,
       NEO4J_CONF: join(spec.instanceDir, 'conf')
     };
   }
@@ -225,6 +241,7 @@ export function createNativeGraphServices({
     return {
       id: spec.id,
       python: descriptor.providerPython,
+      sourcePath: descriptor.providerSource ?? null,
       port: spec.providerPort,
       logPath: join(spec.instanceDir, 'logs', 'provider.log'),
       environment: {
@@ -256,6 +273,7 @@ export function createNativeGraphServices({
       id: spec.id,
       command: join(descriptor.neo4jHome, 'bin', 'neo4j'),
       args: ['console'],
+      memory: spec.memory,
       pidPath: join(spec.instanceDir, 'run', 'neo4j.pid'),
       logPath: join(spec.instanceDir, 'logs', 'neo4j-console.log'),
       environment: neo4jEnvironment(spec)
@@ -265,7 +283,7 @@ export function createNativeGraphServices({
   async function stopProviderEntries(entries) {
     for (const entry of Object.values(entries)) {
       if (!Number.isInteger(entry?.pid) || typeof entry.command !== 'string') continue;
-      if (await processMatches(entry.pid, entry.command)) await stopProcess(entry.pid);
+      if (await processMatches(entry.pid, entry.command, entry)) await stopProcess(entry.pid, entry);
     }
   }
 
@@ -284,6 +302,20 @@ export function createNativeGraphServices({
 
 export async function ensureNativeRuntime(input, dependencies = {}) {
   const deps = nativeDependencies(dependencies);
+  if (deps.platform === 'win32') {
+    const saved = deps.readManifest(input.paths.nativeRuntimeManifestPath);
+    const assets = deps.resolveWindowsNativeBundle(input.bundle ?? saved, {
+      providerSource: join(dirname(input.paths.graphComposePath), 'graph-provider')
+    });
+    const providerFingerprint = await deps.providerSourceFingerprint(assets.providerSource);
+    if (!/^[a-f0-9]{64}$/.test(providerFingerprint)) throw new Error('Native Graph Provider source fingerprint is invalid.');
+    const expected = { version: MANIFEST_VERSION, status: 'ready', mode: 'native',
+      providerVersion: FULI_VERSION + '+native.' + PROVIDER_RUNTIME_REVISION, providerFingerprint, ...assets };
+    assertProviderUpgrade(saved?.providerVersion, expected.providerVersion);
+    if (Object.entries(expected).every(([key, value]) => saved?.[key] === value)) return saved;
+    deps.writeManifest(input.paths.nativeRuntimeManifestPath, expected);
+    return expected;
+  }
   if (!['darwin', 'linux'].includes(deps.platform)) {
     throw new Error('Native graph mode currently supports macOS and Linux. Use container mode here.');
   }
@@ -350,8 +382,11 @@ export function nativeNeo4jConfiguration({
   instanceDir,
   httpPort,
   boltPort,
+  relativeDirectories = false,
   memory
 }) {
+  // A typed Windows instance home plus relative paths avoids Neo4j's PATH
+  // setting parser escaping Unicode absolute directory values into other paths.
   return [
     'server.default_listen_address=127.0.0.1',
     'server.default_advertised_address=127.0.0.1',
@@ -359,10 +394,10 @@ export function nativeNeo4jConfiguration({
     `server.http.advertised_address=127.0.0.1:${httpPort}`,
     `server.bolt.listen_address=127.0.0.1:${boltPort}`,
     `server.bolt.advertised_address=127.0.0.1:${boltPort}`,
-    `server.directories.data=${join(instanceDir, 'data')}`,
-    `server.directories.logs=${join(instanceDir, 'logs')}`,
-    `server.directories.run=${join(instanceDir, 'run')}`,
-    `server.directories.transaction.logs.root=${join(instanceDir, 'transactions')}`,
+    `server.directories.data=${relativeDirectories ? 'data' : join(instanceDir, 'data').replaceAll('\\', '/')}`,
+    `server.directories.logs=${relativeDirectories ? 'logs' : join(instanceDir, 'logs').replaceAll('\\', '/')}`,
+    `server.directories.run=${relativeDirectories ? 'run' : join(instanceDir, 'run').replaceAll('\\', '/')}`,
+    `server.directories.transaction.logs.root=${relativeDirectories ? 'transactions' : join(instanceDir, 'transactions').replaceAll('\\', '/')}`,
     `server.memory.heap.initial_size=${memory.heapInitial}`,
     `server.memory.heap.max_size=${memory.heapMax}`,
     `server.memory.pagecache.size=${memory.pageCache}`,
@@ -405,6 +440,7 @@ function nativeDependencies(overrides) {
     writeManifest: writeJsonFileAtomic,
     resolveJavaHome,
     resolveUvCommand,
+    resolveWindowsNativeBundle,
     installNeo4j,
     installProvider,
     providerSourceFingerprint,
@@ -704,8 +740,9 @@ function spawnNativeProvider(spec) {
   }
 }
 
-async function waitForProvider(url, fetchImpl, wait) {
+async function waitForProvider(url, fetchImpl, wait, entry) {
   for (let attempt = 0; attempt < 120; attempt += 1) {
+    if (entry?.ownership && !processAlive(entry.pid)) throw new Error('The owned native Graph Provider exited during startup');
     const readiness = await providerReadiness(url, fetchImpl);
     if (readiness === 'ready') return;
     if (readiness === 'incompatible') {
