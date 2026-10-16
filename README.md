@@ -53,8 +53,10 @@ Install Fuli, connect a client, and run one actual tool call to verify the conne
 [Installation](#installation) for full requirements and [client connections](docs/client-connections.md)
 for configuration formats, Hooks, and troubleshooting.
 
-Humans retain login, Hook trust, and manual review. **A client showing `configured` on disk or in
-Settings does not prove that the client is `connected` or that a tool call succeeded.**
+Humans retain login, Hook trust, and manual review. **Settings showing `Connected` (`connected`)
+only means the current Fuli entry is present in the client's configuration file — it does not prove
+that the client loaded the MCP process, that a Hook delivered context, or that a tool call
+succeeded.**
 
 ### 1. Install
 
@@ -92,7 +94,8 @@ The setup wizard shows its plan before changing your environment.
 
 For a one-off task, this source version also supports an isolated **temporary project** when no
 registered project matches; reading preferences alone creates nothing, and an ambiguous project
-still needs a choice. The Agent directory explains the first-task entry, and task details show a
+still needs a choice. Fuli retains its task history and follows the existing Agent recruitment and
+executor permissions. The Agent directory explains the first-task entry, and task details show a
 completion table only after real worker execution is reported — an assigned Agent or an ordinary
 local conversation alone is not worker evidence.
 
@@ -101,8 +104,9 @@ local conversation alone is not worker evidence.
 If setup, client detection, or tool calls fail, see
 [Common failure recovery](docs/client-connections.md#common-failure-recovery). Use
 `fuli setup --yes --connected-only` only to refresh clients that still have an existing Fuli MCP
-entry (`current` or `outdated`); clients that are `skills-only`, `removed`, or newly added (no Fuli
-MCP entry) require a full `fuli setup`.
+entry (**Connected** / `connected` or **Configuration changed** / `changed` in Settings); clients
+showing **Skills only** (`skills_left`), **Removed** (`removed`), **Not connected**
+(`not_connected`), or newly installed clients without a Fuli MCP entry require a full `fuli setup`.
 
 [How it works](#philosophy) · [Installation](#installation) ·
 [Agent roles and teams](docs/employee-agents.md) ·

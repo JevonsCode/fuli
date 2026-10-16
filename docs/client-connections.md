@@ -7,8 +7,9 @@ do not call a model. A model can help configure a client or diagnose an error, b
 required to run the installer.
 
 Local-first Fuli keeps Graphiti / Neo4j on this machine. Humans retain login, Hook trust, and
-manual review. **Configuration present (`configured`) ≠ client connected (`connected`) or
-successful tool invocation (`call-success`).**
+manual review. **Settings showing `Connected` (`connected`) only means the current Fuli entry is
+present in the client's configuration file — it does not prove that the client loaded the MCP
+process, that a Hook delivered context, or that a tool call succeeded.**
 
 ## 1. Connect
 
@@ -42,16 +43,19 @@ Clients that only ask for a command can use `fuli mcp` if `fuli` is on their `PA
 ### Client status in Settings
 
 **Settings → Client connection** lists supported local clients that Fuli found and whether their
-Fuli integration configuration is still in place: `connected` (configured on disk), `changed`,
-skills left without MCP (`skills-only`), `removed` after an earlier connection, `not connected`, or
-`unknown` when a client's config, settings, hooks, or their folder cannot be read or parsed. Only a
-missing file counts as `removed`. The view re-reads configuration on open, on manual refresh, and
-every 15 seconds while the card is open and the page is visible. It describes **configuration files
-only** — it does not prove that a client process is running, reachable, or able to invoke tools,
-and it never reinstalls anything automatically. Fuli keeps only the latest status and the last five
-changes per client in `client-connection-observations.json` in its data directory; if that file is
-damaged, history starts over, and if it cannot be saved, the console keeps history until restart
-with an unsaved notice.
+Fuli integration configuration is still in place: **Connected** (`connected`, current Fuli entry in
+config), **Configuration changed** (`changed`, Fuli entry present but differs from this version),
+**Skills only** (`skills_left`, Fuli MCP entry gone and only skill files remain), **Removed**
+(`removed` after an earlier connection), **Not connected** (`not_connected`), **Not found**
+(`not_detected`), or **Cannot confirm** (`unknown`) when a client's config, settings, hooks, or
+their folder cannot be read or parsed. Only a missing file counts as **Removed** (`removed`). The
+view re-reads configuration on open, on manual refresh, and every 15 seconds while the card is open
+and the page is visible. It describes **configuration files only** — it does not prove that a
+client process is running, reachable, or able to invoke tools, and it never reinstalls anything
+automatically. Fuli keeps only the latest status and the last five changes per client in
+`client-connection-observations.json` in its data directory; if that file is damaged, history
+starts over, and if it cannot be saved, the console keeps history until restart with an unsaved
+notice.
 
 ## 2. First actual tool call and verification
 
@@ -64,8 +68,8 @@ with an unsaved notice.
 4. Optional cross-client handoff: continue the same FLA in another client connected to the same
    accessible data using its continuation instruction, and verify that it recovers the saved result.
 
-Merely saving JSON or seeing a configured status in Settings is not proof that task entry, Hook
-delivery, or completion checkpoints ran.
+Merely saving JSON or seeing **Connected** (`connected`) in Settings is not proof that task entry,
+Hook delivery, or completion checkpoints ran.
 
 When a turn receives no valid Hook context, `get_collaboration_preferences` is the task-entry
 fallback. Supply the actual native `sessionId` and current `taskPrompt`; it returns a fresh
@@ -148,10 +152,10 @@ automatic capture or wake.
 | Node.js below 24.12 | Upgrade Node.js to 24.12+, then rerun `fuli setup` |
 | Docker / Compose missing or engine stopped | Start the container runtime, then rerun `fuli setup` |
 | Port busy or setup stops early | Resolve the reported port or runtime conflict; setup stops before modifying Agent configs |
-| Config present (`configured`), but tools missing or call fails | Reload and trust the MCP server in the client; quit and reopen apps that read config only at launch; open a new task |
+| Settings shows **Connected** (`connected`), but tools are missing or a call fails | Reload and trust the MCP server in the client; quit and reopen apps that read config only at launch; open a new task |
 | Codex Hooks not running or exit with untrusted notice | Review and trust the Hooks in Codex with `/hooks` (setup never bypasses host trust) |
-| Existing Fuli MCP entry is outdated or changed | Run `fuli setup --yes --connected-only` to refresh clients that still have a Fuli MCP entry (`current` or `outdated`) |
-| Client is `skills-only`, `removed`, or newly installed (no Fuli MCP entry) | Run a full `fuli setup`. `--connected-only` skips clients without a Fuli MCP entry and leaves existing Skills unchanged |
+| Settings shows **Configuration changed** (`changed`) or **Connected** (`connected`) after an upgrade | Run `fuli setup --yes --connected-only` to refresh clients that still have a Fuli MCP entry in their config |
+| Settings shows **Skills only** (`skills_left`), **Removed** (`removed`), **Not connected** (`not_connected`), or client is newly installed | Run a full `fuli setup`. `--connected-only` skips clients without a Fuli MCP entry and leaves existing Skills unchanged |
 | Unsure whether local UI / graph services are running | Run `fuli status` (and `fuli start` or `fuli restart` if stopped) |
 
 ## Remote clients

@@ -38,9 +38,9 @@ AI 负责检索、提醒、归纳和执行；人始终保留最终判断权。
 ## 先用起来
 
 安装 Fuli、接入客户端，并通过一次实际工具调用完成验证。完整要求见[安装](#安装)；配置格式、Hook 与排错见
-[客户端接入](docs/client-connections.md)。
+[客户端接入（英文）](docs/client-connections.md)。
 
-登录、Hook 信任与人工审核仍由人确认。**磁盘或“设置”页显示已配置（`configured`），不等于客户端已连接（`connected`）或工具已成功调用。**
+登录、Hook 信任与人工审核仍由人确认。**“设置 → 客户端接入”显示 `已接入`（`connected`）仅代表客户端配置文件中已有当前版本的 Fuli 条目，不代表客户端进程已加载该 MCP、Hook 已送达上下文或工具已成功调用。**
 
 ### 1. 安装
 
@@ -66,12 +66,12 @@ fuli open
 2. 在客户端中确认 Fuli 工具已出现，并在项目目录里**发起一次实际工具调用**（例如让 Agent 读取当前项目协作偏好或协调一个小任务），检查它是否找对项目（或登记项目并安排负责 Agent），且在缺少信息时如实询问而非编造。
 3. 可选的跨工具接续：把这位 Agent 的接续指令带到连接同一份数据的另一客户端，验证它能否恢复同一位 Agent、项目和上次工作。支持范围见[Agent 对话与协作说明](docs/agent-conversations-and-collaboration.md)。
 
-临时任务也能交给 Agent：本次源码支持在没有匹配到已登记项目时建立隔离的**临时项目**；单纯读取偏好不会创建项目，多个候选项目仍需明确选择。Agent 目录提供首次任务入口，任务详情只有在收到真实执行报告后才展示完成汇总——仅分配了 Agent 或普通本机对话都不等于工作进程证据。
+临时任务也能交给 Agent：本次源码支持在没有匹配到已登记项目时建立隔离的**临时项目**；单纯读取偏好不会创建项目，多个候选项目仍需明确选择。Fuli 会保留其任务历史，并遵循既有的 Agent 招募与执行器权限。Agent 目录提供首次任务入口，任务详情只有在收到真实执行报告后才展示完成汇总——仅分配了 Agent 或普通本机对话都不等于工作进程证据。
 
 ### 4. 排错与恢复
 
-若安装、客户端检测或工具调用失败，见[常见失败与恢复](docs/client-connections.md#common-failure-recovery)。
-`fuli setup --yes --connected-only` 仅用于刷新仍保留 Fuli MCP 条目（`current` 或 `outdated`）的客户端；仅剩 Skills（`skills-only`）、已移除（`removed`）或新接入的客户端（无 Fuli MCP 条目）须运行完整的 `fuli setup`。
+若安装、客户端检测或工具调用失败，见[常见失败与恢复（英文）](docs/client-connections.md#common-failure-recovery)。
+`fuli setup --yes --connected-only` 仅用于刷新仍保留 Fuli MCP 条目的客户端（“设置”页显示**已接入** / `connected` 或**配置有变化** / `changed`）；显示**只剩技能文件**（`skills_left`）、**已移除**（`removed`）、**未接入**（`not_connected`）或新安装的客户端（无 Fuli MCP 条目）须运行完整的 `fuli setup`。
 
 [工作原理](#项目理念) · [安装](#安装) · [Agent 角色与团队](docs/employee-agents.md) ·
 [跨客户端验收](acceptance/cross-client-handoff.md) · [参与贡献](CONTRIBUTING.md) ·
