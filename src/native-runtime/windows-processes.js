@@ -28,16 +28,25 @@ async function powershell(script, env = process.env, options = {}) {
   return JSON.parse(result.stdout.replace(/^\uFEFF/, '').trim() || 'null');
 }
 
-export async function inspectWindowsNativeProcess(pid, { children = false, timeoutMs = 60_000 } = {}) {
-  if (!Number.isInteger(pid) || pid <= 0) return children ? [] : null;
+export async function inspectWindowsNativeProcess(pid, { children = false, descendants = false, timeoutMs = 60_000 } = {}) {
+  if (!Number.isInteger(pid) || pid <= 0) return children || descendants ? [] : null;
   const filter = 'ProcessId = ' + pid + (children ? ' OR ParentProcessId = ' + pid : '');
-  const script = '$rows = @(Get-CimInstance Win32_Process -Filter "' + filter + '" | ForEach-Object {'
+  // One CIM snapshot avoids a fresh PowerShell process for each descendant.
+  // This is observation only; callers still verify identities before stopping them.
+  const selection = descendants
+    ? '$all = @(Get-CimInstance Win32_Process);'
+      + '$ids = [System.Collections.Generic.HashSet[int]]::new();[void]$ids.Add(' + pid + ');'
+      + 'do {$added = $false;foreach ($item in $all) {'
+      + 'if ($ids.Contains([int]$item.ParentProcessId) -and $ids.Add([int]$item.ProcessId)) {$added = $true}'
+      + '}} while ($added);$selected = @($all | Where-Object {$ids.Contains([int]$_.ProcessId)});'
+    : '$selected = @(Get-CimInstance Win32_Process -Filter "' + filter + '");';
+  const script = selection + '$rows = @($selected | ForEach-Object {'
     + '[pscustomobject]@{pid=[int]$_.ProcessId;parentPid=[int]$_.ParentProcessId;'
     + 'executable=$_.ExecutablePath;commandLine=$_.CommandLine;'
     + 'createdFileTime=$_.CreationDate.ToUniversalTime().ToFileTimeUtc().ToString()}});'
     + 'ConvertTo-Json -InputObject $rows -Compress';
   const rows = await powershell(script, process.env, { timeout: timeoutMs });
-  return children ? rows : rows.find(row => row.pid === pid) ?? null;
+  return children || descendants ? rows : rows.find(row => row.pid === pid) ?? null;
 }
 
 function identityMatches(observed, ownership) {
@@ -51,12 +60,30 @@ export async function windowsNativeProcessMatches(pid, command, entry, options) 
   return Boolean(identityMatches(await inspectWindowsNativeProcess(pid, options), entry.ownership));
 }
 
+// Listening owners on every local address, so a 0.0.0.0 or [::] listener that
+// would also answer 127.0.0.1 is visible, not only an exact loopback bind.
+async function listeningOwners(port) {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid native service port');
+  return powershell('$owners = @(Get-NetTCPConnection -State Listen -LocalPort ' + port
+    + ' -ErrorAction SilentlyContinue | ForEach-Object {[pscustomobject]@{pid=[int]$_.OwningProcess;'
+    + 'name=(Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName}} | Sort-Object pid -Unique);'
+    + 'ConvertTo-Json -InputObject $owners -Compress');
+}
+
+// Before spawning: a port another process already holds would let the readiness
+// probe reach that process and end in a misleading ownership failure.
+export async function assertWindowsNativePortFree(port) {
+  const owners = await listeningOwners(port);
+  if (owners.length) {
+    const observed = owners.map(owner => owner.pid + (owner.name ? ' (' + owner.name + ')' : '')).join(', ');
+    throw new Error('The native service port is already in use before Fuli starts its process: ' + port
+      + ' (owner PIDs: ' + observed + '). The owning process was not touched and the service for this port was not started; stop that process or choose another port.');
+  }
+}
+
 export async function assertWindowsNativePortOwner(entry, port) {
   await refreshProviderChild(entry);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid native service port');
-  const owners = await powershell('$owners = @(Get-NetTCPConnection -State Listen -LocalPort ' + port
-    + ' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique);'
-    + 'ConvertTo-Json -InputObject $owners -Compress');
+  const owners = (await listeningOwners(port)).map(owner => owner.pid);
   const owned = new Set([entry.pid, ...(entry.relatedProcesses ?? []).map(item => item.pid)]);
   if (!owners.length || owners.some(pid => !owned.has(pid))) {
     const expected = [...owned].filter(Number.isInteger).join(',') || 'none';
