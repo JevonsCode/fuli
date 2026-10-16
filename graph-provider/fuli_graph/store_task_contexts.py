@@ -145,6 +145,8 @@ class StoreTaskContexts:
         for field in ('personal_project_id', 'project_agent_id', 'source_application', 'turn_id'):
             if saved[field] != getattr(request, field):
                 raise HTTPException(status_code=409, detail='Task turn already has another context')
+        if saved.get('preference_scope') != record['preference_scope']:
+            raise HTTPException(409, 'Task preference scope is immutable; begin a new task for different dimensions')
         return {**saved, 'previous_checkpoint_missing': rows[0]['previous_checkpoint_missing']}
 
     async def current_task_context(self, actor, space_id, session_id, source_application):

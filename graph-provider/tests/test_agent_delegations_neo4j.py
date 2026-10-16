@@ -247,8 +247,25 @@ async def test_worker_run_claim_seal_and_own_context_survive_retries_and_parent_
         own = admitted[0].json()['task_context']
         assert admitted[1].json()['task_context']['token'] == own['token'] != payload['task_context_token']
         assert own['project_agent_id'] == 'specialist' and own['turn_id'] == 'worker-run:' + run['run_id']
+        assert own['preference_scope'] == {'version': 1, 'work_kind': 'implementation', 'workflow': None}
+        # Change only this synthetic coordination task and its legitimate
+        # assignment. Future authority is rechecked, but the admitted scope is immutable.
+        from neo4j import AsyncGraphDatabase
+        async with AsyncGraphDatabase.driver(settings.neo4j_uri, auth=('neo4j', settings.neo4j_password)) as driver:
+            await driver.execute_query('''
+                MATCH (task:FuliProjectAgentTask {task_id: $task_id, personal_space_id: $space_id})
+                SET task.work_kind = 'review'
+                WITH task
+                MATCH (:FuliSpace {id: $space_id})-[:CONTAINS_PROJECT]->
+                  (:FuliPersonalProject {project_id: $project_id})-[:HAS_PROJECT_AGENT_ASSIGNMENT]->
+                  (assignment:FuliProjectAgentAssignment)-[:ASSIGNED_AGENT]->(:FuliProjectAgent {agent_id: 'specialist'})
+                SET assignment.work_kinds = ['implementation', 'review']
+                ''', task_id=payload['task_id'], space_id=scope['personal_space_id'], project_id=scope['personal_project_id'])
         await binding_parent(client, scope, 'fuli-task-worker-parent-next', 'worker-parent-session')
-        assert (await client.post(path + '/contexts', json=session, headers=headers)).json()['task_context']['token'] == own['token']
+        retried = await client.post(path + '/contexts', json=session, headers=headers)
+        assert retried.status_code == 200, retried.text
+        assert retried.json()['task_context']['token'] == own['token']
+        assert retried.json()['task_context']['preference_scope'] == own['preference_scope']
         visible = (await client.get(f'/v1/project-agent-tasks/{payload["task_id"]}', params=scope)).json()
         assert visible['execution_summary'] == [] and visible['actual_run_id'] is None
     async with provider_client(settings, access_token) as (client, _):
@@ -256,6 +273,8 @@ async def test_worker_run_claim_seal_and_own_context_survive_retries_and_parent_
         assert recovered.status_code == 200, recovered.text
         assert recovered.json()['state'] == 'admitted'
         assert recovered.json()['own_context_token'] == own['token']
+        resumed = await client.post(path + '/contexts', json=session, headers=headers)
+        assert resumed.status_code == 200 and resumed.json()['task_context']['preference_scope'] == own['preference_scope'], resumed.text
         assert (await client.post(path + '/start-claim', json=scope, headers=headers)).json()['start_claimed'] is False
 
 

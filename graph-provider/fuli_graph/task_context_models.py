@@ -9,6 +9,12 @@ from .model_validation import reject_credentials
 from .project_agent_memory_models import ProjectAgentWorkingMemory
 
 
+class TaskPreferenceScope(StrictModel):
+    version: int = Field(strict=True, ge=1, le=1)
+    work_kind: str | None = Field(min_length=1, max_length=128)
+    workflow: str | None = Field(min_length=1, max_length=128)
+
+
 class TaskContextBegin(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     personal_project_id: str | None = Field(default=None, min_length=1, max_length=128)
@@ -20,6 +26,7 @@ class TaskContextBegin(StrictModel):
     turn_id: str | None = Field(default=None, min_length=1, max_length=256)
     memory_revision: int | None = Field(default=None, ge=0)
     work_log_required: bool = False
+    preference_scope: TaskPreferenceScope | None = None
 
 
 class TaskContextAgentMemory(StrictModel):

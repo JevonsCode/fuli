@@ -93,6 +93,7 @@ export function createWorkerTaskContext(application, descriptor) {
   }
   async function entry({ task, run }, toolName) {
     if (!ENTRY_TOOLS.has(toolName)) throw denied('Unsupported worker entry');
+    if (!task.preferenceScope) throw denied('Worker task preference scope is unknown; entry cannot guess dimensions');
     const [rawAgent, coordination] = await Promise.all([
       application.personal.getProjectAgent(scope.personal_space_id, personalProjectId, task.projectAgentId),
       application.personal.viewProjectAgentTask(scope.personal_space_id, run.task_id,
@@ -107,7 +108,7 @@ export function createWorkerTaskContext(application, descriptor) {
     const agent = projectAgentRecord(rawAgent);
     const input = { personalProjectId, projectAgentId: task.projectAgentId, projectPath, taskPrompt,
       sessionId: task.sessionId, sourceSessionId: task.sourceSessionId, sourceApplication: task.sourceApplication,
-      turnId: task.turnId, workKind: coordination.work_kind, workflow: null,
+      turnId: task.turnId, workKind: task.preferenceScope.work_kind, workflow: task.preferenceScope.workflow,
       agentInvocation: true, agentToolName: toolName };
     const preferences = await selectedTaskEntryPreferences(application,
       { status: 'matched', basis: 'worker_run', personalProjectId }, input,

@@ -112,6 +112,7 @@ test('explicit lead selection keeps legal staffing intent for existing assignmen
 test('task entry recovers temporary scope only for the same turn or checkpoint continuation', async () => {
   const scopedTask = { token: 'fuli-task-12345678', sessionId: 'host-session', turnId: 'turn-one',
     personalProjectId: 'temporary-synthetic', projectAgentId: 'temporary-agent',
+    preferenceScope: { version: 1, work_kind: null, workflow: null },
     projectScope: { type: 'temporary', lifetime: 'task', persisted: true }, checkpoint: null };
   const calls = [];
   const application = {

@@ -224,6 +224,7 @@ function workerFixture({ memoryScope = 'reviewed_agent' } = {}) {
     personal_space_id: run.personal_space_id, personal_project_id: run.personal_project_id,
     project_agent_id: run.agent_id, source_application: run.target_application,
     source_session_id: run.actual_session_id, turn_id: `worker-run:${run.run_id}`,
+    preference_scope: { version: 1, work_kind: 'implementation', workflow: null },
     agent_memory_scope: memoryScope, memory_revision: 0, work_log_required: true };
   let closed = false;
   const memory = input => ({ personal_space_id: input.personalSpaceId,
@@ -412,6 +413,17 @@ test('worker task-only memory and allowlists fail closed while restart keeps the
     await fixture.port.entry(first, 'begin_task_context');
     assert.equal(fixture.calls.memories.length, 0);
   } finally { await server.close(); }
+});
+
+test('worker entry uses admitted preference scope after coordination metadata changes and rejects legacy scope', async () => {
+  const { app, port, calls, context, run } = workerFixture();
+  app.personal.viewProjectAgentTask = async () => ({ task_id: run.task_id,
+    personal_space_id: run.personal_space_id, personal_project_id: run.personal_project_id, work_kind: 'review' });
+  await port.entry(await port.admit(), 'begin_task_context');
+  assert.equal(calls.entries[0].dimensions.workKind, 'implementation');
+  delete context.preference_scope;
+  await assert.rejects(port.entry(await port.admit(), 'get_collaboration_preferences'), /preference scope/i);
+  assert.equal(calls.entries.length, 1);
 });
 
 test('mismatched worker context identity, timeout and cancellation never reach business handlers', async () => {

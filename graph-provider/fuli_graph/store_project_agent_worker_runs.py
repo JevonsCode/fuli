@@ -155,12 +155,24 @@ class StoreProjectAgentWorkerRuns:
             task_only = agent.get('memory_scope') == 'task_only'
             memory = None if task_only else await scoped.get_project_agent_memory(
                 actor, request.personal_space_id, request.personal_project_id, run['agent_id'])
+            existing, _, _ = await scoped.runtime.driver.execute_query('''
+                MATCH (context:FuliTaskContext {personal_space_id: $space_id})-
+                  [:FOR_WORKER_RUN]->(:FuliProjectAgentWorkerRun {id: $run_id})
+                RETURN context.record_json AS record_json
+                ''', space_id=request.personal_space_id, run_id=run_id)
+            if run['state'] == 'admitted' and not existing:
+                raise HTTPException(409, 'Admitted worker task context is unavailable')
+            # The task is locked by checked_worker_run. Only first admission
+            # freezes its dimensions; a retry never rewrites the own context.
+            preference_scope = json.loads(existing[0]['record_json']).get('preference_scope') if existing else {
+                'version': 1, 'work_kind': data['task']['work_kind'], 'workflow': None}
             own = await scoped._begin_task_context(actor, TaskContextBegin(
                 personal_space_id=request.personal_space_id, personal_project_id=request.personal_project_id,
                 project_agent_id=run['agent_id'], source_application=run['target_application'],
                 session_id=request.session_id, source_session_id=request.session_id,
                 token='fuli-task-' + str(uuid4()), turn_id='worker-run:' + run_id,
                 memory_revision=memory.revision if memory else None, work_log_required=True,
+                preference_scope=preference_scope,
             ), worker_run_id=run_id, agent_memory_scope='task_only' if task_only else 'reviewed_agent')
             rows, _, _ = await scoped.runtime.driver.execute_query('''
                 MATCH (run:FuliProjectAgentWorkerRun {id: $run_id}), (context:FuliTaskContext {token: $token})

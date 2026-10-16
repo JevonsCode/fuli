@@ -56,6 +56,23 @@ test('Provider task context records preserve turn and host-session provenance', 
   assert.equal(result.sourceSessionId, 'mcp-host-session');
 });
 
+test('Provider registry round-trips a fixed preference scope and detects an old Provider dropping it', async () => {
+  const scope = { version: 1, work_kind: 'review', workflow: null };
+  let received;
+  const registry = new ProviderTaskContextRegistry({ beginTaskContext: async input => {
+    received = input; return input;
+  }, getTaskContext: async () => providerRecord({ preference_scope: scope }) }, 'space-1');
+  const input = { sessionId: 'scope-session', preferenceScope: scope };
+  assert.deepEqual((await registry.begin(input)).preferenceScope, scope);
+  assert.deepEqual(received.preference_scope, scope);
+  assert.deepEqual((await registry.context('fuli-task-provider-token')).preferenceScope, scope);
+  registry.provider.beginTaskContext = async () => providerRecord();
+  await assert.rejects(registry.begin(input), /preference scope/i);
+  assert.equal((await registry.context('fuli-task-provider-token')).preferenceScope.version, 1);
+  registry.provider.getTaskContext = async () => providerRecord();
+  assert.equal((await registry.context('fuli-task-provider-token')).preferenceScope, null);
+});
+
 test('Provider preparation forwards Agent memory atomically and completion omits it', async () => {
   const writes = [];
   const registry = new ProviderTaskContextRegistry({

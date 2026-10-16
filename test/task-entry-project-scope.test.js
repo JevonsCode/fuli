@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
+import { beginTaskContext } from '../src/graphiti/agent-knowledge-workflows.js';
 
 // Synthetic Provider boundary: exercise the public entry workflow without a live graph.
 function fixture({ resolution = { status: 'unmatched', personalProjectId: null },
@@ -265,4 +266,47 @@ test('unavailable global identities never load memory or provision a replacement
     assert.equal(result.project_agent_context.status, 'agent_unavailable');
     assert.deepEqual([writes.length, hires.length], [0, 0]);
   }
+});
+
+test('same-turn and checkpoint entry use the saved preference scope before reading preferences', async () => {
+  const saved = { token: 'fuli-task-fixed-preference', sessionId: 'scope-session', turnId: 'turn-one',
+    personalProjectId: 'scope-project', projectAgentId: null,
+    preferenceScope: { version: 1, work_kind: 'review', workflow: 'release' } };
+  const reads = [], writes = [];
+  const app = { taskContextRegistry: { current: async () => saved, context: async () => saved,
+    begin: async input => { writes.push(input); return input.turnId === saved.turnId ? saved : { ...input, token: 'fuli-task-new-scope' }; } },
+    getCollaborationPreferences: async input => { reads.push(input); return { context: {
+      personal_project_id: input.personalProjectId, project_agent_id: null } }; } };
+  const input = { sessionId: saved.sessionId, sourceApplication: 'codex', turnId: saved.turnId };
+  for (const extra of [{}, { turnId: 'continuation', taskPrompt: `FULI_CHECKPOINT_REQUIRED: ${saved.token} continue` }]) {
+    const result = await beginTaskContext(app, { ...input, ...extra });
+    assert.equal(result.taskContextToken, saved.token);
+    assert.equal(reads.at(-1).workKind, 'review');
+    assert.equal(reads.at(-1).workflow, 'release');
+  }
+  for (const change of [{ workKind: 'implementation' }, { workflow: null }]) {
+    await assert.rejects(beginTaskContext(app, { ...input, ...change }), error => error.status === 409);
+  }
+  assert.equal(reads.length, 2, 'conflicts must fail before preference reads');
+  await beginTaskContext(app, { ...input, turnId: 'new-user-turn', workKind: 'implementation' });
+  assert.equal(writes.length, 2, 'registered retry keeps the Provider begin authorization check');
+  assert.deepEqual(writes[1].preferenceScope, { version: 1, work_kind: 'implementation', workflow: null });
+  saved.preferenceScope = null;
+  await assert.rejects(beginTaskContext(app, input), /preference scope.*unknown/i);
+  assert.equal(reads.length, 3, 'a legacy scope cannot be guessed on recovery');
+});
+
+test('fresh ordinary fallback forwards preference dimensions without inheriting the previous task scope', async () => {
+  const { app, run } = fixture({ existing: ['chosen'], resolution: { status: 'matched', personalProjectId: 'chosen' },
+    current: { personalProjectId: 'chosen', preferenceScope: { version: 1, work_kind: 'old', workflow: 'old' } } });
+  const writes = [];
+  app.taskContextRegistry.begin = async input => {
+    writes.push(input); return { ...input, token: `fuli-task-fresh-scope-${writes.length}` };
+  };
+  const first = await run({ taskPrompt: 'First task', workKind: 'review', workflow: 'release' });
+  const second = await run({ taskPrompt: 'Another task' });
+  assert.notEqual(first.taskContextToken, second.taskContextToken);
+  assert.deepEqual(writes.map(input => input.preferenceScope), [
+    { version: 1, work_kind: 'review', workflow: 'release' },
+    { version: 1, work_kind: null, workflow: null }]);
 });

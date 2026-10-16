@@ -22,6 +22,22 @@ def test_task_context_begin_preserves_bounded_host_session_provenance():
     assert value.model_dump(mode='json')['source_session_id'] == 'mcp-host-session'
 
 
+def test_task_preference_scope_distinguishes_explicit_unspecified_from_legacy_unknown():
+    payload = {'personal_space_id': 'scope-space', 'session_id': 'scope-session',
+               'source_application': 'codex', 'token': 'fuli-task-scope-model'}
+    scope = {'version': 1, 'work_kind': 'review', 'workflow': None}
+    assert TaskContextBegin.model_validate({**payload, 'preference_scope': scope}).preference_scope.model_dump() == scope
+    assert TaskContextBegin.model_validate(payload).preference_scope is None
+    assert TaskContextBegin.model_validate({**payload, 'preference_scope': None}).preference_scope is None
+    for invalid in [{'version': 1, 'work_kind': None}, {'version': 1, 'workflow': None},
+                    {'version': 2, 'work_kind': None, 'workflow': None},
+                    {'version': True, 'work_kind': None, 'workflow': None},
+                    {**scope, 'workflow': 1}, {**scope, 'work_kind': ''},
+                    {**scope, 'work_kind': 'x' * 129}, {**scope, 'extra': 'not-a-scope-field'}]:
+        with pytest.raises(ValidationError):
+            TaskContextBegin.model_validate({**payload, 'preference_scope': invalid})
+
+
 def test_coordination_binding_accepts_only_scope_and_task_identity_not_owner_or_session_claims():
     payload = {'personal_space_id': 'space-1', 'personal_project_id': 'project-1',
                'source_application': 'codex', 'task_id': 'coordination-1'}

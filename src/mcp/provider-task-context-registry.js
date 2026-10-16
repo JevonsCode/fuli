@@ -9,7 +9,8 @@ export class ProviderTaskContextRegistry {
   }
 
   async begin(input) {
-    return taskRecord(await this.provider.beginTaskContext({
+    const scope = taskPreferenceScope(input.preferenceScope);
+    const task = taskRecord(await this.provider.beginTaskContext({
       personal_space_id: this.personalSpaceId,
       personal_project_id: input.personalProjectId ?? null,
       project_agent_id: input.projectAgentId ?? null,
@@ -19,8 +20,13 @@ export class ProviderTaskContextRegistry {
       token: `fuli-task-${randomUUID()}`,
       turn_id: input.turnId ?? null,
       memory_revision: input.memoryRevision ?? null,
-      work_log_required: input.workLogRequired ?? false
+      work_log_required: input.workLogRequired ?? false,
+      ...(input.preferenceScope !== undefined ? { preference_scope: scope } : {})
     }));
+    if (scope && JSON.stringify(task.preferenceScope) !== JSON.stringify(scope)) {
+      throw new TypeError('Provider did not preserve the fixed task preference scope');
+    }
+    return task;
   }
 
   async context(token, sourceApplication = 'other') {
@@ -93,6 +99,7 @@ export function taskRecord(value) {
     sourceApplication: value.source_application,
     sourceSessionId: value.source_session_id ?? null,
     turnId: value.turn_id ?? null,
+    preferenceScope: taskPreferenceScope(value.preference_scope),
     memoryRevision: value.memory_revision,
     workLogRequired: value.work_log_required ?? false,
     agentMemory: value.agent_memory ?? null,
@@ -102,4 +109,17 @@ export function taskRecord(value) {
       ...(value.checkpoint.capture_results ? { captureResults: value.checkpoint.capture_results } : {})
     } : null
   };
+}
+
+// Absent/null is legacy unknown, distinct from an explicit v1 null/null scope.
+export function taskPreferenceScope(value) {
+  if (value == null) return null;
+  if (typeof value !== 'object' || Array.isArray(value) || value.version !== 1 ||
+      Object.keys(value).length !== 3 || !Object.hasOwn(value, 'version') ||
+      !Object.hasOwn(value, 'work_kind') || !Object.hasOwn(value, 'workflow') ||
+      [value.work_kind, value.workflow].some(item => item !== null &&
+        (typeof item !== 'string' || item.length < 1 || [...item].length > 128))) {
+    throw new TypeError('Task preference scope is invalid');
+  }
+  return { version: 1, work_kind: value.work_kind, workflow: value.workflow };
 }

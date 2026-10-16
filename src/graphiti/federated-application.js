@@ -292,7 +292,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       limit, agentInvocation, agentToolName
     }, (items, toolName) => this.#recordAgentViews(items, toolName));
     return finishTaskEntryPreferences(this, preferences, { agentInvocation, agentToolName,
-      sessionId, sourceApplication, sourceSessionId, taskPrompt });
+      sessionId, sourceApplication, sourceSessionId, taskPrompt, workKind, workflow });
   }
 
   async getUserTasteSkill({
