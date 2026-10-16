@@ -97,14 +97,31 @@ test('中英文 README 应完整表达项目理念、证据边界和 Agent 生�
 
 test('中文验收索引应链接全部人工检查文件', () => {
   const 索引 = 读取验收文件('README.md');
+  const 基线 = 读取验收文件('p0-acceptance-and-cost-baseline.md');
 
   for (const 文件名 of [
     '知识验收用例.md',
     '智能体调用时序图.md',
     '知识检索与确认流程图.md',
-    'knowledge-live.js'
+    'knowledge-live.js',
+    'p0-acceptance-and-cost-baseline.md'
   ]) {
-    assert.match(索引, new RegExp(`\\(\\./${文件名.replace('.', '\\.')}\\)`));
+    assert.match(索引, new RegExp(`\\(\\./${文件名.replace(/\./g, '\\.')}\\)`));
+  }
+
+  for (const 关键项 of [
+    '1. 源码测试',
+    '2. 宿主触发',
+    '3. 模型接收',
+    '4. 真实数据库写回',
+    'P0-AC-01：普通对话写回',
+    'P0-AC-02：换端同负责人 / 项目 / 最新结果接续',
+    'P0-AC-03：偏好完整恢复',
+    'P0-AC-04：偏好与知识分流候选确认',
+    '区分冷缓存与暖缓存',
+    '严禁使用 JSON 响应字节数'
+  ]) {
+    assert.match(基线, new RegExp(关键项));
   }
 });
 
