@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from '../native-runtime/windows-assets.js';
 import { canonicalWindowsInstallPath, installationSha256, windowsInstallPathsOverlap } from './windows-installation-context.js';
@@ -130,9 +130,16 @@ export function installWindowsForCurrentUser(options,
     return owned;
   }
   // COM Save cannot create exclusively, so it rewrites an inode this installer
-  // created inside its own new package directory. Only that inode is adopted.
+  // created inside its own new package directory. Only that inode is adopted. It
+  // stays open (read-only, which COM Save and the hash-bound reader both permit) so
+  // a replacement cannot reuse its freed inode number, as POSIX filesystems do.
   function stageShortcut(staged, target) {
-    const owned = ownFile(staged, '');
+    const held = openSync(staged, constants.O_RDONLY | constants.O_CREAT | constants.O_EXCL);
+    try { return verifyStagedShortcut(staged, target, held); } finally { closeSync(held); }
+  }
+  function verifyStagedShortcut(staged, target, held) {
+    const owned = [staged, fstatSync(held, EXACT)];
+    files.push(owned);
     let failure = null;
     try { createShortcut(staged, target); } catch (error) { failure = error; }
     const actual = lstatSync(staged, { ...EXACT, throwIfNoEntry: false });
@@ -141,10 +148,9 @@ export function installWindowsForCurrentUser(options,
     else files.splice(files.indexOf(owned), 1); // A replacement is left for inspection.
     if (failure) throw failure;
     if (!adopted) throw new Error('The shortcut was not saved into the installer-owned staging file: ' + staged);
-    const fd = openSync(staged, 'r');
     try {
-      if (!sameFile(fstatSync(fd, EXACT), owned[1])) throw new Error('The staged shortcut changed while it was read: ' + staged);
-      const bytes = readFileSync(fd);
+      if (!sameFile(fstatSync(held, EXACT), owned[1])) throw new Error('The staged shortcut changed while it was read: ' + staged);
+      const bytes = readFileSync(held);
       if (!bytes.length) throw new Error('The shortcut writer produced no shortcut.');
       // COM interprets these exact bytes (hash-bound) before any shared folder sees them.
       const link = readShortcut(staged, installationSha256(bytes));
@@ -153,7 +159,7 @@ export function installWindowsForCurrentUser(options,
         throw new Error('The shortcut does not point at the installed application: ' + staged);
       }
       return bytes;
-    } finally { closeSync(fd); removeOwnedFile(...owned); }
+    } finally { removeOwnedFile(...owned); }
   }
   // No shared temporary name: the final name is created exclusively (EEXIST leaves
   // any existing file alone) and filled from the verified bytes through this fd.
