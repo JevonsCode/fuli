@@ -19,6 +19,35 @@ const MESSAGE_LIMIT = 240;
 const TRUNCATION_MARKER = '...[truncated]';
 const VALIDATION_ERROR_LIMIT = 5;
 
+// The reader already supplies an explicit business projection. Never pass it
+// through the generic string/array sanitizer and then call it complete.
+export function completePreferenceToolResult(value, limitBytes = 512 * 1024) {
+  if (!value || (value.preferences_complete !== true && value.preference_delivery?.status !== 'blocked')) {
+    throw new ApplicationError('validation', 'Incomplete preference reader projection');
+  }
+  const allowed = new Set(['effective_preferences', 'active_conflicts', 'deferred_conflicts',
+    'application_guidance', 'task_guidance', 'judgment_context', 'agent_receipt', 'context',
+    'project_agent_context', 'taskContextToken', 'task_context_token', 'checkpoint_required', 'project_scope', 'worker_run',
+    'preference_delivery', 'preferences_complete', 'same_task_recovery_available', 'truncated']);
+  // One JSON form for both channels: undefined fields never differ between them.
+  const envelope = candidate => { const text = JSON.stringify(candidate);
+    return { content: [{ type: 'text', text }], structuredContent: JSON.parse(text) }; };
+  const unsafe = (item, depth = 0) => depth > 64 || (item && typeof item === 'object' &&
+    Object.entries(item).some(([key, nested]) => OMITTED_KEYS.has(key.replace(/[_-]/g, '').toLowerCase()) || unsafe(nested, depth + 1)));
+  let candidate = value;
+  if (value?.context?.source_truncated === true) candidate = blockedPreferenceDelivery(value, 'source_window');
+  else if (Object.keys(value ?? {}).some(key => !allowed.has(key)) || unsafe(value)) {
+    candidate = blockedPreferenceDelivery(value, 'unsafe_projection');
+  }
+  let result = envelope(candidate);
+  if (jsonBytes(result) > limitBytes) {
+    result = envelope(blockedPreferenceDelivery(value, 'delivery_budget'));
+    if (jsonBytes(result) > limitBytes) throw new ApplicationError('validation', 'Cannot deliver the complete blocked preference recovery');
+  }
+  if (unsafe(result.structuredContent)) throw new ApplicationError('validation', 'Preference recovery cannot expose private fields');
+  return result;
+}
+
 export function successToolResult(value, { limitBytes = RESULT_LIMIT_BYTES, itemLimit = RESULT_ITEM_LIMIT,
   preferenceContext = false } = {}) {
   const blockedResult = reason => {

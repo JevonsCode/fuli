@@ -7,6 +7,8 @@ import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 import { createWorkerTaskContext } from '../src/graphiti/worker-task-context.js';
 import { GraphitiProviderClient } from '../src/graphiti/provider-client.js';
 import { ApplicationError } from '../src/app/application-error.js';
+import { readTaskPreferences } from '../src/graphiti/task-preference-reader.js';
+import { taskRecord } from '../src/mcp/provider-task-context-registry.js';
 
 test('fallback task entry uses the same compact instruction and memory view as hooks', async () => {
   const instruction = 'Keep the complete effective instruction. '.repeat(25);
@@ -274,6 +276,74 @@ async function workerCall(server, name, args = {}, signal = new AbortController(
   return server.server._requestHandlers.get('tools/call')({ method: 'tools/call',
     params: { name, arguments: args } }, { signal, requestId: 1 });
 }
+
+test('worker preference recovery never admits and reads only the already admitted own token', async () => {
+  const f = workerFixture();
+  const descriptor = { ...f.descriptor, toolNames: [...f.descriptor.toolNames, 'read_task_preferences'] };
+  let reads = 0;
+  let closed = false;
+  f.app.taskContextRegistry.preferences = async (token, identity) => {
+    assert.equal(token, f.context.token); assert.equal(identity.sessionId, f.context.session_id);
+    // The Provider guard rejects a closed run on every read.
+    if (closed) throw new Error('Worker run closed');
+    reads++;
+    return { task: taskRecord(f.context), preferences: {
+      personal_space_id: f.context.personal_space_id, personal_project_id: f.context.personal_project_id,
+      project_agent_id: f.context.project_agent_id, effective_preferences: [], conflicts: [], queued_conflicts: [],
+      source_windows: { candidates_truncated: false, project_ancestors_truncated: false, queued_conflicts_truncated: false },
+      truncated: false
+    } };
+  };
+  f.app.readTaskPreferences = input => readTaskPreferences(f.app, input);
+  const port = createWorkerTaskContext(f.app, descriptor);
+  const server = createMcpServer(f.app, { env: {}, registerResources: false, workerTaskContext: port });
+  try {
+    assert.equal((await workerCall(server, 'read_task_preferences', { taskContextToken: f.context.token })).isError, true);
+    assert.equal(f.calls.admit, 0); assert.equal(f.calls.get, 0); assert.equal(reads, 0);
+    await port.admit();
+    for (let count = 1; count <= 2; count++) {
+      const result = await workerCall(server, 'read_task_preferences', { taskContextToken: f.context.token });
+      assert.notEqual(result.isError, true, JSON.stringify(result));
+      assert.equal(result.structuredContent.task_context_token, f.context.token);
+      assert.equal(result.structuredContent.worker_run.run_id, f.run.run_id);
+      assert.match(result.structuredContent.task_guidance.collaboration, /Do not call plan_agent_collaboration/);
+      assert.equal(f.calls.admit, 1); assert.equal(reads, count);
+    }
+    assert.equal((await workerCall(server, 'read_task_preferences', { taskContextToken: 'fuli-task-parent-token' })).isError, true);
+    assert.equal(reads, 2); assert.equal(f.calls.admit, 1);
+    closed = true;
+    assert.equal((await workerCall(server, 'read_task_preferences', { taskContextToken: f.context.token })).isError, true);
+    assert.equal(reads, 2); assert.equal(f.calls.admit, 1); assert.equal(f.calls.ordinary, 0); assert.equal(f.calls.views, 0);
+    assert.equal(f.calls.memories.length, 0); assert.equal(f.calls.entries.length, 0);
+  } finally { await server.close(); }
+});
+
+test('task-only worker recovery keeps temporary authority and blocks Agent scope drift', async () => {
+  for (const [drift, blocked] of [[null, false], [{ memory_scope: 'reviewed_agent' }, true],
+    [{ profile: { name: 'Worker', status: 'inactive' } }, true]]) {
+    const f = workerFixture({ memoryScope: 'task_only' });
+    const descriptor = { ...f.descriptor, toolNames: [...f.descriptor.toolNames, 'read_task_preferences'] };
+    const agent = await f.app.personal.getProjectAgent();
+    f.app.personal.getProjectAgent = async () => ({ ...agent, ...drift });
+    f.app.taskContextRegistry.preferences = async () => ({ task: taskRecord(f.context), preferences: {
+      personal_space_id: f.context.personal_space_id, personal_project_id: f.context.personal_project_id,
+      project_agent_id: f.context.project_agent_id, effective_preferences: [], conflicts: [], queued_conflicts: [],
+      source_windows: { candidates_truncated: false, project_ancestors_truncated: false, queued_conflicts_truncated: false },
+      truncated: false
+    } });
+    f.app.readTaskPreferences = input => readTaskPreferences(f.app, input);
+    const port = createWorkerTaskContext(f.app, descriptor);
+    await port.admit();
+    const server = createMcpServer(f.app, { env: {}, registerResources: false, workerTaskContext: port });
+    try {
+      const result = await workerCall(server, 'read_task_preferences', { taskContextToken: f.context.token });
+      assert.equal(result.isError === true, blocked, JSON.stringify(result));
+      if (!blocked) assert.equal(result.structuredContent.preferences_complete, true);
+      assert.equal(result.structuredContent.effective_preferences === undefined, blocked);
+      assert.equal(f.calls.memories.length, 0); assert.equal(f.calls.views, 0); assert.equal(f.calls.ordinary, 0);
+    } finally { await server.close(); }
+  }
+});
 
 test('ordinary and worker MCP entries deliver the same explicit preference block without partial rules', async () => {
   for (const worker of [false, true]) {
