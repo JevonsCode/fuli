@@ -28,16 +28,25 @@ async function powershell(script, env = process.env, options = {}) {
   return JSON.parse(result.stdout.replace(/^\uFEFF/, '').trim() || 'null');
 }
 
-export async function inspectWindowsNativeProcess(pid, { children = false, timeoutMs = 60_000 } = {}) {
-  if (!Number.isInteger(pid) || pid <= 0) return children ? [] : null;
+export async function inspectWindowsNativeProcess(pid, { children = false, descendants = false, timeoutMs = 60_000 } = {}) {
+  if (!Number.isInteger(pid) || pid <= 0) return children || descendants ? [] : null;
   const filter = 'ProcessId = ' + pid + (children ? ' OR ParentProcessId = ' + pid : '');
-  const script = '$rows = @(Get-CimInstance Win32_Process -Filter "' + filter + '" | ForEach-Object {'
+  // One CIM snapshot avoids a fresh PowerShell process for each descendant.
+  // This is observation only; callers still verify identities before stopping them.
+  const selection = descendants
+    ? '$all = @(Get-CimInstance Win32_Process);'
+      + '$ids = [System.Collections.Generic.HashSet[int]]::new();[void]$ids.Add(' + pid + ');'
+      + 'do {$added = $false;foreach ($item in $all) {'
+      + 'if ($ids.Contains([int]$item.ParentProcessId) -and $ids.Add([int]$item.ProcessId)) {$added = $true}'
+      + '}} while ($added);$selected = @($all | Where-Object {$ids.Contains([int]$_.ProcessId)});'
+    : '$selected = @(Get-CimInstance Win32_Process -Filter "' + filter + '");';
+  const script = selection + '$rows = @($selected | ForEach-Object {'
     + '[pscustomobject]@{pid=[int]$_.ProcessId;parentPid=[int]$_.ParentProcessId;'
     + 'executable=$_.ExecutablePath;commandLine=$_.CommandLine;'
     + 'createdFileTime=$_.CreationDate.ToUniversalTime().ToFileTimeUtc().ToString()}});'
     + 'ConvertTo-Json -InputObject $rows -Compress';
   const rows = await powershell(script, process.env, { timeout: timeoutMs });
-  return children ? rows : rows.find(row => row.pid === pid) ?? null;
+  return children || descendants ? rows : rows.find(row => row.pid === pid) ?? null;
 }
 
 function identityMatches(observed, ownership) {
