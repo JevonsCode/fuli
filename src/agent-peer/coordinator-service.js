@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { certificateFingerprint, verifyDeviceSignature } from './device-identity.js';
 import { isAuthorityKey } from './origin-proof.js';
 import {
-  canonicalJson, encodeInvitation, PEER_LIMITS, PeerError, pemToDer, publicDirectoryEntry,
+  canonicalJson, encodeInvitation, PEER_LIMITS, PeerError, peerCleanup, pemToDer, publicDirectoryEntry,
   RESULT_OUTCOMES, sha256Hex, TERMINAL_STATUSES, validateAssertion,
 } from './protocol.js';
 
@@ -141,7 +141,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
     });
   }
 
-  function result(nodeId, { messageId, attemptId, outcome, reply = null, error = null, via = null, verified = false }) {
+  function result(nodeId, { messageId, attemptId, outcome, reply = null, error = null, via = null, verified = false, cleanup = null }) {
     if (!RESULT_OUTCOMES.has(outcome)) throw new PeerError('invalid_result', 'Unknown result outcome');
     if (outcome === 'answered' && (typeof reply !== 'string' || !reply.trim() || reply.length > 64_000 || verified !== true)) {
       throw new PeerError('invalid_result', 'An answer needs a verified reply');
@@ -161,9 +161,13 @@ export function createCoordinatorService({ store, identity, authority, name, clo
             iso(), 'unknown', attemptId);
         } else releaseUnstarted(message, detail);
       } else {
+        // Only a started attempt that did not answer can leave a process running.
+        const unconfirmed = outcome === 'answered' ? null : peerCleanup(cleanup);
         store.updateMessage(messageId, { status: outcome, error: outcome === 'answered' ? null : detail,
           reply: outcome === 'answered' ? reply : null, via: typeof via === 'string' ? via.slice(0, 80) : null,
-          verified: verified === true ? 1 : 0, lease_expires_at: null }, iso(), outcome, attemptId);
+          verified: verified === true ? 1 : 0, lease_expires_at: null,
+          ...(unconfirmed ? { cleanup_status: unconfirmed.status, cleanup_code: unconfirmed.code } : {}) },
+        iso(), outcome, attemptId);
       }
       return statusView(store.message(messageId));
     });
@@ -250,7 +254,8 @@ function messageKey(senderNode, messageId) {
 
 function statusView(message) {
   return { messageId: JSON.parse(message.assertion_json).messageId, status: message.status, reply: message.reply ?? null, error: message.error ?? null,
-    via: message.via ?? null, verified: message.verified === 1, updatedAt: message.updated_at };
+    via: message.via ?? null, verified: message.verified === 1, updatedAt: message.updated_at,
+    ...(message.cleanup_status ? { cleanup: { status: message.cleanup_status, code: message.cleanup_code ?? null } } : {}) };
 }
 
 export function cleanName(value) {

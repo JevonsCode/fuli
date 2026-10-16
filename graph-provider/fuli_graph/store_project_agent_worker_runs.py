@@ -153,8 +153,6 @@ class StoreProjectAgentWorkerRuns:
                 raise HTTPException(409, 'Worker admission requires the exact sealed client and session')
             agent = data['agent']
             task_only = agent.get('memory_scope') == 'task_only'
-            memory = None if task_only else await scoped.get_project_agent_memory(
-                actor, request.personal_space_id, request.personal_project_id, run['agent_id'])
             existing, _, _ = await scoped.runtime.driver.execute_query('''
                 MATCH (context:FuliTaskContext {personal_space_id: $space_id})-
                   [:FOR_WORKER_RUN]->(:FuliProjectAgentWorkerRun {id: $run_id})
@@ -162,6 +160,10 @@ class StoreProjectAgentWorkerRuns:
                 ''', space_id=request.personal_space_id, run_id=run_id)
             if run['state'] == 'admitted' and not existing:
                 raise HTTPException(409, 'Admitted worker task context is unavailable')
+            # Retried admission reuses the frozen context, including its memory
+            # revision; reading a new memory snapshot here would be discarded.
+            memory = None if task_only or existing else await scoped.get_project_agent_memory(
+                actor, request.personal_space_id, request.personal_project_id, run['agent_id'])
             # The task is locked by checked_worker_run. Only first admission
             # freezes its dimensions; a retry never rewrites the own context.
             preference_scope = json.loads(existing[0]['record_json']).get('preference_scope') if existing else {

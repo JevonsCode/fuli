@@ -88,6 +88,24 @@ test('a verified, accepted ask runs once and reports a verified answer', async (
   } finally { await f.runner.stop(); f.store.close(); }
 });
 
+test('an unconfirmed cleanup is reported with the original error code, bounded to known fields', async () => {
+  for (const [thrown, outcome, error, cleanup] of [
+    [{ code: 'wake_timeout', cleanup: { status: 'unconfirmed', code: 'cleanup_timeout', pid: 1234, path: 'C:\\private' } },
+      'failed', 'wake_timeout', { status: 'unconfirmed', code: 'cleanup_timeout' }],
+    [{ code: 'cancelled', cleanup: { status: 'unconfirmed', code: 'x'.repeat(500) } },
+      'cancelled', 'cancelled', { status: 'unconfirmed', code: null }],
+    [{ code: 'wake_failed', cleanup: { status: 'released', code: 'cleanup_timeout' } }, 'failed', 'wake_failed', undefined],
+    [{ code: 'wake_failed' }, 'failed', 'wake_failed', undefined],
+  ]) {
+    const f = await fixture({ answer: async () => { throw Object.assign(new Error('synthetic'), thrown); } });
+    try {
+      await f.runner.handle(f.claimFor());
+      const [row] = f.results;
+      assert.deepEqual([row.outcome, row.error, row.cleanup], [outcome, error, cleanup]);
+    } finally { await f.runner.stop(); f.store.close(); }
+  }
+});
+
 test('the lease deadline stops execution even while a renewal request is pending', async (t) => {
   const started = Promise.withResolvers();
   let renewalPending = false;

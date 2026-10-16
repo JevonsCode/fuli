@@ -8,6 +8,38 @@ from fuli_graph.collaboration_context import read_collaboration_context
 
 
 @pytest.mark.asyncio
+async def test_owned_complete_source_resolves_conflict_beyond_the_public_200_window():
+    rows = [preference_node(f'global-{i}', f'global-{i}', 'Global', f'Rule {i}') for i in range(199)]
+    rows += [preference_node(f'project-{i}', f'project-{i}', 'Risk', instruction,
+                            scope='project', project_id='project-a', preference_key='risk')
+             for i, instruction in enumerate(['Prefer speed.', 'Prefer caution.'])]
+    def driver():
+        return SequentialDriver([[{'project': {'project_id': 'project-a'}}], [], rows, [], []])
+    public = await read_collaboration_context(StoreStub(driver()), {'id': 'principal-1'},
+                                              'personal-space', 'project-a', limit=200)
+    assert public.truncated and not public.conflicts
+    owned_driver = driver()
+    complete = await read_collaboration_context(StoreStub(owned_driver), {'id': 'principal-1'},
+                                                'personal-space', 'project-a', complete=True)
+    assert not complete.truncated
+    assert len(complete.effective_preferences) == 199
+    assert len(complete.conflicts) == 1
+    assert set(complete.conflicts[0].item_ids) == {'project-0', 'project-1'}
+    assert owned_driver.calls[2][1]['limit'] == 501
+
+
+@pytest.mark.asyncio
+async def test_owned_complete_source_keeps_candidate_and_related_queue_caps_explicit():
+    rows = [preference_node(str(i), str(i), 'Rule', f'Rule {i}') for i in range(3)]
+    store = StoreStub(SequentialDriver([rows, []]))
+    store.settings.graph_limit = 2
+    result = await read_collaboration_context(store, {'id': 'principal-1'}, 'personal-space', complete=True)
+    assert result.source_windows.candidates_truncated is True
+    assert result.truncated is True
+    assert store.runtime.driver.calls[0][1]['limit'] == 3
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('cap,extra', [(2, 0), (2, 1), (64, 0), (64, 1)])
 async def test_ancestor_window_marks_overflow_without_consuming_the_sentinel(cap, extra):
     ancestors = [{'project_id': f'parent-{i:03}', 'scope_distance': 1,

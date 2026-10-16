@@ -31,6 +31,7 @@ const NAMES = [
   'list_employee_tools',
   'call_employee_tool',
   'get_judgment_policy', 'list_judgments', 'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'get_agent_pins', 'pin_agent',
+  'read_task_preferences',
   'begin_task_context',
   'checkpoint_task_knowledge',
   'verify_task_checkpoint',
@@ -357,6 +358,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       callTool: async (input) => calls.push(['employee-call', input])
     },
     beginTaskContext: async (input) => calls.push(['begin-task', input]),
+    readTaskPreferences: async (input) => calls.push(['read-task-preferences', input]),
     checkpointTaskKnowledge: async (input) => calls.push(['checkpoint-task', input]),
     verifyTaskCheckpoint: async (input) => calls.push(['verify-task', input]),
     getCollaborationPreferences: async (input) => calls.push(['preferences', input]),
@@ -494,6 +496,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'external-update-policy', 'defer-preference-conflict', 'delete-public-project',
     'employee-list', 'employee-recruit', 'employee-tools', 'employee-call',
     'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin',
+    'read-task-preferences',
     'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'taste-skill', 'resolve-preference-conflict',
     'capture', 'workflow-observation', 'decision-trace', 'search', 'connected-search',
