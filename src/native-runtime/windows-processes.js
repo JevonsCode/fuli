@@ -265,7 +265,7 @@ const BOOT_ANCHOR_SCRIPT = [
   'try { bool c; return IsProcessCritical(h, out c) ? (object)c : null; } finally { CloseHandle(h); } } }\';',
   '$anchors = @(Get-CimInstance Win32_Process -Filter "Name = \'wininit.exe\' AND SessionId = 0" | ForEach-Object {',
   '[pscustomobject]@{ pid = [int]$_.ProcessId; image = $_.ExecutablePath; critical = [FuliAnchor]::Critical([uint32]$_.ProcessId) } });',
-  '$guid = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Cryptography" -Name MachineGuid).MachineGuid;',
+  '$guid = (Get-ItemProperty -Path "HKLM:\\SOFTWARE\\Microsoft\\Cryptography" -Name MachineGuid).MachineGuid;',
   'ConvertTo-Json -Compress -InputObject @{ anchors = $anchors; machineGuid = $guid }'
 ].join(' ');
 

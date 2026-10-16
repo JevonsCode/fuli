@@ -130,7 +130,13 @@ test('the Windows boot-anchor reader returns evidence only for one critical sess
   const valid = { anchors: [{ pid: 1736, image: 'C:\\Windows\\System32\\wininit.exe', critical: true }], machineGuid: guid };
   let scripts = 0;
   const read = (result, options = {}) => readWindowsBootAnchor({ salt: 'fuli-test', platform: 'win32',
-    run: async (script) => { scripts++; assert.doesNotMatch(script, /CommandLine/); if (result instanceof Error) throw result; return result; },
+    run: async (script) => {
+      scripts++;
+      assert.doesNotMatch(script, /CommandLine/);
+      assert.ok(script.includes('-Path "HKLM:\\SOFTWARE\\Microsoft\\Cryptography"'), 'the script reads the real MachineGuid key');
+      if (result instanceof Error) throw result;
+      return result;
+    },
     ...options });
   const evidence = await read(valid);
   assert.equal(evidence.version, 1);
