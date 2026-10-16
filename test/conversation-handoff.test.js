@@ -147,17 +147,27 @@ test('guard serializes same-session hooks and persists only hashes and cursors w
 
 test('handoff fixture waits for an unrelated occupied mutex port without retrying callback failures', async t => {
   const contended = Promise.withResolvers();
-  const f = await fixture(t, '', { onLockContention: contended.resolve });
-  const directory = join(f.dir, 'transcript-guards');
-  const key = transcriptDigest(`${f.runtime}\0codex\0${f.input.session_id}`);
-  const port = 49152 + (parseInt(transcriptDigest(`${directory}\0${key}`).slice(0, 8), 16) % 16384);
-  const blocker = createServer();
+  let f, blocker;
+  // Setup must also avoid unrelated listeners before testing guard contention.
+  // A fresh fixture changes the hashed namespace without replaying any callback.
+  for (let attempt = 0; attempt < 16; attempt++) {
+    f = await fixture(t, '', { onLockContention: contended.resolve });
+    const directory = join(f.dir, 'transcript-guards');
+    const key = transcriptDigest(`${f.runtime}\0codex\0${f.input.session_id}`);
+    const port = 49152 + (parseInt(transcriptDigest(`${directory}\0${key}`).slice(0, 8), 16) % 16384);
+    blocker = createServer();
+    try {
+      await new Promise((resolve, reject) => {
+        blocker.once('error', reject);
+        blocker.listen({ host: '127.0.0.1', port, exclusive: true }, resolve);
+      });
+      break;
+    } catch (error) {
+      if (error.code !== 'EADDRINUSE' || attempt === 15) throw error;
+    }
+  }
   t.after(async () => {
     if (blocker.listening) await new Promise(resolve => blocker.close(resolve));
-  });
-  await new Promise((resolve, reject) => {
-    blocker.once('error', reject);
-    blocker.listen({ host: '127.0.0.1', port, exclusive: true }, resolve);
   });
   let calls = 0;
   const running = f.run(async () => { calls++; });
