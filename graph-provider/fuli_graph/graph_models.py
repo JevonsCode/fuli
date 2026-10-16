@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -24,6 +24,26 @@ from .project_action_models import (
     KnowledgeConflictRecord,
     KnowledgeProjectReferenceRecord,
 )
+
+
+AgentConfirmationBlockingReason = Literal[
+    'not_pending',
+    'open_conflict',
+    'usage_unknown',
+    'qualified_uses_below_threshold',
+    'distinct_tasks_below_threshold',
+]
+
+
+class AgentConfirmationProgress(StrictModel):
+    required_qualified_uses: int = Field(ge=1)
+    required_distinct_tasks: int = Field(ge=1)
+    qualified_use_count: int | None = Field(default=None, ge=0)
+    distinct_task_count: int | None = Field(default=None, ge=0)
+    has_open_conflict: bool
+    blocking_reasons: list[AgentConfirmationBlockingReason] = Field(
+        default_factory=list
+    )
 
 
 class GraphNode(StrictModel):
@@ -72,6 +92,7 @@ class GraphNode(StrictModel):
     last_feedback_kind: KnowledgeFeedbackKind | None = None
     last_feedback_at: datetime | None = None
     usage_generation: int = Field(default=1, ge=1)
+    agent_confirmation_progress: AgentConfirmationProgress | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
     evidence: list[GraphEvidence] = Field(default_factory=list)
     created_at: datetime | None = None
@@ -133,6 +154,7 @@ class GraphEdge(StrictModel):
     last_feedback_kind: KnowledgeFeedbackKind | None = None
     last_feedback_at: datetime | None = None
     usage_generation: int = Field(default=1, ge=1)
+    agent_confirmation_progress: AgentConfirmationProgress | None = None
     valid_at: datetime | None
     invalid_at: datetime | None
     replaced_by_item_id: str | None = None

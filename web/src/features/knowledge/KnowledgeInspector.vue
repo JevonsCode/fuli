@@ -4,6 +4,12 @@ import { computed, ref } from 'vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
 import { t } from '@/i18n'
 import {
+  agentConfirmationBlockingText,
+  agentConfirmationProgressText,
+  materialUseText,
+  showsAgentConfirmationProgress,
+} from './agent-confirmation-progress'
+import {
   classificationExplanation,
   confirmationActorLabel,
   endpointId,
@@ -272,6 +278,16 @@ async function copyEvidenceSession(evidence: EvidenceRecord, index: number) {
       <dl class="inspector-meta">
         <div><dt>{{ t('knowledge.workspace.inspector.fields.type') }}</dt><dd>{{ item.type }}</dd></div>
         <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.confirmationStatus') }}</dt><dd>{{ reviewStateLabel(item) }}</dd></div>
+        <template v-if="!managementItem && showsAgentConfirmationProgress(item)">
+          <div class="inspector-auto-confirmation">
+            <dt>{{ t('knowledge.workspace.inspector.autoConfirmation.progressLabel') }}</dt>
+            <dd>{{ agentConfirmationProgressText(item) }}</dd>
+          </div>
+          <div class="inspector-auto-confirmation-reason">
+            <dt>{{ t('knowledge.workspace.inspector.autoConfirmation.reasonLabel') }}</dt>
+            <dd>{{ agentConfirmationBlockingText(item) }}</dd>
+          </div>
+        </template>
         <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.recentUse') }}</dt><dd>{{ formatTime(item.lastUsedAt) }}</dd></div>
         <div v-if="!managementItem && !item.profileAspect">
           <dt>{{ t('knowledge.workspace.inspector.fields.inheritance') }}</dt><dd>{{ inheritanceLabel(item) }}</dd>
@@ -311,10 +327,7 @@ async function copyEvidenceSession(evidence: EvidenceRecord, index: number) {
             <div><dt>{{ t('knowledge.workspace.inspector.fields.confidence') }}</dt><dd>{{ percentage(item.confidenceScore) }}</dd></div>
             <div><dt>{{ t('knowledge.workspace.inspector.fields.utility') }}</dt><dd>{{ percentage(item.utilityScore) }}</dd></div>
             <div>
-              <dt>{{ t('knowledge.workspace.inspector.fields.materialUse') }}</dt><dd>{{ t('knowledge.workspace.inspector.useCount', {
-                uses: item.qualifiedUseCount,
-                tasks: item.distinctTaskCount,
-              }) }}</dd>
+              <dt>{{ t('knowledge.workspace.inspector.fields.materialUse') }}</dt><dd>{{ materialUseText(item) }}</dd>
             </div>
           </template>
         </dl>

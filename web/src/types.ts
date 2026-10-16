@@ -741,6 +741,20 @@ export interface ConfirmationBasis {
 }
 
 export type ConfirmationStatus = 'pending' | 'agent_confirmed' | 'confirmed'
+export type AgentConfirmationBlockingReason =
+  | 'not_pending'
+  | 'open_conflict'
+  | 'usage_unknown'
+  | 'qualified_uses_below_threshold'
+  | 'distinct_tasks_below_threshold'
+export interface AgentConfirmationProgress {
+  required_qualified_uses: number
+  required_distinct_tasks: number
+  qualified_use_count: number | null
+  distinct_task_count: number | null
+  has_open_conflict: boolean
+  blocking_reasons: AgentConfirmationBlockingReason[]
+}
 export type KnowledgeInheritanceMode =
   | 'local_only'
   | 'descendants'
@@ -801,6 +815,7 @@ export interface KnowledgeNode {
   confidence_score?: number
   qualified_use_count?: number
   distinct_task_count?: number
+  agent_confirmation_progress?: AgentConfirmationProgress | null
   last_used_at?: string | null
   usage_generation?: number
   invalid_at?: string | null
@@ -853,6 +868,7 @@ export interface KnowledgeEdge {
   confidence_score?: number
   qualified_use_count?: number
   distinct_task_count?: number
+  agent_confirmation_progress?: AgentConfirmationProgress | null
   last_used_at?: string | null
   usage_generation?: number
   valid_at?: string
@@ -922,6 +938,7 @@ export type KnowledgeItem = {
   confidenceScore: number
   qualifiedUseCount: number
   distinctTaskCount: number
+  agentConfirmationProgress: AgentConfirmationProgress | null
   lastUsedAt: string | null
   usageGeneration: number
   invalidAt?: string | null
