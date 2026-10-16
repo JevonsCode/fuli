@@ -1,5 +1,6 @@
 """Frozen checkpoint attribution over existing synthetic WorkerRuns, no model."""
 
+import asyncio
 from datetime import UTC, datetime
 from hashlib import sha256
 from secrets import token_urlsafe
@@ -118,3 +119,51 @@ async def test_two_parent_tokens_sharing_a_coordination_task_never_share_worker_
         two = await checkpoint(client, scope, other, 'complete')
         assert {value['run_id'] for value in one['collaborators'][0]['runs']} == {first}
         assert {value['run_id'] for value in two['collaborators'][0]['runs']} == {second}
+
+
+@pytest.mark.asyncio
+async def test_concurrent_first_prepare_serializes_two_providers_and_preserves_frozen_receipt(monkeypatch):
+    import fuli_graph.store_task_contexts as contexts
+
+    settings = fixture_settings()
+    async with provider_client(settings, raise_app_exceptions=False) as (first, access_token):
+        scope, payload, headers = await worker_run_fixture(first)
+        run_id, _, _ = await run(first, scope, payload, headers, 'failed')
+        endpoint = f'/v1/task-contexts/{payload["task_context_token"]}/checkpoint'
+        request = {'personal_space_id': scope['personal_space_id'], 'source_application': 'codex',
+            'phase': 'prepare', 'disposition': 'retain_nothing', 'reason': 'Freeze synthetic attribution.',
+            'fingerprint': 'c' * 64, 'work_log': {'status': 'completed', 'summary': 'Synthetic attribution accepted.'}}
+        ready, release = asyncio.Event(), asyncio.Event()
+        original = contexts.checkpoint_collaboration
+
+        async def pause_first_read(*args, **kwargs):
+            snapshot = await original(*args, **kwargs)
+            if not ready.is_set():
+                ready.set()
+                await release.wait()
+            return snapshot
+
+        monkeypatch.setattr(contexts, 'checkpoint_collaboration', pause_first_read)
+        async with provider_client(settings, access_token, raise_app_exceptions=False) as (second, _):
+            tasks = []
+            try:
+                tasks.append(asyncio.create_task(first.put(endpoint, json=request)))
+                await asyncio.wait_for(ready.wait(), 10)
+                tasks.append(asyncio.create_task(second.put(endpoint, json=request)))
+                await asyncio.wait({tasks[1]}, timeout=0.1)
+                assert not tasks[1].done(), 'Second prepare must wait for the first snapshot transaction'
+                release.set()
+                results = await asyncio.wait_for(asyncio.gather(*tasks), 20)
+                assert [response.status_code for response in results] == [200, 200], [response.text for response in results]
+                frozen = results[0].json()['checkpoint']['collaboration']
+                assert results[1].json()['checkpoint']['collaboration'] == frozen
+                assert {item['run_id'] for item in frozen['collaborators'][0]['runs']} == {run_id}
+                assert await checkpoint(second, scope, payload['task_context_token'], 'complete') == frozen
+            finally:
+                release.set()
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+    async with provider_client(settings, access_token) as (restarted, _):
+        assert await checkpoint(restarted, scope, payload['task_context_token'], 'complete') == frozen

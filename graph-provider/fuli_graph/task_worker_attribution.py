@@ -7,16 +7,16 @@ TERMINAL_WORKER_STATUSES = {'completed', 'failed', 'cancelled', 'blocked', 'awai
 
 
 async def lock_checkpoint_context(store, space_id, token):
-    # Match the existing session -> context lock order. A concurrent prepare
-    # must read the first persisted snapshot rather than overwrite it.
-    await store.runtime.driver.execute_query('''
+    # Reuse the session mutex before any read-dependent counter increment.
+    # The caller re-reads the current context after this transaction owns it.
+    rows, _, _ = await store.runtime.driver.execute_query('''
         MATCH (:FuliSpace {id: $space_id})-[:HAS_TASK_CONTEXT_SESSION]->
           (session:FuliTaskContextSession)-[:HAS_CONTEXT]->(context:FuliTaskContext {token: $token})
-        SET session.write_serial = coalesce(session.write_serial, 0) + 1
-        WITH session, context WHERE session.current_token = context.token
-        SET context.write_serial = coalesce(context.write_serial, 0) + 1
-        RETURN context.token AS token
+        WHERE session.current_token = context.token
+        RETURN session.id AS session_id
         ''', space_id=space_id, token=token)
+    if rows:
+        await store._lock_task_context_session(rows[0]['session_id'])
 
 
 async def checkpoint_collaboration(store, space_id, record):
