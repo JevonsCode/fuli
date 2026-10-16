@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { stablePackageRoot } from './stable-package-root.js';
 import { readWindowsNativeBundle } from '../native-runtime/windows-assets.js';
+import { readWindowsInstallation } from '../desktop/windows-installation-context.js';
 
 const DEFAULT_PACKAGE_ROOT = stablePackageRoot(dirname(dirname(dirname(fileURLToPath(import.meta.url)))));
 
@@ -17,7 +18,8 @@ export function resolveSetupPaths({
 } = {}) {
   const root = resolve(packageRoot);
   const bundle = platform === 'win32' ? readWindowsNativeBundle(root) : null;
-  const resolvedDataDir = resolve(cwd, dataDir ?? nonEmpty(env.FULI_DATA_DIR)
+  const installed = bundle ? readWindowsInstallation(root) : null;
+  const resolvedDataDir = resolve(cwd, dataDir ?? installed?.dataDir ?? nonEmpty(env.FULI_DATA_DIR)
     ?? bundle?.dataDir ?? defaultDataDir({ platform, env, homeDir }));
   const nativeRuntimeDir = join(resolvedDataDir, 'native-runtime');
   const runtimeConfigDir = join(resolvedDataDir, 'runtime-configs');

@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { posix, win32 } from 'node:path';
+import { dirname, posix, resolve, win32 } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 
 import {
@@ -11,6 +12,7 @@ import { quoteShellArgument } from './shell-argument.js';
 import { parseUpdateOptions } from '../setup/options.js';
 import { runLocalRuntimeCommand } from './local-runtime-command.js';
 import { formatUpdateInstallation, inspectUpdateInstallation, updateEnvironment } from './update-installation.js';
+import { readWindowsInstallation } from '../desktop/windows-installation-context.js';
 import {
   compareSemanticVersions,
   parseSemanticVersion
@@ -23,6 +25,10 @@ const LATEST_PACKAGE = `${FULI_PACKAGE_NAME}@latest`;
 export async function runUpdateCommand(args = [], dependencies = {}) {
   const options = parseUpdateOptions(args);
   const platform = dependencies.platform ?? process.platform;
+  const packageRoot = dependencies.packageRoot ?? resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+  if (platform === 'win32' && readWindowsInstallation(packageRoot)) {
+    throw new Error('Updating a Windows per-user installation is not supported yet. Keep its application and data directories; do not use the npm update command.');
+  }
   const nodePath = dependencies.nodePath ?? process.execPath;
   const originalEnv = dependencies.env ?? process.env;
   const env = updateEnvironment(originalEnv, nodePath, platform);

@@ -227,8 +227,10 @@ export function createNativeGraphServices({
     }));
     const marker = join(spec.instanceDir, '.password-initialized');
     if (pathExists(marker)) return;
+    // `--` ends option parsing so a generated password that starts with `-`
+    // is still read as the positional <password> value.
     await run(join(descriptor.neo4jHome, 'bin', 'neo4j-admin'), [
-      'dbms', 'set-initial-password', spec.password
+      'dbms', 'set-initial-password', '--', spec.password
     ], { env: neo4jEnvironment(spec) });
     await markInitialized(marker);
   }
