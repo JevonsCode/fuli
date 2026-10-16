@@ -2,6 +2,7 @@ import { taskAgentReceipt } from '../agents/identity-receipt.js';
 import { beginTaskFromPreferences } from './agent-knowledge-workflows.js';
 import { getCollaborationPreferences as getCollaborationPreferencesWorkflow } from './collaboration-preference-workflow.js';
 import { resolveTaskEntryAgent, loadProjectAgentContinuity } from './project-agent-task-entry.js';
+import { applyAgentAssignment } from './task-agent-assignment.js';
 
 export function finishTaskEntryPreferences(application, preferences, input) {
   if (!input.agentInvocation || input.agentToolName !== 'get_collaboration_preferences') return preferences;
@@ -59,29 +60,13 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
     sourceApplication, taskPrompt, selectionReason: selection.reason,
     matchBasis: selection.match_basis
   }) : selection;
-  if (context && selection?.requested_agent_id) {
-    context.requested_agent_id = selection.requested_agent_id;
-    context.requested_agent_guidance = 'The user requested this project specialist, but this session runs as the selected project lead. Keep the lead as accountable owner; coordinate a scoped workstream for the specialist and receive its report before replying. This request is not evidence that a worker ran. Do not load the specialist’s private memory, write memory or checkpoints as the specialist, or reuse another session’s task context. If this session was opened to act as the specialist, tell the user it is running as the lead.';
-  }
-  if (context && selection?.reporting_lead_agent_id) {
-    context.reporting_lead_agent_id = selection.reporting_lead_agent_id;
-    context.reporting_guidance = 'This is a delegated member turn. Keep this member identity and private memory isolated. Return results and blockers to the project lead; the lead integrates the final user report.';
-  }
-  // Conversation ownership is not execution staffing: deliver the Provider's
-  // deterministic execution choice; no task, hire or worker exists yet.
-  if (context && selection?.execution_reason) {
-    context.execution_reason = selection.execution_reason;
-    context.execution_agent_id = selection.execution_agent_id ?? null;
-  }
+  if (context) applyAgentAssignment(context, selection);
   // Questions other Agents left for this Agent while it was not running.
   const waiting = includeMessages && selection?.agent && application.roundtable
     ? application.roundtable.pending(selection.agent.agentId) : [];
-  const judgmentPolicy = application.judgment?.store().policy(application.config.personal.spaceId, projectResolution.personalProjectId ?? '');
+  const judgmentContext = taskJudgmentContext(application, projectResolution.personalProjectId);
   return { ...managedPreferences, ...(context ? { project_agent_context: context } : {}),
-    ...(judgmentPolicy ? { judgment_context: { agentId: 'employee.tonborg', policy: judgmentPolicy,
-      guidance: judgmentPolicy.mode === 'manual'
-        ? 'Tonborg is available for advice via assess_agent_action; retain human review.'
-        : 'Before choosing a new subagent, session, client or model, use assess_agent_action with the exact project, Agent and task. Use its eligible recommendation within the saved policy; recheck host capability before dispatch. Do not ask again for an already delegated routine choice. Escalations, user rules and locked executor policies still apply. For an awaiting-review FULI task, its accountable lead can use assess_task_completion with exact task/artifact revision and real verification evidence. Jefa human acceptance and external publication remain separate. Recommendations are not permissions or execution receipts.' } } : {}),
+    ...(judgmentContext ? { judgment_context: judgmentContext } : {}),
     ...(waiting.length ? { agent_messages: waiting,
       agent_messages_guidance: 'Other Agents are waiting for your answers. Reply to each with reply_agent_message.' } : {}),
     agent_receipt: taskAgentReceipt(application, {
@@ -89,4 +74,12 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
       name: context?.role?.name, sourceApplication,
       assignmentStatus: selection?.status, assignmentReason: selection?.reason
     }) };
+}
+
+export function taskJudgmentContext(application, personalProjectId) {
+  const judgmentPolicy = application.judgment?.store().policy(application.config.personal.spaceId, personalProjectId ?? '');
+  return judgmentPolicy ? { agentId: 'employee.tonborg', policy: judgmentPolicy,
+      guidance: judgmentPolicy.mode === 'manual'
+        ? 'Tonborg is available for advice via assess_agent_action; retain human review.'
+        : 'Before choosing a new subagent, session, client or model, use assess_agent_action with the exact project, Agent and task. Use its eligible recommendation within the saved policy; recheck host capability before dispatch. Do not ask again for an already delegated routine choice. Escalations, user rules and locked executor policies still apply. For an awaiting-review FULI task, its accountable lead can use assess_task_completion with exact task/artifact revision and real verification evidence. Jefa human acceptance and external publication remain separate. Recommendations are not permissions or execution receipts.' } : null;
 }

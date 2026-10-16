@@ -23,7 +23,8 @@ import {
   errorToolResult,
   hookAdditionalContextToolResult,
   protocolErrorResult,
-  successToolResult
+  successToolResult,
+  completePreferenceToolResult
 } from './tool-result.js';
 import { jsonSchemaToZod, openObjectSchema } from './tool-schema.js';
 import {
@@ -196,6 +197,12 @@ function createToolMap(
       return withRuntimeLease(
         `mcp-tool:${definition.name}`,
         () => workerTaskContext ? runWithAgentRequestContext(requestContext, async () => {
+          if (definition.name === 'read_task_preferences') {
+            if (typeof workerTaskContext.recover !== 'function') throw new TypeError('Worker preference recovery is unavailable');
+            return invokeAgentTool(app, definition.name,
+              await workerTaskContext.recover(prepareToolInput(definition.name, input), requestContext ?? {}),
+              projectActionPreviews, commonKnowledgePreviews, requestContext);
+          }
           const admitted = await workerTaskContext.admit(requestContext ?? {});
           requestContext?.signal?.throwIfAborted?.();
           const prepared = workerTaskContext.prepareInput(definition.name,
@@ -274,6 +281,7 @@ async function invokeTool(tool, input, requestContext = null) {
     const value = await tool.invoke(input, requestContext);
     auditLifecycleTool(tool.definition.name);
     const limitBytes = TOOL_RESULT_LIMIT_BYTES[tool.definition.name];
+    if (tool.definition.name === 'read_task_preferences') return completePreferenceToolResult(value);
     if (tool.definition.name === 'list_agent_interfaces') {
       return agentToolCatalogResult(value, tool.catalogDefinitions, input.toolName, limitBytes);
     }

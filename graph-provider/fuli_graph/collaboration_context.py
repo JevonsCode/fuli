@@ -28,6 +28,8 @@ async def read_collaboration_context(
     session_id: str | None = None,
     work_kind: str | None = None,
     workflow: str | None = None,
+    *,
+    complete: bool = False,
 ) -> CollaborationContextResult:
     space = await store.authorize(actor, space_id, 'reader')
     if space['kind'] != 'personal':
@@ -42,6 +44,7 @@ async def read_collaboration_context(
             space,
             personal_project_id,
         )
+    agent = None
     if project_agent_id:
         agent = await authorize_project_agent(
             store,
@@ -49,9 +52,12 @@ async def read_collaboration_context(
             space,
             personal_project_id,
             project_agent_id,
-            require_memory=True, allow_global=True,
+            allow_global=True,
         )
         project_agent_id = agent['agent_id']
+    # Agent-scoped preferences are part of the reviewed long-term layer. A
+    # task_only Agent keeps its identity but never reads that layer.
+    agent_layer_id = None if agent and agent.get('memory_scope') == 'task_only' else project_agent_id
     project_scopes, ancestors_truncated = await _project_scopes(
         store,
         space,
@@ -63,12 +69,14 @@ async def read_collaboration_context(
         if scope['scope_distance'] > 0
     ]
 
-    candidate_limit = min(max(limit * 3, 100), store.settings.graph_limit)
+    # The owned-task reader resolves the whole bounded source before delivery.
+    # This private mode does not enlarge the public entry's limit contract.
+    candidate_limit = store.settings.graph_limit if complete else min(max(limit * 3, 100), store.settings.graph_limit)
     node_records, _, _ = await store.runtime.driver.execute_query(
         _node_query(),
         group_id=space['group_id'],
         project_id=personal_project_id,
-        project_agent_id=project_agent_id,
+        project_agent_id=agent_layer_id,
         inherited_project_ids=inherited_project_ids,
         limit=candidate_limit + 1,
         routing_='r',
@@ -77,7 +85,7 @@ async def read_collaboration_context(
         _edge_query(),
         group_id=space['group_id'],
         project_id=personal_project_id,
-        project_agent_id=project_agent_id,
+        project_agent_id=agent_layer_id,
         inherited_project_ids=inherited_project_ids,
         limit=candidate_limit + 1,
         routing_='r',
@@ -110,7 +118,7 @@ async def read_collaboration_context(
     task_scope_excluded_count = len(items) - len(scoped_items)
     items = scoped_items
     items.sort(key=_sort_key)
-    if len(items) > limit:
+    if not complete and len(items) > limit:
         truncated = True
         items = items[:limit]
 
@@ -175,7 +183,7 @@ async def read_collaboration_context(
     ]
     conflicts = [*global_conflicts, *project_conflicts, *agent_conflicts]
     queued_conflicts, queue_truncated = await read_active_preference_conflicts(
-        store, space_id, conflicts, items, limit=limit,
+        store, space_id, conflicts, items, limit=1000 if complete else limit,
     )
 
     return CollaborationContextResult(

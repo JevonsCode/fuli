@@ -16,6 +16,9 @@ from .project_agent_memory_models import ProjectAgentMemoryWrite
 from .store_transactions import query_store_transaction
 from .task_context_adoption import adopt_task_agent
 from .task_context_coordination import bind_coordination_task, task_context_json, task_context_record
+from .collaboration_context import read_collaboration_context
+from .knowledge_audit import record_knowledge_usage
+from .knowledge_usage_models import KnowledgeUsageCreate
 
 
 class StoreTaskContexts:
@@ -211,29 +214,74 @@ class StoreTaskContexts:
             await self.guard_worker_task_context(actor, space_id, token)
         return record
 
+    async def read_task_preferences(self, actor, token, request):
+        record = await self.get_task_context(actor, request.personal_space_id, token, request.source_application)
+        if record['session_id'] != request.session_id:
+            raise HTTPException(404, 'Task preferences are unavailable for this session')
+        scope = record.get('preference_scope')
+        if scope is None:
+            raise HTTPException(409, 'Task preference scope is unknown; recovery cannot guess legacy dimensions')
+        if (record.get('checkpoint') or {}).get('phase') == 'complete':
+            raise HTTPException(409, 'Task preference recovery requires an unfinished task')
+        if record.get('project_agent_id'):
+            space = await self.authorize(actor, request.personal_space_id, 'reader')
+            agent = await authorize_project_agent(self, actor, space, record.get('personal_project_id'),
+                                                  record['project_agent_id'], require_active=True, allow_global=True)
+            if request.source_application not in json.loads(agent['profile_json']).get('allowed_clients', []):
+                raise HTTPException(403, 'Agent is not allowed in this client')
+        # All applicability dimensions come from the durable task, never the reader.
+        preferences = await read_collaboration_context(
+            self, actor, request.personal_space_id, record.get('personal_project_id'),
+            project_agent_id=record.get('project_agent_id'), session_id=record['session_id'],
+            work_kind=scope['work_kind'], workflow=scope['workflow'], complete=True,
+        )
+        # Recheck current ownership and worker revocation after the source read.
+        current = await self.get_task_context(actor, request.personal_space_id, token, request.source_application)
+        if current != record:
+            raise HTTPException(409, 'Task context changed during preference recovery')
+        return {'task_context': record, 'preferences': preferences.model_dump(mode='json')}
+
     async def checkpoint_task_context(self, actor, token, request):
         # A rejected preparation cannot commit memory. A later host turn may
         # still supersede a successfully prepared context; complete is separate.
         async with query_store_transaction(self) as scoped:
             await scoped.guard_worker_task_context(actor, request.personal_space_id, token, for_write=True)
             record = await scoped._checkpoint_task_context(actor, token, request)
-            if request.agent_memory is None:
-                return record
-            if not record['project_agent_id']:
-                raise HTTPException(status_code=409, detail='Task has no durable Agent memory target')
-            memory = await scoped.write_project_agent_memory(actor, ProjectAgentMemoryWrite(
-                personal_space_id=request.personal_space_id,
-                personal_project_id=record['personal_project_id'],
-                agent_id=record['project_agent_id'],
-                expected_revision=request.agent_memory.expected_revision,
-                memory=request.agent_memory.memory,
-                idempotency_key=f'{token}:memory',
-                source_application=record['source_application'],
-                # The client lifecycle session remains stable when entry and
-                # checkpoint hooks use different short-lived MCP processes.
-                source_session_id=record['session_id'],
-            ))
-            return {**record, 'agent_memory': memory.model_dump(mode='json')}
+            if request.agent_memory is not None:
+                if not record['project_agent_id']:
+                    raise HTTPException(status_code=409, detail='Task has no durable Agent memory target')
+                memory = await scoped.write_project_agent_memory(actor, ProjectAgentMemoryWrite(
+                    personal_space_id=request.personal_space_id,
+                    personal_project_id=record['personal_project_id'],
+                    agent_id=record['project_agent_id'],
+                    expected_revision=request.agent_memory.expected_revision,
+                    memory=request.agent_memory.memory,
+                    idempotency_key=f'{token}:memory',
+                    source_application=record['source_application'],
+                    # The client lifecycle session remains stable when entry and
+                    # checkpoint hooks use different short-lived MCP processes.
+                    source_session_id=record['session_id'],
+                ))
+                record['agent_memory'] = memory.model_dump(mode='json')
+            if request.knowledge_usage is not None:
+                result = record['checkpoint'].get('knowledge_usage_result')
+                if result is None:
+                    result = (await record_knowledge_usage(scoped, actor, KnowledgeUsageCreate(
+                        personal_space_id=request.personal_space_id, task_id=token,
+                        session_id=record['session_id'], tool_name='checkpoint_task_knowledge',
+                        items=request.knowledge_usage,
+                    ))).model_dump(mode='json')
+                record['checkpoint']['knowledge_usage_result'] = result
+                # Persist the receipt with the claim and usage writes. Replays use
+                # this result even if the knowledge has since changed generation.
+                await scoped.runtime.driver.execute_query('''
+                    MATCH (task:FuliTaskContext {personal_space_id: $space_id, token: $token})
+                    SET task.knowledge_usage_result_json = $result, task.record_json = $record_json
+                    ''', space_id=request.personal_space_id, token=token,
+                    result=json.dumps(result, ensure_ascii=False),
+                    record_json=task_context_json({key: value for key, value in record.items()
+                                                   if key != 'agent_memory'}))
+            return record
 
     async def _checkpoint_task_context(self, actor, token, request):
         await self.authorize(actor, request.personal_space_id, 'maintainer')
@@ -251,6 +299,8 @@ class StoreTaskContexts:
         })
         if request.capture_results is None:
             checkpoint.pop('capture_results', None)
+        if request.knowledge_usage is None:
+            checkpoint.pop('knowledge_usage', None)
         # Complete retries must preserve the original completion timestamp/result.
         record['checkpoint'] = checkpoint
         # Bind memory presence independently of the caller's fingerprint. Its
@@ -280,6 +330,7 @@ class StoreTaskContexts:
               task.fingerprint = $fingerprint AND task.disposition = $disposition
               AND task.reason = $reason
               AND coalesce(task.work_log_json, 'null') = $work_log_json
+              AND coalesce(task.knowledge_usage_json, 'null') = $knowledge_usage_json
               AND (NOT $is_prepare OR memory_claimed = $has_agent_memory)
             ) AS matches,
             CASE WHEN first_claim THEN $has_agent_memory ELSE memory_claimed END AS memory_claimed
@@ -287,9 +338,11 @@ class StoreTaskContexts:
               SET task.fingerprint = $fingerprint, task.record_json = $record_json,
                   task.agent_memory_claimed = memory_claimed,
                   task.work_log_json = $work_log_json,
+                  task.knowledge_usage_json = $knowledge_usage_json,
                   task.completed = $completed, task.disposition = $disposition, task.reason = $reason
             )
             RETURN matches, task.record_json AS record_json,
+                   task.knowledge_usage_result_json AS knowledge_usage_result_json,
                    [(task)-[:COORDINATES_TASK]->(linked:FuliProjectAgentTask) | linked.task_id] AS coordination_task_ids
             ''', space_id=request.personal_space_id, token=token,
             fingerprint=request.fingerprint, record_json=task_context_json(record),
@@ -300,10 +353,16 @@ class StoreTaskContexts:
             work_log_json=json.dumps(request.work_log.model_dump() if request.work_log else None,
                                      sort_keys=True, ensure_ascii=False),
             memory_checkpoint_id=memory_checkpoint_id,
+            knowledge_usage_json=json.dumps(
+                [item.model_dump(mode='json') for item in request.knowledge_usage]
+                if request.knowledge_usage is not None else None, sort_keys=True, ensure_ascii=False),
         )
         if not rows or not rows[0]['matches']:
             raise HTTPException(status_code=409, detail='Task checkpoint conflicts or was superseded')
-        return task_context_record(rows[0])
+        saved = task_context_record(rows[0])
+        if rows[0].get('knowledge_usage_result_json'):
+            saved['checkpoint']['knowledge_usage_result'] = json.loads(rows[0]['knowledge_usage_result_json'])
+        return saved
 
     async def verify_task_checkpoint(self, actor, space_id, session_id, source_application):
         self._require_personal()

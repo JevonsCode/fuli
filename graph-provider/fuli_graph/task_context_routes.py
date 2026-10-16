@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import Query
 
 from .models import SourceApplication
-from .task_context_models import TaskContextBegin, TaskContextCheckpoint, TaskContextAdoptAgent, TaskContextCoordinationTask
+from .task_context_models import TaskContextBegin, TaskContextCheckpoint, TaskContextAdoptAgent, TaskContextCoordinationTask, TaskPreferenceRead
 
 
 def register_task_context_routes(application, store, Actor):
@@ -45,6 +45,10 @@ def register_task_context_routes(application, store, Actor):
     @application.put('/v1/task-contexts/{token}/checkpoint')
     async def checkpoint_context(token: str, request: TaskContextCheckpoint, actor: Actor):
         return await store.checkpoint_task_context(actor, token, request)
+
+    @application.post('/v1/task-contexts/{token}/preferences/read')
+    async def read_preferences(token: str, request: TaskPreferenceRead, actor: Actor):
+        return await store.read_task_preferences(actor, token, request)
 
     @application.get('/v1/task-context-sessions/checkpoint')
     async def verify_checkpoint(actor: Actor,

@@ -74,17 +74,7 @@ export async function getCollaborationPreferences(
       ...(taskKnowledgeRecall ? { task_knowledge_recall: taskKnowledgeRecall } : {})
     };
   }
-  return {
-    effective_preferences: effectivePreferences
-      .map(agentCollaborationPreference),
-    deferred_conflicts: deferredConflicts.map(agentDeferredPreferenceConflict),
-    active_conflicts: activePreferenceConflicts(result),
-    application_guidance: applicationGuidance,
-    ...(taskKnowledgeRecall ? { task_knowledge_recall: taskKnowledgeRecall } : {}),
-    context: { ...preferenceContext(result, deferredConflicts, projectResolution),
-      task_scope_excluded_count: (result.task_scope_excluded_count ?? 0) + (result.effective_preferences ?? []).length - effectivePreferences.length,
-      task_scope_filter: result.task_scope_filtered ? 'provider_before_conflicts' : 'legacy_projection' }
-  };
+  return projectAgentCollaborationPreferences(result, projectResolution, { projectAgentId, taskScope, taskKnowledgeRecall });
 }
 
 function guidanceFor(projectId, projectAgentId) {
@@ -137,5 +127,25 @@ function sourceWindows(result, projectId) {
     queued_conflicts_truncated: result.conflicts?.length
       ? Array.isArray(result.queued_conflicts) ? known(windows?.queued_conflicts_truncated) : null
       : false
+  };
+}
+
+// Read-only projection: no selection, task entry, recall, memory or view writes.
+export function projectAgentCollaborationPreferences(raw, projectResolution, { projectAgentId = null, taskScope = {}, taskKnowledgeRecall = null } = {}) {
+  const source_windows = sourceWindows(raw, projectResolution.personalProjectId);
+  const result = { ...raw, source_windows, truncated: raw.truncated === true || Object.values(source_windows).some(value => value !== false) };
+  const deferredConflicts = deferredPreferenceConflicts(result, result.queued_conflicts);
+  const effectivePreferences = (result.effective_preferences ?? []).filter(item => preferenceAppliesToTask(item, taskScope));
+  const applicationGuidance = guidanceFor(projectResolution.personalProjectId, projectAgentId);
+  return {
+    effective_preferences: effectivePreferences
+      .map(agentCollaborationPreference),
+    deferred_conflicts: deferredConflicts.map(agentDeferredPreferenceConflict),
+    active_conflicts: activePreferenceConflicts(result),
+    application_guidance: applicationGuidance,
+    ...(taskKnowledgeRecall ? { task_knowledge_recall: taskKnowledgeRecall } : {}),
+    context: { ...preferenceContext(result, deferredConflicts, projectResolution),
+      task_scope_excluded_count: (result.task_scope_excluded_count ?? 0) + (result.effective_preferences ?? []).length - effectivePreferences.length,
+      task_scope_filter: result.task_scope_filtered ? 'provider_before_conflicts' : 'legacy_projection' }
   };
 }
