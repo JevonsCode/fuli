@@ -49,7 +49,17 @@ Explore the [product website](https://有点.意思.com/fuli/).
 
 ## Start here
 
-With Node.js 24.12+ and Docker Compose v2 available, run:
+Install Fuli, connect a client, and run one actual tool call to verify the connection. See
+[Installation](#installation) for full requirements and [client connections](docs/client-connections.md)
+for configuration formats, Hooks, and troubleshooting.
+
+Humans retain login, Hook trust, and manual review. **A client showing `configured` on disk or in
+Settings does not prove that the client is `connected` or that a tool call succeeded.**
+
+### 1. Install
+
+With Node.js 24.12+ and Docker Compose v2 available (default container mode; see
+[Installation](#installation) for macOS/Linux native mode), run:
 
 ```bash
 npm install --global fuli-context
@@ -57,24 +67,42 @@ fuli setup
 fuli open
 ```
 
-The setup wizard shows its plan before changing your environment. See [Installation](#installation)
-for requirements and the macOS/Linux native runtime option.
+The setup wizard shows its plan before changing your environment.
 
-To try a cross-tool handoff, ask for a task inside a project directory (Fuli registers the project and
-staffs a lead agent), complete it through one connected client, then use the agent's continuation instruction in another client connected
-to the same data. Check whether it recovers the correct project and prior work, and asks for
-missing context rather than inventing it. See [Agent conversations and collaboration](docs/agent-conversations-and-collaboration.md)
-for supported adapters and boundaries.
+### 2. Connect a client
 
-For a one-off task, this source version also supports an isolated **temporary project**: ask the
-connected client to coordinate the task with Fuli even when no registered project matches. Fuli
-retains its task history and follows the existing Agent recruitment and executor permissions.
-Reading preferences alone creates nothing. An ambiguous project still needs a choice.
-This behavior is available in the stable release.
+- **Detected Codex, Claude Code, Cursor, or Claude Desktop:** `fuli setup` writes the MCP entry and
+  supported Hooks/Skills. Quit and reopen apps that read MCP configuration only at launch, then open
+  a new task. Codex Hook trust requires manual `/hooks` review in Codex.
+- **Other MCP clients:** run `fuli connect` (or open **Settings → Client connection** in the
+  console), merge the `fuli` entry into the client's MCP configuration while keeping other servers,
+  and reload or trust the server in that client. `fuli connect` prints JSON only.
 
-The Agent directory now explains the first-task entry, and task details distinguish assignment
-from actual worker reports. A completion table appears only after real execution is reported;
-an assigned Agent or an ordinary local conversation alone is not worker evidence.
+### 3. First actual tool call and verification
+
+1. Run `fuli status` and confirm the management UI and personal graph are ready (default
+   `http://127.0.0.1:2727`).
+2. Confirm Fuli tools appear in the client and **make one actual tool call** inside a project
+   directory (for example, ask the Agent to load project collaboration preferences or coordinate a
+   small task). Verify that Fuli resolves the right project (or registers/staffs a lead Agent) and
+   asks for missing context rather than inventing it.
+3. Optional cross-tool handoff: use the Agent's continuation instruction in another client
+   connected to the same data and verify that it recovers the same Agent, project, and prior work.
+   See [Agent conversations and collaboration](docs/agent-conversations-and-collaboration.md).
+
+For a one-off task, this source version also supports an isolated **temporary project** when no
+registered project matches; reading preferences alone creates nothing, and an ambiguous project
+still needs a choice. The Agent directory explains the first-task entry, and task details show a
+completion table only after real worker execution is reported — an assigned Agent or an ordinary
+local conversation alone is not worker evidence.
+
+### 4. Troubleshooting
+
+If setup, client detection, or tool calls fail, see
+[Common failure recovery](docs/client-connections.md#common-failure-recovery). Use
+`fuli setup --yes --connected-only` only to refresh clients that still have an existing Fuli MCP
+entry (`current` or `outdated`); clients that are `skills-only`, `removed`, or newly added (no Fuli
+MCP entry) require a full `fuli setup`.
 
 [How it works](#philosophy) · [Installation](#installation) ·
 [Agent roles and teams](docs/employee-agents.md) ·
@@ -699,8 +727,9 @@ refreshes only clients with an existing Fuli MCP entry. Existing knowledge, conf
 and Neo4j volumes remain intact. Reuse any custom setup options during updates.
 
 Reconnect Fuli in already-open clients, or restart those clients and open a new task, to load the
-new MCP process. To repair existing integrations without upgrading, run
-`fuli setup --yes --connected-only`. Use normal `fuli setup` to connect a new client.
+new MCP process. To repair existing integrations that still have a Fuli MCP entry without upgrading,
+run `fuli setup --yes --connected-only`. Clients that are `skills-only`, `removed`, or newly added
+(no Fuli MCP entry) require a full `fuli setup`.
 
 Uninstall:
 

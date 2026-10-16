@@ -37,7 +37,14 @@ AI 负责检索、提醒、归纳和执行；人始终保留最终判断权。
 
 ## 先用起来
 
-准备好 Node.js 24.12+ 和 Docker Compose v2 后，运行：
+安装 Fuli、接入客户端，并通过一次实际工具调用完成验证。完整要求见[安装](#安装)；配置格式、Hook 与排错见
+[客户端接入](docs/client-connections.md)。
+
+登录、Hook 信任与人工审核仍由人确认。**磁盘或“设置”页显示已配置（`configured`），不等于客户端已连接（`connected`）或工具已成功调用。**
+
+### 1. 安装
+
+在具备 Node.js 24.12+ 和 Docker Compose v2 的环境下（默认容器模式；macOS / Linux 原生模式见[安装](#安装)），运行：
 
 ```bash
 npm install --global fuli-context
@@ -45,18 +52,26 @@ fuli setup
 fuli open
 ```
 
-设置向导会先展示计划，再修改环境。完整要求与 macOS / Linux 原生运行方式见[安装](#安装)。
+设置向导会先展示计划，再修改环境。
 
-第一次可以试一次跨工具接续：在项目目录里提一个需求（Fuli 会登记项目并安排负责 Agent），在一个已接入客户端完成任务，
-再把这位 Agent 的接续指令带到连接同一份数据的另一客户端。检查它是否找对项目、恢复上次的工作，
-并在缺少信息时如实说明。支持范围见[Agent 对话与协作说明](docs/agent-conversations-and-collaboration.md)。
+### 2. 接入客户端
 
-临时任务也能交给 Agent：本次源码支持在没有匹配到已登记项目时，建立隔离的**临时项目**，
-继续用 Fuli 协调任务。任务历史会保留，Agent 招募与执行器授权沿用现有规则；
-单纯读取偏好不会创建项目，多个候选项目仍需明确选择。此能力已包含在正式版中。
+- **已检测到 Codex、Claude Code、Cursor 或 Claude 桌面版：** `fuli setup` 会写入 MCP 配置及支持的
+  Hook / Skills。只在启动时读取配置的应用须退出重开，重连后新建任务；Codex Hook 信任须在 Codex 的 `/hooks` 中人工审阅。
+- **其他 MCP 客户端：** 运行 `fuli connect`（或打开控制台 **设置 → 客户端接入**），将 `fuli` 条目合并到客户端 MCP 配置并保留其他服务器，再按该客户端要求重载或信任连接。`fuli connect` 只打印 JSON。
 
-Agent 目录提供首次任务入口，任务详情会区分“已分配”和“收到工作进程报告”。
-只有上报真实执行后才有完成汇总；分配了 Agent、或仅完成普通本机对话，都不等于已运行工作进程。
+### 3. 首次实际工具调用与验证
+
+1. 运行 `fuli status`，确认管理界面与个人图谱就绪（默认 `http://127.0.0.1:2727`）。
+2. 在客户端中确认 Fuli 工具已出现，并在项目目录里**发起一次实际工具调用**（例如让 Agent 读取当前项目协作偏好或协调一个小任务），检查它是否找对项目（或登记项目并安排负责 Agent），且在缺少信息时如实询问而非编造。
+3. 可选的跨工具接续：把这位 Agent 的接续指令带到连接同一份数据的另一客户端，验证它能否恢复同一位 Agent、项目和上次工作。支持范围见[Agent 对话与协作说明](docs/agent-conversations-and-collaboration.md)。
+
+临时任务也能交给 Agent：本次源码支持在没有匹配到已登记项目时建立隔离的**临时项目**；单纯读取偏好不会创建项目，多个候选项目仍需明确选择。Agent 目录提供首次任务入口，任务详情只有在收到真实执行报告后才展示完成汇总——仅分配了 Agent 或普通本机对话都不等于工作进程证据。
+
+### 4. 排错与恢复
+
+若安装、客户端检测或工具调用失败，见[常见失败与恢复](docs/client-connections.md#common-failure-recovery)。
+`fuli setup --yes --connected-only` 仅用于刷新仍保留 Fuli MCP 条目（`current` 或 `outdated`）的客户端；仅剩 Skills（`skills-only`）、已移除（`removed`）或新接入的客户端（无 Fuli MCP 条目）须运行完整的 `fuli setup`。
 
 [工作原理](#项目理念) · [安装](#安装) · [Agent 角色与团队](docs/employee-agents.md) ·
 [跨客户端验收](acceptance/cross-client-handoff.md) · [参与贡献](CONTRIBUTING.md) ·
@@ -618,8 +633,7 @@ fuli update
 相同选项。
 
 已打开的客户端需要重新连接 Fuli MCP，或重启客户端后新建任务，才能加载新进程。
-只需修复已有接入时，运行 `fuli setup --yes --connected-only`；接入新客户端仍使用普通
-`fuli setup`。
+只需修复仍保留 Fuli MCP 条目的已有接入时，运行 `fuli setup --yes --connected-only`；仅剩 Skills（`skills-only`）、已移除（`removed`）或新接入的客户端（无 Fuli MCP 条目）须运行完整的 `fuli setup`。
 
 卸载：
 
