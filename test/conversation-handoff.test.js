@@ -4,6 +4,8 @@ import { mkdtemp, writeFile, appendFile, rm, readdir, readFile, stat } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createServer } from 'node:net';
+import { setTimeout as delay } from 'node:timers/promises';
 import { withTranscriptGuard, transcriptDigest } from '../src/conversations/transcript-guard.js';
 import { syncConversationTranscript, claimTranscriptBoundary, recordTranscriptTaskEntry } from '../src/conversations/sync-transcript.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from '../src/agents/codex/conversation-transcript.js';
@@ -12,7 +14,7 @@ import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
 const adapter = { normalize: normalizeCodexRecord, verify: verifyCodexTranscript };
 const header = JSON.stringify({ type: 'session_meta', payload: { id: 'session' } }) + '\n';
 const row = (role, text) => JSON.stringify({ type: 'response_item', payload: { type: 'message', role, content: [{ type: role === 'user' ? 'input_text' : 'output_text', text }] } }) + '\n';
-async function fixture(t, tail) {
+async function fixture(t, tail, { onLockContention = () => {} } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'fuli-handoff-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const path = join(dir, 'transcript.jsonl');
@@ -40,7 +42,25 @@ async function fixture(t, tail) {
     }
   } };
   const runtime = join(dir, 'runtime.json');
-  const run = callback => withTranscriptGuard(runtime, input, 'codex', true, callback);
+  let active = false;
+  const run = async callback => {
+    // Parallel test services can occupy the guard's hashed loopback port.
+    // Retry only before entry; genuine same-fixture contention still fails closed.
+    if (active) return withTranscriptGuard(runtime, input, 'codex', true, callback);
+    for (let attempt = 0; ; attempt++) {
+      let entered = false;
+      try {
+        return await withTranscriptGuard(runtime, input, 'codex', true, async guard => {
+          entered = active = true;
+          try { return await callback(guard); } finally { active = false; }
+        });
+      } catch (error) {
+        if (entered || active || error.code !== 'EADDRINUSE' || attempt >= 99) throw error;
+        onLockContention();
+        await delay(20);
+      }
+    }
+  };
   return { dir, input, app, run, appended, calls, runtime,
     switchTask: value => { task = value; }, failClaim: value => { failClaim = value; }, disable: () => { enabled = false; }, disablePolicy: () => { policyEnabled = false; } };
 }
@@ -123,6 +143,32 @@ test('guard serializes same-session hooks and persists only hashes and cursors w
   const data = await readFile(path, 'utf8');
   assert.ok(!data.includes('incoming') && !data.includes(f.input.transcript_path));
   await f.run(async guard => { assert.equal(guard.value.scanCursor, header.length); });
+});
+
+test('handoff fixture waits for an unrelated occupied mutex port without retrying callback failures', async t => {
+  const contended = Promise.withResolvers();
+  const f = await fixture(t, '', { onLockContention: contended.resolve });
+  const directory = join(f.dir, 'transcript-guards');
+  const key = transcriptDigest(`${f.runtime}\0codex\0${f.input.session_id}`);
+  const port = 49152 + (parseInt(transcriptDigest(`${directory}\0${key}`).slice(0, 8), 16) % 16384);
+  const blocker = createServer();
+  t.after(async () => {
+    if (blocker.listening) await new Promise(resolve => blocker.close(resolve));
+  });
+  await new Promise((resolve, reject) => {
+    blocker.once('error', reject);
+    blocker.listen({ host: '127.0.0.1', port, exclusive: true }, resolve);
+  });
+  let calls = 0;
+  const running = f.run(async () => { calls++; });
+  await Promise.race([contended.promise, running]);
+  assert.equal(calls, 0, 'The callback must not run while an unrelated socket owns the port.');
+  await new Promise(resolve => blocker.close(resolve));
+  await running;
+  assert.equal(calls, 1);
+  const callbackFailure = Object.assign(new Error('Callback failure'), { code: 'EADDRINUSE' });
+  await assert.rejects(f.run(async () => { calls++; throw callbackFailure; }), error => error === callbackFailure);
+  assert.equal(calls, 2, 'A failure after entering the callback must never replay its writes.');
 });
 
 test('lifecycle skips unverified context without intercepting the native prompt', async t => {
