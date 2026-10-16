@@ -21,14 +21,14 @@ function execute(command, args, options = {}) {
   }));
 }
 
-async function powershell(script, env = process.env) {
+async function powershell(script, env = process.env, options = {}) {
   const prefix = '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $ErrorActionPreference="Stop"; ';
   const result = await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
-    Buffer.from(prefix + script, 'utf16le').toString('base64')], { env });
+    Buffer.from(prefix + script, 'utf16le').toString('base64')], { env, ...options });
   return JSON.parse(result.stdout.replace(/^\uFEFF/, '').trim() || 'null');
 }
 
-export async function inspectWindowsNativeProcess(pid, { children = false } = {}) {
+export async function inspectWindowsNativeProcess(pid, { children = false, timeoutMs = 60_000 } = {}) {
   if (!Number.isInteger(pid) || pid <= 0) return children ? [] : null;
   const filter = 'ProcessId = ' + pid + (children ? ' OR ParentProcessId = ' + pid : '');
   const script = '$rows = @(Get-CimInstance Win32_Process -Filter "' + filter + '" | ForEach-Object {'
@@ -36,7 +36,7 @@ export async function inspectWindowsNativeProcess(pid, { children = false } = {}
     + 'executable=$_.ExecutablePath;commandLine=$_.CommandLine;'
     + 'createdFileTime=$_.CreationDate.ToUniversalTime().ToFileTimeUtc().ToString()}});'
     + 'ConvertTo-Json -InputObject $rows -Compress';
-  const rows = await powershell(script);
+  const rows = await powershell(script, process.env, { timeout: timeoutMs });
   return children ? rows : rows.find(row => row.pid === pid) ?? null;
 }
 
@@ -46,9 +46,9 @@ function identityMatches(observed, ownership) {
     && observed.commandLine === ownership.commandLine;
 }
 
-export async function windowsNativeProcessMatches(pid, command, entry) {
+export async function windowsNativeProcessMatches(pid, command, entry, options) {
   if (!entry?.ownership || !samePath(command, entry.ownership.executable)) return false;
-  return Boolean(identityMatches(await inspectWindowsNativeProcess(pid), entry.ownership));
+  return Boolean(identityMatches(await inspectWindowsNativeProcess(pid, options), entry.ownership));
 }
 
 export async function assertWindowsNativePortOwner(entry, port) {
@@ -142,15 +142,21 @@ if ($observed -and $observed.CommandLine -ceq $owner.commandLine) {
 @{stopped=$stopped} | ConvertTo-Json -Compress
 `;
 
-export async function stopWindowsNativeProcess(pid, entry) {
+export async function stopWindowsNativeProcess(pid, entry, { timeoutMs } = {}) {
+  const started = Date.now();
+  const remaining = () => {
+    const value = timeoutMs === undefined ? 60_000 : timeoutMs - (Date.now() - started);
+    if (value <= 0) throw new Error('Native process stop timed out');
+    return value;
+  };
   if (!Number.isInteger(pid) || !entry?.ownership) return;
-  if (!await windowsNativeProcessMatches(pid, entry.command, entry)) return;
+  if (!await windowsNativeProcessMatches(pid, entry.command, entry, { timeoutMs: remaining() })) return;
   await refreshProviderChild(entry);
   for (const item of [{ pid: entry.pid, ownership: entry.ownership }, ...(entry.relatedProcesses ?? [])]) {
     if (!Number.isInteger(item.pid) || !item.ownership) continue;
     const result = await powershell(STOP_SCRIPT, { ...process.env,
-      FULI_NATIVE_PROCESS_OWNER: JSON.stringify({ ...item.ownership, pid: item.pid }) });
-    if (!result?.stopped && identityMatches(await inspectWindowsNativeProcess(item.pid), item.ownership)) {
+      FULI_NATIVE_PROCESS_OWNER: JSON.stringify({ ...item.ownership, pid: item.pid }) }, { timeout: remaining() });
+    if (!result?.stopped && identityMatches(await inspectWindowsNativeProcess(item.pid, { timeoutMs: remaining() }), item.ownership)) {
       throw new Error('The verified native process could not be stopped; ownership state must be retained');
     }
   }
