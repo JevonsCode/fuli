@@ -23,6 +23,8 @@ export function resolveSetupPaths({
   const runtimeConfigDir = join(resolvedDataDir, 'runtime-configs');
   return {
     dataDir: resolvedDataDir,
+    // A Windows portable folder is removed by deleting it, not via npm.
+    portableRoot: bundle?.bundleRoot ?? null,
     graphEnvPath: join(resolvedDataDir, 'graph-provider.env'),
     graphRuntimeConfigPath: join(resolvedDataDir, 'graph-runtime.json'),
     graphRuntimeStatePath: join(resolvedDataDir, 'graph-runtime-state.json'),

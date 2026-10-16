@@ -246,6 +246,11 @@ export class GraphitiProviderClient {
   getTaskContext(token, query, { signal } = {}) {
     return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}?${new URLSearchParams(query)}`, { signal });
   }
+
+  readTaskPreferences(token, input) {
+    return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}/preferences/read`,
+      { method: 'POST', body: input });
+  }
   checkpointTaskContext(token, input) {
     return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}/checkpoint`, {
       method: 'PUT', body: input

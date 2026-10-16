@@ -64,7 +64,7 @@ export function createWorkerTaskContext(application, descriptor) {
     return { task: taskRecord(value), run: identity };
   }
   function prepareInput(name, input, { task }) {
-    if (!allowed.includes(name)) throw denied('Unsupported worker tool');
+    if (!allowed.includes(name) || name === 'read_task_preferences') throw denied('Unsupported worker tool');
     const layers = OWN_LAYER_TOOLS.has(name);
     for (const key of ['personalSpaceId', 'personal_space_id']) {
       if (input[key] !== undefined && input[key] !== scope.personal_space_id) throw denied('Foreign worker space is not allowed');
@@ -91,6 +91,19 @@ export function createWorkerTaskContext(application, descriptor) {
       sessionId: task.sessionId, turnId: task.turnId, taskContextToken: task.token,
       projectPath, ...(ENTRY_TOOLS.has(name) ? { taskPrompt } : {}) };
   }
+  // Recovery has no entry side effects: it never admits, creates a context or
+  // reads memory. Only the token this process already admitted can be read;
+  // the Provider re-verifies the open run and its authority on every read.
+  async function recover(input, { signal } = {}) {
+    if (!allowed.includes('read_task_preferences')) throw denied('Unsupported worker tool');
+    if (!ownToken || input?.taskContextToken !== ownToken) {
+      throw denied('Preference recovery requires this worker own admitted task token');
+    }
+    const run = await locate(signal);
+    if (signal?.aborted) throw denied('Worker preference recovery was cancelled');
+    return { taskContextToken: ownToken, sourceApplication: run.target_application,
+      sourceSessionId: run.actual_session_id, sourceSessionVerified: true, workerRun: run };
+  }
   async function entry({ task, run }, toolName) {
     if (!ENTRY_TOOLS.has(toolName)) throw denied('Unsupported worker entry');
     if (!task.preferenceScope) throw denied('Worker task preference scope is unknown; entry cannot guess dimensions');
@@ -115,10 +128,7 @@ export function createWorkerTaskContext(application, descriptor) {
       { status: 'ready', reason: 'worker_run_admitted', agent, match_basis: ['sealed_worker_run'] },
       recordAgentViews, { includeManagement: false, includeMessages: false });
     const result = await beginTaskFromPreferences(application, preferences, input, { existingTask: task });
-    return { ...result, task_guidance: { ...result.task_guidance,
-      collaboration: 'This is an already assigned bounded worker attempt. The coordinator owns collaboration planning, recruitment, new dispatch, independent acceptance and final user delivery. Do not call plan_agent_collaboration or create additional workers here; report gaps and blockers to the coordinator. Use only the admitted client/model and existing human authority. Return real artifacts and verification evidence; do not claim self-verification is independent acceptance, or recommendations/configured peers are worker execution. Report actual model/usage only when known; never invent tokens or collaborators.' },
-      worker_run: { run_id: runId, task_id: run.task_id, coordinator_agent_id: coordination.coordinator_agent_id ?? null,
-        guidance: 'Use this worker’s own context and checkpoint only. Memory/history reads default to the bound project; explicit personalProjectId null reads only this Agent’s global layer. Return bounded results and evidence to the coordinator. This admission is not proof that a model or worker executed. Unsupported actions require the host/coordinator; do not switch identity or reuse the parent token.' } };
+    return withWorkerTaskGuidance(result, run, coordination);
   }
   async function recordAgentViews(items, toolName) {
     const values = [...new Map(items.map(item => [`${item.item_kind}:${item.item_id}`, item])).values()];
@@ -127,7 +137,7 @@ export function createWorkerTaskContext(application, descriptor) {
         tool_name: toolName, items: values.slice(index, index + 200) });
     }
   }
-  return Object.freeze({ toolNames: allowed, admit, prepareInput, entry });
+  return Object.freeze({ toolNames: allowed, admit, prepareInput, entry, recover });
 }
 
 function checkRun(run, scope, runId) {
@@ -135,3 +145,10 @@ function checkRun(run, scope, runId) {
       run.personal_project_id !== scope.personal_project_id) throw denied('Provider worker run scope does not match');
 }
 function denied(message) { return new ApplicationError('worker_access_denied', message); }
+
+export function withWorkerTaskGuidance(result, run, coordination) {
+  return { ...result, task_guidance: { ...result.task_guidance,
+      collaboration: 'This is an already assigned bounded worker attempt. The coordinator owns collaboration planning, recruitment, new dispatch, independent acceptance and final user delivery. Do not call plan_agent_collaboration or create additional workers here; report gaps and blockers to the coordinator. Use only the admitted client/model and existing human authority. Return real artifacts and verification evidence; do not claim self-verification is independent acceptance, or recommendations/configured peers are worker execution. Report actual model/usage only when known; never invent tokens or collaborators.' },
+      worker_run: { run_id: run.run_id, task_id: run.task_id, coordinator_agent_id: coordination.coordinator_agent_id ?? null,
+        guidance: 'Use this worker’s own context and checkpoint only. Memory/history reads default to the bound project; explicit personalProjectId null reads only this Agent’s global layer. Return bounded results and evidence to the coordinator. This admission is not proof that a model or worker executed. Unsupported actions require the host/coordinator; do not switch identity or reuse the parent token.' } };
+}
