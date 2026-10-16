@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { closeSync, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from '../native-runtime/windows-assets.js';
 import { canonicalWindowsInstallPath, installationSha256, windowsInstallPathsOverlap } from './windows-installation-context.js';
@@ -22,6 +22,27 @@ function createWindowsShortcut(path, target) {
     + '$s=(New-Object -ComObject WScript.Shell).CreateShortcut($p.path); '
     + '$s.TargetPath=$p.target; $s.WorkingDirectory=$p.cwd; $s.IconLocation=$p.target; $s.Save()');
 }
+
+// Node cannot deny sharing on Windows, so the reader holds a .NET handle that
+// denies write and delete (rename) sharing while it hashes the bytes and COM
+// interprets them. Any failure, including a sharing violation, fails closed.
+function readWindowsShortcut(path, sha256) {
+  const input = Buffer.from(JSON.stringify({ path, sha256 })).toString('base64');
+  return JSON.parse(powershell('[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); '
+    + '$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("' + input + '")) | ConvertFrom-Json; '
+    + '$f=[IO.File]::Open($p.path,"Open","Read","Read"); try { '
+    + '$b=New-Object byte[] $f.Length; $n=0; while($n -lt $b.Length){$r=$f.Read($b,$n,$b.Length-$n); if($r -le 0){throw "short read"}; $n+=$r}; '
+    + '$h=-join([Security.Cryptography.SHA256]::Create().ComputeHash($b)|ForEach-Object{$_.ToString("x2")}); '
+    + 'if($h -ne $p.sha256){throw "The shortcut bytes changed before verification."}; '
+    + '$s=(New-Object -ComObject WScript.Shell).CreateShortcut($p.path); '
+    + '@{targetPath=$s.TargetPath;arguments=$s.Arguments;workingDirectory=$s.WorkingDirectory} | ConvertTo-Json -Compress '
+    + '} finally { $f.Dispose() }'));
+}
+
+// Windows file IDs exceed 2^53, so identities are compared as exact bigints.
+const EXACT = { bigint: true };
+const sameInode = (a, b) => a.dev === b.dev && a.ino === b.ino;
+const sameFile = (a, b) => sameInode(a, b) && a.size === b.size && a.mtimeNs === b.mtimeNs;
 
 function trayInventory(source) {
   const bytes = readFileSync(join(source, 'tray-files.sha256.json'));
@@ -80,7 +101,8 @@ export function planFirstWindowsInstall({ source, installRoot, dataDir, shortcut
 }
 
 // First-install only: no existing app/data mutation, service actions or startup.
-export function installWindowsForCurrentUser(options, { createShortcut = createWindowsShortcut } = {}) {
+export function installWindowsForCurrentUser(options,
+  { createShortcut = createWindowsShortcut, readShortcut = readWindowsShortcut } = {}) {
   const plan = planFirstWindowsInstall(options);
   const inventory = trayInventory(plan.source);
   if (inventory.inventorySha256 !== plan.inventorySha256) throw new Error('Tray checksum inventory changed during installation.');
@@ -91,25 +113,67 @@ export function installWindowsForCurrentUser(options, { createShortcut = createW
   function directory(path) {
     if (existsSync(path)) return;
     directory(dirname(path));
-    mkdirSync(path); directories.push([path, lstatSync(path)]);
+    mkdirSync(path); directories.push([path, lstatSync(path, EXACT)]);
   }
-  function ownFile(path, bytes) {
+  function ownFile(path, bytes, { flags = 'wx', verify } = {}) {
     directory(dirname(path));
-    const fd = openSync(path, 'wx');
-    const owned = [path, fstatSync(fd)];
+    const fd = openSync(path, flags);
+    const owned = [path, fstatSync(fd, EXACT)];
     files.push(owned);
-    try { writeFileSync(fd, bytes); }
+    try { writeFileSync(fd, bytes); verify?.(fd); }
     finally {
       // A write can create partial bytes before throwing. Snapshot the opened
       // inode, never a replacement at this path, so caught failures can clean it.
-      try { owned[1] = fstatSync(fd); }
+      try { owned[1] = fstatSync(fd, EXACT); }
       finally { closeSync(fd); }
     }
+    return owned;
+  }
+  // COM Save cannot create exclusively, so it rewrites an inode this installer
+  // created inside its own new package directory. Only that inode is adopted.
+  function stageShortcut(staged, target) {
+    const owned = ownFile(staged, '');
+    let failure = null;
+    try { createShortcut(staged, target); } catch (error) { failure = error; }
+    const actual = lstatSync(staged, { ...EXACT, throwIfNoEntry: false });
+    const adopted = Boolean(actual && sameInode(actual, owned[1]));
+    if (adopted) owned[1] = actual;
+    else files.splice(files.indexOf(owned), 1); // A replacement is left for inspection.
+    if (failure) throw failure;
+    if (!adopted) throw new Error('The shortcut was not saved into the installer-owned staging file: ' + staged);
+    const fd = openSync(staged, 'r');
+    try {
+      if (!sameFile(fstatSync(fd, EXACT), owned[1])) throw new Error('The staged shortcut changed while it was read: ' + staged);
+      const bytes = readFileSync(fd);
+      if (!bytes.length) throw new Error('The shortcut writer produced no shortcut.');
+      // COM interprets these exact bytes (hash-bound) before any shared folder sees them.
+      const link = readShortcut(staged, installationSha256(bytes));
+      if (String(link?.targetPath ?? '').toLowerCase() !== target.toLowerCase() || (link.arguments ?? '') !== ''
+          || String(link.workingDirectory ?? '').toLowerCase() !== dirname(target).toLowerCase()) {
+        throw new Error('The shortcut does not point at the installed application: ' + staged);
+      }
+      return bytes;
+    } finally { closeSync(fd); removeOwnedFile(...owned); }
+  }
+  // No shared temporary name: the final name is created exclusively (EEXIST leaves
+  // any existing file alone) and filled from the verified bytes through this fd.
+  function publishShortcut(path, bytes) {
+    ownFile(path, bytes, { flags: 'wx+', verify(fd) {
+      const written = Buffer.alloc(bytes.length + 1);
+      const read = readSync(fd, written, 0, written.length, 0);
+      if (read !== bytes.length || !written.subarray(0, read).equals(bytes)) {
+        throw new Error('The published shortcut changed while it was written: ' + path);
+      }
+      const current = lstatSync(path, { ...EXACT, throwIfNoEntry: false });
+      if (!current || !sameInode(current, fstatSync(fd, EXACT))) {
+        throw new Error('The published shortcut was replaced while it was written: ' + path);
+      }
+    } });
   }
   try {
     directory(dirname(plan.installRoot));
     // Exclusive claim: another installer cannot pass by observing our new root.
-    mkdirSync(plan.installRoot); directories.push([plan.installRoot, lstatSync(plan.installRoot)]);
+    mkdirSync(plan.installRoot); directories.push([plan.installRoot, lstatSync(plan.installRoot, EXACT)]);
     for (const [name, hash] of inventory.entries) {
       const bytes = readFileSync(join(plan.source, name));
       if (installationSha256(bytes) !== hash) throw new Error('Tray checksum changed during installation: ' + name);
@@ -120,19 +184,14 @@ export function installWindowsForCurrentUser(options, { createShortcut = createW
     const receipt = { version: 1, kind: 'windows-user-installation', installationId,
       installRoot: plan.installRoot, packageRoot, dataDir: plan.dataDir, inventorySha256: plan.inventorySha256 };
     ownFile(join(packageRoot, 'installed-context.json'), JSON.stringify(receipt, null, 2) + '\n');
-    for (const path of plan.shortcuts) {
+    const target = join(packageRoot, 'Fuli.exe');
+    const staging = join(packageRoot, '.shortcut-staging');
+    mkdirSync(staging); directories.push([staging, lstatSync(staging, EXACT)]);
+    for (const [index, path] of plan.shortcuts.entries()) {
       directory(dirname(path));
-      const temp = join(dirname(path), '.fuli-' + installationId + '.lnk');
-      try {
-        createShortcut(temp, join(packageRoot, 'Fuli.exe'));
-        files.push([temp, lstatSync(temp)]);
-        linkSync(temp, path); // Atomic no-overwrite publication, including races.
-        files.push([path, lstatSync(path)]);
-      } finally {
-        const owned = files.find(([name]) => name === temp);
-        if (owned) removeOwnedFile(...owned);
-      }
+      publishShortcut(path, stageShortcut(join(staging, index + '.lnk'), target));
     }
+    rmdirSync(staging);
     if (existsSync(plan.dataDir)) throw new Error('The data directory appeared during installation; refusing to adopt it.');
     const record = { ...receipt, status: 'installed', applicationVersion: plan.applicationVersion, shortcuts: plan.shortcuts };
     ownFile(join(plan.installRoot, 'installation.json'), JSON.stringify(record, null, 2) + '\n');
@@ -142,8 +201,8 @@ export function installWindowsForCurrentUser(options, { createShortcut = createW
     // Non-recursive removal preserves files created by anyone else mid-install.
     for (const [path, identity] of directories.reverse()) {
       try {
-        const actual = lstatSync(path);
-        if (actual.isDirectory() && actual.ino === identity.ino && actual.dev === identity.dev) rmdirSync(path);
+        const actual = lstatSync(path, EXACT);
+        if (actual.isDirectory() && sameInode(actual, identity)) rmdirSync(path);
       } catch { /* Leave nonempty or changed directories for inspection. */ }
     }
     throw error;
@@ -152,7 +211,6 @@ export function installWindowsForCurrentUser(options, { createShortcut = createW
 
 function removeOwnedFile(path, identity) {
   try {
-    const actual = lstatSync(path);
-    if (actual.ino === identity.ino && actual.dev === identity.dev && actual.size === identity.size && actual.mtimeMs === identity.mtimeMs) unlinkSync(path);
+    if (sameFile(lstatSync(path, EXACT), identity)) unlinkSync(path);
   } catch { /* Never remove a replacement or hide the original install failure. */ }
 }
