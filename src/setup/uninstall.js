@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { isAbsolute, relative } from 'node:path';
 
 import { stopLocalRuntime } from '../local-runtime/lifecycle.js';
 import { backupAgentConfig } from './config-backup.js';
@@ -89,6 +90,17 @@ export async function applyLocalUninstall(plan, dependencies = {}) {
     status: partial ? 'partial' : 'ready',
     runtime,
     agents,
-    data: { status: 'preserved', path: plan.paths.dataDir }
+    data: { status: 'preserved', path: plan.paths.dataDir },
+    removal: removalTarget(plan.paths)
   };
+}
+
+// How the remaining program files are removed. A portable folder is deleted
+// as a whole, which would also delete a data directory kept inside it.
+export function removalTarget(paths) {
+  if (!paths.portableRoot) return { kind: 'npm_global' };
+  const local = relative(paths.portableRoot, paths.dataDir);
+  return { kind: 'portable_folder', path: paths.portableRoot,
+    // Compare the first path segment: a folder named '..data' is still inside.
+    dataInside: !isAbsolute(local) && local.split(/[\\/]/)[0] !== '..' };
 }

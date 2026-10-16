@@ -15,6 +15,7 @@ const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   'verify_task_checkpoint',
   'checkpoint_task_knowledge',
   'get_collaboration_preferences',
+  'read_task_preferences',
   'capture_session_knowledge',
   'record_decision_trace',
   'create_project_agent_assignment',
@@ -112,6 +113,8 @@ export function normalizeAgentSessionInput(
       ...(SESSION_ID_TOOLS.has(name) && nativeThreadId ? { sessionId: nativeThreadId } : {}),
       sourceApplication: safeSourceApplication,
       sourceSessionId: hostSessionId,
+      ...(name === 'read_task_preferences' ? { sourceSessionVerified: Boolean(
+        nativeThreadId && nativeThreadId === hostSessionId && safeSourceApplication === 'codex') } : {}),
       ...(name === 'call_employee_tool' ? { sourceSessionVerified: Boolean(nativeThreadId && nativeThreadId === hostSessionId) } : {}),
     };
   }

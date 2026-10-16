@@ -15,6 +15,24 @@ class TaskPreferenceScope(StrictModel):
     workflow: str | None = Field(min_length=1, max_length=128)
 
 
+class TaskAgentAssignment(StrictModel):
+    """The entry's accountability constraints; replayed by same-task recovery."""
+    version: int = Field(strict=True, ge=1, le=1)
+    selection_reason: str | None = Field(min_length=1, max_length=128)
+    match_basis: list[str] = Field(max_length=32)
+    requested_agent_id: str | None = Field(min_length=1, max_length=128)
+    reporting_lead_agent_id: str | None = Field(min_length=1, max_length=128)
+    execution_reason: str | None = Field(min_length=1, max_length=128)
+    execution_agent_id: str | None = Field(min_length=1, max_length=128)
+
+    @field_validator('match_basis')
+    @classmethod
+    def bounded_basis(cls, value):
+        if any(not item or len(item) > 2048 for item in value):
+            raise ValueError('match_basis items must be 1-2048 characters')
+        return value
+
+
 class TaskContextBegin(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     personal_project_id: str | None = Field(default=None, min_length=1, max_length=128)
@@ -27,11 +45,18 @@ class TaskContextBegin(StrictModel):
     memory_revision: int | None = Field(default=None, ge=0)
     work_log_required: bool = False
     preference_scope: TaskPreferenceScope | None = None
+    agent_assignment: TaskAgentAssignment | None = None
 
 
 class TaskContextAgentMemory(StrictModel):
     expected_revision: int = Field(ge=0)
     memory: ProjectAgentWorkingMemory
+
+
+class TaskPreferenceRead(StrictModel):
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    source_application: SourceApplication
+    session_id: str = Field(min_length=1, max_length=256)
 
 
 class TaskContextCoordinationTask(StrictModel):
