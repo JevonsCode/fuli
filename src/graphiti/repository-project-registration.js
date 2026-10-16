@@ -1,8 +1,12 @@
+import { hostInternalActivity } from './task-entry-activity-origin.js';
+
 export const TASK_ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
 
 // Registers the exact repository ID the path resolver would match next time.
 // A failed registration leaves the task unresolved rather than guessing.
-export async function registerRepositoryProject(application, resolution) {
+// Internal Agent activity never registers a project for itself.
+export async function registerRepositoryProject(application, resolution, { sessionId = null } = {}) {
+  if (hostInternalActivity(application, { sessionId })) return { ...resolution, reason: 'internal_activity' };
   const projectId = resolution.repositoryProjectId;
   try {
     await application.upsertPersonalProject({
