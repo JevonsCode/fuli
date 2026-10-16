@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { join } from 'node:path';
 
 import { formatUninstallResult, runUninstallCommand } from '../src/cli/uninstall-command.js';
 import { applyLocalUninstall, planLocalUninstall, removalTarget } from '../src/setup/uninstall.js';
@@ -141,10 +142,18 @@ test('portable data outside the folder needs no warning; npm installs keep the n
 });
 
 test('a data folder whose name starts with two dots is still inside the portable folder', () => {
-  for (const dataDir of ['C:/Portable Fuli/..data', 'C:\\Portable Fuli\\..data\\graph', 'C:/Portable Fuli']) {
-    assert.equal(removalTarget({ portableRoot: 'C:/Portable Fuli', dataDir }).dataInside, true, dataDir);
+  // Host-native absolute paths: removalTarget uses the host path module.
+  const base = process.cwd();
+  const portableRoot = join(base, 'Portable Fuli');
+  for (const dataDir of [join(portableRoot, '..data'), join(portableRoot, '..data', 'graph'), portableRoot]) {
+    assert.equal(removalTarget({ portableRoot, dataDir }).dataInside, true, dataDir);
   }
-  for (const dataDir of ['C:/data', 'C:\\Portable Fuli other\\data', 'D:/Portable Fuli/data']) {
-    assert.equal(removalTarget({ portableRoot: 'C:/Portable Fuli', dataDir }).dataInside, false, dataDir);
+  for (const dataDir of [join(base, 'data'), join(base, 'Portable Fuli other', 'data')]) {
+    assert.equal(removalTarget({ portableRoot, dataDir }).dataInside, false, dataDir);
   }
+});
+
+test('Windows portable data checks accept backslashes and reject another drive', { skip: process.platform !== 'win32' }, () => {
+  assert.equal(removalTarget({ portableRoot: 'C:\\Portable Fuli', dataDir: 'C:\\Portable Fuli\\..data\\graph' }).dataInside, true);
+  assert.equal(removalTarget({ portableRoot: 'C:\\Portable Fuli', dataDir: 'D:\\Portable Fuli\\data' }).dataInside, false);
 });
