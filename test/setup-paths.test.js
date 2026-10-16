@@ -93,3 +93,20 @@ test('setup paths honor an explicit data directory and resolve runtime entries',
   assert.equal(paths.reviewSkillPath, join(PACKAGE_ROOT, 'skills', 'flreview'));
   assert.equal(paths.operationSkillPath, join(PACKAGE_ROOT, 'skills', 'operating-fuli'));
 });
+
+test('a Windows portable bundle exposes its folder as the removal root; other installs do not', async () => {
+  const { mkdtempSync, writeFileSync, realpathSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const root = mkdtempSync(join(tmpdir(), 'fuli portable paths '));
+  try {
+    writeFileSync(join(root, 'native-bundle.json'), JSON.stringify({ version: 1, platform: 'win32', arch: 'x64',
+      providerPackaging: 'embedded', neo4jHome: 'runtime/neo4j', javaHome: 'runtime/jre21',
+      providerPython: 'runtime/python/python.exe', providerSource: 'runtime/python/Lib/site-packages', dataDir: 'data' }));
+    const portable = resolveSetupPaths({ platform: 'win32', env: {}, homeDir: 'C:/Users/Test', packageRoot: root });
+    assert.equal(portable.portableRoot, realpathSync(root));
+    assert.equal(portable.dataDir, join(realpathSync(root), 'data'));
+    assert.equal(resolveSetupPaths({ platform: 'linux', env: {}, homeDir: '/home/test', packageRoot: root }).portableRoot, null);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+  assert.equal(resolveSetupPaths({ platform: 'win32', env: { LOCALAPPDATA: 'C:/Local' }, homeDir: 'C:/Users/Test',
+    packageRoot: PACKAGE_ROOT }).portableRoot, null);
+});
