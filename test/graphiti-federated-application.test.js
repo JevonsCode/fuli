@@ -227,25 +227,30 @@ test('collaboration context always layers global preferences with one exact loca
             preference_project_id: null,
             item_ids: ['tone-a', 'tone-b']
           }],
+          queued_conflicts: [{
+            id: 'tone-conflict',
+            personal_space_id: 'personal-space',
+            preference_key: 'tone',
+            preference_scope: 'global',
+            preference_project_id: null,
+            left_item_id: 'tone-a',
+            left_item_kind: 'entity',
+            right_item_id: 'tone-b',
+            right_item_kind: 'entity',
+            status: 'ai_pending',
+            requested_by: 'human',
+            reason: '相关任务使用时交给 AI 判断。',
+            deferred_at: '2026-07-29T01:00:00Z',
+            updated_at: '2026-07-29T01:00:00Z'
+          }],
           overridden_global_ids: [],
+          source_windows: {
+            candidates_truncated: false,
+            project_ancestors_truncated: false,
+            queued_conflicts_truncated: false
+          },
           truncated: false
         },
-        '/v1/preference-conflicts': [{
-          id: 'tone-conflict',
-          personal_space_id: 'personal-space',
-          preference_key: 'tone',
-          preference_scope: 'global',
-          preference_project_id: null,
-          left_item_id: 'tone-a',
-          left_item_kind: 'entity',
-          right_item_id: 'tone-b',
-          right_item_kind: 'entity',
-          status: 'ai_pending',
-          requested_by: 'human',
-          reason: '相关任务使用时交给 AI 判断。',
-          deferred_at: '2026-07-29T01:00:00Z',
-          updated_at: '2026-07-29T01:00:00Z'
-        }],
         '/v1/knowledge/agent-views': {
           recorded_count: 4,
           item_keys: [
@@ -278,6 +283,8 @@ test('collaboration context always layers global preferences with one exact loca
     );
     assert.equal(contextRead.query.personal_space_id, 'personal-space');
     assert.equal(contextRead.query.personal_project_id, 'fuli');
+    assert.equal(calls.some(({ path }) => path === '/v1/preference-conflicts'), false);
+    assert.equal(result.context.source_truncated, false);
     assert.deepEqual(
       result.effective_preferences.map(({ preference_key: preferenceKey }) => preferenceKey),
       ['writing-style', 'ui-density']

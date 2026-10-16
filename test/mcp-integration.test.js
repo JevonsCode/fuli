@@ -60,7 +60,13 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
         project_preferences: [],
         effective_preferences: [preference],
         conflicts: [],
+        queued_conflicts: [],
         overridden_global_ids: [],
+        source_windows: {
+          candidates_truncated: false,
+          project_ancestors_truncated: false,
+          queued_conflicts_truncated: false
+        },
         truncated: false
       };
     }
@@ -436,6 +442,10 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   assert.match(
     taskHookOutput.hookSpecificOutput.additionalContext,
     /taskContextToken/
+  );
+  assert.equal(
+    taskContext.structuredContent.context.source_truncated,
+    false
   );
   assert.equal(
     taskContext.structuredContent.effective_preferences[0].instruction,
