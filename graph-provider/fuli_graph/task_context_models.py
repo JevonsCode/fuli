@@ -7,6 +7,7 @@ from pydantic import Field, field_validator, model_validator
 from .models import SourceApplication, StrictModel
 from .model_validation import reject_credentials
 from .project_agent_memory_models import ProjectAgentWorkingMemory
+from .knowledge_usage_models import KnowledgeUsageItem
 
 
 class TaskPreferenceScope(StrictModel):
@@ -115,9 +116,14 @@ class TaskContextCheckpoint(StrictModel):
     capture_results: list[TaskCaptureReceipt] | None = Field(default=None, min_length=1, max_length=2)
     agent_memory: TaskContextAgentMemory | None = None
     work_log: TaskWorkLog | None = None
+    knowledge_usage: list[KnowledgeUsageItem] | None = Field(default=None, min_length=1, max_length=200)
 
     @model_validator(mode='after')
     def reject_sensitive_values(self):
+        if self.knowledge_usage is not None:
+            identities = {(item.item_kind, item.item_id, item.use_kind) for item in self.knowledge_usage}
+            if len(identities) != len(self.knowledge_usage):
+                raise ValueError('knowledge usage items must be unique')
         if self.agent_memory is not None and self.phase != 'prepare':
             raise ValueError('Agent memory belongs to atomic checkpoint preparation')
         if self.capture_results is not None:
