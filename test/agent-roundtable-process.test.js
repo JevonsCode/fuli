@@ -61,3 +61,51 @@ for (const [mode, code] of [['cancel', 'cancelled'], ['timeout', 'wake_timeout']
     }
   });
 }
+
+// An idle descendant holding a large resident heap exits measurably later than
+// its group leader, so "the leader closed" cannot stand in for "the tree exited".
+test('confirmed cleanup waits for a slow-exiting descendant, not only the leader', { timeout: 10_000 }, async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'fuli-process-exit-'));
+  const pidFile = join(cwd, 'pids.json');
+  const controller = new AbortController();
+  let pids = [];
+  const descendant = `
+    globalThis.held = Buffer.alloc(64 * 1024 * 1024, 1);
+    require('node:fs').writeFileSync(process.argv[1], String(process.pid));
+    setInterval(() => {}, 1000);
+  `;
+  const script = `
+    const { spawn } = require('node:child_process');
+    const { readFileSync, writeFileSync } = require('node:fs');
+    const ready = process.argv[1] + '.descendant';
+    const child = spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}, ready], { stdio: 'ignore' });
+    const report = setInterval(() => {
+      try { readFileSync(ready); } catch { return; }
+      clearInterval(report);
+      writeFileSync(process.argv[1], JSON.stringify([process.pid, child.pid]));
+    }, 10);
+    setInterval(() => {}, 1000);
+  `;
+  const result = runProcess(process.execPath, ['-e', script, pidFile], {
+    cwd, env: {}, input: '', timeoutMs: 30_000, maxOutputBytes: 1024, signal: controller.signal,
+  }).catch((error) => error);
+  try {
+    pids = await waitFor(async () => {
+      try { return JSON.parse(await readFile(pidFile, 'utf8')); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    });
+    // Like the timeout path, kill a tree that has gone idle; an immediate kill
+    // can let the descendant finish exiting first by accident.
+    await delay(500);
+    controller.abort('share_withdrawn');
+    const error = await result;
+    assert.equal(error.code, 'cancelled');
+    assert.equal(error.cleanup, undefined, 'cleanup must be confirmed');
+    assert.deepEqual(pids.map(alive), [false, false], 'both owned processes must have exited');
+  } finally {
+    controller.abort('fixture_cleanup');
+    await result;
+    await waitFor(() => pids.every((pid) => !alive(pid)));
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

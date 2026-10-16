@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { realpathSync } from 'node:fs';
 import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -169,8 +170,10 @@ test('Windows native setup resolves explicit existing assets and an external Pro
 });
 
 test('Windows portable bundle discovery rebinds cached assets after a stopped directory move', async t => {
-  const root = await mkdtemp(join(tmpdir(), 'fuli-portable-discovery-'));
-  assert.equal(dirname(resolve(root)), resolve(tmpdir()));
+  // The bundle reader canonicalizes its root, so derive expectations from the same real path
+  // (macOS tmpdir() is /var/..., which resolves to /private/var/...).
+  const root = realpathSync(await mkdtemp(join(tmpdir(), 'fuli-portable-discovery-')));
+  assert.equal(dirname(root), realpathSync(tmpdir()));
   t.after(() => rm(root, { recursive: true, force: true }));
   const source = join(root, '中文 portable');
   const moved = join(root, '已搬移 portable');
