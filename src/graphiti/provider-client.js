@@ -82,6 +82,29 @@ export class GraphitiProviderClient {
     const query = new URLSearchParams({ personal_space_id, personal_project_id });
     return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}?${query}`, { capability, signal });
   }
+  prepareProjectAgentWorkerRun(input, { signal } = {}) {
+    return this.#workerHostRequest('/v1/project-agent-worker-runs', { method: 'PUT', body: input, signal });
+  }
+  claimProjectAgentWorkerStart(runId, scope, { capability, signal } = {}) {
+    return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/start-claim`, {
+      capability, signal, method: 'POST', body: scope
+    });
+  }
+  sealProjectAgentWorkerSession(runId, input, { capability, signal } = {}) {
+    return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/session`, {
+      capability, signal, method: 'PUT', body: input
+    });
+  }
+  closeProjectAgentWorkerRun(runId, input, { capability, signal } = {}) {
+    return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/close`, {
+      capability, signal, method: 'POST', body: input
+    });
+  }
+  revokeProjectAgentWorkerRun(runId, input, { signal } = {}) {
+    return this.#workerHostRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/revoke`, {
+      signal, method: 'POST', body: input
+    });
+  }
   admitProjectAgentWorkerContext(runId, { personal_space_id, personal_project_id, source_application, session_id }, { capability, signal } = {}) {
     return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/contexts`, {
       capability, signal, method: 'POST', body: { personal_space_id, personal_project_id, source_application, session_id }
@@ -91,14 +114,17 @@ export class GraphitiProviderClient {
     if (typeof capability !== 'string' || capability.length < 32) {
       throw new TypeError('Worker runtime capability is required');
     }
+    return this.#workerHostRequest(path, { ...options, signal, workerCapability: capability });
+  }
+  async #workerHostRequest(path, { signal = activeAgentRequestSignal(), ...options } = {}) {
     try {
-      return await this.#request(path, { ...options, signal, workerCapability: capability });
+      return await this.#request(path, { ...options, signal });
     } catch (error) {
       // A capability must never be reflected by Provider detail, abort reason or cause.
       const cancelled = signal?.aborted;
       const code = cancelled ? 'request_cancelled' : error instanceof ProviderRequestError ? error.code : 'provider_unavailable';
-      const message = cancelled ? 'Worker admission was cancelled.'
-        : code === 'provider_timeout' ? 'Worker admission timed out.' : 'Worker admission failed.';
+      const message = cancelled ? 'Worker runtime request was cancelled.'
+        : code === 'provider_timeout' ? 'Worker runtime request timed out.' : 'Worker runtime request failed.';
       throw new ProviderRequestError(message, { code, status: cancelled ? 0 : error.status ?? 0 });
     }
   }
@@ -217,8 +243,8 @@ export class GraphitiProviderClient {
       method: 'PUT', body: input
     });
   }
-  getTaskContext(token, query) {
-    return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}?${new URLSearchParams(query)}`);
+  getTaskContext(token, query, { signal } = {}) {
+    return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}?${new URLSearchParams(query)}`, { signal });
   }
   checkpointTaskContext(token, input) {
     return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}/checkpoint`, {
@@ -306,11 +332,11 @@ export class GraphitiProviderClient {
       `/v1/project-agent-tasks/${encodeURIComponent(taskId)}?${query}`
     );
   }
-  recordProjectAgentTaskActivity(input) {
+  recordProjectAgentTaskActivity(input, { signal } = {}) {
     return this.#request(
       `/v1/project-agent-tasks/${encodeURIComponent(input.task_id ?? input.taskId)}/events`,
       {
-        method: 'POST', body: input
+        method: 'POST', body: input, signal
       }
     );
   }

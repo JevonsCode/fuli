@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { getEventListeners } from 'node:events';
 import { startCodexAcpProcess } from '../src/agents/codex/acp-process.js';
+import { createCodexAcpWorkerAdapter } from '../src/agents/codex/acp-worker.js';
+import { createWorkerRunAttempt } from '../src/graphiti/worker-run-host.js';
 import { inspectWindowsNativeProcess, stopWindowsNativeProcess } from '../src/native-runtime/windows-processes.js';
 
 const secret = 'SYNTHETIC_PRIVATE_VALUE_NEVER_LOG';
@@ -101,7 +103,7 @@ input.on('line',async line=>{
 });
 function reply(id){
   send({jsonrpc:'2.0',id,result:{protocolVersion:1,agentCapabilities:{},agentInfo:{name:'synthetic',version:'1'}}});
-  send({jsonrpc:'2.0',method:'_auth/status_update',params:{authStatus:{kind:'none',account:{email:secret}}}});
+  send({jsonrpc:'2.0',method:'_auth/status_update',params:{authStatus:{kind:mode==='worker-host'?'account':'none',account:{email:secret}}}});
 }
 input.on('close',()=>{if(mode!=='hang')process.exit(0);});
 `);
@@ -143,6 +145,59 @@ test('ACP requires existing cwd trust, locks one session and one exact-model pro
     assert.equal(observed.sessionRequest.mcpServers[0].env[0].value, secret);
     assert.equal(observed.methods.filter(method => method === 'session/prompt').length, 1);
   } finally { await handle.close(); }
+});
+
+test('host connects one synthetic ACP process to a mocked Provider WorkerRun and verifies the child result', windowsOnly, async t => {
+  const { options, record, root } = await fixture(t, 'worker-host');
+  await trust(options);
+  const request = { personal_space_id: 'synthetic-space', personal_project_id: 'synthetic-project',
+    task_context_token: 'fuli-task-parent-fixture-1234', source_application: 'claude_code', task_id: 'task',
+    agent_id: 'synthetic-agent', worker_id: 'synthetic-worker', executor_id: 'synthetic-executor',
+    target_application: 'codex', provider: 'openai', model: 'gpt-6.1-sol',
+    model_strategy: { mode: 'deep', reasoning_effort: 'max', capability_hints: [] }, idempotency_key: 'synthetic-attempt-1234' };
+  const context = { personal_space_id: request.personal_space_id, personal_project_id: request.personal_project_id,
+    project_agent_id: request.agent_id, token: 'fuli-task-own-fixture-5678', source_application: 'codex',
+    session_id: 'synthetic-session', source_session_id: 'synthetic-session', turn_id: 'worker-run:synthetic-run' };
+  const run = state => ({ ...request, run_id: 'synthetic-run', state, actual_session_id: 'synthetic-session',
+    requested_model_provider: request.provider, requested_model: request.model,
+    requested_model_strategy: request.model_strategy });
+  const activities = [];
+  const provider = {
+    prepareProjectAgentWorkerRun: async () => run('prepared'),
+    claimProjectAgentWorkerStart: async () => ({ ...run('claimed'), start_claimed: true }),
+    sealProjectAgentWorkerSession: async (_id, value) => {
+      assert.equal(value.session_id, 'synthetic-session'); return run('sealed');
+    },
+    admitProjectAgentWorkerContext: async () => ({ ...run('admitted'), own_context_token: context.token, task_context: context }),
+    getTaskContext: async token => {
+      if (token === request.task_context_token) return { ...context, token, session_id: 'parent-session', source_application: 'claude_code' };
+      assert.equal(token, context.token);
+      const observed = JSON.parse(await readFile(record, 'utf8'));
+      assert.equal(observed.methods.filter(method => method === 'session/prompt').length, 1);
+      return { ...context, checkpoint: { phase: 'complete', work_log: {
+        status: 'completed', summary: 'Synthetic child handled one prompt; no real model was invoked.' } } };
+    },
+    closeProjectAgentWorkerRun: async () => run('closed'),
+    recordProjectAgentTaskActivity: async input => { activities.push(input); }
+  };
+  const leases = { acquireGraphLease: async () => ({ enabled: false, leaseId: null }),
+    releaseLease: async () => ({ released: false }) };
+  const adapter = createCodexAcpWorkerAdapter({ ...options, runtimeConfigPath: join(root, 'unused-fixture-runtime.json'),
+    startProcess: input => startCodexAcpProcess({ ...input, initializeTimeoutMs: 5000, stopTimeoutMs: 8000 }) });
+  const result = await createWorkerRunAttempt({ provider, leases, adapter, request, projectPath: options.cwd,
+    taskPrompt: 'Synthetic protocol fixture; do not claim a real model result.',
+    toolNames: ['get_collaboration_preferences', 'checkpoint_task_knowledge'] }).run();
+  assert.equal(result.outcome.status, 'completed');
+  assert.deepEqual(result.cleanup, { processStopped: true, runClosed: true, errors: [] });
+  const observed = JSON.parse(await readFile(record, 'utf8'));
+  assert.equal(gone(observed.pid), true);
+  const server = observed.sessionRequest.mcpServers[0];
+  assert.equal(server.name, 'fuli_worker');
+  assert.equal(JSON.stringify(server).includes(request.task_context_token), false);
+  assert.equal(JSON.stringify(observed.prompt).includes('FULI_WORKER_DESCRIPTOR'), false);
+  assert.equal(activities.at(-1).worker_runtime.session_id, 'synthetic-session');
+  assert.equal(activities.at(-1).source_session_id, 'parent-session');
+  assert.equal(Object.hasOwn(activities.at(-1), 'actual_model'), false);
 });
 
 test('ACP refuses unsupported effort and mismatched model acknowledgements before any prompt', windowsOnly, async t => {
