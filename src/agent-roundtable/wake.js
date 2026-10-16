@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { WAKE_CLIENTS, wakeAdapter } from '../agents/wake-registry.js';
 
@@ -76,7 +77,7 @@ export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutpu
     child.once('spawn', () => onSpawn?.());
     let output = '', bytes = 0, settled = false;
     const kill = async () => {
-      let killing = Promise.resolve(0);
+      let killing = Promise.resolve(0), deadline, deadlineReached = false;
       if (process.platform === 'win32') {
         const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
         killing = new Promise((resolve) => {
@@ -85,15 +86,16 @@ export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutpu
           killer.once('close', (code) => resolve(failure ?? code));
         });
       } else {
-        try { process.kill(-child.pid, 'SIGKILL'); }
-        catch (error) { if (error.code !== 'ESRCH') killing = Promise.resolve(error.code); }
+        try {
+          process.kill(-child.pid, 'SIGKILL');
+          killing = processGroupExited(child.pid, () => deadlineReached);
+        } catch (error) { if (error.code !== 'ESRCH') killing = Promise.resolve(error.code); }
       }
-      let deadline;
       try {
         const [, killCode] = await Promise.race([
           Promise.all([closed, killing]),
-          new Promise((_, reject) => { deadline = setTimeout(() => reject(
-            Object.assign(new Error('Process cleanup could not be confirmed'), { code: 'cleanup_timeout' })), 5_000); }),
+          new Promise((_, reject) => { deadline = setTimeout(() => { deadlineReached = true; reject(
+            Object.assign(new Error('Process cleanup could not be confirmed'), { code: 'cleanup_timeout' })); }, 5_000); }),
         ]);
         if (killCode !== 0) throw Object.assign(new Error('Process tree termination failed'), { code: 'cleanup_failed' });
       } finally { clearTimeout(deadline); }
@@ -126,6 +128,17 @@ export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutpu
     child.stdin.on('error', () => {});
     child.stdin.end(input);
   });
+}
+
+// SIGKILL is delivered asynchronously and orphaned descendants are reaped by
+// init, so the leader closing does not mean its group is gone. The group has
+// exited only once the kernel no longer resolves any member of it.
+async function processGroupExited(pgid, stopped) {
+  while (!stopped()) {
+    try { process.kill(-pgid, 0); }
+    catch (error) { if (error.code === 'ESRCH') return 0; }
+    await delay(10);
+  }
 }
 
 function whichCommand(name, platform) {
