@@ -51,12 +51,30 @@ export async function windowsNativeProcessMatches(pid, command, entry, options) 
   return Boolean(identityMatches(await inspectWindowsNativeProcess(pid, options), entry.ownership));
 }
 
+// Listening owners on every local address, so a 0.0.0.0 or [::] listener that
+// would also answer 127.0.0.1 is visible, not only an exact loopback bind.
+async function listeningOwners(port) {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid native service port');
+  return powershell('$owners = @(Get-NetTCPConnection -State Listen -LocalPort ' + port
+    + ' -ErrorAction SilentlyContinue | ForEach-Object {[pscustomobject]@{pid=[int]$_.OwningProcess;'
+    + 'name=(Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName}} | Sort-Object pid -Unique);'
+    + 'ConvertTo-Json -InputObject $owners -Compress');
+}
+
+// Before spawning: a port another process already holds would let the readiness
+// probe reach that process and end in a misleading ownership failure.
+export async function assertWindowsNativePortFree(port) {
+  const owners = await listeningOwners(port);
+  if (owners.length) {
+    const observed = owners.map(owner => owner.pid + (owner.name ? ' (' + owner.name + ')' : '')).join(', ');
+    throw new Error('The native service port is already in use before Fuli starts its process: ' + port
+      + ' (owner PIDs: ' + observed + '). Stop that process or choose another port; nothing was started or stopped.');
+  }
+}
+
 export async function assertWindowsNativePortOwner(entry, port) {
   await refreshProviderChild(entry);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid native service port');
-  const owners = await powershell('$owners = @(Get-NetTCPConnection -State Listen -LocalPort ' + port
-    + ' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique);'
-    + 'ConvertTo-Json -InputObject $owners -Compress');
+  const owners = (await listeningOwners(port)).map(owner => owner.pid);
   const owned = new Set([entry.pid, ...(entry.relatedProcesses ?? []).map(item => item.pid)]);
   if (!owners.length || owners.some(pid => !owned.has(pid))) {
     const expected = [...owned].filter(Number.isInteger).join(',') || 'none';
