@@ -215,6 +215,8 @@ test('process, authority and lease cleanup failures and unrecorded terminal acti
     assert.ok(result.cleanup.errors.length > 0);
     assert.equal(result.reporting.terminalRecorded, kind !== 'report');
     if (['process', 'run'].includes(kind)) assert.equal(result.outcome.code, 'worker_cleanup_incomplete');
+    else assert.deepEqual(result.outcome, { status: 'incomplete', code: 'worker_host_finalization_incomplete' });
+    assert.equal(result.checkpoint.workLog.status, 'completed');
     assert.equal(JSON.stringify(result).includes(capability), false);
   }
 });

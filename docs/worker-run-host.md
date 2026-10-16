@@ -69,3 +69,10 @@ owned process, and records its terminal event. The result exposes process/run
 cleanup, unrecorded activity, and lease release errors; it never turns these into
 silent success. A launch failure without a returned process handle emits no
 worker execution row. The host does not checkpoint or advance the parent's task.
+An otherwise completed child with failed terminal reporting or lease release has
+an `incomplete` host outcome. Its saved child checkpoint remains in `checkpoint`.
+
+`graph-provider/tests/test_worker_run_host_neo4j.py` reuses the opt-in disposable
+Provider/Neo4j harness and runs `acceptance/worker-run-host-live.js`. It verifies
+the actual HTTP JSON contracts and persisted checkpoint/activity through the
+restricted stdio MCP. Its adapter and model output are explicitly synthetic.

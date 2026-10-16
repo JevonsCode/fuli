@@ -189,6 +189,11 @@ export function createWorkerRunAttempt({ provider, leases, adapter, request, pro
         } catch { cleanupErrors.push('worker_lease_release_failed'); }
       }
     }
+    if (outcome.status === 'completed' && cleanupErrors.length) {
+      // The saved child checkpoint remains evidence of its work, but the host
+      // has not delivered a successful attempt until reporting and cleanup finish.
+      outcome = { status: 'incomplete', code: 'worker_host_finalization_incomplete' };
+    }
     return { runId: runId ?? null, outcome, ...(child ? { workerRuntime: runtime() } : {}),
       result: result ?? null, checkpoint: checkpoint ?? null,
       reporting: { runningRecorded, terminalRecorded }, cleanup: { processStopped, runClosed, errors: cleanupErrors } };
