@@ -272,6 +272,51 @@ async function workerCall(server, name, args = {}, signal = new AbortController(
     params: { name, arguments: args } }, { signal, requestId: 1 });
 }
 
+test('ordinary and worker MCP entries deliver the same explicit preference block without partial rules', async () => {
+  for (const worker of [false, true]) {
+    const { app, port, context, calls } = workerFixture();
+    let sourceTruncated;
+    const read = app.personal.collaborationPreferences;
+    app.personal.collaborationPreferences = async (...args) => ({ ...await read(...args),
+      truncated: sourceTruncated, effective_preferences: sourceTruncated ? [] : [{ instruction: 'Long complete rule. '.repeat(12_000) }] });
+    const ordinaryEntry = () => ({ context: { ...context, source_truncated: sourceTruncated },
+      effective_preferences: sourceTruncated ? [] : [{ instruction: 'Long complete rule. '.repeat(12_000) }],
+      task_lifecycle: { status: 'not_started', reason: 'native_session_required' } });
+    if (!worker) { app.getCollaborationPreferences = ordinaryEntry; app.beginTaskContext = ordinaryEntry; }
+    const server = createMcpServer(app, { env: {}, registerResources: false,
+      ...(worker ? { workerTaskContext: port } : { toolNames: ['begin_task_context', 'get_collaboration_preferences'] }) });
+    try {
+      for (sourceTruncated of [true, false]) {
+        for (const name of ['begin_task_context', 'get_collaboration_preferences']) {
+          const result = await workerCall(server, name, { projectPath: '/host/project', sessionId: 'synthetic-session' });
+          assert.notEqual(result.isError, true);
+          const data = result.structuredContent;
+          assert.equal(data.preference_delivery.reason, sourceTruncated ? 'source_window' : 'delivery_budget');
+          assert.equal(data.preferences_complete, false);
+          assert.equal(data.same_task_recovery_available, false);
+          assert.equal(Object.hasOwn(data, 'effective_preferences'), false);
+          assert.match(result.content[0].text, /Fuli preference delivery is blocked/);
+          assert.match(data.preference_delivery.guidance, /Do not execute/);
+          if (name === 'get_collaboration_preferences') assert.equal(result.content[0].text, JSON.stringify(data));
+          assert.doesNotMatch(result.content[0].text, /Apply effective_preferences/);
+          if (worker) {
+            assert.equal(data.task_context_token, context.token);
+            assert.equal(data.worker_run.run_id, 'synthetic-run');
+            assert.equal(data.context.project_agent_id, context.project_agent_id);
+            assert.equal(data.project_agent_context.memory, undefined);
+            assert.equal(data.agent_receipt.owner.agent_id, context.project_agent_id);
+          } else {
+            assert.equal(data.task_lifecycle.status, 'not_started');
+            assert.equal(data.task_context_token, undefined);
+          }
+          assert.ok(Buffer.byteLength(JSON.stringify(data)) <= 128 * 1024);
+        }
+      }
+      if (worker) { assert.equal(calls.ordinary, 0); assert.equal(calls.admit, 4); }
+    } finally { await server.close(); }
+  }
+});
+
 test('worker initialization is offline and entry delivers its admitted identity without ordinary selection', async () => {
   const { app, port, calls, run, context } = workerFixture();
   run.state = 'claimed';
