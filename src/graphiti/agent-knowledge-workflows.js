@@ -1,4 +1,6 @@
+import { taskAgentAssignment } from './task-agent-assignment.js';
 import { beginConversation, checkpointConversation } from './agent-conversations.js';
+import { taskTeam } from './task-collaboration-attribution.js';
 import { taskAgentReceipt } from '../agents/identity-receipt.js';
 import { createHash } from 'node:crypto';
 import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
@@ -85,6 +87,7 @@ export async function beginTaskFromPreferences(application, preferences, {
     sourceApplication,
     sourceSessionId,
     preferenceScope: taskPreferenceScope({ version: 1, work_kind: workKind, workflow }),
+    agentAssignment: taskAgentAssignment(preferences.project_agent_context),
     memoryRevision: preferences.project_agent_context?.memory?.revision ?? null,
     workLogRequired: Boolean(preferences.project_agent_context?.memory)
   });
@@ -98,7 +101,12 @@ export async function beginTaskFromPreferences(application, preferences, {
     previous_checkpoint_missing: task.previousCheckpointMissing,
     ...preferences,
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
-    task_guidance: {
+    task_guidance: taskKnowledgeGuidance()
+  };
+}
+
+export function taskKnowledgeGuidance() {
+  return {
       execution_plan: 'For an explicit durable project execution plan, publish public steps via record_project_agent_task_activity.executionPlan and update step statuses as work progresses. Reuse step IDs and send the full current plan; steps: [] withdraws it. Optional: never invent plans, infer progress percentages or expose private reasoning. Completed steps do not replace verification or human acceptance.',
       collaboration: 'Before implementation, call plan_agent_collaboration with taskSize and all known implementationAgentIds; follow divisionPlan. Standard work: main FLA + different FLA for independent acceptance. Complex work: add at most one explicitly bounded independentWork. Small low-impact edits, coupled changes and command-only checks need no artificial split. Keep coupled implementation together; separate meaningful acceptance once artifacts are stable. The stable project lead decomposes, integrates and delivers. Reuse qualified specialists; gaps use approved loans or existing HR flow. Workers get bounded briefs and necessary artifact references, not the full conversation. Start with at most 3 results/query; expand only for a specific gap. Use only authorized clients/models and assess_agent_action under existing user policies. Publish assigned scopes/dependencies via the optional execution plan; report real worker/model/usage and leave unknown tokens unknown. Verify artifacts via record_agent_verification with evidence; escalate capability after two failures. Recommendations, command runs and configured peers alone are not independent worker execution.',
       profile_capture: 'Separately evaluate durable artifact taste (including writing voice, wording, structure, formatting), stable collaboration personality and decision preferences; do not default all to judgment_preference. Writing evidence uses tasteDomain: writing. Retain exact session/turn/time provenance. Agent-inferred personality stays pending. Report missing evidence; do not promise automatic progress from use alone.',
@@ -106,8 +114,7 @@ export async function beginTaskFromPreferences(application, preferences, {
       human_attention: 'When the selected Project Agent needs a human answer, decision, review or permission, use request_agent_attention with the exact current space/project/Agent IDs, a stable idempotency key and a specific requestedAction. Never raise a hand for ordinary running, queueing or automatic retries. Read list_agent_attention with status=resolved for replies; cancel obsolete requests with cancel_agent_attention. A response does not grant permission or accept task completion.',
       retrieval: 'Inspect task_knowledge_recall before asking for a stable project fact or method again. On a miss, use search_current_project_knowledge with focused action, artifact, target-system, or identifier queries; never use the full conversational request as the only query.',
       checkpoint: 'The task owner checkpoints once after integration. Coordinated workers return results and evidence to the coordinator; they must not begin or checkpoint an inherited parent context. Before finishing the owned task, call checkpoint_task_knowledge with capture_candidates or retain_nothing. For an assigned employee include workLog with a concise result summary and truthful status (completed, incomplete, failed, no_change, or reported), even when there is no knowledge to capture. When durable role context changed, also include agentMemory with the loaded revision and bounded merged notes. Do not overwrite from truncated context or store raw transcripts.'
-    }
-  };
+    };
 }
 
 export async function checkpointTaskKnowledge(application, {
@@ -118,6 +125,7 @@ export async function checkpointTaskKnowledge(application, {
   captureRouting = null,
   agentMemory = null,
   workLog = null,
+  knowledgeUsage = null,
   sourceApplication = 'other',
   personalProjectId = null,
   remoteSessionId = null,
@@ -146,15 +154,16 @@ export async function checkpointTaskKnowledge(application, {
   }
   const fingerprint = createHash('sha256').update(JSON.stringify(
     canonicalCheckpoint({ disposition, reason, capture: scopedCaptures ? null : capture,
-      ...(scopedCaptures ? { captures: scopedCaptures } : {}), agentMemory, ...(workLog ? { workLog } : {}) })
+      ...(scopedCaptures ? { captures: scopedCaptures } : {}), agentMemory, ...(workLog ? { workLog } : {}),
+      ...(knowledgeUsage ? { knowledgeUsage } : {}) })
   )).digest('hex');
   if (task.checkpoint && task.checkpoint.fingerprint !== fingerprint) {
     throw validationError(
       'Task checkpoint already has different input; resume the original review or begin a new task context'
     );
   }
-  const team = await taskTeam(application, task, collaborators);
-  const finish = async (result) => {
+  const finish = async (result, checkpointTask = task) => {
+    const team = await taskTeam(application, checkpointTask, collaborators);
     const effectiveLog = workLog ?? { status: 'reported', summary: reason };
     const conversation = await checkpointConversation(application, task, effectiveLog, team);
     return { ...result, conversation,
@@ -168,6 +177,7 @@ export async function checkpointTaskKnowledge(application, {
     return finish({ status: 'checkpointed', disposition, reason,
       personal_project_id: task.personalProjectId, project_agent_id: task.projectAgentId,
       replayed: true, capture_status: task.checkpoint.captureStatus,
+      ...(task.checkpoint.knowledgeUsageResult ? { knowledge_usage: task.checkpoint.knowledgeUsageResult } : {}),
       ...(task.checkpoint.captureResults ? { capture_results: taskCaptureReviewPaths(application.config.personal.spaceId, task.checkpoint.captureResults) } : {}) });
   }
   const captureInput = capture && !scopedCaptures ? {
@@ -212,6 +222,7 @@ export async function checkpointTaskKnowledge(application, {
       memory: prepared.request.memory };
   }
   const checkpoint = { disposition, reason, fingerprint, captureStatus: null,
+    ...(knowledgeUsage ? { knowledgeUsage } : {}),
     ...(task.projectAgentId ? { workLog: workLog ?? {
       status: agentMemory ? 'reported' : 'unreported', summary: reason
     } } : {}) };
@@ -234,7 +245,7 @@ export async function checkpointTaskKnowledge(application, {
   const captureStatus = captureResults
     ? taskCaptureStatus(captureResults)
     : captureResult?.status ?? null;
-  await application.taskContextRegistry.checkpoint(taskContextToken, {
+  const completedTask = await application.taskContextRegistry.checkpoint(taskContextToken, {
     ...checkpoint, captureStatus, ...(captureResults ? { captureResults } : {})
   }, sourceApplication);
   return finish({
@@ -244,6 +255,7 @@ export async function checkpointTaskKnowledge(application, {
     personal_project_id: task.personalProjectId,
     project_agent_id: task.projectAgentId ?? null,
     capture: captureResult,
+    ...(preparedTask.checkpoint?.knowledgeUsageResult ? { knowledge_usage: preparedTask.checkpoint.knowledgeUsageResult } : {}),
     ...(captureResults ? { capture_status: captureStatus, capture_results: taskCaptureReviewPaths(application.config.personal.spaceId, captureResults) } : {}),
     agent_memory: memoryResult ? {
       status: memoryResult.status, agentId: memoryResult.agentId,
@@ -251,23 +263,7 @@ export async function checkpointTaskKnowledge(application, {
       sourceApplication: memoryResult.sourceApplication,
       sourceSessionId: memoryResult.sourceSessionId, createdAt: memoryResult.createdAt
     } : null
-  });
-}
-
-// Names the lead and only collaborators that are real, active Agents of this space.
-async function taskTeam(application, task, collaboratorIds) {
-  const requested = [...new Set(collaboratorIds)].filter(id => id !== task.projectAgentId);
-  if (!task.projectAgentId) return { name: null, collaborators: [], ignored: requested };
-  let agents = [];
-  try {
-    agents = await application.listProjectAgents({ personalSpaceId: application.config.personal.spaceId });
-  } catch { /* Attribution metadata never blocks a checkpoint. */ }
-  const byId = new Map(agents.map(agent => [agent.agentId, agent]));
-  const label = agent => agent?.profile.displayName || agent?.profile.name || null;
-  const active = requested.filter(id => byId.get(id)?.profile.status === 'active');
-  return { name: label(byId.get(task.projectAgentId)),
-    collaborators: active.map(id => ({ agentId: id, name: label(byId.get(id)) })),
-    ignored: requested.filter(id => !active.includes(id)) };
+  }, completedTask);
 }
 
 function canonicalCheckpoint(value) {

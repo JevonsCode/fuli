@@ -1,12 +1,11 @@
-import { spawn } from 'node:child_process';
-import { once } from 'node:events';
 import { realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join, normalize } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { client, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk';
 import { ApplicationError } from '../../app/application-error.js';
-import { inspectWindowsNativeProcess, stopWindowsNativeProcess } from '../../native-runtime/windows-processes.js';
+import { spawnWindowsJobProcess } from '../../native-runtime/windows-job-process.js';
+import { createCodexAcpSession } from './acp-session.js';
 
 const AUTH = '_auth/status_update';
 const AUTH_KINDS = new Set(['none', 'account', 'api_key', 'gateway', 'external']);
@@ -15,8 +14,8 @@ const MAX_BYTES = 64 * 1024;
 const samePath = (a, b) => normalize(a).toLowerCase() === normalize(b).toLowerCase();
 const failure = code => new ApplicationError(`acp_${code}`, `Codex ACP ${code.replaceAll('_', ' ')}.`);
 
-// One owned Windows adapter/app-server pair. Lease and WorkerRun policy stay with the host.
-// This port intentionally exposes no session/new, prompt, authentication or hook operations.
+// One owned Windows adapter/session tree. Lease and WorkerRun policy stay with the host.
+// Login, trust changes, resume, and arbitrary RPC are deliberately not exposed.
 export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, cwd,
   env = process.env, signal, initializeTimeoutMs = 15_000, stopTimeoutMs = 10_000 }) {
   if (process.platform !== 'win32') throw failure('platform_unsupported');
@@ -37,37 +36,59 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
     if (value <= 0) throw failure('timeout');
     return value;
   };
-  const child = spawn(nodePath, [paths.adapterPath], { cwd: paths.cwd, env: childEnv,
-    windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
-  let exited = false, exit, connection, closing, rootOwner, initialization, initializationCaptured = false, authentication = 'unknown';
-  let stderrBytes = 0, stderrTruncated = false, requestedId = null, terminalError = null, timer;
-  const owned = new Map(), permissions = [];
+  const child = await spawnWindowsJobProcess(nodePath, [paths.adapterPath], { cwd: paths.cwd, env: childEnv, stopTimeoutMs });
+  let connection, session, closing, initialization, notification = Promise.resolve(), authentication = 'unknown';
+  let stderrBytes = 0, stderrTruncated = false, terminalError = null, timer;
+  const requestedIds = new Set();
+  const authenticationWaiters = new Set();
+  const owned = new Set(), permissions = [];
   const lifetime = new AbortController();
   let resolveClosed, rejectClosed;
   const closed = new Promise((resolve, reject) => { resolveClosed = resolve; rejectClosed = reject; });
   void closed.catch(() => {});
-  async function capture(timeoutMs) {
-    if (exited) return false;
-    const rows = await inspectWindowsNativeProcess(child.pid, { children: true, timeoutMs });
-    if (exited) return false;
-    const root = rows.find(row => row.pid === child.pid);
-    if (!root?.executable || !samePath(root.executable, nodePath) || !root.commandLine?.includes(paths.adapterPath) ||
-        (rootOwner && (root.createdFileTime !== rootOwner.createdFileTime || root.commandLine !== rootOwner.commandLine))) {
-      throw failure('cleanup_incomplete');
+  async function waitForAuthentication({ timeoutMs = 5000, signal: callerSignal } = {}) {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60_000) throw failure('invalid_timeout');
+    let timeout, observed, stopped, cancelled;
+    try {
+      if (lifetime.signal.aborted) throw lifetime.signal.reason;
+      if (callerSignal?.aborted) throw failure('cancelled');
+      const observedAuthentication = await new Promise((resolve, reject) => {
+        // An initialize ACK can precede the first wire-validated auth notification.
+        observed = () => resolve(authentication);
+        stopped = () => reject(lifetime.signal.reason ?? failure('closed'));
+        cancelled = () => reject(failure('cancelled'));
+        authenticationWaiters.add(observed);
+        lifetime.signal.addEventListener('abort', stopped, { once: true });
+        callerSignal?.addEventListener('abort', cancelled, { once: true });
+        timeout = setTimeout(() => reject(failure('authentication_timeout')), timeoutMs);
+        if (authentication !== 'unknown') observed();
+        if (lifetime.signal.aborted) stopped();
+        if (callerSignal?.aborted) cancelled();
+      });
+      if (lifetime.signal.aborted) throw lifetime.signal.reason;
+      if (callerSignal?.aborted) throw failure('cancelled');
+      return observedAuthentication;
+    } catch (error) {
+      const reason = lifetime.signal.reason ?? error;
+      await close(reason);
+      throw reason;
+    } finally {
+      clearTimeout(timeout);
+      authenticationWaiters.delete(observed);
+      if (stopped) lifetime.signal.removeEventListener('abort', stopped);
+      if (cancelled) callerSignal?.removeEventListener('abort', cancelled);
     }
-    rootOwner = root;
-    owned.set(root.pid, root);
-    for (const row of rows) if (row.parentPid === root.pid && row.executable && row.commandLine &&
-        samePath(row.executable, paths.codexPath) && BigInt(row.createdFileTime) >= BigInt(root.createdFileTime)) {
-      owned.set(row.pid, row);
-    }
-    return true;
+  }
+  async function capture() {
+    const pids = await child.snapshot();
+    for (const pid of pids) if (owned.size < 64) owned.add(pid);
+    return pids.includes(child.pid);
   }
   function close(reason = failure('closed')) {
     if (closing) return closing;
+    terminalError ??= reason;
     clearTimeout(timer);
     closing = Promise.resolve().then(async () => {
-      lifetime.abort(failure('closed'));
       signal?.removeEventListener('abort', cancelled);
       const deadline = Date.now() + stopTimeoutMs;
       const remaining = () => {
@@ -76,16 +97,15 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
         return value;
       };
       try {
-        if (!await capture(remaining()) && !initializationCaptured) throw failure('cleanup_incomplete');
+        // SDK close aborts its write queue. Give session/cancel a bounded chance
+        // to flush first, without letting a blocked adapter delay job cleanup.
+        await boundedExit(notification.catch(() => {}), Math.min(1500, remaining()));
         connection?.close(reason);
         child.stdin.end();
-        await boundedExit(exit, Math.min(1500, remaining()));
-        await capture(remaining());
-        for (const owner of [...owned.values()].reverse()) {
-          await stopWindowsNativeProcess(owner.pid, { pid: owner.pid, command: owner.executable, ownership: owner }, { timeoutMs: remaining() });
-        }
-        if (!exited) await boundedExit(exit, remaining());
-        if (!exited) throw failure('cleanup_incomplete');
+        // Allow a queued session/cancel and stdin EOF to reach the adapter.
+        // The job retains every descendant throughout this bounded grace period.
+        if (child.pid) await boundedExit(child.exited, Math.min(1500, remaining()));
+        await child.stop(remaining());
         resolveClosed();
       } catch {
         connection?.close(failure('cleanup_incomplete'));
@@ -95,28 +115,31 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
         rejectClosed(error); throw error;
       }
     });
+    lifetime.abort(terminalError);
     return closing;
   }
-  const cancelled = () => { terminalError ??= failure('cancelled'); void close(terminalError).catch(() => {}); };
+  const cancelled = () => {
+    terminalError ??= failure('cancelled');
+    void (session ? session.cancel() : close(terminalError)).catch(() => {});
+  };
   try {
-    exit = new Promise(resolve => child.once('exit', () => { exited = true; resolve(); }));
+    void child.exited.then(() => { void close(terminalError ?? failure('closed')).catch(() => {}); });
     child.stderr.on('data', chunk => {
       stderrTruncated ||= stderrBytes + chunk.length > MAX_BYTES;
       stderrBytes = Math.min(MAX_BYTES, stderrBytes + chunk.length);
     });
     child.stdin.on('error', () => { void close(failure('closed')).catch(() => {}); });
-    child.once('error', () => { void close(failure('spawn_failed')).catch(() => {}); });
     signal?.addEventListener('abort', cancelled, { once: true });
     if (signal?.aborted) cancelled();
     if (closing) throw terminalError;
     timer = setTimeout(() => { terminalError ??= failure('timeout'); void close(terminalError).catch(() => {}); }, initializeRemaining());
-    await Promise.race([once(child, 'spawn'), closed.then(() => { throw terminalError ?? failure('closed'); })]);
-    if (!await capture(initializeRemaining())) throw failure('closed');
+    await Promise.race([child.ready, closed.then(() => { throw terminalError ?? failure('closed'); })]);
+    if (!await capture()) throw failure('closed');
     if (closing) throw terminalError ?? failure('closed');
     const output = Writable.toWeb(child.stdin), writer = output.getWriter();
     const trackedOutput = new WritableStream({ write(chunk) {
       const message = JSON.parse(new TextDecoder().decode(chunk));
-      if (message.method === methods.agent.initialize) requestedId = message.id;
+      if (Object.hasOwn(message, 'id') && message.method) requestedIds.add(message.id);
       return writer.write(chunk);
     } });
     const filtered = Readable.toWeb(child.stdout).pipeThrough(initializationWireGuard(message => {
@@ -128,26 +151,38 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
       }
       if (message.method === methods.client.session.requestPermission &&
           (Number.isSafeInteger(message.id) || (typeof message.id === 'string' && message.id.length <= 128))) return message;
-      if (Object.hasOwn(message, 'method') || requestedId === null || message.id !== requestedId) throw failure('protocol_error');
-      requestedId = null;
+      if (message.method === methods.client.session.update && !Object.hasOwn(message, 'id')) return session.projectUpdate(message.params);
+      if (Object.hasOwn(message, 'method') || !requestedIds.delete(message.id)) throw failure('protocol_error');
       return message;
-    }));
-    connection = client().onNotification(AUTH, value => value, ({ params }) => { authentication = params.kind; })
+    }, error => { terminalError ??= error; }));
+    connection = client().onNotification(AUTH, value => value, ({ params }) => {
+      authentication = params.kind;
+      for (const observed of authenticationWaiters) observed();
+    })
       .onRequest(methods.client.session.requestPermission, ({ params, requestId }) => {
         if (permissions.length < 16) permissions.push({ requestId, sessionId: params.sessionId.slice(0, 128),
           toolCallId: params.toolCall.toolCallId.slice(0, 128), optionKinds: params.options.slice(0, 16).map(option => option.kind) });
         return { outcome: { outcome: 'cancelled' } };
       }).connect(ndJsonStream(trackedOutput, filtered));
+    session = createCodexAcpSession({ cwd: paths.cwd, codexHome: paths.codexHome, close, signal: lifetime.signal,
+      notify: (method, params) => { notification = connection.agent.notify(method, params); return notification; },
+      request: async (method, params) => {
+        if (closing) throw terminalError;
+        const response = await connection.agent.request(method, params);
+        if (closing) throw terminalError;
+        if (method === methods.agent.session.new || method === methods.agent.session.prompt) await capture();
+        return response;
+      } });
     void connection.closed.then(() => { void close(terminalError ?? failure('closed')).catch(() => {}); });
     const response = await connection.agent.request(methods.agent.initialize, { protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: {}, clientInfo: { name: 'fuli', version: '1' } }, { cancellationSignal: signal });
     if (response.protocolVersion !== PROTOCOL_VERSION) throw failure('handshake_failed');
     initialization = { protocolVersion: response.protocolVersion, agentVersion: response.agentInfo?.version ?? null };
-    if (!await capture(initializeRemaining())) throw failure('closed');
-    initializationCaptured = true;
+    if (!await capture()) throw failure('closed');
     if (closing) throw terminalError ?? failure('closed');
-    return { pid: child.pid, initialization, signal: lifetime.signal, closed, close,
-      get ownedPids() { return [...owned.keys()]; }, get authentication() { return authentication; },
+    return { pid: child.pid, initialization, signal: lifetime.signal, closed, close, waitForAuthentication,
+      newSession: session.newSession, configureModel: session.configureModel, promptOnce: session.promptOnce, cancel: session.cancel,
+      get ownedPids() { return [...owned]; }, get authentication() { return authentication; },
       get pendingPermissions() { return structuredClone(permissions); },
       get diagnostics() { return { stderrBytes, stderrTruncated }; } };
   } catch (error) {
@@ -157,9 +192,9 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
   } finally { clearTimeout(timer); }
 }
 
-// Only this initialize exchange and auth/permission messages can reach the SDK.
+// Only tracked responses and the bounded auth/permission/session contract reach the SDK.
 // No generic RPC dispatcher or response schema replaces the SDK's own parser.
-function initializationWireGuard(project) {
+function initializationWireGuard(project, rejected) {
   let pending = '';
   const decoder = new TextDecoder(), encoder = new TextEncoder();
   function line(value, controller) {
@@ -167,7 +202,10 @@ function initializationWireGuard(project) {
     let message;
     try { message = JSON.parse(value); } catch { throw failure('protocol_error'); }
     if (!message || typeof message !== 'object') throw failure('protocol_error');
-    controller.enqueue(encoder.encode(JSON.stringify(project(message)) + '\n'));
+    try {
+      const projected = project(message);
+      if (projected !== null) controller.enqueue(encoder.encode(JSON.stringify(projected) + '\n'));
+    } catch (error) { rejected(error); throw error; }
   }
   return new TransformStream({ transform(chunk, controller) {
     pending += decoder.decode(chunk, { stream: true });

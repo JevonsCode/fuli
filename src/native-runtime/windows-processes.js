@@ -1,8 +1,9 @@
 import { execFile, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { closeSync, mkdirSync, openSync, readFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
-import { basename, dirname, join, normalize } from 'node:path';
+import { basename, dirname, join, normalize, win32 } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const samePath = (left, right) => typeof left === 'string' && typeof right === 'string'
@@ -28,16 +29,25 @@ async function powershell(script, env = process.env, options = {}) {
   return JSON.parse(result.stdout.replace(/^\uFEFF/, '').trim() || 'null');
 }
 
-export async function inspectWindowsNativeProcess(pid, { children = false, timeoutMs = 60_000 } = {}) {
-  if (!Number.isInteger(pid) || pid <= 0) return children ? [] : null;
+export async function inspectWindowsNativeProcess(pid, { children = false, descendants = false, timeoutMs = 60_000 } = {}) {
+  if (!Number.isInteger(pid) || pid <= 0) return children || descendants ? [] : null;
   const filter = 'ProcessId = ' + pid + (children ? ' OR ParentProcessId = ' + pid : '');
-  const script = '$rows = @(Get-CimInstance Win32_Process -Filter "' + filter + '" | ForEach-Object {'
+  // One CIM snapshot avoids a fresh PowerShell process for each descendant.
+  // This is observation only; callers still verify identities before stopping them.
+  const selection = descendants
+    ? '$all = @(Get-CimInstance Win32_Process);'
+      + '$ids = [System.Collections.Generic.HashSet[int]]::new();[void]$ids.Add(' + pid + ');'
+      + 'do {$added = $false;foreach ($item in $all) {'
+      + 'if ($ids.Contains([int]$item.ParentProcessId) -and $ids.Add([int]$item.ProcessId)) {$added = $true}'
+      + '}} while ($added);$selected = @($all | Where-Object {$ids.Contains([int]$_.ProcessId)});'
+    : '$selected = @(Get-CimInstance Win32_Process -Filter "' + filter + '");';
+  const script = selection + '$rows = @($selected | ForEach-Object {'
     + '[pscustomobject]@{pid=[int]$_.ProcessId;parentPid=[int]$_.ParentProcessId;'
     + 'executable=$_.ExecutablePath;commandLine=$_.CommandLine;'
     + 'createdFileTime=$_.CreationDate.ToUniversalTime().ToFileTimeUtc().ToString()}});'
     + 'ConvertTo-Json -InputObject $rows -Compress';
   const rows = await powershell(script, process.env, { timeout: timeoutMs });
-  return children ? rows : rows.find(row => row.pid === pid) ?? null;
+  return children || descendants ? rows : rows.find(row => row.pid === pid) ?? null;
 }
 
 function identityMatches(observed, ownership) {
@@ -219,8 +229,13 @@ export async function runWindowsNeo4j(command, args, { env }) {
   // Windows paths through its PATH setting parser, even for set-initial-password.
   return execute(join(env.JAVA_HOME, 'bin', 'java.exe'), ['-cp', join(home, 'lib', '*'),
     'org.neo4j.cli.AdminTool', ...args], {
-    env, sensitiveValues: args[0] === 'dbms' && args[1] === 'set-initial-password' ? [args[2]] : []
+    env, sensitiveValues: neo4jAdminSensitiveValues(args)
   });
+}
+
+export function neo4jAdminSensitiveValues(args) {
+  return args[0] === 'dbms' && args[1] === 'set-initial-password'
+    ? args.slice(2).filter(value => value !== '--') : [];
 }
 
 export function spawnWindowsNativeDatabase(spec) {
@@ -240,4 +255,35 @@ export function spawnWindowsNativeProvider(spec) {
   return spawnOwned(spec.python, ['-B', '-X', 'utf8', '-m', 'uvicorn', 'fuli_graph.app:app', '--host', '127.0.0.1',
     '--port', String(spec.port), '--app-dir', spec.sourcePath],
   spec.environment, spec.logPath, { provider: true });
+}
+
+// Read-only boot-anchor evidence for an unconfirmed cleanup hold: the single
+// session-0 wininit, its image, and whether Windows reports it critical, plus a
+// salted machine hash. No CommandLine is read. Any error, other platform, missing
+// field, or more/less than one anchor returns null, which keeps every hold.
+const BOOT_ANCHOR_SCRIPT = [
+  'Add-Type -TypeDefinition \'using System; using System.Runtime.InteropServices; public static class FuliAnchor {',
+  '[DllImport("kernel32.dll", SetLastError=true)] public static extern IntPtr OpenProcess(uint a, bool i, uint p);',
+  '[DllImport("kernel32.dll", SetLastError=true)] public static extern bool IsProcessCritical(IntPtr h, out bool c);',
+  '[DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);',
+  'public static object Critical(uint p) { IntPtr h = OpenProcess(0x1000, false, p); if (h == IntPtr.Zero) return null;',
+  'try { bool c; return IsProcessCritical(h, out c) ? (object)c : null; } finally { CloseHandle(h); } } }\';',
+  '$anchors = @(Get-CimInstance Win32_Process -Filter "Name = \'wininit.exe\' AND SessionId = 0" | ForEach-Object {',
+  '[pscustomobject]@{ pid = [int]$_.ProcessId; image = $_.ExecutablePath; critical = [FuliAnchor]::Critical([uint32]$_.ProcessId) } });',
+  '$guid = (Get-ItemProperty -Path "HKLM:\\SOFTWARE\\Microsoft\\Cryptography" -Name MachineGuid).MachineGuid;',
+  'ConvertTo-Json -Compress -InputObject @{ anchors = $anchors; machineGuid = $guid }'
+].join(' ');
+
+export async function readWindowsBootAnchor({ salt, platform = process.platform, run = powershell } = {}) {
+  if (platform !== 'win32' || typeof salt !== 'string' || !salt) return null;
+  try {
+    const result = await run(BOOT_ANCHOR_SCRIPT, process.env, { timeout: 15_000 });
+    const anchors = Array.isArray(result?.anchors) ? result.anchors : [result?.anchors].filter(Boolean);
+    const [anchor] = anchors;
+    if (anchors.length !== 1 || !Number.isInteger(anchor.pid) || anchor.pid <= 0 || anchor.critical !== true
+        || typeof anchor.image !== 'string' || win32.basename(anchor.image).toLowerCase() !== 'wininit.exe'
+        || typeof result.machineGuid !== 'string' || !/^[0-9a-f-]{36}$/i.test(result.machineGuid)) return null;
+    const machineHash = createHash('sha256').update(salt + ':' + result.machineGuid.toLowerCase()).digest('hex');
+    return { version: 1, machineHash, anchor: { pid: anchor.pid, image: 'wininit.exe', critical: true } };
+  } catch { return null; }
 }

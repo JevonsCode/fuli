@@ -3,6 +3,7 @@ export const WORKER_DESCRIPTOR_ENV = 'FULI_WORKER_DESCRIPTOR';
 const MAX_DESCRIPTOR_BYTES = 64 * 1024;
 const WORKER_TOOLS = new Set([
   'begin_task_context', 'get_collaboration_preferences', 'verify_task_checkpoint',
+  'read_task_preferences',
   'checkpoint_task_knowledge', 'search_current_project_knowledge',
   'get_project_agent_memory', 'list_agent_conversations', 'read_agent_conversation'
 ]);

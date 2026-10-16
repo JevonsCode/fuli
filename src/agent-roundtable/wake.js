@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { WAKE_CLIENTS, wakeAdapter } from '../agents/wake-registry.js';
 
@@ -72,23 +73,52 @@ export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutpu
     }
     const child = spawn(command, args, { cwd, env, shell: false, windowsHide: true,
       detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'ignore'] });
+    const closed = new Promise((resolve) => child.once('close', resolve));
     child.once('spawn', () => onSpawn?.());
-    signal?.addEventListener('abort', () => finish(Object.assign(new Error('The delivery was cancelled'),
-      { code: 'cancelled', reason: String(signal.reason ?? 'cancelled') })), { once: true });
     let output = '', bytes = 0, settled = false;
-    const kill = () => {
-      if (!child.pid) return;
-      if (process.platform === 'win32') spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).unref();
-      else { try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already exited */ } }
+    const kill = async () => {
+      let killing = Promise.resolve(0), deadline, deadlineReached = false;
+      if (process.platform === 'win32') {
+        const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+        killing = new Promise((resolve) => {
+          let failure;
+          killer.once('error', (error) => { failure = error.code; });
+          killer.once('close', (code) => resolve(failure ?? code));
+        });
+      } else {
+        try {
+          process.kill(-child.pid, 'SIGKILL');
+          killing = processGroupExited(child.pid, () => deadlineReached);
+        } catch (error) { if (error.code !== 'ESRCH') killing = Promise.resolve(error.code); }
+      }
+      try {
+        const [, killCode] = await Promise.race([
+          Promise.all([closed, killing]),
+          new Promise((_, reject) => { deadline = setTimeout(() => { deadlineReached = true; reject(
+            Object.assign(new Error('Process cleanup could not be confirmed'), { code: 'cleanup_timeout' })); }, 5_000); }),
+        ]);
+        if (killCode !== 0) throw Object.assign(new Error('Process tree termination failed'), { code: 'cleanup_failed' });
+      } finally { clearTimeout(deadline); }
     };
-    const finish = (error, code) => {
+    const finish = async (error, code) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (error) { kill(); reject(error); } else resolve({ code, stdout: output });
+      signal?.removeEventListener('abort', abort);
+      if (error) {
+        if (child.pid) {
+          try { await kill(); }
+          catch (cleanupError) { error.cleanup = { status: 'unconfirmed', code: cleanupError.code }; }
+        }
+        reject(error);
+      } else resolve({ code, stdout: output });
     };
+    const abort = () => finish(Object.assign(new Error('The delivery was cancelled'),
+      { code: 'cancelled', reason: String(signal.reason ?? 'cancelled') }));
     const timer = setTimeout(() => finish(Object.assign(new Error('The woken Agent did not answer in time'), { code: 'wake_timeout' })), timeoutMs);
+    signal?.addEventListener('abort', abort, { once: true });
     child.stdout.on('data', (chunk) => {
+      if (settled) return;
       bytes += chunk.length;
       if (bytes > maxOutputBytes) finish(Object.assign(new Error('The woken Agent produced too much output'), { code: 'wake_failed' }));
       else output += chunk.toString('utf8');
@@ -98,6 +128,17 @@ export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutpu
     child.stdin.on('error', () => {});
     child.stdin.end(input);
   });
+}
+
+// SIGKILL is delivered asynchronously and orphaned descendants are reaped by
+// init, so the leader closing does not mean its group is gone. The group has
+// exited only once the kernel no longer resolves any member of it.
+async function processGroupExited(pgid, stopped) {
+  while (!stopped()) {
+    try { process.kill(-pgid, 0); }
+    catch (error) { if (error.code === 'ESRCH') return 0; }
+    await delay(10);
+  }
 }
 
 function whichCommand(name, platform) {

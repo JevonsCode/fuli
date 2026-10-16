@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, writeFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 for (const [name, status, body, blocked, reads] of [
   ['legacy route absence', 404, { detail: 'Not Found' }, false, 1],
@@ -31,7 +32,7 @@ for (const [name, status, body, blocked, reads] of [
     principalId: 'synthetic-principal', spaceId: 'synthetic-space'
   }, workspaces: [] }), { mode: 0o600 });
   await writeFile(join(directory, 'adaptive-runtime-settings.json'), JSON.stringify({ version: 1, enabled: false }), { mode: 0o600 });
-  const child = spawn(process.execPath, [new URL('../src/agents/codex/lifecycle-hook.js', import.meta.url).pathname,
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../src/agents/codex/lifecycle-hook.js', import.meta.url)),
     '--runtime-config', config, '--event', 'UserPromptSubmit'], { env: { PATH: process.env.PATH }, stdio: ['pipe', 'pipe', 'pipe'] });
   let stdout = '', stderr = '';
   child.stdout.on('data', chunk => { stdout += chunk; });

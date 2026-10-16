@@ -41,6 +41,7 @@ import {
 import { resolvePersonalProjectPath } from './project-path-context.js';
 import { mergeExternalKnowledgeProjection } from '../external-knowledge/graph-projection.js';
 import { ProviderTaskContextRegistry } from '../mcp/provider-task-context-registry.js';
+import { readTaskPreferences } from './task-preference-reader.js';
 import { attachExternalKnowledgeRuntime } from '../external-knowledge/runtime.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import {
@@ -281,7 +282,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     if (projectResolution.repositoryProjectId && agentInvocation && TASK_ENTRY_TOOLS.has(agentToolName)
       && this.getCapturePolicy().enabled) {
       // Every task gets a FULI Agent, so a task in an unregistered repository registers it.
-      projectResolution = await registerRepositoryProject(this, projectResolution);
+      projectResolution = await registerRepositoryProject(this, projectResolution, { sessionId });
     }
     projectResolution = await resolveTaskEntryProject(this, projectResolution, {
       sessionId, sourceSessionId, sourceApplication, agentInvocation, agentToolName, projectAgentId, taskPrompt
@@ -294,6 +295,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return finishTaskEntryPreferences(this, preferences, { agentInvocation, agentToolName,
       sessionId, sourceApplication, sourceSessionId, taskPrompt, workKind, workflow });
   }
+
+  readTaskPreferences(input) { return readTaskPreferences(this, input); }
 
   async getUserTasteSkill({
     personalProjectId = null,

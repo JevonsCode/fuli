@@ -197,8 +197,12 @@ test('Claude runtime failure preserves a known native session for fallback witho
 });
 
 test('Claude command quotes shell metacharacters and never interpolates user input', () => {
-  const command = claudeLifecycleCommand({ nodePath: "/synthetic/node's bin/node",
-    mcpServerPath: '/synthetic/$(touch do-not-run)/mcp-server.js', runtimeConfigPath: '/synthetic/runtime.json' }, 'Stop', 30);
+  // A POSIX fixture: pin the platform and the hook path so the Windows host's
+  // path.join and quoting rules do not apply to it.
+  const command = claudeLifecycleCommand({ platform: 'linux', nodePath: "/synthetic/node's bin/node",
+    mcpServerPath: '/synthetic/$(touch do-not-run)/mcp-server.js',
+    claudeLifecycleHookPath: '/synthetic/$(touch do-not-run)/agents/claude-code/lifecycle-hook.js',
+    runtimeConfigPath: '/synthetic/runtime.json' }, 'Stop', 30);
   assert.match(command, /'\\''/);
   assert.match(command, /'\/synthetic\/\$\(touch do-not-run\)/);
   assert.doesNotMatch(command, /\$\{prompt\}|\$\{session_id\}/);
