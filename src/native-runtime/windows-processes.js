@@ -68,7 +68,7 @@ export async function assertWindowsNativePortFree(port) {
   if (owners.length) {
     const observed = owners.map(owner => owner.pid + (owner.name ? ' (' + owner.name + ')' : '')).join(', ');
     throw new Error('The native service port is already in use before Fuli starts its process: ' + port
-      + ' (owner PIDs: ' + observed + '). Stop that process or choose another port; nothing was started or stopped.');
+      + ' (owner PIDs: ' + observed + '). The owning process was not touched and the service for this port was not started; stop that process or choose another port.');
   }
 }
 

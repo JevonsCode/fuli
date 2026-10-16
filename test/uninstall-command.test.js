@@ -139,3 +139,12 @@ test('portable data outside the folder needs no warning; npm installs keep the n
     data: { path: 'D:/Fuli data' }, removal: { kind: 'portable_folder', path: 'C:/Portable Fuli', dataInside: false } }),
     /delete this portable folder: C:\/Portable Fuli$/);
 });
+
+test('a data folder whose name starts with two dots is still inside the portable folder', () => {
+  for (const dataDir of ['C:/Portable Fuli/..data', 'C:\\Portable Fuli\\..data\\graph', 'C:/Portable Fuli']) {
+    assert.equal(removalTarget({ portableRoot: 'C:/Portable Fuli', dataDir }).dataInside, true, dataDir);
+  }
+  for (const dataDir of ['C:/data', 'C:\\Portable Fuli other\\data', 'D:/Portable Fuli/data']) {
+    assert.equal(removalTarget({ portableRoot: 'C:/Portable Fuli', dataDir }).dataInside, false, dataDir);
+  }
+});

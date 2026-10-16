@@ -81,7 +81,7 @@ test('Windows port preflight reports a real listener on any local address with i
     try {
       await assert.rejects(assertWindowsNativePortFree(port), error => {
         assert.match(error.message, new RegExp(`already in use .*: ${port} \\(owner PIDs: ${process.pid} \\(node\\)\\)`));
-        assert.match(error.message, /nothing was started or stopped/);
+        assert.match(error.message, /owning process was not touched and the service for this port was not started/);
         return true;
       });
     } finally { await new Promise(resolve => server.close(resolve)); }

@@ -101,5 +101,6 @@ export function removalTarget(paths) {
   if (!paths.portableRoot) return { kind: 'npm_global' };
   const local = relative(paths.portableRoot, paths.dataDir);
   return { kind: 'portable_folder', path: paths.portableRoot,
-    dataInside: local === '' || (!local.startsWith('..') && !isAbsolute(local)) };
+    // Compare the first path segment: a folder named '..data' is still inside.
+    dataInside: !isAbsolute(local) && local.split(/[\\/]/)[0] !== '..' };
 }
