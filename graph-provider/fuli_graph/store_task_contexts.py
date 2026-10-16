@@ -275,9 +275,10 @@ class StoreTaskContexts:
                 # Persist the receipt with the claim and usage writes. Replays use
                 # this result even if the knowledge has since changed generation.
                 await scoped.runtime.driver.execute_query('''
-                    MATCH (task:FuliTaskContext {token: $token})
+                    MATCH (task:FuliTaskContext {personal_space_id: $space_id, token: $token})
                     SET task.knowledge_usage_result_json = $result, task.record_json = $record_json
-                    ''', token=token, result=json.dumps(result, ensure_ascii=False),
+                    ''', space_id=request.personal_space_id, token=token,
+                    result=json.dumps(result, ensure_ascii=False),
                     record_json=task_context_json({key: value for key, value in record.items()
                                                    if key != 'agent_memory'}))
             return record

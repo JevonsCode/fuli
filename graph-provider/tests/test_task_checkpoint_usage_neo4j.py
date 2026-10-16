@@ -45,6 +45,33 @@ async def audits(settings, context):
 
 
 @pytest.mark.asyncio
+async def test_checkpoint_usage_receipts_stay_in_their_space_when_tokens_match():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        shared_token = f'fuli-task-space-isolation-{uuid4()}'
+        first = await context_fixture(client, token=shared_token)
+        second = await context_fixture(client, token=shared_token)
+        assert first['personal_space_id'] != second['personal_space_id']
+        for current, other in [(first, second), (second, first)]:
+            before = await record(client, other)
+            before_memory = await memory(client, other)
+            before_audits = await audits(settings, other)
+            items = await seed_items(settings, current)
+            response = await client.put(f'/v1/task-contexts/{shared_token}/checkpoint', json=checkpoint(
+                current, agent_memory=memory_input(), knowledge_usage=items))
+            assert response.status_code == 200, response.text
+            saved = response.json()
+            assert saved['personal_space_id'] == current['personal_space_id']
+            assert saved['checkpoint']['knowledge_usage_result']['recorded_count'] == 2
+            assert (await record(client, current))['checkpoint'] == saved['checkpoint']
+            assert (await memory(client, current))['revision'] == 1
+            assert len(await audits(settings, current)) == 2
+            assert await record(client, other) == before, 'Another space must retain its entire task record.'
+            assert await memory(client, other) == before_memory
+            assert await audits(settings, other) == before_audits
+
+
+@pytest.mark.asyncio
 async def test_usage_failure_rolls_back_claim_memory_and_prior_item_then_accepts_retry():
     settings = fixture_settings()
     async with provider_client(settings) as (client, _):
