@@ -34,7 +34,8 @@ export async function buildWindowsTray({ assetBundle, output, dataDir, compiler 
   compiler ??= join(process.env.SystemRoot, 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe');
   if (!existsSync(compiler)) throw new Error('A .NET Framework C# compiler is required to build the Windows shell.');
 
-  const sourceManifest = await readFile(join(assets, 'portable-files.sha256.json'));
+  const sourceManifest = await readFile(join(assets, existsSync(join(assets, 'portable-files.sha256.json'))
+    ? 'portable-files.sha256.json' : 'tray-files.sha256.json'));
   const entries = JSON.parse(sourceManifest);
   if (!Array.isArray(entries)) throw new Error('The portable checksum inventory is invalid.');
   const index = new Map();
@@ -61,7 +62,9 @@ export async function buildWindowsTray({ assetBundle, output, dataDir, compiler 
   assert.deepEqual(lock, await readFile(join(PACKAGE_ROOT, 'npm-shrinkwrap.json')),
     'Reuse requires the identical lockfile; rebuild the portable assets when dependencies change.');
   const nativeManifest = await verifiedFile('native-bundle.json');
-  const assetInventory = JSON.parse(await verifiedFile('portable-inventory.json'));
+  const assetInventory = index.has('portable-inventory.json')
+    ? JSON.parse(await verifiedFile('portable-inventory.json'))
+    : JSON.parse(await verifiedFile('tray-inventory.json')).reusedAssets.sourceInventory;
   const selected = [...index.values()].filter(([name]) => name.startsWith('runtime/') || name.startsWith('node_modules/'));
   if (!selected.some(([name]) => name.startsWith('runtime/'))
       || !selected.some(([name]) => name.startsWith('node_modules/'))) throw new Error('The complete portable runtime and production dependencies are required.');
@@ -106,6 +109,7 @@ export async function buildWindowsTray({ assetBundle, output, dataDir, compiler 
       join(PACKAGE_ROOT, 'desktop', 'windows', 'ControllerRunner.cs')]);
 
     const applicationVersion = JSON.parse(await readFile(join(output, 'package.json'), 'utf8')).version;
+    await writeFile(join(output, 'Install-Fuli.cmd'), '@echo off\r\n"%~dp0runtime\\node\\node.exe" "%~dp0src\\desktop\\windows-install.js" %*\r\nif errorlevel 1 pause\r\n');
     await writeFile(join(output, 'TRAY.md'), trayInstructions(applicationVersion, dataDir));
     await writeFile(join(output, 'tray-inventory.json'), JSON.stringify({ version: 1,
       status: 'local-candidate', applicationVersion, shell: '.NET Framework Windows Forms',
@@ -181,7 +185,7 @@ function trayInstructions(version, dataDir) {
     + '关闭浏览器管理页不停止 Fuli。“退出托盘（Fuli 继续运行）”只移除托盘；“停止 Fuli 并退出”先通过本候选 CLI 停止并确认状态，失败则保留托盘、进程状态和数据。状态来自 CLI，包括主动休眠，不把停止状态的退出码 1 当成命令故障。\n\n'
     + '繁忙时仍可安排“退出托盘”：操作本身最多约三分钟；成功后退出，错误需确认提示框后退出，避免新托盘与未完成的启动交错。超时包含输出读取；只回收本次控制器与其短命 CLI，不递归终止已经启动的服务。错误会明确提示服务可能仍运行。\n\n'
     + '停止后可保留外置数据并删除候选程序目录；不要在运行中搬移程序或数据。Neo4j Community、jlink JRE、Graphiti Provider 和所有生产依赖均随包提供，不需要 Docker、WSL 或系统 Node/Python/Java。托盘外壳使用 Windows .NET Framework；native 进程核验继续使用现有 Windows PowerShell/CIM，无需修改执行策略。\n\n'
-    + '这是托盘候选，不是安装器或已发布版本；不注册开机启动、不修改 PATH、不配置日常客户端。尚无安装器升级或自动升级。**不要在本候选使用 `fuli update`，它当前针对全局 npm 安装；管理页现有版本提示也可能仍显示该命令。** 安装方式识别和更新提示将在后续安装切片接入。\n\n'
+    + '双击 Install-Fuli.cmd 可确认首次单用户安装：默认程序目录 %LOCALAPPDATA%\\Programs\\Fuli、数据目录 %LOCALAPPDATA%\\Fuli，并创建桌面和开始菜单快捷方式；无需管理员，不启动服务、不启用开机启动、不修改 PATH 或客户端。任何已有程序目录、数据目录或同名快捷方式均拒绝，不自动迁移 container 或接入已有 native 数据。安装记录与包位置共同识别 installed 上下文。升级、已有数据接入和卸载尚未实现；已安装副本会拒绝 `fuli update`，保留程序和数据。源候选仍固定使用上面的隔离数据目录。\n\n'
     + 'tray-inventory.json 记录复用资产的范围及来源清单；只从输入候选的 runtime/、node_modules/ 逐文件校验后复制，没有复制其 data/、日志、认证或客户端配置。内嵌 Provider 的 pyproject 必须与当前工作树相同，其 fuli_graph 源码整树替换为当前工作树版本，避免复用旧应用代码。应用和管理页也来自当前工作树。tray-files.sha256.json 覆盖完整新候选，外置运行数据不在其中。\n\n'
     + '非 UI 验证：使用本候选的 runtime/node/node.exe 运行 src/desktop/windows-controller.js status|start|stop。控制器没有任意 shell 参数入口；open/start-open 会打开系统浏览器，应留给人工 UI 验收。\n';
 }
