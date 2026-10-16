@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readWindowsNativeBundle } from '../native-runtime/windows-assets.js';
 import { isMainModule } from '../system/main-module.js';
+import { readWindowsInstallation } from './windows-installation-context.js';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const ACTIONS = new Set(['status', 'start', 'start-open', 'open', 'stop']);
@@ -51,7 +52,8 @@ export function loadTrayContext({ packageRoot = PACKAGE_ROOT, env = process.env 
   if (config.version !== 1 || config.kind !== 'windows-tray-candidate') {
     throw new Error('The tray candidate configuration is not supported.');
   }
-  const dataDir = validateTrayDataDir(root, config.dataDir, env);
+  const installed = readWindowsInstallation(root);
+  const dataDir = installed?.dataDir ?? validateTrayDataDir(root, config.dataDir, env);
   return { packageRoot: root, dataDir,
     instanceKey: createHash('sha256').update(dataDir.toLowerCase()).digest('hex').slice(0, 32),
     nodePath: join(root, 'runtime', 'node', 'node.exe'), cliPath: join(root, 'src', 'cli.js'),
