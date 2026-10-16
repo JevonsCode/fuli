@@ -4,6 +4,7 @@ import { callAgentTool } from '../../agent-tools.js';
 import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js';
 import { openFederatedGraphApplication } from '../../graphiti/federated-application.js';
 import { isMainModule } from '../../system/main-module.js';
+import { readHookInput } from '../lifecycle-input.js';
 import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
 
 const EVENTS = new Set(['sessionStart', 'beforeSubmitPrompt', 'stop']);
@@ -92,16 +93,6 @@ export async function runCursorLifecycleHook(args, dependencies = {}) {
   }
 }
 
-async function readHookInput() {
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of process.stdin) {
-    size += chunk.length;
-    if (size > 256 * 1024) throw new TypeError('Hook input exceeds limit');
-    chunks.push(chunk);
-  }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-}
 
 async function closeQuietly(resource) {
   try {

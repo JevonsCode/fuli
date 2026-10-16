@@ -10,6 +10,7 @@ import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js
 import { openFederatedGraphApplication } from '../../graphiti/federated-application.js';
 import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
 import { isMainModule } from '../../system/main-module.js';
+import { readHookInput } from '../lifecycle-input.js';
 import { boundedHookMessage } from '../lifecycle-message.js';
 
 export async function codexStopLifecycleOutput(input, invoke) {
@@ -121,16 +122,6 @@ async function closeQuietly(resource) {
   }
 }
 
-async function readHookInput() {
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of process.stdin) {
-    size += chunk.length;
-    if (size > 256 * 1024) throw new TypeError('Hook input exceeds limit');
-    chunks.push(chunk);
-  }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-}
 
 function codexLifecycleUnavailable(event, input) {
   const warning = 'Fuli context is unavailable. Continue with the user request; saved context and checkpoint were not verified.';
