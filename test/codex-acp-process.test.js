@@ -215,6 +215,7 @@ test('host connects one synthetic ACP process to a mocked Provider WorkerRun and
     requested_model_provider: request.provider, requested_model: request.model,
     requested_model_strategy: request.model_strategy });
   const activities = [];
+  let authorityReads = 0;
   const provider = {
     prepareProjectAgentWorkerRun: async () => run('prepared'),
     claimProjectAgentWorkerStart: async () => ({ ...run('claimed'), start_claimed: true }),
@@ -222,6 +223,7 @@ test('host connects one synthetic ACP process to a mocked Provider WorkerRun and
       assert.equal(value.session_id, 'synthetic-session'); return run('sealed');
     },
     admitProjectAgentWorkerContext: async () => ({ ...run('admitted'), own_context_token: context.token, task_context: context }),
+    getProjectAgentWorkerRun: async () => { authorityReads += 1; return run('admitted'); },
     getTaskContext: async token => {
       if (token === request.task_context_token) return { ...context, token, session_id: 'parent-session', source_application: 'claude_code' };
       assert.equal(token, context.token);
@@ -239,8 +241,10 @@ test('host connects one synthetic ACP process to a mocked Provider WorkerRun and
     startProcess: input => startCodexAcpProcess({ ...input, initializeTimeoutMs: 5000, stopTimeoutMs: 8000 }) });
   const result = await createWorkerRunAttempt({ provider, leases, adapter, request, projectPath: options.cwd,
     taskPrompt: 'Synthetic protocol fixture; do not claim a real model result.',
+    pollIntervalMs: 10,
     toolNames: ['get_collaboration_preferences', 'checkpoint_task_knowledge'] }).run();
-  assert.equal(result.outcome.status, 'completed');
+  assert.equal(result.outcome.status, 'completed', JSON.stringify(result.outcome));
+  assert.ok(authorityReads > 0, 'the native process fixture must exercise the authority monitor');
   assert.deepEqual(result.cleanup, { processStopped: true, runClosed: true, errors: [] });
   const observed = JSON.parse(await readFile(record, 'utf8'));
   assert.equal(gone(observed.pid), true);
