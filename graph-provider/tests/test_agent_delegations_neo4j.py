@@ -195,6 +195,7 @@ async def worker_run_fixture(client):
 @pytest.mark.asyncio
 async def test_worker_run_claim_seal_and_own_context_survive_retries_and_parent_next_turn(monkeypatch):
     from fuli_graph.store_transactions import TransactionQueryDriver
+    from fuli_graph.store_project_agent_memory import StoreProjectAgentMemory
     from test_project_agent_team_lifecycle_neo4j import binding_parent
     settings = fixture_settings()
     async with provider_client(settings, raise_app_exceptions=False) as (client, access_token):
@@ -219,6 +220,14 @@ async def test_worker_run_claim_seal_and_own_context_survive_retries_and_parent_
             assert sealed.status_code == 200, sealed.text
         changed = await client.put(path + '/session', json={**session, 'session_id': 'another-session'}, headers=headers)
         assert changed.status_code == 409, changed.text
+        memory_reads = []
+        read_memory = StoreProjectAgentMemory.get_project_agent_memory
+
+        async def count_memory_reads(store, *args, **kwargs):
+            memory_reads.append(args)
+            return await read_memory(store, *args, **kwargs)
+
+        monkeypatch.setattr(StoreProjectAgentMemory, 'get_project_agent_memory', count_memory_reads)
         guarded, release, second_entering = asyncio.Event(), asyncio.Event(), asyncio.Event()
         execute = TransactionQueryDriver.execute_query
 
@@ -248,6 +257,8 @@ async def test_worker_run_claim_seal_and_own_context_survive_retries_and_parent_
         assert admitted[1].json()['task_context']['token'] == own['token'] != payload['task_context_token']
         assert own['project_agent_id'] == 'specialist' and own['turn_id'] == 'worker-run:' + run['run_id']
         assert own['preference_scope'] == {'version': 1, 'work_kind': 'implementation', 'workflow': None}
+        assert len(memory_reads) == 1
+        assert admitted[1].json()['task_context']['memory_revision'] == own['memory_revision']
         # Change only this synthetic coordination task and its legitimate
         # assignment. Future authority is rechecked, but the admitted scope is immutable.
         from neo4j import AsyncGraphDatabase
@@ -266,6 +277,8 @@ async def test_worker_run_claim_seal_and_own_context_survive_retries_and_parent_
         assert retried.status_code == 200, retried.text
         assert retried.json()['task_context']['token'] == own['token']
         assert retried.json()['task_context']['preference_scope'] == own['preference_scope']
+        assert retried.json()['task_context']['memory_revision'] == own['memory_revision']
+        assert len(memory_reads) == 1
         visible = (await client.get(f'/v1/project-agent-tasks/{payload["task_id"]}', params=scope)).json()
         assert visible['execution_summary'] == [] and visible['actual_run_id'] is None
     async with provider_client(settings, access_token) as (client, _):
@@ -275,6 +288,8 @@ async def test_worker_run_claim_seal_and_own_context_survive_retries_and_parent_
         assert recovered.json()['own_context_token'] == own['token']
         resumed = await client.post(path + '/contexts', json=session, headers=headers)
         assert resumed.status_code == 200 and resumed.json()['task_context']['preference_scope'] == own['preference_scope'], resumed.text
+        assert resumed.json()['task_context']['memory_revision'] == own['memory_revision']
+        assert len(memory_reads) == 1
         assert (await client.post(path + '/start-claim', json=scope, headers=headers)).json()['start_claimed'] is False
 
 
