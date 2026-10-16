@@ -3,10 +3,8 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Security.Principal;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
 // Windows shell only. The bundled JS controller owns runtime commands and
@@ -70,10 +68,12 @@ internal static class FuliTray
         private readonly ContextMenuStrip menu = new ContextMenuStrip();
         private readonly ToolStripMenuItem state = new ToolStripMenuItem("正在检查 / Checking status");
         private readonly ToolStripMenuItem operation = new ToolStripMenuItem();
+        private readonly ToolStripMenuItem exitTray = new ToolStripMenuItem("退出托盘（Fuli 继续运行）/ Exit tray, keep services");
         private readonly Control dispatch = new Control();
         private readonly System.Windows.Forms.Timer refresh = new System.Windows.Forms.Timer();
         private readonly RegisteredWaitHandle openWait;
         private bool busy;
+        private bool exitAfterOperation;
         private volatile bool exiting;
 
         public TrayContext(ControllerRunner runner, ControllerReply selected, EventWaitHandle signal)
@@ -95,8 +95,8 @@ internal static class FuliTray
             menu.Items.Add("打开日志目录 / Open logs", null, delegate { OpenDirectory(selected.logDir); });
             menu.Items.Add("打开数据目录 / Open data folder", null, delegate { OpenDirectory(selected.dataDir); });
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("退出托盘（Fuli 继续运行）/ Exit tray, keep services", null,
-                delegate { if (!busy) ExitThread(); });
+            exitTray.Click += delegate { RequestTrayExit(); };
+            menu.Items.Add(exitTray);
             AddAction("停止 Fuli 并退出 / Stop services and exit", "stop-exit");
 
             image = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
@@ -120,7 +120,7 @@ internal static class FuliTray
 
         private void RunAction(string action, bool showErrors)
         {
-            if (exiting) return;
+            if (exiting || exitAfterOperation) return;
             if (busy)
             {
                 if (showErrors) icon.ShowBalloonTip(3000, "Fuli", "操作进行中，请稍后重试。 / An operation is in progress; please try again shortly.", ToolTipIcon.Info);
@@ -128,7 +128,7 @@ internal static class FuliTray
             }
             busy = true;
             foreach (ToolStripItem item in menu.Items)
-                if (item is ToolStripMenuItem && item != state && item != operation) item.Enabled = false;
+                if (item is ToolStripMenuItem && item != state && item != operation && item != exitTray) item.Enabled = false;
             var command = action == "stop-exit" ? "stop" : action;
             operation.Text = command == "status" ? "正在读取服务状态 / Reading service status"
                 : command == "stop" ? "正在停止 Fuli 服务 / Stopping Fuli services"
@@ -142,14 +142,11 @@ internal static class FuliTray
                 catch (Exception error) { reply = new ControllerReply { ok = false, error = error.Message }; }
                 Post(delegate
                 {
-                    busy = false;
                     operation.Visible = false;
-                    foreach (ToolStripItem item in menu.Items)
-                        if (item is ToolStripMenuItem && item != state && item != operation) item.Enabled = true;
                     state.Text = reply.label ?? "状态未知 / Unknown";
                     var tip = "Fuli — " + state.Text;
                     icon.Text = tip.Length > 63 ? tip.Substring(0, 63) : tip;
-                    if (!reply.ok && showErrors)
+                    if (!reply.ok && (showErrors || exitAfterOperation))
                     {
                         MessageBox.Show(dispatch, (reply.error ?? "服务操作失败 / The service operation failed")
                             + "\n\n数据目录 / Data: " + selected.dataDir
@@ -159,9 +156,26 @@ internal static class FuliTray
                     }
                     // Failed or partial stops keep the tray and its diagnostic
                     // state visible. Closing the browser never stops services.
-                    if (reply.ok && action == "stop-exit") ExitThread();
+                    if (exitAfterOperation || (reply.ok && action == "stop-exit")) { ExitThread(); return; }
+                    // Modal dialogs pump timer/second-launch messages. Keep
+                    // the action gate closed until the dialog/exit decision.
+                    busy = false;
+                    foreach (ToolStripItem item in menu.Items)
+                        if (item is ToolStripMenuItem && item != state && item != operation) item.Enabled = true;
                 });
             });
+        }
+
+        private void RequestTrayExit()
+        {
+            if (!busy) { ExitThread(); return; }
+            // Keep the instance lock until the current bounded operation has
+            // finished. A new tray must not race a still-running setup/start.
+            exitAfterOperation = true;
+            exitTray.Enabled = false;
+            exitTray.Text = "当前操作结束后退出 / Exit after this operation";
+            icon.ShowBalloonTip(8000, "Fuli",
+                "已安排退出托盘：操作最多约 3 分钟；发生错误需确认后退出。已启动的 Fuli 服务继续运行。 / Exit queued: the operation is bounded to about 3 minutes; errors require confirmation before exit. Started services keep running.", ToolTipIcon.Info);
         }
 
         private void OpenDirectory(string path)
@@ -206,51 +220,4 @@ internal static class FuliTray
         }
     }
 
-    private sealed class ControllerRunner
-    {
-        private readonly string root;
-        public ControllerRunner(string root) { this.root = root; }
-
-        public ControllerReply Run(string action)
-        {
-            var start = new ProcessStartInfo
-            {
-                FileName = Path.Combine(root, "runtime", "node", "node.exe"),
-                Arguments = Quote(Path.Combine(root, "src", "desktop", "windows-controller.js")) + " " + action,
-                WorkingDirectory = root, UseShellExecute = false, CreateNoWindow = true,
-                RedirectStandardOutput = true, RedirectStandardError = true,
-                StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
-            };
-            using (var child = Process.Start(start))
-            {
-                var output = child.StandardOutput.ReadToEndAsync();
-                var error = child.StandardError.ReadToEndAsync();
-                child.WaitForExit();
-                var json = output.Result.Trim();
-                if (json.Length == 0) throw new Exception("JS 控制器未返回状态 / No controller result. " + error.Result);
-                var reply = new JavaScriptSerializer().Deserialize<ControllerReply>(json);
-                if (reply == null) throw new Exception("JS 控制器状态无效 / Invalid controller result.");
-                if (child.ExitCode != 0) reply.ok = false;
-                return reply;
-            }
-        }
-
-        private static string Quote(string value)
-        {
-            // The script is a resolved file path (cannot contain a quote and
-            // never ends in a slash), not shell text or an arbitrary argument.
-            return "\"" + value + "\"";
-        }
-    }
-
-    public sealed class ControllerReply
-    {
-        public bool ok { get; set; }
-        public string error { get; set; }
-        public string label { get; set; }
-        public string dataDir { get; set; }
-        public string logDir { get; set; }
-        public string nativeLogDir { get; set; }
-        public string instanceKey { get; set; }
-    }
 }

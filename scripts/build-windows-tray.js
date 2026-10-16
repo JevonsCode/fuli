@@ -102,7 +102,8 @@ export async function buildWindowsTray({ assetBundle, output, dataDir, compiler 
     await run(compiler, ['/nologo', '/target:winexe', '/platform:x64', '/codepage:65001',
       '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/reference:System.Web.Extensions.dll',
       '/win32icon:' + ico, '/win32manifest:' + manifest, '/out:' + join(output, 'Fuli.exe'),
-      join(PACKAGE_ROOT, 'desktop', 'windows', 'FuliTray.cs')]);
+      join(PACKAGE_ROOT, 'desktop', 'windows', 'FuliTray.cs'),
+      join(PACKAGE_ROOT, 'desktop', 'windows', 'ControllerRunner.cs')]);
 
     const applicationVersion = JSON.parse(await readFile(join(output, 'package.json'), 'utf8')).version;
     await writeFile(join(output, 'TRAY.md'), trayInstructions(applicationVersion, dataDir));
@@ -178,6 +179,7 @@ function trayInstructions(version, dataDir) {
     + `此候选固定数据目录：\n\n${dataDir}\n\n`
     + '程序资产和数据分开；FULI_DATA_DIR 不会替换 tray-config.json 的显式目录。候选拒绝日常默认 Fuli 数据目录，拒绝自动切换已有数据的 runtime mode。相同用户和规范化数据目录只运行一个托盘；再次启动会请求已有托盘打开管理页。\n\n'
     + '关闭浏览器管理页不停止 Fuli。“退出托盘（Fuli 继续运行）”只移除托盘；“停止 Fuli 并退出”先通过本候选 CLI 停止并确认状态，失败则保留托盘、进程状态和数据。状态来自 CLI，包括主动休眠，不把停止状态的退出码 1 当成命令故障。\n\n'
+    + '繁忙时仍可安排“退出托盘”：操作本身最多约三分钟；成功后退出，错误需确认提示框后退出，避免新托盘与未完成的启动交错。超时包含输出读取；只回收本次控制器与其短命 CLI，不递归终止已经启动的服务。错误会明确提示服务可能仍运行。\n\n'
     + '停止后可保留外置数据并删除候选程序目录；不要在运行中搬移程序或数据。Neo4j Community、jlink JRE、Graphiti Provider 和所有生产依赖均随包提供，不需要 Docker、WSL 或系统 Node/Python/Java。托盘外壳使用 Windows .NET Framework；native 进程核验继续使用现有 Windows PowerShell/CIM，无需修改执行策略。\n\n'
     + '这是托盘候选，不是安装器或已发布版本；不注册开机启动、不修改 PATH、不配置日常客户端。尚无安装器升级或自动升级。**不要在本候选使用 `fuli update`，它当前针对全局 npm 安装；管理页现有版本提示也可能仍显示该命令。** 安装方式识别和更新提示将在后续安装切片接入。\n\n'
     + 'tray-inventory.json 记录复用资产的范围及来源清单；只从输入候选的 runtime/、node_modules/ 逐文件校验后复制，没有复制其 data/、日志、认证或客户端配置。内嵌 Provider 的 pyproject 必须与当前工作树相同，其 fuli_graph 源码整树替换为当前工作树版本，避免复用旧应用代码。应用和管理页也来自当前工作树。tray-files.sha256.json 覆盖完整新候选，外置运行数据不在其中。\n\n'
