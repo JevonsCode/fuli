@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import {
@@ -8,7 +9,7 @@ import {
   reviewSkillTrigger
 } from '../src/setup/review-skill-adapters.js';
 
-const PROJECT_ROOT = new URL('..', import.meta.url).pathname;
+const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SKILL_PATH = join(PROJECT_ROOT, 'skills', 'flreview', 'SKILL.md');
 
 test('flreview skill keeps one entry command and lets the invoking Agent generate the review', () => {
