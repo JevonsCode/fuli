@@ -167,13 +167,15 @@ test('pre-cancelled work never acquires a lease and bootstrap failures do not in
   const cancelled = fixture();
   assert.equal((await cancelled.attempt.run({ signal: controller.signal })).outcome.status, 'cancelled');
   assert.deepEqual(cancelled.calls, []);
-  const blocked = fixture();
-  blocked.adapter.start = async () => { throw Object.assign(new Error(capability), { code: 'worker_authentication_required' }); };
-  const result = await createWorkerRunAttempt(blocked.input).run();
-  assert.equal(result.outcome.status, 'blocked');
-  assert.equal(Object.hasOwn(result, 'workerRuntime'), false);
-  assert.equal(blocked.activities.length, 0);
-  assert.equal(result.cleanup.runClosed, true);
+  for (const code of ['worker_authentication_required', 'worker_authentication_unknown']) {
+    const blocked = fixture();
+    blocked.adapter.start = async () => { throw Object.assign(new Error(capability), { code }); };
+    const result = await createWorkerRunAttempt(blocked.input).run();
+    assert.deepEqual(result.outcome, { status: 'blocked', code });
+    assert.equal(Object.hasOwn(result, 'workerRuntime'), false);
+    assert.equal(blocked.activities.length, 0);
+    assert.equal(result.cleanup.runClosed, true);
+  }
 });
 
 test('session/identity and authority changes prevent prompt dispatch and still close owned resources', async () => {

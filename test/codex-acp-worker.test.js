@@ -12,6 +12,10 @@ const selection = { target_application: 'codex', provider: 'openai', model: 'gpt
 function fixture(authentication = 'account') {
   const calls = [];
   const handle = { authentication,
+    waitForAuthentication: async () => {
+      if (authentication === 'unknown') throw Object.assign(new Error(descriptor.capability), { code: 'acp_authentication_timeout' });
+      return authentication;
+    },
     newSession: async input => { calls.push({ kind: 'session', input }); return { sessionId: 'child-session' }; },
     configureModel: async input => { calls.push({ kind: 'configure', input }); return input; },
     promptOnce: async input => { calls.push({ kind: 'prompt', input }); return { sessionId: 'child-session', text: 'Synthetic result.', stopReason: 'end_turn' }; },
@@ -21,6 +25,23 @@ function fixture(authentication = 'account') {
   return { calls, paths, handle, adapter: createCodexAcpWorkerAdapter({ ...paths,
     startProcess: async input => { calls.push({ kind: 'start', input }); return handle; } }) };
 }
+
+test('Codex worker awaits the first native auth observation instead of rejecting an unknown snapshot', async () => {
+  const f = fixture('unknown');
+  const observed = Promise.withResolvers(), authentication = Promise.withResolvers();
+  f.handle.waitForAuthentication = input => { observed.resolve(input); return authentication.promise; };
+  const controller = new AbortController();
+  const pending = f.adapter.start({ descriptor, selection, signal: controller.signal });
+  try {
+    const state = await Promise.race([observed.promise.then(() => 'waiting'), pending.then(() => 'returned', () => 'rejected')]);
+    assert.equal(state, 'waiting');
+    assert.equal((await observed.promise).signal, controller.signal);
+    assert.deepEqual(f.calls.map(value => value.kind), ['start']);
+    authentication.resolve('account');
+    const child = await pending;
+    await child.close();
+  } finally { authentication.resolve('none'); await pending.catch(() => {}); }
+});
 
 test('Codex worker composes only the restricted stdio MCP with host descriptor and exact model/effort', async () => {
   const { adapter, calls, paths } = fixture();
@@ -50,7 +71,8 @@ test('Codex worker composes only the restricted stdio MCP with host descriptor a
 test('missing native authentication is a blocked bootstrap and closes the owned adapter', async () => {
   for (const kind of ['none', 'unknown']) {
     const { adapter, calls } = fixture(kind);
-    await assert.rejects(adapter.start({ descriptor, selection }), { code: 'worker_authentication_required' });
+    await assert.rejects(adapter.start({ descriptor, selection }), {
+      code: kind === 'unknown' ? 'worker_authentication_unknown' : 'worker_authentication_required' });
     assert.deepEqual(calls.map(value => value.kind), ['start', 'close']);
   }
 });

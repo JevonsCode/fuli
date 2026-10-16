@@ -5,7 +5,7 @@ import { validateWorkerDescriptor } from './worker-descriptor.js';
 const failure = code => new ApplicationError(`worker_${code}`, `Worker ${code.replaceAll('_', ' ')}.`);
 const bounded = (value, max) => typeof value === 'string' && value.trim().length > 0 && value.length <= max;
 const taskToken = value => typeof value === 'string' && /^fuli-task-[a-zA-Z0-9-]{8,128}$/.test(value);
-const knownFailures = new Set(['worker_authentication_required', 'worker_workspace_untrusted', 'worker_model_unavailable',
+const knownFailures = new Set(['worker_authentication_required', 'worker_authentication_unknown', 'worker_workspace_untrusted', 'worker_model_unavailable',
   'worker_model_mismatch', 'worker_cancelled', 'worker_timeout', 'worker_connection_closed', 'worker_cleanup_incomplete',
   'worker_identity_mismatch', 'worker_model_strategy_unmapped', 'worker_result_mismatch']);
 
@@ -152,7 +152,7 @@ export function createWorkerRunAttempt({ provider, leases, adapter, request, pro
       const code = signal?.aborted || error?.code === 'worker_cancelled' ? 'worker_cancelled'
         : knownFailures.has(error?.code) ? error.code : `worker_${stage}_failed`;
       outcome = { status: code.endsWith('_cancelled') ? 'cancelled'
-        : ['worker_authentication_required', 'worker_workspace_untrusted', 'worker_model_unavailable',
+        : ['worker_authentication_required', 'worker_authentication_unknown', 'worker_workspace_untrusted', 'worker_model_unavailable',
           'worker_model_strategy_unmapped'].includes(code) ? 'blocked'
           : stage === 'checkpoint' && !['worker_identity_mismatch', 'worker_result_mismatch'].includes(code)
             ? 'incomplete' : 'failed', code };

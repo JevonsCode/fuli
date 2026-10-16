@@ -8,6 +8,7 @@ const failure = code => new ApplicationError(code, 'Codex ACP worker cannot star
 const errorCodes = {
   acp_directory_untrusted: 'worker_workspace_untrusted', acp_model_unavailable: 'worker_model_unavailable',
   acp_model_mismatch: 'worker_model_mismatch', acp_cancelled: 'worker_cancelled', acp_timeout: 'worker_timeout',
+  acp_authentication_timeout: 'worker_authentication_unknown',
   acp_closed: 'worker_connection_closed', acp_cleanup_incomplete: 'worker_cleanup_incomplete'
 };
 
@@ -24,8 +25,11 @@ async function call(operation) {
 // Codex-specific composition; the common host never branches on an Agent ID.
 // Configuration acknowledgements do not establish actual provider/model use.
 export function createCodexAcpWorkerAdapter({ adapterPath, codexPath, codexHome, runtimeConfigPath,
-  startProcess = startCodexAcpProcess }) {
+  startProcess = startCodexAcpProcess, authenticationTimeoutMs = 5000 }) {
   if (typeof runtimeConfigPath !== 'string' || !isAbsolute(runtimeConfigPath)) throw failure('worker_invalid_attempt');
+  if (!Number.isSafeInteger(authenticationTimeoutMs) || authenticationTimeoutMs < 1 || authenticationTimeoutMs > 60_000) {
+    throw failure('worker_invalid_attempt');
+  }
   return { application: 'codex', async start({ descriptor: input, selection, signal }) {
     const descriptor = validateWorkerDescriptor(input);
     const modelId = selection.model;
@@ -34,7 +38,8 @@ export function createCodexAcpWorkerAdapter({ adapterPath, codexPath, codexHome,
         !['low', 'medium', 'high', 'max'].includes(reasoningEffort)) throw failure('worker_model_strategy_unmapped');
     const handle = await call(() => startProcess({ adapterPath, codexPath, codexHome, cwd: descriptor.projectPath, signal }));
     try {
-      if (!['account', 'api_key', 'gateway', 'external'].includes(handle.authentication)) {
+      const authentication = await call(() => handle.waitForAuthentication({ timeoutMs: authenticationTimeoutMs, signal }));
+      if (!['account', 'api_key', 'gateway', 'external'].includes(authentication)) {
         throw failure('worker_authentication_required');
       }
       return {

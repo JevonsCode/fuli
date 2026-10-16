@@ -15,7 +15,7 @@ const samePath = (a, b) => normalize(a).toLowerCase() === normalize(b).toLowerCa
 const failure = code => new ApplicationError(`acp_${code}`, `Codex ACP ${code.replaceAll('_', ' ')}.`);
 
 // One owned Windows adapter/session tree. Lease and WorkerRun policy stay with the host.
-// Authentication, trust changes, resume, and arbitrary RPC are deliberately not exposed.
+// Login, trust changes, resume, and arbitrary RPC are deliberately not exposed.
 export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, cwd,
   env = process.env, signal, initializeTimeoutMs = 15_000, stopTimeoutMs = 10_000 }) {
   if (process.platform !== 'win32') throw failure('platform_unsupported');
@@ -40,11 +40,45 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
   let connection, session, closing, initialization, notification = Promise.resolve(), authentication = 'unknown';
   let stderrBytes = 0, stderrTruncated = false, terminalError = null, timer;
   const requestedIds = new Set();
+  const authenticationWaiters = new Set();
   const owned = new Set(), permissions = [];
   const lifetime = new AbortController();
   let resolveClosed, rejectClosed;
   const closed = new Promise((resolve, reject) => { resolveClosed = resolve; rejectClosed = reject; });
   void closed.catch(() => {});
+  async function waitForAuthentication({ timeoutMs = 5000, signal: callerSignal } = {}) {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60_000) throw failure('invalid_timeout');
+    let timeout, observed, stopped, cancelled;
+    try {
+      if (lifetime.signal.aborted) throw lifetime.signal.reason;
+      if (callerSignal?.aborted) throw failure('cancelled');
+      const observedAuthentication = await new Promise((resolve, reject) => {
+        // An initialize ACK can precede the first wire-validated auth notification.
+        observed = () => resolve(authentication);
+        stopped = () => reject(lifetime.signal.reason ?? failure('closed'));
+        cancelled = () => reject(failure('cancelled'));
+        authenticationWaiters.add(observed);
+        lifetime.signal.addEventListener('abort', stopped, { once: true });
+        callerSignal?.addEventListener('abort', cancelled, { once: true });
+        timeout = setTimeout(() => reject(failure('authentication_timeout')), timeoutMs);
+        if (authentication !== 'unknown') observed();
+        if (lifetime.signal.aborted) stopped();
+        if (callerSignal?.aborted) cancelled();
+      });
+      if (lifetime.signal.aborted) throw lifetime.signal.reason;
+      if (callerSignal?.aborted) throw failure('cancelled');
+      return observedAuthentication;
+    } catch (error) {
+      const reason = lifetime.signal.reason ?? error;
+      await close(reason);
+      throw reason;
+    } finally {
+      clearTimeout(timeout);
+      authenticationWaiters.delete(observed);
+      if (stopped) lifetime.signal.removeEventListener('abort', stopped);
+      if (cancelled) callerSignal?.removeEventListener('abort', cancelled);
+    }
+  }
   async function capture() {
     const pids = await child.snapshot();
     for (const pid of pids) if (owned.size < 64) owned.add(pid);
@@ -121,7 +155,10 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
       if (Object.hasOwn(message, 'method') || !requestedIds.delete(message.id)) throw failure('protocol_error');
       return message;
     }, error => { terminalError ??= error; }));
-    connection = client().onNotification(AUTH, value => value, ({ params }) => { authentication = params.kind; })
+    connection = client().onNotification(AUTH, value => value, ({ params }) => {
+      authentication = params.kind;
+      for (const observed of authenticationWaiters) observed();
+    })
       .onRequest(methods.client.session.requestPermission, ({ params, requestId }) => {
         if (permissions.length < 16) permissions.push({ requestId, sessionId: params.sessionId.slice(0, 128),
           toolCallId: params.toolCall.toolCallId.slice(0, 128), optionKinds: params.options.slice(0, 16).map(option => option.kind) });
@@ -143,7 +180,7 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
     initialization = { protocolVersion: response.protocolVersion, agentVersion: response.agentInfo?.version ?? null };
     if (!await capture()) throw failure('closed');
     if (closing) throw terminalError ?? failure('closed');
-    return { pid: child.pid, initialization, signal: lifetime.signal, closed, close,
+    return { pid: child.pid, initialization, signal: lifetime.signal, closed, close, waitForAuthentication,
       newSession: session.newSession, configureModel: session.configureModel, promptOnce: session.promptOnce, cancel: session.cancel,
       get ownedPids() { return [...owned]; }, get authentication() { return authentication; },
       get pendingPermissions() { return structuredClone(permissions); },

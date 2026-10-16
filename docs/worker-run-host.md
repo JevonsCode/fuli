@@ -36,7 +36,12 @@ creating the attempt. The default generated capability exists only in memory.
 
 The Codex adapter uses the existing isolated native home and exact trusted cwd.
 It requires observed native authentication and never logs in, copies credentials,
-or writes trust. It configures the Provider's exact requested model and an explicit
+or writes trust. Initialization can precede the native auth notification: the
+adapter waits for that validated notification for at most five seconds by default.
+`none` is authentication required; no notification before the deadline is
+`worker_authentication_unknown`. Cancellation and process closure interrupt the
+wait. No repeated initialize or authentication-file polling is performed.
+The adapter configures the Provider's exact requested model and an explicit
 reasoning effort (`low`, `medium`, `high`, or `max`). `default` remains unmapped and
 blocks; the host does not guess a model or effort. The restricted stdio MCP gets
 only the worker descriptor, never the parent's task token or session identity.
