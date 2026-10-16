@@ -4,7 +4,6 @@ import fsPromises, { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/pro
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import { spawn } from 'node:child_process';
 import { getEventListeners } from 'node:events';
 import { startCodexAcpProcess } from '../src/agents/codex/acp-process.js';
@@ -36,8 +35,8 @@ const save=()=>fs.writeFileSync(record,JSON.stringify(observed)); save();
 process.on('uncaughtException',error=>{observed.adapterFailure={name:error.name,code:error.code};save();process.exit(1);});
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
 async function startTree(){
-  const childCode="const fs=require('node:fs'),{spawn}=require('node:child_process');const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore',windowsHide:true});fs.writeFileSync(process.argv[1],JSON.stringify({pid:process.pid,childPid:child.pid}));setInterval(()=>{},1000);";
-  const child=spawn(process.env.CODEX_PATH,['-e',childCode,record+'.tree'],{stdio:'ignore',windowsHide:true});
+  const childCode="const fs=require('node:fs'),{spawn}=require('node:child_process');const child=spawn(process.execPath,['-e','setInterval(()=>{},1000) /* FULI_ACP_DETACHED_TEST */'],{stdio:'ignore',windowsHide:true,detached:true});fs.writeFileSync(process.argv[1],JSON.stringify({pid:process.pid,childPid:child.pid}));setInterval(()=>{},1000);";
+  const child=spawn(process.env.CODEX_PATH,['-e',childCode,record+'.tree'],{stdio:'ignore',windowsHide:true,detached:true});
   observed.childPid=child.pid;save();
   child.once('error',error=>{observed.childSpawnError=error.code;save();});
   child.once('exit',code=>{observed.childExitCode=code;save();});
@@ -79,6 +78,16 @@ input.on('line',async line=>{
   }else if(value.method==='session/prompt'){
     observed.prompt=value.params;save();
     if(mode==='session-hang')return;
+    if(mode==='session-orphan'){
+      await startTree(); process.kill(observed.childPid);
+      const deadline=Date.now()+5000;
+      while(Date.now()<deadline){
+        try{process.kill(observed.childPid,0);}catch{break;}
+        await new Promise(resolve=>setTimeout(resolve,25));
+      }
+      process.kill(JSON.parse(fs.readFileSync(record+'.tree','utf8')).childPid,0);
+      observed.grandchildBeforeRootExit=true;save();process.exit(0);
+    }
     if(mode==='session-eof'){process.exit(0);}
     const update=(kind,fields)=>send({jsonrpc:'2.0',method:'session/update',params:{
       sessionId:mode==='session-foreign'?'foreign-session':sessionId,update:{sessionUpdate:kind,...fields}}});
@@ -206,6 +215,36 @@ test('ACP prompt cancellation and timeout reclaim the verified child tree and pr
   }
 });
 
+test('ACP job reclaims a detached grandchild after its intermediate parent and adapter exit', windowsOnly, async t => {
+  const outsider = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore', windowsHide: true });
+  t.after(() => outsider.kill());
+  const { options, record } = await fixture(t, 'session-orphan');
+  await trust(options);
+  const handle = await startCodexAcpProcess(options);
+  let tree;
+  try {
+    await handle.newSession({});
+    await handle.configureModel({ modelId: 'gpt-6.1-sol', reasoningEffort: 'max' });
+    await assert.rejects(handle.promptOnce({ text: 'synthetic detached orphan' }), { code: 'acp_closed' });
+    tree = JSON.parse(await readFile(record + '.tree', 'utf8'));
+    assert.equal(JSON.parse(await readFile(record, 'utf8')).grandchildBeforeRootExit, true,
+      'the detached grandchild must survive its intermediate parent before adapter exit');
+    await handle.closed;
+    assert.equal(gone(tree.pid), true);
+    assert.equal(gone(tree.childPid), true, 'clean shutdown requires the detached grandchild to exit');
+    assert.equal(gone(outsider.pid), false);
+  } finally {
+    await handle.close().catch(() => {});
+    // Keep a failing regression from leaking its own marked synthetic process.
+    tree ??= await readFile(record + '.tree', 'utf8').then(JSON.parse).catch(() => null);
+    const owner = tree && await inspectWindowsNativeProcess(tree.childPid);
+    if (owner) {
+      assert.ok(owner.commandLine.includes('FULI_ACP_DETACHED_TEST'));
+      await stopWindowsNativeProcess(owner.pid, { pid: owner.pid, command: owner.executable, ownership: owner }, { timeoutMs: 8000 });
+    }
+  }
+});
+
 test('ACP foreign session updates, oversized output and prompt EOF fail closed without raw SDK logging', windowsOnly, async t => {
   const errors = [], spy = t.mock.method(console, 'error', (...args) => errors.push(args));
   try {
@@ -276,17 +315,15 @@ test('ACP timeout and caller cancellation reject pending initialize and stop onl
   }
 });
 
-test('ACP one-millisecond initialization timeout cleans the spawned adapter before rejecting', windowsOnly, async t => {
+test('ACP one-millisecond initialization timeout cleans startup before rejecting', windowsOnly, async t => {
   const { options, record } = await fixture(t);
   let observed;
   try {
     await assert.rejects(startCodexAcpProcess({ ...options, initializeTimeoutMs: 1 }), { code: 'acp_timeout' });
-    for (let attempt = 0; attempt < 20 && !observed; attempt++) {
-      observed = await readFile(record, 'utf8').then(JSON.parse).catch(() => null);
-      if (!observed) await delay(25);
-    }
-    assert.ok(observed, 'the spawned adapter must record its PID');
-    assert.equal(gone(observed.pid), true, 'timeout rejection must wait for process cleanup');
+    observed = await readFile(record, 'utf8').then(JSON.parse).catch(() => null);
+    // The helper can observe expiry before launching the adapter. If execution
+    // began, rejection still waits for the owned job to be empty.
+    if (observed) assert.equal(gone(observed.pid), true, 'timeout rejection must wait for process cleanup');
   } finally {
     const owner = observed && await inspectWindowsNativeProcess(observed.pid);
     if (owner) {

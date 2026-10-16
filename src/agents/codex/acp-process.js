@@ -1,12 +1,10 @@
-import { spawn } from 'node:child_process';
-import { once } from 'node:events';
 import { realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join, normalize } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { client, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk';
 import { ApplicationError } from '../../app/application-error.js';
-import { inspectWindowsNativeProcess, stopWindowsNativeProcess } from '../../native-runtime/windows-processes.js';
+import { spawnWindowsJobProcess } from '../../native-runtime/windows-job-process.js';
 import { createCodexAcpSession } from './acp-session.js';
 
 const AUTH = '_auth/status_update';
@@ -38,55 +36,19 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
     if (value <= 0) throw failure('timeout');
     return value;
   };
-  const child = spawn(nodePath, [paths.adapterPath], { cwd: paths.cwd, env: childEnv,
-    windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
-  let exited = false, exit, connection, session, closing, rootOwner, initialization, initializationCaptured = false, authentication = 'unknown';
+  const child = await spawnWindowsJobProcess(nodePath, [paths.adapterPath], { cwd: paths.cwd, env: childEnv, stopTimeoutMs });
+  let connection, session, closing, initialization, notification = Promise.resolve(), authentication = 'unknown';
   let stderrBytes = 0, stderrTruncated = false, terminalError = null, timer;
   const requestedIds = new Set();
-  const owned = new Map(), permissions = [];
+  const owned = new Set(), permissions = [];
   const lifetime = new AbortController();
   let resolveClosed, rejectClosed;
   const closed = new Promise((resolve, reject) => { resolveClosed = resolve; rejectClosed = reject; });
   void closed.catch(() => {});
-  async function capture(timeoutMs, descendants = false) {
-    const rows = await inspectWindowsNativeProcess(child.pid, { children: true, descendants, timeoutMs });
-    if (rows.length > 64) throw failure('cleanup_incomplete');
-    const root = rows.find(row => row.pid === child.pid);
-    if (root && (!root.executable || !samePath(root.executable, nodePath) || !root.commandLine?.includes(paths.adapterPath) ||
-        (rootOwner && (root.createdFileTime !== rootOwner.createdFileTime || root.commandLine !== rootOwner.commandLine)))) {
-      throw failure('cleanup_incomplete');
-    }
-    if (root) { rootOwner = root; owned.set(root.pid, root); }
-    else if (!exited) throw failure('cleanup_incomplete');
-    if (!root && rows.some(row => row.parentPid === child.pid && !owned.has(row.pid))) throw failure('cleanup_incomplete');
-    if (!descendants) {
-      for (const row of rows) if (root && row.parentPid === root.pid && row.executable && row.commandLine &&
-          samePath(row.executable, paths.codexPath) && BigInt(row.createdFileTime) >= BigInt(root.createdFileTime)) owned.set(row.pid, row);
-      return Boolean(root);
-    }
-    const pending = [...owned.values()], visited = new Set();
-    while (pending.length) {
-      const owner = pending.shift();
-      if (visited.has(owner.pid)) continue;
-      visited.add(owner.pid);
-      const family = rows.filter(row => row.pid === owner.pid || row.parentPid === owner.pid);
-      const observed = family.find(row => row.pid === owner.pid);
-      if (!observed) {
-        if (family.some(row => !owned.has(row.pid))) throw failure('cleanup_incomplete');
-        continue;
-      }
-      if (observed.createdFileTime !== owner.createdFileTime || observed.commandLine !== owner.commandLine ||
-          !samePath(observed.executable, owner.executable)) throw failure('cleanup_incomplete');
-      for (const row of family) if (row.parentPid === owner.pid) {
-        if (!row.executable || !row.commandLine || BigInt(row.createdFileTime) < BigInt(owner.createdFileTime)) throw failure('cleanup_incomplete');
-        const previous = owned.get(row.pid);
-        if (previous && (previous.createdFileTime !== row.createdFileTime || previous.commandLine !== row.commandLine ||
-            !samePath(previous.executable, row.executable))) throw failure('cleanup_incomplete');
-        owned.set(row.pid, row); pending.push(row);
-        if (owned.size > 64) throw failure('cleanup_incomplete');
-      }
-    }
-    return Boolean(root);
+  async function capture() {
+    const pids = await child.snapshot();
+    for (const pid of pids) if (owned.size < 64) owned.add(pid);
+    return pids.includes(child.pid);
   }
   function close(reason = failure('closed')) {
     if (closing) return closing;
@@ -101,16 +63,15 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
         return value;
       };
       try {
-        if (!await capture(remaining(), true) && !initializationCaptured) throw failure('cleanup_incomplete');
+        // SDK close aborts its write queue. Give session/cancel a bounded chance
+        // to flush first, without letting a blocked adapter delay job cleanup.
+        await boundedExit(notification.catch(() => {}), Math.min(1500, remaining()));
         connection?.close(reason);
         child.stdin.end();
-        await boundedExit(exit, Math.min(1500, remaining()));
-        await capture(remaining(), true);
-        for (const owner of [...owned.values()].reverse()) {
-          await stopWindowsNativeProcess(owner.pid, { pid: owner.pid, command: owner.executable, ownership: owner }, { timeoutMs: remaining() });
-        }
-        if (!exited) await boundedExit(exit, remaining());
-        if (!exited) throw failure('cleanup_incomplete');
+        // Allow a queued session/cancel and stdin EOF to reach the adapter.
+        // The job retains every descendant throughout this bounded grace period.
+        if (child.pid) await boundedExit(child.exited, Math.min(1500, remaining()));
+        await child.stop(remaining());
         resolveClosed();
       } catch {
         connection?.close(failure('cleanup_incomplete'));
@@ -128,19 +89,18 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
     void (session ? session.cancel() : close(terminalError)).catch(() => {});
   };
   try {
-    exit = new Promise(resolve => child.once('exit', () => { exited = true; resolve(); }));
+    void child.exited.then(() => { void close(terminalError ?? failure('closed')).catch(() => {}); });
     child.stderr.on('data', chunk => {
       stderrTruncated ||= stderrBytes + chunk.length > MAX_BYTES;
       stderrBytes = Math.min(MAX_BYTES, stderrBytes + chunk.length);
     });
     child.stdin.on('error', () => { void close(failure('closed')).catch(() => {}); });
-    child.once('error', () => { void close(failure('spawn_failed')).catch(() => {}); });
     signal?.addEventListener('abort', cancelled, { once: true });
     if (signal?.aborted) cancelled();
     if (closing) throw terminalError;
     timer = setTimeout(() => { terminalError ??= failure('timeout'); void close(terminalError).catch(() => {}); }, initializeRemaining());
-    await Promise.race([once(child, 'spawn'), closed.then(() => { throw terminalError ?? failure('closed'); })]);
-    if (!await capture(initializeRemaining())) throw failure('closed');
+    await Promise.race([child.ready, closed.then(() => { throw terminalError ?? failure('closed'); })]);
+    if (!await capture()) throw failure('closed');
     if (closing) throw terminalError ?? failure('closed');
     const output = Writable.toWeb(child.stdin), writer = output.getWriter();
     const trackedOutput = new WritableStream({ write(chunk) {
@@ -168,12 +128,12 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
         return { outcome: { outcome: 'cancelled' } };
       }).connect(ndJsonStream(trackedOutput, filtered));
     session = createCodexAcpSession({ cwd: paths.cwd, codexHome: paths.codexHome, close, signal: lifetime.signal,
-      notify: (method, params) => connection.agent.notify(method, params),
+      notify: (method, params) => { notification = connection.agent.notify(method, params); return notification; },
       request: async (method, params) => {
         if (closing) throw terminalError;
         const response = await connection.agent.request(method, params);
         if (closing) throw terminalError;
-        if (method === methods.agent.session.new || method === methods.agent.session.prompt) await capture(stopTimeoutMs, true);
+        if (method === methods.agent.session.new || method === methods.agent.session.prompt) await capture();
         return response;
       } });
     void connection.closed.then(() => { void close(terminalError ?? failure('closed')).catch(() => {}); });
@@ -181,12 +141,11 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
       clientCapabilities: {}, clientInfo: { name: 'fuli', version: '1' } }, { cancellationSignal: signal });
     if (response.protocolVersion !== PROTOCOL_VERSION) throw failure('handshake_failed');
     initialization = { protocolVersion: response.protocolVersion, agentVersion: response.agentInfo?.version ?? null };
-    if (!await capture(initializeRemaining())) throw failure('closed');
-    initializationCaptured = true;
+    if (!await capture()) throw failure('closed');
     if (closing) throw terminalError ?? failure('closed');
     return { pid: child.pid, initialization, signal: lifetime.signal, closed, close,
       newSession: session.newSession, configureModel: session.configureModel, promptOnce: session.promptOnce, cancel: session.cancel,
-      get ownedPids() { return [...owned.keys()]; }, get authentication() { return authentication; },
+      get ownedPids() { return [...owned]; }, get authentication() { return authentication; },
       get pendingPermissions() { return structuredClone(permissions); },
       get diagnostics() { return { stderrBytes, stderrTruncated }; } };
   } catch (error) {
