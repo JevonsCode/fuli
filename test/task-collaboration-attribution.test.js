@@ -39,3 +39,34 @@ test('legacy checkpoints and bare active candidates cannot create worker attribu
   assert.deepEqual(first.ignored_collaborators, ['configured-only']);
   assert.deepEqual(replay.agent_receipt, first.agent_receipt);
 });
+
+for (const status of ['legacy', 'legacy_unknown']) {
+  test(`${status} replay resolves only its original owner display name`, async () => {
+    const f = scenario(status === 'legacy' ? null : { version: 1, status,
+      owner: { agent_id: 'owner', name: null }, collaborators: [] });
+    const lookups = [];
+    f.app.personal = { getProjectAgent: async (...scope) => {
+      lookups.push(scope);
+      return { profile: { display_name: 'Original owner' } };
+    } };
+    await checkpointTaskKnowledge(f.app, f.input);
+    const replay = await checkpointTaskKnowledge(f.app, { ...f.input, collaborators: ['configured-only'] });
+    assert.equal(replay.replayed, true);
+    assert.equal(replay.agent_receipt.owner.agent_id, 'owner');
+    assert.equal(replay.agent_receipt.owner.name, 'Original owner');
+    assert.deepEqual(replay.agent_receipt.collaborators, []);
+    assert.deepEqual(replay.ignored_collaborators, ['configured-only']);
+    assert.deepEqual(lookups, [['space', 'project', 'owner'], ['space', 'project', 'owner']]);
+  });
+}
+
+test('frozen owner display values never consult the current directory', async () => {
+  for (const name of ['Frozen owner', null]) {
+    const f = scenario({ version: 1, status: 'frozen', owner: { agent_id: 'owner', name }, collaborators: [] });
+    let lookups = 0;
+    f.app.personal = { getProjectAgent: async () => { lookups++; return { profile: { name: 'Current owner' } }; } };
+    const result = await checkpointTaskKnowledge(f.app, f.input);
+    assert.equal(result.agent_receipt.owner.name, name);
+    assert.equal(lookups, 0);
+  }
+});
