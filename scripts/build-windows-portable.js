@@ -119,6 +119,9 @@ export async function buildWindowsPortable({ output, assetRoot, buildPython, cac
     const resolvedBundle = resolveWindowsNativeBundle(readWindowsNativeBundle(output));
     await writeFile(join(output, 'fuli.cmd'), '@echo off\r\n"%~dp0runtime\\node\\node.exe" "%~dp0src\\cli.js" %*\r\n');
     await writeFile(join(output, 'fl.cmd'), '@echo off\r\n"%~dp0runtime\\node\\node.exe" "%~dp0src\\cli.js" %*\r\n');
+    for (const [name, action] of [['启动并打开 Fuli.cmd', 'start'], ['停止 Fuli.cmd', 'stop'], ['仅打开 Fuli.cmd', 'open']]) {
+      await writeFile(join(output, name), portableLauncher(action), 'utf8');
+    }
     const inventory = { version: 1, applicationVersion: JSON.parse(await readFile(join(output, 'package.json'), 'utf8')).version,
       status: 'local-candidate', downloads: DOWNLOADS, pythonPackages,
       versions: { node: '24.18.0', python: '3.12.10', neo4j: resolvedBundle.neo4jVersion, java: resolvedBundle.javaVersion },
@@ -160,6 +163,49 @@ async function expandZip(archive, destination) {
   await run(join(process.env.SystemRoot, 'System32', 'tar.exe'), ['-xf', archive, '-C', destination]);
 }
 
+function portableLauncher(action) {
+  const cli = '"%FULI_PORTABLE_ROOT%runtime\\node\\node.exe" "%FULI_PORTABLE_ROOT%src\\cli.js"';
+  const data = '--data-dir "%FULI_PORTABLE_ROOT%data"';
+  const commands = {
+    start: [
+      'echo 正在启动并打开 Fuli / Starting and opening Fuli...',
+      'if exist "%FULI_PORTABLE_ROOT%data\\graph-runtime.json" goto start',
+      'echo 首次配置本目录 / Configuring this directory for the first time...',
+      `${cli} setup --yes --skip-agents --personal-only --runtime-mode native ${data}`,
+      'if errorlevel 1 goto failed',
+      `${cli} open ${data}`,
+      'if errorlevel 1 goto failed',
+      'goto succeeded',
+      ':start',
+      `${cli} start --open ${data}`,
+      'if errorlevel 1 goto failed'
+    ],
+    stop: [
+      'echo 正在停止本目录 Fuli / Stopping Fuli in this directory...',
+      `${cli} stop ${data}`,
+      'if errorlevel 1 goto failed',
+      'echo 检查停止状态 / Checking stopped status...',
+      // status exits 1 for both stopped and not_configured. Parse its existing
+      // JSON contract rather than treating that normal exit as a stop failure.
+      '"%FULI_PORTABLE_ROOT%runtime\\node\\node.exe" -e "const{spawnSync}=require(\'node:child_process\');const r=spawnSync(process.execPath,[process.argv[1],\'status\',\'--json\',\'--data-dir\',process.argv[2]],{encoding:\'utf8\',windowsHide:true});if(r.stdout)process.stdout.write(r.stdout);if(r.stderr)process.stderr.write(r.stderr);if(r.error){console.error(r.error.message);process.exit(1)}try{process.exit([0,1].includes(r.status)&&[\'stopped\',\'not_configured\'].includes(JSON.parse(r.stdout).status)?0:1)}catch{process.exit(1)}" "%FULI_PORTABLE_ROOT%src\\cli.js" "%FULI_PORTABLE_ROOT%data"',
+      'if errorlevel 1 goto failed'
+    ],
+    open: [
+      'echo 仅打开已运行的 Fuli / Opening the running Fuli console only...',
+      `${cli} open ${data}`,
+      'if errorlevel 1 goto failed'
+    ]
+  };
+  return ['@echo off', 'setlocal DisableDelayedExpansion', '"%SystemRoot%\\System32\\chcp.com" 65001 >nul',
+    'set "FULI_PORTABLE_ROOT=%~dp0"', ...commands[action], ':succeeded',
+    'echo 操作完成 / Done.', 'exit /b 0', ':failed', 'set "FULI_PORTABLE_EXIT=%errorlevel%"',
+    'echo.', 'echo 操作失败，原始错误见上 / Operation failed; original error appears above.',
+    'echo 日志目录 / Logs: "%FULI_PORTABLE_ROOT%data\\logs"',
+    'echo Native 日志 / Native logs: "%FULI_PORTABLE_ROOT%data\\native-runtime\\personal\\logs"',
+    'echo 按任意键关闭 / Press any key to close.', 'pause >nul', 'exit /b %FULI_PORTABLE_EXIT%', ''
+  ].join('\r\n');
+}
+
 function run(command, args, { cwd, env = process.env, capture = false } = {}) {
   return new Promise((resolveRun, reject) => {
     const child = execFile(command, args, { cwd, env, windowsHide: true, timeout: 20 * 60_000,
@@ -174,9 +220,14 @@ function run(command, args, { cwd, env = process.env, capture = false } = {}) {
 function portableInstructions(version) {
   return `# Fuli ${version} Windows 本地候选目录包\n\n` +
     '这是 Windows x64 便携候选目录，不是系统安装器或桌面托盘。无需 Docker、WSL、系统 Node、Python、Java 或 uv。Windows 自带 PowerShell/CIM 与系统 C Runtime 仍是平台前提。\n\n' +
+    '双击本目录入口：\n\n' +
+    '- **启动并打开 Fuli.cmd**：首次自动配置本目录的个人 native 服务（跳过 Agent 集成），成功后打开管理页面；之后启动并打开。\n' +
+    '- **停止 Fuli.cmd**：停止本目录服务并显示 JSON 状态；已停止或尚未配置也正常结束。\n' +
+    '- **仅打开 Fuli.cmd**：只打开已运行服务的管理页面，不自动启动或配置。\n\n' +
+    '这三个入口固定使用本目录 runtime/node/node.exe、src/cli.js 与 data/，覆盖 FULI_DATA_DIR；错误保留在窗口中并显示日志目录，按键后关闭。不会选择 PATH 中的 Fuli 或修改日常 Agent 集成。fuli.cmd / fl.cmd 保留原有完整 CLI 参数行为。\n\n' +
     '在此目录运行：\n\n```powershell\n.\\fuli.cmd setup --yes --skip-agents --personal-only --runtime-mode native\n.\\fuli.cmd status --json\n.\\fuli.cmd stop\n.\\fuli.cmd start\n```\n\n' +
     'native-bundle.json 的路径全部相对于包目录；默认数据保存在 data/。显式 --data-dir 优先于 FULI_DATA_DIR，再优先于包内 data/。普通 npm 安装继续使用原平台数据目录。\n\n' +
-    '搬移前先 stop，确认 status 已停止并且所有 owned 进程退出，再整体搬移目录。app/runtime 资产与 data/ 一起搬移；也可通过 --data-dir 指定独立数据目录并单独保留它。首次启动会重解析当前包路径。不要在运行中搬移或复制图数据。\n\n' +
+    '搬移前先 stop，确认 status 已停止并且所有 owned 进程退出，再整体搬移目录。src/、runtime/ 等程序资产与 data/ 一起搬移；也可通过 CLI --data-dir 指定独立数据目录并单独保留它。首次启动会重解析当前包路径。不要在运行中搬移或复制图数据。\n\n' +
     '移除候选时默认保留数据：先 stop；备份并保留 data/ 或外部数据目录，再删除程序资产与 launcher。本候选只验收此手动移除策略，未验收系统卸载程序；不要通过 uninstall 命令影响日常客户端集成。验收 setup 使用 --skip-agents，不改全局客户端配置。\n\n' +
     'portable-inventory.json 记录固定下载来源、SHA256、Provider 依赖版本和资产许可证；portable-files.sha256.json 是构建时文件树，不含运行后的 data/。\n';
 }

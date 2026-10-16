@@ -59,7 +59,10 @@ export async function assertWindowsNativePortOwner(entry, port) {
     + 'ConvertTo-Json -InputObject $owners -Compress');
   const owned = new Set([entry.pid, ...(entry.relatedProcesses ?? []).map(item => item.pid)]);
   if (!owners.length || owners.some(pid => !owned.has(pid))) {
-    throw new Error('The native service port does not belong to its recorded process: ' + port);
+    const expected = [...owned].filter(Number.isInteger).join(',') || 'none';
+    const observed = owners.filter(Number.isInteger).join(',') || 'none';
+    throw new Error('The native service port does not belong to its recorded process: ' + port
+      + ' (' + (owners.length ? 'foreign' : 'empty') + '; expected PIDs: ' + expected + '; observed PIDs: ' + observed + ')');
   }
 }
 
