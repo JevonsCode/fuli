@@ -20,6 +20,7 @@ import {
   lanServerAuthorities
 } from './server/lan-access.js';
 import { createServerApplication } from './server/application-lifecycle.js';
+import { createWorkerPlanRuntime } from './server/worker-plan-runtime.js';
 import { listenServer } from './server/listen.js';
 import { resolveSetupPaths } from './setup/paths.js';
 import { createSystemService } from './system/system-service.js';
@@ -61,10 +62,11 @@ export async function createServer(options = {}) {
   let resourcesClosing = null;
   let stopJudgment = () => {};
   let peer = null;
+  let workerRuntime = null;
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => stopJudgment(), () => peer?.close(), () => system?.close?.(), () => runtime.close()]) {
+      for (const close of [() => stopJudgment(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => runtime.close()]) {
         try {
           const pending = close();
           if (pending?.then) await pending;
@@ -102,6 +104,13 @@ export async function createServer(options = {}) {
           executorAdapters: options.executorAdapters
         })
       : null);
+    if (options.workerRuntimeBindings !== undefined) {
+      workerRuntime = await createWorkerPlanRuntime({
+        runtimeConfigPath: options.runtimeConfigPath ?? localOptions.runtimeConfigPath,
+        workerRuntimeBindings: options.workerRuntimeBindings, provider: application.personal,
+        leases: options.workerRuntimeLeases, env: options.env ?? process.env
+      });
+    }
   } catch (error) {
     // The owned application can already hold local databases before system
     // construction or configuration validation fails, even without a listener.
@@ -182,7 +191,8 @@ export async function createServer(options = {}) {
       close,
       url: `http://${authority}`,
       lanUrls: lanEnabled ? lanConsoleUrls(lanAddresses, address.port) : [],
-      app: application
+      app: application,
+      ...(workerRuntime ? { workerPlanHost: workerRuntime.host } : {})
     };
   }
 
