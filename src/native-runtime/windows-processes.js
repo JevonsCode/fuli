@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { closeSync, mkdirSync, openSync, readFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
-import { basename, dirname, join, normalize } from 'node:path';
+import { basename, dirname, join, normalize, win32 } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const samePath = (left, right) => typeof left === 'string' && typeof right === 'string'
@@ -276,7 +276,7 @@ export async function readWindowsBootAnchor({ salt, platform = process.platform,
     const anchors = Array.isArray(result?.anchors) ? result.anchors : [result?.anchors].filter(Boolean);
     const [anchor] = anchors;
     if (anchors.length !== 1 || !Number.isInteger(anchor.pid) || anchor.pid <= 0 || anchor.critical !== true
-        || typeof anchor.image !== 'string' || basename(anchor.image).toLowerCase() !== 'wininit.exe'
+        || typeof anchor.image !== 'string' || win32.basename(anchor.image).toLowerCase() !== 'wininit.exe'
         || typeof result.machineGuid !== 'string' || !/^[0-9a-f-]{36}$/i.test(result.machineGuid)) return null;
     const machineHash = createHash('sha256').update(salt + ':' + result.machineGuid.toLowerCase()).digest('hex');
     return { version: 1, machineHash, anchor: { pid: anchor.pid, image: 'wininit.exe', critical: true } };
