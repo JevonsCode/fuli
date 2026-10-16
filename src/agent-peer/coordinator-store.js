@@ -32,6 +32,13 @@ export function createCoordinatorStore(path = ':memory:') {
       detail TEXT, at TEXT NOT NULL
     );
   `);
+  // A receiving device may report that its woken process could still be running.
+  const columns = new Set(database.prepare('PRAGMA table_info(messages)').all().map((column) => column.name));
+  for (const column of ['cleanup_status', 'cleanup_code']) {
+    if (columns.has(column)) continue;
+    try { database.exec(`ALTER TABLE messages ADD COLUMN ${column} TEXT`); }
+    catch (error) { if (!/duplicate column/i.test(error.message)) throw error; }
+  }
   const transaction = (work) => {
     database.exec('BEGIN IMMEDIATE');
     try { const result = work(); database.exec('COMMIT'); return result; }

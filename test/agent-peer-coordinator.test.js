@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:https';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -169,6 +173,64 @@ test('an expired acceptance cannot be renewed and an accepted never-started repo
     assert.equal(reported.status, 'unknown');
     assert.equal(service.claim(target.fingerprint), null);
   } finally { store.close(); }
+});
+
+test('only the current attempt can record a bounded unconfirmed cleanup, and its original error stays', async () => {
+  const { coordinator, target, store, service } = await coordinatorWithTarget();
+  const other = await identity();
+  store.upsertNode({ id: other.fingerprint, name: 'Other', certPem: other.certPem, at: new Date().toISOString() });
+  try {
+    const run = (messageId) => {
+      const assertion = assertionFor(coordinator, target, Date.now(), { messageId });
+      service.submit(coordinator.fingerprint, { assertion, signature: coordinator.sign(assertion) });
+      const claim = service.claim(target.fingerprint);
+      service.renew(target.fingerprint, { messageId: claim.messageId, attemptId: claim.attemptId, state: 'accepted' });
+      service.renew(target.fingerprint, { messageId: claim.messageId, attemptId: claim.attemptId, state: 'running' });
+      return claim;
+    };
+    const failed = run('message-failed');
+    const forged = { status: 'unconfirmed', code: 'cleanup_timeout', detail: 'x'.repeat(10_000) };
+    assert.throws(() => service.result(other.fingerprint, { messageId: failed.messageId, attemptId: failed.attemptId,
+      outcome: 'failed', error: 'wake_timeout', cleanup: forged }), { code: 'message_not_found' });
+    assert.equal(service.status(coordinator.fingerprint, { messageId: 'message-failed' }).cleanup, undefined);
+    const reported = service.result(target.fingerprint, { messageId: failed.messageId, attemptId: failed.attemptId,
+      outcome: 'failed', error: 'wake_timeout', cleanup: forged });
+    assert.deepEqual([reported.status, reported.error, reported.cleanup],
+      ['failed', 'wake_timeout', { status: 'unconfirmed', code: 'cleanup_timeout' }]);
+    assert.deepEqual(service.status(coordinator.fingerprint, { messageId: 'message-failed' }).cleanup,
+      { status: 'unconfirmed', code: 'cleanup_timeout' });
+
+    const answered = run('message-answered');
+    const view = service.result(target.fingerprint, { messageId: answered.messageId, attemptId: answered.attemptId,
+      outcome: 'answered', reply: 'Synthetic', verified: true, cleanup: forged });
+    assert.equal(view.cleanup, undefined, 'an answered attempt finished its process');
+    const released = run('message-released');
+    const unreleased = service.result(target.fingerprint, { messageId: released.messageId, attemptId: released.attemptId,
+      outcome: 'cancelled', error: 'cancelled', cleanup: { status: 'released' } });
+    assert.equal(unreleased.cleanup, undefined, 'no remote report can claim a release');
+  } finally { store.close(); }
+});
+
+test('an existing coordinator database gains the cleanup columns and keeps its messages', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'fuli-coordinator-cleanup-'));
+  const path = join(directory, 'coordinator.sqlite');
+  try {
+    const legacy = new DatabaseSync(path);
+    legacy.exec(`CREATE TABLE messages (id TEXT PRIMARY KEY, sender_node TEXT NOT NULL, target_node TEXT NOT NULL,
+      binding_id TEXT NOT NULL, assertion_json TEXT NOT NULL, signature TEXT NOT NULL, status TEXT NOT NULL,
+      attempt_id TEXT, accepted_attempt TEXT, start_attempts INTEGER NOT NULL DEFAULT 0, lease_expires_at TEXT,
+      cancel_requested INTEGER NOT NULL DEFAULT 0, reply TEXT, error TEXT, via TEXT, verified INTEGER,
+      expires_at TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+      INSERT INTO messages(id, sender_node, target_node, binding_id, assertion_json, signature, status, error, expires_at, created_at, updated_at)
+      VALUES ('legacy', 's', 't', 'b', '{}', 'sig', 'failed', 'wake_timeout', 'later', 'now', 'now');`);
+    legacy.close();
+    const store = createCoordinatorStore(path);
+    try {
+      const row = store.message('legacy');
+      assert.deepEqual([row.status, row.error, row.cleanup_status, row.cleanup_code], ['failed', 'wake_timeout', null, null]);
+    } finally { store.close(); }
+    createCoordinatorStore(path).close();
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 test('two devices may use the same message ID without colliding', async () => {

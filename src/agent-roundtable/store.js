@@ -26,6 +26,14 @@ export function createRoundtableStore(path = ':memory:') {
     CREATE INDEX IF NOT EXISTS messages_inbox ON messages(to_agent, status);
     CREATE INDEX IF NOT EXISTS threads_recent ON threads(space_id, updated_at);
   `);
+  // A woken process whose exit could not be confirmed may still be running.
+  const columns = new Set(database.prepare('PRAGMA table_info(messages)').all().map((column) => column.name));
+  for (const column of ['cleanup_status', 'cleanup_code']) {
+    if (columns.has(column)) continue;
+    // Another client's MCP process may add the same column first.
+    try { database.exec(`ALTER TABLE messages ADD COLUMN ${column} TEXT`); }
+    catch (error) { if (!/duplicate column/i.test(error.message)) throw error; }
+  }
   const now = () => new Date().toISOString();
   const transaction = (work) => {
     database.exec('BEGIN IMMEDIATE');
@@ -68,6 +76,18 @@ export function createRoundtableStore(path = ':memory:') {
         to_client = coalesce(?, to_client), to_session = coalesce(?, to_session), updated_at = ? WHERE id = ?`)
         .run(status ?? null, via ?? null, error ?? null, toClient ?? null, toSession ?? null, now(), id);
       return this.getMessage(id);
+    },
+    // Kept apart from updateMessage so later status changes never erase it.
+    setCleanup(id, { status, code = null }) {
+      database.prepare('UPDATE messages SET cleanup_status = ?, cleanup_code = coalesce(?, cleanup_code), updated_at = ? WHERE id = ?')
+        .run(status, code, now(), id);
+      return this.getMessage(id);
+    },
+    // Asks to this Agent whose woken process may still be running.
+    unconfirmedCleanupFor(spaceId, agentId) {
+      return database.prepare(`SELECT m.* FROM messages m JOIN threads t ON t.id = m.thread_id
+        WHERE t.space_id = ? AND m.to_agent = ? AND m.kind = 'ask' AND m.cleanup_status = 'unconfirmed'
+        ORDER BY m.updated_at`).all(spaceId, agentId);
     },
     getMessage(id) {
       return database.prepare('SELECT * FROM messages WHERE id = ?').get(id) ?? null;
