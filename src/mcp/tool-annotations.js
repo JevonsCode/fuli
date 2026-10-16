@@ -17,6 +17,7 @@ const READ_TOOLS = new Set([
   'list_employee_templates',
   'list_employee_tools',
   'verify_task_checkpoint',
+  'read_task_preferences',
   'search_current_project_knowledge',
   'discover_common_knowledge_candidates',
   'discover_personal_global_preference_candidates',

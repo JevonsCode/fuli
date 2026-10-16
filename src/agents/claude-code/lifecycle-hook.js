@@ -11,6 +11,7 @@ import { openFederatedGraphApplication } from '../../graphiti/federated-applicat
 import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
 import { hookAdditionalContextToolResult } from '../../mcp/tool-result.js';
 import { isMainModule } from '../../system/main-module.js';
+import { readHookInput } from '../lifecycle-input.js';
 import { boundedHookMessage } from '../lifecycle-message.js';
 
 export async function claudeLifecycleOutput(event, input, invoke) {
@@ -102,16 +103,6 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
 
 async function close(resource) { await resource?.close(); }
 
-async function readHookInput() {
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of process.stdin) {
-    size += chunk.length;
-    if (size > 256 * 1024) throw new TypeError('Hook input exceeds limit');
-    chunks.push(chunk);
-  }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-}
 
 async function main() {
   const args = process.argv.slice(2);

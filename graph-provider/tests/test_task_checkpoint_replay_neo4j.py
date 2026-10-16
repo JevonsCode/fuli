@@ -10,6 +10,7 @@ import pytest
 from neo4j import AsyncGraphDatabase
 
 from test_project_agent_memory_neo4j import fixture_settings, provider_client, seed_agent
+from test_collaboration_context import preference_node
 
 
 async def context_fixture(client, **changes):
@@ -59,6 +60,144 @@ async def record(client, context):
     })
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def preference_read(context, **changes):
+    return {'personal_space_id': context['personal_space_id'],
+            'source_application': context['source_application'], 'session_id': context['session_id'], **changes}
+
+
+@pytest.mark.asyncio
+async def test_owned_preference_reader_rejects_rebinding_legacy_superseded_and_revoked_client():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        context = await context_fixture(client, source_session_id='original-hook-provenance',
+                                        preference_scope={'version': 1, 'work_kind': 'implementation', 'workflow': None})
+        url = f'/v1/task-contexts/{context["token"]}/preferences/read'
+        before = await record(client, context)
+        result = await client.post(url, json=preference_read(context))
+        assert result.status_code == 200, result.text
+        assert result.json()['task_context']['token'] == context['token']
+        assert result.json()['task_context']['source_session_id'] == 'original-hook-provenance'
+        assert result.json()['preferences']['truncated'] is False
+        assert await record(client, context) == before, 'A preference read must not alter task lifecycle.'
+        for changes, expected in [({'session_id': 'foreign-session'}, 404), ({'source_application': 'cursor'}, 404),
+                                  ({'work_kind': 'review'}, 422), ({'personal_project_id': 'foreign-project'}, 422)]:
+            rejected = await client.post(url, json=preference_read(context, **changes))
+            assert rejected.status_code == expected, rejected.text
+        legacy = await context_fixture(client)
+        rejected = await client.post(f'/v1/task-contexts/{legacy["token"]}/preferences/read', json=preference_read(legacy))
+        assert rejected.status_code == 409, rejected.text
+        replacement = await client.put('/v1/task-contexts', json={**context, 'token': f'fuli-task-{uuid4()}', 'turn_id': 'next-turn'})
+        assert replacement.status_code == 200, replacement.text
+        assert (await client.post(url, json=preference_read(context))).status_code == 404
+        replacement = replacement.json()
+        await seed_agent(client, context['personal_space_id'], allowed_clients=['cursor'])
+        rejected = await client.post(f'/v1/task-contexts/{replacement["token"]}/preferences/read', json=preference_read(replacement))
+        assert rejected.status_code == 403, rejected.text
+
+
+@pytest.mark.asyncio
+async def test_owned_preference_reader_uses_fixed_scope_and_resolves_beyond_public_window():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        context = await context_fixture(client, preference_scope={'version': 1, 'work_kind': 'implementation', 'workflow': 'release'})
+        prefix = str(uuid4())
+        rows = [preference_node(f'{prefix}-{i}', f'{prefix}-{i}', 'Synthetic rule', f'Rule {i}') for i in range(199)]
+        rows += [preference_node(f'{prefix}-risk-{i}', f'{prefix}-risk-{i}', 'Risk', value,
+                                scope='project', project_id='sample-project', preference_key='risk')
+                 for i, value in enumerate(['Prefer speed.', 'Prefer caution.'])]
+        async with AsyncGraphDatabase.driver(settings.neo4j_uri, auth=(settings.neo4j_user, settings.neo4j_password)) as driver:
+            await driver.execute_query('''
+                MATCH (space:FuliSpace {id: $space})
+                UNWIND $rows AS row
+                CREATE (:Entity {uuid: row.id, group_id: space.group_id, name: row.title, summary: row.instruction,
+                  fuli_key: row.key, fuli_profile_aspect: row.profile_aspect,
+                  fuli_preference_scope: row.preference_scope, fuli_preference_project_id: row.preference_project_id,
+                  fuli_attributes_json: row.attributes_json, fuli_confirmation_basis_json: row.confirmation_basis_json,
+                  fuli_confirmation_status: row.confirmation_status, created_at: row.created_at})
+                ''', space=context['personal_space_id'], rows=rows)
+        public = await client.get('/v1/collaboration-preferences', params={
+            'personal_space_id': context['personal_space_id'], 'personal_project_id': 'sample-project', 'limit': 200})
+        assert public.status_code == 200 and public.json()['truncated'] is True
+        assert public.json()['conflicts'] == []
+        result = await client.post(f'/v1/task-contexts/{context["token"]}/preferences/read', json=preference_read(context))
+        assert result.status_code == 200, result.text
+        preferences = result.json()['preferences']
+        assert preferences['truncated'] is False
+        assert len(preferences['effective_preferences']) == 199
+        assert len(preferences['conflicts']) == 1
+        assert set(preferences['conflicts'][0]['item_ids']) == {f'{prefix}-risk-0', f'{prefix}-risk-1'}
+
+
+@pytest.mark.asyncio
+async def test_entry_agent_assignment_is_stored_once_and_returned_to_the_owned_reader():
+    settings = fixture_settings()
+    assignment = {'version': 1, 'selection_reason': 'delegated_member',
+                  'match_basis': ['This member worker reports to the configured project lead.'],
+                  'requested_agent_id': None, 'reporting_lead_agent_id': 'lead',
+                  'execution_reason': None, 'execution_agent_id': None}
+    async with provider_client(settings) as (client, _):
+        context = await context_fixture(client, agent_assignment=assignment,
+                                        preference_scope={'version': 1, 'work_kind': None, 'workflow': None})
+        retry = await client.put('/v1/task-contexts', json={**context, 'agent_assignment': {
+            **assignment, 'reporting_lead_agent_id': None}})
+        assert retry.status_code == 200, retry.text
+        assert retry.json()['agent_assignment'] == assignment, 'A retry keeps the first delivered assignment.'
+        result = await client.post(f'/v1/task-contexts/{context["token"]}/preferences/read', json=preference_read(context))
+        assert result.status_code == 200, result.text
+        assert result.json()['task_context']['agent_assignment'] == assignment
+        for invalid in [{**assignment, 'version': 2}, {**assignment, 'extra': True},
+                        {**assignment, 'match_basis': ['x' * 2049]}, {**assignment, 'match_basis': ['x'] * 33}]:
+            rejected = await client.put('/v1/task-contexts', json={**context, 'token': f'fuli-task-{uuid4()}',
+                                                                   'turn_id': f'turn-{uuid4()}', 'agent_assignment': invalid})
+            assert rejected.status_code == 422, rejected.text
+
+
+@pytest.mark.asyncio
+async def test_task_only_agent_reads_preferences_without_the_reviewed_agent_layer():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        context = await context_fixture(client, preference_scope={'version': 1, 'work_kind': None, 'workflow': None})
+        space_id = context['personal_space_id']
+        prefix = str(uuid4())
+        rows = [preference_node(f'{prefix}-project', f'{prefix}-project', 'Project', 'Project rule.',
+                                scope='project', project_id='sample-project'),
+                preference_node(f'{prefix}-agent', f'{prefix}-agent', 'Agent', 'Reviewed agent rule.',
+                                scope='agent', project_id='sample-project', agent_id='engineer')]
+        async with AsyncGraphDatabase.driver(settings.neo4j_uri, auth=(settings.neo4j_user, settings.neo4j_password)) as driver:
+            await driver.execute_query('''
+                MATCH (space:FuliSpace {id: $space})
+                UNWIND $rows AS row
+                CREATE (:Entity {uuid: row.id, group_id: space.group_id, name: row.title, summary: row.instruction,
+                  fuli_key: row.key, fuli_profile_aspect: row.profile_aspect,
+                  fuli_preference_scope: row.preference_scope, fuli_preference_project_id: row.preference_project_id,
+                  fuli_preference_agent_id: row.preference_agent_id,
+                  fuli_attributes_json: row.attributes_json, fuli_confirmation_basis_json: row.confirmation_basis_json,
+                  fuli_confirmation_status: row.confirmation_status, created_at: row.created_at})
+                ''', space=space_id, rows=rows)
+            reviewed = await client.post(f'/v1/task-contexts/{context["token"]}/preferences/read', json=preference_read(context))
+            assert reviewed.status_code == 200, reviewed.text
+            assert {item['id'] for item in reviewed.json()['preferences']['agent_preferences']} == {f'{prefix}-agent'}
+            await driver.execute_query('''
+                MATCH (:FuliSpace {id: $space})-[:HAS_PROJECT_AGENT_IDENTITY]->(agent:FuliProjectAgent {agent_id: 'engineer'})
+                SET agent.memory_scope = 'task_only'
+                ''', space=space_id)
+        result = await client.post(f'/v1/task-contexts/{context["token"]}/preferences/read', json=preference_read(context))
+        assert result.status_code == 200, result.text
+        preferences = result.json()['preferences']
+        assert preferences['project_agent_id'] == 'engineer'
+        assert preferences['agent_preferences'] == []
+        assert f'{prefix}-project' in {item['id'] for item in preferences['effective_preferences']}
+        assert f'{prefix}-agent' not in {item['id'] for item in preferences['effective_preferences']}
+        # Worker entry reads the same source through the public entry route.
+        entry = await client.get('/v1/collaboration-preferences', params={
+            'personal_space_id': space_id, 'personal_project_id': 'sample-project', 'project_agent_id': 'engineer'})
+        assert entry.status_code == 200, entry.text
+        assert entry.json()['agent_preferences'] == []
+        memory = await client.get('/v1/project-agents/engineer/memory', params={
+            'personal_space_id': space_id, 'personal_project_id': 'sample-project'})
+        assert memory.status_code == 409, 'Reviewed long-term memory stays closed to a task_only Agent.'
 
 
 @pytest.mark.asyncio

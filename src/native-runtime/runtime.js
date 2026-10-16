@@ -29,7 +29,7 @@ import { FULI_VERSION } from '../package-metadata.js';
 import { compareSemanticVersions } from '../semantic-version.js';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from './windows-assets.js';
 import {
-  assertWindowsNativePortOwner, runWindowsNeo4j, spawnWindowsNativeDatabase,
+  assertWindowsNativePortFree, assertWindowsNativePortOwner, runWindowsNeo4j, spawnWindowsNativeDatabase,
   spawnWindowsNativeProvider, stopWindowsNativeProcess, windowsNativeProcessMatches,
   waitForWindowsNativeDatabase
 } from './windows-processes.js';
@@ -71,6 +71,7 @@ export function createNativeGraphServices({
   processMatches = platform === 'win32' ? windowsNativeProcessMatches : processMatchesCommand,
   stopProcess = platform === 'win32' ? stopWindowsNativeProcess : stopOwnedProcess,
   verifyPortOwner = platform === 'win32' ? assertWindowsNativePortOwner : async () => {},
+  verifyPortFree = platform === 'win32' ? assertWindowsNativePortFree : async () => {},
   fetchImpl = globalThis.fetch,
   wait = delay,
   now = () => new Date()
@@ -96,6 +97,9 @@ export function createNativeGraphServices({
         ) {
           databases[spec.id] = existing;
         } else {
+          // Nothing is spawned while another process holds either Neo4j port.
+          await verifyPortFree(spec.boltPort);
+          await verifyPortFree(spec.httpPort);
           const child = await spawnDatabase(databaseSpec(spec));
           if (!Number.isInteger(child?.pid)) {
             throw new Error(`The native ${spec.id} Neo4j process did not return a process ID.`);
@@ -125,6 +129,7 @@ export function createNativeGraphServices({
         ) {
           providers[spec.id] = existing;
         } else {
+          await verifyPortFree(spec.providerPort);
           const child = await spawnProvider(providerSpec(spec));
           if (!Number.isInteger(child?.pid)) {
             throw new Error(`The native ${spec.id} Provider did not return a process ID.`);

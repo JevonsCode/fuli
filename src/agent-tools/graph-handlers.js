@@ -57,6 +57,7 @@ const HANDLERS = Object.freeze({
   list_employee_tools: (app, input) => employeeService(app).describeTools(input),
   call_employee_tool: (app, input) => employeeService(app).callTool(input),
   begin_task_context: (app, input) => app.beginTaskContext(input),
+  read_task_preferences: (app, input) => app.readTaskPreferences(input),
   checkpoint_task_knowledge: (app, input) =>
     app.checkpointTaskKnowledge(input),
   verify_task_checkpoint: (app, input) => app.verifyTaskCheckpoint(input),
