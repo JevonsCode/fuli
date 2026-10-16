@@ -1,5 +1,6 @@
 import { taskAgentAssignment } from './task-agent-assignment.js';
 import { beginConversation, checkpointConversation } from './agent-conversations.js';
+import { taskTeam } from './task-collaboration-attribution.js';
 import { taskAgentReceipt } from '../agents/identity-receipt.js';
 import { createHash } from 'node:crypto';
 import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
@@ -161,8 +162,8 @@ export async function checkpointTaskKnowledge(application, {
       'Task checkpoint already has different input; resume the original review or begin a new task context'
     );
   }
-  const team = await taskTeam(application, task, collaborators);
-  const finish = async (result) => {
+  const finish = async (result, checkpointTask = task) => {
+    const team = await taskTeam(application, checkpointTask, collaborators);
     const effectiveLog = workLog ?? { status: 'reported', summary: reason };
     const conversation = await checkpointConversation(application, task, effectiveLog, team);
     return { ...result, conversation,
@@ -244,7 +245,7 @@ export async function checkpointTaskKnowledge(application, {
   const captureStatus = captureResults
     ? taskCaptureStatus(captureResults)
     : captureResult?.status ?? null;
-  await application.taskContextRegistry.checkpoint(taskContextToken, {
+  const completedTask = await application.taskContextRegistry.checkpoint(taskContextToken, {
     ...checkpoint, captureStatus, ...(captureResults ? { captureResults } : {})
   }, sourceApplication);
   return finish({
@@ -262,23 +263,7 @@ export async function checkpointTaskKnowledge(application, {
       sourceApplication: memoryResult.sourceApplication,
       sourceSessionId: memoryResult.sourceSessionId, createdAt: memoryResult.createdAt
     } : null
-  });
-}
-
-// Names the lead and only collaborators that are real, active Agents of this space.
-async function taskTeam(application, task, collaboratorIds) {
-  const requested = [...new Set(collaboratorIds)].filter(id => id !== task.projectAgentId);
-  if (!task.projectAgentId) return { name: null, collaborators: [], ignored: requested };
-  let agents = [];
-  try {
-    agents = await application.listProjectAgents({ personalSpaceId: application.config.personal.spaceId });
-  } catch { /* Attribution metadata never blocks a checkpoint. */ }
-  const byId = new Map(agents.map(agent => [agent.agentId, agent]));
-  const label = agent => agent?.profile.displayName || agent?.profile.name || null;
-  const active = requested.filter(id => byId.get(id)?.profile.status === 'active');
-  return { name: label(byId.get(task.projectAgentId)),
-    collaborators: active.map(id => ({ agentId: id, name: label(byId.get(id)) })),
-    ignored: requested.filter(id => !active.includes(id)) };
+  }, completedTask);
 }
 
 function canonicalCheckpoint(value) {
