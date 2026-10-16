@@ -16,6 +16,7 @@ from .project_agent_memory_models import ProjectAgentMemoryWrite
 from .store_transactions import query_store_transaction
 from .task_context_adoption import adopt_task_agent
 from .task_context_coordination import bind_coordination_task, task_context_json, task_context_record
+from .task_worker_attribution import lock_checkpoint_context, checkpoint_collaboration
 
 
 class StoreTaskContexts:
@@ -237,6 +238,7 @@ class StoreTaskContexts:
 
     async def _checkpoint_task_context(self, actor, token, request):
         await self.authorize(actor, request.personal_space_id, 'maintainer')
+        await lock_checkpoint_context(self, request.personal_space_id, token)
         record = await self.get_task_context(
             actor, request.personal_space_id, token, request.source_application,
         )
@@ -249,6 +251,7 @@ class StoreTaskContexts:
         checkpoint = request.model_dump(mode='json', exclude={
             'personal_space_id', 'source_application', 'agent_memory',
         })
+        checkpoint['collaboration'] = await checkpoint_collaboration(self, request.personal_space_id, record)
         if request.capture_results is None:
             checkpoint.pop('capture_results', None)
         # Complete retries must preserve the original completion timestamp/result.
