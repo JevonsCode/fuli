@@ -2,7 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { certificateFingerprint, verifyDeviceSignature } from './device-identity.js';
 import { isAuthorityKey, verifyOriginProof } from './origin-proof.js';
-import { PEER_LIMITS, PeerError, validateAssertion } from './protocol.js';
+import { PEER_LIMITS, PeerError, peerCleanup, validateAssertion } from './protocol.js';
 
 const RETRY_MS = 5_000;
 const STARTED_STATES = new Set(['starting', 'running', 'finished']);
@@ -192,9 +192,12 @@ export function createPeerRunner({ store, client, roundtable, provider, nodeId, 
       if (controller.signal.aborted) throw new PeerError('cancelled', 'The delivery was stopped', 499);
       return { outcome: 'answered', reply: answer.body, via: answer.via, verified: true };
     } catch (error) {
-      if (reason === 'lease_lost') return { outcome: 'unknown', error: 'lease_lost' };
-      if (reason === 'cancelled' || reason === 'stopped' || error.code === 'cancelled') return { outcome: 'cancelled', error: reason ?? 'cancelled' };
-      return { outcome: 'failed', error: error.code ?? 'wake_failed' };
+      // A woken process whose exit could not be confirmed is reported with every outcome.
+      const cleanup = peerCleanup(error.cleanup);
+      const extra = cleanup ? { cleanup } : {};
+      if (reason === 'lease_lost') return { outcome: 'unknown', error: 'lease_lost', ...extra };
+      if (reason === 'cancelled' || reason === 'stopped' || error.code === 'cancelled') return { outcome: 'cancelled', error: reason ?? 'cancelled', ...extra };
+      return { outcome: 'failed', error: error.code ?? 'wake_failed', ...extra };
     } finally {
       controller.abort('finished');
       clearTimeout(leaseTimer);
@@ -204,8 +207,9 @@ export function createPeerRunner({ store, client, roundtable, provider, nodeId, 
     }
   }
 
-  function queue(messageId, attemptId, outcome, { reply = null, via = null, verified = false, error = null } = {}) {
-    store.queueResult(messageId, attemptId, { messageId, attemptId, outcome, reply, via, verified, error });
+  function queue(messageId, attemptId, outcome, { reply = null, via = null, verified = false, error = null, cleanup = null } = {}) {
+    store.queueResult(messageId, attemptId, { messageId, attemptId, outcome, reply, via, verified, error,
+      ...(cleanup ? { cleanup } : {}) });
   }
 
   async function flush() {
