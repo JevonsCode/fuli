@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, linkSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from '../native-runtime/windows-assets.js';
 import { canonicalWindowsInstallPath, installationSha256, windowsInstallPathsOverlap } from './windows-installation-context.js';
@@ -94,7 +94,17 @@ export function installWindowsForCurrentUser(options, { createShortcut = createW
     mkdirSync(path); directories.push([path, lstatSync(path)]);
   }
   function ownFile(path, bytes) {
-    directory(dirname(path)); writeFileSync(path, bytes, { flag: 'wx' }); files.push([path, lstatSync(path)]);
+    directory(dirname(path));
+    const fd = openSync(path, 'wx');
+    const owned = [path, fstatSync(fd)];
+    files.push(owned);
+    try { writeFileSync(fd, bytes); }
+    finally {
+      // A write can create partial bytes before throwing. Snapshot the opened
+      // inode, never a replacement at this path, so caught failures can clean it.
+      try { owned[1] = fstatSync(fd); }
+      finally { closeSync(fd); }
+    }
   }
   try {
     directory(dirname(plan.installRoot));

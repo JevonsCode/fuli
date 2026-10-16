@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import fs from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -114,4 +116,56 @@ test('failure cleanup preserves a shortcut replacement and unrelated files creat
   assert.equal(readFileSync(join(plan.installRoot, 'unrelated.txt'), 'utf8'), 'preserve');
   assert.equal(existsSync(join(plan.installRoot, 'installation.json')), false);
   assert.equal(existsSync(join(plan.installRoot, 'versions')), false);
+});
+
+for (const code of ['ENOSPC', 'EIO']) {
+  test('a partial file write throwing ' + code + ' cleans owned bytes and permits first-install retry', t => {
+    const f = fixture(t);
+    const plan = planFirstWindowsInstall(f.options);
+    const originalWrite = fs.writeFileSync;
+    let injected = false;
+    t.mock.method(fs, 'writeFileSync', (target, bytes, ...args) => {
+      if (!injected) {
+        injected = true;
+        originalWrite(target, Buffer.from(bytes).subarray(0, 4), ...args);
+        throw Object.assign(new Error('partial disk write'), { code });
+      }
+      return originalWrite(target, bytes, ...args);
+    });
+    syncBuiltinESMExports();
+    try {
+      assert.throws(() => installWindowsForCurrentUser(f.options, { createShortcut: f.createShortcut }), { code });
+    } finally { t.mock.restoreAll(); syncBuiltinESMExports(); }
+    assert.equal(injected, true);
+    assert.equal(existsSync(plan.installRoot), false);
+    assert.equal(existsSync(plan.dataDir), false);
+    assert.equal(installWindowsForCurrentUser(f.options, { createShortcut: f.createShortcut }).status, 'installed');
+  });
+}
+
+test('partial-write cleanup never follows a replaced destination away from its opened inode', t => {
+  const f = fixture(t);
+  const plan = planFirstWindowsInstall(f.options);
+  const originalWrite = fs.writeFileSync;
+  let injected = false;
+  let destination;
+  t.mock.method(fs, 'writeFileSync', (target, bytes, ...args) => {
+    if (!injected) {
+      injected = true;
+      originalWrite(target, Buffer.from(bytes).subarray(0, 4), ...args);
+      destination = join(plan.installRoot, 'versions', readdirSync(join(plan.installRoot, 'versions'))[0], 'package.json');
+      renameSync(destination, destination + '.moved');
+      originalWrite(destination, 'replacement must survive', { flag: 'wx' });
+      throw Object.assign(new Error('partial disk write with replacement'), { code: 'EIO' });
+    }
+    return originalWrite(target, bytes, ...args);
+  });
+  syncBuiltinESMExports();
+  try {
+    assert.throws(() => installWindowsForCurrentUser(f.options, { createShortcut: f.createShortcut }), { code: 'EIO' });
+  } finally { t.mock.restoreAll(); syncBuiltinESMExports(); }
+  assert.equal(injected, true);
+  assert.equal(readFileSync(destination, 'utf8'), 'replacement must survive');
+  assert.equal(existsSync(plan.dataDir), false);
+  assert.equal(existsSync(join(plan.installRoot, 'installation.json')), false);
 });
