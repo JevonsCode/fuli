@@ -124,6 +124,7 @@ export async function checkpointTaskKnowledge(application, {
   captureRouting = null,
   agentMemory = null,
   workLog = null,
+  knowledgeUsage = null,
   sourceApplication = 'other',
   personalProjectId = null,
   remoteSessionId = null,
@@ -152,7 +153,8 @@ export async function checkpointTaskKnowledge(application, {
   }
   const fingerprint = createHash('sha256').update(JSON.stringify(
     canonicalCheckpoint({ disposition, reason, capture: scopedCaptures ? null : capture,
-      ...(scopedCaptures ? { captures: scopedCaptures } : {}), agentMemory, ...(workLog ? { workLog } : {}) })
+      ...(scopedCaptures ? { captures: scopedCaptures } : {}), agentMemory, ...(workLog ? { workLog } : {}),
+      ...(knowledgeUsage ? { knowledgeUsage } : {}) })
   )).digest('hex');
   if (task.checkpoint && task.checkpoint.fingerprint !== fingerprint) {
     throw validationError(
@@ -174,6 +176,7 @@ export async function checkpointTaskKnowledge(application, {
     return finish({ status: 'checkpointed', disposition, reason,
       personal_project_id: task.personalProjectId, project_agent_id: task.projectAgentId,
       replayed: true, capture_status: task.checkpoint.captureStatus,
+      ...(task.checkpoint.knowledgeUsageResult ? { knowledge_usage: task.checkpoint.knowledgeUsageResult } : {}),
       ...(task.checkpoint.captureResults ? { capture_results: taskCaptureReviewPaths(application.config.personal.spaceId, task.checkpoint.captureResults) } : {}) });
   }
   const captureInput = capture && !scopedCaptures ? {
@@ -218,6 +221,7 @@ export async function checkpointTaskKnowledge(application, {
       memory: prepared.request.memory };
   }
   const checkpoint = { disposition, reason, fingerprint, captureStatus: null,
+    ...(knowledgeUsage ? { knowledgeUsage } : {}),
     ...(task.projectAgentId ? { workLog: workLog ?? {
       status: agentMemory ? 'reported' : 'unreported', summary: reason
     } } : {}) };
@@ -250,6 +254,7 @@ export async function checkpointTaskKnowledge(application, {
     personal_project_id: task.personalProjectId,
     project_agent_id: task.projectAgentId ?? null,
     capture: captureResult,
+    ...(preparedTask.checkpoint?.knowledgeUsageResult ? { knowledge_usage: preparedTask.checkpoint.knowledgeUsageResult } : {}),
     ...(captureResults ? { capture_status: captureStatus, capture_results: taskCaptureReviewPaths(application.config.personal.spaceId, captureResults) } : {}),
     agent_memory: memoryResult ? {
       status: memoryResult.status, agentId: memoryResult.agentId,
