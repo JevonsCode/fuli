@@ -92,6 +92,9 @@ export class ProviderTaskContextRegistry {
       fingerprint: value.fingerprint, capture_status: value.captureStatus ?? null,
       ...(value.captureResults ? { capture_results: value.captureResults } : {}),
       ...(value.workLog ? { work_log: value.workLog } : {}),
+      ...(value.knowledgeUsage ? { knowledge_usage: value.knowledgeUsage.map(item => ({
+        item_id: item.itemId, item_kind: item.itemKind, use_kind: item.useKind
+      })) } : {}),
       ...(agentMemory ? { agent_memory: agentMemory } : {})
     }));
   }
@@ -120,6 +123,7 @@ export function taskRecord(value) {
     previousCheckpointMissing: Boolean(value.previous_checkpoint_missing),
     checkpoint: value.checkpoint ? {
       ...value.checkpoint, captureStatus: value.checkpoint.capture_status,
+      ...(value.checkpoint.knowledge_usage_result ? { knowledgeUsageResult: value.checkpoint.knowledge_usage_result } : {}),
       ...(value.checkpoint.capture_results ? { captureResults: value.checkpoint.capture_results } : {})
     } : null
   };
