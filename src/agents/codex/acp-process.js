@@ -7,6 +7,7 @@ import { Readable, Writable } from 'node:stream';
 import { client, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk';
 import { ApplicationError } from '../../app/application-error.js';
 import { inspectWindowsNativeProcess, stopWindowsNativeProcess } from '../../native-runtime/windows-processes.js';
+import { createCodexAcpSession } from './acp-session.js';
 
 const AUTH = '_auth/status_update';
 const AUTH_KINDS = new Set(['none', 'account', 'api_key', 'gateway', 'external']);
@@ -15,8 +16,8 @@ const MAX_BYTES = 64 * 1024;
 const samePath = (a, b) => normalize(a).toLowerCase() === normalize(b).toLowerCase();
 const failure = code => new ApplicationError(`acp_${code}`, `Codex ACP ${code.replaceAll('_', ' ')}.`);
 
-// One owned Windows adapter/app-server pair. Lease and WorkerRun policy stay with the host.
-// This port intentionally exposes no session/new, prompt, authentication or hook operations.
+// One owned Windows adapter/session tree. Lease and WorkerRun policy stay with the host.
+// Authentication, trust changes, resume, and arbitrary RPC are deliberately not exposed.
 export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, cwd,
   env = process.env, signal, initializeTimeoutMs = 15_000, stopTimeoutMs = 10_000 }) {
   if (process.platform !== 'win32') throw failure('platform_unsupported');
@@ -39,35 +40,59 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
   };
   const child = spawn(nodePath, [paths.adapterPath], { cwd: paths.cwd, env: childEnv,
     windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
-  let exited = false, exit, connection, closing, rootOwner, initialization, initializationCaptured = false, authentication = 'unknown';
-  let stderrBytes = 0, stderrTruncated = false, requestedId = null, terminalError = null, timer;
+  let exited = false, exit, connection, session, closing, rootOwner, initialization, initializationCaptured = false, authentication = 'unknown';
+  let stderrBytes = 0, stderrTruncated = false, terminalError = null, timer;
+  const requestedIds = new Set();
   const owned = new Map(), permissions = [];
   const lifetime = new AbortController();
   let resolveClosed, rejectClosed;
   const closed = new Promise((resolve, reject) => { resolveClosed = resolve; rejectClosed = reject; });
   void closed.catch(() => {});
-  async function capture(timeoutMs) {
-    if (exited) return false;
-    const rows = await inspectWindowsNativeProcess(child.pid, { children: true, timeoutMs });
-    if (exited) return false;
+  async function capture(timeoutMs, descendants = false) {
+    const rows = await inspectWindowsNativeProcess(child.pid, { children: true, descendants, timeoutMs });
+    if (rows.length > 64) throw failure('cleanup_incomplete');
     const root = rows.find(row => row.pid === child.pid);
-    if (!root?.executable || !samePath(root.executable, nodePath) || !root.commandLine?.includes(paths.adapterPath) ||
-        (rootOwner && (root.createdFileTime !== rootOwner.createdFileTime || root.commandLine !== rootOwner.commandLine))) {
+    if (root && (!root.executable || !samePath(root.executable, nodePath) || !root.commandLine?.includes(paths.adapterPath) ||
+        (rootOwner && (root.createdFileTime !== rootOwner.createdFileTime || root.commandLine !== rootOwner.commandLine)))) {
       throw failure('cleanup_incomplete');
     }
-    rootOwner = root;
-    owned.set(root.pid, root);
-    for (const row of rows) if (row.parentPid === root.pid && row.executable && row.commandLine &&
-        samePath(row.executable, paths.codexPath) && BigInt(row.createdFileTime) >= BigInt(root.createdFileTime)) {
-      owned.set(row.pid, row);
+    if (root) { rootOwner = root; owned.set(root.pid, root); }
+    else if (!exited) throw failure('cleanup_incomplete');
+    if (!root && rows.some(row => row.parentPid === child.pid && !owned.has(row.pid))) throw failure('cleanup_incomplete');
+    if (!descendants) {
+      for (const row of rows) if (root && row.parentPid === root.pid && row.executable && row.commandLine &&
+          samePath(row.executable, paths.codexPath) && BigInt(row.createdFileTime) >= BigInt(root.createdFileTime)) owned.set(row.pid, row);
+      return Boolean(root);
     }
-    return true;
+    const pending = [...owned.values()], visited = new Set();
+    while (pending.length) {
+      const owner = pending.shift();
+      if (visited.has(owner.pid)) continue;
+      visited.add(owner.pid);
+      const family = rows.filter(row => row.pid === owner.pid || row.parentPid === owner.pid);
+      const observed = family.find(row => row.pid === owner.pid);
+      if (!observed) {
+        if (family.some(row => !owned.has(row.pid))) throw failure('cleanup_incomplete');
+        continue;
+      }
+      if (observed.createdFileTime !== owner.createdFileTime || observed.commandLine !== owner.commandLine ||
+          !samePath(observed.executable, owner.executable)) throw failure('cleanup_incomplete');
+      for (const row of family) if (row.parentPid === owner.pid) {
+        if (!row.executable || !row.commandLine || BigInt(row.createdFileTime) < BigInt(owner.createdFileTime)) throw failure('cleanup_incomplete');
+        const previous = owned.get(row.pid);
+        if (previous && (previous.createdFileTime !== row.createdFileTime || previous.commandLine !== row.commandLine ||
+            !samePath(previous.executable, row.executable))) throw failure('cleanup_incomplete');
+        owned.set(row.pid, row); pending.push(row);
+        if (owned.size > 64) throw failure('cleanup_incomplete');
+      }
+    }
+    return Boolean(root);
   }
   function close(reason = failure('closed')) {
     if (closing) return closing;
+    terminalError ??= reason;
     clearTimeout(timer);
     closing = Promise.resolve().then(async () => {
-      lifetime.abort(failure('closed'));
       signal?.removeEventListener('abort', cancelled);
       const deadline = Date.now() + stopTimeoutMs;
       const remaining = () => {
@@ -76,11 +101,11 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
         return value;
       };
       try {
-        if (!await capture(remaining()) && !initializationCaptured) throw failure('cleanup_incomplete');
+        if (!await capture(remaining(), true) && !initializationCaptured) throw failure('cleanup_incomplete');
         connection?.close(reason);
         child.stdin.end();
         await boundedExit(exit, Math.min(1500, remaining()));
-        await capture(remaining());
+        await capture(remaining(), true);
         for (const owner of [...owned.values()].reverse()) {
           await stopWindowsNativeProcess(owner.pid, { pid: owner.pid, command: owner.executable, ownership: owner }, { timeoutMs: remaining() });
         }
@@ -95,9 +120,13 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
         rejectClosed(error); throw error;
       }
     });
+    lifetime.abort(terminalError);
     return closing;
   }
-  const cancelled = () => { terminalError ??= failure('cancelled'); void close(terminalError).catch(() => {}); };
+  const cancelled = () => {
+    terminalError ??= failure('cancelled');
+    void (session ? session.cancel() : close(terminalError)).catch(() => {});
+  };
   try {
     exit = new Promise(resolve => child.once('exit', () => { exited = true; resolve(); }));
     child.stderr.on('data', chunk => {
@@ -116,7 +145,7 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
     const output = Writable.toWeb(child.stdin), writer = output.getWriter();
     const trackedOutput = new WritableStream({ write(chunk) {
       const message = JSON.parse(new TextDecoder().decode(chunk));
-      if (message.method === methods.agent.initialize) requestedId = message.id;
+      if (Object.hasOwn(message, 'id') && message.method) requestedIds.add(message.id);
       return writer.write(chunk);
     } });
     const filtered = Readable.toWeb(child.stdout).pipeThrough(initializationWireGuard(message => {
@@ -128,16 +157,25 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
       }
       if (message.method === methods.client.session.requestPermission &&
           (Number.isSafeInteger(message.id) || (typeof message.id === 'string' && message.id.length <= 128))) return message;
-      if (Object.hasOwn(message, 'method') || requestedId === null || message.id !== requestedId) throw failure('protocol_error');
-      requestedId = null;
+      if (message.method === methods.client.session.update && !Object.hasOwn(message, 'id')) return session.projectUpdate(message.params);
+      if (Object.hasOwn(message, 'method') || !requestedIds.delete(message.id)) throw failure('protocol_error');
       return message;
-    }));
+    }, error => { terminalError ??= error; }));
     connection = client().onNotification(AUTH, value => value, ({ params }) => { authentication = params.kind; })
       .onRequest(methods.client.session.requestPermission, ({ params, requestId }) => {
         if (permissions.length < 16) permissions.push({ requestId, sessionId: params.sessionId.slice(0, 128),
           toolCallId: params.toolCall.toolCallId.slice(0, 128), optionKinds: params.options.slice(0, 16).map(option => option.kind) });
         return { outcome: { outcome: 'cancelled' } };
       }).connect(ndJsonStream(trackedOutput, filtered));
+    session = createCodexAcpSession({ cwd: paths.cwd, codexHome: paths.codexHome, close, signal: lifetime.signal,
+      notify: (method, params) => connection.agent.notify(method, params),
+      request: async (method, params) => {
+        if (closing) throw terminalError;
+        const response = await connection.agent.request(method, params);
+        if (closing) throw terminalError;
+        if (method === methods.agent.session.new || method === methods.agent.session.prompt) await capture(stopTimeoutMs, true);
+        return response;
+      } });
     void connection.closed.then(() => { void close(terminalError ?? failure('closed')).catch(() => {}); });
     const response = await connection.agent.request(methods.agent.initialize, { protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: {}, clientInfo: { name: 'fuli', version: '1' } }, { cancellationSignal: signal });
@@ -147,6 +185,7 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
     initializationCaptured = true;
     if (closing) throw terminalError ?? failure('closed');
     return { pid: child.pid, initialization, signal: lifetime.signal, closed, close,
+      newSession: session.newSession, configureModel: session.configureModel, promptOnce: session.promptOnce, cancel: session.cancel,
       get ownedPids() { return [...owned.keys()]; }, get authentication() { return authentication; },
       get pendingPermissions() { return structuredClone(permissions); },
       get diagnostics() { return { stderrBytes, stderrTruncated }; } };
@@ -157,9 +196,9 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
   } finally { clearTimeout(timer); }
 }
 
-// Only this initialize exchange and auth/permission messages can reach the SDK.
+// Only tracked responses and the bounded auth/permission/session contract reach the SDK.
 // No generic RPC dispatcher or response schema replaces the SDK's own parser.
-function initializationWireGuard(project) {
+function initializationWireGuard(project, rejected) {
   let pending = '';
   const decoder = new TextDecoder(), encoder = new TextEncoder();
   function line(value, controller) {
@@ -167,7 +206,10 @@ function initializationWireGuard(project) {
     let message;
     try { message = JSON.parse(value); } catch { throw failure('protocol_error'); }
     if (!message || typeof message !== 'object') throw failure('protocol_error');
-    controller.enqueue(encoder.encode(JSON.stringify(project(message)) + '\n'));
+    try {
+      const projected = project(message);
+      if (projected !== null) controller.enqueue(encoder.encode(JSON.stringify(projected) + '\n'));
+    } catch (error) { rejected(error); throw error; }
   }
   return new TransformStream({ transform(chunk, controller) {
     pending += decoder.decode(chunk, { stream: true });
