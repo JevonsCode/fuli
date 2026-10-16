@@ -97,6 +97,34 @@ test('trusted runtime rejects daily home, unknown fields, missing paths and mism
   await runtime.close();
 });
 
+test('daily-home containment uses path components for dot-dot-prefixed child names', async t => {
+  const f = await fixture(t), projectPath = join(f.root, 'workspace'), daily = join(f.root, 'daily');
+  const external = join(f.root, 'daily-isolated'), adapterCalls = [];
+  await mkdir(projectPath); await mkdir(daily); await mkdir(external);
+  const key = workerRuntimeBindingKey('space', 'project', 'native');
+  const create = codexHome => createWorkerPlanRuntime({ runtimeConfigPath: f.runtimeConfigPath,
+    workerRuntimeBindings: new Map([[key, { personalSpaceId: 'space', personalProjectId: 'project',
+      executorId: 'native', application: 'codex', projectPath, codexHome,
+      adapterPath: process.execPath, codexPath: process.execPath, leaseExecutor: false }]]),
+    provider: {}, leases: {}, env: { CODEX_HOME: daily },
+    adapterFactory: input => { adapterCalls.push(input.codexHome); return { application: 'codex' }; } });
+  for (const name of ['normal-child', '..data', join('..data', 'nested')]) {
+    await t.test(name, async () => {
+      const codexHome = join(daily, name);
+      await mkdir(codexHome, { recursive: true });
+      const before = adapterCalls.length;
+      await assert.rejects(() => create(codexHome), /Invalid trusted worker runtime bindings/);
+      assert.equal(adapterCalls.length, before, 'a daily-home descendant must not reach the adapter factory');
+    });
+  }
+  await t.test('external isolated sibling remains usable', async () => {
+    const before = adapterCalls.length;
+    const runtime = await create(external);
+    assert.equal(adapterCalls.length, before + 1);
+    await runtime.close();
+  });
+});
+
 test('server composition exposes only the explicit local host and closes it with the server', async t => {
   const f = await fixture(t);
   const server = await createServer({ app: { personal: {}, close() {} }, port: 0,

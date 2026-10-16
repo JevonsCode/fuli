@@ -1,6 +1,6 @@
 import { realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { isAbsolute, join, relative } from 'node:path';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import { GraphitiProviderClient } from '../graphiti/provider-client.js';
 import { readGraphRuntimeConfig } from '../graphiti/runtime-config.js';
 import { createRuntimeLeaseClient } from '../adaptive-runtime/lease-client.js';
@@ -10,7 +10,10 @@ import { createCodexAcpWorkerAdapter } from '../agents/codex/acp-worker.js';
 const fields = new Set(['personalSpaceId', 'personalProjectId', 'executorId', 'application',
   'projectPath', 'adapterPath', 'codexPath', 'codexHome', 'leaseExecutor']);
 const invalid = () => new TypeError('Invalid trusted worker runtime bindings');
-const within = (parent, child) => { const path = relative(parent, child); return !path || (!path.startsWith('..') && !isAbsolute(path)); };
+const within = (parent, child) => {
+  const path = relative(parent, child);
+  return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path);
+};
 
 // Local-only configuration. Never derive a path from the Provider directory or
 // the model-facing coordination result. This does not log in or alter trust.
