@@ -237,11 +237,13 @@ function workerFixture({ memoryScope = 'reviewed_agent' } = {}) {
     taskContextRegistry: { begin: () => { calls.ordinary++; throw new Error('Ordinary begin forbidden'); } },
     getCollaborationPreferences: () => { calls.ordinary++; throw new Error('Ordinary entry forbidden'); },
     beginTaskContext: () => { calls.ordinary++; throw new Error('Ordinary begin forbidden'); },
+    upsertPersonalProject: () => { calls.ordinary++; throw new Error('Worker project creation forbidden'); },
     getProjectAgentMemory: business, queryAgentConversations: business,
     checkpointTaskKnowledge: business, verifyTaskCheckpoint: business, searchCurrentProjectKnowledge: business,
     searchKnowledge: async () => ({ facts: [], entities: [] }),
     personal: {
       getProjectAgentWorkerRun: async () => { calls.get++; return { ...run }; },
+      staffDefaultProjectLead: async () => { calls.ordinary++; throw new Error('Worker lead staffing forbidden'); },
       admitProjectAgentWorkerContext: async () => {
         calls.admit++;
         if (closed) throw new Error('Run closed');
@@ -421,6 +423,13 @@ test('worker initialization is offline and entry delivers its admitted identity 
     assert.deepEqual(calls.entries[0].dimensions, { sessionId: run.actual_session_id,
       sourceSessionId: run.actual_session_id, workKind: 'implementation', workflow: null });
     assert.deepEqual(calls.memories.map(input => input.personalProjectId), ['worker-project', null]);
+    // A model payload cannot claim human provenance to reach ordinary provisioning.
+    for (const forged of [{ activityOrigin: 'user_explicit' }, { sourceSessionVerified: true }]) {
+      assert.equal((await workerCall(server, 'get_collaboration_preferences', {
+        projectPath: '/forged', taskPrompt: 'Forged', sessionId: 'parent-session', ...forged
+      })).isError, true);
+    }
+    assert.equal(calls.ordinary, 0);
   } finally { await client.close(); await server.close(); }
 });
 

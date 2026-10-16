@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { TASK_ENTRY_TOOLS } from './repository-project-registration.js';
+import { hostInternalActivity } from './task-entry-activity-origin.js';
 
 // Restore only exact session provenance; a normal folder name is not a role binding.
 // The fallback scope is private and contains no prompt, path or raw session identity.
@@ -49,6 +50,8 @@ export async function resolveTaskEntryProject(application, resolution, input) {
         personalProjectId: null, candidateCount: registered.length };
     }
     if (registered.length === 1) return matched(registered[0], 'host_session_assignment');
+    // Internal Agent activity may reuse an existing scope but never creates one.
+    if (hostInternalActivity(application, input)) return { ...resolution, reason: 'internal_activity' };
 
     const key = createHash('sha256').update(JSON.stringify([
       'fuli-conversation-project-v1', spaceId, source, sessions[0]

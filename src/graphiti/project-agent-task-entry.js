@@ -40,7 +40,8 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
       contextRequest.delegation_session_id = delegation.sessionId;
     }
     let value = await application.personal.resolveProjectAgentContext(contextRequest);
-    if (value?.reason === 'project_lead_required') {
+    // Internal Agent activity restores only its granted role; it never hires a lead.
+    if (value?.reason === 'project_lead_required' && !delegation) {
       await application.personal.staffDefaultProjectLead(scope);
       // Re-resolve after staffing so a requested specialist is not lost and a
       // concurrent successful hire is handled without selecting another owner.
@@ -50,7 +51,8 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
     let agent = value.agent ? projectAgentRecord(value.agent) : null;
     const implicit = !mention?.agentId && !input.projectAgentId;
     const peerOnly = agent && implicit && unrelatedPeer(agent, workKind, input.requiredCapabilities);
-    if (implicit && value.reason !== 'project_lead_required' && (peerOnly || value.status === 'unassigned')) {
+    if (implicit && !delegation && value.reason !== 'project_lead_required'
+      && (peerOnly || value.status === 'unassigned')) {
       // Every task gets a FULI Agent: a project without a lead has AR hire one.
       const staffed = await application.personal.staffDefaultProjectLead(scope).catch(() => null);
       if (staffed?.agent) {
