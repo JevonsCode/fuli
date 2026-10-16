@@ -12,7 +12,9 @@ import { createNativeGraphServices as createServices, ensureNativeRuntime } from
 import { DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
 import { resolveSetupPaths } from '../src/setup/paths.js';
 import { readJsonFile, writeJsonFileAtomic } from '../src/storage/json-file.js';
-import { spawnWindowsNativeProvider, stopWindowsNativeProcess, windowsNativeProcessMatches } from '../src/native-runtime/windows-processes.js';
+import {
+  neo4jAdminSensitiveValues, spawnWindowsNativeProvider, stopWindowsNativeProcess, windowsNativeProcessMatches
+} from '../src/native-runtime/windows-processes.js';
 
 const createNativeGraphServices = options => createServices({ platform: 'linux', ...options });
 
@@ -94,9 +96,9 @@ test('native graph services start databases before Providers and preserve shutdo
       /server\.bolt\.listen_address=127\.0\.0\.1:7688/);
     assert.deepEqual(commands.map(({ command, args }) => [command, ...args]), [
       [join(PATHS.nativeNeo4jHome, 'bin', 'neo4j-admin'),
-        'dbms', 'set-initial-password', 'personal-password'],
+        'dbms', 'set-initial-password', '--', 'personal-password'],
       [join(PATHS.nativeNeo4jHome, 'bin', 'neo4j-admin'),
-        'dbms', 'set-initial-password', 'workspace-password']
+        'dbms', 'set-initial-password', '--', 'workspace-password']
     ]);
     assert.deepEqual(spawnedDatabases.map(({ id, command, args }) => ({ id, command, args })), [
       {
@@ -196,6 +198,41 @@ test('startup failure cleans up only its new Provider while retaining the reused
   assert.deepEqual(f.stopped, [4600]);
   assert.deepEqual(f.state().databases, f.initial.databases);
   assert.notEqual(f.state().providers.personal?.pid, 4600);
+});
+
+test('initial Neo4j password that starts with a dash stays the positional value', async () => {
+  const commands = [];
+  const services = createNativeGraphServices({
+    paths: PATHS,
+    runtimeDescriptor: {
+      status: 'ready',
+      mode: 'native',
+      javaHome: '/jdk-21',
+      neo4jHome: PATHS.nativeNeo4jHome,
+      providerPython: '/data/native-runtime/provider-venv/bin/python'
+    },
+    personalOnly: true,
+    readText: () => ENVIRONMENT.replace('=personal-password', '=-synthetic-dash-password'),
+    writeText: async () => {},
+    pathExists: () => false,
+    markInitialized: () => {},
+    readSettings: () => ({ ...DEFAULT_RUNTIME_SETTINGS, graphRuntimeMode: 'native' }),
+    run: async (_command, args) => commands.push(args),
+    waitForDatabase: async () => {},
+    spawnDatabase: () => ({ pid: 4400 }),
+    readProcessState: () => null,
+    writeProcessState: () => {}
+  });
+
+  await services.start({ providers: false });
+
+  assert.deepEqual(commands, [['dbms', 'set-initial-password', '--', '-synthetic-dash-password']]);
+});
+
+test('Windows Neo4j admin redacts only the initial password, not the option delimiter', () => {
+  assert.deepEqual(neo4jAdminSensitiveValues(['dbms', 'set-initial-password', '--', '-synthetic']), ['-synthetic']);
+  assert.deepEqual(neo4jAdminSensitiveValues(['dbms', 'set-initial-password', 'plain-synthetic']), ['plain-synthetic']);
+  assert.deepEqual(neo4jAdminSensitiveValues(['database', 'dump', 'neo4j', '--to-path=/stage']), []);
 });
 
 test('native graph services can resume databases without waking Providers', async () => {

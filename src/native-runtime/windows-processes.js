@@ -229,8 +229,13 @@ export async function runWindowsNeo4j(command, args, { env }) {
   // Windows paths through its PATH setting parser, even for set-initial-password.
   return execute(join(env.JAVA_HOME, 'bin', 'java.exe'), ['-cp', join(home, 'lib', '*'),
     'org.neo4j.cli.AdminTool', ...args], {
-    env, sensitiveValues: args[0] === 'dbms' && args[1] === 'set-initial-password' ? [args[2]] : []
+    env, sensitiveValues: neo4jAdminSensitiveValues(args)
   });
+}
+
+export function neo4jAdminSensitiveValues(args) {
+  return args[0] === 'dbms' && args[1] === 'set-initial-password'
+    ? args.slice(2).filter(value => value !== '--') : [];
 }
 
 export function spawnWindowsNativeDatabase(spec) {
