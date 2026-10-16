@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { parseTaskAgentAssignment } from '../graphiti/task-agent-assignment.js';
 
 // The Provider is the sole source of truth. Hooks commonly use separate MCP
 // processes; a process-local cache cannot prove that a task was checkpointed.
@@ -21,7 +22,8 @@ export class ProviderTaskContextRegistry {
       turn_id: input.turnId ?? null,
       memory_revision: input.memoryRevision ?? null,
       work_log_required: input.workLogRequired ?? false,
-      ...(input.preferenceScope !== undefined ? { preference_scope: scope } : {})
+      ...(input.preferenceScope !== undefined ? { preference_scope: scope } : {}),
+      ...(input.agentAssignment ? { agent_assignment: parseTaskAgentAssignment(input.agentAssignment) } : {})
     }));
     if (scope && JSON.stringify(task.preferenceScope) !== JSON.stringify(scope)) {
       throw new TypeError('Provider did not preserve the fixed task preference scope');
@@ -41,6 +43,17 @@ export class ProviderTaskContextRegistry {
       source_application: sourceApplication
     });
     return value?.token ? taskRecord(value) : null;
+  }
+
+  async preferences(token, { sourceApplication, sessionId }) {
+    const value = await this.provider.readTaskPreferences(token, {
+      personal_space_id: this.personalSpaceId, source_application: sourceApplication,
+      session_id: sessionId
+    });
+    if (value.task_context?.personal_space_id !== this.personalSpaceId) {
+      throw new TypeError('Provider task preference space changed');
+    }
+    return { task: taskRecord(value.task_context), preferences: value.preferences };
   }
 
   async adoptAgent(token, { personalProjectId, taskId, agentId }, sourceApplication = 'other') {
@@ -100,6 +113,7 @@ export function taskRecord(value) {
     sourceSessionId: value.source_session_id ?? null,
     turnId: value.turn_id ?? null,
     preferenceScope: taskPreferenceScope(value.preference_scope),
+    agentAssignment: storedAgentAssignment(value.agent_assignment),
     memoryRevision: value.memory_revision,
     workLogRequired: value.work_log_required ?? false,
     agentMemory: value.agent_memory ?? null,
@@ -109,6 +123,11 @@ export function taskRecord(value) {
       ...(value.checkpoint.capture_results ? { captureResults: value.checkpoint.capture_results } : {})
     } : null
   };
+}
+
+// An invalid stored assignment is unknown, never a partial reporting line.
+function storedAgentAssignment(value) {
+  try { return parseTaskAgentAssignment(value); } catch { return null; }
 }
 
 // Absent/null is legacy unknown, distinct from an explicit v1 null/null scope.

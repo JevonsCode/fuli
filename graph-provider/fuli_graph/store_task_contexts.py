@@ -16,6 +16,7 @@ from .project_agent_memory_models import ProjectAgentMemoryWrite
 from .store_transactions import query_store_transaction
 from .task_context_adoption import adopt_task_agent
 from .task_context_coordination import bind_coordination_task, task_context_json, task_context_record
+from .collaboration_context import read_collaboration_context
 
 
 class StoreTaskContexts:
@@ -210,6 +211,33 @@ class StoreTaskContexts:
         if rows[0].get('worker_run_id'):
             await self.guard_worker_task_context(actor, space_id, token)
         return record
+
+    async def read_task_preferences(self, actor, token, request):
+        record = await self.get_task_context(actor, request.personal_space_id, token, request.source_application)
+        if record['session_id'] != request.session_id:
+            raise HTTPException(404, 'Task preferences are unavailable for this session')
+        scope = record.get('preference_scope')
+        if scope is None:
+            raise HTTPException(409, 'Task preference scope is unknown; recovery cannot guess legacy dimensions')
+        if (record.get('checkpoint') or {}).get('phase') == 'complete':
+            raise HTTPException(409, 'Task preference recovery requires an unfinished task')
+        if record.get('project_agent_id'):
+            space = await self.authorize(actor, request.personal_space_id, 'reader')
+            agent = await authorize_project_agent(self, actor, space, record.get('personal_project_id'),
+                                                  record['project_agent_id'], require_active=True, allow_global=True)
+            if request.source_application not in json.loads(agent['profile_json']).get('allowed_clients', []):
+                raise HTTPException(403, 'Agent is not allowed in this client')
+        # All applicability dimensions come from the durable task, never the reader.
+        preferences = await read_collaboration_context(
+            self, actor, request.personal_space_id, record.get('personal_project_id'),
+            project_agent_id=record.get('project_agent_id'), session_id=record['session_id'],
+            work_kind=scope['work_kind'], workflow=scope['workflow'], complete=True,
+        )
+        # Recheck current ownership and worker revocation after the source read.
+        current = await self.get_task_context(actor, request.personal_space_id, token, request.source_application)
+        if current != record:
+            raise HTTPException(409, 'Task context changed during preference recovery')
+        return {'task_context': record, 'preferences': preferences.model_dump(mode='json')}
 
     async def checkpoint_task_context(self, actor, token, request):
         # A rejected preparation cannot commit memory. A later host turn may
