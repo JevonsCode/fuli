@@ -28,7 +28,11 @@ export function createRoundtableStore(path = ':memory:') {
   `);
   // A woken process whose exit could not be confirmed may still be running.
   const columns = new Set(database.prepare('PRAGMA table_info(messages)').all().map((column) => column.name));
-  for (const column of ['cleanup_status', 'cleanup_code']) {
+  // Evidence and release audit are append-only; an execution claim outlives the
+  // ask's status, because a reply or cancel says nothing about a process exiting.
+  for (const column of ['cleanup_status', 'cleanup_code', 'cleanup_recorded_at', 'cleanup_evidence_version',
+    'cleanup_machine_hash', 'cleanup_anchor_pid', 'cleanup_anchor_critical', 'cleanup_released_at',
+    'cleanup_release_proof', 'cleanup_release_observation', 'execution_claim', 'execution_claimed_at']) {
     if (columns.has(column)) continue;
     // Another client's MCP process may add the same column first.
     try { database.exec(`ALTER TABLE messages ADD COLUMN ${column} TEXT`); }
@@ -77,17 +81,61 @@ export function createRoundtableStore(path = ':memory:') {
         .run(status ?? null, via ?? null, error ?? null, toClient ?? null, toSession ?? null, now(), id);
       return this.getMessage(id);
     },
-    // Kept apart from updateMessage so later status changes never erase it.
-    setCleanup(id, { status, code = null }) {
-      database.prepare('UPDATE messages SET cleanup_status = ?, cleanup_code = coalesce(?, cleanup_code), updated_at = ? WHERE id = ?')
-        .run(status, code, now(), id);
+    // Kept apart from updateMessage so later status changes never erase it. Boot
+    // evidence is recorded once, with the hold; null evidence can never be released.
+    setCleanup(id, { status, code = null }, evidence = null) {
+      const anchor = evidence?.version === 1 ? evidence : null;
+      database.prepare(`UPDATE messages SET cleanup_status = ?, cleanup_code = coalesce(?, cleanup_code),
+        cleanup_recorded_at = coalesce(cleanup_recorded_at, ?),
+        cleanup_evidence_version = CASE WHEN cleanup_recorded_at IS NULL THEN ? ELSE cleanup_evidence_version END,
+        cleanup_machine_hash = CASE WHEN cleanup_recorded_at IS NULL THEN ? ELSE cleanup_machine_hash END,
+        cleanup_anchor_pid = CASE WHEN cleanup_recorded_at IS NULL THEN ? ELSE cleanup_anchor_pid END,
+        cleanup_anchor_critical = CASE WHEN cleanup_recorded_at IS NULL THEN ? ELSE cleanup_anchor_critical END,
+        updated_at = ? WHERE id = ?`)
+        .run(status, code, now(), anchor ? '1' : null, anchor?.machineHash ?? null,
+          anchor?.anchor?.pid == null ? null : String(anchor.anchor.pid), anchor?.anchor?.critical === true ? '1' : null, now(), id);
       return this.getMessage(id);
     },
     // Asks to this Agent whose woken process may still be running.
     unconfirmedCleanupFor(spaceId, agentId) {
       return database.prepare(`SELECT m.* FROM messages m JOIN threads t ON t.id = m.thread_id
         WHERE t.space_id = ? AND m.to_agent = ? AND m.kind = 'ask' AND m.cleanup_status = 'unconfirmed'
+          AND m.cleanup_released_at IS NULL
         ORDER BY m.updated_at`).all(spaceId, agentId);
+    },
+    // One durable decision: no unreleased hold and no other active execution of
+    // this Agent in this space, then this ask owns the next process. Parallel
+    // coordinators and restarts share the file, so the check and claim are atomic.
+    claimExecution(spaceId, agentId, askId) {
+      return transaction(() => {
+        const blocking = database.prepare(`SELECT m.cleanup_status, m.cleanup_released_at, m.execution_claim
+          FROM messages m JOIN threads t ON t.id = m.thread_id
+          WHERE t.space_id = ? AND m.to_agent = ? AND m.kind = 'ask' AND m.id != ? AND (m.execution_claim = 'active'
+            OR (m.cleanup_status = 'unconfirmed' AND m.cleanup_released_at IS NULL))`).all(spaceId, agentId, askId);
+        if (blocking.some((row) => row.cleanup_status === 'unconfirmed' && row.cleanup_released_at === null)) {
+          return { claimed: false, reason: 'cleanup_unconfirmed' };
+        }
+        if (blocking.length) return { claimed: false, reason: 'execution_claimed' };
+        const claimed = database.prepare(`UPDATE messages SET execution_claim = 'active', execution_claimed_at = ?
+          WHERE id = ? AND execution_claim IS NULL`).run(now(), askId).changes === 1;
+        return claimed ? { claimed: true } : { claimed: false, reason: 'execution_claimed' };
+      });
+    },
+    // Only after the owned process was observed to end, or never started. An
+    // unconfirmed cleanup leaves the claim active until a proof releases it.
+    finishExecution(askId) {
+      database.prepare(`UPDATE messages SET execution_claim = 'finished' WHERE id = ? AND execution_claim = 'active'
+        AND (cleanup_status IS NULL OR cleanup_status != 'unconfirmed')`).run(askId);
+      return this.getMessage(askId);
+    },
+    // Compare-and-set bound to the recorded evidence: it succeeds at most once and
+    // never for null, legacy, non-critical or other-machine evidence.
+    releaseProvenCleanup(id, { machineHash, anchorPid, proof, observation }) {
+      return database.prepare(`UPDATE messages SET cleanup_released_at = ?, cleanup_release_proof = ?,
+        cleanup_release_observation = ?, execution_claim = CASE WHEN execution_claim = 'active' THEN 'released' ELSE execution_claim END
+        WHERE id = ? AND cleanup_status = 'unconfirmed' AND cleanup_released_at IS NULL AND cleanup_evidence_version = '1'
+          AND cleanup_anchor_critical = '1' AND cleanup_machine_hash = ? AND cleanup_anchor_pid = ?`)
+        .run(now(), proof, observation, id, machineHash, String(anchorPid)).changes === 1;
     },
     getMessage(id) {
       return database.prepare('SELECT * FROM messages WHERE id = ?').get(id) ?? null;
