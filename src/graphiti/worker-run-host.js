@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { ApplicationError } from '../app/application-error.js';
 import { validateWorkerDescriptor } from './worker-descriptor.js';
 
@@ -7,13 +8,17 @@ const bounded = (value, max) => typeof value === 'string' && value.trim().length
 const taskToken = value => typeof value === 'string' && /^fuli-task-[a-zA-Z0-9-]{8,128}$/.test(value);
 const knownFailures = new Set(['worker_authentication_required', 'worker_authentication_unknown', 'worker_workspace_untrusted', 'worker_model_unavailable',
   'worker_model_mismatch', 'worker_cancelled', 'worker_timeout', 'worker_connection_closed', 'worker_cleanup_incomplete',
-  'worker_identity_mismatch', 'worker_model_strategy_unmapped', 'worker_result_mismatch']);
+  'worker_identity_mismatch', 'worker_model_strategy_unmapped', 'worker_result_mismatch', 'worker_authority_unavailable']);
 
 // A trusted host creates one attempt, never a model-facing tool or a scheduler.
 // Retain the same capability and idempotency key when recovering a lost prepare;
 // a false/uncertain start claim never authorizes another process.
 export function createWorkerRunAttempt({ provider, leases, adapter, request, projectPath, taskPrompt, toolNames,
-  leaseExecutor = false, capability = randomBytes(32).toString('hex') }) {
+  leaseExecutor = false, capability = randomBytes(32).toString('hex'),
+  pollIntervalMs = 1000, pollTimeoutMs = 5000, maxDurationMs = 30 * 60_000 }) {
+  for (const value of [pollIntervalMs, pollTimeoutMs, maxDurationMs]) {
+    if (!Number.isSafeInteger(value) || value < 1 || value > 60 * 60_000) throw failure('invalid_attempt');
+  }
   const selection = structuredClone(request);
   const descriptor = validateWorkerDescriptor({ runId: 'pending', personalProjectId: selection.personal_project_id,
     capability, projectPath, taskPrompt, toolNames });
@@ -26,10 +31,14 @@ export function createWorkerRunAttempt({ provider, leases, adapter, request, pro
   let pending;
   return { run({ signal } = {}) { return pending ??= execute(signal); } };
 
-  async function execute(signal) {
+  async function execute(callerSignal) {
+    const authority = new AbortController(), watching = new AbortController();
+    const signal = callerSignal ? AbortSignal.any([callerSignal, authority.signal]) : authority.signal;
+    const deadline = setTimeout(() => authority.abort(failure('timeout')), maxDurationMs);
+    let monitor;
     const scope = { personal_space_id: selection.personal_space_id, personal_project_id: selection.personal_project_id };
     const handles = [], cleanupErrors = [];
-    let runId, claimed = false, child, parent, sessionId, ownToken, checkpoint, result;
+    let runId, claimed = false, sealed = false, child, parent, sessionId, ownToken, checkpoint, result;
     let stage = 'lease', runningRecorded = false, terminalRecorded = false;
     let processStopped = false, runClosed = false;
     let outcome = { status: 'blocked', code: 'worker_not_started' };
@@ -108,6 +117,7 @@ export function createWorkerRunAttempt({ provider, leases, adapter, request, pro
       } else {
         if (claim.state !== 'claimed') throw failure('identity_mismatch');
         claimed = true;
+        monitor = watchRun();
         stage = 'start';
         checkCancelled();
         child = await adapter.start({ descriptor: { ...descriptor, runId }, selection: {
@@ -123,6 +133,7 @@ export function createWorkerRunAttempt({ provider, leases, adapter, request, pro
         checkCancelled();
         checkRun(await provider.sealProjectAgentWorkerSession(runId,
           { ...scope, source_application: adapter.application, session_id: sessionId }, { capability, signal }), ['sealed'], sessionId);
+        sealed = true;
         stage = 'admit';
         await admit();
         stage = 'configure';
@@ -146,10 +157,13 @@ export function createWorkerRunAttempt({ provider, leases, adapter, request, pro
         stage = 'checkpoint';
         checkCancelled();
         checkpoint = await readCheckpoint(signal);
+        checkCancelled();
         outcome = checkpointOutcome(result.stopReason, checkpoint);
       }
     } catch (error) {
-      const code = signal?.aborted || error?.code === 'worker_cancelled' ? 'worker_cancelled'
+      const code = callerSignal?.aborted ? 'worker_cancelled'
+        : authority.signal.aborted ? authority.signal.reason.code
+        : error?.code === 'worker_cancelled' ? 'worker_cancelled'
         : knownFailures.has(error?.code) ? error.code : `worker_${stage}_failed`;
       outcome = { status: code.endsWith('_cancelled') ? 'cancelled'
         : ['worker_authentication_required', 'worker_authentication_unknown', 'worker_workspace_untrusted', 'worker_model_unavailable',
@@ -161,12 +175,15 @@ export function createWorkerRunAttempt({ provider, leases, adapter, request, pro
         try { checkpoint = await readCheckpoint(null); } catch { /* Preserve the terminal cause. */ }
       }
     } finally {
+      clearTimeout(deadline);
+      watching.abort();
+      await monitor;
       // Close authority before stopping the owned process. Never close a run whose
       // start claim belonged to another host, even if prepare was an idempotent retry.
       if (claimed) {
         try {
           checkRun(await provider.closeProjectAgentWorkerRun(runId, { ...scope, reason: outcome.code },
-            { capability, signal: null }), ['closed', 'revoked'], sessionId);
+            { capability, signal: null }), ['closed', 'revoked'], sealed ? sessionId : undefined);
           runClosed = true;
         } catch { cleanupErrors.push('worker_run_close_failed'); }
       }
@@ -197,6 +214,23 @@ export function createWorkerRunAttempt({ provider, leases, adapter, request, pro
     return { runId: runId ?? null, outcome, ...(child ? { workerRuntime: runtime() } : {}),
       result: result ?? null, checkpoint: checkpoint ?? null,
       reporting: { runningRecorded, terminalRecorded }, cleanup: { processStopped, runClosed, errors: cleanupErrors } };
+
+    async function watchRun() {
+      try {
+        while (!watching.signal.aborted && !signal.aborted) {
+          await delay(pollIntervalMs, undefined, { signal: watching.signal });
+          const run = checkRun(await provider.getProjectAgentWorkerRun(runId, scope, { capability,
+            signal: AbortSignal.any([signal, watching.signal, AbortSignal.timeout(pollTimeoutMs)]) }),
+          ['claimed', 'sealed', 'admitted', 'closed', 'revoked']);
+          if (['closed', 'revoked'].includes(run.state)) {
+            authority.abort(failure('cancelled'));
+            return;
+          }
+        }
+      } catch {
+        if (!watching.signal.aborted && !signal.aborted) authority.abort(failure('authority_unavailable'));
+      }
+    }
   }
 }
 

@@ -8,6 +8,7 @@ import { runLocalRuntimeCommand } from './cli/local-runtime-command.js';
 import { runRemoteMcpCommand } from './cli/remote-mcp-command.js';
 import { runGraphDataCommand } from './cli/graph-data-command.js';
 import { runEmployeeCommand } from './cli/employee-command.js';
+import { runWorkerCommand } from './cli/worker-command.js';
 import { runSetupCommand } from './cli/setup-command.js';
 import { runConnectCommand } from './cli/connect-command.js';
 import { runPeerCommand } from './cli/peer-command.js';
@@ -54,6 +55,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   if (command === 'employee') {
     assertSupportedNodeVersion();
     return runEmployeeCommand(commandArgs, { env });
+  }
+  if (command === 'worker') {
+    assertSupportedNodeVersion();
+    return runWorkerCommand(commandArgs, { env });
   }
   if (command === 'connect-workspace') {
     assertSupportedNodeVersion();

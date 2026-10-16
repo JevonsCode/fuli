@@ -41,6 +41,7 @@ function fixture(options = {}) {
       return view('prepared');
     },
     async claimProjectAgentWorkerStart() { calls.push('claim'); return view('claimed', { start_claimed: options.claimed !== false }); },
+    async getProjectAgentWorkerRun() { return view('admitted'); },
     async sealProjectAgentWorkerSession(_id, input) {
       calls.push('seal'); assert.equal(input.session_id, context.session_id);
       return view('sealed', options.seal ?? {});
@@ -205,6 +206,23 @@ test('cancellation after configuration dispatches no prompt and cleanup ignores 
   assert.equal(JSON.stringify(result).includes(capability), false);
 });
 
+test('a rejected seal can close the unsealed run without hiding the original failure or accepting foreign identity', async () => {
+  for (const foreign of [false, true]) {
+    const f = fixture();
+    f.provider.sealProjectAgentWorkerSession = async () => { throw new Error('Synthetic seal rejection'); };
+    const close = f.provider.closeProjectAgentWorkerRun;
+    f.provider.closeProjectAgentWorkerRun = async (...args) => ({ ...await close(...args), actual_session_id: null,
+      ...(foreign ? { task_id: 'foreign-task' } : {}) });
+    const result = await createWorkerRunAttempt(f.input).run();
+    assert.equal(result.outcome.status, 'failed');
+    assert.equal(result.outcome.code, foreign ? 'worker_cleanup_incomplete' : 'worker_seal_failed');
+    assert.equal(result.cleanup.runClosed, !foreign);
+    assert.equal(result.cleanup.processStopped, true);
+    assert.equal(f.calls.includes('prompt'), false);
+    assert.deepEqual(result.cleanup.errors, foreign ? ['worker_run_close_failed'] : []);
+  }
+});
+
 test('process, authority and lease cleanup failures and unrecorded terminal activity stay explicit', async () => {
   for (const kind of ['process', 'run', 'lease', 'report']) {
     const f = fixture({ ...(kind === 'process' ? { onClose: () => { throw new Error(capability); } } : {}) });
@@ -229,4 +247,45 @@ test('unmanaged native executors use only the graph lease and never leak host au
   assert.equal(f.calls.includes('executor-lease'), false);
   assert.equal(result.result.text, 'Synthetic [redacted] [redacted] [redacted]');
   assert.equal(JSON.stringify(result).includes(capability), false);
+});
+
+test('out-of-band close or revocation aborts the pending prompt and cleans the owned run and leases', async () => {
+  for (const state of ['closed', 'revoked']) {
+    const f = fixture();
+    let polls = 0, cancellationObserved = false;
+    const getRun = f.provider.getProjectAgentWorkerRun;
+    f.provider.getProjectAgentWorkerRun = async (...args) => {
+      polls++;
+      assert.equal(args[2].capability, capability);
+      return { ...await getRun(...args), state };
+    };
+    f.child.promptOnce = ({ signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => {
+      cancellationObserved = true;
+      reject(signal.reason);
+    }, { once: true }));
+    const result = await createWorkerRunAttempt({ ...f.input, pollIntervalMs: 5 }).run();
+    assert.equal(polls, 1);
+    assert.equal(cancellationObserved, true);
+    assert.deepEqual(result.outcome, { status: 'cancelled', code: 'worker_cancelled' });
+    assert.deepEqual(result.cleanup, { processStopped: true, runClosed: true, errors: [] });
+    assert.equal(f.activities.at(-1).worker_status, 'cancelled');
+    assert.deepEqual(f.calls.slice(-2), ['release-executor', 'release-graph']);
+  }
+});
+
+test('a timed-out authority read fails closed and a bounded attempt timeout also cleans up', async () => {
+  for (const kind of ['poll', 'deadline']) {
+    const f = fixture();
+    f.provider.getProjectAgentWorkerRun = (_id, _scope, { signal }) => new Promise((_, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    });
+    f.child.promptOnce = ({ signal }) => new Promise((_, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    });
+    const result = await createWorkerRunAttempt({ ...f.input, pollIntervalMs: 5,
+      pollTimeoutMs: 10, maxDurationMs: kind === 'deadline' ? 10 : 1000 }).run();
+    assert.equal(result.outcome.code, kind === 'poll' ? 'worker_authority_unavailable' : 'worker_timeout');
+    assert.equal(result.cleanup.processStopped, true);
+    assert.equal(result.cleanup.runClosed, true);
+  }
 });
