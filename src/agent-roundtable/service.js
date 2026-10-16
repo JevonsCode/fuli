@@ -12,7 +12,10 @@ const REMOTE_FINAL = new Set(['answered', 'failed', 'cancelled', 'expired', 'unk
 // Agents talk to each other directly: an ask wakes the recipient in its own
 // client and returns its answer, or waits in its inbox for its next task.
 export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFactory = randomUUID,
-  env = process.env, locateCwd = sessionWorkingDirectory, clientAvailable = (client) => Boolean(resolveClientCommand(client)) }) {
+  env = process.env, locateCwd = sessionWorkingDirectory, clientAvailable = (client) => Boolean(resolveClientCommand(client)),
+  // Boot-anchor evidence recorded with a cleanup hold. Production records none
+  // (null) until a separately verified proof exists; release stays disabled.
+  bootEvidence = async () => null }) {
   const spaceId = () => app.config.personal.spaceId;
   // Opened on first use: most MCP processes never touch the roundtable.
   let opened = null;
@@ -122,6 +125,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
   async function deliver({ ask, attempts, prompt, timeoutMs, issueGrant, signal, onSpawn, peerDepth }) {
     const unusable = new Set();
     let failure = 'wake_failed';
+    let cleanup = null;
     for (const delivery of attempts) {
       if (unusable.has(delivery.client)) continue;
       if (signal?.aborted) { failure = 'cancelled'; break; }
@@ -138,6 +142,12 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
           { code: 'delegation_not_redeemed' });
       } catch (error) {
         failure = error.code ?? 'wake_failed';
+        // A process that may still be running must not get a sibling on another channel.
+        if (error.cleanup) {
+          cleanup = error.cleanup;
+          store.setCleanup(ask.id, cleanup, await bootEvidence().catch(() => null));
+          break;
+        }
         // A missing or logged-out client cannot answer from any session. A conversation
         // open in its app, or a sub-agent thread, still allows a new session.
         if (['client_login_required', 'client_unavailable'].includes(failure)) unusable.add(delivery.client);
@@ -152,7 +162,14 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
       }
       return { answer, delivery, via: `${delivery.client}:${delivery.sessionId ? 'resume' : 'new'}` };
     }
-    throw Object.assign(new Error('No client answered'), { code: failure });
+    throw Object.assign(new Error('No client answered'), { code: failure, ...(cleanup ? { cleanup } : {}) });
+  }
+
+  // While an earlier wake of this Agent may still be running, no new one starts.
+  // The claim is durable and atomic across coordinators; it ends only when the
+  // owned process was observed to end (or never started), not on reply/cancel.
+  function finishWake(ask, error = null) {
+    if (!error?.cleanup) store.finishExecution(ask.id);
   }
 
   async function messageAgent({ taskContextToken = null, sourceApplication, to, body, threadId = null,
@@ -171,8 +188,12 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     const nested = history.filter((message) => message.kind === 'ask' && message.status === 'delivering').length;
     if (!wait || nested >= NESTED_ASK_LIMIT) return queued(thread, ask, target, nested ? 'nested_limit' : 'not_waiting');
     if (!taskContextToken || !from.projectId) return queued(thread, ask, target, 'task_context_required');
-    const attempts = await deliveryTargets(target, conversation, from.projectId, projectPath);
-    if (!attempts.length) return queued(thread, ask, target, 'no_client');
+    const claim = store.claimExecution(spaceId(), target.agentId, ask.id);
+    if (!claim.claimed) return queued(thread, ask, target, claim.reason);
+    let attempts;
+    try { attempts = await deliveryTargets(target, conversation, from.projectId, projectPath); }
+    catch (error) { finishWake(ask); throw error; }
+    if (!attempts.length) { finishWake(ask); return queued(thread, ask, target, 'no_client'); }
     const prompt = wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: from.client });
     const timeoutMs = Math.min(Math.max(timeoutSeconds, 30), 900) * 1000;
     try {
@@ -183,6 +204,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
           // Claude resumes into a fork with a new ID. Only Codex resumes in place.
           target_session_id: delivery.client === 'codex' ? delivery.sessionId : null,
           lifetime_seconds: lifetime }) });
+      finishWake(ask);
       store.updateMessage(ask.id, { status: 'answered', via });
       const reply = store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent',
         inReplyTo: ask.id, via, from: { agentId: target.agentId, name: label(target), client: delivery.client,
@@ -190,8 +212,9 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
       return { status: 'answered', threadId: thread.id, messageId: ask.id, recipient: { agentId: target.agentId, name: label(target) },
         via, reply: reply.body };
     } catch (error) {
+      finishWake(ask, error);
       store.updateMessage(ask.id, { status: 'queued', error: error.code ?? 'wake_failed' });
-      return queued(thread, ask, target, error.code ?? 'wake_failed');
+      return { ...queued(thread, ask, target, error.code ?? 'wake_failed'), ...cleanupView(error.cleanup) };
     }
   }
 
@@ -242,6 +265,8 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     } else if (status !== ask.status) {
       store.updateMessage(ask.id, { status, error: state.error ?? null });
     }
+    // The peer port already bounded it; only an unanswered remote run can leave one.
+    if (status !== 'answered' && state.cleanup?.status === 'unconfirmed') store.setCleanup(ask.id, state.cleanup);
     return store.getMessage(ask.id);
   }
 
@@ -251,6 +276,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     return { status: ask.status === 'sent' ? 'queued' : ask.status, threadId: ask.thread_id, messageId: ask.id,
       recipient: { agentId: ask.to_agent, name: ask.to_name }, remote: true,
       ...(reply ? { reply: reply.body, via: reply.via } : {}), ...(ask.error ? { reason: ask.error } : {}),
+      ...cleanupView(storedCleanup(ask)),
       ...(REMOTE_FINAL.has(ask.status) ? {} : { guidance: 'The remote device has not answered yet. Check later with get_agent_message_status; it does not mean the work ran.' }),
       ...(ask.status === 'unknown' ? { guidance: 'The remote device lost track of this attempt; it may or may not have run. It is not retried automatically.' } : {}) };
   }
@@ -276,9 +302,18 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
       from: { agentId: `peer:${device.nodeId.slice(0, 16)}:${assertion.from.agentId}`, name: `${assertion.from.name} · ${device.name}`,
         client: assertion.from.client ?? 'other' },
       to: { agentId: target.agentId, name: label(target) } });
-    const attempts = await deliveryTargets(target, assertion.conversation, share.projectId, null,
-      { clients: share.clients, freshCwd: share.workingDirectory ?? null, strictCwd: true });
+    const execution = store.claimExecution(share.spaceId, target.agentId, ask.id);
+    if (!execution.claimed) {
+      store.updateMessage(ask.id, { status: 'failed', error: execution.reason });
+      throw Object.assign(new Error('An earlier run of this Agent may still be running on this device'), { code: execution.reason });
+    }
+    let attempts;
+    try {
+      attempts = await deliveryTargets(target, assertion.conversation, share.projectId, null,
+        { clients: share.clients, freshCwd: share.workingDirectory ?? null, strictCwd: true });
+    } catch (error) { finishWake(ask); throw error; }
     if (!attempts.length) {
+      finishWake(ask);
       const code = share.clients.some((client) => clientAvailable(client)) ? 'no_working_directory' : 'no_client';
       store.updateMessage(ask.id, { status: 'failed', error: code });
       throw Object.assign(new Error(code === 'no_working_directory'
@@ -289,12 +324,14 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     try {
       const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, issueGrant, signal, onSpawn,
         peerDepth: assertion.depth });
+      finishWake(ask);
       store.updateMessage(ask.id, { status: 'answered', via });
       store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent', inReplyTo: ask.id, via,
         from: { agentId: target.agentId, name: label(target), client: delivery.client, session: answer.sessionId },
         to: { agentId: ask.from_agent, name: ask.from_name, client: ask.from_client } });
       return { body: answer.body, via, sessionId: answer.sessionId };
     } catch (error) {
+      finishWake(ask, error);
       store.updateMessage(ask.id, { status: error.code === 'cancelled' ? 'cancelled' : 'failed', error: error.code ?? 'wake_failed' });
       throw error;
     }
@@ -316,7 +353,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     const reply = store.messages(ask.thread_id).find((message) => message.in_reply_to === ask.id);
     return { status: ask.status, threadId: ask.thread_id, messageId: ask.id,
       recipient: { agentId: ask.to_agent, name: ask.to_name }, ...(reply ? { reply: reply.body, via: reply.via } : {}),
-      ...(ask.error ? { reason: ask.error } : {}) };
+      ...(ask.error ? { reason: ask.error } : {}), ...cleanupView(storedCleanup(ask)) };
   }
 
   async function cancelMessage({ taskContextToken, sourceApplication, messageId }) {
@@ -421,7 +458,8 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     if (!record || record.space_id !== spaceId()) throw validation('Thread not found');
     return { id: record.id, subject: record.subject, projectId: record.project_id, createdAt: record.created_at,
       messages: store.messages(record.id).map((message) => ({ id: message.id, kind: message.kind, status: message.status,
-        body: message.body, inReplyTo: message.in_reply_to, via: message.via, error: message.error, createdAt: message.created_at,
+        body: message.body, inReplyTo: message.in_reply_to, via: message.via, error: message.error,
+        ...cleanupView(storedCleanup(message)), createdAt: message.created_at,
         from: { agentId: message.from_agent, name: message.from_name, client: message.from_client },
         to: { agentId: message.to_agent, name: message.to_name, client: message.to_client } })) };
   }
@@ -436,6 +474,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
   return { findAgents, messageAgent, readMessages, replyMessage, threads, thread, refreshRemote, taskEntryDelegation,
     messageStatus, cancelMessage, answerRemote,
     ownerMessageStatus: ({ messageId }) => statusOf(ownedAsk(messageId)),
+    // Cancelling is not evidence that a possibly running process exited; any cleanup hold stays.
     ownerCancelMessage: ({ messageId }) => cancelAsk(ownedAsk(messageId)),
     pending: (agentId) => store.pendingFor(spaceId(), agentId).map(inboxItem),
     close: () => opened?.close() };
@@ -456,6 +495,14 @@ function queued(thread, ask, target, reason) {
     guidance: `${label(target)} will see this message when it next starts a task and answer with reply_agent_message.` };
 }
 
+function storedCleanup(message) {
+  return message.cleanup_status ? { status: message.cleanup_status, code: message.cleanup_code } : null;
+}
+
+function cleanupView(cleanup) {
+  return cleanup ? { cleanup: { status: cleanup.status, code: cleanup.code ?? null } } : {};
+}
+
 function inboxItem(message) {
   return { messageId: message.id, threadId: message.thread_id, from: message.from_name,
     fromClient: message.from_client, body: message.body, createdAt: message.created_at };
@@ -473,4 +520,18 @@ function label(agent) {
 
 function validation(message) {
   return new ApplicationError(ApplicationErrorCode.VALIDATION, message);
+}
+
+// Release proof for one recorded hold: the same machine, an anchor recorded as
+// critical, and a complete current snapshot whose single critical session-0
+// anchor is a different process. Anything else is no proof. No production path
+// calls this yet: the boot-anchor assumption is unverified, so release stays off.
+export function cleanupReleaseProof(row, current) {
+  if (row?.cleanup_status !== 'unconfirmed' || row.cleanup_released_at != null || row.cleanup_evidence_version !== '1'
+      || row.cleanup_anchor_critical !== '1' || !row.cleanup_machine_hash || !row.cleanup_anchor_pid) return null;
+  if (current?.version !== 1 || current.machineHash !== row.cleanup_machine_hash || current.anchor?.critical !== true
+      || !Number.isInteger(current.anchor.pid) || current.anchor.pid <= 0) return null;
+  if (String(current.anchor.pid) === row.cleanup_anchor_pid) return null;
+  return { machineHash: row.cleanup_machine_hash, anchorPid: row.cleanup_anchor_pid,
+    proof: 'boot_anchor_replaced', observation: 'anchor_pid_changed' };
 }

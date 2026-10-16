@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ProviderTaskContextRegistry } from '../src/mcp/provider-task-context-registry.js';
+import { ProviderTaskContextRegistry, taskRecord } from '../src/mcp/provider-task-context-registry.js';
+import { applyAgentAssignment, taskAgentAssignment } from '../src/graphiti/task-agent-assignment.js';
 
 function providerRecord(overrides = {}) {
   return {
@@ -19,6 +20,23 @@ function providerRecord(overrides = {}) {
     ...overrides
   };
 }
+
+test('owned preference read uses only durable token and host identity through the Provider port', async () => {
+  const task = providerRecord({ personal_space_id: 'space-1',
+    preference_scope: { version: 1, work_kind: 'review', workflow: null } });
+  const preferences = { effective_preferences: [] };
+  const provider = { readTaskPreferences: async (token, input) => {
+    assert.equal(token, task.token);
+    assert.deepEqual(input, { personal_space_id: 'space-1', source_application: 'claude_code', session_id: 'logical-session' });
+    return { task_context: task, preferences };
+  } };
+  const result = await new ProviderTaskContextRegistry(provider, 'space-1').preferences(task.token,
+    { sourceApplication: 'claude_code', sessionId: 'logical-session' });
+  assert.equal(result.task.token, task.token); assert.equal(result.preferences, preferences);
+  task.personal_space_id = 'foreign-space';
+  await assert.rejects(() => new ProviderTaskContextRegistry(provider, 'space-1').preferences(task.token,
+    { sourceApplication: 'claude_code', sessionId: 'logical-session' }), /space changed/);
+});
 
 test('Provider registry preserves temporary scope and task-only ownership on recovery', async () => {
   const projectScope = { type: 'temporary', lifetime: 'task', persisted: true };
@@ -188,4 +206,34 @@ test('scoped capture receipts survive completion and recovery through another Pr
   assert.deepEqual(saved.checkpoint.capture_results, receipts);
   const next = new ProviderTaskContextRegistry(provider, 'space-1');
   assert.deepEqual((await next.context('fuli-task-provider-token', 'claude_code')).checkpoint.captureResults, receipts);
+});
+
+test('task begin stores only a bounded v1 Agent assignment and reads an invalid one as unknown', async () => {
+  const assignment = { version: 1, selection_reason: 'project_lead_reporting', match_basis: ['Lead owns the task.'],
+    requested_agent_id: 'specialist', reporting_lead_agent_id: null, execution_reason: null, execution_agent_id: null };
+  const sent = [];
+  const provider = { beginTaskContext: async input => { sent.push(input);
+    return providerRecord({ token: input.token, agent_assignment: input.agent_assignment ?? null }); } };
+  const registry = new ProviderTaskContextRegistry(provider, 'space-1');
+  const task = await registry.begin({ sessionId: 'logical-session', sourceApplication: 'claude_code', agentAssignment: assignment });
+  assert.deepEqual(sent[0].agent_assignment, assignment);
+  assert.deepEqual(task.agentAssignment, assignment);
+  await registry.begin({ sessionId: 'logical-session', sourceApplication: 'claude_code' });
+  assert.equal(Object.hasOwn(sent[1], 'agent_assignment'), false);
+  for (const stored of [undefined, null, { ...assignment, extra: true }, { ...assignment, version: 2 },
+    { ...assignment, match_basis: ['x'.repeat(2049)] }]) {
+    assert.equal(taskRecord(providerRecord({ agent_assignment: stored })).agentAssignment, null);
+  }
+});
+
+test('entry assignment record keeps reporting constraints and drops unbounded input instead of a fragment', () => {
+  const context = { project_agent_id: 'member', role: {}, selection_reason: 'delegated_member',
+    match_basis: ['Reports to lead.'], reporting_lead_agent_id: 'lead' };
+  assert.deepEqual(taskAgentAssignment(context), { version: 1, selection_reason: 'delegated_member',
+    match_basis: ['Reports to lead.'], requested_agent_id: null, reporting_lead_agent_id: 'lead',
+    execution_reason: null, execution_agent_id: null });
+  assert.equal(taskAgentAssignment({ ...context, match_basis: Array(33).fill('basis') }), null);
+  assert.equal(taskAgentAssignment({ status: 'unassigned', reason: 'project_lead_required' }), null);
+  const replayed = applyAgentAssignment({}, taskAgentAssignment(context));
+  assert.match(replayed.reporting_guidance, /Return results and blockers to the project lead/);
 });

@@ -18,7 +18,7 @@ function signingAuthority() {
   return { keyId: sha256Hex(Buffer.from(publicKey, 'base64url')).slice(0, 32), publicKey, privateKey: key.privateKey };
 }
 
-async function device(label, { tamper = null } = {}) {
+async function device(label, { tamper = null, wake = null } = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), `fuli-peer-${label}-`));
   const spaceId = `${label}-space`;
   const projectId = `${label}-project`;
@@ -56,7 +56,8 @@ async function device(label, { tamper = null } = {}) {
   };
   app.peer = createPeerPort({ dataDir, provider: personal, spaceId: () => spaceId, statusPollMs: 50 });
   app.roundtable = createAgentRoundtable({ app, openStore: () => createRoundtableStore(), clientAvailable: () => true,
-    wake: async (input) => { calls.wakes.push(input); return { body: `${label} answers`, sessionId: `${label}-woken` }; } });
+    wake: async (input) => { calls.wakes.push(input);
+      return wake ? wake(input) : { body: `${label} answers`, sessionId: `${label}-woken` }; } });
   const folder = join(dataDir, 'project-folder');
   const runtime = createPeerRuntime({ app, port: app.peer, allowLoopback: true, claimWaitMs: 300, interfaces: () => ({}),
     resolveFolder: (path) => ({ personalProjectId: path === folder ? projectId : null }) });
@@ -140,6 +141,33 @@ test('a shared lead without a known project folder is not woken anywhere else', 
     assert.equal(result.status, 'failed');
     assert.equal(result.reason, 'no_working_directory');
     assert.deepEqual(beta.calls.wakes, []);
+  } finally { await alpha.close(); await beta.close(); }
+});
+
+test('an unconfirmed remote cleanup reaches the sender with its original code and holds the next wake', { timeout: 20_000 }, async () => {
+  const [alpha, beta] = await Promise.all([device('alpha'), device('beta', { wake: async () => {
+    throw Object.assign(new Error('synthetic'), { code: 'wake_timeout', cleanup: { status: 'unconfirmed', code: 'cleanup_failed' } });
+  } })]);
+  try {
+    await pair(alpha, beta);
+    const to = await remoteAddress(alpha.app);
+    const first = await alpha.app.roundtable.messageAgent({ taskContextToken: 'alpha-task', sourceApplication: 'codex',
+      to, body: 'Synthetic question', timeoutSeconds: 30 });
+    assert.equal(first.status, 'failed', JSON.stringify(first));
+    assert.equal(first.reason, 'wake_timeout');
+    assert.deepEqual(first.cleanup, { status: 'unconfirmed', code: 'cleanup_failed' });
+    const status = await alpha.app.roundtable.messageStatus({ taskContextToken: 'alpha-task', sourceApplication: 'codex',
+      messageId: first.messageId });
+    assert.deepEqual([status.status, status.reason, status.cleanup],
+      ['failed', 'wake_timeout', { status: 'unconfirmed', code: 'cleanup_failed' }]);
+    assert.equal(beta.calls.wakes.length, 1);
+
+    const second = await alpha.app.roundtable.messageAgent({ taskContextToken: 'alpha-task', sourceApplication: 'codex',
+      to, body: 'Synthetic retry', timeoutSeconds: 30 });
+    assert.equal(second.status, 'failed', JSON.stringify(second));
+    assert.equal(second.reason, 'cleanup_unconfirmed');
+    assert.equal(second.cleanup, undefined, 'a refused ask started nothing that could still be running');
+    assert.equal(beta.calls.wakes.length, 1, 'the receiving device never stacks a second process');
   } finally { await alpha.close(); await beta.close(); }
 });
 

@@ -7,11 +7,19 @@ import { loadDeviceIdentity } from './device-identity.js';
 import { createNodeStore } from './node-store.js';
 import { assertionDigest, authorityFromProvider } from './origin-proof.js';
 import { createPeerClient } from './peer-transport.js';
-import { PEER_LIMITS, PEER_PROTOCOL, PeerError, TERMINAL_STATUSES } from './protocol.js';
+import { PEER_LIMITS, PEER_PROTOCOL, PeerError, peerCleanup, TERMINAL_STATUSES } from './protocol.js';
 
 const ADDRESS = /^peer:([0-9a-f]{16}):([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/;
 const STATUS_POLL_MS = 2_000;
 const PROOF_MARGIN_MS = 60_000;
+
+// The coordinator's answer is untrusted here: only a bounded cleanup report passes.
+function boundedState(state) {
+  if (!state || typeof state !== 'object') return state;
+  const { cleanup, ...rest } = state;
+  const unconfirmed = peerCleanup(cleanup);
+  return unconfirmed ? { ...rest, cleanup: unconfirmed } : rest;
+}
 
 export function peerDirectory(dataDir) {
   return join(dataDir, 'peer');
@@ -103,11 +111,11 @@ export function createPeerPort({ dataDir, provider, spaceId, clock = Date.now, i
   }
 
   async function status(messageId, options) {
-    return post('/peer/1/status', { messageId }, options);
+    return boundedState(await post('/peer/1/status', { messageId }, options));
   }
 
   async function cancel(messageId) {
-    return post('/peer/1/cancel', { messageId });
+    return boundedState(await post('/peer/1/cancel', { messageId }));
   }
 
   async function waitFor(messageId, timeoutMs) {

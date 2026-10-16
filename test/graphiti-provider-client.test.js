@@ -47,6 +47,30 @@ test('worker admission errors never expose a capability through Provider detail 
   }
 });
 
+test('host WorkerRun lifecycle uses exact HTTP ports and never places capabilities in request bodies', async () => {
+  const calls = [];
+  const capability = 'synthetic-worker-capability-never-in-payload';
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async (url, options) => { calls.push({ url, options }); return jsonResponse(200, {}); } });
+  const scope = { personal_space_id: 'worker-space', personal_project_id: 'worker-project' };
+  const session = { ...scope, source_application: 'codex', session_id: 'sealed-session' };
+  await client.prepareProjectAgentWorkerRun({ ...scope, runtime_capability_hash: 'a'.repeat(64) });
+  await client.claimProjectAgentWorkerStart('worker/run', scope, { capability });
+  await client.sealProjectAgentWorkerSession('worker/run', session, { capability });
+  await client.closeProjectAgentWorkerRun('worker/run', { ...scope, reason: 'completed' }, { capability, signal: null });
+  await client.revokeProjectAgentWorkerRun('worker/run', { ...scope, reason: 'cancelled' }, { signal: null });
+  assert.deepEqual(calls.map(({ url, options }) => [options.method, new URL(url).pathname]), [
+    ['PUT', '/v1/project-agent-worker-runs'], ['POST', '/v1/project-agent-worker-runs/worker%2Frun/start-claim'],
+    ['PUT', '/v1/project-agent-worker-runs/worker%2Frun/session'], ['POST', '/v1/project-agent-worker-runs/worker%2Frun/close'],
+    ['POST', '/v1/project-agent-worker-runs/worker%2Frun/revoke']
+  ]);
+  for (let index = 0; index < calls.length; index++) {
+    const { options } = calls[index];
+    assert.equal(options.headers['x-fuli-worker-capability'], [1, 2, 3].includes(index) ? capability : undefined);
+    assert.equal(options.body.includes(capability), false);
+  }
+});
+
 test('preference reads transmit explicit task dimensions independently without storing the task prompt', async () => {
   let url;
   const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',

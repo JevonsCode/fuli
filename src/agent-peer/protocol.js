@@ -22,6 +22,8 @@ export const PEER_LIMITS = Object.freeze({
 export const MESSAGE_STATUSES = Object.freeze(['queued', 'claimed', 'running', 'answered', 'failed', 'cancelled', 'expired', 'unknown']);
 export const TERMINAL_STATUSES = new Set(['answered', 'failed', 'cancelled', 'expired', 'unknown']);
 export const RESULT_OUTCOMES = new Set(['answered', 'failed', 'cancelled', 'unknown', 'never_started']);
+// Only "may still be running" crosses devices; nothing remote can confirm a release.
+const CLEANUP_CODES = new Set(['cleanup_timeout', 'cleanup_failed']);
 
 const INVITATION_PREFIX = 'fuli-peer-invite:1:';
 const FINGERPRINT = /^[0-9a-f]{64}$/;
@@ -33,6 +35,12 @@ export class PeerError extends Error {
     this.code = code;
     this.status = status;
   }
+}
+
+// A bounded copy of a woken process's unconfirmed cleanup, or null.
+export function peerCleanup(value) {
+  if (value?.status !== 'unconfirmed') return null;
+  return { status: 'unconfirmed', code: CLEANUP_CODES.has(value.code) ? value.code : null };
 }
 
 export function isFingerprint(value) {
