@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import pytest
 from fastapi import HTTPException
 
+from fuli_graph.agent_confirmation_progress import agent_confirmation_progress
 from fuli_graph.knowledge_audit import (
     record_agent_views,
     record_human_change,
@@ -397,6 +398,53 @@ async def test_human_contradiction_demotes_only_agent_confirmed_knowledge_to_pen
     assert pending_basis['confirmed_at'] is None
     assert 'agent_policy_version' not in pending_basis
     assert result.items[0].confirmation_status == 'pending'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('stored_status', ['pending', 'confirmed', 'agent_confirmed'])
+@pytest.mark.parametrize('has_open_conflict', [False, True])
+@pytest.mark.parametrize('uses,tasks', [(4, 3), (5, 2), (5, 3), (8, 6)])
+async def test_read_progress_reports_no_blocker_exactly_when_usage_write_promotes(
+    stored_status, has_open_conflict, uses, tasks,
+):
+    driver = SequentialDriver([
+        [{
+            'confirmation_status': stored_status,
+            'confirmation_basis_json': None,
+            'usage_generation': 1,
+            'invalid_at': None,
+            'has_open_conflict': has_open_conflict,
+        }],
+        [{'recorded': True}],
+        [{
+            'qualified_use_count': uses,
+            'distinct_task_count': tasks,
+            'applied_count': 0,
+            'cited_count': uses,
+            'last_used_at': datetime(2026, 10, 17, tzinfo=timezone.utc),
+        }],
+        [{'confirmation_status': stored_status}],
+    ])
+    written = await record_knowledge_usage(
+        StoreStub(driver),
+        {'id': 'principal-1'},
+        KnowledgeUsageCreate(
+            personal_space_id='personal-space',
+            task_id='task-synthetic',
+            items=[{'item_id': 'entity-1', 'item_kind': 'entity', 'use_kind': 'cited'}],
+        ),
+    )
+    progress = agent_confirmation_progress(
+        {
+            'confirmation_status': stored_status,
+            'raw_qualified_use_count': uses,
+            'raw_distinct_task_count': tasks,
+        },
+        knowledge_conflicts=[{'status': 'pending'}] if has_open_conflict else [],
+        preference_conflicts=[],
+    )
+
+    assert written.items[0].promoted is (progress.blocking_reasons == [])
 
 
 def personal_space():

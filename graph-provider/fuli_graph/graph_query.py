@@ -4,6 +4,7 @@ from .graph_projection import (
     management_projection,
     personal_project_projection,
 )
+from .agent_confirmation_progress import agent_confirmation_progress
 from .ai_review import effective_ai_review
 from .graph_models import GraphEdge, GraphNode, GraphResult
 from .models import (
@@ -250,6 +251,8 @@ def _node_query(project_scoped: bool, paginated: bool = False) -> str:
                  AS qualified_use_count,
                coalesce(node.fuli_distinct_task_count, 0)
                  AS distinct_task_count,
+               node.fuli_qualified_use_count AS raw_qualified_use_count,
+               node.fuli_distinct_task_count AS raw_distinct_task_count,
                node.fuli_last_used_at AS last_used_at,
                coalesce(node.fuli_negative_evidence_count, 0)
                  AS negative_evidence_count,
@@ -373,6 +376,8 @@ def _edge_query(project_scoped: bool, paginated: bool = False) -> str:
                  AS qualified_use_count,
                coalesce(edge.fuli_distinct_task_count, 0)
                  AS distinct_task_count,
+               edge.fuli_qualified_use_count AS raw_qualified_use_count,
+               edge.fuli_distinct_task_count AS raw_distinct_task_count,
                edge.fuli_last_used_at AS last_used_at,
                coalesce(edge.fuli_negative_evidence_count, 0)
                  AS negative_evidence_count,
@@ -608,6 +613,13 @@ def _graph_node(
         assignments=assignments.get(record['id'], []),
         project_references=references.get(record['id'], []),
         conflicts=conflicts.get(record['id'], []),
+        agent_confirmation_progress=agent_confirmation_progress(
+            record,
+            knowledge_conflicts=conflicts.get(record['id'], []),
+            preference_conflicts=(preference_conflicts or {}).get(
+                record['id'], []
+            ),
+        ),
         audit_events=(audits or {}).get(record['id'], []),
     )
 
@@ -716,6 +728,13 @@ def _graph_edge(
         assignments=assignments.get(record['id'], []),
         project_references=references.get(record['id'], []),
         conflicts=conflicts.get(record['id'], []),
+        agent_confirmation_progress=agent_confirmation_progress(
+            record,
+            knowledge_conflicts=conflicts.get(record['id'], []),
+            preference_conflicts=(preference_conflicts or {}).get(
+                record['id'], []
+            ),
+        ),
         audit_events=(audits or {}).get(record['id'], []),
     )
 

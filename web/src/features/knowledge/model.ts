@@ -579,6 +579,7 @@ function commonItem(item: KnowledgeNode | KnowledgeEdge) {
     confidenceScore: item.confidence_score ?? 0.5,
     qualifiedUseCount: item.qualified_use_count ?? 0,
     distinctTaskCount: item.distinct_task_count ?? 0,
+    agentConfirmationProgress: item.agent_confirmation_progress ?? null,
     lastUsedAt: item.last_used_at ?? null,
     usageGeneration: item.usage_generation ?? 1,
     invalidAt: item.invalid_at,
