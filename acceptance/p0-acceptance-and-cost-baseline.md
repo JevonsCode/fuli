@@ -25,7 +25,7 @@
 
 1. **固定任务（Fixed Task）**：使用第 3 节定义的标准合成任务提示词（仅替换随机标记如 `ASTER-<hex>`），严禁在同一基线对比中混用自由提问。
 2. **固定模型与推理强度（区分 `requested` 与 `actual`）**：
-   - 支持的推理强度枚举为 `default | low | medium | high | max`（对齐底座 `src/agent-execution-config.js`）。
+   - 支持的推理强度枚举为 `default | low | medium | high | max`（对齐底座 `src/agent-tools/project-agent-definitions.js` 与 `graph-provider/fuli_graph/project_agent_models.py`）。
    - 采集时必须将**请求值**（`requested_model`、`requested_effort`）与**运行日志实际生效值**（`actual_model`、`actual_effort`）分列记录。
    - **严禁将 `requested` 配置直接抄写或冒充为 `actual`**：若客户端或运行日志未显式回报实际执行的模型标识或实际生效的 `effort` 档位，对应的 `actual_model` / `actual_effort` 必须填写 `未知`（`unknown`）。
 3. **固定初始状态与会话/服务启动态（Session & Local Service Start State）**：
@@ -110,7 +110,7 @@
 
 | 验收项 | 1. 源码测试（已核实证据） | 2. 宿主触发 | 3. 模型接收 | 4. 真实数据库写回 | 当前责任与状态 |
 | --- | --- | --- | --- | --- | --- |
-| **P0-AC-01 普通对话写回** | `test/agent-tools.test.js`（5/5）、`test/mcp-integration.test.js`（3/3）、PR `#20`（`6928662`）`test/conversation-transcript.test.js`（12/12）通过 | Google Antigravity 端：`阻塞（blocked）`；Claude Code CLI（`13:13:43`）：实测已触发 `UserPromptSubmit` Hook 并投递上下文；Cursor CLI（`2026.10.14-0f9edde`）：隔离 `HOME` 下 Hook 执行器退出码 `2`（`blocked`）；Codex CLI（`13:45–13:46`）：无 Hook 模式缺原生会话（`native_session_required`） | **阻塞（`blocked`）**：Claude Code CLI 因网关令牌过期返回 `401`；Codex 无 Hook 诊断样本写工具被原生审批拒绝 | **阻塞（`blocked`）**：上述诊断样本均未完成真实闭环写回（诚实未保存） | `JVS-ACC` / `JVS-AC` 已定位真实宿主阻塞点（见 4.2 诊断记录），待刷新网关或具备原生会话审批后复跑并由 `JVS-AA` 独立核验 |
+| **P0-AC-01 普通对话写回** | `test/agent-tools.test.js`（5/5）、`test/mcp-integration.test.js`（3/3）通过，并在 PR `#20` head（`6928662`）复验 `test/conversation-transcript.test.js`（12/12）通过 | Google Antigravity 端：`阻塞（blocked）`；Claude Code CLI（`13:13:43`）：实测已触发 `UserPromptSubmit` Hook 并投递上下文；Cursor CLI（`2026.10.14-0f9edde`）：隔离 `HOME` 下 Hook 执行器退出码 `2`（`blocked`）；Codex CLI（`13:45–13:46`）：无 Hook 模式缺原生会话（`native_session_required`） | **阻塞（`blocked`）**：Claude Code CLI 因网关令牌过期返回 `401`；Codex 无 Hook 诊断样本写工具被原生审批拒绝 | **阻塞（`blocked`）**：上述诊断样本均未完成真实闭环写回（诚实未保存） | `JVS-ACC` / `JVS-AC` 已定位真实宿主阻塞点（见 4.2 诊断记录），待刷新网关或具备原生会话审批后复跑并由 `JVS-AA` 独立核验 |
 | **P0-AC-02 换端同负责人接续** | `test/provider-task-context-registry.test.js`（12/12）通过 | Google Antigravity 端：`阻塞（blocked）`；Codex ↔ Claude Code 原生跨端接续：受上述 `401` 与无 Hook 会话限制暂为 `阻塞（blocked）` | `阻塞（blocked）`（待 `C1` 双端真实模型闭环通过） | `阻塞（blocked）`（待 `C1` 双端真实模型闭环通过） | 同上（等待 `C1` 真实客户端闭环完成后独立验收） |
 | **P0-AC-03 偏好完整恢复** | PR `#16`（`793ecf0`）Node `test/task-preference-reader.test.js`（8/8）、`test/create-mcp-server-contract.test.js`（22/22）通过，GitHub Actions `provider` 单元测试通过（workflow run `38851403642` / job `116813187753`：`635 passed, 176 skipped`，默认 CI 未挂 Neo4j 服务故跳过 `*_neo4j.py`）；PR `#19`（`5565c49`）GitHub Actions `provider` 单元测试通过（workflow run `38856269264` / job `116828316482`：`635 passed, 176 skipped`） | 原生宿主触发：`未运行` | 原生模型接收：`未运行` | **隔离真实 Neo4j `5.26` 契约已独立实跑通过**：PR `#16` 由 `JVS-ACC` 在本地隔离 Neo4j 实跑 `811 passed`（`JVS-AA` 完成源码审查与 Node `45/45` 复验）；PR `#19` 由 `JVS-AC` 本地隔离 Neo4j 实跑 `17 passed` + `1/1` stdio→HTTP→Neo4j，并由 `JVS-AA` 在独立一次性 `neo4j:5.26-community` 容器复验 `test_worker_run_claim_seal_and_own_context_survive_retries_and_parent_next_turn`（`1 passed in 20.75s`）。真实客户端驱动写回：`未运行` | 源码与本地一次性容器真实 Neo4j `5.26` 契约均已独立验证 PASS；真实客户端宿主闭环待验 |
 | **P0-AC-04 分流候选确认** | `test/mcp-integration.test.js`（预览一次性令牌守卫 3/3）通过 | 原生宿主触发：`未运行` | 原生模型接收：`未运行` | 确定性脚本 `npm run test:knowledge:live` 可独立运行；本次未重跑真实客户端 | 待结合真实客户端会话补采 |
@@ -122,7 +122,7 @@
 | **Google Antigravity** | `JVS-AA`（`Gemini 4 Argon High`） | **阻塞（`blocked`）**：`~/.gemini/config/mcp_config.json` 已恢复 `fuli` 条目（对应 UI 状态 `Connected` / `已接入`），但因会话启动（`11:54+08:00`）时该文件为空，存量会话未热加载 `fuli` MCP 工具声明 | `未知`（客户端界面未向模型暴露账户配额比例或重置窗口） | `未知`（当前会话无法发起原生 `fuli` 工具调用，且不输出结构化 Token 账单） | 严格遵守隔离边界：不读取认证缓存、不复制其他客户端凭据、不用字节数估算 Token |
 | **Claude Code** | `JVS-ACC` | CLI Hook 可触发；真实模型网关待刷新凭据 | 截至 `2026-10-16 ~13:55+08:00`：<br>• **5 小时计划窗口（5-hour plan window）**：已用 `83%` / 剩余 `17%`（`16:40+08:00` 重置；此前协调同步剩余 `72%` → `66%` → `49%` 均属该 5 小时计划窗口，非会话上下文窗口）<br>• **周窗口（weekly window）**：已用 `11%`<br>• **当前会话上下文窗口（session context）**：`70%` | 待网关令牌刷新后从 `--output-format stream-json` 的 `result.usage` 采集固定任务配对样本 | **真实宿主诊断（`13:13:43+08:00`）**：真实 CLI 运行已触发 `UserPromptSubmit` Hook 并投递上下文，但模型请求返回 `401`（网关令牌需人工刷新），未产生模型接收与数据库写回 |
 | **Codex** | `JVS-AC` | 总协调会话可运行；无 Hook 独立 CLI 诊断已执行 | 由宿主会话管理（未在本文档跨端猜测） | 已留存 1 份**失败诊断样本**（`Temp/fuli-codex-c1-native-20261016.jsonl`），**不作为配对成本基线** | **真实宿主失败诊断样本（`13:45–13:46+08:00`）**：无 Hook 模式实跑真实模型，因缺原生会话报 `native_session_required`，且写工具被原生审批拒绝，诚实未保存；不重复空跑烧 Token |
-| **Cursor CLI** | `2026.10.14-0f9edde` | 隔离 `HOME` 下 Hook 执行器阻塞 | `未知` | 未采集（Hook 阶段被宿主阻断） | **真实宿主诊断**：PowerShell UTF-8 BOM 管道解析缺陷已在 PR `#20`（`2c2e503` / `6928662`）修复并经真实 `powershell.exe` 复验；但在隔离 `HOME` 下 Cursor CLI 自身 Hook 执行器在运行命令前以退出码 `2`（`blocked`）中止，未触发 `beforeSubmitPrompt` / `stop` |
+| **Cursor CLI** | `2026.10.14-0f9edde` | 隔离 `HOME` 下 Hook 执行器阻塞 | `未知` | 未采集（Hook 阶段被宿主阻断） | **真实宿主诊断**：PowerShell UTF-8 BOM 管道解析缺陷已在 PR `#20`（`2c2e503` / `6928662`，待合并）修复并经真实 `powershell.exe` 复验；但在隔离 `HOME` 下 Cursor CLI 自身 Hook 执行器在运行命令前以退出码 `2`（`blocked`）中止，未触发 `beforeSubmitPrompt` / `stop` |
 
 ### 4.3 已实测的本地源码契约基准耗时（仅作开发机测试耗时参考，非模型 Token 成本）
 
