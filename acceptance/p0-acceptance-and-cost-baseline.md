@@ -24,14 +24,22 @@
 为保证跨版本（如 `--tool-profile full` vs `chat`、入口精简前后、worker 重入优化前后）数据可比，每次采集必须固定并记录以下四项前置条件：
 
 1. **固定任务（Fixed Task）**：使用第 3 节定义的标准合成任务提示词（仅替换随机标记如 `ASTER-<hex>`），严禁在同一基线对比中混用自由提问。
-2. **固定模型与推理强度（Fixed Model & Effort）**：记录客户端实际调用的模型标识（如 `gpt-5.4`、`claude-sonnet-4-6`、`gemini-4-argon`）与推理档位（`effort: low | medium | high`）。客户端未公开或不可见时填 `未知`。
-3. **固定初始状态（Fixed Initial State）**：
+2. **固定模型与推理强度（区分 `requested` 与 `actual`）**：
+   - 支持的推理强度枚举为 `default | low | medium | high | max`（对齐底座 `src/agent-execution-config.js`）。
+   - 采集时必须将**请求值**（`requested_model`、`requested_effort`）与**运行日志实际生效值**（`actual_model`、`actual_effort`）分列记录。
+   - **严禁将 `requested` 配置直接抄写或冒充为 `actual`**：若客户端或运行日志未显式回报实际执行的模型标识或实际生效的 `effort` 档位，对应的 `actual_model` / `actual_effort` 必须填写 `未知`（`unknown`）。
+3. **固定初始状态与会话/服务启动态（Session & Local Service Start State）**：
    - 使用与日常个人空间隔离的测试空间（`personal_space_id`）；
-   - 记录任务开始前目标项目的有效偏好条数（如 `0` 条 vs `20` 条 vs `>150` 条触发恢复）、目标 Agent 的 `memory.revision` 初始值（如 `revision=0`）、以及运行模式（`container` / `native`，Neo4j `balanced` / `low`）。
-4. **区分冷缓存与暖缓存（Cold vs Warm Cache）**：
-   - **冷缓存（Cold）**：客户端全新启动会话的首轮请求，或 Provider / Neo4j 刚唤醒的首轮请求（模型侧 `cached_input_tokens = 0` / `cache_read_input_tokens = 0`）。
-   - **暖缓存（Warm）**：同一会话内第 2 轮及后续请求，或命中模型 Prompt Cache 的紧邻重跑（模型侧 `cached_input_tokens > 0` / `cache_read_input_tokens > 0`）。
-   - **记录要求**：冷缓存与暖缓存样本必须分列记录，不得将冷暖样本直接平均后报告单一成本。
+   - 记录任务开始前目标项目的有效偏好条数（如 `0` 条 vs `20` 条 vs `>150` 条触发恢复）、目标 Agent 的 `memory.revision` 初始值（如 `revision=0`）、以及运行模式（`container` / `native`，Neo4j `balanced` / `low`）；
+   - 独立记录**会话启动态**（`session_state`：`fresh_session` 全新会话首轮 vs `same_session_followup` 同会话后续轮次）与**本地服务启动态**（`service_start_state`：`provider_neo4j_cold_wake` 服务/数据库刚唤醒首轮 vs `provider_neo4j_warm_resident` 服务/数据库已常驻热态）。
+   - **严禁将会话/服务启动态直接等同于模型缓存状态**：全新会话或 Provider / Neo4j 刚唤醒时，若共享静态系统提示词或工具定义前缀，模型侧仍可能命中 Prompt Cache；反之亦然。
+4. **区分模型 Prompt 缓存读取态与缓存写入（Model Cache Read State vs Cache Creation）**：
+   - **模型缓存读取态（`model_cache_read_state`）**仅按客户端/执行器暴露的缓存读取命中计数器（`cached_input_tokens` 或 `cache_read_input_tokens`）严格判定：
+     - **`cold`**：缓存读取命中为 0（`cached_input_tokens == 0` 或 `cache_read_input_tokens == 0`）；
+     - **`warm`**：缓存读取命中大于 0（`cached_input_tokens > 0` 或 `cache_read_input_tokens > 0`）；
+     - **`unknown`（`未知`）**：客户端或执行器未暴露缓存读取命中计数器。
+   - **缓存写入独立记录（`cache_creation_input_tokens`）**：首轮请求即使产生 `cache_creation_input_tokens > 0`，只要 `cache_read_input_tokens == 0`，其模型缓存读取态仍为 `cold`（仅发生了缓存写入，未发生缓存读取命中），不得记为 `warm`。
+   - **分列汇总要求**：`cold`、`warm`、`unknown` 样本必须分列统计，不得直接平均后报告单一成本。
 
 ### 2.2 成本与调用指标采集口径（严禁字节估算）
 
@@ -42,13 +50,13 @@
 - **禁止估算铁律**：
   - **严禁**使用 JSON 响应字节数（如 `Buffer.byteLength`）、字符长度或除以固定系数（如 `bytes / 4`）推算 Token 数或费用。
   - **严禁**将客户端界面显示的会话上下文占用百分比或账户剩余配额百分比折算为本次任务的 Token 消耗。
-  - 凡客户端日志未输出的字段（如不返回 `reasoning_tokens`、不返回美元账单、或客户端界面不显示剩余额度），**一律填写 `未知`（`unknown`）**；日志明确返回 `0` 的字段保留为 `0`。
+  - 凡客户端日志未输出的字段（如不返回 `reasoning_tokens`、不返回 `cache_creation_input_tokens`、不返回实际生效 `effort`、不返回美元账单、或客户端界面不显示剩余额度），**一律填写 `未知`（`unknown`）**；日志明确返回 `0` 的字段保留为 `0`。
 
 ### 2.3 单次任务成本采集表模板
 
-| 采集批次 / 时间 | 客户端与版本 | 模型与 Effort | 缓存态（冷/暖） | 初始状态（偏好数 / memory rev） | 实际 MCP 工具调用序列（次数） | `input_tokens` | `cached_input_tokens`（读/写） | `output_tokens` | `reasoning_tokens` | 端到端耗时 `duration_ms` | 日志证据来源 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 待填写 | `codex` / `claude_code` / 其他 | 模型名 + `low\|medium\|high`（或 `未知`） | `cold` / `warm` | 例：`prefs=10, rev=0` | 例：`begin_task_context(1) -> checkpoint_task_knowledge(1)` | 真实值或 `未知` | 真实值或 `未知` | 真实值或 `未知` | 真实值或 `未知` | 真实毫秒数 | `turn.completed` / `result.usage` |
+| 采集批次 / 时间 | 客户端与版本 | `requested` 模型 / Effort（`default\|low\|medium\|high\|max`） | `actual` 模型 / Effort（未暴露填 `未知`） | 会话与服务启动态（`session_state` / `service_start_state`） | 模型缓存读取态（`cold` / `warm` / `unknown`） | 初始状态（偏好数 / memory rev） | 实际 MCP 工具调用序列（次数） | `input_tokens` | `cache_read_input_tokens`（或 `cached_input_tokens`） | `cache_creation_input_tokens` | `output_tokens` | `reasoning_tokens` | 端到端耗时 `duration_ms` | 日志证据来源 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 待填写 | `codex` / `claude_code` / 其他 | 例：`gpt-5.4` / `high` | 例：`gpt-5.4` / `未知` | `fresh_session` / `provider_neo4j_warm_resident` | `cold` / `warm` / `unknown` | 例：`prefs=10, rev=0` | 例：`begin_task_context(1) -> checkpoint_task_knowledge(1)` | 真实值或 `未知` | 真实值或 `未知` | 真实值或 `未知` | 真实值或 `未知` | 真实值或 `未知` | 真实毫秒数 | `turn.completed` / `result.usage` |
 
 ---
 
@@ -94,7 +102,7 @@
 
 ---
 
-## 4. 当前基线快照（2026-10-16 · Base `7579849` / PR `#16` `#17` `#19`）
+## 4. 当前基线快照（2026-10-16 · Base `7579849` / PR `#16` `#17` `#19` `#20`）
 
 以下记录截至 `2026-10-16` 在本机已实际核实的证据与阻塞边界（**未验证栏位均保持显式 `未运行` 或 `阻塞`，不冒充全绿**）：
 
@@ -102,18 +110,19 @@
 
 | 验收项 | 1. 源码测试（已核实证据） | 2. 宿主触发 | 3. 模型接收 | 4. 真实数据库写回 | 当前责任与状态 |
 | --- | --- | --- | --- | --- | --- |
-| **P0-AC-01 普通对话写回** | `test/agent-tools.test.js`（5/5）、`test/mcp-integration.test.js`（3/3）通过 | Google Antigravity 端 `阻塞（blocked）`；Codex / Claude Code 待 `C1` 闭环实跑 | 待 `C1` 闭环实跑 | 待 `C1` 闭环实跑 | `JVS-ACC` 正在 `p0-native-continuity` 执行 `C1`，待交付后由 `JVS-AA` 独立核验 |
-| **P0-AC-02 换端同负责人接续** | `test/provider-task-context-registry.test.js`（12/12）通过 | Google Antigravity 端 `阻塞（blocked）`；Codex ↔ Claude Code 待 `C1` 闭环实跑 | 待 `C1` 闭环实跑 | 待 `C1` 闭环实跑 | 同上（等待 `C1` 固定交付后独立验收） |
-| **P0-AC-03 偏好完整恢复** | PR `#16`（`793ecf0`）`test/task-preference-reader.test.js`（8/8）、`test/create-mcp-server-contract.test.js`（22/22）、CI `provider`（run `116813187753`）通过；PR `#19`（`5565c49`）CI `provider`（run `116828316482`）通过 | 原生宿主触发：`未运行` | 原生模型接收：`未运行` | 隔离 Neo4j 实跑已在 PR `#16` / `#19` CI 容器验证；真实客户端写回：`未运行` | 源码与容器 Neo4j 契约已由 `JVS-AA` 独立交叉审查 PASS；原生宿主闭环待验 |
+| **P0-AC-01 普通对话写回** | `test/agent-tools.test.js`（5/5）、`test/mcp-integration.test.js`（3/3）、PR `#20`（`6928662`）`test/conversation-transcript.test.js`（12/12）通过 | Google Antigravity 端：`阻塞（blocked）`；Claude Code CLI（`13:13:43`）：实测已触发 `UserPromptSubmit` Hook 并投递上下文；Cursor CLI（`2026.10.14-0f9edde`）：隔离 `HOME` 下 Hook 执行器退出码 `2`（`blocked`）；Codex CLI（`13:45–13:46`）：无 Hook 模式缺原生会话（`native_session_required`） | **阻塞（`blocked`）**：Claude Code CLI 因网关令牌过期返回 `401`；Codex 无 Hook 诊断样本写工具被原生审批拒绝 | **阻塞（`blocked`）**：上述诊断样本均未完成真实闭环写回（诚实未保存） | `JVS-ACC` / `JVS-AC` 已定位真实宿主阻塞点（见 4.2 诊断记录），待刷新网关或具备原生会话审批后复跑并由 `JVS-AA` 独立核验 |
+| **P0-AC-02 换端同负责人接续** | `test/provider-task-context-registry.test.js`（12/12）通过 | Google Antigravity 端：`阻塞（blocked）`；Codex ↔ Claude Code 原生跨端接续：受上述 `401` 与无 Hook 会话限制暂为 `阻塞（blocked）` | `阻塞（blocked）`（待 `C1` 双端真实模型闭环通过） | `阻塞（blocked）`（待 `C1` 双端真实模型闭环通过） | 同上（等待 `C1` 真实客户端闭环完成后独立验收） |
+| **P0-AC-03 偏好完整恢复** | PR `#16`（`793ecf0`）Node `test/task-preference-reader.test.js`（8/8）、`test/create-mcp-server-contract.test.js`（22/22）通过，GitHub Actions `provider` 单元测试通过（workflow run `38851403642` / job `116813187753`：`635 passed, 176 skipped`，默认 CI 未挂 Neo4j 服务故跳过 `*_neo4j.py`）；PR `#19`（`5565c49`）GitHub Actions `provider` 单元测试通过（workflow run `38856269264` / job `116828316482`：`635 passed, 176 skipped`） | 原生宿主触发：`未运行` | 原生模型接收：`未运行` | **隔离真实 Neo4j `5.26` 契约已独立实跑通过**：PR `#16` 由 `JVS-ACC` 在本地隔离 Neo4j 实跑 `811 passed`（`JVS-AA` 完成源码审查与 Node `45/45` 复验）；PR `#19` 由 `JVS-AC` 本地隔离 Neo4j 实跑 `17 passed` + `1/1` stdio→HTTP→Neo4j，并由 `JVS-AA` 在独立一次性 `neo4j:5.26-community` 容器复验 `test_worker_run_claim_seal_and_own_context_survive_retries_and_parent_next_turn`（`1 passed in 20.75s`）。真实客户端驱动写回：`未运行` | 源码与本地一次性容器真实 Neo4j `5.26` 契约均已独立验证 PASS；真实客户端宿主闭环待验 |
 | **P0-AC-04 分流候选确认** | `test/mcp-integration.test.js`（预览一次性令牌守卫 3/3）通过 | 原生宿主触发：`未运行` | 原生模型接收：`未运行` | 确定性脚本 `npm run test:knowledge:live` 可独立运行；本次未重跑真实客户端 | 待结合真实客户端会话补采 |
 
-### 4.2 本机客户端环境与成本采集基线记录（2026-10-16）
+### 4.2 本机客户端环境、额度窗口与真实宿主诊断记录（2026-10-16）
 
-| 客户端 | 标识 | 当前 MCP / 会话状态 | 可见剩余额度 / 窗口 | 真实 Token / 成本采集状态 | 证据与阻塞说明 |
+| 客户端 | 标识 | 当前 MCP / 会话状态 | 可见额度 / 窗口读数（含窗口名称与时间戳） | 真实 Token / 成本采集状态 | 证据与阻塞 / 失败诊断说明 |
 | --- | --- | --- | --- | --- | --- |
 | **Google Antigravity** | `JVS-AA`（`Gemini 4 Argon High`） | **阻塞（`blocked`）**：`~/.gemini/config/mcp_config.json` 已恢复 `fuli` 条目（对应 UI 状态 `Connected` / `已接入`），但因会话启动（`11:54+08:00`）时该文件为空，存量会话未热加载 `fuli` MCP 工具声明 | `未知`（客户端界面未向模型暴露账户配额比例或重置窗口） | `未知`（当前会话无法发起原生 `fuli` 工具调用，且不输出结构化 Token 账单） | 严格遵守隔离边界：不读取认证缓存、不复制其他客户端凭据、不用字节数估算 Token |
-| **Claude Code** | `JVS-ACC` | 可运行（正执行 `C1` 原生接续闭环） | 会话窗口曾报告 `72%` → `66%` → `49%`（由 `JVS-AC` 协调记录同步） | 待从 `--output-format stream-json` 的 `result.usage` 采集固定任务冷/暖样本 | 待 `JVS-ACC` 冻结 `C1` 交付物后提取真实日志指标 |
-| **Codex** | `JVS-AC` | 可运行（总协调与 PR `#14` / `#18` / `#19`） | 由宿主会话管理（未在本文档跨端猜测） | 待从 `codex exec --json` 的 `turn.completed.usage` 采集固定任务冷/暖样本 | 同上 |
+| **Claude Code** | `JVS-ACC` | CLI Hook 可触发；真实模型网关待刷新凭据 | 截至 `2026-10-16 ~13:55+08:00`：<br>• **5 小时计划窗口（5-hour plan window）**：已用 `83%` / 剩余 `17%`（`16:40+08:00` 重置；此前协调同步剩余 `72%` → `66%` → `49%` 均属该 5 小时计划窗口，非会话上下文窗口）<br>• **周窗口（weekly window）**：已用 `11%`<br>• **当前会话上下文窗口（session context）**：`70%` | 待网关令牌刷新后从 `--output-format stream-json` 的 `result.usage` 采集固定任务配对样本 | **真实宿主诊断（`13:13:43+08:00`）**：真实 CLI 运行已触发 `UserPromptSubmit` Hook 并投递上下文，但模型请求返回 `401`（网关令牌需人工刷新），未产生模型接收与数据库写回 |
+| **Codex** | `JVS-AC` | 总协调会话可运行；无 Hook 独立 CLI 诊断已执行 | 由宿主会话管理（未在本文档跨端猜测） | 已留存 1 份**失败诊断样本**（`Temp/fuli-codex-c1-native-20261016.jsonl`），**不作为配对成本基线** | **真实宿主失败诊断样本（`13:45–13:46+08:00`）**：无 Hook 模式实跑真实模型，因缺原生会话报 `native_session_required`，且写工具被原生审批拒绝，诚实未保存；不重复空跑烧 Token |
+| **Cursor CLI** | `2026.10.14-0f9edde` | 隔离 `HOME` 下 Hook 执行器阻塞 | `未知` | 未采集（Hook 阶段被宿主阻断） | **真实宿主诊断**：PowerShell UTF-8 BOM 管道解析缺陷已在 PR `#20`（`2c2e503` / `6928662`）修复并经真实 `powershell.exe` 复验；但在隔离 `HOME` 下 Cursor CLI 自身 Hook 执行器在运行命令前以退出码 `2`（`blocked`）中止，未触发 `beforeSubmitPrompt` / `stop` |
 
 ### 4.3 已实测的本地源码契约基准耗时（仅作开发机测试耗时参考，非模型 Token 成本）
 
