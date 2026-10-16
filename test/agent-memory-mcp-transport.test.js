@@ -57,7 +57,9 @@ function provider(agent, memories) {
     }
     if (target.pathname === '/v1/collaboration-preferences') {
       return Response.json({ personal_space_id: SPACE, personal_project_id: 'sample-project',
-        project_agent_id: 'engineer', conflicts: [], effective_preferences: [], agent_preferences: [] });
+        project_agent_id: 'engineer', conflicts: [], effective_preferences: [], agent_preferences: [],
+        queued_conflicts: [], source_windows: { candidates_truncated: false,
+          project_ancestors_truncated: false, queued_conflicts_truncated: false }, truncated: false });
     }
     if (target.pathname === '/v1/personal-projects/sample-project') return Response.json({ profile: { name: 'Sample' } });
     if (target.pathname === '/v1/search') return Response.json({ facts: [], entities: [] });

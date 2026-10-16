@@ -30,23 +30,19 @@ export async function getCollaborationPreferences(
   recordAgentViews
 ) {
   const resolvedProjectId = projectResolution.personalProjectId;
-  const [result, queuedConflicts] = await Promise.all([
-    application.personal.collaborationPreferences(
+  const raw = await application.personal.collaborationPreferences(
       application.config.personal.spaceId,
       resolvedProjectId,
       limit,
       projectAgentId,
       { sessionId, sourceSessionId, workKind, workflow }
-    ),
-    application.personal.listPreferenceConflicts(
-      application.config.personal.spaceId,
-      'ai_pending',
-      limit
-    )
-  ]);
+    );
+  const source_windows = sourceWindows(raw, resolvedProjectId);
+  const result = { ...raw, source_windows,
+    truncated: raw.truncated === true || Object.values(source_windows).some(value => value !== false) };
   const deferredConflicts = deferredPreferenceConflicts(
     result,
-    queuedConflicts
+    result.queued_conflicts
   );
   const taskScope = { sessionId, sourceSessionId, workKind, workflow };
   const effectivePreferences = (result.effective_preferences ?? []).filter(item => preferenceAppliesToTask(item, taskScope));
@@ -127,6 +123,19 @@ function preferenceContext(result, deferredConflicts, projectResolution) {
     overridden_global_count: (result.overridden_global_ids ?? []).length,
     overridden_project_count: (result.overridden_project_ids ?? []).length,
     source_truncated: result.truncated === true,
+    source_windows: result.source_windows,
     project_resolution: agentProjectResolution(projectResolution)
+  };
+}
+
+function sourceWindows(result, projectId) {
+  const known = value => typeof value === 'boolean' ? value : null;
+  const windows = result.source_windows;
+  return {
+    candidates_truncated: known(windows?.candidates_truncated) ?? known(result.truncated),
+    project_ancestors_truncated: projectId ? known(windows?.project_ancestors_truncated) : false,
+    queued_conflicts_truncated: result.conflicts?.length
+      ? Array.isArray(result.queued_conflicts) ? known(windows?.queued_conflicts_truncated) : null
+      : false
   };
 }

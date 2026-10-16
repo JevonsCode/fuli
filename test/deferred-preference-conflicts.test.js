@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
+import { getCollaborationPreferences } from '../src/graphiti/collaboration-preference-workflow.js';
+import { deferredPreferenceConflicts } from '../src/graphiti/collaboration-preference-projection.js';
+import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 
 const CONFIG = {
   version: 1,
@@ -13,6 +16,57 @@ const CONFIG = {
   },
   workspaces: []
 };
+
+test('entry uses the Provider active-pair queue and preserves every matching pending ID', async () => {
+  const items = ['left', 'right'].map(id => ({ id, item_kind: 'entity', preference_key: 'tone',
+    preference_scope: 'global', instruction: id }));
+  const queue = ['pending-a', 'pending-b'].map(id => ({ id, status: 'ai_pending',
+    left_item_id: 'left', left_item_kind: 'entity', right_item_id: 'right', right_item_kind: 'entity' }));
+  const data = { personal_space_id: 'personal-space', global_preferences: items, effective_preferences: [],
+    conflicts: [{ preference_key: 'tone', preference_scope: 'global', item_ids: ['left', 'right'] }],
+    queued_conflicts: queue, source_windows: { candidates_truncated: false,
+      project_ancestors_truncated: false, queued_conflicts_truncated: false }, truncated: false };
+  const app = { config: CONFIG, personal: {
+    collaborationPreferences: async () => data,
+    listPreferenceConflicts: () => { throw new Error('Task entry must not scan the space-wide queue'); }
+  } };
+  const read = () => getCollaborationPreferences(app, { personalProjectId: null }, { agentInvocation: true }, async () => {});
+  const result = await read();
+  assert.deepEqual(result.deferred_conflicts.map(item => item.id), ['pending-a', 'pending-b']);
+  assert.equal(result.context.source_truncated, false);
+  assert.deepEqual(result.context.source_windows, data.source_windows);
+  app.getCollaborationPreferences = read;
+  const server = createMcpServer(app, { env: {}, toolNames: ['get_collaboration_preferences'], registerResources: false });
+  try {
+    data.source_windows.queued_conflicts_truncated = true;
+    data.truncated = true;
+    const response = await server.server._requestHandlers.get('tools/call')({ method: 'tools/call',
+      params: { name: 'get_collaboration_preferences', arguments: { projectPath: '/synthetic' } } },
+    { signal: new AbortController().signal, requestId: 1 });
+    assert.equal(response.structuredContent.preference_delivery.reason, 'source_window');
+    assert.equal(Object.hasOwn(response.structuredContent, 'effective_preferences'), false);
+  } finally { await server.close(); }
+  const wrongKind = { ...queue[0], left_item_kind: 'relationship' };
+  assert.deepEqual(deferredPreferenceConflicts(data, [wrongKind]), []);
+});
+
+test('legacy Provider reports only relevant source windows as unknown without a space queue fallback', async () => {
+  const data = { personal_space_id: 'personal-space', effective_preferences: [], conflicts: [], truncated: false };
+  const app = { config: CONFIG, personal: { collaborationPreferences: async () => data,
+    listPreferenceConflicts: () => { throw new Error('Legacy entry must not scan the space queue'); } } };
+  const read = personalProjectId => getCollaborationPreferences(app, { personalProjectId }, { agentInvocation: true }, async () => {});
+  const global = await read(null);
+  assert.equal(global.context.source_truncated, false);
+  assert.equal(global.context.source_windows.project_ancestors_truncated, false);
+  assert.equal(global.context.source_windows.queued_conflicts_truncated, false);
+  const project = await read('project-a');
+  assert.equal(project.context.source_truncated, true);
+  assert.equal(project.context.source_windows.project_ancestors_truncated, null);
+  data.conflicts = [{ item_ids: ['left', 'right'], preference_key: 'tone', preference_scope: 'global' }];
+  const conflict = await read(null);
+  assert.equal(conflict.context.source_truncated, true);
+  assert.equal(conflict.context.source_windows.queued_conflicts_truncated, null);
+});
 
 test('Agent deferred-conflict resolution maps one audited decision to the personal Provider',
   async () => {

@@ -891,6 +891,12 @@ class CollaborationPreferenceConflict(StrictModel):
     item_ids: list[str] = Field(min_length=2)
 
 
+class CollaborationSourceWindows(StrictModel):
+    candidates_truncated: bool
+    project_ancestors_truncated: bool
+    queued_conflicts_truncated: bool
+
+
 class CollaborationContextResult(StrictModel):
     personal_space_id: str
     personal_project_id: str | None = None
@@ -902,6 +908,8 @@ class CollaborationContextResult(StrictModel):
     task_scope_excluded_count: int = Field(default=0, ge=0)
     task_scope_filtered: bool = False
     conflicts: list[CollaborationPreferenceConflict] = Field(default_factory=list)
+    queued_conflicts: list['PreferenceConflictRecord'] = Field(default_factory=list)
+    source_windows: CollaborationSourceWindows | None = None
     overridden_global_ids: list[str] = Field(default_factory=list)
     overridden_inherited_ids: list[str] = Field(default_factory=list)
     overridden_project_ids: list[str] = Field(default_factory=list)

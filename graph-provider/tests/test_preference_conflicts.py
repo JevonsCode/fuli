@@ -17,6 +17,34 @@ from fuli_graph.preference_conflicts import (
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('extra', [0, 1])
+async def test_active_conflict_queue_keeps_multiple_ids_and_probes_one_extra(extra):
+    from fuli_graph.preference_conflicts import read_active_preference_conflicts
+    pending = [{**conflict_record(), 'id': f'pending-{i}'} for i in range(2 + extra)]
+    driver = SequentialDriver([[{'conflict': item} for item in pending]])
+    store = StoreStub(driver)
+    alternatives = [SimpleNamespace(id=item, item_kind='entity', preference_key='dashboard.layout',
+                                    preference_scope='global') for item in ['left', 'right']]
+    conflicts = [SimpleNamespace(item_ids=['left', 'right'], preference_key='dashboard.layout', preference_scope='global')]
+    records, truncated = await read_active_preference_conflicts(store, 'personal-space', conflicts, alternatives, limit=2)
+    assert [item.id for item in records] == ['pending-0', 'pending-1']
+    assert truncated is bool(extra)
+    query, parameters = driver.calls[0]
+    assert parameters['limit'] == 3
+    assert parameters['active_groups'] == [[{'id': 'left', 'kind': 'entity'}, {'id': 'right', 'kind': 'entity'}]]
+    for field in ['personal_space_id', 'left_item_id', 'left_item_kind', 'right_item_id', 'right_item_kind']:
+        assert f'conflict.{field}' in query
+
+
+@pytest.mark.asyncio
+async def test_no_active_conflict_pairs_do_not_read_the_queue():
+    from fuli_graph.preference_conflicts import read_active_preference_conflicts
+    driver = SequentialDriver([])
+    assert await read_active_preference_conflicts(StoreStub(driver), 'personal-space', [], [], limit=100) == ([], False)
+    assert driver.calls == []
+
+
+@pytest.mark.asyncio
 async def test_human_can_defer_one_exact_preference_pair_until_ai_needs_it():
     driver = SequentialDriver([
         [entity_item('left')],

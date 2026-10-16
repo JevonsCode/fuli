@@ -251,7 +251,9 @@ function workerFixture({ memoryScope = 'reviewed_agent' } = {}) {
       collaborationPreferences: async (space, project, limit, agent, dimensions) => {
         calls.entries.push({ space, project, agent, dimensions });
         return { personal_space_id: space, personal_project_id: project, project_agent_id: agent,
-          effective_preferences: [], global_preferences: [{ id: 'pref', item_kind: 'entity' }] };
+          effective_preferences: [], global_preferences: [{ id: 'pref', item_kind: 'entity' }],
+          queued_conflicts: [], source_windows: { candidates_truncated: false,
+            project_ancestors_truncated: false, queued_conflicts_truncated: false }, truncated: false };
       },
       listPreferenceConflicts: async () => [], recordAgentViews: async () => { calls.views++; },
       getProjectAgentMemory: async input => { calls.memories.push(input); return memory(input); },
