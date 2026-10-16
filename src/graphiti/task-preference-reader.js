@@ -7,7 +7,8 @@ import { taskJudgmentContext } from './task-entry-preferences.js';
 import { withWorkerTaskGuidance } from './worker-task-context.js';
 import { blockedPreferenceDelivery } from '../mcp/preference-delivery.js';
 import { projectAgentRecord } from './project-agent-mapping.js';
-import { PROJECT_AGENT_CONTINUITY_GUIDANCE, projectAgentRoleContext } from './project-agent-task-entry.js';
+import { PROJECT_AGENT_CONTINUITY_GUIDANCE, projectAgentRoleContext, projectAgentRoleTextOverflows } from './project-agent-task-entry.js';
+import { loadProjectTeamContext } from './project-agent-team-context.js';
 import { applyAgentAssignment } from './task-agent-assignment.js';
 
 // Worker entry always uses this fixed admission selection (worker-task-context.js).
@@ -50,16 +51,23 @@ export async function readTaskPreferences(application, {
   const spaceId = application.config.personal.spaceId;
   let rawAgent;
   let project;
+  let team;
   try {
-    [rawAgent, project] = await Promise.all([
+    // Read-only sources of the entry's role, brief and team reporting rule.
+    [rawAgent, project, team] = await Promise.all([
       application.personal.getProjectAgent(spaceId, task.personalProjectId, task.projectAgentId),
-      task.personalProjectId ? application.personal.getPersonalProject(spaceId, task.personalProjectId) : null
+      task.personalProjectId ? application.personal.getPersonalProject(spaceId, task.personalProjectId) : null,
+      task.personalProjectId ? loadProjectTeamContext(application, spaceId, task.personalProjectId) : null
     ]);
   } catch {
     throw blocked('The task Agent role could not be read; recovery cannot deliver its role instructions.');
   }
   if (rawAgent?.agent_id !== task.projectAgentId || (task.personalProjectId && !project?.profile)) {
     throw blocked('The task Agent role is unavailable.');
+  }
+  const agent = projectAgentRecord(rawAgent);
+  if (projectAgentRoleTextOverflows(agent)) {
+    throw blocked('The task Agent role text exceeds its delivery bound; recovery does not cut role instructions.');
   }
   const judgment = taskJudgmentContext(application, task.personalProjectId);
   let result = {
@@ -70,7 +78,8 @@ export async function readTaskPreferences(application, {
       status: 'ready', project_agent_id: task.projectAgentId, personal_project_id: task.personalProjectId,
       source_application: task.sourceApplication, wake_mode: 'preference_recovery', worker_started: false,
       selection_reason: assignment.selection_reason, match_basis: [...assignment.match_basis],
-      ...projectAgentRoleContext(projectAgentRecord(rawAgent), project?.profile),
+      ...projectAgentRoleContext(agent, project?.profile),
+      ...(team?.guidance ? { team_guidance: team.guidance } : {}),
       guidance: PROJECT_AGENT_CONTINUITY_GUIDANCE
     }, assignment),
     taskContextToken: task.token, task_context_token: task.token, checkpoint_required: true,

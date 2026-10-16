@@ -187,19 +187,31 @@ export function projectAgentRoleContext(agent, projectProfile) {
     role: { name: agent.profile.displayName || agent.profile.name, responsibility: agent.profile.responsibility,
       initial_preferences: [...(agent.profile.initialPreferences ?? [])],
       character: {
-        judgment: boundedRoleText(agent.profile.character?.judgment, 2048),
-        taste: boundedRoleText(agent.profile.character?.taste, 2048),
-        personality: boundedRoleText(agent.profile.character?.personality, 2048)
+        judgment: boundedRoleText(agent.profile.character?.judgment, ROLE_TEXT_LIMITS.judgment),
+        taste: boundedRoleText(agent.profile.character?.taste, ROLE_TEXT_LIMITS.taste),
+        personality: boundedRoleText(agent.profile.character?.personality, ROLE_TEXT_LIMITS.personality)
       },
-      expectations: boundedRoleText(agent.profile.expectations, 4096) },
+      expectations: boundedRoleText(agent.profile.expectations, ROLE_TEXT_LIMITS.expectations) },
     project_brief: projectProfile ? { name: projectProfile.name, purpose: projectProfile.purpose,
       scope: projectProfile.scope, technical_summary: projectProfile.technical_summary,
       boundaries: projectProfile.boundaries ?? [] } : null
   };
 }
 
+// Limits are Unicode code points, matching the Provider profile contract; a
+// UTF-16 slice would halve valid text that uses characters outside the BMP.
+const ROLE_TEXT_LIMITS = Object.freeze({ judgment: 2048, taste: 2048, personality: 2048, expectations: 4096 });
+
 function boundedRoleText(value, limit) {
-  return typeof value === 'string' ? value.slice(0, limit) : '';
+  return typeof value === 'string' ? [...value].slice(0, limit).join('') : '';
+}
+
+// True when the projection above would cut a role instruction.
+export function projectAgentRoleTextOverflows(agent) {
+  const profile = agent.profile ?? {};
+  const values = { ...profile.character, expectations: profile.expectations };
+  return Object.entries(ROLE_TEXT_LIMITS).some(([key, limit]) =>
+    typeof values[key] === 'string' && [...values[key]].length > limit);
 }
 
 function unrelatedPeer(agent, workKind, required = []) {

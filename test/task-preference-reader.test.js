@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 import { readTaskPreferences } from '../src/graphiti/task-preference-reader.js';
+import { loadProjectAgentContinuity } from '../src/graphiti/project-agent-task-entry.js';
+import { projectAgentRecord } from '../src/graphiti/project-agent-mapping.js';
+import { applyAgentAssignment } from '../src/graphiti/task-agent-assignment.js';
+import { compactTaskContext } from '../src/conversations/task-context-view.js';
 
 const SESSION = '019fc6ed-02a5-7832-8821-68e3b03e7cef';
 function fixture() {
@@ -19,13 +23,20 @@ function fixture() {
     conflicts: [], queued_conflicts: [], truncated: false, task_scope_filtered: true,
     source_windows: { candidates_truncated: false, project_ancestors_truncated: false, queued_conflicts_truncated: false } };
   let reads = 0;
+  const rawAgent = { agent_id: 'agent-a', profile: { name: 'Synthetic owner', responsibility: 'Owns the sample.',
+    initial_preferences: ['ROLE_INITIAL_PREF'], character: { judgment: 'ROLE_JUDGMENT', taste: 'ROLE_TASTE', personality: 'ROLE_PERSONALITY' },
+    expectations: 'ROLE_EXPECTATIONS', status: 'active', allowed_clients: ['codex'] } };
+  const team = { policy: { team_lead_agent_id: 'lead-a', team_member_agent_ids: ['agent-a'] }, agents: [
+    { agent_id: 'lead-a', profile: { name: 'Lead', status: 'active' },
+      assignments: [{ personal_project_id: 'project-a', status: 'active' }] },
+    { ...rawAgent, assignments: [{ personal_project_id: 'project-a', status: 'active' }] }] };
   const app = { config: { personal: { spaceId: 'space-a' } },
     taskContextRegistry: { preferences: async (token, input) => {
       assert.equal(token, task.token); assert.deepEqual(input, { sourceApplication: 'codex', sessionId: SESSION });
       reads++; return { task: structuredClone(task), preferences: structuredClone(preferences) };
-    } }, personal: { getProjectAgent: async () => ({ agent_id: 'agent-a', profile: { name: 'Synthetic owner', responsibility: 'Owns the sample.',
-      initial_preferences: ['ROLE_INITIAL_PREF'], character: { judgment: 'ROLE_JUDGMENT', taste: 'ROLE_TASTE', personality: 'ROLE_PERSONALITY' },
-      expectations: 'ROLE_EXPECTATIONS', status: 'active' } }),
+    } }, personal: { getProjectAgent: async () => structuredClone(rawAgent),
+      getProjectAgentCoordinationPolicy: async () => structuredClone(team.policy),
+      listProjectAgents: async () => structuredClone(team.agents),
       getPersonalProject: async () => ({ profile: { name: 'Sample', purpose: 'PROJECT_PURPOSE', boundaries: ['PROJECT_BOUNDARY'] } }),
       getProjectAgentMemory: () => { throw new Error('Recovery must not read memory'); },
       recordAgentViews: () => { throw new Error('Recovery must not record views'); } },
@@ -34,7 +45,7 @@ function fixture() {
     beginTaskContext: () => { throw new Error('Task begin must not run'); }
   };
   app.readTaskPreferences = input => readTaskPreferences(app, input);
-  return { app, task, preferences, reads: () => reads };
+  return { app, task, preferences, rawAgent, team, reads: () => reads };
 }
 async function call(f, { env = { CODEX_THREAD_ID: SESSION }, sourceApplication = 'codex', extra = {} } = {}) {
   const server = createMcpServer(f.app, { env, sourceApplication,
@@ -121,5 +132,57 @@ test('source overflow, oversize instructions and unsafe fields block without del
     assert.equal(value.agent_receipt.owner.agent_id, 'agent-a');
     assert.doesNotMatch(result.content[0].text, /END_PREF_|DO_NOT_DELIVER_PRIVATE_PATH/);
     assert.ok(Buffer.byteLength(JSON.stringify(result)) <= 512 * 1024);
+  }
+});
+
+// Keys an entry carries only as continuity evidence or entry-time state; every
+// other project_agent_context field is a delivered instruction or identity.
+const ENTRY_ONLY_KEYS = ['memory', 'global_memory', 'knowledge', 'recent_tasks', 'team', 'directorySnapshot',
+  'details_guidance', 'unavailable_components', 'status', 'wake_mode'];
+const withoutEntryOnly = value => Object.fromEntries(Object.entries(value).filter(([key]) => !ENTRY_ONLY_KEYS.includes(key)));
+
+test('recovered Agent context matches every instruction field of the compacted entry, including team reporting', async () => {
+  const f = fixture();
+  const entryApp = { ...f.app, searchKnowledge: async () => ({ facts: [], entities: [] }),
+    personal: { ...f.app.personal, listProjectAgentTasks: async () => [],
+      getProjectAgentMemory: async input => ({ personal_space_id: input.personalSpaceId,
+        personal_project_id: input.personalProjectId, agent_id: input.agentId, revision: 0, current: null }) } };
+  const selection = { selection_reason: f.task.agentAssignment.selection_reason,
+    match_basis: f.task.agentAssignment.match_basis, reporting_lead_agent_id: 'lead-a' };
+  const entry = compactTaskContext({ project_agent_context: applyAgentAssignment(await loadProjectAgentContinuity(entryApp, {
+    projectId: 'project-a', agent: projectAgentRecord(f.rawAgent), sourceApplication: 'codex',
+    selectionReason: selection.selection_reason, matchBasis: selection.match_basis }), selection) }).project_agent_context;
+  assert.match(entry.team_guidance, /sole user-facing owner/);
+  const result = await call(f); assert.notEqual(result.isError, true, JSON.stringify(result));
+  const recovered = result.structuredContent.project_agent_context;
+  assert.deepEqual(withoutEntryOnly(recovered), JSON.parse(JSON.stringify(withoutEntryOnly(entry))));
+  assert.equal(recovered.team_guidance, entry.team_guidance);
+});
+
+test('role text with characters outside the BMP is delivered whole up to the Provider code point limit', async () => {
+  const f = fixture();
+  const tail = (limit, marker) => '𝒜'.repeat(limit - [...marker].length) + marker;
+  Object.assign(f.rawAgent.profile.character, { judgment: tail(2048, 'HUMAN_REVIEW_REQUIRED_J') });
+  f.rawAgent.profile.expectations = tail(4096, 'HUMAN_REVIEW_REQUIRED_E');
+  const result = await call(f); assert.notEqual(result.isError, true, JSON.stringify(result));
+  const role = result.structuredContent.project_agent_context.role;
+  assert.equal(role.character.judgment, f.rawAgent.profile.character.judgment);
+  assert.equal(role.expectations, f.rawAgent.profile.expectations);
+  assert.match(role.character.judgment, /HUMAN_REVIEW_REQUIRED_J$/);
+  assert.match(role.expectations, /HUMAN_REVIEW_REQUIRED_E$/);
+  assert.equal(result.structuredContent.preferences_complete, true);
+});
+
+test('role text beyond its bound or an unreadable team blocks instead of delivering a cut role', async () => {
+  for (const change of [
+    f => { f.rawAgent.profile.character.taste = 'x'.repeat(2048) + 'HUMAN_REVIEW_REQUIRED'; },
+    f => { f.rawAgent.profile.expectations = '𝒜'.repeat(4097); },
+    f => { f.app.personal.getProjectAgentCoordinationPolicy = async () => { throw new Error('Provider unavailable'); }; }
+  ]) {
+    const f = fixture(); change(f);
+    const result = await call(f);
+    assert.equal(result.isError, true, JSON.stringify(result));
+    assert.equal(result.structuredContent.effective_preferences, undefined);
+    assert.doesNotMatch(result.content[0].text, /HUMAN_REVIEW_REQUIRED|END_PREF_/);
   }
 });
