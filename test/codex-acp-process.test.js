@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { getEventListeners } from 'node:events';
 import { startCodexAcpProcess } from '../src/agents/codex/acp-process.js';
+import { createCodexAcpWorkerAdapter } from '../src/agents/codex/acp-worker.js';
+import { createWorkerRunAttempt } from '../src/graphiti/worker-run-host.js';
 import { inspectWindowsNativeProcess, stopWindowsNativeProcess } from '../src/native-runtime/windows-processes.js';
 
 const secret = 'SYNTHETIC_PRIVATE_VALUE_NEVER_LOG';
@@ -101,7 +103,15 @@ input.on('line',async line=>{
 });
 function reply(id){
   send({jsonrpc:'2.0',id,result:{protocolVersion:1,agentCapabilities:{},agentInfo:{name:'synthetic',version:'1'}}});
-  send({jsonrpc:'2.0',method:'_auth/status_update',params:{authStatus:{kind:'none',account:{email:secret}}}});
+  if(mode==='auth-never')return;
+  const publish=()=>send({jsonrpc:'2.0',method:'_auth/status_update',params:{authStatus:{
+    kind:mode==='worker-host'||mode==='auth-gated-account'?'account':'none',account:{email:secret}}}});
+  if(mode.startsWith('auth-gated-')){
+    let published=false;
+    const watcher=fs.watch(require('node:path').dirname(record),()=>{
+      if(!published&&fs.existsSync(record+'.auth')){published=true;watcher.close();publish();}
+    });
+  }else publish();
 }
 input.on('close',()=>{if(mode!=='hang')process.exit(0);});
 `);
@@ -114,6 +124,51 @@ input.on('close',()=>{if(mode!=='hang')process.exit(0);});
 const gone = pid => { try { process.kill(pid, 0); return false; } catch { return true; } };
 const trust = options => writeFile(join(options.codexHome, 'config.toml'),
   '[projects.' + JSON.stringify(options.cwd) + ']\ntrust_level = "trusted"\n');
+
+test('ACP authentication waits for a later trusted account or none notification without another initialize', windowsOnly, async t => {
+  for (const kind of ['account', 'none']) {
+    const { options, record } = await fixture(t, `auth-gated-${kind}`);
+    const handle = await startCodexAcpProcess(options);
+    try {
+      assert.equal(handle.authentication, 'unknown');
+      const listeners = getEventListeners(handle.signal, 'abort').length;
+      const waiting = handle.waitForAuthentication({ timeoutMs: 3000 });
+      await writeFile(record + '.auth', 'Publish the synthetic notification.');
+      assert.equal(await waiting, kind);
+      assert.equal(handle.authentication, kind);
+      assert.equal(await handle.waitForAuthentication({ timeoutMs: 1 }), kind);
+      assert.equal(getEventListeners(handle.signal, 'abort').length, listeners);
+      assert.deepEqual(JSON.parse(await readFile(record, 'utf8')).methods, ['initialize']);
+    } finally { await handle.close(); }
+    assert.ok(handle.ownedPids.every(gone));
+  }
+});
+
+test('ACP unobserved authentication times out distinctly and cancel or close interrupts with owned cleanup', windowsOnly, async t => {
+  for (const kind of ['timeout', 'cancel', 'signal', 'close']) {
+    const { options, record } = await fixture(t, 'auth-never');
+    const handle = await startCodexAcpProcess(options);
+    const controller = new AbortController();
+    try {
+      const waiting = handle.waitForAuthentication({ timeoutMs: kind === 'timeout' ? 10 : 3000, signal: controller.signal });
+      const rejected = assert.rejects(waiting, error => {
+        assert.equal(error.code, kind === 'timeout' ? 'acp_authentication_timeout'
+          : kind === 'close' ? 'acp_closed' : 'acp_cancelled');
+        assert.equal((error.stack + JSON.stringify(error)).includes(secret), false);
+        return true;
+      });
+      if (kind === 'cancel') await handle.cancel();
+      if (kind === 'close') await handle.close();
+      if (kind === 'signal') controller.abort(new Error(secret));
+      await rejected; await handle.closed;
+      assert.equal(handle.authentication, 'unknown');
+      assert.equal(getEventListeners(controller.signal, 'abort').length, 0);
+      assert.equal(getEventListeners(handle.signal, 'abort').length, 0);
+      assert.ok(handle.ownedPids.every(gone));
+      assert.deepEqual(JSON.parse(await readFile(record, 'utf8')).methods, ['initialize']);
+    } finally { await handle.close(); }
+  }
+});
 
 test('ACP requires existing cwd trust, locks one session and one exact-model prompt', windowsOnly, async t => {
   const { options, record } = await fixture(t, 'session');
@@ -143,6 +198,59 @@ test('ACP requires existing cwd trust, locks one session and one exact-model pro
     assert.equal(observed.sessionRequest.mcpServers[0].env[0].value, secret);
     assert.equal(observed.methods.filter(method => method === 'session/prompt').length, 1);
   } finally { await handle.close(); }
+});
+
+test('host connects one synthetic ACP process to a mocked Provider WorkerRun and verifies the child result', windowsOnly, async t => {
+  const { options, record, root } = await fixture(t, 'worker-host');
+  await trust(options);
+  const request = { personal_space_id: 'synthetic-space', personal_project_id: 'synthetic-project',
+    task_context_token: 'fuli-task-parent-fixture-1234', source_application: 'claude_code', task_id: 'task',
+    agent_id: 'synthetic-agent', worker_id: 'synthetic-worker', executor_id: 'synthetic-executor',
+    target_application: 'codex', provider: 'openai', model: 'gpt-6.1-sol',
+    model_strategy: { mode: 'deep', reasoning_effort: 'max', capability_hints: [] }, idempotency_key: 'synthetic-attempt-1234' };
+  const context = { personal_space_id: request.personal_space_id, personal_project_id: request.personal_project_id,
+    project_agent_id: request.agent_id, token: 'fuli-task-own-fixture-5678', source_application: 'codex',
+    session_id: 'synthetic-session', source_session_id: 'synthetic-session', turn_id: 'worker-run:synthetic-run' };
+  const run = state => ({ ...request, run_id: 'synthetic-run', state, actual_session_id: 'synthetic-session',
+    requested_model_provider: request.provider, requested_model: request.model,
+    requested_model_strategy: request.model_strategy });
+  const activities = [];
+  const provider = {
+    prepareProjectAgentWorkerRun: async () => run('prepared'),
+    claimProjectAgentWorkerStart: async () => ({ ...run('claimed'), start_claimed: true }),
+    sealProjectAgentWorkerSession: async (_id, value) => {
+      assert.equal(value.session_id, 'synthetic-session'); return run('sealed');
+    },
+    admitProjectAgentWorkerContext: async () => ({ ...run('admitted'), own_context_token: context.token, task_context: context }),
+    getTaskContext: async token => {
+      if (token === request.task_context_token) return { ...context, token, session_id: 'parent-session', source_application: 'claude_code' };
+      assert.equal(token, context.token);
+      const observed = JSON.parse(await readFile(record, 'utf8'));
+      assert.equal(observed.methods.filter(method => method === 'session/prompt').length, 1);
+      return { ...context, checkpoint: { phase: 'complete', work_log: {
+        status: 'completed', summary: 'Synthetic child handled one prompt; no real model was invoked.' } } };
+    },
+    closeProjectAgentWorkerRun: async () => run('closed'),
+    recordProjectAgentTaskActivity: async input => { activities.push(input); }
+  };
+  const leases = { acquireGraphLease: async () => ({ enabled: false, leaseId: null }),
+    releaseLease: async () => ({ released: false }) };
+  const adapter = createCodexAcpWorkerAdapter({ ...options, runtimeConfigPath: join(root, 'unused-fixture-runtime.json'),
+    startProcess: input => startCodexAcpProcess({ ...input, initializeTimeoutMs: 5000, stopTimeoutMs: 8000 }) });
+  const result = await createWorkerRunAttempt({ provider, leases, adapter, request, projectPath: options.cwd,
+    taskPrompt: 'Synthetic protocol fixture; do not claim a real model result.',
+    toolNames: ['get_collaboration_preferences', 'checkpoint_task_knowledge'] }).run();
+  assert.equal(result.outcome.status, 'completed');
+  assert.deepEqual(result.cleanup, { processStopped: true, runClosed: true, errors: [] });
+  const observed = JSON.parse(await readFile(record, 'utf8'));
+  assert.equal(gone(observed.pid), true);
+  const server = observed.sessionRequest.mcpServers[0];
+  assert.equal(server.name, 'fuli_worker');
+  assert.equal(JSON.stringify(server).includes(request.task_context_token), false);
+  assert.equal(JSON.stringify(observed.prompt).includes('FULI_WORKER_DESCRIPTOR'), false);
+  assert.equal(activities.at(-1).worker_runtime.session_id, 'synthetic-session');
+  assert.equal(activities.at(-1).source_session_id, 'parent-session');
+  assert.equal(Object.hasOwn(activities.at(-1), 'actual_model'), false);
 });
 
 test('ACP refuses unsupported effort and mismatched model acknowledgements before any prompt', windowsOnly, async t => {
@@ -378,14 +486,20 @@ test('official Codex ACP 2.2.2 initializes and exits in an empty isolated home w
 }, async t => {
   assert.ok(process.env.FULI_TEST_CODEX_ACP_ADAPTER && process.env.FULI_TEST_CODEX_BINARY);
   const { options } = await fixture(t);
+  const startedAt = new Date().toISOString(), started = performance.now();
   const handle = await startCodexAcpProcess({ ...options,
     adapterPath: process.env.FULI_TEST_CODEX_ACP_ADAPTER, codexPath: process.env.FULI_TEST_CODEX_BINARY,
     initializeTimeoutMs: 20_000, stopTimeoutMs: 10_000 });
-  assert.equal(handle.initialization.protocolVersion, 1);
-  assert.ok(handle.ownedPids.length >= 2, 'adapter and actual app-server ownership must both be captured');
-  t.diagnostic(JSON.stringify({ initialization: handle.initialization, authentication: handle.authentication,
-    ownedProcesses: handle.ownedPids.length }));
-  await handle.close(); await handle.closed;
+  try {
+    const initialAuthentication = handle.authentication, initializedMs = Math.round(performance.now() - started);
+    assert.equal(handle.initialization.protocolVersion, 1);
+    assert.ok(handle.ownedPids.length >= 2, 'adapter and actual app-server ownership must both be captured');
+    const authentication = await handle.waitForAuthentication({ timeoutMs: 5000 });
+    assert.equal(authentication, 'none');
+    t.diagnostic(JSON.stringify({ startedAt, initialization: handle.initialization,
+      initialAuthentication, initializedMs, authentication, authenticationMs: Math.round(performance.now() - started),
+      authObservedAt: new Date().toISOString(), ownedProcesses: handle.ownedPids.length }));
+  } finally { await handle.close(); await handle.closed; }
   assert.equal(handle.signal.aborted, true);
   assert.ok(handle.ownedPids.every(gone));
   assert.deepEqual(handle.pendingPermissions, []);
