@@ -1,4 +1,6 @@
 import { ApplicationError } from '../app/application-error.js';
+import { BLOCKED_PREFERENCE_LABEL, blockedPreferenceDelivery, completeBlockedPreferenceDelivery,
+  preferenceDeliveryReason } from './preference-delivery.js';
 
 const OMITTED_KEYS = new Set([
   'store',
@@ -17,7 +19,19 @@ const MESSAGE_LIMIT = 240;
 const TRUNCATION_MARKER = '...[truncated]';
 const VALIDATION_ERROR_LIMIT = 5;
 
-export function successToolResult(value, { limitBytes = RESULT_LIMIT_BYTES, itemLimit = RESULT_ITEM_LIMIT } = {}) {
+export function successToolResult(value, { limitBytes = RESULT_LIMIT_BYTES, itemLimit = RESULT_ITEM_LIMIT,
+  preferenceContext = false } = {}) {
+  const blockedResult = reason => {
+    const envelope = blockedPreferenceDelivery(value, reason);
+    const sanitized = sanitize(envelope, { truncated: false, itemLimit: 1000 });
+    const budget = Number.isInteger(limitBytes) && limitBytes > 0 ? limitBytes : RESULT_LIMIT_BYTES;
+    if (!completeBlockedPreferenceDelivery(envelope, sanitized) || jsonBytes(sanitized) > budget) {
+      throw new ApplicationError('validation', 'Result budget cannot hold the complete blocked preference delivery');
+    }
+    return { content: [{ type: 'text', text: JSON.stringify(sanitized) }],
+      structuredContent: sanitized };
+  };
+  if (preferenceContext && value?.context?.source_truncated === true) return blockedResult('source_window');
   const state = { truncated: false, itemLimit: Number.isInteger(itemLimit) && itemLimit > 0 ? Math.min(itemLimit, 1000) : RESULT_ITEM_LIMIT };
   // Task identity is a required part of the response, even if preferences or
   // memory exhaust the delivery budget. Sanitize it before reserving its bytes.
@@ -40,6 +54,8 @@ export function successToolResult(value, { limitBytes = RESULT_LIMIT_BYTES, item
     limitBytes,
     required
   );
+  const reason = preferenceContext && preferenceDeliveryReason(value, structuredContent);
+  if (reason) return blockedResult(reason);
   return {
     content: [{ type: 'text', text: JSON.stringify(structuredContent) }],
     structuredContent
@@ -55,11 +71,12 @@ export function hookAdditionalContextToolResult(
     itemLimit = RESULT_ITEM_LIMIT
   }
 ) {
-  const result = successToolResult(value, { limitBytes, itemLimit });
-  const warning = result.structuredContent.truncated
-    ? '\nContext delivery is incomplete. Do not claim full employee recovery or merge truncated memory. Read get_project_agent_memory for the exact role and project before continuing its work; retrieve omitted preference details before applying them.'
+  const result = successToolResult(value, { limitBytes, itemLimit, preferenceContext: true });
+  const blocked = result.structuredContent.preferences_complete === false;
+  const warning = !blocked && result.structuredContent.truncated
+    ? '\nContext delivery is incomplete. Do not claim full employee recovery or merge truncated memory. Read get_project_agent_memory for the exact role and project before continuing its work.'
     : '';
-  const additionalContext = `${label}${warning}\n${JSON.stringify(result.structuredContent)}`;
+  const additionalContext = `${blocked ? BLOCKED_PREFERENCE_LABEL : label}${warning}\n${JSON.stringify(result.structuredContent)}`;
   return {
     ...result,
     content: [{

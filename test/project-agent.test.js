@@ -284,7 +284,8 @@ test('project Agent context withholds an inactive Agent profile and execution hi
   assert.equal(calls.some(({ path }) => path === '/v1/search'), false);
 });
 
-test('project Agent coordinator returns isolated contexts for the Provider-selected team', async () => {
+for (const existingOwner of [null, 'original-owner']) {
+test(`project Agent coordinator binds the selected team while preserving owner ${existingOwner}`, async () => {
   const calls = [];
   const app = application(calls, {
     '/v1/personal-projects': [{
@@ -335,11 +336,20 @@ test('project Agent coordinator returns isolated contexts for the Provider-selec
   });
 
   const adoptions = [];
+  const bindings = [];
+  let parent = { token: 'fuli-task-first-team', personalProjectId: 'fuli', projectAgentId: existingOwner };
   app.taskContextRegistry = {
-    context: async () => ({ personalProjectId: 'fuli', projectAgentId: null }),
+    context: async () => parent,
     adoptAgent: async (token, input, source) => {
       adoptions.push({ token, input, source });
-      return { token, projectAgentId: input.agentId, memoryRevision: 0, workLogRequired: true };
+      parent = { ...parent, token, projectAgentId: input.agentId, memoryRevision: 0, workLogRequired: true,
+        coordinationTaskId: input.taskId, coordinationTaskIds: [input.taskId] };
+      return parent;
+    },
+    bindCoordinationTask: async (token, input, source) => {
+      bindings.push({ token, input, source });
+      parent = { ...parent, coordinationTaskIds: [...new Set([...(parent.coordinationTaskIds ?? []), input.taskId])] };
+      return parent;
     }
   };
   const result = await app.coordinateProjectAgentTask({
@@ -358,9 +368,13 @@ test('project Agent coordinator returns isolated contexts for the Provider-selec
   assert.equal(result.host_execution_required, true);
   assert.equal(result.host_execution_policy.task_checkpoint_owner, 'coordinator');
   assert.equal(result.host_execution_policy.forward_parent_task_context_token, false);
-  assert.deepEqual(adoptions, [{ token: 'fuli-task-first-team',
+  assert.deepEqual(adoptions, existingOwner ? [] : [{ token: 'fuli-task-first-team',
     input: { personalProjectId: 'fuli', taskId: 'task-team-1', agentId: 'agent-a' }, source: 'codex' }]);
-  assert.equal(result.task_context.work_log_required, true);
+  assert.deepEqual(bindings, existingOwner ? [{ token: 'fuli-task-first-team',
+    input: { personalProjectId: 'fuli', taskId: 'task-team-1' }, source: 'codex' }] : []);
+  assert.equal(result.task_context.project_agent_id, existingOwner ?? 'agent-a');
+  assert.deepEqual(result.task_context.coordination_task_ids, ['task-team-1']);
+  if (!existingOwner) assert.equal(result.task_context.work_log_required, true);
   assert.deepEqual(result.route.recruitments, []);
   assert.deepEqual(result.worker_plan.map((worker) => [
     worker.agent_id,
@@ -380,12 +394,14 @@ test('project Agent coordinator returns isolated contexts for the Provider-selec
   assert.equal(submit.body.personal_space_id, 'personal-space');
   assert.equal(submit.body.personal_project_id, 'fuli');
   assert.equal(submit.body.source_application, 'codex');
+  assert.equal(submit.body.coordinator_agent_id, null, 'implicit owner must not change the legacy submit payload identity');
   assert.deepEqual(
     calls.filter(({ path }) => path === '/v1/search')
       .map(({ body }) => body.project_agent_id),
     ['agent-a', 'agent-a', 'agent-b', 'agent-b']
   );
 });
+}
 
 test('project Agent coordinator fails closed if Provider cannot confirm a temporary scope', async () => {
   const calls = [];
@@ -504,6 +520,27 @@ test('project Agent coordinator reports a queued task with no participant as sta
   assert.equal(result.status, 'staffing_unavailable');
   assert.equal(result.host_execution_required, false);
   assert.deepEqual(result.worker_plan, []);
+});
+
+test('explicit coordinator is preserved and a rejected parent binding returns no executable plan', async () => {
+  const calls = [];
+  const app = application(calls, {
+    '/v1/personal-projects': [{ project_id: 'fuli', profile: { name: 'Fuli', sources: [], boundaries: [] } }],
+    '/v1/project-agent-tasks': { task: { task_id: 'unrelated-task', personal_project_id: 'fuli',
+      status: 'queued', participants: [], events: [] }, decision: 'assigned_existing' }
+  });
+  app.taskContextRegistry = {
+    context: async () => ({ token: 'fuli-task-owned', personalProjectId: 'fuli', projectAgentId: 'original-owner' }),
+    bindCoordinationTask: async () => { throw new Error('Owner is not a coordinator or lead'); },
+    adoptAgent: async () => assert.fail('An existing owner must not be replaced')
+  };
+  await assert.rejects(app.coordinateProjectAgentTask({ taskContextToken: 'fuli-task-owned',
+    projectPath: PROJECT_PATH, idempotencyKey: 'coordinate-rejected-parent', title: 'Synthetic rejected binding',
+    objective: 'Do not return workers without a parent binding.', workKind: 'implementation',
+    coordinatorAgentId: 'explicit-other-coordinator', routingReason: 'Synthetic scope rejection.',
+    contextQueries: [], sourceApplication: 'codex' }), /not a coordinator or lead/);
+  assert.equal(calls.find(({ path }) => path === '/v1/project-agent-tasks').body.coordinator_agent_id,
+    'explicit-other-coordinator');
 });
 
 function application(calls, routes) {

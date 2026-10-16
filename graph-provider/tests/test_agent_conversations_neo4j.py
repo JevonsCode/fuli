@@ -80,18 +80,43 @@ def test_conversation_cross_client_replay_isolation_and_policy():
             recovered = (await client.post('/v1/agent-conversations/query', json={**cc,
                 'conversation_id':cid, 'mode':'context'})).json()
             assert recovered['compacted_through'] > 0
-            # The current checkpoint is separate from historical excerpts after compaction.
+            # Default recovery uses the checkpoint and recent raw, including
+            # source sequences; the stored digest is only read on demand.
             assert recovered['context']['summary_role'] == 'historical'
             assert recovered['context']['latest_checkpoint'] == {
                 'status': 'completed', 'summary': 'Second result', 'truncated': False}
-            assert 'First result' in recovered['context']['summary']
-            assert '- Synthetic task' in recovered['context']['summary']
-            assert '- Request 0' in recovered['context']['summary']
+            assert recovered['context']['summary'] == ''
+            assert recovered['context']['truncated'] is True
+            assert recovered['context']['conversation_id'] == cid
+            assert recovered['context']['revision'] == recovered['revision']
             assert all('Request 0' not in message['content'] for message in recovered['context']['messages'])
             originals = (await client.post('/v1/agent-conversations/query', json={**cc,
                 'conversation_id':cid, 'mode':'events', 'limit':50})).json()
             assert originals['raw_retained'] is True
             assert any(event['content'] == 'Synthetic task' for event in originals['events'])
+            assert originals['digest']['tasks'][0]['summary'] == 'First result'
+            for message in recovered['context']['messages']:
+                original = (await client.post('/v1/agent-conversations/query', json={**cc,
+                    'conversation_id':cid, 'mode':'events', 'after':message['sequence'] - 1, 'limit':1})).json()
+                assert original['events'][0]['content'] == message['content']
+            # A tiny budget truthfully truncates a Unicode/escaped checkpoint;
+            # its full source is readable without retrieving an old raw page.
+            assert (await client.put('/v1/agent-conversations/policy', json={**owner,
+                'policy':{'compact_after_kb':8,'context_budget':512,'enabled':True}})).status_code == 200
+            full_checkpoint = '完成😀"\\\n' * 300 + 'END'
+            assert (await client.post('/v1/agent-conversations/append', json={**later,
+                'summary':full_checkpoint, 'events':[dict(event_id='large-checkpoint', role='summary',
+                    kind='checkpoint', content=full_checkpoint)]})).status_code == 200
+            bounded = (await client.post('/v1/agent-conversations/query', json={**cc,
+                'conversation_id':cid, 'mode':'context'})).json()['context']
+            import json
+            assert len(json.dumps(bounded, ensure_ascii=False, separators=(',', ':')).encode()) <= 512
+            assert bounded['truncated'] and bounded['latest_checkpoint']['truncated']
+            assert full_checkpoint.startswith(bounded['latest_checkpoint']['summary'].removesuffix('…'))
+            reread = (await client.post('/v1/agent-conversations/query', json={**cc,
+                'conversation_id':cid, 'mode':'events', 'after':bounded['revision'], 'limit':1})).json()
+            assert reread['events'] == [] and reread['summary'] == full_checkpoint
+            assert reread['revision'] == bounded['revision']
             policy = await client.put('/v1/agent-conversations/policy', json={**owner,'policy':{'compact_after_kb':64,'context_budget':1000,'enabled':False}})
             assert policy.status_code == 200, policy.text
             assert (await client.post('/v1/agent-conversations/append',json=later)).json()['status'] == 'capture_disabled'

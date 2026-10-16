@@ -994,7 +994,7 @@ describe('ProjectAgentsPage', () => {
       }] })
       if (url.includes('/api/project-agent-routing-learning?')) return Promise.resolve([{
         personal_project_id: 'project-a', work_kind: 'review', agent_id: 'shared-agent',
-        executor_id: 'executor-1', model_strategy: { mode: 'deep', reasoning_effort: 'high', capability_hints: [] },
+        executor_id: 'executor-1', model_strategy: { mode: 'deep', reasoning_effort: 'max', capability_hints: [] },
         model_strategy_key: 'strategy-key-1', sample_count: 4, recent_count: 2,
         success_count: 3, rework_count: 1, failure_count: 0, rating_count: 1,
         weighted_success: 2.5, weighted_failure: 0.5, decay_half_life_days: 30,
@@ -1015,7 +1015,7 @@ describe('ProjectAgentsPage', () => {
 
     const learning = wrapper.get('.project-agent-learning-card')
     expect(learning.text()).toContain('4')
-    expect(learning.text()).toContain('deep')
+    expect(learning.text()).toContain('deep · max')
     expect(learning.text()).toContain('test_passed')
     await wrapper.get('.project-agent-evidence-list button').trigger('click')
     await flushPromises()

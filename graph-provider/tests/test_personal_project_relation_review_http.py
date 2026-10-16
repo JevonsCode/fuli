@@ -64,12 +64,12 @@ async def test_project_action_relation_is_pending_until_independent_human_review
         store,
         {'id': 'personal-space'},
         'travel-d',
-    ) == {
+    ) == ({
         'travel-d': {
             'scope_distance': 0,
             'scope_path': ['travel-d'],
         },
-    }
+    }, False)
 
     relation_id = driver.relation['id']
     async with httpx.AsyncClient(
@@ -117,7 +117,7 @@ async def test_project_action_relation_is_pending_until_independent_human_review
         store,
         {'id': 'personal-space'},
         'travel-d',
-    ) == {
+    ) == ({
         'travel-d': {
             'scope_distance': 0,
             'scope_path': ['travel-d'],
@@ -126,7 +126,7 @@ async def test_project_action_relation_is_pending_until_independent_human_review
             'scope_distance': 1,
             'scope_path': ['travel-d', 'platform-a'],
         },
-    }
+    }, False)
     assert driver.review_events == [{
         'decision_revision': 1,
         'status': 'active',

@@ -687,7 +687,9 @@ function formatDateOnly(value: string | null | undefined) {
 }
 
 function strategyLabel(strategy: ProjectAgentModelStrategy | null | undefined) {
-  return strategy?.mode ?? 'adaptive'
+  const mode = strategy?.mode ?? 'adaptive'
+  return strategy?.reasoningEffort && strategy.reasoningEffort !== 'default'
+    ? `${mode} · ${strategy.reasoningEffort}` : mode
 }
 function policyLabel(policy: ProjectAgentExecutorPolicy | null | undefined) {
   return policy?.mode ?? 'flexible'

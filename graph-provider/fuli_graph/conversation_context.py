@@ -6,7 +6,8 @@ first line of each user request plus user/assistant lines that match explicit
 decision, correction, open-work or method markers, each with its source role
 and sequence. It does not understand meaning, so it can miss unmarked content
 and mislabel marked lines; omissions are counted and the raw history remains the
-authority. Sizes are conservative UTF-8 bytes.
+authority. Default recovery carries the latest checkpoint and recent raw, not
+the digest; its whole serialized JSON is bounded in UTF-8 bytes.
 """
 import json
 import re
@@ -181,44 +182,66 @@ def json_bytes(value):
     return len(json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode())
 
 
-def latest_checkpoint(checkpoint, limit):
-    """The caller's latest task result, kept from its start so completed work
-    and named artifacts survive; its serialized text stays within limit."""
-    if not checkpoint or not checkpoint.get('summary'):
-        return None
-    summary, cut = checkpoint['summary'], False
-    allowed = len(summary.encode())
-    # Escapes make JSON larger than UTF-8; shrink in proportion to the measured size.
-    while json_bytes(summary) > limit:
-        allowed = min(allowed - 1, allowed * limit // json_bytes(summary))
-        if allowed <= len('…'.encode()):
-            summary, cut = '', True
-            break
-        summary, cut = bounded_text(checkpoint['summary'], allowed)
-    return {'status': checkpoint['status'], 'summary': summary, 'truncated': cut}
+def _fit_prefix(text, target, key, fits):
+    """Measure the complete JSON after each Unicode-safe prefix candidate."""
+    low, high, best = 0, len(text), ''
+    while low <= high:
+        middle = (low + high) // 2
+        target[key] = text[:middle] + '…'
+        if fits():
+            best, low = target[key], middle + 1
+        else:
+            high = middle - 1
+    target[key] = best
 
 
-def pack_context(summary, events, budget, checkpoint=None):
-    # The digest is historical excerpts; latest_checkpoint is the current result.
-    result = {'summary': '', 'messages': [], 'truncated': False, 'summary_role': 'historical',
-              'latest_checkpoint': latest_checkpoint(checkpoint, budget // 4)}
-    result['truncated'] = bool(result['latest_checkpoint'] and result['latest_checkpoint']['truncated'])
-    def size():
-        return json_bytes(result)
-    result['summary'] = summary or ''
-    # Reserve half for recent messages, measured as serialized JSON so escapes
-    # count; keep the newest digest lines. The checkpoint comes out of the other half.
-    while result['summary'] and (len(json.dumps(result['summary'], ensure_ascii=False).encode()) > budget // 2
-                                 or size() > budget * 3 // 4):
-        result['summary'] = result['summary'][64:]
-        result['truncated'] = True
-    for event in reversed(events):
-        if not message_bytes(event):
-            continue
-        item = {'role': event['role'], 'content': event['content']}
+def pack_context(summary, events, budget, checkpoint=None, *, conversation_id=None, revision=None,
+                 omitted_sequence=None, scan_truncated=False):
+    # Keep the old empty summary fields for readers; digests remain in history,
+    # never compete with the latest checkpoint and visible raw messages here.
+    latest = ({'status': checkpoint['status'], 'summary': checkpoint['summary'], 'truncated': False}
+              if checkpoint and checkpoint.get('summary') else None)
+    result = {'summary': '', 'messages': [], 'truncated': omitted_sequence is not None or scan_truncated,
+              'summary_role': 'historical', 'latest_checkpoint': latest,
+              'conversation_id': conversation_id, 'revision': revision,
+              'omitted_sequence': omitted_sequence, 'scan_truncated': scan_truncated}
+    messages = [event for event in events if message_bytes(event)]
+
+    def fits():
+        return json_bytes(result) <= budget
+
+    def fit_checkpoint():
+        if latest and not fits():
+            result['truncated'] = latest['truncated'] = True
+            _fit_prefix(checkpoint['summary'], latest, 'summary', fits)
+
+    if not fits():
+        if messages:
+            result['omitted_sequence'] = messages[-1].get('sequence')
+        fit_checkpoint()
+        return result
+    for event in reversed(messages):
+        item = {'sequence': event.get('sequence'), 'role': event['role'], 'content': event['content']}
         result['messages'].insert(0, item)
-        if size() > budget:
-            result['messages'].pop(0)
-            result['truncated'] = True
-            break
+        if fits():
+            continue
+        result['messages'].pop(0)
+        result['truncated'] = True
+        result['omitted_sequence'] = event.get('sequence')
+        # A longer numeric omission anchor also counts against the same budget.
+        while result['messages'] and not fits():
+            result['omitted_sequence'] = result['messages'].pop(0)['sequence']
+        if not result['messages']:
+            # A huge newest message must not be skipped in favor of older small
+            # messages. Keep its prefix if possible, with an exact event anchor.
+            newest = messages[-1]
+            result['omitted_sequence'] = newest.get('sequence')
+            fit_checkpoint()
+            item = {'sequence': newest.get('sequence'), 'role': newest['role'], 'content': '', 'truncated': True}
+            result['messages'].append(item)
+            if fits():
+                _fit_prefix(newest['content'], item, 'content', fits)
+            else:
+                result['messages'].clear()
+        break
     return result

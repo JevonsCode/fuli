@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 from importlib.metadata import version
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
 
 from .auth import (
     matches_bootstrap_token,
@@ -433,6 +433,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.post('/v1/knowledge/commits', response_model=CommitResult)
     async def commit_personal(request: KnowledgeCommit, actor: Actor) -> CommitResult:
         return await store.commit_personal(actor, request)
+
+    @application.post('/v1/knowledge/commits/preflight')
+    async def preflight_personal_commits(
+        requests: Annotated[list[KnowledgeCommit], Body(min_length=1, max_length=2)],
+        actor: Actor,
+    ) -> dict:
+        return await store.preflight_personal_commits(actor, requests)
 
     @application.post('/v1/workflow-observations', response_model=CommitResult)
     async def record_workflow_observation(

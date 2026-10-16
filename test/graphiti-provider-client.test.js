@@ -6,6 +6,47 @@ import {
   ProviderRequestError
 } from '../src/graphiti/provider-client.js';
 
+test('worker lookup and admission transmit capability only in a dedicated header', async () => {
+  const calls = [];
+  const capability = 'synthetic-worker-capability-never-in-payload';
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async (url, options) => { calls.push({ url, options }); return jsonResponse(200, {}); } });
+  const scope = { personal_space_id: 'worker-space', personal_project_id: 'worker-project' };
+  const signal = new AbortController().signal;
+  await client.getProjectAgentWorkerRun('worker/run', scope, { capability, signal });
+  await client.admitProjectAgentWorkerContext('worker/run', { ...scope,
+    source_application: 'codex', session_id: 'sealed-session' }, { capability, signal });
+  assert.match(calls[0].url, /worker%2Frun\?personal_space_id=worker-space/);
+  assert.match(calls[1].url, /worker%2Frun\/contexts$/);
+  assert.equal(calls[1].options.method, 'POST');
+  for (const { url, options } of calls) {
+    assert.equal(options.headers['x-fuli-worker-capability'], capability);
+    assert.equal((url + (options.body ?? '')).includes(capability), false);
+  }
+});
+
+test('worker admission errors never expose a capability through Provider detail or cancellation reason', async () => {
+  const capability = 'synthetic-capability-must-be-redacted-123';
+  const scope = { personal_space_id: 'worker-space', personal_project_id: 'worker-project' };
+  for (const kind of ['rejected', 'cancelled', 'timeout']) {
+    const controller = new AbortController();
+    const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+      requestTimeoutMs: 10, fetchImpl: async (_url, { signal }) => {
+        if (kind === 'rejected') return jsonResponse(403, { detail: capability });
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          if (kind === 'cancelled') controller.abort(new Error(capability));
+        });
+      } });
+    await assert.rejects(client.admitProjectAgentWorkerContext('run', scope, { capability, signal: controller.signal }), error => {
+      assert.ok(error instanceof ProviderRequestError);
+      assert.equal((error.stack + JSON.stringify(error)).includes(capability), false);
+      assert.equal(error.code, kind === 'timeout' ? 'provider_timeout' : kind === 'cancelled' ? 'request_cancelled' : 'provider_error');
+      return true;
+    });
+  }
+});
+
 test('preference reads transmit explicit task dimensions independently without storing the task prompt', async () => {
   let url;
   const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',

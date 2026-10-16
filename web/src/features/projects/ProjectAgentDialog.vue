@@ -160,8 +160,9 @@ async function save() {
     if (displayName.value.trim()) profile.displayName = displayName.value.trim()
     if (agentOccupationEmoji) profile.occupationEmoji = agentOccupationEmoji
     if (agentType.value !== 'durable') profile.agentType = agentType.value
-    if (strategyMode.value !== 'adaptive') {
+    if (strategyMode.value !== 'adaptive' || props.agent?.profile.defaultModelStrategy) {
       profile.defaultModelStrategy = {
+        ...props.agent?.profile.defaultModelStrategy,
         mode: strategyMode.value,
       }
     }

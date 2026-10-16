@@ -247,6 +247,12 @@ export async function coordinateProjectAgentTask(
       personalProjectId: projectId, taskId: route.task.taskId, agentId: route.task.leadAgentId
     }, input.sourceApplication);
   }
+  // The current conversation owner stays accountable even when the routed
+  // execution lead differs. Requests with an entry context retain that parent.
+  const boundTask = adoptedTask ?? (entryTask
+    ? await application.taskContextRegistry.bindCoordinationTask(input.taskContextToken, {
+      personalProjectId: projectId, taskId: route.task.taskId
+    }, input.sourceApplication) : null);
 
   return {
     status: coordinatedTaskStatus(
@@ -262,11 +268,13 @@ export async function coordinateProjectAgentTask(
       required_action: 'Review the returned recruitment proposal and use decide_project_agent_recruitment with its current revision before starting a worker.'
     } : {}),
     route,
-    ...(adoptedTask || (entryTask && projectResolution.scope) ? { task_context: {
-      task_context_token: (adoptedTask ?? entryTask).token,
-      personal_project_id: projectId, project_agent_id: (adoptedTask ?? entryTask).projectAgentId,
-      memory_revision: (adoptedTask ?? entryTask).memoryRevision,
-      work_log_required: (adoptedTask ?? entryTask).workLogRequired
+    ...(boundTask ? { task_context: {
+      task_context_token: boundTask.token,
+      personal_project_id: projectId, project_agent_id: boundTask.projectAgentId,
+      memory_revision: boundTask.memoryRevision,
+      work_log_required: boundTask.workLogRequired,
+      coordination_task_id: boundTask.coordinationTaskId ?? null,
+      coordination_task_ids: boundTask.coordinationTaskIds
     } } : {}),
     host_execution_required: hostExecutionRequired,
     host_execution_policy: {

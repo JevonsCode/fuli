@@ -56,6 +56,23 @@ test('Provider task context records preserve turn and host-session provenance', 
   assert.equal(result.sourceSessionId, 'mcp-host-session');
 });
 
+test('Provider registry round-trips a fixed preference scope and detects an old Provider dropping it', async () => {
+  const scope = { version: 1, work_kind: 'review', workflow: null };
+  let received;
+  const registry = new ProviderTaskContextRegistry({ beginTaskContext: async input => {
+    received = input; return input;
+  }, getTaskContext: async () => providerRecord({ preference_scope: scope }) }, 'space-1');
+  const input = { sessionId: 'scope-session', preferenceScope: scope };
+  assert.deepEqual((await registry.begin(input)).preferenceScope, scope);
+  assert.deepEqual(received.preference_scope, scope);
+  assert.deepEqual((await registry.context('fuli-task-provider-token')).preferenceScope, scope);
+  registry.provider.beginTaskContext = async () => providerRecord();
+  await assert.rejects(registry.begin(input), /preference scope/i);
+  assert.equal((await registry.context('fuli-task-provider-token')).preferenceScope.version, 1);
+  registry.provider.getTaskContext = async () => providerRecord();
+  assert.equal((await registry.context('fuli-task-provider-token')).preferenceScope, null);
+});
+
 test('Provider preparation forwards Agent memory atomically and completion omits it', async () => {
   const writes = [];
   const registry = new ProviderTaskContextRegistry({
@@ -119,4 +136,56 @@ test('Provider registry rejects malformed durable task records', async () => {
     registry.context('fuli-task-provider-token', 'codex'),
     /Provider did not return a durable task context/
   );
+});
+
+test('coordination bindings survive the TaskContext port and another registry without changing owner', async () => {
+  let saved = providerRecord({ coordination_task_id: 'original-adoption',
+    coordination_task_ids: ['original-adoption', 'task-first'] });
+  const calls = [];
+  const provider = {
+    bindTaskContextCoordinationTask: async (token, input) => {
+      calls.push({ token, input });
+      saved = { ...saved, coordination_task_ids: [...new Set([...saved.coordination_task_ids, input.task_id])] };
+      return saved;
+    },
+    getTaskContext: async () => saved
+  };
+  const first = new ProviderTaskContextRegistry(provider, 'space-1');
+  const linked = await first.bindCoordinationTask('fuli-task-provider-token', {
+    personalProjectId: 'project-1', taskId: 'task-second'
+  }, 'claude_code');
+  assert.deepEqual(calls, [{ token: 'fuli-task-provider-token', input: {
+    personal_space_id: 'space-1', personal_project_id: 'project-1',
+    source_application: 'claude_code', task_id: 'task-second'
+  } }]);
+  const second = new ProviderTaskContextRegistry(provider, 'space-1');
+  const recovered = await second.context(linked.token, 'claude_code');
+  assert.equal(recovered.projectAgentId, 'agent-1');
+  assert.equal(recovered.coordinationTaskId, 'original-adoption');
+  assert.deepEqual(recovered.coordinationTaskIds, ['original-adoption', 'task-first', 'task-second']);
+});
+
+test('legacy adoption pointer is preserved in the TaskContext view', async () => {
+  const registry = new ProviderTaskContextRegistry({ getTaskContext: async () =>
+    providerRecord({ coordination_task_id: 'original-adoption' }) }, 'space-1');
+  const recovered = await registry.context('fuli-task-provider-token', 'claude_code');
+  assert.equal(recovered.coordinationTaskId, 'original-adoption');
+  assert.deepEqual(recovered.coordinationTaskIds, ['original-adoption']);
+});
+
+test('scoped capture receipts survive completion and recovery through another Provider registry', async () => {
+  let saved;
+  const receipts = [{ scope: 'personal_global', personal_project_id: null, status: 'committed',
+    episode_id: 'episode-global', entity_ids: ['preference-global'], relationship_ids: [] }];
+  const provider = {
+    checkpointTaskContext: async (_token, input) => { saved = providerRecord({ checkpoint: input }); return saved; },
+    getTaskContext: async () => saved
+  };
+  const first = new ProviderTaskContextRegistry(provider, 'space-1');
+  await first.checkpoint('fuli-task-provider-token', { disposition: 'capture_candidates',
+    reason: 'Pending preference candidates.', fingerprint: 'b'.repeat(64),
+    captureStatus: 'committed', captureResults: receipts }, 'claude_code');
+  assert.deepEqual(saved.checkpoint.capture_results, receipts);
+  const next = new ProviderTaskContextRegistry(provider, 'space-1');
+  assert.deepEqual((await next.context('fuli-task-provider-token', 'claude_code')).checkpoint.captureResults, receipts);
 });

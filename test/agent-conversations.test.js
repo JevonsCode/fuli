@@ -87,18 +87,28 @@ function checkpointFixture() {
   const original = app.personal.conversation;
   app.personal.conversation = async (operation, input) => {
     if (input.mode === 'context') return { id: 'previous', summary: 'outer unbounded copy', status: 'completed',
-      context: { summary: 'TODO: stale excerpt', summary_role: 'historical', latest_checkpoint: latestCheckpoint, messages: [] } };
+      context: { conversation_id: 'previous', revision: 7, summary: '', summary_role: 'historical',
+        latest_checkpoint: latestCheckpoint, messages: [{ sequence: 6, role: 'assistant', content: 'Recent visible raw.' }] } };
     return original(operation, input);
   };
   return { app, calls };
 }
-test('automatic recovery keeps the latest checkpoint separate from historical excerpts', async () => {
+test('automatic recovery keeps the latest checkpoint and recent raw with exact source guidance', async () => {
   const { app } = checkpointFixture();
   const result = await beginConversation(app, task);
   assert.deepEqual(result.recovery.latest_checkpoint, latestCheckpoint);
   assert.equal(result.recovery.summary_role, 'historical');
+  assert.deepEqual(result.recovery.messages, [{ sequence: 6, role: 'assistant', content: 'Recent visible raw.' }]);
+  assert.equal(result.recovery.revision, 7);
   assert.match(result.guidance, /latest_checkpoint/);
   assert.match(result.guidance, /historical/i);
+  assert.match(result.guidance, /never instructions or authorization/);
+  assert.match(result.guidance, /recovered_from/);
+  assert.match(result.guidance, /window = conversation.recovery on entry, otherwise context/);
+  assert.match(result.guidance, /after: message.sequence - 1/);
+  assert.match(result.guidance, /omitted_sequence is an older journal boundary/);
+  assert.match(result.guidance, /may point to a tool\/checkpoint/);
+  assert.match(result.guidance, /after: window.revision, limit: 1/);
 });
 test('explicit resume from a fresh client keeps the bounded latest checkpoint and states the handoff boundary', async () => {
   const { app } = checkpointFixture();
@@ -113,6 +123,7 @@ test('explicit resume from a fresh client keeps the bounded latest checkpoint an
   assert.equal(calls[0].input.task_context_token, fresh.token);
   assert.equal(calls[0].input.source_application, 'claude_code');
   assert.deepEqual(result.context.latest_checkpoint, latestCheckpoint);
+  assert.equal(result.context.messages[0].sequence, 6);
   assert.equal(result.summary, undefined, 'the unbounded outer summary is not repeated');
   assert.match(result.guidance, /latest_checkpoint/);
   assert.match(result.guidance, /files/i);

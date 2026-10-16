@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { claudeLifecycleOutput, runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
 import { claudeLifecycleCommand } from '../src/agents/claude-code/lifecycle-hooks.js';
@@ -42,6 +45,95 @@ test('Claude adapter rejects missing session and malformed entry before invoking
   await assert.rejects(claudeLifecycleOutput('UserPromptSubmit', {}, invoke), /session identifier/);
   await assert.rejects(claudeLifecycleOutput('UserPromptSubmit', { session_id: 'session' }, invoke), /cwd and prompt/);
   assert.equal(calls, 0);
+});
+
+test('Claude pending main-session background notifications preserve the original task before runtime work', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-claude-notification-'));
+  assert.equal(dirname(resolve(directory)), resolve(tmpdir()));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const prompt = '<task-notification>\n<task-id>synthetic-background</task-id>\n<status>completed</status>\n</task-notification>';
+  const transcript = join(directory, 'session.jsonl');
+  const native = { ...input, prompt, transcript_path: transcript };
+  const queue = (operation, extra = {}) => ({ type: 'queue-operation', operation, sessionId: input.session_id, content: prompt, ...extra });
+  const attachment = (commandMode, extra = {}) => ({ type: 'attachment', sessionId: input.session_id,
+    attachment: { type: 'queued_command', prompt, commandMode }, ...extra });
+  const write = records => writeFileSync(transcript, records.map(record => typeof record === 'string' ? record : JSON.stringify(record)).join('\n'));
+  const invocations = [];
+  const invoke = async name => { invocations.push(name); return { taskContextToken: 'fuli-task-synthetic' }; };
+  for (const records of [[queue('enqueue')], [queue('enqueue'), attachment('task-notification')],
+    [queue('enqueue'), attachment('prompt'), queue('remove'), queue('enqueue')],
+    [queue('enqueue'), queue('remove', { isSidechain: true })]]) {
+    write(records);
+    const output = await claudeLifecycleOutput('UserPromptSubmit', native, invoke);
+    assert.match(output.hookSpecificOutput.additionalContext, /Keep the current task context/);
+    assert.doesNotMatch(JSON.stringify(output), /fuli-task-synthetic|effective_preferences|begin_task_context/);
+  }
+  assert.deepEqual(invocations, []);
+  const calls = [];
+  const never = name => () => { calls.push(name); throw new Error('Unexpected notification runtime work: ' + name); };
+  const output = await runClaudeLifecycleHook(['--event', 'UserPromptSubmit'], {
+    readInput: async () => native,
+    invoke: never('invoke'), resolveRuntimeOptions: never('resolve'), openApplication: never('Provider'),
+    createLeases: never('lease'), onTranscriptGuard: never('transcript'), callTool: never('tool')
+  });
+  assert.match(output.hookSpecificOutput.additionalContext, /not a new user task/);
+  // The installed hook path must bypass runtime setup as well as its injectable invoke path.
+  const direct = await runClaudeLifecycleHook(['--event', 'UserPromptSubmit'], {
+    readInput: async () => native, resolveRuntimeOptions: never('resolve'), openApplication: never('Provider'),
+    createLeases: never('lease'), onTranscriptGuard: never('transcript'), callTool: never('tool')
+  });
+  assert.match(direct.hookSpecificOutput.additionalContext, /not a new user task/);
+  assert.deepEqual(calls, []);
+  const command = spawnSync(process.execPath, ['src/agents/claude-code/lifecycle-hook.js',
+    '--event', 'UserPromptSubmit', '--runtime-config', join(directory, 'must-not-open.json')], {
+    input: JSON.stringify(native), encoding: 'utf8', timeout: 5000
+  });
+  assert.equal(command.status, 0);
+  assert.equal(command.stderr, '');
+  assert.deepEqual(JSON.parse(command.stdout), direct);
+  await claudeLifecycleOutput('Stop', native, async name => {
+    assert.equal(name, 'verify_task_checkpoint'); return { decision: 'block', reason: 'FULI_CHECKPOINT_REQUIRED: original task' };
+  }).then(stop => assert.equal(stop.systemMessage, 'FULI_CHECKPOINT_REQUIRED: original task'));
+
+  const negatives = [
+    ['no queue source', [{ type: 'user', sessionId: input.session_id, message: { content: prompt } }]],
+    ['removed queue', [queue('enqueue'), attachment('task-notification'), queue('remove')]],
+    ['removal without payload', [queue('enqueue'), queue('remove', { content: undefined })]],
+    ['different session', [queue('enqueue', { sessionId: 'another-session' })]],
+    ['different prompt', [queue('enqueue', { content: prompt + '\nUser followup' })]],
+    ['sidechain source', [queue('enqueue', { isSidechain: true })]],
+    ['explicit user', [queue('enqueue'), attachment('prompt')]],
+    ['user takes precedence', [queue('enqueue'), attachment('prompt'), attachment('task-notification')]],
+    ['duplicate enqueue cannot erase user evidence', [queue('enqueue'), attachment('prompt'), queue('enqueue')]],
+    ['invalid JSON', ['{invalid', queue('enqueue')]],
+    ['partial trailing record', [queue('enqueue'), '{"type":"queue-operation","operation":"remove"']],
+    ['forged prefix only', [queue('enqueue', { content: '<task-notification><task-id>' })], '<task-notification><task-id>'],
+    ['empty task identifier', [queue('enqueue', { content: '<task-notification><task-id> </task-id></task-notification>' })],
+      '<task-notification><task-id> </task-id></task-notification>'],
+    ['multiple envelopes', [queue('enqueue', { content: prompt + prompt })], prompt + prompt],
+    ['pasted surrounding text', [queue('enqueue', { content: 'Please inspect ' + prompt })], 'Please inspect ' + prompt],
+    ['user continuation', [queue('enqueue', { content: prompt + '\nNow do another task' })], prompt + '\nNow do another task']
+  ];
+  for (const [label, records, submitted = prompt] of negatives) {
+    write(records); invocations.length = 0;
+    await claudeLifecycleOutput('UserPromptSubmit', { ...native, prompt: submitted }, invoke);
+    assert.deepEqual(invocations, ['begin_task_context'], label);
+  }
+  invocations.length = 0;
+  await claudeLifecycleOutput('UserPromptSubmit', { ...native, transcript_path: join(directory, 'missing.jsonl') }, invoke);
+  assert.deepEqual(invocations, ['begin_task_context'], 'unreadable transcript must preserve normal entry');
+
+  const encoded = JSON.stringify(queue('enqueue'));
+  // The bounded tail can begin at valid-looking JSON inside a cut, invalid line.
+  writeFileSync(transcript, 'cut-prefix' + encoded + ' '.repeat(512 * 1024 - Buffer.byteLength(encoded) - 1) + '\n');
+  invocations.length = 0;
+  await claudeLifecycleOutput('UserPromptSubmit', native, invoke);
+  assert.deepEqual(invocations, ['begin_task_context'], 'a truncated first line is not host evidence');
+  // Cutting inside UTF-8 must not hide a complete enqueue on the next line.
+  writeFileSync(transcript, '记'.repeat(200_000) + '\n' + encoded + '\n');
+  invocations.length = 0;
+  await claudeLifecycleOutput('UserPromptSubmit', native, invoke);
+  assert.deepEqual(invocations, [], 'complete records after a discarded partial line remain usable');
 });
 
 test('Claude adapter releases runtime resources after failure and preserves request cancellation', async () => {

@@ -165,6 +165,44 @@ async def list_preference_conflicts(
     return [_record(record['conflict']) for record in records]
 
 
+async def read_active_preference_conflicts(store, personal_space_id, conflicts, items, *, limit=100):
+    # Each active group means every pair of its typed members conflicts. Keep
+    # linear-size group parameters instead of materializing every possible pair.
+    active_groups = []
+    for conflict in conflicts:
+        ids = set(conflict.item_ids)
+        members = [{'id': item.id, 'kind': item.item_kind} for item in items
+                   if item.id in ids and item.preference_key == conflict.preference_key
+                   and item.preference_scope == conflict.preference_scope]
+        if len(members) >= 2:
+            active_groups.append(members)
+    if not active_groups:
+        return [], False
+    cap = min(max(limit, 1), 1000)
+    records, _, _ = await store.runtime.driver.execute_query(
+        '''
+        MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
+              [:HAS_PREFERENCE_CONFLICT]->(conflict:FuliPreferenceConflict)
+        WHERE conflict.personal_space_id = $space_id
+          AND conflict.status = 'ai_pending'
+          AND (conflict.left_item_id <> conflict.right_item_id
+               OR conflict.left_item_kind <> conflict.right_item_kind)
+          AND any(members IN $active_groups WHERE
+            any(item IN members WHERE conflict.left_item_id = item.id
+                AND conflict.left_item_kind = item.kind)
+            AND any(item IN members WHERE conflict.right_item_id = item.id
+                AND conflict.right_item_kind = item.kind)
+          )
+        RETURN conflict
+        ORDER BY conflict.updated_at DESC, conflict.id ASC
+        LIMIT $limit
+        ''',
+        space_id=personal_space_id, active_groups=active_groups,
+        limit=cap + 1, routing_='r',
+    )
+    return [_record(record['conflict']) for record in records[:cap]], len(records) > cap
+
+
 async def resolve_preference_conflict(
     store,
     actor: dict,

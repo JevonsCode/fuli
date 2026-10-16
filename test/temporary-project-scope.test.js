@@ -73,7 +73,8 @@ test('temporary projects never participate in directory matching', () => {
 test('a bound context keeps task identity and provenance stable across MCP process sessions', async () => {
   const { application, calls } = fixture();
   let task = { personalProjectId: null, projectAgentId: null, sessionId: 'stable-host-session' };
-  application.taskContextRegistry = { context: async () => task };
+  application.taskContextRegistry = { context: async () => task,
+    bindCoordinationTask: async (_token, input) => ({ ...task, coordinationTaskIds: [input.taskId] }) };
   const ensure = application.personal.ensureTemporaryProject;
   application.personal.ensureTemporaryProject = async input => {
     const project = await ensure(input);
@@ -111,6 +112,7 @@ test('explicit lead selection keeps legal staffing intent for existing assignmen
 test('task entry recovers temporary scope only for the same turn or checkpoint continuation', async () => {
   const scopedTask = { token: 'fuli-task-12345678', sessionId: 'host-session', turnId: 'turn-one',
     personalProjectId: 'temporary-synthetic', projectAgentId: 'temporary-agent',
+    preferenceScope: { version: 1, work_kind: null, workflow: null },
     projectScope: { type: 'temporary', lifetime: 'task', persisted: true }, checkpoint: null };
   const calls = [];
   const application = {

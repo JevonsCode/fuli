@@ -23,7 +23,7 @@ ProjectAgentWorkStatus = Literal[
 ]
 ProjectAgentAssignmentStatus = Literal['active', 'ended']
 ProjectAgentModelMode = Literal['adaptive', 'fast', 'balanced', 'deep']
-ProjectAgentReasoningEffort = Literal['default', 'low', 'medium', 'high']
+ProjectAgentReasoningEffort = Literal['default', 'low', 'medium', 'high', 'max']
 ProjectAgentExecutorPolicyMode = Literal['flexible', 'locked']
 PROJECT_AGENT_CLIENTS: tuple[SourceApplication, ...] = (
     'codex',

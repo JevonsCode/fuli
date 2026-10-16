@@ -8,6 +8,24 @@ from fuli_graph.collaboration_context import read_collaboration_context
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('cap,extra', [(2, 0), (2, 1), (64, 0), (64, 1)])
+async def test_ancestor_window_marks_overflow_without_consuming_the_sentinel(cap, extra):
+    ancestors = [{'project_id': f'parent-{i:03}', 'scope_distance': 1,
+                  'scope_path': ['project-a', f'parent-{i:03}']} for i in range(cap + extra)]
+    driver = SequentialDriver([[{'project': {'project_id': 'project-a'}}], ancestors, [], []])
+    store = StoreStub(driver)
+    store.settings.graph_limit = cap if cap < 64 else 500
+    result = await read_collaboration_context(store, {'id': 'principal-1'}, 'personal-space', 'project-a')
+    assert driver.calls[1][1]['inheritance_limit'] == cap + 1
+    assert len(driver.calls[2][1]['inherited_project_ids']) == cap
+    assert result.source_windows.project_ancestors_truncated is bool(extra)
+    assert result.source_windows.candidates_truncated is False
+    assert result.source_windows.queued_conflicts_truncated is False
+    assert result.truncated is bool(extra)
+    assert len(driver.calls) == 4, 'No active conflicts means no queue query.'
+
+
+@pytest.mark.asyncio
 async def test_collaboration_context_layers_exact_project_and_suppresses_conflicts():
     driver = SequentialDriver([
         [{'project': {'project_id': 'project-a'}}],
@@ -250,6 +268,8 @@ class SequentialDriver:
 
     async def execute_query(self, query, **parameters):
         self.calls.append((query, parameters))
+        if 'active_groups' in parameters:
+            return [], None, None
         return self.responses.pop(0), None, None
 
 

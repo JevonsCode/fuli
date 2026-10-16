@@ -148,19 +148,24 @@ test('candidate Hook subprocesses persist visible history and recover only the s
   const next = context(await hook('codex', 'UserPromptSubmit', { session_id: codexSession,
     turn_id: 'turn-two', cwd: projectPath, transcript_path: codexPath, prompt: nextPrompt }));
   assert.equal(next.context.project_agent_id, 'engineer');
-  assert.equal(next.conversation.recovery.messages, undefined);
-  assert.equal(next.conversation.recovery.messagesOmitted, true);
+  assert.deepEqual(next.conversation.recovery.messages.map(message => message.content), [prompt, marker]);
+  assert.equal(next.conversation.recovery.messagesOmitted, undefined);
+  assert.equal(next.conversation.recovery.truncated, false);
+  assert.equal(next.conversation.recovery.conversation_id, next.conversation.recovered_from);
+  assert.notEqual(next.conversation.recovered_from, next.conversation.conversation_id);
+  assert.ok(Buffer.byteLength(JSON.stringify(next.conversation.recovery)) <= 4000);
+  assert.doesNotMatch(JSON.stringify(next.conversation.recovery), /PRIVATE_THINKING_NOT_CAPTURED|OLD_SCOPE_DO_NOT_IMPORT/);
   assert.equal(next.conversation.recovery.latest_checkpoint.summary, 'Synthetic Hook flow verified.');
-  // Hot-path history is deferred, not lost: the authorized original-name read
-  // retrieves the prior conversation, which differs from the new conversation.
+  // Each raw message can be reread exactly from the recovered source, which
+  // differs from the new conversation. No external model/host is involved.
   const historyApplication = openFederatedGraphApplication({ runtimeConfigPath });
   try {
     const history = await callAgentTool(historyApplication, 'read_agent_conversation', {
       personalSpaceId: space.id, personalProjectId: projectId, agentId: 'engineer',
       conversationId: next.conversation.recovered_from, sourceApplication: 'codex',
-      sourceSessionId: codexSession, limit: 20
+      sourceSessionId: codexSession, after: next.conversation.recovery.messages.at(-1).sequence - 1, limit: 1
     });
-    assert.ok(history.events.some(message => message.content === marker));
+    assert.deepEqual(history.events.map(message => message.content), [marker]);
   } finally { await historyApplication.close(); }
   assert.equal(next.project_agent_context.memory.current.memory.summary, 'SYNTHETIC_DURABLE_MEMORY_MARKER');
   await writeFile(codexPath, JSON.stringify({ type: 'session_meta', payload: { id: codexSession } }) + '\n' +

@@ -45,35 +45,78 @@ def test_context_budget_counts_multibyte_and_never_returns_tool_payloads():
 
 @pytest.mark.parametrize('summary', ['\\' * 2000, '"引号"\n' * 800, '任务' * 3000],
                          ids=['backslashes', 'quoted-multibyte', 'multibyte'])
-def test_context_json_stays_within_budget_for_escaped_and_unicode_summaries(summary):
+def test_default_context_omits_legacy_digest_and_keeps_recent_raw(summary):
     import json
     for budget in (512, 4000):
-        result = pack_context(summary, [{'role': 'user', 'content': 'recent "quoted" \\ message'}], budget)
+        event = {'sequence': 4, 'role': 'user', 'content': 'recent "quoted" \\ message'}
+        result = pack_context(summary, [event], budget)
         assert len(json.dumps(result, ensure_ascii=False, separators=(',', ':')).encode()) <= budget
-        assert result['truncated'] is True
-        # The newest end of the legacy summary is kept verbatim.
-        assert result['summary'] and summary.endswith(result['summary'])
+        assert result['summary'] == ''
+        assert result['messages'] == [event]
+        assert result['truncated'] is False
 
 
-@pytest.mark.parametrize('checkpoint', ['\\' * 3000, '"完成"\n' * 600, 'done ' * 500],
+@pytest.mark.parametrize('checkpoint', ['\\' * 3000, '"完成"\n' * 600, 'done ' * 1000],
                          ids=['backslashes', 'quoted-multibyte', 'ascii'])
 def test_latest_checkpoint_is_bounded_with_escapes_and_reports_truncation(checkpoint):
     import json
     for budget in (512, 4000):
-        result = pack_context('TODO: stale excerpt\n' * 300, [{'role': 'user', 'content': 'recent'}], budget,
-                              {'status': 'completed', 'summary': checkpoint})
+        result = pack_context('TODO: stale excerpt\n' * 300,
+                              [{'sequence': 6, 'role': 'user', 'content': 'recent'}], budget,
+                              {'status': 'completed', 'summary': checkpoint},
+                              conversation_id='synthetic-source', revision=7)
         assert len(json.dumps(result, ensure_ascii=False, separators=(',', ':')).encode()) <= budget
         latest = result['latest_checkpoint']
         assert latest['status'] == 'completed' and latest['truncated'] is True
         # The checkpoint keeps its beginning, so completed work is never cut first.
         assert latest['summary'] and checkpoint.startswith(latest['summary'].removesuffix('…'))
         assert result['summary_role'] == 'historical'
+        assert result['conversation_id'] == 'synthetic-source'
+        assert result['revision'] == 7
+
+
+def test_checkpoint_uses_available_budget_before_raw_and_never_skips_a_newer_message():
+    checkpoint = {'status': 'completed', 'summary': 'Checkpoint ' * 90}
+    result = pack_context('Old digest', [
+        {'sequence': 1, 'role': 'user', 'content': 'old small message'},
+        {'sequence': 2, 'role': 'assistant', 'content': 'newest ' * 1000},
+    ], 1600, checkpoint, conversation_id='source', revision=2)
+    assert result['latest_checkpoint'] == {**checkpoint, 'truncated': False}
+    assert all(message['sequence'] == 2 for message in result['messages'])
+    assert result['truncated'] is True
+    assert result['omitted_sequence'] == 2
+    assert not any(message['content'] == 'old small message' for message in result['messages'])
+
+
+@pytest.mark.parametrize('content', ['中文😀"\\\n' * 1000, 'latest ' * 1000])
+def test_truncated_newest_message_keeps_sequence_and_exact_prefix_under_whole_json_budget(content):
+    import json
+    result = pack_context('', [{'sequence': 9, 'role': 'assistant', 'content': content}], 512,
+                          conversation_id='source', revision=10)
+    assert len(json.dumps(result, ensure_ascii=False, separators=(',', ':')).encode()) <= 512
+    assert result['truncated'] is True and result['omitted_sequence'] == 9
+    assert result['messages'][0]['sequence'] == 9
+    assert result['messages'][0]['truncated'] is True
+    assert content.startswith(result['messages'][0]['content'].removesuffix('…'))
 
 
 def test_short_checkpoint_is_kept_verbatim_and_context_without_one_is_null():
     result = pack_context('', [], 512, {'status': 'incomplete', 'summary': 'Step 3 remains.'})
     assert result['latest_checkpoint'] == {'status': 'incomplete', 'summary': 'Step 3 remains.', 'truncated': False}
     assert pack_context('x', [], 512)['latest_checkpoint'] is None
+
+
+def test_minimum_budget_includes_long_source_anchor_flags_and_escaped_checkpoint():
+    import json
+    sequence = 2 ** 53 - 1
+    checkpoint = {'status': 'incomplete', 'summary': '😀"\\\n' * 500}
+    result = pack_context('', [{'sequence': sequence, 'role': 'user', 'content': 'recent'}], 512,
+                          checkpoint, conversation_id='s' * 128, revision=sequence,
+                          omitted_sequence=sequence - 1, scan_truncated=True)
+    assert len(json.dumps(result, ensure_ascii=False, separators=(',', ':')).encode()) <= 512
+    assert result['latest_checkpoint']['truncated'] and result['truncated'] and result['scan_truncated']
+    assert result['conversation_id'] == 's' * 128 and result['revision'] == sequence
+    assert result['omitted_sequence'] == sequence
 
 
 def test_rejects_private_reasoning_and_unbounded_policy():

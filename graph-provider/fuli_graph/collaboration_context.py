@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 from .models import (
     CollaborationContextResult,
+    CollaborationSourceWindows,
     CollaborationPreferenceConflict,
     CollaborationPreferenceItem,
     ConfirmationBasis,
@@ -13,6 +14,7 @@ from .models import (
 )
 from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
+from .preference_conflicts import read_active_preference_conflicts
 from .provider_values import json_object, native_datetime as _native_datetime, preference_qualifiers
 
 
@@ -50,7 +52,7 @@ async def read_collaboration_context(
             require_memory=True, allow_global=True,
         )
         project_agent_id = agent['agent_id']
-    project_scopes = await _project_scopes(
+    project_scopes, ancestors_truncated = await _project_scopes(
         store,
         space,
         personal_project_id,
@@ -171,6 +173,10 @@ async def read_collaboration_context(
         *project_effective,
         *agent_effective,
     ]
+    conflicts = [*global_conflicts, *project_conflicts, *agent_conflicts]
+    queued_conflicts, queue_truncated = await read_active_preference_conflicts(
+        store, space_id, conflicts, items, limit=limit,
+    )
 
     return CollaborationContextResult(
         personal_space_id=space_id,
@@ -182,12 +188,18 @@ async def read_collaboration_context(
         effective_preferences=effective_preferences,
         task_scope_excluded_count=task_scope_excluded_count,
         task_scope_filtered=True,
-        conflicts=[*global_conflicts, *project_conflicts, *agent_conflicts],
+        conflicts=conflicts,
+        queued_conflicts=queued_conflicts,
+        source_windows=CollaborationSourceWindows(
+            candidates_truncated=truncated,
+            project_ancestors_truncated=ancestors_truncated,
+            queued_conflicts_truncated=queue_truncated,
+        ),
         overridden_global_ids=overridden_global_ids,
         overridden_inherited_ids=overridden_inherited_ids,
         overridden_project_ids=overridden_project_ids,
         overridden_lower_authority_ids=overridden_lower_authority_ids,
-        truncated=truncated,
+        truncated=truncated or ancestors_truncated or queue_truncated,
     )
 
 
@@ -219,13 +231,14 @@ def _legacy_session(instruction):
 
 async def _project_scopes(store, space, personal_project_id):
     if not personal_project_id:
-        return {}
+        return {}, False
     scopes = {
         personal_project_id: {
             'scope_distance': 0,
             'scope_path': [personal_project_id],
         },
     }
+    cap = min(int(getattr(getattr(store, 'settings', None), 'graph_limit', 500)), 64)
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})-
@@ -250,13 +263,10 @@ async def _project_scopes(store, space, personal_project_id):
         ''',
         space_id=space['id'],
         active_project_id=personal_project_id,
-        inheritance_limit=min(
-            int(getattr(getattr(store, 'settings', None), 'graph_limit', 500)),
-            64,
-        ),
+        inheritance_limit=cap + 1,
         routing_='r',
     )
-    for record in records:
+    for record in records[:cap]:
         project_id = record['project_id']
         distance = int(record['scope_distance'])
         path = list(record.get('scope_path') or [])
@@ -269,7 +279,7 @@ async def _project_scopes(store, space, personal_project_id):
             'scope_distance': distance,
             'scope_path': path,
         }
-    return scopes
+    return scopes, len(records) > cap
 
 
 def _node_query() -> str:

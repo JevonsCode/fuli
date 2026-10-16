@@ -16,9 +16,9 @@ class JournalDriver:
                              'summary': '', 'status': 'reported', 'last_activity': '2026-10-12T00:00:00+00:00'}
         self.events = []
 
-    def append(self, role, content):
+    def append(self, role, content, kind='message'):
         self.conversation['revision'] += 1
-        _, payload = encode_event(ConversationEvent(event_id=f'e{self.conversation["revision"]}', role=role, content=content))
+        _, payload = encode_event(ConversationEvent(event_id=f'e{self.conversation["revision"]}', role=role, content=content, kind=kind))
         self.events.append({'payload': payload, 'sequence': self.conversation['revision']})
         self.conversation['unfolded_bytes'] = self.conversation.get('unfolded_bytes', 0) + len(content.encode())
 
@@ -26,7 +26,9 @@ class JournalDriver:
         if query.endswith('RETURN c'):
             return [{'c': dict(self.conversation)}], None, None
         if 'HAS_EVENT' in query:
-            rows = [event for event in self.events if event['sequence'] > params['after']]
+            rows = [event for event in self.events if params['after'] < event['sequence']
+                    <= params.get('revision', self.conversation['revision'])
+                    and event['sequence'] < params.get('before', self.conversation['revision'] + 1)]
             if 'DESC' in query:
                 rows = list(reversed(rows))
             return rows[:params.get('limit', len(rows))], None, None
@@ -70,16 +72,15 @@ async def test_repeated_compaction_recovers_decisions_methods_and_corrections_wi
     assert driver.conversation['compacted_through'] > 15
 
     context = (await store.query_conversations(None, query('context')))['context']
-    summary = context['summary']
-    assert 'Decision: export CSV with UTF-8 BOM. [decision, user #1]' in summary
-    assert 'Method: stream rows in 500-row pages. [method, assistant #2]' in summary
-    assert 'Correction: use semicolons instead of commas. [correction, user #15]' in summary
-    assert 'TODO: confirm the Excel import. [open, user #15]' in summary
-    assert 'not verified working memory' in summary
+    assert context['summary'] == ''
+    assert context['messages'][-1]['content'].startswith('more 5')
+    assert context['messages'][-1]['sequence'] == driver.conversation['revision']
+    assert context['truncated'] is True
     assert len(json.dumps(context, ensure_ascii=False, separators=(',', ':')).encode()) <= 2000
 
     page = await store.query_conversations(None, query('events', limit=50))
     digest = page['digest']
+    assert 'Correction: use semicolons instead of commas.' in {entry['text'] for entry in digest['entries']}
     assert digest['omitted'] > 0
     by_text = {entry['text']: entry for entry in digest['entries']}
     source = by_text['Decision: export CSV with UTF-8 BOM.']['sources'][0]
@@ -108,7 +109,8 @@ async def test_latest_completed_checkpoint_survives_todo_heavy_digest_within_bud
     context = (await store.query_conversations(None, query('context')))['context']
     assert context['latest_checkpoint'] == {'status': 'completed', 'summary': latest, 'truncated': False}
     assert context['summary_role'] == 'historical'
-    assert 'TODO: synthetic stale item 39' in context['summary']
+    assert context['summary'] == ''
+    assert context['messages'][0]['content'] == 'Recent synthetic "quoted" \\ message'
     assert len(json.dumps(context, ensure_ascii=False, separators=(',', ':')).encode()) <= 2000
     # Raw history and the stored digest remain readable in full.
     page = await store.query_conversations(None, query('events'))
@@ -139,4 +141,73 @@ async def test_history_page_reports_absent_digest_and_legacy_summary_recovery():
     assert context['context']['latest_checkpoint']['summary'] == 'Legacy synthetic summary'
     store.runtime.driver.conversation['digest'] = json.dumps({'tasks': [], 'notes': ['旧请求']}, ensure_ascii=False)
     context = await store.query_conversations(None, query('context'))
-    assert context['context']['summary'] == 'Earlier requests:\n- 旧请求'
+    assert context['context']['summary'] == ''
+    assert (await store.query_conversations(None, query('events')))['digest']['notes'] == ['旧请求']
+
+
+@pytest.mark.asyncio
+async def test_context_pages_past_tool_events_and_compacted_range_to_three_user_turns():
+    store = Store()
+    driver = store.runtime.driver
+    for turn in range(4):
+        driver.append('user', f'user {turn}')
+        driver.append('assistant', f'assistant {turn}')
+        driver.append('user', 'User-shaped tool payload', kind='tool_result')
+        driver.append('assistant', 'Assistant-shaped checkpoint', kind='checkpoint')
+        for index in range(30):
+            driver.append('tool', f'tool {turn}-{index}', kind='tool_result')
+        driver.append('summary', f'checkpoint {turn}', kind='checkpoint')
+    driver.conversation['compacted_through'] = driver.conversation['revision'] - 1
+    context = (await store.query_conversations(None, query('context')))['context']
+    assert [event['content'] for event in context['messages']] == [
+        'user 1', 'assistant 1', 'user 2', 'assistant 2', 'user 3', 'assistant 3']
+    assert context['truncated'] is True and context['scan_truncated'] is False
+    assert context['revision'] == driver.conversation['revision']
+    assert context['omitted_sequence'] == context['messages'][0]['sequence'] - 1
+    for message in context['messages']:
+        page = await store.query_conversations(None, query('events', after=message['sequence'] - 1, limit=1))
+        assert page['events'][0]['content'] == message['content']
+
+
+@pytest.mark.asyncio
+async def test_context_revision_snapshot_excludes_append_between_pages():
+    store = Store()
+    driver = store.runtime.driver
+    driver.append('user', 'original user')
+    for index in range(65):
+        driver.append('tool', str(index), kind='tool_result')
+    snapshot = driver.conversation['revision']
+    execute = driver.execute_query
+    mutated = False
+    async def append_during_read(statement, **params):
+        nonlocal mutated
+        if 'HAS_EVENT' in statement and not mutated:
+            mutated = True
+            driver.append('user', 'concurrent later user')
+            driver.conversation.update(summary='Concurrent checkpoint', status='completed')
+        return await execute(statement, **params)
+    driver.execute_query = append_during_read
+    context = (await store.query_conversations(None, query('context')))['context']
+    assert context['revision'] == snapshot
+    assert [message['content'] for message in context['messages']] == ['original user']
+    assert context['truncated'] is False
+    assert context['latest_checkpoint'] is None
+    full = await store.query_conversations(None, query('events', after=context['revision'], limit=1))
+    assert full['summary'] == 'Concurrent checkpoint' and full['revision'] > context['revision']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('limit_name, limit', [('CONTEXT_SCAN_EVENTS', 55), ('CONTEXT_DECODE_BYTES', 1600)])
+async def test_context_safety_caps_report_real_omission(monkeypatch, limit_name, limit):
+    import fuli_graph.store_agent_conversations as module
+    monkeypatch.setattr(module, limit_name, limit)
+    store = Store()
+    driver = store.runtime.driver
+    driver.append('user', 'older user')
+    for index in range(70):
+        driver.append('tool', f'tool {index}', kind='tool_result')
+    driver.append('assistant', 'newest visible')
+    context = (await store.query_conversations(None, query('context')))['context']
+    assert context['scan_truncated'] is True and context['truncated'] is True
+    assert [message['content'] for message in context['messages']] == ['newest visible']
+    assert 1 <= context['omitted_sequence'] < driver.conversation['revision']

@@ -13,8 +13,20 @@ import { runStdio } from '../mcp/runtime.js';
 import { prepareDirectAgentToolCall } from '../mcp/direct-call.js';
 import { normalizeMcpSourceApplication } from '../mcp/session-id.js';
 import { applicationErrorMessage } from '../mcp/tool-result.js';
+import { decodeWorkerDescriptor, WORKER_DESCRIPTOR_ENV } from '../graphiti/worker-descriptor.js';
 
 export async function runMcpCommand(args, { env = process.env } = {}) {
+  if (args.includes('--worker') || args.some(arg => arg.startsWith('--worker='))) {
+    if (args.includes('--help') || args.includes('-h')) {
+      process.stdout.write(helpText());
+      return;
+    }
+    const runtimeArgs = workerRuntimeArguments(args);
+    const worker = decodeWorkerDescriptor(env[WORKER_DESCRIPTOR_ENV]);
+    const { runtimeConfigPath } = resolveGraphRuntimeOptions(runtimeArgs, env);
+    await runStdio({ runtimeConfigPath, worker });
+    return;
+  }
   if (args.includes('--tools')) {
     process.stdout.write(`${JSON.stringify(listAgentTools(), null, 2)}\n`);
     return;
@@ -45,6 +57,23 @@ export async function runMcpCommand(args, { env = process.env } = {}) {
       : undefined,
     toolProfile: args.includes('--tool-profile') ? requiredOption(args, '--tool-profile') : 'full'
   });
+}
+
+function workerRuntimeArguments(args) {
+  const seen = new Set(), runtimeArgs = [];
+  for (let index = 0; index < args.length; index++) {
+    const flag = args[index];
+    if (!['--worker', '--runtime-config'].includes(flag) || seen.has(flag)) {
+      throw new TypeError('Invalid worker MCP options');
+    }
+    seen.add(flag);
+    if (flag === '--runtime-config') {
+      const value = args[++index];
+      if (!value?.trim() || value.startsWith('-')) throw new TypeError('Invalid worker MCP runtime option');
+      runtimeArgs.push(flag, value);
+    }
+  }
+  return runtimeArgs;
 }
 
 async function runCall({ args, runtimeConfigPath, sourceApplication }) {
@@ -95,6 +124,8 @@ function helpText() {
   return 'Usage: fuli mcp [--runtime-config <graph-runtime.json>] ' +
     '[--source-application <codex|claude|claude_code|cursor|kiro|other>] [--tool-profile <full|chat>]\n' +
     '       fuli mcp --tools\n' +
+    '       fuli mcp --worker [--runtime-config <graph-runtime.json>]\n' +
+    '       Worker mode requires host-only FULI_WORKER_DESCRIPTOR; never pass capabilities in arguments.\n' +
     '       fuli mcp --runtime-config <graph-runtime.json> ' +
     '--call <tool> [--input <json>]\n';
 }

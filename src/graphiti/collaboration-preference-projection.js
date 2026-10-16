@@ -58,6 +58,7 @@ export function deferredPreferenceConflicts(result, queuedConflicts) {
     ...(result.agent_preferences ?? [])
   ];
   const itemById = new Map(items.map((item) => [item.id, item]));
+  const itemByIdentity = new Map(items.map((item) => [`${item.item_kind}:${item.id}`, item]));
   const activeConflictPairs = new Set(
     (result.conflicts ?? []).flatMap((conflict) => {
       const ids = conflict.item_ids ?? [];
@@ -77,13 +78,13 @@ export function deferredPreferenceConflicts(result, queuedConflicts) {
         conflict.left_item_id,
         conflict.right_item_id
       )) &&
-      itemById.has(conflict.left_item_id) &&
-      itemById.has(conflict.right_item_id)
+      itemByIdentity.has(`${conflict.left_item_kind}:${conflict.left_item_id}`) &&
+      itemByIdentity.has(`${conflict.right_item_kind}:${conflict.right_item_id}`)
     )
     .map((conflict) => ({
       ...conflict,
-      left: itemById.get(conflict.left_item_id),
-      right: itemById.get(conflict.right_item_id)
+      left: itemByIdentity.get(`${conflict.left_item_kind}:${conflict.left_item_id}`),
+      right: itemByIdentity.get(`${conflict.right_item_kind}:${conflict.right_item_id}`)
     }));
   const queuedPairs = new Set(queued.map((conflict) => preferenceConflictPairKey(
     conflict.left_item_id,

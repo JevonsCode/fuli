@@ -12,7 +12,7 @@ from neo4j import AsyncGraphDatabase
 from test_project_agent_memory_neo4j import fixture_settings, provider_client, seed_agent
 
 
-async def context_fixture(client):
+async def context_fixture(client, **changes):
     space = await client.post('/v1/spaces', json={
         'name': 'Synthetic checkpoint replay', 'kind': 'personal',
     })
@@ -24,6 +24,7 @@ async def context_fixture(client):
         'project_agent_id': 'engineer', 'session_id': f'synthetic-{uuid4()}',
         'source_application': 'codex', 'token': f'fuli-task-{uuid4()}',
         'turn_id': 'first-turn',
+        **changes,
     }
     response = await client.put('/v1/task-contexts', json=context)
     assert response.status_code == 200, response.text
@@ -58,6 +59,59 @@ async def record(client, context):
     })
     assert response.status_code == 200, response.text
     return response.json()
+
+
+@pytest.mark.asyncio
+async def test_fixed_preference_scope_survives_retry_checkpoint_and_provider_restart_without_guessing_legacy():
+    settings = fixture_settings()
+    fixed = {'version': 1, 'work_kind': 'implementation', 'workflow': 'release'}
+    async with provider_client(settings) as (client, access_token):
+        context = await context_fixture(client, preference_scope=fixed)
+        retry = await client.put('/v1/task-contexts', json={**context, 'token': f'fuli-task-{uuid4()}'})
+        assert retry.status_code == 200 and retry.json()['token'] == context['token'], retry.text
+        assert retry.json()['preference_scope'] == fixed
+        for change in [None, {**fixed, 'work_kind': 'review'}, {**fixed, 'workflow': None}]:
+            rejected = await client.put('/v1/task-contexts', json={**context, 'preference_scope': change})
+            assert rejected.status_code == 409, rejected.text
+            assert (await record(client, context))['preference_scope'] == fixed
+        saved = await client.put(f'/v1/task-contexts/{context["token"]}/checkpoint',
+                                 json=checkpoint(context, phase='complete'))
+        assert saved.status_code == 200 and saved.json()['preference_scope'] == fixed, saved.text
+        # Old records remain readable/checkpointable; assigning a scope later
+        # would invent the dimensions under which their original rules applied.
+        legacy = await context_fixture(client)
+        rejected = await client.put('/v1/task-contexts', json={**legacy, 'preference_scope': fixed})
+        assert rejected.status_code == 409, rejected.text
+        saved = await client.put(f'/v1/task-contexts/{legacy["token"]}/checkpoint', json=checkpoint(legacy, phase='complete'))
+        assert saved.status_code == 200 and saved.json().get('preference_scope') is None, saved.text
+    async with provider_client(settings, access_token) as (client, _):
+        assert (await record(client, context))['preference_scope'] == fixed
+        assert (await record(client, legacy)).get('preference_scope') is None
+
+
+@pytest.mark.asyncio
+async def test_scoped_capture_receipt_metadata_survives_independent_provider_recovery():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, token):
+        context = await context_fixture(client)
+        endpoint = f'/v1/task-contexts/{context["token"]}/checkpoint'
+        receipts = [{
+            'scope': 'current_project', 'personal_project_id': context['personal_project_id'],
+            'status': 'committed', 'episode_id': 'synthetic-receipt-episode',
+            'entity_ids': ['synthetic-receipt-entity'], 'relationship_ids': [],
+        }]
+        # Synthetic IDs exercise lifecycle metadata only; this test does not
+        # claim to have committed the knowledge those IDs would identify.
+        saved = checkpoint(context, phase='complete', disposition='capture_candidates', capture_results=receipts)
+        response = await client.put(endpoint, json=saved)
+        assert response.status_code == 200, response.text
+        assert response.json()['checkpoint']['capture_results'] == receipts
+    async with provider_client(settings, token) as (other, _):
+        recovered = await record(other, context)
+        assert recovered['checkpoint']['capture_results'] == receipts
+        replay = await other.put(endpoint, json=saved)
+        assert replay.status_code == 200, replay.text
+        assert replay.json() == recovered
 
 
 async def simulate_legacy_record(settings, context):

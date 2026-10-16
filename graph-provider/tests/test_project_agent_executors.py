@@ -8,6 +8,7 @@ from fuli_graph.project_agent_executor_models import (
     ProjectAgentExecutorAuthorization,
     ProjectAgentExecutorEvidenceIgnore,
     ProjectAgentExecutorHealthReport,
+    ProjectAgentExecutorModelRecord,
     ProjectAgentExecutorOutcomeAggregate,
     ProjectAgentExecutorOutcomeEvidenceCreate,
     ProjectAgentExecutorOutcomeReset,
@@ -71,6 +72,73 @@ def test_model_strategy_key_is_canonical_and_provider_neutral():
     assert project_agent_model_strategy_key(aliased) == (
         project_agent_model_strategy_key(canonical)
     )
+
+
+def test_max_strategy_round_trip_requires_explicit_model_capability():
+    strategy = ProjectAgentModelStrategy(mode='deep', reasoning_effort='max')
+    assert ProjectAgentModelStrategy.model_validate_json(strategy.model_dump_json()) == strategy
+    efforts = ['default', 'low', 'medium', 'high', 'max']
+    exact = ProjectAgentExecutorModelRecord(
+        provider='synthetic',
+        model='Synthetic.Provider/Exact-Model@2026',
+        reasoning_efforts=efforts,
+    )
+    assert ProjectAgentExecutorModelRecord.model_validate_json(exact.model_dump_json()) == exact
+    unknown = ProjectAgentExecutorModelRecord(provider='synthetic', model='unknown')
+    high = ProjectAgentExecutorModelRecord(
+        provider='synthetic', model='high-only', reasoning_efforts=['high'],
+    )
+    assert StoreStub._select_model([unknown, high, exact], strategy) is exact
+    assert StoreStub._select_model([unknown, high], strategy) is None
+    assert StoreStub._select_model([unknown], ProjectAgentModelStrategy()) is unknown
+    assert StoreStub._select_model(
+        [unknown], ProjectAgentModelStrategy(reasoning_effort='high'),
+    ) is unknown
+    assert project_agent_model_strategy_key(strategy) != project_agent_model_strategy_key(
+        ProjectAgentModelStrategy(mode='deep', reasoning_effort='high'),
+    )
+    with pytest.raises(ValueError):
+        ProjectAgentModelStrategy(reasoning_effort='unknown')
+    with pytest.raises(ValueError):
+        ProjectAgentExecutorModelRecord(
+            provider='synthetic', model='unknown-effort', reasoning_efforts=['unknown'],
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('supported', [True, False])
+async def test_max_route_uses_only_a_supporting_authorized_candidate_or_blocks(supported):
+    unknown = ProjectAgentExecutorModelRecord(provider='synthetic', model='unknown')
+    high = ProjectAgentExecutorModelRecord(
+        provider='synthetic', model='high-only', reasoning_efforts=['high'],
+    )
+    exact = ProjectAgentExecutorModelRecord(
+        provider='synthetic', model='Synthetic.Provider/Exact-Model@2026',
+        reasoning_efforts=['max'] if supported else ['high'],
+    )
+    driver = SequentialDriver([
+        [{'project': {'project_id': 'project-1'}}], [agent_raw()], [],
+        [
+            executor_raw('unknown', priority=1, models=[unknown]),
+            executor_raw('high', priority=2, models=[high]),
+            executor_raw('supporting', priority=3, models=[exact]),
+        ],
+        [{'decision': {}}],
+    ])
+    result = await StoreStub(driver).resolve_project_agent_executor(
+        actor(), personal_space_id='space-1', personal_project_id='project-1', task_id='task-max',
+        agent_id='agent-1', work_kind='review',
+        model_strategy=ProjectAgentModelStrategy(reasoning_effort='max'),
+        idempotency_key='select-max-1',
+    )
+    assert result.model_strategy.reasoning_effort == 'max'
+    if supported:
+        assert result.selected_executor_id == 'supporting'
+        assert result.selected_model == exact.model
+    else:
+        assert result.status == 'blocked'
+        assert result.selected_executor_id is None
+        assert result.selected_model is None
 
 
 def test_executor_capability_matching_normalizes_common_aliases():

@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-import { realpathSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 
 import {
   isLocalRuntimeCommand,
@@ -18,6 +16,7 @@ import { runUninstallCommand } from './cli/uninstall-command.js';
 import { runUpdateCommand } from './cli/update-command.js';
 import { runWorkspaceConnectionCommand } from './cli/workspace-connection-command.js';
 import { FULI_VERSION } from './package-metadata.js';
+import { isMainModule } from './system/main-module.js';
 import { assertSupportedNodeVersion } from './setup/node-runtime.js';
 
 export async function main(argv = process.argv.slice(2), env = process.env) {
@@ -89,11 +88,4 @@ if (isMainModule(import.meta.url, process.argv[1])) {
     });
 }
 
-export function isMainModule(metaUrl, argvPath) {
-  if (!argvPath) return false;
-  try {
-    return realpathSync(fileURLToPath(metaUrl)) === realpathSync(argvPath);
-  } catch {
-    return fileURLToPath(metaUrl) === argvPath;
-  }
-}
+export { isMainModule };

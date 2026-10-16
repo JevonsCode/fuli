@@ -213,9 +213,10 @@ function isManagedCodexHook(hook) {
 }
 
 function codexStopCommand(context, event = 'Stop') {
+  const platform = context.platform ?? process.platform;
   const script = context.codexLifecycleHookPath ??
     join(dirname(context.mcpServerPath), 'agents', 'codex', 'lifecycle-hook.js');
-  return [
+  const command = [
     context.nodePath,
     script,
     COMMAND_MARKER,
@@ -223,7 +224,15 @@ function codexStopCommand(context, event = 'Stop') {
     context.runtimeConfigPath,
     '--event',
     event
-  ].map(value => quoteShellArgument(value, context.platform)).join(' ');
+  ];
+  if (platform === 'win32') return `& ${command.map(quotePowerShellArgument).join(' ')}`;
+  return command.map(value => quoteShellArgument(value, platform)).join(' ');
+}
+
+// Codex evaluates Windows Hook commands in PowerShell. The call operator runs
+// the quoted executable; single quotes keep dollar signs and backticks literal.
+function quotePowerShellArgument(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
 }
 
 function normalizeText(value) {

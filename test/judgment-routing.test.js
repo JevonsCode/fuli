@@ -25,13 +25,13 @@ test('routing respects locked executor, available models and scoped feedback; ne
   assert.match(prompt, /Use relevant verification/);
 });
 
-function routingFixture(t, { rules = [], executors, allowedClients = ['codex'], answer } = {}) {
+function routingFixture(t, { rules = [], executors, allowedClients = ['codex'], answer, strategy } = {}) {
   let prompt;
   const app = { config: { personal: { spaceId: 's' } }, listPersonalProjects: async () => [{ project_id: 'p' }],
     listProjectAgents: async () => [{ agentId: 'employee.tonborg', profile: { status: 'active', allowedClients: ['codex'], capabilities: ['fuli.employee:tonborg'] } }],
     getCollaborationPreferences: async () => ({ effective_preferences: [] }),
     inspectProjectAgentMemory: async () => ({ revision: 0 }),
-    getProjectAgent: async () => ({ profile: { allowedClients, executorPolicy: { mode: 'flexible' } } }),
+    getProjectAgent: async () => ({ profile: { allowedClients, executorPolicy: { mode: 'flexible' }, defaultModelStrategy: strategy } }),
     listExecutors: async () => executors, listExecutorRoutingRules: async () => rules };
   const judge = async input => { prompt = input.prompt; return { client: 'codex', body: JSON.stringify(answer ?? { executorId: 'space', model: 'model', disposition: 'delegate', conversationId: null, summary: 'Follow explicit scope rule', evidence: ['Space rule'] }) }; };
   const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge }) });
@@ -42,6 +42,39 @@ const availableExecutor = (id, client = 'codex') => ({ executorId: id, displayNa
   registrationStatus: 'registered', permissionStatus: 'authorized', preflightStatus: 'passed', workspacePermission: true,
   availableModels: [{ model: 'model', available: true }] });
 const routingInput = { personalSpaceId: 's', personalProjectId: 'p', agentId: 'a', requestId: 'request', workKind: 'review', objective: 'Verify artifact' };
+
+test('explicit max routing keeps only models that advertise max and preserves their exact IDs', async t => {
+  const executor = availableExecutor('space');
+  const exact = 'Synthetic.Provider/Exact-Model@2026';
+  executor.availableModels = [
+    { model: 'unknown-effort', available: true },
+    { model: 'empty-effort', available: true, reasoningEfforts: [] },
+    { model: 'high-only', available: true, reasoningEfforts: ['high'] },
+    { model: exact, available: true, reasoningEfforts: ['default', 'low', 'medium', 'high', 'max'] }
+  ];
+  const { service, prompt } = routingFixture(t, { executors: [executor], strategy: { mode: 'deep', reasoningEffort: 'max' },
+    answer: { executorId: 'space', model: exact, disposition: 'delegate', conversationId: null,
+      summary: 'Explicit maximum effort is supported.', evidence: ['Observed max capability'] } });
+  assert.equal((await service.assess(routingInput)).selection.model, exact);
+  const eligible = JSON.parse(prompt().split('\nDATA:\n')[1]).eligible;
+  assert.deepEqual(eligible[0].models.map(model => model.model), [exact]);
+});
+
+test('max without a declared matching capability never invokes a judge or downgrades to high', async t => {
+  for (const reasoningEfforts of [undefined, [], ['high'], 'max']) {
+    const executor = availableExecutor('space');
+    executor.availableModels[0].reasoningEfforts = reasoningEfforts;
+    const { service, prompt } = routingFixture(t, { executors: [executor], strategy: { mode: 'deep', reasoningEffort: 'max' } });
+    const result = await service.assess(routingInput);
+    assert.equal(result.selection, null);
+    assert.equal(result.disposition, 'ask_user');
+    assert.equal(prompt(), undefined);
+  }
+  for (const reasoningEffort of ['default', 'high']) {
+    const { service } = routingFixture(t, { executors: [availableExecutor('space')], strategy: { mode: 'deep', reasoningEffort } });
+    assert.equal((await service.assess(routingInput)).selection.model, 'model', 'legacy effort still accepts unknown capabilities');
+  }
+});
 test('inferred executor clients obey the Agent allowedClients boundary', async t => {
   const { service, prompt } = routingFixture(t, { executors: [availableExecutor('forbidden', 'claude_code')] });
   assert.equal((await service.assess(routingInput)).selection, null);

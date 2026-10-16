@@ -3,12 +3,95 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from fastapi import HTTPException
 
 os.environ.setdefault('FULI_BOOTSTRAP_TOKEN', 'test-bootstrap-token-1234')
 os.environ.setdefault('FULI_NEO4J_PASSWORD', 'test-password')
 
 from fuli_graph.app import create_app
 from fuli_graph.config import Settings
+
+
+def pending_commit(project_id=None):
+    return {
+        'space_id': 'personal-space', 'personal_project_id': project_id,
+        'episode': {
+            'idempotency_key': 'synthetic-preflight-commit', 'session_id': 'synthetic-session',
+            'name': 'Synthetic preflight', 'source_kind': 'synthetic_fixture',
+            'source_description': 'Synthetic pending evidence.', 'reference_time': '2026-10-16T00:00:00Z',
+            'entities': [{'key': 'synthetic-preference', 'name': 'Synthetic preference',
+                          'type': 'PersonalPreference', 'profile_aspect': 'taste',
+                          'confirmation_status': 'pending'}],
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_commit_preflight_reuses_full_commit_models_and_never_writes():
+    application = scope_application(ScopeSecurityDriver(current_scope='global'))
+
+    async def forbid_commit(*_args, **_kwargs):
+        raise AssertionError('Read-only preflight must not commit or embed')
+
+    application.state.store._commit_episode = forbid_commit
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=application), base_url='http://provider.test',
+        headers={'authorization': 'Bearer ordinary-agent-token'},
+    ) as client:
+        valid = [pending_commit('project-a'), pending_commit()]
+        response = await client.post('/v1/knowledge/commits/preflight', json=valid)
+        assert response.status_code == 200, response.text
+        assert response.json() == {'status': 'validated', 'count': 2}
+        for kind in ['attributes', 'inheritance']:
+            invalid = pending_commit()
+            entity = invalid['episode']['entities'][0]
+            if kind == 'attributes':
+                entity['attributes'] = {f'fixture{i}': 'synthetic' for i in range(33)}
+            else:
+                entity.update(inheritance_mode='selected_projects', inherited_project_ids=[])
+            # Both endpoints accept the same KnowledgeCommit model, including
+            # rules the MCP schema deliberately does not duplicate.
+            for path, payload in [('/v1/knowledge/commits/preflight', [valid[0], invalid]),
+                                  ('/v1/knowledge/commits', invalid)]:
+                rejected = await client.post(path, json=payload)
+                assert rejected.status_code == 422, rejected.text
+        for invalid_size in [[], valid + [valid[0]]]:
+            rejected = await client.post('/v1/knowledge/commits/preflight', json=invalid_size)
+            assert rejected.status_code == 422, rejected.text
+
+
+@pytest.mark.asyncio
+async def test_commit_preflight_checks_the_same_personal_space_and_project_access_as_commit():
+    driver = ScopeSecurityDriver(current_scope='global')
+    execute = driver.execute_query
+
+    async def project_access(query, **parameters):
+        if parameters.get('project_id') == 'foreign-project':
+            return [], None, None
+        return await execute(query, **parameters)
+
+    driver.execute_query = project_access
+    application = scope_application(driver)
+
+    async def space_access(_actor, space_id, _role):
+        if space_id != 'personal-space':
+            raise HTTPException(status_code=403, detail='Synthetic foreign space')
+        return {'id': space_id, 'kind': 'personal', 'group_id': 'personal-group'}
+
+    application.state.store.authorize = space_access
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=application), base_url='http://provider.test',
+        headers={'authorization': 'Bearer ordinary-agent-token'},
+    ) as client:
+        for changes, status in [({'space_id': 'foreign-space'}, 403),
+                                ({'personal_project_id': 'foreign-project'}, 404)]:
+            invalid = {**pending_commit(), **changes}
+            for path, payload in [('/v1/knowledge/commits/preflight', [pending_commit(), invalid]),
+                                  ('/v1/knowledge/commits', invalid)]:
+                rejected = await client.post(path, json=payload)
+                assert rejected.status_code == status, rejected.text
+    assert driver.scope_updates == []
+    assert driver.human_audit_writes == 0
 
 
 @pytest.mark.asyncio
