@@ -1,4 +1,4 @@
-"""Fixed roles: Jefa (project manager), Bole (AR), and Tonborg (judgment).
+"""Fixed roles: Jefa, Bole, Tonborg, and the global task-only Assistant.
 
 Jefa also coordinates task routing, replacing the earlier separate coordinator
 identity. That legacy node is retired, not deleted, so old tasks keep their
@@ -15,6 +15,7 @@ SYSTEM_COORDINATOR_AGENT_ID = 'employee.jefa'
 LEGACY_COORDINATOR_AGENT_ID = 'fuli-project-coordinator'
 SYSTEM_HR_AGENT_ID = 'employee.bole'
 SYSTEM_JUDGMENT_AGENT_ID = 'employee.tonborg'
+SYSTEM_ASSISTANT_AGENT_ID = 'employee.assistant'
 # Upgrade only the former built-in copy; custom responsibilities are user data.
 LEGACY_HR_RESPONSIBILITY = 'HR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录。'
 LEGACY_JUDGMENT_RESPONSIBILITY = '判断官：依照用户偏好审核日常事项、建议客户端和模型，保留判断依据与反馈。'
@@ -69,10 +70,21 @@ def judgment_profile() -> ProjectAgentProfile:
     )
 
 
+def assistant_profile() -> ProjectAgentProfile:
+    return ProjectAgentProfile(
+        name='Assistant', occupation_emoji='💬',
+        responsibility='全局助手：接待未归属项目的对话，只用全局偏好，不自动询问项目归属。',
+        work_kinds=['conversation'],
+        capabilities=['全局对话', 'fuli.employee:assistant'],
+        initial_preferences=['项目确认前只保留任务上下文，不写入长期记忆。'],
+    )
+
+
 SYSTEM_PROFILES = {
     SYSTEM_COORDINATOR_AGENT_ID: coordinator_profile,
     SYSTEM_HR_AGENT_ID: hr_profile,
     SYSTEM_JUDGMENT_AGENT_ID: judgment_profile,
+    SYSTEM_ASSISTANT_AGENT_ID: assistant_profile,
 }
 
 
@@ -115,7 +127,7 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
                       agent.responsibility = $responsibility,
                       agent.capabilities = $capabilities,
                       agent.work_kinds = $work_kinds,
-                      agent.memory_scope = 'reviewed_agent',
+                      agent.memory_scope = $memory_scope,
                       agent.created_at = $now,
                       agent.updated_at = $now
         SET agent.profile_json = $profile_json,
@@ -123,7 +135,14 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
               THEN $responsibility ELSE agent.responsibility END,
             agent.agent_type = $agent_type,
             agent.status = 'active',
-            agent.system_managed = true
+            agent.system_managed = true,
+            agent.memory_scope = $memory_scope
+        FOREACH (_ IN CASE WHEN agent.occupation_role IS NULL THEN [1] ELSE [] END |
+          SET agent.occupation_role = $occupation_role,
+              agent.occupation_tags = coalesce(agent.occupation_tags, []),
+              agent.occupation_updated_at = $now,
+              agent.occupation_source = 'builtin-role-v1'
+        )
         MERGE (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(agent)
         ''' + ASSIGN_EMPLOYEE_NUMBERS + ' RETURN agent',
         space_id=space_id,
@@ -137,6 +156,8 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
         capabilities=profile.capabilities,
         work_kinds=profile.work_kinds,
         agent_type=profile.agent_type,
+        memory_scope='task_only' if agent_id == SYSTEM_ASSISTANT_AGENT_ID else 'reviewed_agent',
+        occupation_role='assistant' if agent_id == SYSTEM_ASSISTANT_AGENT_ID else 'management',
         now=now,
     )
     if agent_id == SYSTEM_JUDGMENT_AGENT_ID:

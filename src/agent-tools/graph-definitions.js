@@ -30,6 +30,7 @@ import {
   projectAgentTaskOutcomeInput,
   projectAgentTaskSubmitInput,
   recruitmentConfirmationMode,
+  projectAgentOccupation,
   recruitmentDecision,
   recruitmentStatus,
   routingRuleScope
@@ -673,7 +674,8 @@ export const GRAPH_TOOL_DEFINITIONS = [
       personalSpaceId: id,
       personalProjectId: nullableStringSchema(),
       agentId: boundedString(128),
-      profile: projectAgentProfile
+      profile: projectAgentProfile,
+      occupation: projectAgentOccupation
     }, ['personalSpaceId', 'agentId', 'profile'])
   },
   {
@@ -902,6 +904,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
       recruitmentId: id,
       expectedRevision: integerSchema({ minimum: 0 }),
       decision: recruitmentDecision,
+      occupation: projectAgentOccupation,
       reason: shortText
     }, ['personalSpaceId', 'personalProjectId', 'recruitmentId', 'expectedRevision', 'decision', 'reason'])
   },

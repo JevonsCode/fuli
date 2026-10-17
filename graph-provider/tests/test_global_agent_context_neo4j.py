@@ -10,6 +10,7 @@ async def test_global_context_survives_assignment_and_remains_isolated():
         space = (await client.post('/v1/spaces', json={
             'name': 'Synthetic global context', 'kind': 'personal'})).json()['id']
         response = await client.put('/v1/project-agents', json={
+            'occupation': {'role': 'engineering'},
             'personal_space_id': space, 'agent_id': 'engineer',
             'profile': {'name': 'Synthetic global engineer', 'responsibility': 'Global work.',
                 'allowed_clients': ['codex', 'claude_code']}})

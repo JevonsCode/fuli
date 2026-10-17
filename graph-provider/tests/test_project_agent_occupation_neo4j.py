@@ -20,7 +20,7 @@ async def test_occupation_is_set_explicitly_and_survives_profile_upserts():
         space_id = space.json()['id']
         await seed_agent(client, space_id)
         listed = await client.get('/v1/project-agents', params={'personal_space_id': space_id})
-        assert engineer(listed.json())['occupation'] is None
+        assert engineer(listed.json())['occupation']['role'] == 'engineering'
 
         updated = await client.put('/v1/project-agents/engineer/occupation', json={
             'personal_space_id': space_id, 'role': 'engineering', 'tags': ['testing', 'design'],
@@ -48,9 +48,7 @@ async def test_occupation_is_set_explicitly_and_survives_profile_upserts():
         cleared = await client.put('/v1/project-agents/engineer/occupation', json={
             'personal_space_id': space_id, 'role': None, 'tags': [],
         })
-        assert cleared.status_code == 200, cleared.text
-        assert cleared.json()['occupation']['role'] is None
-        assert cleared.json()['occupation']['tags'] == []
+        assert cleared.status_code == 422, cleared.text
 
         missing = await client.put('/v1/project-agents/nobody/occupation', json={
             'personal_space_id': space_id, 'role': 'design', 'tags': [],

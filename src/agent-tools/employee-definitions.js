@@ -1,3 +1,4 @@
+import { projectAgentOccupation } from './project-agent-definitions.js';
 import { booleanSchema, objectSchema, stringSchema } from './schema.js';
 
 const id = { ...stringSchema(), minLength: 1, maxLength: 256 };
@@ -15,7 +16,7 @@ export const EMPLOYEE_TOOL_DEFINITIONS = [
     name: 'recruit_employee', title: 'WRITE · Recruit an employee',
     description: 'Recruit only on explicit user request. Unscoped new recruitment uses template default (Jefa: all projects, including future); existing identities keep saved scope. management.mode=all with excludedProjectIds gives persistent all-except; mode=selected with projectIds gives fixed selection. Never combine management with projectPath/personalProjectIds. Existing management changes require replaceAssignments and catalog expectedAssignmentsVersion. Legacy projectPath/personalProjectIds still selects current projects. Apply exclusions before assignment sync; preserve data/history. Reload after conflicts/incomplete updates. Starts no models/workers. Reactivation requires explicit request.',
     inputSchema: objectSchema({
-      ...target, reactivate: booleanSchema(),
+      ...target, reactivate: booleanSchema(), occupation: projectAgentOccupation,
       personalProjectIds: { type: 'array', items: id, maxItems: 500 },
       replaceAssignments: booleanSchema(),
       expectedAssignmentsVersion: { ...stringSchema(), minLength: 1, maxLength: 128 },
