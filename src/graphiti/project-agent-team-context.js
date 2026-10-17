@@ -18,5 +18,7 @@ export async function loadProjectTeamContext(application, personalSpaceId, proje
     assigned_collaborators: team.collaborators.map(person => entry(person, 'collaborator')),
     assigned_peers: team.peers.map(person => entry(person, 'peer')),
     peer_roles: ['hr', 'project_manager'], worker_started: false,
-    guidance: 'The project lead is the sole user-facing owner. Members report results and blockers to this lead; do not skip reporting levels or replace the lead when a member is named. Assigned collaborators outside the explicit team work through the lead and are not direct reports unless the policy names them. The lead integrates and verifies member reports before reporting to the user. Split bounded work through an authorized coordination plan; report real worker evidence. AR and project managers remain peers. Team membership grants no new tool, data, executor, or publication permissions.' };
+    guidance: TEAM_GUIDANCE };
 }
+
+export const TEAM_GUIDANCE = 'The project lead is the sole user-facing owner. Members report results and blockers to this lead; do not skip reporting levels or replace the lead when a member is named. Assigned collaborators outside the explicit team work through the lead and are not direct reports unless the policy names them. The lead integrates and verifies member reports before reporting to the user. Split bounded work through an authorized coordination plan; report real worker evidence. AR and project managers remain peers. Team membership grants no new tool, data, executor, or publication permissions.';

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { errorToolResult, hookAdditionalContextToolResult, successToolResult } from '../src/mcp/tool-result.js';
+import { entryRules } from '../src/conversations/entry-rules.js';
 import { listAgentTools } from '../src/agent-tools.js';
 import { jsonSchemaToZod } from '../src/mcp/tool-schema.js';
 
@@ -74,7 +75,8 @@ test('task context preview bounds both memory layers with honest truncation meta
   assert.equal(view.memory.current.memory.summary.length, 800);
   assert.equal(view.global_memory.current.memory.summary, 'Short synthetic global notes.');
   assert.deepEqual([view.memory.revision, view.global_memory.revision], [3, 5]);
-  assert.match(view.global_memory.guidance, /personalProjectId: null/);
+  assert.equal(view.global_memory.guidance.rules, 'fuli://rules/task-entry#global_memory_guidance');
+  assert.match(entryRules().sections.global_memory_guidance, /personalProjectId: null/);
   const result = hookAdditionalContextToolResult(compactTaskContext(source), options);
   assert.equal(result.structuredContent.truncated, undefined);
   assert.equal(result.structuredContent.project_agent_context.global_memory.revision, 5);
@@ -226,8 +228,10 @@ test('real task checkpoint and confirmation guidance cannot be clipped under his
     getCapturePolicy: () => ({ enabled: false }),
     taskContextRegistry: { begin: async input => ({ ...input, token: 'fuli-task-synthetic-real-guidance' }) }
   }, preferenceEntry(), { sessionId: 'synthetic-session' }));
-  assert.ok(Buffer.byteLength(value.task_guidance.checkpoint) > 512);
-  assert.ok(Buffer.byteLength(value.task_guidance.knowledge_routing) > 512);
+  // Shared rule text travels as a versioned reference, so memory pressure cannot clip it.
+  assert.deepEqual(value.task_guidance, { rules: 'fuli://rules/task-entry#task_guidance', version: entryRules().version });
+  assert.ok(Buffer.byteLength(entryRules().sections.task_guidance.checkpoint) > 512);
+  assert.ok(Buffer.byteLength(entryRules().sections.task_guidance.knowledge_routing) > 512);
   value.conversation = { recovery: { messages: [{ role: 'user', content: 'Historical context. '.repeat(12_000) }] } };
   const result = hookAdditionalContextToolResult(value, options).structuredContent;
   assert.equal(result.preference_delivery.reason, 'delivery_budget');

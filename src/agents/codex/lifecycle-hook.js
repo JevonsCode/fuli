@@ -40,7 +40,7 @@ export async function codexLifecycleOutput(event, input, invoke) {
     turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192),
     sourceApplication: 'codex', sourceSessionId: input.session_id });
   return JSON.parse(hookAdditionalContextToolResult(compactTaskContext(context), { hookEventName: event,
-    label: 'Fuli task context. Apply effective_preferences and checkpoint with taskContextToken.',
+    label: 'Fuli task context. Apply effective_preferences and checkpoint with taskContextToken. Shared rules are referenced by version; read MCP resource fuli://rules/task-entry when one applies.',
     limitBytes: 128 * 1024, itemLimit: 1000 }).content[0].text);
 }
 
