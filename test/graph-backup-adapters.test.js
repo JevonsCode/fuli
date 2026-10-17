@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -62,4 +62,43 @@ test('container backup adapter copies through an offline helper using the existi
     const start = calls.find(({ args }) => args.includes('up') && args.includes('--no-build'));
     assert.equal(start.args.includes('personal-neo4j'), true);
     assert.equal(start.args.includes('personal-provider'), false);
+  });
+
+test('native backup adapter dumps and loads through the native runtime that owns neo4j-admin',
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuli-native-backup-'));
+    const paths = resolveSetupPaths({ dataDir: root, packageRoot: '/package' });
+    await mkdir(join(root, 'native-runtime'), { recursive: true });
+    await writeFile(paths.graphRuntimeConfigPath, JSON.stringify({ workspaces: [] }));
+    await writeFile(paths.nativeRuntimeManifestPath, JSON.stringify({ status: 'ready', mode: 'native' }));
+    const calls = [];
+    const adapter = await createGraphBackupAdapter({
+      mode: 'native',
+      paths,
+      createNativeServices: (options) => {
+        calls.push(['services', options.personalOnly]);
+        return {
+          async dumpDatabase(instance, stage) {
+            calls.push(['dump', instance]);
+            await writeFile(join(stage, 'neo4j.dump'), 'native graph');
+          },
+          async loadDatabase(instance, stage) {
+            calls.push(['load', instance, await readFile(join(stage, 'neo4j.dump'), 'utf8')]);
+          }
+        };
+      }
+    });
+    const output = join(root, 'personal.dump');
+    const input = join(root, 'container.dump');
+    await writeFile(input, 'container graph');
+
+    await adapter.dump('personal', output);
+    await adapter.load('personal', input);
+
+    assert.equal(await readFile(output, 'utf8'), 'native graph');
+    assert.deepEqual(calls, [
+      ['services', true],
+      ['dump', 'personal'],
+      ['load', 'personal', 'container graph']
+    ]);
   });

@@ -2,8 +2,13 @@ import { createInterface } from 'node:readline/promises';
 
 import { exportGraphData, importGraphData } from '../backup/graph-backup.js';
 import { createGraphBackupAdapter } from '../backup/runtime-adapters.js';
+import {
+  inspectLocalRuntime,
+  startLocalRuntime,
+  stopLocalRuntime
+} from '../local-runtime/lifecycle.js';
 import { resolveSetupPaths } from '../setup/paths.js';
-import { readRuntimeSettings } from '../system/runtime-settings.js';
+import { readRuntimeSettings, runtimeSettingsWithOverrides } from '../system/runtime-settings.js';
 
 export async function runGraphDataCommand(action, args, dependencies = {}) {
   const options = parseGraphDataOptions(action, args);
@@ -22,6 +27,29 @@ export async function runGraphDataCommand(action, args, dependencies = {}) {
     }
   }
 
+  // A running console wakes graph services on demand, which reopens the
+  // database between the offline stop and the dump or load. The whole local
+  // runtime is stopped first and started again only if it was running.
+  const runtime = dependencies.runtime ?? localRuntime(paths, dependencies.env ?? process.env, write);
+  const consoleWasRunning = await runtime.consoleRunning();
+  if (consoleWasRunning) {
+    write('Stopping the running Fuli console and graph services for an offline graph copy...');
+    const stopped = await runtime.stop();
+    if (stopped?.status === 'partial') {
+      throw new Error('Could not confirm that the running Fuli console stopped. Graph data was not changed.');
+    }
+  }
+  try {
+    return await transferGraphData({ action, options, paths, mode, write, dependencies });
+  } finally {
+    if (consoleWasRunning) {
+      write('Starting Fuli again...');
+      await runtime.start();
+    }
+  }
+}
+
+async function transferGraphData({ action, options, paths, mode, write, dependencies }) {
   const createAdapter = dependencies.createAdapter ?? createGraphBackupAdapter;
   const adapter = await createAdapter({
     mode,
@@ -51,6 +79,23 @@ export async function runGraphDataCommand(action, args, dependencies = {}) {
     ? `Graph data imported into ${mode} mode. A pre-import rollback backup was preserved.`
     : `Graph data imported into ${mode} mode. The target had no prior data to preserve.`);
   return result;
+}
+
+function localRuntime(paths, env, write) {
+  const input = () => {
+    // Read again on start: an import can be the step that switched the mode.
+    const runtimeSettings = runtimeSettingsWithOverrides(readRuntimeSettings(paths.runtimeSettingsPath), {});
+    return { paths, env, runtimeSettings, port: runtimeSettings.ports.console,
+      lan: runtimeSettings.lanAccess, onProgress: write };
+  };
+  return {
+    async consoleRunning() {
+      const state = await inspectLocalRuntime(input());
+      return state.console?.status !== 'stopped';
+    },
+    stop: () => stopLocalRuntime(input()),
+    start: () => startLocalRuntime(input())
+  };
 }
 
 export function parseGraphDataOptions(action, args = []) {

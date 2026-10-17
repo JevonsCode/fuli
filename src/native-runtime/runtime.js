@@ -304,7 +304,27 @@ export function createNativeGraphServices({
     });
   }
 
-  return { start, stopProviders, stopDatabases, ready };
+  // Offline dump/load for backups and migration. The database must be stopped.
+  // It runs neo4j-admin exactly as the instance's own start does, so Windows
+  // uses the typed AdminTool entry and the instance-relative home and config.
+  async function adminDatabase(instanceId, args) {
+    assertDescriptor(descriptor);
+    const spec = (await serviceSpecs()).find((item) => item.id === instanceId);
+    if (!spec) throw new TypeError(`Unsupported graph instance: ${instanceId}`);
+    await prepareInstance(spec);
+    return run(join(descriptor.neo4jHome, 'bin', 'neo4j-admin'), args, {
+      env: neo4jEnvironment(spec)
+    });
+  }
+
+  const dumpDatabase = (instanceId, toPath) => adminDatabase(instanceId, [
+    'database', 'dump', 'neo4j', `--to-path=${toPath}`
+  ]);
+  const loadDatabase = (instanceId, fromPath) => adminDatabase(instanceId, [
+    'database', 'load', 'neo4j', `--from-path=${fromPath}`, '--overwrite-destination=true'
+  ]);
+
+  return { start, stopProviders, stopDatabases, ready, dumpDatabase, loadDatabase };
 }
 
 export async function ensureNativeRuntime(input, dependencies = {}) {
