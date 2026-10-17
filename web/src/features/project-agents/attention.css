@@ -1,10 +1,7 @@
 .attention-nav-status { display: inline-flex; align-items: center; gap: 6px; justify-self: end; }
-.attention-dialog[open]:has(.attention-workspace) { height: min(780px, calc(100dvh - 40px)); }
-.attention-dialog:not(:has(.attention-workspace)) { width: min(560px, calc(100vw - 32px)); }
-.attention-dialog .ui-dialog__shell { height: 100%; }
-.attention-dialog .ui-dialog__header { padding-bottom: 16px; border-bottom: 1px solid var(--color-border); }
-.attention-dialog .ui-dialog__body { flex: 1 1 auto; padding: 0; gap: 0; overflow: hidden; }
-.attention-workspace { flex: 1 1 auto; overflow: hidden; display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: 0; }
+.attention-page-body { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.attention-page-count { margin: 0; min-height: 1.4em; }
+.attention-workspace { flex: 1 1 auto; overflow: hidden; display: grid; height: min(780px, calc(100dvh - 180px)); border: 1px solid var(--color-border); border-radius: var(--radius-card, 16px); background: var(--color-surface); grid-template-columns: 280px minmax(0, 1fr); min-height: 0; }
 .attention-queue { min-width: 0; overflow-y: auto; padding: 12px; background: var(--color-surface-subtle); border-right: 1px solid var(--color-border); overscroll-behavior: contain; }
 .attention-queue-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 8px; font-size: 12px; color: var(--color-muted); }
 .attention-queue-toolbar > span { min-width: 0; overflow-wrap: anywhere; }
@@ -21,13 +18,11 @@
 .attention-detail-meta { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; margin-bottom: 20px; color: var(--color-muted); font-size: 12px; overflow-wrap: anywhere; }
 .attention-task-link { display: inline-block; margin-top: 16px; color: var(--color-accent); font-size: 13px; text-underline-offset: 4px; }
 .attention-queue .attention-mobile-picker { display: none; margin-bottom: 8px; }
-.attention-error { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; color: var(--color-danger); background: var(--color-danger-soft); font-size: 13px; }
+.attention-error { flex: 0 0 auto; border-radius: var(--radius-control); display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; color: var(--color-danger); background: var(--color-danger-soft); font-size: 13px; }
 .attention-empty { flex: 1; align-content: center; display: grid; justify-items: center; gap: 16px; padding: 72px 24px; text-align: center; color: var(--color-muted); }
 .attention-empty > span { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--color-success-soft); color: var(--color-success); font-size: 24px; }
 .attention-empty p { margin: 0; font-size: 14px; }
 @media (max-width: 640px) {
-  .attention-dialog[open] { width: calc(100vw - 16px); }
-  .attention-dialog[open]:has(.attention-workspace) { height: calc(100dvh - 16px); }
   .attention-workspace { flex: 1 1 auto; overflow: hidden; display: flex; flex-direction: column; height: auto; }
   .attention-queue { flex: 0 0 auto; padding: 8px 16px 12px; border-right: 0; border-bottom: 1px solid var(--color-border); max-height: 185px; }
   .attention-queue-toolbar { padding: 0; }

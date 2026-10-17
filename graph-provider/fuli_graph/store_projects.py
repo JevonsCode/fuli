@@ -54,6 +54,8 @@ class StoreProjects:
             ON CREATE SET project.project_id = $project_id,
                           project.publication_key = $publication_key,
                           project.created_at = $updated_at
+            WITH space, project
+            WHERE NOT $create_only OR project.created_at = $updated_at
             SET project.profile_json = $profile_json,
                 project.name = $name,
                 project.updated_at = $updated_at
@@ -67,7 +69,10 @@ class StoreProjects:
             profile_json=request.profile.model_dump_json(),
             name=request.profile.name,
             updated_at=updated_at,
+            create_only=request.create_only,
         )
+        if not records:
+            raise HTTPException(status_code=409, detail='personal project already exists')
         return self._personal_project(records[0]['project'], request.personal_space_id)
 
     async def list_personal_projects(

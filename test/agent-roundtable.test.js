@@ -60,6 +60,7 @@ test('an Agent asks another Agent, which answers from its latest conversation', 
   assert.equal(summary.subject, '登录重构评审过了吗？');
   assert.deepEqual(summary.participants.map((person) => person.name), ['Milo Reed', 'Nova Lane']);
   assert.equal(summary.waiting, false);
+  assert.deepEqual(summary.waitingFor, []);
 });
 
 test('employee numbers find and address the same identity across clients', async () => {
@@ -220,6 +221,10 @@ test('names must be unambiguous and threads have a message limit', async () => {
   await assert.rejects(roundtable.messageAgent({ to: 'Nobody', body: 'x', sourceApplication: 'codex' }), /No active Agent/);
   const first = await roundtable.messageAgent({ to: 'Milo Reed', body: 'start', sourceApplication: 'codex', wait: false });
   assert.equal(first.status, 'queued');
+  // An unanswered ask names who the thread is waiting for.
+  const [summary] = roundtable.threads().threads;
+  assert.equal(summary.waiting, true);
+  assert.deepEqual(summary.waitingFor, ['Milo Reed']);
   for (let index = 1; index < 24; index += 1) {
     await roundtable.messageAgent({ to: 'Milo Reed', body: `more ${index}`, threadId: first.threadId, sourceApplication: 'codex', wait: false });
   }

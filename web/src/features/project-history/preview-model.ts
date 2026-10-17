@@ -1,3 +1,4 @@
+import { isConversationFallback } from '@/features/projects/project-origin'
 import type { CountEvidence, HistoryProject, ProjectEvidence } from './evidence-reader'
 
 // Pure preview rules. A suggestion is advice for a human; nothing here acts on it.
@@ -23,13 +24,9 @@ export interface HistoryPreview {
   counts: Partial<Record<PreviewSuggestion, number>>
 }
 
-// The identity task entry generates for an unmatched session; the display
-// name is shared by every such project and is not used as evidence.
-const CONVERSATION_FALLBACK_ID = /^conversation-[0-9a-f]{64}$/
-
 export function projectOrigin(project: HistoryProject): ProjectOrigin {
   if (project.scope_type === 'temporary') return 'temporary_task'
-  if (CONVERSATION_FALLBACK_ID.test(project.project_id)) return 'conversation_fallback'
+  if (isConversationFallback(project)) return 'conversation_fallback'
   if (sourceKeys(project).length) return 'registered_with_sources'
   return 'unknown'
 }

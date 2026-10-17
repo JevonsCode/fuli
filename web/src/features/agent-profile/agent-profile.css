@@ -113,6 +113,8 @@
 .directory-project-body { padding: 0 16px 16px; }
 .directory-project-lead { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2, 8px); margin-bottom: var(--space-3, 12px); font-size: 13px; }
 .directory-project-lead p { display: flex; align-items: center; gap: 8px; margin: 0; }
+.agent-card-occupation { min-width: 0; overflow: hidden; color: var(--color-muted); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.agent-resume-occupation { margin: 0 0 4px; font-weight: 600; }
 .agent-card-responsibility {
   display: -webkit-box; overflow: hidden; margin: 2px 0 0; color: var(--color-muted); font-size: 13px; line-height: 1.55;
   -webkit-box-orient: vertical; -webkit-line-clamp: 1;
@@ -532,7 +534,8 @@
   font-size: 13px;
 }
 
-.agent-simple-settings {
+.agent-simple-settings,
+.agent-occupation-editor {
   box-sizing: border-box;
   margin-top: var(--space-4, 16px);
   padding: var(--space-6, 24px);
@@ -639,7 +642,8 @@
 @media (max-width: 480px) {
   .agent-resume-header,
   .agent-resume-section,
-  .agent-simple-settings {
+  .agent-simple-settings,
+  .agent-occupation-editor {
     padding: var(--space-4, 16px);
   }
 

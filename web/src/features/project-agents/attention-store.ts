@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { getJson, postJson } from '@/api/client'
 import { t } from '@/i18n'
+import type { AttentionReplyDraft } from './attention-replies'
 
 export interface AgentAttention {
   requestId: string; personalSpaceId: string; personalProjectId: string; agentId: string
@@ -23,7 +24,11 @@ export const useAgentAttention = defineStore('agent-attention', () => {
   const previewLoaded = ref(false)
   const previewError = ref('')
   const agentId = ref('')
+  /** True while the inbox page is shown; only then is the full queue read. */
   const open = ref(false)
+  // Unsent replies live here so leaving the inbox and coming back keeps them.
+  const drafts = ref<Record<string, AttentionReplyDraft & { revision: number }>>({})
+  const responseErrors = ref<Record<string, string>>({})
   const loading = ref(false)
   const error = ref('')
   let version = 0
@@ -112,7 +117,7 @@ export const useAgentAttention = defineStore('agent-attention', () => {
     if (spaceId.value === id) return
     version++; spaceId.value = id; counts.value = {}; items.value = []; total.value = 0
     filteredTotal.value = 0; error.value = ''; open.value = false; loading.value = false
-    agentId.value = ''
+    agentId.value = ''; drafts.value = {}; responseErrors.value = {}
     resetPreview()
     if (id) void refresh()
   }
@@ -147,6 +152,7 @@ export const useAgentAttention = defineStore('agent-attention', () => {
       total.value = Math.max(0, total.value - 1)
       counts.value = { ...counts.value, [item.agentId]: Math.max(0, (counts.value[item.agentId] ?? 0) - 1) }
       if (!agentId.value || agentId.value === item.agentId) filteredTotal.value = Math.max(0, filteredTotal.value - 1)
+      delete drafts.value[item.requestId]
       if (previewSpaceId.value === originalSpace) {
         previewItems.value = previewItems.value.filter(candidate => candidate.requestId !== item.requestId)
         previewTotal.value = Math.max(0, previewTotal.value - 1)
@@ -156,10 +162,18 @@ export const useAgentAttention = defineStore('agent-attention', () => {
   }
   return {
     spaceId, counts, total, items, filteredTotal, previewItems, previewTotal, previewSpaceId,
-    previewLoading, previewLoaded, previewError, agentId, open, loading, error,
+    previewLoading, previewLoaded, previewError, agentId, open, loading, error, drafts, responseErrors,
     setSpace, show, refresh, refreshPreview, more, respond,
   }
 })
+
+/** The inbox route, optionally narrowed to one Agent's requests. */
+export function inboxLocation(agentId = '', requestId = '') {
+  return {
+    path: '/inbox',
+    query: { ...(agentId ? { agent: agentId } : {}), ...(requestId ? { request: requestId } : {}) },
+  }
+}
 
 export function attentionTaskHref(item: AgentAttention) {
   const query = new URLSearchParams({ agent: item.agentId, project: item.personalProjectId })

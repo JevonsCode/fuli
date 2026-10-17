@@ -36,6 +36,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   agent('PUT /api/personal-projects', 'upsert_personal_project'),
   agent('PUT /api/project-agents', 'upsert_project_agent'),
   agent('DELETE /api/project-agents/:agentId', 'delete_project_agent'),
+  local('PUT /api/project-agents/:agentId/occupation', 'A long-term occupation is set by a person; an Agent never infers it from one task.'),
   agent('POST /api/project-agent-assignments', 'create_project_agent_assignment'),
   agent('POST /api/project-agent-assignments/:assignmentId/end', 'end_project_agent_assignment'),
   agent('POST /api/project-agent-assignments/:assignmentId/replace', 'replace_project_agent_assignment'),

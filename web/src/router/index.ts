@@ -143,6 +143,15 @@ export const router = createRouter({
       meta: { eyebrow: 'KNOWLEDGE BASE', title: 'routes.knowledge.title' },
     },
     {
+      path: '/inbox',
+      name: 'inbox',
+      component: () => import('@/pages/InboxPage.vue'),
+      meta: {
+        eyebrow: 'INBOX',
+        title: 'attention.title',
+      },
+    },
+    {
       path: '/review',
       name: 'review',
       component: () => import('@/pages/ReviewPage.vue'),

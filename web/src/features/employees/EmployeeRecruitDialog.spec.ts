@@ -56,6 +56,20 @@ async function setup(projectsList = projects, props: { defaultProjectIds?: strin
 }
 
 describe('employee recruitment', () => {
+  it('lists people-made projects before fallback session projects, which are named by last use', async () => {
+    const fallback: PersonalProject = {
+      project_id: `conversation-${'f'.repeat(64)}`, personal_space_id: 'space-a', updated_at: '2026-10-17T07:20:00Z',
+      profile: { name: '会话项目 / Conversation project', sources: [], boundaries: [] },
+    }
+    const { wrapper } = await setup([fallback, ...projects])
+    const labels = wrapper.findAll('label').map(label => label.text()).filter(text => /项目/.test(text))
+    const formal = labels.findIndex(text => text.includes('招募验收项目'))
+    const session = labels.findIndex(text => text.startsWith('会话项目 · '))
+    expect(formal).toBeGreaterThanOrEqual(0)
+    expect(session).toBeGreaterThan(formal)
+    expect(wrapper.text()).not.toContain('Conversation project')
+  })
+
   it('reads a fresh management snapshot without toggling the shared catalog state', async () => {
     const { wrapper } = await setup()
     expect(wrapper.find('form').exists()).toBe(true)

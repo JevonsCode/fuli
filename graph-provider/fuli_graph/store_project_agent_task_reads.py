@@ -170,7 +170,8 @@ class StoreProjectAgentTaskReads:
           profile_json: participant_agent.profile_json,
           joined_at: participant.joined_at,
           updated_at: participant.updated_at,
-          ended_at: participant.ended_at
+          ended_at: participant.ended_at,
+          running_since: participant.running_since
         }}) AS participant_rows
         OPTIONAL MATCH (task)-[:HAS_TASK_EVENT]->
                        (event:FuliProjectAgentTaskEvent)
@@ -280,6 +281,7 @@ class StoreProjectAgentTaskReads:
                     joined_at=native_datetime(value['joined_at']),
                     updated_at=native_datetime(value['updated_at']),
                     ended_at=native_datetime(value.get('ended_at')),
+                    running_since=native_datetime(value.get('running_since')),
                 )
                 for value in self._participant_maps(row)
             ],
