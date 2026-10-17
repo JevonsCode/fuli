@@ -49,7 +49,7 @@ Each row is the single home for that behavior; reuse it or extend it.
 | Web identity, debounce | `web/src/lib/identity.ts`, `web/src/lib/debounce.ts` | |
 | Web loading feedback | `web/src/components/GrowthLoading.vue` | See `AGENTS.md`. |
 | Web modal behavior | `web/src/composables/useModalDialog.ts` | |
-| Python confirmation-basis mapping, node/edge query builders | one module in `graph-provider/fuli_graph/` per concept | Do not redefine `_confirmation_basis`, `_node_query` or `_edge_query` per file. |
+| Python shared values | `provider_values.py` (`json_object`, `sha256_text`), `model_validation.py` (`unique_text_list`), `models.py` (`stored_confirmation_basis`), `auth.py` (`token_hash`) | Do not redefine a private `_helper` that one of these already provides. |
 
 Python follows the same rule: a private `_helper` copied into a second module is a signal to promote it
 into a named module both import.
