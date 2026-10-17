@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PersonalProject } from '@/types'
-import { isConversationFallback, pickerOrder, projectDisplayName } from './project-origin'
+import { isConversationFallback, isFormalProject, pickerOrder, projectDisplayName } from './project-origin'
 
 const fallbackId = (seed: string) => `conversation-${seed.repeat(64).slice(0, 64)}`
 const project = (id: string, name: string, updatedAt: string | null = null, createdAt: string | null = null): PersonalProject => ({
@@ -11,6 +11,13 @@ describe('project origin', () => {
   it('recognises fallback session projects by their generated ID, never by name', () => {
     expect(isConversationFallback(project(fallbackId('a'), 'Anything'))).toBe(true)
     expect(isConversationFallback(project('conversation-notes', '会话项目 / Conversation project'))).toBe(false)
+  })
+
+  it('treats only non-archived, non-temporary, non-fallback projects as formal projects', () => {
+    expect(isFormalProject(project('fuli', 'Fuli'))).toBe(true)
+    expect(isFormalProject(project(fallbackId('a'), 'Fallback'))).toBe(false)
+    expect(isFormalProject({ ...project('temp-1', 'Temp'), scope_type: 'temporary' })).toBe(false)
+    expect(isFormalProject({ ...project('old', 'Old'), profile: { name: 'Old', lifecycle: 'archived' } })).toBe(false)
   })
 
   it('names fallback projects by when they were last used so they can be told apart', () => {

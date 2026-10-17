@@ -164,11 +164,20 @@ export const knowledgeDomainMessages = {
         label: '决策',
         description: '项目形成的决策',
       },
+      PROJECT_MEMORY_ACCESS: {
+        label: '记忆访问',
+        description: '跨项目记忆访问实际频次关系',
+      },
       fallback: {
         label: '关联',
         description: '两个节点之间的关联关系',
       },
       quoted: '“{label}”',
+    },
+    weightTiers: {
+      related: '有关系',
+      frequent: '常往来',
+      close: '密切',
     },
     graph: {
       hit: '命中',
@@ -353,11 +362,20 @@ export const knowledgeDomainMessages = {
         label: 'Decision',
         description: 'A decision produced by the project',
       },
+      PROJECT_MEMORY_ACCESS: {
+        label: 'Memory access',
+        description: 'Cross-project memory access frequency relationship',
+      },
       fallback: {
         label: 'Related to',
         description: 'A relationship between two nodes',
       },
       quoted: '“{label}”',
+    },
+    weightTiers: {
+      related: 'Related',
+      frequent: 'Frequent',
+      close: 'Close',
     },
     graph: {
       hit: 'Match',

@@ -27,7 +27,7 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
   const platform = dependencies.platform ?? process.platform;
   const packageRoot = dependencies.packageRoot ?? resolve(dirname(fileURLToPath(import.meta.url)), '../..');
   if (platform === 'win32' && readWindowsInstallation(packageRoot)) {
-    throw new Error('Updating a Windows per-user installation is not supported yet. Keep its application and data directories; do not use the npm update command.');
+    throw new Error('The npm update command is not supported for a Windows per-user installation. Exit the Fuli tray, then run Update-Fuli.cmd from the newer verified candidate; use --preview to inspect it first. Keep the application and data directories.');
   }
   const nodePath = dependencies.nodePath ?? process.execPath;
   const originalEnv = dependencies.env ?? process.env;

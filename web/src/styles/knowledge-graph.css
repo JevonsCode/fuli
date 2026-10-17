@@ -143,6 +143,9 @@
 .graph-hint { margin-top: 8px; color: var(--color-muted); font-size: 12px; text-align: right; }
 
 .graph-edge { stroke: var(--color-border-strong); stroke-width: 1.2; opacity: .72; transition: opacity .12s, stroke .12s, stroke-width .12s; pointer-events: none; }
+.graph-edge.weight-tier-related { stroke: var(--color-muted); stroke-width: 1.4; opacity: .62; }
+.graph-edge.weight-tier-frequent { stroke: var(--color-chart-teal, var(--color-accent)); stroke-width: 2.4; opacity: .84; }
+.graph-edge.weight-tier-close { stroke: var(--color-accent); stroke-width: 3.6; opacity: .98; }
 .graph-edge.historical { stroke-dasharray: 5 4; opacity: .45; }
 .graph-edge.human-change-pending {
   stroke: var(--color-warning); stroke-width: 2.2; stroke-dasharray: 4 3; opacity: .9;
@@ -162,6 +165,10 @@
   fill: var(--color-muted); font-size: 8.5px; font-weight: 650; pointer-events: none;
   transition: fill .12s;
 }
+.graph-edge-label.weight-tier-frequent .graph-edge-label-bg { stroke: var(--color-border-strong); }
+.graph-edge-label.weight-tier-close .graph-edge-label-bg { fill: var(--color-accent-soft); stroke: var(--color-accent); }
+.graph-edge-label.weight-tier-close .graph-edge-label-icon { stroke: var(--color-accent); }
+.graph-edge-label.weight-tier-close .graph-edge-label-text { fill: var(--color-accent); font-weight: 700; }
 .graph-arrow { fill: var(--color-muted); }
 .graph-node { cursor: move; outline: none; transition: opacity .12s; }
 .graph-node-human-marker {

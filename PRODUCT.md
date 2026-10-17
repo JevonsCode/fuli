@@ -14,11 +14,15 @@ The public website supports Chinese and English, with language detection and a m
 
 ## Product truth
 
-- Agents have durable profiles, project responsibilities, working history and expectations.
-- Each space includes Jefa for project management, Bole for AR (Agent Resources: recruiting
-  and staffing), and Tonborg for judgment guided by preferences and feedback. Tonborg reviews
-  within the chosen autonomy level and recommends clients and models. Actual execution still
-  requires an available, authorized client and executor.
+- Agents have durable profiles, a required primary occupation, project responsibilities, working
+  history and expectations. Each formal project has one project lead responsible for breaking down
+  work, dispatching by occupation, and signing off on results to the user.
+- Each space includes four fixed roles: Jefa for project management and conversation project
+  attribution triage, Bole for AR (Agent Resources: occupation-based recruiting and staffing,
+  reusing existing Agents before recruiting new ones), Tonborg for judgment guided by preferences
+  and feedback, and Assistant for receiving unassigned conversations before they belong to a
+  project. Tonborg reviews within the chosen autonomy level and recommends clients and models.
+  Actual execution still requires an available, authorized client and executor.
 - Private conversation history is distinct from confirmed reusable knowledge. Once a
   conversation passes a size threshold, older messages fold into a compact digest while recent
   messages stay verbatim; nothing is forgotten because of elapsed time. Retrieval is bounded and additional evidence is loaded on demand.

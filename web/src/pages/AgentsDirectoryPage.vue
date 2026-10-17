@@ -14,7 +14,9 @@ import {
 } from "@/features/agent-profile/directory-query";
 import { groupAgentsByProject } from "@/features/agent-profile/directory-project-groups";
 import DirectoryProjectGroup from "@/features/agent-profile/DirectoryProjectGroup.vue";
+import UnassignedConversationsPanel from "@/features/agent-profile/UnassignedConversationsPanel.vue";
 import AgentCard from "@/features/agent-profile/AgentCard.vue";
+import { isFormalProject } from "@/features/projects/project-origin";
 import {
   agentDisplayName,
   agentProfilePath,
@@ -35,6 +37,7 @@ import { employeeTemplates } from "@/features/employees/catalog";
 import { useConsoleStore } from "@/stores/console";
 import { t } from "@/i18n";
 import type { EmployeeRecruitmentResult } from "@/features/employees/catalog";
+import type { PersonalProject } from "@/types";
 
 const store = useConsoleStore();
 const route = useRoute();
@@ -81,10 +84,16 @@ const hireable = computed(() => employeeTemplates.value.some((entry) => !entry.f
 const managesAllProjects = (agentId: string) => employeeTemplates.value
   .some((entry) => entry.agentId === agentId && entry.management?.mode === "all");
 
-const projects = computed(() =>
+const allSpaceProjects = computed(() =>
   (store.state?.personalProjects ?? []).filter(
     (project) => project.personal_space_id === space.value,
   ),
+);
+const projects = computed(() =>
+  allSpaceProjects.value.filter((project) => isFormalProject(project)),
+);
+const projectById = computed(() =>
+  new Map(projects.value.map((project) => [project.project_id, project])),
 );
 const options = computed(() =>
   projects.value.map((project) => ({ value: project.project_id, label: project.profile.name })),
@@ -154,12 +163,12 @@ const projectGroups = computed(() =>
     (agentId) => entries.value[agentId]?.status,
     projects.value.map((project) => project.project_id),
     selectedProjects.value,
+    { includeEmpty: !search.value.trim() },
   ).map((group) => ({
     ...group,
-    key: group.projectId ?? "",
-    name: group.projectId === null
-      ? t("agentRedesign.projectView.unassigned")
-      : projectNames.value[group.projectId] || group.projectId,
+    key: group.projectId,
+    name: projectNames.value[group.projectId] || group.projectId,
+    purpose: projectById.value.get(group.projectId)?.profile.purpose ?? null,
     agents: group.agentIds.map((id) => agentsById.value.get(id)!),
   })),
 );
@@ -247,6 +256,14 @@ watch([nearEnd, pageLoading, pageError, rosterComplete], () => {
 async function retryDirectory() {
   if (!store.state) await store.refresh();
   await Promise.allSettled([reload(), loadWorkSummary()]);
+}
+
+function handleProjectCreated(project: PersonalProject) {
+  if (!store.state) return;
+  const current = store.state.personalProjects ?? [];
+  if (!current.some((item) => item.project_id === project.project_id)) {
+    store.state.personalProjects = [...current, project];
+  }
 }
 </script>
 
@@ -353,6 +370,7 @@ async function retryDirectory() {
         !busy &&
         rosterComplete &&
         !visible.length &&
+        view === 'agents' &&
         !pageError &&
         store.runtimeStatus !== 'error'
       "
@@ -373,7 +391,13 @@ async function retryDirectory() {
         <AgentCard v-bind="cardProps(agent)" @toggle-pin="toggleAgentPin(agent.agentId, $event)" />
       </li>
     </ul>
-    <div v-else-if="visible.length" class="agents-directory-projects">
+    <div v-else-if="view === 'projects'" class="agents-directory-projects">
+      <UnassignedConversationsPanel
+        :space-id="space"
+        :formal-projects="projects"
+        :existing-project-ids="allSpaceProjects.map((project) => project.project_id)"
+        @project-created="handleProjectCreated"
+      />
       <DirectoryProjectGroup
         v-for="group in projectGroups"
         :key="group.key"
@@ -381,6 +405,8 @@ async function retryDirectory() {
         :space-id="space"
         :project-id="group.projectId"
         :name="group.name"
+        :purpose="group.purpose"
+        :agents="group.agents"
         :count="group.agents.length"
         :running-count="group.runningCount"
         :unknown-count="group.unknownCount"
