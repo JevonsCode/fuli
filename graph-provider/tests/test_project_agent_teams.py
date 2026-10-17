@@ -549,3 +549,14 @@ async def test_task_entry_reports_nothing_extra_when_the_lead_fits():
     assert result.execution_reason == 'project_team_lead'
     assert result.execution_agent_id == 'lead'
     assert not any('coordinate_project_agent_task' in item for item in result.match_basis)
+
+
+@pytest.mark.asyncio
+async def test_migrated_lead_delegates_even_with_legacy_implementation_capabilities():
+    lead = candidate('lead', ['implementation'], ['coding'])
+    lead['occupation_role'] = 'lead'
+    store = TeamStore([lead, candidate('member', ['implementation'], ['coding'])])
+    selected, _, reason, _ = await store._select_agents({}, {}, task_request(
+        work_kind='implementation', required_capabilities=['coding']))
+    assert selected[0]['agent_id'] == 'member'
+    assert reason == 'project_team_member'

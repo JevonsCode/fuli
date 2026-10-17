@@ -140,6 +140,11 @@ const projectAgentParallelPlan = objectSchema({
   reason: nullableStringSchema(),
   workstreamBoundaries: arraySchema(shortText, { maxItems: 16 })
 });
+export const projectAgentOccupation = objectSchema({
+  role: { type: 'string', enum: ['lead', 'assistant', 'product', 'engineering', 'design', 'operations', 'testing', 'research', 'data', 'writing', 'management'] },
+  tags: arraySchema(boundedString(128), { maxItems: 5 })
+}, ['role']);
+
 export const projectAgentTaskSubmitInput = objectSchema({
   personalSpaceId: id,
   personalProjectId: id,
@@ -161,6 +166,7 @@ export const projectAgentTaskSubmitInput = objectSchema({
   sourceApplication,
   sourceSessionId: nullableStringSchema(),
   routingReason: shortText,
+  recruitmentOccupation: { ...projectAgentOccupation, type: ['object', 'null'] },
   recruitmentProfile: { ...projectAgentProfile, type: ['object', 'null'] }
 }, [
   'personalSpaceId', 'personalProjectId', 'idempotencyKey', 'title', 'objective',
@@ -189,6 +195,7 @@ export const projectAgentTaskCoordinateInput = objectSchema({
   modelStrategyOverride: { ...projectAgentProfile.properties.defaultModelStrategy, type: ['object', 'null'] },
   executorPolicyOverride: { ...projectAgentExecutorPolicy, type: ['object', 'null'] },
   routingReason: shortText,
+  recruitmentOccupation: { ...projectAgentOccupation, type: ['object', 'null'] },
   recruitmentProfile: { ...projectAgentProfile, type: ['object', 'null'] },
   contextQueries: arraySchema(shortText, { minItems: 1, maxItems: 10 }),
   contextLimitPerQuery: integerSchema({ minimum: 1, maximum: 20 }),

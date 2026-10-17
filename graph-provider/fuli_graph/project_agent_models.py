@@ -5,7 +5,7 @@ from pydantic import AliasChoices, Field, field_validator, model_validator
 
 from .model_validation import reject_credentials, validate_emoji_sequence
 from .models import SourceApplication, StrictModel
-from .project_agent_occupation_models import ProjectAgentOccupation
+from .project_agent_occupation_models import ProjectAgentOccupation, ProjectAgentOccupationInput
 
 
 ProjectAgentStatus = Literal['active', 'inactive', 'archived']
@@ -174,6 +174,7 @@ class ProjectAgentUpsert(StrictModel):
     )
     agent_id: str = Field(min_length=1, max_length=128)
     profile: ProjectAgentProfile
+    occupation: ProjectAgentOccupationInput | None = None
 
     @model_validator(mode='after')
     def require_dedicated_archive_operation(self):
