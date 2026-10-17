@@ -25,6 +25,8 @@ export interface WorkbenchTaskSnapshot {
   title: string;
   updatedAt: string | null;
   participantUpdatedAt: Record<string, string | null>;
+  /** The task's recorded result/blocking summary, when there is one. */
+  summary: string | null;
 }
 
 export interface AgentWorkbenchEntry {
@@ -35,6 +37,8 @@ export interface AgentWorkbenchEntry {
   title: string | null;
   /** Last recorded change of this Agent's task row, never a start time. */
   lastUpdateAt: string | null;
+  /** Recorded reason for a waiting state (blocked, review, paused); null if none was recorded. */
+  reason: string | null;
   /**
    * Recorded entry into running for the current task. Null when not running,
    * when the provider does not report it, or for rows written before it was
@@ -57,6 +61,8 @@ const RANK: Record<WorkbenchStatus, number> = {
   ended: 8,
 };
 
+const WAITING_WITH_REASON: ReadonlySet<WorkbenchStatus> = new Set(["blocked", "awaiting_review", "paused"]);
+
 function isAgentWorkStatus(value: string): value is AgentWorkStatus {
   return (AGENT_WORK_STATUSES as readonly string[]).includes(value);
 }
@@ -72,6 +78,7 @@ export function indexWorkbenchTasks(value: unknown, personalSpaceId: string) {
       participantUpdatedAt: Object.fromEntries(
         task.participants.map((item) => [item.agentId, item.updatedAt ?? null]),
       ),
+      summary: task.resultSummary?.trim() || null,
     };
   }
   return index;
@@ -127,6 +134,7 @@ export function agentWorkbenchEntry(
     taskId,
     title,
     lastUpdateAt,
+    reason: WAITING_WITH_REASON.has(status) ? snapshot?.summary ?? null : null,
     runningSince:
       fromRoster && status === "running" ? agent.currentTaskRunningSince ?? null : null,
   };

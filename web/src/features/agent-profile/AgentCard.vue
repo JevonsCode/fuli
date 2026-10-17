@@ -9,6 +9,7 @@ import { currentLocale, t } from "@/i18n";
 import { useNow } from "@/composables/useNow";
 import { formatElapsed } from "@/lib/elapsed-time";
 import { formatRelativeTime } from "@/lib/relative-time";
+import { workbenchStatusDetail } from "./workbench-status-text";
 import {
   agentDisplayName,
   agentProfilePath,
@@ -62,6 +63,7 @@ const taskLink = computed(() => ({
   path: "/project-agents/manage",
   query: { agent: props.agent.agentId, task: props.entry?.taskId ?? "" },
 }));
+const statusDetail = computed(() => workbenchStatusDetail(props.entry));
 const occupation = computed(() => occupationLabels(props.agent.occupation));
 const workStatusClass = computed(() => `is-${workStatus.value}`);
 // Jefa and Bole are fixed roles every space has.
@@ -184,6 +186,7 @@ function togglePin() {
         {{ lastUpdate ? t("agentRedesign.workbench.lastUpdate", { time: lastUpdate }) : t("agentRedesign.workbench.lastUpdateUnknown") }}
       </span>
     </p>
+    <p v-if="statusDetail" class="agent-card-status-detail" :class="workStatusClass" :title="statusDetail" data-status-detail>{{ statusDetail }}</p>
     <p class="agent-card-responsibility" :title="t('agentRedesign.workbench.responsibility')">{{ agent.profile.responsibility }}</p>
     <div v-if="capabilities.length" class="agent-inline-skills">
       <span v-for="skill in capabilities" :key="skill">{{ skill }}</span>

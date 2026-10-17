@@ -99,6 +99,9 @@
 .agents-directory-reorder {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-3, 12px); margin: 0 0 var(--space-3, 12px); color: var(--color-muted); font-size: 13px;
 }
+.agent-card-status-detail { overflow: hidden; margin: 2px 0 0; color: var(--color-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.agent-card-status-detail:is(.is-blocked, .is-unavailable) { color: var(--color-danger); }
+.agent-card-status-detail:is(.is-awaiting_review, .is-paused, .is-queued, .is-awaiting_recruitment) { color: var(--color-warning); }
 .agents-directory-view { flex: 0 0 auto; }
 .agents-directory-projects { display: grid; gap: var(--space-3, 12px); }
 .directory-project { border: 1px solid var(--color-border); border-radius: var(--radius-md, 10px); background: var(--color-surface); }
