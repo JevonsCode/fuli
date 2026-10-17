@@ -242,3 +242,55 @@ test('Claude blocked handoff supplies exact host fallback identity without bypas
     await withTranscriptGuard(runtimeConfigPath, native, 'claude_code', true, guard => assert.deepEqual(guard.value, guardState));
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+async function claudeGuardFixture(t) {
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const directory = await mkdtemp(join(tmpdir(), 'jvs-a-claude-guard-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const runtimeConfigPath = join(directory, 'runtime.json');
+  const native = { ...input, transcript_path: join(directory, 'missing.jsonl') };
+  const calls = [], lookups = [];
+  const run = () => runClaudeLifecycleHook(['--event', 'UserPromptSubmit'], {
+    readInput: async () => native,
+    resolveRuntimeOptions: () => ({ runtimeConfigPath }),
+    createLeases: () => ({ withGraphLease: async (_owner, operation) => operation() }),
+    openApplication: () => ({ config: { personal: { spaceId: 'synthetic-space' } },
+      getCapturePolicy: () => ({ enabled: true }), personal: {
+        currentTaskContext: async () => { lookups.push('current'); return null; },
+        conversation: async (_operation, query) => query.mode === 'policy' ? { enabled: true } : { initialized: true, cursor: 0 }
+      } }),
+    callTool: async (_app, name) => { calls.push(name); return { taskContextToken: 'synthetic-task' }; }
+  });
+  return { runtimeConfigPath, native, run, calls, lookups };
+}
+
+test('Claude task entry is not blocked by an unrelated listener on the former guard port', async t => {
+  const { createServer } = await import('node:net');
+  const { transcriptDigest } = await import('../src/conversations/transcript-guard.js');
+  const f = await claudeGuardFixture(t);
+  const key = transcriptDigest(`${f.runtimeConfigPath}\0claude_code\0${f.native.session_id}`);
+  const lockKey = transcriptDigest(`${join(dirname(f.runtimeConfigPath), 'transcript-guards')}\0${key}`);
+  const blocker = createServer();
+  t.after(() => new Promise(resolve => blocker.close(() => resolve())));
+  await new Promise(resolve => {
+    // An existing owner of the port is the same foreign-holder case.
+    blocker.once('error', resolve);
+    blocker.listen({ host: '127.0.0.1', port: 49152 + (parseInt(lockKey.slice(0, 8), 16) % 16384), exclusive: true }, resolve);
+  });
+  const output = await f.run();
+  assert.doesNotMatch(output.systemMessage ?? '', /Another Fuli hook|lock/i);
+  assert.ok(f.lookups.length > 0, 'The hook must reach transcript synchronization');
+  assert.deepEqual(f.calls, ['begin_task_context']);
+});
+
+test('Claude same-session hook reports a held guard as another Fuli hook without beginning a task', async t => {
+  const { withTranscriptGuard } = await import('../src/conversations/transcript-guard.js');
+  const f = await claudeGuardFixture(t);
+  await withTranscriptGuard(f.runtimeConfigPath, f.native, 'claude_code', true, async () => {
+    const output = await f.run();
+    assert.match(output.systemMessage, /Another Fuli hook for this host session is still running/);
+    assert.notEqual(output.decision, 'block');
+  });
+  assert.deepEqual(f.calls, []);
+  assert.deepEqual(f.lookups, []);
+});

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { withTranscriptGuard } from '../../conversations/transcript-guard.js';
+import { transcriptGuardFailureMessage, withTranscriptGuard } from '../../conversations/transcript-guard.js';
 import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { syncConversationTranscript, withTranscriptNotice, claimTranscriptBoundary, recordTranscriptTaskEntry } from '../../conversations/sync-transcript.js';
 import { normalizeClaudeRecord, verifyClaudeTranscript } from './conversation-transcript.js';
@@ -91,9 +91,7 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
         });
       } catch (error) {
         if (event !== 'UserPromptSubmit' || !app.getCapturePolicy?.().enabled || !input.transcript_path) throw error;
-        return claudeLifecycleUnavailable(event, input, error.code === 'EADDRINUSE'
-          ? 'The session handoff lock is occupied. Retry after the current hook finishes; if it persists, start a new host session and resume the intended Agent.'
-          : 'Fuli transcript handoff could not be completed safely. Retry task entry; no previous Agent context was supplied.');
+        return claudeLifecycleUnavailable(event, input, transcriptGuardFailureMessage(error));
       }
     }, request);
   } finally {
