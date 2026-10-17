@@ -714,6 +714,7 @@ async def test_inactive_identity_is_reversible_but_never_routable():
             'cleanup_eligible': True,
         }
         inactive = await client.put('/v1/project-agents', json={
+            'occupation': {'role': 'engineering'},
             **scope, 'agent_id': 'inactive-boundary-role', 'profile': profile,
         })
         assert inactive.status_code == 200, inactive.text
