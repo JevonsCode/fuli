@@ -8,8 +8,13 @@ import {
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+// Capturing a client's sessions is separate from that client using FULI tools:
+// a disabled source still queries existing memory, it just adds nothing new.
+export const CAPTURE_SOURCES = Object.freeze(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other']);
+
 const DEFAULT_POLICY = Object.freeze({
   enabled: true,
+  disabledSources: [],
   updatedAt: null
 });
 
@@ -40,6 +45,8 @@ export class CapturePolicyStore {
     }
     const next = {
       enabled: input.enabled,
+      disabledSources: input.disabledSources === undefined
+        ? this.read().disabledSources : validSources(input.disabledSources, TypeError),
       updatedAt: this.now()
     };
     if (!this.path) {
@@ -65,8 +72,24 @@ function validateStoredPolicy(value) {
   }
   return {
     enabled: value.enabled,
+    // Policies saved before per-client capture capture every client.
+    disabledSources: validSources(value.disabledSources ?? [], CapturePolicyConfigurationError),
     updatedAt: value.updatedAt ?? null
   };
+}
+
+function validSources(value, ErrorType) {
+  if (!Array.isArray(value) || value.some(source => !CAPTURE_SOURCES.includes(source))
+    || new Set(value).size !== value.length) {
+    throw new ErrorType('Capture policy disabledSources must list distinct supported clients');
+  }
+  return [...value].sort();
+}
+
+// The effective policy for one client's capture; without a client, the global switch.
+export function capturePolicyFor(policy, sourceApplication = null) {
+  if (!policy.enabled || !sourceApplication || !policy.disabledSources?.includes(sourceApplication)) return policy;
+  return { ...policy, enabled: false, disabledFor: sourceApplication };
 }
 
 function writeAtomically(path, value) {

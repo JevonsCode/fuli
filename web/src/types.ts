@@ -7,6 +7,7 @@ export type CapabilityName =
 
 export interface CapturePolicy {
   enabled: boolean
+  disabledSources?: string[]
   updatedAt?: string | null
 }
 

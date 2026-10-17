@@ -196,7 +196,7 @@ export async function prepareProjectAgentMemory(application, input) {
     throw new ApplicationError(ApplicationErrorCode.VALIDATION, 'Agent working memory contains credentials');
   }
   const agent = await requireAgentMemoryAccess(application, input);
-  const policy = application.getCapturePolicy?.() ?? { enabled: true };
+  const policy = application.getCapturePolicy?.(input.sourceApplication) ?? { enabled: true };
   if (!policy.enabled) return { status: 'capture_disabled', capturePolicy: policy };
   return { agent, request: {
     personal_space_id: input.personalSpaceId,
