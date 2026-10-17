@@ -161,7 +161,15 @@ test('tray packaging replaces stale embedded Provider code but refuses dependenc
   assert.equal(await readFile(join(target, 'app.py'), 'utf8'), 'current application');
   assert.equal(existsSync(join(target, 'stale.py')), false);
   assert.equal(await readFile(join(site, 'dependency.py'), 'utf8'), 'preserved dependency');
-  await writeFile(join(source, 'graph-provider', 'pyproject.toml'), 'changed dependency version');
+  // A release bump alone keeps the dependencies and stamps the new Provider version.
+  await mkdir(join(site, 'fuli_graph_provider-0.12.4.dist-info'), { recursive: true });
+  await writeFile(join(site, 'fuli_graph_provider-0.12.4.dist-info', 'METADATA'), 'Name: fuli-graph-provider\nVersion: 0.12.4\n');
+  await writeFile(join(site, 'pyproject.toml'), '[project]\nversion = "0.12.4"\ndependencies = ["x==1"]\n');
+  await writeFile(join(source, 'graph-provider', 'pyproject.toml'), '[project]\nversion = "0.20.0rc1"\ndependencies = ["x==1"]\n');
+  await refreshEmbeddedProvider(f.packageRoot, source);
+  assert.match(await readFile(join(site, 'fuli_graph_provider-0.12.4.dist-info', 'METADATA'), 'utf8'), /^Version: 0\.20\.0rc1$/m);
+  assert.match(await readFile(join(site, 'pyproject.toml'), 'utf8'), /0\.20\.0rc1/);
+  await writeFile(join(source, 'graph-provider', 'pyproject.toml'), '[project]\nversion = "0.20.0rc1"\ndependencies = ["x==2"]\n');
   await assert.rejects(refreshEmbeddedProvider(f.packageRoot, source), /pyproject changed/);
   assert.equal(await readFile(join(target, 'app.py'), 'utf8'), 'current application');
 });
