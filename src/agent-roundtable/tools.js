@@ -7,13 +7,13 @@ export const ROUNDTABLE_TOOL_DEFINITIONS = [
   {
     name: 'find_agents',
     title: 'ROUNDTABLE · Find Agents to talk to',
-    description: 'List active FULI Agents you can message directly, with their recent Claude Code / Codex conversations. Optional query matches name, responsibility or capability.',
+    description: 'Find active Agents and recent Claude Code/Codex sessions by name, role or capability. personalProjectId selects its lead and project:<id> address. Discovery never hires.',
     inputSchema: objectSchema({ query: text(128), personalProjectId: text(128) })
   },
   {
     name: 'message_agent',
     title: 'ROUNDTABLE · Ask another Agent',
-    description: 'Send a message to another Agent, like asking a teammate or a sub-agent. By default Fuli wakes the recipient in its own client (resuming its latest conversation, or one from find_agents) read-only, and returns its answer in reply. If it cannot be woken the message waits in its inbox. Pass the current taskContextToken so the recipient knows who is asking, projectPath as the current working directory, and threadId to continue a thread. A peer:<device>:<binding> address from find_agents asks the shared project lead on another paired device (LAN roundtable Beta, project leads only). Every exchange is recorded for the user.',
+    description: 'Ask an Agent, or project:<id> for that project\'s lead. Requires the current taskContextToken for execution. Cross-project asks keep the source lead, run read-only in the target\'s verified folder/session, and return a bounded reply. projectPath may supply that verified folder; threadId continues the source thread. Missing leads use existing Bole staffing; unavailable clients never trigger replacement hiring. Undelivered asks wait in the target inbox. peer:<device>:<binding> addresses a shared lead on a paired device (LAN Beta). Exchanges are recorded.',
     inputSchema: objectSchema({
       taskContextToken: text(160),
       to: text(160),

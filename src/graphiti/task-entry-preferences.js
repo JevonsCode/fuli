@@ -63,7 +63,7 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
   if (context) applyAgentAssignment(context, selection);
   // Questions other Agents left for this Agent while it was not running.
   const waiting = includeMessages && selection?.agent && application.roundtable
-    ? application.roundtable.pending(selection.agent.agentId) : [];
+    ? application.roundtable.pending(selection.agent.agentId, projectResolution.personalProjectId) : [];
   const judgmentContext = taskJudgmentContext(application, projectResolution.personalProjectId);
   return { ...managedPreferences, ...(context ? { project_agent_context: context } : {}),
     ...(judgmentContext ? { judgment_context: judgmentContext } : {}),

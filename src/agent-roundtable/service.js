@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { projectAddress, resolveProjectLead, verifiedProjectFolder } from './project-target.js';
+import { observeReturnedMemory, taskContextHash } from './memory-observation.js';
 
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { WAKE_CLIENTS, resolveClientCommand, sessionWorkingDirectory, wakeAgent } from './wake.js';
@@ -62,8 +64,9 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
   }
 
   async function findAgents({ query = null, personalProjectId = null } = {}) {
+    const project = personalProjectId ? await resolveProjectLead(app, personalProjectId) : null;
     const needle = query?.trim().toLowerCase();
-    const matches = (await agents()).filter((agent) => !needle || [agent.agentId,
+    const matches = (project ? (project.agent ? [project.agent] : []) : await agents()).filter((agent) => !needle || [agent.agentId,
       agent.employeeNumber ? `FLA ${agent.employeeNumber}` : null, agent.profile.displayName,
       agent.profile.name, agent.profile.responsibility, ...(agent.profile.capabilities ?? [])]
       .some((value) => value?.toLowerCase().includes(needle)));
@@ -74,6 +77,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     })));
     const remote = app.peer ? await app.peer.remoteAgents({ query: needle }).catch(() => null) : null;
     return { agents: local,
+      ...(project ? { project: { projectId: personalProjectId, address: `project:${personalProjectId}`, reason: project.reason } } : {}),
       ...(remote ? { remoteAgents: remote.agents, ...(remote.unavailable ? { remoteUnavailable: remote.unavailable } : {}) } : {}),
       guidance: remote
         ? 'message_agent sends to an Agent (optionally one of its recentConversations) and returns its answer. remoteAgents run on other paired devices (LAN roundtable Beta): address them by their exact address, from an active project task. Only each shared project\'s lead can be asked. Use get_agent_message_status for a pending reply.'
@@ -90,7 +94,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     if (conversation !== 'new') {
       const known = await conversations(agent, null);
       const candidates = explicit
-        ? known.filter((session) => session.sessionId === conversation)
+        ? known.filter((session) => session.sessionId === conversation && (!strictCwd || session.projectId === projectId))
         : known.filter((session) => !projectId || session.projectId === projectId);
       for (const session of candidates) {
         if (!allowed.includes(session.client)) continue;
@@ -135,11 +139,14 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
       try {
         grant = await issueGrant(delivery, timeoutMs / 1000);
         answer = await wake({ client: delivery.client, sessionId: delivery.sessionId, cwd: delivery.cwd,
-          timeoutMs, prompt, delegationToken: grant.token, peerDepth, signal, onSpawn });
+          timeoutMs, prompt, delegationToken: grant.token, peerDepth, signal, onSpawn,
+          onSession: session => app.personal.sealAgentDelegation({ personal_space_id: spaceId(),
+            token: grant.token, session_id: session }) });
         const verified = answer.sessionId && await app.personal.verifyAgentDelegation({
           personal_space_id: spaceId(), token: grant.token, session_id: answer.sessionId });
         if (!verified?.redeemed) throw Object.assign(new Error('The receiving session did not restore the Agent'),
           { code: 'delegation_not_redeemed' });
+        store.recordMemoryResult(ask.id, verified.memory_result_count ?? 0);
       } catch (error) {
         failure = error.code ?? 'wake_failed';
         // A process that may still be running must not get a sibling on another channel.
@@ -178,28 +185,40 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
       return messageRemote({ taskContextToken, sourceApplication, to, body, threadId, conversation, wait, timeoutSeconds });
     }
     const from = await sender({ taskContextToken, sourceApplication });
-    const target = await recipient(to);
-    if (from.agent?.agentId === target.agentId && !threadId) throw validation('An Agent cannot open a thread with itself');
+    const projectId = projectAddress(to);
+    const resolved = projectId ? await resolveProjectLead(app, projectId, { source: from, recruit: true }) : null;
+    if (resolved && !resolved.agent) return { status: 'queued', reason: resolved.reason, targetProjectId: projectId };
+    const target = resolved?.agent ?? await recipient(to);
+    const targetProjectId = projectId ?? from.projectId;
+    const crossProject = Boolean(targetProjectId && from.projectId && targetProjectId !== from.projectId);
+    if (from.agent?.agentId === target.agentId && !crossProject && !threadId) throw validation('An Agent cannot open a thread with itself');
     const { thread, history } = openThread(threadId, from.projectId, body);
     const ask = store.appendMessage(thread.id, { id: idFactory(), kind: 'ask', body, status: 'queued',
       from: { agentId: from.agent?.agentId, name: from.agent ? label(from.agent) : CLIENT_LABELS[from.client] ?? from.client,
         client: from.client, session: from.session },
-      to: { agentId: target.agentId, name: label(target) } });
+      to: { agentId: target.agentId, name: label(target) }, targetProjectId,
+      sourceContextHash: taskContextToken ? taskContextHash(taskContextToken) : null });
+    // The source token never enters the communication log.
     const nested = history.filter((message) => message.kind === 'ask' && message.status === 'delivering').length;
     if (!wait || nested >= NESTED_ASK_LIMIT) return queued(thread, ask, target, nested ? 'nested_limit' : 'not_waiting');
     if (!taskContextToken || !from.projectId) return queued(thread, ask, target, 'task_context_required');
     const claim = store.claimExecution(spaceId(), target.agentId, ask.id);
     if (!claim.claimed) return queued(thread, ask, target, claim.reason);
     let attempts;
-    try { attempts = await deliveryTargets(target, conversation, from.projectId, projectPath); }
+    try { attempts = await deliveryTargets(target, conversation, targetProjectId, crossProject ? null : projectPath,
+      crossProject ? { strictCwd: true, freshCwd: await verifiedProjectFolder(app, targetProjectId, projectPath) } : {}); }
     catch (error) { finishWake(ask); throw error; }
-    if (!attempts.length) { finishWake(ask); return queued(thread, ask, target, 'no_client'); }
-    const prompt = wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: from.client });
+    if (!attempts.length) { finishWake(ask); return queued(thread, ask, target,
+      crossProject && WAKE_CLIENTS.some(client => target.profile.allowedClients.includes(client) && clientAvailable(client))
+        ? 'no_working_directory' : 'no_client'); }
+    const prompt = wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: from.client,
+      targetProjectId: crossProject ? targetProjectId : null });
     const timeoutMs = Math.min(Math.max(timeoutSeconds, 30), 900) * 1000;
     try {
       const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs,
         issueGrant: (delivery, lifetime) => app.personal.issueAgentDelegation({ personal_space_id: spaceId(),
           task_context_token: taskContextToken, source_application: from.client, agent_id: target.agentId,
+          ...(crossProject ? { target_personal_project_id: targetProjectId } : {}),
           target_application: delivery.client,
           // Claude resumes into a fork with a new ID. Only Codex resumes in place.
           target_session_id: delivery.client === 'codex' ? delivery.sessionId : null,
@@ -209,7 +228,9 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
       const reply = store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent',
         inReplyTo: ask.id, via, from: { agentId: target.agentId, name: label(target), client: delivery.client,
           session: answer.sessionId }, to: { agentId: from.agent?.agentId, name: ask.from_name, client: from.client, session: from.session } });
+      const observation = await observeReturnedMemory(app, store, { ask, reply, from, taskContextToken });
       return { status: 'answered', threadId: thread.id, messageId: ask.id, recipient: { agentId: target.agentId, name: label(target) },
+        ...(observation ? { memoryObservation: observation } : {}),
         via, reply: reply.body };
     } catch (error) {
       finishWake(ask, error);
@@ -221,6 +242,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
   function openThread(threadId, projectId, body) {
     let thread = threadId ? store.getThread(threadId) : null;
     if (threadId && (!thread || thread.space_id !== spaceId())) throw validation('Thread not found');
+    if (thread && thread.project_id !== projectId) throw validation('This thread belongs to another project');
     const history = thread ? store.messages(thread.id) : [];
     if (history.length >= THREAD_MESSAGE_LIMIT) throw validation('This thread reached its message limit; start a new one');
     thread ??= store.createThread({ id: idFactory(), spaceId: spaceId(), projectId,
@@ -341,7 +363,10 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     const me = await sender({ taskContextToken, sourceApplication });
     const ask = taskScopedAsk(me, messageId);
     if (![ask.from_agent, ask.to_agent].includes(me.agent.agentId)) throw validation('No such message for this Agent');
-    return statusOf(ask);
+    const result = await statusOf(ask);
+    const reply = store.messages(ask.thread_id).find(message => message.in_reply_to === ask.id);
+    const observation = await observeReturnedMemory(app, store, { ask: store.getMessage(ask.id), reply, from: me, taskContextToken });
+    return { ...result, ...(observation ? { memoryObservation: observation } : {}) };
   }
 
   async function statusOf(ask) {
@@ -368,7 +393,8 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     const ask = store.getMessage(messageId);
     const thread = ask && store.getThread(ask.thread_id);
     if (!ask || ask.kind !== 'ask' || !me.agent || !me.projectId || thread?.space_id !== spaceId()
-      || thread.project_id !== me.projectId) {
+      || !((ask.from_agent === me.agent.agentId && thread.project_id === me.projectId)
+        || (ask.to_agent === me.agent.agentId && messageProject(ask) === me.projectId))) {
       throw validation('No such message for this Agent in the current project');
     }
     return ask;
@@ -395,14 +421,20 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
   async function readMessages({ taskContextToken, sourceApplication }) {
     const me = await sender({ taskContextToken, sourceApplication });
     if (!me.agent) return { messages: [] };
-    return { messages: store.pendingFor(spaceId(), me.agent.agentId).map(inboxItem),
+    return { messages: store.pendingFor(spaceId(), me.agent.agentId)
+      .filter(message => messageProject(message) === me.projectId).map(inboxItem),
       guidance: 'Answer each with reply_agent_message.' };
   }
 
   async function replyMessage({ taskContextToken, sourceApplication, messageId, body }) {
     const me = await sender({ taskContextToken, sourceApplication });
     const ask = store.getMessage(messageId);
-    if (!ask || ask.kind !== 'ask' || !me.agent || ask.to_agent !== me.agent.agentId) throw validation('No such message for this Agent');
+    if (!ask || ask.kind !== 'ask' || !me.agent || ask.to_agent !== me.agent.agentId
+        || messageProject(ask) !== me.projectId) throw validation('No such message for this Agent');
+    if (ask.target_project_id && ask.target_project_id !== store.getThread(ask.thread_id)?.project_id) {
+      const policy = await app.personal.getProjectAgentCoordinationPolicy(spaceId(), ask.target_project_id);
+      if (policy.team_lead_agent_id !== me.agent.agentId) throw validation('The target project lead changed');
+    }
     if (ask.status === 'answered') throw validation('This message was already answered');
     if (ask.from_agent?.startsWith('peer:')) throw validation('A remote device message is answered by its delivery, not from the inbox');
     store.updateMessage(ask.id, { status: 'answered', via: `${me.client}:inbox` });
@@ -474,12 +506,14 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
       ? { token: env.FULI_ROUNDTABLE_DELEGATION, sessionId: sessionId ?? null } : null;
   }
 
+  const messageProject = message => message.target_project_id ?? store.getThread(message.thread_id)?.project_id ?? null;
   return { findAgents, messageAgent, readMessages, replyMessage, threads, thread, refreshRemote, taskEntryDelegation,
     messageStatus, cancelMessage, answerRemote,
     ownerMessageStatus: ({ messageId }) => statusOf(ownedAsk(messageId)),
     // Cancelling is not evidence that a possibly running process exited; any cleanup hold stays.
     ownerCancelMessage: ({ messageId }) => cancelAsk(ownedAsk(messageId)),
-    pending: (agentId) => store.pendingFor(spaceId(), agentId).map(inboxItem),
+    pending: (agentId, projectId = undefined) => store.pendingFor(spaceId(), agentId)
+      .filter(message => projectId === undefined || messageProject(message) === projectId).map(inboxItem),
     close: () => opened?.close() };
 }
 
@@ -511,8 +545,9 @@ function inboxItem(message) {
     fromClient: message.from_client, body: message.body, createdAt: message.created_at };
 }
 
-function wakePrompt({ thread, target, senderName, senderClient, ask }) {
+function wakePrompt({ thread, target, senderName, senderClient, ask, targetProjectId = null }) {
   return `@{${encodeURIComponent(target.agentId)}} [FULI 圆桌 · ${thread.id}]\n`
+    + (targetProjectId ? `在目标项目上下文执行：personalProjectId=${JSON.stringify(targetProjectId)}。原项目负责人保持不变，只回传本条限定需求的结果。\n` : '')
     + `${senderName}（${CLIENT_LABELS[senderClient] ?? senderClient}）发来消息：\n\n${ask.body}\n\n`
     + `请直接回答对方，你的最终回复会原样转达。需要再问其他 Agent 时，调用 message_agent 并带上 threadId="${thread.id}"。`;
 }

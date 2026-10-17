@@ -6,6 +6,7 @@ import {
 } from '../adaptive-runtime/lease-client.js';
 import { openFederatedGraphApplication } from '../graphiti/federated-application.js';
 import { createWorkerTaskContext } from '../graphiti/worker-task-context.js';
+import { createRoundtableTaskContext } from '../agent-roundtable/task-context.js';
 import { createMcpServer } from './create-mcp-server.js';
 
 export async function runStdio({ runtimeConfigPath, sourceApplication, toolNames = null, toolProfile = 'full', worker = null }) {
@@ -13,7 +14,9 @@ export async function runStdio({ runtimeConfigPath, sourceApplication, toolNames
   const leaseClient = createRuntimeLeaseClient({ runtimeConfigPath });
   bindRuntimeLeaseAgentTools(app, leaseClient);
   const server = createServerOrClose(app, (application, options) => createMcpServer(application, {
-    ...options, workerTaskContext: worker === null ? null : createWorkerTaskContext(application, worker)
+    ...options, workerTaskContext: worker !== null ? createWorkerTaskContext(application, worker)
+      : process.env.FULI_ROUNDTABLE_DELEGATION
+        ? createRoundtableTaskContext(application, { token: process.env.FULI_ROUNDTABLE_DELEGATION }) : null
   }), {
     sourceApplication,
     toolNames,

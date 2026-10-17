@@ -221,6 +221,15 @@ export class GraphitiProviderClient {
   issueAgentDelegation(input) {
     return this.#request('/v1/project-agent-context/delegations', { method: 'POST', body: input });
   }
+  sealAgentDelegation(input) {
+    return this.#request('/v1/project-agent-context/delegations/seal', { method: 'POST', body: input });
+  }
+  admitAgentDelegation(input) {
+    return this.#request('/v1/project-agent-context/delegations/admit', { method: 'POST', body: input });
+  }
+  observeAgentDelegationMemory(input) {
+    return this.#request('/v1/project-agent-context/delegations/memory-result', { method: 'POST', body: input });
+  }
   issueRemoteAgentDelegation(input) {
     return this.#request('/v1/project-agent-context/remote-delegations', { method: 'POST', body: input });
   }

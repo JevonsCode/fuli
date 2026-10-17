@@ -39,6 +39,7 @@ export const codexWake = Object.freeze({
 
   // `codex exec --json` streams items; the last agent message before turn.completed is the answer.
   initialState: () => ({ body: '', completed: false, failed: false }),
+  nativeSessionId: event => event.type === 'thread.started' ? event.thread_id : null,
   readEvent(event, state) {
     if (event.type === 'item.completed' && event.item?.type === 'agent_message') state.body = event.item.text ?? '';
     if (event.type === 'turn.completed') state.completed = true;
