@@ -8,6 +8,7 @@ import { t } from '@/i18n'
 
 import { agentDisplayName, agentProfilePath } from './profile-model'
 import { agentPinsText } from './agent-pins'
+import { agentIdentityStyle } from './agent-identity-color'
 import type { ProjectAgentRecord } from '@/types'
 
 const props = defineProps<{
@@ -51,7 +52,7 @@ const isLoading = computed(() => props.loading || Boolean(props.rosterLoading))
           :to="agentProfilePath(spaceId, agent.agentId)"
           :aria-label="`${agentDisplayName(agent)} · ${t('agentProfiles.profile')}`"
         >
-          <span class="pinned-agent-portrait" aria-hidden="true">
+          <span class="pinned-agent-portrait" :style="agentIdentityStyle(agent.agentId)" aria-hidden="true">
             <img v-if="employeeAvatarUrl(agent.agentId)" :src="employeeAvatarUrl(agent.agentId)" alt="" />
             <template v-else>{{ agent.profile.occupationEmoji || agentDisplayName(agent).slice(0, 1) }}</template>
           </span>
@@ -134,13 +135,15 @@ const isLoading = computed(() => props.loading || Boolean(props.rosterLoading))
   flex: 0 0 24px;
   place-items: center;
   border-radius: 7px;
-  color: var(--color-accent);
-  background: var(--color-accent-soft);
+  color: var(--agent-identity, var(--color-accent));
+  background: var(--agent-identity-soft, var(--color-accent-soft));
   font-size: 12px;
   line-height: 1;
 }
 
 .pinned-agent-portrait img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+
+.pinned-agent-portrait:has(img) { box-shadow: 0 0 0 1.5px var(--agent-identity, transparent); }
 
 .pinned-agent-name {
   min-width: 0;

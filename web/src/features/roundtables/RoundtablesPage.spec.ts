@@ -31,6 +31,17 @@ async function mountAt(path: string) {
 describe('RoundtablesPage', () => {
   beforeEach(() => { setLocale('zh-CN', { persist: false }); getJson.mockReset() })
 
+  it('gives each participant one stable identity colour across the thread list and timeline', async () => {
+    getJson.mockImplementation(async (url: string) => url === '/api/roundtable/threads' ? { threads: [thread] } : detail)
+    const wrapper = await mountAt('/roundtables/thread-1')
+    const faces = wrapper.findAll('.roundtable-faces span').map((face) => face.attributes('style'))
+    const avatars = wrapper.findAll('.roundtable-avatar').map((avatar) => avatar.attributes('style'))
+    expect(faces[0]).toMatch(/--agent-identity: #[0-9a-f]{6}/)
+    expect(avatars).toEqual(faces)
+    expect(wrapper.findAll('.roundtable-avatar').map((avatar) => avatar.text())).toEqual(['M', 'N'])
+    wrapper.unmount()
+  })
+
   it('shows who talked to whom, through which client, and what was said', async () => {
     getJson.mockImplementation(async (url: string) => url === '/api/roundtable/threads' ? { threads: [thread] } : detail)
     const wrapper = await mountAt('/roundtables/thread-1')

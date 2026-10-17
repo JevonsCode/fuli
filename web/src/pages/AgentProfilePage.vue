@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { employeeAvatarUrl } from "@/features/employees/avatars";
+import { agentIdentityStyle } from "@/features/agent-profile/agent-identity-color";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { getJson } from "@/api/client";
@@ -306,7 +307,7 @@ onMounted(() => {
     </p>
     <template v-else>
       <header class="ui-card agent-resume-header">
-        <span class="agent-portrait" aria-hidden="true">
+        <span class="agent-portrait agent-identity" :style="agentIdentityStyle(agent.agentId)" aria-hidden="true">
           <img v-if="employeeAvatarUrl(agent.agentId)" :src="employeeAvatarUrl(agent.agentId)" alt="" />
           <template v-else>{{ agent.profile.occupationEmoji || agentDisplayName(agent).slice(0, 1) }}</template>
         </span>
@@ -783,3 +784,14 @@ onMounted(() => {
 </template>
 
 <style src="@/features/agent-profile/agent-profile.css" />
+
+<style scoped>
+.agent-portrait.agent-identity {
+  color: var(--agent-identity, var(--color-accent));
+  background: var(--agent-identity-soft, var(--color-accent-soft));
+}
+
+.agent-portrait.agent-identity:has(img) {
+  box-shadow: 0 0 0 2px var(--agent-identity, transparent);
+}
+</style>

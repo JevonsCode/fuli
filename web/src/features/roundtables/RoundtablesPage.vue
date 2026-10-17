@@ -4,6 +4,7 @@ import { RouterLink, useRoute } from 'vue-router'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { currentLocale, t } from '@/i18n'
+import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { listThreads, readThread, type RoundtableMessage, type RoundtablePerson, type RoundtableThread, type RoundtableThreadSummary } from './roundtable-api'
 
 // A read-only record of Agents talking to each other. Agents start these
@@ -72,7 +73,7 @@ function delivery(message: RoundtableMessage) {
         <RouterLink v-for="item in threads" :key="item.id" class="roundtable-thread" :class="{ 'is-active': item.id === selectedId }"
           :to="`/roundtables/${encodeURIComponent(item.id)}`" data-testid="roundtable-thread">
           <span class="roundtable-faces" aria-hidden="true">
-            <span v-for="person in item.participants.slice(0, 3)" :key="person.agentId ?? person.name ?? ''">{{ initial(person) }}</span>
+            <span v-for="person in item.participants.slice(0, 3)" :key="person.agentId ?? person.name ?? ''" :style="agentIdentityStyle(person.agentId)">{{ initial(person) }}</span>
           </span>
           <span class="roundtable-thread-copy">
             <strong>{{ item.subject }}</strong>
@@ -92,7 +93,7 @@ function delivery(message: RoundtableMessage) {
         </header>
         <ol>
           <li v-for="message in thread.messages" :key="message.id" class="roundtable-message" :class="`is-${message.kind}`">
-            <span class="roundtable-avatar" aria-hidden="true">{{ initial(message.from) }}</span>
+            <span class="roundtable-avatar" :style="agentIdentityStyle(message.from.agentId)" aria-hidden="true">{{ initial(message.from) }}</span>
             <div class="roundtable-bubble">
               <p class="roundtable-byline">
                 <strong>{{ message.from.name }}</strong>
@@ -122,7 +123,7 @@ function delivery(message: RoundtableMessage) {
 .roundtable-thread:hover { background: var(--color-surface-hover); }
 .roundtable-thread.is-active { background: var(--color-surface); box-shadow: inset 3px 0 0 var(--color-accent); }
 .roundtable-faces { display: flex; padding-top: 2px; }
-.roundtable-faces span, .roundtable-avatar { display: grid; width: 26px; height: 26px; place-items: center; border: 2px solid var(--color-bg); border-radius: 50%; color: var(--color-accent); background: var(--color-accent-soft); font-size: 12px; font-weight: 650; }
+.roundtable-faces span, .roundtable-avatar { display: grid; width: 26px; height: 26px; place-items: center; border: 2px solid var(--color-bg); border-radius: 50%; color: var(--agent-identity, var(--color-accent)); background: var(--agent-identity-soft, var(--color-accent-soft)); font-size: 12px; font-weight: 650; }
 .roundtable-faces span + span { margin-left: -9px; }
 .roundtable-thread-copy { display: grid; gap: 2px; min-width: 0; }
 .roundtable-thread-copy strong { overflow: hidden; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
@@ -136,7 +137,6 @@ function delivery(message: RoundtableMessage) {
 .roundtable-message { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; max-width: 760px; }
 .roundtable-message.is-reply { margin-left: 42px; }
 .roundtable-avatar { width: 30px; height: 30px; border: 0; }
-.roundtable-message.is-reply .roundtable-avatar { color: var(--color-ink-soft); background: var(--color-surface-subtle); }
 .roundtable-bubble { min-width: 0; }
 .roundtable-byline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
 .roundtable-byline > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
