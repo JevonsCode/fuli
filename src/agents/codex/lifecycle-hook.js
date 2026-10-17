@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { withTranscriptGuard } from '../../conversations/transcript-guard.js';
+import { transcriptGuardFailureMessage, withTranscriptGuard } from '../../conversations/transcript-guard.js';
 import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { syncConversationTranscript, withTranscriptNotice, claimTranscriptBoundary, recordTranscriptTaskEntry } from '../../conversations/sync-transcript.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from './conversation-transcript.js';
@@ -40,7 +40,7 @@ export async function codexLifecycleOutput(event, input, invoke) {
     turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192),
     sourceApplication: 'codex', sourceSessionId: input.session_id });
   return JSON.parse(hookAdditionalContextToolResult(compactTaskContext(context), { hookEventName: event,
-    label: 'Fuli task context. Apply effective_preferences and checkpoint with taskContextToken.',
+    label: 'Fuli task context. Apply effective_preferences and checkpoint with taskContextToken. Shared rules are referenced by version; read MCP resource fuli://rules/task-entry when one applies.',
     limitBytes: 128 * 1024, itemLimit: 1000 }).content[0].text);
 }
 
@@ -102,9 +102,7 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
         });
       } catch (error) {
         if (event !== 'UserPromptSubmit' || !app.getCapturePolicy?.().enabled || !input.transcript_path) throw error;
-        return { systemMessage: error.code === 'EADDRINUSE'
-          ? 'The session handoff lock is occupied. Retry after the current hook finishes; if it persists, start a new host session and resume the intended Agent.'
-          : 'Fuli transcript handoff could not be completed safely. Retry task entry; no previous Agent context was supplied.' };
+        return { systemMessage: transcriptGuardFailureMessage(error) };
       }
     }, { signal: dependencies.signal });
     write(`${JSON.stringify(output)}\n`);

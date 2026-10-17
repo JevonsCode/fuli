@@ -11,6 +11,7 @@ import {
 } from '../graphiti/runtime-config.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { writeLine } from './terminal-io.js';
 
 const HELP_FLAGS = new Set(['--help', '-h']);
 const VALUE_FLAGS = new Set(['--url', '--token-file', '--data-dir']);
@@ -326,8 +327,4 @@ function writeSecureJson(path, value) {
       { ...options, mode: 0o600 }
     )
   });
-}
-
-function writeLine(value) {
-  process.stdout.write(`${value}\n`);
 }

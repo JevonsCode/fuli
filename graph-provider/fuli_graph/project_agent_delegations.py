@@ -1,11 +1,11 @@
 """Short-lived, session-bound capabilities for a real roundtable invocation."""
 
-from hashlib import sha256
 from secrets import token_urlsafe
 
 from fastapi import HTTPException
 from pydantic import Field
 
+from .auth import token_hash
 from .models import SourceApplication, StrictModel
 from .personal_project_access import authorize_personal_project
 
@@ -41,10 +41,6 @@ class AgentDelegationCheck(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     token: str = Field(min_length=32, max_length=128)
     session_id: str | None = Field(default=None, min_length=1, max_length=256)
-
-
-def token_hash(token):
-    return sha256(token.encode()).hexdigest()
 
 
 class StoreAgentDelegations:

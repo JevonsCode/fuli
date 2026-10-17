@@ -1,17 +1,40 @@
+import { containsEntryRules, entryRules, entryRulesReference, ruleTextView } from './entry-rules.js';
+
 const SUMMARY_PREVIEW = 800;
 const NOTE_COUNT_PREVIEW = 3;
 const NOTE_PREVIEW = 160;
+const ROSTER_PREVIEW = 4;
+const DRAFT_LABEL_BUDGET = 32;
 
 // Preserve every effective instruction and Provider-budgeted conversation raw
 // window. Other evidence envelopes remain available through explicit read tools.
 export function compactTaskContext(value) {
   if (!value || typeof value !== 'object') return value;
   const result = { ...value };
+  // Sealed workers cannot read MCP resources, so their entry keeps full rule text.
+  const share = !value.worker_run;
+  const text = (current, section) => share ? ruleTextView(current, section) : current;
+  const sharedApplication = share && containsEntryRules(value.application_guidance, 'application_guidance');
   const retrieval = value.application_guidance?.knowledge_retrieval;
   if (retrieval && JSON.stringify(retrieval) === JSON.stringify(value.task_knowledge_recall?.guidance)) {
     result.task_knowledge_recall = { ...value.task_knowledge_recall, guidance: undefined,
-      guidance_ref: 'application_guidance.knowledge_retrieval' };
+      guidance_ref: sharedApplication ? entryRulesReference('application_guidance').rules
+        : 'application_guidance.knowledge_retrieval' };
   }
+  // Task-independent rule text is referenced, not repeated on every turn.
+  if (share && containsEntryRules(value.task_guidance, 'task_guidance')
+    && Object.keys(value.task_guidance).length === Object.keys(entryRules().sections.task_guidance).length) {
+    result.task_guidance = entryRulesReference('task_guidance');
+  }
+  if (sharedApplication) {
+    const shared = entryRules().sections.application_guidance;
+    result.application_guidance = { ...Object.fromEntries(Object.entries(value.application_guidance)
+      .filter(([key]) => !Object.hasOwn(shared, key))), ...entryRulesReference('application_guidance') };
+  }
+  if (value.conversation) result.conversation = conversationView(value.conversation, share);
+  if (value.agent_receipt?.continuation) result.agent_receipt = { ...value.agent_receipt,
+    continuation: { ...value.agent_receipt.continuation,
+      guidance: text(value.agent_receipt.continuation.guidance, 'continuation_guidance') } };
   if (Array.isArray(value.effective_preferences)) result.effective_preferences = value.effective_preferences.map(item => ({
     instruction: item.instruction, preference_key: item.preference_key,
     preference_scope: item.preference_scope, confirmation_status: item.confirmation_status,
@@ -33,17 +56,39 @@ export function compactTaskContext(value) {
     }))
   };
   const continuity = value.project_agent_context;
-  if (continuity) result.project_agent_context = { ...continuity, team: undefined, recent_tasks: undefined,
-    ...(continuity.team?.guidance ? { team_guidance: continuity.team.guidance } : {}),
+  const teamRules = continuity?.team?.guidance ?? continuity?.team_guidance;
+  const teamGuidance = teamRules ? text(teamRules, 'team_guidance') : undefined;
+  if (continuity) result.project_agent_context = { ...continuity,
+    team: compactTeamRoster(continuity.team, teamGuidance),
+    recent_tasks: undefined,
+    guidance: text(continuity.guidance, 'continuity_guidance'),
+    ...(teamGuidance ? { team_guidance: teamGuidance } : {}),
     details_guidance: 'Read get_project_team for staffing and list_project_agent_tasks for task history when needed.' };
   if (continuity?.memory || continuity?.global_memory) {
     result.project_agent_context = { ...result.project_agent_context, knowledge: undefined,
-      memory: continuity.memory && memoryPreview(continuity.memory,
-        'Use get_project_agent_memory before merging or checkpointing working memory; this preview omits history and may truncate notes.'),
-      ...(continuity.global_memory !== undefined ? { global_memory: continuity.global_memory && memoryPreview(continuity.global_memory,
-        'Global layer of the same employee. Read get_project_agent_memory with personalProjectId: null before merging or checkpointing it; this preview omits history and may truncate notes.') } : {}) };
+      memory: continuity.memory && memoryPreview(continuity.memory, ruleOrReference('memory_guidance', share)),
+      ...(continuity.global_memory !== undefined ? { global_memory: continuity.global_memory
+        && memoryPreview(continuity.global_memory, ruleOrReference('global_memory_guidance', share)) } : {}) };
   }
   return result;
+}
+
+// Inside the same native chat the host already holds the recent messages, so
+// only the latest saved result is repeated; another chat gets the full window.
+function conversationView(conversation, share) {
+  if (!share) return conversation;
+  const view = { ...conversation, guidance: ruleTextView(conversation.guidance, 'conversation_guidance') };
+  const recovery = conversation.recovery;
+  if (conversation.same_session && recovery && Array.isArray(recovery.messages)) {
+    view.recovery = { conversation_id: recovery.conversation_id, revision: recovery.revision,
+      latest_checkpoint: recovery.latest_checkpoint ?? null, summary_role: recovery.summary_role,
+      messages_omitted: recovery.messages.length, omitted_reason: 'same_host_session' };
+  }
+  return view;
+}
+
+function ruleOrReference(section, share) {
+  return share ? entryRulesReference(section) : entryRules().sections[section];
 }
 
 function instructionQualifiers(attributes, instruction) {
@@ -72,7 +117,28 @@ function memoryPreview(memory, guidance) {
     openThreads: list(notes.openThreads),
     nextActions: list(notes.nextActions)
   };
-  return { ...memory, history: undefined, workLog: undefined,
+  // Space, project and Agent IDs are already in the entry context.
+  return { ...memory, history: undefined, workLog: undefined, personalSpaceId: undefined,
+    personalProjectId: undefined, agentId: undefined, storage: undefined,
     current: current && { ...current, memory: preview },
     view: 'preview', notesTruncated, requiresFullReadBeforeWrite: true, guidance };
+}
+
+// Staff detail is query-on-demand. Bound the entry and dedupe identities before
+// removing IDs; same-name people remain distinct.
+function compactTeamRoster(team, deliveredGuidance) {
+  if (!team) return undefined;
+  const people = [...(team.roster ?? []), ...(team.assigned_collaborators ?? []), ...(team.assigned_peers ?? [])];
+  const roster = [...new Map(people.map(person => [person.agent_id ?? person, person])).values()];
+  const view = count => ({ roster: roster.slice(0, count).map(person => ({ name: person.name, occupation: person.occupation ?? null })),
+    ...(roster.length > count ? { roster_total: roster.length, roster_truncated: true } : {}) });
+  let count = Math.min(roster.length, ROSTER_PREVIEW);
+  // Once the team rules are a reference, the roster may spend only the bytes
+  // that rule text no longer costs, keeping room for the draft marker.
+  if (team.guidance && deliveredGuidance !== team.guidance) {
+    const budget = Buffer.byteLength(JSON.stringify({ team_guidance: team.guidance })) - DRAFT_LABEL_BUDGET;
+    while (count && Buffer.byteLength(JSON.stringify({ team: view(count), team_guidance: deliveredGuidance })) > budget) count--;
+  }
+  return view(count);
+
 }

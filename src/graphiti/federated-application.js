@@ -16,7 +16,7 @@ import {
   createWorkspaceProvider
 } from './workspace-provider-client.js';
 import {
-  canonicalProviderUrl,
+  canonicalProviderUrl, personalTokenRefresher,
   readGraphRuntimeConfig
 } from './runtime-config.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
@@ -120,7 +120,8 @@ export function openFederatedGraphApplication({
     ),
     tokenUsageResolver,
     consoleUrl: sourceConsoleUrl(runtimeConfigPath),
-    providerRequestTimeoutMs: providerRequestTimeoutFromEnv(env)
+    providerRequestTimeoutMs: providerRequestTimeoutFromEnv(env),
+    refreshPersonalToken: personalTokenRefresher(runtimeConfigPath, resolved.personal)
   });
   if (typeof runtimeConfigPath === 'string' && runtimeConfigPath) {
     const paths = resolveSetupPaths({ dataDir: dirname(runtimeConfigPath) });
@@ -163,7 +164,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     projectPathResolver = resolvePersonalProjectPath,
     taskContextRegistry = null,
     providerRequestTimeoutMs = undefined,
-    tokenUsageResolver = undefined
+    tokenUsageResolver = undefined, refreshPersonalToken = null
   } = {}) {
     super();
     this.graphiti = true;
@@ -178,7 +179,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       accessToken: config.personal.accessToken,
       workflowObservationToken: config.personal.workflowObservationToken ?? null,
       fetchImpl,
-      requestTimeoutMs: providerRequestTimeoutMs
+      requestTimeoutMs: providerRequestTimeoutMs, refreshAccessToken: refreshPersonalToken
     });
     this.taskContextRegistry = taskContextRegistry ?? new ProviderTaskContextRegistry(
       this.personal, config.personal.spaceId
@@ -282,7 +283,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     if (projectResolution.repositoryProjectId && agentInvocation && TASK_ENTRY_TOOLS.has(agentToolName)
       && this.getCapturePolicy().enabled) {
       // Every task gets a FULI Agent, so a task in an unregistered repository registers it.
-      projectResolution = await registerRepositoryProject(this, projectResolution, { sessionId });
+      projectResolution = await registerRepositoryProject(this, projectResolution, { sessionId, projectPath });
     }
     projectResolution = await resolveTaskEntryProject(this, projectResolution, {
       sessionId, sourceSessionId, sourceApplication, agentInvocation, agentToolName, projectAgentId, taskPrompt

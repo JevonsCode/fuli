@@ -4,6 +4,8 @@ export function agentProfileUrl(application, agentId) {
   return `${application.consoleUrl ?? sourceConsoleUrl(null)}/agents/${encodeURIComponent(application.config.personal.spaceId)}/${encodeURIComponent(agentId)}`;
 }
 
+export const CONTINUATION_GUIDANCE = 'Use a connected client and the same authorized project/Agent. Obtain a fresh task context; never reuse the previous client’s token. This is a FULI prompt, not a native client @ picker registration.';
+
 export function agentContinuation(projectId, agentId, conversationId = null) {
   return { personal_project_id: projectId, agent_id: agentId,
     ...(conversationId ? { conversation_id: conversationId } : {}),
@@ -11,7 +13,7 @@ export function agentContinuation(projectId, agentId, conversationId = null) {
       ? `请在 FULI 项目 ${JSON.stringify(projectId)} 对应的工作目录继续工作。`
       : '请在未绑定项目的会话中，以这个全局 FLA 继续工作。')
       + (conversationId ? `先用当前任务的 taskContextToken 调用 resume_agent_conversation，conversationId=${JSON.stringify(conversationId)}，再按需读取上下文。` : '先恢复这个 Agent 在当前范围的记忆和最近会话。'),
-    guidance: 'Use a connected client and the same authorized project/Agent. Obtain a fresh task context; never reuse the previous client’s token. This is a FULI prompt, not a native client @ picker registration.' };
+    guidance: CONTINUATION_GUIDANCE };
 }
 
 function agentLink(application, agentId, name) {
@@ -37,7 +39,7 @@ export function taskAgentReceipt(application, { projectId, agentId, name = null,
       profile_url: agentProfileUrl(application, item.agentId) })),
     personal_project_id: projectId, work_status: workStatus, persistence,
     continuation: owner ? agentContinuation(projectId, agentId, conversationId) : null,
-    guidance: 'MUST end every final user-visible reply with agent_receipt.markdown unchanged, exactly once, including greetings, status and errors, even when capture is disabled or nothing is retained. The receipt returned by checkpoint_task_knowledge supersedes the entry receipt because it names actual collaborators. Never invent an owner or a collaborator.' };
+    guidance: 'MUST end every final user-visible reply with agent_receipt.markdown unchanged, exactly once: greetings, status, errors, even with capture disabled or nothing retained. checkpoint_task_knowledge receipt overrides entry and names actual collaborators. Never invent owners or collaborators.' };
 }
 
 function unassignedReceipt(status, reason) {
@@ -47,6 +49,7 @@ function unassignedReceipt(status, reason) {
       : reason === 'session_identity_required' ? 'FULI Agent：分配失败（缺少会话标识）'
         : 'FULI Agent：分配失败（项目归属未能恢复）';
   }
+  if (reason === 'assistant_unavailable') return 'FULI Agent：待归属会话（助理尚未就绪）';
   const labels = {
     unavailable: '分配失败（服务或身份恢复不可用）',
     agent_unavailable: '分配失败（指定 FLA 不可用）',

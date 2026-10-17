@@ -8,6 +8,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiDialog from '@/components/ui/UiDialog.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import { currentLocale, t } from '@/i18n'
+import { DATE_TIME_FULL, formatDateTime } from '@/lib/date-time'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { knowledgePath } from '@/router/paths'
 import { useConsoleStore } from '@/stores/console'
@@ -293,9 +294,7 @@ async function createRelation() {
 onBeforeUnmount(cancelDetailRequest)
 
 function formatDate(value?: string) {
-  return value
-    ? new Date(value).toLocaleString(currentLocale())
-    : t('pages.publicProjects.timeNotRecorded')
+  return formatDateTime(value, currentLocale(), DATE_TIME_FULL, { missing: t('pages.publicProjects.timeNotRecorded') })
 }
 </script>
 

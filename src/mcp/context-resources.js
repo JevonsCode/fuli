@@ -1,4 +1,6 @@
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { ENTRY_RULES_URI, entryRulesMarkdown } from '../conversations/entry-rules.js';
+import { singleLine } from '../text/single-line.js';
 
 const PROJECT_RESOURCE_TEMPLATE = 'fuli://projects/{projectId}';
 const GLOBAL_TASTE_RESOURCE_URI = 'fuli://taste/global';
@@ -21,6 +23,17 @@ export function registerFuliContextResources(server, app, {
       'mcp-resource:global-taste',
       () => readGlobalTasteResource(app, uri)
     )
+  );
+
+  server.registerResource(
+    'FULI task entry rules',
+    ENTRY_RULES_URI,
+    {
+      title: 'FULI · Task entry rules',
+      description: 'Shared rule text that task entries reference by version instead of repeating.',
+      mimeType: RESOURCE_MIME_TYPE
+    },
+    (uri) => markdownResource(uri, entryRulesMarkdown())
   );
 
   const projectResources = new ResourceTemplate(PROJECT_RESOURCE_TEMPLATE, {
@@ -152,10 +165,6 @@ function projectResourceUri(projectId) {
 
 function displayProjectName(project) {
   return singleLine(project.profile?.name) || project.project_id;
-}
-
-function singleLine(value) {
-  return String(value ?? '').replace(/[\r\n\t]+/g, ' ').trim();
 }
 
 function boundedResourceText(value) {

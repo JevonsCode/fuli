@@ -65,6 +65,7 @@ function person(agent, assignment) {
     agentId: agent.agent_id,
     name: displayName(agent),
     employeeNumber: agent.employee_number ?? null,
+    occupation: agent.occupation?.role ?? null,
     occupationEmoji: profile.occupation_emoji ?? profile.occupationEmoji ?? null,
     responsibility: assignment.responsibility || profile.responsibility || '',
     peerRole: isPeerRoleAgent({ agentId: agent.agent_id, agentType: profile.agent_type,

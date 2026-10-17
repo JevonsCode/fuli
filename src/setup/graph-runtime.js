@@ -10,6 +10,7 @@ import {
   writeFileSync
 } from 'node:fs';
 import { dirname } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import {
   ensureContainerRuntime,
@@ -47,11 +48,14 @@ import {
   initialAdaptiveRuntimeState,
   writeAdaptiveRuntimeState
 } from '../adaptive-runtime/state.js';
+import { nonEmptyText } from '../validation/values.js';
 
 export {
   dockerInfoIndicatesDaemon,
   selectDockerEnvironment
 } from './container-runtime.js';
+import { isProcessAlive, stopProcess } from '../local-runtime/processes.js';
+import { isManagedWorkspace, waitForProviderHealth } from '../local-runtime/provider-readiness.js';
 
 export async function ensureGraphRuntime(input, dependencies = {}) {
   const deps = graphDependencies(dependencies);
@@ -124,8 +128,8 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
       ...(input.buildProviders === false ? { build: false } : {})
     });
   }
-  await waitForProvider(urls.personal, deps.fetch);
-  if (!input.personalOnly) await waitForProvider(urls.workspace, deps.fetch);
+  await waitForProviderHealth(urls.personal, { fetchImpl: deps.fetch, failureMessage: `Graphiti provider did not become ready: ${urls.personal}` });
+  if (!input.personalOnly) await waitForProviderHealth(urls.workspace, { fetchImpl: deps.fetch, failureMessage: `Graphiti provider did not become ready: ${urls.workspace}` });
   if (input.paths.adaptiveRuntimeStatePath) {
     deps.writeAdaptiveState(
       input.paths.adaptiveRuntimeStatePath,
@@ -355,7 +359,7 @@ export function synchronizeManagedProviderUrls(config, urls, {
   let changed = next.personal?.providerUrl !== urls.personal;
   next.personal.providerUrl = urls.personal;
   if (
-    nonEmpty(workflowObservationToken) &&
+    nonEmptyText(workflowObservationToken) &&
     next.personal.workflowObservationToken !== workflowObservationToken
   ) {
     next.personal.workflowObservationToken = workflowObservationToken;
@@ -417,18 +421,6 @@ async function reconcileManagedWorkspaceSubscriptions({
   }
 }
 
-function isManagedWorkspace(workspace) {
-  if (workspace?.managedDevelopment === true) return true;
-  try {
-    const url = new URL(workspace?.providerUrl);
-    return url.protocol === 'http:' &&
-      ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname) &&
-      url.port === '8788';
-  } catch {
-    return false;
-  }
-}
-
 async function bootstrapProvider(url, bootstrapToken, principalName, fetchImpl) {
   const response = await fetchImpl(`${url}/v1/bootstrap`, {
     method: 'POST',
@@ -469,19 +461,6 @@ async function findOrCreateSpace(baseUrl, { token, name, kind, fetchImpl }) {
     body: { name, kind },
     fetchImpl
   });
-}
-
-async function waitForProvider(url, fetchImpl) {
-  for (let attempt = 0; attempt < 120; attempt += 1) {
-    try {
-      const response = await fetchImpl(`${url}/health`);
-      if (response.ok) return;
-    } catch {
-      // Containers and Graphiti indices may still be starting.
-    }
-    await delay(1000);
-  }
-  throw new Error(`Graphiti provider did not become ready: ${url}`);
 }
 
 async function waitForWeb(url, pid, deps) {
@@ -676,20 +655,8 @@ function parseEnv(body) {
   }));
 }
 
-function nonEmpty(value) {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
 function secret() {
   return randomBytes(32).toString('base64url');
-}
-
-function isProcessAlive(pid) {
-  try { process.kill(pid, 0); return true; } catch { return false; }
-}
-
-function stopProcess(pid) {
-  try { process.kill(pid, 'SIGTERM'); } catch { /* already stopped */ }
 }
 
 async function waitForProcessExit(pid) {
@@ -698,8 +665,4 @@ async function waitForProcessExit(pid) {
     await delay(100);
   }
   return false;
-}
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

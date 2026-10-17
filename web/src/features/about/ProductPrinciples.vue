@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AboutSectionHeading from './AboutSectionHeading.vue'
 import { computed } from 'vue'
 
 import { t } from '@/i18n'
@@ -51,13 +52,7 @@ const boundaries = computed(() => [
 
 <template>
   <section class="product-principles" aria-labelledby="principles-title">
-    <header class="principles-heading">
-      <span class="principles-index" aria-hidden="true">01</span>
-      <div>
-        <h2 id="principles-title">{{ t('about.philosophy.sectionTitle') }}</h2>
-        <p>{{ t('about.philosophy.support') }}</p>
-      </div>
-    </header>
+    <AboutSectionHeading title-id="principles-title" :title="t('about.philosophy.sectionTitle')" :description="t('about.philosophy.support')" />
 
     <div class="principle-sequence">
       <article v-for="principle in principles" :key="principle.key">
@@ -87,40 +82,6 @@ const boundaries = computed(() => [
   min-width: 0;
 }
 
-.principles-heading {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  align-items: start;
-  gap: 16px;
-  padding-bottom: 30px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.principles-index {
-  padding-top: 6px;
-  color: var(--about-gold);
-  font-size: 12px;
-  font-weight: 650;
-  letter-spacing: .08em;
-}
-
-.principles-heading h2 {
-  margin: 0;
-  color: var(--color-ink);
-  font-size: clamp(22px, 3vw, 30px);
-  font-weight: 650;
-  letter-spacing: -.03em;
-  line-height: 1.2;
-}
-
-.principles-heading p {
-  max-width: 680px;
-  margin-top: 10px;
-  color: var(--color-muted);
-  font-size: 14px;
-  line-height: 1.7;
-}
-
 .principle-sequence {
   display: grid;
 }
@@ -136,7 +97,7 @@ const boundaries = computed(() => [
 
 .principle-sequence article > span {
   padding-top: 3px;
-  color: var(--about-gold);
+  color: var(--color-accent);
   font-size: 12px;
   font-weight: 650;
   letter-spacing: .06em;
@@ -197,7 +158,6 @@ const boundaries = computed(() => [
 .principle-boundaries i[data-boundary="scope"] { transform: rotate(45deg); border-radius: 1px; }
 
 @media (max-width: 680px) {
-  .principles-heading { gap: 12px; }
   .principle-sequence article { gap: 12px; padding: 20px 0; }
   .principle-boundaries > div { grid-template-columns: 1fr; gap: 20px; }
   .principle-boundaries article { padding: 0; }

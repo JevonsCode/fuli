@@ -7,9 +7,12 @@ from .graph_projection import (
 from .agent_confirmation_progress import agent_confirmation_progress
 from .ai_review import effective_ai_review
 from .graph_models import GraphEdge, GraphNode, GraphResult
+from .project_memory_usage import read_project_memory_usage
+from .project_memory_usage_projection import append_memory_usage_projection
 from .models import (
     ConfirmationBasis,
     GraphEvidence,
+    stored_confirmation_basis,
 )
 from .knowledge_audit import read_knowledge_audits
 from .knowledge_records import assignment_record, revision_record
@@ -143,6 +146,12 @@ async def read_graph(
             management_edges,
             knowledge_nodes,
             knowledge_edges,
+        )
+    if space['kind'] == 'personal':
+        graph_nodes, graph_edges = append_memory_usage_projection(
+            graph_nodes, graph_edges,
+            await read_project_memory_usage(store, space_id, personal_project_id),
+            group_id=space['group_id'], project_id=personal_project_id,
         )
     return GraphResult(
         space_id=space_id,
@@ -739,16 +748,6 @@ def _graph_edge(
     )
 
 
-def _confirmation_basis(value) -> ConfirmationBasis | None:
-    data = json_object(value)
-    if not data:
-        return None
-    try:
-        return ConfirmationBasis.model_validate(data)
-    except ValueError:
-        return None
-
-
 def _confirmation_projection(record) -> tuple[
     str,
     ConfirmationBasis | None,
@@ -763,7 +762,7 @@ def _confirmation_projection(record) -> tuple[
     )
     if status != raw_status:
         confidence = min(confidence, 0.5)
-    basis = _confirmation_basis(record.get('confirmation_basis_json'))
+    basis = stored_confirmation_basis(record.get('confirmation_basis_json'))
     explicit = (
         record.get('confirmation_state_explicit') is True
         and status == raw_status

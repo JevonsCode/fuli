@@ -1,15 +1,7 @@
-import { randomUUID } from 'node:crypto';
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync
-} from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 
 import { codexReviewCommandBridge } from './review-skill-adapters.js';
+import { writeTextFileAtomic } from '../storage/json-file.js';
 
 const BLOCK_START = '<!-- BEGIN FULI MANAGED INSTRUCTIONS -->';
 const BLOCK_END = '<!-- END FULI MANAGED INSTRUCTIONS -->';
@@ -33,7 +25,7 @@ ${BLOCK_END}`;
 export function installCodexBootstrap(agent, _context, {
   fileExists = existsSync,
   readText = defaultReadText,
-  writeText = writeTextAtomic
+  writeText = writeTextFileAtomic
 } = {}) {
   if (!agent?.globalInstructionsPath) return { changed: false };
   const instructionsPath = activeGlobalInstructionsPath(agent, {
@@ -50,7 +42,7 @@ export function installCodexBootstrap(agent, _context, {
 export function removeCodexBootstrap(agent, {
   fileExists = existsSync,
   readText = defaultReadText,
-  writeText = writeTextAtomic
+  writeText = writeTextFileAtomic
 } = {}) {
   let changed = false;
   for (const filePath of [
@@ -109,17 +101,4 @@ function activeGlobalInstructionsPath(agent, { fileExists, readText }) {
 
 function defaultReadText(filePath) {
   return existsSync(filePath) ? readFileSync(filePath, 'utf8') : '';
-}
-
-function writeTextAtomic(filePath, value) {
-  const directory = dirname(filePath);
-  const temporary = join(directory, `.${basename(filePath)}.${randomUUID()}.tmp`);
-  mkdirSync(directory, { recursive: true });
-  try {
-    writeFileSync(temporary, value, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
-    renameSync(temporary, filePath);
-  } catch (error) {
-    rmSync(temporary, { force: true });
-    throw error;
-  }
 }

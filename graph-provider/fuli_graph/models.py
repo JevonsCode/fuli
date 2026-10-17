@@ -32,6 +32,7 @@ from .knowledge_audit_models import (
     PreferenceScopeChange,
 )
 from .model_base import StrictModel
+from .provider_values import json_object
 from .model_validation import (
     complete_epistemic_state,
     normalize_provider_url,
@@ -180,6 +181,17 @@ class ConfirmationBasis(StrictModel):
         return self
 
 
+def stored_confirmation_basis(value) -> ConfirmationBasis | None:
+    """Read a stored basis; missing or invalid data reads as no basis."""
+    data = json_object(value)
+    if not data:
+        return None
+    try:
+        return ConfirmationBasis.model_validate(data)
+    except ValueError:
+        return None
+
+
 def _validate_confirmation_state(
     status: ConfirmationStatus,
     basis: ConfirmationBasis,
@@ -296,6 +308,12 @@ class ProjectAssessment(StrictModel):
         return compatible
 
 
+class ProjectBriefDraft(StrictModel):
+    source: Literal['readme', 'first_task']
+    label: Literal['AI draft'] = 'AI draft'
+    editable: Literal[True] = True
+
+
 class ProjectProfile(StrictModel):
     name: str = Field(min_length=1, max_length=160)
     purpose: str | None = Field(default=None, max_length=4096)
@@ -305,6 +323,12 @@ class ProjectProfile(StrictModel):
     sources: list[ProjectSource] = Field(default_factory=list, max_length=64)
     boundaries: list[str] = Field(default_factory=list, max_length=64)
     assessment: ProjectAssessment | None = None
+    brief_draft: ProjectBriefDraft | None = None
+
+    @property
+    def has_brief(self) -> bool:
+        return any(value and value.strip() for value in
+                   [self.purpose, self.scope, *self.boundaries])
 
     @model_validator(mode='after')
     def reject_credentials(self):
@@ -368,6 +392,12 @@ class PersonalProjectUpsert(StrictModel):
     profile: ProjectProfile
     # A person creating a new project must never overwrite an existing one.
     create_only: bool = False
+
+    @model_validator(mode='after')
+    def require_project_brief(self):
+        if self.create_only and not self.profile.has_brief:
+            raise ValueError('Project brief requires non-empty purpose, scope, or boundaries')
+        return self
 
 
 class PersonalProjectRecord(StrictModel):

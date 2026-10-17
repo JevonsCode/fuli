@@ -4,7 +4,8 @@ import { useRoute } from 'vue-router'
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiSegmented from '@/components/ui/UiSegmented.vue'
-import { t } from '@/i18n'
+import { currentLocale, t } from '@/i18n'
+import { formatDateTime } from '@/lib/date-time'
 import type { PersonalProject } from '@/types'
 import ProjectScopePicker from './ProjectScopePicker.vue'
 import { employeeAvatarUrl } from './avatars'
@@ -255,10 +256,9 @@ function statusLabel(status: string) {
 function agentName(agentId: string) { return agents.value.find((agent) => agent.id === agentId)?.name ?? agentId }
 function projectName(projectId: string) { return projectNames.value.get(projectId) ?? t('employees.bole.noProject') }
 function formattedDate(value: string) {
-  if (!value) return t('employees.bole.unknownTime')
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+  return formatDateTime(value, currentLocale(), { dateStyle: 'medium', timeStyle: 'short' }, {
+    missing: t('employees.bole.unknownTime'),
+  })
 }
 </script>
 

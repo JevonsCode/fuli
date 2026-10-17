@@ -19,7 +19,7 @@ test('project team keeps one lead, explicit members, other assignments as collab
     agents: [assigned('lead', { number: '000123' }), assigned('member'), assigned('helper'),
       assigned('employee.bole'), assigned('reviewer', { agentType: 'hr' })] });
   assert.equal(team.status, 'ready');
-  assert.deepEqual(team.lead, { agentId: 'lead', name: 'lead', employeeNumber: '000123', occupationEmoji: null,
+  assert.deepEqual(team.lead, { agentId: 'lead', name: 'lead', employeeNumber: '000123', occupationEmoji: null, occupation: null,
     responsibility: 'lead on project', peerRole: false });
   assert.deepEqual(team.members.map(member => [member.agentId, member.reportsToAgentId]), [['member', 'lead']]);
   assert.deepEqual(team.collaborators.map(person => person.agentId), ['helper']);

@@ -77,6 +77,18 @@ export async function getCollaborationPreferences(
   return projectAgentCollaborationPreferences(result, projectResolution, { projectAgentId, taskScope, taskKnowledgeRecall });
 }
 
+// Rule text that does not depend on the task; the compact task entry
+// references it instead of repeating it on every turn.
+export const STATIC_APPLICATION_GUIDANCE = Object.freeze({
+  inheritance: 'Project preference inheritance follows only PART_OF or USES_KNOWLEDGE_FROM for at most two hops. Preserve inherited_from_project_id, scope_path, and scope_distance. An exact item wins only after confirmation authority is compared; weight never expands scope or resolves a conflict.',
+  related_projects: 'RELATED_TO preferences never auto-apply. Use structured related-project suggestions to ask before a one-time read-only expansion.',
+  conflicts: 'Do not apply entries listed in conflicts until the user resolves them.',
+  deferred_conflicts: 'If the current task would use a deferred_conflict, call resolve_deferred_preference_conflict before applying either side. Ignore unrelated deferred conflicts. The resolution must preserve the AI audit marker.',
+  authority: 'Human or authoritative-source confirmed preferences outrank agent-confirmed preferences. Agent-confirmed preferences are usable but lower priority and remain explicitly marked.',
+  pending: 'Pending preferences are available only through on-demand knowledge search; invalid and unrelated-project preferences are excluded. Automatic preference injection does not count as usage evidence.',
+  knowledge_retrieval: TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE
+});
+
 function guidanceFor(projectId, projectAgentId) {
   return {
     apply: 'effective_preferences',
@@ -87,13 +99,7 @@ function guidanceFor(projectId, projectAgentId) {
     agent_scope: projectAgentId
       ? `Also apply preferences scoped to project Agent ${projectAgentId}; exclude every other project Agent.`
       : 'No project Agent was selected; do not apply Agent-scoped preferences.',
-    inheritance: 'Project preference inheritance follows only PART_OF or USES_KNOWLEDGE_FROM for at most two hops. Preserve inherited_from_project_id, scope_path, and scope_distance. An exact item wins only after confirmation authority is compared; weight never expands scope or resolves a conflict.',
-    related_projects: 'RELATED_TO preferences never auto-apply. Use structured related-project suggestions to ask before a one-time read-only expansion.',
-    conflicts: 'Do not apply entries listed in conflicts until the user resolves them.',
-    deferred_conflicts: 'If the current task would use a deferred_conflict, call resolve_deferred_preference_conflict before applying either side. Ignore unrelated deferred conflicts. The resolution must preserve the AI audit marker.',
-    authority: 'Human or authoritative-source confirmed preferences outrank agent-confirmed preferences. Agent-confirmed preferences are usable but lower priority and remain explicitly marked.',
-    pending: 'Pending preferences are available only through on-demand knowledge search; invalid and unrelated-project preferences are excluded. Automatic preference injection does not count as usage evidence.',
-    knowledge_retrieval: TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE
+    ...STATIC_APPLICATION_GUIDANCE
   };
 }
 

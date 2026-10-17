@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { copyFile, mkdir, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { createNativeGraphServices } from '../native-runtime/runtime.js';
 import { ensureContainerRuntime } from '../setup/container-runtime.js';
@@ -302,8 +303,4 @@ function runCommand(command, args, { env } = {}) {
       else resolve(stdout);
     });
   });
-}
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

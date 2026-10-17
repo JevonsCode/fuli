@@ -860,6 +860,30 @@ describe('ProjectAgentsPage', () => {
     expect(decision.text()).toContain('工作范围互斥')
     expect(decision.text()).toContain('结构审查')
     expect(wrapper.find('.project-agent-execution-summary').exists()).toBe(false)
+    // Staffing evidence stays reachable but sits behind the nested technical disclosure.
+    const tech = decision.element.closest<HTMLDetailsElement>('[data-task-tech]')
+    expect(tech?.open).toBe(false)
+    expect(tech?.textContent).toContain('task-routing-decision')
+  })
+
+  it('groups same-named projects in an Agent row instead of repeating the name', async () => {
+    const agent = structuredClone(agents[0]!)
+    agent.assignments = ['conv-1', 'conv-2', 'conv-3'].map(projectId => ({
+      ...agent.assignments![0]!, assignmentId: `assignment-${projectId}`, personalProjectId: projectId,
+    }))
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (url.includes('/api/project-agents?')) return Promise.resolve([agent])
+      if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: agent.assignments })
+      return original(url)
+    })
+    const { wrapper, store } = mountPage()
+    store.state = { ...store.state!, personalProjects: [...store.state!.personalProjects!, ...['conv-1', 'conv-2', 'conv-3'].map(projectId => ({
+      project_id: projectId, personal_space_id: 'personal-1', profile: { name: '会话项目', sources: [], boundaries: [] },
+    }))] }
+    await flushPromises()
+    const chips = wrapper.get('.project-agent-row-projects').findAll('b')
+    expect(chips.map(chip => chip.text())).toEqual(['会话项目 ×3'])
   })
 
   it('keeps blocked work visible in the main personnel list', async () => {

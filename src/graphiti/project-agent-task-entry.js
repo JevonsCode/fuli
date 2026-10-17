@@ -1,3 +1,4 @@
+import { projectBrief } from './project-brief.js';
 import { projectAgentRecord } from './project-agent-mapping.js';
 import { projectSnapshot, scopedAgentMemoryView } from './project-agent-memory.js';
 import { planTaskKnowledgeRecall } from './task-knowledge-recall.js';
@@ -96,7 +97,11 @@ async function resolveGlobalAgent(application, resolution, input) {
       return { status: 'agent_unavailable', worker_started: false };
     }
     return { status: 'ready', reason: 'global_agent', agent, worker_started: false };
-  } catch {
+  } catch (error) {
+    // Before the assistant identity exists, a pending conversation simply has no owner yet.
+    if (error?.status === 404 && resolution.basis === 'pending_assignment') {
+      return { status: 'unassigned', reason: 'assistant_unavailable', worker_started: false };
+    }
     return { status: 'unavailable', worker_started: false };
   }
 }
@@ -194,9 +199,7 @@ export function projectAgentRoleContext(agent, projectProfile) {
         personality: boundedRoleText(agent.profile.character?.personality, ROLE_TEXT_LIMITS.personality)
       },
       expectations: boundedRoleText(agent.profile.expectations, ROLE_TEXT_LIMITS.expectations) },
-    project_brief: projectProfile ? { name: projectProfile.name, purpose: projectProfile.purpose,
-      scope: projectProfile.scope, technical_summary: projectProfile.technical_summary,
-      boundaries: projectProfile.boundaries ?? [] } : null
+    project_brief: projectBrief(projectProfile)
   };
 }
 

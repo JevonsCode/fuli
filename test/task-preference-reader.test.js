@@ -6,6 +6,7 @@ import { loadProjectAgentContinuity } from '../src/graphiti/project-agent-task-e
 import { projectAgentRecord } from '../src/graphiti/project-agent-mapping.js';
 import { applyAgentAssignment } from '../src/graphiti/task-agent-assignment.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
+import { entryRules } from '../src/conversations/entry-rules.js';
 
 const SESSION = '019fc6ed-02a5-7832-8821-68e3b03e7cef';
 function fixture() {
@@ -76,7 +77,7 @@ test('owned reader delivers all long instructions and mandatory guidance in both
   assert.deepEqual(role.role.initial_preferences, ['ROLE_INITIAL_PREF']);
   assert.deepEqual(role.role.character, { judgment: 'ROLE_JUDGMENT', taste: 'ROLE_TASTE', personality: 'ROLE_PERSONALITY' });
   assert.equal(role.role.expectations, 'ROLE_EXPECTATIONS');
-  assert.deepEqual(role.project_brief.boundaries, ['PROJECT_BOUNDARY']);
+  assert.equal(role.project_brief.summary, 'PROJECT_PURPOSE · PROJECT_BOUNDARY');
   assert.equal(role.reporting_lead_agent_id, 'lead-a');
   assert.match(role.reporting_guidance, /Return results and blockers to the project lead/);
   assert.equal(role.selection_reason, 'delegated_member');
@@ -140,6 +141,10 @@ test('source overflow, oversize instructions and unsafe fields block without del
 const ENTRY_ONLY_KEYS = ['memory', 'global_memory', 'knowledge', 'recent_tasks', 'team', 'directorySnapshot',
   'details_guidance', 'unavailable_components', 'status', 'wake_mode'];
 const withoutEntryOnly = value => Object.fromEntries(Object.entries(value).filter(([key]) => !ENTRY_ONLY_KEYS.includes(key)));
+// The entry references shared rule text; resolve it before comparing with full recovery.
+const resolvedRules = value => Object.fromEntries(Object.entries(value).map(([key, item]) =>
+  [key, typeof item?.rules === 'string' && item.version === entryRules().version
+    ? entryRules().sections[item.rules.split('#')[1]] : item]));
 
 test('recovered Agent context matches every instruction field of the compacted entry, including team reporting', async () => {
   const f = fixture();
@@ -152,11 +157,11 @@ test('recovered Agent context matches every instruction field of the compacted e
   const entry = compactTaskContext({ project_agent_context: applyAgentAssignment(await loadProjectAgentContinuity(entryApp, {
     projectId: 'project-a', agent: projectAgentRecord(f.rawAgent), sourceApplication: 'codex',
     selectionReason: selection.selection_reason, matchBasis: selection.match_basis }), selection) }).project_agent_context;
-  assert.match(entry.team_guidance, /sole user-facing owner/);
+  assert.equal(entry.team_guidance.rules, 'fuli://rules/task-entry#team_guidance');
   const result = await call(f); assert.notEqual(result.isError, true, JSON.stringify(result));
   const recovered = result.structuredContent.project_agent_context;
-  assert.deepEqual(withoutEntryOnly(recovered), JSON.parse(JSON.stringify(withoutEntryOnly(entry))));
-  assert.equal(recovered.team_guidance, entry.team_guidance);
+  assert.deepEqual(withoutEntryOnly(recovered), JSON.parse(JSON.stringify(resolvedRules(withoutEntryOnly(entry)))));
+  assert.match(recovered.team_guidance, /sole user-facing owner/);
 });
 
 test('role text with characters outside the BMP is delivered whole up to the Provider code point limit', async () => {

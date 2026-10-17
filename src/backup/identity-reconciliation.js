@@ -1,18 +1,21 @@
 import { chmodSync } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import {
   managedProviderUrls,
   readRuntimeSettings
 } from '../system/runtime-settings.js';
+import { nonEmptyText } from '../validation/values.js';
+import { waitForProviderHealth } from '../local-runtime/provider-readiness.js';
 
-const PROVIDER_READY_ATTEMPTS = 120;
+const IMPORTED_PROVIDER_NOT_READY = 'The imported graph Provider did not become ready for credential rotation.';
 
 export function graphBackupSelection(paths, {
   readConfig = (path) => readJsonFile(path, null)
 } = {}) {
   const config = readConfig(paths.graphRuntimeConfigPath);
-  const personalSpaceId = nonEmpty(config?.personal?.spaceId);
+  const personalSpaceId = nonEmptyText(config?.personal?.spaceId);
   return personalSpaceId ? { personalSpaceId } : null;
 }
 
@@ -44,7 +47,7 @@ export async function reconcileImportedGraphIdentity({
   const next = structuredClone(current);
   next.workspaces = mergedExternalWorkspaces(current, source);
 
-  await waitForProvider(urls.personal, fetchImpl, wait);
+  await waitForProviderHealth(urls.personal, { fetchImpl, wait, failureMessage: IMPORTED_PROVIDER_NOT_READY });
   const personal = await bootstrapProvider({
     url: urls.personal,
     bootstrapToken: requiredValue(values, 'FULI_PERSONAL_BOOTSTRAP_TOKEN'),
@@ -62,13 +65,13 @@ export async function reconcileImportedGraphIdentity({
     accessToken: personal.accessToken,
     principalId: personal.principalId,
     spaceId: personalSpaceId,
-    ...(nonEmpty(values.FULI_PERSONAL_WORKFLOW_OBSERVATION_TOKEN)
+    ...(nonEmptyText(values.FULI_PERSONAL_WORKFLOW_OBSERVATION_TOKEN)
       ? { workflowObservationToken: values.FULI_PERSONAL_WORKFLOW_OBSERVATION_TOKEN }
       : {})
   };
 
   if (instances.includes('workspace')) {
-    await waitForProvider(urls.workspace, fetchImpl, wait);
+    await waitForProviderHealth(urls.workspace, { fetchImpl, wait, failureMessage: IMPORTED_PROVIDER_NOT_READY });
     const workspace = await bootstrapProvider({
       url: urls.workspace,
       bootstrapToken: requiredValue(values, 'FULI_WORKSPACE_BOOTSTRAP_TOKEN'),
@@ -100,21 +103,6 @@ export async function reconcileImportedGraphIdentity({
   return { personalSpaceId, instances: [...instances] };
 }
 
-async function waitForProvider(url, fetchImpl, wait) {
-  for (let attempt = 0; attempt < PROVIDER_READY_ATTEMPTS; attempt += 1) {
-    try {
-      const response = await fetchImpl(`${url}/health`, {
-        signal: AbortSignal.timeout(2500)
-      });
-      if (response.ok) return;
-    } catch {
-      // The target is still starting.
-    }
-    if (attempt < PROVIDER_READY_ATTEMPTS - 1) await wait(1000);
-  }
-  throw new Error('The imported graph Provider did not become ready for credential rotation.');
-}
-
 async function bootstrapProvider({ url, bootstrapToken, fetchImpl }) {
   const response = await fetchImpl(`${url}/v1/bootstrap`, {
     method: 'POST',
@@ -127,8 +115,8 @@ async function bootstrapProvider({ url, bootstrapToken, fetchImpl }) {
   });
   if (!response.ok) throw new Error('The imported graph Provider rejected credential rotation.');
   const body = await response.json();
-  const principalId = nonEmpty(body?.principal_id);
-  const accessToken = nonEmpty(body?.access_token);
+  const principalId = nonEmptyText(body?.principal_id);
+  const accessToken = nonEmptyText(body?.access_token);
   if (!principalId || !accessToken) {
     throw new Error('The imported graph Provider returned an invalid bootstrap identity.');
   }
@@ -143,12 +131,12 @@ async function listSpaces(url, accessToken, fetchImpl) {
   if (!response.ok) throw new Error('The imported graph Provider could not list personal spaces.');
   const body = await response.json();
   if (!Array.isArray(body)) throw new Error('The imported graph Provider returned invalid spaces.');
-  return body.filter((space) => space?.kind === 'personal' && nonEmpty(space.id));
+  return body.filter((space) => space?.kind === 'personal' && nonEmptyText(space.id));
 }
 
 function selectPersonalSpace({ spaces, requestedId, currentId }) {
   for (const candidate of [requestedId, currentId]) {
-    const id = nonEmpty(candidate);
+    const id = nonEmptyText(candidate);
     if (id && spaces.some((space) => space.id === id)) return id;
   }
   if (spaces.length === 1) return spaces[0].id;
@@ -163,15 +151,11 @@ function mergedExternalWorkspaces(current, source) {
     ...(source?.workspaces ?? []),
     ...(current?.workspaces ?? [])
   ]) {
-    if (isManagedWorkspace(workspace)) continue;
-    const providerUrl = nonEmpty(workspace?.providerUrl);
+    if (workspace?.managedDevelopment === true) continue;
+    const providerUrl = nonEmptyText(workspace?.providerUrl);
     if (providerUrl) result.set(providerUrl, structuredClone(workspace));
   }
   return [...result.values()];
-}
-
-function isManagedWorkspace(workspace) {
-  return workspace?.managedDevelopment === true;
 }
 
 function profilePath(paths, mode) {
@@ -194,15 +178,7 @@ async function readEnvironmentFile(path) {
 }
 
 function requiredValue(values, name) {
-  const value = nonEmpty(values[name]);
+  const value = nonEmptyText(values[name]);
   if (!value) throw new Error(`The target graph environment is missing ${name}.`);
   return value;
-}
-
-function nonEmpty(value) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

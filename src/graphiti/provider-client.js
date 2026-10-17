@@ -28,15 +28,20 @@ export class ProviderRequestError extends ApplicationError {
 
 export class GraphitiProviderClient {
   #workflowObservationToken;
+  #refreshAccessToken;
 
   constructor({
     baseUrl,
     accessToken,
     workflowObservationToken = null,
     fetchImpl = globalThis.fetch,
-    requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS
+    requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+    refreshAccessToken = null
   }) {
     if (!baseUrl) throw new TypeError('Graphiti provider baseUrl is required');
+    if (refreshAccessToken !== null && typeof refreshAccessToken !== 'function') {
+      throw new TypeError('Graphiti provider token refresh must be a function');
+    }
     if (!accessToken) throw new TypeError('Graphiti provider accessToken is required');
     if (workflowObservationToken !== null && (
       typeof workflowObservationToken !== 'string' ||
@@ -57,11 +62,15 @@ export class GraphitiProviderClient {
     this.#workflowObservationToken = workflowObservationToken?.trim() ?? null;
     this.fetch = fetchImpl;
     this.requestTimeoutMs = requestTimeoutMs;
+    this.#refreshAccessToken = refreshAccessToken;
   }
 
   agentVerification(operation, input) {
     if (!['query', 'record'].includes(operation)) throw new TypeError('Unknown verification operation');
     return this.#request(`/v1/agent-verification/${operation}`, { method: 'POST', body: input });
+  }
+  occupationDemand(input) {
+    return this.#request('/v1/occupation-demand/query', { method: 'POST', body: input });
   }
   agentLoan(operation, input) {
     if (!['query', 'request', 'decide'].includes(operation)) throw new TypeError('Unknown loan operation');
@@ -73,10 +82,17 @@ export class GraphitiProviderClient {
       method: operation === 'policy' ? 'PUT' : 'POST', body: input
     });
   }
+  conversationTriage(operation, input) {
+    if (!['record', 'topics', 'form'].includes(operation)) throw new TypeError('Unknown conversation triage operation');
+    return this.#request(`/v1/conversation-triage/${operation}`, { method: 'POST', body: input });
+  }
   currentTaskContext(input, { timeoutMs = this.requestTimeoutMs } = {}) {
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new TypeError('Current task timeout must be a positive safe integer');
     return this.#request(`/v1/task-context-sessions/current?${new URLSearchParams(input)}`,
       { timeoutMs: Math.min(timeoutMs, this.requestTimeoutMs) });
+  }
+  recordProjectMemoryUsage(input) {
+    return this.#request('/v1/project-memory-usage', { method: 'POST', body: input });
   }
   getProjectAgentWorkerRun(runId, { personal_space_id, personal_project_id }, { capability, signal } = {}) {
     const query = new URLSearchParams({ personal_space_id, personal_project_id });
@@ -805,7 +821,25 @@ export class GraphitiProviderClient {
     return this.#request(`/v1/spaces/${encodeURIComponent(spaceId)}/graph?${query}`);
   }
 
-  async #request(path, {
+  // A long-running client (an MCP server) outlives a token rotation, for
+  // example after a graph import or a runtime mode switch. A rejected token is
+  // replaced once by the current one and the request repeated; the Provider
+  // did not act on the rejected request. An unchanged token is not retried.
+  async #request(path, options = {}) {
+    const used = this.accessToken;
+    try {
+      return await this.#send(path, options);
+    } catch (error) {
+      if (!(error instanceof ProviderRequestError) || error.status !== 401
+          || options.authenticated === false || !this.#refreshAccessToken) throw error;
+      const current = await Promise.resolve().then(() => this.#refreshAccessToken()).catch(() => null);
+      if (typeof current !== 'string' || !current || current === used) throw error;
+      this.accessToken = current;
+      return this.#send(path, options);
+    }
+  }
+
+  async #send(path, {
     method = 'GET',
     body,
     authenticated = true,

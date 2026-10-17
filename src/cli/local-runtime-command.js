@@ -14,6 +14,7 @@ import {
   runtimeSettingsWithOverrides
 } from '../system/runtime-settings.js';
 import { parseLocalRuntimeOptions } from './local-runtime-options.js';
+import { writeLine } from './terminal-io.js';
 
 export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
   const options = parseLocalRuntimeOptions(command, args);
@@ -206,8 +207,4 @@ function providerLabel(status, labels) {
   if (status === 'not_configured') return labels.not_configured_provider;
   if (status === 'sleeping') return 'sleeping on purpose';
   return labels[status] ?? status;
-}
-
-function writeLine(value) {
-  process.stdout.write(`${value}\n`);
 }

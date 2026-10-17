@@ -1,5 +1,3 @@
-import type { LocationQueryRaw } from 'vue-router'
-
 export type KnowledgeMode = 'overview' | 'directory' | 'graph'
 export type KnowledgeScope = 'personal' | 'public'
 
@@ -42,13 +40,3 @@ export function knowledgePath(
   return `${base}${project}/${mode}${item}`
 }
 
-export function routeQuery(source: URLSearchParams): LocationQueryRaw {
-  const query: LocationQueryRaw = {}
-  for (const name of ['q', 'type', 'quadrant', 'profile', 'status']) {
-    const value = source.get(name)
-    if (value) query[name] = value
-  }
-  const contexts = source.getAll('context').filter(Boolean).slice(0, 12)
-  if (contexts.length) query.context = contexts
-  return query
-}

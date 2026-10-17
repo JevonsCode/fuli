@@ -10,6 +10,7 @@ import {
 } from './document-mapping.js';
 import { safeExternalSourceDiagnostic } from './safe-diagnostic.js';
 import { ApplicationError } from '../app/application-error.js';
+import { positiveInteger, requiredString } from '../validation/values.js';
 
 const MODES = new Set(['hybrid', 'live', 'mirror']);
 const MAX_TARGETS = 32;
@@ -780,23 +781,9 @@ function normalizedConfigurationKey(key) {
   return key.toLocaleLowerCase().replace(/[^a-z0-9]/gu, '');
 }
 
-function requiredString(value, label, maximum) {
-  if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} is required`);
-  const normalized = value.trim();
-  if (normalized.length > maximum) throw new TypeError(`${label} is too long`);
-  return normalized;
-}
-
 function optionalString(value, label, maximum) {
   if (value === undefined || value === null || value === '') return null;
   return requiredString(value, label, maximum);
-}
-
-function positiveInteger(value, label, maximum) {
-  if (!Number.isInteger(value) || value <= 0 || value > maximum) {
-    throw new TypeError(`${label} must be a positive integer no greater than ${maximum}`);
-  }
-  return value;
 }
 
 function isCredentialDocumentError(error) {

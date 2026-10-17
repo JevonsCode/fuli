@@ -9,6 +9,7 @@ import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import { restartLocalRuntime, startLocalRuntime } from '../local-runtime/lifecycle.js';
 import { stopGraphProviders } from '../setup/graph-runtime.js';
 import { writeRuntimeSettings } from './runtime-settings.js';
+import { isProcessAlive } from '../local-runtime/processes.js';
 
 const operationPath = (paths) => join(paths.dataDir, 'settings-apply.json');
 function saveOperation(paths, value) {
@@ -23,7 +24,7 @@ export function createSettingsApplier({ paths, checkPorts = checkChangedPorts,
     const job = readJsonFile(operationPath(paths), null);
     if (!job) return null;
     const interrupted = job.status === 'applying' && Date.now() - job.startedAt > 10000
-      && !processAlive(job.workerPid);
+      && !isProcessAlive(job.workerPid);
     return { id: job.id, status: interrupted ? 'failed' : job.status,
       port: job.configured.ports.console,
       error: interrupted ? 'Settings application was interrupted. Save again to retry.' : job.error,
@@ -108,9 +109,4 @@ async function checkChangedPorts(configured, previous) {
       server.listen(port, configured.lanAccess ? '0.0.0.0' : '127.0.0.1', () => server.close(resolve));
     });
   }
-}
-
-function processAlive(pid) {
-  if (!Number.isInteger(pid)) return false;
-  try { process.kill(pid, 0); return true; } catch { return false; }
 }

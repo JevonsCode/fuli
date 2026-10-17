@@ -6,6 +6,7 @@ from .models import (
     ConfirmationBasis,
     FactResult,
     _validate_confirmation_state,
+    stored_confirmation_basis,
 )
 from .provider_values import (
     json_object,
@@ -134,7 +135,7 @@ def fact_result(
         current_quadrant=metadata.get('current_quadrant', 'known_known'),
         epistemic_status=metadata.get('epistemic_status', 'confirmed'),
         confirmation_status=metadata.get('confirmation_status', 'pending'),
-        confirmation_basis=_confirmation_basis(
+        confirmation_basis=stored_confirmation_basis(
             metadata.get('confirmation_basis_json')
         ),
         reasoning_summary=metadata.get('reasoning_summary'),
@@ -219,13 +220,3 @@ def _source_reference_timestamp(reference: dict) -> float:
         if isinstance(value, datetime):
             return value.timestamp()
     return 0.0
-
-
-def _confirmation_basis(value) -> ConfirmationBasis | None:
-    data = json_object(value)
-    if not data:
-        return None
-    try:
-        return ConfirmationBasis.model_validate(data)
-    except ValueError:
-        return None
