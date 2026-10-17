@@ -1,8 +1,7 @@
 """Triage labels on unclaimed conversations and topic accumulation; no LLM."""
 from fastapi import HTTPException
 from .provider_values import now_utc, stable_uuid
-
-ASSISTANT_AGENT_ID = 'employee.assistant'
+from .system_agents import SYSTEM_ASSISTANT_AGENT_ID as ASSISTANT_AGENT_ID
 
 
 def topic_key(topic):
