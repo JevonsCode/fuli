@@ -5,7 +5,7 @@ import { RouterLink } from 'vue-router'
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { agentDisplayName } from '@/features/agent-profile/profile-model'
-import { useAgentRoster } from '@/features/agent-profile/useAgentRoster'
+import { useAgentRecords } from '@/features/agent-profile/useAgentRecords'
 import { isAgentTaskDataComplete } from '@/features/agent-profile/agent-work-summary'
 import {
   currentWork,
@@ -28,23 +28,11 @@ const consoleBootstrapLoading = computed(() => !state.value
   && (store.runtimeStatus === 'idle' || store.runtimeStatus === 'loading'))
 const activePersonalSpace = computed(() => store.activePersonalSpace)
 const activeSpaceId = computed(() => activePersonalSpace.value?.id ?? state.value?.activePersonalSpaceId ?? '')
-const { agents: rosterAgents } = useAgentRoster(activeSpaceId)
 const personalProjects = computed(() => {
   const spaceId = activeSpaceId.value
   return (state.value?.personalProjects ?? []).filter(project => !spaceId || project.personal_space_id === spaceId)
 })
 const projectNames = computed(() => new Map(personalProjects.value.map(project => [project.project_id, projectDisplayName(project)])))
-const agentNames = computed(() => {
-  const names = new Map<string, string>()
-  for (const agent of rosterAgents.value) {
-    if (agent.personalSpaceId !== activeSpaceId.value) continue
-    const name = agentDisplayName(agent).trim()
-    if (!name || name === agent.agentId || agent.legacyAgentIds?.includes(name)) continue
-    names.set(agent.agentId, name)
-    for (const legacyAgentId of agent.legacyAgentIds ?? []) names.set(legacyAgentId, name)
-  }
-  return names
-})
 
 const tasks = ref<ProjectAgentTaskRecord[]>([])
 const tasksLoading = ref(false)
@@ -61,6 +49,8 @@ const recentProjectItems = computed(() => recentProjects(tasks.value, personalPr
 })))
 const hasTaskData = computed(() => tasks.value.length > 0)
 const attentionItems = computed(() => attention.previewItems)
+// Names are read only for the Agents this preview shows, not the whole roster.
+const attentionAgents = useAgentRecords(activeSpaceId, computed(() => attentionItems.value.map(item => item.agentId)))
 const attentionHasData = computed(() => attentionItems.value.length > 0)
 
 const localServiceStatus = computed(() => {
@@ -133,7 +123,11 @@ function projectName(projectId: string | null | undefined) {
 }
 
 function attentionAgentName(agentId: string) {
-  return agentNames.value.get(agentId) ?? ''
+  const agent = attentionAgents.records.value[agentId]
+  if (!agent) return ''
+  const name = agentDisplayName(agent).trim()
+  // An id is not a name; show none rather than a raw or legacy id.
+  return !name || name === agent.agentId || name === agentId || agent.legacyAgentIds?.includes(name) ? '' : name
 }
 
 function attentionMeta(item: AgentAttention) {

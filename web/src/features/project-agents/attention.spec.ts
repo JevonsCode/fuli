@@ -12,8 +12,8 @@ const item = { requestId: 'request-a', personalSpaceId: 'space-a', personalProje
   title: '选择方案', detail: '有两个可行的方案。', requestedAction: '请明确选择 A 或 B。', kind: 'question', status: 'open' as const, revision: 2, createdAt: '2026-09-04T00:00:00Z' }
 beforeEach(() => {
   setActivePinia(createPinia()); getJson.mockReset(); postJson.mockReset()
-  getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents?')
-    ? [{ agentId: 'agent-a', profile: { name: '工程师', displayName: 'Milo' } }]
+  getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents/')
+    ? { agentId: 'agent-a', personalSpaceId: new URL(url, 'http://fixture').searchParams.get('personalSpaceId'), profile: { name: '工程师', displayName: 'Milo' } }
     : { items: [item], total: 201, counts: { 'agent-a': 201 } })
 })
 
@@ -112,7 +112,7 @@ describe('Agent attention', () => {
     wrapper.unmount()
   })
   it('requires an explicit selection and sends the selected reply with its optional note', async () => {
-    getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents?') ? [] : { items: [{ ...item, kind: 'review' }], total: 1, counts: {} })
+    getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents/') ? [] : { items: [{ ...item, kind: 'review' }], total: 1, counts: {} })
     const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [] }, global: { stubs: { RouterLink: RouterLinkStub } } })
     await flushPromises(); useAgentAttention().show(); await flushPromises()
     expect((document.querySelector('button[type=submit]') as HTMLButtonElement).disabled).toBe(true)
@@ -129,7 +129,7 @@ describe('Agent attention', () => {
 
   it('keeps independent drafts while switching requests through the mobile selector', async () => {
     const second = { ...item, requestId: 'request-b', title: '第二个问题' }
-    getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents?') ? [] : { items: [item, second], total: 2, counts: {} })
+    getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents/') ? [] : { items: [item, second], total: 2, counts: {} })
     const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [] }, global: { stubs: { UiSelect: UiSelectStub, RouterLink: RouterLinkStub } } })
     await flushPromises(); useAgentAttention().show(); await flushPromises()
     const textarea = document.querySelector('textarea')!
@@ -156,7 +156,7 @@ describe('Agent attention', () => {
   it('keeps revision warnings on their own request and rechecks saved drafts after reopening', async () => {
     const second = { ...item, requestId: 'request-b', title: '第二个问题' }
     let items = [item, second]
-    getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents?') ? [] : { items, total: 2, counts: {} })
+    getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents/') ? [] : { items, total: 2, counts: {} })
     const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [] }, global: { stubs: { UiSelect: UiSelectStub, RouterLink: RouterLinkStub } } })
     await flushPromises(); const store = useAgentAttention(); store.show(); await flushPromises()
     const textarea = document.querySelector('textarea')!
@@ -179,7 +179,7 @@ describe('Agent attention', () => {
   it('releases the old space lock without allowing its completion to unlock a new submission', async () => {
     const finishes: Array<() => void> = []
     postJson.mockImplementation(() => new Promise<void>(resolve => { finishes.push(resolve) }))
-    getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents?') ? [] : {
+    getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents/') ? [] : {
       items: [{ ...item, personalSpaceId: url.includes('space-b') ? 'space-b' : 'space-a' }], total: 1, counts: {},
     })
     const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [] }, global: { stubs: { RouterLink: RouterLinkStub } } })
@@ -225,7 +225,7 @@ describe('Agent attention', () => {
 
   it('does not label the next request as submitting while refreshing after a confirmed reply', async () => {
     const second = { ...item, requestId: 'request-b', title: '第二个问题' }
-    getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents?') ? [] : { items: [item, second], total: 2, counts: {} })
+    getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents/') ? [] : { items: [item, second], total: 2, counts: {} })
     const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [] }, global: { stubs: { RouterLink: RouterLinkStub } } })
     await flushPromises(); const store = useAgentAttention(); store.show(); await flushPromises()
     let finish!: (value: unknown) => void

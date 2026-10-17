@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import BackToTop from "@/components/BackToTop.vue";
 import GrowthLoading from "@/components/GrowthLoading.vue";
+import { useNearEnd } from "@/composables/useNearEnd";
 import { useScrollRestoration } from "@/composables/useScrollRestoration";
 import {
   directoryFilterQuery,
@@ -20,7 +21,8 @@ import {
   fuzzyMatch,
   profileProjectIds,
 } from "@/features/agent-profile/profile-model";
-import { agentPinsText, useAgentPinsState, useAgentRosterState } from "@/features/agent-profile/agent-pins";
+import { agentPinsText, useAgentPinsState } from "@/features/agent-profile/agent-pins";
+import { useAgentRosterPages } from "@/features/agent-profile/useAgentRosterPages";
 import ProjectAgentFirstTask from "@/features/project-agents/ProjectAgentFirstTask.vue";
 import { useAgentWorkSummary } from "@/features/agent-profile/useAgentWorkSummary";
 import { agentWorkbenchEntry, compareWorkbenchRows } from "@/features/agent-profile/agent-workbench";
@@ -38,7 +40,6 @@ const store = useConsoleStore();
 const route = useRoute();
 const router = useRouter();
 const space = computed(() => store.activePersonalSpace?.id ?? "");
-const { agents, loading, error, load } = useAgentRosterState(space);
 const agentPins = useAgentPinsState(space);
 const pinnedAgentIds = agentPins.agentIds;
 const pinSavingAgentId = agentPins.savingAgentId;
@@ -58,9 +59,23 @@ const status = ref<string>(initialFilters.status);
 // No selected project means every project.
 const selectedProjects = ref<string[]>(initialFilters.projects);
 const view = ref<DirectoryView>(initialFilters.view);
+// Status narrows the request itself; search and projects filter the pages read so far.
+const {
+  agents,
+  loading: pageLoading,
+  error: pageError,
+  complete: rosterComplete,
+  loadMore,
+  reload,
+} = useAgentRosterPages(space, status);
+const firstPageLoading = computed(() => pageLoading.value && !agents.value.length);
+const partialRoster = computed(() => !rosterComplete.value && agents.value.length > 0);
+const filtering = computed(() => Boolean(search.value.trim() || selectedProjects.value.length));
 // Opened project groups; each opened project reads its own lead once.
 const openProjects = ref<Record<string, boolean>>({});
 const scroller = ref<HTMLElement | null>(null);
+const rosterEnd = ref<HTMLElement | null>(null);
+const nearEnd = useNearEnd(rosterEnd, scroller);
 const recruiting = ref(false);
 const hireable = computed(() => employeeTemplates.value.some((entry) => !entry.fixed));
 const managesAllProjects = (agentId: string) => employeeTemplates.value
@@ -98,7 +113,7 @@ const matches = (agent: (typeof agents.value)[number]) =>
   );
 const busy = computed(
   () =>
-    loading.value ||
+    firstPageLoading.value ||
     workLoading.value ||
     store.runtimeStatus === "loading",
 );
@@ -222,13 +237,16 @@ async function recruited(result: EmployeeRecruitmentResult) {
   await router.push(agentProfilePath(space.value, result.agent.agentId));
 }
 
+// Reading on toward the end of the list asks for the next page; a failed
+// page waits for the reader's retry instead of looping.
+watch([nearEnd, pageLoading, pageError, rosterComplete], () => {
+  if (nearEnd.value && !pageLoading.value && !pageError.value && !rosterComplete.value)
+    void loadMore();
+});
+
 async function retryDirectory() {
-  if (store.state) {
-    await Promise.allSettled([load(), loadWorkSummary()]);
-    return;
-  }
-  await store.refresh();
-  await Promise.allSettled([load(), loadWorkSummary()]);
+  if (!store.state) await store.refresh();
+  await Promise.allSettled([reload(), loadWorkSummary()]);
 }
 </script>
 
@@ -240,7 +258,7 @@ async function retryDirectory() {
   >
     <header class="ui-toolbar agents-directory-heading">
       <p v-if="!busy || agents.length" class="agents-directory-count">
-        {{ t("agentProfiles.members", { count: agents.length }) }}
+        {{ t(partialRoster ? "agentProfiles.membersLoaded" : "agentProfiles.members", { count: agents.length }) }}
       </p>
       <span v-else class="agents-directory-count" aria-hidden="true">&nbsp;</span>
       <div class="agent-profile-actions">
@@ -268,7 +286,7 @@ async function retryDirectory() {
       </button>
     </p>
     <ProjectAgentFirstTask
-      v-if="!busy && !error && store.runtimeStatus === 'ready' && !projects.length"
+      v-if="!busy && !pageError && store.runtimeStatus === 'ready' && !projects.length"
       :personal-space-id="space"
     />
 
@@ -317,21 +335,25 @@ async function retryDirectory() {
       :label="t('agentProfiles.loading')"
     />
     <div
-      v-if="error || store.runtimeStatus === 'error'"
+      v-if="(pageError && !agents.length) || store.runtimeStatus === 'error'"
       v-show="!busy || agents.length === 0"
       role="alert"
       class="ui-card ui-empty agent-profile-empty"
     >
-      <p>{{ error || t("agentProfiles.loadError") }}</p>
+      <p>{{ (!agents.length && pageError) || t("agentProfiles.loadError") }}</p>
       <button class="quiet-button" type="button" @click="retryDirectory">
         {{ t("agentProfiles.retry") }}
       </button>
     </div>
+    <p v-if="partialRoster" class="agents-directory-partial" role="status">
+      {{ t(filtering ? "agentProfiles.partialFilter" : "agentProfiles.partialRoster", { count: agents.length }) }}
+    </p>
     <p
       v-if="
         !busy &&
+        rosterComplete &&
         !visible.length &&
-        !error &&
+        !pageError &&
         store.runtimeStatus !== 'error'
       "
       class="ui-card ui-empty agent-profile-empty"
@@ -369,6 +391,19 @@ async function retryDirectory() {
           </li>
         </ul>
       </DirectoryProjectGroup>
+    </div>
+
+    <div v-if="agents.length && !rosterComplete" ref="rosterEnd" class="agents-directory-more">
+      <GrowthLoading v-if="pageLoading" variant="inline" :label="t('agentProfiles.loadingMore')" />
+      <p v-else-if="pageError" class="agents-directory-more-error" role="alert">
+        <span>{{ t("agentProfiles.loadMoreError") }} {{ pageError }}</span>
+        <button class="quiet-button" type="button" data-roster-retry @click="loadMore">
+          {{ t("agentProfiles.retry") }}
+        </button>
+      </p>
+      <button v-else class="quiet-button" type="button" data-roster-more @click="loadMore">
+        {{ t("agentProfiles.loadMore") }}
+      </button>
     </div>
 
     <BackToTop :scroller="scroller" />

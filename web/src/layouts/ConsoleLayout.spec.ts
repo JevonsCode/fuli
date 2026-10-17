@@ -31,7 +31,8 @@ const roster = ['Bole', 'Jefa', 'Tonborg'].map((name) => ({
 beforeEach(() => {
   vi.mocked(getJson).mockReset()
   vi.mocked(getJson).mockImplementation(async (url: string) => {
-    if (url === '/api/project-agents?personalSpaceId=personal-1') return roster
+    const pinned = url.match(/^\/api\/project-agents\/([^/?]+)\?personalSpaceId=personal-1$/)
+    if (pinned) return roster.find((agent) => agent.agentId === decodeURIComponent(pinned[1]!))
     if (url === '/api/agent-pins?personalSpaceId=personal-1') return { revision: 1, agentIds: ['employee.bole', 'employee.jefa', 'employee.tonborg'] }
     if (url === '/api/system/version') return { status: 'unavailable', currentVersion: '0.12.0', latestVersion: null, updateAvailable: false, packageUrl: '', checkedAt: '' }
     throw new Error(`Unexpected detail request: ${url}`)
@@ -122,6 +123,8 @@ describe('ConsoleLayout', () => {
     expect(wrapper.get('a[href="/about"]').attributes('href')).toBe('/about')
     expect(wrapper.get('a[href="/project-agents"]').text()).toContain('Agents')
     expect(wrapper.findAll('.pinned-agent-name').map((name) => name.text())).toEqual(['Bole', 'Jefa', 'Tonborg'])
+    // The sidebar reads only its pinned Agents, never the whole roster.
+    expect(vi.mocked(getJson).mock.calls.some(([url]) => String(url).startsWith('/api/project-agents?'))).toBe(false)
     expect(wrapper.find('a[href="/public-projects"]').exists()).toBe(false)
     expect(wrapper.find('a[href="/review"]').exists()).toBe(false)
     store.state = {
@@ -179,7 +182,7 @@ describe('ConsoleLayout', () => {
     wrapper.unmount()
   })
 
-  it('surfaces a roster failure and retries both roster and pin reads', async () => {
+  it('surfaces a pinned Agent read failure and retries both the Agent and pin reads', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = useConsoleStore()
@@ -192,12 +195,12 @@ describe('ConsoleLayout', () => {
     }
     let rosterReads = 0
     vi.mocked(getJson).mockImplementation(async (url: string) => {
-      if (url === '/api/project-agents?personalSpaceId=personal-1') {
+      if (url === '/api/project-agents/employee.bole?personalSpaceId=personal-1') {
         rosterReads += 1
         if (rosterReads === 1) throw new Error('Roster is temporarily unavailable.')
-        return roster
+        return roster[0]
       }
-      if (url === '/api/agent-pins?personalSpaceId=personal-1') return { revision: 1, agentIds: [] }
+      if (url === '/api/agent-pins?personalSpaceId=personal-1') return { revision: 1, agentIds: ['employee.bole'] }
       throw new Error(`Unexpected detail request: ${url}`)
     })
     const router = createRouter({

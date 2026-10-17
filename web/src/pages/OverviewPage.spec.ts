@@ -56,6 +56,13 @@ function state(overrides: Partial<ConsoleState> = {}): ConsoleState {
   }
 }
 
+// Pages read one Agent at a time: answer from a synthetic roster, 404 for anyone else.
+const isAgentRead = (url: string) => url.startsWith('/api/project-agents/') && new URL(url, 'http://fixture').pathname.split('/').length === 4
+function agentRead(url: string, roster: unknown[]) {
+  const id = decodeURIComponent(new URL(url, 'http://fixture').pathname.split('/')[3] ?? '')
+  const found = (roster as Array<{ agentId: string }>).find(agent => agent.agentId === id)
+  return found ? Promise.resolve(found) : Promise.reject(Object.assign(new Error('project Agent not found'), { status: 404 }))
+}
 async function setup({
   taskPayload = { items: [] },
   attentionPayload = { items: [], total: 0, counts: {} },
@@ -81,7 +88,7 @@ async function setup({
     : async (url: string) => {
       if (url.startsWith('/api/project-agent-tasks?')) return taskPayload
       if (url.startsWith('/api/agent-attention?')) return attentionPayload
-      if (url.startsWith('/api/project-agents?')) return rosterPayload
+      if (isAgentRead(url)) return agentRead(url, rosterPayload as unknown[])
       throw new Error(`Unexpected request: ${url}`)
     })
   const router = createRouter({

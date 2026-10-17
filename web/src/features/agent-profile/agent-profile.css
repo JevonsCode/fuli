@@ -65,6 +65,17 @@
 
 .agents-directory-grid > li {
   min-width: 0;
+  /* Long rosters: rows far off screen skip layout and paint but stay in the DOM for find and focus. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 132px;
+}
+
+.agents-directory-partial { margin: 0 0 var(--space-3, 12px); color: var(--color-muted); font-size: 13px; }
+.agents-directory-more {
+  display: flex; justify-content: center; min-height: var(--control-height-sm, 32px); margin-top: var(--space-3, 12px);
+}
+.agents-directory-more-error {
+  display: flex; align-items: center; gap: var(--space-3, 12px); margin: 0; color: var(--color-danger); font-size: 13px;
 }
 
 .agent-card {

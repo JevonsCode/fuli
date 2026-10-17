@@ -20,7 +20,7 @@ import {
   profileProjectIds,
 } from "@/features/agent-profile/profile-model";
 import { isAgentTaskDataComplete, taskHasAgent } from "@/features/agent-profile/agent-work-summary";
-import { useAgentRoster } from "@/features/agent-profile/useAgentRoster";
+import { useAgentRecords } from "@/features/agent-profile/useAgentRecords";
 import { CURRENT_WORK_STATUSES } from "@/features/overview/overview-data";
 import {
   arrayOf,
@@ -48,16 +48,15 @@ type ProfileTab =
 const route = useRoute();
 const store = useConsoleStore();
 const space = computed(() => store.activePersonalSpace?.id ?? "");
-const { agents, loading, error, load } = useAgentRoster(space);
+// Only this Agent is read; the Provider resolves a legacy id to its current record.
+const routeAgentId = computed(() =>
+  route.params.spaceId === space.value ? String(route.params.agentId ?? "") : "",
+);
+const self = useAgentRecords(space, computed(() => (routeAgentId.value ? [routeAgentId.value] : [])));
+const { loading, error } = self;
+const load = () => self.load({ force: true });
 const agent = computed(() =>
-  route.params.spaceId === space.value
-    ? agents.value.find(
-        (item) =>
-          item.personalSpaceId === space.value &&
-          (item.agentId === route.params.agentId ||
-            item.legacyAgentIds?.includes(String(route.params.agentId))),
-      )
-    : undefined,
+  routeAgentId.value ? self.records.value[routeAgentId.value] : undefined,
 );
 const projects = computed(() =>
   (store.state?.personalProjects ?? []).filter(
@@ -66,10 +65,6 @@ const projects = computed(() =>
 );
 const projectName = (id: string) =>
   projects.value.find((item) => item.project_id === id)?.profile.name || id;
-const personName = (id: string) => {
-  const person = agents.value.find((item) => item.agentId === id);
-  return person ? agentDisplayName(person) : id;
-};
 
 const tasks = ref<ProjectAgentTaskRecord[]>([]);
 const assignments = ref<ProjectAgentAssignmentRecord[] | undefined>(undefined);
@@ -104,6 +99,15 @@ const profileTabs = computed(() => {
 const collaborators = computed(() =>
   agent.value ? collaboratorsFor(agent.value.agentId, tasks.value) : [],
 );
+// Collaborator names are read for the people shown; an unread name falls back to the id.
+const collaboratorRecords = useAgentRecords(
+  space,
+  computed(() => collaborators.value.map((person) => person.agentId)),
+);
+const personName = (id: string) => {
+  const person = collaboratorRecords.records.value[id];
+  return person ? agentDisplayName(person) : id;
+};
 const currentProjects = computed(() =>
   agent.value
     ? profileProjectIds({
@@ -246,8 +250,7 @@ watch(
 );
 
 function saved(person: ProjectAgentRecord) {
-  const index = agents.value.findIndex((item) => item.agentId === person.agentId);
-  if (index >= 0) agents.value[index] = { ...agents.value[index], ...person };
+  if (agent.value) self.put(routeAgentId.value, { ...agent.value, ...person });
 }
 
 function selectTab(tab: ProfileTab) {

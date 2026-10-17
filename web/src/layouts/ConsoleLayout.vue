@@ -9,8 +9,8 @@ import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
 import AgentAttentionCenter from '@/features/project-agents/AgentAttentionCenter.vue'
 import PinnedAgentsNav from '@/features/agent-profile/PinnedAgentsNav.vue'
-import { AGENT_PINS_KEY, AGENT_ROSTER_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
-import { useAgentRoster } from '@/features/agent-profile/useAgentRoster'
+import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
+import { useAgentRecords } from '@/features/agent-profile/useAgentRecords'
 import { t } from '@/i18n'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { personalProjectsPath, knowledgePath } from '@/router/paths'
@@ -26,16 +26,16 @@ const activeSpaceId = computed(() => store.activePersonalSpace?.id ?? '')
 const navigationSpaceId = computed(() => activeSpaceId.value || 'current')
 const personalProjectsTo = computed(() => personalProjectsPath(navigationSpaceId.value, 'graph'))
 const knowledgeTo = computed(() => knowledgePath('personal', navigationSpaceId.value, 'directory'))
-const agentRoster = useAgentRoster(activeSpaceId)
 const agentPins = useAgentPins(activeSpaceId)
-const rosterAgents = agentRoster.agents
-const rosterLoading = agentRoster.loading
-const rosterError = agentRoster.error
 const pinnedAgentIds = agentPins.agentIds
+// Only the pinned Agents are read here; the full roster belongs to the directory.
+const pinnedRecords = useAgentRecords(activeSpaceId, pinnedAgentIds)
+const rosterAgents = computed(() => Object.values(pinnedRecords.records.value))
+const rosterLoading = pinnedRecords.loading
+const rosterError = pinnedRecords.error
 const pinsLoading = agentPins.loading
 const pinsError = agentPins.error
 const pinnedAgentsError = computed(() => pinsError.value || rosterError.value)
-provide(AGENT_ROSTER_KEY, agentRoster)
 provide(AGENT_PINS_KEY, agentPins)
 const title = computed(() => routeMetaText(route.meta.title, 'routes.overview.title'))
 const dedicatedWorkspace = computed(() => route.meta.dedicatedWorkspace === true)
@@ -101,7 +101,7 @@ async function closeMobileNav() {
 
 function retryPinnedAgents() {
   void Promise.all([
-    agentRoster.load(),
+    pinnedRecords.load({ force: true }),
     agentPins.load({ force: true }),
   ])
 }
