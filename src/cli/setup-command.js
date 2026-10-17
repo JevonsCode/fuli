@@ -112,12 +112,18 @@ export function formatSetupResult(result, plan) {
       lines.push(`${agent.label}: ${state}${agent.message ? ` (${agent.message})` : ''}; retry fuli setup`);
       continue;
     }
+    const checkNote = agent.selfCheck?.status === 'passed' ? ' (self-check passed)' : '';
     lines.push(agent.restartRequired
-      ? `${agent.label}: connected; quit and reopen the app to load Fuli`
+      ? `${agent.label}: connected${checkNote}; quit and reopen the app to load Fuli`
       : agent.newTaskRequired
-        ? `${agent.label}: connected; create or reopen a task to load the new configuration`
-        : `${agent.label}: connected`);
+        ? `${agent.label}: connected${checkNote}; create or reopen a task to load the new configuration`
+        : `${agent.label}: connected${checkNote}`);
     for (const step of agent.nextSteps ?? []) lines.push(`${agent.label}: ${step}`);
+  }
+  if (result.status === 'ready' && result.agents.some((agent) => agent.status === 'connected')) {
+    lines.push(
+      'First-try check: 1) Tell one connected client a collaboration preference; 2) Ask another connected client what Fuli remembers.'
+    );
   }
   if (result.agents.some((agent) => agent.status === 'connected' &&
     !agent.restartRequired && !agent.newTaskRequired)) {

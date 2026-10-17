@@ -513,3 +513,81 @@ test('setup output explains why an Agent was not fully connected', () => {
   assert.match(output, /Codex: partially configured \(EPERM: operation not permitted\); retry fuli setup/);
   assert.match(output, /Cursor: connection failed; retry fuli setup/);
 });
+
+test('applyLocalSetup runs post-connection self-check and formatSetupResult prints the 2-step first-try guide', async () => {
+  const result = await applyLocalSetup(samplePlan(), OPTIONS, {
+    ensureRuntime: async () => ({ status: 'running', url: 'http://127.0.0.1:2727', pid: 1 }),
+    backupConfig: () => 'C:/backup/codex.bak',
+    connect: (agent) => ({
+      id: agent.id,
+      label: agent.label,
+      status: 'connected',
+      newTaskRequired: true
+    }),
+    installSkill: (agent) => ({
+      status: 'installed',
+      path: agent.skillPath,
+      backupPath: null
+    }),
+    inspectInstallations: (agents) => agents.map((agent) => ({
+      ...agent,
+      integrationStatus: 'connected',
+      integrationDetails: {
+        mcp: 'current',
+        skills: 'current',
+        bootstrap: 'current',
+        lifecycleHooks: 'current'
+      }
+    }))
+  });
+
+  assert.equal(result.status, 'ready');
+  assert.deepEqual(result.agents[0].selfCheck, {
+    status: 'passed',
+    details: {
+      mcp: 'current',
+      skills: 'current',
+      bootstrap: 'current',
+      lifecycleHooks: 'current'
+    }
+  });
+
+  const output = formatSetupResult(result, samplePlan());
+  assert.match(output, /Codex: connected \(self-check passed\); create or reopen a task/);
+  assert.match(output, /First-try check: 1\) Tell one connected client a collaboration preference; 2\) Ask another connected client what Fuli remembers\./);
+});
+
+test('applyLocalSetup downgrades an Agent to partial when post-connection self-check detects missing or outdated components', async () => {
+  const result = await applyLocalSetup(samplePlan(), OPTIONS, {
+    ensureRuntime: async () => ({ status: 'running', url: 'http://127.0.0.1:2727', pid: 1 }),
+    backupConfig: () => 'C:/backup/codex.bak',
+    connect: (agent) => ({
+      id: agent.id,
+      label: agent.label,
+      status: 'connected'
+    }),
+    installSkill: (agent) => ({
+      status: 'installed',
+      path: agent.skillPath,
+      backupPath: null
+    }),
+    inspectInstallations: (agents) => agents.map((agent) => ({
+      ...agent,
+      integrationStatus: 'update_available',
+      integrationDetails: {
+        mcp: 'current',
+        skills: 'current',
+        lifecycleHooks: 'outdated'
+      }
+    }))
+  });
+
+  assert.equal(result.status, 'partial');
+  assert.equal(result.agents[0].status, 'partial');
+  assert.equal(result.agents[0].selfCheck.status, 'failed');
+  assert.match(result.agents[0].message, /Self-check failed \(lifecycleHooks=outdated\)/);
+
+  const output = formatSetupResult(result, samplePlan());
+  assert.match(output, /Codex: partially configured \(Self-check failed \(lifecycleHooks=outdated\)\); retry fuli setup/);
+});
+
