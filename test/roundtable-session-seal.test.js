@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { runProcess, wakeAgent } from '../src/agent-roundtable/wake.js';
+import { runProcess, wakeAgent, wakeArguments } from '../src/agent-roundtable/wake.js';
 
 const program = `
 const first = JSON.stringify({type:'thread.started',thread_id:'native-receiver-123'})+'\\n';
@@ -49,4 +49,15 @@ test('answer metadata alone cannot establish the native session', async () => {
     env: { ...process.env, FULI_CLAUDE_BIN: process.execPath }, onSession: async () => {},
     run: (_, __, options) => runProcess(process.execPath, ['-e', `process.stdout.write(${JSON.stringify(resultOnly)})`], options)
   }), { code: 'session_mismatch' });
+});
+
+test('a delegated Codex wake forwards only the private roundtable variable names to its MCP child', () => {
+  for (const sessionId of [null, 'native-session-123']) {
+    const args = wakeArguments('codex', { cwd: '/synthetic', sessionId, delegated: true });
+    const setting = args.find(arg => arg.startsWith('mcp_servers.fuli.env_vars='));
+    assert.deepEqual(JSON.parse(setting?.split('=')[1] ?? 'null'),
+      ['FULI_ROUNDTABLE_DELEGATION', 'FULI_ROUNDTABLE_PEER_DEPTH']);
+    assert.equal(args.some(arg => arg.includes('private-grant-value')), false);
+  }
+  assert.equal(wakeArguments('codex', { cwd: '/synthetic' }).some(arg => arg.includes('env_vars')), false);
 });

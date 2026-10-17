@@ -25,10 +25,13 @@ export const codexWake = Object.freeze({
     return bundled && fileExists(bundled) ? bundled : null;
   },
 
-  args({ sessionId, cwd }) {
+  args({ sessionId, cwd, delegated = false }) {
+    // Codex MCP children inherit a filtered environment. Pass variable names,
+    // never the private capability itself in argv or persisted client config.
+    const authority = delegated ? ['-c', 'mcp_servers.fuli.env_vars=["FULI_ROUNDTABLE_DELEGATION","FULI_ROUNDTABLE_PEER_DEPTH"]'] : [];
     return sessionId
-      ? ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', sessionId, '-']
-      : ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', cwd, '-'];
+      ? ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', ...authority, sessionId, '-']
+      : ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', cwd, ...authority, '-'];
   },
 
   // A session resumes only from the directory it started in.
