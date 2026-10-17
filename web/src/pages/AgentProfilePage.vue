@@ -10,6 +10,8 @@ import GrowthLoading from "@/components/GrowthLoading.vue";
 import UiDisclosure from "@/components/UiDisclosure.vue";
 import AgentName from "@/features/agent-profile/AgentName.vue";
 import AgentProfileSettings from "@/features/agent-profile/AgentProfileSettings.vue";
+import AgentOccupationEditor from "@/features/agent-profile/AgentOccupationEditor.vue";
+import { occupationLabels } from "@/features/agent-profile/agent-occupation";
 import AgentConversations from "@/features/project-agents/AgentConversations.vue";
 import TaskExecutionPlan from "@/features/project-agents/TaskExecutionPlan.vue";
 import {
@@ -322,6 +324,10 @@ onMounted(() => {
               {{ t(`projectAgents.status.${agent.profile.status}`) }}
             </span>
           </div>
+          <p class="agent-resume-occupation" data-profile-occupation>
+            <template v-if="occupationLabels(agent.occupation).length">{{ occupationLabels(agent.occupation).join(" · ") }}</template>
+            <span v-else class="ui-meta">{{ t("agentRedesign.occupation.notSet") }}</span>
+          </p>
           <p>{{ agent.profile.responsibility }}</p>
           <div class="agent-resume-meta">
             <span>
@@ -376,6 +382,12 @@ onMounted(() => {
       <AgentProfileSettings
         v-if="showSettings"
         :key="agent.agentId"
+        :agent="agent"
+        @saved="saved"
+      />
+      <AgentOccupationEditor
+        v-if="showSettings && agent.profile.status !== 'archived'"
+        :key="`occupation-${agent.agentId}`"
         :agent="agent"
         @saved="saved"
       />

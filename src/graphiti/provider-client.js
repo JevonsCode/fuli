@@ -259,6 +259,11 @@ export class GraphitiProviderClient {
   verifyTaskCheckpoint(query) {
     return this.#request(`/v1/task-context-sessions/checkpoint?${new URLSearchParams(query)}`);
   }
+  updateProjectAgentOccupation(agentId, input) {
+    return this.#request(`/v1/project-agents/${encodeURIComponent(agentId)}/occupation`, {
+      method: 'PUT', body: input
+    });
+  }
   deleteProjectAgent(personalSpaceId, agentId, reason = 'archived by user') {
     const query = new URLSearchParams({
       personal_space_id: personalSpaceId,

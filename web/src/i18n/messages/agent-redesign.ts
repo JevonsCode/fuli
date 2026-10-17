@@ -5,6 +5,23 @@ export const agentRedesignMessages = {
     projects: {
       more: "全部项目 · {count}",
     },
+    occupation: {
+      title: "职业",
+      role: "主角色",
+      tags: "能力标签",
+      tagsHint: "最多 5 个，可多选",
+      none: "未设置",
+      notSet: "还没有设置职业",
+      note: "职业由你设置，用来说明长期分工；不代表权限，也不证明技能。",
+      save: "保存职业",
+      saving: "正在保存职业",
+      saved: "职业已保存",
+      saveError: "职业保存失败",
+      keys: {
+        product: "产品", engineering: "开发", design: "设计", operations: "运营", testing: "测试",
+        research: "研究", data: "数据", writing: "写作", management: "管理",
+      },
+    },
     workbench: {
       current: "当前",
       titleNotLoaded: "任务标题未在最近 200 条任务中，打开查看",
@@ -35,6 +52,23 @@ export const agentRedesignMessages = {
     membershipStatus: "Member · {status}",
     projects: {
       more: "All projects · {count}",
+    },
+    occupation: {
+      title: "Occupation",
+      role: "Main role",
+      tags: "Skill tags",
+      tagsHint: "Up to 5; pick any",
+      none: "Not set",
+      notSet: "No occupation set yet",
+      note: "You set the occupation to describe long-term focus. It is not a permission and does not prove a skill.",
+      save: "Save occupation",
+      saving: "Saving occupation",
+      saved: "Occupation saved",
+      saveError: "Could not save the occupation",
+      keys: {
+        product: "Product", engineering: "Engineering", design: "Design", operations: "Operations", testing: "Testing",
+        research: "Research", data: "Data", writing: "Writing", management: "Management",
+      },
     },
     workbench: {
       current: "Now",

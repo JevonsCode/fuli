@@ -673,6 +673,30 @@ async def test_blocked_task_is_visible_as_current_agent_work():
 
 
 @pytest.mark.asyncio
+async def test_occupation_is_read_only_from_an_explicit_edit():
+    profile = project_agent_profile()
+    edited = raw_agent(profile)
+    edited.update({
+        'occupation_role': 'design', 'occupation_tags': ['research'],
+        'occupation_updated_at': datetime(2026, 10, 17, tzinfo=UTC),
+    })
+    never = raw_agent(profile)
+    never['agent_id'] = 'never-edited'
+    # A stray role without an edit time is not treated as a human edit.
+    never['occupation_role'] = 'design'
+    driver = SequentialDriver([[
+        {'agent': edited, 'assignment_rows': [], 'task_rows': [], 'observed_clients': []},
+        {'agent': never, 'assignment_rows': [], 'task_rows': [], 'observed_clients': []},
+    ]])
+
+    result = await StoreStub(driver).list_project_agents({'id': 'principal-1'}, 'personal-space')
+
+    assert result[0].occupation.role == 'design'
+    assert result[0].occupation.tags == ['research']
+    assert result[1].occupation is None
+
+
+@pytest.mark.asyncio
 async def test_archiving_agent_preserves_history_and_ends_assignments():
     profile = project_agent_profile()
     archived = raw_agent(profile)

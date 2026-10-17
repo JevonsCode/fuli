@@ -6,6 +6,7 @@ from typing import Annotated, Any
 from fastapi import FastAPI, HTTPException, Query
 
 from .project_agent_memory_routes import register_project_agent_memory_routes
+from .project_agent_occupation_models import ProjectAgentOccupationUpdate
 from .project_agent_worker_routes import register_project_agent_worker_routes
 from .task_notifications import register_task_notification_routes
 
@@ -132,6 +133,17 @@ def register_project_agent_routes(
             agent_id,
             reason=reason,
         )
+
+    @application.put(
+        '/v1/project-agents/{agent_id}/occupation',
+        response_model=ProjectAgentRecord,
+    )
+    async def update_project_agent_occupation(
+        agent_id: str,
+        request: ProjectAgentOccupationUpdate,
+        actor: Actor,
+    ) -> ProjectAgentRecord:
+        return await store.update_project_agent_occupation(actor, agent_id, request)
 
     @application.post(
         '/v1/project-agents/system-coordinator',

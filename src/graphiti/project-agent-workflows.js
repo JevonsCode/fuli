@@ -93,6 +93,18 @@ export async function getProjectAgent(application, input) {
   ));
 }
 
+// Only an explicit person edit sets the occupation; it is never inferred.
+export async function updateProjectAgentOccupation(application, input) {
+  return projectAgentRecord(await application.personal.updateProjectAgentOccupation(
+    input.agentId,
+    {
+      personal_space_id: input.personalSpaceId,
+      role: input.role ?? null,
+      tags: input.tags ?? []
+    }
+  ));
+}
+
 export async function deleteProjectAgent(application, input) {
   return projectAgentRecord(await application.personal.deleteProjectAgent(
     input.personalSpaceId,

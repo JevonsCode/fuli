@@ -113,6 +113,11 @@ export function projectAgentRecord(value) {
     Object.hasOwn(value, 'open_task_count'));
   copyOptional(result, 'currentTaskId', value.current_task_id,
     Object.hasOwn(value, 'current_task_id'));
+  copyOptional(result, 'occupation', value.occupation ? {
+    role: value.occupation.role ?? null,
+    tags: value.occupation.tags ?? [],
+    updatedAt: value.occupation.updated_at
+  } : null, Object.hasOwn(value, 'occupation'));
   copyOptional(result, 'observedClients', value.observed_clients,
     Object.hasOwn(value, 'observed_clients'));
   copyOptional(result, 'recruitedAt', value.recruited_at,

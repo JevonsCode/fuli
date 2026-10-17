@@ -14,6 +14,7 @@ import {
 } from "./profile-model";
 import type { AgentWorkbenchEntry } from "./agent-workbench";
 import { agentPinsText } from "./agent-pins";
+import { occupationLabels } from "./agent-occupation";
 import type { ProjectAgentRecord } from "@/types";
 
 const props = defineProps<{
@@ -52,6 +53,7 @@ const taskLink = computed(() => ({
   path: "/project-agents/manage",
   query: { agent: props.agent.agentId, task: props.entry?.taskId ?? "" },
 }));
+const occupation = computed(() => occupationLabels(props.agent.occupation));
 const workStatusClass = computed(() => `is-${workStatus.value}`);
 // Jefa and Bole are fixed roles every space has.
 const fixedRole = computed(() => ({ coordinator: t("agentProfiles.roles.projectManager"), hr: t("agentProfiles.roles.hr") })[props.agent.profile.agentType as string] ?? "");
@@ -117,6 +119,12 @@ function togglePin() {
         </RouterLink>
         <span v-if="agent.employeeNumber" class="ui-badge fla-employee-number">FLA {{ agent.employeeNumber }}</span>
         <span v-if="fixedRole" class="ui-badge ui-badge--accent agent-card-role">{{ fixedRole }}</span>
+        <span
+          v-if="occupation.length"
+          class="agent-card-occupation"
+          data-occupation
+          :title="t('agentRedesign.occupation.title')"
+        >{{ occupation.join(" · ") }}</span>
         <AgentHand :agent-id="agent.agentId" />
       </div>
       <span
