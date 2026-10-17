@@ -11,6 +11,17 @@ import { t } from '@/i18n'
 import type { ProjectAgentRecord } from '@/types'
 
 describe('ProjectAgentAutomationPolicyPanel', () => {
+  it('keeps loading visible while the policy disclosure is collapsed', async () => {
+    let finish!: (value: unknown) => void
+    getJson.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const wrapper = mountPanel()
+    expect(wrapper.get('details').attributes('open')).toBeUndefined()
+    expect(wrapper.get('summary').text()).toContain(t('projectAgents.coordination.loading'))
+    finish({ auto_reuse_previous_agent: true })
+    await flushPromises()
+    expect(wrapper.get('summary').text()).not.toContain(t('projectAgents.coordination.loading'))
+    wrapper.unmount()
+  })
   it('does not overwrite the next project when a previous save arrives late', async () => {
     let finish!: (value: unknown) => void
     patchJson.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))

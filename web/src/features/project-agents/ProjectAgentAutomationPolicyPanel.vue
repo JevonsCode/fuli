@@ -209,16 +209,12 @@ function stringValue(value: unknown) {
     <summary>
       <h3>{{ t('projectAgents.coordination.title') }}</h3>
       <span class="project-agent-policy-project">{{ projectName }}</span>
+      <GrowthLoading v-if="loading" variant="inline" :label="t('projectAgents.coordination.loading')" />
       <span v-if="!loading" class="project-agent-policy-state" data-policy-summary>{{ policySummary }}</span>
     </summary>
     <div class="project-agent-policy-body">
 
-    <GrowthLoading
-      v-if="loading"
-      variant="compact"
-      :label="t('projectAgents.coordination.loading')"
-    />
-    <div v-else class="project-agent-policy-options">
+    <div v-if="!loading" class="project-agent-policy-options">
       <label>
         <span>
           <strong>{{ t('projectAgents.coordination.autoReuse') }}</strong>
@@ -327,6 +323,7 @@ function stringValue(value: unknown) {
 .project-agent-policy-disclosure > summary::before { content: '▸'; color: var(--color-muted); transition: transform 140ms ease-out; }
 .project-agent-policy-disclosure[open] > summary::before { transform: rotate(90deg); }
 @media (prefers-reduced-motion: reduce) { .project-agent-policy-disclosure > summary::before { transition: none; } }
+:global(:root[data-motion="reduced"]) .project-agent-policy-disclosure > summary::before { transition: none; }
 .project-agent-policy-disclosure h3 { display: inline; color: var(--color-ink); font-size: 13px; line-height: 1.35; }
 .project-agent-policy-project { color: var(--color-muted); font-size: 12px; }
 .project-agent-policy-disclosure > summary .project-agent-policy-state { min-width: 0; overflow-wrap: anywhere; }
