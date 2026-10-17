@@ -10,7 +10,7 @@ import {
 
 import { callAgentTool, listAgentTools } from '../agent-tools.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
-import { runWithAgentRequestContext } from '../app/agent-request-context.js';
+import { runWithAgentRequestContext, sealedWorkerRequestContext } from '../app/agent-request-context.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { MCP_INSTRUCTIONS } from './instructions.js';
 import { createProjectActionPreviewTokens } from './project-action-preview-tokens.js';
@@ -210,8 +210,9 @@ function createToolMap(
           if (['begin_task_context', 'get_collaboration_preferences'].includes(definition.name)) {
             return workerTaskContext.entry(admitted, definition.name);
           }
+          // Provenance follows the Provider-admitted run, never the payload.
           return invokeAgentTool(app, definition.name, prepared, projectActionPreviews,
-            commonKnowledgePreviews, requestContext);
+            commonKnowledgePreviews, sealedWorkerRequestContext(requestContext));
         }) : invokeAgentTool(
           app,
           definition.name,

@@ -7,7 +7,8 @@ import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { agentMemoryRecord, prepareProjectAgentMemory } from './project-agent-memory.js';
-import { normalizeTaskCaptures, taskCaptureInput, taskCaptureReceipt, taskCaptureReviewPaths, taskCaptureStatus } from './task-knowledge-routing.js';
+import { internalCaptureSkip, normalizeTaskCaptures, taskCaptureInput, taskCaptureReceipt, taskCaptureReviewPaths, taskCaptureStatus } from './task-knowledge-routing.js';
+import { activeSealedWorkerRequest } from '../app/agent-request-context.js';
 
 import { onlineSourceUri } from './source-uri.js';
 import {
@@ -141,7 +142,13 @@ export async function checkpointTaskKnowledge(application, {
   if (remoteSessionId && task.sessionId !== remoteSessionId) {
     throw validationError('Task checkpoint belongs to another remote session');
   }
-  const scopedCaptures = captureRouting === null ? null : normalizeTaskCaptures(task, capture, captureRouting);
+  // A Provider-admitted sealed worker call still checkpoints, but never writes
+  // preference or project knowledge candidates. Only the worker MCP composition
+  // marks the call; roundtable wakes and unknown origins keep ordinary capture.
+  const internalActivity = disposition === 'capture_candidates' && capture && activeSealedWorkerRequest()
+    ? 'sealed_worker' : null;
+  const scopedCaptures = captureRouting === null || internalActivity
+    ? null : normalizeTaskCaptures(task, capture, captureRouting);
   if (disposition === 'capture_candidates') {
     if (!capture && !scopedCaptures) {
       throw validationError('capture_candidates requires a bounded capture payload');
@@ -154,7 +161,8 @@ export async function checkpointTaskKnowledge(application, {
   }
   const fingerprint = createHash('sha256').update(JSON.stringify(
     canonicalCheckpoint({ disposition, reason, capture: scopedCaptures ? null : capture,
-      ...(scopedCaptures ? { captures: scopedCaptures } : {}), agentMemory, ...(workLog ? { workLog } : {}),
+      ...(scopedCaptures ? { captures: scopedCaptures } : {}),
+      ...(internalActivity && captureRouting !== null ? { captureRouting } : {}), agentMemory, ...(workLog ? { workLog } : {}),
       ...(knowledgeUsage ? { knowledgeUsage } : {}) })
   )).digest('hex');
   if (task.checkpoint && task.checkpoint.fingerprint !== fingerprint) {
@@ -180,7 +188,7 @@ export async function checkpointTaskKnowledge(application, {
       ...(task.checkpoint.knowledgeUsageResult ? { knowledge_usage: task.checkpoint.knowledgeUsageResult } : {}),
       ...(task.checkpoint.captureResults ? { capture_results: taskCaptureReviewPaths(application.config.personal.spaceId, task.checkpoint.captureResults) } : {}) });
   }
-  const captureInput = capture && !scopedCaptures ? {
+  const captureInput = capture && !scopedCaptures && !internalActivity ? {
     ...capture,
     targetKind: 'personal',
     spaceId: application.config.personal.spaceId,
@@ -235,7 +243,7 @@ export async function checkpointTaskKnowledge(application, {
     }
     memoryResult = { status: 'checkpointed', ...agentMemoryRecord(preparedTask.agentMemory) };
   }
-  const captureResult = captureInput
+  const captureResult = internalActivity ? internalCaptureSkip(internalActivity) : captureInput
     ? await application.captureSessionKnowledge(captureInput) : null;
   const captureResults = scopedInputs ? [] : null;
   for (const batch of scopedInputs ?? []) {
@@ -257,6 +265,7 @@ export async function checkpointTaskKnowledge(application, {
     capture: captureResult,
     ...(preparedTask.checkpoint?.knowledgeUsageResult ? { knowledge_usage: preparedTask.checkpoint.knowledgeUsageResult } : {}),
     ...(captureResults ? { capture_status: captureStatus, capture_results: taskCaptureReviewPaths(application.config.personal.spaceId, captureResults) } : {}),
+    ...(internalActivity ? { capture_status: captureStatus } : {}),
     agent_memory: memoryResult ? {
       status: memoryResult.status, agentId: memoryResult.agentId,
       checkpointId: memoryResult.checkpointId, revision: memoryResult.revision,
