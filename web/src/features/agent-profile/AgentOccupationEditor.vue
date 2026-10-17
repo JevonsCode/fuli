@@ -22,8 +22,12 @@ const saved = ref(false);
 
 watch(() => props.agent.occupation, (occupation) => {
   role.value = occupation?.role ?? "";
-  tags.value = [...(occupation?.tags ?? [])];
+  tags.value = (occupation?.tags ?? []).filter((tag) => tag !== occupation?.role);
 }, { immediate: true });
+// The main role is not also an extra tag: choosing it drops that tag.
+watch(role, (value) => {
+  if (value) tags.value = tags.value.filter((tag) => tag !== value);
+});
 
 const roleOptions = computed(() => [
   { value: "", label: t("agentRedesign.occupation.none") },
@@ -80,10 +84,11 @@ async function save() {
         class="quiet-button"
         :data-occupation-tag="key"
         :aria-pressed="tags.includes(key)"
-        :disabled="!tags.includes(key) && tags.length >= MAX_OCCUPATION_TAGS"
+        :disabled="key === role || (!tags.includes(key) && tags.length >= MAX_OCCUPATION_TAGS)"
+        :title="key === role ? t('agentRedesign.occupation.isMainRole') : undefined"
         @click="toggleTag(key)"
       >
-        {{ occupationLabel(key) }}
+        {{ occupationLabel(key) }}<small v-if="key === role" class="agent-occupation-main"> · {{ t('agentRedesign.occupation.mainRoleShort') }}</small>
       </button>
     </fieldset>
     <p v-if="error" role="alert">{{ error }}</p>
