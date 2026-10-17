@@ -22,6 +22,9 @@ describe('relation visuals', () => {
       description: '项目登记的资料来源',
     })
     expect(relationVisual('HAS_SOURCE').iconPath).not.toBe('')
+    expect(relationVisual('PROJECT_MEMORY_ACCESS')).toMatchObject({
+      label: '记忆访问',
+    })
   })
 
   it('uses a neutral Chinese fallback and deduplicates legend entries', () => {

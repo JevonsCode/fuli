@@ -94,6 +94,10 @@ const RELATION_VISUALS: Record<string, RelationVisualDefinition> = {
     messageKey: 'HAS_DECISION',
     iconPath: ICONS.decision,
   },
+  PROJECT_MEMORY_ACCESS: {
+    messageKey: 'PROJECT_MEMORY_ACCESS',
+    iconPath: ICONS.transfer,
+  },
 }
 
 const FALLBACK_VISUAL: RelationVisualDefinition = {

@@ -55,9 +55,39 @@
   .project-team-organization > .project-team-list,
   .project-team-organization > p { grid-column: 1 / -1; }
 }
+.project-frequent-projects {
+  display: grid; gap: var(--space-3); padding: var(--space-5);
+  border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface);
+}
+.project-frequent-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+.project-frequent-header h3 { font-size: var(--text-section); font-weight: 650; }
+.project-frequent-list { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
+.project-frequent-item {
+  display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-subtle);
+}
+.project-frequent-main { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.project-frequent-link { color: var(--color-ink); font-weight: 650; text-decoration: none; }
+.project-frequent-link:hover { color: var(--color-accent); text-decoration: underline; }
+.project-frequent-tier {
+  display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px;
+  font-size: var(--text-meta); font-weight: 650; border: 1px solid var(--color-border);
+  color: var(--color-muted); background: var(--color-surface);
+}
+.project-frequent-tier.is-frequent {
+  border-color: var(--color-border-strong); color: var(--color-ink);
+}
+.project-frequent-tier.is-close {
+  border-color: var(--color-accent); color: var(--color-accent); background: var(--color-accent-soft);
+}
+.project-frequent-counts { margin-left: auto; }
+.project-frequent-reuse-hint { margin: 0; color: var(--color-ink-soft); font-size: var(--text-meta); line-height: 1.5; }
+
 @media (max-width: 640px) {
   .project-overview-header { gap: var(--space-3); }
   .project-overview-actions { flex-wrap: wrap; justify-content: flex-end; }
-  .project-team { padding: var(--space-4); }
+  .project-team, .project-frequent-projects { padding: var(--space-4); }
   .project-team-lead { gap: var(--space-3); padding: var(--space-3); }
+  .project-frequent-counts { margin-left: 0; width: 100%; }
 }
+

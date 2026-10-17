@@ -3,6 +3,11 @@ import * as d3 from 'd3'
 import { t } from '@/i18n'
 import { graphNodeIdentity } from '@/lib/identity'
 import type { KnowledgeEdge, KnowledgeGraph, KnowledgeNode } from '@/types'
+import {
+  edgeWeightTier,
+  filterFormalProjectGraph,
+  projectRelationTierLabel,
+} from './project-relation-weights'
 import { localizeRelationTokens, relationVisual } from './relation-visuals'
 
 export interface GraphController {
@@ -59,9 +64,10 @@ export function renderKnowledgeGraph(
     : options
   const width = Math.max(svg.clientWidth || 0, 760)
   const height = Math.max(svg.clientHeight || 0, 520)
-  const nodes: GraphNodeDatum[] = graph.nodes.map((node) => ({ ...node }))
+  const formalGraph = filterFormalProjectGraph(graph)
+  const nodes: GraphNodeDatum[] = formalGraph.nodes.map((node) => ({ ...node }))
   const nodeIds = new Set(nodes.map(({ id }) => id))
-  const links = graph.edges
+  const links = formalGraph.edges
     .map(normalizeEdge)
     .filter(({ sourceId, targetId }) => nodeIds.has(sourceId) && nodeIds.has(targetId))
 
@@ -93,12 +99,18 @@ export function renderKnowledgeGraph(
   const edgeLines = edgeLayer.selectAll<SVGLineElement, GraphEdgeDatum>('line.graph-edge')
     .data(links)
     .join('line')
-    .attr('class', (edge) => [
-      'graph-edge',
-      edge.invalid_at ? 'historical' : null,
-      pendingHumanChange(edge) ? 'human-change-pending' : null,
-      edge.human_change_status === 'viewed' ? 'human-change-viewed' : null,
-    ].filter(Boolean).join(' '))
+    .attr('class', (edge) => {
+      const tier = edgeWeightTier(edge.raw)
+      return [
+        'graph-edge',
+        tier ? `weight-tier-${tier}` : null,
+        edge.invalid_at ? 'historical' : null,
+        pendingHumanChange(edge) ? 'human-change-pending' : null,
+        edge.human_change_status === 'viewed' ? 'human-change-viewed' : null,
+      ].filter(Boolean).join(' ')
+    })
+    .attr('data-relation-type', (edge) => edge.type)
+    .attr('data-weight-tier', (edge) => edgeWeightTier(edge.raw) ?? null)
     .attr('marker-end', `url(#${markerId})`)
 
   const edgeHits = edgeLayer.selectAll<SVGLineElement, GraphEdgeDatum>('line.graph-edge-hit')
@@ -109,20 +121,28 @@ export function renderKnowledgeGraph(
     .attr('tabindex', 0)
     .attr('aria-label', (edge) => {
       const visual = relationVisual(edge.type)
-      return `${visual.label}：${localizeRelationTokens(edge.fact || visual.description)}`
+      const tier = edgeWeightTier(edge.raw)
+      const tierPrefix = tier ? `${projectRelationTierLabel(tier)} · ` : ''
+      return `${tierPrefix}${visual.label}：${localizeRelationTokens(edge.fact || visual.description)}`
     })
 
   edgeHits.append('title').text((edge) => {
     const visual = relationVisual(edge.type)
-    return `${visual.label}：${localizeRelationTokens(edge.fact || visual.description)}`
+    const tier = edgeWeightTier(edge.raw)
+    const tierPrefix = tier ? `${projectRelationTierLabel(tier)} · ` : ''
+    return `${tierPrefix}${visual.label}：${localizeRelationTokens(edge.fact || visual.description)}`
   })
 
   const edgeLabels = links.length <= 90
     ? labelLayer.selectAll<SVGGElement, GraphEdgeDatum>('g.graph-edge-label')
       .data(links)
       .join('g')
-      .attr('class', 'graph-edge-label')
+      .attr('class', (edge) => {
+        const tier = edgeWeightTier(edge.raw)
+        return ['graph-edge-label', tier ? `weight-tier-${tier}` : null].filter(Boolean).join(' ')
+      })
       .attr('data-relation-type', (edge) => edge.type)
+      .attr('data-weight-tier', (edge) => edgeWeightTier(edge.raw) ?? null)
     : labelLayer.selectAll<SVGGElement, GraphEdgeDatum>('g.graph-edge-label')
 
   edgeLabels.append('rect')
@@ -143,11 +163,14 @@ export function renderKnowledgeGraph(
     .attr('class', 'graph-edge-label-text')
     .attr('x', (edge) => -edgeLabelWidth(edge) / 2 + 22)
     .attr('y', 3.5)
-    .text((edge) => relationVisual(edge.type).label)
+    .text((edge) => edgeDisplayLabel(edge))
   edgeLabels.append('title')
     .text((edge) => {
       const visual = relationVisual(edge.type)
-      return `${visual.label}：${visual.description}`
+      const tier = edgeWeightTier(edge.raw)
+      return tier
+        ? `${projectRelationTierLabel(tier)}（${visual.label}）：${visual.description}`
+        : `${visual.label}：${visual.description}`
     })
 
   const nodeGroups = nodeLayer.selectAll<SVGGElement, GraphNodeDatum>('g.graph-node')
@@ -594,8 +617,16 @@ function degree(id: string, edges: GraphEdgeDatum[]) {
   )
 }
 
+function edgeDisplayLabel(edge: GraphEdgeDatum) {
+  const tier = edgeWeightTier(edge.raw)
+  if (tier && edge.type === 'PROJECT_MEMORY_ACCESS') {
+    return projectRelationTierLabel(tier)
+  }
+  return relationVisual(edge.type).label
+}
+
 function edgeLabelWidth(edge: GraphEdgeDatum) {
-  return Math.max(54, 31 + [...relationVisual(edge.type).label].length * 10)
+  return Math.max(54, 31 + [...edgeDisplayLabel(edge)].length * 10)
 }
 
 function truncate(value: string, limit: number) {
