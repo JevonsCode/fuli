@@ -14,6 +14,7 @@ import {
   DEFAULT_RUNTIME_SETTINGS,
   managedProviderUrls
 } from '../system/runtime-settings.js';
+import { isProcessAlive, stopProcess } from './processes.js';
 
 export async function startLocalRuntime(input, dependencies = {}) {
   const deps = lifecycleDependencies(dependencies);
@@ -299,14 +300,6 @@ function safeLanUrls(value) {
   return Array.isArray(value)
     ? value.filter((url) => typeof url === 'string' && url.startsWith('http://'))
     : [];
-}
-
-function isProcessAlive(pid) {
-  try { process.kill(pid, 0); return true; } catch { return false; }
-}
-
-function stopProcess(pid) {
-  try { process.kill(pid, 'SIGTERM'); } catch { /* already stopped */ }
 }
 
 async function waitForExit(pid) {

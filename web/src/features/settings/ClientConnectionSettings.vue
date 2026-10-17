@@ -5,6 +5,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import { currentLocale, t } from '@/i18n'
+import { formatDateTime } from '@/lib/date-time'
 
 type Format = 'standard' | 'vscode' | 'server'
 type ClientStatus = 'connected' | 'changed' | 'skills_left' | 'removed' | 'not_connected' | 'not_detected' | 'unknown'
@@ -106,7 +107,7 @@ onBeforeUnmount(() => {
   stop()
 })
 function formatTime(value: string) {
-  return new Date(value).toLocaleString(currentLocale(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return formatDateTime(value, currentLocale(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }, { missing: '—' })
 }
 function explanation(client: ClientObservation) {
   if (client.status === 'unknown' && client.lastKnownStatus) {

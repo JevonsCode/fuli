@@ -1,4 +1,5 @@
 import { currentLocale, t } from '@/i18n'
+import { DATE_TIME_FULL, formatDateTime } from '@/lib/date-time'
 import type {
   ConfirmationActor,
   ConfirmationStatus,
@@ -287,28 +288,6 @@ export function personalProfileItems(graph: KnowledgeGraph | null) {
   )
 }
 
-export function personalProfileGraph(
-  graph: KnowledgeGraph,
-  activeProjectId: string | null = null,
-): KnowledgeGraph {
-  const edges = graph.edges.filter(
-    (edge) => edge.profile_aspect && preferenceApplies(edge, activeProjectId),
-  )
-  const nodeIds = new Set(
-    edges.flatMap((edge) => [endpointId(edge.source), endpointId(edge.target)]),
-  )
-  for (const node of graph.nodes) {
-    if (node.profile_aspect && preferenceApplies(node, activeProjectId)) nodeIds.add(node.id)
-  }
-  return {
-    ...graph,
-    nodes: graph.nodes.filter((node) => nodeIds.has(node.id)),
-    edges: edges.filter(
-      (edge) => nodeIds.has(endpointId(edge.source)) && nodeIds.has(endpointId(edge.target)),
-    ),
-  }
-}
-
 export function mergeKnowledgeGraphs(graphs: Array<KnowledgeGraph | null>): KnowledgeGraph {
   const available = graphs.filter((graph): graph is KnowledgeGraph => Boolean(graph))
   return {
@@ -343,9 +322,7 @@ export function latestItemValue(item: KnowledgeItem) {
 }
 
 export function formatTime(value?: string | null) {
-  if (!value) return t('knowledge.domain.items.notRecorded')
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(currentLocale())
+  return formatDateTime(value, currentLocale(), DATE_TIME_FULL, { missing: t('knowledge.domain.items.notRecorded') })
 }
 
 export function knowledgeReviewState(item: KnowledgeItem): KnowledgeReviewState {
@@ -441,10 +418,6 @@ export function batchConfirmationBasis(
       }),
     proposedBy: existing?.proposed_by || proposedByFromEvidence(evidence),
   }
-}
-
-export function confirmationBasisCount(item: KnowledgeItem) {
-  return item.evidence.length + (item.confirmationBasis ? 1 : 0)
 }
 
 function addConfirmationGroup(
@@ -639,12 +612,6 @@ function latestTime(item: KnowledgeItem) {
   const value = latestItemValue(item)
   const time = value ? new Date(value).getTime() : 0
   return Number.isNaN(time) ? 0 : time
-}
-
-function preferenceApplies(item: KnowledgeNode | KnowledgeEdge, activeProjectId: string | null) {
-  const scope = item.preference_scope ?? 'global'
-  return scope === 'global'
-    || (scope === 'project' && Boolean(activeProjectId) && item.preference_project_id === activeProjectId)
 }
 
 function mergeItems<T extends KnowledgeNode | KnowledgeEdge>(items: T[]): T[] {

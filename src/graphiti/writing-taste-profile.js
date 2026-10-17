@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
 
+import { canonicalJson } from '../publication/canonical-json.js';
+import { singleLine } from '../text/single-line.js';
+
 export const WRITING_TASTE_READINESS = Object.freeze({
   ruleCount: 3,
   evidenceCount: 6,
@@ -103,7 +106,7 @@ export function buildWritingTasteProfile({
       : 'collecting';
   const fingerprint = ready
     ? createHash('sha256')
-      .update(canonicalJson(decoratedRules.map(ruleFingerprint)))
+      .update(canonicalJson(decoratedRules.map(ruleFingerprint), { omitUndefined: true }))
       .digest('hex')
     : null;
   const skillVersion = fingerprint ? `v1:${fingerprint.slice(0, 24)}` : null;
@@ -490,10 +493,6 @@ function uniqueStrings(values) {
   return [...new Set(values.filter((value) => typeof value === 'string' && value.trim()))];
 }
 
-function singleLine(value) {
-  return String(value ?? '').replace(/[\r\n\t]+/g, ' ').trim();
-}
-
 function dateKey(value) {
   if (!value) return null;
   const date = new Date(value);
@@ -504,14 +503,4 @@ function timeValue(value) {
   if (!value) return 0;
   const time = new Date(value).getTime();
   return Number.isNaN(time) ? 0 : time;
-}
-
-function canonicalJson(value) {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.keys(value).sort().map((key) =>
-      `${JSON.stringify(key)}:${canonicalJson(value[key])}`
-    ).join(',')}}`;
-  }
-  return JSON.stringify(value);
 }

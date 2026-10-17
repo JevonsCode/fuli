@@ -1,4 +1,3 @@
-import hashlib
 import json
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -25,6 +24,7 @@ from .provider_values import (
     native_datetime,
     now_utc,
     preference_qualifiers,
+    sha256_text,
     stable_uuid,
 )
 
@@ -144,7 +144,7 @@ async def preview_personal_global_preference_decision(
     issued_at = created_at or now_utc()
     expires_at = issued_at + DECISION_PREVIEW_TTL
     approval_token = token_factory(32)
-    token_hash = _sha256(approval_token)
+    token_hash = sha256_text(approval_token)
     payload_fingerprint = _decision_payload_fingerprint(candidate_id, request)
     preview_id = stable_uuid(
         space['id'],
@@ -299,7 +299,7 @@ async def apply_personal_global_preference_decision(
         if global_assertion_id
         else None
     )
-    token_hash = _sha256(request.approval_token)
+    token_hash = sha256_text(request.approval_token)
     records, _, _ = await store.runtime.driver.execute_query(
         _APPLY_DECISION_QUERY,
         space_id=space['id'],
@@ -651,7 +651,7 @@ async def _personal_space(store, actor, space_id: str, role: str) -> dict:
 
 
 def _candidate_id(item_ids: list[str]) -> str:
-    digest = _sha256('\n'.join(sorted(item_ids)))[:20]
+    digest = sha256_text('\n'.join(sorted(item_ids)))[:20]
     return f'personal-global-{digest}'
 
 
@@ -698,7 +698,7 @@ def _candidate_version(
         sort_keys=True,
         separators=(',', ':'),
     )
-    return f'v1:{_sha256(canonical)[:24]}'
+    return f'v1:{sha256_text(canonical)[:24]}'
 
 
 def _decision_payload_fingerprint(
@@ -712,7 +712,7 @@ def _decision_payload_fingerprint(
             exclude={'approval_token'},
         ),
     }
-    return _sha256(json.dumps(
+    return sha256_text(json.dumps(
         payload,
         ensure_ascii=False,
         sort_keys=True,
@@ -774,10 +774,6 @@ def _json_datetime(value: datetime | None) -> str | None:
     if native.tzinfo is None:
         native = native.replace(tzinfo=timezone.utc)
     return native.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
-
-
-def _sha256(value: str) -> str:
-    return hashlib.sha256(value.encode('utf-8')).hexdigest()
 
 
 _SOURCE_ENTITY_QUERY = '''

@@ -19,7 +19,6 @@ export const PEER_LIMITS = Object.freeze({
   invitationSeconds: 10 * 60,
   executionSeconds: 900,
 });
-export const MESSAGE_STATUSES = Object.freeze(['queued', 'claimed', 'running', 'answered', 'failed', 'cancelled', 'expired', 'unknown']);
 export const TERMINAL_STATUSES = new Set(['answered', 'failed', 'cancelled', 'expired', 'unknown']);
 export const RESULT_OUTCOMES = new Set(['answered', 'failed', 'cancelled', 'unknown', 'never_started']);
 // Only "may still be running" crosses devices; nothing remote can confirm a release.
@@ -63,7 +62,9 @@ export function shortFingerprint(fingerprint) {
   return fingerprint.slice(0, 24).toUpperCase().match(/.{4}/g).join(' ');
 }
 
-// Signatures cover a canonical form, so property order never changes meaning.
+// peer/1 compatibility: keys, including integer-like keys, use lexical order.
+// Publication JSON uses JavaScript integer-key order, so it cannot replace this
+// wire encoding until a versioned peer protocol migration changes both ends.
 export function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
   if (value && typeof value === 'object') {

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { detectSensitiveContent } from '../security/sensitive-content.js';
+import { requiredString } from '../validation/values.js';
 
 const MAX_CHUNK_LENGTH = 6_000;
 const MAX_EXCERPT_LENGTH = 2_048;
@@ -113,13 +114,6 @@ export function chunkText(content, maximum = MAX_CHUNK_LENGTH) {
 
 function shortHash(value) {
   return createHash('sha256').update(value).digest('hex').slice(0, 24);
-}
-
-function requiredString(value, label, maximum) {
-  if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} is required`);
-  const normalized = value.trim();
-  if (normalized.length > maximum) throw new TypeError(`${label} is too long`);
-  return normalized;
 }
 
 function optionalOnlineUrl(value) {

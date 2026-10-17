@@ -1,4 +1,5 @@
 import { safeExternalSourceDiagnostic } from './safe-diagnostic.js';
+import { positiveInteger, requiredString, uniqueTextArray } from '../validation/values.js';
 
 export class ConnectedKnowledgeSearch {
   constructor({ app, externalKnowledge, policies }) {
@@ -15,8 +16,8 @@ export class ConnectedKnowledgeSearch {
     const personalProjectId = requiredString(input?.personalProjectId, 'personalProjectId');
     const query = requiredString(input?.query, 'query');
     const limit = positiveInteger(input?.limit ?? 12, 'limit', 100);
-    const projectIds = stringArray(input?.projectIds, 'projectIds', 32);
-    const contextPersonalProjectIds = stringArray(
+    const projectIds = uniqueTextArray(input?.projectIds, 'projectIds', 32);
+    const contextPersonalProjectIds = uniqueTextArray(
       input?.contextPersonalProjectIds,
       'contextPersonalProjectIds',
       15
@@ -142,25 +143,4 @@ function requiresConflictAssessment({ graph, external, publicProjectIds }) {
   const liveSourceCount = external.filter(({ items }) => items.length > 0).length;
   return (graphHasEvidence ? 1 : 0) + liveSourceCount > 1 ||
     (graphHasEvidence && publicProjectIds.length > 0);
-}
-
-function stringArray(value, label, maximum) {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value) || value.length > maximum ||
-      value.some((item) => typeof item !== 'string' || !item.trim())) {
-    throw new TypeError(`${label} must be an array of at most ${maximum} nonempty strings`);
-  }
-  return [...new Set(value.map((item) => item.trim()))];
-}
-
-function positiveInteger(value, label, maximum) {
-  if (!Number.isInteger(value) || value <= 0 || value > maximum) {
-    throw new TypeError(`${label} must be a positive integer no greater than ${maximum}`);
-  }
-  return value;
-}
-
-function requiredString(value, label) {
-  if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} is required`);
-  return value.trim();
 }

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 from datetime import datetime, timezone
@@ -22,6 +23,10 @@ def native_datetime(value):
         return value
     to_native = getattr(value, 'to_native', None)
     return to_native() if callable(to_native) else value
+
+
+def sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode('utf-8')).hexdigest()
 
 
 def json_object(value) -> dict:

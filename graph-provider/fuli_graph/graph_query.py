@@ -10,6 +10,7 @@ from .graph_models import GraphEdge, GraphNode, GraphResult
 from .models import (
     ConfirmationBasis,
     GraphEvidence,
+    stored_confirmation_basis,
 )
 from .knowledge_audit import read_knowledge_audits
 from .knowledge_records import assignment_record, revision_record
@@ -739,16 +740,6 @@ def _graph_edge(
     )
 
 
-def _confirmation_basis(value) -> ConfirmationBasis | None:
-    data = json_object(value)
-    if not data:
-        return None
-    try:
-        return ConfirmationBasis.model_validate(data)
-    except ValueError:
-        return None
-
-
 def _confirmation_projection(record) -> tuple[
     str,
     ConfirmationBasis | None,
@@ -763,7 +754,7 @@ def _confirmation_projection(record) -> tuple[
     )
     if status != raw_status:
         confidence = min(confidence, 0.5)
-    basis = _confirmation_basis(record.get('confirmation_basis_json'))
+    basis = stored_confirmation_basis(record.get('confirmation_basis_json'))
     explicit = (
         record.get('confirmation_state_explicit') is True
         and status == raw_status

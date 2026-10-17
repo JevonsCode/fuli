@@ -32,6 +32,7 @@ from .knowledge_audit_models import (
     PreferenceScopeChange,
 )
 from .model_base import StrictModel
+from .provider_values import json_object
 from .model_validation import (
     complete_epistemic_state,
     normalize_provider_url,
@@ -178,6 +179,17 @@ class ConfirmationBasis(StrictModel):
         if bool(self.confirmed_by) != bool(self.confirmed_at):
             raise ValueError('confirmed_by and confirmed_at must be recorded together')
         return self
+
+
+def stored_confirmation_basis(value) -> ConfirmationBasis | None:
+    """Read a stored basis; missing or invalid data reads as no basis."""
+    data = json_object(value)
+    if not data:
+        return None
+    try:
+        return ConfirmationBasis.model_validate(data)
+    except ValueError:
+        return None
 
 
 def _validate_confirmation_state(

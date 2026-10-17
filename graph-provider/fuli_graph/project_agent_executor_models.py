@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic import AwareDatetime, Field, field_validator, model_validator
 
-from .model_validation import reject_credentials
+from .model_validation import reject_credentials, unique_text_list
 from .models import SourceApplication, StrictModel
 from .project_agent_models import (
     ProjectAgentExecutorPolicy,
@@ -126,17 +126,8 @@ def project_agent_model_strategy_key(
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _unique_text(value: list[str], label: str, *, maximum: int = 512) -> list[str]:
-    normalized = [item.strip() for item in value]
-    if any(not item or len(item) > maximum for item in normalized):
-        raise ValueError(f'{label} must contain 1 to {maximum} characters')
-    if len({item.casefold() for item in normalized}) != len(normalized):
-        raise ValueError(f'{label} must be unique')
-    return normalized
-
-
 def _unique_ids(value: list[str], label: str = 'IDs') -> list[str]:
-    return _unique_text(value, label, maximum=128)
+    return unique_text_list(value, label, maximum=128)
 
 
 class ProjectAgentExecutorModelRecord(StrictModel):
@@ -168,7 +159,7 @@ class ProjectAgentExecutorModelRecord(StrictModel):
     @field_validator('capabilities')
     @classmethod
     def validate_capabilities(cls, value: list[str]) -> list[str]:
-        return _unique_text(value, 'executor model capabilities')
+        return unique_text_list(value, 'executor model capabilities')
 
     @model_validator(mode='after')
     def validate_availability(self):
@@ -202,7 +193,7 @@ class ProjectAgentExecutorRegistration(StrictModel):
     @field_validator('capabilities')
     @classmethod
     def validate_capabilities(cls, value: list[str]) -> list[str]:
-        return _unique_text(value, 'executor capabilities')
+        return unique_text_list(value, 'executor capabilities')
 
     @model_validator(mode='after')
     def reject_sensitive_values(self):
@@ -243,7 +234,7 @@ class ProjectAgentExecutorPreflightReport(StrictModel):
     @field_validator('capabilities')
     @classmethod
     def validate_capabilities(cls, value: list[str]) -> list[str]:
-        return _unique_text(value, 'preflight capabilities')
+        return unique_text_list(value, 'preflight capabilities')
 
     @model_validator(mode='after')
     def validate_report(self):
@@ -331,7 +322,7 @@ class ProjectAgentExecutorRoutingRuleCreate(StrictModel):
     @field_validator('required_capabilities')
     @classmethod
     def validate_capabilities(cls, value: list[str]) -> list[str]:
-        return _unique_text(value, 'routing rule capabilities')
+        return unique_text_list(value, 'routing rule capabilities')
 
     @field_validator('executor_ids')
     @classmethod
@@ -401,7 +392,7 @@ class ProjectAgentExecutorSelectionRequest(StrictModel):
     @field_validator('required_capabilities')
     @classmethod
     def validate_capabilities(cls, value: list[str]) -> list[str]:
-        return _unique_text(value, 'required executor capabilities')
+        return unique_text_list(value, 'required executor capabilities')
 
     @model_validator(mode='after')
     def reject_sensitive_values(self):

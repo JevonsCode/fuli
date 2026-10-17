@@ -1,3 +1,8 @@
+import { nonEmptyText, requiredString, uniqueTextArray } from '../../validation/values.js';
+import { onlineUrl, timeoutMilliseconds } from './response-values.js';
+
+const HTTPS_ONLY = Object.freeze(['https:']);
+
 const API_ROOTS = Object.freeze({
   cn: 'https://open.feishu.cn',
   global: 'https://open.larksuite.com'
@@ -217,7 +222,7 @@ function feishuRequester(fetchImpl, tokenCache) {
         'Content-Type': 'application/json; charset=utf-8'
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(timeoutMilliseconds(context.config?.timeoutMs))
+      signal: AbortSignal.timeout(timeoutMilliseconds(context.config?.timeoutMs, 'Feishu timeoutMs'))
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload.code !== 0) {
@@ -243,7 +248,7 @@ async function accessToken(context, fetchImpl, tokenCache) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
-      signal: AbortSignal.timeout(timeoutMilliseconds(context.config?.timeoutMs))
+      signal: AbortSignal.timeout(timeoutMilliseconds(context.config?.timeoutMs, 'Feishu timeoutMs'))
     }
   );
   const payload = await response.json().catch(() => ({}));
@@ -298,9 +303,9 @@ async function searchWiki(context, request, source, query, pageToken, limit = 50
 }
 
 function feishuSource(source, { allowEmpty = false } = {}) {
-  const nodeTokens = idArray(source?.nodeTokens, 'Feishu nodeTokens');
-  const spaceId = optionalString(source?.spaceId);
-  const rootNodeToken = optionalString(source?.rootNodeToken);
+  const nodeTokens = uniqueTextArray(source?.nodeTokens, 'Feishu nodeTokens');
+  const spaceId = nonEmptyText(source?.spaceId);
+  const rootNodeToken = nonEmptyText(source?.rootNodeToken);
   if (!allowEmpty && !nodeTokens.length && !spaceId) {
     throw new TypeError('Feishu source requires nodeTokens or spaceId');
   }
@@ -315,7 +320,7 @@ function nodeSummary(node) {
     id: node.node_token ?? node.node_id,
     title: node.title ?? node.node_token ?? node.node_id,
     type: normalizedObjectType(node.obj_type),
-    url: onlineUrl(node.url),
+    url: onlineUrl(node.url, HTTPS_ONLY),
     updatedAt: epochDateTime(node.obj_edit_time),
     metadata: {
       spaceId: node.space_id ?? null,
@@ -326,9 +331,9 @@ function nodeSummary(node) {
 }
 
 function nodeUrl(node, source) {
-  const direct = onlineUrl(node.url);
+  const direct = onlineUrl(node.url, HTTPS_ONLY);
   if (direct) return direct;
-  const base = onlineUrl(source?.webBaseUrl);
+  const base = onlineUrl(source?.webBaseUrl, HTTPS_ONLY);
   const token = node.node_token ?? node.node_id;
   return base && token ? new URL(`/wiki/${encodeURIComponent(token)}`, base).toString() : null;
 }
@@ -403,26 +408,10 @@ function environmentValue(env, name, label) {
   return value;
 }
 
-function idArray(value, label) {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || !item.trim())) {
-    throw new TypeError(`${label} must be an array of nonempty strings`);
-  }
-  return [...new Set(value.map((item) => item.trim()))];
-}
-
 function rawContentInterval(value) {
   if (value === undefined || value === null) return 210;
   if (!Number.isInteger(value) || value < 0 || value > 10_000) {
     throw new TypeError('Feishu rawContentIntervalMs must be between 0 and 10000');
-  }
-  return value;
-}
-
-function timeoutMilliseconds(value) {
-  if (value === undefined || value === null) return 30_000;
-  if (!Number.isInteger(value) || value < 1_000 || value > 120_000) {
-    throw new TypeError('Feishu timeoutMs must be between 1000 and 120000');
   }
   return value;
 }
@@ -438,24 +427,4 @@ function epochDateTime(value) {
   return Number.isFinite(seconds) && seconds > 0
     ? new Date(seconds * 1_000).toISOString()
     : null;
-}
-
-function onlineUrl(value) {
-  if (typeof value !== 'string') return null;
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' && !url.username && !url.password ? url.toString() : null;
-  } catch {
-    return null;
-  }
-}
-
-function optionalString(value) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function requiredString(value, label) {
-  const normalized = optionalString(value);
-  if (!normalized) throw new TypeError(`${label} is required`);
-  return normalized;
 }

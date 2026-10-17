@@ -1,3 +1,5 @@
+import { setTimeout as delay } from 'node:timers/promises';
+
 import { readJsonFile } from '../storage/json-file.js';
 import { createNativeGraphServices } from '../native-runtime/runtime.js';
 import {
@@ -10,6 +12,7 @@ import {
   managedProviderUrls,
   readRuntimeSettings
 } from '../system/runtime-settings.js';
+import { isManagedWorkspace, waitForProviderHealth } from '../local-runtime/provider-readiness.js';
 
 const PERSONAL_SERVICES = Object.freeze({
   providers: ['personal-provider'],
@@ -78,7 +81,11 @@ export function createManagedGraphServices({
       ...services.databases,
       ...services.providers
     ], await runtime());
-    for (const url of services.providerUrls) await waitForProvider(url, fetchImpl, wait);
+    for (const url of services.providerUrls) await waitForProviderHealth(url, {
+      fetchImpl,
+      wait,
+      failureMessage: 'The managed graph Provider did not become ready after waking'
+    });
   }
 
   async function stopProviders() {
@@ -128,31 +135,6 @@ function providerUrls(config, paths, readSettings, includesWorkspace) {
   return [...urls, managed?.providerUrl ?? defaults.workspace];
 }
 
-function isManagedWorkspace(workspace) {
-  if (workspace?.managedDevelopment === true) return true;
-  try {
-    const url = new URL(workspace?.providerUrl);
-    return url.protocol === 'http:' && isLoopback(url.hostname) && url.port === '8788';
-  } catch {
-    return false;
-  }
-}
-
-async function waitForProvider(url, fetchImpl, wait) {
-  for (let attempt = 0; attempt < 120; attempt += 1) {
-    try {
-      const response = await fetchImpl(`${String(url).replace(/\/$/, '')}/health`, {
-        signal: AbortSignal.timeout(2500)
-      });
-      if (response.ok) return;
-    } catch {
-      // Neo4j recovery and Provider index initialization can take a while after a cold wake.
-    }
-    if (attempt < 119) await wait(1000);
-  }
-  throw new Error('The managed graph Provider did not become ready after waking');
-}
-
 async function providerReady(url, fetchImpl) {
   try {
     const response = await fetchImpl(`${String(url).replace(/\/$/, '')}/health`, {
@@ -162,12 +144,4 @@ async function providerReady(url, fetchImpl) {
   } catch {
     return false;
   }
-}
-
-function isLoopback(hostname) {
-  return ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(hostname);
-}
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

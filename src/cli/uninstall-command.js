@@ -1,14 +1,14 @@
-import { createInterface } from 'node:readline/promises';
-
 import { FULI_PACKAGE_NAME } from '../package-metadata.js';
 import { parseUninstallOptions } from '../setup/options.js';
 import { applyLocalUninstall, planLocalUninstall, removalTarget } from '../setup/uninstall.js';
+import { confirmInTerminal, writeLine } from './terminal-io.js';
 
 export async function runUninstallCommand(args, dependencies = {}) {
   const options = parseUninstallOptions(args);
   const planUninstall = dependencies.planUninstall ?? planLocalUninstall;
   const applyUninstall = dependencies.applyUninstall ?? applyLocalUninstall;
-  const confirm = dependencies.confirm ?? confirmInTerminal;
+  const confirm = dependencies.confirm
+    ?? (() => confirmInTerminal('Remove local integrations? [y/N] ', { defaultYes: false }));
   const write = dependencies.write ?? writeLine;
   const plan = planUninstall(options, dependencies);
   write(formatUninstallPreview(plan));
@@ -68,18 +68,4 @@ function finalRemovalLines(removal) {
 
 function portableDataWarning(removal) {
   return `Warning: the data directory is inside the portable folder; move it out of ${removal.path} first if you want to keep it.`;
-}
-
-async function confirmInTerminal() {
-  const input = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const answer = (await input.question('Remove local integrations? [y/N] ')).trim().toLowerCase();
-    return answer === 'y' || answer === 'yes';
-  } finally {
-    input.close();
-  }
-}
-
-function writeLine(value) {
-  process.stdout.write(`${value}\n`);
 }

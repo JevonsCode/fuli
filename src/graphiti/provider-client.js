@@ -28,15 +28,20 @@ export class ProviderRequestError extends ApplicationError {
 
 export class GraphitiProviderClient {
   #workflowObservationToken;
+  #refreshAccessToken;
 
   constructor({
     baseUrl,
     accessToken,
     workflowObservationToken = null,
     fetchImpl = globalThis.fetch,
-    requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS
+    requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+    refreshAccessToken = null
   }) {
     if (!baseUrl) throw new TypeError('Graphiti provider baseUrl is required');
+    if (refreshAccessToken !== null && typeof refreshAccessToken !== 'function') {
+      throw new TypeError('Graphiti provider token refresh must be a function');
+    }
     if (!accessToken) throw new TypeError('Graphiti provider accessToken is required');
     if (workflowObservationToken !== null && (
       typeof workflowObservationToken !== 'string' ||
@@ -57,6 +62,7 @@ export class GraphitiProviderClient {
     this.#workflowObservationToken = workflowObservationToken?.trim() ?? null;
     this.fetch = fetchImpl;
     this.requestTimeoutMs = requestTimeoutMs;
+    this.#refreshAccessToken = refreshAccessToken;
   }
 
   agentVerification(operation, input) {
@@ -805,7 +811,25 @@ export class GraphitiProviderClient {
     return this.#request(`/v1/spaces/${encodeURIComponent(spaceId)}/graph?${query}`);
   }
 
-  async #request(path, {
+  // A long-running client (an MCP server) outlives a token rotation, for
+  // example after a graph import or a runtime mode switch. A rejected token is
+  // replaced once by the current one and the request repeated; the Provider
+  // did not act on the rejected request. An unchanged token is not retried.
+  async #request(path, options = {}) {
+    const used = this.accessToken;
+    try {
+      return await this.#send(path, options);
+    } catch (error) {
+      if (!(error instanceof ProviderRequestError) || error.status !== 401
+          || options.authenticated === false || !this.#refreshAccessToken) throw error;
+      const current = await Promise.resolve().then(() => this.#refreshAccessToken()).catch(() => null);
+      if (typeof current !== 'string' || !current || current === used) throw error;
+      this.accessToken = current;
+      return this.#send(path, options);
+    }
+  }
+
+  async #send(path, {
     method = 'GET',
     body,
     authenticated = true,

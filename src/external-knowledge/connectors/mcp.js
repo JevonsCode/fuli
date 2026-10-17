@@ -4,6 +4,8 @@ import {
   getDefaultEnvironment
 } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { requiredString } from '../../validation/values.js';
+import { dateTimeOrNull, onlineUrl } from './response-values.js';
 
 const LOCAL_CURSOR_PREFIX = 'fuli-mcp-v1:';
 
@@ -389,23 +391,6 @@ function mcpHttpUrl(value) {
   return url;
 }
 
-function onlineUrl(value) {
-  if (typeof value !== 'string') return null;
-  try {
-    const url = new URL(value);
-    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password
-      ? url.toString()
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function dateTimeOrNull(value) {
-  if (typeof value !== 'string' || Number.isNaN(Date.parse(value))) return null;
-  return new Date(value).toISOString();
-}
-
 function plainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
 }
@@ -416,11 +401,6 @@ function stringArray(value) {
     throw new TypeError('Expected an array of strings');
   }
   return value;
-}
-
-function requiredString(value, label) {
-  if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} is required`);
-  return value.trim();
 }
 
 function assertEnvironmentName(value) {

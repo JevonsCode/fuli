@@ -2,16 +2,17 @@ import { existsSync } from 'node:fs';
 
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import { withCursorLifecycleHooks, withoutCursorLifecycleHooks } from '../agents/cursor/lifecycle-hooks.js';
+import { assertJsonObject } from '../validation/values.js';
 
 export function connectCursor(agent, context, {
   readConfig = readJsonFile,
   writeConfig = writeJsonFileAtomic
 } = {}) {
   const current = readConfig(agent.configPath, {});
-  assertObject(current, 'Cursor MCP config');
+  assertJsonObject(current, 'Cursor MCP config');
 
   const currentServers = current.mcpServers ?? {};
-  assertObject(currentServers, 'Cursor mcpServers');
+  assertJsonObject(currentServers, 'Cursor mcpServers');
   const currentHooks = agent.hooksPath ? readConfig(agent.hooksPath, {}) : null;
   const nextHooks = agent.hooksPath ? withCursorLifecycleHooks(currentHooks, context) : null;
 
@@ -58,9 +59,9 @@ export function disconnectCursor(agent, {
     return { id: agent.id, label: agent.label, status: hooksChanged ? 'disconnected' : 'not_connected' };
   }
   const current = readConfig(agent.configPath, {});
-  assertObject(current, 'Cursor MCP config');
+  assertJsonObject(current, 'Cursor MCP config');
   const currentServers = current.mcpServers ?? {};
-  assertObject(currentServers, 'Cursor mcpServers');
+  assertJsonObject(currentServers, 'Cursor mcpServers');
   if (!Object.hasOwn(currentServers, 'fuli')) {
     return { id: agent.id, label: agent.label, status: hooksChanged ? 'disconnected' : 'not_connected' };
   }
@@ -71,10 +72,4 @@ export function disconnectCursor(agent, {
     mcpServers: remainingServers
   });
   return { id: agent.id, label: agent.label, status: 'disconnected' };
-}
-
-function assertObject(value, label) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new TypeError(`${label} must be a JSON object`);
-  }
 }

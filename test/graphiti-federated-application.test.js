@@ -1162,3 +1162,27 @@ function providerFetch(calls, routes) {
     });
   };
 }
+
+test('an opened app adopts a rotated token only for the same Provider and personal space', async () => {
+  const { mkdtemp, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { openFederatedGraphApplication } = await import('../src/graphiti/federated-application.js');
+  const root = await mkdtemp(join(tmpdir(), 'fuli-token-rotation-'));
+  const runtimeConfigPath = join(root, 'graph-runtime.json');
+  const personal = { providerUrl: 'http://127.0.0.1:8787', accessToken: 'old-token', principalId: 'p', spaceId: 'space-a' };
+  await writeFile(runtimeConfigPath, JSON.stringify({ version: 1, personal, workspaces: [] }));
+  const seen = [];
+  const app = openFederatedGraphApplication({ runtimeConfigPath, env: {}, fetchImpl: async (_url, options) => {
+    seen.push(options.headers.authorization);
+    return options.headers.authorization === 'Bearer new-token'
+      ? Response.json([]) : Response.json({ detail: 'invalid access token' }, { status: 401 });
+  } });
+
+  await writeFile(runtimeConfigPath, JSON.stringify({ version: 1, personal: { ...personal, spaceId: 'space-b', accessToken: 'new-token' }, workspaces: [] }));
+  await assert.rejects(app.personal.listSpaces(), (error) => error.status === 401);
+  await writeFile(runtimeConfigPath, JSON.stringify({ version: 1, personal: { ...personal, accessToken: 'new-token' }, workspaces: [] }));
+  assert.deepEqual(await app.personal.listSpaces(), []);
+  assert.deepEqual(seen, ['Bearer old-token', 'Bearer old-token', 'Bearer new-token']);
+  await app.close?.();
+});

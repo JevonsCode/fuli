@@ -1,13 +1,4 @@
-import { randomUUID } from 'node:crypto';
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync
-} from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 
 import {
   installCodexBootstrap,
@@ -23,10 +14,11 @@ import {
   withoutCodexTomlLifecycleHooks
 } from '../agents/codex/lifecycle-hooks.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { writeTextFileAtomic } from '../storage/json-file.js';
 
 export function connectCodex(agent, context, {
   readConfig = readText,
-  writeConfig = writeTextAtomic,
+  writeConfig = writeTextFileAtomic,
   readHooks = readJsonFile,
   writeHooks = writeJsonFileAtomic,
   installBootstrap = installCodexBootstrap,
@@ -102,7 +94,7 @@ function hasHookDefinitions(value) {
 export function disconnectCodex(agent, {
   fileExists = existsSync,
   readConfig = readText,
-  writeConfig = writeTextAtomic,
+  writeConfig = writeTextFileAtomic,
   removeBootstrap = removeCodexBootstrap,
   removeHooks = removeCodexLifecycleHooks
 } = {}) {
@@ -179,17 +171,4 @@ function tomlString(value) {
 
 function readText(filePath) {
   return existsSync(filePath) ? readFileSync(filePath, 'utf8') : '';
-}
-
-function writeTextAtomic(filePath, value) {
-  const directory = dirname(filePath);
-  const tempPath = join(directory, `.${basename(filePath)}.${randomUUID()}.tmp`);
-  mkdirSync(directory, { recursive: true });
-  try {
-    writeFileSync(tempPath, value, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
-    renameSync(tempPath, filePath);
-  } catch (error) {
-    rmSync(tempPath, { force: true });
-    throw error;
-  }
 }

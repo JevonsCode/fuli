@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
 
+import { canonicalJson } from '../publication/canonical-json.js';
+import { singleLine } from '../text/single-line.js';
+
 const DEFAULT_ITEM_LIMIT = 64;
 const DEFAULT_RECOMMENDATION_LIMIT = 12;
 
@@ -38,7 +41,7 @@ export function buildUserTasteSkill({
     recommendationLimit
   );
   const sourceFingerprint = createHash('sha256')
-    .update(canonicalJson(active.map(preferenceFingerprint)))
+    .update(canonicalJson(active.map(preferenceFingerprint), { omitUndefined: true }))
     .digest('hex');
 
   return {
@@ -220,20 +223,6 @@ function tokenize(value) {
     }
   }
   return tokens;
-}
-
-function canonicalJson(value) {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.keys(value).sort().map((key) =>
-      `${JSON.stringify(key)}:${canonicalJson(value[key])}`
-    ).join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
-
-function singleLine(value) {
-  return String(value ?? '').replace(/[\r\n\t]+/g, ' ').trim();
 }
 
 function boundedLimit(value, fallback) {

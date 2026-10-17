@@ -2,12 +2,13 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { resolveSetupPaths } from '../setup/paths.js';
+import { nonEmptyText } from '../validation/values.js';
 
 export class GraphRuntimeConfigurationError extends TypeError {}
 
 export function resolveGraphRuntimeOptions(args = [], env = process.env, options = {}) {
   const configuredPath = runtimeValue(args, '--runtime-config') ??
-    nonEmpty(env.FULI_GRAPH_RUNTIME_CONFIG);
+    nonEmptyText(env.FULI_GRAPH_RUNTIME_CONFIG);
   const dataDir = resolveSetupPaths({ env, ...options.setupPaths }).dataDir;
   return {
     runtimeConfigPath: resolve(configuredPath ?? join(dataDir, 'graph-runtime.json'))
@@ -50,14 +51,14 @@ function validateConfig(config) {
 function provider(value, label) {
   if (!value || typeof value !== 'object') fail(`${label} is required`);
   for (const property of ['providerUrl', 'accessToken', 'principalId']) {
-    if (!nonEmpty(value[property])) fail(`${label}.${property} is required`);
+    if (!nonEmptyText(value[property])) fail(`${label}.${property} is required`);
   }
   value.providerUrl = canonicalProviderUrl(value.providerUrl);
 }
 
 function optionalSecret(value, property, label) {
   if (value[property] === undefined) return;
-  const normalized = nonEmpty(value[property]);
+  const normalized = nonEmptyText(value[property]);
   if (!normalized || normalized.length < 32) {
     fail(`${label} must contain at least 32 characters`);
   }
@@ -86,7 +87,7 @@ function runtimeValue(args, flag) {
   const index = args.indexOf(flag);
   if (index === -1) return null;
   const value = args[index + 1];
-  if (!nonEmpty(value) || value.startsWith('--')) {
+  if (!nonEmptyText(value) || value.startsWith('--')) {
     throw new GraphRuntimeConfigurationError(`Missing value for ${flag}`);
   }
   if (args.indexOf(flag, index + 1) !== -1) {
@@ -95,10 +96,20 @@ function runtimeValue(args, flag) {
   return value;
 }
 
-function nonEmpty(value) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
 function fail(message) {
   throw new GraphRuntimeConfigurationError(message);
+}
+
+/**
+ * For a long-running client after a token rotation: reads the personal token
+ * another process wrote for this same Provider and personal space. A different
+ * Provider or space is never adopted. Null without a runtime config file.
+ */
+export function personalTokenRefresher(path, personal) {
+  if (typeof path !== 'string' || !path) return null;
+  return () => {
+    const latest = readGraphRuntimeConfig(path).personal;
+    return latest?.providerUrl === personal.providerUrl && latest?.spaceId === personal.spaceId
+      ? latest.accessToken : null;
+  };
 }

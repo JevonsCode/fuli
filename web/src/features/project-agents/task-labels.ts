@@ -1,4 +1,5 @@
 import { currentLocale, t } from '@/i18n'
+import { formatDateTime } from '@/lib/date-time'
 import type {
   ConversationSourceApplication,
   ProjectAgentActualExecution,
@@ -14,10 +15,10 @@ import type {
 import { eventExecution } from './task-evidence'
 
 export function formatDate(value: string | null | undefined) {
-  if (!value) return t('projectAgents.notReported')
-  const date = new Date(value)
-  if (Number.isNaN(date.valueOf())) return t('projectAgents.notReported')
-  return new Intl.DateTimeFormat(currentLocale(), { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date)
+  const notReported = t('projectAgents.notReported')
+  return formatDateTime(value, currentLocale(), {
+    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  }, { missing: notReported, invalid: notReported })
 }
 
 export function strategyLabel(strategy: ProjectAgentModelStrategy | null | undefined) {

@@ -7,6 +7,7 @@ import {
   readJsonFile,
   writeJsonFileAtomic
 } from '../storage/json-file.js';
+import { assertJsonObject } from '../validation/values.js';
 
 const FULI_SERVER = 'fuli';
 const MANAGED_HOOK_TOOLS = new Set([
@@ -26,9 +27,9 @@ export function connectClaudeCode(agent, context, {
 } = {}) {
   const current = readConfig(agent.configPath, {});
   const settings = readConfig(agent.settingsPath, {});
-  assertObject(current, 'Claude Code config');
-  assertObject(settings, 'Claude Code settings');
-  assertObject(current.mcpServers ?? {}, 'Claude Code mcpServers');
+  assertJsonObject(current, 'Claude Code config');
+  assertJsonObject(settings, 'Claude Code settings');
+  assertJsonObject(current.mcpServers ?? {}, 'Claude Code mcpServers');
   assertHookSettings(settings.hooks ?? {});
   assertPermissionSettings(settings.permissions ?? {});
   const profile = installedToolProfile(current.mcpServers?.fuli?.args, context.toolProfile);
@@ -75,8 +76,8 @@ export function disconnectClaudeCode(agent, {
   let changed = false;
   if (fileExists(agent.configPath)) {
     const current = readConfig(agent.configPath, {});
-    assertObject(current, 'Claude Code config');
-    assertObject(current.mcpServers ?? {}, 'Claude Code mcpServers');
+    assertJsonObject(current, 'Claude Code config');
+    assertJsonObject(current.mcpServers ?? {}, 'Claude Code mcpServers');
     if (Object.hasOwn(current.mcpServers ?? {}, FULI_SERVER)) {
       const { [FULI_SERVER]: _removed, ...remainingServers } =
         current.mcpServers;
@@ -90,7 +91,7 @@ export function disconnectClaudeCode(agent, {
 
   if (agent.settingsPath && fileExists(agent.settingsPath)) {
     const settings = readConfig(agent.settingsPath, {});
-    assertObject(settings, 'Claude Code settings');
+    assertJsonObject(settings, 'Claude Code settings');
     assertHookSettings(settings.hooks ?? {});
     assertPermissionSettings(settings.permissions ?? {});
     const nextSettings = withoutManagedSettings(settings);
@@ -109,7 +110,7 @@ export function disconnectClaudeCode(agent, {
 
 export function hasCurrentClaudeCodeHooks(settings, context = {}) {
   try {
-    assertObject(settings, 'Claude Code settings');
+    assertJsonObject(settings, 'Claude Code settings');
     assertHookSettings(settings.hooks ?? {});
     assertPermissionSettings(settings.permissions ?? {});
     return sameJson(
@@ -212,13 +213,13 @@ function isManagedHook(hook, tool = null) {
 }
 
 function assertHookSettings(value) {
-  assertObject(value, 'Claude Code hooks');
+  assertJsonObject(value, 'Claude Code hooks');
   for (const [event, groups] of Object.entries(value)) {
     if (!Array.isArray(groups)) {
       throw new TypeError(`Claude Code hook event ${event} must be an array`);
     }
     for (const group of groups) {
-      assertObject(group, `Claude Code ${event} hook group`);
+      assertJsonObject(group, `Claude Code ${event} hook group`);
       if (!Array.isArray(group.hooks)) {
         throw new TypeError(`Claude Code ${event} hook group must contain hooks`);
       }
@@ -227,19 +228,13 @@ function assertHookSettings(value) {
 }
 
 function assertPermissionSettings(value) {
-  assertObject(value, 'Claude Code permissions');
+  assertJsonObject(value, 'Claude Code permissions');
   for (const field of ['allow', 'ask', 'deny']) {
     if (value[field] !== undefined && (
       !Array.isArray(value[field]) || !value[field].every(rule => typeof rule === 'string')
     )) {
       throw new TypeError(`Claude Code permissions ${field} must be an array of strings`);
     }
-  }
-}
-
-function assertObject(value, label) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new TypeError(`${label} must be a JSON object`);
   }
 }
 

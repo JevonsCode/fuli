@@ -1,11 +1,10 @@
-import hashlib
 import json
 import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
 
-from .provider_values import native_datetime, now_utc, stable_uuid
+from .provider_values import native_datetime, now_utc, sha256_text, stable_uuid
 from .workflow_candidate_models import (
     WorkflowAuthorization,
     WorkflowCandidate,
@@ -117,7 +116,7 @@ async def preview_workflow_candidate_review(
     issued_at = created_at or now_utc()
     expires_at = issued_at + REVIEW_PREVIEW_TTL
     approval_token = token_factory(32)
-    token_hash = _sha256(approval_token)
+    token_hash = sha256_text(approval_token)
     payload_fingerprint = _review_payload_fingerprint(candidate_id, request)
     preview_id = stable_uuid(
         space['id'], 'workflow-review-preview', token_hash
@@ -192,7 +191,7 @@ async def review_workflow_candidate(
         return await _read_workflow_candidate(
             store, actor, space['id'], candidate_id, changed_at
         )
-    token_hash = _sha256(request.approval_token)
+    token_hash = sha256_text(request.approval_token)
     if request.decision == 'reject':
         records, _, _ = await store.runtime.driver.execute_query(
             _REJECT_WORKFLOW_CANDIDATE_QUERY,
@@ -574,16 +573,12 @@ def _review_payload_fingerprint(
         'candidate_id': candidate_id,
         **request.model_dump(mode='json', exclude={'approval_token'}),
     }
-    return _sha256(json.dumps(
+    return sha256_text(json.dumps(
         payload,
         ensure_ascii=False,
         separators=(',', ':'),
         sort_keys=True,
     ))
-
-
-def _sha256(value: str) -> str:
-    return hashlib.sha256(value.encode('utf-8')).hexdigest()
 
 
 def _workflow_condition(value: str | None) -> dict[str, object]:

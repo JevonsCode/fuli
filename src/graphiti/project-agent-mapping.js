@@ -1036,35 +1036,6 @@ export function providerExecutorPreflight(input) {
   });
 }
 
-export function executorPreflightRecord(value = {}) {
-  return withoutUndefined({
-    executorId: value.executor_id,
-    personalSpaceId: value.personal_space_id,
-    displayName: value.display_name,
-    executorKind: value.executor_kind,
-    registrationStatus: value.registration_status,
-    permissionStatus: value.permission_status,
-    preflightStatus: value.preflight_status,
-    healthStatus: value.health_status,
-    healthRequired: value.health_required,
-    globalPriority: value.global_priority,
-    revision: value.revision,
-    registeredAt: value.registered_at,
-    updatedAt: value.updated_at,
-    status: value.status,
-    available: value.available,
-    workspacePermission: value.workspace_permission,
-    capabilities: value.capabilities ?? [],
-    availableModels: (value.available_models ?? value.advertised_models ?? [])
-      .map(executorModelRecord),
-    checkedAt: value.checked_at ?? value.preflight_at,
-    connected: value.connected,
-    reason: value.reason,
-    testSource: value.test_source,
-    cleanupEligible: value.cleanup_eligible
-  });
-}
-
 export function providerExecutorActualReport(input) {
   return withoutUndefined({
     artifact_revision: input.artifactRevision ?? input.artifact_revision,

@@ -2,6 +2,7 @@ import { chmodSync } from 'node:fs';
 
 import { isFetchBlockedPort } from '../server/blocked-ports.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { deepFreeze } from '../validation/values.js';
 
 export const RUNTIME_SETTINGS_VERSION = 1;
 export const RESOURCE_REFRESH_OPTIONS = Object.freeze([5, 10, 30, 60]);
@@ -255,12 +256,4 @@ function validConversationUrlTemplate(value) {
   if (value.split('{id}').length !== 2 || /\s/.test(value)) return false;
   const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(value)?.[1]?.toLowerCase();
   return Boolean(scheme) && !['about', 'blob', 'data', 'file', 'javascript'].includes(scheme);
-}
-
-function deepFreeze(value) {
-  Object.freeze(value);
-  for (const child of Object.values(value)) {
-    if (child && typeof child === 'object' && !Object.isFrozen(child)) deepFreeze(child);
-  }
-  return value;
 }

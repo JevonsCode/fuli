@@ -1,5 +1,3 @@
-import { createInterface } from 'node:readline/promises';
-
 import {
   applyAgentSelection,
   promptAgentSelection,
@@ -11,12 +9,14 @@ import {
   DEFAULT_RUNTIME_SETTINGS,
   runtimeSettingsWithOverrides
 } from '../system/runtime-settings.js';
+import { confirmInTerminal, writeLine } from './terminal-io.js';
 
 export async function runSetupCommand(args, dependencies = {}) {
   const options = parseSetupOptions(args);
   const planSetup = dependencies.planSetup ?? planLocalSetup;
   const applySetup = dependencies.applySetup ?? applyLocalSetup;
-  const confirm = dependencies.confirm ?? confirmInTerminal;
+  const confirm = dependencies.confirm
+    ?? (() => confirmInTerminal('Only the items above will change. Continue? [Y/n] ', { defaultYes: true }));
   const selectAgents = dependencies.selectAgents ?? promptAgentSelection;
   const write = dependencies.write ?? writeLine;
   let plan = planSetup(options, dependencies);
@@ -128,20 +128,4 @@ export function formatSetupResult(result, plan) {
   if (dataDir) lines.push(`For this installation, use --data-dir ${JSON.stringify(dataDir)}.`);
   lines.push('MCP provides tools and memory. Automatic conversation capture and wake/resume require a client adapter.');
   return lines.join('\n');
-}
-
-async function confirmInTerminal() {
-  const input = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const answer = (await input.question('Only the items above will change. Continue? [Y/n] '))
-      .trim()
-      .toLowerCase();
-    return answer === '' || answer === 'y' || answer === 'yes';
-  } finally {
-    input.close();
-  }
-}
-
-function writeLine(value) {
-  process.stdout.write(`${value}\n`);
 }

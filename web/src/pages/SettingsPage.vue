@@ -15,6 +15,7 @@ import {
   sourceApplicationName,
 } from '@/features/knowledge/source-adapters'
 import { currentLocale, i18n, setLocale, t, type AppLocale } from '@/i18n'
+import { formatDateTime } from '@/lib/date-time'
 import { motionPreference, setMotionPreference } from '@/lib/motion-preference'
 import { useConsoleStore } from '@/stores/console'
 import type {
@@ -265,12 +266,7 @@ function barWidth(bytes: number, maximum: number) {
 }
 
 function formatTime(value: string | undefined) {
-  if (!value) return '—'
-  return new Intl.DateTimeFormat(locale.value, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).format(new Date(value))
+  return formatDateTime(value, locale.value, { hour: '2-digit', minute: '2-digit', second: '2-digit' }, { missing: '—' })
 }
 function revealInvalidField(event: Event) {
   const field = event.target as HTMLElement
