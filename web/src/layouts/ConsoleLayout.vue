@@ -10,7 +10,7 @@ import NavigationRecovery from '@/components/NavigationRecovery.vue'
 import AgentAttentionCenter from '@/features/project-agents/AgentAttentionCenter.vue'
 import PinnedAgentsNav from '@/features/agent-profile/PinnedAgentsNav.vue'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
-import { usePinnedAgentRecords } from '@/features/agent-profile/usePinnedAgentRecords'
+import { useAgentRecords } from '@/features/agent-profile/useAgentRecords'
 import { t } from '@/i18n'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { personalProjectsPath, knowledgePath } from '@/router/paths'
@@ -29,7 +29,7 @@ const knowledgeTo = computed(() => knowledgePath('personal', navigationSpaceId.v
 const agentPins = useAgentPins(activeSpaceId)
 const pinnedAgentIds = agentPins.agentIds
 // Only the pinned Agents are read here; the full roster belongs to the directory.
-const pinnedRecords = usePinnedAgentRecords(activeSpaceId, pinnedAgentIds)
+const pinnedRecords = useAgentRecords(activeSpaceId, pinnedAgentIds)
 const rosterAgents = computed(() => Object.values(pinnedRecords.records.value))
 const rosterLoading = pinnedRecords.loading
 const rosterError = pinnedRecords.error

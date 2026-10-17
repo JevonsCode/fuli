@@ -3,7 +3,7 @@ import { getJson } from "@/api/client";
 import { t } from "@/i18n";
 import type { ProjectAgentRecord } from "@/types";
 import { unknownRecord } from "@/features/project-agents/task-evidence";
-import { rosterRecords } from "./useAgentRoster";
+import { rosterRecords } from "./useAgentRecords";
 
 export const ROSTER_PAGE_SIZE = 50;
 

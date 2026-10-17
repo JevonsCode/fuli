@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import { t } from '@/i18n'
-import type { PersonalProject, ProjectAgentRecord } from '@/types'
+import type { PersonalProject } from '@/types'
+import { useAgentRecords } from '@/features/agent-profile/useAgentRecords'
 import AttentionReply from './AttentionReply.vue'
 import type { AttentionReplyDraft } from './attention-replies'
 import { attentionTaskHref, inboxLocation, useAgentAttention, type AgentAttention } from './attention-store'
@@ -14,7 +14,14 @@ import { attentionTaskHref, inboxLocation, useAgentAttention, type AgentAttentio
 // The inbox body: request queue on one side, the selected request and reply on the other.
 const props = defineProps<{ personalSpaceId: string; projects: PersonalProject[]; focusRequestId?: string }>()
 const attention = useAgentAttention()
-const names = ref<Record<string, string>>({})
+// Names are read only for the Agents with open requests; requests stay usable without them.
+const agentRecords = useAgentRecords(
+  computed(() => (attention.open ? attention.spaceId : '')),
+  computed(() => [...attention.items.map(item => item.agentId), ...(attention.agentId ? [attention.agentId] : [])]),
+)
+const names = computed<Record<string, string>>(() => Object.fromEntries(
+  Object.entries(agentRecords.records.value).map(([id, agent]) => [id, agent.profile.displayName || agent.profile.name]),
+))
 const selectedId = ref('')
 const busy = ref('')
 let operation = 0
@@ -33,15 +40,8 @@ const requestOptions = computed(() => attention.items.map(item => ({
 })))
 watch(() => props.personalSpaceId, id => {
   operation++; busy.value = ''
-  names.value = {}; selectedId.value = ''
+  selectedId.value = ''
   attention.setSpace(id === 'current' ? '' : id)
-}, { immediate: true })
-watch(() => [attention.open, attention.spaceId] as const, async ([open, space]) => {
-  if (!open || !space) return
-  try {
-    const agents = await getJson<ProjectAgentRecord[]>(`/api/project-agents?${new URLSearchParams({ personalSpaceId: space })}`)
-    if (space === attention.spaceId) names.value = Object.fromEntries(agents.map(agent => [agent.agentId, agent.profile.displayName || agent.profile.name]))
-  } catch { /* Requests remain usable when the directory is unavailable. */ }
 }, { immediate: true })
 watch(() => attention.items, items => {
   if (!items.some(item => item.requestId === selectedId.value)) {

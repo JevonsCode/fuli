@@ -28,6 +28,13 @@ const task = (id: string, agentId: string, title: string, status = 'completed') 
 const teamPerson = (agentId: string, name: string) => ({ agentId, name, employeeNumber: null, occupationEmoji: null, responsibility: '', peerRole: false })
 const teamView = (leadId: string, leadName: string, members: Array<[string, string]>) => ({ personalProjectId: 'project-a', status: 'ready', lead: teamPerson(leadId, leadName), unavailableLead: null,
   members: members.map(([id, name]) => ({ ...teamPerson(id, name), reportsToAgentId: leadId })), collaborators: [], peers: [], unavailableMemberIds: [] })
+// Pages read one Agent at a time: answer from a synthetic roster, 404 for anyone else.
+const isAgentRead = (url: string) => url.startsWith('/api/project-agents/') && new URL(url, 'http://fixture').pathname.split('/').length === 4
+function agentRead(url: string, roster: unknown[]) {
+  const id = decodeURIComponent(new URL(url, 'http://fixture').pathname.split('/')[3] ?? '')
+  const found = (roster as Array<{ agentId: string }>).find(agent => agent.agentId === id)
+  return found ? Promise.resolve(found) : Promise.reject(Object.assign(new Error('project Agent not found'), { status: 404 }))
+}
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { promise, resolve } }
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -40,7 +47,7 @@ beforeEach(() => {
   getJson.mockImplementation(async (url: string) => {
     const parsed = new URL(url, 'http://fixture')
     const id = parsed.searchParams.get('agentId') ?? 'alpha'
-    if (parsed.pathname === '/api/project-agents') return [person('alpha'), person('beta'), person('gamma')]
+    if (isAgentRead(url)) return agentRead(url, [person('alpha'), person('beta'), person('gamma')])
     if (parsed.pathname === '/api/project-agent-assignments') return [assignment(id), assignment(id, 'ended', 'project-old')]
     if (parsed.pathname === '/api/project-agent-tasks') return [task('done', id, 'Completed evidence'), task('queued', id, 'Only scheduled', 'queued')]
     if (parsed.pathname === '/api/project-team') return teamView('beta', 'Birch', [['alpha', 'Aster'], ['gamma', 'Cedar']])
@@ -98,7 +105,7 @@ describe('Agent profile integration', () => {
   it('loads a fixed role workbench on a direct profile visit without a cached catalog', async () => {
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => {
-      if (url.startsWith('/api/project-agents?')) return Promise.resolve([person('employee.tonborg')])
+      if (isAgentRead(url)) return agentRead(url, [person('employee.tonborg')])
       if (url.startsWith('/api/employee-templates?')) return Promise.resolve({ templates: [{
         id: 'tonborg', name: 'Tonborg', agentId: 'employee.tonborg', agentStatus: 'active',
         workbench: { kind: 'native', view: 'judgment' },
@@ -113,7 +120,7 @@ describe('Agent profile integration', () => {
   it('exposes conversation retention under an accessible secondary tab', async () => {
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => {
-      if (url.startsWith('/api/project-agents?')) return Promise.resolve([{ ...person('alpha'), memoryScope: 'reviewed_agent' }, person('beta'), person('gamma')])
+      if (isAgentRead(url)) return agentRead(url, [{ ...person('alpha'), memoryScope: 'reviewed_agent' }, person('beta'), person('gamma')])
       return normal(url)
     })
     const { wrapper } = await setup()
@@ -134,7 +141,7 @@ describe('Agent profile integration', () => {
     store.state!.personalProjects!.unshift({ project_id: 'unrelated', personal_space_id: 'space-a', profile: { name: 'Unrelated conversation project' } })
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => {
-      if (url.startsWith('/api/project-agents?')) return Promise.resolve([{ ...person('alpha'), memoryScope: 'reviewed_agent' }])
+      if (isAgentRead(url)) return agentRead(url, [{ ...person('alpha'), memoryScope: 'reviewed_agent' }])
       return normal(url)
     })
     postJson.mockImplementation(async (_url, body) => {
@@ -167,7 +174,7 @@ describe('Agent profile integration', () => {
     const pending = deferred<unknown>()
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => {
-      if (url.startsWith('/api/project-agents?')) return Promise.resolve([{ ...person('alpha'), memoryScope: 'reviewed_agent' }])
+      if (isAgentRead(url)) return agentRead(url, [{ ...person('alpha'), memoryScope: 'reviewed_agent' }])
       if (url.startsWith('/api/project-agent-assignments?')) return pending.promise
       return normal(url)
     })
@@ -188,8 +195,8 @@ describe('Agent profile integration', () => {
   it('supports roving keyboard navigation for profile tabs', async () => {
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => {
-      if (url.startsWith('/api/project-agents?')) {
-        return Promise.resolve([{ ...person('alpha'), memoryScope: 'reviewed_agent' }, person('beta'), person('gamma')])
+      if (isAgentRead(url)) {
+        return agentRead(url, [{ ...person('alpha'), memoryScope: 'reviewed_agent' }, person('beta'), person('gamma')])
       }
       return normal(url)
     })
@@ -314,15 +321,19 @@ describe('Agent profile integration', () => {
     expect(wrapper.get('.agent-current-work-section').text()).not.toContain('Foreign task')
   })
 
-  it.each(['/agents/space-a/missing', '/agents/space-b/alpha'])('does not show a profile for %s', async path => {
+  it.each([
+    ['/agents/space-a/missing', [['/api/project-agents/missing?personalSpaceId=space-a']]],
+    ['/agents/space-b/alpha', []],
+  ])('does not show a profile for %s', async (path, reads) => {
     const { wrapper } = await setup(path)
     expect(wrapper.find('h1').exists()).toBe(false)
     expect(wrapper.find('.agent-resume-header').exists()).toBe(false)
-    expect(getJson.mock.calls).toEqual([['/api/project-agents?personalSpaceId=space-a']])
+    // Only the named Agent is read, and a foreign space is not read at all.
+    expect(getJson.mock.calls).toEqual(reads)
   })
 
   it('rejects a foreign-space identity even if returned in a roster response', async () => {
-    getJson.mockResolvedValue([{ ...person('alpha'), personalSpaceId: 'space-b' }])
+    getJson.mockResolvedValue({ ...person('alpha'), personalSpaceId: 'space-b' })
     const { wrapper } = await setup()
     expect(wrapper.find('.agent-resume-header').exists()).toBe(false)
     expect(getJson.mock.calls).toHaveLength(1)
@@ -374,7 +385,7 @@ describe('Agent profile integration', () => {
   it('retains legacy project membership when assignment details are unavailable', async () => {
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => {
-      if (url.startsWith('/api/project-agents?')) return Promise.resolve([{ ...person('alpha'), personalProjectId: 'project-a' }])
+      if (isAgentRead(url)) return agentRead(url, [{ ...person('alpha'), personalProjectId: 'project-a' }])
       if (url.startsWith('/api/project-agent-assignments?')) return Promise.reject(new Error('Temporary failure'))
       return normal(url)
     })
