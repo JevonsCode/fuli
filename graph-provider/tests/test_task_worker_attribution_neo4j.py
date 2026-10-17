@@ -47,7 +47,9 @@ async def finish(client, scope, run_id, request, headers, status, session_id):
     response = await client.post(f'/v1/project-agent-tasks/{request["task_id"]}/events', json={**scope,
         'task_id': request['task_id'], 'agent_id': request['agent_id'], 'worker_id': request['worker_id'],
         'status': 'running', 'worker_status': status,
-        'worker_runtime': {'application': 'codex', 'session_id': session_id},
+        'worker_label': 'Synthetic implementation review',
+        'worker_runtime': {'application': 'codex', 'session_id': session_id,
+                           'session_url': f'codex://threads/{session_id}'},
         'source_application': 'codex', 'source_session_id': 'worker-parent-session',
         'idempotency_key': f'{run_id}:terminal', 'summary': f'Synthetic worker {status}.'})
     assert response.status_code == 200, response.text
@@ -85,6 +87,11 @@ async def test_exact_parent_snapshot_retains_failed_cancelled_sessions_and_exclu
         assert {item['run_id'] for item in evidence} == {first, second}
         assert {item['status'] for item in evidence} == {'failed', 'cancelled'}
         assert len({item['session_id'] for item in evidence}) == 2
+        assert snapshot['collaborators'][0]['responsibility']
+        assert all(item['task_id'] == payload['task_id'] for item in evidence)
+        assert all(item['work_kind'] == 'implementation' for item in evidence)
+        assert all(item['worker_label'] == 'Synthetic implementation review' for item in evidence)
+        assert all(item['session_url'] == f'codex://threads/{item["session_id"]}' for item in evidence)
         assert len(next(item for item in evidence if item['run_id'] == first)['observation_ids']) == 1
         assert not next(item for item in evidence if item['run_id'] == second)['observation_ids']
 
@@ -167,3 +174,28 @@ async def test_concurrent_first_prepare_serializes_two_providers_and_preserves_f
                 await asyncio.gather(*tasks, return_exceptions=True)
     async with provider_client(settings, access_token) as (restarted, _):
         assert await checkpoint(restarted, scope, payload['task_context_token'], 'complete') == frozen
+
+
+@pytest.mark.asyncio
+async def test_another_project_cannot_claim_or_display_the_original_worker_receipt():
+    from test_project_agent_memory_neo4j import seed_agent
+    from test_project_agent_team_lifecycle_neo4j import binding_policy
+
+    async with provider_client(fixture_settings()) as (client, _):
+        scope, payload, headers = await worker_run_fixture(client)
+        run_id, _, _ = await run(client, scope, payload, headers, 'completed')
+        other = {**scope, 'personal_project_id': 'other-' + uuid4().hex}
+        for agent in ['owner', 'specialist']:
+            await seed_agent(client, scope['personal_space_id'], project=other['personal_project_id'],
+                             agent=agent, allowed_clients=['codex', 'claude_code'])
+        await binding_policy(client, other)
+        parent = 'fuli-task-other-' + uuid4().hex
+        await binding_parent(client, other, parent, 'other-session-' + uuid4().hex)
+        denied = await client.put('/v1/project-agent-worker-runs', json={**payload, **other,
+            'task_context_token': parent, 'idempotency_key': 'foreign-attribution-' + uuid4().hex})
+        assert denied.status_code in {403, 404, 409}, denied.text
+        foreign = await checkpoint(client, other, parent, 'complete')
+        assert foreign['owner']['agent_id'] == 'owner'
+        assert foreign['collaborators'] == []
+        original = await checkpoint(client, scope, payload['task_context_token'], 'complete')
+        assert [item['run_id'] for item in original['collaborators'][0]['runs']] == [run_id]

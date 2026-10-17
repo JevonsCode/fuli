@@ -7,7 +7,7 @@ const pending = reason => ({ status: 'partial', entryBlocked: true, reason });
 const retryReason = 'Transcript handoff is pending. Retry task entry to continue its saved progress; no new Agent context was supplied';
 
 export async function syncConversationTranscript(application, input, sourceApplication, adapter, guard = null) {
-  if (!application.getCapturePolicy?.().enabled) return { status: 'capture_disabled' };
+  if (!application.getCapturePolicy?.(sourceApplication).enabled) return { status: 'capture_disabled' };
   if (!input?.transcript_path) return { status: 'partial', reason: 'Host did not supply a visible transcript' };
   let committedPages = 0;
   try {
@@ -117,7 +117,7 @@ export function withTranscriptNotice(output, sync) {
 // prompt. Failed flushes keep the old owner, so new Agents cannot inherit an
 // unrelated session tail. Native files remain available for explicit recovery.
 export async function claimTranscriptBoundary(application, input, sourceApplication, sync, adapter, guard = null) {
-  if (!application.getCapturePolicy?.().enabled || !input.transcript_path) return sync;
+  if (!application.getCapturePolicy?.(sourceApplication).enabled || !input.transcript_path) return sync;
   try {
     const task = await application.personal.currentTaskContext({ personal_space_id: application.config.personal.spaceId,
       session_id: input.session_id, source_application: sourceApplication });

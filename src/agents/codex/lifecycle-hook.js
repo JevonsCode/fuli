@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { transcriptGuardFailureMessage, withTranscriptGuard } from '../../conversations/transcript-guard.js';
 import { compactTaskContext } from '../../conversations/task-context-view.js';
+import { PREFERENCE_RESET_EVENTS, preferenceHookOutput, preferenceLifecycleOutput } from '../../conversations/preference-lifecycle.js';
 import { syncConversationTranscript, withTranscriptNotice, claimTranscriptBoundary, recordTranscriptTaskEntry } from '../../conversations/sync-transcript.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from './conversation-transcript.js';
-import { hookAdditionalContextToolResult } from '../../mcp/tool-result.js';
 
 import { callAgentTool } from '../../agent-tools.js';
 import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js';
@@ -31,7 +31,9 @@ export async function codexStopLifecycleOutput(input, invoke) {
   return { systemMessage: boundedHookMessage(check.reason) };
 }
 
-export async function codexLifecycleOutput(event, input, invoke) {
+export async function codexLifecycleOutput(event, input, invoke, { delivery, currentTask } = {}) {
+  if (PREFERENCE_RESET_EVENTS.includes(event)) return preferenceLifecycleOutput(event, input,
+    { sourceApplication: 'codex', delivery, currentTask, invoke });
   if (event === 'Stop') return codexStopLifecycleOutput(input, invoke);
   if (!input?.session_id || typeof input.cwd !== 'string' || typeof input.prompt !== 'string') {
     throw new TypeError('Codex task entry requires session, cwd and prompt');
@@ -39,14 +41,13 @@ export async function codexLifecycleOutput(event, input, invoke) {
   const context = await invoke('begin_task_context', { sessionId: input.session_id,
     turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192),
     sourceApplication: 'codex', sourceSessionId: input.session_id });
-  return JSON.parse(hookAdditionalContextToolResult(compactTaskContext(context), { hookEventName: event,
-    label: 'Fuli task context. Apply effective_preferences and checkpoint with taskContextToken. Shared rules are referenced by version; read MCP resource fuli://rules/task-entry when one applies.',
-    limitBytes: 128 * 1024, itemLimit: 1000 }).content[0].text);
+  return preferenceHookOutput(compactTaskContext(context), event, input, delivery, 'codex',
+    'Fuli task context. Apply effective_preferences and checkpoint with taskContextToken. Shared rules are referenced by version; read MCP resource fuli://rules/task-entry when one applies.');
 }
 
 export async function runCodexLifecycleHook(args, dependencies = {}) {
   const event = args[args.indexOf('--event') + 1];
-  if (!['Stop', 'UserPromptSubmit'].includes(event)) throw new TypeError('Missing Codex lifecycle event');
+  if (!['Stop', 'UserPromptSubmit', ...PREFERENCE_RESET_EVENTS].includes(event)) throw new TypeError('Missing Codex lifecycle event');
   const input = await (dependencies.readInput ?? readHookInput)();
   const write = dependencies.write ?? ((value) => process.stdout.write(value));
   if (dependencies.invoke) {
@@ -74,8 +75,11 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
     });
     const invokeTool = dependencies.callTool ?? callAgentTool;
     const output = await leases.withGraphLease('codex-lifecycle', async () => {
+      if (PREFERENCE_RESET_EVENTS.includes(event)) return codexLifecycleOutput(event, input,
+        (name, parameters) => invokeTool(app, name, parameters, { signal: dependencies.signal }),
+        { delivery: app.preferenceDelivery, currentTask: app.taskContextRegistry?.current?.bind(app.taskContextRegistry) });
       try {
-        return await withTranscriptGuard(runtimeConfigPath, input, 'codex', app.getCapturePolicy?.().enabled, async guard => {
+        return await withTranscriptGuard(runtimeConfigPath, input, 'codex', app.getCapturePolicy?.('codex').enabled, async guard => {
           let sync = await syncConversationTranscript(app, input, 'codex', {
             normalize: normalizeCodexRecord, verify: verifyCodexTranscript
           }, guard);
@@ -93,7 +97,7 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
             const context = await invokeTool(app, name, parameters, { signal: dependencies.signal });
             if (name === 'begin_task_context') await recordTranscriptTaskEntry(entryGuard, context);
             return context;
-          });
+          }, { delivery: app.preferenceDelivery });
           if (event === 'UserPromptSubmit') sync = await claimTranscriptBoundary(app, input, 'codex', sync, {
             normalize: normalizeCodexRecord, verify: verifyCodexTranscript
           }, entryGuard);
@@ -101,7 +105,7 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
           return withTranscriptNotice(result, sync);
         });
       } catch (error) {
-        if (event !== 'UserPromptSubmit' || !app.getCapturePolicy?.().enabled || !input.transcript_path) throw error;
+        if (event !== 'UserPromptSubmit' || !app.getCapturePolicy?.('codex').enabled || !input.transcript_path) throw error;
         return { systemMessage: transcriptGuardFailureMessage(error) };
       }
     }, { signal: dependencies.signal });

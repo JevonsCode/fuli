@@ -140,6 +140,8 @@ candidates for generic connection, not a claim of completed Fuli end-to-end acce
 clients and custom Agents can use the same contract. Closed chat interfaces without tools or an
 extension interface cannot connect directly.
 
+Capture can be turned off per client (`disabledSources` in the capture policy, or the per-client switches in Settings). A client that is off keeps its tools and can still read existing memory; it only stops adding new conversations, knowledge candidates and working memory. The global switch still turns capture off for every client.
+
 New dedicated adapters belong behind the shared client ports. They should add only host-specific
 configuration, hooks, transcript parsing, or execution, never a second version of Fuli's knowledge
 and role rules. Missing enhancements must remain explicit; a generic connection must not claim

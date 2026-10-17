@@ -140,6 +140,10 @@ function withManagedHooks(settings, context) {
       normalizedHookTimeoutSec
     )
   ];
+  for (const event of ['SessionStart', 'PreCompact']) {
+    hooks[event] = [...(hooks[event] ?? []),
+      managedHookGroup(context, event, 'Refreshing Fuli context generation', normalizedHookTimeoutSec)];
+  }
   return withManagedPermissions({ ...clean, hooks });
 }
 

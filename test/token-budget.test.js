@@ -13,7 +13,7 @@ import { hookAdditionalContextToolResult } from '../src/mcp/tool-result.js';
 const BASELINE = Object.freeze({
   // R-02: +1,730 B for required occupation contracts on full-profile writers.
   // The default chat schema and task entry budgets remain unchanged.
-  fullToolSchemaBytes: 169096,
+  fullToolSchemaBytes: 169321,
   chatToolSchemaBytes: 40502,
   instructionsBytes: 2043,
   projectEntryChars: 3449

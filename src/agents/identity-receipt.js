@@ -17,10 +17,13 @@ export function agentContinuation(projectId, agentId, conversationId = null) {
 }
 
 function agentLink(application, agentId, name) {
-  const label = String(name?.trim() || agentId).replace(/[\r\n\t]+/g, ' ')
+  return `[${receiptText(name?.trim() || agentId)}](<${agentProfileUrl(application, agentId).replace(/[<>\s]/g, encodeURIComponent)}>)`;
+}
+
+function receiptText(value) {
+  return String(value).replace(/[\r\n\t]+/g, ' ')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/[\\`*_{}\[\]()!|]/g, '\\$&');
-  return `[${label}](<${agentProfileUrl(application, agentId).replace(/[<>\s]/g, encodeURIComponent)}>)`;
 }
 
 // The reply's attribution line: who led the task and who actually helped.
@@ -29,17 +32,73 @@ export function taskAgentReceipt(application, { projectId, agentId, name = null,
   collaborators = [], assignmentStatus = null, assignmentReason = null }) {
   const owner = agentId ? { agent_id: agentId, name,
     profile_url: agentProfileUrl(application, agentId), source_application: sourceApplication } : null;
-  const helpers = owner ? collaborators.filter(item => item.agentId !== agentId) : [];
-  const markdown = owner
+  const helpers = owner ? [...new Map(collaborators.filter(item => item.agentId !== agentId)
+    .map(item => [item.agentId, item])).values()].map(receiptCollaborator) : [];
+  const build = () => ({ required: true, markdown: owner
     ? `FULI Agent：负责人 ${agentLink(application, agentId, name)}`
-      + (helpers.length ? ` · 协作 ${helpers.map(item => agentLink(application, item.agentId, item.name)).join('、')}` : '')
-    : unassignedReceipt(assignmentStatus, assignmentReason);
-  return { required: true, markdown, owner,
+      + (helpers.length ? ` · 协作 ${helpers.map(item => collaboratorLink(application, item)).join('、')}` : '')
+    : unassignedReceipt(assignmentStatus, assignmentReason), owner,
     collaborators: helpers.map(item => ({ agent_id: item.agentId, name: item.name,
-      profile_url: agentProfileUrl(application, item.agentId) })),
+      profile_url: agentProfileUrl(application, item.agentId),
+      ...(item.responsibility ? { responsibility: item.responsibility } : {}),
+      ...(item.runCount ? { runs: item.runs, run_count: item.runCount,
+        omitted_run_count: item.runCount - item.runs.length } : {}) })),
     personal_project_id: projectId, work_status: workStatus, persistence,
     continuation: owner ? agentContinuation(projectId, agentId, conversationId) : null,
-    guidance: 'MUST end every final user-visible reply with agent_receipt.markdown unchanged, exactly once: greetings, status, errors, even with capture disabled or nothing retained. checkpoint_task_knowledge receipt overrides entry and names actual collaborators. Never invent owners or collaborators.' };
+    guidance: 'MUST end every final user-visible reply with agent_receipt.markdown unchanged, exactly once: greetings, status, errors, even with capture disabled or nothing retained. checkpoint_task_knowledge receipt overrides entry and names actual collaborators. Never invent owners or collaborators.' });
+  let receipt = build();
+  // Reserve room within checkpoint's 16 KiB response. Only optional execution
+  // detail is removed: every proven helper and the exact total remain visible.
+  while (Buffer.byteLength(JSON.stringify(receipt)) > 12 * 1024) {
+    const largest = [...helpers].filter(item => item.runs.length)
+      .sort((a, b) => Buffer.byteLength(JSON.stringify(b.runs)) - Buffer.byteLength(JSON.stringify(a.runs)))[0];
+    if (largest) largest.runs.pop();
+    else {
+      const detail = helpers.find(item => item.responsibility);
+      if (!detail) break; // Preserve the existing identity-only receipt contract.
+      detail.responsibility = null;
+    }
+    receipt = build();
+  }
+  return receipt;
+}
+
+function collaboratorLink(application, item) {
+  const duties = [...new Set((item.runs ?? []).map(run => run.worker_label || run.work_kind).filter(Boolean))];
+  const sessions = new Map();
+  for (const run of item.runs ?? []) {
+    const url = receiptSessionUrl(run.session_url);
+    const status = { completed: '完成', failed: '失败', cancelled: '取消', blocked: '阻塞', awaiting_review: '待验收' }[run.status];
+    if (url) sessions.set(`${run.application}:${run.session_id}`, `[会话${status ? `·${status}` : ''}](<${url}>)`);
+  }
+  const omitted = item.runCount - (item.runs?.length ?? 0);
+  const detail = [...duties.map(receiptText), ...sessions.values(), ...(omitted > 0 ? [`另${omitted}次`] : [])].join('，');
+  return agentLink(application, item.agentId, item.name) + (detail ? `（${detail}）` : '');
+}
+
+// The full evidence stays in the immutable checkpoint. Mandatory receipts must
+// fit the transport's per-array limit even after many retries of one worker.
+function receiptCollaborator(item) {
+  const text = (value, max) => typeof value === 'string' ? [...value].slice(0, max).join('') : null;
+  const runs = (item.runs ?? []).slice(0, 3).map(run => ({
+    run_id: text(run.run_id, 128), task_id: text(run.task_id, 128),
+    work_kind: text(run.work_kind, 64), worker_label: text(run.worker_label, 80),
+    application: text(run.application, 32), session_id: text(run.session_id, 256),
+    session_url: typeof run.session_url === 'string' && run.session_url.length <= 512 ? receiptSessionUrl(run.session_url) : null,
+    status: text(run.status, 32)
+  }));
+  return { ...item, responsibility: text(item.responsibility, 160), runs, runCount: item.runs?.length ?? 0 };
+}
+
+function receiptSessionUrl(value) {
+  if (typeof value !== 'string') return null;
+  try {
+    const url = new URL(value);
+    if (url.username || url.password || url.search || url.hash) return null;
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname))
+        && !(url.protocol === 'codex:' && url.hostname === 'threads' && url.pathname !== '/')) return null;
+    return url.href.replace(/[<>\s]/g, encodeURIComponent);
+  } catch { return null; }
 }
 
 function unassignedReceipt(status, reason) {
