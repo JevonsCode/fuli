@@ -20,7 +20,6 @@ export const PEER_LIMITS = Object.freeze({
   invitationSeconds: 10 * 60,
   executionSeconds: 900,
 });
-export const MESSAGE_STATUSES = Object.freeze(['queued', 'claimed', 'running', 'answered', 'failed', 'cancelled', 'expired', 'unknown']);
 export const TERMINAL_STATUSES = new Set(['answered', 'failed', 'cancelled', 'expired', 'unknown']);
 export const RESULT_OUTCOMES = new Set(['answered', 'failed', 'cancelled', 'unknown', 'never_started']);
 // Only "may still be running" crosses devices; nothing remote can confirm a release.

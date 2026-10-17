@@ -288,28 +288,6 @@ export function personalProfileItems(graph: KnowledgeGraph | null) {
   )
 }
 
-export function personalProfileGraph(
-  graph: KnowledgeGraph,
-  activeProjectId: string | null = null,
-): KnowledgeGraph {
-  const edges = graph.edges.filter(
-    (edge) => edge.profile_aspect && preferenceApplies(edge, activeProjectId),
-  )
-  const nodeIds = new Set(
-    edges.flatMap((edge) => [endpointId(edge.source), endpointId(edge.target)]),
-  )
-  for (const node of graph.nodes) {
-    if (node.profile_aspect && preferenceApplies(node, activeProjectId)) nodeIds.add(node.id)
-  }
-  return {
-    ...graph,
-    nodes: graph.nodes.filter((node) => nodeIds.has(node.id)),
-    edges: edges.filter(
-      (edge) => nodeIds.has(endpointId(edge.source)) && nodeIds.has(endpointId(edge.target)),
-    ),
-  }
-}
-
 export function mergeKnowledgeGraphs(graphs: Array<KnowledgeGraph | null>): KnowledgeGraph {
   const available = graphs.filter((graph): graph is KnowledgeGraph => Boolean(graph))
   return {
@@ -440,10 +418,6 @@ export function batchConfirmationBasis(
       }),
     proposedBy: existing?.proposed_by || proposedByFromEvidence(evidence),
   }
-}
-
-export function confirmationBasisCount(item: KnowledgeItem) {
-  return item.evidence.length + (item.confirmationBasis ? 1 : 0)
 }
 
 function addConfirmationGroup(
@@ -638,12 +612,6 @@ function latestTime(item: KnowledgeItem) {
   const value = latestItemValue(item)
   const time = value ? new Date(value).getTime() : 0
   return Number.isNaN(time) ? 0 : time
-}
-
-function preferenceApplies(item: KnowledgeNode | KnowledgeEdge, activeProjectId: string | null) {
-  const scope = item.preference_scope ?? 'global'
-  return scope === 'global'
-    || (scope === 'project' && Boolean(activeProjectId) && item.preference_project_id === activeProjectId)
 }
 
 function mergeItems<T extends KnowledgeNode | KnowledgeEdge>(items: T[]): T[] {
