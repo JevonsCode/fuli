@@ -1,4 +1,5 @@
 import { currentLocale, t } from '@/i18n'
+import { DATE_TIME_FULL, formatDateTime } from '@/lib/date-time'
 import type {
   ConfirmationActor,
   ConfirmationStatus,
@@ -343,9 +344,7 @@ export function latestItemValue(item: KnowledgeItem) {
 }
 
 export function formatTime(value?: string | null) {
-  if (!value) return t('knowledge.domain.items.notRecorded')
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(currentLocale())
+  return formatDateTime(value, currentLocale(), DATE_TIME_FULL, { missing: t('knowledge.domain.items.notRecorded') })
 }
 
 export function knowledgeReviewState(item: KnowledgeItem): KnowledgeReviewState {

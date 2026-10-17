@@ -45,7 +45,7 @@ Each row is the single home for that behavior; reuse it or extend it.
 | One-line display text | `src/text/single-line.js` | |
 | Lifecycle hook stdin reading and size limit | `src/agents/lifecycle-input.js` | Common to every Agent; only the output format stays in `src/agents/<agent>/`. |
 | CLI line output and terminal confirmation | `src/cli/terminal-io.js` | |
-| Web date and time display | `web/src/lib/` date formatter (create on first move) | Locale comes from the i18n store, never a hard-coded locale. |
+| Web date and time display | `web/src/lib/date-time.ts` (`formatDateTime`), `web/src/lib/relative-time.ts` | Pass `currentLocale()`; never a hard-coded or browser-default locale. |
 | Web identity, debounce | `web/src/lib/identity.ts`, `web/src/lib/debounce.ts` | |
 | Web loading feedback | `web/src/components/GrowthLoading.vue` | See `AGENTS.md`. |
 | Web modal behavior | `web/src/composables/useModalDialog.ts` | |
