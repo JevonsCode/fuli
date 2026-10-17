@@ -180,12 +180,16 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
   }
 
   async function messageAgent({ taskContextToken = null, sourceApplication, to, body, threadId = null,
-    conversation = 'auto', wait = true, timeoutSeconds = 300, projectPath = null } = {}) {
+    conversation = 'auto', wait = true, timeoutSeconds = 300, projectPath = null, roundtableProjectId = null } = {}) {
+    if (roundtableProjectId && app.peer?.isRemoteAddress(to)) throw validation('This scoped consultation cannot leave its project');
     if (app.peer?.isRemoteAddress(to)) {
       return messageRemote({ taskContextToken, sourceApplication, to, body, threadId, conversation, wait, timeoutSeconds });
     }
     const from = await sender({ taskContextToken, sourceApplication });
     const projectId = projectAddress(to);
+    if (roundtableProjectId && (from.projectId !== roundtableProjectId || (projectId && projectId !== roundtableProjectId))) {
+      throw validation('This scoped consultation cannot leave its project');
+    }
     const resolved = projectId ? await resolveProjectLead(app, projectId, { source: from, recruit: true }) : null;
     if (resolved && !resolved.agent) return { status: 'queued', reason: resolved.reason, targetProjectId: projectId };
     const target = resolved?.agent ?? await recipient(to);

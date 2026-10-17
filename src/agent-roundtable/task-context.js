@@ -6,11 +6,11 @@ const SEAL_WAIT_MS = 100;
 
 const TOOLS = Object.freeze(['get_collaboration_preferences', 'read_task_preferences',
   'get_project_agent_memory', 'search_knowledge_graph', 'list_agent_conversations',
-  'read_agent_conversation', 'checkpoint_task_knowledge']);
+  'read_agent_conversation', 'checkpoint_task_knowledge', 'message_agent', 'get_agent_message_status']);
 const AUTHORITY = new Set(['personalSpaceId', 'personal_space_id', 'personalProjectId', 'personal_project_id',
   'agentId', 'agent_id', 'projectAgentId', 'project_agent_id', 'sourceApplication', 'source_application',
   'sessionId', 'session_id', 'sourceSessionId', 'source_session_id', 'turnId', 'turn_id',
-  'taskContextToken', 'task_context_token', 'projectPath', 'sourceSessionVerified']);
+  'taskContextToken', 'task_context_token', 'projectPath', 'sourceSessionVerified', 'roundtableProjectId']);
 
 // The private capability is checked by the Provider on every call. Environment
 // metadata and model arguments never establish scope or native identity.
@@ -55,6 +55,10 @@ export function createRoundtableTaskContext(app, { token }) {
   function prepareInput(name, input, scope) {
     if (!TOOLS.includes(name)) throw denied('Roundtable tools are read-only');
     if (name !== 'get_collaboration_preferences' && !ownToken) throw denied('Roundtable task entry is required');
+    if (name === 'message_agent' && ((input.to?.startsWith('project:')
+        && input.to.slice(8) !== scope.personal_project_id) || app.peer?.isRemoteAddress(input.to))) {
+      throw denied('Roundtable follow-ups must stay in the admitted project scope');
+    }
     const layers = ['get_project_agent_memory', 'list_agent_conversations', 'read_agent_conversation'].includes(name);
     for (const key of ['personalSpaceId', 'personal_space_id']) {
       if (input[key] !== undefined && input[key] !== scope.personal_space_id) throw denied('Foreign space scope');
@@ -80,7 +84,8 @@ export function createRoundtableTaskContext(app, { token }) {
         ? null : scope.personal_project_id,
       agentId: scope.project_agent_id, projectAgentId: scope.project_agent_id,
       sourceApplication: scope.source_application, sourceSessionId: scope.session_id,
-      sessionId: scope.session_id, taskContextToken: ownToken };
+      sessionId: scope.session_id, taskContextToken: ownToken,
+      ...(name === 'message_agent' ? { roundtableProjectId: scope.personal_project_id } : {}) };
   }
   async function entry(scope) {
     entryPromise ??= app.getCollaborationPreferences({ personalProjectId: scope.personal_project_id,

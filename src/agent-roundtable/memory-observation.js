@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { recordProjectMemoryUsage } from '../graphiti/project-memory-usage.js';
 
 export const taskContextHash = token => createHash('sha256').update(token).digest('hex');
 
@@ -14,9 +15,8 @@ export async function observeReturnedMemory(app, store, { ask, reply, from, task
   }
   if (!app.personal.recordProjectMemoryUsage) return { recorded: false, reason: 'usage_port_unavailable' };
   try {
-    const result = await app.personal.recordProjectMemoryUsage({ personal_space_id: app.config.personal.spaceId,
-      task_context_token: taskContextToken, source_application: from.client,
-      target_project_id: target, channel: 'roundtable_answer', evidence_id: reply.id, result_count: resultCount });
+    const result = await recordProjectMemoryUsage(app, { taskContextToken, sourceApplication: from.client,
+      targetProjectId: target, channel: 'roundtable_answer', evidenceId: reply.id, resultCount });
     if (result.recorded) store.markMemoryObserved(ask.id);
     return result;
   } catch (error) {

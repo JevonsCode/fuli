@@ -181,6 +181,9 @@ try {
   assert.equal(data.context.project_agent_id,'target-lead');
   assert.equal(data.context.personal_project_id,'target-project');
   assert.notEqual(data.taskContextToken,f.parentToken);
+  const recovered=await call('read_task_preferences',{taskContextToken:data.taskContextToken});
+  assert.notEqual(recovered.isError,true,JSON.stringify(recovered));
+  assert.equal((await call('message_agent',{to:'project:sample-project',body:'Foreign follow-up'})).isError,true);
   const own={personalSpaceId:f.capability.personal_space_id,personalProjectId:'target-project',agentId:'target-lead'};
   const memory=await call('get_project_agent_memory',own);
   assert.notEqual(memory.isError,true,JSON.stringify(memory));

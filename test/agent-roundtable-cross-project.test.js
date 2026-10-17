@@ -106,3 +106,10 @@ test('an answered consultation without a verified memory hit never adds project 
   await f.roundtable.messageStatus({ taskContextToken: 'source', messageId: result.messageId });
   assert.equal(f.observations.length, 0);
 });
+
+test('the scoped receiving MCP cannot open a follow-up into a different project', async () => {
+  const f = fixture();
+  await assert.rejects(f.roundtable.messageAgent({ taskContextToken: 'target', roundtableProjectId: 'target',
+    to: 'project:source', body: 'Foreign follow-up' }));
+  assert.equal(f.wakes.length, 0);
+});

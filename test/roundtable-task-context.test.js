@@ -63,3 +63,14 @@ test('entry uses sealed native identity and checkpoint cannot write memory or ca
   assert.equal(global.personalProjectId, null);
   assert.equal(global.projectAgentId, 'target-lead');
 });
+
+test('a woken Agent may communicate only within its admitted target project', async () => {
+  const f = fixture();
+  const scope = await f.context.admit();
+  await f.context.entry(scope);
+  assert.equal(f.context.toolNames.includes('message_agent'), true);
+  const own = f.context.prepareInput('message_agent', { to: 'target-member', body: 'Bounded follow-up' }, scope);
+  assert.equal(own.roundtableProjectId, 'target');
+  assert.equal(own.taskContextToken, 'own-target-token');
+  assert.throws(() => f.context.prepareInput('message_agent', { to: 'project:source', body: 'Foreign project' }, scope), /scope/i);
+});
