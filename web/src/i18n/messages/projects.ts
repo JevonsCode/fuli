@@ -236,6 +236,11 @@ export const projectMessages = {
       setLead: '设置组长',
       changeLead: '更换组长',
       employeeNumber: 'FLA {number}',
+      frequentProjects: '常查询的项目',
+      frequentProjectsHint: '按近 30 天实际跨项目记忆查询统计，最多显示 3 个正式项目',
+      noFrequentProjects: '暂无跨项目记忆查询记录',
+      frequentProjectCounts: '近 30 天 {recent} 次 · 累计 {total} 次',
+      suggestKnowledgeReuse: '往来密切（10 次以上）：建议确认是否设为“借鉴”关系（USES_KNOWLEDGE_FROM），不会自动放开读取权限。',
     },
   },
   'en-US': {
@@ -475,6 +480,11 @@ export const projectMessages = {
       setLead: 'Set lead',
       changeLead: 'Change lead',
       employeeNumber: 'FLA {number}',
+      frequentProjects: 'Frequently queried projects',
+      frequentProjectsHint: 'Top 3 formal projects by recent 30-day cross-project memory queries',
+      noFrequentProjects: 'No cross-project memory queries recorded yet',
+      frequentProjectCounts: '{recent} in 30d · {total} total',
+      suggestKnowledgeReuse: 'Close relationship (10+ queries): consider confirming a USES_KNOWLEDGE_FROM relationship; read access is never granted automatically.',
     },
   },
 } as const

@@ -1,10 +1,31 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { RouterLink } from 'vue-router'
+
+import {
+  projectRelationTierLabel,
+  type FrequentProjectSummary,
+} from '@/features/knowledge/project-relation-weights'
 import { t } from '@/i18n'
+import { personalProjectsPath } from '@/router/paths'
 import type { PersonalProject } from '@/types'
 import ProjectTeamSummary from './ProjectTeamSummary.vue'
 
-defineProps<{ spaceId: string; project: PersonalProject; canPublish?: boolean }>()
+const props = withDefaults(defineProps<{
+  spaceId: string
+  project: PersonalProject
+  frequentProjects?: readonly FrequentProjectSummary[]
+  canPublish?: boolean
+}>(), {
+  frequentProjects: () => [],
+  canPublish: false,
+})
+
 defineEmits<{ 'edit-profile': []; publish: [] }>()
+
+const visibleFrequentProjects = computed(() =>
+  (props.frequentProjects ?? []).slice(0, 3),
+)
 </script>
 
 <template>
@@ -31,5 +52,56 @@ defineEmits<{ 'edit-profile': []; publish: [] }>()
       </div>
     </header>
     <ProjectTeamSummary :space-id="spaceId" :project-id="project.project_id" />
+    <section
+      class="project-frequent-projects"
+      data-frequent-projects
+      :aria-label="t('projects.overview.frequentProjects')"
+    >
+      <header class="project-frequent-header">
+        <h3>{{ t('projects.overview.frequentProjects') }}</h3>
+        <span class="ui-meta">{{ t('projects.overview.frequentProjectsHint') }}</span>
+      </header>
+      <p
+        v-if="!visibleFrequentProjects.length"
+        class="ui-meta"
+        data-frequent-projects-empty
+      >
+        {{ t('projects.overview.noFrequentProjects') }}
+      </p>
+      <ul v-else class="project-frequent-list">
+        <li
+          v-for="item in visibleFrequentProjects"
+          :key="item.projectId"
+          class="project-frequent-item"
+          :data-frequent-project="item.projectId"
+          :data-weight-tier="item.tier"
+        >
+          <div class="project-frequent-main">
+            <RouterLink
+              class="project-frequent-link"
+              :to="personalProjectsPath(spaceId, 'overview', item.projectId)"
+            >
+              {{ item.name }}
+            </RouterLink>
+            <span class="project-frequent-tier" :class="`is-${item.tier}`">
+              {{ projectRelationTierLabel(item.tier) }}
+            </span>
+            <span class="ui-meta project-frequent-counts">
+              {{ t('projects.overview.frequentProjectCounts', {
+                recent: item.recent30dCount,
+                total: item.totalCount,
+              }) }}
+            </span>
+          </div>
+          <p
+            v-if="item.suggestKnowledgeReuse"
+            class="project-frequent-reuse-hint"
+            data-suggest-knowledge-reuse
+          >
+            {{ t('projects.overview.suggestKnowledgeReuse') }}
+          </p>
+        </li>
+      </ul>
+    </section>
   </div>
 </template>
