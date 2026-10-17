@@ -23,6 +23,11 @@ export function withCodexLifecycleHooks(current, { timeout = 30, context = null 
       : { type: 'mcp_tool', server: 'fuli', tool, input, timeout };
     hooks[event] = [...(hooks[event] ?? []), { hooks: [handler] }];
   }
+  if (context) for (const event of ['SessionStart', 'PreCompact']) {
+    hooks[event] = [...(hooks[event] ?? []), {
+      hooks: [{ type: 'command', command: codexStopCommand(context, event), timeout }]
+    }];
+  }
   return { ...clean, hooks };
 }
 
@@ -98,7 +103,9 @@ export function withCodexTomlLifecycleHooks(source, { timeout = 30, context = nu
       ? codexTomlCommandHookBlock('Stop', codexStopCommand(context), timeout)
       : codexTomlHookBlock('Stop', 'verify_task_checkpoint', {
           sessionId: '${session_id}'
-        }, timeout))
+        }, timeout)),
+    ...(context ? ['SessionStart', 'PreCompact'].flatMap(event =>
+      codexTomlCommandHookBlock(event, codexStopCommand(context, event), timeout)) : [])
   ];
   return `${[...lines, ...(lines.length ? [''] : []), ...blocks].join('\n')}\n`;
 }

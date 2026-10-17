@@ -83,6 +83,7 @@ import { buildUserTasteSkill } from './user-taste-skill.js';
 import { taskEntryPreferences, finishTaskEntryPreferences } from './task-entry-preferences.js';
 import { TASK_ENTRY_TOOLS, registerRepositoryProject } from './repository-project-registration.js';
 import { resolveTaskEntryProject } from './task-entry-project-scope.js';
+import { createSessionPreferenceDelivery } from '../conversations/preference-session.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
 
 export function openFederatedGraphApplication({
@@ -110,6 +111,8 @@ export function openFederatedGraphApplication({
     refreshPersonalToken: personalTokenRefresher(runtimeConfigPath, resolved.personal)
   });
   if (typeof runtimeConfigPath === 'string' && runtimeConfigPath) {
+    app.preferenceDelivery = createSessionPreferenceDelivery({
+      directory: join(dirname(runtimeConfigPath), 'preference-delivery'), env });
     const paths = resolveSetupPaths({ dataDir: dirname(runtimeConfigPath) });
     attachExternalKnowledgeRuntime(app, {
       paths,
