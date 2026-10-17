@@ -339,7 +339,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
         kind: enumSchema(['project', 'topic', 'one_off']),
         project: boundedString(80),
         topic: boundedString(80)
-      }, ['kind']), description: 'Only for an unclaimed conversation (entry triage_candidates): project names an existing project, topic picks or starts a topic name, one_off needs neither.' }
+      }, ['kind']), description: 'Unclaimed conversations only (see triage_candidates): project=existing name, topic=pick/start a name, one_off=neither.' }
     }, ['taskContextToken', 'disposition', 'reason'])
   },
   {
