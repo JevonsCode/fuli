@@ -39,6 +39,12 @@ export interface AgentWorkbenchEntry {
   lastUpdateAt: string | null;
   /** Recorded reason for a waiting state (blocked, review, paused); null if none was recorded. */
   reason: string | null;
+  /**
+   * Recorded entry into running for the current task. Null when not running,
+   * when the provider does not report it, or for rows written before it was
+   * recorded; never derived from an update time.
+   */
+  runningSince: string | null;
 }
 
 const RANK: Record<WorkbenchStatus, number> = {
@@ -129,6 +135,8 @@ export function agentWorkbenchEntry(
     title,
     lastUpdateAt,
     reason: WAITING_WITH_REASON.has(status) ? snapshot?.summary ?? null : null,
+    runningSince:
+      fromRoster && status === "running" ? agent.currentTaskRunningSince ?? null : null,
   };
 }
 

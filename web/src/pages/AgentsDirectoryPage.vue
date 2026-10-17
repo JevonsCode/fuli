@@ -9,7 +9,10 @@ import {
   readDirectoryFilters,
   sameDirectoryFilters,
   type DirectoryStatus,
+  type DirectoryView,
 } from "@/features/agent-profile/directory-query";
+import { groupAgentsByProject } from "@/features/agent-profile/directory-project-groups";
+import DirectoryProjectGroup from "@/features/agent-profile/DirectoryProjectGroup.vue";
 import AgentCard from "@/features/agent-profile/AgentCard.vue";
 import {
   agentDisplayName,
@@ -22,6 +25,7 @@ import ProjectAgentFirstTask from "@/features/project-agents/ProjectAgentFirstTa
 import { useAgentWorkSummary } from "@/features/agent-profile/useAgentWorkSummary";
 import { agentWorkbenchEntry, compareWorkbenchRows } from "@/features/agent-profile/agent-workbench";
 import { useStableOrder } from "@/features/agent-profile/useStableOrder";
+import UiSegmented from "@/components/ui/UiSegmented.vue";
 import UiSelect from "@/components/ui/UiSelect.vue";
 import EmployeeRecruitDialog from "@/features/employees/EmployeeRecruitDialog.vue";
 import EmployeeWorkbenchLinks from "@/features/employees/EmployeeWorkbenchLinks.vue";
@@ -53,6 +57,9 @@ const search = ref(initialFilters.search);
 const status = ref<string>(initialFilters.status);
 // No selected project means every project.
 const selectedProjects = ref<string[]>(initialFilters.projects);
+const view = ref<DirectoryView>(initialFilters.view);
+// Opened project groups; each opened project reads its own lead once.
+const openProjects = ref<Record<string, boolean>>({});
 const scroller = ref<HTMLElement | null>(null);
 const recruiting = ref(false);
 const hireable = computed(() => employeeTemplates.value.some((entry) => !entry.fixed));
@@ -121,6 +128,35 @@ const stableOrder = useStableOrder(freshOrder, computed(() => !busy.value), spac
 const visibleIn = (ids: string[]) =>
   ids.map((id) => agentsById.value.get(id)!).filter((agent) => agent && matches(agent));
 const visible = computed(() => visibleIn(stableOrder.order.value));
+const viewOptions = computed(() => [
+  { value: "agents" as const, label: t("agentRedesign.projectView.agents") },
+  { value: "projects" as const, label: t("agentRedesign.projectView.projects") },
+]);
+const projectGroups = computed(() =>
+  groupAgentsByProject(
+    visible.value.map((agent) => agent.agentId),
+    (agentId) => profileProjectIds(agentsById.value.get(agentId)!),
+    (agentId) => entries.value[agentId]?.status,
+    projects.value.map((project) => project.project_id),
+    selectedProjects.value,
+  ).map((group) => ({
+    ...group,
+    key: group.projectId ?? "",
+    name: group.projectId === null
+      ? t("agentRedesign.projectView.unassigned")
+      : projectNames.value[group.projectId] || group.projectId,
+    agents: group.agentIds.map((id) => agentsById.value.get(id)!),
+  })),
+);
+const cardProps = (agent: (typeof agents.value)[number]) => ({
+  agent,
+  spaceId: space.value,
+  projectNames: projectNames.value,
+  managesAllProjects: managesAllProjects(agent.agentId),
+  entry: entries.value[agent.agentId],
+  pinned: pinnedAgentIds.value.includes(agent.agentId),
+  pinPending: pinSavingAgentId.value === agent.agentId,
+});
 const reorderAvailable = computed(() => {
   const fresh = visibleIn(freshOrder.value);
   return fresh.some((agent, index) => agent.agentId !== visible.value[index]?.agentId);
@@ -139,16 +175,18 @@ const currentFilters = () => ({
   search: search.value,
   projects: selectedProjects.value,
   status: status.value as DirectoryStatus,
+  view: view.value,
 });
 watch(() => route.query, (query) => {
   const filters = readDirectoryFilters(query);
   search.value = filters.search;
   selectedProjects.value = filters.projects;
   status.value = filters.status;
+  view.value = filters.view;
 });
 // This only updates local navigation state; delaying it loses filters on a
 // quick visit to a profile followed by Back.
-watch([search, status, selectedProjects], () => {
+watch([search, status, selectedProjects, view], () => {
   if (sameDirectoryFilters(readDirectoryFilters(route.query), currentFilters())) return;
   void router.replace({ query: directoryFilterQuery(route.query, currentFilters()) });
 }, { deep: true });
@@ -176,6 +214,7 @@ watch(space, (_current, previous) => {
   search.value = "";
   selectedProjects.value = [];
   status.value = "all";
+  openProjects.value = {};
 });
 
 async function recruited(result: EmployeeRecruitmentResult) {
@@ -264,6 +303,13 @@ async function retryDirectory() {
         :options="statusOptions"
         :label="t('projectAgents.fields.status')"
       />
+      <UiSegmented
+        v-model="view"
+        class="agents-directory-view"
+        data-directory-view
+        :options="viewOptions"
+        :label="t('agentRedesign.projectView.label')"
+      />
     </div>
 
     <GrowthLoading
@@ -300,20 +346,30 @@ async function retryDirectory() {
         {{ t("agentRedesign.workbench.reorder") }}
       </button>
     </p>
-    <ul v-if="visible.length" class="agents-directory-grid">
+    <ul v-if="visible.length && view === 'agents'" class="agents-directory-grid">
       <li v-for="agent in visible" :key="agent.agentId">
-        <AgentCard
-          :agent="agent"
-          :space-id="space"
-          :project-names="projectNames"
-          :manages-all-projects="managesAllProjects(agent.agentId)"
-          :entry="entries[agent.agentId]"
-          :pinned="pinnedAgentIds.includes(agent.agentId)"
-          :pin-pending="pinSavingAgentId === agent.agentId"
-          @toggle-pin="toggleAgentPin(agent.agentId, $event)"
-        />
+        <AgentCard v-bind="cardProps(agent)" @toggle-pin="toggleAgentPin(agent.agentId, $event)" />
       </li>
     </ul>
+    <div v-else-if="visible.length" class="agents-directory-projects">
+      <DirectoryProjectGroup
+        v-for="group in projectGroups"
+        :key="group.key"
+        v-model:expanded="openProjects[group.key]"
+        :space-id="space"
+        :project-id="group.projectId"
+        :name="group.name"
+        :count="group.agents.length"
+        :running-count="group.runningCount"
+        :unknown-count="group.unknownCount"
+      >
+        <ul class="agents-directory-grid">
+          <li v-for="agent in group.agents" :key="agent.agentId">
+            <AgentCard v-bind="cardProps(agent)" @toggle-pin="toggleAgentPin(agent.agentId, $event)" />
+          </li>
+        </ul>
+      </DirectoryProjectGroup>
+    </div>
 
     <BackToTop :scroller="scroller" />
 

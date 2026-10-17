@@ -165,7 +165,9 @@ describe('Agent directory integration', () => {
     expect(names()).toEqual(['Birch', 'Aster'])
     const current = wrapper.get('[data-current-task]')
     expect(current.text()).toContain('Synthetic review task')
-    expect(current.get('[data-last-update]').attributes('title')).toBe('2026-10-17T02:00:00Z')
+    // No recorded run start: say unknown rather than turn the update time into a duration.
+    expect(current.find('[data-last-update]').exists()).toBe(false)
+    expect(current.get('[data-running-since]').text()).toBe(t('agentRedesign.workbench.runningForUnknown'))
     expect(wrapper.findAll('[data-current-task]')).toHaveLength(1)
     expect(wrapper.find('[data-workbench-reorder]').exists()).toBe(false)
 
@@ -192,6 +194,33 @@ describe('Agent directory integration', () => {
     })
     const { wrapper } = await setup()
     expect(wrapper.get('[data-status-detail]').text()).toBe('受阻：Waiting for a person to grant staging access.')
+  })
+
+  it('shows running time from the recorded run start, not the last update', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-17T03:00:00Z'))
+    try {
+      getJson.mockImplementation(async (url: string) => {
+        if (url === '/api/project-agents?personalSpaceId=space-a') {
+          return [{ ...roster[0], workStatus: 'running', currentTaskId: 'task-a', currentTaskRunningSince: '2026-10-17T02:35:00Z' }]
+        }
+        if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') {
+          return [{
+            taskId: 'task-a', personalSpaceId: 'space-a', title: 'Synthetic run', status: 'running',
+            createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-17T02:59:00Z',
+            participants: [{ agentId: 'agent-0', role: 'lead', status: 'running', updatedAt: '2026-10-17T02:59:00Z' }],
+          }]
+        }
+        if (url === '/api/agent-pins?personalSpaceId=space-a') return { revision: 1, agentIds: [] }
+        throw new Error(`Unexpected detail request: ${url}`)
+      })
+      const { wrapper } = await setup()
+      const running = wrapper.get('[data-running-since]')
+      expect(running.attributes('title')).toBe('2026-10-17T02:35:00Z')
+      expect(running.text()).toContain('25')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('does not turn an unavailable work summary into an idle state', async () => {
@@ -307,6 +336,43 @@ describe('Agent directory integration', () => {
     await new Promise((resolve) => setTimeout(resolve, 300))
     await flushPromises()
     expect(router.currentRoute.value.query).toEqual({ project: ['project-a', 'project-b'], status: 'inactive' })
+  })
+
+  it('groups Agents by project and reads a lead only for an opened project', async () => {
+    const store = useConsoleStore()
+    store.state!.personalProjects = ['project-a', 'project-b'].map((id) => ({
+      project_id: id, personal_space_id: 'space-a', profile: { name: `Synthetic ${id}` },
+    }))
+    getJson.mockImplementation(async (url: string) => {
+      if (url === '/api/project-agents?personalSpaceId=space-a') {
+        return [
+          { ...roster[0], personalProjectId: 'project-b', workStatus: 'running', currentTaskId: 'task-a' },
+          { ...roster[1], personalProjectId: 'project-a' },
+        ]
+      }
+      if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') return []
+      if (url === '/api/agent-pins?personalSpaceId=space-a') return { revision: 1, agentIds: [] }
+      if (url === '/api/project-team?personalSpaceId=space-a&personalProjectId=project-b') {
+        return { personalProjectId: 'project-b', status: 'ready', lead: { agentId: 'agent-0', name: 'Aster', employeeNumber: '000001', occupationEmoji: null, responsibility: '', peerRole: false }, unavailableLead: null, members: [], collaborators: [], peers: [], unavailableMemberIds: [] }
+      }
+      throw new Error(`Unexpected detail request: ${url}`)
+    })
+    const { router, wrapper } = await setup()
+    await wrapper.findAll('[data-directory-view] button')[1]!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ view: 'projects' })
+    const groups = () => wrapper.findAll('[data-directory-project]')
+    expect(groups().map((group) => group.attributes('data-directory-project'))).toEqual(['project-a', 'project-b'])
+    expect(groups()[1]!.text()).toContain(t('agentRedesign.projectView.running', { count: 1 }))
+    expect(wrapper.findAll('.agent-card')).toHaveLength(0)
+    expect(getJson.mock.calls.some(([url]) => String(url).startsWith('/api/project-team'))).toBe(false)
+
+    await groups()[1]!.get('.directory-project-toggle').trigger('click')
+    await flushPromises()
+    expect(groups()[1]!.findAll('.agent-directory-name a').map(link => link.text())).toEqual(['Aster'])
+    expect(groups()[1]!.get('[data-project-lead]').text()).toContain('Aster')
+    expect(getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/project-team'))).toHaveLength(1)
+    expect(groups()[0]!.find('.agent-card').exists()).toBe(false)
   })
 
   it('updates filters when query navigation reuses the directory', async () => {

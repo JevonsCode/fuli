@@ -1,5 +1,6 @@
 import type { PersonalProject, ProjectAgentTaskRecord, ProjectAgentTaskStatus } from '@/types'
 import { arrayOf, normalizeTask, unknownRecord } from '@/features/project-agents/task-evidence'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 export const CURRENT_WORK_STATUSES = new Set<ProjectAgentTaskStatus>([
   'awaiting_recruitment',
@@ -39,7 +40,7 @@ export function recentProjects(
   projects: PersonalProject[],
   limit = 6,
 ): OverviewProject[] {
-  const projectNames = new Map(projects.map((project) => [project.project_id, project.profile.name]))
+  const projectNames = new Map(projects.map((project) => [project.project_id, projectDisplayName(project)]))
   const derived = new Map<string, OverviewProject>()
   for (const task of tasks) {
     const id = task.personalProjectId

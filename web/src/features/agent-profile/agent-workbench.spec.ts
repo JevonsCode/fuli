@@ -28,7 +28,7 @@ describe('agentWorkbenchEntry', () => {
     const entry = agentWorkbenchEntry(agent({ workStatus: 'running', currentTaskId: 'task-1' }), { tasks })
     expect(entry).toEqual({
       status: 'running', source: 'roster', taskId: 'task-1',
-      title: 'Synthetic running task', lastUpdateAt: '2026-10-17T02:00:00Z', reason: null,
+      title: 'Synthetic running task', lastUpdateAt: '2026-10-17T02:00:00Z', reason: null, runningSince: null,
     })
   })
 
@@ -40,6 +40,17 @@ describe('agentWorkbenchEntry', () => {
     expect(agentWorkbenchEntry(agent({ workStatus: 'blocked', currentTaskId: 'task-2' }), { tasks: page }).reason)
       .toBe('Needs the staging token from a person.')
     expect(agentWorkbenchEntry(agent({ workStatus: 'running', currentTaskId: 'task-2' }), { tasks: page }).reason).toBeNull()
+  })
+
+  it('takes the run start only from the recorded roster value for a running Agent', () => {
+    const stamped = agentWorkbenchEntry(agent({
+      workStatus: 'running', currentTaskId: 'task-1', currentTaskRunningSince: '2026-10-17T00:30:00Z',
+    }), { tasks })
+    expect(stamped.runningSince).toBe('2026-10-17T00:30:00Z')
+    const blocked = agentWorkbenchEntry(agent({
+      workStatus: 'blocked', currentTaskId: 'task-1', currentTaskRunningSince: '2026-10-17T00:30:00Z',
+    }), { tasks })
+    expect(blocked.runningSince).toBeNull()
   })
 
   it('keeps a task outside the bounded page untitled instead of inventing one', () => {
@@ -63,7 +74,7 @@ describe('agentWorkbenchEntry', () => {
 
 describe('compareWorkbenchRows', () => {
   const row = (name: string, status: AgentWorkbenchEntry['status'], lastUpdateAt: string | null = null) => ({
-    name, entry: { status, source: 'roster' as const, taskId: null, title: null, lastUpdateAt, reason: null },
+    name, entry: { status, source: 'roster' as const, taskId: null, title: null, lastUpdateAt, reason: null, runningSince: null },
   })
   it('puts active work first, unknown before idle, then the most recent update, then name', () => {
     const rows = [

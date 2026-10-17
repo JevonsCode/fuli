@@ -366,6 +366,8 @@ class PersonalProjectUpsert(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     project_id: str = Field(min_length=1, max_length=128)
     profile: ProjectProfile
+    # A person creating a new project must never overwrite an existing one.
+    create_only: bool = False
 
 
 class PersonalProjectRecord(StrictModel):

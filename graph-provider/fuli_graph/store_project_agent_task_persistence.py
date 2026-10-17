@@ -3,6 +3,8 @@
 import json
 from fastapi import HTTPException
 
+from .task_participant_running import running_since_set
+
 
 class StoreProjectAgentTaskPersistence:
     """Persist idempotent task edges and repair them on task replay."""
@@ -44,7 +46,7 @@ class StoreProjectAgentTaskPersistence:
                    OR $status IN ['completed', 'failed', 'cancelled']
                 MERGE (task)-[participant:HAS_PARTICIPANT]->(agent)
                 ON CREATE SET participant.role = $role,
-                              participant.status = $status,
+                              ''' + running_since_set('participant') + ''' participant.status = $status,
                               participant.assignment_summary =
                                 $assignment_summary,
                               participant.joined_at = $created_at,

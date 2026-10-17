@@ -10,6 +10,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiDialog from '@/components/ui/UiDialog.vue'
 import { t } from '@/i18n'
 import { personalProjectsPath } from '@/router/paths'
+import { pickerOrder, projectDisplayName } from '@/features/projects/project-origin'
 import type { PersonalProject } from '@/types'
 import {
   employeeTemplates, fetchEmployeeCatalog, refreshEmployeeCatalog,
@@ -48,8 +49,8 @@ const selected = computed(() => props.templateId
 const templateChoice = computed({ get: () => selected.value?.id ?? '', set: (id: string) => { templateId.value = id } })
 const title = computed(() => selected.value?.agentId
   ? t('employees.manageProjectsTitle', { name: selected.value.name }) : t('employees.recruit'))
-const projectOptions = computed(() => props.projects.filter((project) => project.profile.lifecycle !== 'archived')
-  .map((project) => ({ id: project.project_id, name: project.profile.name })))
+const projectOptions = computed(() => pickerOrder(props.projects.filter((project) => project.profile.lifecycle !== 'archived'))
+  .map((project) => ({ id: project.project_id, name: projectDisplayName(project) })))
 const supportsPolicy = computed(() => selected.value?.management !== undefined)
 const selectionIds = computed({
   get: () => scopeMode.value === 'all'

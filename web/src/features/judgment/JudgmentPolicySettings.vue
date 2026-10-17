@@ -4,12 +4,13 @@ import { computed } from 'vue'
 import { useConsoleStore } from '@/stores/console'
 
 import JudgmentPolicyPanel from './JudgmentPolicyPanel.vue'
+import { pickerOrder, projectDisplayName } from '@/features/projects/project-origin'
 
 const store = useConsoleStore()
 const personalSpaceId = computed(() => store.activePersonalSpace?.id ?? '')
-const projects = computed(() => (store.state?.personalProjects ?? [])
-  .filter(project => project.personal_space_id === personalSpaceId.value)
-  .map(project => ({ id: project.project_id, name: project.profile.name })))
+const projects = computed(() => pickerOrder((store.state?.personalProjects ?? [])
+  .filter(project => project.personal_space_id === personalSpaceId.value))
+  .map(project => ({ id: project.project_id, name: projectDisplayName(project) })))
 </script>
 
 <template>

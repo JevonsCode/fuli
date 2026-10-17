@@ -3,7 +3,7 @@ import type { AgentWorkbenchEntry } from './agent-workbench'
 import { workbenchStatusDetail } from './workbench-status-text'
 
 const entry = (status: AgentWorkbenchEntry['status'], patch: Partial<AgentWorkbenchEntry> = {}): AgentWorkbenchEntry => ({
-  status, source: 'roster', taskId: 'task-1', title: null, lastUpdateAt: null, reason: null, ...patch,
+  status, source: 'roster', taskId: 'task-1', title: null, lastUpdateAt: null, reason: null, runningSince: null, ...patch,
 })
 
 describe('workbenchStatusDetail', () => {
