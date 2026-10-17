@@ -8,10 +8,10 @@ import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
 import { createPersonalProject, newProjectId, type NewProjectDraft } from './project-create'
 
-const props = defineProps<{ open: boolean; personalSpaceId: string; existingProjectIds: string[] }>()
+const props = defineProps<{ open: boolean; personalSpaceId: string; existingProjectIds: string[]; initialPurpose?: string }>()
 const emit = defineEmits<{ close: []; created: [project: PersonalProject] }>()
 
-const empty = (): NewProjectDraft => ({ name: '', purpose: '', includes: '', excludes: '', source: '' })
+const empty = (): NewProjectDraft => ({ name: '', purpose: props.initialPurpose ?? '', includes: '', excludes: '', source: '' })
 const draft = ref<NewProjectDraft>(empty())
 const busy = ref(false)
 const error = ref('')
@@ -19,7 +19,7 @@ const projectId = computed(() => newProjectId(draft.value.name, props.existingPr
 
 watch(() => props.open, (open) => {
   if (open) { draft.value = empty(); error.value = '' }
-})
+}, { immediate: true })
 
 async function create() {
   if (busy.value) return

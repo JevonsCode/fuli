@@ -3,6 +3,7 @@ import { t } from "@/i18n";
 import type { AgentOccupation, AgentOccupationKey, ProjectAgentRecord } from "@/types";
 
 export const OCCUPATION_KEYS: readonly AgentOccupationKey[] = [
+  "lead", "assistant",
   "product", "engineering", "design", "operations", "testing",
   "research", "data", "writing", "management",
 ];
