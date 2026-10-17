@@ -88,6 +88,9 @@ export class GraphitiProviderClient {
     return this.#request(`/v1/task-context-sessions/current?${new URLSearchParams(input)}`,
       { timeoutMs: Math.min(timeoutMs, this.requestTimeoutMs) });
   }
+  recordProjectMemoryUsage(input) {
+    return this.#request('/v1/project-memory-usage', { method: 'POST', body: input });
+  }
   getProjectAgentWorkerRun(runId, { personal_space_id, personal_project_id }, { capability, signal } = {}) {
     const query = new URLSearchParams({ personal_space_id, personal_project_id });
     return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}?${query}`, { capability, signal });
