@@ -72,4 +72,27 @@ describe('AgentCard projects', () => {
     expect(toggle.attributes('disabled')).toBeDefined()
     expect(wrapper.get('.growth-loading').attributes('aria-label')).toMatch(/Saving pin|正在保存 pin/)
   })
+
+  it('renders name, occupation (including lead/assistant), summary and current task on the card', () => {
+    const wrapper = render({
+      agent: {
+        ...agent,
+        agentId: 'agent-lead',
+        profile: { ...agent.profile, name: 'Rowan', responsibility: '负责拆活、派活、整合，对用户汇报。' },
+        occupation: { role: 'lead', tags: ['engineering'], updatedAt: '2026-10-18T00:00:00Z' },
+      },
+      entry: {
+        status: 'running',
+        source: 'tasks',
+        taskId: 'task-101',
+        title: '收口 R-06 项目视图改造',
+        runningSince: '2026-10-18T00:00:00Z',
+        lastUpdateAt: '2026-10-18T00:05:00Z',
+      },
+    })
+    expect(wrapper.get('.agent-directory-name').text()).toContain('Rowan')
+    expect(wrapper.get('[data-occupation]').text()).toBe('组长 · 开发')
+    expect(wrapper.get('[data-agent-summary]').text()).toBe('负责拆活、派活、整合，对用户汇报。')
+    expect(wrapper.get('[data-current-task]').text()).toContain('收口 R-06 项目视图改造')
+  })
 })

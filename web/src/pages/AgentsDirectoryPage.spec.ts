@@ -8,8 +8,8 @@ import { t } from '@/i18n'
 import { forgetLoadedRosters } from '@/features/agent-profile/useAgentRosterPages'
 import AgentsDirectoryPage from './AgentsDirectoryPage.vue'
 
-const { getJson, putJson } = vi.hoisted(() => ({ getJson: vi.fn(), putJson: vi.fn() }))
-vi.mock('@/api/client', () => ({ getJson, putJson, postJson: vi.fn(), patchJson: vi.fn() }))
+const { getJson, putJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), putJson: vi.fn(), postJson: vi.fn() }))
+vi.mock('@/api/client', () => ({ getJson, putJson, postJson, patchJson: vi.fn() }))
 const mounted: Array<{ unmount: () => void }> = []
 const roster = ['Aster', 'Birch'].map((name, index) => ({
   agentId: `agent-${index}`, personalSpaceId: 'space-a',
@@ -38,6 +38,7 @@ beforeEach(() => {
   })
   putJson.mockReset()
   putJson.mockResolvedValue({ revision: 2, agentIds: [] })
+  postJson.mockReset()
 })
 afterEach(() => mounted.splice(0).forEach(wrapper => wrapper.unmount()))
 async function setup(path = '/project-agents') {
@@ -481,4 +482,121 @@ describe('Agent directory integration', () => {
     expect(router.currentRoute.value.path).toBe('/agents/space-a/agent-1')
     expect(router.currentRoute.value.query).toEqual({ project: 'project-a' })
   })
+
+  it('shows only formal projects with purpose, lead, and member occupations in project view while surfacing unassigned conversations at the top', async () => {
+    const store = useConsoleStore()
+    store.state!.personalProjects = [
+      {
+        project_id: 'project-formal',
+        personal_space_id: 'space-a',
+        status: 'active',
+        profile: { name: 'Formal Product', purpose: 'Ship clean v2 project agent pages', origin: 'manual' },
+      },
+      {
+        project_id: `conversation-${'f'.repeat(64)}`,
+        personal_space_id: 'space-a',
+        status: 'active',
+        profile: { name: 'Temp Conversation Project', origin: 'conversation_fallback' },
+      },
+      {
+        project_id: 'project-archived',
+        personal_space_id: 'space-a',
+        status: 'archived',
+        profile: { name: 'Archived Project' },
+      },
+    ]
+    getJson.mockImplementation(async (url: string) => {
+      if (isRosterPage(url)) {
+        return rosterPage(url, [
+          {
+            ...roster[0],
+            personalProjectId: 'project-formal',
+            occupation: { role: 'lead', tags: [], updatedAt: '2026-10-18T00:00:00Z' },
+            profile: { ...roster[0]!.profile, occupationEmoji: '🧭', responsibility: 'Coordinates project delivery' },
+          },
+          {
+            ...roster[1],
+            personalProjectId: 'project-formal',
+            occupation: { role: 'engineering', tags: [], updatedAt: '2026-10-18T00:00:00Z' },
+            profile: { ...roster[1]!.profile, occupationEmoji: '🛠️', responsibility: 'Builds frontend views' },
+          },
+          {
+            agentId: 'employee.assistant',
+            personalSpaceId: 'space-a',
+            employeeNumber: '000099',
+            personalProjectId: null,
+            occupation: { role: 'assistant', tags: [], updatedAt: '2026-10-18T00:00:00Z' },
+            profile: { name: 'Fuli Assistant', responsibility: 'Handles unassigned sessions', capabilities: [], initialPreferences: [], status: 'active' },
+          },
+        ])
+      }
+      if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') return []
+      if (url === '/api/agent-pins?personalSpaceId=space-a') return { revision: 1, agentIds: [] }
+      throw new Error(`Unexpected detail request: ${url}`)
+    })
+    postJson.mockImplementation(async (url: string, body: Record<string, unknown>) => {
+      if (url === '/api/agent-conversations/query') {
+        expect(body).toMatchObject({
+          personalSpaceId: 'space-a',
+          personalProjectId: null,
+          agentId: 'employee.assistant',
+          mode: 'list',
+        })
+        return {
+          conversations: [
+            {
+              conversationId: 'conv-unassigned-1',
+              personalSpaceId: 'space-a',
+              personalProjectId: null,
+              agentId: 'employee.assistant',
+              title: 'Quick CSS alignment fix',
+              summary: 'Adjusted button padding',
+              status: 'active',
+              startedAt: '2026-10-18T01:00:00Z',
+              endedAt: null,
+              updatedAt: '2026-10-18T01:05:00Z',
+              metadata: { openingLine: 'Please fix the button padding in header', jefaTriage: 'pending' },
+            },
+          ],
+        }
+      }
+      if (url === '/api/conversation-triage/record') {
+        return { triage: { kind: 'one_off', source: 'user' } }
+      }
+      throw new Error(`Unexpected POST request: ${url}`)
+    })
+
+    const { wrapper } = await setup('/project-agents?view=projects')
+    const groups = wrapper.findAll('[data-directory-project]')
+    expect(groups.map((group) => group.attributes('data-directory-project'))).toEqual(['project-formal'])
+    expect(groups[0]!.get('[data-project-purpose]').text()).toBe('Ship clean v2 project agent pages')
+    expect(groups[0]!.get('[data-project-header-lead]').text()).toContain('Aster')
+    const occupations = groups[0]!.get('[data-project-member-occupations]').text()
+    expect(occupations).toContain(t('agentRedesign.occupation.keys.lead'))
+    expect(occupations).toContain(t('agentRedesign.occupation.keys.engineering'))
+
+    const unassignedPanel = wrapper.get('[data-unassigned-conversations]')
+    expect(unassignedPanel.text()).toContain(t('agentRedesign.unassigned.count', { count: 1 }))
+    await unassignedPanel.get('[data-unassigned-toggle]').trigger('click')
+    await flushPromises()
+
+    const list = wrapper.get('[data-unassigned-list]')
+    expect(list.text()).toContain('Please fix the button padding in header')
+    expect(list.get('[data-unassigned-triage]').text()).toBe(t('agentRedesign.unassigned.triage.pending'))
+    expect(list.find('[data-unassigned-move]').exists()).toBe(true)
+    expect(list.find('[data-unassigned-create-project]').exists()).toBe(true)
+    expect(list.find('[data-unassigned-one-off]').exists()).toBe(true)
+
+    await list.get('[data-unassigned-one-off]').trigger('click')
+    await flushPromises()
+    expect(postJson).toHaveBeenCalledWith('/api/conversation-triage/record', {
+      personalSpaceId: 'space-a',
+      conversationId: 'conv-unassigned-1',
+      kind: 'one_off',
+      personalProjectId: null,
+      topic: null,
+      source: 'user',
+    })
+  })
 })
+

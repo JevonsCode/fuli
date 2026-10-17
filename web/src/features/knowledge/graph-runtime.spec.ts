@@ -138,4 +138,119 @@ describe('typed graph runtime', () => {
       vi.useRealTimers()
     }
   })
+
+  it('draws only formal projects and marks PROJECT_MEMORY_ACCESS edges with 3 weight tiers', () => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    Object.defineProperty(svg, 'clientWidth', { value: 900 })
+    Object.defineProperty(svg, 'clientHeight', { value: 600 })
+    document.body.append(svg)
+    const fallbackProjectId = `conversation-${'f'.repeat(64)}`
+    const controller = renderKnowledgeGraph(svg, {
+      nodes: [
+        {
+          id: 'personal-project:space:fuli',
+          name: 'Fuli',
+          type: 'PersonalProject',
+          attributes: { projectId: 'fuli' },
+        },
+        {
+          id: 'personal-project:space:alpha',
+          name: 'Alpha',
+          type: 'RelatedPersonalProject',
+          attributes: { projectId: 'alpha' },
+        },
+        {
+          id: 'personal-project:space:beta',
+          name: 'Beta',
+          type: 'RelatedPersonalProject',
+          attributes: { projectId: 'beta' },
+        },
+        {
+          id: 'personal-project:space:gamma',
+          name: 'Gamma',
+          type: 'RelatedPersonalProject',
+          attributes: { projectId: 'gamma' },
+        },
+        {
+          id: `personal-project:space:${fallbackProjectId}`,
+          name: '会话项目',
+          type: 'PersonalProject',
+          attributes: { projectId: fallbackProjectId },
+        },
+        {
+          id: 'personal-project:space:temp',
+          name: '临时项目',
+          type: 'RelatedPersonalProject',
+          attributes: { projectId: 'temp', scope_type: 'temporary' },
+        },
+        {
+          id: 'personal-project:space:archived',
+          name: '归档项目',
+          type: 'RelatedPersonalProject',
+          attributes: { projectId: 'archived', lifecycle: 'archived' },
+        },
+      ],
+      edges: [
+        {
+          id: 'edge-related',
+          source: 'personal-project:space:fuli',
+          target: 'personal-project:space:gamma',
+          type: 'PROJECT_MEMORY_ACCESS',
+          attributes: { recent30dCount: 2, totalCount: 2, tier: 'related' },
+        },
+        {
+          id: 'edge-frequent',
+          source: 'personal-project:space:fuli',
+          target: 'personal-project:space:beta',
+          type: 'PROJECT_MEMORY_ACCESS',
+          attributes: { recent30dCount: 5, totalCount: 6, tier: 'frequent' },
+        },
+        {
+          id: 'edge-close',
+          source: 'personal-project:space:fuli',
+          target: 'personal-project:space:alpha',
+          type: 'PROJECT_MEMORY_ACCESS',
+          attributes: {
+            recent30dCount: 12,
+            totalCount: 15,
+            tier: 'close',
+            suggestKnowledgeReuse: true,
+          },
+        },
+        {
+          id: 'edge-fallback',
+          source: 'personal-project:space:fuli',
+          target: `personal-project:space:${fallbackProjectId}`,
+          type: 'PROJECT_MEMORY_ACCESS',
+          attributes: { recent30dCount: 8, totalCount: 8, tier: 'frequent' },
+        },
+      ],
+    })
+
+    try {
+      expect(svg.querySelectorAll('.graph-node')).toHaveLength(4)
+      expect(svg.textContent).not.toContain('会话项目')
+      expect(svg.textContent).not.toContain('临时项目')
+      expect(svg.textContent).not.toContain('归档项目')
+
+      const edges = [...svg.querySelectorAll('line.graph-edge')]
+      expect(edges).toHaveLength(3)
+      expect(edges.map((edge) => edge.getAttribute('data-weight-tier'))).toEqual([
+        'related',
+        'frequent',
+        'close',
+      ])
+      expect(edges[0].classList.contains('weight-tier-related')).toBe(true)
+      expect(edges[1].classList.contains('weight-tier-frequent')).toBe(true)
+      expect(edges[2].classList.contains('weight-tier-close')).toBe(true)
+
+      const labels = [...svg.querySelectorAll('g.graph-edge-label .graph-edge-label-text')]
+        .map((el) => el.textContent)
+      expect(labels).toEqual(['有关系', '常往来', '密切'])
+    } finally {
+      controller.destroy()
+      svg.remove()
+    }
+  })
 })
+

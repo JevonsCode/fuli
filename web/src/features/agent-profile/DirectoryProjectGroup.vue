@@ -4,22 +4,26 @@ import { RouterLink } from "vue-router";
 
 import GrowthLoading from "@/components/GrowthLoading.vue";
 import AgentName from "@/features/agent-profile/AgentName.vue";
+import { occupationLabels } from "@/features/agent-profile/agent-occupation";
 import { readProjectTeam, type ProjectTeam } from "@/features/projects/project-team-api";
 import { personalProjectsPath } from "@/router/paths";
 import { t } from "@/i18n";
+import type { ProjectAgentRecord } from "@/types";
 
 const props = defineProps<{
   spaceId: string;
-  /** null is the group of Agents without an active project. */
   projectId: string | null;
   name: string;
+  purpose?: string | null;
+  agents?: readonly ProjectAgentRecord[];
   count: number;
   runningCount: number;
   unknownCount: number;
 }>();
 const expanded = defineModel<boolean>("expanded", { default: false });
 
-// The lead is not part of the roster; read it only for an opened project.
+// Full team details are read only when the project group is opened; collapsed
+// headers summarize the lead and member occupations from the loaded roster.
 const team = ref<ProjectTeam | null>(null);
 const loading = ref(false);
 const failed = ref(false);
@@ -29,6 +33,30 @@ const panelId = computed(() => `directory-project-${props.projectId ?? "unassign
 const projectTo = computed(() => props.projectId && props.spaceId
   ? personalProjectsPath(props.spaceId, "overview", props.projectId)
   : null);
+
+const headerLeadName = computed(() => {
+  if (team.value?.lead?.name) return team.value.lead.name;
+  const rosterLead = (props.agents ?? []).find(
+    (agent) => agent.occupation?.role === "lead" || agent.profile.agentType === "coordinator",
+  );
+  return rosterLead ? (rosterLead.profile.displayName || rosterLead.profile.name) : null;
+});
+
+const memberOccupations = computed(() => {
+  const seen = new Set<string>();
+  const items: string[] = [];
+  for (const agent of props.agents ?? []) {
+    const label = occupationLabels(agent.occupation)[0];
+    if (!label) continue;
+    const emoji = agent.profile.occupationEmoji?.trim();
+    const token = emoji ? `${emoji} ${label}` : label;
+    if (!seen.has(token)) {
+      seen.add(token);
+      items.push(token);
+    }
+  }
+  return items;
+});
 
 async function loadTeam() {
   if (!props.projectId || !props.spaceId) return;
@@ -66,7 +94,18 @@ watch(expanded, (open) => {
       :aria-controls="panelId"
       @click="expanded = !expanded"
     >
-      <span class="directory-project-name">{{ name }}</span>
+      <span class="directory-project-heading">
+        <span class="directory-project-name">{{ name }}</span>
+        <span v-if="purpose" class="ui-meta directory-project-purpose" data-project-purpose>{{ purpose }}</span>
+      </span>
+      <span class="ui-meta directory-project-summary">
+        <span class="directory-project-header-lead" data-project-header-lead>
+          {{ headerLeadName ? t("agentRedesign.projectView.lead", { name: headerLeadName }) : t("agentRedesign.projectView.leadUnset") }}
+        </span>
+        <span v-if="memberOccupations.length" class="directory-project-occupations" data-project-member-occupations>
+          · {{ memberOccupations.join(" · ") }}
+        </span>
+      </span>
       <span class="ui-meta directory-project-counts">
         {{ t("agentRedesign.projectView.members", { count }) }}
         <template v-if="runningCount"> · {{ t("agentRedesign.projectView.running", { count: runningCount }) }}</template>

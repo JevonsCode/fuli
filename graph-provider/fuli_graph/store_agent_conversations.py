@@ -10,7 +10,7 @@ from .conversation_context import (
 )
 from .project_agent_access import authorize_project_agent
 from .provider_values import now_utc, stable_uuid
-from .store_conversation_triage import ASSISTANT_AGENT_ID
+from .store_conversation_triage import ASSISTANT_AGENT_ID, StoreConversationTriage
 from .store_transactions import query_store_transaction
 
 CONTEXT_PAGE_EVENTS = 50
@@ -79,10 +79,15 @@ class StoreAgentConversations:
                 id=stable_uuid(scope, request.source_application, request.session_id or ''))
             return dict(rows[0]) if rows else {'conversation_id': None, 'cursor': 0, 'initialized': False}
         if request.mode == 'list':
+            # Jefa's triage label travels with each conversation so a list can
+            # show what is still unclaimed without a second read per row.
             rows, _, _ = await self.runtime.driver.execute_query(
-                'MATCH (c:FuliConversation {scope: $scope}) RETURN c ORDER BY c.last_activity DESC, c.id LIMIT $limit',
+                'MATCH (c:FuliConversation {scope: $scope}) '
+                'OPTIONAL MATCH (t:FuliConversationTriage {id: c.id}) '
+                'RETURN c, t ORDER BY c.last_activity DESC, c.id LIMIT $limit',
                 scope=scope, limit=request.limit)
-            return {'conversations': [self._conversation_view(dict(r['c']), policy) for r in rows]}
+            return {'conversations': [{**self._conversation_view(dict(r['c']), policy),
+                'triage': StoreConversationTriage._triage_view(dict(r.get('t'))) if r.get('t') else None} for r in rows]}
         rows, _, _ = await self.runtime.driver.execute_query(
             'MATCH (c:FuliConversation {scope: $scope, id: $id}) RETURN c', scope=scope, id=request.conversation_id)
         if not rows:

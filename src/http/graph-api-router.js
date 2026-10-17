@@ -15,6 +15,10 @@ export async function handleGraphApiRequest({
     sendJson(response, 200, await app.queryAgentConversations({ ...(await readJson(request)), ownerInspection: true }));
     return true;
   }
+  if (url.pathname === '/api/conversation-triage/record' && request.method === 'POST') {
+    sendJson(response, 200, await app.recordConversationTriage(await readJson(request)));
+    return true;
+  }
   if (url.pathname === '/api/agent-conversations/policy' && request.method === 'PUT') {
     sendJson(response, 200, await app.updateAgentConversationPolicy({ ...(await readJson(request)), ownerInspection: true }));
     return true;

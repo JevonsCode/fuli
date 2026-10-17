@@ -14,6 +14,14 @@ export function isConversationFallback(project: Pick<PersonalProject, 'project_i
   return CONVERSATION_FALLBACK_ID.test(project.project_id)
 }
 
+export function isFormalProject(project: Pick<PersonalProject, 'project_id' | 'scope_type' | 'status' | 'profile'>) {
+  if (isConversationFallback(project)) return false
+  if (project.scope_type === 'temporary') return false
+  if (project.status === 'archived' || project.profile?.lifecycle === 'archived') return false
+  if (project.profile?.origin === 'conversation_fallback') return false
+  return true
+}
+
 /** A name people can tell apart: fallback session projects show when they were last used. */
 export function projectDisplayName(project: PersonalProject) {
   if (!isConversationFallback(project)) return project.profile.name
