@@ -47,12 +47,16 @@ import {
   quadrantLabel,
 } from './model'
 import {
-  discoverPersonalProjectResults,
+   discoverPersonalProjectResults,
   projectDiscoverySummary,
   type KnowledgeSearchResult,
   type PersonalProjectDiscovery,
 } from './project-discovery'
 import { separateParentProjects } from './project-hierarchy'
+import {
+  extractFrequentProjects,
+  filterFormalProjectGraph,
+} from './project-relation-weights'
 
 const props = withDefaults(defineProps<{
   personalProjectsOnly?: boolean
@@ -205,7 +209,14 @@ const selectedStatusLabel = computed(() => {
   if (contentStatus.value === 'historical') return t('common.status.invalid')
   return t('knowledge.workspace.workspace.status.all')
 })
-const currentGraphView = computed(() => graph.value ? currentKnowledgeGraph(graph.value) : null)
+const currentGraphView = computed(() =>
+  graph.value
+    ? filterFormalProjectGraph(currentKnowledgeGraph(graph.value), personalProjects.value)
+    : null,
+)
+const activeFrequentProjects = computed(() =>
+  extractFrequentProjects(graph.value, projectId.value, personalProjects.value),
+)
 const projectHierarchy = computed(() =>
   currentGraphView.value
     ? separateParentProjects(currentGraphView.value, projectId.value)
@@ -968,6 +979,7 @@ function queryValues(value: unknown) {
         v-if="activePersonalProject"
         :space-id="spaceId"
         :project="activePersonalProject"
+        :frequent-projects="activeFrequentProjects"
         :can-publish="Boolean(store.state?.capabilities?.publishProject)"
         @edit-profile="editActiveProjectProfile"
         @publish="publishingProject = activePersonalProject"
