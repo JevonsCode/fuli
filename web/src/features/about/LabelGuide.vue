@@ -336,7 +336,7 @@ const statuses = computed(() => [
 }
 
 .label-guide-section > header > span {
-  color: var(--about-gold);
+  color: var(--color-accent);
   font-size: 12px;
   font-weight: 650;
   letter-spacing: .06em;
