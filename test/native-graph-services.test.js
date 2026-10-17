@@ -490,3 +490,39 @@ test('native census reads label and relationship counts over the instance loopba
     `Basic ${Buffer.from('neo4j:personal-password').toString('base64')}`);
   assert.equal(JSON.parse(requests[0].init.body).statements.length, 4);
 });
+
+test('a dump refused after a hard stop is retried once after a database-only start-stop recovery', async () => {
+  const events = [];
+  let dumps = 0;
+  let processState = null;
+  const services = createServices({
+    platform: 'win32',
+    paths: PATHS,
+    runtimeDescriptor: { status: 'ready', mode: 'native', javaHome: '/jre-21',
+      neo4jHome: PATHS.nativeNeo4jHome, providerPython: '/python' },
+    personalOnly: true,
+    readText: () => ENVIRONMENT,
+    writeText: async () => {},
+    pathExists: () => true,
+    markInitialized: () => {},
+    readSettings: () => ({ ...DEFAULT_RUNTIME_SETTINGS, graphRuntimeMode: 'native' }),
+    run: async (_command, args) => {
+      if (args[1] !== 'dump') return;
+      dumps += 1;
+      events.push(`dump-${dumps}`);
+      if (dumps === 1) throw new Error('Dump failed for databases: neo4j');
+    },
+    waitForDatabase: async () => {},
+    verifyPortFree: async () => {},
+    verifyPortOwner: async () => {},
+    spawnDatabase: () => { events.push('start-database'); return { pid: 4800 }; },
+    spawnProvider: () => { throw new Error('No Provider may start for recovery'); },
+    readProcessState: () => processState,
+    writeProcessState: (_path, value) => { processState = value; },
+    processMatches: async () => true,
+    stopProcess: async (pid) => events.push(`stop-${pid}`)
+  });
+
+  await services.dumpDatabase('personal', '/stage');
+  assert.deepEqual(events, ['dump-1', 'start-database', 'stop-4800', 'dump-2']);
+});
