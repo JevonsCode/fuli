@@ -673,6 +673,42 @@ async def test_blocked_task_is_visible_as_current_agent_work():
 
 
 @pytest.mark.asyncio
+async def test_running_agent_exposes_only_a_stamped_run_start():
+    profile = project_agent_profile()
+    started = datetime(2026, 10, 17, 1, 0, tzinfo=UTC)
+
+    def row(agent_id, task_rows):
+        agent = raw_agent(profile)
+        agent['agent_id'] = agent_id
+        return {'agent': agent, 'assignment_rows': [], 'task_rows': task_rows, 'observed_clients': []}
+
+    driver = SequentialDriver([[
+        row('stamped', [{
+            'task_id': 'run', 'status': 'running',
+            'updated_at': datetime(2026, 10, 17, 3, 0, tzinfo=UTC), 'running_since': started,
+        }]),
+        row('legacy', [{
+            'task_id': 'old-run', 'status': 'running',
+            'updated_at': datetime(2026, 10, 17, 3, 0, tzinfo=UTC),
+        }]),
+        row('blocked', [{
+            'task_id': 'wait', 'status': 'blocked',
+            'updated_at': datetime(2026, 10, 17, 3, 0, tzinfo=UTC), 'running_since': started,
+        }]),
+    ]])
+
+    result = await StoreStub(driver).list_project_agents({'id': 'principal-1'}, 'personal-space')
+
+    by_id = {item.agent_id: item for item in result}
+    assert by_id['stamped'].current_task_running_since == started
+    # A row written before the stamp stays unknown; updated_at is not a start.
+    assert by_id['legacy'].work_status == 'running'
+    assert by_id['legacy'].current_task_running_since is None
+    assert by_id['blocked'].current_task_running_since is None
+    assert 'running_since: participant.running_since' in driver.calls[0][0]
+
+
+@pytest.mark.asyncio
 async def test_archiving_agent_preserves_history_and_ends_assignments():
     profile = project_agent_profile()
     archived = raw_agent(profile)

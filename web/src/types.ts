@@ -211,6 +211,7 @@ export interface ProjectAgentTaskParticipant {
   status: ProjectAgentTaskStatus
   assignmentSummary?: string | null
   joinedAt?: string | null
+  runningSince?: string | null
   updatedAt?: string | null
   endedAt?: string | null
 }
@@ -510,6 +511,7 @@ export interface ProjectAgentRecord {
   workStatus?: ProjectAgentWorkStatus
   openTaskCount?: number
   currentTaskId?: string | null
+  currentTaskRunningSince?: string | null
   observedClients?: ConversationSourceApplication[]
   recruitedAt?: string | null
   recruitmentReason?: string | null

@@ -537,6 +537,7 @@ class StoreProjectAgents:
                    personal_project_id: task.personal_project_id,
                    status: participant.status,
                    updated_at: participant.updated_at,
+                   running_since: participant.running_since,
                    source_application: task.source_application
                  }) AS all_task_rows,
                  collect(DISTINCT {
@@ -1115,6 +1116,13 @@ class StoreProjectAgents:
             work_status=work_status,
             open_task_count=len(tasks),
             current_task_id=tasks[0]['task_id'] if tasks else None,
+            # Only a stamped entry into running is a start time; rows written
+            # before the stamp existed stay unknown instead of using updated_at.
+            current_task_running_since=(
+                native_datetime(tasks[0]['running_since'])
+                if work_status == 'running' and tasks[0].get('running_since')
+                else None
+            ),
             observed_clients=observed_clients,
             recruited_at=(
                 native_datetime(raw['recruited_at'])
