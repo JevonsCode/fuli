@@ -20,6 +20,9 @@ function fixture({ resolution = { status: 'unmatched', personalProjectId: null }
     return current;
   }, begin: async input => ({ ...input, token: 'fuli-task-synthetic-fallback' }) };
   app.upsertPersonalProject = async input => {
+    if (input.createOnly && projects.has(input.projectId)) {
+      throw Object.assign(new Error('Conflict'), { status: 409 });
+    }
     writes.push(input);
     projects.set(input.projectId, { project_id: input.projectId,
       scope_type: 'registered', profile: input.profile });
@@ -113,8 +116,52 @@ test('a new-project prefix creates exactly one registered project', async () => 
   assert.equal(writes.length, 1);
   assert.equal(writes[0].createOnly, true);
   assert.equal(writes[0].profile.name, 'Garden Planner');
+  assert.equal(writes[0].profile.purpose, '新项目：Garden Planner');
   const cjk = await run({ taskPrompt: '新项目：花园规划' });
   assert.match(cjk.context.personal_project_id, /^project-[a-f0-9]{12}$/);
+});
+
+test('a name shared by several projects is ambiguous in either listing order', async () => {
+  const { app, run, writes, projects } = fixture({ existing: ['alpha-one', 'alpha-two'] });
+  for (const id of projects.keys()) projects.get(id).profile.name = 'Alpha';
+  const listed = [...projects.values()];
+  for (const order of [listed, [...listed].reverse()]) {
+    app.personal.listPersonalProjects = async () => order;
+    for (const taskPrompt of ['Alpha 修一下入口', '新项目：Alpha']) {
+      const result = await run({ taskPrompt });
+      assert.equal(result.context.personal_project_id, null);
+      assert.match(result.agent_receipt.markdown, /项目归属待确认/);
+    }
+  }
+  assert.equal(writes.length, 0);
+});
+
+test('an archived project is never selected by name', async () => {
+  const { run, writes, projects } = fixture({ existing: ['old-tool'] });
+  projects.get('old-tool').profile = { name: 'Old Tool', lifecycle: 'archived' };
+  assert.equal((await run({ taskPrompt: 'Old Tool 再看一下' })).context.personal_project_id, null);
+  const created = await run({ taskPrompt: '新项目：Old Tool' });
+  assert.match(created.context.personal_project_id, /^old-tool-[a-f0-9]{12}$/);
+  assert.equal(writes.length, 1);
+});
+
+test('different names with the same slug get distinct project IDs', async () => {
+  const { run, writes } = fixture();
+  const plus = await run({ taskPrompt: '新项目：Alpha+Beta' });
+  const space = await run({ taskPrompt: '新项目：Alpha Beta' });
+  assert.equal(plus.context.personal_project_id, 'alpha-beta');
+  assert.match(space.context.personal_project_id, /^alpha-beta-[a-f0-9]{12}$/);
+  assert.equal(writes.length, 2);
+});
+
+test('a concurrent create of the same name resolves to that project', async () => {
+  const { app, run, writes, projects } = fixture();
+  projects.set('garden-planner', { project_id: 'garden-planner', scope_type: 'registered',
+    profile: { name: 'Garden Planner', lifecycle: 'active' } });
+  app.personal.listPersonalProjects = async () => [];
+  const result = await run({ taskPrompt: '新项目：Garden Planner' });
+  assert.equal(result.context.personal_project_id, 'garden-planner');
+  assert.equal(writes.length, 0);
 });
 
 test('a registered lifecycle binding restores its project before AR recruitment', async () => {

@@ -58,6 +58,10 @@ export async function resolveTaskEntryProject(application, resolution, input) {
     if (hostInternalActivity(application, input)) return { ...resolution, reason: 'internal_activity' };
 
     const named = await projectNamedInPrompt(application, input.taskPrompt);
+    if (named?.ambiguous) {
+      return { status: 'ambiguous', basis: named.basis, personalProjectId: null,
+        candidateCount: named.candidateCount };
+    }
     if (named) return matched(named.personalProjectId, named.basis);
     return { status: 'global', basis: 'pending_assignment', personalProjectId: null,
       globalAgentId: ASSISTANT_AGENT_ID };
