@@ -8,7 +8,7 @@ import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { agentMemoryRecord, prepareProjectAgentMemory } from './project-agent-memory.js';
 import { internalCaptureSkip, normalizeTaskCaptures, taskCaptureInput, taskCaptureReceipt, taskCaptureReviewPaths, taskCaptureStatus } from './task-knowledge-routing.js';
-import { hostInternalActivity } from './task-entry-activity-origin.js';
+import { activeSealedWorkerRequest } from '../app/agent-request-context.js';
 
 import { onlineSourceUri } from './source-uri.js';
 import {
@@ -142,10 +142,11 @@ export async function checkpointTaskKnowledge(application, {
   if (remoteSessionId && task.sessionId !== remoteSessionId) {
     throw validationError('Task checkpoint belongs to another remote session');
   }
-  // Verified internal Agent activity still checkpoints, but never writes
-  // preference or project knowledge candidates. Only host provenance decides.
-  const internalActivity = disposition === 'capture_candidates' && capture
-    ? hostInternalActivity(application, { sessionId: task.sessionId }) : null;
+  // A Provider-admitted sealed worker call still checkpoints, but never writes
+  // preference or project knowledge candidates. Only the worker MCP composition
+  // marks the call; roundtable wakes and unknown origins keep ordinary capture.
+  const internalActivity = disposition === 'capture_candidates' && capture && activeSealedWorkerRequest()
+    ? 'sealed_worker' : null;
   const scopedCaptures = captureRouting === null || internalActivity
     ? null : normalizeTaskCaptures(task, capture, captureRouting);
   if (disposition === 'capture_candidates') {

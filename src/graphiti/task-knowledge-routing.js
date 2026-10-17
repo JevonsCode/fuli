@@ -102,12 +102,12 @@ export function taskCaptureReceipt(scope, input, result) {
     entity_ids: saved ? result.entity_ids : [], relationship_ids: saved ? result.relationship_ids : [] };
 }
 
-// Verified internal Agent activity (task-entry-activity-origin) keeps its
-// checkpoint, work log and memory, but its capture payload is never written.
+// A Provider-admitted sealed worker keeps its checkpoint, work log and memory,
+// but its capture payload is never written.
 export function internalCaptureSkip(origin) {
   return { route: 'skipped', status: 'internal_activity_skipped', persisted: false,
     reason: 'internal_activity', activity_origin: origin,
-    guidance: 'Verified internal Agent activity does not write personal preferences or project knowledge candidates. Nothing from this capture payload was persisted; the checkpoint, work log and memory are unaffected. Report results to the requesting Agent; a human may capture knowledge later through an ordinary task.' };
+    guidance: 'A Provider-admitted sealed worker does not write personal preferences or project knowledge candidates. Nothing from this capture payload was persisted; the checkpoint, work log and memory are unaffected. Return results to the coordinator; a human may capture knowledge later through an ordinary task.' };
 }
 
 export function taskCaptureStatus(receipts) {
