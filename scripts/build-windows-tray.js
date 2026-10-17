@@ -17,6 +17,14 @@ const contains = (root, path) => !isAbsolute(relative(root, path))
 
 // The old bundle supplies checksum-verified runtimes and dependencies. Its
 // embedded Provider application is replaced with this checkout's Python source.
+// A release bumps only the root package's own version; reuse needs identical dependencies.
+export function dependencyLock(bytes) {
+  const lock = JSON.parse(bytes);
+  delete lock.version;
+  if (lock.packages?.['']) delete lock.packages[''].version;
+  return lock;
+}
+
 export async function buildWindowsTray({ assetBundle, output, dataDir, compiler } = {}) {
   if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('Build on Windows x64.');
   for (const [name, path] of Object.entries({ assetBundle, output, dataDir })) {
@@ -59,7 +67,7 @@ export async function buildWindowsTray({ assetBundle, output, dataDir, compiler 
     return bytes;
   }
   const lock = await verifiedFile('npm-shrinkwrap.json');
-  assert.deepEqual(lock, await readFile(join(PACKAGE_ROOT, 'npm-shrinkwrap.json')),
+  assert.deepEqual(dependencyLock(lock), dependencyLock(await readFile(join(PACKAGE_ROOT, 'npm-shrinkwrap.json'))),
     'Reuse requires the identical lockfile; rebuild the portable assets when dependencies change.');
   const nativeManifest = await verifiedFile('native-bundle.json');
   const assetInventory = index.has('portable-inventory.json')
