@@ -3,6 +3,9 @@ from .agent_loan_models import AgentLoanRequest, AgentLoanDecision, AgentLoanQue
 from .agent_conversation_models import (
     ConversationQuery, ConversationWrite, ConversationResume, ConversationPolicyWrite,
 )
+from .conversation_triage_models import (
+    ConversationTriageWrite, ConversationTopicQuery, ConversationTopicFormation,
+)
 
 
 def register_agent_conversation_routes(application, store, Actor):
@@ -45,3 +48,15 @@ def register_agent_conversation_routes(application, store, Actor):
     @application.put('/v1/agent-conversations/policy')
     async def policy(request: ConversationPolicyWrite, actor: Actor):
         return await store.write_conversation_policy(actor, request)
+
+    @application.post('/v1/conversation-triage/record')
+    async def triage(request: ConversationTriageWrite, actor: Actor):
+        return await store.record_conversation_triage(actor, request)
+
+    @application.post('/v1/conversation-triage/topics')
+    async def topics(request: ConversationTopicQuery, actor: Actor):
+        return await store.query_conversation_topics(actor, request)
+
+    @application.post('/v1/conversation-triage/form')
+    async def form(request: ConversationTopicFormation, actor: Actor):
+        return await store.form_conversation_topic(actor, request)

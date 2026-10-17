@@ -3,7 +3,7 @@ import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { projectNamedInPrompt } from './task-entry-project-mention.js';
 
 // The fixed assistant receives conversations no project has claimed yet.
-const ASSISTANT_AGENT_ID = 'employee.assistant';
+export const ASSISTANT_AGENT_ID = 'employee.assistant';
 
 // Restore only exact session provenance; a normal folder name is not a role binding.
 // An unclaimed conversation never creates a project or hires a lead: it stays
