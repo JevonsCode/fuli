@@ -7,10 +7,13 @@ const DURATION_MS = 900
 const celebrated = new Set<string>()
 let running = false
 
+// A key is only spent by a burst that actually started; a skipped one
+// (another playing, hidden page, no anchor) leaves a later chance.
 export function celebrateOnce(key: string, anchor: HTMLElement | null, color = '#1f5ea8') {
   if (celebrated.has(key)) return false
-  celebrated.add(key)
-  return burst(anchor, color)
+  const started = burst(anchor, color)
+  if (started) celebrated.add(key)
+  return started
 }
 
 function burst(anchor: HTMLElement | null, color: string) {
