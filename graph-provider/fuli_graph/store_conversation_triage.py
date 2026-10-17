@@ -25,27 +25,26 @@ class StoreConversationTriage:
         await self._pending_conversation(space['id'], request.conversation_id)
         if request.personal_project_id is not None:
             await self.get_personal_project(actor, request.personal_space_id, request.personal_project_id)
-        rows, _, _ = await self.runtime.driver.execute_query(
-            'MATCH (t:FuliConversationTriage {id: $id}) RETURN t', id=request.conversation_id)
-        current = dict(rows[0]['t']) if rows else None
-        kept = current and request.source == 'host' and (
-            'formed_project' if current.get('formed_project_id') else
-            'user_label' if current.get('source') == 'user' else None)
-        if kept:
-            return {'triage': self._triage_view(current), 'kept': kept,
-                    'topic_count': await self._topic_count(space['id'], current.get('topic_key'))}
         key = topic_key(request.topic) if request.topic else None
         label = {'kind': request.kind, 'personal_project_id': request.personal_project_id,
                  'topic': ' '.join(request.topic.split()) if request.topic else None,
                  'topic_key': key, 'source': request.source, 'labeled_at': now_utc().isoformat()}
+        # One statement: take the node's write lock before reading the label it
+        # replaces, so a person's correction committed meanwhile is never
+        # overwritten by a host label that read the older value.
         rows, _, _ = await self.runtime.driver.execute_query(
             'MERGE (t:FuliConversationTriage {id: $id}) '
             'ON CREATE SET t.space_id=$space_id '
-            'SET t += $label RETURN t',
-            id=request.conversation_id, space_id=space['id'], label=label)
-        return {'triage': self._triage_view(dict(rows[0]['t'])),
-                'topic_count': await self._topic_count(space['id'], key)}
-
+            'SET t._triage_lock = true REMOVE t._triage_lock '
+            'WITH t, CASE WHEN $source <> "host" THEN null '
+            "WHEN t.formed_project_id IS NOT NULL THEN 'formed_project' "
+            "WHEN t.source = 'user' THEN 'user_label' ELSE null END AS kept "
+            'FOREACH (_ IN CASE WHEN kept IS NULL THEN [1] ELSE [] END | SET t += $label) '
+            'RETURN t, kept',
+            id=request.conversation_id, space_id=space['id'], label=label, source=request.source)
+        record, kept = dict(rows[0]['t']), rows[0]['kept']
+        return {'triage': self._triage_view(record), **({'kept': kept} if kept else {}),
+                'topic_count': await self._topic_count(space['id'], record.get('topic_key'))}
     async def _topic_count(self, space_id, key):
         if not key:
             return 0
