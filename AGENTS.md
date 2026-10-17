@@ -1,5 +1,7 @@
 # Fuli Engineering Rules
 
+Read [coding-taste.md](coding-taste.md) before writing code: it defines reuse, dead-code and shared-module rules for every Agent.
+
 ## Product Boundaries
 
 - Prefer plain JavaScript for application code unless another language has a clear technical advantage.
