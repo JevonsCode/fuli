@@ -295,6 +295,36 @@ describe('Agent directory integration', () => {
     expect(router.currentRoute.value.query).toEqual({ project: ['project-a', 'project-b'], status: 'inactive' })
   })
 
+  it('updates filters when query navigation reuses the directory', async () => {
+    const { router, wrapper } = await setup('/project-agents?q=aster')
+    await router.push('/project-agents?q=birch&status=active&project=project-a')
+    await flushPromises()
+    expect((wrapper.get('input[type="search"]').element as HTMLInputElement).value).toBe('birch')
+    await router.push('/project-agents')
+    await flushPromises()
+    expect((wrapper.get('input[type="search"]').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.findAll('.agent-directory-name a')).toHaveLength(2)
+    router.back()
+    await flushPromises()
+    expect((wrapper.get('input[type="search"]').element as HTMLInputElement).value).toBe('birch')
+    expect(wrapper.findAll('.agent-directory-name a')).toHaveLength(0)
+  })
+
+  it('keeps the latest filter when leaving before the old debounce interval', async () => {
+    const { router, wrapper } = await setup()
+    await wrapper.get('input[type="search"]').setValue('aster')
+    // Separate browser input and click events drain navigation microtasks,
+    // without waiting for the former 250ms debounce timer.
+    await flushPromises()
+    await wrapper.get('.agent-directory-name a').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/agents/space-a/agent-0')
+    router.back()
+    await flushPromises()
+    expect(router.currentRoute.value.query.q).toBe('aster')
+    expect((wrapper.get('input[type="search"]').element as HTMLInputElement).value).toBe('aster')
+  })
+
   it('restores the directory scroll position when coming back from a profile', async () => {
     const { router, wrapper } = await setup()
     const scroller = () => wrapper.get('.agents-directory').element as HTMLElement

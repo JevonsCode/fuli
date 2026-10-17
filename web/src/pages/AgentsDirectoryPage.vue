@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { onBeforeRouteLeave, RouterLink, useRoute, useRouter } from "vue-router";
+import { computed, onMounted, ref, watch } from "vue";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import BackToTop from "@/components/BackToTop.vue";
 import GrowthLoading from "@/components/GrowthLoading.vue";
 import { useScrollRestoration } from "@/composables/useScrollRestoration";
-import { createDebouncedAction } from "@/lib/debounce";
 import {
   directoryFilterQuery,
   readDirectoryFilters,
@@ -141,13 +140,18 @@ const currentFilters = () => ({
   projects: selectedProjects.value,
   status: status.value as DirectoryStatus,
 });
-const syncFilterQuery = createDebouncedAction(() => {
+watch(() => route.query, (query) => {
+  const filters = readDirectoryFilters(query);
+  search.value = filters.search;
+  selectedProjects.value = filters.projects;
+  status.value = filters.status;
+});
+// This only updates local navigation state; delaying it loses filters on a
+// quick visit to a profile followed by Back.
+watch([search, status, selectedProjects], () => {
   if (sameDirectoryFilters(readDirectoryFilters(route.query), currentFilters())) return;
   void router.replace({ query: directoryFilterQuery(route.query, currentFilters()) });
-}, 250);
-watch([search, status, selectedProjects], () => syncFilterQuery.schedule(), { deep: true });
-onBeforeRouteLeave(() => syncFilterQuery.cancel());
-onBeforeUnmount(() => syncFilterQuery.cancel());
+}, { deep: true });
 useScrollRestoration(scroller, "agents-directory", computed(() => visible.value.length > 0));
 
 watch(
