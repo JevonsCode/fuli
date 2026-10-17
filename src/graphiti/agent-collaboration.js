@@ -99,7 +99,9 @@ export async function planAgentCollaboration(application, input) {
   const recruit = stream => ({ tool: 'coordinate_project_agent_task',
     arguments: { taskContextToken: token, personalProjectId: task.personalProjectId,
       workKind: stream.workKind, requiredCapabilities: stream.requiredCapabilities ?? [],
-      staffingIntent: 'new_durable' },
+      staffingIntent: 'new_durable',
+      // Bole hires by the occupation the workstream asked for, not by guessing from its work kind.
+      ...(stream.occupation ? { recruitmentOccupation: { role: stream.occupation, tags: [] } } : {}) },
     requires: ['idempotencyKey', 'title', 'objective', 'routingReason', 'contextQueries'],
     coordinatorAgentId: policy.team_lead_agent_id ?? null, askBeforeRecruitment: policy.ask_before_recruitment !== false,
     guidance: 'Reuse one stable idempotencyKey for this staffing need so a retry reuses the same recruitment. When askBeforeRecruitment is true, AR only proposes a hire; confirm with the user before it is staffed. Recruiting executes nothing.' });
@@ -126,17 +128,19 @@ export async function planAgentCollaboration(application, input) {
       ...(candidate?.requiresLoan ? { borrow: nextSteps(candidate, token, sourceLeads[candidate.projectId], task.personalProjectId).borrow } : {}) };
   }
   // The lead keeps the main work only when no other occupation was asked for.
+  // An explicitly requested occupation is a requirement: without such a member, Bole recruits one.
+  const pick = (list, occupation) => occupation ? list.find(candidate => candidate.occupationMatch) : list[0];
   const main = !independentAcceptance && mainCandidates.find(candidate => candidate.agentId === task.projectAgentId
-    && (!input.occupation || candidate.occupationMatch)) || mainCandidates[0];
+    && (!input.occupation || candidate.occupationMatch)) || pick(mainCandidates, input.occupation);
   const workstreams = [workstream('main', input, main, [], unavailableCandidates)];
   if (independent) {
     const excluded = [...authors, main?.agentId];
-    workstreams.push(workstream('independent', independent, eligible(pools.independent, excluded)[0], [],
+    workstreams.push(workstream('independent', independent, pick(eligible(pools.independent, excluded), independent.occupation), [],
       eligible(pools.independent, excluded, false)));
   }
   if (separated) {
     const excluded = [...authors, ...workstreams.map(stream => stream.agentId)];
-    workstreams.push(workstream('verification', verification, eligible(pools.verification, excluded)[0],
+    workstreams.push(workstream('verification', verification, pick(eligible(pools.verification, excluded), input.verificationOccupation),
       workstreams.map(stream => stream.id), eligible(pools.verification, excluded, false)));
   }
   const divisionPlan = { mode: separated ? 'separated' : 'single', coordinatorAgentId, workstreams,
