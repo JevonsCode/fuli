@@ -234,6 +234,9 @@ class ProjectAgentTaskParticipantRecord(StrictModel):
     joined_at: datetime
     updated_at: datetime
     ended_at: datetime | None = None
+    # Set when this participant last entered running; null when not running
+    # or when the row predates the stamp.
+    running_since: datetime | None = None
 
 
 class ProjectAgentTokenUsage(StrictModel):

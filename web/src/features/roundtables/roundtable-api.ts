@@ -9,6 +9,8 @@ export interface RoundtableThreadSummary {
   messageCount: number
   participants: RoundtablePerson[]
   waiting: boolean
+  /** Recipients of asks still open; absent from older servers. */
+  waitingFor?: string[]
   last: { from: string | null; body: string } | null
 }
 export interface RoundtableMessage {

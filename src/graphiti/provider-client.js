@@ -182,6 +182,14 @@ export class GraphitiProviderClient {
     if (capability) query.set('capability', capability);
     return this.#request(`/v1/project-agents?${query}`);
   }
+  listProjectAgentPage(personalSpaceId, options = {}) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    for (const [key, value] of [['personal_project_id', options.personalProjectId], ['status', options.status],
+      ['capability', options.capability], ['work', options.work], ['limit', options.limit], ['cursor', options.cursor]]) {
+      if (value !== undefined && value !== null && value !== '') query.set(key, String(value));
+    }
+    return this.#request(`/v1/project-agent-pages?${query}`);
+  }
   getProjectAgent(personalSpaceId, personalProjectId, agentId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
     if (personalProjectId) query.set('personal_project_id', personalProjectId);
@@ -258,6 +266,11 @@ export class GraphitiProviderClient {
   }
   verifyTaskCheckpoint(query) {
     return this.#request(`/v1/task-context-sessions/checkpoint?${new URLSearchParams(query)}`);
+  }
+  updateProjectAgentOccupation(agentId, input) {
+    return this.#request(`/v1/project-agents/${encodeURIComponent(agentId)}/occupation`, {
+      method: 'PUT', body: input
+    });
   }
   deleteProjectAgent(personalSpaceId, agentId, reason = 'archived by user') {
     const query = new URLSearchParams({

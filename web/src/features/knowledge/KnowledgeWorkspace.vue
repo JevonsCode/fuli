@@ -31,6 +31,8 @@ import KnowledgeInspector from './KnowledgeInspector.vue'
 import KnowledgeWorkspaceDialogs from './KnowledgeWorkspaceDialogs.vue'
 import ProjectHierarchyAside from './ProjectHierarchyAside.vue'
 import ProjectOverview from '@/features/projects/ProjectOverview.vue'
+import { pickerOrder, projectDisplayName } from '@/features/projects/project-origin'
+import CreateProjectEntry from '@/features/projects/CreateProjectEntry.vue'
 import {
   currentKnowledgeGraph,
   filterKnowledgeItems,
@@ -273,8 +275,8 @@ const spaceChoices = computed<SpaceChoice[]>(() => {
         name: space.name,
       }),
     }
-    const projects = (state.personalProjects ?? [])
-      .filter(({ personal_space_id }) => personal_space_id === space.id)
+    const projects = pickerOrder((state.personalProjects ?? [])
+      .filter(({ personal_space_id }) => personal_space_id === space.id))
       .map((project): SpaceChoice => ({
         key: choiceKey('personal', space.id, project.project_id),
         scope: 'personal',
@@ -282,7 +284,7 @@ const spaceChoices = computed<SpaceChoice[]>(() => {
         projectId: project.project_id,
         providerUrl: null,
         label: t('knowledge.workspace.workspace.spaces.personalProject', {
-          name: project.profile.name,
+          name: projectDisplayName(project),
         }),
       }))
     return [aggregate, ...projects]
@@ -991,6 +993,7 @@ function queryValues(value: unknown) {
         searchable
         @update:model-value="changeSpace"
       />
+      <CreateProjectEntry v-if="personalProjectsOnly && spaceId" :space-id="spaceId" />
 
       <details v-if="projectId && availableContexts.length" class="personal-context-picker">
         <summary>

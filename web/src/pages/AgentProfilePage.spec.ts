@@ -64,6 +64,26 @@ async function setup(path = '/agents/space-a/alpha') {
   return { router, wrapper }
 }
 describe('Agent profile integration', () => {
+  it('shows an unset occupation and saves an explicit role with tags apart from the profile', async () => {
+    putJson.mockImplementation(async (url: string, payload: { role: string | null; tags: string[] }) => {
+      expect(url).toBe('/api/project-agents/alpha/occupation')
+      return { ...person('alpha'), occupation: { role: payload.role, tags: payload.tags, updatedAt: '2026-10-17T05:00:00Z' } }
+    })
+    const { wrapper } = await setup()
+    expect(wrapper.get('[data-profile-occupation]').text()).toBe('还没有设置职业')
+    const settings = wrapper.findAll('button').find(button => button.attributes('aria-expanded') !== undefined && button.text().includes('设置'))!
+    await settings.trigger('click')
+    const editor = wrapper.get('[data-occupation-editor]')
+    await editor.get('[data-occupation-tag="testing"]').trigger('click')
+    await editor.get('[data-occupation-tag="design"]').trigger('click')
+    await editor.trigger('submit')
+    await flushPromises()
+    expect(putJson).toHaveBeenCalledWith('/api/project-agents/alpha/occupation', { personalSpaceId: 'space-a', role: null, tags: ['testing', 'design'] })
+    expect(wrapper.get('[data-profile-occupation]').text()).toBe('测试 · 设计')
+    // The free-text responsibility stays as it was.
+    expect(wrapper.text()).toContain('Synthetic alpha role')
+  })
+
   it('shows an explicitly reported plan within the current work card', async () => {
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => url.startsWith('/api/project-agent-tasks?')

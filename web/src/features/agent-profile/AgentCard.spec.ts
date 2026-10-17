@@ -40,6 +40,11 @@ describe('AgentCard projects', () => {
     expect(colours.size).toBeGreaterThan(1)
     expect(render({ agent: { ...agent, agentId: 'custom-a' } }).get('[data-card-portrait]').classes()).toContain('agent-card-identity')
   })
+  it('shows the person-set occupation next to the name and nothing when unset', () => {
+    const classified = render({ agent: { ...agent, occupation: { role: 'product', tags: ['writing'], updatedAt: '2026-10-17T00:00:00Z' } } })
+    expect(classified.get('[data-occupation]').text()).toBe('产品 · 写作')
+    expect(render().find('[data-occupation]').exists()).toBe(false)
+  })
   it('shows the stable FLA employee number', () => {
     expect(render({ agent: { ...agent, employeeNumber: '000001' } }).get('.fla-employee-number').text()).toBe('FLA 000001')
   })
