@@ -2,6 +2,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+import { nonEmptyText } from '../validation/values.js';
 
 const DOCKER_INFO_ARGS = ['info', '--format', '{{.ServerVersion}}'];
 const RANCHER_DOWNLOAD_URL = 'https://rancherdesktop.io/';
@@ -60,7 +62,7 @@ export function inspectContainerRuntime({
     };
   }
 
-  const explicitTarget = nonEmpty(env.DOCKER_HOST) || nonEmpty(env.DOCKER_CONTEXT);
+  const explicitTarget = nonEmptyText(env.DOCKER_HOST) || nonEmptyText(env.DOCKER_CONTEXT);
   return {
     status: desktop && !explicitTarget ? 'stopped' : 'unavailable',
     label: desktop?.label ?? 'Docker',
@@ -142,7 +144,7 @@ export function selectDockerEnvironment({
   socketExists = existsSync
 } = {}) {
   const selected = { ...env };
-  if (nonEmpty(env.DOCKER_HOST) || nonEmpty(env.DOCKER_CONTEXT)) return selected;
+  if (nonEmptyText(env.DOCKER_HOST) || nonEmptyText(env.DOCKER_CONTEXT)) return selected;
   if (dockerAvailable(selected)) return selected;
   if (platform !== 'darwin') return selected;
 
@@ -154,7 +156,7 @@ export function selectDockerEnvironment({
 }
 
 export function dockerInfoIndicatesDaemon(result) {
-  return processSucceeded(result) && nonEmpty(result.stdout);
+  return processSucceeded(result) && nonEmptyText(result.stdout) !== null;
 }
 
 export function containerRuntimeError(runtime, platform = process.platform) {
@@ -214,7 +216,7 @@ function dockerCommandEnvironment(command, env, platform) {
   if (platform !== 'darwin' || !command.includes('/Docker.app/')) return selected;
   const resources = command.slice(0, command.indexOf('/bin/docker'));
   const pluginDirectory = join(resources, 'cli-plugins');
-  const current = nonEmpty(selected.DOCKER_CLI_PLUGIN_EXTRA_DIRS);
+  const current = nonEmptyText(selected.DOCKER_CLI_PLUGIN_EXTRA_DIRS);
   selected.DOCKER_CLI_PLUGIN_EXTRA_DIRS = current
     ? `${current}${delimiter}${pluginDirectory}`
     : pluginDirectory;
@@ -362,7 +364,7 @@ function runProcess(command, args, env) {
 
 function safeProcessDetail(result, homeDir) {
   const body = [result?.stderr, result?.stdout, result?.error?.message]
-    .filter(nonEmpty)
+    .filter(nonEmptyText)
     .join('\n')
     .replaceAll(homeDir, '~')
     .replace(/(authorization:\s*bearer\s+)\S+/gi, '$1[redacted]')
@@ -376,17 +378,9 @@ function safeProcessDetail(result, homeDir) {
 }
 
 function detailSuffix(detail) {
-  return nonEmpty(detail) ? ` Docker returned: ${detail}` : '';
+  return nonEmptyText(detail) ? ` Docker returned: ${detail}` : '';
 }
 
 function processSucceeded(result) {
   return result?.status === 0 && !result.error;
-}
-
-function nonEmpty(value) {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

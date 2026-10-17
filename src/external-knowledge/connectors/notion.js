@@ -1,3 +1,6 @@
+import { requiredString, uniqueTextArray } from '../../validation/values.js';
+import { dateTimeOrNull, jsonObject, onlineUrl, timeoutMilliseconds } from './response-values.js';
+
 const NOTION_API_ROOT = 'https://api.notion.com';
 const NOTION_API_VERSION = '2026-03-11';
 
@@ -123,7 +126,7 @@ function notionRequester(fetchImpl) {
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' })
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(timeoutMilliseconds(context.config?.timeoutMs))
+      signal: AbortSignal.timeout(timeoutMilliseconds(context.config?.timeoutMs, 'Notion timeoutMs'))
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -178,8 +181,8 @@ async function notionPageDocument(context, request, page) {
 }
 
 function notionSources(source, { allowEmpty = false } = {}) {
-  const pageIds = idArray(source?.pageIds, 'Notion pageIds');
-  const dataSourceIds = idArray(source?.dataSourceIds, 'Notion dataSourceIds');
+  const pageIds = uniqueTextArray(source?.pageIds, 'Notion pageIds');
+  const dataSourceIds = uniqueTextArray(source?.dataSourceIds, 'Notion dataSourceIds');
   const sources = [
     ...pageIds.map((id) => ({ kind: 'page', id })),
     ...dataSourceIds.map((id) => ({ kind: 'data_source', id }))
@@ -256,52 +259,8 @@ function credentialFromEnvironment(context, key, label) {
   return value;
 }
 
-function idArray(value, label) {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || !item.trim())) {
-    throw new TypeError(`${label} must be an array of nonempty strings`);
-  }
-  return [...new Set(value.map((item) => item.trim()))];
-}
-
 function pageSize(value) {
   if (value === undefined || value === null) return 100;
   if (!Number.isInteger(value) || value <= 0) throw new TypeError('Notion page size is invalid');
   return Math.min(value, 100);
-}
-
-function timeoutMilliseconds(value) {
-  if (value === undefined || value === null) return 30_000;
-  if (!Number.isInteger(value) || value < 1_000 || value > 120_000) {
-    throw new TypeError('Notion timeoutMs must be between 1000 and 120000');
-  }
-  return value;
-}
-
-function requiredString(value, label) {
-  if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} is required`);
-  return value.trim();
-}
-
-function onlineUrl(value) {
-  if (typeof value !== 'string') return null;
-  try {
-    const url = new URL(value);
-    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password
-      ? url.toString()
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function dateTimeOrNull(value) {
-  if (typeof value !== 'string' || Number.isNaN(Date.parse(value))) return null;
-  return new Date(value).toISOString();
-}
-
-function jsonObject(value) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? structuredClone(value)
-    : {};
 }

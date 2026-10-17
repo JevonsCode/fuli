@@ -2,7 +2,6 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, posix, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createInterface } from 'node:readline/promises';
 
 import {
   FULI_PACKAGE_NAME,
@@ -17,6 +16,7 @@ import {
   compareSemanticVersions,
   parseSemanticVersion
 } from '../semantic-version.js';
+import { confirmInTerminal, writeLine } from './terminal-io.js';
 
 export { compareSemanticVersions } from '../semantic-version.js';
 
@@ -34,7 +34,8 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
   const env = updateEnvironment(originalEnv, nodePath, platform);
   const npmCommand = dependencies.npmCommand ??
     (platform === 'win32' ? 'npm.cmd' : 'npm');
-  const confirm = dependencies.confirm ?? confirmInTerminal;
+  const confirm = dependencies.confirm
+    ?? (() => confirmInTerminal('This will modify the global npm installation. Continue? [Y/n] ', { defaultYes: true }));
   const write = dependencies.write ?? writeLine;
   const stopRuntime = dependencies.stopRuntime ?? runLocalRuntimeCommand;
   const runInherited = dependencies.runInherited ?? spawnInherited;
@@ -281,20 +282,4 @@ function spawnCaptured(command, args, { env }) {
     windowsHide: true,
     ...batchFileSpawnOptions(command, args)
   });
-}
-
-async function confirmInTerminal() {
-  const input = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const answer = (await input.question('This will modify the global npm installation. Continue? [Y/n] '))
-      .trim()
-      .toLowerCase();
-    return answer === '' || answer === 'y' || answer === 'yes';
-  } finally {
-    input.close();
-  }
-}
-
-function writeLine(value) {
-  process.stdout.write(`${value}\n`);
 }

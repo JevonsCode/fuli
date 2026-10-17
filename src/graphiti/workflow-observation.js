@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { canonicalJson } from '../publication/canonical-json.js';
+
 const FORBIDDEN_AGENT_FIELDS = [
   'sessionId',
   'idempotencyKey',
@@ -58,21 +60,9 @@ function providerStep(step) {
 
 function workflowObservationId(value) {
   const digest = createHash('sha256')
-    .update(canonicalJson(value))
+    .update(canonicalJson(value, { omitUndefined: true }))
     .digest('hex');
   return `workflow-observation:${digest}`;
-}
-
-function canonicalJson(value) {
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalJson).join(',')}]`;
-  }
-  if (value && typeof value === 'object') {
-    return `{${Object.keys(value).sort().map((key) =>
-      `${JSON.stringify(key)}:${canonicalJson(value[key])}`
-    ).join(',')}}`;
-  }
-  return JSON.stringify(value);
 }
 
 function assertHostValue(value, label) {

@@ -222,3 +222,13 @@ def require_public_eligible_episode(episode: Any) -> None:
         raise ValueError(
             'Only knowledge originally captured as known-known can enter public review'
         )
+
+
+def unique_text_list(value: list[str], label: str, *, maximum: int = 512) -> list[str]:
+    """Trim items; each must be 1..maximum characters and unique ignoring case."""
+    normalized = [item.strip() for item in value]
+    if any(not item or len(item) > maximum for item in normalized):
+        raise ValueError(f'{label} must contain 1 to {maximum} characters')
+    if len({item.casefold() for item in normalized}) != len(normalized):
+        raise ValueError(f'{label} must be unique')
+    return normalized

@@ -16,6 +16,7 @@ import {
 } from '@/features/overview/overview-data'
 import { inboxLocation, useAgentAttention, type AgentAttention } from '@/features/project-agents/attention-store'
 import { currentLocale, t } from '@/i18n'
+import { formatDateTime } from '@/lib/date-time'
 import { personalProjectsPath } from '@/router/paths'
 import { projectDisplayName } from '@/features/projects/project-origin'
 import { useConsoleStore } from '@/stores/console'
@@ -145,12 +146,10 @@ function attentionTaskHref(item: AgentAttention) {
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return t('overview.notReported')
-  const date = new Date(value)
-  if (Number.isNaN(date.valueOf())) return t('overview.notReported')
-  return new Intl.DateTimeFormat(currentLocale(), {
+  const notReported = t('overview.notReported')
+  return formatDateTime(value, currentLocale(), {
     month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-  }).format(date)
+  }, { missing: notReported, invalid: notReported })
 }
 
 function taskStatusLabel(status: string) {

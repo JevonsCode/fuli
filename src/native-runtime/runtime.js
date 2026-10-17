@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { CENSUS_QUERIES, censusFromRows } from '../backup/graph-census.js';
 import {
   chmodSync,
@@ -40,6 +41,8 @@ import {
   managedProviderUrls,
   readRuntimeSettings
 } from '../system/runtime-settings.js';
+import { nonEmptyText } from '../validation/values.js';
+import { isProcessAlive } from '../local-runtime/processes.js';
 
 export const NATIVE_NEO4J_VERSION = '5.26.28';
 export const NATIVE_NEO4J_SHA256 =
@@ -519,16 +522,16 @@ function nativeDependencies(overrides) {
 }
 
 async function resolveJavaHome(env) {
-  const configured = nonEmpty(env.FULI_NATIVE_JAVA_HOME) ?? nonEmpty(env.JAVA_HOME);
+  const configured = nonEmptyText(env.FULI_NATIVE_JAVA_HOME) ?? nonEmptyText(env.JAVA_HOME);
   if (configured && existsSync(join(configured, 'bin', 'java'))) return configured;
   if (process.platform === 'darwin') {
     const apple = await commandResult('/usr/libexec/java_home', ['-v', '21'], { env });
-    const appleHome = nonEmpty(apple.stdout);
+    const appleHome = nonEmptyText(apple.stdout);
     if (apple.status === 0 && appleHome && existsSync(join(appleHome, 'bin', 'java'))) {
       return appleHome;
     }
     const brew = await commandResult('brew', ['--prefix', 'openjdk@21'], { env });
-    const brewHome = nonEmpty(brew.stdout);
+    const brewHome = nonEmptyText(brew.stdout);
     if (brew.status === 0 && brewHome && existsSync(join(brewHome, 'bin', 'java'))) {
       return brewHome;
     }
@@ -650,7 +653,7 @@ function runCommand(command, args, options = {}) {
       windowsHide: true
     }, (error, stdout, stderr) => {
       if (error) {
-        reject(new Error(nonEmpty(stderr) ?? nonEmpty(stdout) ?? error.message));
+        reject(new Error(nonEmptyText(stderr) ?? nonEmptyText(stdout) ?? error.message));
       } else {
         resolve({ stdout, stderr });
       }
@@ -669,10 +672,6 @@ function commandResult(command, args, options = {}) {
       resolve({ status: error ? 1 : 0, stdout, stderr, command });
     });
   });
-}
-
-function nonEmpty(value) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 function nativeInstanceSpecs(paths, settings, values, includeWorkspace) {
@@ -738,7 +737,7 @@ function parseEnv(body) {
 }
 
 function requiredEnv(values, name) {
-  const value = nonEmpty(values[name]);
+  const value = nonEmptyText(values[name]);
   if (!value) throw new Error(`Native graph runtime is missing ${name}. Run setup again.`);
   return value;
 }
@@ -747,9 +746,9 @@ function assertDescriptor(descriptor) {
   if (
     descriptor?.status !== 'ready' ||
     descriptor.mode !== 'native' ||
-    !nonEmpty(descriptor.javaHome) ||
-    !nonEmpty(descriptor.neo4jHome) ||
-    !nonEmpty(descriptor.providerPython)
+    !nonEmptyText(descriptor.javaHome) ||
+    !nonEmptyText(descriptor.neo4jHome) ||
+    !nonEmptyText(descriptor.providerPython)
   ) {
     throw new Error('The native graph runtime is not installed. Run setup in native mode first.');
   }
@@ -769,7 +768,7 @@ async function secureMarker(path) {
 function spawnNativeDatabase(spec) {
   if (existsSync(spec.pidPath)) {
     const pid = Number(readFileSync(spec.pidPath, 'utf8').trim());
-    if (Number.isInteger(pid) && processAlive(pid)) return { pid };
+    if (Number.isInteger(pid) && isProcessAlive(pid)) return { pid };
     unlinkSync(spec.pidPath);
   }
   mkdirSync(dirname(spec.logPath), { recursive: true });
@@ -811,7 +810,7 @@ function spawnNativeProvider(spec) {
 
 async function waitForProvider(url, fetchImpl, wait, entry) {
   for (let attempt = 0; attempt < 120; attempt += 1) {
-    if (entry?.ownership && !processAlive(entry.pid)) throw new Error('The owned native Graph Provider exited during startup');
+    if (entry?.ownership && !isProcessAlive(entry.pid)) throw new Error('The owned native Graph Provider exited during startup');
     const readiness = await providerReadiness(url, fetchImpl);
     if (readiness === 'ready') return;
     if (readiness === 'incompatible') {
@@ -888,21 +887,8 @@ async function stopOwnedProcess(pid) {
     throw error;
   }
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (!processAlive(pid)) return;
+    if (!isProcessAlive(pid)) return;
     await delay(100);
   }
-  if (processAlive(pid)) process.kill(target, 'SIGKILL');
-}
-
-function processAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  if (isProcessAlive(pid)) process.kill(target, 'SIGKILL');
 }

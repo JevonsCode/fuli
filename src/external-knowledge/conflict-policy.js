@@ -1,4 +1,5 @@
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { requiredString } from '../validation/values.js';
 
 const MODES = new Set(['ask_human', 'agent_decide']);
 const EMPTY_POLICIES = Object.freeze({ version: 1, projects: {} });
@@ -50,9 +51,4 @@ export class KnowledgeConflictPolicyStore {
 
 function policyKey(personalProjectId) {
   return `project:${personalProjectId}`;
-}
-
-function requiredString(value, label) {
-  if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} is required`);
-  return value.trim();
 }

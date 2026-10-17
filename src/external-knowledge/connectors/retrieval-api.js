@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { positiveInteger, requiredString } from '../../validation/values.js';
+import { jsonObject, onlineUrl } from './response-values.js';
 
 const DEFAULT_SCORE_THRESHOLD = 0.5;
 const MAX_KNOWLEDGE_BASES = 32;
@@ -172,24 +174,6 @@ function optionalEnvironmentName(value, label) {
   return value;
 }
 
-function jsonObject(value) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? structuredClone(value)
-    : {};
-}
-
-function onlineUrl(value) {
-  if (!value) return null;
-  try {
-    const url = new URL(value);
-    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password
-      ? url.toString()
-      : null;
-  } catch {
-    return null;
-  }
-}
-
 function dateTime(value) {
   return value && !Number.isNaN(Date.parse(value))
     ? new Date(value).toISOString()
@@ -205,18 +189,4 @@ function firstString(...values) {
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return null;
-}
-
-function requiredString(value, label, maximum) {
-  if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} is required`);
-  const normalized = value.trim();
-  if (normalized.length > maximum) throw new TypeError(`${label} is too long`);
-  return normalized;
-}
-
-function positiveInteger(value, label, maximum) {
-  if (!Number.isInteger(value) || value <= 0 || value > maximum) {
-    throw new TypeError(`${label} must be a positive integer no greater than ${maximum}`);
-  }
-  return value;
 }

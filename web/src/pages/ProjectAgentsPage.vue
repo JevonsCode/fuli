@@ -34,6 +34,7 @@ import ProjectAgentDialog from '@/features/projects/ProjectAgentDialog.vue'
 import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
 import { employeeTemplates, employeeTemplateIdForAgent, refreshEmployeeCatalog, type EmployeeRecruitmentResult } from '@/features/employees/catalog'
 import { currentLocale, t } from '@/i18n'
+import { formatDateTime } from '@/lib/date-time'
 import { useConsoleStore } from '@/stores/console'
 import type {
   ConversationSourceApplication,
@@ -674,16 +675,17 @@ function recordSaved(agent: ProjectAgentRecord) {
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return t('projectAgents.notReported')
-  const date = new Date(value)
-  if (Number.isNaN(date.valueOf())) return t('projectAgents.notReported')
-  return new Intl.DateTimeFormat(currentLocale(), { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date)
+  const notReported = t('projectAgents.notReported')
+  return formatDateTime(value, currentLocale(), {
+    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  }, { missing: notReported, invalid: notReported })
 }
 
 function formatDateOnly(value: string | null | undefined) {
-  if (!value) return t('projectAgents.notReported')
-  const date = new Date(`${value}T00:00:00Z`)
-  return Number.isNaN(date.valueOf()) ? value : new Intl.DateTimeFormat(currentLocale(), { month: 'short', day: 'numeric' }).format(date)
+  return formatDateTime(value && `${value}T00:00:00Z`, currentLocale(), { month: 'short', day: 'numeric' }, {
+    missing: t('projectAgents.notReported'),
+    invalid: value ?? undefined,
+  })
 }
 
 function strategyLabel(strategy: ProjectAgentModelStrategy | null | undefined) {

@@ -6,6 +6,7 @@ from pydantic import AliasChoices, Field, field_validator, model_serializer, mod
 from .model_validation import (
     normalize_source_session_url,
     reject_credentials,
+    unique_text_list,
     validate_emoji_sequence,
 )
 from .models import SourceApplication, StrictModel
@@ -97,15 +98,6 @@ _WORKER_EVIDENCE_ALIASES = {
 }
 
 
-def _unique_text(value: list[str], label: str) -> list[str]:
-    normalized = [item.strip() for item in value]
-    if any(not item or len(item) > 512 for item in normalized):
-        raise ValueError(f'{label} must contain 1 to 512 characters')
-    if len({item.casefold() for item in normalized}) != len(normalized):
-        raise ValueError(f'{label} must be unique')
-    return normalized
-
-
 def _normalize_worker_evidence_aliases(value):
     if not isinstance(value, dict):
         return value
@@ -129,7 +121,7 @@ class ProjectAgentParallelPlan(StrictModel):
     @field_validator('workstream_boundaries')
     @classmethod
     def validate_boundaries(cls, value: list[str]) -> list[str]:
-        return _unique_text(value, 'parallel workstream boundaries')
+        return unique_text_list(value, 'parallel workstream boundaries')
 
     @model_validator(mode='after')
     def validate_parallel_plan(self):
@@ -184,7 +176,7 @@ class ProjectAgentTaskSubmit(StrictModel):
     @field_validator('required_capabilities')
     @classmethod
     def validate_capabilities(cls, value: list[str]) -> list[str]:
-        return _unique_text(value, 'required capabilities')
+        return unique_text_list(value, 'required capabilities')
 
     @field_validator('executor_capability_hints')
     @classmethod
@@ -192,12 +184,12 @@ class ProjectAgentTaskSubmit(StrictModel):
         cls,
         value: list[str],
     ) -> list[str]:
-        return _unique_text(value, 'executor capability hints')
+        return unique_text_list(value, 'executor capability hints')
 
     @field_validator('collaborator_agent_ids')
     @classmethod
     def validate_collaborators(cls, value: list[str]) -> list[str]:
-        return _unique_text(value, 'collaborator Agent IDs')
+        return unique_text_list(value, 'collaborator Agent IDs')
 
     @model_validator(mode='after')
     def validate_staffing(self):
@@ -354,7 +346,7 @@ class ProjectAgentTaskExecutionSummary(StrictModel):
     @field_validator('tools_used')
     @classmethod
     def validate_tools_used(cls, value):
-        return _unique_text(value, 'tools used') if value is not None else None
+        return unique_text_list(value, 'tools used') if value is not None else None
 
 
 class ProjectAgentPlanStep(StrictModel):
@@ -426,7 +418,7 @@ class ProjectAgentTaskEventRecord(StrictModel):
     @field_validator('tools_used')
     @classmethod
     def validate_tools_used(cls, value):
-        return _unique_text(value, 'tools used') if value is not None else None
+        return unique_text_list(value, 'tools used') if value is not None else None
 
 
 class ProjectAgentRoutingDecisionRecord(StrictModel):
@@ -618,7 +610,7 @@ class ProjectAgentTaskActivityCreate(StrictModel):
     @field_validator('tools_used')
     @classmethod
     def validate_tools_used(cls, value):
-        return _unique_text(value, 'tools used') if value is not None else None
+        return unique_text_list(value, 'tools used') if value is not None else None
 
     @model_validator(mode='after')
     def validate_actual_model(self):
@@ -767,7 +759,7 @@ class ProjectAgentActivityTask(StrictModel):
     @field_validator('tools_used')
     @classmethod
     def validate_tools_used(cls, value):
-        return _unique_text(value, 'tools used') if value is not None else None
+        return unique_text_list(value, 'tools used') if value is not None else None
 
 
 class ProjectAgentActivityDay(StrictModel):
