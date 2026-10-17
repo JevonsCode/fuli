@@ -138,14 +138,31 @@ export async function buildWindowsTray({ assetBundle, output, dataDir, compiler 
   }
 }
 
+const PROJECT_VERSION = /^version\s*=\s*"([^"]+)"\s*$/m;
+const withoutProjectVersion = bytes => bytes.toString('utf8').replace(PROJECT_VERSION, '');
+
+async function stampProviderVersion(site, project) {
+  const version = PROJECT_VERSION.exec(project.toString('utf8'))?.[1];
+  if (!version) throw new Error('The current Provider pyproject has no project version.');
+  await writeFile(join(site, 'pyproject.toml'), project);
+  for (const entry of await readdir(site)) {
+    if (!/^fuli_graph_provider-.+\.dist-info$/i.test(entry)) continue;
+    const metadata = join(site, entry, 'METADATA');
+    if (!existsSync(metadata)) continue;
+    await writeFile(metadata, (await readFile(metadata, 'utf8')).replace(/^Version: .*$/m, 'Version: ' + version));
+  }
+}
+
 export async function refreshEmbeddedProvider(output, packageRoot = PACKAGE_ROOT) {
   const site = join(output, 'runtime', 'python', 'Lib', 'site-packages');
   const source = join(packageRoot, 'graph-provider', 'fuli_graph');
   const target = join(site, 'fuli_graph');
   const project = await readFile(join(packageRoot, 'graph-provider', 'pyproject.toml'));
-  // The vendored dependencies and dist-info metadata remain reusable only when
-  // their package/dependency declaration is exactly the current one.
-  assert.deepEqual(await readFile(join(site, 'pyproject.toml')), project,
+  // The vendored dependencies stay reusable only when their declaration is the
+  // current one; a release changes only the Provider's own version, which is
+  // stamped into its metadata below so health reports the real version.
+  const embedded = await readFile(join(site, 'pyproject.toml'));
+  assert.equal(withoutProjectVersion(embedded), withoutProjectVersion(project),
     'Provider pyproject changed; rebuild portable Python dependencies before building the tray.');
   const sources = [];
   async function collect(directory, prefix = '') {
@@ -164,6 +181,7 @@ export async function refreshEmbeddedProvider(output, packageRoot = PACKAGE_ROOT
     await mkdir(dirname(join(target, name)), { recursive: true });
     await writeFile(join(target, name), bytes);
   }
+  if (!embedded.equals(project)) await stampProviderVersion(site, project);
   return { files: sources.length, pyprojectSha256: sha256(project),
     sha256Tree: sha256(JSON.stringify(sources.map(([name, bytes]) => [name, sha256(bytes)]))) };
 }
