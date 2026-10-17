@@ -324,6 +324,43 @@ describe('Agent directory integration', () => {
     expect(router.currentRoute.value.query).toEqual({ project: ['project-a', 'project-b'], status: 'inactive' })
   })
 
+  it('groups Agents by project and reads a lead only for an opened project', async () => {
+    const store = useConsoleStore()
+    store.state!.personalProjects = ['project-a', 'project-b'].map((id) => ({
+      project_id: id, personal_space_id: 'space-a', profile: { name: `Synthetic ${id}` },
+    }))
+    getJson.mockImplementation(async (url: string) => {
+      if (url === '/api/project-agents?personalSpaceId=space-a') {
+        return [
+          { ...roster[0], personalProjectId: 'project-b', workStatus: 'running', currentTaskId: 'task-a' },
+          { ...roster[1], personalProjectId: 'project-a' },
+        ]
+      }
+      if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') return []
+      if (url === '/api/agent-pins?personalSpaceId=space-a') return { revision: 1, agentIds: [] }
+      if (url === '/api/project-team?personalSpaceId=space-a&personalProjectId=project-b') {
+        return { personalProjectId: 'project-b', status: 'ready', lead: { agentId: 'agent-0', name: 'Aster', employeeNumber: '000001', occupationEmoji: null, responsibility: '', peerRole: false }, unavailableLead: null, members: [], collaborators: [], peers: [], unavailableMemberIds: [] }
+      }
+      throw new Error(`Unexpected detail request: ${url}`)
+    })
+    const { router, wrapper } = await setup()
+    await wrapper.findAll('[data-directory-view] button')[1]!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ view: 'projects' })
+    const groups = () => wrapper.findAll('[data-directory-project]')
+    expect(groups().map((group) => group.attributes('data-directory-project'))).toEqual(['project-a', 'project-b'])
+    expect(groups()[1]!.text()).toContain(t('agentRedesign.projectView.running', { count: 1 }))
+    expect(wrapper.findAll('.agent-card')).toHaveLength(0)
+    expect(getJson.mock.calls.some(([url]) => String(url).startsWith('/api/project-team'))).toBe(false)
+
+    await groups()[1]!.get('.directory-project-toggle').trigger('click')
+    await flushPromises()
+    expect(groups()[1]!.findAll('.agent-directory-name a').map(link => link.text())).toEqual(['Aster'])
+    expect(groups()[1]!.get('[data-project-lead]').text()).toContain('Aster')
+    expect(getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/project-team'))).toHaveLength(1)
+    expect(groups()[0]!.find('.agent-card').exists()).toBe(false)
+  })
+
   it('updates filters when query navigation reuses the directory', async () => {
     const { router, wrapper } = await setup('/project-agents?q=aster')
     await router.push('/project-agents?q=birch&status=active&project=project-a')
