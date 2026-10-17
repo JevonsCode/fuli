@@ -194,7 +194,7 @@ function togglePin() {
       </span>
     </p>
     <p v-if="statusDetail" class="agent-card-status-detail" :class="workStatusClass" :title="statusDetail" data-status-detail>{{ statusDetail }}</p>
-    <p class="agent-card-responsibility" :title="t('agentRedesign.workbench.responsibility')">{{ agent.profile.responsibility }}</p>
+    <p class="agent-card-responsibility" data-agent-summary :title="t('agentRedesign.workbench.responsibility')">{{ agent.profile.responsibility }}</p>
     <div v-if="capabilities.length" class="agent-inline-skills">
       <span v-for="skill in capabilities" :key="skill">{{ skill }}</span>
     </div>
