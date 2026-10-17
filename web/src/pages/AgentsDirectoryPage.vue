@@ -1,7 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
-import { RouterLink, useRoute, useRouter } from "vue-router";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { onBeforeRouteLeave, RouterLink, useRoute, useRouter } from "vue-router";
+import BackToTop from "@/components/BackToTop.vue";
 import GrowthLoading from "@/components/GrowthLoading.vue";
+import { useScrollRestoration } from "@/composables/useScrollRestoration";
+import { createDebouncedAction } from "@/lib/debounce";
+import {
+  directoryFilterQuery,
+  readDirectoryFilters,
+  sameDirectoryFilters,
+  type DirectoryStatus,
+} from "@/features/agent-profile/directory-query";
 import AgentCard from "@/features/agent-profile/AgentCard.vue";
 import {
   agentDisplayName,
@@ -40,12 +49,12 @@ const {
   state: workState,
   load: loadWorkSummary,
 } = useAgentWorkSummary(space);
-const search = ref(typeof route.query.q === "string" ? route.query.q : "");
-const status = ref("all");
+const initialFilters = readDirectoryFilters(route.query);
+const search = ref(initialFilters.search);
+const status = ref<string>(initialFilters.status);
 // No selected project means every project.
-const selectedProjects = ref<string[]>(
-  typeof route.query.project === "string" ? [route.query.project] : [],
-);
+const selectedProjects = ref<string[]>(initialFilters.projects);
+const scroller = ref<HTMLElement | null>(null);
 const recruiting = ref(false);
 const hireable = computed(() => employeeTemplates.value.some((entry) => !entry.fixed));
 const managesAllProjects = (agentId: string) => employeeTemplates.value
@@ -126,6 +135,21 @@ onMounted(() => {
   if (store.runtimeStatus === "idle") void store.refresh();
 });
 
+// Keep filters in the URL so Back and shared links return to the same view.
+const currentFilters = () => ({
+  search: search.value,
+  projects: selectedProjects.value,
+  status: status.value as DirectoryStatus,
+});
+const syncFilterQuery = createDebouncedAction(() => {
+  if (sameDirectoryFilters(readDirectoryFilters(route.query), currentFilters())) return;
+  void router.replace({ query: directoryFilterQuery(route.query, currentFilters()) });
+}, 250);
+watch([search, status, selectedProjects], () => syncFilterQuery.schedule(), { deep: true });
+onBeforeRouteLeave(() => syncFilterQuery.cancel());
+onBeforeUnmount(() => syncFilterQuery.cancel());
+useScrollRestoration(scroller, "agents-directory", computed(() => visible.value.length > 0));
+
 watch(
   [space, () => route.query.agent],
   ([spaceId, agent]) => {
@@ -167,6 +191,7 @@ async function retryDirectory() {
 
 <template>
   <section
+    ref="scroller"
     class="view agents-directory"
     :aria-label="t('agentProfiles.title')"
   >
@@ -285,6 +310,8 @@ async function retryDirectory() {
         />
       </li>
     </ul>
+
+    <BackToTop :scroller="scroller" />
 
     <EmployeeRecruitDialog
       :open="recruiting"
