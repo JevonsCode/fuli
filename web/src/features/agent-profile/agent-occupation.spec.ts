@@ -7,6 +7,13 @@ describe('occupationLabels', () => {
       .toEqual(['开发', '测试'])
   })
 
+  it('translates lead and assistant roles alongside specialist occupations', () => {
+    expect(occupationLabels({ role: 'lead', tags: ['management'], updatedAt: '2026-10-18T00:00:00Z' }))
+      .toEqual(['组长', '管理'])
+    expect(occupationLabels({ role: 'assistant', tags: [], updatedAt: '2026-10-18T00:00:00Z' }))
+      .toEqual(['助理'])
+  })
+
   it('shows nothing for an Agent nobody has classified', () => {
     expect(occupationLabels(null)).toEqual([])
     expect(occupationLabels(undefined)).toEqual([])

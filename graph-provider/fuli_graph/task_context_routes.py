@@ -4,9 +4,11 @@ from fastapi import Query
 
 from .models import SourceApplication
 from .task_context_models import TaskContextBegin, TaskContextCheckpoint, TaskContextAdoptAgent, TaskContextCoordinationTask, TaskPreferenceRead
+from .project_memory_usage_routes import register_project_memory_usage_routes
 
 
 def register_task_context_routes(application, store, Actor):
+    register_project_memory_usage_routes(application, store, Actor)
     @application.get('/v1/task-context-sessions/recent')
     async def recent_sessions(actor: Actor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],

@@ -25,6 +25,7 @@ export interface ProjectProfile {
   name: string
   purpose?: string
   scope?: string
+  origin?: string
   technical_summary?: string
   lifecycle?: string
   sources?: Array<Record<string, unknown>>
@@ -40,6 +41,7 @@ export interface ProjectProfile {
 export interface PersonalProject {
   project_id: string
   personal_space_id: string
+  status?: 'active' | 'inactive' | 'archived' | string
   scope_type?: 'registered' | 'temporary'
   publication_key?: string | null
   profile: ProjectProfile
@@ -498,6 +500,7 @@ export interface ProjectAgentLearningEvidence {
 }
 
 export type AgentOccupationKey =
+  | 'lead' | 'assistant'
   | 'product' | 'engineering' | 'design' | 'operations' | 'testing'
   | 'research' | 'data' | 'writing' | 'management'
 
