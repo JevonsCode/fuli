@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
+import { canonicalJson as sharedCanonicalJson } from '../publication/canonical-json.js';
 
 export const PEER_PROTOCOL = 'peer/1';
 export const PEER_LIMITS = Object.freeze({
@@ -65,12 +66,7 @@ export function shortFingerprint(fingerprint) {
 
 // Signatures cover a canonical form, so property order never changes meaning.
 export function canonicalJson(value) {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.keys(value).filter((key) => value[key] !== undefined).sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
-  }
-  return JSON.stringify(value ?? null);
+  return sharedCanonicalJson(value, { omitUndefined: true });
 }
 
 export function sha256Hex(value) {
