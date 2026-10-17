@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AboutSectionHeading from './AboutSectionHeading.vue'
 import { computed } from 'vue'
 
 import fuliLogoUrl from '../../../assets/brand/fuli-logo.png'
@@ -65,13 +66,7 @@ const credits = computed(() => [
 
 <template>
   <section class="open-source-credits" aria-labelledby="credits-title">
-    <header class="credits-heading">
-      <span class="credits-index" aria-hidden="true">03</span>
-      <div>
-        <h2 id="credits-title">{{ t('about.credits.title') }}</h2>
-        <p>{{ t('about.credits.description') }}</p>
-      </div>
-    </header>
+    <AboutSectionHeading title-id="credits-title" :title="t('about.credits.title')" :description="t('about.credits.description')" />
 
     <ul class="credit-list">
       <li v-for="credit in credits" :key="credit.name" class="credit-item">
@@ -117,39 +112,6 @@ const credits = computed(() => [
 <style scoped>
 .open-source-credits {
   min-width: 0;
-}
-
-.credits-heading {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  align-items: start;
-  gap: 16px;
-  padding-bottom: 30px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.credits-index {
-  padding-top: 6px;
-  color: var(--about-gold);
-  font-size: 12px;
-  font-weight: 650;
-  letter-spacing: .08em;
-}
-
-.credits-heading h2 {
-  margin: 0;
-  color: var(--color-ink);
-  font-size: clamp(22px, 3vw, 30px);
-  font-weight: 650;
-  letter-spacing: -.03em;
-  line-height: 1.2;
-}
-
-.credits-heading p {
-  margin-top: 10px;
-  color: var(--color-muted);
-  font-size: 14px;
-  line-height: 1.65;
 }
 
 .credit-list {
@@ -211,7 +173,7 @@ const credits = computed(() => [
 
 .credit-arrow {
   flex: 0 0 auto;
-  color: var(--about-gold);
+  color: var(--color-accent);
   font-size: 16px;
   font-weight: 400;
 }
@@ -239,7 +201,7 @@ const credits = computed(() => [
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  background: var(--about-logo-surface);
+  background: var(--color-surface-subtle);
 }
 
 .finale-logo-plate img {

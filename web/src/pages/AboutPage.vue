@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AboutSectionHeading from '@/features/about/AboutSectionHeading.vue'
 import LabelGuide from '@/features/about/LabelGuide.vue'
 import OpenSourceCredits from '@/features/about/OpenSourceCredits.vue'
 import ProductPrinciples from '@/features/about/ProductPrinciples.vue'
@@ -24,13 +25,7 @@ import fuliLogoUrl from '../../assets/brand/fuli-logo.png'
       <ProductPrinciples />
 
       <section class="about-labels-section" aria-labelledby="about-labels-title">
-        <header class="about-section-heading">
-          <span class="about-section-index" aria-hidden="true">02</span>
-          <div>
-            <h2 id="about-labels-title">{{ t('about.labelsIntro.title') }}</h2>
-            <p>{{ t('about.labelsIntro.description') }}</p>
-          </div>
-        </header>
+        <AboutSectionHeading title-id="about-labels-title" :title="t('about.labelsIntro.title')" :description="t('about.labelsIntro.description')" />
         <LabelGuide />
       </section>
 
@@ -41,33 +36,11 @@ import fuliLogoUrl from '../../assets/brand/fuli-logo.png'
 
 <style scoped>
 .about-view {
-  --color-bg: #111923;
-  --color-surface: #182330;
-  --color-surface-subtle: #202d3d;
-  --color-surface-hover: #25364a;
-  --color-ink: #f3f6fb;
-  --color-muted: #a9b6c8;
-  --color-border: #3d4b5e;
-  --color-border-strong: #61728a;
-  --color-control-border: #778ba7;
-  --color-accent: #91b8ff;
-  --color-accent-hover: #b8d1ff;
-  --color-accent-soft: #203d67;
-  --color-success: #7ed5a5;
-  --color-success-soft: #1c3b2d;
-  --color-warning: #f2c476;
-  --color-warning-soft: #41331e;
-  --color-danger: #f2aaa5;
-  --color-danger-soft: #42282c;
-  --color-on-accent: #11203a;
-  --about-logo-surface: #f7f3e8;
-  --about-gold: #e2bd72;
   min-height: 0;
   flex: 1 1 auto;
   padding: clamp(40px, 6vw, 72px) 28px 96px;
   color: var(--color-ink);
   background: var(--color-bg);
-  color-scheme: dark;
 }
 
 .about-content {
@@ -98,7 +71,7 @@ import fuliLogoUrl from '../../assets/brand/fuli-logo.png'
   width: 68px;
   height: 68px;
   border-radius: 50%;
-  background: var(--about-logo-surface);
+  background: var(--color-surface-subtle);
 }
 
 .about-logo-plate img {
@@ -108,7 +81,7 @@ import fuliLogoUrl from '../../assets/brand/fuli-logo.png'
 }
 
 .about-brand-name {
-  color: var(--about-gold);
+  color: var(--color-accent);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: .18em;
@@ -137,43 +110,10 @@ import fuliLogoUrl from '../../assets/brand/fuli-logo.png'
   gap: 32px;
 }
 
-.about-section-heading {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  align-items: start;
-  gap: 16px;
-}
-
-.about-section-index {
-  padding-top: 6px;
-  color: var(--about-gold);
-  font-size: 12px;
-  font-weight: 650;
-  letter-spacing: .08em;
-}
-
-.about-section-heading h2 {
-  margin: 0;
-  color: var(--color-ink);
-  font-size: clamp(22px, 3vw, 30px);
-  font-weight: 650;
-  letter-spacing: -.03em;
-  line-height: 1.2;
-}
-
-.about-section-heading p {
-  max-width: 680px;
-  margin-top: 10px;
-  color: var(--color-muted);
-  font-size: 14px;
-  line-height: 1.65;
-}
-
 @media (max-width: 680px) {
   .about-view { padding: 32px 20px 64px; }
   .about-content { gap: 56px; }
   .about-opening { padding-bottom: 44px; }
-  .about-section-heading { gap: 12px; }
   .about-opening-copy { font-size: 14px; }
 }
 </style>

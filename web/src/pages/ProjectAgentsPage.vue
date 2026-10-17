@@ -11,24 +11,21 @@ import ExecutorRoutingDialog from '@/features/project-agents/ExecutorRoutingDial
 import ProjectAgentAutomationPolicyPanel from '@/features/project-agents/ProjectAgentAutomationPolicyPanel.vue'
 import ProjectAgentDetailState from '@/features/project-agents/ProjectAgentDetailState.vue'
 import ProjectAgentFirstTask from '@/features/project-agents/ProjectAgentFirstTask.vue'
-import ProjectAgentTaskDiagnostics from '@/features/project-agents/ProjectAgentTaskDiagnostics.vue'
-import TaskExecutionPlan from '@/features/project-agents/TaskExecutionPlan.vue'
+import ProjectAgentTaskCard from '@/features/project-agents/ProjectAgentTaskCard.vue'
+import { formatDate, policyLabel, sourceLabel, strategyLabel, taskStatusLabel } from '@/features/project-agents/task-labels'
 import EmployeeWorkHistory from '@/features/project-agents/EmployeeWorkHistory.vue'
 import AgentConversations from '@/features/project-agents/AgentConversations.vue'
 import { isAgentTaskDataComplete, taskHasAgent } from '@/features/agent-profile/agent-work-summary'
 import {
   agentValues,
   arrayOf,
-  eventExecution,
   normalizeAssignment,
   normalizePolicy,
   normalizeStrategy,
   normalizeTask,
-  parallelPlanHasEvidence,
   stringOf,
   unknownRecord,
   valueOf,
-  workerEventEvidence,
 } from '@/features/project-agents/task-evidence'
 import ProjectAgentDialog from '@/features/projects/ProjectAgentDialog.vue'
 import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
@@ -40,22 +37,17 @@ import type {
   ConversationSourceApplication,
   ProjectAgentActivityDay,
   ProjectAgentActivityResult,
-  ProjectAgentActualExecution,
   ProjectAgentAssignmentRecord,
   ProjectAgentClientEvidence,
   ProjectAgentExecutorRef,
   ProjectAgentExecutorPolicy,
   ProjectAgentLearningEvidence,
-  ProjectAgentModelStrategy,
   ProjectAgentRecruitmentRecord,
   ProjectAgentRecord,
   ProjectAgentRoutingRule,
   ProjectAgentStatus,
-  ProjectAgentTaskEvent,
-  ProjectAgentTaskExecutionSummary,
   ProjectAgentTaskRecord,
   ProjectAgentTaskStatus,
-  ProjectAgentTokenUsage,
   ProjectAgentType,
   ProjectAgentWorkStatus,
 } from '@/types'
@@ -79,11 +71,6 @@ const projectFilterOverridden = ref(false)
 const statusFilter = ref<StatusFilter>('all')
 const search = ref('')
 const selectedAgentKey = ref('')
-const expandedTasks = ref(new Set<string>())
-function toggleTaskDetails(taskId: string, event: Event) {
-  if ((event.target as HTMLDetailsElement).open) expandedTasks.value.add(taskId)
-  else expandedTasks.value.delete(taskId)
-}
 watch(() => route.query.agent, id => { if (typeof id === 'string') selectedAgentKey.value = id }, { immediate: true })
 const dialogOpen = ref(false)
 const recruitDialogOpen = ref(false)
@@ -615,6 +602,13 @@ function responsibleProjectsFor(agent: ProjectAgentRecord) {
   }))
 }
 
+// Several fallback conversation projects share one display name; repeating it adds noise without information.
+function projectChipGroups(agent: ProjectAgentRecord) {
+  const groups = new Map<string, number>()
+  for (const project of responsibleProjectsFor(agent)) groups.set(project.name, (groups.get(project.name) ?? 0) + 1)
+  return [...groups].map(([name, count]) => ({ name, count }))
+}
+
 function legacyAssignment(agent: ProjectAgentRecord): ProjectAgentAssignmentRecord {
   return {
     assignmentId: `legacy:${agent.agentId}:${agent.personalProjectId}`,
@@ -674,12 +668,6 @@ function recordSaved(agent: ProjectAgentRecord) {
   store.notify(t('projectAgents.saved'))
 }
 
-function formatDate(value: string | null | undefined) {
-  const notReported = t('projectAgents.notReported')
-  return formatDateTime(value, currentLocale(), {
-    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-  }, { missing: notReported, invalid: notReported })
-}
 
 function formatDateOnly(value: string | null | undefined) {
   return formatDateTime(value && `${value}T00:00:00Z`, currentLocale(), { month: 'short', day: 'numeric' }, {
@@ -688,14 +676,6 @@ function formatDateOnly(value: string | null | undefined) {
   })
 }
 
-function strategyLabel(strategy: ProjectAgentModelStrategy | null | undefined) {
-  const mode = strategy?.mode ?? 'adaptive'
-  return strategy?.reasoningEffort && strategy.reasoningEffort !== 'default'
-    ? `${mode} · ${strategy.reasoningEffort}` : mode
-}
-function policyLabel(policy: ProjectAgentExecutorPolicy | null | undefined) {
-  return policy?.mode ?? 'flexible'
-}
 function policyIsLocked(policy: ProjectAgentExecutorPolicy | null | undefined) {
   return policy?.mode === 'locked'
 }
@@ -706,80 +686,10 @@ function policyAllowList(policy: ProjectAgentExecutorPolicy | null | undefined):
   return (ids ?? []).map((executorId) => ({ executorId }) satisfies ProjectAgentExecutorRef)
 }
 
-function actualExecution(task: ProjectAgentTaskRecord): ProjectAgentActualExecution | null {
-  if (task.actualExecution) return task.actualExecution
-  const event = [...(task.events ?? [])].reverse().find((item) => item.actualExecution)
-  return event ? eventExecution(event) : null
-}
-function workerEventLabel(event: ProjectAgentTaskEvent) {
-  if (event.workerLabel && event.workerId && event.workerLabel !== event.workerId) {
-    return `${event.workerLabel} · ${event.workerId}`
-  }
-  return event.workerLabel || event.workerId || t('projectAgents.notReported')
-}
-function workerEventOccupationEmoji(event: ProjectAgentTaskEvent) {
-  return event.workerOccupationEmoji || ''
-}
-function workerEventStatusLabel(event: ProjectAgentTaskEvent) {
-  return executionSummaryStatusLabel(event.workerStatus || event.status)
-}
-function executionSummaryWorkerLabel(summary: ProjectAgentTaskExecutionSummary) {
-  return summary.workerLabel || summary.agentName || summary.workerId || summary.agentId || t('projectAgents.notReported')
-}
-function executionSummaryOccupationEmoji(summary: ProjectAgentTaskExecutionSummary) {
-  return summary.workerOccupationEmoji || summary.occupationEmoji || ''
-}
-function executionSummaryStatusLabel(status: string | null | undefined) {
-  return status ? taskStatusLabel(status) : t('projectAgents.notReported')
-}
-function participantRoleLabel(role: string | null | undefined) {
-  if (!role) return t('projectAgents.notReported')
-  const key = `projectAgents.participantRoles.${role}`
-  const translated = t(key)
-  return translated === key ? role : translated
-}
-function tokenUsageSourceLabel(source: ProjectAgentTokenUsage['source']) {
-  return t(`projectAgents.tokenSources.${source}`)
-}
-function tokenUsageLabel(usage: ProjectAgentTokenUsage | null | undefined) {
-  if (!usage || !['executor', 'host', 'dingdong'].includes(usage.source)
-    || !Number.isSafeInteger(usage.totalTokens) || usage.totalTokens < 0) return '-'
-  return `${new Intl.NumberFormat(currentLocale()).format(usage.totalTokens)} Token · ${tokenUsageSourceLabel(usage.source)}`
-}
-function executionSummarySessionHref(summary: ProjectAgentTaskExecutionSummary) {
-  return sessionHref(summary.workerRuntime
-    ? summary.workerRuntime.sessionUrl
-    : summary.sourceSessionUrl)
-}
-function sessionHref(raw: string | null | undefined) {
-  const value = raw?.trim()
-  if (!value) return null
-  try {
-    const url = new URL(value)
-    if (url.username || url.password || url.search || url.hash) return null
-    if (url.protocol === 'https:') return value
-    if (url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) return value
-    if (url.protocol === 'codex:' && url.hostname === 'threads' && url.pathname !== '/') return value
-  } catch {
-    return null
-  }
-  return null
-}
-function executionSummarySessionId(summary: ProjectAgentTaskExecutionSummary) {
-  return summary.workerRuntime
-    ? summary.workerRuntime.sessionId
-    : summary.sourceSessionId
-}
 function currentWork(agent: ProjectAgentRecord) {
   return (agent.tasks ?? []).find((task) => nonTerminalTaskStatuses.has(task.status)) ?? null
 }
-function taskStatusLabel(status: ProjectAgentTaskStatus | ProjectAgentWorkStatus | string) {
-  const key = `projectAgents.taskStatus.${status}`
-  const translated = t(key)
-  return translated === key ? status : translated
-}
 function agentTypeLabel(type: ProjectAgentType | undefined) { return t(`projectAgents.agentType.${type ?? 'durable'}`) }
-function sourceLabel(source: ConversationSourceApplication | null | undefined) { return source ? t(`projectAgents.clients.${source}`) : t('projectAgents.notReported') }
 function clientNames(agent: ProjectAgentRecord) {
   return unique([
     ...(agent.profile.allowedClients ?? []),
@@ -1048,7 +958,7 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
     <header class="project-agents-header">
       <div>
         <h2>{{ t('projectAgents.title') }}</h2>
-        <p v-if="!pageLoading && !pageError" class="project-agents-header-meta">{{ t('projectAgents.stats.total', { count: agents.length }) }} · {{ t('projectAgents.stats.assignments', { count: assignmentCount }) }} · {{ t('projectAgents.stats.projects', { count: representedProjectCount }) }}</p>
+        <p v-if="!pageLoading && !pageError" class="project-agents-header-meta" aria-live="polite"><strong>{{ t('projectAgents.stats.active', { count: activeCount }) }}</strong> · {{ t('projectAgents.stats.total', { count: agents.length }) }} · {{ t('projectAgents.stats.assignments', { count: assignmentCount }) }} · {{ t('projectAgents.stats.projects', { count: representedProjectCount }) }}<span class="project-agents-header-note">{{ t('projectAgents.stats.noOnlineClaim') }}</span></p>
       </div>
       <div class="project-agent-header-actions">
         <button class="quiet-button" type="button" :disabled="!activeSpaceId" @click="openCreate">{{ t('projectAgents.add') }}</button>
@@ -1056,7 +966,6 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
       </div>
     </header>
     <EmployeeRecruitDialog :open="recruitDialogOpen" :personal-space-id="activeSpaceId" :projects="projects" :template-id="recruitTemplateId" :default-project-ids="projectFilter ?? []" @close="recruitDialogOpen = false" @recruited="employeeRecruited" />
-    <div v-if="!pageLoading && !pageError" class="project-agents-summary" aria-live="polite"><span>{{ t('projectAgents.stats.active', { count: activeCount }) }}</span><span>{{ t('projectAgents.stats.noOnlineClaim') }}</span></div>
     <ProjectAgentFirstTask v-if="!pageLoading && !pageError && !projects.length" :personal-space-id="activeSpaceId" />
 
     <div class="project-agents-toolbar">
@@ -1086,7 +995,7 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
         <div v-for="agent in filteredAgents" :key="agent.agentId" class="project-agent-row-shell">
         <button type="button" class="project-agent-row" :class="{ selected: selectedAgentKey === agent.agentId }" :aria-current="selectedAgentKey === agent.agentId ? 'true' : undefined" @click="selectedAgentKey = agent.agentId">
           <span class="project-agent-row-heading"><span v-if="agent.profile.occupationEmoji" class="project-agent-occupation-emoji" role="img" :aria-label="`${t('projectAgents.fields.occupationEmoji')}: ${agent.profile.occupationEmoji}`">{{ agent.profile.occupationEmoji }}</span><strong>{{ agent.profile.displayName || agent.profile.name }}</strong><i class="ui-badge project-agent-kind">{{ agentTypeLabel(agent.profile.agentType) }}</i><i class="ui-badge" :class="`is-${agent.profile.status}`">{{ t(`projectAgents.status.${agent.profile.status}`) }}</i></span>
-          <span class="project-agent-row-projects"><b v-for="project in responsibleProjectsFor(agent).slice(0, 3)" :key="project.id">{{ project.name }}</b><b v-if="responsibleProjectsFor(agent).length > 3">+{{ responsibleProjectsFor(agent).length - 3 }}</b><em v-if="!responsibleProjectsFor(agent).length">{{ t('employees.noAssignedProjects') }}</em></span>
+          <span class="project-agent-row-projects"><b v-for="group in projectChipGroups(agent).slice(0, 3)" :key="group.name">{{ group.name }}<template v-if="group.count > 1"> ×{{ group.count }}</template></b><b v-if="projectChipGroups(agent).length > 3">+{{ projectChipGroups(agent).length - 3 }}</b><em v-if="!projectChipGroups(agent).length">{{ t('employees.noAssignedProjects') }}</em></span>
           <span class="project-agent-row-responsibility">{{ agent.profile.responsibility || t('projectAgents.notReported') }}</span>
           <span class="project-agent-row-work"><template v-if="currentWork(agent)"><i :class="['project-agent-work-dot', { 'is-live': currentWork(agent)!.status === 'running' }]" aria-hidden="true" />{{ taskStatusLabel(currentWork(agent)!.status) }} · {{ currentWork(agent)!.title }}</template><template v-else-if="agent.workStatus === 'blocked' || agent.workStatus === 'queued'">{{ taskStatusLabel(agent.workStatus) }} · {{ t('projectAgents.detail.stateReported') }}</template><template v-else>{{ t('projectAgents.detail.noRun') }}</template></span>
         </button>
@@ -1119,62 +1028,7 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
         <div class="project-agent-detail-source" data-detail-section="tasks">
           <ProjectAgentDetailState v-bind="detailState('tasks')" :label="detailLoadingLabel('tasks')" @retry="refreshDetails">
             <p v-if="taskListPartial[selectedAgent.agentId]" class="project-agent-muted" data-task-partial>{{ t('agentProfiles.partial') }}</p>
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.tasks') }}</h4><span>{{ selectedAgent.tasks?.length ?? 0 }}</span></div><div v-if="selectedAgent.tasks?.length" class="project-agent-task-list"><article v-for="task in selectedAgent.tasks" :id="`task-${task.taskId}`" :key="task.taskId" class="ui-card project-agent-task-card" :class="{ 'is-linked': task.taskId === route.query.task }"><header><div><strong>{{ task.title }}</strong><small>{{ projectName(task.personalProjectId) }}</small></div><i class="ui-badge" :class="`is-${task.status}`">{{ taskStatusLabel(task.status) }}</i></header><p v-if="task.resultSummary || task.failureReason">{{ task.resultSummary || task.failureReason }}</p><small>{{ t('projectAgents.fields.collaborators') }} · {{ task.participants.length }}</small><div v-if="task.participants.length" class="project-agent-inline-list"><span v-for="participant in task.participants" :key="`${task.taskId}:${participant.agentId}`">{{ agents.find(item => item.agentId === participant.agentId)?.profile.displayName || agents.find(item => item.agentId === participant.agentId)?.profile.name || participant.agentId }} · {{ participantRoleLabel(participant.role) }}</span></div><ProjectAgentTaskDiagnostics :task="task" :project-name="projectName(task.personalProjectId)" /><details class="ui-disclosure project-agent-disclosure" :open="task.taskId === route.query.task" @toggle="toggleTaskDetails(task.taskId, $event)" data-task-details><summary>{{ t('projectAgents.taskDetails') }}</summary>
-<TaskExecutionPlan :task="task" :personal-space-id="activeSpaceId" :active="expandedTasks.has(task.taskId)" />
-<small>{{ task.taskId }}</small><section v-if="task.executionSummary !== undefined" class="project-agent-execution-summary" :aria-label="t('projectAgents.fields.executionSummary')">
-<div class="project-agent-section-heading">
-<h5>{{ t('projectAgents.fields.executionSummary') }}</h5>
-<span>{{ task.executionSummary.length }}</span>
-</div>
-<div v-if="task.executionSummary.length" class="project-agent-execution-summary-table-wrap" role="region" tabindex="0" :aria-label="t('projectAgents.fields.executionSummary')">
-<table class="project-agent-execution-summary-table">
-<caption class="sr-only">{{ t('projectAgents.fields.executionSummary') }}</caption>
-<thead>
-<tr>
-<th scope="col">{{ t('projectAgents.fields.worker') }}</th>
-<th scope="col">{{ t('projectAgents.fields.workSummary') }}</th>
-<th scope="col">{{ t('projectAgents.fields.toolsUsed') }}</th>
-<th scope="col">{{ t('projectAgents.fields.executionEnvironment') }}</th>
-<th scope="col">{{ t('projectAgents.fields.sourceSession') }}</th>
-<th scope="col">{{ t('projectAgents.fields.tokenUsage') }}</th>
-<th scope="col">{{ t('projectAgents.fields.terminalStatus') }}</th>
-</tr>
-</thead>
-<tbody>
-<tr v-for="(summary, summaryIndex) in task.executionSummary" :key="task.taskId + ':execution:' + (summary.workerId || summary.agentId || summaryIndex)" class="project-agent-execution-summary-row">
-<th scope="row">
-<span class="project-agent-execution-worker">
-<span v-if="executionSummaryOccupationEmoji(summary)" class="project-agent-occupation-emoji" role="img" :aria-label="t('projectAgents.fields.occupationEmoji') + ': ' + executionSummaryOccupationEmoji(summary)">{{ executionSummaryOccupationEmoji(summary) }}</span>
-{{ executionSummaryWorkerLabel(summary) }}
-</span>
-<small v-if="summary.agentId || summary.workerId">{{ summary.workerId || summary.agentId }}</small>
-<small>{{ participantRoleLabel(summary.participantRole) }}</small>
-</th>
-<td :data-label="t('projectAgents.fields.workSummary')">{{ summary.workSummary || t('projectAgents.notReported') }}</td>
-<td :data-label="t('projectAgents.fields.toolsUsed')">{{ summary.toolsUsed ? summary.toolsUsed.join(' · ') || t('projectAgents.noToolsUsed') : t('projectAgents.notReported') }}</td>
-<td :data-label="t('projectAgents.fields.executionEnvironment')">
-<strong>{{ summary.executor || t('projectAgents.notReported') }}</strong>
-<small v-if="summary.executorId && summary.executorId !== summary.executor">{{ summary.executorId }}</small>
-<small v-if="summary.actualModelProvider || summary.actualModel">{{ [summary.actualModelProvider, summary.actualModel].filter(Boolean).join(' · ') }}</small>
-</td>
-<td :data-label="t('projectAgents.fields.sourceSession')">
-<span><template v-if="summary.workerRuntime">{{ t('projectAgents.fields.workerSession') }} · </template>{{ sourceLabel(summary.workerRuntime?.application || summary.sourceApplication) }}</span>
-<a v-if="executionSummarySessionHref(summary)" :href="executionSummarySessionHref(summary) || undefined" target="_blank" rel="noreferrer">{{ executionSummarySessionId(summary) || executionSummarySessionHref(summary) }}</a>
-<small v-else>{{ executionSummarySessionId(summary) || t('projectAgents.notReported') }}</small>
-<template v-if="summary.workerRuntime">
-<small class="project-agent-reporter-label">{{ t('projectAgents.fields.reporterSession') }} · {{ sourceLabel(summary.sourceApplication) }}</small>
-<a v-if="sessionHref(summary.sourceSessionUrl)" :href="sessionHref(summary.sourceSessionUrl) || undefined" target="_blank" rel="noreferrer">{{ summary.sourceSessionId || summary.sourceSessionUrl }}</a>
-<small v-else>{{ summary.sourceSessionId || t('projectAgents.notReported') }}</small>
-</template>
-</td>
-<td :data-label="t('projectAgents.fields.tokenUsage')">{{ tokenUsageLabel(summary.tokenUsage) }}</td>
-<td :data-label="t('projectAgents.fields.terminalStatus')"><i v-if="summary.status" :class="'is-' + summary.status">{{ executionSummaryStatusLabel(summary.status) }}</i><span v-else>{{ t('projectAgents.notReported') }}</span></td>
-</tr>
-</tbody>
-</table>
-</div>
-<p v-else class="project-agent-muted">{{ t('projectAgents.detail.noExecutionSummary') }}</p>
-</section><section v-if="workerEventEvidence(task).length" class="project-agent-worker-event-evidence" :aria-label="t('projectAgents.fields.workerEventEvidence')"><div class="project-agent-section-heading"><h5>{{ t('projectAgents.fields.workerEventEvidence') }}</h5><span>{{ workerEventEvidence(task).length }}</span></div><ul class="project-agent-execution-summary-list"><li v-for="event in workerEventEvidence(task)" :key="`${task.taskId}:worker-event:${event.eventId}`" class="project-agent-worker-event-row"><header><strong><span v-if="workerEventOccupationEmoji(event)" class="project-agent-occupation-emoji" role="img" :aria-label="`${t('projectAgents.fields.occupationEmoji')}: ${workerEventOccupationEmoji(event)}`">{{ workerEventOccupationEmoji(event) }}</span>{{ workerEventLabel(event) }}<small v-if="event.agentId">{{ t('projectAgents.fields.agentId') }} · {{ event.agentId }}</small></strong><i :class="`is-${event.workerStatus || event.status}`">{{ workerEventStatusLabel(event) }}</i></header><dl class="project-agent-execution-summary-meta"><div><dt>{{ t('projectAgents.fields.workSummary') }}</dt><dd>{{ event.summary || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.fields.sourceApplication') }}</dt><dd>{{ sourceLabel(event.sourceApplication) }}</dd></div><div><dt>{{ t('projectAgents.fields.sourceSession') }}</dt><dd>{{ event.sourceSessionId || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.fields.tokenUsage') }}</dt><dd>{{ tokenUsageLabel(event.tokenUsage) }}</dd></div><div v-if="event.actualModelProvider || event.actualModel"><dt>{{ t('projectAgents.fields.actualModel') }}</dt><dd><span v-if="event.actualModelProvider">{{ event.actualModelProvider }}</span><span v-if="event.actualModelProvider && event.actualModel"> · </span><span v-if="event.actualModel">{{ event.actualModel }}</span></dd></div><div><dt>{{ t('projectAgents.fields.reportedAt') }}</dt><dd>{{ formatDate(event.createdAt) }}</dd></div></dl></li></ul></section><small v-if="task.effectiveModelStrategy">{{ t('projectAgents.fields.strategySource') }} · {{ task.modelStrategySource || t('projectAgents.notReported') }} · {{ strategyLabel(task.effectiveModelStrategy) }} · {{ policyLabel(task.effectiveExecutorPolicy) }}</small><div v-if="task.routingDecision" class="project-agent-routing-decision"><div class="project-agent-section-heading"><span>{{ t('projectAgents.fields.reportedStaffingDecision') }}</span><strong>{{ task.routingDecision.outcome || t('projectAgents.notReported') }}</strong></div><small v-if="task.routingDecision.coordinatorAgentId || task.coordinatorAgentId">{{ t('projectAgents.fields.coordinator') }} · {{ task.routingDecision.coordinatorAgentId || task.coordinatorAgentId }}</small><small>{{ t('projectAgents.fields.matchBasis') }} · {{ task.routingDecision.matchBasis?.join(' · ') || t('projectAgents.notReported') }} · {{ task.routingDecision.reason || t('projectAgents.notReported') }}</small><small v-if="task.routingDecision.candidateAgentIds?.length">{{ t('projectAgents.fields.candidateAgents') }} · {{ task.routingDecision.candidateAgentIds.join(' · ') }}</small><small v-if="task.routingDecision.complexity !== null && task.routingDecision.complexity !== undefined">{{ t('projectAgents.fields.complexity') }} · {{ task.routingDecision.complexity }}<span v-if="task.routingDecision.complexityBasis?.length"> · {{ task.routingDecision.complexityBasis.join(' · ') }}</span></small><small v-if="parallelPlanHasEvidence(task.routingDecision.parallelPlan)">{{ t('projectAgents.fields.parallelPlan') }} · {{ task.routingDecision.parallelPlan?.reason || t('projectAgents.notReported') }}<span v-if="task.routingDecision.parallelPlan?.workstreamBoundaries?.length"> · {{ task.routingDecision.parallelPlan.workstreamBoundaries.join(' · ') }}</span></small><small v-if="task.routingDecision.ruleId || task.routingDecision.fallback">{{ task.routingDecision.ruleId || t('projectAgents.notReported') }} · {{ task.routingDecision.fallback || t('projectAgents.notReported') }}</small></div><div class="project-agent-execution-line"><span>{{ t('projectAgents.fields.actualExecution') }}</span><strong v-if="actualExecution(task)">{{ actualExecution(task)?.executor || actualExecution(task)?.provider || t('projectAgents.notReported') }} / {{ actualExecution(task)?.model || t('projectAgents.notReported') }} / {{ sourceLabel(actualExecution(task)?.client) }}</strong><span v-else>{{ t('projectAgents.detail.notReportedActualExecution') }}</span><small v-if="actualExecution(task)?.rule || actualExecution(task)?.fallback">{{ actualExecution(task)?.rule || t('projectAgents.notReported') }} · {{ actualExecution(task)?.fallback || t('projectAgents.notReported') }}</small></div><small v-if="task.runId">{{ t('projectAgents.fields.run') }} · {{ task.runId }}</small><small v-else>{{ t('projectAgents.detail.noRun') }}</small></details></article></div><p v-else-if="!taskListPartial[selectedAgent.agentId]" class="project-agent-muted">{{ t('projectAgents.detail.noTasks') }}</p></section>
+            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.tasks') }}</h4><span>{{ selectedAgent.tasks?.length ?? 0 }}</span></div><div v-if="selectedAgent.tasks?.length" class="project-agent-task-list"><ProjectAgentTaskCard v-for="task in selectedAgent.tasks" :key="task.taskId" :task="task" :project-name="projectName(task.personalProjectId)" :agents="agents" :personal-space-id="activeSpaceId" :linked="task.taskId === route.query.task" /></div><p v-else-if="!taskListPartial[selectedAgent.agentId]" class="project-agent-muted">{{ t('projectAgents.detail.noTasks') }}</p></section>
           </ProjectAgentDetailState>
         </div>
 
