@@ -1,6 +1,7 @@
 import { chmodSync } from 'node:fs';
 
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { deepFreeze } from '../validation/values.js';
 
 export const ADAPTIVE_RUNTIME_SETTINGS_VERSION = 1;
 
@@ -98,14 +99,6 @@ export function adaptiveRuntimeSettingsWithOverrides(settings, {
 function duration(value, label, minimum, maximum) {
   if (!Number.isInteger(value) || value < minimum || value > maximum) {
     throw new TypeError(`${label} must be an integer between ${minimum} and ${maximum}`);
-  }
-  return value;
-}
-
-function deepFreeze(value) {
-  Object.freeze(value);
-  for (const child of Object.values(value)) {
-    if (child && typeof child === 'object' && !Object.isFrozen(child)) deepFreeze(child);
   }
   return value;
 }

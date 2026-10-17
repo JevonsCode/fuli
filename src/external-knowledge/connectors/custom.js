@@ -1,6 +1,7 @@
 import { realpathSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { deepFreeze, requiredString } from '../../validation/values.js';
 
 export function createCustomConnector({ directory }) {
   const root = realpathSync(requiredString(directory, 'Custom connector directory'));
@@ -112,22 +113,10 @@ function customContext(context) {
   }));
 }
 
-function deepFreeze(value) {
-  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
-  Object.freeze(value);
-  for (const item of Object.values(value)) deepFreeze(item);
-  return value;
-}
-
 function stringArray(value) {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
     throw new TypeError('Custom connector environmentNames must be an array of strings');
   }
   return [...new Set(value)];
-}
-
-function requiredString(value, label) {
-  if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} is required`);
-  return value.trim();
 }

@@ -40,6 +40,7 @@ import {
   managedProviderUrls,
   readRuntimeSettings
 } from '../system/runtime-settings.js';
+import { nonEmptyText } from '../validation/values.js';
 
 export const NATIVE_NEO4J_VERSION = '5.26.28';
 export const NATIVE_NEO4J_SHA256 =
@@ -519,16 +520,16 @@ function nativeDependencies(overrides) {
 }
 
 async function resolveJavaHome(env) {
-  const configured = nonEmpty(env.FULI_NATIVE_JAVA_HOME) ?? nonEmpty(env.JAVA_HOME);
+  const configured = nonEmptyText(env.FULI_NATIVE_JAVA_HOME) ?? nonEmptyText(env.JAVA_HOME);
   if (configured && existsSync(join(configured, 'bin', 'java'))) return configured;
   if (process.platform === 'darwin') {
     const apple = await commandResult('/usr/libexec/java_home', ['-v', '21'], { env });
-    const appleHome = nonEmpty(apple.stdout);
+    const appleHome = nonEmptyText(apple.stdout);
     if (apple.status === 0 && appleHome && existsSync(join(appleHome, 'bin', 'java'))) {
       return appleHome;
     }
     const brew = await commandResult('brew', ['--prefix', 'openjdk@21'], { env });
-    const brewHome = nonEmpty(brew.stdout);
+    const brewHome = nonEmptyText(brew.stdout);
     if (brew.status === 0 && brewHome && existsSync(join(brewHome, 'bin', 'java'))) {
       return brewHome;
     }
@@ -650,7 +651,7 @@ function runCommand(command, args, options = {}) {
       windowsHide: true
     }, (error, stdout, stderr) => {
       if (error) {
-        reject(new Error(nonEmpty(stderr) ?? nonEmpty(stdout) ?? error.message));
+        reject(new Error(nonEmptyText(stderr) ?? nonEmptyText(stdout) ?? error.message));
       } else {
         resolve({ stdout, stderr });
       }
@@ -669,10 +670,6 @@ function commandResult(command, args, options = {}) {
       resolve({ status: error ? 1 : 0, stdout, stderr, command });
     });
   });
-}
-
-function nonEmpty(value) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 function nativeInstanceSpecs(paths, settings, values, includeWorkspace) {
@@ -738,7 +735,7 @@ function parseEnv(body) {
 }
 
 function requiredEnv(values, name) {
-  const value = nonEmpty(values[name]);
+  const value = nonEmptyText(values[name]);
   if (!value) throw new Error(`Native graph runtime is missing ${name}. Run setup again.`);
   return value;
 }
@@ -747,9 +744,9 @@ function assertDescriptor(descriptor) {
   if (
     descriptor?.status !== 'ready' ||
     descriptor.mode !== 'native' ||
-    !nonEmpty(descriptor.javaHome) ||
-    !nonEmpty(descriptor.neo4jHome) ||
-    !nonEmpty(descriptor.providerPython)
+    !nonEmptyText(descriptor.javaHome) ||
+    !nonEmptyText(descriptor.neo4jHome) ||
+    !nonEmptyText(descriptor.providerPython)
   ) {
     throw new Error('The native graph runtime is not installed. Run setup in native mode first.');
   }

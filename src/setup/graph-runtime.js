@@ -47,6 +47,7 @@ import {
   initialAdaptiveRuntimeState,
   writeAdaptiveRuntimeState
 } from '../adaptive-runtime/state.js';
+import { nonEmptyText } from '../validation/values.js';
 
 export {
   dockerInfoIndicatesDaemon,
@@ -355,7 +356,7 @@ export function synchronizeManagedProviderUrls(config, urls, {
   let changed = next.personal?.providerUrl !== urls.personal;
   next.personal.providerUrl = urls.personal;
   if (
-    nonEmpty(workflowObservationToken) &&
+    nonEmptyText(workflowObservationToken) &&
     next.personal.workflowObservationToken !== workflowObservationToken
   ) {
     next.personal.workflowObservationToken = workflowObservationToken;
@@ -674,10 +675,6 @@ function parseEnv(body) {
     const index = line.indexOf('=');
     return [line.slice(0, index), line.slice(index + 1)];
   }));
-}
-
-function nonEmpty(value) {
-  return typeof value === 'string' && value.trim().length > 0;
 }
 
 function secret() {
