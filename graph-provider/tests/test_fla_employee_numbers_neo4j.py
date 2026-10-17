@@ -91,7 +91,8 @@ async def test_number_survives_project_move_archive_and_six_digit_rollover():
         for project in ['first', 'second']:
             response = await client.put('/v1/personal-projects', json={
                 'personal_space_id': space_id, 'project_id': project,
-                'profile': {'name': project, 'lifecycle': 'active'},
+                'profile': {'name': project, 'lifecycle': 'active',
+                            'purpose': 'Synthetic employee numbering and project move acceptance'},
             })
             assert response.status_code == 200, response.text
             updated = await put_agent(client, space_id, 'last-six', personal_project_id=project)

@@ -21,7 +21,8 @@ async def create_scope(client):
     project = await client.put('/v1/personal-projects', json={
         'personal_space_id': scope['personal_space_id'],
         'project_id': scope['personal_project_id'],
-        'profile': {'name': 'Synthetic staffing project', 'lifecycle': 'active'},
+        'profile': {'name': 'Synthetic staffing project', 'lifecycle': 'active',
+                    'purpose': 'Synthetic staffing boundary acceptance'},
     })
     assert project.status_code == 200, project.text
     return scope
@@ -120,7 +121,8 @@ async def test_project_bound_task_and_activity_reads_do_not_cross_projects():
         created_b = await client.put('/v1/personal-projects', json={
             'personal_space_id': project_b['personal_space_id'],
             'project_id': project_b['personal_project_id'],
-            'profile': {'name': 'Synthetic staffing project B', 'lifecycle': 'active'},
+            'profile': {'name': 'Synthetic staffing project B', 'lifecycle': 'active',
+                        'purpose': 'Synthetic cross-project staffing isolation acceptance'},
         })
         assert created_b.status_code == 200, created_b.text
         assigned_b = await client.post('/v1/project-agent-assignments', json={

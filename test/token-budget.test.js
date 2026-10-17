@@ -11,7 +11,9 @@ import { hookAdditionalContextToolResult } from '../src/mcp/tool-result.js';
 // that grows a number fails here; lower the baseline when a change shrinks it,
 // and raise it only with the reason in the same commit.
 const BASELINE = Object.freeze({
-  fullToolSchemaBytes: 165967,
+  // R-02: +1,730 B for required occupation contracts on full-profile writers.
+  // The default chat schema and task entry budgets remain unchanged.
+  fullToolSchemaBytes: 167697,
   chatToolSchemaBytes: 39619,
   instructionsBytes: 2043,
   projectEntryChars: 10264
