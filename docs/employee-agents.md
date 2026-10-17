@@ -1,6 +1,8 @@
 # Specialist Agents
 
-An employee template is a reusable role with an optional FULI-hosted or native workbench. Recruitment reuses the existing durable Project Agent identity and assignment model. Three roles are fixed: **Jefa**, the project manager, **Bole**, the AR (Agent Resources) Agent, and **Tonborg**, the judgment Agent. They exist in every personal space from the start, manage all projects by default, and are never offered for hire. They require no separate runtime package. See [judgment and autonomy](judgment-and-autonomy.md) for Tonborg's review, feedback, and execution-choice workflow.
+An employee template is a reusable role with an optional FULI-hosted or native workbench. Recruitment reuses the existing durable Project Agent identity and assignment model. Four roles are fixed: **Jefa**, the project manager and project-attribution triager, **Bole**, the AR (Agent Resources) Agent, **Tonborg**, the judgment Agent, and **Assistant** (`employee.assistant`), the unassigned-conversation receptionist. They exist in every personal space from the start and are never offered for hire; Jefa, Bole, and Tonborg span all projects by default while Assistant belongs to no project and receives conversations that do not yet match a formal project. They require no separate runtime package. See [judgment and autonomy](judgment-and-autonomy.md) for Tonborg's review, feedback, and execution-choice workflow.
+
+Every Project Agent requires a primary occupation (`occupation.role`, from `product`, `engineering`, `design`, `operations`, `testing`, `research`, `data`, `writing`, `management`, `lead`, or `assistant`) plus up to five optional secondary tags. Bole writes the primary occupation at recruitment with an audit trail, and the user can change it at any time as final authority. Each formal project has one project **lead** (`lead`) who breaks down work, dispatches tasks by occupation (`new_session → sub_agent → phased`), integrates results, and signs off to the user without performing specialist implementation work directly. When a project needs a given occupation, Bole reuses an existing same-occupation Agent across projects before recruiting a new specialist.
 
 ## User flow
 
@@ -18,9 +20,11 @@ Repeat recruitment is idempotent. Customized profile preferences and executor/mo
 
 The catalog shows whether a workbench package is actually installed. Identity-only templates need no runtime and remain valid employees without a sidebar workbench. A trusted built-in template may declare `workbench: { "kind": "native", "view": "people" }`; Bole uses this native panel to summarize Agent distribution, current tasks, and timestamped recruitment reasons from the same Project Agent APIs used elsewhere in the console.
 
-## One-off tasks without a registered project
+## Unassigned conversations, Jefa triage, and explicit temporary tasks
 
-Explicit `coordinate_project_agent_task` calls can create a task-scoped temporary project when
+Normal task-entry conversations that do not match a registered repository or an explicit project name at the start of the prompt no longer auto-create `conversation-<hash>` projects or auto-recruit per-conversation leads. Instead, they are received by the fixed **Assistant** (`employee.assistant`) in global scope with only personal global preferences, and their content stays in the conversation log without polluting any Agent's long-term memory. At session completion, **Jefa** records deterministic attribution triage (`existing_project`, `new_topic`, or `one_off`) without invoking an extra model; once a `new_topic` accumulates 3 conversations, Jefa promotes it into a formal project with an editable AI-drafted summary and Bole assigns a project `lead`.
+
+Explicit `coordinate_project_agent_task` calls can still create a task-scoped temporary project when
 project resolution is `unmatched` or `not_provided`. Preference reads remain read-only; an
 ambiguous or invalid explicit project is never replaced with a temporary one. Use the exact
 returned project ID for subsequent task operations. Temporary projects do not participate in
