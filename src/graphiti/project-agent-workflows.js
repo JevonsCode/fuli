@@ -39,7 +39,8 @@ export async function upsertProjectAgent(application, input) {
     personal_space_id: input.personalSpaceId,
     personal_project_id: input.personalProjectId ?? null,
     agent_id: input.agentId,
-    profile: providerProjectAgentProfile(input.profile)
+    profile: providerProjectAgentProfile(input.profile),
+    ...(input.occupation ? { occupation: input.occupation } : {})
   });
   return projectAgentRecord(value);
 }
@@ -228,6 +229,7 @@ export async function coordinateProjectAgentTask(
     sourceSessionId: projectResolution.scope?.type === 'temporary' && entryTask
       ? entryTask.sessionId : input.sourceSessionId,
     routingReason: input.routingReason,
+    recruitmentOccupation: input.recruitmentOccupation,
     recruitmentProfile: input.recruitmentProfile
   });
   const participants = route.task.participants ?? [];

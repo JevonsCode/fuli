@@ -44,7 +44,7 @@ test('a second employee uses the same catalog protocol without a Jefa branch', (
   installEmployeePackage({ sourceDirectory: f.source, runtimeConfigPath: f.runtimeConfigPath });
   const registry = createEmployeePackageRegistry(employeeDirectories(f.runtimeConfigPath));
   assert.equal(registry.get('release-reviewer').runtimeStatus, 'not_required');
-  assert.equal(registry.catalog().length, 4);
+  assert.equal(registry.catalog().length, 5);
 });
 
 test('Bole is a built-in native specialist instead of an installable package', (t) => {

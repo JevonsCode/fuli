@@ -25,6 +25,8 @@ from .project_agent_names import agent_display_name
 from .store_transactions import query_store_transaction
 from .store_project_agent_occupation import occupation_from_agent_node
 from .system_agents import (
+    SYSTEM_PROFILES,
+    SYSTEM_ASSISTANT_AGENT_ID,
     SYSTEM_COORDINATOR_AGENT_ID,
     SYSTEM_HR_AGENT_ID,
     ensure_system_agents,
@@ -68,6 +70,10 @@ class StoreProjectAgents:
         recruitment_id: str | None = None,
     ) -> ProjectAgentRecord:
         self._require_personal()
+        if request.occupation and request.occupation.role == 'assistant':
+            raise HTTPException(422, 'assistant occupation is reserved for the fixed global assistant')
+        if request.agent_id == SYSTEM_ASSISTANT_AGENT_ID:
+            raise HTTPException(422, 'the system assistant identity is managed by the Provider')
         if request.agent_id == LEGACY_HR_AGENT_ID:
             raise HTTPException(409, 'This AR identity has moved to employee.bole')
         if request.profile.agent_type == 'temporary' and not recruitment_id:
@@ -130,6 +136,8 @@ class StoreProjectAgents:
             request.agent_id,
         )
         updated_at = now_utc()
+        occupation_role = request.occupation.role if request.occupation else (
+            'management' if request.agent_id in SYSTEM_PROFILES else None)
         memory_scope = (
             'task_only'
             if request.profile.agent_type == 'temporary'
@@ -139,6 +147,9 @@ class StoreProjectAgents:
             '''
             MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
             ''' + EMPLOYEE_NUMBER_LOCK + '''
+            OPTIONAL MATCH (existing:FuliProjectAgent {id: $id})
+            WITH space, existing
+            WHERE existing IS NOT NULL OR $occupation_role IS NOT NULL
             MERGE (agent:FuliProjectAgent {id: $id})
             ON CREATE SET agent.agent_id = $agent_id,
                           agent.created_at = $updated_at,
@@ -168,6 +179,13 @@ class StoreProjectAgents:
                 agent.recruitment_id = coalesce(
                   agent.recruitment_id, $recruitment_id),
                 agent.updated_at = $updated_at
+            FOREACH (_ IN CASE WHEN $occupation_role IS NOT NULL
+                AND ($occupation_explicit OR agent.occupation_role IS NULL) THEN [1] ELSE [] END |
+              SET agent.occupation_role = $occupation_role,
+                  agent.occupation_tags = $occupation_tags,
+                  agent.occupation_updated_at = $updated_at,
+                  agent.occupation_source = 'profile-write'
+            )
             MERGE (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(agent)
             ''' + ASSIGN_EMPLOYEE_NUMBERS + '''
             RETURN agent
@@ -178,6 +196,9 @@ class StoreProjectAgents:
             profile_json=request.profile.model_dump_json(),
             name=request.profile.name,
             occupation_emoji=request.profile.occupation_emoji,
+            occupation_role=occupation_role,
+            occupation_explicit=request.occupation is not None,
+            occupation_tags=request.occupation.tags if request.occupation else [],
             responsibility=request.profile.responsibility,
             capabilities=request.profile.capabilities,
             work_kinds=request.profile.work_kinds,
@@ -193,7 +214,7 @@ class StoreProjectAgents:
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    'archived Agents require a dedicated restore operation; project leads must hand off before deactivation'
+                    'new Agents require occupation.role; archived Agents require a dedicated restore operation; project leads must hand off before deactivation'
                 ),
         )
         if request.personal_project_id:
@@ -395,6 +416,8 @@ class StoreProjectAgents:
         """Archive one reusable identity while preserving every audit edge."""
 
         self._require_personal()
+        if agent_id == SYSTEM_ASSISTANT_AGENT_ID:
+            raise HTTPException(422, 'the system assistant cannot be archived')
         if agent_id == SYSTEM_COORDINATOR_AGENT_ID:
             raise HTTPException(
                 status_code=422,
@@ -640,6 +663,8 @@ class StoreProjectAgents:
         actor: dict,
         request: ProjectAgentAssignmentCreate,
     ) -> ProjectAgentAssignmentRecord:
+        if request.agent_id == SYSTEM_ASSISTANT_AGENT_ID:
+            raise HTTPException(422, 'the global assistant cannot hold project assignments')
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         await authorize_personal_project(
@@ -858,6 +883,8 @@ class StoreProjectAgents:
         actor: dict,
         request: ProjectAgentAssignmentReplace,
     ) -> ProjectAgentAssignmentReplaceResult:
+        if request.replacement_agent_id == SYSTEM_ASSISTANT_AGENT_ID:
+            raise HTTPException(422, 'the global assistant cannot hold project assignments')
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         await authorize_personal_project(

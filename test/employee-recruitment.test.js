@@ -411,3 +411,22 @@ test('the existing FULI MCP discovers, recruits, and calls employees without a s
   assert.deepEqual(replaced.structuredContent.assignments.map((entry) => entry.personalProjectId), ['project-b']);
   assert.equal(listed.tools.find(({ name }) => name === 'recruit_employee').annotations.destructiveHint, true);
 });
+
+test('global assistant is fixed and cannot be recruited into projects', async () => {
+  const assistant = parseEmployeeManifest(JSON.parse(readFileSync(new URL('../src/employees/catalog/assistant.json', import.meta.url))));
+  const { service, writes } = fixture(assistant);
+  await assert.rejects(service.recruit({ templateId: 'assistant', personalProjectId: 'project-a' }), { code: 'system_managed_employee' });
+  assert.equal(writes.length, 0);
+  const [entry] = (await service.list()).templates;
+  assert.equal(entry.fixed, true);
+  assert.deepEqual(entry.managedProjects, []);
+});
+
+test('custom employee creation requires and forwards a primary occupation', async () => {
+  const custom = { ...manifest, id: 'sample-helper' };
+  const { service, writes } = fixture(custom);
+  await assert.rejects(service.recruit({ templateId: custom.id, personalProjectId: 'project-a' }), { code: 'occupation_required' });
+  assert.equal(writes.length, 0);
+  await service.recruit({ templateId: custom.id, personalProjectId: 'project-a', occupation: { role: 'research' } });
+  assert.deepEqual(writes[0].occupation, { role: 'research' });
+});

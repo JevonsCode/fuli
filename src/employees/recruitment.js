@@ -40,7 +40,7 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
       const owned = agent?.profile.capabilities.includes(employeeCapability(manifest.id));
       const stored = managementStore.read(spaceId, manifest.id);
       const management = managementFor(manifest, owned ? agent : null, stored);
-      const managedProjects = owned && agent.profile.status === 'active' ? projects
+      const managedProjects = manifest.id !== 'assistant' && owned && agent.profile.status === 'active' ? projects
         .filter(entry => entry.profile?.lifecycle !== 'archived' && policyAllowsProject(management, entry.project_id)
           && (management.mode === 'all' || activeEmployeeAssignments(agent).some(a => a.personalProjectId === entry.project_id)))
         .map(entry => ({ id: entry.project_id, name: entry.profile.name })) : [];
@@ -113,6 +113,9 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
         throw new EmployeeError('Project assignments changed; reload the selection before saving', 409, 'assignment_scope_conflict');
       }
       if (!agent || agent.profile.status !== 'active') {
+        const occupation = input.occupation ?? (Object.hasOwn(FIXED_EMPLOYEE_AGENT_TYPES, manifest.id)
+          ? { role: 'management', tags: [] } : undefined);
+        if (!agent && !occupation) throw new EmployeeError('New employees require occupation.role', 422, 'occupation_required');
         const profile = agent ? { ...agent.profile, status: 'active' } : {
           name: manifest.name,
           occupationEmoji: manifest.occupationEmoji,
@@ -124,7 +127,7 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
           defaultModelStrategy: { mode: 'adaptive' },
           executorPolicy: { mode: 'flexible' }
         };
-        agent = await app.upsertProjectAgent({ personalSpaceId: spaceId, agentId, profile });
+        agent = await app.upsertProjectAgent({ personalSpaceId: spaceId, agentId, profile, ...(occupation ? { occupation } : {}) });
         changed = true;
       }
       const endedAssignments = [];
