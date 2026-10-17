@@ -77,7 +77,7 @@ test('owned reader delivers all long instructions and mandatory guidance in both
   assert.deepEqual(role.role.initial_preferences, ['ROLE_INITIAL_PREF']);
   assert.deepEqual(role.role.character, { judgment: 'ROLE_JUDGMENT', taste: 'ROLE_TASTE', personality: 'ROLE_PERSONALITY' });
   assert.equal(role.role.expectations, 'ROLE_EXPECTATIONS');
-  assert.deepEqual(role.project_brief.boundaries, ['PROJECT_BOUNDARY']);
+  assert.equal(role.project_brief.summary, 'PROJECT_PURPOSE · PROJECT_BOUNDARY');
   assert.equal(role.reporting_lead_agent_id, 'lead-a');
   assert.match(role.reporting_guidance, /Return results and blockers to the project lead/);
   assert.equal(role.selection_reason, 'delegated_member');

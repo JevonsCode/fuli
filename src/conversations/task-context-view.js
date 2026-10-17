@@ -3,6 +3,8 @@ import { containsEntryRules, entryRules, entryRulesReference, ruleTextView } fro
 const SUMMARY_PREVIEW = 800;
 const NOTE_COUNT_PREVIEW = 3;
 const NOTE_PREVIEW = 160;
+const ROSTER_PREVIEW = 4;
+const DRAFT_LABEL_BUDGET = 32;
 
 // Preserve every effective instruction and Provider-budgeted conversation raw
 // window. Other evidence envelopes remain available through explicit read tools.
@@ -54,10 +56,13 @@ export function compactTaskContext(value) {
     }))
   };
   const continuity = value.project_agent_context;
-  if (continuity) result.project_agent_context = { ...continuity, team: undefined, recent_tasks: undefined,
+  const teamRules = continuity?.team?.guidance ?? continuity?.team_guidance;
+  const teamGuidance = teamRules ? text(teamRules, 'team_guidance') : undefined;
+  if (continuity) result.project_agent_context = { ...continuity,
+    team: compactTeamRoster(continuity.team, teamGuidance),
+    recent_tasks: undefined,
     guidance: text(continuity.guidance, 'continuity_guidance'),
-    ...(continuity.team?.guidance ?? continuity.team_guidance ? {
-      team_guidance: text(continuity.team?.guidance ?? continuity.team_guidance, 'team_guidance') } : {}),
+    ...(teamGuidance ? { team_guidance: teamGuidance } : {}),
     details_guidance: 'Read get_project_team for staffing and list_project_agent_tasks for task history when needed.' };
   if (continuity?.memory || continuity?.global_memory) {
     result.project_agent_context = { ...result.project_agent_context, knowledge: undefined,
@@ -117,4 +122,23 @@ function memoryPreview(memory, guidance) {
     personalProjectId: undefined, agentId: undefined, storage: undefined,
     current: current && { ...current, memory: preview },
     view: 'preview', notesTruncated, requiresFullReadBeforeWrite: true, guidance };
+}
+
+// Staff detail is query-on-demand. Bound the entry and dedupe identities before
+// removing IDs; same-name people remain distinct.
+function compactTeamRoster(team, deliveredGuidance) {
+  if (!team) return undefined;
+  const people = [...(team.roster ?? []), ...(team.assigned_collaborators ?? []), ...(team.assigned_peers ?? [])];
+  const roster = [...new Map(people.map(person => [person.agent_id ?? person, person])).values()];
+  const view = count => ({ roster: roster.slice(0, count).map(person => ({ name: person.name, occupation: person.occupation ?? null })),
+    ...(roster.length > count ? { roster_total: roster.length, roster_truncated: true } : {}) });
+  let count = Math.min(roster.length, ROSTER_PREVIEW);
+  // Once the team rules are a reference, the roster may spend only the bytes
+  // that rule text no longer costs, keeping room for the draft marker.
+  if (team.guidance && deliveredGuidance !== team.guidance) {
+    const budget = Buffer.byteLength(JSON.stringify({ team_guidance: team.guidance })) - DRAFT_LABEL_BUDGET;
+    while (count && Buffer.byteLength(JSON.stringify({ team: view(count), team_guidance: deliveredGuidance })) > budget) count--;
+  }
+  return view(count);
+
 }

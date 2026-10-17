@@ -7,7 +7,7 @@ export const TASK_PREFERENCE_DEFINITIONS = [
   {
     name: 'read_task_preferences',
     title: 'READ · Recover complete preferences for the owned task',
-    description: 'Read the current complete mandatory preferences for the original taskContextToken after blocked entry delivery. Requires the same verified native or sealed-worker session and the stored task scope. Does not create or rebind a task, select an Agent, load private memory or record views. Apply nothing unless preferences_complete is true; source or delivery overflow remains blocked. If this tool is not exposed, discover it through list_agent_interfaces only when the host permits it. Never restart task entry or invent a session for recovery.',
+    description: 'After blocked entry delivery, read complete current mandatory preferences for the original taskContextToken. Requires the same verified native/sealed-worker session and stored task scope. Never creates/rebinds tasks, selects Agents, loads private memory, or records views. Apply nothing unless preferences_complete=true; source/delivery overflow stays blocked. If unexposed, discover through list_agent_interfaces only with host permission. Never restart entry or invent a session for recovery.',
     inputSchema: objectSchema({ taskContextToken: id }, ['taskContextToken'])
   }
 ];

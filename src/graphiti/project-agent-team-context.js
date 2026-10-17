@@ -7,7 +7,7 @@ export async function loadProjectTeamContext(application, personalSpaceId, proje
   const team = await loadProjectTeam(application, personalSpaceId, projectId);
   if (team.status === 'no_lead') return null;
   const leadId = team.lead?.agentId ?? team.unavailableLead.agentId;
-  const entry = (person, role) => ({ agent_id: person.agentId, name: person.name,
+  const entry = (person, role) => ({ agent_id: person.agentId, name: person.name, occupation: person.occupation,
     responsibility: person.responsibility, role });
   const roster = [...(team.lead ? [entry(team.lead, 'lead')] : []),
     ...team.members.map(member => entry(member, 'member'))];

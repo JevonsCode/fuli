@@ -1,5 +1,6 @@
 import { taskAgentAssignment } from './task-agent-assignment.js';
 import { beginConversation, checkpointConversation } from './agent-conversations.js';
+import { recordTriage, validateTriage } from './conversation-triage.js';
 import { taskTeam } from './task-collaboration-attribution.js';
 import { taskAgentReceipt } from '../agents/identity-receipt.js';
 import { createHash } from 'node:crypto';
@@ -130,11 +131,13 @@ export async function checkpointTaskKnowledge(application, {
   sourceApplication = 'other',
   personalProjectId = null,
   remoteSessionId = null,
-  collaborators = []
+  collaborators = [],
+  triage = null
 }) {
   if (!['capture_candidates', 'retain_nothing'].includes(disposition)) {
     throw validationError('Unknown task knowledge checkpoint disposition');
   }
+  const triageLabel = validateTriage(triage);
   const task = await application.taskContextRegistry.context(taskContextToken, sourceApplication);
   if (personalProjectId && task.personalProjectId !== personalProjectId) {
     throw validationError('Task checkpoint belongs to another project');
@@ -174,7 +177,8 @@ export async function checkpointTaskKnowledge(application, {
     const team = await taskTeam(application, checkpointTask, collaborators);
     const effectiveLog = workLog ?? { status: 'reported', summary: reason };
     const conversation = await checkpointConversation(application, task, effectiveLog, team);
-    return { ...result, conversation,
+    const triaged = await recordTriage(application, task, conversation, triageLabel);
+    return { ...result, conversation, ...(triaged ? { triage: triaged } : {}),
       agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
         agentId: task.projectAgentId ?? null, name: team.name, sourceApplication: task.sourceApplication,
         workStatus: effectiveLog.status, conversationId: conversation?.conversation_id ?? null,
