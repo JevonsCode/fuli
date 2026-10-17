@@ -165,7 +165,9 @@ describe('Agent directory integration', () => {
     expect(names()).toEqual(['Birch', 'Aster'])
     const current = wrapper.get('[data-current-task]')
     expect(current.text()).toContain('Synthetic review task')
-    expect(current.get('[data-last-update]').attributes('title')).toBe('2026-10-17T02:00:00Z')
+    // No recorded run start: say unknown rather than turn the update time into a duration.
+    expect(current.find('[data-last-update]').exists()).toBe(false)
+    expect(current.get('[data-running-since]').text()).toBe(t('agentRedesign.workbench.runningForUnknown'))
     expect(wrapper.findAll('[data-current-task]')).toHaveLength(1)
     expect(wrapper.find('[data-workbench-reorder]').exists()).toBe(false)
 
@@ -178,6 +180,33 @@ describe('Agent directory integration', () => {
     await wrapper.get('[data-workbench-reorder]').trigger('click')
     expect(names()).toEqual(['Aster', 'Birch'])
     expect(wrapper.find('[data-workbench-reorder]').exists()).toBe(false)
+  })
+
+  it('shows running time from the recorded run start, not the last update', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-17T03:00:00Z'))
+    try {
+      getJson.mockImplementation(async (url: string) => {
+        if (url === '/api/project-agents?personalSpaceId=space-a') {
+          return [{ ...roster[0], workStatus: 'running', currentTaskId: 'task-a', currentTaskRunningSince: '2026-10-17T02:35:00Z' }]
+        }
+        if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') {
+          return [{
+            taskId: 'task-a', personalSpaceId: 'space-a', title: 'Synthetic run', status: 'running',
+            createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-17T02:59:00Z',
+            participants: [{ agentId: 'agent-0', role: 'lead', status: 'running', updatedAt: '2026-10-17T02:59:00Z' }],
+          }]
+        }
+        if (url === '/api/agent-pins?personalSpaceId=space-a') return { revision: 1, agentIds: [] }
+        throw new Error(`Unexpected detail request: ${url}`)
+      })
+      const { wrapper } = await setup()
+      const running = wrapper.get('[data-running-since]')
+      expect(running.attributes('title')).toBe('2026-10-17T02:35:00Z')
+      expect(running.text()).toContain('25')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('does not turn an unavailable work summary into an idle state', async () => {

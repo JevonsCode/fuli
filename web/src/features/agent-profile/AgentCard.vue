@@ -6,6 +6,8 @@ import GrowthLoading from "@/components/GrowthLoading.vue";
 import PinIcon from "@/components/PinIcon.vue";
 import AgentHand from "@/features/project-agents/AgentHand.vue";
 import { currentLocale, t } from "@/i18n";
+import { useNow } from "@/composables/useNow";
+import { formatElapsed } from "@/lib/elapsed-time";
 import { formatRelativeTime } from "@/lib/relative-time";
 import {
   agentDisplayName,
@@ -47,6 +49,13 @@ const currentTaskTitle = computed(() =>
 );
 const lastUpdate = computed(() =>
   formatRelativeTime(props.entry?.lastUpdateAt, currentLocale()),
+);
+const now = useNow();
+// Running time comes only from the recorded run start, never an update time.
+const runningFor = computed(() =>
+  workStatus.value === "running"
+    ? formatElapsed(props.entry?.runningSince, currentLocale(), now.value)
+    : null,
 );
 const taskLink = computed(() => ({
   path: "/project-agents/manage",
@@ -155,7 +164,15 @@ function togglePin() {
       <RouterLink class="agent-card-current-task" :to="taskLink" :class="{ 'is-unloaded': !entry.title }">
         {{ currentTaskTitle }}
       </RouterLink>
-      <span class="agent-card-last-update" :title="entry.lastUpdateAt ?? undefined" data-last-update>
+      <span
+        v-if="workStatus === 'running'"
+        class="agent-card-last-update"
+        :title="entry.runningSince ?? undefined"
+        data-running-since
+      >
+        {{ runningFor ? t("agentRedesign.workbench.runningFor", { duration: runningFor }) : t("agentRedesign.workbench.runningForUnknown") }}
+      </span>
+      <span v-else class="agent-card-last-update" :title="entry.lastUpdateAt ?? undefined" data-last-update>
         {{ lastUpdate ? t("agentRedesign.workbench.lastUpdate", { time: lastUpdate }) : t("agentRedesign.workbench.lastUpdateUnknown") }}
       </span>
     </p>
