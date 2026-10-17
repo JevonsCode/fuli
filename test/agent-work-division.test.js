@@ -171,3 +171,14 @@ test('a matching occupation outranks work-kind matches and an unused occupation 
   assert.equal(plain.divisionPlan.workstreams[0].agentId, 'lead');
   assert.equal(plain.divisionPlan.workstreams[0].action, 'continue_current');
 });
+
+test('recruiting for an occupation workstream tells Bole which occupation to hire', async () => {
+  const result = await planAgentCollaboration(fixture([withRole(agent('lead', ['implementation']), 'lead')]),
+    { ...input, occupation: 'design' });
+  const [main, verification] = result.divisionPlan.workstreams;
+  assert.equal(main.action, 'recruit');
+  assert.deepEqual(main.dispatch.arguments.recruitmentOccupation, { role: 'design', tags: [] });
+  assert.deepEqual(verification.dispatch.arguments.recruitmentOccupation, { role: 'testing', tags: [] });
+  const plain = await planAgentCollaboration(fixture([]), input);
+  assert.equal(plain.recruitment.arguments.recruitmentOccupation, undefined);
+});
