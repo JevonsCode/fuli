@@ -446,9 +446,12 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
         }
       }
       const last = messages.at(-1);
+      const open = messages.filter((message) => message.kind === 'ask' && !REMOTE_FINAL.has(message.status));
       return { id: thread.id, subject: thread.subject, projectId: thread.project_id, updatedAt: thread.updated_at,
         messageCount: messages.length, participants: [...people.values()],
-        waiting: messages.some((message) => message.kind === 'ask' && !['answered', 'cancelled', 'failed', 'expired', 'unknown'].includes(message.status)),
+        waiting: open.length > 0,
+        // Who the open asks are addressed to, so the list never shows a bare "waiting".
+        waitingFor: [...new Set(open.map((message) => message.to_name).filter(Boolean))],
         last: last ? { from: last.from_name, body: last.body.slice(0, 160) } : null };
     }) };
   }
