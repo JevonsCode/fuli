@@ -79,6 +79,10 @@ export class GraphitiProviderClient {
       method: operation === 'policy' ? 'PUT' : 'POST', body: input
     });
   }
+  conversationTriage(operation, input) {
+    if (!['record', 'topics', 'form'].includes(operation)) throw new TypeError('Unknown conversation triage operation');
+    return this.#request(`/v1/conversation-triage/${operation}`, { method: 'POST', body: input });
+  }
   currentTaskContext(input, { timeoutMs = this.requestTimeoutMs } = {}) {
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new TypeError('Current task timeout must be a positive safe integer');
     return this.#request(`/v1/task-context-sessions/current?${new URLSearchParams(input)}`,

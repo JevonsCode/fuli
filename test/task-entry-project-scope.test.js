@@ -93,13 +93,17 @@ test('the fixed assistant receives an unclaimed conversation in its global scope
   assert.equal(result.context.personal_project_id, null);
   assert.equal(result.agent_receipt.owner.agent_id, 'employee.assistant');
   assert.deepEqual([writes.length, hires.length], [0, 0]);
+  assert.deepEqual(result.triage_candidates, { projects: [], topics: [],
+    label_with: 'checkpoint_task_knowledge.triage' });
 });
 
 test('a registered project named at the start of the prompt is matched', async () => {
   const { app, run, writes, projects } = fixture({ existing: ['dingdong', 'conversation-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'] });
   projects.get('dingdong').profile.name = 'DingDong';
   for (const taskPrompt of ['dingdong 那边的入口有个 bug', 'DingDong: fix the tray', '  dingdong，看下日志']) {
-    assert.equal((await run({ taskPrompt })).context.personal_project_id, 'dingdong');
+    const named = await run({ taskPrompt });
+    assert.equal(named.context.personal_project_id, 'dingdong');
+    assert.equal(named.triage_candidates, undefined);
   }
   for (const taskPrompt of ['dingdongs are loud', 'please check dingdong', '会话项目 / Conversation project 继续']) {
     assert.equal((await run({ taskPrompt })).context.personal_project_id, null);
