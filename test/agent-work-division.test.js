@@ -147,3 +147,27 @@ test('work kept in the current session needs no execution mode', async () => {
     hostExecutionModes: ['new_session'] });
   assert.deepEqual(result.divisionPlan.execution, { mode: 'current_session' });
 });
+
+const withRole = (value, role) => ({ ...value, occupation: { role, tags: [] } });
+
+test('the lead hands work to the requested occupation and keeps only coordination', async () => {
+  const agents = [withRole(agent('lead', ['implementation']), 'management'),
+    withRole(agent('designer', ['ui_design']), 'design'), withRole(agent('qa', ['test_validation']), 'testing')];
+  const result = await planAgentCollaboration(fixture(agents), { ...input, occupation: 'design' });
+  const [main, verification] = result.divisionPlan.workstreams;
+  assert.equal(main.agentId, 'designer');
+  assert.equal(main.action, 'delegate');
+  assert.equal(result.divisionPlan.coordinatorAgentId, 'lead');
+  assert.equal(verification.agentId, 'qa');
+  assert.equal(result.candidates[0].occupation, 'design');
+});
+
+test('a matching occupation outranks work-kind matches and an unused occupation changes nothing', async () => {
+  const agents = [withRole(agent('lead', ['implementation']), 'engineering'),
+    withRole(agent('developer', ['implementation']), 'engineering'), withRole(agent('writer', ['implementation']), 'writing')];
+  const writing = await planAgentCollaboration(fixture(agents), { ...input, occupation: 'writing' });
+  assert.equal(writing.divisionPlan.workstreams[0].agentId, 'writer');
+  const plain = await planAgentCollaboration(fixture(agents), input);
+  assert.equal(plain.divisionPlan.workstreams[0].agentId, 'lead');
+  assert.equal(plain.divisionPlan.workstreams[0].action, 'continue_current');
+});

@@ -8,6 +8,7 @@ const verificationKinds = new Set(['test_validation', 'verification', 'code_revi
 function matchCandidates(agents, task, input) {
   const required = lower(input.requiredCapabilities);
   const workKind = String(input.workKind).toLowerCase();
+  const occupation = input.occupation ? String(input.occupation).toLowerCase() : null;
   const candidates = [];
   for (const agent of Array.isArray(agents) ? agents : []) {
     for (const assignment of agent.assignments ?? []) {
@@ -15,13 +16,17 @@ function matchCandidates(agents, task, input) {
       const capabilities = effective(assignment, agent.profile, 'capabilities');
       if (!required.every(value => capabilities.includes(value))) continue;
       const workMatch = effective(assignment, agent.profile, 'work_kinds').includes(workKind);
-      if (!workMatch && !required.length) continue;
+      // The lead assigns by occupation first; a matching occupation qualifies on its own.
+      const role = agent.occupation?.role ? String(agent.occupation.role).toLowerCase() : null;
+      const occupationMatch = Boolean(occupation) && role === occupation;
+      if (!workMatch && !occupationMatch && !required.length) continue;
       candidates.push({ agentId: agent.agent_id, name: agent.profile?.display_name || agent.profile?.name,
         projectId: assignment.personal_project_id, capabilities,
         allowedClients: agent.profile?.allowed_clients ?? [],
         clientAvailable: Boolean(agent.profile?.allowed_clients?.includes(input.sourceApplication)),
         ...(assignment.responsibility ? { responsibility: assignment.responsibility } : {}),
         requiresLoan: assignment.personal_project_id !== task.personalProjectId,
+        ...(role ? { occupation: role } : {}), occupationMatch,
         workMatch, activeTasks: agent.open_task_count ?? 0 });
     }
   }
@@ -60,10 +65,11 @@ export async function planAgentCollaboration(application, input) {
   const separated = input.taskSize !== 'small' && !verificationOnly;
   const independent = separated && input.taskSize === 'complex' ? input.independentWork : null;
   const verification = { workKind: input.verificationWorkKind ?? 'test_validation',
+    occupation: input.verificationOccupation ?? 'testing',
     requiredCapabilities: input.verificationCapabilities ?? [] };
   const pools = { main: matchCandidates(agents, task, input),
     independent: independent ? matchCandidates(agents, task, { ...input, ...independent,
-      requiredCapabilities: independent.requiredCapabilities ?? [] }) : [],
+      requiredCapabilities: independent.requiredCapabilities ?? [], occupation: independent.occupation ?? null }) : [],
     verification: separated ? matchCandidates(agents, task, { ...input, ...verification }) : [] };
   // A loan needs the source project's lead, who itself cannot be borrowed.
   const sourceProjects = [...new Set(Object.values(pools).flat().filter(item => item.requiresLoan).map(item => item.projectId))];
@@ -72,7 +78,8 @@ export async function planAgentCollaboration(application, input) {
   const token = input.taskContextToken;
   const eligible = (pool, excluded = [], available = true) => pool.filter(item => item.clientAvailable === available && !excluded.includes(item.agentId)
     && (!item.requiresLoan || (sourceLeads[item.projectId] && sourceLeads[item.projectId] !== item.agentId)))
-    .sort((a, b) => Number(a.requiresLoan) - Number(b.requiresLoan) || Number(b.workMatch) - Number(a.workMatch)
+    .sort((a, b) => Number(b.occupationMatch) - Number(a.occupationMatch)
+      || Number(a.requiresLoan) - Number(b.requiresLoan) || Number(b.workMatch) - Number(a.workMatch)
       || a.activeTasks - b.activeTasks || a.agentId.localeCompare(b.agentId));
   const authors = [...new Set([task.projectAgentId, ...(input.implementationAgentIds ?? [])])];
   const mainCandidates = eligible(pools.main, independentAcceptance ? authors : []);
@@ -118,8 +125,9 @@ export async function planAgentCollaboration(application, input) {
         guidance: 'A qualified FLA exists but cannot use this client. Select an already authorized eligible client with assess_agent_action or report the constraint; do not recruit a replacement or relax its allowed clients.' } : {}),
       ...(candidate?.requiresLoan ? { borrow: nextSteps(candidate, token, sourceLeads[candidate.projectId], task.personalProjectId).borrow } : {}) };
   }
-  const main = !independentAcceptance && mainCandidates.find(candidate => candidate.agentId === task.projectAgentId)
-    || mainCandidates[0];
+  // The lead keeps the main work only when no other occupation was asked for.
+  const main = !independentAcceptance && mainCandidates.find(candidate => candidate.agentId === task.projectAgentId
+    && (!input.occupation || candidate.occupationMatch)) || mainCandidates[0];
   const workstreams = [workstream('main', input, main, [], unavailableCandidates)];
   if (independent) {
     const excluded = [...authors, main?.agentId];
