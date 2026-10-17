@@ -1,3 +1,4 @@
+from .staffing_demand import StaffingDemandQuery, query_staffing_demand
 from .agent_verification_models import AgentQualityQuery, AgentVerification
 from .agent_loan_models import AgentLoanRequest, AgentLoanDecision, AgentLoanQuery
 from .agent_conversation_models import (
@@ -6,6 +7,10 @@ from .agent_conversation_models import (
 
 
 def register_agent_conversation_routes(application, store, Actor):
+    @application.post('/v1/occupation-demand/query')
+    async def staffing_demand(request: StaffingDemandQuery, actor: Actor):
+        return await query_staffing_demand(store, actor, request)
+
     @application.post('/v1/agent-verification/query')
     async def quality(request: AgentQualityQuery, actor: Actor):
         return await store.query_agent_quality(actor, request)

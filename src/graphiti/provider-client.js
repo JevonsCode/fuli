@@ -69,6 +69,9 @@ export class GraphitiProviderClient {
     if (!['query', 'record'].includes(operation)) throw new TypeError('Unknown verification operation');
     return this.#request(`/v1/agent-verification/${operation}`, { method: 'POST', body: input });
   }
+  occupationDemand(input) {
+    return this.#request('/v1/occupation-demand/query', { method: 'POST', body: input });
+  }
   agentLoan(operation, input) {
     if (!['query', 'request', 'decide'].includes(operation)) throw new TypeError('Unknown loan operation');
     return this.#request(`/v1/agent-loans/${operation}`, { method: 'POST', body: input });
