@@ -479,7 +479,13 @@ class StoreProjectAgents:
         agent_id: str | None,
         status: str | None,
         capability: str | None,
+        page: dict | None = None,
     ):
+        # page: {'after': (rank, name, agent_id) | None, 'limit': int, 'open_work': bool}.
+        # Keyset paging over the same global order as the full list, applied
+        # before the per-Agent joins so a page only reads its own Agents.
+        page = page or {}
+        after = page.get('after') or (None, None, None)
         records, _, _ = await self.runtime.driver.execute_query(
             '''
             MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
@@ -515,6 +521,29 @@ class StoreProjectAgents:
                         CONTAINS toLower($capability)
                 }
               )
+              AND (
+                NOT $open_work
+                OR EXISTS {
+                  MATCH (space)-[:HAS_PROJECT_AGENT_TASK]->(:FuliProjectAgentTask)-
+                        [open:HAS_PARTICIPANT]->(agent)
+                  WHERE open.status IN ['awaiting_recruitment', 'queued', 'running',
+                                        'paused', 'blocked', 'awaiting_review']
+                }
+              )
+            WITH space, agent, CASE agent.agent_type
+                   WHEN 'coordinator' THEN 0
+                   WHEN 'hr' THEN 1
+                   WHEN 'durable' THEN 2
+                   ELSE 3
+                 END AS order_rank, coalesce(agent.name, '') AS order_name
+            WHERE $after_rank IS NULL
+               OR order_rank > $after_rank
+               OR (order_rank = $after_rank AND (
+                    order_name > $after_name
+                    OR (order_name = $after_name AND agent.agent_id > $after_id)))
+            WITH space, agent, order_rank, order_name
+            ORDER BY order_rank, order_name, agent.agent_id
+            LIMIT $row_limit
             OPTIONAL MATCH (space)-[:CONTAINS_PROJECT]->
                   (project:FuliPersonalProject)-
                   [:HAS_PROJECT_AGENT_ASSIGNMENT]->
@@ -538,6 +567,7 @@ class StoreProjectAgents:
                    personal_project_id: task.personal_project_id,
                    status: participant.status,
                    updated_at: participant.updated_at,
+                   running_since: participant.running_since,
                    source_application: task.source_application
                  }) AS all_task_rows,
                  collect(DISTINCT {
@@ -587,7 +617,7 @@ class StoreProjectAgents:
                        WHEN 'durable' THEN 2
                        ELSE 3
                      END,
-                     agent.name,
+                     coalesce(agent.name, ''),
                      agent.agent_id
             ''',
             personal_space_id=personal_space_id,
@@ -595,6 +625,12 @@ class StoreProjectAgents:
             agent_id=agent_id,
             status=status,
             capability=capability,
+            open_work=bool(page.get('open_work')),
+            after_rank=after[0],
+            after_name=after[1],
+            after_id=after[2],
+            # One extra row tells the caller whether another page exists.
+            row_limit=page['limit'] + 1 if page.get('limit') else 1_000_000,
             routing_='r',
         )
         return records
@@ -1117,6 +1153,13 @@ class StoreProjectAgents:
             open_task_count=len(tasks),
             current_task_id=tasks[0]['task_id'] if tasks else None,
             occupation=occupation_from_agent_node(raw),
+            # Only a stamped entry into running is a start time; rows written
+            # before the stamp existed stay unknown instead of using updated_at.
+            current_task_running_since=(
+                native_datetime(tasks[0]['running_since'])
+                if work_status == 'running' and tasks[0].get('running_since')
+                else None
+            ),
             observed_clients=observed_clients,
             recruited_at=(
                 native_datetime(raw['recruited_at'])

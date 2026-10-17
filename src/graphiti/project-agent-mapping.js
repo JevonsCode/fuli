@@ -118,6 +118,8 @@ export function projectAgentRecord(value) {
     tags: value.occupation.tags ?? [],
     updatedAt: value.occupation.updated_at
   } : null, Object.hasOwn(value, 'occupation'));
+  copyOptional(result, 'currentTaskRunningSince', value.current_task_running_since,
+    Object.hasOwn(value, 'current_task_running_since'));
   copyOptional(result, 'observedClients', value.observed_clients,
     Object.hasOwn(value, 'observed_clients'));
   copyOptional(result, 'recruitedAt', value.recruited_at,
@@ -489,7 +491,9 @@ export function projectAgentTaskParticipantRecord(value = {}) {
     assignmentSummary: value.assignment_summary ?? null,
     joinedAt: value.joined_at,
     updatedAt: value.updated_at,
-    endedAt: value.ended_at ?? null
+    endedAt: value.ended_at ?? null,
+    // null: not running, or written before the run start was recorded.
+    runningSince: value.running_since ?? null
   };
 }
 

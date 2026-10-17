@@ -1,12 +1,13 @@
 """HTTP route registration for the Project Agent collaboration control plane."""
 
 from datetime import date
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query
 
 from .project_agent_memory_routes import register_project_agent_memory_routes
 from .project_agent_occupation_models import ProjectAgentOccupationUpdate
+from .store_project_agent_pages import ProjectAgentPage
 from .project_agent_worker_routes import register_project_agent_worker_routes
 from .task_notifications import register_task_notification_routes
 
@@ -95,6 +96,28 @@ def register_project_agent_routes(
             personal_project_id,
             status=status,
             capability=capability,
+        )
+
+    @application.get('/v1/project-agent-pages', response_model=ProjectAgentPage)
+    async def list_project_agent_page(
+        actor: Actor,
+        personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
+        personal_project_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
+        status: Annotated[ProjectAgentStatus | None, Query()] = None,
+        capability: Annotated[str | None, Query(min_length=1, max_length=512)] = None,
+        work: Annotated[Literal['open'] | None, Query()] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        cursor: Annotated[str | None, Query(min_length=1, max_length=1024)] = None,
+    ) -> ProjectAgentPage:
+        return await store.list_project_agent_page(
+            actor,
+            personal_space_id,
+            personal_project_id,
+            status=status,
+            capability=capability,
+            work=work,
+            limit=limit,
+            cursor=cursor,
         )
 
     @application.get(
