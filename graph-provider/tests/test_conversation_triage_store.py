@@ -130,3 +130,34 @@ def test_a_label_carries_exactly_what_its_kind_needs():
                     {'kind': 'one_off'}, {'kind': 'topic', 'personal_project_id': 'garden'}):
         with pytest.raises(ValidationError):
             write('c1', **changes)
+
+
+class ListDriver:
+    async def execute_query(self, query, **parameters):
+        assert 'FuliConversationTriage' in query
+        return [{'c': {'id': 'c1', 'summary': 'One', 'status': 'reported', 'revision': 2, 'last_activity': 'x'},
+                 't': {'kind': 'topic', 'topic': 'Garden', 'source': 'user', 'personal_project_id': None,
+                       'labeled_at': 'y', 'formed_project_id': None}},
+                {'c': {'id': 'c2', 'summary': 'Two', 'status': 'reported', 'revision': 1, 'last_activity': 'x'},
+                 't': None}], None, None
+
+
+@pytest.mark.asyncio
+async def test_conversation_lists_carry_their_triage_label():
+    from fuli_graph.agent_conversation_models import ConversationQuery, ConversationPolicy
+    from fuli_graph.store_agent_conversations import StoreAgentConversations
+
+    class ListStore(StoreAgentConversations):
+        def __init__(self):
+            self.runtime = SimpleNamespace(driver=ListDriver())
+
+        async def _conversation_scope(self, actor, request, *, write=False):
+            return 'scope'
+
+        async def _conversation_policy(self, scope):
+            return ConversationPolicy()
+
+    result = await ListStore().query_conversations({}, ConversationQuery(
+        personal_space_id=SPACE, personal_project_id=None, agent_id='employee.assistant', mode='list'))
+    assert [row['triage'] and row['triage']['topic'] for row in result['conversations']] == ['Garden', None]
+    assert result['conversations'][0]['triage']['source'] == 'user'
