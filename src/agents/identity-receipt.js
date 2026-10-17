@@ -4,6 +4,8 @@ export function agentProfileUrl(application, agentId) {
   return `${application.consoleUrl ?? sourceConsoleUrl(null)}/agents/${encodeURIComponent(application.config.personal.spaceId)}/${encodeURIComponent(agentId)}`;
 }
 
+export const CONTINUATION_GUIDANCE = 'Use a connected client and the same authorized project/Agent. Obtain a fresh task context; never reuse the previous client’s token. This is a FULI prompt, not a native client @ picker registration.';
+
 export function agentContinuation(projectId, agentId, conversationId = null) {
   return { personal_project_id: projectId, agent_id: agentId,
     ...(conversationId ? { conversation_id: conversationId } : {}),
@@ -11,7 +13,7 @@ export function agentContinuation(projectId, agentId, conversationId = null) {
       ? `请在 FULI 项目 ${JSON.stringify(projectId)} 对应的工作目录继续工作。`
       : '请在未绑定项目的会话中，以这个全局 FLA 继续工作。')
       + (conversationId ? `先用当前任务的 taskContextToken 调用 resume_agent_conversation，conversationId=${JSON.stringify(conversationId)}，再按需读取上下文。` : '先恢复这个 Agent 在当前范围的记忆和最近会话。'),
-    guidance: 'Use a connected client and the same authorized project/Agent. Obtain a fresh task context; never reuse the previous client’s token. This is a FULI prompt, not a native client @ picker registration.' };
+    guidance: CONTINUATION_GUIDANCE };
 }
 
 function agentLink(application, agentId, name) {

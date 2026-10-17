@@ -31,7 +31,7 @@ export async function claudeLifecycleOutput(event, input, invoke) {
     });
     return JSON.parse(hookAdditionalContextToolResult(compactTaskContext(context), {
       hookEventName: event,
-      label: 'Fuli task context. Read full context; apply effective_preferences. Finish with checkpoint_task_knowledge and a truthful workLog.',
+      label: 'Fuli task context. Read full context; apply effective_preferences. Finish with checkpoint_task_knowledge and a truthful workLog. Shared rules are referenced by version; read MCP resource fuli://rules/task-entry when one applies.',
       limitBytes: 128 * 1024,
       itemLimit: 1000
     }).content[0].text);

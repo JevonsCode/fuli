@@ -14,7 +14,7 @@ const BASELINE = Object.freeze({
   fullToolSchemaBytes: 166883,
   chatToolSchemaBytes: 40019,
   instructionsBytes: 2043,
-  projectEntryChars: 10264
+  projectEntryChars: 3449
 });
 
 const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
