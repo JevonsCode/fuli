@@ -7,6 +7,8 @@ from .graph_projection import (
 from .agent_confirmation_progress import agent_confirmation_progress
 from .ai_review import effective_ai_review
 from .graph_models import GraphEdge, GraphNode, GraphResult
+from .project_memory_usage import read_project_memory_usage
+from .project_memory_usage_projection import append_memory_usage_projection
 from .models import (
     ConfirmationBasis,
     GraphEvidence,
@@ -144,6 +146,12 @@ async def read_graph(
             management_edges,
             knowledge_nodes,
             knowledge_edges,
+        )
+    if space['kind'] == 'personal':
+        graph_nodes, graph_edges = append_memory_usage_projection(
+            graph_nodes, graph_edges,
+            await read_project_memory_usage(store, space_id, personal_project_id),
+            group_id=space['group_id'], project_id=personal_project_id,
         )
     return GraphResult(
         space_id=space_id,
