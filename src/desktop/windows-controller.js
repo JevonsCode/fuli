@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readWindowsNativeBundle } from '../native-runtime/windows-assets.js';
 import { isMainModule } from '../system/main-module.js';
-import { readWindowsInstallation } from './windows-installation-context.js';
+import { readWindowsInstallation, windowsMigrationCommand } from './windows-installation-context.js';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const ACTIONS = new Set(['status', 'start', 'start-open', 'open', 'stop']);
@@ -76,7 +76,8 @@ function assertNativeSelection(context) {
   const settings = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null;
   if ((settings && settings.graphRuntimeMode !== 'native') || (!settings
       && existsSync(join(context.dataDir, 'graph-runtime.json')))) {
-    throw new Error('The selected data is not configured for native mode. The tray will not switch its runtime mode.');
+    throw new Error('The selected data is not configured for native mode. The tray will not switch its runtime mode. '
+      + '已有数据仍使用 Docker；先迁移到内置数据库 / Move it to the built-in database first: ' + windowsMigrationCommand(context.packageRoot));
   }
 }
 

@@ -7,6 +7,7 @@ import {
 import { runLocalRuntimeCommand } from './cli/local-runtime-command.js';
 import { runRemoteMcpCommand } from './cli/remote-mcp-command.js';
 import { runGraphDataCommand } from './cli/graph-data-command.js';
+import { runGraphMigrateCommand } from './cli/graph-migrate-command.js';
 import { runEmployeeCommand } from './cli/employee-command.js';
 import { runWorkerCommand } from './cli/worker-command.js';
 import { runSetupCommand } from './cli/setup-command.js';
@@ -50,6 +51,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   if (command === 'graph') {
     assertSupportedNodeVersion();
     const [action, ...graphArgs] = commandArgs;
+    if (action === 'migrate') return runGraphMigrateCommand(graphArgs, { env });
     return runGraphDataCommand(action, graphArgs, { env });
   }
   if (command === 'employee') {

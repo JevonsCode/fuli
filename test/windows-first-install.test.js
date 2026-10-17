@@ -383,3 +383,51 @@ test('partial-write cleanup never follows a replaced destination away from its o
   assert.equal(existsSync(plan.dataDir), false);
   assert.equal(existsSync(join(plan.installRoot, 'installation.json')), false);
 });
+
+test('an explicitly adopted Fuli data directory is bound unchanged and its container mode is reported', async t => {
+  const f = fixture(t);
+  const dataDir = join(f.env.LOCALAPPDATA, 'Fuli');
+  mkdirSync(join(dataDir, 'backups'), { recursive: true });
+  const existing = {
+    'graph-runtime.json': '{"personal":{"spaceId":"synthetic"}}',
+    'runtime-settings.json': JSON.stringify({ version: 1, graphRuntimeMode: 'container' }),
+    'backups/keep.txt': 'synthetic'
+  };
+  for (const [name, text] of Object.entries(existing)) writeFileSync(join(dataDir, name), text);
+  const snapshot = () => Object.fromEntries(Object.keys(existing).map(name => [name, readFileSync(join(dataDir, name), 'utf8')]));
+  const before = snapshot();
+
+  assert.throws(() => planFirstWindowsInstall(f.options), /--adopt-existing-data/);
+  const options = { ...f.options, adoptExistingData: true };
+  const plan = planFirstWindowsInstall(options);
+  assert.deepEqual(plan.adoptedData, { runtimeMode: 'container' });
+  const installed = installWindowsForCurrentUser(options, f.deps);
+
+  assert.equal(installed.adoptedExistingData, true);
+  assert.equal(installed.dataDir, dataDir);
+  assert.deepEqual(snapshot(), before);
+  assert.deepEqual(readdirSync(dataDir).sort(), ['backups', 'graph-runtime.json', 'runtime-settings.json']);
+  const context = loadTrayContext({ packageRoot: installed.packageRoot, env: f.env });
+  assert.equal(context.dataDir, dataDir);
+  const { runTrayAction } = await import('../src/desktop/windows-controller.js');
+  const calls = [];
+  const result = await runTrayAction('start', context, { runCli: async (_context, args) => {
+    calls.push(args);
+    return { code: 1, stdout: JSON.stringify({ status: 'stopped' }), stderr: '' };
+  } });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /graph migrate --to native/);
+  assert.equal(calls.some(args => args[0] !== 'status'), false, 'no setup, start or switch is attempted');
+});
+
+test('adoption is refused without data to adopt, for non-Fuli folders and for unknown modes', t => {
+  const f = fixture(t);
+  const options = { ...f.options, adoptExistingData: true };
+  assert.throws(() => planFirstWindowsInstall(options), /no existing data directory to adopt/);
+  const dataDir = join(f.env.LOCALAPPDATA, 'Fuli');
+  mkdirSync(dataDir, { recursive: true }); writeFileSync(join(dataDir, 'notes.txt'), 'not fuli');
+  assert.throws(() => planFirstWindowsInstall(options), /not Fuli data/);
+  writeFileSync(join(dataDir, 'runtime-settings.json'), JSON.stringify({ graphRuntimeMode: 'cloud' }));
+  assert.throws(() => planFirstWindowsInstall(options), /unknown graph runtime mode/);
+  assert.equal(existsSync(join(f.env.LOCALAPPDATA, 'Programs', 'Fuli')), false);
+});

@@ -41,3 +41,9 @@ export function readWindowsInstallation(packageRoot) {
       || receipt.inventorySha256 !== installationSha256(readFileSync(join(root, 'tray-files.sha256.json')))) fail();
   return record;
 }
+
+// What an installed package runs to move adopted container data to native.
+export function windowsMigrationCommand(packageRoot) {
+  return '"' + join(packageRoot, 'runtime', 'node', 'node.exe') + '" "' + join(packageRoot, 'src', 'cli.js')
+    + '" graph migrate --to native';
+}

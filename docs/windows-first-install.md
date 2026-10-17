@@ -30,9 +30,25 @@ tray and CLI defaults use the registered external data; explicit CLI `--data-dir
 remains available. The native runtime builds its manifest from the installed
 bundle on the first explicit setup; no old absolute runtime manifest is copied.
 
-Any existing application directory, data directory or same-named shortcut is
-refused. Existing native data adoption, container migration, updates, uninstall
-and update rollback are **not implemented**. Installed `fuli update` fails before
+Any existing application directory or same-named shortcut is refused. An existing
+data directory is refused unless `--adopt-existing-data` is given; then it must be
+Fuli data (`runtime-settings.json` or `graph-runtime.json`) and is bound to the new
+installation without any file in it being changed. The preview shows its current
+graph runtime. Data that still uses Docker containers is not started by the tray,
+which names the move instead:
+
+```
+"<package>\runtime\node\node.exe" "<package>\src\cli.js" graph migrate --to native
+```
+
+The move stops the running console, counts the container graph (labels and
+relationship types) with no writer running, exports it under
+`backups\graph\container-to-native-<time>`, sets up native mode, imports, and
+accepts the result only when the native census is identical. On any failure it
+switches back to container mode. The container volume is only read and is left
+stopped; client integrations are not changed (run `setup --connected-only` from
+the installed CLI afterwards to point clients at it). Updates, uninstall and update
+rollback are **not implemented**. Installed `fuli update` fails before
 npm access or stopping services. A later update slice must verify stopped owned
 processes, preserve data/configuration, rebind native asset paths and implement
 rollback before replacing an installation. Do not manually move installed slots.

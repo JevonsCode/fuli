@@ -461,3 +461,32 @@ test('offline dump and load run neo4j-admin with the instance home Windows start
       args: ['database', 'load', 'neo4j', '--from-path=/stage/in', '--overwrite-destination=true'], ...instance }
   ]);
 });
+
+test('native census reads label and relationship counts over the instance loopback HTTP endpoint', async () => {
+  const requests = [];
+  const services = createNativeGraphServices({
+    paths: PATHS,
+    runtimeDescriptor: { status: 'ready', mode: 'native', javaHome: '/jdk-21',
+      neo4jHome: PATHS.nativeNeo4jHome, providerPython: '/python' },
+    personalOnly: true,
+    readText: () => ENVIRONMENT,
+    readSettings: () => ({ ...DEFAULT_RUNTIME_SETTINGS, graphRuntimeMode: 'native' }),
+    fetchImpl: async (url, init) => {
+      requests.push({ url, init });
+      return Response.json({ errors: [], results: [
+        { data: [{ row: ['Entity', 5] }] },
+        { data: [{ row: ['RELATES_TO', 4] }] },
+        { data: [{ row: ['nodes', 5] }] },
+        { data: [{ row: ['relationships', 4] }] }
+      ] });
+    }
+  });
+
+  assert.deepEqual(await services.censusDatabase('personal'), {
+    nodes: 5, relationships: 4, labels: { Entity: 5 }, types: { RELATES_TO: 4 }
+  });
+  assert.equal(requests[0].url, `http://127.0.0.1:${DEFAULT_RUNTIME_SETTINGS.ports.personalNeo4jHttp}/db/neo4j/tx/commit`);
+  assert.equal(requests[0].init.headers.authorization,
+    `Basic ${Buffer.from('neo4j:personal-password').toString('base64')}`);
+  assert.equal(JSON.parse(requests[0].init.body).statements.length, 4);
+});
