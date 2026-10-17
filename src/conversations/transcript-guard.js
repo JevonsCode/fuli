@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, rm, lstat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { createServer } from 'node:net';
+import { acquireTranscriptGuardLock, isTranscriptGuardBusy } from './transcript-guard-lock.js';
 
 export const transcriptDigest = value => createHash('sha256').update(value).digest('hex');
 
@@ -14,15 +14,10 @@ export async function withTranscriptGuard(runtimeConfigPath, input, source, enab
   if (!(await lstat(directory)).isDirectory()) throw new Error('Transcript guard directory is unavailable');
   const key = transcriptDigest(`${runtimeConfigPath}\0${source}\0${input.session_id}`);
   const path = join(directory, `${key}.json`);
-  // A loopback mutex is released by the OS even if the process is killed.
-  // Port collisions fail closed and request a retry; no transcript is served.
-  const lock = createServer(socket => socket.destroy());
-  const lockKey = transcriptDigest(`${directory}\0${key}`);
-  const port = 49152 + (parseInt(lockKey.slice(0, 8), 16) % 16384);
-  await new Promise((resolve, reject) => {
-    lock.once('error', reject);
-    lock.listen({ host: '127.0.0.1', port, exclusive: true }, resolve);
-  });
+  // The OS releases the lock even if the process is killed. Contention fails
+  // closed and requests a retry; no transcript is served.
+  const release = await acquireTranscriptGuardLock(
+    join(dirname(runtimeConfigPath), 'transcript-guard-locks'), transcriptDigest(`${directory}\0${key}`));
   try {
     let value = null;
     try {
@@ -50,5 +45,13 @@ export async function withTranscriptGuard(runtimeConfigPath, input, source, enab
       async clear() { await rm(path, { force: true }); value = null; }
     };
     return await operation(guard);
-  } finally { await new Promise(resolve => lock.close(resolve)); }
+  } finally { await release(); }
+}
+
+// Only a busy guard lock is attributed to another Fuli hook; every other guard
+// failure stays generic so local diagnostics are never echoed to the host.
+export function transcriptGuardFailureMessage(error) {
+  return isTranscriptGuardBusy(error)
+    ? 'Another Fuli hook for this host session is still running, so this prompt was not linked to an Agent. Retry after it finishes; if it persists, start a new host session and resume the intended Agent.'
+    : 'Fuli transcript handoff could not be completed safely. Retry task entry; no previous Agent context was supplied.';
 }

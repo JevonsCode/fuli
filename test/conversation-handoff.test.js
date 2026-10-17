@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, appendFile, rm, readdir, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
-import { setTimeout as delay } from 'node:timers/promises';
+import { TRANSCRIPT_GUARD_BUSY } from '../src/conversations/transcript-guard-lock.js';
 import { withTranscriptGuard, transcriptDigest } from '../src/conversations/transcript-guard.js';
 import { syncConversationTranscript, claimTranscriptBoundary, recordTranscriptTaskEntry } from '../src/conversations/sync-transcript.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from '../src/agents/codex/conversation-transcript.js';
@@ -18,32 +18,15 @@ const listen = (server, port) => new Promise((resolve, reject) => {
   server.once('error', reject);
   server.listen({ host: '127.0.0.1', port, exclusive: true }, resolve);
 });
-const guardPort = (runtime, sessionId) => {
+// The loopback port the guard used before it switched to a Fuli-owned lock name.
+const formerGuardPort = (runtime, sessionId) => {
   const key = transcriptDigest(`${runtime}\0codex\0${sessionId}`);
   const lockKey = transcriptDigest(`${join(dirname(runtime), 'transcript-guards')}\0${key}`);
   return 49152 + (parseInt(lockKey.slice(0, 8), 16) % 16384);
 };
-async function portIsFree(port) {
-  const probe = createServer();
-  try { await listen(probe, port); return true; } catch (error) {
-    if (error.code !== 'EADDRINUSE') throw error;
-    return false;
-  } finally { if (probe.listening) await new Promise(resolve => probe.close(resolve)); }
-}
-const temporaryDirectory = () => mkdtemp(join(tmpdir(), 'fuli-handoff-'));
-async function fixture(t, tail, { onLockContention = () => {}, makeDirectory = temporaryDirectory } = {}) {
-  // Unrelated CI processes can hold the guard's hashed loopback port for longer
-  // than the entry retry budget. Choose a namespace whose port is free before
-  // any guard state exists; the guard itself still fails closed on contention.
-  let dir, port;
-  for (let attempt = 0; ; attempt++) {
-    const candidate = await makeDirectory();
-    t.after(() => rm(candidate, { recursive: true, force: true }));
-    dir = candidate;
-    port = guardPort(join(dir, 'runtime.json'), 'session');
-    if (await portIsFree(port)) break;
-    if (attempt >= 15) throw new Error('No handoff fixture namespace had a free guard port');
-  }
+async function fixture(t, tail) {
+  const dir = await mkdtemp(join(tmpdir(), 'fuli-handoff-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
   const path = join(dir, 'transcript.jsonl');
   await writeFile(path, header + tail);
   const input = { transcript_path: path, session_id: 'session', prompt: 'incoming', cwd: '/synthetic' };
@@ -69,26 +52,16 @@ async function fixture(t, tail, { onLockContention = () => {}, makeDirectory = t
     }
   } };
   const runtime = join(dir, 'runtime.json');
-  let active = false;
-  const run = async callback => {
-    // Parallel test services can occupy the guard's hashed loopback port.
-    // Retry only before entry; genuine same-fixture contention still fails closed.
-    if (active) return withTranscriptGuard(runtime, input, 'codex', true, callback);
-    for (let attempt = 0; ; attempt++) {
-      let entered = false;
-      try {
-        return await withTranscriptGuard(runtime, input, 'codex', true, async guard => {
-          entered = active = true;
-          try { return await callback(guard); } finally { active = false; }
-        });
-      } catch (error) {
-        if (entered || active || error.code !== 'EADDRINUSE' || attempt >= 99) throw error;
-        onLockContention();
-        await delay(20);
-      }
-    }
-  };
-  return { dir, port, input, app, run, appended, calls, runtime,
+  const run = callback => withTranscriptGuard(runtime, input, 'codex', true, callback);
+  const entries = [];
+  const hook = () => runCodexLifecycleHook(['--event', 'UserPromptSubmit'], {
+    readInput: async () => input, write: () => {},
+    resolveRuntimeOptions: () => ({ runtimeConfigPath: runtime }),
+    openApplication: () => app,
+    createLeases: () => ({ withGraphLease: async (_owner, operation) => operation() }),
+    callTool: async (_app, name) => { entries.push(name); task = 'new'; return { taskContextToken: 'new' }; }
+  });
+  return { dir, input, app, run, hook, entries, appended, calls, runtime,
     switchTask: value => { task = value; }, failClaim: value => { failClaim = value; }, disable: () => { enabled = false; }, disablePolicy: () => { policyEnabled = false; } };
 }
 
@@ -159,7 +132,7 @@ test('stale guard does not bind an unrelated task and disabled capture leaves it
 test('guard serializes same-session hooks and persists only hashes and cursors with private permissions', async t => {
   const f = await fixture(t, '');
   await f.run(async guard => {
-    await assert.rejects(f.run(async () => { assert.fail('Concurrent hook entered'); }), /EADDRINUSE/);
+    await assert.rejects(f.run(async () => { assert.fail('Concurrent hook entered'); }), { code: TRANSCRIPT_GUARD_BUSY });
     await guard.write({ version: 1, phase: 'scan', owner: transcriptDigest('old'), prompt: transcriptDigest('incoming'), scanCursor: header.length, userMessages: 0, omitted: false });
   });
   const directory = join(f.dir, 'transcript-guards');
@@ -172,56 +145,42 @@ test('guard serializes same-session hooks and persists only hashes and cursors w
   await f.run(async guard => { assert.equal(guard.value.scanCursor, header.length); });
 });
 
-test('handoff fixture waits for an unrelated occupied mutex port without retrying callback failures', async t => {
-  const contended = Promise.withResolvers();
-  let f, blocker;
-  // Setup must also avoid unrelated listeners before testing guard contention.
-  // A fresh fixture changes the hashed namespace without replaying any callback.
-  for (let attempt = 0; attempt < 16; attempt++) {
-    f = await fixture(t, '', { onLockContention: contended.resolve });
-    blocker = createServer();
-    try {
-      await listen(blocker, f.port);
-      break;
-    } catch (error) {
-      if (error.code !== 'EADDRINUSE' || attempt === 15) throw error;
-    }
+test('an unrelated listener on the former hashed loopback port does not block the guard or task entry', async t => {
+  const f = await fixture(t, row('assistant', 'prior completed answer'));
+  const blocker = createServer();
+  t.after(() => new Promise(resolve => blocker.close(() => resolve())));
+  try { await listen(blocker, formerGuardPort(f.runtime, f.input.session_id)); } catch (error) {
+    // Something else already owns the port, which is the same foreign-holder case.
+    if (error.code !== 'EADDRINUSE') throw error;
   }
-  t.after(async () => {
-    if (blocker.listening) await new Promise(resolve => blocker.close(resolve));
-  });
-  let calls = 0;
-  const running = f.run(async () => { calls++; });
-  await Promise.race([contended.promise, running]);
-  assert.equal(calls, 0, 'The callback must not run while an unrelated socket owns the port.');
-  await new Promise(resolve => blocker.close(resolve));
-  await running;
-  assert.equal(calls, 1);
-  const callbackFailure = Object.assign(new Error('Callback failure'), { code: 'EADDRINUSE' });
-  await assert.rejects(f.run(async () => { calls++; throw callbackFailure; }), error => error === callbackFailure);
-  assert.equal(calls, 2, 'A failure after entering the callback must never replay its writes.');
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const result = await f.hook();
+    assert.notEqual(result.decision, 'block');
+    assert.doesNotMatch(result.systemMessage ?? '', /another Fuli hook|lock/i);
+  }
+  assert.deepEqual(f.entries, ['begin_task_context', 'begin_task_context', 'begin_task_context']);
 });
 
-test('handoff fixture skips a namespace whose mutex port an unrelated process holds past the retry budget', async t => {
-  const blockers = [];
-  t.after(() => Promise.all(blockers.map(blocker => new Promise(resolve => blocker.close(resolve)))));
-  let occupied;
-  const makeDirectory = async () => {
-    const dir = await temporaryDirectory();
-    if (occupied) return dir;
-    occupied = dir;
-    // Held for the whole test, like a long-lived CI listener or connection.
-    const blocker = createServer();
-    try { await listen(blocker, guardPort(join(dir, 'runtime.json'), 'session')); blockers.push(blocker); } catch (error) {
-      if (error.code !== 'EADDRINUSE') throw error;
-    }
-    return dir;
-  };
-  const f = await fixture(t, row('assistant', 'prior completed answer'), { makeDirectory });
-  const result = await f.run(guard => syncConversationTranscript(f.app, f.input, 'codex', adapter, guard));
-  assert.equal(result.atPromptBoundary, true);
-  assert.deepEqual(f.appended.map(event => event.content), ['prior completed answer']);
-  assert.notEqual(f.dir, occupied);
+test('a same-session hook reports a held guard as another Fuli hook and does not begin a task', async t => {
+  const f = await fixture(t, row('assistant', 'prior completed answer'));
+  await f.run(async () => {
+    const result = await f.hook();
+    assert.notEqual(result.decision, 'block');
+    assert.match(result.systemMessage, /Another Fuli hook for this host session is still running/);
+    assert.equal(result.hookSpecificOutput, undefined);
+  });
+  assert.deepEqual(f.entries, []);
+  assert.deepEqual(f.appended, []);
+  const result = await f.hook();
+  assert.doesNotMatch(result.systemMessage ?? '', /Another Fuli hook/);
+  assert.deepEqual(f.entries, ['begin_task_context']);
+});
+
+test('guards for different sessions do not contend', async t => {
+  const f = await fixture(t, '');
+  await f.run(async () => {
+    await withTranscriptGuard(f.runtime, { ...f.input, session_id: 'other-session' }, 'codex', true, async () => {});
+  });
 });
 
 test('lifecycle skips unverified context without intercepting the native prompt', async t => {
@@ -262,6 +221,33 @@ test('a killed hook leaves resumable state and its OS lock is released on proces
   const child = spawnSync(process.execPath, ['--input-type=module', '-e', script, moduleUrl, f.runtime, JSON.stringify(f.input)], { encoding: 'utf8', timeout: 5000 });
   assert.equal(child.status, 0, child.stderr);
   await f.run(async guard => { assert.equal(guard.value.scanCursor, 123); });
+});
+
+test('a hook process killed while holding the guard serializes other processes until the OS releases it', async t => {
+  const f = await fixture(t, '');
+  const moduleUrl = new URL('../src/conversations/transcript-guard.js', import.meta.url).href;
+  const script = `const { withTranscriptGuard, transcriptDigest } = await import(process.argv[1]);
+    await withTranscriptGuard(process.argv[2], JSON.parse(process.argv[3]), 'codex', true, async guard => {
+      await guard.write({ version: 1, phase: 'scan', owner: transcriptDigest('old'), prompt: transcriptDigest('incoming'), scanCursor: 456, userMessages: 0, omitted: false });
+      process.stdout.write('held');
+      setInterval(() => {}, 1000);
+      await new Promise(() => {});
+    });`;
+  const child = spawn(process.execPath, ['--input-type=module', '-e', script, moduleUrl, f.runtime, JSON.stringify(f.input)], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const exited = new Promise(resolve => child.once('exit', resolve));
+  t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
+  let stderr = '';
+  child.stderr.on('data', chunk => { stderr += chunk; });
+  await new Promise((resolve, reject) => {
+    child.stdout.on('data', chunk => { if (String(chunk).includes('held')) resolve(); });
+    child.once('exit', code => reject(new Error(`Guard holder exited early (${code}): ${stderr}`)));
+  });
+  await assert.rejects(f.run(async () => { assert.fail('Entered while another process held the guard'); }), { code: TRANSCRIPT_GUARD_BUSY });
+  assert.match((await f.hook()).systemMessage, /Another Fuli hook/);
+  assert.deepEqual(f.entries, []);
+  child.kill('SIGKILL');
+  await exited;
+  await f.run(async guard => { assert.equal(guard.value.scanCursor, 456); });
 });
 
 test('an interrupted begin without a recorded new token never guesses the current owner', async t => {
@@ -324,4 +310,14 @@ test('an append failure after a committed page reports partial capture and keeps
   f.app.personal.conversation = conversation;
   await f.run(guard => syncConversationTranscript(f.app, { ...f.input, prompt: undefined }, 'codex', adapter, guard));
   assert.equal(f.appended.length, 60);
+});
+
+test('only a busy guard lock is attributed to another Fuli hook', async () => {
+  const { acquireTranscriptGuardLock } = await import('../src/conversations/transcript-guard-lock.js');
+  const { transcriptGuardFailureMessage } = await import('../src/conversations/transcript-guard.js');
+  const unsupported = await acquireTranscriptGuardLock(tmpdir(), transcriptDigest('synthetic'), 'synthetic-os').catch(error => error);
+  assert.notEqual(unsupported.code, TRANSCRIPT_GUARD_BUSY);
+  assert.match(transcriptGuardFailureMessage(unsupported), /could not be completed safely/);
+  assert.match(transcriptGuardFailureMessage(Object.assign(new Error('foreign'), { code: 'EADDRINUSE' })), /could not be completed safely/);
+  assert.match(transcriptGuardFailureMessage(Object.assign(new Error('busy'), { code: TRANSCRIPT_GUARD_BUSY })), /Another Fuli hook/);
 });
