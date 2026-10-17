@@ -12,6 +12,7 @@ from .project_agent_task_models import ProjectAgentTaskActivityCreate, ProjectAg
 from .provider_values import now_utc, stable_uuid
 from .store_project_agent_task_recruitment import RECRUITMENT_CLAIM_TTL
 from .store_transactions import query_store_transaction
+from .task_participant_running import running_since_set
 
 
 TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled"}
@@ -346,7 +347,8 @@ class StoreProjectAgentTaskActivity:
                   OR participant_agent.agent_id = $agent_id
                 )
               THEN [1] ELSE [] END |
-              SET participant.status = $status,
+              SET ''' + running_since_set('participant') + '''
+                  participant.status = $status,
                   participant.role = CASE
                     WHEN promote_lead
                       AND participant_agent.agent_id = $agent_id
