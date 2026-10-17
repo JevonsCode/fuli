@@ -527,4 +527,10 @@ onBeforeUnmount(() => {
   .employee-all-projects-column, .employee-task-shift-move, .employee-task-shift-enter-active, .employee-task-shift-leave-active, .employee-all-projects-drag-preview.is-dropping { transition-duration: 1ms !important; }
   .employee-all-projects-drag-preview { transform: none; }
 }
+:root[data-motion="reduced"] .employee-all-projects-column,
+:root[data-motion="reduced"] .employee-task-shift-move,
+:root[data-motion="reduced"] .employee-task-shift-enter-active,
+:root[data-motion="reduced"] .employee-task-shift-leave-active,
+:root[data-motion="reduced"] .employee-all-projects-drag-preview.is-dropping { transition-duration: 1ms !important; }
+:root[data-motion="reduced"] .employee-all-projects-drag-preview { transform: none; }
 </style>

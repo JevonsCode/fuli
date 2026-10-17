@@ -3,6 +3,7 @@ import { createApp } from 'vue'
 
 import App from './App.vue'
 import { i18n } from './i18n'
+import { initMotionPreference } from './lib/motion-preference'
 import { router } from './router'
 import './styles/tokens.css'
 import '../styles.css'
@@ -12,6 +13,8 @@ import './styles/knowledge-graph.css'
 import './styles/vue.css'
 import './styles/project-overview.css'
 import './styles/primitives.css'
+
+initMotionPreference()
 
 const app = createApp(App)
 app.use(createPinia())

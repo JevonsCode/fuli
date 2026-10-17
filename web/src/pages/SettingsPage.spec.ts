@@ -47,6 +47,32 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
+  it('turns decorative motion off for this browser without touching the saved settings', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().runtimeStatus = 'ready'
+    const fetch = vi.fn(async (input) => {
+      if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
+      return Response.json({}, { status: 503 })
+    })
+    vi.stubGlobal('fetch', fetch)
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    await flushPromises()
+    const requests = fetch.mock.calls.length
+    const toggle = wrapper.get('input[data-reduce-motion]')
+    expect((toggle.element as HTMLInputElement).checked).toBe(false)
+
+    await toggle.setValue(true)
+    expect(document.documentElement.dataset.motion).toBe('reduced')
+    expect(window.localStorage.getItem('fuli.motion')).toBe('reduced')
+
+    await toggle.setValue(false)
+    expect(document.documentElement.dataset.motion).toBeUndefined()
+    expect(window.localStorage.getItem('fuli.motion')).toBeNull()
+    expect(fetch.mock.calls).toHaveLength(requests)
+    wrapper.unmount()
+  })
+
   it('reports a failed save in the persistent global feedback and unlocks retry', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

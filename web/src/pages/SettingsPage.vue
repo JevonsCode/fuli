@@ -15,6 +15,7 @@ import {
   sourceApplicationName,
 } from '@/features/knowledge/source-adapters'
 import { currentLocale, i18n, setLocale, t, type AppLocale } from '@/i18n'
+import { motionPreference, setMotionPreference } from '@/lib/motion-preference'
 import { useConsoleStore } from '@/stores/console'
 import type {
   ConversationSourceApplication,
@@ -213,6 +214,10 @@ function updateLocale(value: string) {
   if (value === 'zh-CN' || value === 'en-US') setLocale(value)
 }
 
+function toggleReducedMotion(event: Event) {
+  setMotionPreference((event.target as HTMLInputElement).checked ? 'reduced' : 'system')
+}
+
 function updateRefreshInterval(value: string) {
   const seconds = refreshIntervals.find((option) => String(option) === value)
   if (seconds === undefined || !form.value) return
@@ -324,6 +329,10 @@ function revealInvalidField(event: Event) {
                 @update:model-value="updateLocale"
               />
             </div>
+            <label class="setting-row">
+              <span><strong>{{ t('settings.behavior.reduceMotion') }}</strong><small>{{ t('settings.behavior.reduceMotionMeta') }}</small></span>
+              <input type="checkbox" role="switch" data-reduce-motion :checked="motionPreference === 'reduced'" @change="toggleReducedMotion" />
+            </label>
             <div class="setting-row select-row">
               <span><strong>{{ t('settings.resources.refresh') }}</strong></span>
               <UiSelect
