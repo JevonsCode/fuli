@@ -41,7 +41,10 @@ function Use-FuliStandaloneNode {
       Write-Host "Downloading standalone Node.js v$standaloneVersion ($arch)..."
       Invoke-WebRequest -Uri $archiveUrl -OutFile $tmpArchive -UseBasicParsing
     }
-    $actualSha = (Get-FileHash -LiteralPath $tmpArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+    # .NET hashing works even when the module path belongs to another PowerShell edition.
+    $stream = [System.IO.File]::OpenRead($tmpArchive)
+    try { $hashBytes = [System.Security.Cryptography.SHA256]::Create().ComputeHash($stream) } finally { $stream.Dispose() }
+    $actualSha = ([System.BitConverter]::ToString($hashBytes) -replace '-', '').ToLowerInvariant()
     if ($actualSha -ne $expectedSha) {
       Remove-Item -LiteralPath $tmpArchive -Force -ErrorAction SilentlyContinue
       throw "Standalone Node.js checksum mismatch for $distName.zip (expected $expectedSha, got $actualSha)."
