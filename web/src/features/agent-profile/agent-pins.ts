@@ -2,9 +2,7 @@ import { inject, ref, watch, type InjectionKey, type Ref } from 'vue'
 
 import { getJson, putJson } from '@/api/client'
 import { i18n, t } from '@/i18n'
-import type { ProjectAgentRecord } from '@/types'
 
-import { useAgentRoster } from './useAgentRoster'
 
 export interface AgentPinsResponse {
   revision: number
@@ -21,15 +19,7 @@ export interface AgentPinsState {
   setPinned: (agentId: string, pinned: boolean) => Promise<boolean>
 }
 
-export interface AgentRosterState {
-  agents: Ref<ProjectAgentRecord[]>
-  loading: Ref<boolean>
-  error: Ref<string>
-  load: () => Promise<void>
-}
-
 export const AGENT_PINS_KEY: InjectionKey<AgentPinsState> = Symbol('agent-pins')
-export const AGENT_ROSTER_KEY: InjectionKey<AgentRosterState> = Symbol('agent-roster')
 
 interface CachedPins {
   revision: number
@@ -188,6 +178,3 @@ export function useAgentPinsState(spaceId: Ref<string>) {
   return inject(AGENT_PINS_KEY, null) ?? useAgentPins(spaceId)
 }
 
-export function useAgentRosterState(spaceId: Ref<string>): AgentRosterState {
-  return inject(AGENT_ROSTER_KEY, null) ?? useAgentRoster(spaceId)
-}

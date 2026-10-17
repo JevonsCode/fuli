@@ -4,6 +4,21 @@ import { t } from "@/i18n";
 import type { ProjectAgentRecord } from "@/types";
 import { agentValues } from "@/features/project-agents/task-evidence";
 
+/** One space's Agents; the console API is the canonical camelCase boundary, not raw Provider data. */
+export function rosterRecords(value: unknown, spaceId: string): ProjectAgentRecord[] {
+  return agentValues(value).filter(
+    (item): item is ProjectAgentRecord =>
+      Boolean(
+        item &&
+        typeof item === "object" &&
+        "agentId" in item &&
+        "profile" in item &&
+        "personalSpaceId" in item &&
+        item.personalSpaceId === spaceId,
+      ),
+  );
+}
+
 export function useAgentRoster(spaceId: Ref<string>) {
   const agents = ref<ProjectAgentRecord[]>([]);
   const loading = ref(false);
@@ -35,18 +50,7 @@ export function useAgentRoster(spaceId: Ref<string>) {
         `/api/project-agents?${new URLSearchParams({ personalSpaceId: requestedSpace })}`,
       );
       if (current !== generation || spaceId.value !== requestedSpace) return;
-      // The console API is the canonical camelCase boundary, not raw Provider data.
-      const next = agentValues(value).filter(
-        (item): item is ProjectAgentRecord =>
-          Boolean(
-            item &&
-            typeof item === "object" &&
-            "agentId" in item &&
-            "profile" in item &&
-            "personalSpaceId" in item &&
-            item.personalSpaceId === requestedSpace,
-          ),
-      );
+      const next = rosterRecords(value, requestedSpace);
       rosterBySpace.set(requestedSpace, next);
       agents.value = next;
     } catch (cause) {

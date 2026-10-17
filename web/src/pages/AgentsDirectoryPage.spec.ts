@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { nextTick } from 'vue'
 import { useConsoleStore } from '@/stores/console'
 import { t } from '@/i18n'
+import { forgetLoadedRosters } from '@/features/agent-profile/useAgentRosterPages'
 import AgentsDirectoryPage from './AgentsDirectoryPage.vue'
 
 const { getJson, putJson } = vi.hoisted(() => ({ getJson: vi.fn(), putJson: vi.fn() }))
@@ -15,14 +16,22 @@ const roster = ['Aster', 'Birch'].map((name, index) => ({
   employeeNumber: `00000${index + 1}`,
   profile: { name, responsibility: 'Synthetic review role', capabilities: ['review'], initialPreferences: [], status: 'active' },
 }))
+// The directory reads Agents with open work first, then the whole roster.
+const ROSTER_OPEN = '/api/project-agent-pages?personalSpaceId=space-a&limit=50&work=open'
+const ROSTER_ALL = '/api/project-agent-pages?personalSpaceId=space-a&limit=50'
+const isRosterPage = (url: string) => url.startsWith('/api/project-agent-pages?')
+const rosterPage = (url: string, items: unknown[]) => ({
+  items: url.includes('work=open') ? [] : items, nextCursor: null, complete: true,
+})
 beforeEach(() => {
+  forgetLoadedRosters()
   setActivePinia(createPinia())
   const store = useConsoleStore()
   store.state = { mode: 'connected', activePersonalSpaceId: 'space-a', personalSpaces: [{ id: 'space-a', name: 'Synthetic space' }], personalProjects: [], projects: [], subscriptions: [] }
   store.runtimeStatus = 'ready'
   getJson.mockReset()
   getJson.mockImplementation(async (url: string) => {
-    if (url === '/api/project-agents?personalSpaceId=space-a') return roster
+    if (isRosterPage(url)) return rosterPage(url, roster)
     if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') return []
     if (url === '/api/agent-pins?personalSpaceId=space-a') return { revision: 1, agentIds: ['agent-0'] }
     throw new Error(`Unexpected detail request: ${url}`)
@@ -72,7 +81,12 @@ describe('Agent directory integration', () => {
       assignedAt: '2026-09-01T00:00:00Z',
       updatedAt: '2026-09-01T00:00:00Z',
     }))
-    getJson.mockResolvedValue([{ ...roster[0], profile: { ...roster[0]!.profile, status: 'inactive' }, assignments }])
+    getJson.mockImplementation(async (url: string) => {
+      if (isRosterPage(url)) return rosterPage(url, [{ ...roster[0], profile: { ...roster[0]!.profile, status: 'inactive' }, assignments }])
+      if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') return []
+      if (url === '/api/agent-pins?personalSpaceId=space-a') return { revision: 1, agentIds: [] }
+      throw new Error(`Unexpected detail request: ${url}`)
+    })
     const { wrapper } = await setup()
     expect(wrapper.get('.agent-card-status').classes()).toContain('is-inactive')
     expect(wrapper.findAll('.agent-card-project-list .ui-badge')).toHaveLength(3)
@@ -86,7 +100,8 @@ describe('Agent directory integration', () => {
       ['Aster', '/agents/space-a/agent-0'], ['Birch', '/agents/space-a/agent-1'],
     ])
     expect(getJson.mock.calls).toEqual(expect.arrayContaining([
-      ['/api/project-agents?personalSpaceId=space-a'],
+      [ROSTER_OPEN],
+      [ROSTER_ALL],
       ['/api/project-agent-tasks?personalSpaceId=space-a&limit=200'],
     ]))
     await links[0]!.trigger('click')
@@ -98,7 +113,8 @@ describe('Agent directory integration', () => {
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/agents/space-a/agent-1')
     expect(getJson.mock.calls.every(([url]) => [
-      '/api/project-agents?personalSpaceId=space-a',
+      ROSTER_OPEN,
+      ROSTER_ALL,
       '/api/project-agent-tasks?personalSpaceId=space-a&limit=200',
       '/api/agent-pins?personalSpaceId=space-a',
     ].includes(url) || String(url).startsWith('/api/employee-templates'))).toBe(true)
@@ -124,8 +140,8 @@ describe('Agent directory integration', () => {
 
   it('separates membership state from a reported active work state', async () => {
     getJson.mockImplementation(async (url: string) => {
-      if (url === '/api/project-agents?personalSpaceId=space-a') {
-        return [{ ...roster[0], profile: { ...roster[0]!.profile, status: 'inactive' } }]
+      if (isRosterPage(url)) {
+        return rosterPage(url, [{ ...roster[0], profile: { ...roster[0]!.profile, status: 'inactive' } }])
       }
       if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') {
         return [{
@@ -144,11 +160,11 @@ describe('Agent directory integration', () => {
   it('lists active work first from the roster projection and keeps that order while reading', async () => {
     let birch = 'running'
     getJson.mockImplementation(async (url: string) => {
-      if (url === '/api/project-agents?personalSpaceId=space-a') {
-        return [
+      if (isRosterPage(url)) {
+        return rosterPage(url, [
           { ...roster[0], workStatus: birch === 'running' ? 'idle' : 'running', currentTaskId: birch === 'running' ? null : 'task-a' },
           { ...roster[1], workStatus: birch, currentTaskId: birch === 'running' ? 'task-b' : null },
-        ]
+        ])
       }
       if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') {
         return [{
@@ -184,7 +200,7 @@ describe('Agent directory integration', () => {
 
   it('explains a blocked Agent with the reason its task recorded', async () => {
     getJson.mockImplementation(async (url: string) => {
-      if (url === '/api/project-agents?personalSpaceId=space-a') return [{ ...roster[0], workStatus: 'blocked', currentTaskId: 'task-b' }]
+      if (isRosterPage(url)) return rosterPage(url, [{ ...roster[0], workStatus: 'blocked', currentTaskId: 'task-b' }])
       if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') {
         return [{ taskId: 'task-b', personalSpaceId: 'space-a', title: 'Synthetic deploy', status: 'blocked',
           resultSummary: 'Waiting for a person to grant staging access.', updatedAt: '2026-10-17T01:00:00Z', participants: [] }]
@@ -201,8 +217,8 @@ describe('Agent directory integration', () => {
     vi.setSystemTime(new Date('2026-10-17T03:00:00Z'))
     try {
       getJson.mockImplementation(async (url: string) => {
-        if (url === '/api/project-agents?personalSpaceId=space-a') {
-          return [{ ...roster[0], workStatus: 'running', currentTaskId: 'task-a', currentTaskRunningSince: '2026-10-17T02:35:00Z' }]
+        if (isRosterPage(url)) {
+          return rosterPage(url, [{ ...roster[0], workStatus: 'running', currentTaskId: 'task-a', currentTaskRunningSince: '2026-10-17T02:35:00Z' }])
         }
         if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') {
           return [{
@@ -225,7 +241,7 @@ describe('Agent directory integration', () => {
 
   it('does not turn an unavailable work summary into an idle state', async () => {
     getJson.mockImplementation(async (url: string) => {
-      if (url === '/api/project-agents?personalSpaceId=space-a') return roster
+      if (isRosterPage(url)) return rosterPage(url, roster)
       if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') {
         throw new Error('Task summary unavailable')
       }
@@ -238,7 +254,7 @@ describe('Agent directory integration', () => {
 
   it('keeps a full task page explicitly unreported instead of calling it idle', async () => {
     getJson.mockImplementation(async (url: string) => {
-      if (url === '/api/project-agents?personalSpaceId=space-a') return roster
+      if (isRosterPage(url)) return rosterPage(url, roster)
       if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') {
         return {
           tasks: Array.from({ length: 200 }, (_, index) => ({
@@ -259,7 +275,7 @@ describe('Agent directory integration', () => {
 
   it('keeps the last reported work state visible when a refresh fails', async () => {
     getJson.mockImplementation(async (url: string) => {
-      if (url === '/api/project-agents?personalSpaceId=space-a') return roster
+      if (isRosterPage(url)) return rosterPage(url, roster)
       if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') {
         return [{
           taskId: 'task-running', personalSpaceId: 'space-a', title: 'Synthetic active task', status: 'running',
@@ -271,7 +287,7 @@ describe('Agent directory integration', () => {
     const { wrapper } = await setup()
     getJson.mockImplementation(async (url: string) => {
       if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') throw new Error('Task summary unavailable')
-      if (url === '/api/project-agents?personalSpaceId=space-a') return roster
+      if (isRosterPage(url)) return rosterPage(url, roster)
       throw new Error(`Unexpected detail request: ${url}`)
     })
     const page = wrapper.getComponent(AgentsDirectoryPage)
@@ -283,7 +299,7 @@ describe('Agent directory integration', () => {
 
     getJson.mockImplementation(async (url: string) => {
       if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') return []
-      if (url === '/api/project-agents?personalSpaceId=space-a') return roster
+      if (isRosterPage(url)) return rosterPage(url, roster)
       throw new Error(`Unexpected detail request: ${url}`)
     })
     await wrapper.get('.agent-directory-work-error button').trigger('click')
@@ -307,7 +323,7 @@ describe('Agent directory integration', () => {
     readyState.personalProjects = [{ project_id: 'project-a', personal_space_id: 'space-a', profile: { name: 'Synthetic project' } }]
     store.state = null; store.runtimeStatus = 'loading'
     getJson.mockImplementation(async (url: string) => {
-      if (url === '/api/project-agents?personalSpaceId=space-a') return roster.map(item => ({ ...item, personalProjectId: 'project-a' }))
+      if (isRosterPage(url)) return rosterPage(url, roster.map(item => ({ ...item, personalProjectId: 'project-a' })))
       throw new Error(`Unexpected request: ${url}`)
     })
     const { wrapper } = await setup('/project-agents?q=aster&project=project-a')
@@ -344,11 +360,11 @@ describe('Agent directory integration', () => {
       project_id: id, personal_space_id: 'space-a', profile: { name: `Synthetic ${id}` },
     }))
     getJson.mockImplementation(async (url: string) => {
-      if (url === '/api/project-agents?personalSpaceId=space-a') {
-        return [
+      if (isRosterPage(url)) {
+        return rosterPage(url, [
           { ...roster[0], personalProjectId: 'project-b', workStatus: 'running', currentTaskId: 'task-a' },
           { ...roster[1], personalProjectId: 'project-a' },
-        ]
+        ])
       }
       if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') return []
       if (url === '/api/agent-pins?personalSpaceId=space-a') return { revision: 1, agentIds: [] }
@@ -425,6 +441,39 @@ describe('Agent directory integration', () => {
     await router.push('/project-agents')
     await flushPromises()
     expect(scroller().scrollTop).toBe(120)
+  })
+
+  it('says the roster is partial until the last page and retries a failed page in place', async () => {
+    let failNext = true
+    getJson.mockImplementation(async (url: string) => {
+      if (url === ROSTER_OPEN) return { items: [], nextCursor: null, complete: true }
+      if (url === ROSTER_ALL) return { items: [roster[0]], nextCursor: 'c1', complete: false }
+      if (url === `${ROSTER_ALL}&cursor=c1`) {
+        if (failNext) { failNext = false; throw new Error('Synthetic outage') }
+        return { items: [roster[1]], nextCursor: null, complete: true }
+      }
+      if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') return []
+      if (url === '/api/agent-pins?personalSpaceId=space-a') return { revision: 1, agentIds: [] }
+      throw new Error(`Unexpected detail request: ${url}`)
+    })
+    const { wrapper } = await setup('/project-agents?q=birch')
+
+    expect(wrapper.get('.agents-directory-count').text()).toBe(t('agentProfiles.membersLoaded', { count: 1 }))
+    expect(wrapper.get('.agents-directory-partial').text()).toBe(t('agentProfiles.partialFilter', { count: 1 }))
+    // No match among loaded rows is not reported as "no match" while more remain.
+    expect(wrapper.find('.agent-profile-empty').exists()).toBe(false)
+
+    await wrapper.get('[data-roster-more]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.agents-directory-more-error').text()).toContain('Synthetic outage')
+    expect(wrapper.findAll('.agent-directory-name a')).toHaveLength(0)
+
+    await wrapper.get('[data-roster-retry]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.agent-directory-name a').map(link => link.text())).toEqual(['Birch'])
+    expect(wrapper.get('.agents-directory-count').text()).toBe(t('agentProfiles.members', { count: 2 }))
+    expect(wrapper.find('.agents-directory-partial').exists()).toBe(false)
+    expect(wrapper.find('.agents-directory-more').exists()).toBe(false)
   })
 
   it('redirects a legacy agent query while preserving the remaining query', async () => {
