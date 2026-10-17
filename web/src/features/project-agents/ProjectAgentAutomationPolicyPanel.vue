@@ -327,6 +327,7 @@ function stringValue(value: unknown) {
 .project-agent-policy-disclosure > summary::before { content: '▸'; color: var(--color-muted); transition: transform 140ms ease-out; }
 .project-agent-policy-disclosure[open] > summary::before { transform: rotate(90deg); }
 @media (prefers-reduced-motion: reduce) { .project-agent-policy-disclosure > summary::before { transition: none; } }
+:root[data-motion="reduced"] .project-agent-policy-disclosure > summary::before { transition: none; }
 .project-agent-policy-disclosure h3 { display: inline; color: var(--color-ink); font-size: 13px; line-height: 1.35; }
 .project-agent-policy-project { color: var(--color-muted); font-size: 12px; }
 .project-agent-policy-disclosure > summary .project-agent-policy-state { min-width: 0; overflow-wrap: anywhere; }
