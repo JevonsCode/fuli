@@ -10,6 +10,7 @@ from .conversation_context import (
 )
 from .project_agent_access import authorize_project_agent
 from .provider_values import now_utc, stable_uuid
+from .store_conversation_triage import ASSISTANT_AGENT_ID
 from .store_transactions import query_store_transaction
 
 CONTEXT_PAGE_EVENTS = 50
@@ -30,8 +31,11 @@ class StoreAgentConversations:
     async def _conversation_scope(self, actor, request, *, write=False):
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer' if write else 'reader')
+        # The fixed assistant keeps no reviewed memory, but its global conversation
+        # journal is what holds unclaimed conversations until they are triaged.
+        journal_only = request.personal_project_id is None and request.agent_id == ASSISTANT_AGENT_ID
         agent = await authorize_project_agent(self, actor, space, request.personal_project_id,
-            request.agent_id, require_active=write, require_memory=True, allow_global=True)
+            request.agent_id, require_active=write, require_memory=not journal_only, allow_global=True)
         if request.source_application is not None and request.source_application not in json.loads(agent['profile_json']).get('allowed_clients', []):
             raise HTTPException(403, 'Agent is not allowed in this client')
         if request.personal_project_id is None:
