@@ -35,6 +35,12 @@ export interface AgentWorkbenchEntry {
   title: string | null;
   /** Last recorded change of this Agent's task row, never a start time. */
   lastUpdateAt: string | null;
+  /**
+   * Recorded entry into running for the current task. Null when not running,
+   * when the provider does not report it, or for rows written before it was
+   * recorded; never derived from an update time.
+   */
+  runningSince: string | null;
 }
 
 const RANK: Record<WorkbenchStatus, number> = {
@@ -121,6 +127,8 @@ export function agentWorkbenchEntry(
     taskId,
     title,
     lastUpdateAt,
+    runningSince:
+      fromRoster && status === "running" ? agent.currentTaskRunningSince ?? null : null,
   };
 }
 

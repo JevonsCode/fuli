@@ -142,9 +142,10 @@ describe('OverviewPage', () => {
       attentionPayload: { items: [pending], total: 1, counts: { 'agent-request-a': 1 } },
     })
 
-    await wrapper.get('[data-testid="overview-attention-open"]').trigger('click')
-    expect(attentionStore.open).toBe(true)
-    expect(attentionStore.agentId).toBe('agent-request-a')
+    // The inbox is a page: the item links to that Agent's queue with the request selected, no modal opens.
+    expect(wrapper.get('[data-testid="overview-attention-open"]').attributes('href')).toBe('/inbox?agent=agent-request-a&request=request-a')
+    expect(wrapper.get('[data-testid="overview-attention-all"]').attributes('href')).toBe('/inbox')
+    expect(attentionStore.open).toBe(false)
     expect(wrapper.get('[data-testid="overview-attention-task"]').attributes('href')).toBe(
       '/project-agents/manage?agent=agent-request-a&project=project-a&task=task-a#task-task-a',
     )

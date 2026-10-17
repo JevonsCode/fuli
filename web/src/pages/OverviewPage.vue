@@ -14,7 +14,7 @@ import {
   overviewTaskHref,
   recentProjects,
 } from '@/features/overview/overview-data'
-import { useAgentAttention, type AgentAttention } from '@/features/project-agents/attention-store'
+import { inboxLocation, useAgentAttention, type AgentAttention } from '@/features/project-agents/attention-store'
 import { currentLocale, t } from '@/i18n'
 import { personalProjectsPath } from '@/router/paths'
 import { projectDisplayName } from '@/features/projects/project-origin'
@@ -189,7 +189,7 @@ function taskMeta(task: ProjectAgentTaskRecord) {
           </div>
           <div class="overview-section-actions">
             <GrowthLoading v-if="attention.previewLoading && attentionHasData" variant="inline" :label="t('overview.attention.loading')" />
-            <button class="ui-button ui-button--ghost ui-button--sm" type="button" data-testid="overview-attention-all" @click="attention.show()">{{ t('overview.attention.open') }}</button>
+            <RouterLink class="ui-button ui-button--ghost ui-button--sm" data-testid="overview-attention-all" :to="inboxLocation()">{{ t('overview.attention.open') }}</RouterLink>
           </div>
         </header>
         <GrowthLoading v-if="attention.previewLoading && !attentionHasData" variant="compact" :label="t('overview.attention.loading')" />
@@ -202,10 +202,10 @@ function taskMeta(task: ProjectAgentTaskRecord) {
         </div>
         <ul v-else class="overview-attention-list">
           <li v-for="item in attentionItems" :key="item.requestId" class="overview-attention-item" data-testid="overview-attention-item">
-            <button class="overview-attention-open" data-testid="overview-attention-open" type="button" @click="attention.show(item.agentId)">
+            <RouterLink class="overview-attention-open" data-testid="overview-attention-open" :to="inboxLocation(item.agentId, item.requestId)">
               <strong>{{ item.title }}</strong>
               <span>{{ attentionMeta(item) }}</span>
-            </button>
+            </RouterLink>
             <RouterLink
               v-if="item.taskId"
               class="quiet-button overview-task-link"

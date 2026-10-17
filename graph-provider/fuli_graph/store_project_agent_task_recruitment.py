@@ -27,6 +27,7 @@ from .provider_values import native_datetime, now_utc, stable_uuid
 from .store_project_agents import SYSTEM_HR_AGENT_ID
 from .store_transactions import query_store_transaction
 from .project_agent_team_growth import enroll_recruited_team_member
+from .task_participant_running import running_since_set
 
 
 RECRUITMENT_CLAIM_TTL = timedelta(minutes=2)
@@ -387,7 +388,7 @@ class StoreProjectAgentTaskRecruitment:
                 task.revision = coalesce(task.revision, 0) + 1
             MERGE (task)-[participant:HAS_PARTICIPANT]->(agent)
             SET participant.role = 'lead',
-                participant.status = $status,
+                ''' + running_since_set('participant') + ''' participant.status = $status,
                 participant.assignment_summary = $assignment_summary,
                 participant.joined_at = coalesce(participant.joined_at, $updated_at),
                 participant.updated_at = $updated_at
@@ -395,7 +396,7 @@ class StoreProjectAgentTaskRecruitment:
             MATCH (task)-[task_participant:HAS_PARTICIPANT]->
                   (participant_agent:FuliProjectAgent)
             WHERE participant_agent IN locked_agents
-            SET task_participant.status = $status,
+            SET ''' + running_since_set('task_participant') + ''' task_participant.status = $status,
                 task_participant.updated_at = $updated_at
             WITH DISTINCT task, agent
             MERGE (decision_node:FuliProjectAgentRoutingDecision {id: $decision_id})
@@ -496,7 +497,7 @@ class StoreProjectAgentTaskRecruitment:
             MERGE (task)-[participant:HAS_PARTICIPANT]->(agent)
             ON CREATE SET participant.role =
                             coalesce(recruitment.participant_role, 'lead'),
-                          participant.status = task.status,
+                          ''' + running_since_set('participant', 'task.status') + ''' participant.status = task.status,
                           participant.assignment_summary = $assignment_summary,
                           participant.joined_at = $updated_at,
                           participant.updated_at = $updated_at

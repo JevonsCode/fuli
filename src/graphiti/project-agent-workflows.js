@@ -56,6 +56,16 @@ export async function listProjectAgents(application, input) {
   return asList(value, ['agents', 'items']).map(projectAgentRecord);
 }
 
+/** One keyset page of the roster; `complete` is true only on the last page. */
+export async function listProjectAgentPage(application, input) {
+  const value = await application.personal.listProjectAgentPage(input.personalSpaceId, input);
+  return {
+    items: (value.items ?? []).map(projectAgentRecord),
+    nextCursor: value.next_cursor ?? null,
+    complete: value.complete === true
+  };
+}
+
 export async function listCurrentProjectAgents(
   application,
   projectResolution,
@@ -90,6 +100,18 @@ export async function getProjectAgent(application, input) {
     input.personalSpaceId,
     input.personalProjectId,
     input.agentId
+  ));
+}
+
+// Only an explicit person edit sets the occupation; it is never inferred.
+export async function updateProjectAgentOccupation(application, input) {
+  return projectAgentRecord(await application.personal.updateProjectAgentOccupation(
+    input.agentId,
+    {
+      personal_space_id: input.personalSpaceId,
+      role: input.role ?? null,
+      tags: input.tags ?? []
+    }
   ));
 }
 

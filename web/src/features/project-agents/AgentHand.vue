@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { t } from '@/i18n'
-import { useAgentAttention } from './attention-store'
+import { inboxLocation, useAgentAttention } from './attention-store'
 const props = defineProps<{ agentId?: string; passive?: boolean; countOnly?: boolean }>()
 const attention = useAgentAttention()
+const router = useRouter()
 const count = computed(() => props.agentId ? attention.counts[props.agentId] ?? 0 : attention.total)
-function activate(event: Event) { if (!props.passive) { event.preventDefault(); event.stopPropagation(); attention.show(props.agentId) } }
+function activate(event: Event) { if (!props.passive) { event.preventDefault(); event.stopPropagation(); if (router) void router.push(inboxLocation(props.agentId)); else attention.show(props.agentId) } }
 </script>
 
 <template>

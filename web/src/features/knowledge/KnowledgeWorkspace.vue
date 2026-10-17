@@ -32,6 +32,7 @@ import KnowledgeWorkspaceDialogs from './KnowledgeWorkspaceDialogs.vue'
 import ProjectHierarchyAside from './ProjectHierarchyAside.vue'
 import ProjectOverview from '@/features/projects/ProjectOverview.vue'
 import { pickerOrder, projectDisplayName } from '@/features/projects/project-origin'
+import CreateProjectEntry from '@/features/projects/CreateProjectEntry.vue'
 import {
   currentKnowledgeGraph,
   filterKnowledgeItems,
@@ -992,6 +993,7 @@ function queryValues(value: unknown) {
         searchable
         @update:model-value="changeSpace"
       />
+      <CreateProjectEntry v-if="personalProjectsOnly && spaceId" :space-id="spaceId" />
 
       <details v-if="projectId && availableContexts.length" class="personal-context-picker">
         <summary>
