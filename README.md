@@ -14,7 +14,20 @@
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="license" /></a>
 </p>
 
-**Switch AI tools. Keep your agent.**
+**Switch AI tools. Keep yourself**
+
+Fuli (复利) is Chinese for **compound interest**: returns that generate further returns.
+
+Fuli exists to preserve your own taste, personality, and judgment as you work with AI.
+We believe people should no longer be tied to doing everything themselves. You should
+be free to make decisions, come up with ideas, and take a break.
+
+Fuli works with Codex, Claude Code, and other agent clients that support MCP and Skills.
+Connect supported clients to the same Fuli data and continue with the same agent,
+carrying forward its recorded work and relevant context.
+
+As AI learns to take on more of the work, Fuli helps you make the transition while
+keeping your own judgment at the center.
 
 Fuli is a collaboration layer for long-lived agents across MCP-compatible AI clients. Connect
 your tools to the same accessible Fuli data, select the same agent, and continue with its identity,

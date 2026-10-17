@@ -10,12 +10,14 @@ test('team context contains scoped public roles, never another member memory', a
       return { team_lead_agent_id: 'lead', team_member_agent_ids: ['member'] };
     },
     listProjectAgents: async () => ['lead', 'member', 'outside'].map(agent_id => ({
-      agent_id, profile: { name: agent_id, responsibility: 'scoped work' }, memory: { private: 'never include' },
+      agent_id, occupation: { role: agent_id === 'lead' ? 'management' : 'engineering' },
+      profile: { name: agent_id, responsibility: 'scoped work' }, memory: { private: 'never include' },
       assignments: [{ personal_project_id: 'project', status: 'active' }]
     }))
   } };
   const team = await loadProjectTeamContext(app, 'space', 'project');
   assert.deepEqual(team.roster.map(agent => agent.agent_id), ['lead', 'member']);
+  assert.deepEqual(team.roster.map(agent => agent.occupation), ['management', 'engineering']);
   assert.deepEqual(team.peer_roles, ['hr', 'project_manager']);
   assert.equal(team.worker_started, false);
   assert.deepEqual(team.reporting_lines, [{ agent_id: 'member', reports_to_agent_id: 'lead' }]);
