@@ -64,6 +64,17 @@ export async function recordTriage(application, task, conversation, label) {
   }
 }
 
+// A person's correction from the pages. It is stored as source user, so a
+// later host label never overwrites it; no project is formed on the user's behalf.
+export async function recordUserTriage(application, input) {
+  const label = validateTriage({ kind: input.kind, project: input.personalProjectId, topic: input.topic });
+  return application.personal.conversationTriage('record', {
+    personal_space_id: application.config.personal.spaceId, conversation_id: input.conversationId,
+    kind: label.kind, personal_project_id: label.kind === 'project' ? input.personalProjectId : null,
+    topic: label.kind === 'topic' ? label.topic : null, source: 'user'
+  });
+}
+
 // A topic that keeps coming back becomes a project: an AI-draft brief, a lead
 // staffed through AR, and its conversations attached. People can rename,
 // merge, split or return it afterwards.
