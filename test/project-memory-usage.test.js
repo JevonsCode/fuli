@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { recordProjectMemoryUsage } from '../src/graphiti/project-memory-usage.js';
 import { GraphitiProviderClient } from '../src/graphiti/provider-client.js';
+import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 
 test('empty results and same-project traffic do not record memory use', async () => {
   const writes = [];
-  const app = { config: { personalSpaceId: 'space' },
+  const app = { config: { personal: { spaceId: 'space' } },
     taskContextRegistry: { context: async () => ({ personalProjectId: 'source', sourceApplication: 'codex' }) },
     personal: { recordProjectMemoryUsage: async value => writes.push(value) } };
   await recordProjectMemoryUsage(app, { taskContextToken: 'token', targetProjectId: 'source', resultCount: 1 });
@@ -15,7 +16,7 @@ test('empty results and same-project traffic do not record memory use', async ()
 
 test('returned memory records only bounded provenance and the original task token', async () => {
   const writes = [];
-  const app = { config: { personalSpaceId: 'space' },
+  const app = { config: { personal: { spaceId: 'space' } },
     taskContextRegistry: { context: async () => ({ personalProjectId: 'source', sourceApplication: 'codex' }) },
     personal: { recordProjectMemoryUsage: async value => { writes.push(value); return { recorded: true }; } } };
   const result = await recordProjectMemoryUsage(app, { taskContextToken: 'token',
@@ -40,4 +41,21 @@ test('Provider observation port uses authenticated POST and propagates stale-con
   assert.equal(calls[0].url, 'http://127.0.0.1:1234/v1/project-memory-usage');
   assert.equal(calls[0].options.method, 'POST');
   assert.equal(JSON.parse(calls[0].options.body).task_context_token, 'synthetic-task');
+});
+
+test('real application configuration reaches the Provider observation endpoint', async () => {
+  let observed;
+  const app = new FederatedGraphApplication({ version: 1, personal: {
+    providerUrl: 'http://127.0.0.1:1234', accessToken: 'synthetic-token',
+    principalId: 'synthetic-user', spaceId: 'actual-config-space'
+  }, workspaces: [] }, { fetchImpl: async (url, options) => {
+    observed = { url, body: JSON.parse(options.body) };
+    return new Response(JSON.stringify({ recorded: true }), { headers: { 'content-type': 'application/json' } });
+  } });
+  app.taskContextRegistry = { context: async () => ({ personalProjectId: 'source', sourceApplication: 'codex' }) };
+  const result = await recordProjectMemoryUsage(app, { taskContextToken: 'token', targetProjectId: 'target',
+    channel: 'roundtable_answer', evidenceId: 'answer', resultCount: 1 });
+  assert.equal(result.recorded, true);
+  assert.equal(observed.body.personal_space_id, 'actual-config-space');
+  assert.equal(observed.url, 'http://127.0.0.1:1234/v1/project-memory-usage');
 });

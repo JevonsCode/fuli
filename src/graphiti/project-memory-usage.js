@@ -9,7 +9,7 @@ export async function recordProjectMemoryUsage(app, input) {
     return { recorded: false, reason: 'not_cross_project' };
   }
   return app.personal.recordProjectMemoryUsage({
-    personal_space_id: app.config.personalSpaceId,
+    personal_space_id: app.config.personal.spaceId,
     task_context_token: input.taskContextToken,
     source_application: context.sourceApplication,
     target_project_id: input.targetProjectId,
