@@ -76,7 +76,7 @@ test('owned reader delivers all long instructions and mandatory guidance in both
   assert.deepEqual(role.role.initial_preferences, ['ROLE_INITIAL_PREF']);
   assert.deepEqual(role.role.character, { judgment: 'ROLE_JUDGMENT', taste: 'ROLE_TASTE', personality: 'ROLE_PERSONALITY' });
   assert.equal(role.role.expectations, 'ROLE_EXPECTATIONS');
-  assert.deepEqual(role.project_brief.boundaries, ['PROJECT_BOUNDARY']);
+  assert.equal(role.project_brief.summary, 'PROJECT_PURPOSE · PROJECT_BOUNDARY');
   assert.equal(role.reporting_lead_agent_id, 'lead-a');
   assert.match(role.reporting_guidance, /Return results and blockers to the project lead/);
   assert.equal(role.selection_reason, 'delegated_member');
@@ -152,7 +152,7 @@ test('recovered Agent context matches every instruction field of the compacted e
   const entry = compactTaskContext({ project_agent_context: applyAgentAssignment(await loadProjectAgentContinuity(entryApp, {
     projectId: 'project-a', agent: projectAgentRecord(f.rawAgent), sourceApplication: 'codex',
     selectionReason: selection.selection_reason, matchBasis: selection.match_basis }), selection) }).project_agent_context;
-  assert.match(entry.team_guidance, /sole user-facing owner/);
+  assert.match(entry.team_guidance, /Lead alone reports to users/);
   const result = await call(f); assert.notEqual(result.isError, true, JSON.stringify(result));
   const recovered = result.structuredContent.project_agent_context;
   assert.deepEqual(withoutEntryOnly(recovered), JSON.parse(JSON.stringify(withoutEntryOnly(entry))));

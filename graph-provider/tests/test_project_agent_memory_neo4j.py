@@ -54,7 +54,8 @@ async def seed_agent(client, space_id, project='sample-project', agent='engineer
     allowed_clients=None):
     response = await client.put('/v1/personal-projects', json={
         'personal_space_id': space_id, 'project_id': project,
-        'profile': {'name': 'Synthetic sample project', 'lifecycle': 'active'},
+        'profile': {'name': 'Synthetic sample project', 'lifecycle': 'active',
+                    'purpose': 'Verify synthetic project Agent memory and task behavior.'},
     })
     assert response.status_code == 200, response.text
     response = await client.put('/v1/project-agents', json={

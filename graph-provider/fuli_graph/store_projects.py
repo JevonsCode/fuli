@@ -14,6 +14,7 @@ from .project_management import (
     list_project_releases as read_project_releases,
 )
 from .provider_values import now_utc, stable_uuid
+from .project_brief import legacy_project_brief
 
 
 class StoreProjects:
@@ -47,9 +48,13 @@ class StoreProjects:
         )
         publication_key = stable_uuid(node_id, 'publication')
         updated_at = now_utc()
+        has_brief = request.profile.has_brief
         records, _, _ = await self.runtime.driver.execute_query(
             '''
             MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
+            OPTIONAL MATCH (existing:FuliPersonalProject {id: $id})
+            WITH space, existing
+            WHERE $has_brief OR existing IS NOT NULL
             MERGE (project:FuliPersonalProject {id: $id})
             ON CREATE SET project.project_id = $project_id,
                           project.publication_key = $publication_key,
@@ -70,8 +75,11 @@ class StoreProjects:
             name=request.profile.name,
             updated_at=updated_at,
             create_only=request.create_only,
+            has_brief=has_brief,
         )
         if not records:
+            if not has_brief:
+                raise HTTPException(status_code=422, detail='Project brief requires non-empty purpose, scope, or boundaries')
             raise HTTPException(status_code=409, detail='personal project already exists')
         return self._personal_project(records[0]['project'], request.personal_space_id)
 
@@ -117,7 +125,9 @@ class StoreProjects:
         )
         if not records:
             raise HTTPException(status_code=404, detail='personal project not found')
-        return self._personal_project(records[0]['project'], personal_space_id)
+        return await legacy_project_brief(
+            self, self._personal_project(records[0]['project'], personal_space_id)
+        )
 
     async def create_project_relation(
         self,
