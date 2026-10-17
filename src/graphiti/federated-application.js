@@ -283,7 +283,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     if (projectResolution.repositoryProjectId && agentInvocation && TASK_ENTRY_TOOLS.has(agentToolName)
       && this.getCapturePolicy().enabled) {
       // Every task gets a FULI Agent, so a task in an unregistered repository registers it.
-      projectResolution = await registerRepositoryProject(this, projectResolution, { sessionId });
+      projectResolution = await registerRepositoryProject(this, projectResolution, { sessionId, projectPath });
     }
     projectResolution = await resolveTaskEntryProject(this, projectResolution, {
       sessionId, sourceSessionId, sourceApplication, agentInvocation, agentToolName, projectAgentId, taskPrompt
