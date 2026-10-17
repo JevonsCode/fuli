@@ -47,6 +47,16 @@ const selectedMembers = computed(() => eligible.value.filter(agent => policy.val
 const teamDirty = computed(() => teamLead.value !== (policy.value.teamLeadAgentId ?? '')
   || JSON.stringify([...teamMembers.value].sort()) !== JSON.stringify([...(policy.value.teamMemberAgentIds ?? [])].sort()))
 watch(teamLead, lead => { teamMembers.value = lead ? teamMembers.value.filter(id => id !== lead) : [] })
+// Collapsed view: the current switches and lead in one line, so the Agent list stays above the fold.
+const policySummary = computed(() => {
+  const state = (on: boolean | undefined) => t(`projectAgents.coordination.${on ? 'on' : 'off'}`)
+  return [
+    `${t('projectAgents.coordination.autoReuse')} ${state(policy.value.autoReusePreviousAgent)}`,
+    `${t('projectAgents.coordination.askBeforeRecruitment')} ${state(policy.value.askBeforeRecruitment)}`,
+    `${t('projectAgents.team.autoGrow')} ${state(policy.value.autoGrowTeam)}`,
+    `${t('projectAgents.team.lead')} ${selectedLead.value ? label(selectedLead.value) : t('projectAgents.team.noLead')}`,
+  ].join(' · ')
+})
 function label(agent: ProjectAgentRecord) { return agent.profile.displayName || agent.profile.name }
 function resetTeam() {
   teamLead.value = policy.value.teamLeadAgentId ?? ''
@@ -195,10 +205,13 @@ function stringValue(value: unknown) {
     :aria-label="t('projectAgents.coordination.aria', { project: projectName })"
     :aria-busy="busy"
   >
-    <header>
+    <details class="project-agent-policy-disclosure" :open="Boolean(loadError || saveError)">
+    <summary>
       <h3>{{ t('projectAgents.coordination.title') }}</h3>
-      <span>{{ projectName }}</span>
-    </header>
+      <span class="project-agent-policy-project">{{ projectName }}</span>
+      <span v-if="!loading" class="project-agent-policy-state" data-policy-summary>{{ policySummary }}</span>
+    </summary>
+    <div class="project-agent-policy-body">
 
     <GrowthLoading
       v-if="loading"
@@ -282,11 +295,13 @@ function stringValue(value: unknown) {
       />
       <p v-else-if="saved" role="status">{{ t('projectAgents.coordination.saved') }}</p>
     </div>
+    </div>
+    </details>
   </section>
 </template>
 
 <style scoped>
-.project-team { grid-column: 1 / -1; min-width: 0; padding-block: 12px; border-top: 1px solid var(--color-border); }
+.project-team { min-width: 0; padding-block: 12px; border-top: 1px solid var(--color-border); }
 .project-team-peers { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .project-team-peers > * { padding: 7px 10px; background: var(--color-surface-subtle); border: 1px solid var(--color-border-strong); border-radius: 6px; color: var(--color-ink); font-size: 12px; }
 .project-team-summary { margin: 9px 0; color: var(--color-muted); font-size: 12px; }
@@ -298,25 +313,24 @@ function stringValue(value: unknown) {
 .project-team fieldset { display: flex; gap: 12px; flex-wrap: wrap; border: 0; padding: 0; margin-bottom: 14px; }
 .project-team fieldset label { display: flex; gap: 5px; align-items: center; font-size: 12px; }
 .project-team legend { margin-bottom: 8px; font-size: 12px; }
-.project-agent-automation-policy {
-  display: grid;
-  grid-template-columns: minmax(110px, 150px) minmax(0, 1fr);
-  align-items: center;
-  gap: 14px;
-  padding: 11px 0;
-  border-block: 1px solid var(--color-border);
+.project-agent-automation-policy { border-block: 1px solid var(--color-border); }
+.project-agent-policy-disclosure > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 10px 0;
+  cursor: pointer;
+  list-style: none;
 }
-.project-agent-automation-policy > header { min-width: 0; }
-.project-agent-automation-policy h3 { color: var(--color-ink); font-size: 12px; line-height: 1.35; }
-.project-agent-automation-policy header span {
-  display: block;
-  margin-top: 3px;
-  overflow: hidden;
-  color: var(--color-muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.project-agent-policy-disclosure > summary::-webkit-details-marker { display: none; }
+.project-agent-policy-disclosure > summary::before { content: '▸'; color: var(--color-muted); transition: transform 140ms ease-out; }
+.project-agent-policy-disclosure[open] > summary::before { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .project-agent-policy-disclosure > summary::before { transition: none; } }
+.project-agent-policy-disclosure h3 { display: inline; color: var(--color-ink); font-size: 13px; line-height: 1.35; }
+.project-agent-policy-project { color: var(--color-muted); font-size: 12px; }
+.project-agent-policy-disclosure > summary .project-agent-policy-state { min-width: 0; overflow-wrap: anywhere; }
+.project-agent-policy-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding-bottom: 12px; }
 .project-agent-policy-options {
   min-width: 0;
   display: grid;
@@ -373,7 +387,6 @@ function stringValue(value: unknown) {
 }
 .project-agent-policy-options input:disabled { cursor: wait; opacity: .62; }
 .project-agent-policy-feedback {
-  grid-column: 2;
   min-height: 14px;
   padding-inline: 16px;
 }
@@ -394,10 +407,9 @@ function stringValue(value: unknown) {
   cursor: pointer;
 }
 @media (max-width: 760px) {
-  .project-agent-automation-policy { grid-template-columns: minmax(0, 1fr); }
   .project-agent-policy-options { grid-template-columns: minmax(0, 1fr); }
   .project-agent-policy-options label { padding: 8px 0; }
   .project-agent-policy-options label + label { border-inline-start: 0; border-block-start: 1px solid var(--color-border); }
-  .project-agent-policy-feedback { grid-column: 1; padding-inline: 0; }
+  .project-agent-policy-feedback { padding-inline: 0; }
 }
 </style>

@@ -60,11 +60,15 @@ const summaryReason = computed(() => {
 </template>
 
 <style scoped>
-.project-agent-task-diagnostics { margin: 12px 0; padding: 12px; border-radius: 8px; background: #f1f5f2; color: #334b3c; }
-.project-agent-task-diagnostics dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; }
-.project-agent-task-diagnostics dt { margin-bottom: 4px; color: #65766b; font-size: 11px; }
-.project-agent-task-diagnostics dd { margin: 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-.project-agent-task-diagnostics small { display: block; margin-top: 4px; color: #65766b; font-size: 11px; overflow-wrap: anywhere; }
-.project-agent-task-diagnostics p { margin: 10px 0 0; color: #52665a; font-size: 12px; line-height: 1.6; }
-@media (max-width: 540px) { .project-agent-task-diagnostics dl { grid-template-columns: 1fr; gap: 10px; } }
+/* Quiet status lines: the three facts stay visible without a boxed grid competing with the task itself. */
+.project-agent-task-diagnostics { margin: 8px 0 0; color: var(--color-muted); font-size: 12px; line-height: 1.55; }
+.project-agent-task-diagnostics dl { display: grid; gap: 2px; margin: 0; }
+.project-agent-task-diagnostics dl > div { display: inline-flex; align-items: baseline; gap: 4px; min-width: 0; }
+.project-agent-task-diagnostics dt { color: var(--color-muted); }
+.project-agent-task-diagnostics dt::after { content: ':'; }
+.project-agent-task-diagnostics dd { margin: 0; color: var(--color-ink); overflow-wrap: anywhere; }
+.project-agent-task-diagnostics small { color: var(--color-muted); }
+.project-agent-task-diagnostics small::before { content: '('; }
+.project-agent-task-diagnostics small::after { content: ')'; }
+.project-agent-task-diagnostics p { margin: 4px 0 0; color: var(--color-muted); font-size: 12px; line-height: 1.55; }
 </style>

@@ -3,11 +3,11 @@
 .project-agent-row-shell > .agent-hand { margin-top: 14px; }
 .project-agent-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .project-agents-view { min-height: 0; display: flex; flex-direction: column; gap: 16px; padding: 20px 32px 24px; overflow: hidden; }
-.project-agents-header, .project-agent-section-heading, .project-agent-section-tools, .project-agent-detail-actions, .project-agent-assignment-card header, .project-agent-task-card header, .project-agent-learning-card header, .project-agent-day-detail header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.project-agents-header, .project-agent-section-heading, .project-agent-section-tools, .project-agent-detail-actions, .project-agent-assignment-card header, .project-agent-learning-card header, .project-agent-day-detail header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .project-agents-header h2 { color: var(--color-ink); font-size: 20px; }
 .project-agents-header-meta { color: var(--color-muted); font-size: 12px; }
-.project-agents-summary { display: flex; gap: 18px; padding: 2px 0 4px; color: var(--color-muted); font-size: 12px; line-height: 1.5; }
-.project-agents-summary span:first-child { color: var(--color-ink); font-weight: 700; }
+.project-agents-header-meta strong { color: var(--color-ink); font-weight: 700; }
+.project-agents-header-note { margin-inline-start: 12px; }
 .project-agents-toolbar { display: grid; grid-template-columns: minmax(240px, 320px) minmax(200px, 1fr) auto; align-items: center; gap: 12px; }
 .project-agents-search input { width: 100%; min-height: 44px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-ink); padding: 10px 12px; font-size: 13px; }
 .project-agents-search input:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
@@ -66,71 +66,15 @@
 .project-agents-state.is-error { color: var(--color-danger); }
 .project-agent-assignment-list, .project-agent-task-list, .project-agent-learning-list, .project-agent-recruitment-list { display: grid; gap: 12px; margin-top: 12px; }
 .project-agent-task-list { min-width: 0; grid-template-columns: minmax(0, 1fr); }
-.project-agent-execution-summary { min-width: 0; margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--color-border); }
-.project-agent-worker-event-evidence { margin-top: 13px; padding: 10px 10px 0; border: 1px dashed var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); }
-.project-agent-execution-summary .project-agent-section-heading { gap: 8px; }
-.project-agent-execution-summary h5 { margin: 0; color: var(--color-muted); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-.project-agent-execution-summary-table-wrap { box-sizing: border-box; width: 100%; max-width: 100%; margin-top: 7px; overflow-x: auto; overscroll-behavior-inline: contain; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); }
-.project-agent-execution-summary-table-wrap:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-.project-agent-execution-summary-table { width: 100%; min-width: 1040px; border-collapse: collapse; table-layout: fixed; color: var(--color-ink); font-size: 12px; line-height: 1.5; }
-.project-agent-execution-summary-table th, .project-agent-execution-summary-table td { min-width: 0; padding: 8px 9px; border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); overflow-wrap: anywhere; text-align: left; vertical-align: top; }
-.project-agent-execution-summary-table tr > :last-child { border-right: 0; }
-.project-agent-execution-summary-table tbody tr:last-child > * { border-bottom: 0; }
-.project-agent-execution-summary-table thead th { background: var(--color-surface-subtle); color: var(--color-muted); font-size: 12px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
-.project-agent-execution-summary-table thead th:nth-child(1) { width: 14%; }
-.project-agent-execution-summary-table thead th:nth-child(2) { width: 20%; }
-.project-agent-execution-summary-table thead th:nth-child(3) { width: 13%; }
-.project-agent-execution-summary-table thead th:nth-child(4) { width: 15%; }
-.project-agent-execution-summary-table thead th:nth-child(5) { width: 15%; }
-.project-agent-execution-summary-table thead th:nth-child(6) { width: 12%; }
-.project-agent-execution-summary-table tbody tr:hover { background: var(--color-surface); }
-.project-agent-execution-summary-table tbody th { color: var(--color-ink); font-weight: 700; }
-.project-agent-execution-summary-table tbody strong, .project-agent-execution-summary-table tbody span, .project-agent-execution-summary-table tbody small, .project-agent-execution-summary-table tbody a { display: block; }
-.project-agent-execution-summary-table tbody small { margin-top: 3px; color: var(--color-muted); font-size: 12px; font-weight: 500; }
-.project-agent-execution-summary-table tbody .project-agent-reporter-label { margin-top: 8px; }
-.project-agent-execution-summary-table tbody a { margin-top: 3px; color: var(--color-ink); text-decoration-thickness: 1px; text-underline-offset: 2px; }
-.project-agent-execution-summary-table tbody a:focus-visible { border-radius: 2px; outline: 2px solid var(--color-accent); outline-offset: 2px; }
-.project-agent-execution-worker { display: flex !important; align-items: center; gap: 4px; }
-.project-agent-execution-summary-row i { display: inline-flex; border-radius: 999px; background: var(--color-surface-subtle); color: var(--color-muted); padding: 2px 6px; font-size: 12px; font-style: normal; font-weight: 700; }
-.project-agent-execution-summary-row i.is-completed { background: var(--color-surface-subtle); color: var(--color-ink); }
-.project-agent-execution-summary-row i.is-failed { background: var(--color-danger-soft); color: var(--color-danger); }
-.project-agent-execution-summary-row i.is-cancelled { background: var(--color-surface-subtle); color: var(--color-muted); }
-.project-agent-execution-summary-list { display: grid; margin: 7px 0 0; padding: 0; list-style: none; }
-.project-agent-worker-event-row { min-width: 0; padding: 10px 0; border-top: 1px solid var(--color-border); }.project-agent-worker-event-row:first-child { border-top: 0; }
-.project-agent-worker-event-row header { align-items: flex-start; }
-.project-agent-worker-event-row header strong { min-width: 0; display: flex; align-items: center; gap: 5px; overflow-wrap: anywhere; color: var(--color-ink); font-size: 12px; }
-.project-agent-worker-event-row header strong small { display: inline; margin: 0; color: var(--color-muted); font-size: 12px; font-weight: 500; }
-.project-agent-worker-event-row header i { flex: 0 0 auto; border-radius: 999px; background: var(--color-surface-subtle); color: var(--color-muted); padding: 2px 6px; font-size: 12px; font-style: normal; font-weight: 700; }
-.project-agent-worker-event-row header i.is-completed { background: var(--color-surface-subtle); color: var(--color-ink); }
-.project-agent-worker-event-row header i.is-failed { background: var(--color-danger-soft); color: var(--color-danger); }
-.project-agent-worker-event-row header i.is-cancelled { background: var(--color-surface-subtle); color: var(--color-muted); }
-.project-agent-execution-summary-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 10px; margin: 8px 0 0; }
-.project-agent-execution-summary-meta div { min-width: 0; }
-.project-agent-execution-summary-meta dt { color: var(--color-muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-.project-agent-execution-summary-meta dd { margin: 2px 0 0; overflow-wrap: anywhere; color: var(--color-ink); font-size: 12px; line-height: 1.45; }
-.project-agent-execution-summary-meta dd small { display: block; margin-top: 2px; color: var(--color-muted); font-size: 12px; }
-.project-agent-assignment-card, .project-agent-task-card, .project-agent-learning-card, .project-agent-recruitment-card { min-width: 0; padding: 16px; }
-.project-agent-assignment-card header strong, .project-agent-task-card header strong, .project-agent-learning-card header strong, .project-agent-recruitment-card header strong { color: var(--color-ink); font-size: 14px; }
+.project-agent-assignment-card, .project-agent-learning-card, .project-agent-recruitment-card { min-width: 0; padding: 16px; }
+.project-agent-assignment-card header strong, .project-agent-learning-card header strong, .project-agent-recruitment-card header strong { color: var(--color-ink); font-size: 14px; }
 .project-agent-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: wrap; }
-.project-agent-assignment-card p, .project-agent-task-card p, .project-agent-learning-card p { margin: 8px 0 0; font-size: 14px; line-height: 1.55; }
-.project-agent-assignment-card small, .project-agent-task-card small, .project-agent-learning-card small { display: block; margin-top: 8px; color: var(--color-muted); font-size: 12px; line-height: 1.5; }
+.project-agent-assignment-card p, .project-agent-learning-card p { margin: 8px 0 0; font-size: 14px; line-height: 1.55; }
+.project-agent-assignment-card small, .project-agent-learning-card small { display: block; margin-top: 8px; color: var(--color-muted); font-size: 12px; line-height: 1.5; }
 .project-agent-assignment-card header .ui-badge.is-ended, .project-agent-assignment-card header .ui-badge.is-replaced { color: var(--color-muted); }
 .project-agent-strategy-note, .project-agent-execution-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; margin-top: 8px; color: var(--color-muted); font-size: 12px; }
 .project-agent-strategy-note strong, .project-agent-execution-line strong { color: var(--color-muted); font-size: 12px; }
 .project-agent-strategy-note small { flex-basis: 100%; color: var(--color-danger); }
-.project-agent-routing-decision { display: grid; gap: 5px; margin-top: 10px; padding: 9px 10px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-subtle); color: var(--color-muted); font-size: 12px; }
-.project-agent-routing-decision .project-agent-section-heading { align-items: baseline; gap: 8px; }
-.project-agent-routing-decision .project-agent-section-heading strong { color: var(--color-ink); font-size: 12px; }
-.project-agent-routing-decision small { color: var(--color-muted); line-height: 1.45; }
-.project-agent-blocked { color: var(--color-danger) !important; }
-.project-agent-task-card { scroll-margin: 16px; }
-.project-agent-task-card.is-linked { box-shadow: inset 0 0 0 2px var(--color-accent); }
-.project-agent-task-card header { align-items: flex-start; }
-.project-agent-task-card header small { margin-top: 3px; }
-.project-agent-task-card header .ui-badge { color: var(--color-muted); font-style: normal; }
-.project-agent-task-card header .ui-badge.is-completed { color: var(--color-ink); }
-.project-agent-task-card header .ui-badge.is-failed { background: var(--color-danger-soft); color: var(--color-danger); }
-.project-agent-task-card header .ui-badge.is-cancelled { color: var(--color-muted); }
 .project-agent-heatmap-viewport { min-width: 0; max-width: 100%; overflow-x: clip; contain: layout inline-size paint; }
 .project-agent-heatmap { width: 100%; max-width: 100%; display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, minmax(10px, 1fr)); grid-auto-columns: minmax(10px, 1fr); gap: 3px; margin-top: 9px; overflow-x: auto; padding: 0; }
 .project-agent-heat-cell { appearance: none; box-sizing: border-box; aspect-ratio: 1; min-width: 9px; margin: 0; padding: 0; border: 1px solid var(--color-border); border-radius: 3px; background: var(--color-surface-subtle); }
@@ -143,7 +87,7 @@
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (max-width: 1180px) { .project-agents-toolbar { grid-template-columns: minmax(220px, 280px) 1fr; }.project-agents-status-filter { grid-column: 1 / -1; justify-self: start; }.project-agents-directory { grid-template-columns: minmax(320px, .9fr) minmax(330px, 1fr); }.project-agent-detail-meta, .project-agent-compact-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @container (max-width: 420px) { .project-agent-detail > header { grid-template-columns: minmax(0, 1fr); }.project-agent-detail-actions { justify-content: start; } }
-@media (max-width: 760px) { .project-agents-view { padding: 14px 16px 18px; overflow: auto; }.project-agents-header, .project-agents-summary, .project-agent-section-heading, .project-agent-assignment-card header { align-items: flex-start; flex-wrap: wrap; }.project-agents-toolbar { grid-template-columns: minmax(0, 1fr); }.project-agents-project-filter, .project-agents-search, .project-agents-status-filter { grid-column: 1; }.project-agents-status-filter { width: 100%; justify-self: stretch; flex-wrap: wrap; }.project-agents-directory { flex: 0 0 auto; grid-template-columns: minmax(0, 1fr); overflow: visible; }.project-agent-list { max-height: 340px; border-right: 0; border-bottom: 1px solid var(--color-border); }.project-agent-detail { min-height: 520px; padding: 16px; }.project-agent-client-row, .project-agent-rule-row, .project-agent-executor-row { grid-template-columns: minmax(0, 1fr); align-items: start; }.project-agent-client-row small, .project-agent-executor-row small { grid-column: 1; }.project-agent-execution-summary-meta { grid-template-columns: minmax(0, 1fr); }.project-agent-worker-event-row header { gap: 8px; } }
+@media (max-width: 760px) { .project-agents-view { padding: 14px 16px 18px; overflow: auto; }.project-agents-header, .project-agent-section-heading, .project-agent-assignment-card header { align-items: flex-start; flex-wrap: wrap; }.project-agents-toolbar { grid-template-columns: minmax(0, 1fr); }.project-agents-project-filter, .project-agents-search, .project-agents-status-filter { grid-column: 1; }.project-agents-status-filter { width: 100%; justify-self: stretch; flex-wrap: wrap; }.project-agents-directory { flex: 0 0 auto; grid-template-columns: minmax(0, 1fr); overflow: visible; }.project-agent-list { max-height: 340px; border-right: 0; border-bottom: 1px solid var(--color-border); }.project-agent-detail { min-height: 520px; padding: 16px; }.project-agent-client-row, .project-agent-rule-row, .project-agent-executor-row { grid-template-columns: minmax(0, 1fr); align-items: start; }.project-agent-client-row small, .project-agent-executor-row small { grid-column: 1; }.project-agent-execution-summary-meta { grid-template-columns: minmax(0, 1fr); }.project-agent-worker-event-row header { gap: 8px; } }
 
 .project-agent-disclosure { margin-top: 16px; }
 .project-agent-disclosure .project-agent-detail-section:first-child { margin-top: 0; }

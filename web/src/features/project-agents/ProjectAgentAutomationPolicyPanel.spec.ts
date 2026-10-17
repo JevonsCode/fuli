@@ -41,6 +41,23 @@ describe('ProjectAgentAutomationPolicyPanel', () => {
     patchJson.mockImplementation(async (_url: string, input: Record<string, unknown>) => input)
   })
 
+  it('collapses the settings into a one-line summary until opened', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+    const disclosure = wrapper.get<HTMLDetailsElement>('.project-agent-policy-disclosure')
+    expect(disclosure.element.open).toBe(false)
+    const summary = wrapper.get('[data-policy-summary]').text()
+    expect(summary).toContain(`${t('projectAgents.coordination.autoReuse')} ${t('projectAgents.coordination.on')}`)
+    expect(summary).toContain(t('projectAgents.team.lead'))
+  })
+
+  it('opens the settings when the policy cannot be read so the error is visible', async () => {
+    getJson.mockRejectedValueOnce(new Error('offline'))
+    const wrapper = mountPanel()
+    await flushPromises()
+    expect(wrapper.get<HTMLDetailsElement>('.project-agent-policy-disclosure').element.open).toBe(true)
+  })
+
   it('loads the project switches on by default', async () => {
     const wrapper = mountPanel()
     await flushPromises()
