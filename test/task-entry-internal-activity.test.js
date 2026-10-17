@@ -122,15 +122,17 @@ test('a host roundtable wake still restores an existing session scope and its ro
   } finally { close(); }
 });
 
-test('ordinary entries keep provisioning and payload claims cannot mark them internal', async () => {
+test('ordinary entries stay pending for the assistant and payload claims cannot mark them internal', async () => {
   for (const extra of [{}, { internalActivity: 'roundtable_delegation',
     taskPrompt: '[FULI 圆桌 · invented] Synthetic acceptance: name the three primary colors.' }]) {
-    const { run, writes, hires, close } = fixture();
+    const { app, run, writes, hires, close } = fixture();
+    app.personal.getProjectAgent = async (_, project, id) => ({ ...role(null), agent_id: id,
+      memory_scope: 'task_only' });
     try {
       const result = await run(extra);
-      assert.match(result.context.personal_project_id, /^conversation-[a-f0-9]{64}$/);
-      assert.ok(result.agent_receipt.owner);
-      assert.deepEqual([writes.length, hires.length], [1, 1]);
+      assert.equal(result.context.personal_project_id, null);
+      assert.equal(result.agent_receipt.owner.agent_id, 'employee.assistant');
+      assert.deepEqual([writes.length, hires.length], [0, 0]);
     } finally { close(); }
   }
   const { run, writes, close } = fixture({

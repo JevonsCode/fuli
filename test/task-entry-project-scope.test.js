@@ -26,6 +26,7 @@ function fixture({ resolution = { status: 'unmatched', personalProjectId: null }
     return projects.get(input.projectId);
   };
   Object.assign(app.personal, {
+    getProjectAgent: async () => { throw Object.assign(new Error('Not found'), { status: 404 }); },
     listPersonalProjects: async () => [...projects.values()],
     listProjectAgentAssignments: async () => assignments,
     getPersonalProject: async (_, id) => {
@@ -67,35 +68,53 @@ function role(project) {
       work_kinds: ['project_context'], capabilities: [] } };
 }
 
-test('unmatched ordinary directory reaches AR and returns a real owner', async () => {
-  const { run, writes, hires } = fixture();
+test('an unclaimed conversation creates no project and hires nobody', async () => {
+  const { run, writes, hires, resolutions } = fixture();
+  for (const extra of [{}, { taskPrompt: 'A different task in this conversation.' },
+    { sessionId: 'synthetic-session-b' }, { sourceApplication: 'claude_code' }]) {
+    const result = await run(extra);
+    assert.equal(result.context.personal_project_id, null);
+    assert.equal(result.agent_receipt.owner, null);
+    assert.match(result.agent_receipt.markdown, /待归属会话/);
+  }
+  assert.deepEqual([writes.length, hires.length, resolutions.length], [0, 0, 0]);
+});
+
+test('the fixed assistant receives an unclaimed conversation in its global scope', async () => {
+  const { app, run, writes, hires } = fixture();
+  app.personal.getProjectAgent = async (_, project, id) => {
+    assert.equal(project, null); assert.equal(id, 'employee.assistant');
+    return { ...role(null), agent_id: id, memory_scope: 'task_only' };
+  };
   const result = await run();
-  assert.ok(result.agent_receipt.owner);
-  assert.equal(writes.length, 1);
-  assert.equal(hires.length, 1);
-  assert.match(result.context.personal_project_id, /^conversation-[a-f0-9]{64}$/);
-  assert.equal(result.context.personal_project_id, hires[0].personal_project_id);
-  const serialized = JSON.stringify(writes);
-  assert.equal(serialized.includes('/synthetic/chat-folder'), false);
-  assert.equal(serialized.includes('synthetic-session-a'), false);
+  assert.equal(result.context.personal_project_id, null);
+  assert.equal(result.agent_receipt.owner.agent_id, 'employee.assistant');
+  assert.deepEqual([writes.length, hires.length], [0, 0]);
 });
 
-test('repeat entry keeps the same private scope and does not overwrite or rehire', async () => {
-  const { run, writes, hires } = fixture();
-  const first = await run();
-  const again = await run({ taskPrompt: 'A different task in this conversation.' });
-  assert.ok(first.agent_receipt.owner);
-  assert.equal(again.context.personal_project_id, first.context.personal_project_id);
-  assert.equal(writes.length, 1);
-  assert.equal(hires.length, 1);
+test('a registered project named at the start of the prompt is matched', async () => {
+  const { app, run, writes, projects } = fixture({ existing: ['dingdong', 'conversation-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'] });
+  projects.get('dingdong').profile.name = 'DingDong';
+  for (const taskPrompt of ['dingdong 那边的入口有个 bug', 'DingDong: fix the tray', '  dingdong，看下日志']) {
+    assert.equal((await run({ taskPrompt })).context.personal_project_id, 'dingdong');
+  }
+  for (const taskPrompt of ['dingdongs are loud', 'please check dingdong', '会话项目 / Conversation project 继续']) {
+    assert.equal((await run({ taskPrompt })).context.personal_project_id, null);
+  }
+  assert.equal(writes.length, 0);
 });
 
-test('different sessions and clients get isolated fallback scopes', async () => {
-  const { run } = fixture();
-  const a = await run();
-  const b = await run({ sessionId: 'synthetic-session-b' });
-  const c = await run({ sourceApplication: 'claude_code' });
-  assert.equal(new Set([a, b, c].map(x => x.context.personal_project_id)).size, 3);
+test('a new-project prefix creates exactly one registered project', async () => {
+  const { run, writes } = fixture();
+  const first = await run({ taskPrompt: '新项目：Garden Planner\n帮我规划第一版' });
+  const again = await run({ taskPrompt: 'new project: garden planner' });
+  assert.equal(first.context.personal_project_id, 'garden-planner');
+  assert.equal(again.context.personal_project_id, 'garden-planner');
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].createOnly, true);
+  assert.equal(writes[0].profile.name, 'Garden Planner');
+  const cjk = await run({ taskPrompt: '新项目：花园规划' });
+  assert.match(cjk.context.personal_project_id, /^project-[a-f0-9]{12}$/);
 });
 
 test('a registered lifecycle binding restores its project before AR recruitment', async () => {
@@ -124,7 +143,7 @@ test('a known native chat cannot inherit another chat through its MCP process', 
     personal_project_id: 'another-chat', source_application: 'codex',
     source_session_id: 'synthetic-host-a', status: 'active'
   }] });
-  assert.match((await run()).context.personal_project_id, /^conversation-/);
+  assert.equal((await run()).context.personal_project_id, null);
 });
 
 test('another session, another client and ended assignments cannot bind this chat', async () => {
@@ -133,7 +152,7 @@ test('another session, another client and ended assignments cannot bind this cha
     { personal_project_id: 'unrelated', source_application: 'claude_code', source_session_id: 'synthetic-host-a', status: 'active' },
     { personal_project_id: 'unrelated', source_application: 'codex', source_session_id: 'synthetic-host-a', status: 'ended' }
   ] });
-  assert.match((await run({ sessionId: null })).context.personal_project_id, /^conversation-/);
+  assert.equal((await run({ sessionId: null })).context.personal_project_id, null);
 });
 
 test('directory or legacy-session ambiguity stays explicit without provisioning', async () => {
@@ -188,7 +207,7 @@ test('task-only temporary ownership does not escape into another user task', asy
     personalProjectId: 'temporary-synthetic', projectScope: { type: 'temporary' }
   } });
   projects.get('temporary-synthetic').scope_type = 'temporary';
-  assert.match((await run()).context.personal_project_id, /^conversation-/);
+  assert.equal((await run()).context.personal_project_id, null);
 });
 
 test('a rejected explicit FLA never triggers replacement recruitment', async () => {
@@ -202,7 +221,8 @@ test('a rejected explicit FLA never triggers replacement recruitment', async () 
 });
 
 test('a failed AR recruitment reports failure and never fabricates an owner', async () => {
-  const { run, app } = fixture();
+  const { run, app } = fixture({ resolution: { status: 'matched', personalProjectId: 'leadless' } });
+  app.personal.getPersonalProject = async () => ({ project_id: 'leadless', scope_type: 'registered', profile: { name: 'leadless' } });
   app.personal.staffDefaultProjectLead = async () => { throw new Error('Staffing unavailable'); };
   const result = await run();
   assert.equal(result.agent_receipt.owner, null);
