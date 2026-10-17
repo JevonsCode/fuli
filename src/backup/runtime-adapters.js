@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { createNativeGraphServices } from '../native-runtime/runtime.js';
 import { ensureContainerRuntime } from '../setup/container-runtime.js';
 import { readJsonFile } from '../storage/json-file.js';
+import { CENSUS_QUERIES, censusFromRows, parsePlainCensusRows } from './graph-census.js';
 import {
   graphBackupSelection,
   reconcileImportedGraphIdentity
@@ -20,13 +21,14 @@ export async function createGraphBackupAdapter({
   onProgress = () => {},
   ensureContainer = ensureContainerRuntime,
   createNativeServices = createNativeGraphServices,
-  run = runCommand
+  run = runCommand,
+  wait = delay
 }) {
   const instances = managedGraphInstances(paths);
   if (mode === 'native') return createNativeBackupAdapter({ paths, instances, createNativeServices });
   if (mode === 'container') {
     const runtime = await ensureContainer({ onProgress });
-    return createContainerBackupAdapter({ paths, instances, runtime, run });
+    return createContainerBackupAdapter({ paths, instances, runtime, run, wait });
   }
   throw new TypeError('Graph backup runtime mode must be container or native.');
 }
@@ -85,6 +87,17 @@ function createNativeBackupAdapter({ paths, instances, createNativeServices }) {
     return existsSync(join(nativeInstanceDir(paths, instance), 'data', 'databases', 'neo4j'));
   }
 
+  // Counts with only the database running; a stopped runtime is left stopped.
+  async function census(instance) {
+    const running = nativeRuntimeLifecycle(paths, instances).resumeDatabases;
+    if (!running) await services.start({ providers: false });
+    try {
+      return await services.censusDatabase(instance);
+    } finally {
+      if (!running) await services.stopDatabases();
+    }
+  }
+
   async function reconcile(input) {
     await services.start();
     try {
@@ -102,12 +115,13 @@ function createNativeBackupAdapter({ paths, instances, createNativeServices }) {
     dump,
     load,
     hasData,
+    census,
     selection: () => graphBackupSelection(paths),
     reconcile
   };
 }
 
-function createContainerBackupAdapter({ paths, instances, runtime, run }) {
+function createContainerBackupAdapter({ paths, instances, runtime, run, wait }) {
   const composePrefix = [
     'compose', '--env-file', paths.graphEnvPath, '-f', paths.graphComposePath
   ];
@@ -170,6 +184,44 @@ function createContainerBackupAdapter({ paths, instances, runtime, run }) {
     });
   }
 
+  // Counts inside the Neo4j container; its Provider stays as it was, so a
+  // stopped runtime has no writer while the count runs.
+  async function census(instance) {
+    const service = `${instance}-neo4j`;
+    const running = String(await docker([
+      ...composePrefix, 'ps', '--status', 'running', '--services', service
+    ])).split(/\r?\n/).map((line) => line.trim()).includes(service);
+    if (!running) await docker([...composePrefix, 'up', '-d', '--no-build', service]);
+    try {
+      await untilReady(() => cypher(service, 'RETURN 1 AS ready'));
+      const rows = {};
+      for (const [key, statement] of Object.entries(CENSUS_QUERIES)) {
+        rows[key] = parsePlainCensusRows(await cypher(service, statement));
+      }
+      return censusFromRows(rows);
+    } finally {
+      if (!running) await docker([...composePrefix, 'stop', '-t', '30', service]);
+    }
+  }
+
+  // The password stays inside the container: cypher-shell reads it from the
+  // container's own NEO4J_AUTH, and the statement is a separate argument.
+  function cypher(service, statement) {
+    return docker([
+      ...composePrefix, 'exec', '-T', service, 'sh', '-c',
+      'cypher-shell -u neo4j -p "${NEO4J_AUTH#neo4j/}" --format plain "$1"', 'sh', statement
+    ]);
+  }
+
+  async function untilReady(probe) {
+    let failure = null;
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      try { return await probe(); } catch (error) { failure = error; }
+      await wait(2000);
+    }
+    throw new Error(`The container graph did not become readable: ${failure?.message ?? 'timed out'}`);
+  }
+
   async function reconcile(input) {
     await docker([...composePrefix, 'up', '-d', '--no-build', ...services]);
     try {
@@ -202,6 +254,7 @@ function createContainerBackupAdapter({ paths, instances, runtime, run }) {
     dump,
     load,
     hasData,
+    census,
     selection: () => graphBackupSelection(paths),
     reconcile
   };
@@ -249,4 +302,8 @@ function runCommand(command, args, { env } = {}) {
       else resolve(stdout);
     });
   });
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

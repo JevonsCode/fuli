@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { CENSUS_QUERIES, censusFromRows } from '../backup/graph-census.js';
 import {
   chmodSync,
   closeSync,
@@ -307,24 +308,63 @@ export function createNativeGraphServices({
   // Offline dump/load for backups and migration. The database must be stopped.
   // It runs neo4j-admin exactly as the instance's own start does, so Windows
   // uses the typed AdminTool entry and the instance-relative home and config.
-  async function adminDatabase(instanceId, args) {
+  async function instanceSpec(instanceId) {
     assertDescriptor(descriptor);
     const spec = (await serviceSpecs()).find((item) => item.id === instanceId);
     if (!spec) throw new TypeError(`Unsupported graph instance: ${instanceId}`);
+    return spec;
+  }
+
+  async function adminDatabase(spec, args) {
     await prepareInstance(spec);
     return run(join(descriptor.neo4jHome, 'bin', 'neo4j-admin'), args, {
       env: neo4jEnvironment(spec)
     });
   }
 
-  const dumpDatabase = (instanceId, toPath) => adminDatabase(instanceId, [
-    'database', 'dump', 'neo4j', `--to-path=${toPath}`
-  ]);
-  const loadDatabase = (instanceId, fromPath) => adminDatabase(instanceId, [
+  // A stop on Windows terminates Neo4j, so a database with recent writes keeps
+  // an active transaction log and neo4j-admin refuses to dump it until it is
+  // recovered. Neo4j recovers and checkpoints when it starts; with no Provider
+  // running nothing writes after that, so one start-stop cycle makes the store
+  // dumpable. A second failure is reported as it is.
+  async function dumpDatabase(instanceId, toPath) {
+    const spec = await instanceSpec(instanceId);
+    const args = ['database', 'dump', 'neo4j', `--to-path=${toPath}`];
+    try {
+      return await adminDatabase(spec, args);
+    } catch {
+      await start({ providers: false });
+      await stopDatabases();
+      return adminDatabase(spec, args);
+    }
+  }
+  const loadDatabase = async (instanceId, fromPath) => adminDatabase(await instanceSpec(instanceId), [
     'database', 'load', 'neo4j', `--from-path=${fromPath}`, '--overwrite-destination=true'
   ]);
 
-  return { start, stopProviders, stopDatabases, ready, dumpDatabase, loadDatabase };
+  // Reads the content-free census of a running instance over its loopback
+  // HTTP endpoint; the caller decides whether the database runs.
+  async function censusDatabase(instanceId) {
+    const spec = await instanceSpec(instanceId);
+    const response = await fetchImpl(`http://127.0.0.1:${spec.httpPort}/db/neo4j/tx/commit`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        authorization: `Basic ${Buffer.from(`neo4j:${spec.password}`).toString('base64')}`
+      },
+      body: JSON.stringify({
+        statements: Object.values(CENSUS_QUERIES).map((statement) => ({ statement }))
+      })
+    });
+    if (!response.ok) throw new Error(`The native ${instanceId} graph census failed (HTTP ${response.status}).`);
+    const body = await response.json();
+    if (body.errors?.length) throw new Error(`The native ${instanceId} graph census failed: ${body.errors[0].message}`);
+    return censusFromRows(Object.fromEntries(Object.keys(CENSUS_QUERIES).map((key, index) =>
+      [key, (body.results?.[index]?.data ?? []).map(({ row }) => row)])));
+  }
+
+  return { start, stopProviders, stopDatabases, ready, dumpDatabase, loadDatabase, censusDatabase };
 }
 
 export async function ensureNativeRuntime(input, dependencies = {}) {

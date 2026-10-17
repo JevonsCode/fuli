@@ -33,5 +33,6 @@ Install and Agent connection:
 
 Graph data portability:
   graph export --output DIR [--mode container|native] [--data-dir DIR]
-  graph import --input DIR [--target-mode container|native] [--yes] [--data-dir DIR]`);
+  graph import --input DIR [--target-mode container|native] [--yes] [--data-dir DIR]
+  graph migrate --to native [--yes] [--data-dir DIR]  (container graph -> native, count-verified, switches back on failure)`);
 }

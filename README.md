@@ -585,6 +585,7 @@ system locale. User data such as paths and space names is displayed unchanged.
 | `fuli open [--data-dir DIR]` | Open the current management UI in the default browser |
 | `fuli graph export --output DIR [--mode container\|native]` | Export graph data as a checksummed, copyable offline bundle |
 | `fuli graph import --input DIR [--target-mode container\|native] [--yes]` | Verify and replace target graph data, preserving an automatic pre-import rollback bundle |
+| `fuli graph migrate --to native [--yes]` | Move a container graph to native mode, accepted only when node and relationship counts match |
 | `fuli update [setup options]` | Update the npm package and refresh local integrations |
 | `fuli uninstall [--yes] [--data-dir DIR]` | Remove agent integrations and services while preserving knowledge data and Neo4j volumes |
 
@@ -700,6 +701,18 @@ fuli graph export --mode container --output "$HOME/Backups/fuli-container"
 fuli setup --yes --runtime-mode native --memory-profile low --adaptive-memory
 fuli graph import --target-mode native --input "$HOME/Backups/fuli-container" --yes
 ```
+
+Or run the same steps as one command, from a package that has the native runtime (on Windows the
+installed Fuli desktop package):
+
+```bash
+fuli graph migrate --to native
+```
+
+It stops the running console, counts and exports the container graph, sets up native mode, imports,
+and accepts the result only when every label and relationship-type count matches. On any failure it
+switches back to container mode. The container volume is only read and is left stopped, never removed.
+Client integrations are not changed.
 
 Swap `container` and `native` for the reverse direction. Export briefly stops the source database
 and resumes only services that were actually running beforehand. Import validates the manifest and

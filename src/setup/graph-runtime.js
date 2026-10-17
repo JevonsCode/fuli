@@ -69,8 +69,12 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   const lan = runtimeSettings.lanAccess;
   const runtimeMode = input.runtimeMode ?? runtimeSettings.graphRuntimeMode;
   const activeRuntimeState = deps.readState(input.paths.graphRuntimeStatePath);
+  // `fuli stop` removes the runtime state, so the saved settings are the record of
+  // the mode a stopped installation last used. Without it a mode switch would
+  // reuse the old mode's credentials against the new, empty graph.
   const previousRuntimeMode = input.previousRuntimeMode ??
-    activeRuntimeState?.runtimeSettings?.graphRuntimeMode ?? runtimeMode;
+    activeRuntimeState?.runtimeSettings?.graphRuntimeMode ??
+    input.savedRuntimeMode ?? runtimeMode;
   const lanAddresses = lan ? deps.discoverLanAddresses() : [];
   if (lan && lanAddresses.length === 0) {
     throw new Error('No private IPv4 LAN address is available, so LAN mode cannot start.');

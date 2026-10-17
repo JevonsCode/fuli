@@ -73,7 +73,7 @@ function trayInventory(source) {
   return { entries, inventorySha256: installationSha256(bytes), bytes };
 }
 
-export function planFirstWindowsInstall({ source, installRoot, dataDir, shortcutDirectories, env = process.env } = {}) {
+export function planFirstWindowsInstall({ source, installRoot, dataDir, shortcutDirectories, adoptExistingData = false, env = process.env } = {}) {
   if (!source || !isAbsolute(source) || !env.LOCALAPPDATA || !isAbsolute(env.LOCALAPPDATA)
       || [installRoot, dataDir].some(path => path != null && (typeof path !== 'string' || !isAbsolute(path)))) {
     throw new Error('Absolute source, installation, data and current-user LOCALAPPDATA paths are required.');
@@ -84,7 +84,7 @@ export function planFirstWindowsInstall({ source, installRoot, dataDir, shortcut
   if (windowsInstallPathsOverlap(source, installRoot) || windowsInstallPathsOverlap(source, dataDir)
       || windowsInstallPathsOverlap(installRoot, dataDir)) throw new Error('Application, source and data directories must be separate.');
   if (existsSync(installRoot)) throw new Error('Installation directory already exists. Updates are not supported by this first-install entry.');
-  if (existsSync(dataDir)) throw new Error('The data directory already exists. Existing native/container data is not adopted or migrated.');
+  const adoptedData = existingFuliData(dataDir, adoptExistingData);
   const directories = shortcutDirectories ?? currentUserShortcutDirectories();
   const shortcuts = ['desktop', 'startMenu'].map(key => {
     if (typeof directories[key] !== 'string' || !isAbsolute(directories[key])) throw new Error('A current-user shortcut directory is unavailable: ' + key);
@@ -96,7 +96,7 @@ export function planFirstWindowsInstall({ source, installRoot, dataDir, shortcut
   });
   if (shortcuts[0] === shortcuts[1]) throw new Error('Desktop and Start menu directories must differ.');
   const inventory = trayInventory(source);
-  return { source, installRoot, dataDir, shortcuts, inventorySha256: inventory.inventorySha256,
+  return { source, installRoot, dataDir, shortcuts, adoptedData, inventorySha256: inventory.inventorySha256,
     applicationVersion: JSON.parse(readFileSync(join(source, 'package.json'), 'utf8')).version };
 }
 
@@ -198,8 +198,13 @@ export function installWindowsForCurrentUser(options,
       publishShortcut(path, stageShortcut(join(staging, index + '.lnk'), target));
     }
     rmdirSync(staging);
-    if (existsSync(plan.dataDir)) throw new Error('The data directory appeared during installation; refusing to adopt it.');
-    const record = { ...receipt, status: 'installed', applicationVersion: plan.applicationVersion, shortcuts: plan.shortcuts };
+    // Only data adopted at planning time may exist; anything else appearing is refused.
+    if (plan.adoptedData ? !existsSync(plan.dataDir) : existsSync(plan.dataDir)) {
+      throw new Error(plan.adoptedData ? 'The adopted data directory disappeared during installation.'
+        : 'The data directory appeared during installation; refusing to adopt it.');
+    }
+    const record = { ...receipt, status: 'installed', applicationVersion: plan.applicationVersion, shortcuts: plan.shortcuts,
+      ...(plan.adoptedData ? { adoptedExistingData: true } : {}) };
     ownFile(join(plan.installRoot, 'installation.json'), JSON.stringify(record, null, 2) + '\n');
     return record;
   } catch (error) {
@@ -213,6 +218,25 @@ export function installWindowsForCurrentUser(options,
     }
     throw error;
   }
+}
+
+// Existing data is bound only on explicit request and only when it is a Fuli
+// data directory. Nothing in it is read beyond the runtime mode or changed.
+function existingFuliData(dataDir, adopt) {
+  if (!existsSync(dataDir)) {
+    if (adopt) throw new Error('There is no existing data directory to adopt: ' + dataDir);
+    return null;
+  }
+  if (!adopt) throw new Error('The data directory already exists. Rerun with --adopt-existing-data to use it; it will not be changed.');
+  if (!lstatSync(dataDir).isDirectory()) throw new Error('The existing data path is not a directory: ' + dataDir);
+  const settingsPath = join(dataDir, 'runtime-settings.json');
+  const configured = existsSync(join(dataDir, 'graph-runtime.json'));
+  if (!existsSync(settingsPath) && !configured) throw new Error('The existing directory is not Fuli data: ' + dataDir);
+  const settings = existsSync(settingsPath) ? JSON.parse(readFileSync(settingsPath, 'utf8')) : null;
+  // The same default the runtime settings reader applies: no mode is container.
+  const runtimeMode = settings?.graphRuntimeMode ?? 'container';
+  if (!['container', 'native'].includes(runtimeMode)) throw new Error('The existing data has an unknown graph runtime mode.');
+  return { runtimeMode };
 }
 
 function removeOwnedFile(path, identity) {
