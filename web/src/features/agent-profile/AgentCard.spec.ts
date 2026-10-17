@@ -23,6 +23,23 @@ describe('AgentCard projects', () => {
     const wrapper = render({ agent: { ...agent, agentId: 'custom', profile: { ...agent.profile, occupationEmoji: '🔧' } } })
     expect(wrapper.get('.agent-portrait').text()).toBe('🔧')
   })
+  it('uses the Agent identity colour and moves only for a reported running state', () => {
+    const entry = (status: string) => ({ status, source: 'roster', taskId: null, title: null, lastUpdateAt: null })
+    const running = render({ agent: { ...agent, agentId: 'custom' }, entry: entry('running') }).get('[data-card-portrait]')
+    expect(running.attributes('style')).toMatch(/--agent-identity: #[0-9a-f]{6}/)
+    expect(running.classes()).toContain('is-working')
+    for (const status of ['none', 'blocked', 'unreported']) {
+      expect(render({ agent: { ...agent, agentId: 'custom' }, entry: entry(status) }).get('[data-card-portrait]').classes()).not.toContain('is-working')
+    }
+  })
+  it('gives each initials portrait the same identity colour as the profile and pinned nav', () => {
+    const style = (agentId: string) => render({ agent: { ...agent, agentId } }).get('[data-card-portrait]').attributes('style')
+    expect(style('custom-a')).toMatch(/--agent-identity: #[0-9a-f]{6}/)
+    expect(style('custom-a')).toBe(style('custom-a'))
+    const colours = new Set(['a', 'b', 'c', 'd', 'e', 'f'].map(id => style(`agent-${id}`)))
+    expect(colours.size).toBeGreaterThan(1)
+    expect(render({ agent: { ...agent, agentId: 'custom-a' } }).get('[data-card-portrait]').classes()).toContain('agent-card-identity')
+  })
   it('shows the person-set occupation next to the name and nothing when unset', () => {
     const classified = render({ agent: { ...agent, occupation: { role: 'product', tags: ['writing'], updatedAt: '2026-10-17T00:00:00Z' } } })
     expect(classified.get('[data-occupation]').text()).toBe('产品 · 写作')

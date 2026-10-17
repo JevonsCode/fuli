@@ -17,6 +17,7 @@ import {
 } from "./profile-model";
 import type { AgentWorkbenchEntry } from "./agent-workbench";
 import { agentPinsText } from "./agent-pins";
+import { agentIdentityStyle } from "./agent-identity-color";
 import { occupationLabels } from "./agent-occupation";
 import type { ProjectAgentRecord } from "@/types";
 
@@ -117,7 +118,13 @@ function togglePin() {
 <template>
   <article class="ui-card agent-card">
     <div class="agent-card-topline">
-      <span class="agent-portrait small" aria-hidden="true">
+      <span
+        class="agent-portrait small agent-card-identity"
+        :class="{ 'is-working': workStatus === 'running' }"
+        :style="agentIdentityStyle(agent.agentId)"
+        aria-hidden="true"
+        data-card-portrait
+      >
         <img v-if="employeeAvatarUrl(agent.agentId)" :src="employeeAvatarUrl(agent.agentId)" alt="" />
         <template v-else>{{ agent.profile.occupationEmoji || name.slice(0, 1) }}</template>
       </span>
