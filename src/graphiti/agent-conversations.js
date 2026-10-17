@@ -62,7 +62,7 @@ export async function checkpointConversation(application, task, workLog, team = 
         workStatus: workLog.status, conversationId: result.conversation_id,
         persistence: result.status, collaborators: team?.collaborators ?? [] }),
       coverage: 'task_summary; visible transcript capture is confirmed separately by the host hook',
-      guidance: 'Include the Agent name, truthful work status and conversation ID in the final receipt. In another client select this Agent, then call resume_agent_conversation with its current taskContextToken and this conversation ID.' };
+      guidance: 'Final receipt must include Agent name, truthful work status, and conversation ID. In another client, select this Agent; call resume_agent_conversation with its current taskContextToken and this conversation ID.' };
   } catch { return unavailable(); }
 }
 
