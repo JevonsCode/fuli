@@ -200,6 +200,19 @@ export async function handleGraphApiRequest({
     }));
     return true;
   }
+  if (url.pathname === '/api/project-agent-pages' && request.method === 'GET') {
+    const limit = url.searchParams.get('limit');
+    sendJson(response, 200, await app.listProjectAgentPage({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('personalProjectId'),
+      status: url.searchParams.get('status'),
+      capability: url.searchParams.get('capability'),
+      work: url.searchParams.get('work'),
+      limit: limit === null ? null : Number(limit),
+      cursor: url.searchParams.get('cursor')
+    }));
+    return true;
+  }
   if (url.pathname === '/api/project-agents' && request.method === 'PUT') {
     sendJson(response, 200, await app.upsertProjectAgent(await readJson(request)));
     return true;
