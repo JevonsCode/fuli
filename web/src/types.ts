@@ -43,6 +43,8 @@ export interface PersonalProject {
   scope_type?: 'registered' | 'temporary'
   publication_key?: string | null
   profile: ProjectProfile
+  created_at?: string | null
+  updated_at?: string | null
 }
 
 export type ProjectAgentStatus = 'active' | 'inactive' | 'archived'
