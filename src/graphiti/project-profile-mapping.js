@@ -10,6 +10,7 @@ export function providerProjectProfile(profile) {
     lifecycle: profile.lifecycle ?? 'planned',
     sources: profile.sources ?? [],
     boundaries: profile.boundaries ?? [],
+    ...(profile.brief_draft ? { brief_draft: profile.brief_draft } : {}),
     assessment: profile.assessment ? providerProjectAssessment(profile.assessment) : null
   };
 }

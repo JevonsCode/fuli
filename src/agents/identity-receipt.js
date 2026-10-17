@@ -37,7 +37,7 @@ export function taskAgentReceipt(application, { projectId, agentId, name = null,
       profile_url: agentProfileUrl(application, item.agentId) })),
     personal_project_id: projectId, work_status: workStatus, persistence,
     continuation: owner ? agentContinuation(projectId, agentId, conversationId) : null,
-    guidance: 'MUST end every final user-visible reply with agent_receipt.markdown unchanged, exactly once, including greetings, status and errors, even when capture is disabled or nothing is retained. The receipt returned by checkpoint_task_knowledge supersedes the entry receipt because it names actual collaborators. Never invent an owner or a collaborator.' };
+    guidance: 'MUST end every final user-visible reply with agent_receipt.markdown unchanged, exactly once: greetings, status, errors, even with capture disabled or nothing retained. checkpoint_task_knowledge receipt overrides entry and names actual collaborators. Never invent owners or collaborators.' };
 }
 
 function unassignedReceipt(status, reason) {
@@ -47,6 +47,7 @@ function unassignedReceipt(status, reason) {
       : reason === 'session_identity_required' ? 'FULI Agent：分配失败（缺少会话标识）'
         : 'FULI Agent：分配失败（项目归属未能恢复）';
   }
+  if (reason === 'assistant_unavailable') return 'FULI Agent：待归属会话（助理尚未就绪）';
   const labels = {
     unavailable: '分配失败（服务或身份恢复不可用）',
     agent_unavailable: '分配失败（指定 FLA 不可用）',
