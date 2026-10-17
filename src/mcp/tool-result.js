@@ -1,6 +1,6 @@
 import { ApplicationError } from '../app/application-error.js';
 import { BLOCKED_PREFERENCE_LABEL, blockedPreferenceDelivery, completeBlockedPreferenceDelivery,
-  preferenceDeliveryReason } from './preference-delivery.js';
+  preferenceDeliveryReason, stablePreferencePrefix } from './preference-delivery.js';
 
 const OMITTED_KEYS = new Set([
   'store',
@@ -39,7 +39,7 @@ export function completePreferenceToolResult(value, limitBytes = 512 * 1024) {
   else if (Object.keys(value ?? {}).some(key => !allowed.has(key)) || unsafe(value)) {
     candidate = blockedPreferenceDelivery(value, 'unsafe_projection');
   }
-  let result = envelope(candidate);
+  let result = envelope(stablePreferencePrefix(candidate));
   if (jsonBytes(result) > limitBytes) {
     result = envelope(blockedPreferenceDelivery(value, 'delivery_budget'));
     if (jsonBytes(result) > limitBytes) throw new ApplicationError('validation', 'Cannot deliver the complete blocked preference recovery');
@@ -85,10 +85,8 @@ export function successToolResult(value, { limitBytes = RESULT_LIMIT_BYTES, item
   );
   const reason = preferenceContext && preferenceDeliveryReason(value, structuredContent);
   if (reason) return blockedResult(reason);
-  return {
-    content: [{ type: 'text', text: JSON.stringify(structuredContent) }],
-    structuredContent
-  };
+  const delivered = preferenceContext ? stablePreferencePrefix(structuredContent) : structuredContent;
+  return { content: [{ type: 'text', text: JSON.stringify(delivered) }], structuredContent: delivered };
 }
 
 export function hookAdditionalContextToolResult(

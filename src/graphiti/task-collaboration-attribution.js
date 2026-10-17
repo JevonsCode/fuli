@@ -19,6 +19,7 @@ export async function taskTeam(application, task, collaboratorIds) {
     } catch { /* Missing display metadata cannot undo a checkpoint or change its owner. */ }
   }
   return { name,
-    collaborators: [...unique.values()].map(item => ({ agentId: item.agent_id, name: item.name })),
+    collaborators: [...unique.values()].map(item => ({ agentId: item.agent_id, name: item.name,
+      responsibility: item.responsibility ?? null, runs: item.runs })),
     ignored: requested.filter(id => !unique.has(id)) };
 }

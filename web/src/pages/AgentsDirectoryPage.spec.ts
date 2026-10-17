@@ -60,9 +60,15 @@ describe('Agent directory integration', () => {
     expect(wrapper.findAll('.agent-directory-name a').map(link => link.text())).toEqual(['Birch'])
     expect(wrapper.get('.fla-employee-number').text()).toBe('FLA 000002')
   })
-  it('explains how to start the first task at the main directory entry', async () => {
+  it('explains how to start the first task and verify cross-client memory at the main directory entry', async () => {
     const { wrapper } = await setup()
-    expect(wrapper.get('.project-agent-first-task').text()).toContain('开始第一个任务')
+    const firstTask = wrapper.get('.project-agent-first-task')
+    expect(firstTask.text()).toContain('开始第一个任务')
+    const steps = firstTask.findAll('[data-first-task-steps] li').map(item => item.text())
+    expect(steps).toEqual([
+      t('projectAgents.firstTask.stepTellPreference'),
+      t('projectAgents.firstTask.stepVerifyAcrossClients'),
+    ])
   })
 
   it('renders membership state and a compact project summary on each card', async () => {

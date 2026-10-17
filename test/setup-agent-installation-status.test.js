@@ -176,7 +176,11 @@ test('Claude Code requires always-loaded Fuli plus task lifecycle hooks', () => 
             timeout: 30,
             statusMessage: 'Checking Fuli task checkpoint'
           }]
-        }]
+        }],
+        ...Object.fromEntries(['SessionStart', 'PreCompact'].map(event => [event, [{ hooks: [{
+          type: 'command', command: claudeLifecycleCommand(CONTEXT, event, 30), timeout: 30,
+          statusMessage: 'Refreshing Fuli context generation'
+        }] }]]))
       }
     }]
   ]);

@@ -70,3 +70,26 @@ test('frozen owner display values never consult the current directory', async ()
     assert.equal(lookups, 0);
   }
 });
+
+test('checkpoint retains frozen collaborator duties and execution references in both receipts', async () => {
+  const run = { run_id: 'run-1', worker_id: 'worker-1', task_id: 'task-1', work_kind: 'code_review',
+    worker_label: 'Review parser', application: 'codex', session_id: 'native-one',
+    session_url: 'codex://threads/native-one', status: 'failed', event_id: 'event-1', observation_ids: [] };
+  const f = scenario({ version: 1, status: 'frozen', owner: { agent_id: 'owner', name: 'Original owner' },
+    collaborators: [{ agent_id: 'helper', name: 'Actual helper', responsibility: 'Review changes', runs: [run] }] });
+  f.app.getCapturePolicy = () => ({ enabled: true });
+  f.app.personal = { conversation: async () => ({ status: 'saved', conversation_id: 'parent-conversation' }) };
+  const result = await checkpointTaskKnowledge(f.app, f.input);
+  const helper = result.agent_receipt.collaborators[0];
+  assert.equal(helper.responsibility, 'Review changes');
+  const { event_id, observation_ids, worker_id, ...reference } = run;
+  assert.deepEqual(helper.runs, [reference]);
+  assert.equal(helper.run_count, 1);
+  assert.equal(helper.omitted_run_count, 0);
+  assert.match(result.agent_receipt.markdown, /Review parser/);
+  assert.match(result.agent_receipt.markdown, /codex:\/\/threads\/native-one/);
+  assert.match(result.agent_receipt.markdown, /失败/);
+  assert.deepEqual(result.conversation.receipt, result.agent_receipt);
+  const replay = await checkpointTaskKnowledge(f.app, { ...f.input, collaborators: ['unproven'] });
+  assert.deepEqual(replay.agent_receipt, result.agent_receipt);
+});
