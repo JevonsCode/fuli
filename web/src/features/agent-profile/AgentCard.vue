@@ -5,17 +5,15 @@ import { RouterLink } from "vue-router";
 import GrowthLoading from "@/components/GrowthLoading.vue";
 import PinIcon from "@/components/PinIcon.vue";
 import AgentHand from "@/features/project-agents/AgentHand.vue";
-import { t } from "@/i18n";
+import { currentLocale, t } from "@/i18n";
+import { formatRelativeTime } from "@/lib/relative-time";
 import {
   agentDisplayName,
   agentProfilePath,
   profileProjectIds,
 } from "./profile-model";
-import type {
-  AgentWorkSummary,
-} from "./agent-work-summary";
+import type { AgentWorkbenchEntry } from "./agent-workbench";
 import { agentPinsText } from "./agent-pins";
-import type { AgentWorkSummaryState } from "./useAgentWorkSummary";
 import type { ProjectAgentRecord } from "@/types";
 
 const props = defineProps<{
@@ -23,8 +21,7 @@ const props = defineProps<{
   spaceId: string;
   projectNames?: Record<string, string>;
   managesAllProjects?: boolean;
-  workSummary?: AgentWorkSummary;
-  workState?: AgentWorkSummaryState;
+  entry?: AgentWorkbenchEntry;
   pinned?: boolean;
   pinPending?: boolean;
 }>();
@@ -44,13 +41,17 @@ const statusClass = computed(() => `is-${props.agent.profile.status}`);
 const reportedMembershipStatus = computed(() =>
   t(`projectAgents.status.${props.agent.profile.status}`),
 );
-const workStatus = computed(() => {
-  if (props.workSummary) return props.workSummary.status;
-  if (props.workState === "loading") return "loading";
-  if (props.workState === "error") return "unavailable";
-  if (props.workState === "incomplete") return "unreported";
-  return "none";
-});
+const workStatus = computed(() => props.entry?.status ?? "unreported");
+const currentTaskTitle = computed(() =>
+  props.entry?.title ?? t("agentRedesign.workbench.titleNotLoaded"),
+);
+const lastUpdate = computed(() =>
+  formatRelativeTime(props.entry?.lastUpdateAt, currentLocale()),
+);
+const taskLink = computed(() => ({
+  path: "/project-agents/manage",
+  query: { agent: props.agent.agentId, task: props.entry?.taskId ?? "" },
+}));
 const workStatusClass = computed(() => `is-${workStatus.value}`);
 // Jefa and Bole are fixed roles every space has.
 const fixedRole = computed(() => ({ coordinator: t("agentProfiles.roles.projectManager"), hr: t("agentProfiles.roles.hr") })[props.agent.profile.agentType as string] ?? "");
@@ -81,6 +82,7 @@ const workStatusLabel = computed(() => {
     loading: "Loading work status",
     unreported: "Partial status",
     unavailable: "Unavailable",
+    ended: "Ended",
   }[workStatus.value];
   return localized(
     `agentRedesign.workStatus.${workStatus.value}`,
@@ -126,7 +128,7 @@ function togglePin() {
         {{ membershipStatusLabel }}
       </span>
       <span
-        v-if="agent.profile.status === 'active' || !['none', 'loading'].includes(workStatus)"
+        v-if="workStatus !== 'ended' && (agent.profile.status === 'active' || !['none', 'loading'].includes(workStatus))"
         class="agent-card-work-status"
         :class="workStatusClass"
         :data-work-status="workStatus"
@@ -148,7 +150,16 @@ function togglePin() {
         <PinIcon v-else :filled="pinned" />
       </button>
     </div>
-    <p class="agent-card-responsibility">{{ agent.profile.responsibility }}</p>
+    <p v-if="entry?.taskId" class="agent-card-current" data-current-task>
+      <span class="agent-card-current-label">{{ t("agentRedesign.workbench.current") }}</span>
+      <RouterLink class="agent-card-current-task" :to="taskLink" :class="{ 'is-unloaded': !entry.title }">
+        {{ currentTaskTitle }}
+      </RouterLink>
+      <span class="agent-card-last-update" :title="entry.lastUpdateAt ?? undefined" data-last-update>
+        {{ lastUpdate ? t("agentRedesign.workbench.lastUpdate", { time: lastUpdate }) : t("agentRedesign.workbench.lastUpdateUnknown") }}
+      </span>
+    </p>
+    <p class="agent-card-responsibility" :title="t('agentRedesign.workbench.responsibility')">{{ agent.profile.responsibility }}</p>
     <div v-if="capabilities.length" class="agent-inline-skills">
       <span v-for="skill in capabilities" :key="skill">{{ skill }}</span>
     </div>

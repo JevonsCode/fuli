@@ -12,6 +12,8 @@ import {
 import { agentPinsText, useAgentPinsState, useAgentRosterState } from "@/features/agent-profile/agent-pins";
 import ProjectAgentFirstTask from "@/features/project-agents/ProjectAgentFirstTask.vue";
 import { useAgentWorkSummary } from "@/features/agent-profile/useAgentWorkSummary";
+import { agentWorkbenchEntry, compareWorkbenchRows } from "@/features/agent-profile/agent-workbench";
+import { useStableOrder } from "@/features/agent-profile/useStableOrder";
 import UiSelect from "@/components/ui/UiSelect.vue";
 import EmployeeRecruitDialog from "@/features/employees/EmployeeRecruitDialog.vue";
 import EmployeeWorkbenchLinks from "@/features/employees/EmployeeWorkbenchLinks.vue";
@@ -32,6 +34,7 @@ const pinError = agentPins.error;
 const pinRetryLabel = computed(() => agentPinsText("retry", "Retry"));
 const {
   summaries: workSummaries,
+  tasks: workTasks,
   loading: workLoading,
   error: workError,
   state: workState,
@@ -64,35 +67,56 @@ const statusOptions = computed(() => [
   ...["active", "inactive", "archived"].map((value) => ({ value, label: t(`projectAgents.status.${value}`) })),
 ]);
 
-const visible = computed(() =>
-  agents.value
-    .filter(
-      (agent) =>
-        (status.value === "all" || agent.profile.status === status.value) &&
-        (!selectedProjects.value.length ||
-          profileProjectIds(agent).some((id) =>
-            selectedProjects.value.includes(id),
-          )) &&
-        fuzzyMatch(
-          [
-            agentDisplayName(agent),
-            agent.employeeNumber ? `FLA ${agent.employeeNumber}` : "",
-            agent.profile.responsibility,
-            ...agent.profile.capabilities,
-            ...profileProjectIds(agent).map((id) => projectNames.value[id] || id),
-          ].join(" "),
-          search.value,
-        ),
-    )
-    .sort((a, b) => agentDisplayName(a).localeCompare(agentDisplayName(b))),
-);
+const matches = (agent: (typeof agents.value)[number]) =>
+  (status.value === "all" || agent.profile.status === status.value) &&
+  (!selectedProjects.value.length ||
+    profileProjectIds(agent).some((id) => selectedProjects.value.includes(id))) &&
+  fuzzyMatch(
+    [
+      agentDisplayName(agent),
+      agent.employeeNumber ? `FLA ${agent.employeeNumber}` : "",
+      agent.profile.responsibility,
+      ...agent.profile.capabilities,
+      ...profileProjectIds(agent).map((id) => projectNames.value[id] || id),
+    ].join(" "),
+    search.value,
+  );
 const busy = computed(
   () =>
     loading.value ||
     workLoading.value ||
     store.runtimeStatus === "loading",
 );
-const workSummaryFor = (agentId: string) => workSummaries.value[agentId];
+const entries = computed(() =>
+  Object.fromEntries(
+    agents.value.map((agent) => [
+      agent.agentId,
+      agentWorkbenchEntry(agent, {
+        summary: workSummaries.value[agent.agentId],
+        summaryState: workState.value,
+        tasks: workTasks.value,
+      }),
+    ]),
+  ),
+);
+const agentsById = computed(
+  () => new Map(agents.value.map((agent) => [agent.agentId, agent])),
+);
+// Active work first; the order freezes once loaded so rows do not jump while read.
+const freshOrder = computed(() =>
+  agents.value
+    .map((agent) => ({ agent, entry: entries.value[agent.agentId]!, name: agentDisplayName(agent) }))
+    .sort(compareWorkbenchRows)
+    .map((row) => row.agent.agentId),
+);
+const stableOrder = useStableOrder(freshOrder, computed(() => !busy.value), space);
+const visibleIn = (ids: string[]) =>
+  ids.map((id) => agentsById.value.get(id)!).filter((agent) => agent && matches(agent));
+const visible = computed(() => visibleIn(stableOrder.order.value));
+const reorderAvailable = computed(() => {
+  const fresh = visibleIn(freshOrder.value);
+  return fresh.some((agent, index) => agent.agentId !== visible.value[index]?.agentId);
+});
 
 async function toggleAgentPin(agentId: string, pinned: boolean) {
   await agentPins.setPinned(agentId, pinned);
@@ -241,6 +265,12 @@ async function retryDirectory() {
         t(agents.length ? "agentProfiles.noMatch" : "agentProfiles.noAgents")
       }}
     </p>
+    <p v-if="reorderAvailable && !busy" class="agents-directory-reorder" role="status">
+      <span>{{ t("agentRedesign.workbench.reorderHint") }}</span>
+      <button class="quiet-button" type="button" data-workbench-reorder @click="stableOrder.apply()">
+        {{ t("agentRedesign.workbench.reorder") }}
+      </button>
+    </p>
     <ul v-if="visible.length" class="agents-directory-grid">
       <li v-for="agent in visible" :key="agent.agentId">
         <AgentCard
@@ -248,8 +278,7 @@ async function retryDirectory() {
           :space-id="space"
           :project-names="projectNames"
           :manages-all-projects="managesAllProjects(agent.agentId)"
-          :work-summary="workSummaryFor(agent.agentId)"
-          :work-state="workState"
+          :entry="entries[agent.agentId]"
           :pinned="pinnedAgentIds.includes(agent.agentId)"
           :pin-pending="pinSavingAgentId === agent.agentId"
           @toggle-pin="toggleAgentPin(agent.agentId, $event)"

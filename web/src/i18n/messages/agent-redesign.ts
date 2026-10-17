@@ -5,6 +5,15 @@ export const agentRedesignMessages = {
     projects: {
       more: "全部项目 · {count}",
     },
+    workbench: {
+      current: "当前",
+      titleNotLoaded: "任务标题未在最近 200 条任务中，打开查看",
+      lastUpdate: "最近更新 {time}",
+      lastUpdateUnknown: "最近更新时间未知",
+      responsibility: "长期职责",
+      reorder: "按最新状态重新排序",
+      reorderHint: "工作状态已变化，列表保持原顺序以便阅读",
+    },
     workStatus: {
       label: "工作状态",
       awaiting_recruitment: "等待招聘",
@@ -17,6 +26,7 @@ export const agentRedesignMessages = {
       loading: "正在读取工作状态",
       unreported: "状态不完整",
       unavailable: "读取失败",
+      ended: "已结束",
       refreshError: "工作状态更新失败",
     },
   },
@@ -25,6 +35,15 @@ export const agentRedesignMessages = {
     membershipStatus: "Member · {status}",
     projects: {
       more: "All projects · {count}",
+    },
+    workbench: {
+      current: "Now",
+      titleNotLoaded: "Task title is not among the latest 200 tasks; open to view",
+      lastUpdate: "Updated {time}",
+      lastUpdateUnknown: "Last update unknown",
+      responsibility: "Long-term responsibility",
+      reorder: "Re-sort by latest status",
+      reorderHint: "Work status changed; the list keeps its order while you read",
     },
     workStatus: {
       label: "Work status",
@@ -38,6 +57,7 @@ export const agentRedesignMessages = {
       loading: "Loading work status",
       unreported: "Partial status",
       unavailable: "Unavailable",
+      ended: "Ended",
       refreshError: "Work status could not be refreshed",
     },
   },
