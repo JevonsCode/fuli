@@ -5,6 +5,7 @@ import { createGraphBackupAdapter } from '../backup/runtime-adapters.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
 import { localRuntimeControl } from './local-runtime-control.js';
+import { writeLine } from './terminal-io.js';
 
 export async function runGraphDataCommand(action, args, dependencies = {}) {
   const options = parseGraphDataOptions(action, args);
@@ -129,8 +130,4 @@ async function confirmImport(mode) {
   } finally {
     input.close();
   }
-}
-
-function writeLine(value) {
-  process.stdout.write(`${value}\n`);
 }

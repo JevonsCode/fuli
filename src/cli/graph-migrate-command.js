@@ -9,6 +9,7 @@ import { resolveSetupPaths } from '../setup/paths.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
 import { localRuntimeControl } from './local-runtime-control.js';
 import { runSetupCommand } from './setup-command.js';
+import { writeLine } from './terminal-io.js';
 
 // `fuli graph migrate --to native`: move this data directory's container graph
 // into the native runtime. Client integrations are not changed here.
@@ -103,8 +104,4 @@ async function confirmMigration() {
   } finally {
     input.close();
   }
-}
-
-function writeLine(value) {
-  process.stdout.write(`${value}\n`);
 }
