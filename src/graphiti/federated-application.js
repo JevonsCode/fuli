@@ -1029,7 +1029,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return this.personal.upsertPersonalProject({
       personal_space_id: input.personalSpaceId,
       project_id: input.projectId,
-      profile: providerProjectProfile(input.profile)
+      profile: providerProjectProfile(input.profile),
+      ...(input.createOnly === true ? { create_only: true } : {})
     });
   }
 
