@@ -141,6 +141,45 @@ describe('Agent directory integration', () => {
     expect(wrapper.get('[data-work-status="running"]').text()).toBe(t('agentRedesign.workStatus.running'))
   })
 
+  it('lists active work first from the roster projection and keeps that order while reading', async () => {
+    let birch = 'running'
+    getJson.mockImplementation(async (url: string) => {
+      if (url === '/api/project-agents?personalSpaceId=space-a') {
+        return [
+          { ...roster[0], workStatus: birch === 'running' ? 'idle' : 'running', currentTaskId: birch === 'running' ? null : 'task-a' },
+          { ...roster[1], workStatus: birch, currentTaskId: birch === 'running' ? 'task-b' : null },
+        ]
+      }
+      if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') {
+        return [{
+          taskId: 'task-b', personalSpaceId: 'space-a', title: 'Synthetic review task', status: 'running',
+          createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-17T01:00:00Z',
+          participants: [{ agentId: 'agent-1', role: 'lead', status: 'running', updatedAt: '2026-10-17T02:00:00Z' }],
+        }]
+      }
+      if (url === '/api/agent-pins?personalSpaceId=space-a') return { revision: 1, agentIds: [] }
+      throw new Error(`Unexpected detail request: ${url}`)
+    })
+    const { wrapper } = await setup()
+    const names = () => wrapper.findAll('.agent-directory-name a').map(link => link.text())
+    expect(names()).toEqual(['Birch', 'Aster'])
+    const current = wrapper.get('[data-current-task]')
+    expect(current.text()).toContain('Synthetic review task')
+    expect(current.get('[data-last-update]').attributes('title')).toBe('2026-10-17T02:00:00Z')
+    expect(wrapper.findAll('[data-current-task]')).toHaveLength(1)
+    expect(wrapper.find('[data-workbench-reorder]').exists()).toBe(false)
+
+    birch = 'idle'
+    await (wrapper.getComponent(AgentsDirectoryPage).vm as unknown as { retryDirectory: () => Promise<void> }).retryDirectory()
+    await flushPromises()
+    expect(names()).toEqual(['Birch', 'Aster'])
+    expect(wrapper.get('[data-work-status="running"]').element.closest('.agent-card')!.textContent).toContain('Aster')
+
+    await wrapper.get('[data-workbench-reorder]').trigger('click')
+    expect(names()).toEqual(['Aster', 'Birch'])
+    expect(wrapper.find('[data-workbench-reorder]').exists()).toBe(false)
+  })
+
   it('does not turn an unavailable work summary into an idle state', async () => {
     getJson.mockImplementation(async (url: string) => {
       if (url === '/api/project-agents?personalSpaceId=space-a') return roster
