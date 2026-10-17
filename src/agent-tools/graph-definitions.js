@@ -335,7 +335,12 @@ export const GRAPH_TOOL_DEFINITIONS = [
         expectedRevision: integerSchema({ minimum: 0 }),
         memory: workingMemorySchema
       }, ['expectedRevision', 'memory']),
-      collaborators: arraySchema(boundedString(128), { maxItems: 16 })
+      collaborators: arraySchema(boundedString(128), { maxItems: 16 }),
+      triage: { ...objectSchema({
+        kind: enumSchema(['project', 'topic', 'one_off']),
+        project: boundedString(80),
+        topic: boundedString(80)
+      }, ['kind']), description: 'Unclaimed conversations only (see triage_candidates): project=existing name, topic=pick/start a name, one_off=neither.' }
     }, ['taskContextToken', 'disposition', 'reason'])
   },
   {

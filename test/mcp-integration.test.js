@@ -782,7 +782,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   const resources = await connection.client.listResources();
   assert.deepEqual(
     resources.resources.map(({ uri }) => uri).sort(),
-    ['fuli://projects/hotel-b', 'fuli://projects/inbound', 'fuli://taste/global']
+    ['fuli://projects/hotel-b', 'fuli://projects/inbound', 'fuli://rules/task-entry', 'fuli://taste/global']
   );
   assert.equal(
     resources.resources.find(({ uri }) => uri === 'fuli://taste/global').name,
