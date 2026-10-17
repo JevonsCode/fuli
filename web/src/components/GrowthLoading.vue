@@ -157,4 +157,11 @@ const props = withDefaults(defineProps<{
     will-change: auto;
   }
 }
+
+:root[data-motion="reduced"] .growth-loading__arc {
+  opacity: 1;
+  transform: none;
+  animation: none;
+  will-change: auto;
+}
 </style>

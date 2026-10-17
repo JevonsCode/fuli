@@ -144,3 +144,8 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(2px);
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0s !important; animation-duration: 0s !important; }
 }
+
+/* In-app "reduce motion" switch (lib/motion-preference.ts); mirrors the system rule. */
+:root[data-motion="reduced"] *, :root[data-motion="reduced"] *::before, :root[data-motion="reduced"] *::after {
+  scroll-behavior: auto !important; transition-duration: 0s !important; animation-duration: 0s !important;
+}

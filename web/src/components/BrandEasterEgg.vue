@@ -449,15 +449,28 @@ onBeforeUnmount(() => {
     clip-path: inset(0);
     animation: brand-reduced-glint .28s ease-out both;
   }
+}
 
-  @keyframes brand-reduced-halo {
-    0%, 100% { opacity: 0; }
-    45% { opacity: .72; }
-  }
+:root[data-motion="reduced"] .brand-orbit {
+  display: none;
+}
 
-  @keyframes brand-reduced-glint {
-    0%, 100% { opacity: 0; }
-    45% { opacity: .58; }
-  }
+:root[data-motion="reduced"] .brand-block.is-sparkling::before {
+  animation: brand-reduced-halo .28s ease-out both;
+}
+
+:root[data-motion="reduced"] .brand-copy-reflection {
+  clip-path: inset(0);
+  animation: brand-reduced-glint .28s ease-out both;
+}
+
+@keyframes brand-reduced-halo {
+  0%, 100% { opacity: 0; }
+  45% { opacity: .72; }
+}
+
+@keyframes brand-reduced-glint {
+  0%, 100% { opacity: 0; }
+  45% { opacity: .58; }
 }
 </style>
