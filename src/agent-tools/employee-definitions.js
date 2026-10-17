@@ -13,7 +13,7 @@ export const EMPLOYEE_TOOL_DEFINITIONS = [
   },
   {
     name: 'recruit_employee', title: 'WRITE · Recruit an employee',
-    description: 'On an explicit user request recruit an employee. New recruitment without a scope uses the template default (Jefa: all projects, including future projects). Existing identities retain their saved scope. Use management.mode=all plus excludedProjectIds for a persistent all-except rule, or mode=selected plus projectIds for a fixed selection. Never combine management with projectPath/personalProjectIds. Changing existing management requires replaceAssignments and expectedAssignmentsVersion from the catalog. Legacy projectPath or personalProjectIds remains a current-project selection. Exclusions take effect before assignment synchronization; data and history are preserved. Reload after conflicts or incomplete updates. No models or workers start. Reactivation must be explicitly requested.',
+    description: 'Recruit only on explicit user request. Unscoped new recruitment uses template default (Jefa: all projects, including future); existing identities keep saved scope. management.mode=all with excludedProjectIds gives persistent all-except; mode=selected with projectIds gives fixed selection. Never combine management with projectPath/personalProjectIds. Existing management changes require replaceAssignments and catalog expectedAssignmentsVersion. Legacy projectPath/personalProjectIds still selects current projects. Apply exclusions before assignment sync; preserve data/history. Reload after conflicts/incomplete updates. Starts no models/workers. Reactivation requires explicit request.',
     inputSchema: objectSchema({
       ...target, reactivate: booleanSchema(),
       personalProjectIds: { type: 'array', items: id, maxItems: 500 },
@@ -30,12 +30,12 @@ export const EMPLOYEE_TOOL_DEFINITIONS = [
   },
   {
     name: 'list_employee_tools', title: 'READ · Employee workbench tools',
-    description: 'Discover complete input schemas and permitted tools for a recruited employee. Supply projectPath, or a previously resolved personalProjectId without projectPath when directory resolution is unavailable. If both are supplied they must resolve to the same project. Existing project and employee authorization always apply. Use includeSchemas=false for a compact name list, then toolName to read one exact schema. Oversized contracts fail explicitly, never return partial schemas. Read the schema before calling; a workbench has to be installed first.',
+    description: 'Discover complete input schemas and permitted tools for a recruited employee. Supply projectPath, or a previously resolved personalProjectId alone if directory resolution is unavailable; if both are supplied, they must resolve to the same project. Project/employee authorization always applies. Use includeSchemas=false for compact names, then toolName for one exact schema. Oversized contracts fail explicitly, never return partial schemas. Read schema before calling; install the workbench first.',
     inputSchema: objectSchema({ ...workbenchTarget, toolName: id, includeSchemas: booleanSchema() }, ['templateId'])
   },
   {
     name: 'call_employee_tool', title: 'WRITE · Call an employee workbench tool',
-    description: 'Call a discovered employee tool inside the exact assigned project. Supply projectPath or a previously resolved personalProjectId; omit projectPath if directory resolution is unavailable. If both are supplied they must resolve to the same project. May read or change data according to the tool schema. Preserve optimistic concurrency and idempotency keys. Does not grant cross-project access, execute an external model, or confirm task completion for the human.',
+    description: 'Call a discovered employee tool in the exact assigned project. Supply projectPath or previously resolved personalProjectId; omit projectPath if directory resolution is unavailable. If both are supplied, they must resolve to the same project. Reads/changes follow tool schema; preserve optimistic concurrency and idempotency keys. Grants no cross-project access, executes no external model, and cannot confirm completion for the human.',
     inputSchema: objectSchema({
       ...workbenchTarget, tool: id,
       arguments: { type: 'object', additionalProperties: true }

@@ -24,7 +24,7 @@ export const PROJECT_AGENT_MEMORY_DEFINITIONS = [
   {
     name: 'export_project_agent_memory',
     title: 'READ · Export private Agent working memory as Markdown',
-    description: 'Return a generated Markdown handoff for exactly one durable Agent: its identity plus one memory scope (global, or one assigned project), read fresh from the database with the same access rules as get_project_agent_memory. The result has a suggested filename and the Markdown text; it accepts no output path and writes no export file. Existing authorized local directory snapshots of this Agent may be refreshed as a side effect. The database stays authoritative: edits to an exported file are never imported.',
+    description: 'Generate a Markdown handoff for exactly one durable Agent: identity and one memory scope (global or one assigned project), read fresh from the database under get_project_agent_memory access rules. Returns suggested filename and Markdown; accepts no output path, writes no export file. May refresh existing authorized local directory snapshots for this Agent. Database remains authoritative; exported-file edits are never imported.',
     inputSchema: objectSchema({
       personalSpaceId: id, personalProjectId: { ...id, type: ['string', 'null'], description: 'Omit or use null for this Agent’s independent global scope; a project ID requires an active assignment.' }, agentId: id
     }, ['personalSpaceId', 'agentId'])
@@ -32,7 +32,7 @@ export const PROJECT_AGENT_MEMORY_DEFINITIONS = [
   {
     name: 'checkpoint_project_agent_memory',
     title: 'WRITE · Checkpoint private Agent working memory',
-    description: 'Save a bounded, distilled working-context snapshot after meaningful work: summary, decisions, unresolved threads and next actions. Read the current revision first, preserve still-relevant notes, and use expectedRevision for optimistic concurrency. On conflict reload and merge; never blindly retry an overwrite. Reuse one idempotency key for the same logical write. Never store raw chats, credentials, unsupported facts, or another Agent’s memory. Shared confirmed facts belong in capture_session_knowledge. Honors disabled capture.',
+    description: 'After meaningful work, save a bounded distilled working-context snapshot: summary, decisions, unresolved threads, next actions. Read current revision first, preserve relevant notes, and use expectedRevision for optimistic concurrency. On conflict reload and merge; never blindly retry overwrites. Reuse one idempotency key per logical write. Never store raw chats, credentials, unsupported facts, or another Agent’s memory. Shared confirmed facts belong in capture_session_knowledge. Honors disabled capture.',
     inputSchema: objectSchema({
       personalSpaceId: id, personalProjectId: { ...id, type: ['string', 'null'], description: 'Omit or use null for this Agent’s independent global scope; a project ID requires an active assignment.' }, agentId: id,
       expectedRevision: integerSchema({ minimum: 0 }),
