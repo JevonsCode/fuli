@@ -426,3 +426,38 @@ function assetSnapshot(root) {
       : [[path, statSync(path).size, statSync(path).mtimeMs, createHash('sha256').update(readFileSync(path)).digest('hex')]];
   });
 }
+
+test('offline dump and load run neo4j-admin with the instance home Windows starts it with', async () => {
+  const commands = [];
+  const services = createServices({
+    platform: 'win32',
+    paths: PATHS,
+    runtimeDescriptor: {
+      status: 'ready',
+      mode: 'native',
+      javaHome: '/jre-21',
+      neo4jHome: PATHS.nativeNeo4jHome,
+      providerPython: '/bundle/python/python.exe'
+    },
+    personalOnly: true,
+    readText: () => ENVIRONMENT,
+    writeText: async () => {},
+    pathExists: () => true,
+    markInitialized: () => {},
+    readSettings: () => ({ ...DEFAULT_RUNTIME_SETTINGS, graphRuntimeMode: 'native' }),
+    run: async (command, args, { env }) => commands.push({ command, args,
+      home: env.NEO4J_HOME, conf: env.NEO4J_CONF, java: env.JAVA_HOME })
+  });
+
+  await services.dumpDatabase('personal', '/stage/out');
+  await services.loadDatabase('personal', '/stage/in');
+  await assert.rejects(services.dumpDatabase('workspace', '/stage/out'), /Unsupported graph instance/);
+
+  const instance = { home: PATHS.nativePersonalDir, conf: join(PATHS.nativePersonalDir, 'conf'), java: '/jre-21' };
+  assert.deepEqual(commands, [
+    { command: join(PATHS.nativeNeo4jHome, 'bin', 'neo4j-admin'),
+      args: ['database', 'dump', 'neo4j', '--to-path=/stage/out'], ...instance },
+    { command: join(PATHS.nativeNeo4jHome, 'bin', 'neo4j-admin'),
+      args: ['database', 'load', 'neo4j', '--from-path=/stage/in', '--overwrite-destination=true'], ...instance }
+  ]);
+});

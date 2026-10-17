@@ -19,10 +19,11 @@ export async function createGraphBackupAdapter({
   paths,
   onProgress = () => {},
   ensureContainer = ensureContainerRuntime,
+  createNativeServices = createNativeGraphServices,
   run = runCommand
 }) {
   const instances = managedGraphInstances(paths);
-  if (mode === 'native') return createNativeBackupAdapter({ paths, instances, run });
+  if (mode === 'native') return createNativeBackupAdapter({ paths, instances, createNativeServices });
   if (mode === 'container') {
     const runtime = await ensureContainer({ onProgress });
     return createContainerBackupAdapter({ paths, instances, runtime, run });
@@ -38,14 +39,14 @@ export function managedGraphInstances(paths) {
   return workspace ? ['personal', 'workspace'] : ['personal'];
 }
 
-function createNativeBackupAdapter({ paths, instances, run }) {
+function createNativeBackupAdapter({ paths, instances, createNativeServices }) {
   const descriptor = readJsonFile(paths.nativeRuntimeManifestPath, null);
   if (descriptor?.status !== 'ready' || descriptor.mode !== 'native') {
     throw new Error(
       'Native graph mode is not initialized. Run `fuli setup --runtime-mode native` first.'
     );
   }
-  const services = createNativeGraphServices({
+  const services = createNativeServices({
     paths,
     runtimeDescriptor: descriptor,
     personalOnly: !instances.includes('workspace')
@@ -65,23 +66,18 @@ function createNativeBackupAdapter({ paths, instances, run }) {
     }
   }
 
+  // The native runtime owns how neo4j-admin runs on each platform.
   async function dump(instance, destination) {
-    const spec = nativeSpec(paths, descriptor, instance);
     await withStagingDirectory(destination, async (stage) => {
-      await run(join(descriptor.neo4jHome, 'bin', 'neo4j-admin'), [
-        'database', 'dump', 'neo4j', `--to-path=${stage}`
-      ], { env: spec.environment });
+      await services.dumpDatabase(instance, stage);
       await rename(join(stage, 'neo4j.dump'), destination);
     });
   }
 
   async function load(instance, source) {
-    const spec = nativeSpec(paths, descriptor, instance);
     await withStagingDirectory(source, async (stage) => {
       await copyFile(source, join(stage, 'neo4j.dump'));
-      await run(join(descriptor.neo4jHome, 'bin', 'neo4j-admin'), [
-        'database', 'load', 'neo4j', `--from-path=${stage}`, '--overwrite-destination=true'
-      ], { env: spec.environment });
+      await services.loadDatabase(instance, stage);
     });
   }
 
@@ -208,19 +204,6 @@ function createContainerBackupAdapter({ paths, instances, runtime, run }) {
     hasData,
     selection: () => graphBackupSelection(paths),
     reconcile
-  };
-}
-
-function nativeSpec(paths, descriptor, instance) {
-  const instanceDir = nativeInstanceDir(paths, instance);
-  return {
-    instanceDir,
-    environment: {
-      ...process.env,
-      JAVA_HOME: descriptor.javaHome,
-      NEO4J_HOME: descriptor.neo4jHome,
-      NEO4J_CONF: join(instanceDir, 'conf')
-    }
   };
 }
 
