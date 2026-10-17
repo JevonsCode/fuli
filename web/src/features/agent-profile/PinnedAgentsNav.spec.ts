@@ -36,6 +36,7 @@ describe('PinnedAgentsNav', () => {
     expect(wrapper.get('.pinned-agent-portrait img').attributes('src')).toContain('bole-avatar.webp')
     expect(wrapper.findComponent(RouterLinkStub).props('to')).toBe('/agents/space-a/employee.bole')
     expect(wrapper.text()).not.toContain('employee.unknown')
+    expect(wrapper.get('.pinned-agent-portrait').attributes('style')).toMatch(/--agent-identity: #[0-9a-f]{6}/)
   })
 
   it('keeps an empty server response empty instead of restoring defaults', () => {
