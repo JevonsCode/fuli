@@ -17,9 +17,7 @@ export async function projectNamedInPrompt(application, taskPrompt) {
   if (requested) {
     const existing = projects.filter(project => sameName(project, requested));
     if (existing.length) return choice(existing, 'named_in_prompt');
-    // The brief is the user's own opening line, so its source is the prompt.
-    return createNamedProject(application, spaceId, all, requested,
-      taskPrompt.trim().split(/\r?\n/, 1)[0].slice(0, PURPOSE_LIMIT));
+    return createNamedProject(application, spaceId, all, requested, requestedBrief(taskPrompt, requested));
   }
   const opening = taskPrompt.trimStart().toLowerCase();
   const matches = projects
@@ -40,13 +38,22 @@ export async function projectByName(application, name) {
 export async function createProjectNamed(application, name, purpose) {
   const spaceId = application.config.personal.spaceId;
   return createNamedProject(application, spaceId,
-    await application.personal.listPersonalProjects(spaceId), name, purpose);
+    await application.personal.listPersonalProjects(spaceId), name, { purpose });
 }
 
 // Display names only, for a compact triage candidate list.
 export async function projectNames(application, limit) {
   return (await application.personal.listPersonalProjects(application.config.personal.spaceId))
     .filter(nameable).map(project => project.profile?.name || project.project_id).slice(0, limit);
+}
+
+// Only the user's own description on the "新项目：" line is kept; other prompt
+// text is transient. A bare name becomes an editable AI draft to fill in.
+function requestedBrief(taskPrompt, name) {
+  const line = taskPrompt.trim().split(/\r?\n/, 1)[0];
+  const description = line.slice(line.indexOf(name) + name.length).replace(/^[\s,，。:：、—-]+/, '').trim();
+  return description ? { purpose: description.slice(0, PURPOSE_LIMIT) }
+    : { purpose: name, brief_draft: { source: 'first_task', label: 'AI draft', editable: true } };
 }
 
 function choice(projects, basis) {
@@ -58,7 +65,7 @@ function choice(projects, basis) {
 // The readable slug is used while it is free; a different name that slugs the
 // same way gets a name-derived suffix. A concurrent create of the same name
 // is the same project, so a create-only conflict re-reads before giving up.
-async function createNamedProject(application, spaceId, all, name, purpose) {
+async function createNamedProject(application, spaceId, all, name, brief) {
   const taken = new Map(all.map(project => [project.project_id, project]));
   const owns = project => nameable(project) && sameName(project, name);
   const readable = readableId(name);
@@ -69,7 +76,7 @@ async function createNamedProject(application, spaceId, all, name, purpose) {
     }
     try {
       await application.upsertPersonalProject({ personalSpaceId: spaceId, projectId, createOnly: true,
-        profile: { name, purpose, lifecycle: 'active' } });
+        profile: { name, ...brief, lifecycle: 'active' } });
       return { personalProjectId: projectId, basis: 'created_from_prompt' };
     } catch (error) {
       if (error?.status !== 409) throw error;

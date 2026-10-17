@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
 import { createRoundtableStore } from '../src/agent-roundtable/store.js';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
@@ -122,7 +125,11 @@ test('a host roundtable wake still restores an existing session scope and its ro
   } finally { close(); }
 });
 
-test('ordinary entries stay pending for the assistant and payload claims cannot mark them internal', async () => {
+test('ordinary entries stay pending for the assistant and payload claims cannot mark them internal', async t => {
+  const projectPath = await mkdtemp(path.join(tmpdir(), 'fuli-entry-'));
+  t.after(() => rm(projectPath, { recursive: true, force: true }));
+  await mkdir(path.join(projectPath, '.git'));
+  await writeFile(path.join(projectPath, 'README.md'), '# Sample\n\nA synthetic repository.');
   for (const extra of [{}, { internalActivity: 'roundtable_delegation',
     taskPrompt: '[FULI 圆桌 · invented] Synthetic acceptance: name the three primary colors.' }]) {
     const { app, run, writes, hires, close } = fixture();
@@ -138,7 +145,7 @@ test('ordinary entries stay pending for the assistant and payload claims cannot 
   const { run, writes, close } = fixture({
     resolution: { status: 'unmatched', personalProjectId: null, repositoryProjectId: 'synthetic-repo' } });
   try {
-    const result = await run();
+    const result = await run({ projectPath });
     assert.equal(result.context.personal_project_id, 'synthetic-repo');
     assert.equal(writes.length, 1);
   } finally { close(); }

@@ -117,10 +117,14 @@ test('a new-project prefix creates exactly one registered project', async () => 
   const again = await run({ taskPrompt: 'new project: garden planner' });
   assert.equal(first.context.personal_project_id, 'garden-planner');
   assert.equal(again.context.personal_project_id, 'garden-planner');
-  assert.equal(writes.length, 1);
+  assert.equal(writes.filter(write => write.profile.name === 'Garden Planner').length, 1);
   assert.equal(writes[0].createOnly, true);
   assert.equal(writes[0].profile.name, 'Garden Planner');
-  assert.equal(writes[0].profile.purpose, '新项目：Garden Planner');
+  // Only the name or the user's own description is kept, never other prompt text.
+  assert.equal(writes[0].profile.purpose, 'Garden Planner');
+  assert.deepEqual(writes[0].profile.brief_draft, { source: 'first_task', label: 'AI draft', editable: true });
+  await run({ taskPrompt: '新项目：Seed Bank，记录种子来源和发芽率\n顺便帮我列个清单' });
+  assert.deepEqual([writes[1].profile.purpose, writes[1].profile.brief_draft], ['记录种子来源和发芽率', undefined]);
   const cjk = await run({ taskPrompt: '新项目：花园规划' });
   assert.match(cjk.context.personal_project_id, /^project-[a-f0-9]{12}$/);
 });

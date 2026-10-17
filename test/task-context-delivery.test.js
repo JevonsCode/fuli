@@ -109,7 +109,7 @@ test('compact entry preserves executable scope, conflicts and memory revision wh
     assert.deepEqual(view.effective_preferences[0][field], preference[field], field);
   }
   assert.deepEqual(view.active_conflicts, conflicts);
-  assert.equal(view.project_agent_context.team, undefined);
+  assert.deepEqual(view.project_agent_context.team, { roster: [] });
   assert.equal(view.project_agent_context.memory.revision, 7);
   assert.equal(view.project_management_context.managers[0].board.items, undefined);
   assert.match(view.project_management_context.managers[0].board.guidance, /read_board/);
