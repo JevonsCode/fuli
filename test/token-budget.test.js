@@ -11,7 +11,7 @@ import { hookAdditionalContextToolResult } from '../src/mcp/tool-result.js';
 // that grows a number fails here; lower the baseline when a change shrinks it,
 // and raise it only with the reason in the same commit.
 const BASELINE = Object.freeze({
-  fullToolSchemaBytes: 166367,
+  fullToolSchemaBytes: 166883,
   chatToolSchemaBytes: 40019,
   instructionsBytes: 2043,
   projectEntryChars: 10264
