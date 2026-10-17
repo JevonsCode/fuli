@@ -121,3 +121,53 @@ test('a qualified verifier on another client is an availability issue, not a rec
   assert.equal(standalone.status, 'specialist_client_unavailable');
   assert.equal(standalone.recruitment, null);
 });
+
+test('delegated work runs in the first mode the host supports, in isolation order', async () => {
+  const plan = async modes => (await planAgentCollaboration(fixture(team()), { ...input,
+    ...(modes ? { hostExecutionModes: modes } : {}) })).divisionPlan.execution;
+  assert.equal((await plan(['phased', 'sub_agent', 'new_session'])).mode, 'new_session');
+  assert.equal((await plan(['phased', 'sub_agent'])).mode, 'sub_agent');
+  const unknown = await plan();
+  assert.equal(unknown.mode, null);
+  assert.deepEqual(unknown.order, ['new_session', 'sub_agent', 'phased']);
+  assert.equal((await plan([])).blockedReason, 'no_supported_execution_mode');
+});
+
+test('phased work writes each phase back to its own Agent memory', async () => {
+  const execution = (await planAgentCollaboration(fixture(team()), { ...input,
+    hostExecutionModes: ['phased'] })).divisionPlan.execution;
+  assert.equal(execution.mode, 'phased');
+  assert.deepEqual(execution.phases, [{ workstream: 'verification', agentId: 'developer',
+    memoryIdempotencyKey: 'task:phase:verification' }]);
+  assert.match(execution.guidance, /checkpoint_project_agent_memory/);
+});
+
+test('work kept in the current session needs no execution mode', async () => {
+  const result = await planAgentCollaboration(fixture([team()[0]]), { ...input, taskSize: 'small',
+    hostExecutionModes: ['new_session'] });
+  assert.deepEqual(result.divisionPlan.execution, { mode: 'current_session' });
+});
+
+const withRole = (value, role) => ({ ...value, occupation: { role, tags: [] } });
+
+test('the lead hands work to the requested occupation and keeps only coordination', async () => {
+  const agents = [withRole(agent('lead', ['implementation']), 'management'),
+    withRole(agent('designer', ['ui_design']), 'design'), withRole(agent('qa', ['test_validation']), 'testing')];
+  const result = await planAgentCollaboration(fixture(agents), { ...input, occupation: 'design' });
+  const [main, verification] = result.divisionPlan.workstreams;
+  assert.equal(main.agentId, 'designer');
+  assert.equal(main.action, 'delegate');
+  assert.equal(result.divisionPlan.coordinatorAgentId, 'lead');
+  assert.equal(verification.agentId, 'qa');
+  assert.equal(result.candidates[0].occupation, 'design');
+});
+
+test('a matching occupation outranks work-kind matches and an unused occupation changes nothing', async () => {
+  const agents = [withRole(agent('lead', ['implementation']), 'engineering'),
+    withRole(agent('developer', ['implementation']), 'engineering'), withRole(agent('writer', ['implementation']), 'writing')];
+  const writing = await planAgentCollaboration(fixture(agents), { ...input, occupation: 'writing' });
+  assert.equal(writing.divisionPlan.workstreams[0].agentId, 'writer');
+  const plain = await planAgentCollaboration(fixture(agents), input);
+  assert.equal(plain.divisionPlan.workstreams[0].agentId, 'lead');
+  assert.equal(plain.divisionPlan.workstreams[0].action, 'continue_current');
+});

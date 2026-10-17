@@ -3,6 +3,8 @@ import { beginTaskFromPreferences } from './agent-knowledge-workflows.js';
 import { getCollaborationPreferences as getCollaborationPreferencesWorkflow } from './collaboration-preference-workflow.js';
 import { resolveTaskEntryAgent, loadProjectAgentContinuity } from './project-agent-task-entry.js';
 import { applyAgentAssignment } from './task-agent-assignment.js';
+import { triageCandidates } from './conversation-triage.js';
+import { ASSISTANT_AGENT_ID } from './task-entry-project-scope.js';
 
 export function finishTaskEntryPreferences(application, preferences, input) {
   if (!input.agentInvocation || input.agentToolName !== 'get_collaboration_preferences') return preferences;
@@ -65,7 +67,11 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
   const waiting = includeMessages && selection?.agent && application.roundtable
     ? application.roundtable.pending(selection.agent.agentId, projectResolution.personalProjectId) : [];
   const judgmentContext = taskJudgmentContext(application, projectResolution.personalProjectId);
+  // An unclaimed conversation gets names only, so its finishing host can label it.
+  const triage = selection?.agent?.agentId === ASSISTANT_AGENT_ID && !projectResolution.personalProjectId
+    ? await triageCandidates(application) : null;
   return { ...managedPreferences, ...(context ? { project_agent_context: context } : {}),
+    ...(triage ? { triage_candidates: triage } : {}),
     ...(judgmentContext ? { judgment_context: judgmentContext } : {}),
     ...(waiting.length ? { agent_messages: waiting,
       agent_messages_guidance: 'Other Agents are waiting for your answers. Reply to each with reply_agent_message.' } : {}),

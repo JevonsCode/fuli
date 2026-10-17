@@ -97,7 +97,11 @@ async function resolveGlobalAgent(application, resolution, input) {
       return { status: 'agent_unavailable', worker_started: false };
     }
     return { status: 'ready', reason: 'global_agent', agent, worker_started: false };
-  } catch {
+  } catch (error) {
+    // Before the assistant identity exists, a pending conversation simply has no owner yet.
+    if (error?.status === 404 && resolution.basis === 'pending_assignment') {
+      return { status: 'unassigned', reason: 'assistant_unavailable', worker_started: false };
+    }
     return { status: 'unavailable', worker_started: false };
   }
 }
