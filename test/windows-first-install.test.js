@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -13,8 +13,10 @@ import { runUpdateCommand } from '../src/cli/update-command.js';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 function fixture(t) {
-  const root = mkdtempSync(join(tmpdir(), 'fuli-first-install-'));
-  t.after(() => { assert.equal(dirname(root), tmpdir()); rmSync(root, { recursive: true, force: true }); });
+  // The installer canonicalizes its paths, so derive expectations from the same real path
+  // (macOS tmpdir() is /var/..., which resolves to /private/var/...).
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'fuli-first-install-')));
+  t.after(() => { assert.equal(dirname(root), realpathSync(tmpdir())); rmSync(root, { recursive: true, force: true }); });
   const source = join(root, 'candidate');
   const files = {
     'package.json': JSON.stringify({ name: 'fuli-context', version: '0.12.4' }),

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -8,8 +8,10 @@ import { loadTrayContext, runTrayAction, trayStateLabel, validateTrayDataDir } f
 import { refreshEmbeddedProvider } from '../scripts/build-windows-tray.js';
 
 async function fixture(t) {
-  const root = await mkdtemp(join(tmpdir(), 'fuli-tray-test-'));
-  t.after(async () => { assert.equal(dirname(root), tmpdir()); await rm(root, { recursive: true, force: true }); });
+  // The tray context canonicalizes its paths, so derive expectations from the same real path
+  // (macOS tmpdir() is /var/..., which resolves to /private/var/...).
+  const root = realpathSync(await mkdtemp(join(tmpdir(), 'fuli-tray-test-')));
+  t.after(async () => { assert.equal(dirname(root), realpathSync(tmpdir())); await rm(root, { recursive: true, force: true }); });
   const packageRoot = join(root, 'app');
   const dataDir = join(root, 'external data');
   const env = { LOCALAPPDATA: join(root, 'daily') };
