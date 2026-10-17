@@ -1,11 +1,12 @@
 """Value conversion helpers for durable project Agent recruitment records."""
 
+from .project_agent_occupation_models import ProjectAgentOccupationInput
 from .project_agent_models import ProjectAgentProfile
 from .project_agent_task_models import ProjectAgentRecruitmentRecord
 from .provider_values import native_datetime
 
 
-def project_agent_recruitment_record(raw):
+def project_agent_recruitment_profile(raw):
     proposed_profile = ProjectAgentProfile.model_validate_json(
         raw['proposed_profile_json']
     )
@@ -16,6 +17,11 @@ def project_agent_recruitment_record(raw):
         proposed_profile = proposed_profile.model_copy(
             update={'occupation_emoji': occupation_emoji}
         )
+    return proposed_profile
+
+
+def project_agent_recruitment_record(raw):
+    proposed_profile = project_agent_recruitment_profile(raw)
     fields = {
         'recruitment_id': raw.get('recruitment_id') or raw['id'],
         'personal_space_id': raw['personal_space_id'],
@@ -32,6 +38,9 @@ def project_agent_recruitment_record(raw):
         'confirmation_mode': raw['confirmation_mode'],
         'proposed_agent_id': raw['proposed_agent_id'],
         'proposed_profile': proposed_profile,
+        'occupation_basis': raw.get('occupation_basis'),
+        'occupation': ProjectAgentOccupationInput(role=raw['occupation_role'],
+            tags=raw.get('occupation_tags') or []) if raw.get('occupation_role') else None,
         'participant_role': raw.get('participant_role') or 'lead',
         'recruitment_slot': raw.get('recruitment_slot') or 'lead',
         'trigger_source_application': raw.get('trigger_source_application'),

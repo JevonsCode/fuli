@@ -56,3 +56,25 @@ test('an Agent no one has classified keeps a null occupation; older providers om
   assert.equal(projectAgentRecord(agentRecord(null)).occupation, null);
   assert.equal(Object.hasOwn(projectAgentRecord(agentRecord()), 'occupation'), false);
 });
+
+test('explicit recruitment occupation travels through the public task schema and provider payload', async () => {
+  const { projectAgentTaskSubmitInput, projectAgentTaskCoordinateInput } = await import('../src/agent-tools/project-agent-definitions.js');
+  const { providerProjectAgentTaskSubmit, projectAgentRecruitmentRecord } = await import('../src/graphiti/project-agent-mapping.js');
+  assert.deepEqual(projectAgentTaskSubmitInput.properties.recruitmentOccupation.required, ['role']);
+  assert.deepEqual(projectAgentTaskCoordinateInput.properties.recruitmentOccupation.required, ['role']);
+  const occupation = { role: 'research', tags: ['writing'] };
+  assert.deepEqual(providerProjectAgentTaskSubmit({ recruitmentOccupation: occupation }).recruitment_occupation, occupation);
+  const record = projectAgentRecruitmentRecord({ occupation, occupation_basis: 'explicit' });
+  assert.deepEqual(record.occupation, occupation);
+  assert.equal(record.occupationBasis, 'explicit');
+});
+
+test('direct identity creation and legacy recruitment approval expose occupation input', async () => {
+  const { GRAPH_TOOL_DEFINITIONS } = await import('../src/agent-tools/graph-definitions.js');
+  const { providerProjectAgentRecruitmentDecision } = await import('../src/graphiti/project-agent-mapping.js');
+  for (const name of ['upsert_project_agent', 'decide_project_agent_recruitment']) {
+    const definition = GRAPH_TOOL_DEFINITIONS.find(tool => tool.name === name);
+    assert.deepEqual(definition.inputSchema.properties.occupation.required, ['role']);
+  }
+  assert.deepEqual(providerProjectAgentRecruitmentDecision({ occupation: { role: 'research' } }).occupation, { role: 'research' });
+});

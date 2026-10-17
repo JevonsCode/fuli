@@ -10,6 +10,7 @@ from .model_validation import (
     validate_emoji_sequence,
 )
 from .models import SourceApplication, StrictModel
+from .project_agent_occupation_models import ProjectAgentOccupationInput
 from .project_agent_models import (
     ProjectAgentExecutorPolicy,
     ProjectAgentModelStrategy,
@@ -172,6 +173,7 @@ class ProjectAgentTaskSubmit(StrictModel):
     source_session_id: str | None = Field(default=None, min_length=1, max_length=256)
     routing_reason: str = Field(min_length=1, max_length=2048)
     recruitment_profile: ProjectAgentProfile | None = None
+    recruitment_occupation: ProjectAgentOccupationInput | None = None
 
     @field_validator('required_capabilities')
     @classmethod
@@ -670,6 +672,8 @@ class ProjectAgentRecruitmentRecord(StrictModel):
     confirmation_mode: ProjectAgentRecruitmentConfirmationMode
     proposed_agent_id: str
     proposed_profile: ProjectAgentProfile
+    occupation: ProjectAgentOccupationInput | None = None
+    occupation_basis: str | None = None
     participant_role: ProjectAgentParticipantRole = 'lead'
     recruitment_slot: str = Field(default='lead', min_length=1, max_length=128)
     trigger_source_application: SourceApplication | None = None
@@ -723,6 +727,7 @@ class ProjectAgentRecruitmentDecision(StrictModel):
     recruitment_id: str = Field(min_length=1, max_length=128)
     expected_revision: int = Field(ge=0)
     decision: Literal['approve', 'cancel']
+    occupation: ProjectAgentOccupationInput | None = None
     reason: str = Field(min_length=1, max_length=4096)
 
     @model_validator(mode='after')

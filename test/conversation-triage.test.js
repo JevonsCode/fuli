@@ -94,3 +94,12 @@ test('a malformed label is rejected before the checkpoint touches its task', asy
   const tool = GRAPH_TOOL_DEFINITIONS.find(item => item.name === 'checkpoint_task_knowledge');
   assert.deepEqual(tool.inputSchema.properties.triage.properties.kind.enum, ['project', 'topic', 'one_off']);
 });
+
+test('a person correction from the pages is recorded as source user and validated', async () => {
+  const { recordUserTriage } = await import('../src/graphiti/conversation-triage.js');
+  const app = application();
+  await recordUserTriage(app, { conversationId: 'c-9', kind: 'project', personalProjectId: 'fuli' });
+  assert.deepEqual(app.calls.at(-1), ['record', { personal_space_id: 'space', conversation_id: 'c-9',
+    kind: 'project', personal_project_id: 'fuli', topic: null, source: 'user' }]);
+  await assert.rejects(recordUserTriage(app, { conversationId: 'c-9', kind: 'topic' }), /triage/);
+});

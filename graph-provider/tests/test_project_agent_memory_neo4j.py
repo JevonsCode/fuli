@@ -61,6 +61,7 @@ async def seed_agent(client, space_id, project='sample-project', agent='engineer
     response = await client.put('/v1/project-agents', json={
         'personal_space_id': space_id, 'personal_project_id': project,
         'agent_id': agent,
+        'occupation': {'role': 'engineering'},
         'profile': {'name': 'Synthetic engineer', 'responsibility': 'Maintain the sample.',
             'allowed_clients': allowed_clients if allowed_clients is not None
                 else ['codex', 'claude_code', 'cursor', 'other'],

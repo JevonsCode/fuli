@@ -10,6 +10,7 @@ from .conversation_context import (
 )
 from .project_agent_access import authorize_project_agent
 from .provider_values import now_utc, stable_uuid
+from .store_conversation_triage import ASSISTANT_AGENT_ID, StoreConversationTriage
 from .store_transactions import query_store_transaction
 
 CONTEXT_PAGE_EVENTS = 50
@@ -30,8 +31,11 @@ class StoreAgentConversations:
     async def _conversation_scope(self, actor, request, *, write=False):
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer' if write else 'reader')
+        # The fixed assistant keeps no reviewed memory, but its global conversation
+        # journal is what holds unclaimed conversations until they are triaged.
+        journal_only = request.personal_project_id is None and request.agent_id == ASSISTANT_AGENT_ID
         agent = await authorize_project_agent(self, actor, space, request.personal_project_id,
-            request.agent_id, require_active=write, require_memory=True, allow_global=True)
+            request.agent_id, require_active=write, require_memory=not journal_only, allow_global=True)
         if request.source_application is not None and request.source_application not in json.loads(agent['profile_json']).get('allowed_clients', []):
             raise HTTPException(403, 'Agent is not allowed in this client')
         if request.personal_project_id is None:
@@ -75,10 +79,15 @@ class StoreAgentConversations:
                 id=stable_uuid(scope, request.source_application, request.session_id or ''))
             return dict(rows[0]) if rows else {'conversation_id': None, 'cursor': 0, 'initialized': False}
         if request.mode == 'list':
+            # Jefa's triage label travels with each conversation so a list can
+            # show what is still unclaimed without a second read per row.
             rows, _, _ = await self.runtime.driver.execute_query(
-                'MATCH (c:FuliConversation {scope: $scope}) RETURN c ORDER BY c.last_activity DESC, c.id LIMIT $limit',
+                'MATCH (c:FuliConversation {scope: $scope}) '
+                'OPTIONAL MATCH (t:FuliConversationTriage {id: c.id}) '
+                'RETURN c, t ORDER BY c.last_activity DESC, c.id LIMIT $limit',
                 scope=scope, limit=request.limit)
-            return {'conversations': [self._conversation_view(dict(r['c']), policy) for r in rows]}
+            return {'conversations': [{**self._conversation_view(dict(r['c']), policy),
+                'triage': StoreConversationTriage._triage_view(dict(r.get('t'))) if r.get('t') else None} for r in rows]}
         rows, _, _ = await self.runtime.driver.execute_query(
             'MATCH (c:FuliConversation {scope: $scope, id: $id}) RETURN c', scope=scope, id=request.conversation_id)
         if not rows:

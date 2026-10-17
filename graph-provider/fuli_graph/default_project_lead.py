@@ -24,9 +24,9 @@ def default_lead_profile(project_name):
     return ProjectAgentProfile(
         name=f'{project_name} 负责人'[:160],
         responsibility=f'统筹 {project_name} 的任务拆分、分工、集成与交付，延续项目上下文；有明确边界的工作委派给合适成员，实质性改动由另一位 FLA 独立验收。'[:4096],
-        work_kinds=['implementation', 'project_context', 'code_review', 'test_validation', 'architecture'],
-        capabilities=['代码实现', '问题修复', '测试验证', '代码审查', '项目上下文'],
-        initial_preferences=['先理解现有实现与约定，再修改。', '结论附带可复现的验证证据。',
+        work_kinds=['project_context', 'planning', 'delegation', 'integration', 'reporting'],
+        capabilities=['任务拆分', '工作委派', '成果集成', '进度汇报', '项目上下文'],
+        initial_preferences=['先理解目标与边界，再拆分和委派。', '结论附带可复现的验证证据。',
                              '通常采用执行与独立验收两位 FLA；复杂任务有独立边界再增加一位，小改动不硬拆，只共享必要上下文。'],
     )
 
