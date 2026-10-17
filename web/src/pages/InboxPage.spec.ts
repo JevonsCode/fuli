@@ -66,6 +66,15 @@ describe('Inbox page', () => {
     expect(postJson).not.toHaveBeenCalled()
   })
 
+  it('follows a new linked request while another one is still selected', async () => {
+    const { router, wrapper } = await setup('/inbox?request=request-a')
+    expect(wrapper.get('.attention-request.is-selected').text()).toContain('Synthetic request-a')
+    await router.push('/inbox?request=request-b'); await flushPromises()
+    expect(wrapper.get('.attention-request.is-selected').text()).toContain('Synthetic request-b')
+    await router.back(); await flushPromises()
+    expect(wrapper.get('.attention-request.is-selected').text()).toContain('Synthetic request-a')
+  })
+
   it('removes a confirmed reply and updates the pending count', async () => {
     const { wrapper } = await setup('/inbox')
     expect(wrapper.get('.attention-page-count').text()).toContain('2')

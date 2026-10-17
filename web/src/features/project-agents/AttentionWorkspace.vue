@@ -55,6 +55,10 @@ watch(() => attention.items, items => {
     }
   }
 }, { immediate: true })
+// A new link target (overview item, Back/Forward) selects that request even while another stays open.
+watch(() => props.focusRequestId, targetId => {
+  if (targetId && attention.items.some(item => item.requestId === targetId)) selectedId.value = targetId
+})
 async function respond(item: AgentAttention, response: string) {
   if (busy.value || !response.trim() || response.length > 4096) return
   const space = attention.spaceId
