@@ -119,11 +119,11 @@ const HANDLERS = Object.freeze({
   review_human_knowledge_change: (app, input) => app.reviewHumanChange(input),
   list_knowledge_spaces: (app) => app.listKnowledgeSpaces(),
   upsert_personal_project: (app, input) => captureGuard(app, () =>
-    app.upsertPersonalProject(input)
+    app.upsertPersonalProject(input), input?.sourceApplication
   ),
   list_personal_projects: (app, input) => app.listPersonalProjects(input),
   upsert_project_agent: (app, input) => captureGuard(app, () =>
-    app.upsertProjectAgent(input)
+    app.upsertProjectAgent(input), input?.sourceApplication
   ),
   list_project_agents: (app, input) => app.listCurrentProjectAgents(input),
   get_project_agent: (app, input) => app.getProjectAgent(input),
@@ -265,8 +265,8 @@ export function dispatchGraphTool(app, name, input) {
   return handler(app, input);
 }
 
-function captureGuard(app, operation) {
-  const capturePolicy = app.getCapturePolicy?.() ?? { enabled: true, updatedAt: null };
+function captureGuard(app, operation, sourceApplication = null) {
+  const capturePolicy = app.getCapturePolicy?.(sourceApplication) ?? { enabled: true, updatedAt: null };
   if (capturePolicy.enabled) return operation();
   return {
     route: 'disabled',

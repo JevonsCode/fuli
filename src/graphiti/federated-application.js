@@ -24,6 +24,7 @@ import { ApplicationError, ApplicationErrorCode } from '../app/application-error
 import { detectSensitiveContent } from '../security/sensitive-content.js';
 import {
   CapturePolicyStore,
+  capturePolicyFor,
   capturePolicyPathForRuntime
 } from './capture-policy.js';
 import {
@@ -196,7 +197,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   validateCaptureSessionKnowledge(input) {
-    if (this.getCapturePolicy().enabled) this.#prepareKnowledgeCapture(input);
+    if (this.getCapturePolicy(input?.sourceApplication).enabled) this.#prepareKnowledgeCapture(input);
   }
 
   async preflightPersonalKnowledgeCaptures(inputs) {
@@ -204,7 +205,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async captureSessionKnowledge(input) {
-    const capturePolicy = this.getCapturePolicy();
+    const capturePolicy = this.getCapturePolicy(input?.sourceApplication);
     if (!capturePolicy.enabled) {
       return {
         route: 'disabled',
@@ -234,7 +235,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   async recordWorkflowTransitionObservation(input) {
     this.#assertActivePersonalSpace(input.personalSpaceId);
-    const capturePolicy = this.getCapturePolicy();
+    const capturePolicy = this.getCapturePolicy(input.sourceApplication);
     if (!capturePolicy.enabled) {
       return {
         route: 'disabled',
@@ -267,7 +268,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   } = {}) {
     let projectResolution = await this.#resolvePreferenceProject({ personalProjectId, projectPath });
     if (projectResolution.repositoryProjectId && agentInvocation && TASK_ENTRY_TOOLS.has(agentToolName)
-      && this.getCapturePolicy().enabled) {
+      && this.getCapturePolicy(sourceApplication).enabled) {
       // Every task gets a FULI Agent, so a task in an unregistered repository registers it.
       projectResolution = await registerRepositoryProject(this, projectResolution, { sessionId, projectPath });
     }
@@ -980,8 +981,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return { personal, workspaces };
   }
 
-  getCapturePolicy() {
-    return this.capturePolicyStore.read();
+  getCapturePolicy(sourceApplication = null) {
+    return capturePolicyFor(this.capturePolicyStore.read(), sourceApplication);
   }
 
   updateCapturePolicy(input) {

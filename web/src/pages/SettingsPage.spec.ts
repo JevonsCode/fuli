@@ -268,4 +268,29 @@ describe('SettingsPage', () => {
     expect(wrapper.text()).not.toContain('需要重启')
     wrapper.unmount()
   })
-})
+  it('switches capture per client while the clients keep reading memory', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.runtimeStatus = 'ready'
+    store.state = { mode: 'personal_only', activePersonalSpaceId: 'personal-1',
+      personalSpaces: [{ id: 'personal-1', name: '我' }], personalProjects: [], projects: [], subscriptions: [],
+      capturePolicy: { enabled: true, disabledSources: ['codex'] }, agentAccessPolicy: { enabled: true },
+      capabilities: { browsePublicProjects: false, submitKnowledge: false, reviewProposals: false } } as never
+    const update = vi.spyOn(store, 'updateCapturePolicy').mockResolvedValue(undefined)
+    vi.stubGlobal('fetch', vi.fn(async (input) => {
+      if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
+      return Response.json({}, { status: 503 })
+    }))
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    await flushPromises()
+    const codex = wrapper.get('[data-capture-source="codex"] input[role="switch"]')
+    const claude = wrapper.get('[data-capture-source="claude_code"] input[role="switch"]')
+    expect((codex.element as HTMLInputElement).checked).toBe(false)
+    expect((claude.element as HTMLInputElement).checked).toBe(true)
+    await claude.setValue(false)
+    expect(update).toHaveBeenLastCalledWith(true, ['codex', 'claude_code'])
+    await codex.setValue(true)
+    expect(update).toHaveBeenLastCalledWith(true, [])
+    wrapper.unmount()
+  })})

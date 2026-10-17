@@ -75,7 +75,7 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
     const invokeTool = dependencies.callTool ?? callAgentTool;
     const output = await leases.withGraphLease('codex-lifecycle', async () => {
       try {
-        return await withTranscriptGuard(runtimeConfigPath, input, 'codex', app.getCapturePolicy?.().enabled, async guard => {
+        return await withTranscriptGuard(runtimeConfigPath, input, 'codex', app.getCapturePolicy?.('codex').enabled, async guard => {
           let sync = await syncConversationTranscript(app, input, 'codex', {
             normalize: normalizeCodexRecord, verify: verifyCodexTranscript
           }, guard);
@@ -101,7 +101,7 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
           return withTranscriptNotice(result, sync);
         });
       } catch (error) {
-        if (event !== 'UserPromptSubmit' || !app.getCapturePolicy?.().enabled || !input.transcript_path) throw error;
+        if (event !== 'UserPromptSubmit' || !app.getCapturePolicy?.('codex').enabled || !input.transcript_path) throw error;
         return { systemMessage: transcriptGuardFailureMessage(error) };
       }
     }, { signal: dependencies.signal });

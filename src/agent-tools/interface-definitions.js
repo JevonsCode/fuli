@@ -56,7 +56,10 @@ export const AGENT_INTERFACE_DEFINITIONS = [
     name: 'update_capture_policy',
     title: 'WRITE · Update automatic capture policy',
     description: 'On an explicit user request enable or disable automatic personal knowledge capture. This never changes Agent access, deletes existing knowledge, or bypasses project scope.',
-    inputSchema: objectSchema({ enabled: { type: 'boolean' } }, ['enabled']),
+    inputSchema: objectSchema({ enabled: { type: 'boolean' },
+      disabledSources: { type: 'array', uniqueItems: true, maxItems: 6,
+        items: { enum: ['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other'] },
+        description: 'Clients whose sessions are not captured; they still use FULI tools.' } }, ['enabled']),
   },
   {
     name: 'list_external_knowledge_connectors',

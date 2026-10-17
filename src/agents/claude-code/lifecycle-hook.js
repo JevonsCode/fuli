@@ -70,8 +70,8 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
     const request = { signal: dependencies.signal };
     return await leases.withGraphLease('claude-code-lifecycle', async () => {
       try {
-        if (app.getCapturePolicy?.().enabled && input.transcript_path) dependencies.onTranscriptGuard?.();
-        return await withTranscriptGuard(runtimeConfigPath, input, 'claude_code', app.getCapturePolicy?.().enabled, async guard => {
+        if (app.getCapturePolicy?.('claude_code').enabled && input.transcript_path) dependencies.onTranscriptGuard?.();
+        return await withTranscriptGuard(runtimeConfigPath, input, 'claude_code', app.getCapturePolicy?.('claude_code').enabled, async guard => {
           let sync = await syncConversationTranscript(app, input, 'claude_code', {
             normalize: normalizeClaudeRecord, verify: verifyClaudeTranscript
           }, guard);
@@ -90,7 +90,7 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
           return withTranscriptNotice(output, sync);
         });
       } catch (error) {
-        if (event !== 'UserPromptSubmit' || !app.getCapturePolicy?.().enabled || !input.transcript_path) throw error;
+        if (event !== 'UserPromptSubmit' || !app.getCapturePolicy?.('claude_code').enabled || !input.transcript_path) throw error;
         return claudeLifecycleUnavailable(event, input, transcriptGuardFailureMessage(error));
       }
     }, request);
