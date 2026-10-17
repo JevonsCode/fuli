@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -11,7 +11,9 @@ const compiler = process.env.SystemRoot && join(process.env.SystemRoot, 'Microso
 test('Windows tray controller has one bounded execution/pipe lifetime and preserves services', {
   skip: process.platform !== 'win32' || !compiler || !existsSync(compiler)
 }, async t => {
-  const root = await mkdtemp(join(tmpdir(), 'fuli-tray-runner-'));
+  // Windows reports a process image by its real path, so derive the fixture executable from the
+  // same real path (a junctioned or macOS-style aliased TEMP otherwise fails the ownership check).
+  const root = realpathSync(await mkdtemp(join(tmpdir(), 'fuli-tray-runner-')));
   const node = join(root, 'runtime', 'node', 'node.exe');
   const scripts = join(root, 'src', 'desktop');
   await mkdir(dirname(node), { recursive: true });
@@ -32,7 +34,7 @@ class Probe { static void Main(string[] args) {
     '/out:' + probe, resolve('desktop/windows/ControllerRunner.cs'), harness]);
   t.after(async () => {
     await cleanup();
-    assert.equal(dirname(root), tmpdir());
+    assert.equal(dirname(root), realpathSync(tmpdir()));
     await rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   });
   const success = 'process.stderr.write("诊断".repeat(100000));process.stdout.write(JSON.stringify({ok:true,label:"运行中 / Running"})+"\\n");';
