@@ -1,4 +1,5 @@
 import { chmodSync } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import {
@@ -6,8 +7,9 @@ import {
   readRuntimeSettings
 } from '../system/runtime-settings.js';
 import { nonEmptyText } from '../validation/values.js';
+import { waitForProviderHealth } from '../local-runtime/provider-readiness.js';
 
-const PROVIDER_READY_ATTEMPTS = 120;
+const IMPORTED_PROVIDER_NOT_READY = 'The imported graph Provider did not become ready for credential rotation.';
 
 export function graphBackupSelection(paths, {
   readConfig = (path) => readJsonFile(path, null)
@@ -45,7 +47,7 @@ export async function reconcileImportedGraphIdentity({
   const next = structuredClone(current);
   next.workspaces = mergedExternalWorkspaces(current, source);
 
-  await waitForProvider(urls.personal, fetchImpl, wait);
+  await waitForProviderHealth(urls.personal, { fetchImpl, wait, failureMessage: IMPORTED_PROVIDER_NOT_READY });
   const personal = await bootstrapProvider({
     url: urls.personal,
     bootstrapToken: requiredValue(values, 'FULI_PERSONAL_BOOTSTRAP_TOKEN'),
@@ -69,7 +71,7 @@ export async function reconcileImportedGraphIdentity({
   };
 
   if (instances.includes('workspace')) {
-    await waitForProvider(urls.workspace, fetchImpl, wait);
+    await waitForProviderHealth(urls.workspace, { fetchImpl, wait, failureMessage: IMPORTED_PROVIDER_NOT_READY });
     const workspace = await bootstrapProvider({
       url: urls.workspace,
       bootstrapToken: requiredValue(values, 'FULI_WORKSPACE_BOOTSTRAP_TOKEN'),
@@ -99,21 +101,6 @@ export async function reconcileImportedGraphIdentity({
     throw error;
   }
   return { personalSpaceId, instances: [...instances] };
-}
-
-async function waitForProvider(url, fetchImpl, wait) {
-  for (let attempt = 0; attempt < PROVIDER_READY_ATTEMPTS; attempt += 1) {
-    try {
-      const response = await fetchImpl(`${url}/health`, {
-        signal: AbortSignal.timeout(2500)
-      });
-      if (response.ok) return;
-    } catch {
-      // The target is still starting.
-    }
-    if (attempt < PROVIDER_READY_ATTEMPTS - 1) await wait(1000);
-  }
-  throw new Error('The imported graph Provider did not become ready for credential rotation.');
 }
 
 async function bootstrapProvider({ url, bootstrapToken, fetchImpl }) {
@@ -164,15 +151,11 @@ function mergedExternalWorkspaces(current, source) {
     ...(source?.workspaces ?? []),
     ...(current?.workspaces ?? [])
   ]) {
-    if (isManagedWorkspace(workspace)) continue;
+    if (workspace?.managedDevelopment === true) continue;
     const providerUrl = nonEmptyText(workspace?.providerUrl);
     if (providerUrl) result.set(providerUrl, structuredClone(workspace));
   }
   return [...result.values()];
-}
-
-function isManagedWorkspace(workspace) {
-  return workspace?.managedDevelopment === true;
 }
 
 function profilePath(paths, mode) {
@@ -198,8 +181,4 @@ function requiredValue(values, name) {
   const value = nonEmptyText(values[name]);
   if (!value) throw new Error(`The target graph environment is missing ${name}.`);
   return value;
-}
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

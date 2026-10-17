@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { CENSUS_QUERIES, censusFromRows } from '../backup/graph-census.js';
 import {
   chmodSync,
@@ -41,6 +42,7 @@ import {
   readRuntimeSettings
 } from '../system/runtime-settings.js';
 import { nonEmptyText } from '../validation/values.js';
+import { isProcessAlive } from '../local-runtime/processes.js';
 
 export const NATIVE_NEO4J_VERSION = '5.26.28';
 export const NATIVE_NEO4J_SHA256 =
@@ -766,7 +768,7 @@ async function secureMarker(path) {
 function spawnNativeDatabase(spec) {
   if (existsSync(spec.pidPath)) {
     const pid = Number(readFileSync(spec.pidPath, 'utf8').trim());
-    if (Number.isInteger(pid) && processAlive(pid)) return { pid };
+    if (Number.isInteger(pid) && isProcessAlive(pid)) return { pid };
     unlinkSync(spec.pidPath);
   }
   mkdirSync(dirname(spec.logPath), { recursive: true });
@@ -808,7 +810,7 @@ function spawnNativeProvider(spec) {
 
 async function waitForProvider(url, fetchImpl, wait, entry) {
   for (let attempt = 0; attempt < 120; attempt += 1) {
-    if (entry?.ownership && !processAlive(entry.pid)) throw new Error('The owned native Graph Provider exited during startup');
+    if (entry?.ownership && !isProcessAlive(entry.pid)) throw new Error('The owned native Graph Provider exited during startup');
     const readiness = await providerReadiness(url, fetchImpl);
     if (readiness === 'ready') return;
     if (readiness === 'incompatible') {
@@ -885,21 +887,8 @@ async function stopOwnedProcess(pid) {
     throw error;
   }
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (!processAlive(pid)) return;
+    if (!isProcessAlive(pid)) return;
     await delay(100);
   }
-  if (processAlive(pid)) process.kill(target, 'SIGKILL');
-}
-
-function processAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  if (isProcessAlive(pid)) process.kill(target, 'SIGKILL');
 }

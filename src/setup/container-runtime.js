@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { nonEmptyText } from '../validation/values.js';
 
 const DOCKER_INFO_ARGS = ['info', '--format', '{{.ServerVersion}}'];
@@ -382,8 +383,4 @@ function detailSuffix(detail) {
 
 function processSucceeded(result) {
   return result?.status === 0 && !result.error;
-}
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
