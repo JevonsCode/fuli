@@ -5,6 +5,7 @@ from pydantic import AliasChoices, Field, field_validator, model_validator
 
 from .model_validation import reject_credentials, validate_emoji_sequence
 from .models import SourceApplication, StrictModel
+from .project_agent_occupation_models import ProjectAgentOccupation
 
 
 ProjectAgentStatus = Literal['active', 'inactive', 'archived']
@@ -292,6 +293,7 @@ class ProjectAgentRecord(StrictModel):
     work_status: ProjectAgentWorkStatus = 'idle'
     open_task_count: int = Field(default=0, ge=0)
     current_task_id: str | None = None
+    occupation: ProjectAgentOccupation | None = None
     current_task_running_since: datetime | None = None
     observed_clients: list[SourceApplication] = Field(default_factory=list)
     recruited_at: datetime | None = None

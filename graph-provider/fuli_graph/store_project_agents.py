@@ -23,6 +23,7 @@ from .project_agent_models import (
 from .provider_values import native_datetime, now_utc, stable_uuid
 from .project_agent_names import agent_display_name
 from .store_transactions import query_store_transaction
+from .store_project_agent_occupation import occupation_from_agent_node
 from .system_agents import (
     SYSTEM_COORDINATOR_AGENT_ID,
     SYSTEM_HR_AGENT_ID,
@@ -1151,6 +1152,7 @@ class StoreProjectAgents:
             work_status=work_status,
             open_task_count=len(tasks),
             current_task_id=tasks[0]['task_id'] if tasks else None,
+            occupation=occupation_from_agent_node(raw),
             # Only a stamped entry into running is a start time; rows written
             # before the stamp existed stay unknown instead of using updated_at.
             current_task_running_since=(

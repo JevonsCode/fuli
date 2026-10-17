@@ -495,6 +495,17 @@ export interface ProjectAgentLearningEvidence {
   neutral?: boolean
 }
 
+export type AgentOccupationKey =
+  | 'product' | 'engineering' | 'design' | 'operations' | 'testing'
+  | 'research' | 'data' | 'writing' | 'management'
+
+/** Person-set long-term role; never inferred from a task, never a permission. */
+export interface AgentOccupation {
+  role: AgentOccupationKey | null
+  tags: AgentOccupationKey[]
+  updatedAt: string
+}
+
 export interface ProjectAgentRecord {
   agentId: string
   employeeNumber?: string | null
@@ -508,6 +519,7 @@ export interface ProjectAgentRecord {
   assignments?: ProjectAgentAssignmentRecord[]
   recruitmentId?: string | null
   temporaryTaskId?: string | null
+  occupation?: AgentOccupation | null
   workStatus?: ProjectAgentWorkStatus
   openTaskCount?: number
   currentTaskId?: string | null

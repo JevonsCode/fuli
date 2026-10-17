@@ -19,6 +19,7 @@ import {
   deleteExecutor as deleteExecutorWorkflow,
   deleteExecutorRoutingRule as deleteExecutorRoutingRuleWorkflow,
   deleteProjectAgent as deleteProjectAgentWorkflow,
+  updateProjectAgentOccupation as updateProjectAgentOccupationWorkflow,
   endProjectAgentAssignment as endProjectAgentAssignmentWorkflow,
   getExecutor as getExecutorWorkflow,
   getExecutorRoutingRule as getExecutorRoutingRuleWorkflow,
@@ -159,6 +160,11 @@ export class ProjectAgentControlPlaneApplication {
   async deleteProjectAgent(input) {
     this.#assertSpace(input.personalSpaceId);
     return deleteProjectAgentWorkflow(this, input);
+  }
+
+  async updateProjectAgentOccupation(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return updateProjectAgentOccupationWorkflow(this, input);
   }
 
   async cleanupProjectAgentTestRoles(input) {
