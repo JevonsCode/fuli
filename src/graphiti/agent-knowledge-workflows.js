@@ -1,6 +1,7 @@
 import { taskAgentAssignment } from './task-agent-assignment.js';
 import { beginConversation, checkpointConversation } from './agent-conversations.js';
 import { recordTriage, validateTriage } from './conversation-triage.js';
+import { experienceCapture } from './task-experiences.js';
 import { taskTeam } from './task-collaboration-attribution.js';
 import { taskAgentReceipt } from '../agents/identity-receipt.js';
 import { createHash } from 'node:crypto';
@@ -133,7 +134,8 @@ export async function checkpointTaskKnowledge(application, {
   personalProjectId = null,
   remoteSessionId = null,
   collaborators = [],
-  triage = null
+  triage = null,
+  experiences = null
 }) {
   if (!['capture_candidates', 'retain_nothing'].includes(disposition)) {
     throw validationError('Unknown task knowledge checkpoint disposition');
@@ -145,6 +147,12 @@ export async function checkpointTaskKnowledge(application, {
   }
   if (remoteSessionId && task.sessionId !== remoteSessionId) {
     throw validationError('Task checkpoint belongs to another remote session');
+  }
+  // Reusable experiences are a compact form of one current-project capture.
+  if (experiences !== null) {
+    if (capture || captureRouting !== null) throw validationError('Send experiences or capture, not both');
+    if (disposition !== 'capture_candidates') throw validationError('experiences require disposition capture_candidates');
+    ({ capture, captureRouting } = experienceCapture(task, experiences, { sourceApplication }));
   }
   // A Provider-admitted sealed worker call still checkpoints, but never writes
   // preference or project knowledge candidates. Only the worker MCP composition

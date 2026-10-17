@@ -1,4 +1,5 @@
 import { projectRelationDefinitions } from './project-relation-definitions.js';
+import { checkpointExperiencesSchema, checkpointTriageSchema } from './checkpoint-definitions.js';
 import { AGENT_COLLABORATION_DEFINITIONS } from './agent-collaboration-definitions.js';
 import { AGENT_CONVERSATION_DEFINITIONS } from './agent-conversation-definitions.js';
 import {
@@ -336,11 +337,8 @@ export const GRAPH_TOOL_DEFINITIONS = [
         memory: workingMemorySchema
       }, ['expectedRevision', 'memory']),
       collaborators: arraySchema(boundedString(128), { maxItems: 16 }),
-      triage: { ...objectSchema({
-        kind: enumSchema(['project', 'topic', 'one_off']),
-        project: boundedString(80),
-        topic: boundedString(80)
-      }, ['kind']), description: 'Unclaimed conversations only (see triage_candidates): project=existing name, topic=pick/start a name, one_off=neither.' }
+      experiences: checkpointExperiencesSchema,
+      triage: checkpointTriageSchema
     }, ['taskContextToken', 'disposition', 'reason'])
   },
   {
