@@ -6,6 +6,8 @@ import type { ProjectAgentTaskRecord } from '@/types'
 import TaskExecutionPlan from './TaskExecutionPlan.vue'
 
 vi.mock('@/api/client', () => ({ getJson: vi.fn() }))
+const { celebrateOnce } = vi.hoisted(() => ({ celebrateOnce: vi.fn() }))
+vi.mock('@/lib/celebration', () => ({ celebrateOnce }))
 class NotificationSource extends EventTarget {
   static instances: NotificationSource[] = []
   closed = false
@@ -162,4 +164,17 @@ it('resyncs all visible tasks after a coalesced burst', async () => {
   render(); render({ ...task(), taskId: 'task-b' })
   source().change(null); await flushPromises()
   expect(getJson).toHaveBeenCalledTimes(2)
+})
+
+it('celebrates a completion it saw happen, once, and never one already done on load', async () => {
+  vi.mocked(getJson).mockResolvedValue({ ...task('completed'), status: 'completed', leadAgentId: 'agent-a' })
+  const wrapper = render({ ...task(), leadAgentId: 'agent-a' })
+  source().change(); await flushPromises()
+  expect(celebrateOnce).toHaveBeenCalledTimes(1)
+  expect(celebrateOnce).toHaveBeenCalledWith('task-completed:task-a', wrapper.get('[data-execution-plan]').element, expect.stringMatching(/^#[0-9a-f]{6}$/))
+
+  celebrateOnce.mockClear()
+  render({ ...task('completed'), status: 'completed' })
+  await flushPromises()
+  expect(celebrateOnce).not.toHaveBeenCalled()
 })

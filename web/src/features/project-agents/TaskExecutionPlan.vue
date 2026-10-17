@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { getJson } from '@/api/client'
+import { AGENT_IDENTITY_PALETTE, agentIdentitySwatch } from '@/features/agent-profile/agent-identity-color'
+import { celebrateOnce } from '@/lib/celebration'
 import { currentLocale, t } from '@/i18n'
 import type { ProjectAgentTaskEvent, ProjectAgentTaskRecord } from '@/types'
 import { normalizeTask } from './task-evidence'
@@ -12,6 +14,7 @@ const props = withDefaults(defineProps<{
   active?: boolean
 }>(), { active: true })
 const snapshot = shallowRef(props.task)
+const root = ref<HTMLElement | null>(null)
 const stale = ref(false)
 const visible = ref(!document.hidden)
 watch(() => [props.task, props.personalSpaceId], () => {
@@ -25,6 +28,14 @@ const planEvent = computed(() => (snapshot.value.events ?? []).reduce<ProjectAge
 const steps = computed(() => planEvent.value?.executionPlan?.steps ?? [])
 const updatedAt = computed(() => planEvent.value
   ? new Date(planEvent.value.createdAt).toLocaleString(currentLocale()) : '')
+
+// Celebrate only a completion seen happening here, never one already done on load.
+watch(() => [snapshot.value.taskId, snapshot.value.status] as const, ([taskId, status], previous) => {
+  if (!previous || previous[0] !== taskId || status !== 'completed' || previous[1] === 'completed') return
+  const swatch = agentIdentitySwatch(snapshot.value.leadAgentId)
+  const color = swatch === null ? undefined : AGENT_IDENTITY_PALETTE[swatch]?.color
+  celebrateOnce(`task-completed:${taskId}`, root.value, color)
+})
 
 function visibilityChanged() { visible.value = !document.hidden }
 onMounted(() => document.addEventListener('visibilitychange', visibilityChanged))
@@ -64,7 +75,7 @@ watch([
 </script>
 
 <template>
-  <section v-if="steps.length" class="task-execution-plan" data-execution-plan :aria-label="t('projectAgents.executionPlan.title')">
+  <section v-if="steps.length" ref="root" class="task-execution-plan" data-execution-plan :aria-label="t('projectAgents.executionPlan.title')">
     <div class="plan-heading">
       <strong>{{ t('projectAgents.executionPlan.title') }}</strong>
       <small>{{ t('projectAgents.executionPlan.reported') }}</small>

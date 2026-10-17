@@ -82,6 +82,18 @@
 }
 .agent-portrait img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .agent-portrait.small { width: 40px; height: 40px; flex-basis: 40px; border-radius: 11px; font-size: 19px; }
+.agent-portrait.agent-card-identity { position: relative; color: var(--agent-identity, var(--color-accent)); background: var(--agent-identity-soft, var(--color-accent-soft)); }
+.agent-portrait.agent-card-identity:has(img) { box-shadow: 0 0 0 2px var(--agent-identity, transparent); }
+/* Only a reported running state moves; the ring is compositor-only and stops when motion is reduced. */
+.agent-portrait.agent-card-identity.is-working::after {
+  content: ""; position: absolute; inset: -4px; border: 2px solid var(--agent-identity, var(--color-accent)); border-radius: 14px;
+  opacity: 0; animation: agent-working-ring 2.4s ease-out infinite; pointer-events: none;
+}
+@keyframes agent-working-ring { 0% { opacity: 0.55; transform: scale(0.92); } 100% { opacity: 0; transform: scale(1.12); } }
+@media (prefers-reduced-motion: reduce) {
+  .agent-portrait.agent-card-identity.is-working::after { animation: none; opacity: 0.5; transform: none; }
+}
+:root[data-motion="reduced"] .agent-portrait.agent-card-identity.is-working::after { animation: none; opacity: 0.5; transform: none; }
 .agent-directory-name { display: flex; flex: 1; min-width: 0; align-items: center; gap: 8px; font-size: 16px; font-weight: 650; }
 .agent-directory-name a { min-width: 0; overflow: hidden; color: var(--color-ink); text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
 .agent-directory-name a:hover { color: var(--color-accent); }
