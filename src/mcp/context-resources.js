@@ -1,4 +1,5 @@
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { singleLine } from '../text/single-line.js';
 
 const PROJECT_RESOURCE_TEMPLATE = 'fuli://projects/{projectId}';
 const GLOBAL_TASTE_RESOURCE_URI = 'fuli://taste/global';
@@ -152,10 +153,6 @@ function projectResourceUri(projectId) {
 
 function displayProjectName(project) {
   return singleLine(project.profile?.name) || project.project_id;
-}
-
-function singleLine(value) {
-  return String(value ?? '').replace(/[\r\n\t]+/g, ' ').trim();
 }
 
 function boundedResourceText(value) {

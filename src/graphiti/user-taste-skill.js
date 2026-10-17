@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { canonicalJson } from '../publication/canonical-json.js';
+import { singleLine } from '../text/single-line.js';
 
 const DEFAULT_ITEM_LIMIT = 64;
 const DEFAULT_RECOMMENDATION_LIMIT = 12;
@@ -222,10 +223,6 @@ function tokenize(value) {
     }
   }
   return tokens;
-}
-
-function singleLine(value) {
-  return String(value ?? '').replace(/[\r\n\t]+/g, ' ').trim();
 }
 
 function boundedLimit(value, fallback) {

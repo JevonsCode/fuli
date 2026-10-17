@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { canonicalJson } from '../publication/canonical-json.js';
+import { singleLine } from '../text/single-line.js';
 
 export const WRITING_TASTE_READINESS = Object.freeze({
   ruleCount: 3,
@@ -492,10 +493,6 @@ function uniqueStrings(values) {
   return [...new Set(values.filter((value) => typeof value === 'string' && value.trim()))];
 }
 
-function singleLine(value) {
-  return String(value ?? '').replace(/[\r\n\t]+/g, ' ').trim();
-}
-
 function dateKey(value) {
   if (!value) return null;
   const date = new Date(value);
@@ -507,4 +504,3 @@ function timeValue(value) {
   const time = new Date(value).getTime();
   return Number.isNaN(time) ? 0 : time;
 }
-

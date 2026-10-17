@@ -20,6 +20,12 @@ export function readJsonFile(filePath, fallback) {
 }
 
 export function writeJsonFileAtomic(filePath, value, io = {}) {
+  writeTextFileAtomic(filePath, `${JSON.stringify(value, null, 2)}\n`, io);
+}
+
+// Replaces a file through a temporary sibling so readers never see a partial
+// write. An existing file keeps its permissions; a new one is private.
+export function writeTextFileAtomic(filePath, text, io = {}) {
   const fileIo = { ...DEFAULT_IO, ...io };
   const directory = dirname(filePath);
   const tempPath = join(directory, `.${basename(filePath)}.${randomUUID()}.tmp`);
@@ -32,7 +38,7 @@ export function writeJsonFileAtomic(filePath, value, io = {}) {
 
   fileIo.mkdirSync(directory, { recursive: true, mode: 0o700 });
   try {
-    fileIo.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, {
+    fileIo.writeFileSync(tempPath, text, {
       encoding: 'utf8',
       flag: 'wx',
       mode

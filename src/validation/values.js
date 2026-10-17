@@ -36,3 +36,9 @@ export function deepFreeze(value) {
   for (const item of Object.values(value)) deepFreeze(item);
   return value;
 }
+
+export function assertJsonObject(value, label) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${label} must be a JSON object`);
+  }
+}
