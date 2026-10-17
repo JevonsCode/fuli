@@ -16,6 +16,8 @@
 
 **Switch AI tools. Keep yourself**
 
+Fuli (复利) is Chinese for **compound interest**: returns that generate further returns.
+
 Fuli exists to preserve your own taste, personality, and judgment as you work with AI.
 We believe people should no longer be tied to doing everything themselves. You should
 be free to make decisions, come up with ideas, and take a break.
