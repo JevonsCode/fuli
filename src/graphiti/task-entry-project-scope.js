@@ -1,9 +1,13 @@
-import { createHash } from 'node:crypto';
 import { TASK_ENTRY_TOOLS } from './repository-project-registration.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
+import { projectNamedInPrompt } from './task-entry-project-mention.js';
+
+// The fixed assistant receives conversations no project has claimed yet.
+const ASSISTANT_AGENT_ID = 'employee.assistant';
 
 // Restore only exact session provenance; a normal folder name is not a role binding.
-// The fallback scope is private and contains no prompt, path or raw session identity.
+// An unclaimed conversation never creates a project or hires a lead: it stays
+// pending in the assistant's global scope until it is assigned to a project.
 export async function resolveTaskEntryProject(application, resolution, input) {
   if (!input.agentInvocation || !TASK_ENTRY_TOOLS.has(input.agentToolName)
     || resolution.personalProjectId || resolution.repositoryProjectId
@@ -53,20 +57,14 @@ export async function resolveTaskEntryProject(application, resolution, input) {
     // Internal Agent activity may reuse an existing scope but never creates one.
     if (hostInternalActivity(application, input)) return { ...resolution, reason: 'internal_activity' };
 
-    const key = createHash('sha256').update(JSON.stringify([
-      'fuli-conversation-project-v1', spaceId, source, sessions[0]
-    ])).digest('hex');
-    const projectId = `conversation-${key}`;
-    try {
-      await application.personal.getPersonalProject(spaceId, projectId);
-    } catch (error) {
-      if (error.status !== 404) throw error;
-      await application.upsertPersonalProject({ personalSpaceId: spaceId, projectId,
-        profile: { name: '会话项目 / Conversation project', lifecycle: 'active',
-          purpose: '为尚未归属已有项目的会话提供独立的负责人和上下文。',
-          boundaries: ['仅供当前会话使用，不隐式继承其他项目知识。'] } });
+    const named = await projectNamedInPrompt(application, input.taskPrompt);
+    if (named?.ambiguous) {
+      return { status: 'ambiguous', basis: named.basis, personalProjectId: null,
+        candidateCount: named.candidateCount };
     }
-    return matched(projectId, 'isolated_conversation');
+    if (named) return matched(named.personalProjectId, named.basis);
+    return { status: 'global', basis: 'pending_assignment', personalProjectId: null,
+      globalAgentId: ASSISTANT_AGENT_ID };
   } catch {
     // A failed read cannot prove that no previous owner exists.
     return { status: 'unavailable', basis: null, personalProjectId: null,
