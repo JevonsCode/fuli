@@ -1,3 +1,4 @@
+import { withOccupationDemand } from './occupation-staffing.js';
 import { planAgentCollaboration, agentLoan, agentVerification } from './agent-collaboration.js';
 import { queryConversations, resumeConversation, updateConversationPolicy } from './agent-conversations.js';
 import { recordUserTriage } from './conversation-triage.js';
@@ -66,7 +67,9 @@ export class ProjectAgentControlPlaneApplication {
     this.#assertSpace(input.personalSpaceId);
     return agentVerification(this, operation, input);
   }
-  async planAgentCollaboration(input) { return planAgentCollaboration(this, input); }
+  async planAgentCollaboration(input) {
+    return withOccupationDemand(this, input, await planAgentCollaboration(this, input));
+  }
   async agentLoan(operation, input) {
     if (input.personalSpaceId) this.#assertSpace(input.personalSpaceId);
     return agentLoan(this, operation, input);
