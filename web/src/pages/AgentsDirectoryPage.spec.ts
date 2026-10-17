@@ -180,6 +180,20 @@ describe('Agent directory integration', () => {
     expect(wrapper.find('[data-workbench-reorder]').exists()).toBe(false)
   })
 
+  it('explains a blocked Agent with the reason its task recorded', async () => {
+    getJson.mockImplementation(async (url: string) => {
+      if (url === '/api/project-agents?personalSpaceId=space-a') return [{ ...roster[0], workStatus: 'blocked', currentTaskId: 'task-b' }]
+      if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') {
+        return [{ taskId: 'task-b', personalSpaceId: 'space-a', title: 'Synthetic deploy', status: 'blocked',
+          resultSummary: 'Waiting for a person to grant staging access.', updatedAt: '2026-10-17T01:00:00Z', participants: [] }]
+      }
+      if (url === '/api/agent-pins?personalSpaceId=space-a') return { revision: 1, agentIds: [] }
+      throw new Error(`Unexpected detail request: ${url}`)
+    })
+    const { wrapper } = await setup()
+    expect(wrapper.get('[data-status-detail]').text()).toBe('受阻：Waiting for a person to grant staging access.')
+  })
+
   it('does not turn an unavailable work summary into an idle state', async () => {
     getJson.mockImplementation(async (url: string) => {
       if (url === '/api/project-agents?personalSpaceId=space-a') return roster
