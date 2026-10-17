@@ -165,3 +165,13 @@ test('tray packaging replaces stale embedded Provider code but refuses dependenc
   await assert.rejects(refreshEmbeddedProvider(f.packageRoot, source), /pyproject changed/);
   assert.equal(await readFile(join(target, 'app.py'), 'utf8'), 'current application');
 });
+
+test('tray asset reuse ignores only the root package version in the lockfile', async () => {
+  const { dependencyLock } = await import('../scripts/build-windows-tray.js');
+  const lock = version => Buffer.from(JSON.stringify({ name: 'fuli-context', version, lockfileVersion: 3,
+    packages: { '': { name: 'fuli-context', version }, 'node_modules/zod': { version: '3.25.76' } } }));
+  assert.deepEqual(dependencyLock(lock('0.12.4')), dependencyLock(lock('0.20.0-rc.1')));
+  const changed = JSON.parse(lock('0.12.4'));
+  changed.packages['node_modules/zod'].version = '3.25.77';
+  assert.notDeepEqual(dependencyLock(lock('0.12.4')), dependencyLock(Buffer.from(JSON.stringify(changed))));
+});
