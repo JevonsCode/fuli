@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, appendFile, rm, readdir, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -14,9 +14,36 @@ import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
 const adapter = { normalize: normalizeCodexRecord, verify: verifyCodexTranscript };
 const header = JSON.stringify({ type: 'session_meta', payload: { id: 'session' } }) + '\n';
 const row = (role, text) => JSON.stringify({ type: 'response_item', payload: { type: 'message', role, content: [{ type: role === 'user' ? 'input_text' : 'output_text', text }] } }) + '\n';
-async function fixture(t, tail, { onLockContention = () => {} } = {}) {
-  const dir = await mkdtemp(join(tmpdir(), 'fuli-handoff-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
+const listen = (server, port) => new Promise((resolve, reject) => {
+  server.once('error', reject);
+  server.listen({ host: '127.0.0.1', port, exclusive: true }, resolve);
+});
+const guardPort = (runtime, sessionId) => {
+  const key = transcriptDigest(`${runtime}\0codex\0${sessionId}`);
+  const lockKey = transcriptDigest(`${join(dirname(runtime), 'transcript-guards')}\0${key}`);
+  return 49152 + (parseInt(lockKey.slice(0, 8), 16) % 16384);
+};
+async function portIsFree(port) {
+  const probe = createServer();
+  try { await listen(probe, port); return true; } catch (error) {
+    if (error.code !== 'EADDRINUSE') throw error;
+    return false;
+  } finally { if (probe.listening) await new Promise(resolve => probe.close(resolve)); }
+}
+const temporaryDirectory = () => mkdtemp(join(tmpdir(), 'fuli-handoff-'));
+async function fixture(t, tail, { onLockContention = () => {}, makeDirectory = temporaryDirectory } = {}) {
+  // Unrelated CI processes can hold the guard's hashed loopback port for longer
+  // than the entry retry budget. Choose a namespace whose port is free before
+  // any guard state exists; the guard itself still fails closed on contention.
+  let dir, port;
+  for (let attempt = 0; ; attempt++) {
+    const candidate = await makeDirectory();
+    t.after(() => rm(candidate, { recursive: true, force: true }));
+    dir = candidate;
+    port = guardPort(join(dir, 'runtime.json'), 'session');
+    if (await portIsFree(port)) break;
+    if (attempt >= 15) throw new Error('No handoff fixture namespace had a free guard port');
+  }
   const path = join(dir, 'transcript.jsonl');
   await writeFile(path, header + tail);
   const input = { transcript_path: path, session_id: 'session', prompt: 'incoming', cwd: '/synthetic' };
@@ -61,7 +88,7 @@ async function fixture(t, tail, { onLockContention = () => {} } = {}) {
       }
     }
   };
-  return { dir, input, app, run, appended, calls, runtime,
+  return { dir, port, input, app, run, appended, calls, runtime,
     switchTask: value => { task = value; }, failClaim: value => { failClaim = value; }, disable: () => { enabled = false; }, disablePolicy: () => { policyEnabled = false; } };
 }
 
@@ -152,15 +179,9 @@ test('handoff fixture waits for an unrelated occupied mutex port without retryin
   // A fresh fixture changes the hashed namespace without replaying any callback.
   for (let attempt = 0; attempt < 16; attempt++) {
     f = await fixture(t, '', { onLockContention: contended.resolve });
-    const directory = join(f.dir, 'transcript-guards');
-    const key = transcriptDigest(`${f.runtime}\0codex\0${f.input.session_id}`);
-    const port = 49152 + (parseInt(transcriptDigest(`${directory}\0${key}`).slice(0, 8), 16) % 16384);
     blocker = createServer();
     try {
-      await new Promise((resolve, reject) => {
-        blocker.once('error', reject);
-        blocker.listen({ host: '127.0.0.1', port, exclusive: true }, resolve);
-      });
+      await listen(blocker, f.port);
       break;
     } catch (error) {
       if (error.code !== 'EADDRINUSE' || attempt === 15) throw error;
@@ -179,6 +200,28 @@ test('handoff fixture waits for an unrelated occupied mutex port without retryin
   const callbackFailure = Object.assign(new Error('Callback failure'), { code: 'EADDRINUSE' });
   await assert.rejects(f.run(async () => { calls++; throw callbackFailure; }), error => error === callbackFailure);
   assert.equal(calls, 2, 'A failure after entering the callback must never replay its writes.');
+});
+
+test('handoff fixture skips a namespace whose mutex port an unrelated process holds past the retry budget', async t => {
+  const blockers = [];
+  t.after(() => Promise.all(blockers.map(blocker => new Promise(resolve => blocker.close(resolve)))));
+  let occupied;
+  const makeDirectory = async () => {
+    const dir = await temporaryDirectory();
+    if (occupied) return dir;
+    occupied = dir;
+    // Held for the whole test, like a long-lived CI listener or connection.
+    const blocker = createServer();
+    try { await listen(blocker, guardPort(join(dir, 'runtime.json'), 'session')); blockers.push(blocker); } catch (error) {
+      if (error.code !== 'EADDRINUSE') throw error;
+    }
+    return dir;
+  };
+  const f = await fixture(t, row('assistant', 'prior completed answer'), { makeDirectory });
+  const result = await f.run(guard => syncConversationTranscript(f.app, f.input, 'codex', adapter, guard));
+  assert.equal(result.atPromptBoundary, true);
+  assert.deepEqual(f.appended.map(event => event.content), ['prior completed answer']);
+  assert.notEqual(f.dir, occupied);
 });
 
 test('lifecycle skips unverified context without intercepting the native prompt', async t => {
