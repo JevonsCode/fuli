@@ -1,4 +1,5 @@
 import { verificationPreference } from './verification-preference.js';
+import { executionPlan } from './execution-mode.js';
 const lower = values => (values ?? []).map(value => String(value).toLowerCase());
 // Matches Provider staffing: a nonempty assignment list overrides the profile list.
 const effective = (assignment, profile, field) => lower(assignment[field]?.length ? assignment[field] : profile?.[field]);
@@ -131,6 +132,7 @@ export async function planAgentCollaboration(application, input) {
       workstreams.map(stream => stream.id), eligible(pools.verification, excluded, false)));
   }
   const divisionPlan = { mode: separated ? 'separated' : 'single', coordinatorAgentId, workstreams,
+    execution: executionPlan(workstreams, input.hostExecutionModes, token),
     reason: separated ? (independent ? '复杂任务有明确独立边界，拆为两个执行工作包和一份独立验收。'
       : '主线延续当前上下文，另一个 FLA 在产物稳定后独立验收，减少重复阅读。')
       : independentAcceptance ? '这是独立验收工作包，排除已知实现者，不再递归拆分。'

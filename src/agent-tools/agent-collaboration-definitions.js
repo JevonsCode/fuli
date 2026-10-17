@@ -18,6 +18,8 @@ export const AGENT_COLLABORATION_DEFINITIONS = [
     inputSchema: objectSchema({ ...task, workKind: id, requiredCapabilities: arraySchema(id, { maxItems: 16 }),
       taskSize: { ...enumSchema(['small', 'standard', 'complex']), description: 'Default standard. Small means a low-impact bounded edit or running an existing command; security-sensitive or substantial behavior changes need independent acceptance.' },
       implementationAgentIds: arraySchema(id, { maxItems: 16, uniqueItems: true }),
+      hostExecutionModes: { ...arraySchema(enumSchema(['new_session', 'sub_agent', 'phased']), { maxItems: 3, uniqueItems: true }),
+        description: 'What this host can run; delegated work uses the first of new_session, sub_agent, phased.' },
       verificationWorkKind: id, verificationCapabilities: arraySchema(id, { maxItems: 16 }),
       independentWork: objectSchema({ workKind: id, requiredCapabilities: arraySchema(id, { maxItems: 16 }),
         boundary: { ...id, maxLength: 2000, description: 'Explicit independent scope with no overlapping writes or unresolved dependency on the main work.' },
