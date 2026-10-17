@@ -9,12 +9,13 @@ from .project_agent_occupation_models import (
 )
 from .provider_values import native_datetime, now_utc
 from .system_hr_identity import resolve_hr_alias
+from .system_agents import SYSTEM_ASSISTANT_AGENT_ID
 
 
 def occupation_from_agent_node(raw: dict) -> ProjectAgentOccupation | None:
     """Read the stored occupation; agents never edited by a person have none."""
     updated_at = raw.get('occupation_updated_at')
-    if updated_at is None:
+    if updated_at is None or not raw.get('occupation_role'):
         return None
     return ProjectAgentOccupation(
         role=raw.get('occupation_role'),
@@ -33,6 +34,8 @@ class StoreProjectAgentOccupation:
         """Replace the occupation as one explicit edit; the profile is untouched."""
 
         self._require_personal()
+        if (request.role == 'assistant') != (agent_id == SYSTEM_ASSISTANT_AGENT_ID):
+            raise HTTPException(422, 'assistant occupation is reserved for the fixed global assistant')
         await self.authorize(actor, request.personal_space_id, 'maintainer')
         agent_id = await resolve_hr_alias(self, request.personal_space_id, agent_id)
         records, _, _ = await self.runtime.driver.execute_query(

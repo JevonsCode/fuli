@@ -45,7 +45,7 @@ export function parseEmployeeManifest(value) {
 }
 
 // Built-in roles every personal space has; the Provider provisions their identities.
-export const FIXED_EMPLOYEE_AGENT_TYPES = Object.freeze({ jefa: 'coordinator', bole: 'hr', tonborg: 'durable' });
+export const FIXED_EMPLOYEE_AGENT_TYPES = Object.freeze({ jefa: 'coordinator', bole: 'hr', tonborg: 'durable', assistant: 'durable' });
 
 export const employeeAgentId = (id) => `employee.${identifier.parse(id)}`;
 export const employeeCapability = (id) => `fuli.employee:${identifier.parse(id)}`;
