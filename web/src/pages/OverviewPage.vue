@@ -17,6 +17,7 @@ import {
 import { inboxLocation, useAgentAttention, type AgentAttention } from '@/features/project-agents/attention-store'
 import { currentLocale, t } from '@/i18n'
 import { personalProjectsPath } from '@/router/paths'
+import { projectDisplayName } from '@/features/projects/project-origin'
 import { useConsoleStore } from '@/stores/console'
 import type { ProjectAgentTaskRecord } from '@/types'
 
@@ -32,7 +33,7 @@ const personalProjects = computed(() => {
   const spaceId = activeSpaceId.value
   return (state.value?.personalProjects ?? []).filter(project => !spaceId || project.personal_space_id === spaceId)
 })
-const projectNames = computed(() => new Map(personalProjects.value.map(project => [project.project_id, project.profile.name])))
+const projectNames = computed(() => new Map(personalProjects.value.map(project => [project.project_id, projectDisplayName(project)])))
 const agentNames = computed(() => {
   const names = new Map<string, string>()
   for (const agent of rosterAgents.value) {

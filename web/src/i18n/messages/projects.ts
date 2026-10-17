@@ -91,6 +91,8 @@ export const projectMessages = {
       coexist: '允许两条内容并存',
       operationReason: '操作说明',
     },
+    conversationFallback: '会话项目 · {time}',
+    conversationFallbackUndated: '会话项目',
     createDialog: {
       open: '新建项目',
       title: '新建项目',
@@ -328,6 +330,8 @@ export const projectMessages = {
       coexist: 'Allow both items to coexist',
       operationReason: 'Operation note',
     },
+    conversationFallback: 'Conversation project · {time}',
+    conversationFallbackUndated: 'Conversation project',
     createDialog: {
       open: 'New project',
       title: 'New project',
