@@ -99,3 +99,17 @@ function runtimeValue(args, flag) {
 function fail(message) {
   throw new GraphRuntimeConfigurationError(message);
 }
+
+/**
+ * For a long-running client after a token rotation: reads the personal token
+ * another process wrote for this same Provider and personal space. A different
+ * Provider or space is never adopted. Null without a runtime config file.
+ */
+export function personalTokenRefresher(path, personal) {
+  if (typeof path !== 'string' || !path) return null;
+  return () => {
+    const latest = readGraphRuntimeConfig(path).personal;
+    return latest?.providerUrl === personal.providerUrl && latest?.spaceId === personal.spaceId
+      ? latest.accessToken : null;
+  };
+}

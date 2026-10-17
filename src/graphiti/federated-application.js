@@ -16,7 +16,7 @@ import {
   createWorkspaceProvider
 } from './workspace-provider-client.js';
 import {
-  canonicalProviderUrl,
+  canonicalProviderUrl, personalTokenRefresher,
   readGraphRuntimeConfig
 } from './runtime-config.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
@@ -120,7 +120,8 @@ export function openFederatedGraphApplication({
     ),
     tokenUsageResolver,
     consoleUrl: sourceConsoleUrl(runtimeConfigPath),
-    providerRequestTimeoutMs: providerRequestTimeoutFromEnv(env)
+    providerRequestTimeoutMs: providerRequestTimeoutFromEnv(env),
+    refreshPersonalToken: personalTokenRefresher(runtimeConfigPath, resolved.personal)
   });
   if (typeof runtimeConfigPath === 'string' && runtimeConfigPath) {
     const paths = resolveSetupPaths({ dataDir: dirname(runtimeConfigPath) });
@@ -163,7 +164,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     projectPathResolver = resolvePersonalProjectPath,
     taskContextRegistry = null,
     providerRequestTimeoutMs = undefined,
-    tokenUsageResolver = undefined
+    tokenUsageResolver = undefined, refreshPersonalToken = null
   } = {}) {
     super();
     this.graphiti = true;
@@ -178,7 +179,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       accessToken: config.personal.accessToken,
       workflowObservationToken: config.personal.workflowObservationToken ?? null,
       fetchImpl,
-      requestTimeoutMs: providerRequestTimeoutMs
+      requestTimeoutMs: providerRequestTimeoutMs, refreshAccessToken: refreshPersonalToken
     });
     this.taskContextRegistry = taskContextRegistry ?? new ProviderTaskContextRegistry(
       this.personal, config.personal.spaceId

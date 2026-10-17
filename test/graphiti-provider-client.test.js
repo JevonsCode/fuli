@@ -435,3 +435,37 @@ function jsonResponse(status, payload) {
     headers: { 'content-type': 'application/json' }
   });
 }
+
+test('a rotated access token is adopted once and the rejected request repeated', async () => {
+  const seen = [];
+  let refreshes = 0;
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'old-token',
+    refreshAccessToken: async () => { refreshes += 1; return 'new-token'; },
+    fetchImpl: async (_url, options) => {
+      seen.push(options.headers.authorization);
+      return options.headers.authorization === 'Bearer new-token'
+        ? jsonResponse(200, { ok: true }) : jsonResponse(401, { detail: 'invalid access token' });
+    } });
+
+  assert.deepEqual(await client.conversation('query', { mode: 'policy' }), { ok: true });
+  assert.deepEqual(seen, ['Bearer old-token', 'Bearer new-token']);
+  await client.conversation('query', { mode: 'policy' });
+  assert.equal(refreshes, 1, 'the adopted token is kept for later requests');
+});
+
+test('a 401 is reported unchanged when no different token is available', async () => {
+  for (const refreshAccessToken of [async () => 'same-token', async () => null, async () => { throw new Error('unreadable'); }]) {
+    let calls = 0;
+    const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'same-token',
+      refreshAccessToken,
+      fetchImpl: async () => { calls += 1; return jsonResponse(401, { detail: 'invalid access token' }); } });
+    await assert.rejects(client.listSpaces(), (error) => error instanceof ProviderRequestError && error.status === 401);
+    assert.equal(calls, 1);
+  }
+  let refreshed = false;
+  const unauthenticated = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'token',
+    refreshAccessToken: async () => { refreshed = true; return 'other'; },
+    fetchImpl: async () => jsonResponse(401, { detail: 'nope' }) });
+  await assert.rejects(unauthenticated.health());
+  assert.equal(refreshed, false);
+});

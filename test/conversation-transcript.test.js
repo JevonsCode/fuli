@@ -215,3 +215,33 @@ test('normalized content over the batch byte budget is explicitly omitted', asyn
   assert.ok(batch.events.length <= 50);
   assert.ok(batch.events.reduce((sum, event) => sum + Buffer.byteLength(event.content), 0) <= 512 * 1024);
 });
+
+test('a page the Provider rejects for credential-looking content is saved with that content omitted', async t => {
+  const path = await fixture(t, row('user', 'task'));
+  let cursor = 0;
+  const attempts = [];
+  const { ProviderRequestError } = await import('../src/graphiti/provider-client.js');
+  const application = { config: { personal: { spaceId: 'space' } }, getCapturePolicy: () => ({ enabled: true }), personal: {
+    currentTaskContext: async () => ({ personal_project_id: 'project', project_agent_id: 'agent', token: 'task' }),
+    conversation: async (operation, request) => {
+      if (request.mode === 'policy') return { enabled: true };
+      if (request.mode === 'session') return { cursor, initialized: true };
+      if (operation === 'append') {
+        attempts.push(request);
+        if (attempts.length === 1) {
+          throw new ProviderRequestError('rejected', { status: 422, validationErrors: [
+            { field: 'events[0]', message: 'Value error, Conversation event contains credentials' }
+          ] });
+        }
+        cursor = request.cursor;
+        return { status: 'saved' };
+      }
+    }
+  } };
+  const result = await syncConversationTranscript(application, { transcript_path: path, session_id: 'current' }, 'codex', adapter);
+  assert.equal(result.status, 'saved');
+  assert.equal(result.entryBlocked, false);
+  assert.ok(cursor > 0);
+  assert.match(attempts[1].events[0].content, /looked like a credential/);
+  assert.equal(attempts[1].events[0].event_id, attempts[0].events[0].event_id);
+});
