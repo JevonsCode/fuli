@@ -1,4 +1,6 @@
 import { containsEntryRules, entryRules, entryRulesReference, ruleTextView } from './entry-rules.js';
+import { copyPreferenceScope } from './preference-snapshot.js';
+import { preferenceInstructionView } from './preference-view.js';
 
 const SUMMARY_PREVIEW = 800;
 const NOTE_COUNT_PREVIEW = 3;
@@ -35,19 +37,7 @@ export function compactTaskContext(value) {
   if (value.agent_receipt?.continuation) result.agent_receipt = { ...value.agent_receipt,
     continuation: { ...value.agent_receipt.continuation,
       guidance: text(value.agent_receipt.continuation.guidance, 'continuation_guidance') } };
-  if (Array.isArray(value.effective_preferences)) result.effective_preferences = value.effective_preferences.map(item => ({
-    instruction: item.instruction, preference_key: item.preference_key,
-    preference_scope: item.preference_scope, confirmation_status: item.confirmation_status,
-    profile_aspect: item.profile_aspect,
-    ...Object.fromEntries(['preference_project_id', 'preference_agent_id',
-      'inherited_from_project_id', 'scope_distance', 'scope_path', 'inheritance_mode', 'inherited_project_ids']
-      .filter(key => item[key] !== undefined).map(key => [key, item[key]])),
-    ...(item.preference_qualifiers || item.attributes ? {
-      preference_qualifiers: instructionQualifiers({ ...item.attributes,
-        ...item.attributes?.preference_qualifiers, ...item.preference_qualifiers }, item.instruction)
-    } : {}),
-    ...(item.attributes?.tasteDomain ? { attributes: { tasteDomain: item.attributes.tasteDomain } } : {})
-  }));
+  if (Array.isArray(value.effective_preferences)) result.effective_preferences = value.effective_preferences.map(preferenceInstructionView);
   if (value.project_management_context?.managers) result.project_management_context = {
     ...value.project_management_context,
     managers: value.project_management_context.managers.map(manager => ({ ...manager,
@@ -70,7 +60,7 @@ export function compactTaskContext(value) {
       ...(continuity.global_memory !== undefined ? { global_memory: continuity.global_memory
         && memoryPreview(continuity.global_memory, ruleOrReference('global_memory_guidance', share)) } : {}) };
   }
-  return result;
+  return copyPreferenceScope(value, result);
 }
 
 // Inside the same native chat the host already holds the recent messages, so
@@ -89,12 +79,6 @@ function conversationView(conversation, share) {
 
 function ruleOrReference(section, share) {
   return share ? entryRulesReference(section) : entryRules().sections[section];
-}
-
-function instructionQualifiers(attributes, instruction) {
-  return Object.fromEntries(Object.entries(attributes).filter(([key, value]) =>
-    !['preferenceKey', 'preference_key', 'preference_qualifiers', 'searchTerms', 'search_terms', 'weight'].includes(key)
-      && !(key === 'instruction' && value === instruction)));
 }
 
 // Each layer has a fixed preview size, so adding the global layer cannot grow

@@ -10,6 +10,7 @@ import { ApplicationError, ApplicationErrorCode } from '../app/application-error
 import { agentMemoryRecord, prepareProjectAgentMemory } from './project-agent-memory.js';
 import { internalCaptureSkip, normalizeTaskCaptures, taskCaptureInput, taskCaptureReceipt, taskCaptureReviewPaths, taskCaptureStatus } from './task-knowledge-routing.js';
 import { activeSealedWorkerRequest } from '../app/agent-request-context.js';
+import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
 
 import { onlineSourceUri } from './source-uri.js';
 import {
@@ -94,7 +95,7 @@ export async function beginTaskFromPreferences(application, preferences, {
     workLogRequired: Boolean(preferences.project_agent_context?.memory)
   });
   const conversation = await beginConversation(application, task);
-  return {
+  return withPreferenceScope({
     conversation,
     taskContextToken: task.token,
     task_context_token: task.token,
@@ -104,7 +105,7 @@ export async function beginTaskFromPreferences(application, preferences, {
     ...preferences,
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
     task_guidance: taskKnowledgeGuidance()
-  };
+  }, taskPreferenceMetadata(task, application.config?.personal?.spaceId));
 }
 
 export function taskKnowledgeGuidance() {

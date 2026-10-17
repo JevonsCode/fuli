@@ -151,6 +151,8 @@ test('Claude Code hook status requires the exact managed command, timeout and st
     (settings) => { settings.hooks.UserPromptSubmit.at(-1).hooks[0].command += ' --extra'; },
     (settings) => { settings.hooks.Stop.at(-1).hooks[0].timeout = 31; },
     (settings) => { settings.hooks.Stop.at(-1).hooks[0].statusMessage = 'Different'; },
+    (settings) => { delete settings.hooks.PreCompact; },
+    (settings) => { settings.hooks.SessionStart.at(-1).hooks[0].command += ' --extra'; },
     (settings) => {
       settings.permissions.allow = ['mcp__fuli__get_collaboration_preferences'];
     }
@@ -161,7 +163,7 @@ test('Claude Code hook status requires the exact managed command, timeout and st
   }
 
   const customTimeout = structuredClone(current);
-  for (const event of ['UserPromptSubmit', 'Stop']) {
+  for (const event of ['UserPromptSubmit', 'Stop', 'SessionStart', 'PreCompact']) {
     customTimeout.hooks[event].at(-1).hooks[0].timeout = 240;
     customTimeout.hooks[event].at(-1).hooks[0].command = claudeLifecycleCommand(CONTEXT, event, 240);
   }

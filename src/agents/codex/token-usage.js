@@ -69,6 +69,17 @@ export async function resolveCodexTokenUsage(request = {}, { roots } = {}) {
   return null;
 }
 
+export async function locateCodexSession(sessionId, root) {
+  if (!safeSessionId(sessionId)) return null;
+  let entries = 0, candidates = 0;
+  const files = await matchingSessionFiles(root, sessionId, {
+    onEntry: () => { entries++; }, get entriesInspected() { return entries; },
+    get candidatesFound() { return candidates; }, addCandidate: () => { candidates++; }
+  });
+  // The evidence reader verifies the exact native header before trusting bytes.
+  return files.length === 1 ? files[0] : null;
+}
+
 async function matchingSessionFiles(root, sessionId, counters, depth = 0) {
   if (depth > MAX_DIRECTORY_DEPTH || counters.entriesInspected >= MAX_DIRECTORY_ENTRIES ||
       counters.candidatesFound >= MAX_CANDIDATE_FILES) return [];
