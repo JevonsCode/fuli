@@ -651,7 +651,8 @@ export const GRAPH_TOOL_DEFINITIONS = [
     inputSchema: objectSchema({
       personalSpaceId: id,
       projectId: boundedString(128),
-      profile: projectProfile
+      profile: projectProfile,
+      createOnly: { type: 'boolean', description: 'When true, fail with 409 instead of replacing an existing project with this projectId.' }
     }, ['personalSpaceId', 'projectId', 'profile'])
   },
   {
