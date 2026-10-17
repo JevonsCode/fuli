@@ -12,6 +12,10 @@ export function stringSchema() {
   return { type: 'string' };
 }
 
+export function boundedString(maxLength) {
+  return { ...stringSchema(), minLength: 1, maxLength };
+}
+
 export function nullableStringSchema() {
   return { type: ['string', 'null'] };
 }
