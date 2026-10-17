@@ -16,7 +16,7 @@ function currentUserShortcutDirectories() {
     + '@{desktop=[Environment]::GetFolderPath("DesktopDirectory");startMenu=[Environment]::GetFolderPath("Programs")} | ConvertTo-Json -Compress'));
 }
 
-function createWindowsShortcut(path, target) {
+export function createWindowsShortcut(path, target) {
   const input = Buffer.from(JSON.stringify({ path, target, cwd: dirname(target) })).toString('base64');
   powershell('$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("' + input + '")) | ConvertFrom-Json; '
     + '$s=(New-Object -ComObject WScript.Shell).CreateShortcut($p.path); '
@@ -26,7 +26,7 @@ function createWindowsShortcut(path, target) {
 // Node cannot deny sharing on Windows, so the reader holds a .NET handle that
 // denies write and delete (rename) sharing while it hashes the bytes and COM
 // interprets them. Any failure, including a sharing violation, fails closed.
-function readWindowsShortcut(path, sha256) {
+export function readWindowsShortcut(path, sha256) {
   const input = Buffer.from(JSON.stringify({ path, sha256 })).toString('base64');
   return JSON.parse(powershell('[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); '
     + '$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("' + input + '")) | ConvertFrom-Json; '
@@ -44,7 +44,7 @@ const EXACT = { bigint: true };
 const sameInode = (a, b) => a.dev === b.dev && a.ino === b.ino;
 const sameFile = (a, b) => sameInode(a, b) && a.size === b.size && a.mtimeNs === b.mtimeNs;
 
-function trayInventory(source) {
+export function trayInventory(source) {
   const bytes = readFileSync(join(source, 'tray-files.sha256.json'));
   const entries = JSON.parse(bytes);
   if (!Array.isArray(entries)) throw new Error('Invalid tray checksum inventory.');
