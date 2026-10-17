@@ -11,6 +11,7 @@ from test_system_hr_identity_neo4j import _create_space, _query
 
 async def put_agent(client, space_id, agent_id, **changes):
     response = await client.put('/v1/project-agents', json={
+        'occupation': {'role': 'engineering'},
         'personal_space_id': space_id, 'agent_id': agent_id,
         'profile': {'name': 'Synthetic member', 'responsibility': 'Verify numbering'},
         **changes,
@@ -30,7 +31,7 @@ async def test_numbers_start_at_one_and_concurrent_creates_and_replays_are_uniqu
         space_id = await _create_space(client, 'Synthetic concurrent FLA numbering')
         await ensure_system(client, space_id)
         initial = (await client.get('/v1/project-agents', params={'personal_space_id': space_id})).json()
-        assert sorted(a['employee_number'] for a in initial) == ['000001', '000002', '000003']
+        assert sorted(a['employee_number'] for a in initial) == ['000001', '000002', '000003', '000004']
         results = await asyncio.gather(*[
             put_agent(client, space_id, f'member-{i}') for i in list(range(8)) * 2
         ])
@@ -39,11 +40,11 @@ async def test_numbers_start_at_one_and_concurrent_creates_and_replays_are_uniqu
             key, number = agent['agent_id'], agent['employee_number']
             assert numbers.setdefault(key, number) == number
         assert len(set(numbers.values())) == 8
-        assert sorted(numbers.values()) == [f'{i:06d}' for i in range(4, 12)]
+        assert sorted(numbers.values()) == [f'{i:06d}' for i in range(5, 13)]
         other = await _create_space(client, 'Synthetic independent FLA numbering')
         await ensure_system(client, other)
         other_agents = (await client.get('/v1/project-agents', params={'personal_space_id': other})).json()
-        assert sorted(a['employee_number'] for a in other_agents) == ['000001', '000002', '000003']
+        assert sorted(a['employee_number'] for a in other_agents) == ['000001', '000002', '000003', '000004']
         rejected = await client.put('/v1/project-agents', json={
             'personal_space_id': space_id, 'agent_id': 'member-0', 'employee_number': '999999',
             'profile': {'name': 'Synthetic member', 'responsibility': 'Cannot assign a number'},

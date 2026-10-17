@@ -14,10 +14,11 @@ from .system_hr_identity import LEGACY_HR_AGENT_ID
 IMPLICIT_PEER_AGENT_IDS = frozenset({
     'employee.jefa',
     'employee.tonborg',
+    'employee.assistant',
     SYSTEM_HR_AGENT_ID.casefold(),
     LEGACY_HR_AGENT_ID.casefold(),
 })
-IMPLICIT_PEER_CAPABILITIES = frozenset({'fuli.employee:jefa', 'fuli.employee:bole', 'fuli.employee:tonborg'})
+IMPLICIT_PEER_CAPABILITIES = frozenset({'fuli.employee:jefa', 'fuli.employee:bole', 'fuli.employee:tonborg', 'fuli.employee:assistant'})
 IMPLICIT_PEER_AGENT_TYPES = frozenset({'hr'})
 # Routing reasons produced inside a configured project team roster.
 TEAM_ROUTING_REASONS = frozenset({'project_team_lead', 'project_team_member', 'project_team_gap'})
@@ -219,7 +220,10 @@ class StoreProjectAgentTaskStaffing:
         if request.work_kind.casefold() == 'project_context' and not request.required_capabilities:
             ranked, history = [lead], {}
         else:
-            ranked, history = await self._rank_agent_candidates(team, request)
+            executors = (members if lead.get('occupation_role') == 'lead'
+                         and request.work_kind not in {'planning', 'delegation', 'integration', 'reporting'}
+                         else team)
+            ranked, history = await self._rank_agent_candidates(executors, request)
         accountable = f'project team lead {lead["agent_id"]} remains accountable'
         if not ranked:
             if any(
@@ -890,6 +894,7 @@ class StoreProjectAgentTaskStaffing:
             profile = ProjectAgentProfile.model_validate_json(agent['profile_json'])
             result.append({
                 'agent_id': agent['agent_id'],
+                'occupation_role': agent.get('occupation_role'),
                 'assignment_id': assignment.get('assignment_id') or assignment['id'],
                 'responsibility': assignment.get('responsibility'),
                 'work_kinds': list(

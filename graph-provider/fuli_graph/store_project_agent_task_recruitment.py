@@ -12,10 +12,12 @@ from .personal_project_access import authorize_personal_project
 from .project_agent_models import (
     ProjectAgentAssignmentCreate,
     ProjectAgentModelStrategy,
-    ProjectAgentProfile,
     ProjectAgentUpsert,
 )
-from .project_agent_recruitment_values import project_agent_recruitment_record
+from .project_agent_recruitment_occupation import (
+    normalized_recruitment_profile, recruitment_occupation_fields, stored_recruitment_occupation,
+)
+from .project_agent_recruitment_values import project_agent_recruitment_profile, project_agent_recruitment_record
 from .project_agent_task_models import (
     ProjectAgentRecruitmentDecision,
     ProjectAgentRecruitmentPolicyRecord,
@@ -35,6 +37,8 @@ RECRUITMENT_CLAIM_TTL = timedelta(minutes=2)
 
 class StoreProjectAgentTaskRecruitment:
     """Own the audited AR lifecycle independently from task routing mechanics."""
+
+    _normalized_recruitment_profile = staticmethod(normalized_recruitment_profile)
 
     async def get_project_agent_recruitment_policy(
         self,
@@ -99,6 +103,8 @@ class StoreProjectAgentTaskRecruitment:
         actor: dict,
         request: ProjectAgentRecruitmentDecision,
     ) -> ProjectAgentRecruitmentRecord:
+        if request.occupation and request.occupation.role == 'assistant':
+            raise HTTPException(422, 'use the fixed global assistant; assistants cannot be recruited')
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         await authorize_personal_project(
@@ -136,7 +142,8 @@ class StoreProjectAgentTaskRecruitment:
                   (hr:FuliProjectAgent {agent_type: 'hr', status: 'active'})
             WHERE hr.agent_id = recruitment.hr_agent_id
             WITH recruitment, task, hr
-            WHERE recruitment.status = 'awaiting_confirmation'
+            WHERE (recruitment.status = 'awaiting_confirmation'
+              OR (recruitment.status = 'requested' AND recruitment.occupation_role IS NULL))
               AND coalesce(recruitment.revision, 0) = $expected_revision
               AND task.task_id = recruitment.task_id
               AND task.status = 'awaiting_recruitment'
@@ -147,9 +154,14 @@ class StoreProjectAgentTaskRecruitment:
               )
               AND (
                 $decision_status = 'cancelled'
-                OR hr IS NOT NULL
+                OR (hr IS NOT NULL AND coalesce($occupation_role, recruitment.occupation_role) IS NOT NULL)
               )
             SET recruitment.status = $decision_status,
+                recruitment.occupation_role = coalesce($occupation_role, recruitment.occupation_role),
+                recruitment.occupation_tags = CASE WHEN $occupation_role IS NULL
+                  THEN recruitment.occupation_tags ELSE $occupation_tags END,
+                recruitment.occupation_basis = CASE WHEN $occupation_role IS NULL
+                  THEN recruitment.occupation_basis ELSE 'approval_choice' END,
                 recruitment.decision_reason = $reason,
                 recruitment.provisioning_claim_id = $provisioning_claim_id,
                 recruitment.provisioning_claimed_at = $provisioning_claimed_at,
@@ -182,6 +194,8 @@ class StoreProjectAgentTaskRecruitment:
             recruitment_id=request.recruitment_id,
             expected_revision=request.expected_revision,
             decision_status=decision_status,
+            occupation_role=request.occupation.role if request.occupation else None,
+            occupation_tags=request.occupation.tags if request.occupation else [],
             reason=request.reason,
             provisioning_claim_id=provisioning_claim_id,
             provisioning_claimed_at=(
@@ -195,7 +209,7 @@ class StoreProjectAgentTaskRecruitment:
         if not records:
             raise HTTPException(
                 status_code=409,
-                detail='recruitment is not awaiting confirmation or revision is stale',
+                detail='recruitment is not awaiting confirmation, revision is stale, or legacy approval requires occupation.role',
             )
         raw = dict(records[0]['recruitment'])
         if request.decision == 'cancel':
@@ -777,6 +791,7 @@ class StoreProjectAgentTaskRecruitment:
             status = 'requested'
         now = now_utc()
         raw = {
+            **recruitment_occupation_fields(request),
             'id': recruitment_id,
             'recruitment_id': recruitment_id,
             'personal_space_id': request.personal_space_id,
@@ -923,7 +938,8 @@ class StoreProjectAgentTaskRecruitment:
             SET agent._task_lifecycle_lock = true
             REMOVE agent._task_lifecycle_lock
             WITH space, recruitment, agent, task
-            WHERE agent.status = 'active'
+            WHERE agent.status = 'active' AND recruitment.occupation_role IS NOT NULL
+              AND recruitment.occupation_role <> 'assistant'
             MATCH (space)-[:CONTAINS_PROJECT]->
                   (:FuliPersonalProject {project_id: $personal_project_id})-
                   [:HAS_PROJECT_AGENT_ASSIGNMENT]->
@@ -941,6 +957,10 @@ class StoreProjectAgentTaskRecruitment:
                 recruitment.fulfilled_at = $updated_at,
                 recruitment.updated_at = $updated_at,
                 recruitment.revision = coalesce(recruitment.revision, 0) + 1,
+                agent.occupation_role = recruitment.occupation_role,
+                agent.occupation_tags = coalesce(recruitment.occupation_tags, []),
+                agent.occupation_updated_at = $updated_at,
+                agent.occupation_recruitment_id = recruitment.recruitment_id,
                 agent.recruitment_id = recruitment.recruitment_id,
                 agent.recruited_at = coalesce(agent.recruited_at, $updated_at),
                 agent.recruitment_reason = recruitment.reason,
@@ -1033,25 +1053,6 @@ class StoreProjectAgentTaskRecruitment:
             raw['_guarded_task_id'] = task_id
         return raw
 
-    @staticmethod
-    def _normalized_recruitment_profile(request):
-        position_kind = (
-            'temporary'
-            if request.staffing_intent == 'temporary'
-            else 'durable'
-        )
-        profile = request.recruitment_profile or ProjectAgentProfile(
-            name=f'{request.work_kind} Agent',
-            responsibility=request.objective,
-            agent_type=position_kind,
-            work_kinds=[request.work_kind],
-            capabilities=request.required_capabilities,
-            status='active',
-        )
-        if profile.agent_type != position_kind:
-            profile = profile.model_copy(update={'agent_type': position_kind})
-        return position_kind, profile
-
     async def _persist_recruitment(self, raw):
         records, _, _ = await self.runtime.driver.execute_query(
             '''
@@ -1090,6 +1091,7 @@ class StoreProjectAgentTaskRecruitment:
             return await scoped._provision_recruitment_transaction(actor, raw)
 
     async def _provision_recruitment_transaction(self, actor, raw):
+        occupation = stored_recruitment_occupation(raw)
         guarded_task_id = raw.get('_guarded_task_id')
         if guarded_task_id:
             active, _, _ = await self.runtime.driver.execute_query(
@@ -1133,16 +1135,7 @@ class StoreProjectAgentTaskRecruitment:
         )
         if not claimed:
             raise HTTPException(status_code=409, detail='recruitment provisioning claim is stale')
-        profile = ProjectAgentProfile.model_validate_json(
-            raw['proposed_profile_json']
-        )
-        occupation_emoji = raw.get('occupation_emoji') or raw.get(
-            'occupationEmoji'
-        )
-        if not profile.occupation_emoji and occupation_emoji:
-            profile = profile.model_copy(
-                update={'occupation_emoji': occupation_emoji}
-            )
+        profile = project_agent_recruitment_profile(raw)
         agent_id = raw['proposed_agent_id']
         await self.upsert_project_agent(
             actor,
@@ -1150,6 +1143,7 @@ class StoreProjectAgentTaskRecruitment:
                 personal_space_id=raw['personal_space_id'],
                 agent_id=agent_id,
                 profile=profile,
+                occupation=occupation,
             ),
             recruitment_id=raw['recruitment_id'],
         )
@@ -1197,6 +1191,10 @@ class StoreProjectAgentTaskRecruitment:
                 recruitment.fulfilled_at = $updated_at,
                 recruitment.updated_at = $updated_at,
                 recruitment.revision = coalesce(recruitment.revision, 0) + 1,
+                agent.occupation_role = $occupation_role,
+                agent.occupation_tags = $occupation_tags,
+                agent.occupation_updated_at = $updated_at,
+                agent.occupation_recruitment_id = $recruitment_id,
                 agent.recruitment_id = $recruitment_id,
                 agent.recruited_at = $updated_at,
                 agent.recruitment_reason = recruitment.reason,
@@ -1219,6 +1217,8 @@ class StoreProjectAgentTaskRecruitment:
             recruitment_id=raw['recruitment_id'],
             personal_space_id=raw['personal_space_id'],
             agent_id=agent_id,
+            occupation_role=occupation.role,
+            occupation_tags=occupation.tags,
             task_id=guarded_task_id,
             task_guarded=bool(guarded_task_id),
             provisioning_claim_id=raw.get('provisioning_claim_id'),

@@ -32,6 +32,7 @@ async def assign_role(client, scope, agent, capabilities, *, work_kind='implemen
     # Deliberately create space identity separately: a legacy upsert would copy
     # profile capabilities into the assignment and hide precedence regressions.
     identity = await client.put('/v1/project-agents', json={
+        'occupation': {'role': 'engineering'},
         'personal_space_id': scope['personal_space_id'], 'agent_id': agent,
         'profile': {'name': f'Synthetic {agent}', 'responsibility': 'Maintain the sample.',
             'capabilities': capabilities if profile_capabilities is None
@@ -232,6 +233,7 @@ async def test_legacy_upsert_reactivates_an_ended_assignment_consistently():
             'cleanup_eligible': True,
         }
         created = await client.put('/v1/project-agents', json={
+            'occupation': {'role': 'engineering'},
             **scope, 'agent_id': 'ended-legacy-role', 'profile': profile,
         })
         assert created.status_code == 200, created.text
@@ -275,6 +277,7 @@ async def test_profile_upsert_cannot_bypass_the_dedicated_archive_operation():
             'cleanup_eligible': True,
         }
         created = await client.put('/v1/project-agents', json={
+            'occupation': {'role': 'engineering'},
             **scope, 'agent_id': 'archive-boundary-role', 'profile': profile,
         })
         assert created.status_code == 200, created.text
@@ -366,6 +369,7 @@ async def test_archive_between_profile_and_legacy_assignment_wins_atomically(
             'cleanup_eligible': True,
         }
         created = await client.put('/v1/project-agents', json={
+            'occupation': {'role': 'engineering'},
             **scope,
             'agent_id': 'legacy-archive-race-role',
             'profile': profile,
@@ -442,6 +446,7 @@ async def test_archive_after_assignment_authorization_blocks_assignment_create(
     ) as (client, _):
         scope = await create_scope(client)
         identity = await client.put('/v1/project-agents', json={
+            'occupation': {'role': 'engineering'},
             'personal_space_id': scope['personal_space_id'],
             'agent_id': 'assignment-create-race-role',
             'profile': {
@@ -535,6 +540,7 @@ async def test_archive_after_replacement_authorization_blocks_assignment_replace
         }
         for agent_id in ('replace-race-original', 'replace-race-target'):
             identity = await client.put('/v1/project-agents', json={
+                'occupation': {'role': 'engineering'},
                 'personal_space_id': scope['personal_space_id'],
                 'agent_id': agent_id,
                 'profile': {**profile, 'name': f'Synthetic {agent_id}'},
@@ -746,6 +752,7 @@ async def test_legacy_upsert_preserves_an_active_cross_agent_replacement():
             'cleanup_eligible': True,
         }
         original = await client.put('/v1/project-agents', json={
+            'occupation': {'role': 'engineering'},
             **scope, 'agent_id': 'original-legacy-role',
             'profile': original_profile,
         })
@@ -753,6 +760,7 @@ async def test_legacy_upsert_preserves_an_active_cross_agent_replacement():
         original_assignment = original.json()['assignments'][0]
 
         replacement = await client.put('/v1/project-agents', json={
+            'occupation': {'role': 'engineering'},
             'personal_space_id': scope['personal_space_id'],
             'agent_id': 'replacement-role',
             'profile': {
@@ -846,6 +854,7 @@ async def test_legacy_upsert_preserves_an_explicit_cross_agent_replacement():
             ('explicit-replacement-role', 'Synthetic explicit replacement role'),
         ):
             identity = await client.put('/v1/project-agents', json={
+                'occupation': {'role': 'engineering'},
                 'personal_space_id': scope['personal_space_id'],
                 'agent_id': agent_id,
                 'profile': {**profile, 'name': name},
@@ -926,6 +935,7 @@ async def test_legacy_upsert_preserves_a_transitive_handoff_chain():
         }
         for agent_id in ('chain-original', 'chain-middle', 'chain-current'):
             identity = await client.put('/v1/project-agents', json={
+                'occupation': {'role': 'engineering'},
                 'personal_space_id': scope['personal_space_id'],
                 'agent_id': agent_id,
                 'profile': {**profile, 'name': f'Synthetic {agent_id}'},
@@ -1020,6 +1030,7 @@ async def test_active_legacy_refresh_ignores_an_unrelated_handoff_history():
             'cleanup_eligible': True,
         }
         original = await client.put('/v1/project-agents', json={
+            'occupation': {'role': 'engineering'},
             **scope,
             'agent_id': 'active-legacy-with-history',
             'profile': initial_profile,
@@ -1039,6 +1050,7 @@ async def test_active_legacy_refresh_ignores_an_unrelated_handoff_history():
         })
         assert explicit.status_code == 200, explicit.text
         replacement = await client.put('/v1/project-agents', json={
+            'occupation': {'role': 'engineering'},
             'personal_space_id': scope['personal_space_id'],
             'agent_id': 'refresh-history-replacement',
             'profile': {
