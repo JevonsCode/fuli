@@ -1,5 +1,6 @@
 import { planAgentCollaboration, agentLoan, agentVerification } from './agent-collaboration.js';
 import { queryConversations, resumeConversation, updateConversationPolicy } from './agent-conversations.js';
+import { recordUserTriage } from './conversation-triage.js';
 import { agentProjectResolution } from './agent-knowledge-workflows.js';
 import { listAgentAttention, changeAgentAttention } from './agent-attention.js';
 import { loadProjectTeam } from './project-team-view.js';
@@ -69,6 +70,10 @@ export class ProjectAgentControlPlaneApplication {
   async agentLoan(operation, input) {
     if (input.personalSpaceId) this.#assertSpace(input.personalSpaceId);
     return agentLoan(this, operation, input);
+  }
+  async recordConversationTriage(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return recordUserTriage(this, input);
   }
   async queryAgentConversations(input) {
     this.#assertSpace(input.personalSpaceId);
