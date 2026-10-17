@@ -65,7 +65,7 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
   if (context) applyAgentAssignment(context, selection);
   // Questions other Agents left for this Agent while it was not running.
   const waiting = includeMessages && selection?.agent && application.roundtable
-    ? application.roundtable.pending(selection.agent.agentId) : [];
+    ? application.roundtable.pending(selection.agent.agentId, projectResolution.personalProjectId) : [];
   const judgmentContext = taskJudgmentContext(application, projectResolution.personalProjectId);
   // An unclaimed conversation gets names only, so its finishing host can label it.
   const triage = selection?.agent?.agentId === ASSISTANT_AGENT_ID && !projectResolution.personalProjectId

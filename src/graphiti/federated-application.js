@@ -8,6 +8,7 @@ import { JudgmentStore } from '../judgment/store.js';
 import { createJudgmentEngine } from '../judgment/engine.js';
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 import { withTaskMemorySnapshot } from './project-agent-memory.js';
+import { searchFederatedKnowledge } from './federated-search.js';
 import { preflightTaskCaptures } from './task-knowledge-routing.js';
 
 import { GraphitiProviderClient } from './provider-client.js';
@@ -30,12 +31,6 @@ import {
   agentAccessPolicyPathForRuntime
 } from './agent-access-policy.js';
 import {
-  personalContextProjectIds,
-  personalProjectSearchBatches,
-  scopedSearchItems
-} from './personal-context.js';
-import {
-  createFuliSourceMarker,
   sourceConsoleUrl
 } from './source-marker.js';
 import { resolvePersonalProjectPath } from './project-path-context.js';
@@ -84,20 +79,11 @@ import {
 import {
   providerWorkflowTransitionObservation
 } from './workflow-observation.js';
-import {
-  relatedProjectGuidance
-} from './related-project-suggestions.js';
 import { buildUserTasteSkill } from './user-taste-skill.js';
 import { taskEntryPreferences, finishTaskEntryPreferences } from './task-entry-preferences.js';
 import { TASK_ENTRY_TOOLS, registerRepositoryProject } from './repository-project-registration.js';
 import { resolveTaskEntryProject } from './task-entry-project-scope.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
-import {
-  groupSubscriptions,
-  loadSearchRelatedProjectSuggestions,
-  rankedSearchItems,
-  retrievalGuidanceForScope
-} from './federated-search-support.js';
 
 export function openFederatedGraphApplication({
   runtimeConfigPath,
@@ -375,166 +361,11 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
-  async searchKnowledge({
-    personalSpaceId,
-    query,
-    projectIds = [],
-    personalProjectId = null,
-    projectAgentId = null,
-    contextPersonalProjectIds = [],
-    personalProjectScope = 'bounded',
-    limit = 12,
-    includeHistorical = false,
-    includePending = true,
-    agentInvocation = false,
-    agentToolName = 'search_knowledge_graph'
-  }) {
-    if (personalSpaceId !== this.config.personal.spaceId) {
-      throw new TypeError('Search must use the active personal space');
-    }
-    if (!['bounded', 'all_local_confirmed'].includes(personalProjectScope)) {
-      throw new TypeError('Unknown personal project search scope');
-    }
-    if (projectAgentId && (!personalProjectId || personalProjectScope !== 'bounded')) {
-      throw new TypeError(
-        'Project Agent search requires one bounded active personal project'
-      );
-    }
-    const subscriptions = projectIds.length
-      ? await this.personal.listSubscriptions(personalSpaceId)
-      : [];
-    const requestedProjects = new Set(projectIds);
-    const selectedSubscriptions = subscriptions.filter(({ project_id: projectId }) =>
-      requestedProjects.has(projectId)
-    );
-    if (selectedSubscriptions.length !== requestedProjects.size) {
-      throw new TypeError('Every selected project must be an active subscription');
-    }
-    const selectedPersonalProjectIds = personalProjectScope === 'all_local_confirmed'
-      ? personalContextProjectIds(
-        null,
-        (await this.personal.listPersonalProjects(personalSpaceId))
-          .map(({ project_id: projectId }) => projectId)
-      )
-      : personalContextProjectIds(personalProjectId, contextPersonalProjectIds);
-    const personalSearches = personalProjectSearchBatches(selectedPersonalProjectIds)
-      .map((personalProjectIds, index) => {
-        const activePersonalProjectId = (
-          personalProjectScope === 'bounded' &&
-          personalProjectId &&
-          personalProjectIds.includes(personalProjectId)
-        ) ? personalProjectId : null;
-        return this.personal.search({
-        space_ids: [personalSpaceId],
-        query,
-        limit,
-        include_historical: includeHistorical,
-        include_exploratory: includePending,
-        personal_project_ids: personalProjectIds,
-        active_personal_project_id: activePersonalProjectId,
-        project_agent_id: activePersonalProjectId ? projectAgentId : null,
-        inherit_project_knowledge: personalProjectScope === 'bounded',
-        include_personal_global: index === 0
-        });
-      });
-    const grouped = groupSubscriptions(selectedSubscriptions);
-    const workspaceSearches = [...grouped.entries()].map(([providerUrl, items]) => {
-      const projectIdsForProvider = items.map(({ project_id: projectId }) => projectId);
-      return {
-        projectIds: projectIdsForProvider,
-        operation: (async () => {
-          const workspace = this.#workspace(providerUrl);
-          const result = await workspace.client.search({
-            space_ids: projectIdsForProvider,
-            query,
-            limit,
-            include_historical: includeHistorical,
-            include_exploratory: includePending
-          });
-          return scopedSearchItems(result, 'project', workspace.providerUrl);
-        })()
-      };
+  searchKnowledge(input) {
+    return searchFederatedKnowledge(this, input, {
+      workspaceFor: providerUrl => this.#workspace(providerUrl),
+      recordAgentViews: (items, toolName) => this.#recordAgentViews(items, toolName)
     });
-    const searchResults = await Promise.allSettled([
-      ...personalSearches,
-      ...workspaceSearches.map(({ operation }) => operation)
-    ]);
-    const personalSettlements = searchResults.slice(0, personalSearches.length);
-    const personalFailure = personalSettlements.find(({ status }) => status === 'rejected');
-    if (personalFailure) throw personalFailure.reason;
-    const personalItems = personalSettlements
-      .map(({ value }) => scopedSearchItems(
-        value,
-        'personal',
-        null,
-        this.config.personal.spaceId
-      ));
-    const successfulProjectIds = new Set();
-    const failedProjectIds = new Set();
-    const projects = [];
-    searchResults.slice(personalSearches.length).forEach((settlement, index) => {
-      const { projectIds: providerProjectIds } = workspaceSearches[index];
-      if (settlement.status === 'fulfilled') {
-        projects.push(settlement.value);
-        providerProjectIds.forEach((projectId) => successfulProjectIds.add(projectId));
-        return;
-      }
-      providerProjectIds.forEach((projectId) => failedProjectIds.add(projectId));
-    });
-    const requestedProjectIds = [...requestedProjects];
-    const searchedProjectIds = requestedProjectIds.filter((projectId) =>
-      successfulProjectIds.has(projectId)
-    );
-    const unavailableProjectIds = requestedProjectIds.filter((projectId) =>
-      failedProjectIds.has(projectId)
-    );
-    const rankedSources = [...personalItems, ...projects];
-    const facts = rankedSearchItems(rankedSources, 'facts', limit);
-    const entities = rankedSearchItems(rankedSources, 'entities', limit);
-    const sourceMarker = createFuliSourceMarker({
-      consoleUrl: this.consoleUrl,
-      facts,
-      entities
-    });
-    const noMatchSourceMarker = createFuliSourceMarker({
-      consoleUrl: this.consoleUrl,
-      facts: [],
-      entities: []
-    });
-    if (agentInvocation) {
-      await this.#recordAgentViews([
-        ...facts
-          .filter(({ scope }) => scope === 'personal')
-          .map(({ id }) => ({ item_id: id, item_kind: 'relationship' })),
-        ...entities
-          .filter(({ scope }) => scope === 'personal')
-          .map(({ id }) => ({ item_id: id, item_kind: 'entity' }))
-      ], agentToolName);
-    }
-    const relatedProjects = await loadSearchRelatedProjectSuggestions(
-      this,
-      { facts, entities }
-    );
-    return {
-      query,
-      sourceMarker,
-      noMatchSourceMarker,
-      retrievalGuidance: retrievalGuidanceForScope(personalProjectScope),
-      facts,
-      entities,
-      personalGlobalIncluded: true,
-      personalProjectScope,
-      projectAgentId,
-      searchedPersonalProjectIds: selectedPersonalProjectIds,
-      requestedProjectIds,
-      searchedProjectIds,
-      failedProjectIds: unavailableProjectIds,
-      partial: unavailableProjectIds.length > 0,
-      subscriptions: selectedSubscriptions,
-      relatedProjectSuggestions: relatedProjects.suggestions,
-      relatedProjectSuggestionsStatus: relatedProjects.status,
-      relatedProjectGuidance: relatedProjectGuidance(relatedProjects.suggestions)
-    };
   }
 
   async searchCurrentProjectKnowledge(input) {

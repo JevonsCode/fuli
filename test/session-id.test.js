@@ -89,10 +89,21 @@ test('invalid or absent Codex thread IDs never replace supplied session IDs', ()
       sourceSessionId: 'fuli-host-test'
     }
   );
-  assert.equal(
+  assert.deepEqual(
     normalizeAgentSessionInput('search_knowledge_graph', input, NATIVE_THREAD_ID),
-    input
+    { ...input, sourceApplication: 'codex', sourceSessionId: NATIVE_THREAD_ID }
   );
+});
+
+test('read-only expansion attribution comes from the native host, never search arguments', () => {
+  const actual = normalizeAgentSessionInput('search_knowledge_graph', {
+    query: 'Synthetic lookup', sourceApplication: 'cursor', sourceSessionId: 'forged-source',
+    source_session_id: 'forged-source', sourceSessionVerified: true,
+  }, NATIVE_THREAD_ID);
+  assert.equal(actual.sourceApplication, 'codex');
+  assert.equal(actual.sourceSessionId, NATIVE_THREAD_ID);
+  assert.equal('source_session_id' in actual, false);
+  assert.equal('sourceSessionVerified' in actual, false);
 });
 
 test('workflow observations replace every Agent session and timestamp with host values', () => {

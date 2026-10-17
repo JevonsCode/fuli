@@ -16,7 +16,7 @@ from .agent_conversation_routes import register_agent_conversation_routes
 from .default_project_lead import DefaultProjectLeadRequest
 from .task_context_routes import register_task_context_routes
 from .project_agent_delegations import (
-    AgentDelegationCheck, AgentDelegationIssue, AgentRemoteDelegationIssue,
+    AgentDelegationCheck, AgentDelegationIssue, AgentRemoteDelegationIssue, AgentDelegationMemoryResult,
 )
 from .project_agent_remote_origins import AgentRemoteOriginIssue
 
@@ -51,6 +51,18 @@ def register_project_agent_memory_routes(application, store, Actor):
     @application.post('/v1/project-agent-context/delegations/verify')
     async def verify_delegation(request: AgentDelegationCheck, actor: Actor):
         return await store.verify_agent_delegation(actor, request)
+
+    @application.post('/v1/project-agent-context/delegations/seal')
+    async def seal_delegation(request: AgentDelegationCheck, actor: Actor):
+        return await store.seal_agent_delegation(actor, request)
+
+    @application.post('/v1/project-agent-context/delegations/admit')
+    async def admit_delegation(request: AgentDelegationCheck, actor: Actor):
+        return await store.admit_agent_delegation(actor, request)
+
+    @application.post('/v1/project-agent-context/delegations/memory-result')
+    async def memory_result(request: AgentDelegationMemoryResult, actor: Actor):
+        return await store.record_agent_delegation_memory(actor, request)
 
     @application.post('/v1/project-agent-context/delegations/revoke')
     async def revoke_delegation(request: AgentDelegationCheck, actor: Actor):

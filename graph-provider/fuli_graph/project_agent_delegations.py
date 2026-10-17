@@ -8,6 +8,7 @@ from pydantic import Field
 from .auth import token_hash
 from .models import SourceApplication, StrictModel
 from .personal_project_access import authorize_personal_project
+from .project_agent_context_models import ProjectAgentContextRequest
 
 
 class AgentDelegationIssue(StrictModel):
@@ -15,6 +16,7 @@ class AgentDelegationIssue(StrictModel):
     task_context_token: str = Field(min_length=1, max_length=256)
     source_application: SourceApplication
     agent_id: str = Field(min_length=1, max_length=128)
+    target_personal_project_id: str | None = Field(default=None, min_length=1, max_length=128)
     target_application: SourceApplication
     target_session_id: str | None = Field(default=None, min_length=1, max_length=256)
     lifetime_seconds: int = Field(default=300, ge=30, le=900)
@@ -43,7 +45,64 @@ class AgentDelegationCheck(StrictModel):
     session_id: str | None = Field(default=None, min_length=1, max_length=256)
 
 
+class AgentDelegationMemoryResult(AgentDelegationCheck):
+    result_count: int = Field(ge=1, le=1000)
+
+
 class StoreAgentDelegations:
+    async def record_agent_delegation_memory(self, actor, request):
+        scope = await self.admit_agent_delegation(actor, request)
+        if request.session_id != scope['session_id']:
+            raise HTTPException(403, 'Memory result belongs to another native session')
+        await self.runtime.driver.execute_query('''
+            MATCH (grant:FuliAgentDelegation {token_hash: $token_hash, space_id: $space_id,
+                                             session_id: $session_id, session_sealed: true})
+            WHERE grant.expires_at > datetime()
+            SET grant.memory_result_count = $count
+            ''', token_hash=token_hash(request.token), space_id=request.personal_space_id,
+            session_id=request.session_id, count=request.result_count)
+        return {'recorded': True}
+
+    async def seal_agent_delegation(self, actor, request):
+        self._require_personal()
+        await self.authorize(actor, request.personal_space_id, 'maintainer')
+        if not request.session_id:
+            raise HTTPException(422, 'An observed native session is required')
+        rows, _, _ = await self.runtime.driver.execute_query('''
+            MATCH (grant:FuliAgentDelegation {token_hash: $token_hash, space_id: $space_id})
+            SET grant.write_serial = coalesce(grant.write_serial, 0) + 1
+            WITH grant WHERE grant.expires_at > datetime()
+              AND (grant.session_id IS NULL OR grant.session_id = $session_id)
+            SET grant.session_id = $session_id, grant.session_sealed = true
+            RETURN grant.token_hash AS token_hash
+            ''', token_hash=token_hash(request.token), space_id=request.personal_space_id,
+            session_id=request.session_id)
+        if not rows:
+            raise HTTPException(409, 'Delegation expired or another session is already bound')
+        return {'sealed': True}
+
+    async def admit_agent_delegation(self, actor, request):
+        self._require_personal()
+        await self.authorize(actor, request.personal_space_id, 'reader')
+        rows, _, _ = await self.runtime.driver.execute_query('''
+            MATCH (grant:FuliAgentDelegation {token_hash: $token_hash, space_id: $space_id})
+            WHERE grant.expires_at > datetime() AND grant.session_sealed = true
+            RETURN grant.project_id AS project_id, grant.agent_id AS agent_id,
+                   grant.source_application AS application, grant.session_id AS session_id
+            ''', token_hash=token_hash(request.token), space_id=request.personal_space_id, routing_='r')
+        if not rows:
+            raise HTTPException(409, 'Delegation is not sealed and available')
+        row = rows[0]
+        resolution = await self.resolve_project_agent_context(actor, ProjectAgentContextRequest(
+            personal_space_id=request.personal_space_id, personal_project_id=row['project_id'],
+            agent_id=row['agent_id'], source_application=row['application'], work_kind='project_context',
+            delegation_token=request.token, delegation_session_id=row['session_id']))
+        if resolution.status != 'ready' or not resolution.agent or resolution.agent.agent_id != row['agent_id']:
+            raise HTTPException(403, 'Delegation no longer authorizes this target')
+        return {'personal_space_id': request.personal_space_id, 'personal_project_id': row['project_id'],
+                'project_agent_id': row['agent_id'], 'source_application': row['application'],
+                'session_id': row['session_id']}
+
     async def issue_agent_delegation(self, actor, request):
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
@@ -58,7 +117,18 @@ class StoreAgentDelegations:
         sender = context.get('project_agent_id')
         if not lead or not sender or (sender != lead and request.agent_id != lead):
             raise HTTPException(403, 'Members must communicate through the project lead')
-        target = await self.get_project_agent(actor, request.personal_space_id, project_id, request.agent_id)
+        target_project_id = request.target_personal_project_id or project_id
+        target_lead = lead
+        if target_project_id != project_id:
+            if sender != lead:
+                raise HTTPException(403, 'Cross-project requests must come from the source lead')
+            await authorize_personal_project(self, actor, space, target_project_id)
+            target_policy = await self.get_project_agent_coordination_policy(
+                actor, request.personal_space_id, target_project_id)
+            target_lead = target_policy.team_lead_agent_id
+            if not target_lead or request.agent_id != target_lead:
+                raise HTTPException(403, 'Cross-project requests can only address the target lead')
+        target = await self.get_project_agent(actor, request.personal_space_id, target_project_id, request.agent_id)
         if (target.profile.status != 'active'
                 or request.target_application not in target.profile.allowed_clients):
             raise HTTPException(403, 'The receiving Agent is unavailable in this client')
@@ -72,11 +142,12 @@ class StoreAgentDelegations:
             '''CREATE (:FuliAgentDelegation {token_hash: $token_hash, space_id: $space_id,
                  project_id: $project_id, agent_id: $agent_id, source_application: $application,
                  session_id: $session_id, sender_token: $sender_token, lead_agent_id: $lead,
+                 sender_project_id: $sender_project, sender_lead_agent_id: $sender_lead,
                  expires_at: datetime() + duration({seconds: $lifetime}), redeemed: false})''',
-            token_hash=token_hash(token), space_id=request.personal_space_id, project_id=project_id,
+            token_hash=token_hash(token), space_id=request.personal_space_id, project_id=target_project_id,
             agent_id=request.agent_id, application=request.target_application,
             session_id=request.target_session_id, sender_token=request.task_context_token,
-            lead=lead, lifetime=request.lifetime_seconds)
+            lead=target_lead, sender_project=project_id, sender_lead=lead, lifetime=request.lifetime_seconds)
         return {'token': token}
 
     async def issue_remote_agent_delegation(self, actor, request):
@@ -147,8 +218,15 @@ class StoreAgentDelegations:
                WHERE grant.origin IS NULL
                  AND task.token = grant.sender_token AND session.current_token = task.token
                  AND NOT task.completed AND task.personal_space_id = grant.space_id
-                 AND task.personal_project_id = grant.project_id
-                 AND (task.project_agent_id = grant.lead_agent_id OR grant.agent_id = grant.lead_agent_id)
+                 AND task.personal_project_id = coalesce(grant.sender_project_id, grant.project_id)
+                 AND (task.project_agent_id = coalesce(grant.sender_lead_agent_id, grant.lead_agent_id)
+                      OR (grant.project_id = task.personal_project_id AND grant.agent_id = grant.lead_agent_id))
+                 AND EXISTS {
+                   MATCH (:FuliSpace {id: $space_id})-[:CONTAINS_PROJECT]->
+                         (:FuliPersonalProject {project_id: task.personal_project_id})-
+                         [:HAS_PROJECT_AGENT_COORDINATION_POLICY]->(sender_policy:FuliProjectAgentCoordinationPolicy)
+                   WHERE sender_policy.team_lead_agent_id = coalesce(grant.sender_lead_agent_id, grant.lead_agent_id)
+                 }
                WITH grant, count(task) AS live_sender
                // A local grant needs its live sender task; a remote grant has no
                // local sender and may only ever restore the current lead.
@@ -168,10 +246,17 @@ class StoreAgentDelegations:
             '''MATCH (grant:FuliAgentDelegation {token_hash: $token_hash, space_id: $space_id,
                   session_id: $session_id, redeemed: true})
                WHERE grant.expires_at > datetime()
-               RETURN grant.token_hash AS token_hash''',
+               RETURN grant.token_hash AS token_hash, grant.session_sealed AS sealed,
+                      coalesce(grant.memory_result_count, 0) AS memory_result_count''',
             token_hash=token_hash(request.token), space_id=request.personal_space_id,
             session_id=request.session_id)
-        return {'redeemed': bool(rows)}
+        if rows and rows[0].get('sealed'):
+            try:
+                await self.admit_agent_delegation(actor, request)
+            except HTTPException:
+                return {'redeemed': False}
+        count = rows[0].get('memory_result_count', 0) if rows else 0
+        return {'redeemed': bool(rows), **({'memory_result_count': count} if count else {})}
 
     async def revoke_agent_delegation(self, actor, request):
         self._require_personal()

@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
+import { StringDecoder } from 'node:string_decoder';
 
 import { WAKE_CLIENTS, wakeAdapter } from '../agents/wake-registry.js';
 
@@ -22,9 +23,9 @@ export function resolveClientCommand(client, { env = process.env, platform = pro
   return wakeAdapter(client)?.resolveCommand({ env, platform, fileExists, which }) ?? null;
 }
 
-export function wakeArguments(client, { sessionId = null, cwd } = {}) {
+export function wakeArguments(client, { sessionId = null, cwd, delegated = false } = {}) {
   if (sessionId !== null && !SESSION_ID.test(sessionId)) throw new TypeError('Invalid client session id');
-  return adapterFor(client).args({ sessionId, cwd });
+  return adapterFor(client).args({ sessionId, cwd, delegated });
 }
 
 // Clients only resume a conversation from the directory it started in.
@@ -34,15 +35,29 @@ export function sessionWorkingDirectory(client, sessionId, { home = homedir(), e
 }
 
 export async function wakeAgent({ client, sessionId = null, cwd, prompt, timeoutMs = 300_000,
-  delegationToken = null, peerDepth = null, env = process.env, run = runProcess, signal, onSpawn } = {}) {
+  delegationToken = null, peerDepth = null, env = process.env, run = runProcess, signal, onSpawn, onSession } = {}) {
   const command = resolveClientCommand(client, { env });
   if (!command) throw Object.assign(new Error(`${client} is not installed on this machine`), { code: 'client_unavailable' });
   const childEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('FULI_ROUNDTABLE_')));
   if (delegationToken) childEnv.FULI_ROUNDTABLE_DELEGATION = delegationToken;
   if (peerDepth) childEnv.FULI_ROUNDTABLE_PEER_DEPTH = String(peerDepth);
-  const result = await run(command, wakeArguments(client, { sessionId, cwd }),
-    { cwd, env: childEnv, input: prompt, timeoutMs, signal, onSpawn });
-  return parseFinalAnswer(client, result);
+  let observedSession = null;
+  const result = await run(command, wakeArguments(client, { sessionId, cwd, delegated: Boolean(delegationToken) }),
+    { cwd, env: childEnv, input: prompt, timeoutMs, signal, onSpawn, onEvent: event => {
+      const observed = adapterFor(client).nativeSessionId(event);
+      if (!observed) return;
+      if (!SESSION_ID.test(observed) || (observedSession && observedSession !== observed)) {
+        throw Object.assign(new Error('The receiving native session changed'), { code: 'session_mismatch' });
+      }
+      if (observedSession) return;
+      observedSession = observed;
+      return onSession?.(observed);
+    } });
+  const answer = parseFinalAnswer(client, result);
+  if (onSession && (!observedSession || answer.sessionId !== observedSession)) {
+    throw Object.assign(new Error('No matching native session was observed'), { code: 'session_mismatch' });
+  }
+  return answer;
 }
 
 export function parseFinalAnswer(client, { code, stdout }) {
@@ -65,7 +80,7 @@ export function parseFinalAnswer(client, { code, stdout }) {
 }
 
 // Owns exactly one child process tree and never touches unrelated clients.
-export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutputBytes = 4_000_000, signal, onSpawn }) {
+export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutputBytes = 4_000_000, signal, onSpawn, onEvent }) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(Object.assign(new Error('The delivery was cancelled before it started'), { code: 'cancelled', started: false }));
@@ -75,7 +90,32 @@ export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutpu
       detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'ignore'] });
     const closed = new Promise((resolve) => child.once('close', resolve));
     child.once('spawn', () => onSpawn?.());
-    let output = '', bytes = 0, settled = false;
+    let output = '', pending = '', bytes = 0, settled = false, childClosed = false;
+    const decoder = new StringDecoder('utf8');
+    const callbacks = new Set();
+    let eventFailure = null;
+    const emit = line => {
+      let event;
+      try { event = JSON.parse(line); } catch { return; }
+      let callback;
+      try { callback = Promise.resolve(onEvent?.(event)); }
+      catch (error) { callback = Promise.reject(error); }
+      callbacks.add(callback);
+      callback.catch(error => {
+        eventFailure ??= error;
+        if (!childClosed) void finish(error);
+      }).finally(() => callbacks.delete(callback));
+    };
+    const append = text => {
+      output += text;
+      if (!onEvent) return;
+      pending += text;
+      let newline;
+      while ((newline = pending.indexOf('\n')) >= 0) {
+        emit(pending.slice(0, newline));
+        pending = pending.slice(newline + 1);
+      }
+    };
     const kill = async () => {
       let killing = Promise.resolve(0), deadline, deadlineReached = false;
       if (process.platform === 'win32') {
@@ -106,7 +146,7 @@ export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutpu
       clearTimeout(timer);
       signal?.removeEventListener('abort', abort);
       if (error) {
-        if (child.pid) {
+        if (child.pid && !childClosed) {
           try { await kill(); }
           catch (cleanupError) { error.cleanup = { status: 'unconfirmed', code: cleanupError.code }; }
         }
@@ -121,10 +161,17 @@ export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutpu
       if (settled) return;
       bytes += chunk.length;
       if (bytes > maxOutputBytes) finish(Object.assign(new Error('The woken Agent produced too much output'), { code: 'wake_failed' }));
-      else output += chunk.toString('utf8');
+      else append(decoder.write(chunk));
     });
     child.on('error', () => finish(Object.assign(new Error('The client could not be started'), { code: 'client_unavailable' })));
-    child.on('close', (code) => finish(null, code));
+    child.on('close', async (code) => {
+      childClosed = true;
+      if (settled) return;
+      append(decoder.end());
+      if (pending) emit(pending);
+      await Promise.allSettled([...callbacks]);
+      void finish(eventFailure, code);
+    });
     child.stdin.on('error', () => {});
     child.stdin.end(input);
   });

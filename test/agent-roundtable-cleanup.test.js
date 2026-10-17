@@ -31,6 +31,7 @@ function fixture({ run }) {
       // A resumable conversation plus fresh sessions in two clients: three possible channels.
       recentAgentSessions: async () => [{ source_application: 'codex', session_id: 'cx-session-9', personal_project_id: 'app' }],
       issueAgentDelegation: async () => ({ token: 'synthetic-grant' }),
+      sealAgentDelegation: async () => ({ sealed: true }),
       verifyAgentDelegation: async () => ({ redeemed: true }),
       revokeAgentDelegation: async () => {}
     }
@@ -41,18 +42,25 @@ function fixture({ run }) {
     wake: (input) => {
       woken.push(input);
       return wakeAgent({ ...input, env: { FULI_CODEX_BIN: '/synthetic/codex', FULI_CLAUDE_BIN: '/synthetic/claude' },
-        run: (...args) => run(woken.length, ...args) });
+        run: async (...args) => {
+          const result = await run(woken.length, ...args);
+          for (const line of result.stdout.split('\n')) await args[2].onEvent?.(JSON.parse(line));
+          return result;
+        } });
     } });
   const ask = (body, to = 'reviewer-1') => roundtable.messageAgent({ taskContextToken: 'token', sourceApplication: 'claude_code',
     to, body });
   return { store, roundtable, woken, ask };
 }
 
-const answer = async () => ({ code: 0, stdout: [
-  { type: 'thread.started', thread_id: 'synthetic-answer-session' },
-  { type: 'item.completed', item: { type: 'agent_message', text: 'Synthetic answer' } },
-  { type: 'turn.completed' }
-].map(JSON.stringify).join('\n') });
+const answer = async () => {
+  const events = [
+    { type: 'thread.started', thread_id: 'synthetic-answer-session' },
+    { type: 'item.completed', item: { type: 'agent_message', text: 'Synthetic answer' } },
+    { type: 'turn.completed' }
+  ];
+  return { code: 0, stdout: events.map(JSON.stringify).join('\n') };
+};
 
 for (const code of ['wake_failed', 'client_unavailable', 'wake_timeout', 'cancelled']) {
   test(`unconfirmed cleanup after ${code} keeps the code, is persisted and starts no other channel`, async () => {

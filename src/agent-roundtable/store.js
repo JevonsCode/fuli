@@ -32,7 +32,8 @@ export function createRoundtableStore(path = ':memory:') {
   // ask's status, because a reply or cancel says nothing about a process exiting.
   for (const column of ['cleanup_status', 'cleanup_code', 'cleanup_recorded_at', 'cleanup_evidence_version',
     'cleanup_machine_hash', 'cleanup_anchor_pid', 'cleanup_anchor_critical', 'cleanup_released_at',
-    'cleanup_release_proof', 'cleanup_release_observation', 'execution_claim', 'execution_claimed_at']) {
+    'cleanup_release_proof', 'cleanup_release_observation', 'execution_claim', 'execution_claimed_at',
+    'target_project_id', 'source_context_hash', 'memory_usage_recorded', 'memory_result_count']) {
     if (columns.has(column)) continue;
     // Another client's MCP process may add the same column first.
     try { database.exec(`ALTER TABLE messages ADD COLUMN ${column} TEXT`); }
@@ -66,14 +67,20 @@ export function createRoundtableStore(path = ':memory:') {
         const seq = (database.prepare('SELECT coalesce(max(seq), 0) AS seq FROM messages WHERE thread_id = ?').get(threadId).seq) + 1;
         database.prepare(`INSERT INTO messages(id, thread_id, seq, kind, body, status, in_reply_to,
           from_agent, from_name, from_client, from_session, to_agent, to_name, to_client, to_session,
-          via, error, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+          via, error, created_at, updated_at, target_project_id, source_context_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
           message.id, threadId, seq, message.kind, message.body, message.status, message.inReplyTo ?? null,
           message.from?.agentId ?? null, message.from?.name ?? null, message.from?.client ?? null, message.from?.session ?? null,
           message.to?.agentId ?? null, message.to?.name ?? null, message.to?.client ?? null, message.to?.session ?? null,
-          message.via ?? null, null, at, at);
+          message.via ?? null, null, at, at, message.targetProjectId ?? null, message.sourceContextHash ?? null);
         database.prepare('UPDATE threads SET updated_at = ? WHERE id = ?').run(at, threadId);
         return this.getMessage(message.id);
       });
+    },
+    markMemoryObserved(id) {
+      database.prepare('UPDATE messages SET memory_usage_recorded = ? WHERE id = ?').run('1', id);
+    },
+    recordMemoryResult(id, count) {
+      database.prepare('UPDATE messages SET memory_result_count = ? WHERE id = ?').run(String(count), id);
     },
     updateMessage(id, { status, via, error, toClient, toSession }) {
       database.prepare(`UPDATE messages SET status = coalesce(?, status), via = coalesce(?, via), error = ?,

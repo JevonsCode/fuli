@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const WORKFLOW_OBSERVATION_TOOL = 'record_workflow_transition_observation';
 const PROJECT_AGENT_SOURCE_TOOLS = new Set([
+  'search_knowledge_graph',
   'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message',
   'get_agent_message_status', 'cancel_agent_message',
   'get_agent_quality_gate', 'record_agent_verification',
