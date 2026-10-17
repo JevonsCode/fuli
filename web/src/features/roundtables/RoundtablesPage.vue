@@ -6,6 +6,8 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { currentLocale, t } from '@/i18n'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { listThreads, readThread, type RoundtableMessage, type RoundtablePerson, type RoundtableThread, type RoundtableThreadSummary } from './roundtable-api'
+import { splitThread, tableSeats } from './roundtable-model'
+import RoundtableSeats from './RoundtableSeats.vue'
 
 // A read-only record of Agents talking to each other. Agents start these
 // conversations themselves through message_agent; people only watch.
@@ -41,6 +43,16 @@ onMounted(() => {
 })
 onBeforeUnmount(() => clearInterval(timer))
 
+const split = computed(() => splitThread(thread.value?.messages ?? []))
+const seats = computed(() => tableSeats(thread.value?.messages ?? [], split.value.pending))
+const REASONS = new Set(['not_waiting', 'nested_limit', 'task_context_required', 'no_client', 'wake_failed', 'peer_send_failed'])
+// A stored failure code, in words when known; unknown codes stay visible as recorded.
+const reason = (message: RoundtableMessage) => message.error
+  ? REASONS.has(message.error) ? t(`roundtable.reasons.${message.error}`) : message.error
+  : ''
+const waitingLabel = (item: RoundtableThreadSummary) => item.waitingFor?.length
+  ? t('roundtable.waitingFor', { names: item.waitingFor.join('、') })
+  : t('roundtable.waiting')
 const client = (person: RoundtablePerson) => person.client ? CLIENTS[person.client] ?? person.client : ''
 const initial = (person: RoundtablePerson) => (person.name ?? '?').trim().slice(0, 1).toUpperCase()
 function time(value: string) {
@@ -82,7 +94,7 @@ function delivery(message: RoundtableMessage) {
           </span>
           <span class="roundtable-thread-meta">
             <time :datetime="item.updatedAt">{{ time(item.updatedAt) }}</time>
-            <span v-if="item.waiting" class="ui-badge ui-badge--warning">{{ t('roundtable.waiting') }}</span>
+            <span v-if="item.waiting" class="ui-badge ui-badge--warning" data-roundtable-waiting>{{ waitingLabel(item) }}</span>
           </span>
         </RouterLink>
       </nav>
@@ -91,21 +103,44 @@ function delivery(message: RoundtableMessage) {
           <h2>{{ thread.subject }}</h2>
           <p class="ui-meta">{{ t('roundtable.messages', { count: thread.messages.length }) }} · {{ time(thread.createdAt) }}</p>
         </header>
-        <ol>
-          <li v-for="message in thread.messages" :key="message.id" class="roundtable-message" :class="`is-${message.kind}`">
-            <span class="roundtable-avatar" :style="agentIdentityStyle(message.from.agentId)" aria-hidden="true">{{ initial(message.from) }}</span>
-            <div class="roundtable-bubble">
-              <p class="roundtable-byline">
-                <strong>{{ message.from.name }}</strong>
-                <span v-if="client(message.from)" class="ui-badge">{{ client(message.from) }}</span>
-                <span class="ui-meta">{{ t('roundtable.to') }} {{ message.to.name }}</span>
-                <time class="ui-meta" :datetime="message.createdAt">{{ time(message.createdAt) }}</time>
-              </p>
-              <p class="roundtable-body">{{ message.body }}</p>
-              <p v-if="delivery(message)" class="roundtable-delivery">{{ delivery(message) }}</p>
-            </div>
-          </li>
-        </ol>
+        <div class="roundtable-scroll">
+          <RoundtableSeats :seats="seats" />
+          <section class="roundtable-section" :aria-label="t('roundtable.exchanges')" data-roundtable-exchanges>
+            <h3>{{ t('roundtable.exchanges') }}</h3>
+            <ol v-if="split.exchanges.length">
+              <template v-for="exchange in split.exchanges" :key="exchange.ask?.id ?? exchange.replies[0]!.id">
+                <li v-for="message in [...(exchange.ask ? [exchange.ask] : []), ...exchange.replies]" :key="message.id" class="roundtable-message" :class="`is-${message.kind}`">
+                  <span class="roundtable-avatar" :style="agentIdentityStyle(message.from.agentId)" aria-hidden="true">{{ initial(message.from) }}</span>
+                  <div class="roundtable-bubble">
+                    <p class="roundtable-byline">
+                      <strong>{{ message.from.name }}</strong>
+                      <span v-if="client(message.from)" class="ui-badge">{{ client(message.from) }}</span>
+                      <span class="ui-meta">{{ t('roundtable.to') }} {{ message.to.name }}</span>
+                      <time class="ui-meta" :datetime="message.createdAt">{{ time(message.createdAt) }}</time>
+                    </p>
+                    <p class="roundtable-body">{{ message.body }}</p>
+                    <p v-if="delivery(message)" class="roundtable-delivery">{{ delivery(message) }}</p>
+                  </div>
+                </li>
+              </template>
+            </ol>
+            <p v-else class="ui-meta">{{ t('roundtable.noExchanges') }}</p>
+          </section>
+          <section v-if="split.pending.length || split.unanswered.length" class="roundtable-section roundtable-pending" :aria-label="t('roundtable.pending')" data-roundtable-pending>
+            <h3>{{ t('roundtable.pending') }}</h3>
+            <ul>
+              <li v-for="message in [...split.pending, ...split.unanswered]" :key="message.id" class="roundtable-request" :class="{ 'is-closed': split.unanswered.includes(message) }" data-roundtable-request>
+                <p class="roundtable-byline">
+                  <strong>{{ t('roundtable.waitingOn', { name: message.to.name ?? t('roundtable.unknownAgent') }) }}</strong>
+                  <span class="ui-meta">{{ t('roundtable.askedBy', { name: message.from.name ?? t('roundtable.unknownAgent') }) }}</span>
+                  <time class="ui-meta" :datetime="message.createdAt">{{ time(message.createdAt) }}</time>
+                </p>
+                <p class="roundtable-request-state">{{ delivery(message) }}<template v-if="reason(message)"> · {{ reason(message) }}</template></p>
+                <p class="roundtable-body">{{ message.body }}</p>
+              </li>
+            </ul>
+          </section>
+        </div>
       </article>
       <p v-else class="roundtable-select ui-meta">{{ t('roundtable.select') }}</p>
     </div>
@@ -133,7 +168,14 @@ function delivery(message: RoundtableMessage) {
 .roundtable-timeline { display: flex; flex-direction: column; min-height: 0; }
 .roundtable-timeline header { padding: 20px 28px 14px; border-bottom: 1px solid var(--color-border); }
 .roundtable-timeline h2 { font-size: 17px; overflow-wrap: anywhere; }
-.roundtable-timeline ol { flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 20px 28px 32px; list-style: none; display: grid; align-content: start; gap: 18px; }
+.roundtable-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 28px 32px; }
+.roundtable-section { margin-top: 20px; }
+.roundtable-section h3 { margin: 0 0 12px; color: var(--color-muted); font-size: 13px; font-weight: 600; }
+.roundtable-section ol, .roundtable-section ul { margin: 0; padding: 0; list-style: none; display: grid; align-content: start; gap: 18px; }
+.roundtable-request { display: grid; gap: 6px; max-width: 760px; padding: 12px 14px; border: 1px dashed var(--color-border-strong, var(--color-border)); border-radius: 12px; }
+.roundtable-request.is-closed { opacity: 0.8; }
+.roundtable-request-state { color: var(--color-warning); font-size: 12px; }
+.roundtable-request.is-closed .roundtable-request-state { color: var(--color-danger); }
 .roundtable-message { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; max-width: 760px; }
 .roundtable-message.is-reply { margin-left: 42px; }
 .roundtable-avatar { width: 30px; height: 30px; border: 0; }
@@ -152,7 +194,7 @@ function delivery(message: RoundtableMessage) {
 }
 @media (max-width: 480px) {
   .roundtable-timeline header { padding: 16px; }
-  .roundtable-timeline ol { padding: 16px; }
+  .roundtable-scroll { padding: 12px 16px 24px; }
   .roundtable-message { gap: 8px; }
   .roundtable-message.is-reply { margin-left: 8px; }
 }
