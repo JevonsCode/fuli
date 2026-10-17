@@ -67,7 +67,8 @@ test('writing a result never acknowledges it; verified native delivery enables u
   assert.equal(files.length, 1);
   const cache = await readFile(join(f.options.directory, files[0]), 'utf8');
   assert.doesNotMatch(cache, /SYNTHETIC_PRIVATE_PREFERENCE|task-a|task-c|Current owner/);
-  assert.equal((await stat(join(f.options.directory, files[0]))).mode & 0o777, 0o600);
+  // Windows has no POSIX permission bits; the cache stays private on POSIX hosts.
+  if (process.platform !== 'win32') assert.equal((await stat(join(f.options.directory, files[0]))).mode & 0o777, 0o600);
 }));
 
 test('new scope, unverified host, force-full reader and explicit reset always deliver full preferences', () => fixture(async f => {
