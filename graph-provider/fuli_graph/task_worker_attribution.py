@@ -51,6 +51,7 @@ async def checkpoint_collaboration(store, space_id, record):
         OPTIONAL MATCH (task)-[:HAS_EXECUTOR_OBSERVATION]->(observation:FuliProjectAgentExecutorObservation)
         WHERE observation.agent_id = run.agent_id AND observation.run_id IN [run.id, event.event_id]
         RETURN run, agent.profile_json AS profile_json, event,
+          task.work_kind AS work_kind,
           collect(DISTINCT observation.observation_id) AS observation_ids
         ORDER BY run.id, event.created_at, event.event_id
         ''', token=record['token'], space_id=space_id,
@@ -66,26 +67,36 @@ async def checkpoint_collaboration(store, space_id, record):
                 or runtime.get('session_id') != run['actual_session_id']
                 or event.get('worker_status') not in TERMINAL_WORKER_STATUSES):
             continue
-        runs[run['id']] = (run['agent_id'], _name(row['profile_json']), {
+        runs[run['id']] = (run['agent_id'], _profile(row['profile_json']), {
             'run_id': run['id'], 'worker_id': run['worker_id'],
+            'task_id': run['task_id'], 'work_kind': row['work_kind'],
+            'worker_label': event.get('worker_label'),
             'application': run['target_application'], 'session_id': run['actual_session_id'],
+            'session_url': runtime.get('session_url'),
             'status': event['worker_status'], 'event_id': event['event_id'],
             'observation_ids': sorted(row['observation_ids']),
         })
     helpers = {}
     for run_id in sorted(runs):
-        agent_id, name, evidence = runs[run_id]
-        helper = helpers.setdefault(agent_id, {'agent_id': agent_id, 'name': name, 'runs': []})
+        agent_id, profile, evidence = runs[run_id]
+        helper = helpers.setdefault(agent_id, {'agent_id': agent_id,
+            'name': profile.get('display_name') or profile.get('name'),
+            'responsibility': profile.get('responsibility'), 'runs': []})
         helper['runs'].append(evidence)
     snapshot['collaborators'] = [helpers[agent_id] for agent_id in sorted(helpers)]
     return snapshot
 
 
 def _name(profile_json):
+    profile = _profile(profile_json)
+    return profile.get('display_name') or profile.get('name')
+
+
+def _profile(profile_json):
     try:
         profile = json.loads(profile_json or '{}')
         if not isinstance(profile, dict):
-            return None
-        return profile.get('display_name') or profile.get('name')
+            return {}
+        return profile
     except (TypeError, ValueError):
-        return None
+        return {}

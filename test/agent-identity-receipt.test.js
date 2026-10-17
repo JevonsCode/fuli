@@ -70,3 +70,52 @@ test('delivery rejects a budget that cannot hold the mandatory receipt', () => {
   assert.throws(() => successToolResult({ agent_receipt: receipt }, { limitBytes: 100 }),
     error => error.code === 'validation' && /required Agent receipt/i.test(error.message));
 });
+
+test('collaborator details remain one escaped line with only safe reported session links', () => {
+  const receipt = taskAgentReceipt(application, { ...owner, collaborators: [
+    { agentId: 'reviewer', name: 'Earlier' },
+    { agentId: 'reviewer', name: 'Nova', runs: [
+      { worker_label: 'Review\n[x](bad)<script>', application: 'codex', session_id: 'one', session_url: 'codex://threads/one', status: 'completed' },
+      { application: 'codex', session_id: 'one', session_url: 'codex://threads/one', status: 'completed' },
+      ...['javascript:alert(1)', 'https://user:password@example.com/a', 'https://example.com/?token=secret',
+        'https://example.com/#token', 'file:///private/data'].map((session_url, i) => ({ session_url, session_id: `bad-${i}` }))
+    ] }
+  ] });
+  assert.equal(receipt.collaborators.length, 1);
+  assert.equal(receipt.markdown.split('\n').length, 1);
+  assert.match(receipt.markdown, /Review \\\[x\\\]/);
+  assert.match(receipt.markdown, /&lt;script&gt;/);
+  assert.equal(receipt.markdown.match(/codex:\/\/threads\/one/g).length, 1);
+  assert.doesNotMatch(receipt.markdown, /javascript:|password|token=|file:/);
+});
+
+test('many executions and long links cannot overflow the mandatory receipt', () => {
+  const runs = Array.from({ length: 21 }, (_, i) => ({ run_id: `run-${i}`, task_id: 'task',
+    worker_label: 'Review'.repeat(100), application: 'codex', session_id: `native-${i}`,
+    session_url: 'https://example.com/' + 'x'.repeat(1900), status: i % 2 ? 'failed' : 'completed',
+    observation_ids: Array.from({ length: 30 }, (_, j) => `observation-${j}`) }));
+  const receipt = taskAgentReceipt(application, { ...owner, collaborators: [
+    { agentId: 'reviewer', name: 'Nova', responsibility: 'Review '.repeat(500), runs }
+  ] });
+  const result = successToolResult({ agent_receipt: receipt }, { limitBytes: 16384, itemLimit: 20 });
+  assert.deepEqual(result.structuredContent.agent_receipt, receipt);
+  assert.equal(receipt.collaborators[0].run_count, 21);
+  assert.equal(receipt.collaborators[0].omitted_run_count, 18);
+  assert.match(receipt.markdown, /另18次/);
+  assert.equal(runs.length, 21);
+});
+
+test('execution summaries share a total budget without dropping collaborator identities', () => {
+  const collaborators = Array.from({ length: 4 }, (_, i) => ({ agentId: `helper-${i}`, name: `Helper ${i}`,
+    responsibility: '职责'.repeat(80), runs: Array.from({ length: 3 }, (_, j) => ({
+      run_id: `run-${i}-${j}`, task_id: 'task', worker_label: '审'.repeat(80), application: 'codex',
+      session_id: `session-${i}-${j}`, session_url: 'https://example.com/' + 'a'.repeat(480), status: 'completed'
+    })) }));
+  const receipt = taskAgentReceipt(application, { ...owner, collaborators });
+  const result = successToolResult({ agent_receipt: receipt }, { limitBytes: 16384, itemLimit: 20 });
+  assert.deepEqual(result.structuredContent.agent_receipt, receipt);
+  assert.equal(receipt.collaborators.length, 4);
+  assert.ok(receipt.collaborators.some(item => item.omitted_run_count > 0));
+  for (const item of receipt.collaborators) assert.equal(item.run_count, 3);
+  assert.ok(Buffer.byteLength(JSON.stringify(receipt)) <= 12 * 1024);
+});
