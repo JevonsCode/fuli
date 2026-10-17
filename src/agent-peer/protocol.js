@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
-import { canonicalJson as sharedCanonicalJson } from '../publication/canonical-json.js';
 
 export const PEER_PROTOCOL = 'peer/1';
 export const PEER_LIMITS = Object.freeze({
@@ -63,9 +62,16 @@ export function shortFingerprint(fingerprint) {
   return fingerprint.slice(0, 24).toUpperCase().match(/.{4}/g).join(' ');
 }
 
-// Signatures cover a canonical form, so property order never changes meaning.
+// peer/1 compatibility: keys, including integer-like keys, use lexical order.
+// Publication JSON uses JavaScript integer-key order, so it cannot replace this
+// wire encoding until a versioned peer protocol migration changes both ends.
 export function canonicalJson(value) {
-  return sharedCanonicalJson(value, { omitUndefined: true });
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).filter((key) => value[key] !== undefined).sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value ?? null);
 }
 
 export function sha256Hex(value) {

@@ -24,6 +24,8 @@ test('peer canonical JSON keeps the signed byte encoding', () => {
     true,
     [],
     {},
+    { '2': 'two', '10': 'ten' },
+    { nested: { '2': 'two', '10': 'ten' } },
     [1, undefined, null, 'a'],
     { b: 1, a: { d: [3, { z: undefined, y: 'é' }], c: null }, skipped: undefined },
     { nested: [[{ b: 2, a: 1 }]], unicode: '圆桌' }
