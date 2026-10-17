@@ -18,8 +18,7 @@ export async function loadProjectTeamContext(application, personalSpaceId, proje
     assigned_collaborators: team.collaborators.map(person => entry(person, 'collaborator')),
     assigned_peers: team.peers.map(person => entry(person, 'peer')),
     peer_roles: ['hr', 'project_manager'], worker_started: false,
-    entry_guidance: PROJECT_TEAM_ENTRY_GUIDANCE,
-    guidance: 'The project lead is the sole user-facing owner. Members report results and blockers to this lead; do not skip reporting levels or replace the lead when a member is named. Assigned collaborators outside the explicit team work through the lead and are not direct reports unless the policy names them. The lead integrates and verifies member reports before reporting to the user. Split bounded work through an authorized coordination plan; report real worker evidence. AR and project managers remain peers. Team membership grants no new tool, data, executor, or publication permissions.' };
+    guidance: TEAM_GUIDANCE };
 }
 
-const PROJECT_TEAM_ENTRY_GUIDANCE = 'Lead alone reports to users and verifies results. Members (even named) report results/blockers to lead; only policy members are direct reports. Other assignees work through lead; AR/PM stay peers. Use authorized coordination plans and actual worker evidence. Membership adds no permissions.';
+export const TEAM_GUIDANCE = 'The project lead is the sole user-facing owner. Members report results and blockers to this lead; do not skip reporting levels or replace the lead when a member is named. Assigned collaborators outside the explicit team work through the lead and are not direct reports unless the policy names them. The lead integrates and verifies member reports before reporting to the user. Split bounded work through an authorized coordination plan; report real worker evidence. AR and project managers remain peers. Team membership grants no new tool, data, executor, or publication permissions.';

@@ -3,6 +3,7 @@ from .provider_values import graphiti_group_id, native_datetime
 from .runtime import GraphitiRuntime
 from .store_identity import StoreIdentity
 from .store_agent_conversations import StoreAgentConversations
+from .store_conversation_triage import StoreConversationTriage
 from .store_agent_loans import StoreAgentLoans
 from .store_agent_verification import StoreAgentVerification
 from .store_knowledge import StoreKnowledge
@@ -25,6 +26,7 @@ from .store_project_agent_worker_runs import StoreProjectAgentWorkerRuns
 class GraphStore(
     StoreIdentity,
     StoreAgentConversations,
+    StoreConversationTriage,
     StoreAgentLoans,
     StoreAgentVerification,
     StoreProjects,

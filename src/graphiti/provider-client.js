@@ -69,6 +69,9 @@ export class GraphitiProviderClient {
     if (!['query', 'record'].includes(operation)) throw new TypeError('Unknown verification operation');
     return this.#request(`/v1/agent-verification/${operation}`, { method: 'POST', body: input });
   }
+  occupationDemand(input) {
+    return this.#request('/v1/occupation-demand/query', { method: 'POST', body: input });
+  }
   agentLoan(operation, input) {
     if (!['query', 'request', 'decide'].includes(operation)) throw new TypeError('Unknown loan operation');
     return this.#request(`/v1/agent-loans/${operation}`, { method: 'POST', body: input });
@@ -79,10 +82,17 @@ export class GraphitiProviderClient {
       method: operation === 'policy' ? 'PUT' : 'POST', body: input
     });
   }
+  conversationTriage(operation, input) {
+    if (!['record', 'topics', 'form'].includes(operation)) throw new TypeError('Unknown conversation triage operation');
+    return this.#request(`/v1/conversation-triage/${operation}`, { method: 'POST', body: input });
+  }
   currentTaskContext(input, { timeoutMs = this.requestTimeoutMs } = {}) {
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new TypeError('Current task timeout must be a positive safe integer');
     return this.#request(`/v1/task-context-sessions/current?${new URLSearchParams(input)}`,
       { timeoutMs: Math.min(timeoutMs, this.requestTimeoutMs) });
+  }
+  recordProjectMemoryUsage(input) {
+    return this.#request('/v1/project-memory-usage', { method: 'POST', body: input });
   }
   getProjectAgentWorkerRun(runId, { personal_space_id, personal_project_id }, { capability, signal } = {}) {
     const query = new URLSearchParams({ personal_space_id, personal_project_id });

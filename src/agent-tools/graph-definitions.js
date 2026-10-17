@@ -30,6 +30,7 @@ import {
   projectAgentTaskOutcomeInput,
   projectAgentTaskSubmitInput,
   recruitmentConfirmationMode,
+  projectAgentOccupation,
   recruitmentDecision,
   recruitmentStatus,
   routingRuleScope
@@ -334,7 +335,12 @@ export const GRAPH_TOOL_DEFINITIONS = [
         expectedRevision: integerSchema({ minimum: 0 }),
         memory: workingMemorySchema
       }, ['expectedRevision', 'memory']),
-      collaborators: arraySchema(boundedString(128), { maxItems: 16 })
+      collaborators: arraySchema(boundedString(128), { maxItems: 16 }),
+      triage: { ...objectSchema({
+        kind: enumSchema(['project', 'topic', 'one_off']),
+        project: boundedString(80),
+        topic: boundedString(80)
+      }, ['kind']), description: 'Unclaimed conversations only (see triage_candidates): project=existing name, topic=pick/start a name, one_off=neither.' }
     }, ['taskContextToken', 'disposition', 'reason'])
   },
   {
@@ -668,7 +674,8 @@ export const GRAPH_TOOL_DEFINITIONS = [
       personalSpaceId: id,
       personalProjectId: nullableStringSchema(),
       agentId: boundedString(128),
-      profile: projectAgentProfile
+      profile: projectAgentProfile,
+      occupation: projectAgentOccupation
     }, ['personalSpaceId', 'agentId', 'profile'])
   },
   {
@@ -897,6 +904,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
       recruitmentId: id,
       expectedRevision: integerSchema({ minimum: 0 }),
       decision: recruitmentDecision,
+      occupation: projectAgentOccupation,
       reason: shortText
     }, ['personalSpaceId', 'personalProjectId', 'recruitmentId', 'expectedRevision', 'decision', 'reason'])
   },

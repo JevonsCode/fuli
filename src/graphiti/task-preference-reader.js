@@ -79,7 +79,7 @@ export async function readTaskPreferences(application, {
       source_application: task.sourceApplication, wake_mode: 'preference_recovery', worker_started: false,
       selection_reason: assignment.selection_reason, match_basis: [...assignment.match_basis],
       ...projectAgentRoleContext(agent, project?.profile),
-      ...(team?.guidance ? { team_guidance: team.entry_guidance ?? team.guidance } : {}),
+      ...(team?.guidance ? { team_guidance: team.guidance } : {}),
       guidance: PROJECT_AGENT_CONTINUITY_GUIDANCE
     }, assignment),
     taskContextToken: task.token, task_context_token: task.token, checkpoint_required: true,

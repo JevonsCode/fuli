@@ -290,6 +290,8 @@ export function providerProjectAgentTaskSubmit(input) {
       input.executorPolicyOverride ?? input.executor_policy_override
     )
   };
+  copyOptional(result, 'recruitment_occupation', input.recruitmentOccupation ?? input.recruitment_occupation,
+    hasAny(input, ['recruitmentOccupation', 'recruitment_occupation']));
   return result;
 }
 
@@ -619,6 +621,8 @@ export function projectAgentRecruitmentRecord(value = {}) {
     status: value.status,
     confirmationMode: value.confirmation_mode,
     proposedAgentId: value.proposed_agent_id,
+    occupation: value.occupation ?? null,
+    occupationBasis: value.occupation_basis ?? null,
     participantRole: value.participant_role ?? 'lead',
     recruitmentSlot: value.recruitment_slot ?? 'lead',
     proposedProfile: value.proposed_profile
@@ -834,6 +838,7 @@ export function providerProjectAgentRecruitmentDecision(input) {
     personal_project_id: input.personalProjectId ?? input.personal_project_id,
     recruitment_id: input.recruitmentId ?? input.recruitment_id,
     expected_revision: input.expectedRevision ?? input.expected_revision,
+    ...(input.occupation ? { occupation: input.occupation } : {}),
     decision: input.decision,
     reason: input.reason
   };

@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     embedding_dim: int = 384
     graph_limit: int = 500
     search_limit: int = 20
+    staffing_demand_window_days: int = Field(default=30, ge=1, le=365)
+    staffing_demand_task_threshold: int = Field(default=5, ge=0, le=100000)
 
     @field_validator('provider_id')
     @classmethod

@@ -926,6 +926,8 @@ async def test_recruitment_fulfillment_links_only_the_current_space_agent():
             'proposed_agent_id': 'shared-agent-id',
             'proposed_profile_json': profile.model_dump_json(),
             'provisioning_claim_id': 'claim-a',
+            'occupation_role': 'testing',
+            'occupation_tags': [],
             'work_kind': 'verification',
             'reason': 'Fill a durable responsibility gap.',
         },

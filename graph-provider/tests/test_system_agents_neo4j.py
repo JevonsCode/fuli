@@ -61,6 +61,7 @@ async def test_every_space_has_fixed_project_manager_and_hr():
         assert roles['employee.jefa'] == 'coordinator'
         assert roles['employee.bole'] == 'hr'
         assert roles['employee.tonborg'] == 'durable'
+        assert roles['employee.assistant'] == 'durable'
 
         archived = await client.request('DELETE', '/v1/project-agents/employee.jefa', params={
             'personal_space_id': space_id, 'reason': 'try to remove the PM',
@@ -129,7 +130,8 @@ async def test_first_task_in_a_project_has_bole_hire_its_lead():
         })).status_code == 200
         project = await client.put('/v1/personal-projects', json={
             'personal_space_id': space_id, 'project_id': 'sample-app',
-            'profile': {'name': 'Sample App', 'lifecycle': 'active'},
+            'profile': {'name': 'Sample App', 'lifecycle': 'active',
+                        'purpose': 'Synthetic default lead recruitment acceptance'},
         })
         assert project.status_code == 200, project.text
         body = {'personal_space_id': space_id, 'personal_project_id': 'sample-app',

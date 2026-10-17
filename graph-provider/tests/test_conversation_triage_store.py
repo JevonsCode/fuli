@@ -1,0 +1,132 @@
+"""Triage store rules on a synthetic driver; Cypher shapes stay deliberately simple."""
+from types import SimpleNamespace
+
+import pytest
+from fastapi import HTTPException
+from pydantic import ValidationError
+
+from fuli_graph.conversation_triage_models import (
+    ConversationTopicFormation, ConversationTopicQuery, ConversationTriageWrite,
+)
+from fuli_graph.provider_values import stable_uuid
+from fuli_graph.store_conversation_triage import StoreConversationTriage
+
+SPACE = 'synthetic-space'
+PENDING = stable_uuid('global-conversation-scope', SPACE, 'employee.assistant')
+
+
+class TriageDriver:
+    def __init__(self, conversations):
+        self.conversations = conversations
+        self.labels = {}
+
+    async def execute_query(self, query, **p):
+        if query.startswith('MATCH (c:FuliConversation'):
+            return ([{'id': p['id']}] if self.conversations.get(p['id']) == p['scope'] else []), None, None
+        if query.startswith('MATCH (t:FuliConversationTriage {id: $id}) RETURN t'):
+            label = self.labels.get(p['id'])
+            return ([{'t': dict(label)}] if label else []), None, None
+        if query.startswith('MERGE (t:FuliConversationTriage'):
+            label = self.labels.setdefault(p['id'], {'id': p['id'], 'space_id': p['space_id']})
+            label.update(p['label'])
+            return [{'t': dict(label)}], None, None
+        open_labels = [t for t in self.labels.values() if t['space_id'] == p['space_id']
+                       and t['kind'] == 'topic' and not t.get('formed_project_id')]
+        if 'RETURN count(t)' in query:
+            return [{'count': sum(t['topic_key'] == p['key'] for t in open_labels)}], None, None
+        if 'collect(t.topic)' in query:
+            groups = {}
+            for label in open_labels:
+                groups.setdefault(label['topic_key'], []).append(label)
+            rows = sorted(groups.values(), key=lambda g: (
+                -any(t['source'] == 'user' for t in g), -len(g), ''.join(sorted(t['labeled_at'] for t in g))))
+            return [{'topic': g[0]['topic'], 'count': len(g)} for g in rows[:p['limit']]], None, None
+        if 'SET t.formed_project_id' in query:
+            ids = []
+            for label in self.labels.values():
+                if label['space_id'] == p['space_id'] and label.get('topic_key') == p['key'] and \
+                        label['kind'] == 'topic' and label.get('formed_project_id') in (None, p['project']):
+                    label['formed_project_id'] = p['project']
+                    ids.append({'id': label['id']})
+            return sorted(ids, key=lambda row: row['id']), None, None
+        raise AssertionError(query)
+
+
+class TriageStore(StoreConversationTriage):
+    def __init__(self, conversations, projects=('garden',)):
+        self.runtime = SimpleNamespace(driver=TriageDriver(conversations))
+        self.projects = set(projects)
+
+    def _require_personal(self):
+        return None
+
+    async def authorize(self, actor, space_id, role):
+        return {'id': space_id}
+
+    async def get_personal_project(self, actor, space_id, project_id):
+        if project_id not in self.projects:
+            raise HTTPException(404, 'personal project not found')
+        return {'project_id': project_id}
+
+
+def write(conversation, **changes):
+    return ConversationTriageWrite(**{'personal_space_id': SPACE, 'conversation_id': conversation,
+                                      'kind': 'topic', 'topic': 'Garden  Planning', **changes})
+
+
+@pytest.mark.asyncio
+async def test_topic_labels_accumulate_per_normalized_topic():
+    store = TriageStore({'c1': PENDING, 'c2': PENDING, 'c3': PENDING})
+    counts = [(await store.record_conversation_triage({}, write(c, topic=t)))['topic_count']
+              for c, t in (('c1', 'Garden Planning'), ('c2', 'garden planning'), ('c3', 'Other'))]
+    assert counts == [1, 2, 1]
+    topics = await store.query_conversation_topics({}, ConversationTopicQuery(personal_space_id=SPACE))
+    assert topics == {'topics': [{'topic': 'Garden Planning', 'count': 2}, {'topic': 'Other', 'count': 1}]}
+
+
+@pytest.mark.asyncio
+async def test_only_unclaimed_conversations_of_this_space_are_labelled():
+    store = TriageStore({'project-chat': 'some-project-scope'})
+    with pytest.raises(HTTPException) as error:
+        await store.record_conversation_triage({}, write('project-chat'))
+    assert error.value.status_code == 404
+    store = TriageStore({'c1': PENDING})
+    with pytest.raises(HTTPException):
+        await store.record_conversation_triage({}, write('c1', kind='project', topic=None,
+                                                         personal_project_id='missing'))
+
+
+@pytest.mark.asyncio
+async def test_a_person_correction_and_a_formed_project_outrank_later_host_labels():
+    store = TriageStore({'c1': PENDING, 'c2': PENDING})
+    await store.record_conversation_triage({}, write('c1', kind='one_off', topic=None, source='user'))
+    kept = await store.record_conversation_triage({}, write('c1'))
+    assert (kept['kept'], kept['triage']['kind']) == ('user_label', 'one_off')
+    await store.record_conversation_triage({}, write('c2'))
+    formed = await store.form_conversation_topic({}, ConversationTopicFormation(
+        personal_space_id=SPACE, topic='garden planning', personal_project_id='garden'))
+    assert formed['conversation_ids'] == ['c2']
+    relabel = await store.record_conversation_triage({}, write('c2', kind='one_off', topic=None))
+    assert (relabel['kept'], relabel['triage']['formed_project_id']) == ('formed_project', 'garden')
+    corrected = await store.record_conversation_triage({}, write('c2', kind='one_off', topic=None, source='user'))
+    assert corrected['triage']['kind'] == 'one_off'
+
+
+@pytest.mark.asyncio
+async def test_formation_is_idempotent_and_closes_the_topic():
+    store = TriageStore({f'c{i}': PENDING for i in range(3)})
+    for i in range(3):
+        await store.record_conversation_triage({}, write(f'c{i}'))
+    request = ConversationTopicFormation(personal_space_id=SPACE, topic='Garden Planning',
+                                         personal_project_id='garden')
+    first = await store.form_conversation_topic({}, request)
+    again = await store.form_conversation_topic({}, request)
+    assert first['conversation_ids'] == again['conversation_ids'] == ['c0', 'c1', 'c2']
+    assert (await store.query_conversation_topics({}, ConversationTopicQuery(personal_space_id=SPACE))) == {'topics': []}
+
+
+def test_a_label_carries_exactly_what_its_kind_needs():
+    for changes in ({'kind': 'project', 'topic': None}, {'kind': 'topic', 'topic': None},
+                    {'kind': 'one_off'}, {'kind': 'topic', 'personal_project_id': 'garden'}):
+        with pytest.raises(ValidationError):
+            write('c1', **changes)

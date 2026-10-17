@@ -8,6 +8,8 @@ from pydantic import Field, field_validator
 from .models import StrictModel
 
 ProjectAgentOccupationKey = Literal[
+    'lead',
+    'assistant',
     'product',
     'engineering',
     'design',
@@ -20,33 +22,27 @@ ProjectAgentOccupationKey = Literal[
 ]
 
 
-class ProjectAgentOccupation(StrictModel):
-    """A person-set primary role plus a few extra ability tags.
+class ProjectAgentOccupationInput(StrictModel):
+    """An explicit primary role plus a few extra ability tags.
 
     It only describes what the Agent is for; it never grants permissions or
-    proves a skill. ``updated_at`` is the last explicit human edit.
+    proves a skill. Bole records its recruitment decision separately.
     """
 
-    role: ProjectAgentOccupationKey | None = None
+    role: ProjectAgentOccupationKey
     tags: list[ProjectAgentOccupationKey] = Field(default_factory=list, max_length=5)
+
+    @field_validator('tags')
+    @classmethod
+    def unique_tags(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError('occupation tags must be unique')
+        return value
+
+
+class ProjectAgentOccupation(ProjectAgentOccupationInput):
     updated_at: datetime
 
-    @field_validator('tags')
-    @classmethod
-    def unique_tags(cls, value: list[str]) -> list[str]:
-        if len(set(value)) != len(value):
-            raise ValueError('occupation tags must be unique')
-        return value
 
-
-class ProjectAgentOccupationUpdate(StrictModel):
+class ProjectAgentOccupationUpdate(ProjectAgentOccupationInput):
     personal_space_id: str = Field(min_length=1, max_length=128)
-    role: ProjectAgentOccupationKey | None = None
-    tags: list[ProjectAgentOccupationKey] = Field(default_factory=list, max_length=5)
-
-    @field_validator('tags')
-    @classmethod
-    def unique_tags(cls, value: list[str]) -> list[str]:
-        if len(set(value)) != len(value):
-            raise ValueError('occupation tags must be unique')
-        return value
