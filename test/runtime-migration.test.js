@@ -71,20 +71,22 @@ test('a census mismatch switches back to the unchanged container graph', async (
     assert.match(error.message, /back on the unchanged container graph/);
     return true;
   });
-  // The console was already stopped for the import, so it switches straight back.
-  assert.deepEqual(events.slice(-2), ['census:native:personal', 'setup:container']);
+  // Native graph processes can run without a console, so it always stops first.
+  assert.deepEqual(events.slice(-3), ['census:native:personal', 'stop', 'setup:container']);
   assert.equal(events.includes('start'), false);
 });
 
 test('an import failure also switches back, and a failed switch-back says so', async () => {
   const back = harness({ failImport: true });
   await assert.rejects(back.run(), /synthetic load failure.*back on the unchanged container graph/s);
-  assert.deepEqual(back.events.slice(-2), ['import', 'setup:container']);
+  assert.deepEqual(back.events.slice(-3), ['import', 'stop', 'setup:container']);
 
   const stuck = harness({ failImport: true, failRollback: true });
   await assert.rejects(stuck.run(), (error) => {
     assert.ok(error instanceof AggregateError);
     assert.match(error.message, /switching back to container mode also failed/);
+    assert.match(error.message, /synthetic load failure/);
+    assert.match(error.message, /synthetic container failure/);
     assert.match(error.message, /container graph was not changed/);
     return true;
   });
@@ -128,4 +130,15 @@ test('graph census reads cypher-shell plain rows and lists every difference', ()
     'nodes: 7 → 6', 'labels Episodic: 2 → 0', 'types NEW: 0 → 1'
   ]);
   assert.throws(() => censusFromRows({ nodes: [], relationships: [['relationships', 1]], labels: [], types: [] }), /invalid total/);
+});
+
+test('a native setup that fails part-way stops what it started before switching back', async () => {
+  const { events, ports, run } = harness();
+  const setup = ports.setupRuntime;
+  ports.setupRuntime = async (target) => {
+    if (target === 'native') { events.push('setup:native'); throw new Error('Provider request failed with 401'); }
+    return setup(target);
+  };
+  await assert.rejects(run(), /401.*back on the unchanged container graph/s);
+  assert.deepEqual(events.slice(-3), ['setup:native', 'stop', 'setup:container']);
 });

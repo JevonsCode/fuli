@@ -49,6 +49,8 @@ export function planLocalSetup(options, {
   return {
     paths,
     runtimeSettings,
+    // The mode this data last ran in, before any --runtime-mode override.
+    savedRuntimeMode: savedRuntimeSettings.graphRuntimeMode,
     runtimeModeRecommendation: graphRuntimeModeRecommendation({
       platform,
       hostTotalBytes: hostTotalMemory()
@@ -93,6 +95,7 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
     lan: runtimeSettings.lanAccess,
     runtimeSettings,
     runtimeMode: runtimeSettings.graphRuntimeMode,
+    savedRuntimeMode: plan.savedRuntimeMode,
     personalOnly: options.personalOnly,
     memoryProfile: options.memoryProfile,
     adaptiveRuntimeSettings: plan.adaptiveRuntimeSettings,

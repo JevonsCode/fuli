@@ -696,3 +696,48 @@ function response(body, status = 200) {
     async json() { return body; }
   };
 }
+
+test('a stopped installation switches modes from its saved mode, not from the removed runtime state',
+  async () => {
+    const previous = configuredGraph();
+    previous.personal.accessToken = 'container-token';
+    const writes = [];
+    const providerCalls = [];
+    await ensureGraphRuntime({
+      paths: PATHS,
+      personalSpaceName: '我',
+      personalOnly: true,
+      runtimeMode: 'native',
+      savedRuntimeMode: 'container',
+      noStart: true
+    }, dependencies({
+      ensureNativeRuntime: async () => ({ status: 'ready', mode: 'native' }),
+      startNativeProviders() {},
+      // `fuli stop` removed graph-runtime-state.json.
+      readState: () => null,
+      readConfig(path) {
+        if (path === PATHS.graphRuntimeConfigPath) return previous;
+        return null;
+      },
+      writeConfig(path, value) { writes.push({ path, value }); },
+      async fetch(url, options = {}) {
+        providerCalls.push(url);
+        if (url.endsWith('/health')) return response({ status: 'ready' });
+        if (url.endsWith('/v1/bootstrap')) {
+          return response({ access_token: 'native-token', principal_id: 'native-user' });
+        }
+        if (url.endsWith('/v1/spaces') && !options.method) return response([]);
+        if (url.endsWith('/v1/spaces') && options.method === 'POST') {
+          return response({ id: 'native-space', name: '我', kind: 'personal' });
+        }
+        if (url.includes('/v1/project-agents/system-hr?')) return response({ agent_id: 'employee.bole' });
+        throw new Error(`Unexpected Provider request: ${url}`);
+      }
+    }));
+
+    assert.ok(providerCalls.some((url) => url.endsWith('/v1/bootstrap')), 'the empty native graph is bootstrapped');
+    assert.equal(writes.find(({ path }) =>
+      path === PATHS.containerGraphConfigProfilePath).value.personal.accessToken, 'container-token');
+    assert.equal(writes.find(({ path }) =>
+      path === PATHS.graphRuntimeConfigPath).value.personal.accessToken, 'native-token');
+  });

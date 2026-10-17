@@ -70,11 +70,14 @@ export async function migrateContainerGraphToNative({ backupRoot, now = () => ne
     if (!switched) throw error;
     ports.write('The move did not complete; switching back to the unchanged container graph...');
     try {
-      if (await ports.consoleRunning()) await ports.stopRuntime();
+      // Always stop: a native setup can fail after starting its own graph
+      // processes on the same ports while the console never came up.
+      await ports.stopRuntime();
       await ports.setupRuntime('container');
     } catch (rollbackError) {
       throw new AggregateError([error, rollbackError],
-        `The move failed and switching back to container mode also failed. The container graph was not changed; its export is at ${outputDir}.`);
+        `The move failed (${error.message}) and switching back to container mode also failed (${rollbackError.message}). ` +
+        `The container graph was not changed; its export is at ${outputDir}.`);
     }
     throw new Error(`${error.message} Fuli is back on the unchanged container graph; its export is at ${outputDir}.`, { cause: error });
   }
