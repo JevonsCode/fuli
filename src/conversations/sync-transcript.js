@@ -1,6 +1,7 @@
 import { initialTranscriptBoundary, readTranscriptBatch } from './transcript-reader.js';
 import { transcriptDigest } from './transcript-guard.js';
 import { lookupTranscriptTask } from './current-task-lookup.js';
+import { appendTranscriptPage } from './transcript-append.js';
 
 const pending = reason => ({ status: 'partial', entryBlocked: true, reason });
 const retryReason = 'Transcript handoff is pending. Retry task entry to continue its saved progress; no new Agent context was supplied';
@@ -74,12 +75,12 @@ export async function syncConversationTranscript(application, input, sourceAppli
       // Without a durable guard, an unmatched user record cannot be attributed
       // to the prior owner merely because the file currently ends after it.
       if (!guard && typeof input.prompt === 'string' && userMessages && !batch.atPromptBoundary) return pending(retryReason);
-      result = await application.personal.conversation('append', { ...scope, session_id: input.session_id,
+      result = await appendTranscriptPage(application, { ...scope, session_id: input.session_id,
         task_context_token: task.token, events: batch.events, expected_cursor: session.cursor ?? 0, cursor: batch.cursor });
       if (result.status === 'saved') committedPages++;
       if (!batch.hasMore && guard?.value?.ambiguousFrom !== undefined && batch.cursor < guard.value.boundary) {
         const boundary = guard.value.boundary;
-        result = await application.personal.conversation('append', { ...scope, session_id: input.session_id,
+        result = await appendTranscriptPage(application, { ...scope, session_id: input.session_id,
           task_context_token: task.token, expected_cursor: batch.cursor, cursor: boundary,
           events: [{ event_id: `jsonl-v1:${batch.cursor}:${boundary}:ambiguous`, role: 'tool', kind: 'tool_result',
             content: '[Visible transcript content omitted: ambiguous task ownership; original remains in native history.]' }] });
