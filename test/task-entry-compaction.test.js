@@ -82,3 +82,21 @@ test('the rules resource carries the referenced scope, receipt and details text'
   assert.match(sections.details_guidance, /get_project_team/);
   assert.match(entryRulesMarkdown(), /## scope_guidance/);
 });
+
+test('an exact local preference omits default scope fields; real inheritance stays', async () => {
+  const { preferenceInstructionView } = await import('../src/conversations/preference-view.js');
+  const local = { instruction: 'Use JVS/ branches.', preference_key: 'git-branch-naming', preference_scope: 'global',
+    confirmation_status: 'confirmed', profile_aspect: null, inherited_from_project_id: null, scope_distance: 0,
+    scope_path: [], inheritance_mode: 'local_only', inherited_project_ids: [] };
+  assert.deepEqual(preferenceInstructionView(local), { instruction: 'Use JVS/ branches.',
+    preference_key: 'git-branch-naming', preference_scope: 'global', confirmation_status: 'confirmed' });
+  const inherited = { ...local, preference_scope: 'project', inherited_from_project_id: 'parent', scope_distance: 1,
+    scope_path: ['parent'], inheritance_mode: 'descendants', profile_aspect: 'taste' };
+  const view = preferenceInstructionView(inherited);
+  assert.equal(view.inherited_from_project_id, 'parent');
+  assert.equal(view.scope_distance, 1);
+  assert.deepEqual(view.scope_path, ['parent']);
+  assert.equal(view.inheritance_mode, 'descendants');
+  assert.equal(view.profile_aspect, 'taste');
+  assert.ok(JSON.stringify(local).length - JSON.stringify(preferenceInstructionView(local)).length > 120);
+});
