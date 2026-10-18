@@ -445,10 +445,8 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     taskHookOutput.hookSpecificOutput.additionalContext,
     /taskContextToken/
   );
-  assert.equal(
-    taskContext.structuredContent.context.source_truncated,
-    false
-  );
+  // Compact entries omit off-flags: an untruncated source has no flag.
+  assert.notEqual(taskContext.structuredContent.context.source_truncated, true);
   assert.equal(
     taskContext.structuredContent.effective_preferences[0].instruction,
     'Use direct, low-fluff writing.'
@@ -646,10 +644,9 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'writing.direct'
   );
   assert.equal('global_preferences' in preferences.structuredContent, false);
-  assert.equal(
-    preferences.structuredContent.application_guidance.apply,
-    'effective_preferences'
-  );
+  // The scope lines are a template over context IDs, referenced from the rules.
+  assert.equal(preferences.structuredContent.application_guidance.scope_rules,
+    'fuli://rules/task-entry#scope_guidance');
 
   const tasteSkill = await connection.client.callTool({
     name: 'get_user_taste_skill',

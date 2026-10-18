@@ -89,7 +89,20 @@ export const STATIC_APPLICATION_GUIDANCE = Object.freeze({
   knowledge_retrieval: TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE
 });
 
+// The scope lines depend only on the matched project and Agent IDs, which the
+// entry already carries in context; compact entries reference the generic form.
+export const GENERIC_SCOPE_GUIDANCE = Object.freeze({
+  apply: 'effective_preferences',
+  global_scope: 'Apply personal-global preferences in every user task.',
+  project_scope: 'Also apply preferences scoped to context.personal_project_id and confirmed ancestor preferences whose descendants or selected-projects mode explicitly reaches it; with no matched project, apply no project-scoped preferences.',
+  agent_scope: 'Also apply preferences scoped to context.project_agent_id; exclude every other project Agent; with no selected Agent, apply no Agent-scoped preferences.'
+});
+
 function guidanceFor(projectId, projectAgentId) {
+  return { ...preferenceScopeGuidance(projectId, projectAgentId), ...STATIC_APPLICATION_GUIDANCE };
+}
+
+export function preferenceScopeGuidance(projectId, projectAgentId) {
   return {
     apply: 'effective_preferences',
     global_scope: 'Apply personal-global preferences in every user task.',
@@ -98,8 +111,7 @@ function guidanceFor(projectId, projectAgentId) {
       : 'No exact personal project matched; do not apply project-scoped preferences.',
     agent_scope: projectAgentId
       ? `Also apply preferences scoped to project Agent ${projectAgentId}; exclude every other project Agent.`
-      : 'No project Agent was selected; do not apply Agent-scoped preferences.',
-    ...STATIC_APPLICATION_GUIDANCE
+      : 'No project Agent was selected; do not apply Agent-scoped preferences.'
   };
 }
 

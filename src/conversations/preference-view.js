@@ -4,16 +4,24 @@ export function preferenceInstructionView(item) {
   return {
     instruction: item.instruction, preference_key: item.preference_key,
     preference_scope: item.preference_scope, confirmation_status: item.confirmation_status,
-    profile_aspect: item.profile_aspect,
+    ...(item.profile_aspect ? { profile_aspect: item.profile_aspect } : {}),
     ...Object.fromEntries(['preference_project_id', 'preference_agent_id',
       'inherited_from_project_id', 'scope_distance', 'scope_path', 'inheritance_mode', 'inherited_project_ids']
-      .filter(key => item[key] !== undefined).map(key => [key, item[key]])),
+      .filter(key => item[key] !== undefined && !isScopeDefault(key, item[key])).map(key => [key, item[key]])),
     ...(item.preference_qualifiers || item.attributes ? {
       preference_qualifiers: instructionQualifiers({ ...item.attributes,
         ...item.attributes?.preference_qualifiers, ...item.preference_qualifiers }, item.instruction)
     } : {}),
     ...(item.attributes?.tasteDomain ? { attributes: { tasteDomain: item.attributes.tasteDomain } } : {})
   };
+}
+
+// An exact local preference needs no inheritance fields; only a real
+// inheritance (distance, path, mode, source) changes how it applies.
+const SCOPE_DEFAULTS = { inherited_from_project_id: null, scope_distance: 0, inheritance_mode: 'local_only' };
+function isScopeDefault(key, value) {
+  if (Array.isArray(value)) return !value.length;
+  return Object.hasOwn(SCOPE_DEFAULTS, key) && SCOPE_DEFAULTS[key] === value;
 }
 
 function instructionQualifiers(attributes, instruction) {

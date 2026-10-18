@@ -27,6 +27,8 @@ function receiptText(value) {
 }
 
 // The reply's attribution line: who led the task and who actually helped.
+export const RECEIPT_GUIDANCE = 'MUST end every final user-visible reply with agent_receipt.markdown unchanged, exactly once: greetings, status, errors, even with capture disabled or nothing retained. checkpoint_task_knowledge receipt overrides entry and names actual collaborators. Never invent owners or collaborators.';
+
 export function taskAgentReceipt(application, { projectId, agentId, name = null,
   sourceApplication = null, workStatus = null, conversationId = null, persistence = null,
   collaborators = [], assignmentStatus = null, assignmentReason = null }) {
@@ -45,7 +47,7 @@ export function taskAgentReceipt(application, { projectId, agentId, name = null,
         omitted_run_count: item.runCount - item.runs.length } : {}) })),
     personal_project_id: projectId, work_status: workStatus, persistence,
     continuation: owner ? agentContinuation(projectId, agentId, conversationId) : null,
-    guidance: 'MUST end every final user-visible reply with agent_receipt.markdown unchanged, exactly once: greetings, status, errors, even with capture disabled or nothing retained. checkpoint_task_knowledge receipt overrides entry and names actual collaborators. Never invent owners or collaborators.' });
+    guidance: RECEIPT_GUIDANCE });
   let receipt = build();
   // Reserve room within checkpoint's 16 KiB response. Only optional execution
   // detail is removed: every proven helper and the exact total remain visible.

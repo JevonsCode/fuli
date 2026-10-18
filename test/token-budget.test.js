@@ -20,7 +20,10 @@ const BASELINE = Object.freeze({
   fullToolSchemaBytes: 167317,
   chatToolSchemaBytes: 28211,
   instructionsBytes: 2041,
-  projectEntryChars: 3449
+  // T-TOKEN-2: the entry receipt keeps only what must be copied, defaults and
+  // empty values are omitted, and the scope, receipt and details rule text is
+  // referenced: 3,449 -> 1,775 chars.
+  projectEntryChars: 1775
 });
 
 const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
