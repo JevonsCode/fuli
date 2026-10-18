@@ -1,5 +1,6 @@
-import { mount, RouterLinkStub } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
+import { describe, expect, it, vi } from 'vitest'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Component } from 'vue'
 import type { AgentAttention } from '@/features/project-agents/attention-store'
 import type { ProjectAgentTaskRecord } from '@/types'
@@ -73,5 +74,19 @@ describe('workbench designs', () => {
     const wrapper = mountDesign(ConstellationBoard, board([]))
     expect(wrapper.find('svg').exists()).toBe(false)
     expect(wrapper.text()).toContain('休息')
+  })
+})
+
+describe('3D workbench designs', () => {
+  it('fall back to the 2D star map where WebGL is unavailable', async () => {
+    const { default: Workbench3D } = await import('./Workbench3D.vue')
+    const CustomLink = { props: ['to', 'custom'], template: '<slot :href="String(to)" :navigate="() => {}" />' }
+    const wrapper = mount(Workbench3D, {
+      props: { board: board([task('r', 'running')]), scene: 'office' },
+      global: { plugins: [createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })], stubs: { RouterLink: CustomLink } },
+    })
+    // three.js loads on demand; jsdom has no WebGL, so the 2D map stands in.
+    await vi.waitFor(async () => { await flushPromises(); expect(wrapper.find('[data-workbench="constellation"]').exists()).toBe(true) }, { timeout: 4000 })
+    wrapper.unmount()
   })
 })

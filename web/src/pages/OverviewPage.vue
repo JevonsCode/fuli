@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import UiButton from '@/ui/UiButton.vue'
-import { computed, onMounted, ref, watch, type Component } from 'vue'
+import { computed, defineAsyncComponent, h, onMounted, ref, watch, type Component } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { getJson } from '@/api/client'
@@ -69,7 +69,11 @@ const shownAgentIds = computed(() => [...new Set([
 const attentionAgents = useAgentRecords(activeSpaceId, shownAgentIds)
 
 // Design-lab workbench designs share this page's data and links.
-const WORKBENCH_DESIGNS: Record<string, Component> = { focus: FocusBoard, board: KanbanBoard, timeline: TimelineBoard, constellation: ConstellationBoard }
+// The 3D designs load three.js on demand, so the default workbench stays light.
+const Workbench3D = defineAsyncComponent(() => import('@/features/workbench/Workbench3D.vue'))
+const scene3d = (scene: 'office' | 'galaxy'): Component => (props: { board: WorkbenchBoard }) => h(Workbench3D, { board: props.board, scene })
+const WORKBENCH_DESIGNS: Record<string, Component> = { focus: FocusBoard, board: KanbanBoard, timeline: TimelineBoard,
+  constellation: ConstellationBoard, office: scene3d('office'), galaxy3d: scene3d('galaxy') }
 const workbenchDesign = computed(() => WORKBENCH_DESIGNS[designLab.value.workbench] ?? null)
 function agentFace(agentId?: string | null): AgentFace {
   const record = agentId ? attentionAgents.records.value[agentId] : undefined

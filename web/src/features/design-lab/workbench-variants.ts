@@ -14,4 +14,6 @@ export const WORKBENCH_VARIANTS: readonly WorkbenchVariant[] = [
   { id: 'board', labelKey: 'workbench.variants.board' },
   { id: 'timeline', labelKey: 'workbench.variants.timeline' },
   { id: 'constellation', labelKey: 'workbench.variants.constellation' },
+  { id: 'office', labelKey: 'workbench.variants.office' },
+  { id: 'galaxy3d', labelKey: 'workbench.variants.galaxy3d' },
 ]

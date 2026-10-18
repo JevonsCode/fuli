@@ -1,6 +1,7 @@
 export const workbenchMessages = {
   'zh-CN': {
-    variants: { focus: '今日焦点', board: '看板', timeline: '时间线', constellation: '星图' },
+    variants: { focus: '今日焦点', board: '看板', timeline: '时间线', constellation: '星图', office: '办公室（3D）', galaxy3d: '星系（3D）' },
+    scene: { loading: '正在载入 3D 场景…', hint: '拖动旋转，滚轮缩放，点人物或卫星打开', office: { aria: '{count} 个项目的 3D 办公室' }, galaxy: { aria: '{count} 个项目的 3D 星系' } },
     constellation: { aria: '{count} 个项目的星图', empty: '现在没有进行中的工作，Agent 们都在休息。' },
     lanes: { waiting: '等你', running: '进行中', stuck: '卡住了', done: '刚完成' },
     focus: {
@@ -23,7 +24,8 @@ export const workbenchMessages = {
     unknownAgent: '未署名 Agent',
   },
   'en-US': {
-    variants: { focus: 'Focus', board: 'Board', timeline: 'Timeline', constellation: 'Star map' },
+    variants: { focus: 'Focus', board: 'Board', timeline: 'Timeline', constellation: 'Star map', office: 'Office (3D)', galaxy3d: 'Galaxy (3D)' },
+    scene: { loading: 'Loading the 3D scene…', hint: 'Drag to turn, scroll to zoom, click a person or moon to open', office: { aria: '3D office of {count} projects' }, galaxy: { aria: '3D galaxy of {count} projects' } },
     constellation: { aria: 'Star map of {count} projects', empty: 'No work in progress; the Agents are resting.' },
     lanes: { waiting: 'Needs you', running: 'In progress', stuck: 'Stuck', done: 'Just done' },
     focus: {

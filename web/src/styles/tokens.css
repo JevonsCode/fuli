@@ -59,6 +59,14 @@
   --shadow-dialog: 0 2px 6px rgb(var(--shadow-rgb) / 6%), 0 24px 64px rgb(var(--shadow-rgb) / 16%);
   /* The brand mark's sparkle. */
   --brand-gold: #f4c970;
+  /* 3D workbench scenes (office and galaxy); the palettes may restyle them. */
+  --scene-sky: #fff6ea; --scene-ground: #d9cdb8; --scene-key: #ffffff;
+  --scene-skin: #f3d9c6; --scene-wood: #e7d3b5; --scene-wood-dark: #b9a688; --scene-chair: #8c9599;
+  --scene-monitor: #2b3134; --scene-screen: #111416; --scene-screen-off: #3a4145; --scene-eye: #1d2124;
+  --scene-pot: #c98b62; --scene-leaf: #6f9e6a; --scene-agent: #5b7f9e;
+  --scene-space: #1b2a47; --scene-space-deep: #0b1222; --scene-space-ink: #e9efff; --scene-space-label: rgb(14 22 40 / 70%);
+  --scene-ambient: #8fa2c8; --scene-sun: #fff2dc; --scene-rim: #7fb4ff; --scene-orbit: #bfd0ff; --scene-star: #dfe8ff;
+  --scene-moon: #9fb4d6; --scene-moon-done: #6f7a86; --scene-glow: #ffffff;
   /* Agent identity swatches: none is green, amber or red, so identity never reads as a status. */
   --identity-0: #1f5ea8; --identity-0-soft: #e6eef8;
   --identity-1: #4a4aad; --identity-1-soft: #ececf8;
