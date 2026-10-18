@@ -11,7 +11,8 @@ import UiDisclosure from "@/components/UiDisclosure.vue";
 import AgentName from "@/features/agent-profile/AgentName.vue";
 import AgentProfileSettings from "@/features/agent-profile/AgentProfileSettings.vue";
 import AgentOccupationEditor from "@/features/agent-profile/AgentOccupationEditor.vue";
-import { occupationLabels } from "@/features/agent-profile/agent-occupation";
+import OccupationChip from "@/features/occupations/OccupationChip.vue";
+import { useOccupationCatalog } from "@/features/occupations/occupation-catalog";
 import AgentConversations from "@/features/project-agents/AgentConversations.vue";
 import TaskExecutionPlan from "@/features/project-agents/TaskExecutionPlan.vue";
 import {
@@ -131,6 +132,13 @@ const currentWork = computed(() =>
     .filter((task) => CURRENT_WORK_STATUSES.has(task.status))
     .slice(0, 6),
 );
+// Main role first, then tags; each chip opens the duties from the catalog.
+const occupationKeys = computed(() => {
+  const occupation = agent.value?.occupation;
+  if (!occupation) return [];
+  return [...new Set([...(occupation.role ? [occupation.role] : []), ...occupation.tags])];
+});
+useOccupationCatalog(computed(() => agent.value?.personalSpaceId ?? ""));
 const workbench = computed(() =>
   employeeTemplates.value.find((item) => item.agentId === agent.value?.agentId),
 );
@@ -330,7 +338,9 @@ onMounted(() => {
             </span>
           </div>
           <p class="agent-resume-occupation" data-profile-occupation>
-            <template v-if="occupationLabels(agent.occupation).length">{{ occupationLabels(agent.occupation).join(" · ") }}</template>
+            <template v-if="occupationKeys.length">
+              <OccupationChip v-for="(key, index) in occupationKeys" :key="key" :occupation-key="key" :main="index === 0 && Boolean(agent.occupation?.role)" />
+            </template>
             <span v-else class="ui-meta">{{ t("agentRedesign.occupation.notSet") }}</span>
           </p>
           <p>{{ agent.profile.responsibility }}</p>

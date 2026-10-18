@@ -14,7 +14,10 @@ export function navDestinations({ spaceId, publicProjects, review }: NavContext)
   const knowledge = knowledgePath('personal', spaceId, 'directory')
   return [
     { key: 'constellation', icon: 'constellation', to: '/', owns: ['/'], exact: true, sections: [] },
-    { key: 'agents', icon: 'agents', to: '/project-agents', owns: ['/project-agents', '/agents/', '/employees/'], sections: [] },
+    { key: 'agents', icon: 'agents', to: '/project-agents', owns: ['/project-agents', '/agents/', '/employees/'], sections: [
+      { key: 'agentDirectory', to: '/project-agents', owns: ['/project-agents', '/agents/', '/employees/'] },
+      { key: 'occupations', to: '/project-agents/occupations', owns: ['/project-agents/occupations'] },
+    ] },
     { key: 'chat', icon: 'chat', to: '/roundtables', owns: ['/roundtables', '/inbox'], sections: [
       { key: 'roundtables', to: '/roundtables', owns: ['/roundtables'] },
       { key: 'askedYou', to: '/inbox', owns: ['/inbox'] },

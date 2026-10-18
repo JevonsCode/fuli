@@ -13,8 +13,9 @@ describe('nav destinations', () => {
 
   it.each([
     ['/', 'constellation', undefined],
-    ['/project-agents', 'agents', undefined],
-    ['/agents/employee.bole', 'agents', undefined],
+    ['/project-agents', 'agents', 'agentDirectory'],
+    ['/agents/employee.bole', 'agents', 'agentDirectory'],
+    ['/project-agents/occupations', 'agents', 'occupations'],
     ['/inbox', 'chat', 'askedYou'],
     ['/roundtables/abc', 'chat', 'roundtables'],
     ['/personal/personal-1/projects/graph', 'projects', 'myProjects'],
