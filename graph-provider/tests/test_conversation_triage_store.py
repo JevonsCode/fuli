@@ -23,10 +23,10 @@ class TriageDriver:
 
     async def execute_query(self, query, **p):
         self.queries.append(query)
-        if query.startswith('MATCH (c:FuliConversation'):
-            return ([{'id': p['id']}] if self.conversations.get(p['id']) == p['scope'] else []), None, None
-        if query.startswith('MERGE (t:FuliConversationTriage'):
-            label = self.labels.setdefault(p['id'], {'id': p['id'], 'space_id': p['space_id']})
+        if 'MERGE (t:FuliConversationTriage' in query:
+            if self.conversations.get(p['id']) != p['scope']:
+                return [], None, None
+            label =self.labels.setdefault(p['id'], {'id': p['id'], 'space_id': p['space_id']})
             kept = None if p['source'] != 'host' else (
                 'formed_project' if label.get('formed_project_id') else
                 'user_label' if label.get('source') == 'user' else None)
@@ -177,3 +177,11 @@ async def test_a_host_label_cannot_overwrite_a_correction_made_while_it_was_runn
     assert (late['triage']['kind'], late['triage']['source']) == ('one_off', 'user')
     # The decision and the write happen in one statement; nothing reads the label first.
     assert not any(q.startswith('MATCH (t:FuliConversationTriage {id: $id}) RETURN t') for q in store.runtime.driver.queries)
+
+@pytest.mark.asyncio
+async def test_the_conversation_lock_comes_before_the_first_label_is_created():
+    """SOL's #93 repro: two first labels must not each MERGE their own node."""
+    store = TriageStore({'c1': PENDING})
+    await store.record_conversation_triage({}, write('c1'))
+    query = store.runtime.driver.queries[0]
+    assert query.index('SET c._triage_lock') < query.index('MERGE (t:FuliConversationTriage')
