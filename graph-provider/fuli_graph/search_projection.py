@@ -3,11 +3,10 @@ from datetime import datetime
 from graphiti_core.edges import EntityEdge
 
 from .models import (
-    ConfirmationBasis,
     FactResult,
-    _validate_confirmation_state,
     stored_confirmation_basis,
 )
+from .knowledge_weight import effective_confirmation_status, knowledge_weight
 from .provider_values import (
     json_object,
     native_datetime as _native_datetime,
@@ -22,19 +21,6 @@ def is_default_retrievable(metadata: dict) -> bool:
     }
 
 
-def effective_confirmation_status(metadata: dict) -> str:
-    status = metadata.get('confirmation_status', 'pending')
-    basis_data = json_object(metadata.get('confirmation_basis_json'))
-    if not basis_data:
-        return 'pending'
-    try:
-        basis = ConfirmationBasis.model_validate(basis_data)
-        _validate_confirmation_state(status, basis)
-    except ValueError:
-        return 'pending'
-    return status
-
-
 async def read_edge_epistemic_metadata(store, edge_ids: list[str]) -> dict[str, dict]:
     if not edge_ids:
         return {}
@@ -43,7 +29,7 @@ async def read_edge_epistemic_metadata(store, edge_ids: list[str]) -> dict[str, 
         MATCH ()-[edge:RELATES_TO]->()
         WHERE edge.uuid IN $edge_ids
         OPTIONAL MATCH (episode:Episodic)
-        WHERE episode.uuid IN coalesce(edge.episodes, [])
+        WHERE episode.uuid IN coalesce(edge.episodes, []) AND episode.group_id = edge.group_id
         WITH edge, collect(DISTINCT episode) AS episodes
         RETURN edge.uuid AS id,
                coalesce(edge.fuli_origin_quadrant, 'known_known') AS origin_quadrant,
@@ -86,6 +72,7 @@ async def read_edge_epistemic_metadata(store, edge_ids: list[str]) -> dict[str, 
                  AS requires_attention
                ,edge.fuli_last_feedback_kind AS last_feedback_kind
                ,edge.fuli_last_feedback_at AS last_feedback_at
+               ,[episode IN episodes | episode.uuid] AS evidence_ids
                ,[episode IN episodes
                  WHERE episode.fuli_source_uri IS NOT NULL |
                  {
@@ -120,6 +107,7 @@ def fact_result(
     metadata = epistemic or {}
     attributes = json_object(metadata.get('attributes_json'))
     return FactResult(
+        **knowledge_weight(metadata, evidence_ids=metadata.get('evidence_ids') or []),
         id=edge.uuid,
         space_id=space_id,
         group_id=edge.group_id,
