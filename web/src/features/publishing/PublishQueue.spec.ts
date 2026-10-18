@@ -9,7 +9,7 @@ vi.mock('@/api/client', () => ({ getJson, postJson }))
 
 import { useConsoleStore } from '@/stores/console'
 import { UiSelectStub } from '@/test-support/UiSelectStub'
-import ReviewPage from './ReviewPage.vue'
+import PublishQueue from './PublishQueue.vue'
 
 type Deferred<T> = {
   promise: Promise<T>
@@ -86,7 +86,7 @@ function mountReview() {
   const store = useConsoleStore()
   store.state = state()
   const refresh = vi.spyOn(store, 'refresh').mockResolvedValue(undefined)
-  const wrapper = mount(ReviewPage, {
+  const wrapper = mount(PublishQueue, {
     global: {
       plugins: [pinia],
       stubs: { UiSelect: UiSelectStub },
@@ -95,7 +95,7 @@ function mountReview() {
   return { store, refresh, wrapper }
 }
 
-describe('ReviewPage', () => {
+describe('PublishQueue', () => {
   beforeEach(() => {
     getJson.mockReset()
     getJson.mockImplementation((url: string) => {
@@ -106,6 +106,14 @@ describe('ReviewPage', () => {
     })
     postJson.mockReset()
     postJson.mockResolvedValue({})
+  })
+
+  it('shows nothing when no draft or proposal is waiting', async () => {
+    getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/personal-review?') ? { drafts: [] } : { proposals: [] }))
+    const { wrapper } = mountReview()
+    await flushPromises()
+    expect(wrapper.find('.publish-queue').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('loads and decides personal and Maintainer review queues through current APIs', async () => {
@@ -212,7 +220,7 @@ describe('ReviewPage', () => {
     await flushPromises()
     projectOne.resolve({ proposals: [proposal('proposal-old', '旧项目 Proposal')] })
     await flushPromises()
-    const oldApprove = wrapper.get('[data-review-queue="shared"] .approve')
+    const oldApprove = wrapper.get('[data-review-queue="shared"] [data-decision="approve"]')
 
     await wrapper.get('[aria-label="审核项目"]').setValue('project-2')
     expect(wrapper.text()).not.toContain('旧项目 Proposal')
@@ -291,7 +299,7 @@ describe('ReviewPage', () => {
     expect(personalCalls).toBe(2)
     expect(sharedCalls).toBe(2)
     expect(wrapper.text()).toContain('刷新前 Proposal')
-    expect(wrapper.get('[data-review-queue="shared"] .approve').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-review-queue="shared"] [data-decision="approve"]').attributes('disabled')).toBeDefined()
 
     sharedReload.resolve({ proposals: [proposal('proposal-new', '刷新后 Proposal')] })
     await flushPromises()
@@ -305,7 +313,7 @@ describe('ReviewPage', () => {
     const { wrapper } = mountReview()
     await flushPromises()
 
-    const approve = wrapper.get('[data-review-queue="shared"] .approve')
+    const approve = wrapper.get('[data-review-queue="shared"] [data-decision="approve"]')
     const approveElement = approve.element as HTMLButtonElement
     approveElement.click()
     approveElement.click()
@@ -324,7 +332,7 @@ describe('ReviewPage', () => {
     const { wrapper } = mountReview()
     await flushPromises()
     expect(wrapper.get('[data-review-queue="personal"] .growth-loading').text()).toContain('待确认的个人知识')
-    expect(wrapper.get('[data-review-queue="shared"] .growth-loading').text()).toContain('待审核 Proposal')
+    expect(wrapper.get('[data-review-queue="shared"] .growth-loading').text()).toContain('别人提交的内容')
     personal.resolve({ drafts: [] })
     await flushPromises()
     expect(wrapper.find('[data-review-queue="personal"] .growth-loading').exists()).toBe(false)

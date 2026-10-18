@@ -73,12 +73,12 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
-  it('adds public projects and review when the capabilities allow them', async () => {
+  it('adds public projects when the capabilities allow them; publishing decisions live there, not in memory', async () => {
     const { wrapper, router } = await setup('/public-projects', { browsePublicProjects: true, reviewProposals: true })
     expect(wrapper.findAll('[data-section]').map(tab => tab.attributes('data-section'))).toEqual(['myProjects', 'publicProjects'])
     await router.push('/organize')
     await flushPromises()
-    expect(wrapper.findAll('[data-section]').map(tab => tab.attributes('data-section'))).toContain('review')
+    expect(wrapper.findAll('[data-section]').map(tab => tab.attributes('data-section'))).not.toContain('review')
     wrapper.unmount()
   })
 

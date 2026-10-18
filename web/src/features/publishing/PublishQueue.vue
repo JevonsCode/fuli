@@ -3,6 +3,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { getJson, postJson } from '@/api/client'
+import UiButton from '@/ui/UiButton.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { formatTime } from '@/features/knowledge/model'
 import { t } from '@/i18n'
@@ -50,6 +51,10 @@ const reviewProjectOptions = computed(() =>
     search: identitySearchText(project.id),
   })),
 )
+// Only shown when something waits: no empty "nothing to review" blocks.
+const showPersonal = computed(() => personalDrafts.value.length > 0 || personalLoading.value || personalError.value !== '')
+const showShared = computed(() => maintainableProjects.value.length > 0
+  && (proposals.value.length > 0 || sharedLoading.value || sharedError.value !== ''))
 const reviewProject = computed(
   () => maintainableProjects.value.find(({ id }) => id === reviewProjectId.value) ?? null,
 )
@@ -335,67 +340,69 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="view">
-    <div class="section-title"><h3>{{ t('pages.review.personalTitle') }}</h3></div>
-    <div class="review-list" data-review-queue="personal">
-      <GrowthLoading v-if="personalLoading" variant="compact" :label="t('pages.review.loadingPersonal')" />
-      <div v-if="personalError" class="review-error" role="alert">
-        <span>{{ personalError }}</span>
-        <button class="secondary-action" type="button" :disabled="personalLoading" @click="loadPersonal()">{{ t('common.actions.retry') }}</button>
-      </div>
-      <article v-for="draft in personalDrafts" :key="draft.id" class="review-item review-item-detailed">
-        <div>
-          <div class="review-stage">{{ t('pages.review.beforePublic') }}</div>
-          <h4>{{ draft.episode.name }}</h4>
-          <p>{{ draft.episode.summary || draft.episode.source_description }}</p>
-          <div class="review-meta">
-            <span>{{ t('common.counts.entities', { count: draft.episode.entities?.length ?? 0 }) }}</span>
-            <span>{{ t('common.counts.relationships', { count: draft.episode.relationships?.length ?? 0 }) }}</span>
-            <span>{{ formatTime(draft.created_at) }}</span>
+  <!-- Publishing decisions stay with the person: whether a personal draft goes
+       public, and a maintainer's call on proposals. Shown only when there is one. -->
+  <section v-if="showPersonal || showShared" class="publish-queue" :aria-label="t('pages.review.title')">
+    <div v-if="showPersonal" class="publish-queue-block">
+      <h3 class="list-title">{{ t('pages.review.personalTitle') }} <span v-if="personalDrafts.length">{{ personalDrafts.length }}</span></h3>
+      <div class="ui-list" data-review-queue="personal">
+        <GrowthLoading v-if="personalLoading" variant="compact" :label="t('pages.review.loadingPersonal')" />
+        <div v-if="personalError" class="ui-list-row publish-queue-error" role="alert">
+          <span class="ui-list-main">{{ personalError }}</span>
+          <UiButton size="sm" :disabled="personalLoading" @click="loadPersonal()">{{ t('common.actions.retry') }}</UiButton>
+        </div>
+        <article v-for="draft in personalDrafts" :key="draft.id" class="ui-list-row review-item">
+          <div class="ui-list-main">
+            <span class="ui-list-heading">{{ draft.episode.name }}</span>
+            <p v-if="draft.episode.summary || draft.episode.source_description" class="ui-list-text">{{ draft.episode.summary || draft.episode.source_description }}</p>
+            <div class="ui-list-meta">
+              <span>{{ t('common.counts.entities', { count: draft.episode.entities?.length ?? 0 }) }}</span>
+              <span>{{ t('common.counts.relationships', { count: draft.episode.relationships?.length ?? 0 }) }}</span>
+              <span>{{ formatTime(draft.created_at) }}</span>
+            </div>
           </div>
-        </div>
-        <div class="review-actions stacked-actions">
-          <GrowthLoading v-if="personalDecisionBusy.has(draft.id)" variant="inline" :label="t('pages.review.savingDecision')" />
-          <button class="secondary-action" type="button" :disabled="personalLoading || personalError !== '' || personalDecisionBusy.has(draft.id)" @click="decidePersonal(draft, 'keep_personal')">{{ t('pages.review.keepPersonal') }}</button>
-          <button class="reject" type="button" :disabled="personalLoading || personalError !== '' || personalDecisionBusy.has(draft.id)" @click="decidePersonal(draft, 'ignore')">{{ t('pages.review.ignore') }}</button>
-          <button v-if="store.state?.capabilities?.submitKnowledge" class="approve" type="button" :disabled="personalLoading || personalError !== '' || personalDecisionBusy.has(draft.id)" @click="decidePersonal(draft, 'submit_public')">{{ t('pages.review.submitPublic') }}</button>
-        </div>
-      </article>
-      <div v-if="!personalLoading && !personalError && !personalDrafts.length" class="empty-state">{{ t('pages.review.noPersonalDrafts') }}</div>
-    </div>
-
-    <section v-if="store.state?.capabilities?.reviewProposals && maintainableProjects.length" class="project-section">
-      <div class="section-toolbar">
-        <div><h3>{{ t('pages.review.publicTitle') }}</h3></div>
-        <UiSelect
-          v-model="reviewProjectId"
-          :options="reviewProjectOptions"
-          :label="t('pages.review.projectLabel')"
-          control-id="review-project"
-          searchable
-        />
-      </div>
-      <div class="review-list" data-review-queue="shared">
-        <GrowthLoading v-if="sharedLoading" variant="compact" :label="t('pages.review.loadingPublic')" />
-        <div v-if="sharedError" class="review-error" role="alert">
-          <span>{{ sharedError }}</span>
-          <button class="secondary-action" type="button" :disabled="sharedLoading" @click="loadShared()">{{ t('common.actions.retry') }}</button>
-        </div>
-        <article v-for="proposal in proposals" :key="proposal.id" class="review-item">
-          <div>
-            <div class="review-stage">{{ t('pages.review.maintainerReview') }}</div>
-            <h4>{{ proposal.episode.name }}</h4>
-            <p>{{ proposal.episode.summary || proposal.episode.source_description }}</p>
-            <div class="review-meta"><span>{{ formatTime(proposal.created_at) }}</span></div>
-          </div>
-          <div class="review-actions">
-            <GrowthLoading v-if="sharedDecisionBusy.has(sharedBusyKey(reviewProjectId, proposal.id))" variant="inline" :label="t('pages.review.savingDecision')" />
-            <button class="reject" type="button" :disabled="sharedLoading || sharedError !== '' || sharedDecisionBusy.has(sharedBusyKey(reviewProjectId, proposal.id))" @click="decideShared(proposal, 'reject')">{{ t('pages.review.reject') }}</button>
-            <button class="approve" type="button" :disabled="sharedLoading || sharedError !== '' || sharedDecisionBusy.has(sharedBusyKey(reviewProjectId, proposal.id))" @click="decideShared(proposal, 'approve')">{{ t('pages.review.approve') }}</button>
+          <div class="ui-list-actions">
+            <GrowthLoading v-if="personalDecisionBusy.has(draft.id)" variant="inline" :label="t('pages.review.savingDecision')" />
+            <UiButton size="sm" variant="ghost" :disabled="personalLoading || personalError !== '' || personalDecisionBusy.has(draft.id)" data-decision="ignore" @click="decidePersonal(draft, 'ignore')">{{ t('pages.review.ignore') }}</UiButton>
+            <UiButton size="sm" :disabled="personalLoading || personalError !== '' || personalDecisionBusy.has(draft.id)" data-decision="keep_personal" @click="decidePersonal(draft, 'keep_personal')">{{ t('pages.review.keepPersonal') }}</UiButton>
+            <UiButton v-if="store.state?.capabilities?.submitKnowledge" size="sm" variant="primary" :disabled="personalLoading || personalError !== '' || personalDecisionBusy.has(draft.id)" data-decision="submit_public" @click="decidePersonal(draft, 'submit_public')">{{ t('pages.review.submitPublic') }}</UiButton>
           </div>
         </article>
-        <div v-if="!sharedLoading && !sharedError && !proposals.length" class="empty-state">{{ t('pages.review.noProposals') }}</div>
       </div>
-    </section>
+    </div>
+
+    <div v-if="showShared" class="publish-queue-block">
+      <div class="publish-queue-head">
+        <h3 class="list-title">{{ t('pages.review.publicTitle') }} <span v-if="proposals.length">{{ proposals.length }}</span></h3>
+        <UiSelect v-if="maintainableProjects.length > 1" v-model="reviewProjectId" :options="reviewProjectOptions"
+          :label="t('pages.review.projectLabel')" control-id="review-project" searchable />
+      </div>
+      <div class="ui-list" data-review-queue="shared">
+        <GrowthLoading v-if="sharedLoading" variant="compact" :label="t('pages.review.loadingPublic')" />
+        <div v-if="sharedError" class="ui-list-row publish-queue-error" role="alert">
+          <span class="ui-list-main">{{ sharedError }}</span>
+          <UiButton size="sm" :disabled="sharedLoading" @click="loadShared()">{{ t('common.actions.retry') }}</UiButton>
+        </div>
+        <article v-for="proposal in proposals" :key="proposal.id" class="ui-list-row review-item">
+          <div class="ui-list-main">
+            <span class="ui-list-heading">{{ proposal.episode.name }}</span>
+            <p v-if="proposal.episode.summary || proposal.episode.source_description" class="ui-list-text">{{ proposal.episode.summary || proposal.episode.source_description }}</p>
+            <div class="ui-list-meta"><span>{{ formatTime(proposal.created_at) }}</span></div>
+          </div>
+          <div class="ui-list-actions">
+            <GrowthLoading v-if="sharedDecisionBusy.has(sharedBusyKey(reviewProjectId, proposal.id))" variant="inline" :label="t('pages.review.savingDecision')" />
+            <UiButton size="sm" variant="ghost" :disabled="sharedLoading || sharedError !== '' || sharedDecisionBusy.has(sharedBusyKey(reviewProjectId, proposal.id))" data-decision="reject" @click="decideShared(proposal, 'reject')">{{ t('pages.review.reject') }}</UiButton>
+            <UiButton size="sm" variant="primary" :disabled="sharedLoading || sharedError !== '' || sharedDecisionBusy.has(sharedBusyKey(reviewProjectId, proposal.id))" data-decision="approve" @click="decideShared(proposal, 'approve')">{{ t('pages.review.approve') }}</UiButton>
+          </div>
+        </article>
+      </div>
+    </div>
   </section>
 </template>
+
+<style scoped>
+.publish-queue { display: grid; gap: 20px; margin-bottom: 24px; }
+.publish-queue-block { display: grid; gap: 10px; }
+.publish-queue-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.publish-queue-error { align-items: center; color: var(--color-danger); background: var(--color-danger-soft); }
+</style>

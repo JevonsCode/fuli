@@ -152,16 +152,7 @@ export const router = createRouter({
         title: 'attention.title',
       },
     },
-    {
-      path: '/review',
-      name: 'review',
-      component: () => import('@/pages/ReviewPage.vue'),
-      meta: {
-        eyebrow: 'REVIEW WORKSPACE',
-        title: 'routes.review.title',
-        description: 'routes.review.description',
-      },
-    },
+    { path: '/review', redirect: '/public-projects' },
     {
       path: '/connections',
       name: 'connections',

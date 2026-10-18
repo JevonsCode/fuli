@@ -46,10 +46,6 @@ export const routeMessages = {
     settings: {
       title: '设置',
     },
-    review: {
-      title: '审核',
-      description: '个人发布确认与公共项目 Maintainer 审核。',
-    },
     connections: {
       title: '连接',
       description: '本地知识库状态、公共 Provider 与项目订阅。',
@@ -101,10 +97,6 @@ export const routeMessages = {
     },
     settings: {
       title: 'Settings',
-    },
-    review: {
-      title: 'Review',
-      description: 'Personal publishing confirmation and public project Maintainer review.',
     },
     connections: {
       title: 'Connections',
