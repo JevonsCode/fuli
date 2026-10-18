@@ -3,6 +3,7 @@ import { chmodSync } from 'node:fs';
 import { isFetchBlockedPort } from '../server/blocked-ports.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import { deepFreeze } from '../validation/values.js';
+import { normalizeNeedsPersonUrl } from '../notifications/needs-person.js';
 
 export const RUNTIME_SETTINGS_VERSION = 1;
 export const RESOURCE_REFRESH_OPTIONS = Object.freeze([5, 10, 30, 60]);
@@ -86,7 +87,8 @@ export const DEFAULT_RUNTIME_SETTINGS = deepFreeze({
   },
   lanAccess: false,
   resourceRefreshSeconds: 5,
-  conversationLaunchers: DEFAULT_CONVERSATION_LAUNCHERS
+  conversationLaunchers: DEFAULT_CONVERSATION_LAUNCHERS,
+  notifications: { needsPersonUrl: '' }
 });
 
 export function readRuntimeSettings(path, {
@@ -148,13 +150,15 @@ export function normalizeRuntimeSettings(input, {
     input.conversationLaunchers,
     { base: base.conversationLaunchers ?? DEFAULT_CONVERSATION_LAUNCHERS }
   );
+  const notifications = normalizeNotifications(input.notifications, base.notifications);
   return {
     version: RUNTIME_SETTINGS_VERSION,
     graphRuntimeMode,
     ports,
     lanAccess,
     resourceRefreshSeconds,
-    conversationLaunchers
+    conversationLaunchers,
+    notifications
   };
 }
 
@@ -256,4 +260,12 @@ function validConversationUrlTemplate(value) {
   if (value.split('{id}').length !== 2 || /\s/.test(value)) return false;
   const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(value)?.[1]?.toLowerCase();
   return Boolean(scheme) && !['about', 'blob', 'data', 'file', 'javascript'].includes(scheme);
+}
+
+// Where FULI tells a local notifier that a person is needed; '' is off.
+function normalizeNotifications(input, base = DEFAULT_RUNTIME_SETTINGS.notifications) {
+  if (input !== undefined && (!input || typeof input !== 'object' || Array.isArray(input))) {
+    throw new TypeError('notifications must be an object');
+  }
+  return { needsPersonUrl: normalizeNeedsPersonUrl(input?.needsPersonUrl ?? base?.needsPersonUrl ?? '') };
 }

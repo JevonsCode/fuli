@@ -453,6 +453,14 @@ function revealInvalidField(event: Event) {
           </div>
         </UiDisclosure>
 
+        <UiDisclosure v-if="form.notifications" id="notifications" class="settings-card notifications-card" :title="t('settings.notifications.title')">
+          <label class="notification-url">
+            <span><strong>{{ t('settings.notifications.needsPersonUrl') }}</strong><small>{{ t('settings.notifications.needsPersonUrlMeta') }}</small></span>
+            <input v-model.trim="form.notifications.needsPersonUrl" type="url" maxlength="2048" spellcheck="false"
+              placeholder="http://127.0.0.1:9123/fuli" data-needs-person-url />
+          </label>
+        </UiDisclosure>
+
 
 
         </fieldset>
@@ -653,6 +661,10 @@ function revealInvalidField(event: Event) {
 .conversation-launcher-fields code { color: var(--color-muted); font-size: 12px; }
 .conversation-launcher-fields :deep(.launcher-select) { width: 100%; height: 40px; min-width: 0; }
 .conversation-launcher-fields input { width: 100%; min-width: 0; }
+.notification-url { display: grid; gap: 10px; }
+.notification-url > span { display: grid; gap: 4px; }
+.notification-url small { color: var(--color-muted); font-size: 12px; }
+.notification-url input { width: 100%; min-width: 0; }
 .setting-list { display: grid; }
 .setting-row {
   min-height: 64px;
