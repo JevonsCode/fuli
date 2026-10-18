@@ -53,6 +53,12 @@ export const AGENT_INTERFACE_DEFINITIONS = [
     inputSchema: objectSchema({}),
   },
   {
+    name: 'explain_settings',
+    title: 'READ · Explain FULI settings',
+    description: 'When the user asks how to set FULI up or what a setting does: each setting with its current value, effect, restart need and who changes it. Explain the effect before any change. Only capture has an Agent write tool; for other settings give the user the returned settingsUrl.',
+    inputSchema: objectSchema({}),
+  },
+  {
     name: 'update_capture_policy',
     title: 'WRITE · Update automatic capture policy',
     description: 'On an explicit user request enable or disable automatic personal knowledge capture. This never changes Agent access, deletes existing knowledge, or bypasses project scope.',

@@ -9,6 +9,7 @@ const READ_TOOLS = new Set([
   'list_preference_conflicts',
   'list_agent_interfaces',
   'get_capture_policy',
+  'explain_settings',
   'list_external_knowledge_connectors',
   'discover_external_knowledge_sources',
   'list_external_knowledge_bindings',
