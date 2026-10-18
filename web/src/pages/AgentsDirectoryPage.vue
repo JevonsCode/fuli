@@ -16,7 +16,7 @@ import { groupAgentsByProject } from "@/features/agent-profile/directory-project
 import DirectoryProjectGroup from "@/features/agent-profile/DirectoryProjectGroup.vue";
 import UnassignedConversationsPanel from "@/features/agent-profile/UnassignedConversationsPanel.vue";
 import AgentCard from "@/features/agent-profile/AgentCard.vue";
-import { isFormalProject } from "@/features/projects/project-origin";
+import { isFormalProject, projectDisplayName } from "@/features/projects/project-origin";
 import {
   agentDisplayName,
   agentProfilePath,
@@ -98,8 +98,10 @@ const projectById = computed(() =>
 const options = computed(() =>
   projects.value.map((project) => ({ value: project.project_id, label: project.profile.name })),
 );
+// Every project in the space gets a readable name, session fallbacks too,
+// so an Agent card never shows a raw project id.
 const projectNames = computed<Record<string, string>>(() =>
-  Object.fromEntries(options.value.map((project) => [project.value, project.label])),
+  Object.fromEntries(allSpaceProjects.value.map((project) => [project.project_id, projectDisplayName(project)])),
 );
 const statusOptions = computed(() => [
   { value: "all", label: t("agentProfiles.allStatus") },

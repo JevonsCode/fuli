@@ -373,19 +373,22 @@ const statuses = computed(() => [
 .label-definition-row dt,
 .label-definition-row dd { margin: 0; }
 
+/* A quiet outline chip: neutral text, the meaning carried by one coloured dot. */
 .label-token {
+  --token: var(--color-faint);
   width: max-content;
   max-width: 100%;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  height: 24px;
+  padding: 0 10px 0 8px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
-  padding: 5px 8px;
-  color: var(--color-ink);
-  background: var(--color-surface-subtle);
+  border-radius: var(--radius-pill);
+  color: var(--color-ink-soft);
+  background: var(--color-surface);
   font-size: 12px;
-  font-weight: 680;
+  font-weight: 500;
   line-height: 1;
   white-space: nowrap;
 }
@@ -395,18 +398,17 @@ const statuses = computed(() => [
   height: 6px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: currentColor;
+  background: var(--token);
   content: '';
-  opacity: .8;
 }
 
-.profile-token[data-kind="taste"] { color: var(--aspect-taste); background: var(--aspect-taste-soft); }
-.profile-token[data-kind="personality"] { color: var(--aspect-personality); background: var(--aspect-personality-soft); }
-.profile-token[data-kind="judgment"] { color: var(--aspect-judgment); background: var(--aspect-judgment-soft); }
-.origin-token { color: var(--color-ink); }
-.status-token[data-status="pending"] { color: var(--color-warning); background: var(--color-warning-soft); }
-.status-token[data-status="agent-confirmed"],
-.status-token[data-status="confirmed"] { color: var(--color-success); background: var(--color-success-soft); }
+.profile-token[data-kind="taste"] { --token: var(--aspect-taste); }
+.profile-token[data-kind="personality"] { --token: var(--aspect-personality); }
+.profile-token[data-kind="judgment"] { --token: var(--aspect-judgment); }
+.origin-token { --token: var(--color-ink-soft); }
+.status-token[data-status="pending"] { --token: var(--color-warning); }
+.status-token[data-status="agent-confirmed"] { --token: var(--color-accent-line); }
+.status-token[data-status="confirmed"] { --token: var(--color-success); }
 
 .label-definition-row strong {
   color: var(--color-ink);
