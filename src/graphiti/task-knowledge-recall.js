@@ -1,4 +1,4 @@
-import { createFuliSourceMarker } from './source-marker.js';
+import { createFuliSourceMarker, sourceConsoleUrl } from './source-marker.js';
 import { knowledgeItemRole } from './knowledge-item-role.js';
 import { detectSensitiveContent } from '../security/sensitive-content.js';
 import { budgetAutomaticRecall } from './knowledge-result-budget.js';
@@ -171,6 +171,15 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt) {
   return facts.length || entities.length ? budgetAutomaticRecall(result, {
     consoleUrl: application.consoleUrl, compare: compareRecallItems
   }) : result;
+}
+
+// An answer can rest on the recovered conversation instead of searched knowledge.
+// Without its own marker such a reply could only cite "searched, no match".
+export function withRecoveredSource(recall, conversation, { consoleUrl, spaceId, agentId }) {
+  if (!recall || recall.status === 'matched' || !conversation?.recovery?.latest_checkpoint || !spaceId || !agentId) return recall;
+  const url = `${consoleUrl ?? sourceConsoleUrl()}/agents/${encodeURIComponent(spaceId)}/${encodeURIComponent(agentId)}`;
+  return { ...recall, sourceMarker: { required: true, label: 'FULI 来源', status: 'recovered', count: 1,
+    leadMarkdown: `**[◇ FULI · 接续上次进度](${url})**`, markdown: '' } };
 }
 
 function recallWithoutSearch(status, plan) {

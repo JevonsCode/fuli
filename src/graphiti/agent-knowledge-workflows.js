@@ -2,6 +2,7 @@ import { taskAgentAssignment } from './task-agent-assignment.js';
 import { beginConversation, checkpointConversation } from './agent-conversations.js';
 import { recordTriage, validateTriage } from './conversation-triage.js';
 import { compactTaskCapture } from './task-remember.js';
+import { withRecoveredSource } from './task-knowledge-recall.js';
 import { taskTeam } from './task-collaboration-attribution.js';
 import { taskAgentReceipt } from '../agents/identity-receipt.js';
 import { createHash } from 'node:crypto';
@@ -115,6 +116,8 @@ export async function beginTaskFromPreferences(application, preferences, {
     resumed_checkpoint: Boolean(resumed),
     previous_checkpoint_missing: task.previousCheckpointMissing,
     ...preferences,
+    ...(preferences.task_knowledge_recall ? { task_knowledge_recall: withRecoveredSource(preferences.task_knowledge_recall, conversation, {
+      consoleUrl: application.consoleUrl, spaceId: preferences.context?.personal_space_id, agentId: preferences.context?.project_agent_id }) } : {}),
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
     task_guidance: taskKnowledgeGuidance()
   }, taskPreferenceMetadata(task, application.config?.personal?.spaceId));
