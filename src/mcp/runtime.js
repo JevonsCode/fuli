@@ -9,6 +9,8 @@ import { createWorkerTaskContext } from '../graphiti/worker-task-context.js';
 import { createRoundtableTaskContext } from '../agent-roundtable/task-context.js';
 import { createMcpServer } from './create-mcp-server.js';
 import { nativeMcpRequestContextResolver } from '../agents/native-mcp-context.js';
+import { FULI_VERSION } from '../package-metadata.js';
+import { registerMcpProcess } from './process-registry.js';
 
 export async function runStdio({ runtimeConfigPath, sourceApplication, toolNames = null, toolProfile = 'full', worker = null }) {
   const app = openFederatedGraphApplication({ runtimeConfigPath });
@@ -27,13 +29,15 @@ export async function runStdio({ runtimeConfigPath, sourceApplication, toolNames
   });
   const transport = new StdioServerTransport();
   const signalHandlers = new Map();
+  // Lets a later hook see that this client still runs this version after an update.
+  const unregister = worker === null ? registerMcpProcess(runtimeConfigPath, { sourceApplication, version: FULI_VERSION }) : () => {};
   const close = createCloseOnce({
     closeServer: () => server.close(),
     closeApplication: async () => {
       await leaseClient.close();
       return app.close();
     },
-    afterClose: () => removeHandlers(signalHandlers)
+    afterClose: () => { unregister(); removeHandlers(signalHandlers); }
   });
   const quietClose = createQuietCloser(close, () => { process.exitCode = 1; });
 
