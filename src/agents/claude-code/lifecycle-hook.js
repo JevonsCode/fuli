@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { TASK_RULES_ON_DEMAND } from '../lifecycle-message.js';
 import { transcriptLifecycle } from '../../conversations/transcript-lifecycle.js';
 import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { PREFERENCE_RESET_EVENTS, preferenceHookOutput, preferenceLifecycleOutput } from '../../conversations/preference-lifecycle.js';
@@ -33,7 +34,7 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
       sessionId, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192), ...source
     });
     return preferenceHookOutput(compactTaskContext(context), event, input, delivery, 'claude_code',
-      'Fuli task context. Read full context; apply effective_preferences. Follow checkpoint_guidance: checkpoint_task_knowledge only when there is something to record; the Stop hook closes the rest. Shared rules are referenced by version; read MCP resource fuli://rules/task-entry when one applies.');
+      'Fuli task context. Read full context; apply effective_preferences. Follow checkpoint_guidance: checkpoint_task_knowledge only when there is something to record; the Stop hook closes the rest. ' + TASK_RULES_ON_DEMAND);
   }
   const check = await invoke('verify_task_checkpoint', { sessionId, ...source });
   return stopHookOutcome(check, invoke, source);
