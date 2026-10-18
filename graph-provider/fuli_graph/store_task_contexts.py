@@ -394,7 +394,7 @@ class StoreTaskContexts:
                 'guidance': f'Worker run is {run_state}; no checkpoint is required. Do not block.'}
         return {
             'status': 'checkpoint_required', 'decision': 'block',
-            'task_context_token': record['token'],
+            'task_context_token': record['token'], 'entry_via': record.get('entry_via', 'tool'),
             'reason': f'FULI_CHECKPOINT_REQUIRED: {record["token"]} '
                 'Before finishing, call checkpoint_task_knowledge using this task_context_token '
                 'with capture_candidates or retain_nothing and workLog (summary and truthful status); include agentMemory when durable '

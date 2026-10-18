@@ -27,7 +27,7 @@ export function completePreferenceToolResult(value, limitBytes = 512 * 1024) {
   }
   const allowed = new Set(['effective_preferences', 'active_conflicts', 'deferred_conflicts',
     'application_guidance', 'task_guidance', 'judgment_context', 'agent_receipt', 'context',
-    'project_agent_context', 'taskContextToken', 'task_context_token', 'checkpoint_required', 'project_scope', 'worker_run',
+    'project_agent_context', 'taskContextToken', 'task_context_token', 'checkpoint_required', 'checkpoint_guidance', 'project_scope', 'worker_run',
     'preference_delivery', 'preferences_complete', 'same_task_recovery_available', 'truncated']);
   // One JSON form for both channels: undefined fields never differ between them.
   const envelope = candidate => { const text = JSON.stringify(candidate);

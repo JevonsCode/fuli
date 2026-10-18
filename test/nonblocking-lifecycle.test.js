@@ -113,3 +113,25 @@ test('Codex command never guesses a fallback session or supplies entry context a
     assert.notEqual(output.decision, 'block');
   }
 });
+
+for (const [host, run, source] of [
+  ['Codex', (input, invoke) => codexStopLifecycleOutput(input, invoke), 'codex'],
+  ['Claude', (input, invoke) => claudeLifecycleOutput('Stop', input, invoke), 'claude_code']
+]) test(`${host} closes a hook-delivered task with nothing recorded, honestly and without another model turn`, async () => {
+  const calls = [];
+  const invoke = async (name, input) => {
+    calls.push({ name, input });
+    return name === 'verify_task_checkpoint'
+      ? { status: 'checkpoint_required', decision: 'block', reason: 'Checkpoint pending', task_context_token: 'synthetic-token', entry_via: 'hook' }
+      : { status: 'checkpointed' };
+  };
+  const result = await run({ session_id: 'synthetic-session' }, invoke);
+  assert.deepEqual(result, {});
+  const close = calls.find(call => call.name === 'checkpoint_task_knowledge');
+  assert.equal(close.input.taskContextToken, 'synthetic-token');
+  assert.equal(close.input.disposition, 'retain_nothing');
+  assert.equal(close.input.workLog.status, 'reported');
+  assert.match(close.input.workLog.summary, /Auto-closed by the Stop hook/);
+  assert.equal(close.input.sourceApplication, source);
+  assert.equal('capture' in close.input, false);
+});

@@ -22,6 +22,7 @@ export class ProviderTaskContextRegistry {
       turn_id: input.turnId ?? null,
       memory_revision: input.memoryRevision ?? null,
       work_log_required: input.workLogRequired ?? false,
+      entry_via: input.entryVia === 'hook' ? 'hook' : 'tool',
       ...(input.preferenceScope !== undefined ? { preference_scope: scope } : {}),
       ...(input.agentAssignment ? { agent_assignment: parseTaskAgentAssignment(input.agentAssignment) } : {})
     }));
@@ -115,6 +116,7 @@ export function taskRecord(value) {
     sourceApplication: value.source_application,
     sourceSessionId: value.source_session_id ?? null,
     turnId: value.turn_id ?? null,
+    entryVia: value.entry_via ?? 'tool',
     preferenceScope: taskPreferenceScope(value.preference_scope),
     agentAssignment: storedAgentAssignment(value.agent_assignment),
     memoryRevision: value.memory_revision,

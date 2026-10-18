@@ -107,3 +107,12 @@ def test_worker_run_prepare_accepts_only_ids_strategy_and_host_capability_hash()
                    {'token': 'fuli-task-inherited-parent'}, {'session_id': '   '}]:
         with pytest.raises(ValidationError):
             WorkerRunSession.model_validate({**session, **change})
+
+
+def test_task_context_begin_records_whether_the_lifecycle_hook_delivered_it():
+    payload = {'personal_space_id': 'space-1', 'session_id': 'session-1',
+               'source_application': 'claude_code', 'token': 'fuli-task-entry-via'}
+    assert TaskContextBegin.model_validate(payload).model_dump(mode='json')['entry_via'] == 'tool'
+    assert TaskContextBegin.model_validate({**payload, 'entry_via': 'hook'}).entry_via == 'hook'
+    with pytest.raises(ValidationError):
+        TaskContextBegin.model_validate({**payload, 'entry_via': 'agent'})

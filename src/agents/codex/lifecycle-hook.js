@@ -12,6 +12,7 @@ import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
 import { isMainModule } from '../../system/main-module.js';
 import { readHookInput } from '../lifecycle-input.js';
 import { boundedHookMessage } from '../lifecycle-message.js';
+import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 
 export async function codexStopLifecycleOutput(input, invoke) {
   const sessionId = input?.session_id;
@@ -23,12 +24,9 @@ export async function codexStopLifecycleOutput(input, invoke) {
     sourceApplication: 'codex',
     sourceSessionId: sessionId
   });
-  if (check?.decision !== 'block' || typeof check.reason !== 'string' || !check.reason.trim()) {
-    return {};
-  }
-  // Checkpoints are advisory to the host. Never force another model turn or
-  // fabricate a work log merely because the user is ending the conversation.
-  return { systemMessage: boundedHookMessage(check.reason) };
+  // Never force another model turn. A hook-delivered task with no checkpoint
+  // is closed as honestly reported retain_nothing; others get the reminder.
+  return stopHookOutcome(check, invoke, { sourceApplication: 'codex', sourceSessionId: sessionId });
 }
 
 export async function codexLifecycleOutput(event, input, invoke, { delivery, currentTask } = {}) {
@@ -42,7 +40,7 @@ export async function codexLifecycleOutput(event, input, invoke, { delivery, cur
     turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192),
     sourceApplication: 'codex', sourceSessionId: input.session_id });
   return preferenceHookOutput(compactTaskContext(context), event, input, delivery, 'codex',
-    'Fuli task context. Apply effective_preferences and checkpoint with taskContextToken. Shared rules are referenced by version; read MCP resource fuli://rules/task-entry when one applies.');
+    'Fuli task context. Apply effective_preferences. Follow checkpoint_guidance: checkpoint with taskContextToken only when there is something to record; the Stop hook closes the rest. Shared rules are referenced by version; read MCP resource fuli://rules/task-entry when one applies.');
 }
 
 export async function runCodexLifecycleHook(args, dependencies = {}) {
