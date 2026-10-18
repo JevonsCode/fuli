@@ -194,7 +194,7 @@ describe('ConnectionsPage', () => {
     expect(wrapper.findAll('.external-binding-row')).toHaveLength(2)
     expect(wrapper.text()).toContain('2 个连接')
     expect(wrapper.get('.external-create-action').text()).toBe('添加连接')
-    expect(wrapper.get('.external-create-action').classes()).toContain('primary-action')
+    expect(wrapper.get('.external-create-action').classes()).toContain('ui-button--primary')
     expect(wrapper.get('.external-create-action-icon').attributes('aria-hidden')).toBe('true')
     expect(wrapper.get('[data-testid="external-knowledge-help"]').attributes()).toMatchObject({
       href: 'https://github.com/JevonsCode/fuli/blob/main/README.zh-CN.md#connect-external-knowledge',
@@ -245,7 +245,7 @@ describe('ConnectionsPage', () => {
     const editor = wrapper.get('.external-binding-editor')
     await editor.get('.ui-select__trigger').trigger('click')
     await editor.findAll('[role="option"]')[1].trigger('click')
-    await editor.get('.external-binding-editor-actions .primary-action').trigger('click')
+    await editor.get('.external-binding-editor-actions .ui-button--primary').trigger('click')
     await flushPromises()
     expect(patchJson).toHaveBeenCalledWith(
       '/api/external-knowledge/bindings/binding-1/targets',

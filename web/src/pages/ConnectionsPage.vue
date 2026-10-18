@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
+import UiButton from '@/ui/UiButton.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import { deleteJson, getJson, patchJson, postJson } from '@/api/client'
@@ -644,10 +645,10 @@ function readmeHelpUrl(fragment: string) {
             <small v-else-if="bindingSkippedCredentials(binding)">{{ t('pages.connections.credentialsSkipped', { count: bindingSkippedCredentials(binding) }) }}</small>
           </div>
           <div class="external-binding-actions">
-            <button class="quiet-button" type="button" :disabled="externalBusy" @click="checkBinding(binding)">{{ t('pages.connections.check') }}</button>
-            <button class="quiet-button external-sync-action" type="button" :disabled="externalBusy || !bindingCanSync(binding)" @click="syncBinding(binding)">{{ t('pages.connections.sync') }}</button>
-            <button class="quiet-button" type="button" :disabled="externalBusy" @click="startEditingTargets(binding)">{{ t('pages.connections.manageProjects') }}</button>
-            <button class="quiet-button danger" type="button" :disabled="externalBusy" @click="deleteBinding(binding)">{{ t('pages.connections.disconnect') }}</button>
+            <UiButton size="sm" variant="ghost" :disabled="externalBusy" @click="checkBinding(binding)">{{ t('pages.connections.check') }}</UiButton>
+            <UiButton size="sm" variant="ghost" class="external-sync-action" :disabled="externalBusy || !bindingCanSync(binding)" @click="syncBinding(binding)">{{ t('pages.connections.sync') }}</UiButton>
+            <UiButton size="sm" variant="ghost" :disabled="externalBusy" @click="startEditingTargets(binding)">{{ t('pages.connections.manageProjects') }}</UiButton>
+            <UiButton size="sm" variant="danger" :disabled="externalBusy" @click="deleteBinding(binding)">{{ t('pages.connections.disconnect') }}</UiButton>
           </div>
           <div v-if="editingBindingId === binding.id" class="external-binding-editor">
             <label>
@@ -681,8 +682,8 @@ function readmeHelpUrl(fragment: string) {
               </div>
             </div>
             <div class="external-binding-editor-actions">
-              <button class="quiet-button" type="button" :disabled="externalBusy" @click="cancelEditingTargets">{{ t('common.actions.cancel') }}</button>
-              <button class="primary-action" type="button" :disabled="externalBusy || !editingProjectIds.length" @click="saveBindingTargets(binding)">{{ t('pages.connections.saveProjects') }}</button>
+              <UiButton size="sm" variant="ghost" :disabled="externalBusy" @click="cancelEditingTargets">{{ t('common.actions.cancel') }}</UiButton>
+              <UiButton size="sm" variant="primary" :disabled="externalBusy || !editingProjectIds.length" @click="saveBindingTargets(binding)">{{ t('pages.connections.saveProjects') }}</UiButton>
             </div>
           </div>
         </article>
@@ -786,14 +787,15 @@ function readmeHelpUrl(fragment: string) {
           </div>
           <span class="trusted-code-badge">{{ t('pages.connections.trustedCode') }}</span>
         </template>
-        <button
-          class="primary-action external-create-action"
+        <UiButton
+          variant="primary"
+          class="external-create-action"
           type="submit"
           :disabled="externalBusy || !personalProjects.length || !form.personalProjectIds.length"
         >
           <span class="external-create-action-icon" aria-hidden="true" />
           <span>{{ t('pages.connections.connect') }}</span>
-        </button>
+        </UiButton>
       </form>
       </UiDisclosure>
     </section>
@@ -839,7 +841,7 @@ function readmeHelpUrl(fragment: string) {
       <GrowthLoading v-if="conflictBusy" variant="inline" :label="t('pages.connections.savingConflictPolicy')" />
       <div v-else-if="conflictError" role="alert">
         <p>{{ t('common.errors.loadFailed') }}</p>
-        <button class="secondary-action" type="button" @click="loadConflictPolicy">{{ t('common.actions.retry') }}</button>
+        <UiButton size="sm" @click="loadConflictPolicy">{{ t('common.actions.retry') }}</UiButton>
       </div>
     </UiDisclosure>
 
@@ -850,7 +852,7 @@ function readmeHelpUrl(fragment: string) {
         <div v-for="subscription in subscriptions" :key="`${subscription.provider_url}:${subscription.project_id}`" class="subscription-row">
           <span>↗</span>
           <div><strong>{{ subscription.project_name ?? subscription.project_id }}</strong><span>{{ t('pages.connections.sharedProject') }}</span></div>
-          <button class="secondary-action subscription-action" type="button" :disabled="subscriptionBusy" @click="unsubscribe(subscription)">{{ t('pages.connections.unsubscribe') }}</button>
+          <UiButton size="sm" class="subscription-action" :disabled="subscriptionBusy" @click="unsubscribe(subscription)">{{ t('pages.connections.unsubscribe') }}</UiButton>
         </div>
         <div v-if="!subscriptions.length" class="empty-state">{{ t('pages.connections.noSubscriptions') }}</div>
       </div>
@@ -864,7 +866,7 @@ function readmeHelpUrl(fragment: string) {
           required
           :disabled="subscriptionBusy"
         />
-        <button type="submit" :disabled="subscriptionBusy || !selectedProjectKey || !store.activePersonalSpace">{{ t('pages.connections.subscribe') }}</button>
+        <UiButton variant="primary" type="submit" :disabled="subscriptionBusy || !selectedProjectKey || !store.activePersonalSpace">{{ t('pages.connections.subscribe') }}</UiButton>
       </form>
     </section>
   </section>
