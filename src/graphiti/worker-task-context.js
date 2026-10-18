@@ -101,7 +101,7 @@ export function createWorkerTaskContext(application, descriptor) {
     }
     const run = await locate(signal);
     if (signal?.aborted) throw denied('Worker preference recovery was cancelled');
-    return { taskContextToken: ownToken, sourceApplication: run.target_application,
+    return { taskContextToken: ownToken, ...(input.cursor ? { cursor: input.cursor } : {}), sourceApplication: run.target_application,
       sourceSessionId: run.actual_session_id, sourceSessionVerified: true, workerRun: run };
   }
   async function entry({ task, run }, toolName) {

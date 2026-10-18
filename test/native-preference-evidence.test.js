@@ -15,6 +15,15 @@ const codexCall = (id, name = 'mcp__fuli__get_collaboration_preferences') => ({ 
 const codexResult = (id, output) => ({ type: 'response_item', payload: { type: 'function_call_output', call_id: id, output } });
 const codexHeader = { type: 'session_meta', payload: { id: session } };
 
+test('a final reader page with preferences_complete=true cannot prove a whole native preference frame', async () => {
+  const suffix = { ...value, preferences_complete: true, preference_delivery: {
+    status: 'paginated', revision: 'synthetic-revision', page_index: 9, page_count: 10, next_cursor: null } };
+  const proof = await inspect([codexHeader, codexCall('last', 'mcp__fuli__read_task_preferences'),
+    codexResult('last', JSON.stringify(envelope(suffix)))]);
+  assert.equal(proof.known, true);
+  assert.deepEqual(proof.frames, []);
+});
+
 async function inspect(records, adapter = codexPreferenceEvidence, id = session, suffix = '\n') {
   const directory = await mkdtemp(join(tmpdir(), 'fuli-native-preference-evidence-'));
   try {

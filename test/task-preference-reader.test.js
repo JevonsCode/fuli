@@ -7,15 +7,16 @@ import { projectAgentRecord } from '../src/graphiti/project-agent-mapping.js';
 import { applyAgentAssignment } from '../src/graphiti/task-agent-assignment.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
 import { entryRules } from '../src/conversations/entry-rules.js';
+import { agentCollaborationPreference } from '../src/graphiti/collaboration-preference-projection.js';
 
 const SESSION = '019fc6ed-02a5-7832-8821-68e3b03e7cef';
-function fixture() {
+function fixture(count = 1) {
   const task = { token: 'fuli-task-synthetic-reader', sessionId: SESSION, sourceApplication: 'codex',
     sourceSessionId: 'old-hook-process-provenance', personalProjectId: 'project-a', projectAgentId: 'agent-a',
     preferenceScope: { version: 1, work_kind: 'implementation', workflow: 'release' }, checkpoint: null,
     agentAssignment: { version: 1, selection_reason: 'delegated_member', match_basis: ['This member worker reports to the configured project lead.'],
       requested_agent_id: null, reporting_lead_agent_id: 'lead-a', execution_reason: null, execution_agent_id: null } };
-  const items = Array.from({ length: 100 }, (_, i) => ({ id: `rule-${i}`, item_kind: 'entity',
+  const items = Array.from({ length: count }, (_, i) => ({ id: `rule-${i}`, item_kind: 'entity',
     instruction: `Synthetic rule ${i}: ` + '规则说明'.repeat(160) + ` END_PREF_${i}`,
     preference_key: `rule-${i}`, preference_scope: 'project', preference_project_id: 'project-a',
     confirmation_status: 'confirmed', preference_qualifiers: { workKind: 'implementation', workflow: 'release' } }));
@@ -59,15 +60,26 @@ async function call(f, { env = { CODEX_THREAD_ID: SESSION }, sourceApplication =
 }
 
 test('owned reader delivers all long instructions and mandatory guidance in both channels without entry side effects', async () => {
-  const f = fixture();
-  const result = await call(f);
-  assert.notEqual(result.isError, true, JSON.stringify(result));
-  const value = result.structuredContent;
-  assert.equal(value.preferences_complete, true);
+  const f = fixture(100);
+  const pages = [];
+  let cursor;
+  do {
+    const result = await call(f, { extra: cursor ? { cursor } : {} });
+    assert.notEqual(result.isError, true, JSON.stringify(result));
+    assert.ok(Buffer.byteLength(JSON.stringify(result)) <= 32 * 1024);
+    assert.deepEqual(JSON.parse(result.content[0].text), result.structuredContent);
+    pages.push(result.structuredContent);
+    cursor = result.structuredContent.preference_delivery.next_cursor;
+    assert.equal(result.structuredContent.preferences_complete, !cursor);
+    assert.ok(pages.length <= 100);
+  } while (cursor);
+  assert.ok(pages.length > 1);
+  assert.equal(new Set(pages.map(page => page.preference_delivery.revision)).size, 1);
+  assert.deepEqual(pages.map(page => page.preference_delivery.page_index), pages.map((_, i) => i));
+  const value = { ...Object.assign({}, ...pages), effective_preferences: pages.flatMap(page => page.effective_preferences) };
   assert.equal(value.effective_preferences.length, 100);
+  assert.deepEqual(value.effective_preferences, f.preferences.effective_preferences.map(agentCollaborationPreference));
   for (let i = 0; i < 100; i++) assert.equal(value.effective_preferences[i].instruction, f.preferences.effective_preferences[i].instruction);
-  assert.deepEqual(JSON.parse(result.content[0].text), value);
-  assert.ok(Buffer.byteLength(JSON.stringify(result)) <= 512 * 1024);
   assert.equal(value.task_context_token, f.task.token);
   assert.equal(value.agent_receipt.owner.agent_id, 'agent-a');
   assert.match(value.task_guidance.checkpoint, /checkpoint/);
@@ -83,7 +95,7 @@ test('owned reader delivers all long instructions and mandatory guidance in both
   assert.equal(role.selection_reason, 'delegated_member');
   for (const key of ['memory', 'global_memory', 'team', 'knowledge', 'recent_tasks']) assert.equal(Object.hasOwn(role, key), false);
   assert.deepEqual(value.active_conflicts, []); assert.deepEqual(value.deferred_conflicts, []);
-  assert.equal(f.reads(), 1);
+  assert.equal(f.reads(), pages.length);
 });
 
 test('complete reader preserves active and queued conflict alternatives instead of delivering only effective rules', async () => {
@@ -164,18 +176,16 @@ test('recovered Agent context matches every instruction field of the compacted e
   assert.match(recovered.team_guidance, /sole user-facing owner/);
 });
 
-test('role text with characters outside the BMP is delivered whole up to the Provider code point limit', async () => {
+test('fixed role guidance beyond the page envelope budget blocks without a partial role', async () => {
   const f = fixture();
   const tail = (limit, marker) => '𝒜'.repeat(limit - [...marker].length) + marker;
   Object.assign(f.rawAgent.profile.character, { judgment: tail(2048, 'HUMAN_REVIEW_REQUIRED_J') });
   f.rawAgent.profile.expectations = tail(4096, 'HUMAN_REVIEW_REQUIRED_E');
   const result = await call(f); assert.notEqual(result.isError, true, JSON.stringify(result));
-  const role = result.structuredContent.project_agent_context.role;
-  assert.equal(role.character.judgment, f.rawAgent.profile.character.judgment);
-  assert.equal(role.expectations, f.rawAgent.profile.expectations);
-  assert.match(role.character.judgment, /HUMAN_REVIEW_REQUIRED_J$/);
-  assert.match(role.expectations, /HUMAN_REVIEW_REQUIRED_E$/);
-  assert.equal(result.structuredContent.preferences_complete, true);
+  assert.equal(result.structuredContent.preferences_complete, false);
+  assert.equal(result.structuredContent.preference_delivery.reason, 'delivery_budget');
+  assert.equal(result.structuredContent.effective_preferences, undefined);
+  assert.doesNotMatch(result.content[0].text, /HUMAN_REVIEW_REQUIRED/);
 });
 
 test('role text beyond its bound or an unreadable team blocks instead of delivering a cut role', async () => {
@@ -190,4 +200,59 @@ test('role text beyond its bound or an unreadable team blocks instead of deliver
     assert.equal(result.structuredContent.effective_preferences, undefined);
     assert.doesNotMatch(result.content[0].text, /HUMAN_REVIEW_REQUIRED|END_PREF_/);
   }
+});
+
+
+test('reader retries return identical pages and reject forged, cross-token and changed-snapshot cursors', async () => {
+  const f = fixture(100);
+  const first = await call(f);
+  const cursor = first.structuredContent.preference_delivery.next_cursor;
+  assert.equal(typeof cursor, 'string');
+  assert.deepEqual(await call(f), first);
+  const second = await call(f, { extra: { cursor } });
+  assert.deepEqual(await call(f, { extra: { cursor } }), second);
+  assert.equal((await call(f, { extra: { cursor: cursor + 'forged' } })).isError, true);
+  const other = fixture(100); other.task.token = 'fuli-task-other';
+  assert.equal((await call(other, { extra: { cursor } })).isError, true);
+  // All mandatory content, including role and conflicts, belongs to the revision.
+  f.rawAgent.profile.expectations += ' Changed role';
+  const stale = await call(f, { extra: { cursor } });
+  assert.equal(stale.isError, true);
+  assert.equal(stale.structuredContent.effective_preferences, undefined);
+  assert.notEqual((await call(f)).structuredContent.preference_delivery.revision,
+    first.structuredContent.preference_delivery.revision);
+});
+
+test('a later oversize preference blocks the first page rather than silently dropping it', async () => {
+  const f = fixture(100);
+  f.preferences.effective_preferences[99].instruction = 'Oversized synthetic instruction '.repeat(20_000);
+  const result = await call(f);
+  assert.equal(result.structuredContent.preferences_complete, false);
+  assert.equal(result.structuredContent.preference_delivery.status, 'blocked');
+  assert.equal(result.structuredContent.effective_preferences, undefined);
+  assert.doesNotMatch(result.content[0].text, /END_PREF_/);
+});
+
+test('small legacy reader response remains complete without a cursor', async () => {
+  const result = await call(fixture());
+  assert.equal(result.structuredContent.preferences_complete, true);
+  assert.equal(result.structuredContent.preference_delivery.status, 'complete');
+  assert.equal(result.structuredContent.effective_preferences.length, 1);
+  assert.equal(result.structuredContent.preference_delivery.next_cursor, undefined);
+});
+
+test('a continuation reauthorizes before reading cached cursor metadata', async () => {
+  const f = fixture(100);
+  const first = await call(f);
+  const cursor = first.structuredContent.preference_delivery.next_cursor;
+  let revokedReads = 0;
+  f.app.taskContextRegistry.preferences = async () => {
+    revokedReads++;
+    throw new Error('Synthetic Provider denied revoked access');
+  };
+  const result = await call(f, { extra: { cursor } });
+  assert.equal(revokedReads, 1);
+  assert.equal(result.isError, true);
+  assert.equal(result.structuredContent.effective_preferences, undefined);
+  assert.doesNotMatch(result.content[0].text, /END_PREF_/);
 });

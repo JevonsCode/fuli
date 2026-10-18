@@ -347,6 +347,59 @@ test('task-only worker recovery keeps temporary authority and blocks Agent scope
   }
 });
 
+test('sealed workers continue long preference pages on the same admitted token and recheck run revocation', async () => {
+  const f = workerFixture({ memoryScope: 'task_only' });
+  const descriptor = { ...f.descriptor, toolNames: [...f.descriptor.toolNames, 'read_task_preferences'] };
+  const items = Array.from({ length: 100 }, (_, i) => ({ preference_key: `synthetic-worker-${i}`,
+    instruction: `Synthetic worker ${i}: ${'Preserve scope. '.repeat(100)} END_${i}`,
+    preference_scope: 'project', preference_project_id: f.context.personal_project_id, confirmation_status: 'confirmed' }));
+  let revoked = false;
+  f.app.taskContextRegistry.preferences = async () => {
+    if (revoked) throw new Error('Synthetic revoked worker');
+    return { task: taskRecord(f.context), preferences: {
+      personal_space_id: f.context.personal_space_id, personal_project_id: f.context.personal_project_id,
+      project_agent_id: f.context.project_agent_id, effective_preferences: items, project_preferences: items,
+      conflicts: [], queued_conflicts: [], truncated: false,
+      source_windows: { candidates_truncated: false, project_ancestors_truncated: false, queued_conflicts_truncated: false }
+    } };
+  };
+  f.app.readTaskPreferences = input => readTaskPreferences(f.app, input);
+  const port = createWorkerTaskContext(f.app, descriptor);
+  await port.admit();
+  const server = createMcpServer(f.app, { env: {}, registerResources: false, workerTaskContext: port });
+  try {
+    const collected = [];
+    let cursor;
+    let continuation;
+    let count = 0;
+    do {
+      const result = await workerCall(server, 'read_task_preferences', {
+        taskContextToken: f.context.token, ...(cursor ? { cursor } : {}) });
+      assert.notEqual(result.isError, true, JSON.stringify(result));
+      const page = result.structuredContent;
+      assert.ok(Buffer.byteLength(JSON.stringify(result)) <= 32 * 1024);
+      assert.equal(page.worker_run.run_id, f.run.run_id);
+      if (page.project_agent_context) assert.equal(page.project_agent_context.selection_reason, 'worker_run_admitted');
+      if (page.task_guidance) assert.match(page.task_guidance.collaboration, /already assigned bounded worker/);
+      collected.push(...page.effective_preferences);
+      cursor = page.preference_delivery.next_cursor;
+      continuation ??= cursor;
+      assert.equal(page.preferences_complete, !cursor);
+      assert.ok(++count <= 100);
+    } while (cursor);
+    assert.ok(count > 1);
+    assert.deepEqual(collected.map(item => item.instruction), items.map(item => item.instruction));
+    assert.equal(f.calls.admit, 1);
+    revoked = true;
+    assert.equal((await workerCall(server, 'read_task_preferences', {
+      taskContextToken: f.context.token, cursor: continuation })).isError, true);
+    assert.equal(f.calls.admit, 1);
+    assert.equal(f.calls.entries.length, 0);
+    assert.equal(f.calls.views, 0);
+    assert.deepEqual(f.calls.memories, []);
+  } finally { await server.close(); }
+});
+
 test('ordinary and worker MCP entries deliver the same explicit preference block without partial rules', async () => {
   for (const worker of [false, true]) {
     const { app, port, context, calls } = workerFixture();

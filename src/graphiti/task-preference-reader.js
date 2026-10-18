@@ -11,14 +11,16 @@ import { PROJECT_AGENT_CONTINUITY_GUIDANCE, projectAgentRoleContext, projectAgen
 import { loadProjectTeamContext } from './project-agent-team-context.js';
 import { applyAgentAssignment } from './task-agent-assignment.js';
 import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
+import { createTaskPreferencePager } from './task-preference-pages.js';
 
 // Worker entry always uses this fixed admission selection (worker-task-context.js).
 const WORKER_ASSIGNMENT = Object.freeze({ selection_reason: 'worker_run_admitted', match_basis: ['sealed_worker_run'] });
+const PAGERS = new WeakMap();
 
 // A fresh read of the current source, never a task entry or preference snapshot.
 export async function readTaskPreferences(application, {
   taskContextToken, sourceApplication, sourceSessionId, sourceSessionVerified = false,
-  workerRun = null
+  workerRun = null, cursor
 }) {
   if (!sourceSessionVerified || !sourceSessionId || sourceSessionId.startsWith('fuli-host-')) {
     throw blocked('This host has no verified native or sealed worker session; do not supply or guess a session to recover preferences.');
@@ -105,8 +107,12 @@ export async function readTaskPreferences(application, {
         coordination.personal_project_id !== task.personalProjectId) throw blocked('Worker coordination identity changed.');
     result = withWorkerTaskGuidance(result, workerRun, coordination);
   }
-  return projection.context.source_truncated ? blockedPreferenceDelivery(result, 'source_window')
-    : withPreferenceScope(result, taskPreferenceMetadata(task, spaceId));
+  if (!PAGERS.has(application)) PAGERS.set(application, createTaskPreferencePager());
+  const page = PAGERS.get(application).read(projection.context.source_truncated
+    ? blockedPreferenceDelivery(result, 'source_window') : result, { cursor });
+  // A final page is only a suffix, never a complete native delta baseline.
+  return page.preference_delivery.status === 'complete'
+    ? withPreferenceScope(page, taskPreferenceMetadata(task, spaceId)) : page;
 }
 
 function blocked(message) { return new ApplicationError('preference_recovery_blocked', message); }
