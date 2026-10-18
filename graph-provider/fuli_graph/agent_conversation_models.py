@@ -58,6 +58,7 @@ class ConversationWrite(ConversationScope):
     cursor: int | None = Field(default=None, ge=0)
     expected_cursor: int | None = Field(default=None, ge=0)
     initialize_cursor: bool = False
+    fallback_recovery: bool = False
 
     @model_validator(mode='after')
     def bounded_batch(self):

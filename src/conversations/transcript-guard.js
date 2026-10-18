@@ -23,10 +23,13 @@ export async function withTranscriptGuard(runtimeConfigPath, input, source, enab
     try {
       if (!(await lstat(path)).isFile()) throw new Error('Invalid transcript guard');
       value = JSON.parse(await readFile(path, 'utf8'));
-      if (value.version !== 1 || !['scan', 'ready', 'beginning', 'claim'].includes(value.phase)
+      if (value.version !== 1 || !['scan', 'ready', 'beginning', 'claim', 'fallback'].includes(value.phase)
         || !/^[a-f0-9]{64}$/.test(value.owner ?? '') || !/^[a-f0-9]{64}$/.test(value.prompt ?? '')
         || !Number.isSafeInteger(value.scanCursor) || value.scanCursor < 0
-        || (value.boundary !== undefined && (!Number.isSafeInteger(value.boundary) || value.boundary < 0))) {
+        || (value.boundary !== undefined && (!Number.isSafeInteger(value.boundary) || value.boundary < 0))
+        || (value.phase === 'fallback' && (!/^[a-f0-9]{64}$/.test(value.nextOwner ?? '')
+          || !Number.isSafeInteger(value.recoveryFrom) || value.recoveryFrom < 0
+          || !Number.isSafeInteger(value.boundary) || value.boundary < value.recoveryFrom))) {
         throw new Error('Invalid transcript guard state');
       }
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
