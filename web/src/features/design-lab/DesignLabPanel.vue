@@ -4,7 +4,7 @@ import { t } from '@/i18n'
 import { motionPreference, setMotionPreference } from '@/lib/motion-preference'
 import { PALETTES, palettePreference, setPalettePreference } from '@/lib/palette-preference'
 import { UiButton, UiIconButton, UiSegmented, UiToggle } from '@/ui'
-import { PAGE_TRANSITIONS, designLab, resetDesignLab } from './design-lab'
+import { LAB_CHOICES, PAGE_TRANSITIONS, designLab, resetDesignLab, type LabChoice } from './design-lab'
 import { WORKBENCH_VARIANTS } from './workbench-variants'
 import './design-lab.css'
 
@@ -14,6 +14,8 @@ const paletteOptions = computed(() => PALETTES.map(value => ({
   value, label: t(`designLab.palettes.${value}`), swatch: `var(--palette-swatch-${value})`,
 })))
 const transitionOptions = computed(() => PAGE_TRANSITIONS.map(value => ({ value, label: t(`designLab.transitions.${value}`) })))
+const LOOK: readonly LabChoice[] = ['theme', 'cards', 'density', 'radius']
+const choiceOptions = (key: LabChoice) => LAB_CHOICES[key].map(value => ({ value, label: t(`designLab.choices.${key}.${value}`) }))
 const workbenchOptions = computed(() => WORKBENCH_VARIANTS.map(({ id, labelKey }) => ({ value: id, label: t(labelKey) })))
 const position = computed(() => designLab.value.x === null || designLab.value.y === null
   ? undefined
@@ -63,6 +65,14 @@ function reset() {
     </div>
 
     <div class="design-lab-group">
+      <span class="design-lab-label">{{ t('designLab.look') }}</span>
+      <div v-for="key in LOOK" :key="key" class="design-lab-row">
+        <span>{{ t(`designLab.choices.${key}.label`) }}</span>
+        <UiSegmented v-model="designLab.choices[key]" :data-lab-choice="key" :options="choiceOptions(key)" :label="t(`designLab.choices.${key}.label`)" />
+      </div>
+    </div>
+
+    <div class="design-lab-group">
       <span class="design-lab-label">{{ t('designLab.motion') }}</span>
       <label class="design-lab-row">
         <span>{{ t('designLab.reduceMotion') }}</span>
@@ -72,6 +82,10 @@ function reset() {
       <div class="design-lab-row">
         <span>{{ t('designLab.transition') }}</span>
         <UiSegmented v-model="designLab.transition" data-lab-transition :options="transitionOptions" :label="t('designLab.transition')" />
+      </div>
+      <div class="design-lab-row">
+        <span>{{ t('designLab.choices.ring.label') }}</span>
+        <UiSegmented v-model="designLab.choices.ring" data-lab-choice="ring" :options="choiceOptions('ring')" :label="t('designLab.choices.ring.label')" />
       </div>
       <label class="design-lab-row">
         <span>{{ t('designLab.cardLift') }}</span>

@@ -44,3 +44,24 @@ describe('DesignLabPanel', () => {
     wrapper.unmount()
   })
 })
+
+describe('DesignLabPanel A/B choices', () => {
+  it('applies theme, card, density, radius and ring choices to the document and resets them', async () => {
+    designLab.value.open = true
+    const wrapper = mount(DesignLabPanel)
+    const pick = (key: string, label: string) => wrapper.findAll(`[data-lab-choice="${key}"] button`).find(button => button.text() === label)!.trigger('click')
+    await pick('theme', '深色')
+    await pick('cards', '阴影')
+    await pick('density', '紧凑')
+    await pick('radius', '大')
+    await pick('ring', '静止')
+    await nextTick()
+    const root = document.documentElement.dataset
+    expect([root.theme, root.labCards, root.labDensity, root.labRadius, root.labRing]).toEqual(['dark', 'shadow', 'compact', 'large', 'still'])
+
+    await wrapper.get('[data-design-lab-reset]').trigger('click')
+    await nextTick()
+    expect([root.theme, root.labCards, root.labDensity, root.labRadius, root.labRing]).toEqual([undefined, undefined, undefined, undefined, undefined])
+    wrapper.unmount()
+  })
+})
