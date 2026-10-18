@@ -14,7 +14,7 @@ const paletteOptions = computed(() => PALETTES.map(value => ({
   value, label: t(`designLab.palettes.${value}`), swatch: `var(--palette-swatch-${value})`,
 })))
 const transitionOptions = computed(() => PAGE_TRANSITIONS.map(value => ({ value, label: t(`designLab.transitions.${value}`) })))
-const LOOK: readonly LabChoice[] = ['theme', 'cards', 'density', 'radius']
+const LOOK: readonly LabChoice[] = ['cards', 'density', 'radius']
 const choiceOptions = (key: LabChoice) => LAB_CHOICES[key].map(value => ({ value, label: t(`designLab.choices.${key}.${value}`) }))
 const workbenchOptions = computed(() => WORKBENCH_VARIANTS.map(({ id, labelKey }) => ({ value: id, label: t(labelKey) })))
 const position = computed(() => designLab.value.x === null || designLab.value.y === null
