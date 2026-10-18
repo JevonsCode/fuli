@@ -57,6 +57,21 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
       : `No active Agent matches "${needle}". Call find_agents first.`);
   }
 
+  // An Agent addressed by ID who works only in another project is a cross-project
+  // ask to that project (the Provider still admits only its lead). Several
+  // possible projects must be named; Agents without a project keep the sender's.
+  function agentProjectOutsideSender(agent, from) {
+    if (!from.projectId) return null;
+    const active = (agent.assignments ?? []).filter(assignment => assignment.status === 'active')
+      .map(assignment => assignment.personalProjectId);
+    const projects = [...new Set(active.length ? active : [agent.personalProjectId].filter(Boolean))];
+    if (!projects.length || projects.includes(from.projectId)) return null;
+    if (projects.length > 1) {
+      throw validation(`${label(agent)} works in several projects; address one as project:<projectId> (${projects.join(', ')})`);
+    }
+    return projects[0];
+  }
+
   async function conversations(agent, projectId) {
     const sessions = await app.personal.recentAgentSessions({ personalSpaceId: spaceId(), agentId: agent.agentId,
       personalProjectId: projectId ?? null, limit: 5 }).catch(() => []);
@@ -196,7 +211,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     const resolved = projectId ? await resolveProjectLead(app, projectId, { source: from, recruit: true }) : null;
     if (resolved && !resolved.agent) return { status: 'queued', reason: resolved.reason, targetProjectId: projectId };
     const target = resolved?.agent ?? await recipient(to);
-    const targetProjectId = projectId ?? from.projectId;
+    const targetProjectId = projectId ?? agentProjectOutsideSender(target, from) ?? from.projectId;
     const crossProject = Boolean(targetProjectId && from.projectId && targetProjectId !== from.projectId);
     if (from.agent?.agentId === target.agentId && !crossProject && !threadId) throw validation('An Agent cannot open a thread with itself');
     const { thread, history } = openThread(threadId, from.projectId, body);
