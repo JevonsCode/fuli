@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-import { transcriptGuardFailureMessage, withTranscriptGuard } from '../../conversations/transcript-guard.js';
+import { transcriptLifecycle } from '../../conversations/transcript-lifecycle.js';
 import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { PREFERENCE_RESET_EVENTS, preferenceHookOutput, preferenceLifecycleOutput } from '../../conversations/preference-lifecycle.js';
-import { syncConversationTranscript, withTranscriptNotice, claimTranscriptBoundary, recordTranscriptTaskEntry } from '../../conversations/sync-transcript.js';
 import { normalizeClaudeRecord, verifyClaudeTranscript } from './conversation-transcript.js';
 import { hostNotificationOutput, isHostNotificationEntry } from './host-notification.js';
 
@@ -12,7 +11,6 @@ import { openFederatedGraphApplication } from '../../graphiti/federated-applicat
 import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
 import { isMainModule } from '../../system/main-module.js';
 import { readHookInput } from '../lifecycle-input.js';
-import { boundedHookMessage } from '../lifecycle-message.js';
 import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
 import { FULI_VERSION } from '../../package-metadata.js';
@@ -71,30 +69,15 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
       if (PREFERENCE_RESET_EVENTS.includes(event)) return claudeLifecycleOutput(event, input,
         (name, parameters) => (dependencies.callTool ?? callAgentTool)(app, name, parameters, request),
         { delivery: app.preferenceDelivery, currentTask: app.taskContextRegistry?.current?.bind(app.taskContextRegistry) });
-      try {
-        if (app.getCapturePolicy?.('claude_code').enabled && input.transcript_path) dependencies.onTranscriptGuard?.();
-        return await withTranscriptGuard(runtimeConfigPath, input, 'claude_code', app.getCapturePolicy?.('claude_code').enabled, async guard => {
-          let sync = await syncConversationTranscript(app, input, 'claude_code', {
-            normalize: normalizeClaudeRecord, verify: verifyClaudeTranscript
-          }, guard);
-          if (event === 'UserPromptSubmit' && sync.entryBlocked) return claudeLifecycleUnavailable(event, input, boundedHookMessage(sync.reason));
-          const entryGuard = sync.status === 'capture_disabled' ? null : guard;
-          if (event === 'UserPromptSubmit' && entryGuard?.value) await entryGuard.write({ ...entryGuard.value, phase: 'beginning' });
-          const output = await claudeLifecycleOutput(event, input, async (name, parameters) => {
-            const context = await (dependencies.callTool ?? callAgentTool)(app, name, parameters, request);
-            if (name === 'begin_task_context') await recordTranscriptTaskEntry(entryGuard, context);
-            return context;
-          }, { delivery: app.preferenceDelivery });
-          if (event === 'UserPromptSubmit') sync = await claimTranscriptBoundary(app, input, 'claude_code', sync, {
-            normalize: normalizeClaudeRecord, verify: verifyClaudeTranscript
-          }, entryGuard);
-          if (event === 'UserPromptSubmit' && sync.entryBlocked) return claudeLifecycleUnavailable(event, input, boundedHookMessage(sync.reason));
-          return withTranscriptNotice(output, sync);
-        });
-      } catch (error) {
-        if (event !== 'UserPromptSubmit' || !app.getCapturePolicy?.('claude_code').enabled || !input.transcript_path) throw error;
-        return claudeLifecycleUnavailable(event, input, transcriptGuardFailureMessage(error));
-      }
+      if (app.getCapturePolicy?.('claude_code').enabled && input.transcript_path) dependencies.onTranscriptGuard?.();
+      return transcriptLifecycle({ application: app, runtimeConfigPath, input, event, sourceApplication: 'claude_code',
+        captureTimeoutMs: dependencies.captureTimeoutMs, signal: dependencies.signal,
+        adapter: { normalize: normalizeClaudeRecord, verify: verifyClaudeTranscript },
+        run: onContext => claudeLifecycleOutput(event, input, async (name, parameters) => {
+          const context = await (dependencies.callTool ?? callAgentTool)(app, name, parameters, request);
+          if (name === 'begin_task_context') onContext(context);
+          return context;
+        }, { delivery: app.preferenceDelivery }) });
     }, request);
     return event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, outdatedMcpNotice(runtimeConfigPath,
       { sourceApplication: 'claude_code', version: FULI_VERSION, sessionId: input.session_id })) : output;
@@ -129,6 +112,7 @@ async function main() {
   const abort = setTimeout(() => controller.abort(), Math.max(1, timeoutMs - 1500));
   try {
     const output = await runClaudeLifecycleHook(args, { signal: controller.signal,
+      captureTimeoutMs: Math.max(1, Math.min(750, Math.floor(timeoutMs / 4))),
       readInput: async () => { input = await readHookInput(); return input; } });
     emit(output);
   } catch {

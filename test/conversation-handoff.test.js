@@ -292,19 +292,19 @@ test('an unrelated listener on the former hashed loopback port does not block th
   assert.deepEqual(f.entries, ['begin_task_context', 'begin_task_context', 'begin_task_context']);
 });
 
-test('a same-session hook reports a held guard as another Fuli hook and does not begin a task', async t => {
+test('a same-session hook skips held-guard capture and still begins a task', async t => {
   const f = await fixture(t, row('assistant', 'prior completed answer'));
   await f.run(async () => {
     const result = await f.hook();
     assert.notEqual(result.decision, 'block');
     assert.match(result.systemMessage, /Another Fuli hook for this host session is still running/);
-    assert.equal(result.hookSpecificOutput, undefined);
+    assert.match(result.hookSpecificOutput.additionalContext, /taskContextToken/);
   });
-  assert.deepEqual(f.entries, []);
+  assert.deepEqual(f.entries, ['begin_task_context']);
   assert.deepEqual(f.appended, []);
   const result = await f.hook();
   assert.doesNotMatch(result.systemMessage ?? '', /Another Fuli hook/);
-  assert.deepEqual(f.entries, ['begin_task_context']);
+  assert.deepEqual(f.entries, ['begin_task_context', 'begin_task_context']);
 });
 
 test('guards for different sessions do not contend', async t => {
@@ -314,7 +314,7 @@ test('guards for different sessions do not contend', async t => {
   });
 });
 
-test('lifecycle skips unverified context without intercepting the native prompt', async t => {
+test('lifecycle skips unverified transcript while delivering current context', async t => {
   const f = await fixture(t, row('user', 'different'));
   let invoked = false;
   const result = await runCodexLifecycleHook(['--event', 'UserPromptSubmit'], {
@@ -322,11 +322,12 @@ test('lifecycle skips unverified context without intercepting the native prompt'
     resolveRuntimeOptions: () => ({ runtimeConfigPath: f.runtime }),
     openApplication: () => f.app,
     createLeases: () => ({ withGraphLease: async (_owner, operation) => operation() }),
-    callTool: async () => { invoked = true; return {}; }
+    callTool: async () => { invoked = true; return { taskContextToken: 'fresh-entry' }; }
   });
   assert.notEqual(result.decision, 'block');
-  assert.equal(result.hookSpecificOutput, undefined);
-  assert.equal(invoked, false);
+  assert.match(result.hookSpecificOutput.additionalContext, /fresh-entry/);
+  assert.equal(invoked, true);
+  assert.deepEqual(f.appended, []);
 });
 
 
@@ -375,7 +376,7 @@ test('a hook process killed while holding the guard serializes other processes u
   });
   await assert.rejects(f.run(async () => { assert.fail('Entered while another process held the guard'); }), { code: TRANSCRIPT_GUARD_BUSY });
   assert.match((await f.hook()).systemMessage, /Another Fuli hook/);
-  assert.deepEqual(f.entries, []);
+  assert.deepEqual(f.entries, ['begin_task_context']);
   child.kill('SIGKILL');
   await exited;
   await f.run(async guard => { assert.equal(guard.value.scanCursor, 456); });

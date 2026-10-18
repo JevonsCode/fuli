@@ -57,16 +57,20 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
       sourceApplication, sourceSessionId, sessionId })
     : null;
   const managedPreferences = management ? { ...preferences, project_management_context: management } : preferences;
+  // Sealed workers already carry a coordinator's reporting contract. Ordinary
+  // entry advertises team/judgment only with an available authorized manager.
+  const includeTeam = !includeManagement || (management?.status !== 'degraded'
+    && Array.isArray(management?.managers) && management.managers.length > 0);
   const context = selection?.agent ? await loadProjectAgentContinuity(application, {
     projectId: projectResolution.personalProjectId, agent: selection.agent,
     sourceApplication, taskPrompt, selectionReason: selection.reason,
-    matchBasis: selection.match_basis
+    matchBasis: selection.match_basis, includeTeam
   }) : selection;
   if (context) applyAgentAssignment(context, selection);
   // Questions other Agents left for this Agent while it was not running.
   const waiting = includeMessages && selection?.agent && application.roundtable
     ? application.roundtable.pending(selection.agent.agentId, projectResolution.personalProjectId) : [];
-  const judgmentContext = taskJudgmentContext(application, projectResolution.personalProjectId);
+  const judgmentContext = includeTeam ? taskJudgmentContext(application, projectResolution.personalProjectId) : null;
   // An unclaimed conversation gets names only, so its finishing host can label it.
   const triage = selection?.agent?.agentId === ASSISTANT_AGENT_ID && !projectResolution.personalProjectId
     ? await triageCandidates(application) : null;

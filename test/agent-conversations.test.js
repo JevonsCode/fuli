@@ -29,7 +29,7 @@ test('disabled capture writes no conversation data', async () => {
   assert.equal((await beginConversation(app, task, 'private')).status, 'capture_disabled');
   assert.equal(calls.length, 0);
 });
-test('a new chat recovers the same Agent’s latest conversation without merging its identity', async () => {
+test('a new chat keeps its Agent scope without automatically resuming the last unrelated conversation', async () => {
   const { app, calls } = fixture();
   const original = app.personal.conversation;
   app.personal.conversation = async (operation, input) => {
@@ -38,9 +38,10 @@ test('a new chat recovers the same Agent’s latest conversation without merging
     return original(operation, input);
   };
   const result = await beginConversation(app, task, 'new task');
-  assert.equal(result.recovered_from, 'earlier-chat');
+  assert.equal(result.recovered_from, null);
   assert.equal(result.conversation_id, 'conversation-one');
-  assert.equal(result.recovery.summary, 'Prior result');
+  assert.equal(result.recovery, null);
+  assert.equal(calls.some(call => call.input.mode === 'context'), false);
   assert.equal(calls[0].input.agent_id, task.projectAgentId);
   assert.equal(calls[0].input.personal_project_id, task.personalProjectId);
 });
