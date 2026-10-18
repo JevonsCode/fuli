@@ -43,10 +43,26 @@ export function useSettingsSearch(root: Ref<HTMLElement | null>, query: Ref<stri
   // Only content changes re-run it; the filter's own attribute writes are not observed.
   const observer = typeof MutationObserver === 'undefined' ? null : new MutationObserver(() => { if (query.value) apply() })
   watch(query, apply)
-  watch(root, (element, _previous) => {
+  watch(root, element => {
     observer?.disconnect()
     if (element) { observer?.observe(element, { childList: true, subtree: true, characterData: true }); apply() }
   })
   onMounted(apply)
   onBeforeUnmount(() => observer?.disconnect())
+}
+
+// Setting keys used in links (the Agent's explain_settings) mapped to the label
+// the page shows, so a link filters the page in the person's own language.
+const SETTING_LABELS: Record<string, string> = {
+  capture: 'settings.behavior.capture',
+  notifications: 'settings.notifications.title',
+  refresh: 'settings.resources.refresh',
+  launchers: 'settings.conversationLaunchers.title',
+  lanAccess: 'settings.behavior.lanAccess',
+  ports: 'settings.ports.title',
+  runtimeMode: 'settings.behavior.runtimeMode',
+}
+
+export function settingSearchTerm(key: unknown, translate: (key: string) => string): string {
+  return typeof key === 'string' && SETTING_LABELS[key] ? translate(SETTING_LABELS[key]) : ''
 }

@@ -110,7 +110,7 @@ export function agentInterfaceCatalog() {
       { domain: 'external-knowledge', toolNames: ['list_external_knowledge_connectors', 'discover_external_knowledge_sources', 'list_external_knowledge_bindings', 'retrieve_external_knowledge_binding', 'get_external_knowledge_conflict_policy'], readRoutes: ['POST /api/external-knowledge/discover', 'POST /api/external-knowledge/bindings/:bindingId/retrieve'] },
       { domain: 'executors', toolNames: ['list_executors', 'get_executor', 'list_executor_routing_rules', 'list_project_agent_routing_learning'] },
       { domain: 'review', toolNames: ['list_personal_review_queue', 'list_project_review_queue', 'list_knowledge_review_candidates'] },
-      { domain: 'policy-and-health', toolNames: ['get_capture_policy', 'get_project_agent_coordination_policy', 'get_project_agent_recruitment_policy', 'get_graphiti_status'] },
+      { domain: 'policy-and-health', toolNames: ['get_capture_policy', 'explain_settings', 'get_project_agent_coordination_policy', 'get_project_agent_recruitment_policy', 'get_graphiti_status'] },
     ],
   };
 }

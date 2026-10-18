@@ -11,7 +11,7 @@ import JudgmentPolicySettings from '@/features/judgment/JudgmentPolicySettings.v
 import ClientConnectionSettings from '@/features/settings/ClientConnectionSettings.vue'
 import PeerSettings from '@/features/settings/PeerSettings.vue'
 import { waitForSettingsApply } from '@/features/settings/settings-apply'
-import { useSettingsSearch } from '@/features/settings/settings-search'
+import { settingSearchTerm, useSettingsSearch } from '@/features/settings/settings-search'
 import {
   CONVERSATION_SOURCE_APPLICATIONS,
   sourceApplicationName,
@@ -38,7 +38,8 @@ const saving = computed(() => store.settingsSaving)
 const loadingResources = ref(false)
 const loadError = ref('')
 const searchRoot = ref<HTMLElement | null>(null)
-const searchQuery = ref('')
+// A link from an Agent (?setting=ports) opens the page already filtered to that setting.
+const searchQuery = ref(settingSearchTerm(new URLSearchParams(window.location.search).get('setting'), t))
 const searchMatches = ref(0)
 useSettingsSearch(searchRoot, searchQuery, count => { searchMatches.value = count })
 const resourceError = ref('')

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { filterSettings } from './settings-search'
+import { setLocale, t } from '@/i18n'
+import { filterSettings, settingSearchTerm } from './settings-search'
 
 function page() {
   const root = document.createElement('div')
@@ -53,5 +54,19 @@ describe('filterSettings', () => {
   it('reports no match without hiding the page structure', () => {
     const root = page()
     expect(filterSettings(root, 'nothing like this')).toBe(0)
+  })
+})
+
+describe('settingSearchTerm', () => {
+  it('turns every linked setting key into its label in the current language', () => {
+    setLocale('zh-CN', { persist: false })
+    for (const key of ['capture', 'notifications', 'refresh', 'launchers', 'lanAccess', 'ports', 'runtimeMode']) {
+      const label = settingSearchTerm(key, t)
+      expect(label, key).not.toMatch(/^settings\./)
+      expect(label.length, key).toBeGreaterThan(1)
+    }
+    expect(settingSearchTerm('ports', t)).toBe('服务端口')
+    expect(settingSearchTerm('unknown', t)).toBe('')
+    expect(settingSearchTerm(['ports'], t)).toBe('')
   })
 })
