@@ -484,7 +484,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'search_knowledge_graph',
     title: 'READ · Search the scoped knowledge graph',
-    description: 'Before saying you do not know, search if the task may depend on remembered URLs, routes, requirements, architecture, prior decisions, runbooks, rationale, or personal preferences. Online-backed supporting facts/entities expose bounded source_uris for capable Agents to re-read originals before refreshing Fuli knowledge. Pending knowledge is searchable and marked; agent-confirmed ranks below human-confirmed. Bounded scope: personal-global profile, exact active local project, selectively inheritable PART_OF/USES_KNOWLEDGE_FROM knowledge, explicitly selected additional personal projects, selected subscribed team projects. Generic RELATED_TO links never expand scope. Only active human-authorized RELATED_TO edges may yield one-time read-only relatedProjectSuggestions: ask the user before the supplied exact-project follow-up query; never silently add that project to future scope. Use all_local_confirmed only after explicit user confirmation: registered local personal projects for this query, never expands public projects. If still unsupported, use read-only local file search in the current repository or workspace files within a safe root. Returns sourceMarker for supporting results, noMatchSourceMarker for items not supporting the answer, and retrievalGuidance with the required next action.',
+    description: 'Search remembered URLs, routes, requirements, prior decisions, runbooks, architecture, rationale and preferences before saying you do not know. Scope: personal-global, exact active project, authorized PART_OF/USES_KNOWLEDGE_FROM parents, explicitly selected personal projects and subscribed team projects. RELATED_TO never expands scope: active human-authorized suggestions require confirmation for one read-only exact-project query. all_local_confirmed requires explicit user confirmation and never expands public projects. Pending stays marked; human-confirmed evidence outranks agent-confirmed evidence. Use source_uris to re-read originals before refreshing Fuli knowledge; cite sourceMarker only for supporting evidence, otherwise noMatchSourceMarker. Follow retrievalGuidance and its required next action for a miss: read-only local file search in current repository or workspace files within a safe root. Pages are bounded; repeat identical scope/query with next_cursor as cursor through fuli_call for full record fragments.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       query: shortText,
@@ -493,6 +493,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
       contextPersonalProjectIds: arraySchema(id, { maxItems: 15 }),
       personalProjectScope: enumSchema(['bounded', 'all_local_confirmed']),
       projectIds: arraySchema(id, { maxItems: 32 }),
+      cursor: boundedString(128),
       limit: integerSchema({ minimum: 1, maximum: 100 }),
       includeHistorical: booleanSchema(),
       includePending: booleanSchema()
@@ -550,6 +551,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
       projectPath: boundedString(4096),
       personalProjectId: nullableStringSchema(),
       queries: arraySchema(shortText, { minItems: 1, maxItems: 10 }),
+      cursor: boundedString(128),
       limitPerQuery: integerSchema({ minimum: 1, maximum: 50 }),
       includeHistorical: booleanSchema(),
       includePending: booleanSchema()

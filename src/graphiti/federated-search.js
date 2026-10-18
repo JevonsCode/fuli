@@ -4,6 +4,7 @@ import { relatedProjectGuidance } from './related-project-suggestions.js';
 import { groupSubscriptions, loadSearchRelatedProjectSuggestions, rankedSearchItems,
   retrievalGuidanceForScope } from './federated-search-support.js';
 import { recordReadExtensionUsage } from './project-memory-usage.js';
+import { budgetKnowledgeSearch } from './knowledge-result-budget.js';
 
 export async function searchFederatedKnowledge(application, {
   personalSpaceId,
@@ -19,7 +20,8 @@ export async function searchFederatedKnowledge(application, {
   agentInvocation = false,
   agentToolName = 'search_knowledge_graph',
   sourceApplication = null,
-  sourceSessionId = null
+  sourceSessionId = null,
+  cursor = null
 }, { workspaceFor, recordAgentViews }) {
   if (personalSpaceId !== application.config.personal.spaceId) {
     throw new TypeError('Search must use the active personal space');
@@ -149,7 +151,7 @@ export async function searchFederatedKnowledge(application, {
   );
   if (agentInvocation) await recordReadExtensionUsage(application, { sourceApplication, sourceSessionId,
     personalProjectScope, contextPersonalProjectIds, facts, entities }).catch(() => {});
-  return {
+  const result = {
     query,
     sourceMarker,
     noMatchSourceMarker,
@@ -169,6 +171,10 @@ export async function searchFederatedKnowledge(application, {
     relatedProjectSuggestionsStatus: relatedProjects.status,
     relatedProjectGuidance: relatedProjectGuidance(relatedProjects.suggestions)
   };
+  return agentInvocation && agentToolName === 'search_knowledge_graph'
+    ? budgetKnowledgeSearch(result, { cursor, consoleUrl: application.consoleUrl,
+      context: { personalSpaceId, query, personalProjectId, projectAgentId, contextPersonalProjectIds,
+        personalProjectScope, projectIds, limit, includeHistorical, includePending } }) : result;
 }
 
 // Console percentages are presentation metadata, not another Agent weight.
