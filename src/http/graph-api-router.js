@@ -336,6 +336,16 @@ export async function handleGraphApiRequest({
     sendJson(response, 200, await app.submitProjectAgentTask(await readJson(request)));
     return true;
   }
+  const taskRunsPath = url.pathname.match(/^\/api\/project-agent-tasks\/([^/]+)\/runs$/);
+  if (taskRunsPath && request.method === 'GET') {
+    sendJson(response, 200, await app.listProjectAgentTaskRuns({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('personalProjectId'),
+      taskId: decodeURIComponent(taskRunsPath[1]), limit: numberParam(url, 'limit', 50),
+      cursor: url.searchParams.get('cursor')
+    }));
+    return true;
+  }
   const projectAgentTaskPath = url.pathname.match(/^\/api\/project-agent-tasks\/([^/]+)$/);
   if (projectAgentTaskPath && request.method === 'GET') {
     sendJson(response, 200, await app.viewProjectAgentTask({

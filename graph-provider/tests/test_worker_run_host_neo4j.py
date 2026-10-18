@@ -15,7 +15,8 @@ from test_project_agent_memory_neo4j import fixture_settings, provider_client
 
 
 @pytest.mark.asyncio
-async def test_host_attempt_persists_own_checkpoint_terminal_activity_and_close(tmp_path):
+@pytest.mark.parametrize('retry_plan', [False, True])
+async def test_host_attempt_persists_own_checkpoint_terminal_activity_and_close(tmp_path, retry_plan):
     async with provider_client(fixture_settings()) as (client, access_token):
         scope, payload, headers = await worker_run_fixture(client)
         listener = socket.socket()
@@ -33,7 +34,7 @@ async def test_host_attempt_persists_own_checkpoint_terminal_activity_and_close(
                     break
                 await asyncio.sleep(0.01)
             assert server.started
-            fixture = {'providerUrl': provider_url, 'configPath': str(config_path),
+            fixture = {'providerUrl': provider_url, 'configPath': str(config_path), 'retryPlan': retry_plan,
                 'accessToken': access_token, 'scope': scope, 'projectPath': str(tmp_path),
                 'capability': headers['x-fuli-worker-capability'],
                 'request': {key: value for key, value in payload.items() if key != 'runtime_capability_hash'}}

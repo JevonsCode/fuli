@@ -132,6 +132,10 @@ async def lock_worker_scope(store, scope, data, *, proposed_session=None):
 
 async def validate_worker_authority(store, scope, data):
     run = data['run']
+    if run.get('retry_of_run_id'):
+        previous = await load_worker_run(store, scope, run['retry_of_run_id'])
+        if previous['run']['state'] != 'closed' or (run.get('id') and previous['run'].get('retry_run_id') not in {None, run['id']}):
+            raise HTTPException(409, 'Worker retry predecessor has been stopped or superseded')
     rows, _, _ = await store.runtime.driver.execute_query('''
         MATCH (space:FuliSpace {id: $space_id})-[:HAS_TASK_CONTEXT_SESSION]->
           (session:FuliTaskContextSession)-[:HAS_CONTEXT]->(parent:FuliTaskContext {id: $parent_id})
