@@ -195,20 +195,16 @@ a { color: var(--color-accent); }
   padding: 18px 24px 20px; overflow: hidden; display: flex; flex-direction: column;
 }
 .graph-view.graph-canvas-active { overflow: hidden; }
-.knowledge-view-heading {
-  min-height: 42px; display: flex; align-items: center; justify-content: space-between;
-  border-bottom: 1px solid var(--color-control-border);
-}
-.knowledge-mode-switch { display: flex; align-self: stretch; gap: 22px; }
+/* The view switch looks like every other segmented control (no nested tab row). */
+.knowledge-view-heading { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.knowledge-mode-switch { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--color-surface-subtle); }
 .knowledge-mode-switch button {
-  position: relative; border: 0; padding: 0 1px; color: var(--color-muted); background: transparent;
-  font-size: 12px; font-weight: 620;
+  min-height: 28px; padding: 3px 12px; border: 0; border-radius: 7px; color: var(--color-muted); background: transparent;
+  font-size: 13px; font-weight: 500; cursor: pointer; transition: background-color var(--motion-fast), color var(--motion-fast);
 }
-.knowledge-mode-switch button[aria-selected="true"] { color: var(--color-accent); }
-.knowledge-mode-switch button[aria-selected="true"]::after {
-  position: absolute; right: 0; bottom: -1px; left: 0; height: 2px;
-  border-radius: 2px 2px 0 0; background: var(--color-accent); content: '';
-}
+.knowledge-mode-switch button:hover { color: var(--color-ink); }
+.knowledge-mode-switch button[aria-selected="true"] { color: var(--color-ink); background: var(--color-surface); box-shadow: var(--shadow-xs); }
+.knowledge-mode-switch button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .graph-toolbar {
   min-height: 48px; display: flex; flex-wrap: wrap; gap: 8px 10px;
   align-items: center; padding: 8px 0;
@@ -349,29 +345,7 @@ a { color: var(--color-accent); }
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .directory-section-count { flex: 0 0 auto; }
-.knowledge-status-filter {
-  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 2px; padding: 2px;
-  border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-subtle);
-}
-.knowledge-status-option {
-  height: 24px; display: inline-flex; align-items: center; gap: 5px; padding: 0 7px;
-  border: 1px solid transparent; border-radius: 5px; color: var(--color-muted); background: transparent;
-  font-size: 12px; font-weight: 640; white-space: nowrap;
-}
-.knowledge-status-option:hover { color: var(--color-ink); background: color-mix(in srgb, var(--color-surface) 72%, transparent); }
-.knowledge-status-option:focus-visible {
-  outline: 2px solid var(--color-accent); outline-offset: 1px;
-}
-.knowledge-status-option[aria-pressed="true"] {
-  border-color: var(--color-border-strong); color: var(--color-accent); background: var(--color-surface);
-}
-.knowledge-status-option[data-status="historical"][aria-pressed="true"] {
-  border-color: var(--color-danger-soft); color: var(--color-danger); background: var(--color-surface-subtle);
-}
-.knowledge-status-option span {
-  min-width: 16px; padding: 0 4px; border-radius: 999px; color: inherit;
-  background: var(--color-accent-soft); font-size: 12px; line-height: 16px; text-align: center;
-}
+.knowledge-status-filter { flex: 0 0 auto; }
 .knowledge-directory-virtual-list,
 .project-material-virtual-list { min-width: 0; min-height: 0; flex: 1; }
 .project-material-row {
