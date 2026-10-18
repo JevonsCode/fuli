@@ -4,10 +4,12 @@ import GrowthLoading from "@/components/GrowthLoading.vue";
 import UiSelect from "@/ui/UiSelect.vue";
 import { t } from "@/i18n";
 import type { AgentOccupationKey, ProjectAgentRecord } from "@/types";
+import { occupationDescription, occupationEntry, useOccupationCatalog } from "@/features/occupations/occupation-catalog";
 import {
   MAX_OCCUPATION_TAGS,
   OCCUPATION_KEYS,
   occupationLabel,
+  occupationLabels,
   saveAgentOccupation,
 } from "./agent-occupation";
 
@@ -29,9 +31,21 @@ watch(role, (value) => {
   if (value) tags.value = tags.value.filter((tag) => tag !== value);
 });
 
+// The space catalog's active occupations; built-in keys until it is read. The
+// Agent's current choices stay listed even if they were archived since.
+const catalog = useOccupationCatalog(computed(() => props.agent.personalSpaceId));
+const keys = computed(() => {
+  const active = catalog.active.value.map((entry) => entry.key);
+  const current = [props.agent.occupation?.role, ...(props.agent.occupation?.tags ?? [])].filter((key): key is string => Boolean(key));
+  return [...new Set([...(active.length ? active : OCCUPATION_KEYS), ...current])];
+});
+const duties = (key: string) => {
+  const entry = occupationEntry(key);
+  return entry ? occupationDescription(entry) : undefined;
+};
 const roleOptions = computed(() => [
   { value: "", label: t("agentRedesign.occupation.none") },
-  ...OCCUPATION_KEYS.map((key) => ({ value: key, label: occupationLabel(key) })),
+  ...keys.value.map((key) => ({ value: key, label: occupationLabel(key) })),
 ]);
 
 function toggleTag(key: AgentOccupationKey) {
@@ -61,7 +75,11 @@ async function save() {
 </script>
 
 <template>
-  <form class="agent-occupation-editor" data-occupation-editor @submit.prevent="save">
+  <section v-if="agent.occupationLocked" class="agent-occupation-editor" data-occupation-locked>
+    <h3>{{ t("agentRedesign.occupation.title") }}</h3>
+    <p class="ui-meta">{{ t("agentRedesign.occupation.locked", { occupation: occupationLabels(agent.occupation).join(' · ') || t("agentRedesign.occupation.none") }) }}</p>
+  </section>
+  <form v-else class="agent-occupation-editor" data-occupation-editor @submit.prevent="save">
     <h3>{{ t("agentRedesign.occupation.title") }}</h3>
     <p class="ui-meta">{{ t("agentRedesign.occupation.note") }}</p>
     <UiSelect
@@ -78,14 +96,14 @@ async function save() {
         <small class="ui-meta">{{ t("agentRedesign.occupation.tagsHint") }}</small>
       </legend>
       <button
-        v-for="key in OCCUPATION_KEYS"
+        v-for="key in keys"
         :key="key"
         type="button"
         class="quiet-button"
         :data-occupation-tag="key"
         :aria-pressed="tags.includes(key)"
         :disabled="key === role || (!tags.includes(key) && tags.length >= MAX_OCCUPATION_TAGS)"
-        :title="key === role ? t('agentRedesign.occupation.isMainRole') : undefined"
+        :title="key === role ? t('agentRedesign.occupation.isMainRole') : duties(key)"
         @click="toggleTag(key)"
       >
         {{ occupationLabel(key) }}<small v-if="key === role" class="agent-occupation-main"> · {{ t('agentRedesign.occupation.mainRoleShort') }}</small>
