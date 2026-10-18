@@ -346,6 +346,18 @@ export async function handleGraphApiRequest({
     }));
     return true;
   }
+  const taskRunStopPath = url.pathname.match(/^\/api\/project-agent-tasks\/([^/]+)\/runs\/([^/]+)\/stop$/);
+  if (taskRunStopPath && request.method === 'POST') {
+    sendJson(response, 200, await app.controlProjectAgentTaskRun({ ...await readJson(request), action: 'stop',
+      taskId: decodeURIComponent(taskRunStopPath[1]), runId: decodeURIComponent(taskRunStopPath[2]) }));
+    return true;
+  }
+  const taskRetryPath = url.pathname.match(/^\/api\/project-agent-tasks\/([^/]+)\/retry$/);
+  if (taskRetryPath && request.method === 'POST') {
+    sendJson(response, 200, await app.controlProjectAgentTaskRun({ ...await readJson(request), action: 'retry',
+      taskId: decodeURIComponent(taskRetryPath[1]) }));
+    return true;
+  }
   const projectAgentTaskPath = url.pathname.match(/^\/api\/project-agent-tasks\/([^/]+)$/);
   if (projectAgentTaskPath && request.method === 'GET') {
     sendJson(response, 200, await app.viewProjectAgentTask({

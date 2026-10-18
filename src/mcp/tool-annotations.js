@@ -57,7 +57,7 @@ const READ_TOOLS = new Set([
 const WRITE_TOOLS = new Set([
   'agent_chat',
   'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'pin_agent',
-  'manage_project_agent_schedule',
+  'manage_project_agent_schedule', 'control_project_agent_task_run',
   'message_agent', 'reply_agent_message', 'cancel_agent_message',
   'record_agent_verification',
   'request_agent_loan', 'decide_agent_loan',
