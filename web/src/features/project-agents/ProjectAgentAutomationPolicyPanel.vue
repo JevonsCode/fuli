@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import UiButton from '@/ui/UiButton.vue'
 import { computed, ref, watch } from 'vue'
 import { getJson, patchJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
-import type { ProjectAgentCoordinationPolicy, ProjectAgentRecord } from '@/types'
+import type { ProjectAgentCoordinationPolicy, ProjectAgentRecord, ProjectSubTeamPolicy } from '@/types'
 
 const props = defineProps<{
   personalSpaceId: string
@@ -22,6 +23,7 @@ const saveError = ref('')
 const saved = ref(false)
 const teamLead = ref('')
 const teamMembers = ref<string[]>([])
+const subTeams = ref<ProjectSubTeamPolicy[]>([])
 let loadVersion = 0
 
 const busy = computed(() => loading.value || saving.value)
@@ -45,7 +47,29 @@ const unavailableMembers = computed(() => teamMembers.value.filter(id => !member
 const selectedLead = computed(() => eligible.value.find(agent => agent.agentId === policy.value.teamLeadAgentId))
 const selectedMembers = computed(() => eligible.value.filter(agent => policy.value.teamMemberAgentIds?.includes(agent.agentId)))
 const teamDirty = computed(() => teamLead.value !== (policy.value.teamLeadAgentId ?? '')
-  || JSON.stringify([...teamMembers.value].sort()) !== JSON.stringify([...(policy.value.teamMemberAgentIds ?? [])].sort()))
+  || JSON.stringify([...teamMembers.value].sort()) !== JSON.stringify([...(policy.value.teamMemberAgentIds ?? [])].sort())
+  || JSON.stringify(subTeams.value) !== JSON.stringify(policy.value.subTeams ?? []))
+// Groups need a name and a sub-lead; each member sits in at most one group.
+const subTeamsValid = computed(() => subTeams.value.every(group => group.name.trim() && group.leadAgentId))
+const teamMemberOptions = computed(() => members.value.filter(agent => teamMembers.value.includes(agent.agentId)))
+const takenElsewhere = (group: ProjectSubTeamPolicy) => new Set(subTeams.value.filter(other => other !== group)
+  .flatMap(other => [other.leadAgentId, ...other.memberAgentIds]))
+const subLeadOptions = (group: ProjectSubTeamPolicy) => [
+  { value: '', label: t('projectAgents.team.chooseSubLead') },
+  ...teamMemberOptions.value.filter(agent => !takenElsewhere(group).has(agent.agentId)).map(agent => ({ value: agent.agentId, label: label(agent) })),
+]
+const groupMemberOptions = (group: ProjectSubTeamPolicy) => teamMemberOptions.value
+  .filter(agent => agent.agentId !== group.leadAgentId && !takenElsewhere(group).has(agent.agentId))
+function addSubTeam() {
+  subTeams.value = [...subTeams.value, { id: `group-${Date.now().toString(36)}`, name: '', leadAgentId: '', memberAgentIds: [] }]
+}
+function removeSubTeam(group: ProjectSubTeamPolicy) { subTeams.value = subTeams.value.filter(other => other !== group) }
+// Leaving the team also leaves its group; a departed sub-lead empties the group's lead.
+watch(teamMembers, ids => {
+  subTeams.value = subTeams.value.map(group => ({ ...group,
+    leadAgentId: ids.includes(group.leadAgentId) ? group.leadAgentId : '',
+    memberAgentIds: group.memberAgentIds.filter(id => ids.includes(id)) }))
+})
 watch(teamLead, lead => { teamMembers.value = lead ? teamMembers.value.filter(id => id !== lead) : [] })
 // Collapsed view: the current switches and lead in one line, so the Agent list stays above the fold.
 const policySummary = computed(() => {
@@ -61,6 +85,7 @@ function label(agent: ProjectAgentRecord) { return agent.profile.displayName || 
 function resetTeam() {
   teamLead.value = policy.value.teamLeadAgentId ?? ''
   teamMembers.value = [...(policy.value.teamMemberAgentIds ?? [])]
+  subTeams.value = (policy.value.subTeams ?? []).map(group => ({ ...group, memberAgentIds: [...group.memberAgentIds] }))
 }
 
 watch(
@@ -113,15 +138,16 @@ async function updatePolicy(
 }
 
 async function saveTeam() {
-  if (busy.value || loadError.value || !teamDirty.value || !teamLead.value) return
+  if (busy.value || loadError.value || !teamDirty.value || !teamLead.value || !subTeamsValid.value) return
   await persistPolicy({ ...policy.value }, {
     teamLeadAgentId: teamLead.value || null,
     teamMemberAgentIds: [...teamMembers.value],
+    subTeams: subTeams.value.map(group => ({ ...group, name: group.name.trim() })),
   })
 }
 
 async function persistPolicy(previous: ProjectAgentCoordinationPolicy, team?: {
-  teamLeadAgentId: string | null; teamMemberAgentIds: string[]
+  teamLeadAgentId: string | null; teamMemberAgentIds: string[]; subTeams?: ProjectSubTeamPolicy[]
 }) {
   const version = loadVersion
   saving.value = true
@@ -187,6 +213,10 @@ function normalizePolicy(value: unknown): ProjectAgentCoordinationPolicy {
     teamLeadAgentId: stringValue(record.teamLeadAgentId ?? record.team_lead_agent_id),
     teamMemberAgentIds: Array.isArray(record.teamMemberAgentIds ?? record.team_member_agent_ids)
       ? (record.teamMemberAgentIds ?? record.team_member_agent_ids) as string[] : [],
+    subTeams: (Array.isArray(record.subTeams ?? record.sub_teams) ? (record.subTeams ?? record.sub_teams) as Record<string, unknown>[] : [])
+      .map(group => ({ id: String(group.id ?? ''), name: String(group.name ?? ''),
+        leadAgentId: String(group.leadAgentId ?? group.lead_agent_id ?? ''),
+        memberAgentIds: (Array.isArray(group.memberAgentIds ?? group.member_agent_ids) ? (group.memberAgentIds ?? group.member_agent_ids) as string[] : []) })),
   }
 }
 
@@ -274,7 +304,20 @@ function stringValue(value: unknown) {
           </label>
           <label v-for="agent in members" :key="agent.agentId"><input v-model="teamMembers" type="checkbox" :value="agent.agentId" />{{ label(agent) }}</label>
         </fieldset>
-        <button type="button" :disabled="busy || !teamDirty || !teamLead" @click="saveTeam">{{ t('projectAgents.team.save') }}</button>
+        <fieldset v-if="teamMembers.length > 1" class="sub-team-editor" :disabled="busy || !teamLead" data-sub-team-editor>
+          <legend>{{ t('projectAgents.team.subTeams') }}</legend>
+          <p class="sub-team-hint">{{ t('projectAgents.team.subTeamsHint') }}</p>
+          <div v-for="group in subTeams" :key="group.id" class="sub-team-row" data-sub-team-row>
+            <input v-model="group.name" class="sub-team-name" type="text" maxlength="40" :placeholder="t('projectAgents.team.subTeamName')" :aria-label="t('projectAgents.team.subTeamName')" />
+            <UiSelect v-model="group.leadAgentId" field :label="t('projectAgents.team.subLead')" :options="subLeadOptions(group)" />
+            <div class="sub-team-members">
+              <label v-for="agent in groupMemberOptions(group)" :key="agent.agentId"><input v-model="group.memberAgentIds" type="checkbox" :value="agent.agentId" />{{ label(agent) }}</label>
+            </div>
+            <UiButton size="sm" variant="ghost" @click="removeSubTeam(group)">{{ t('projectAgents.team.removeSubTeam') }}</UiButton>
+          </div>
+          <UiButton size="sm" data-sub-team-add @click="addSubTeam">{{ t('projectAgents.team.addSubTeam') }}</UiButton>
+        </fieldset>
+        <UiButton size="sm" variant="primary" :disabled="busy || !teamDirty || !teamLead || !subTeamsValid" @click="saveTeam">{{ t('projectAgents.team.save') }}</UiButton>
       </details>
     </div>
     <div class="project-agent-policy-feedback" aria-live="polite">
@@ -409,4 +452,9 @@ function stringValue(value: unknown) {
   .project-agent-policy-options label + label { border-inline-start: 0; border-block-start: 1px solid var(--color-border); }
   .project-agent-policy-feedback { padding-inline: 0; }
 }
+.sub-team-editor { display: grid; gap: 10px; }
+.sub-team-hint { margin: 0; color: var(--color-muted); font-size: 12px; }
+.sub-team-row { display: grid; gap: 8px; padding: 10px 12px; border-radius: var(--radius-control); background: var(--color-surface-subtle); }
+.sub-team-name { width: 100%; box-sizing: border-box; }
+.sub-team-members { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
 </style>

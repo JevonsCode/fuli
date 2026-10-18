@@ -89,6 +89,8 @@ export const projectAgentMessages = {
       unavailable: '项目总负责人不可用，请完成交接',
       summary: '日常找组长沟通，成员按职责协作。',
       members: '小组成员', edit: '管理小组', save: '保存小组',
+      subTeams: '小组（可选）', subTeamsHint: '人多时按职责分组，每组一位子组长；组员向子组长汇报，子组长向总负责人汇报。',
+      subTeamName: '小组名称，例如：后端', subLead: '子组长', chooseSubLead: '选择子组长', addSubTeam: '添加小组', removeSubTeam: '删除这个小组',
     },
     coordination: {
       aria: '{project} 项目 Agent 协作策略',
@@ -442,6 +444,8 @@ export const projectAgentMessages = {
       unavailable: 'Project lead unavailable; complete the handoff',
       summary: 'Talk to the lead; members work by specialty.',
       members: 'Team members', edit: 'Manage team', save: 'Save team',
+      subTeams: 'Groups (optional)', subTeamsHint: 'Split a large team by specialty; each group has a sub-lead. Members report to their sub-lead, sub-leads to the project lead.',
+      subTeamName: 'Group name, e.g. Backend', subLead: 'Sub-lead', chooseSubLead: 'Choose a sub-lead', addSubTeam: 'Add group', removeSubTeam: 'Remove this group',
     },
     aria: 'Project Agent directory',
     title: 'Agents',

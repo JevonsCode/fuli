@@ -7,6 +7,7 @@ const patchJson = vi.hoisted(() => vi.fn())
 vi.mock('@/api/client', () => ({ getJson, patchJson }))
 
 import ProjectAgentAutomationPolicyPanel from './ProjectAgentAutomationPolicyPanel.vue'
+import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import type { ProjectAgentRecord } from '@/types'
 
@@ -134,6 +135,28 @@ describe('ProjectAgentAutomationPolicyPanel', () => {
     await flushPromises()
     expect(patchJson.mock.lastCall?.[1]).toMatchObject({ teamLeadAgentId: 'lead',
       teamMemberAgentIds: ['member'], expectedUpdatedAt: '2026-09-16T00:00:00Z' })
+  })
+
+  it('groups members under a sub-lead and saves the groups with the team', async () => {
+    getJson.mockResolvedValueOnce({ teamLeadAgentId: 'lead', teamMemberAgentIds: ['backend', 'engineer', 'designer'],
+      updatedAt: '2026-10-18T00:00:00Z' })
+    const wrapper = mountPanel([agent('lead'), agent('backend'), agent('engineer'), agent('designer')])
+    await flushPromises()
+    const save = () => wrapper.findAll('button').find(button => button.text() === t('projectAgents.team.save'))!
+    await wrapper.get('[data-sub-team-add]').trigger('click')
+    const row = wrapper.get('[data-sub-team-row]')
+    // A group needs a name and a sub-lead before the team can be saved.
+    expect(save().attributes('disabled')).toBeDefined()
+    await row.get('.sub-team-name').setValue('后端')
+    row.findComponent(UiSelect).vm.$emit('update:modelValue', 'backend')
+    await flushPromises()
+    await row.findAll('.sub-team-members input').find(input => input.attributes('value') === 'engineer')!.setValue(true)
+    expect(row.findAll('.sub-team-members input').map(input => input.attributes('value'))).not.toContain('backend')
+    expect(save().attributes('disabled')).toBeUndefined()
+    await save().trigger('click')
+    await flushPromises()
+    expect(patchJson.mock.lastCall?.[1]).toMatchObject({ teamLeadAgentId: 'lead', expectedUpdatedAt: '2026-10-18T00:00:00Z',
+      subTeams: [{ name: '后端', leadAgentId: 'backend', memberAgentIds: ['engineer'] }] })
   })
 
   it('does not offer an empty lead once the project has a lead', async () => {
