@@ -71,7 +71,7 @@ function toggle(event: Event) {
         </div>
         <div v-if="task.executionSummary.length" class="project-agent-execution-summary-table-wrap" role="region" tabindex="0" :aria-label="t('projectAgents.fields.executionSummary')">
           <table class="project-agent-execution-summary-table">
-            <caption class="sr-only">{{ t('projectAgents.fields.executionSummary') }}</caption>
+            <caption class="ui-sr-only">{{ t('projectAgents.fields.executionSummary') }}</caption>
             <thead>
               <tr>
                 <th scope="col">{{ t('projectAgents.fields.worker') }}</th>

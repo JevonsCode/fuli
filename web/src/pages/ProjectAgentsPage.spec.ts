@@ -682,7 +682,7 @@ describe('ProjectAgentsPage', () => {
     expect(summary.get('.project-agent-execution-summary-table-wrap').attributes()).toMatchObject({
       role: 'region', tabindex: '0',
     })
-    expect(summary.get('caption').classes()).toContain('sr-only')
+    expect(summary.get('caption').classes()).toContain('ui-sr-only')
     expect(summary.findAll('thead th').every((cell) => cell.attributes('scope') === 'col')).toBe(true)
     expect(summary.findAll('tbody th').every((cell) => cell.attributes('scope') === 'row')).toBe(true)
     expect(summary.findAll('.project-agent-execution-summary-row')).toHaveLength(2)

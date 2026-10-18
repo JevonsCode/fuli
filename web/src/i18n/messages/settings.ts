@@ -1,6 +1,7 @@
 export const settingsMessages = {
   'zh-CN': {
     aria: '设置',
+    search: { label: '搜索设置', placeholder: '搜索设置，例如：端口、通知、语言', empty: '没有和「{query}」相关的设置' },
     connection: {
       title: '客户端接入',
       description: '支持 MCP 工具调用的客户端均可尝试接入，无需指定模型。',
@@ -295,6 +296,7 @@ export const settingsMessages = {
       clientsClaude: 'Claude Code',
     },
     aria: 'Settings',
+    search: { label: 'Search settings', placeholder: 'Search settings, e.g. port, notifications, language', empty: 'No settings match “{query}”' },
     loading: 'Loading runtime settings…',
     resources: {
       title: 'Resource usage',
