@@ -297,6 +297,7 @@ export function providerProjectAgentTaskSubmit(input) {
     hasAny(input, ['taskContextToken', 'task_context_token']));
   copyOptional(result, 'recruitment_occupation', input.recruitmentOccupation ?? input.recruitment_occupation,
     hasAny(input, ['recruitmentOccupation', 'recruitment_occupation']));
+  copyOptional(result, 'start', input.start, hasAny(input, ['start']));
   return result;
 }
 

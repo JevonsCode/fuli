@@ -127,6 +127,7 @@ export const projectAgentMessages = {
     },
     taskStatus: {
       awaiting_recruitment: '等待招聘',
+      backlog: '待开工',
       queued: '排队',
       running: '运行中',
       paused: '已暂停',
@@ -506,6 +507,7 @@ export const projectAgentMessages = {
     },
     taskStatus: {
       awaiting_recruitment: 'Awaiting recruitment',
+      backlog: 'Backlog',
       queued: 'Queued',
       running: 'Running',
       paused: 'Paused',

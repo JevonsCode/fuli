@@ -234,6 +234,7 @@ export async function coordinateProjectAgentTask(
       ? entryTask.sessionId : input.sourceSessionId,
     routingReason: input.routingReason,
     recruitmentOccupation: input.recruitmentOccupation,
+    start: input.start,
     recruitmentProfile: input.recruitmentProfile
   });
   const participants = route.task.participants ?? [];
@@ -269,7 +270,7 @@ export async function coordinateProjectAgentTask(
   const leadMemoryScope = workerPlan.find(worker => worker.agent_id === route.task.leadAgentId)
     ?.context?.agent?.memoryScope;
   if (entryTask && !entryTask.projectAgentId && contextsReady
-      && ['queued', 'running', 'paused', 'blocked', 'awaiting_recruitment'].includes(route.task.status)
+      && ['backlog', 'queued', 'running', 'paused', 'blocked', 'awaiting_recruitment'].includes(route.task.status)
       && ['reviewed_agent', 'task_only'].includes(leadMemoryScope)) {
     adoptedTask = await application.taskContextRegistry.adoptAgent(input.taskContextToken, {
       personalProjectId: projectId, taskId: route.task.taskId, agentId: route.task.leadAgentId
@@ -292,6 +293,9 @@ export async function coordinateProjectAgentTask(
     personal_project_id: projectId,
     project_resolution: projectResolution,
     ...(projectResolution.scope ? { project_scope: projectResolution.scope } : {}),
+    ...(route.task.status === 'backlog' ? {
+      required_action: 'The task is assigned but not started. To start it, set its status to queued with record_project_agent_task_activity, then call coordinate_project_agent_task again with the same idempotencyKey for the dispatch plan.'
+    } : {}),
     ...(route.task.status === 'awaiting_recruitment' ? {
       required_action: 'Review the returned recruitment proposal and use decide_project_agent_recruitment with its current revision before starting a worker.'
     } : {}),
