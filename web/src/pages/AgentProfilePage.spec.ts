@@ -117,6 +117,23 @@ describe('Agent profile integration', () => {
     expect(wrapper.find('a[href="/employees/tonborg"]').exists()).toBe(true)
   })
 
+  it('offers each profile link once and no Ask AR on the AR itself', async () => {
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (isAgentRead(url)) return agentRead(url, [person('employee.bole')])
+      if (url.startsWith('/api/employee-templates?')) return Promise.resolve({ templates: [{
+        id: 'bole', name: 'Bole', agentId: 'employee.bole', agentStatus: 'active',
+        workbench: { kind: 'native', view: 'people' },
+      }] })
+      return normal(url)
+    })
+    const { wrapper } = await setup('/agents/space-a/employee.bole')
+    expect(wrapper.findAll('a[href="/employees/bole"]')).toHaveLength(1)
+    expect(wrapper.findAll('a[href^="/employees/bole?"]')).toHaveLength(0)
+    expect(wrapper.findAll('.agent-management-card a')).toHaveLength(1)
+    expect(wrapper.get('[data-open-management]').text()).toBe('打开 Agent 管理')
+  })
+
   it('exposes conversation retention under an accessible secondary tab', async () => {
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => {
