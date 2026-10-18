@@ -29,3 +29,21 @@ export interface RoundtableThread { id: string; subject: string; projectId: stri
 
 export const listThreads = () => getJson<{ threads: RoundtableThreadSummary[] }>('/api/roundtable/threads')
 export const readThread = (id: string) => getJson<RoundtableThread>(`/api/roundtable/threads/${encodeURIComponent(id)}`)
+
+/** An Agent chat room (agent_chat): 1:1 or a group, read-only for people. */
+export interface RoundtableChatMember { address: string; agentId: string | null; name: string | null; node?: string; joinedSeq: number }
+export interface RoundtableChatRoom {
+  chatId: string
+  kind: 'direct' | 'group'
+  title: string | null
+  members: RoundtableChatMember[]
+  transport: string
+  createdAt: string
+  updatedAt: string
+}
+export interface RoundtableChatMessage { messageId: string; seq: number; from: string; body: string; createdAt: string }
+export interface RoundtableChatPage extends RoundtableChatRoom { messages: RoundtableChatMessage[]; nextAfter: number; hasMore: boolean }
+
+export const listChats = () => getJson<{ chats: RoundtableChatRoom[]; hasMore: boolean; remoteUnavailable?: string }>('/api/roundtable/chats')
+export const readChat = (id: string, after = 0) =>
+  getJson<RoundtableChatPage>(`/api/roundtable/chats/${encodeURIComponent(id)}?after=${after}&limit=200`)

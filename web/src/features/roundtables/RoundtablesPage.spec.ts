@@ -21,7 +21,10 @@ const detail = { id: 'thread-1', subject: thread.subject, projectId: 'app', crea
 ] }
 
 async function mountAt(path: string) {
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/roundtables/:threadId?', component: RoundtablesPage }] })
+  const router = createRouter({ history: createMemoryHistory(), routes: [
+    { path: '/roundtables/chat/:chatId', component: RoundtablesPage },
+    { path: '/roundtables/:threadId?', component: RoundtablesPage },
+  ] })
   await router.push(path)
   const wrapper = mount(RoundtablesPage, { global: { plugins: [router] } })
   await flushPromises()
@@ -84,6 +87,49 @@ describe('RoundtablesPage', () => {
     ])
     expect(seats[2]!.text()).toContain('待回应')
     expect(seats[3]!.text()).not.toContain('待回应')
+    wrapper.unmount()
+  })
+
+  it('lists Agent chat rooms beside asks and shows a room with its members and messages', async () => {
+    const members = [
+      { address: 'local:lead-1', agentId: 'lead-1', name: 'Milo Reed', joinedSeq: 0 },
+      { address: 'local:ops-1', agentId: 'ops-1', name: 'Cora Fenn', joinedSeq: 0 },
+    ]
+    const room = { chatId: 'room-1', kind: 'group', title: null, members, transport: 'local', createdAt: '2026-10-10T09:00:00Z', updatedAt: '2026-10-10T09:05:00Z' }
+    getJson.mockImplementation(async (url: string) => {
+      if (url === '/api/roundtable/threads') return { threads: [thread] }
+      if (url === '/api/roundtable/chats') return { chats: [room], hasMore: false }
+      if (url.startsWith('/api/roundtable/chats/room-1')) return { ...room, hasMore: false, nextAfter: 2, messages: [
+        { messageId: 'c-1', seq: 1, from: 'local:lead-1', body: '部署窗口定在今晚', createdAt: '2026-10-10T09:01:00Z' },
+        { messageId: 'c-2', seq: 2, from: 'local:ops-1', body: '收到，我来值守', createdAt: '2026-10-10T09:02:00Z' },
+      ] }
+      return detail
+    })
+    const wrapper = await mountAt('/roundtables/chat/room-1')
+    const rooms = wrapper.findAll('[data-testid="roundtable-chat-room"]')
+    expect(rooms).toHaveLength(1)
+    expect(rooms[0]!.text()).toContain('群聊 · 2')
+    expect(rooms[0]!.text()).toContain('Milo Reed · Cora Fenn')
+    expect(wrapper.findAll('[data-testid="roundtable-thread"]')).toHaveLength(1)
+    const open = wrapper.get('[data-testid="roundtable-chat"]')
+    expect(open.findAll('[data-roundtable-chat-message]').map(item => item.text())).toEqual([
+      expect.stringContaining('部署窗口定在今晚'), expect.stringContaining('收到，我来值守'),
+    ])
+    expect(open.findAll('[data-roundtable-seat]').map(seat => seat.text())).toEqual([
+      expect.stringContaining('Milo Reed'), expect.stringContaining('Cora Fenn'),
+    ])
+    wrapper.unmount()
+  })
+
+  it('still shows asks when the server has no chat rooms', async () => {
+    getJson.mockImplementation(async (url: string) => {
+      if (url === '/api/roundtable/threads') return { threads: [thread] }
+      if (url === '/api/roundtable/chats') throw new Error('404')
+      return detail
+    })
+    const wrapper = await mountAt('/roundtables')
+    expect(wrapper.findAll('[data-testid="roundtable-thread"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="roundtable-chat-room"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
