@@ -10,6 +10,9 @@ import { officeLayout, type SceneAgent, type SceneProject } from './layout'
 
 interface OfficePalette { accent: THREE.Color; danger: THREE.Color; skin: THREE.Color; wood: THREE.Color; woodDark: THREE.Color; chair: THREE.Color;
   monitor: THREE.Color; screen: THREE.Color; screenOff: THREE.Color; eye: THREE.Color; pot: THREE.Color; leaf: THREE.Color }
+// Shoulder angle that rests the hands on the desk in front.
+const ARM_DESK = -1.25
+
 const RUG_TONES = ['--identity-0-soft', '--identity-1-soft', '--identity-2-soft', '--identity-3-soft', '--identity-4-soft', '--identity-5-soft']
 
 export function mountOffice(container: HTMLElement, projects: readonly SceneProject[],
@@ -47,7 +50,8 @@ export function mountOffice(container: HTMLElement, projects: readonly SceneProj
   floor.receiveShadow = true
   scene.add(floor)
 
-  const typing: { body: THREE.Object3D; screen: THREE.MeshStandardMaterial; offset: number }[] = []
+  const typing: { body: THREE.Object3D; screen: THREE.MeshStandardMaterial; arms: THREE.Object3D[]; offset: number }[] = []
+  const waving: { arm: THREE.Object3D; offset: number }[] = []
   plan.islands.forEach((island, index) => {
     const group = new THREE.Group()
     group.position.set(island.x, 0, island.z)
@@ -63,7 +67,8 @@ export function mountOffice(container: HTMLElement, projects: readonly SceneProj
       const station = workstation(desk.agent, cssColor(container, desk.agent.color, '--scene-agent'), palette)
       station.group.position.set(desk.x, 0, desk.z)
       group.add(station.group)
-      if (desk.agent.state === 'running') typing.push({ body: station.body, screen: station.screen, offset: Math.random() * 6 })
+      if (desk.agent.state === 'running') typing.push({ body: station.body, screen: station.screen, arms: station.arms, offset: Math.random() * 6 })
+      if (desk.agent.state === 'waiting') waving.push({ arm: station.arms[1]!, offset: Math.random() * 6 })
     }
     for (const [x, z] of [[-island.width / 2 + 0.35, -island.depth / 2 + 0.35], [island.width / 2 - 0.35, island.depth / 2 - 0.35]] as const) {
       const pot = plant(palette)
@@ -74,10 +79,13 @@ export function mountOffice(container: HTMLElement, projects: readonly SceneProj
   })
 
   stage.onFrame(elapsed => {
-    for (const { body, screen, offset } of typing) {
+    for (const { body, screen, arms, offset } of typing) {
       body.position.y = 0.62 + Math.abs(Math.sin((elapsed + offset) * 7)) * 0.025
       screen.emissiveIntensity = 0.9 + Math.sin((elapsed + offset) * 3) * 0.15
+      // Hands take turns on the keyboard.
+      arms.forEach((arm, side) => { arm.rotation.x = ARM_DESK + Math.sin((elapsed + offset) * 14 + side * Math.PI) * 0.08 })
     }
+    for (const { arm, offset } of waving) arm.rotation.z = -0.25 + Math.sin((elapsed + offset) * 5) * 0.35
   })
   return stage
 }
@@ -132,6 +140,23 @@ function workstation(agent: SceneAgent, tone: THREE.Color, colors: OfficePalette
     body.add(eye)
   }
   // Stuck slumps toward the desk; just done leans back in the chair.
+  // Arms hang from the shoulders: on the desk while working or stuck, at the
+  // sides when done, and the right one raised while asking you.
+  const arms = [-1, 1].map(side => {
+    const shoulder = new THREE.Group()
+    shoulder.position.set(side * 0.22, 0.36, 0)
+    // Sleeves a shade darker than the body so the pose reads at a distance.
+    const arm = shade(new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.22, 4, 10), matte(tone.clone().multiplyScalar(0.72), 0.6)))
+    arm.position.y = -0.14
+    shoulder.add(arm)
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 10), matte(colors.skin, 0.55))
+    hand.position.y = -0.29
+    shoulder.add(hand)
+    shoulder.rotation.x = agent.state === 'done' ? -0.15 : ARM_DESK
+    body.add(shoulder)
+    return shoulder
+  })
+  if (agent.state === 'waiting') { arms[1]!.rotation.x = Math.PI; arms[1]!.rotation.z = -0.25 }
   if (agent.state === 'stuck') body.rotation.x = 0.3
   if (agent.state === 'done') body.rotation.x = -0.24
   group.add(body)
@@ -145,13 +170,13 @@ function workstation(agent: SceneAgent, tone: THREE.Color, colors: OfficePalette
   const bubble = { waiting: '?', stuck: '!', done: '✓', running: '' }[agent.state]
   if (bubble) {
     const sign = label(bubble, `stage-bubble stage-bubble--${agent.state}`)
-    sign.position.set(-0.08, 2.05, -0.45)
+    sign.position.set(-0.08, 2.25, -0.45)
     group.add(sign)
   }
   const name = label(agent.name, `stage-label stage-label--agent is-${agent.state}`)
-  name.position.set(-0.08, 1.6, -0.45)
+  name.position.set(-0.08, 1.8, -0.45)
   group.add(name)
-  return { group, body, screen }
+  return { group, body, screen, arms }
 }
 
 // A small potted plant: terracotta pot and two leafy spheres.
