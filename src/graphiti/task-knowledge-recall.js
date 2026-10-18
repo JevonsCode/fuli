@@ -6,6 +6,8 @@ import { budgetAutomaticRecall } from './knowledge-result-budget.js';
 const MAX_QUERIES = 4;
 const MAX_ITEMS_PER_KIND = 3;
 const MAX_ITEM_TEXT = 1000;
+const CONFIRMED = new Set(['confirmed', 'agent_confirmed']);
+const PENDING_NOTE = 'Pending items are agent-proposed and not confirmed by a person; judge them before use.';
 
 const RECALL_INTENTS = Object.freeze([
   {
@@ -114,7 +116,7 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt) {
       query,
       limit: 6,
       includeHistorical: false,
-      includePending: false,
+      includePending: true,
       agentInvocation: true,
       agentToolName: 'automatic_task_knowledge_recall'
     })
@@ -125,19 +127,21 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt) {
   const failedQueryCount = settlements.length - results.length;
   const focusTerms = distinctivePromptTerms(singleLine(taskPrompt).slice(0, 8192));
   const facts = rankedUnique(
-    filterRecallCandidates(
+    confirmedFirst(filterRecallCandidates(
       results.flatMap(({ facts = [] }) => facts),
       focusTerms
-    ),
+    )),
     'relationship'
   ).slice(0, MAX_ITEMS_PER_KIND).map(compactFact);
   const entities = rankedUnique(
-    filterRecallCandidates(
+    confirmedFirst(filterRecallCandidates(
       results.flatMap(({ entities = [] }) => entities),
       focusTerms
-    ),
+    )),
     'entity'
   ).slice(0, MAX_ITEMS_PER_KIND).map(compactEntity);
+  const pendingSlots = Object.entries({ facts, entities })
+    .filter(([, items]) => items.some((item) => !isConfirmed(item))).map(([slot]) => slot);
   const sourceMarker = createFuliSourceMarker({
     consoleUrl: application.consoleUrl,
     facts,
@@ -160,6 +164,7 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt) {
         consoleUrl: application.consoleUrl
       })
     } : {}),
+    ...(pendingSlots.length ? { pending_fallback: { slots: pendingSlots, note: PENDING_NOTE } } : {}),
     facts,
     entities
   };
@@ -181,6 +186,17 @@ function recallWithoutSearch(status, plan) {
 
 function taskKnowledgeRetrievalGuidance() {
   return { ...TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE };
+}
+
+// Human-authoritative first: agent-proposed pending items fill a slot only when
+// nothing confirmed matched it, so a prior-context task needs no extra search.
+function confirmedFirst(items) {
+  const confirmed = items.filter(isConfirmed);
+  return confirmed.length ? confirmed : items;
+}
+
+function isConfirmed(item) {
+  return CONFIRMED.has(item?.confirmation_status);
 }
 
 function rankedUnique(items, itemKind) {
