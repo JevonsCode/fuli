@@ -12,6 +12,7 @@ from .project_agent_access import authorize_project_agent
 from .provider_values import now_utc, stable_uuid
 from .store_conversation_triage import ASSISTANT_AGENT_ID, StoreConversationTriage
 from .store_transactions import query_store_transaction
+from .store_transcript_recovery import recover_fallback_boundary
 
 CONTEXT_PAGE_EVENTS = 50
 CONTEXT_SCAN_EVENTS = 1000
@@ -51,6 +52,7 @@ class StoreAgentConversations:
         if (task['session_id'], task['personal_project_id'], task['project_agent_id']) != (
             request.session_id, request.personal_project_id, request.agent_id):
             raise HTTPException(409, 'Conversation does not match the current task Agent and session')
+        return task
 
     async def _conversation_policy(self, scope):
         rows, _, _ = await self.runtime.driver.execute_query(
@@ -204,7 +206,7 @@ class StoreAgentConversations:
             through=decoded[cut - 1]['sequence'], kept=kept)
 
     async def append_conversation(self, actor, request):
-        if request.initialize_cursor:
+        if request.initialize_cursor or request.fallback_recovery:
             raise HTTPException(422, 'Initialize transcripts only at a verified task boundary')
         async with query_store_transaction(self) as store:
             scope = await store._conversation_scope(actor, request, write=True)
@@ -295,6 +297,8 @@ class StoreAgentConversations:
             return {'status': 'resumed', 'conversation_id': request.conversation_id}
 
     async def claim_conversation_boundary(self, actor, request):
+        if request.fallback_recovery:
+            return await recover_fallback_boundary(self, actor, request)
         if request.events or request.cursor is None or (not request.initialize_cursor and request.cursor != request.expected_cursor):
             raise HTTPException(422, 'A scope boundary cannot import events or skip bytes')
         async with query_store_transaction(self) as store:
