@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from '@/ui/UiButton.vue'
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
@@ -73,24 +74,22 @@ function number(person: ProjectTeamPerson) {
       <GrowthLoading v-if="showRefreshing" variant="inline" :label="t('projects.overview.refreshingTeam')" />
       <p v-else-if="failed && team" class="project-team-stale" role="alert">
         {{ t('projects.overview.refreshFailed') }}
-        <button class="quiet-button" type="button" @click="load">{{ t('projects.overview.retry') }}</button>
+        <UiButton size="sm" variant="ghost" @click="load">{{ t('projects.overview.retry') }}</UiButton>
       </p>
-      <button
-        class="toolbar-action ui-button--icon"
-        type="button"
+      <UiButton size="sm" variant="ghost" class="ui-button--icon"
         :aria-label="t('projects.overview.refresh')"
         :title="t('projects.overview.refresh')"
         :disabled="loading"
         @click="load"
       >
         <svg class="project-team-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" /></svg>
-      </button>
+      </UiButton>
     </header>
 
     <GrowthLoading v-if="showInitialLoading" variant="compact" :label="t('projects.overview.loadingTeam')" />
     <div v-else-if="failed && !team" class="project-team-state" role="alert">
       <p>{{ t('projects.overview.teamFailed') }}</p>
-      <button class="quiet-button" type="button" @click="load">{{ t('projects.overview.retry') }}</button>
+      <UiButton size="sm" variant="ghost" @click="load">{{ t('projects.overview.retry') }}</UiButton>
     </div>
 
     <template v-else-if="team">

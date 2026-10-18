@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from '@/ui/UiButton.vue'
 import { computed, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 
@@ -122,9 +123,9 @@ watch(expanded, (open) => {
         />
         <p v-else-if="failed" role="alert">
           {{ t("agentRedesign.projectView.leadFailed") }}
-          <button class="quiet-button" type="button" @click="loadTeam">
+          <UiButton size="sm" variant="ghost" @click="loadTeam">
             {{ t("agentProfiles.retry") }}
-          </button>
+          </UiButton>
         </p>
         <p v-else-if="team?.lead">
           <span class="ui-meta">{{ t("projects.overview.lead") }}</span>

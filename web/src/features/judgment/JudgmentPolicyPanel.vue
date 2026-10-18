@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from '@/ui/UiButton.vue'
 import { computed, ref, watch } from 'vue'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -154,7 +155,7 @@ async function resetOverride() {
 
       <div v-if="loadError" class="judgment-policy-error" role="alert">
         <span>{{ loadError }}</span>
-        <button type="button" class="quiet-button" :disabled="busy" @click="loadPolicy">{{ judgmentText('settings.retry') }}</button>
+        <UiButton size="sm" variant="ghost" :disabled="busy" @click="loadPolicy">{{ judgmentText('settings.retry') }}</UiButton>
       </div>
       <fieldset v-else-if="policy" class="judgment-policy-fields" :disabled="!canEdit">
         <legend>{{ judgmentText('mode.title') }}</legend>
@@ -179,13 +180,13 @@ async function resetOverride() {
         </div>
 
         <div class="judgment-policy-actions">
-          <button v-if="saveError" class="quiet-button" type="button" data-action="save-policy" :disabled="busy" @click="save">
+          <UiButton size="sm" variant="ghost" v-if="saveError" data-action="save-policy" :disabled="busy" @click="save">
             {{ judgmentText('settings.retry') }}
-          </button>
-          <button v-if="projectOverride" class="quiet-button" type="button" data-action="reset-policy" :title="judgmentText('settings.resetTitle')" :disabled="busy" @click="resetOverride">
+          </UiButton>
+          <UiButton size="sm" variant="ghost" v-if="projectOverride" data-action="reset-policy" :title="judgmentText('settings.resetTitle')" :disabled="busy" @click="resetOverride">
             {{ judgmentText('settings.reset') }}
-          </button>
-          <button v-if="undoValue" class="quiet-button" type="button" data-action="undo-policy" :disabled="busy" @click="undo">{{ judgmentText('settings.undo') }}</button>
+          </UiButton>
+          <UiButton size="sm" variant="ghost" v-if="undoValue" data-action="undo-policy" :disabled="busy" @click="undo">{{ judgmentText('settings.undo') }}</UiButton>
           <span v-if="saved" class="judgment-policy-saved" role="status">{{ judgmentText('settings.saved') }}</span>
         </div>
       </fieldset>
