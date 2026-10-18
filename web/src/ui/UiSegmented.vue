@@ -15,7 +15,7 @@ defineEmits<{ 'update:modelValue': [value: T] }>()
 
 <template>
   <div class="ui-segmented" role="group" :aria-label="label">
-    <button v-for="option in options" :key="option.value" type="button" :aria-pressed="option.value === modelValue"
+    <button v-for="option in options" :key="option.value" type="button" :aria-pressed="option.value === modelValue" :data-value="option.value"
       :aria-label="option.iconOnly ? option.label : undefined" :title="option.iconOnly ? option.label : undefined"
       @click="$emit('update:modelValue', option.value)">
       <span v-if="option.swatch" class="ui-segmented-swatch" :style="{ background: option.swatch }" aria-hidden="true" /><UiIcon v-if="option.icon" :name="option.icon" :size="16" /><template v-if="!option.iconOnly">{{ option.label }}</template><small v-if="option.count !== undefined">{{ option.count }}</small>
