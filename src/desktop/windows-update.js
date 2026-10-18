@@ -18,7 +18,8 @@ export function readCurrentWindowsInstallation({ installRoot, env = process.env,
   const recordPath = join(installRoot, 'installation.json');
   const record = readFileSync(recordPath);
   const current = readWindowsInstallation(JSON.parse(record).packageRoot);
-  if (!current || canonicalWindowsInstallPath(current.installRoot) !== installRoot) throw new Error('Inconsistent Windows installation root.');
+  // Windows paths are case-insensitive: --install-root may differ in case from the record.
+  if (!current || canonicalWindowsInstallPath(current.installRoot).toLowerCase() !== installRoot.toLowerCase()) throw new Error('Inconsistent Windows installation root.');
   for (const path of outside) {
     if (windowsInstallPathsOverlap(path, installRoot) || windowsInstallPathsOverlap(path, current.dataDir)) {
       throw new Error('Update from a package outside the installation and data directories.');
