@@ -2,8 +2,8 @@
 import { computed, ref, watch } from 'vue'
 
 import { ApiError } from '@/api/client'
-import UiButton from '@/components/ui/UiButton.vue'
-import UiDialog from '@/components/ui/UiDialog.vue'
+import UiButton from '@/ui/UiButton.vue'
+import UiDialog from '@/ui/UiDialog.vue'
 import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
 import { createPersonalProject, newProjectId, type NewProjectDraft } from './project-create'

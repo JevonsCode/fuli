@@ -4,7 +4,7 @@ import UiDisclosure from '@/components/UiDisclosure.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { ApiError, getJson, putJson } from '@/api/client'
-import UiSelect from '@/components/ui/UiSelect.vue'
+import UiSelect from '@/ui/UiSelect.vue'
 import { normalizedConfiguration, setConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
 import JudgmentPolicySettings from '@/features/judgment/JudgmentPolicySettings.vue'
 import ClientConnectionSettings from '@/features/settings/ClientConnectionSettings.vue'

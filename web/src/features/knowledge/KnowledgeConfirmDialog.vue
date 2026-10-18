@@ -2,8 +2,8 @@
 import { computed, ref, watch } from 'vue'
 
 import { patchJson } from '@/api/client'
-import UiButton from '@/components/ui/UiButton.vue'
-import UiDialog from '@/components/ui/UiDialog.vue'
+import UiButton from '@/ui/UiButton.vue'
+import UiDialog from '@/ui/UiDialog.vue'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { ConfirmationActor, EvidenceRecord, KnowledgeItem } from '@/types'
