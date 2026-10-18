@@ -154,8 +154,8 @@ export async function searchFederatedKnowledge(application, {
     sourceMarker,
     noMatchSourceMarker,
     retrievalGuidance: retrievalGuidanceForScope(personalProjectScope),
-    facts,
-    entities,
+    facts: agentInvocation ? facts.map(agentSearchItem) : facts,
+    entities: agentInvocation ? entities.map(agentSearchItem) : entities,
     personalGlobalIncluded: true,
     personalProjectScope,
     projectAgentId,
@@ -169,4 +169,12 @@ export async function searchFederatedKnowledge(application, {
     relatedProjectSuggestionsStatus: relatedProjects.status,
     relatedProjectGuidance: relatedProjectGuidance(relatedProjects.suggestions)
   };
+}
+
+// Console percentages are presentation metadata, not another Agent weight.
+function agentSearchItem(item) {
+  const view = { ...item };
+  delete view.weight_percent;
+  delete view.confirmed_by_person;
+  return view;
 }

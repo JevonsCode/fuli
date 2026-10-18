@@ -20,6 +20,7 @@ from .search_projection import (
     read_edge_epistemic_metadata,
     source_uris_from_references,
 )
+from .knowledge_weight import knowledge_weight
 
 MIN_TERM_COVERAGE = 0.25
 LATIN_QUERY_FILLERS = {
@@ -423,6 +424,7 @@ async def _personal_entities(
                  AS requires_attention,
                node.fuli_last_feedback_kind AS last_feedback_kind,
                node.fuli_last_feedback_at AS last_feedback_at,
+               [episode IN episodes | episode.uuid] AS evidence_ids,
                [episode IN episodes
                  WHERE episode.fuli_source_uri IS NOT NULL |
                  {
@@ -708,6 +710,7 @@ def _dedupe_ranked_entities(ranked, active_project_id, project_agent_id=None):
 
 def _entity_search_result(record, score: float, space_id: str) -> EntitySearchResult:
     value = dict(record)
+    value.update(knowledge_weight(record, evidence_ids=value.pop('evidence_ids', [])))
     attributes = json_object(value.get('attributes_json'))
     value['preference_key'] = (
         attributes.get('preferenceKey')

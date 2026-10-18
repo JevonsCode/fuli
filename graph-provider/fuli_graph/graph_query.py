@@ -27,7 +27,7 @@ from .project_knowledge import (
     read_personal_project_relations,
     read_project_references,
 )
-from .search_projection import effective_confirmation_status
+from .knowledge_weight import effective_confirmation_status, knowledge_weight
 
 
 async def read_graph(
@@ -81,7 +81,7 @@ async def read_graph(
         *episode_ids,
         *(episode_id for record in edge_records for episode_id in (record.get('episodes') or [])),
     })
-    evidence = await _read_evidence(store, all_episode_ids)
+    evidence = await _read_evidence(store, all_episode_ids, space['group_id'])
     item_ids = node_ids + [record['id'] for record in edge_records]
     revisions = await _read_revisions(store, space_id, item_ids)
     assignments = await _read_assignments(store, space_id, item_ids)
@@ -422,12 +422,12 @@ async def _personal_projects(store, space: dict) -> list[dict]:
     return [dict(record['project']) for record in records]
 
 
-async def _read_evidence(store, episode_ids: list[str]) -> dict[str, GraphEvidence]:
+async def _read_evidence(store, episode_ids: list[str], group_id: str) -> dict[str, GraphEvidence]:
     if not episode_ids:
         return {}
     records, _, _ = await store.runtime.driver.execute_query(
         '''
-        MATCH (episode:Episodic) WHERE episode.uuid IN $episode_ids
+        MATCH (episode:Episodic {group_id: $group_id}) WHERE episode.uuid IN $episode_ids
         RETURN episode.uuid AS id, episode.name AS name,
                episode.source_description AS source_description,
                coalesce(episode.fuli_source_kind, 'unknown') AS source_kind,
@@ -442,6 +442,7 @@ async def _read_evidence(store, episode_ids: list[str]) -> dict[str, GraphEviden
                episode.created_at AS created_at
         ''',
         episode_ids=episode_ids,
+        group_id=group_id,
         routing_='r',
     )
     return {
@@ -553,6 +554,7 @@ def _graph_node(
         personal_project_id=personal_project_id,
     )
     return GraphNode(
+        **knowledge_weight(record, evidence_ids=[item for item in episode_ids if item in evidence]),
         id=record['id'],
         name=record['name'],
         type=record['type'],
@@ -663,6 +665,7 @@ def _graph_edge(
         personal_project_id=personal_project_id,
     )
     return GraphEdge(
+        **knowledge_weight(record, evidence_ids=[item for item in episode_ids if item in evidence]),
         id=record['id'],
         source=record['source'],
         target=record['target'],
