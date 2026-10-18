@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { createStage, cssColor, label, tokenColor, type Stage } from './stage'
-import { galaxyLayout, type SceneProject } from './layout'
+import { galaxyLayout, type SceneLink, type SceneProject } from './layout'
 
 // 3D 星系: projects are lit planets with a soft atmosphere, Agents are moons on
 // tilted orbits. A moon asking you glows amber and pulses, a stuck one glows
@@ -9,7 +9,7 @@ import { galaxyLayout, type SceneProject } from './layout'
 const PLANET_TONES = ['--identity-0', '--identity-1', '--identity-2', '--identity-3', '--identity-4', '--identity-5']
 
 export function mountGalaxy(container: HTMLElement, projects: readonly SceneProject[],
-  { reducedMotion, onPick }: { reducedMotion: boolean; onPick: (href: unknown) => void }): Stage {
+  { reducedMotion, onPick, links = [] }: { reducedMotion: boolean; onPick: (href: unknown) => void; links?: readonly SceneLink[] }): Stage {
   const planets = galaxyLayout(projects)
   const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 400)
   camera.position.set(0, 10, 19)
@@ -77,7 +77,13 @@ export function mountGalaxy(container: HTMLElement, projects: readonly SceneProj
     scene.add(system)
   })
 
+  // Memory beams: light travels from the project that reads to the one it
+  // draws from; thicker and brighter the more often it does.
+  const beams = memoryBeams(planets, links, color('--color-accent').lerp(white, 0.25))
+  for (const beam of beams) scene.add(beam.mesh)
+
   stage.onFrame(elapsed => {
+    for (const beam of beams) beam.time.value = elapsed
     for (const moon of moons) {
       moon.pivot.rotation.y = moon.phase + elapsed * moon.speed
       if (moon.halo && moon.pulse) moon.halo.scale.setScalar(1.1 + Math.sin(elapsed * 3.2 + moon.phase) * 0.28)
@@ -125,4 +131,31 @@ function glowTexture(tone: THREE.Color): THREE.Texture {
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
   return texture
+}
+
+const BEAM = { related: { radius: 0.025, speed: 0.25, strength: 0.45 }, frequent: { radius: 0.045, speed: 0.4, strength: 0.7 }, close: { radius: 0.07, speed: 0.6, strength: 1 } }
+
+export function memoryBeams(planets: ReturnType<typeof galaxyLayout>, links: readonly SceneLink[], tone: THREE.Color) {
+  const at = new Map(planets.map(planet => [planet.project.id, planet]))
+  return links.flatMap(link => {
+    const from = at.get(link.from)
+    const to = at.get(link.to)
+    if (!from || !to || from === to) return []
+    const style = BEAM[link.tier]
+    const start = new THREE.Vector3(from.x, 0, from.z)
+    const end = new THREE.Vector3(to.x, 0, to.z)
+    // Arc above the plane so beams never cut through planets.
+    const middle = start.clone().lerp(end, 0.5).setY(start.distanceTo(end) * 0.28 + 0.6)
+    const curve = new THREE.QuadraticBezierCurve3(start, middle, end)
+    const time = { value: 0 }
+    const material = new THREE.ShaderMaterial({
+      uniforms: { tone: { value: tone }, time, speed: { value: style.speed }, strength: { value: style.strength } },
+      vertexShader: 'varying float vAlong; void main(){ vAlong = uv.x; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: 'uniform vec3 tone; uniform float time; uniform float speed; uniform float strength; varying float vAlong;' +
+        'void main(){ float pulse = smoothstep(0.0, 0.18, fract(vAlong - time * speed)) * (1.0 - smoothstep(0.18, 0.36, fract(vAlong - time * speed)));' +
+        ' float ends = smoothstep(0.0, 0.08, vAlong) * smoothstep(1.0, 0.92, vAlong); gl_FragColor = vec4(tone, (0.3 + pulse * 0.7) * ends * strength); }',
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    })
+    return [{ mesh: new THREE.Mesh(new THREE.TubeGeometry(curve, 64, style.radius, 8, false), material), time }]
+  })
 }

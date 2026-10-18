@@ -7,6 +7,8 @@ import type { RouteLocationRaw } from 'vue-router'
 export interface AgentFace { name: string; image: string | null; color: string | null; softColor: string | null }
 
 export interface WorkbenchBoard {
+  /** The active personal space, for designs that read extra space data. */
+  personalSpaceId?: string
   tasks: readonly ProjectAgentTaskRecord[]
   attention: readonly AgentAttention[]
   projectName: (projectId?: string | null) => string

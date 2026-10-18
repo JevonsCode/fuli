@@ -7,7 +7,8 @@ import { motionReduced } from '@/lib/motion-preference'
 import ConstellationBoard from './ConstellationBoard.vue'
 import type { WorkbenchBoard } from './workbench-board'
 import { starProjects, type StarState } from './workbench-model'
-import type { SceneProject } from './three/layout'
+import { getJson } from '@/api/client'
+import type { SceneLink, SceneProject } from './three/layout'
 import type { Stage } from './three/stage'
 
 // The 3D workbench designs. three.js loads only when one is shown; without
@@ -49,7 +50,10 @@ async function mount() {
     const module = props.scene === 'office' ? await import('./three/office-scene') : await import('./three/galaxy-scene')
     if (!host.value || current !== version) return
     const mountScene = 'mountOffice' in module ? module.mountOffice : module.mountGalaxy
+    const links = props.scene === 'galaxy' ? await relationLinks() : []
+    if (!host.value || current !== version) return
     stage = mountScene(host.value, projects.value, {
+      links,
       reducedMotion: motionReduced(),
       onPick: href => { if (href) void router.push(href as RouteLocationRaw) },
     })
@@ -57,6 +61,19 @@ async function mount() {
     fallback.value = true
   } finally {
     if (current === version) loading.value = false
+  }
+}
+
+// Memory beams are optional: an install without the weights endpoint shows none.
+async function relationLinks(): Promise<SceneLink[]> {
+  if (!props.board.personalSpaceId) return []
+  try {
+    type Weight = { fromProjectId: string; toProjectId: string; tier: SceneLink['tier'] }
+    const result = await getJson<Weight[] | { links?: Weight[] }>(
+      `/api/projects/relation-weights?personalSpaceId=${encodeURIComponent(props.board.personalSpaceId)}`)
+    return (Array.isArray(result) ? result : result.links ?? []).map(link => ({ from: link.fromProjectId, to: link.toProjectId, tier: link.tier }))
+  } catch {
+    return []
   }
 }
 
