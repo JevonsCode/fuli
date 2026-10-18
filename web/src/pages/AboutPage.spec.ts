@@ -9,7 +9,7 @@ describe('AboutPage', () => {
     setLocale('zh-CN', { persist: false })
   })
 
-  it('presents the product principles, label system, and open-source credits', () => {
+  it('presents the product principles, label system, and open-source credits', async () => {
     const wrapper = mount(AboutPage)
 
     expect(wrapper.findAll('.principle-sequence article')).toHaveLength(4)
@@ -22,10 +22,14 @@ describe('AboutPage', () => {
     expect(wrapper.text()).toContain('至少 5 次有效使用、覆盖 3 个任务')
     expect(wrapper.text()).toContain('“全部”只是筛选条件')
     expect(wrapper.findAll('details')).toHaveLength(0)
-    expect(wrapper.findAll('.credit-list a')).toHaveLength(11)
-    expect(wrapper.findAll('.credit-list img')).toHaveLength(0)
-    expect(wrapper.get('.credit-row .credit-role').text()).toBe('界面框架')
-    expect(wrapper.get('.credit-row .credit-name').text()).toContain('Vue.js')
+    expect(wrapper.findAll('.credit-grid a')).toHaveLength(11)
+    expect(wrapper.findAll('.credit-grid img')).toHaveLength(11)
+    const vue = wrapper.get('[data-credit="Vue.js"]')
+    expect(vue.get('small').text()).toBe('界面框架')
+    // A logo that fails to load becomes a quiet initial tile, never a broken image.
+    await vue.get('img').trigger('error')
+    expect(vue.find('img').exists()).toBe(false)
+    expect(vue.get('.credit-mark.is-fallback').text()).toBe('V')
     expect(wrapper.get('[data-testid="about-opening-logo"]').attributes('src')).toBeTruthy()
     expect(wrapper.get('.fuli-finale img').attributes('src')).toBeTruthy()
     expect(wrapper.get('[data-testid="about-website-link"]').attributes('href')).toBe('https://xn--8ovp9s.xn--m8txu.com/fuli/')

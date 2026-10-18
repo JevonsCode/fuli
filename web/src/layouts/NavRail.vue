@@ -77,8 +77,9 @@ watch(expanded, value => {
 .nav-rail.is-expanded { width: 208px; align-items: stretch; padding-inline: 12px; }
 .nav-rail-brand { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding-bottom: 6px; }
 .nav-rail.is-expanded .nav-rail-brand { justify-content: flex-start; padding-left: 4px; }
-.nav-rail-wordmark { color: var(--color-ink); font-size: 17px; font-weight: 800; letter-spacing: .08em; white-space: nowrap; }
-.nav-rail-version { min-width: 0; overflow: hidden; color: var(--color-faint); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+/* Same wordmark as the brand mark everywhere: 700, -.02em, ink. */
+.nav-rail-wordmark { color: var(--color-ink); font-size: 18px; font-weight: 700; letter-spacing: -.02em; white-space: nowrap; }
+.nav-rail-version { min-width: 0; overflow: hidden; color: var(--color-muted); font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .nav-rail-links { display: flex; flex: 1; flex-direction: column; align-items: center; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .nav-rail.is-expanded .nav-rail-links { align-items: stretch; }
 .nav-rail-link {

@@ -78,9 +78,9 @@ a { color: var(--color-accent); }
 .profile-aspect-mark {
   width: fit-content; border-radius: 999px; padding: 4px 8px; font-size: 12px; font-weight: 680;
 }
-.profile-aspect-mark.taste { color: var(--color-ink); background: var(--color-warning-soft); }
-.profile-aspect-mark.personality { color: var(--color-muted); background: var(--color-surface-subtle); }
-.profile-aspect-mark.judgment_preference { color: var(--color-ink); background: var(--color-surface-subtle); }
+.profile-aspect-mark.taste { color: var(--aspect-taste); background: var(--aspect-taste-soft); }
+.profile-aspect-mark.personality { color: var(--aspect-personality); background: var(--aspect-personality-soft); }
+.profile-aspect-mark.judgment_preference { color: var(--aspect-judgment); background: var(--aspect-judgment-soft); }
 .personal-profile-copy, .personal-profile-origin { min-width: 0; display: grid; gap: 4px; }
 .personal-profile-copy strong, .personal-profile-origin strong { color: var(--color-ink); font-size: 12px; }
 .personal-profile-origin strong.has-conflict { color: var(--color-ink); }
