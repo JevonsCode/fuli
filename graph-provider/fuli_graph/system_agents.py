@@ -17,6 +17,7 @@ SYSTEM_HR_AGENT_ID = 'employee.bole'
 SYSTEM_JUDGMENT_AGENT_ID = 'employee.tonborg'
 SYSTEM_ASSISTANT_AGENT_ID = 'employee.assistant'
 # Upgrade only the former built-in copy; custom responsibilities are user data.
+LEGACY_ASSISTANT_NAME = 'Assistant'
 LEGACY_HR_RESPONSIBILITY = 'HR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录。'
 LEGACY_JUDGMENT_RESPONSIBILITY = '判断官：依照用户偏好审核日常事项、建议客户端和模型，保留判断依据与反馈。'
 
@@ -113,6 +114,12 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
         )
         if upgrade_responsibility:
             stored['responsibility'] = default.responsibility
+        # The assistant was first created as "Assistant"; the built-in name is
+        # now Astro. Only the untouched old default is renamed, never a user's name.
+        if agent_id == SYSTEM_ASSISTANT_AGENT_ID:
+            for field in ('name', 'display_name'):
+                if stored.get(field) == LEGACY_ASSISTANT_NAME:
+                    stored[field] = default.name
         profile = ProjectAgentProfile.model_validate(
             {**stored, 'agent_type': default.agent_type, 'status': 'active'}
         )
@@ -132,6 +139,7 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
                       agent.created_at = $now,
                       agent.updated_at = $now
         SET agent.profile_json = $profile_json,
+            agent.name = CASE WHEN agent.name = $legacy_name THEN $name ELSE agent.name END,
             agent.responsibility = CASE WHEN $upgrade_responsibility
               THEN $responsibility ELSE agent.responsibility END,
             agent.agent_type = $agent_type,
@@ -154,6 +162,7 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
         occupation_emoji=profile.occupation_emoji,
         responsibility=profile.responsibility,
         upgrade_responsibility=upgrade_responsibility,
+        legacy_name=LEGACY_ASSISTANT_NAME if agent_id == SYSTEM_ASSISTANT_AGENT_ID else None,
         capabilities=profile.capabilities,
         work_kinds=profile.work_kinds,
         agent_type=profile.agent_type,
