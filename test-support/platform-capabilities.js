@@ -37,6 +37,12 @@ export const requiresPermissionDenial = Object.freeze({
       : false
 });
 
+// Neo4j asset lifecycle tests build and extract Unix tar.gz packages and manage
+// POSIX process groups; Windows uses the bundled tray runtime instead.
+export const requiresUnixNativeAssets = Object.freeze({
+  skip: process.platform === 'win32' ? 'Unix Neo4j tar.gz assets are managed only on macOS and Linux' : false
+});
+
 export const requiresPosixFileModes = Object.freeze({
   skip: posixFileModes ? false : 'NTFS stores no POSIX permission bits'
 });

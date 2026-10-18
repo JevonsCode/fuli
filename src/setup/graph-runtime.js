@@ -119,7 +119,8 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   if (runtimeMode === 'native') {
     await deps.startNativeProviders(input.paths, input.paths.graphEnvPath, {
       personalOnly: input.personalOnly === true,
-      nativeRuntime: selectedGraphRuntime
+      nativeRuntime: selectedGraphRuntime,
+      ...(input.env ? { env: input.env } : {})
     });
   } else {
     deps.startProviders(input.paths, input.paths.graphEnvPath, {
@@ -488,7 +489,8 @@ export async function stopGraphProviders(paths, envPath, options = {}) {
   if (options.runtimeMode === 'native') {
     await createNativeGraphServices({
       paths,
-      personalOnly: options.personalOnly === true
+      personalOnly: options.personalOnly === true,
+      env: options.env
     }).stopDatabases();
     return;
   }
@@ -549,7 +551,8 @@ function graphDependencies(overrides) {
     startNativeProviders: (paths, _envPath, options) => createNativeGraphServices({
       paths,
       runtimeDescriptor: options.nativeRuntime,
-      personalOnly: options.personalOnly
+      personalOnly: options.personalOnly,
+      env: options.env
     }).start(),
     spawnWebRuntime,
     isProcessAlive,
