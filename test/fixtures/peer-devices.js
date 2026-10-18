@@ -89,4 +89,3 @@ export async function remoteAddress(app) {
   }
   throw new Error('No remote Agent appeared');
 }
-

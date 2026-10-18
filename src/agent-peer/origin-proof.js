@@ -25,8 +25,8 @@ export function authorityFromProvider(response) {
 }
 
 // A device signature only proves which installation relayed a message. This
-// proves the sender's own FULI authority let its current project lead send
-// exactly this message to exactly this binding, until a short expiry.
+// proves the sender's own FULI authority allowed this exact message, binding
+// and purpose until a short expiry. Execution keeps its project-lead restriction.
 export function verifyOriginProof(assertion, authority, { now = Date.now(), purpose = 'execution' } = {}) {
   const fail = (message) => { throw new PeerError('origin_rejected', message, 403); };
   if (!isAuthorityKey(authority)) fail('No origin authority was bound when this device was paired');

@@ -2,7 +2,7 @@
 
 A device signature only proves which installation sent a message. The
 receiving device also needs proof that this authority, not merely the device,
-let the current project lead's live task send exactly that message. This
+let a live assigned task send exactly that message for its explicit purpose. This
 authority signs that statement with a key that never leaves it; the receiver
 checks it with the public key it bound when the owners paired the devices.
 """
@@ -95,7 +95,7 @@ class StoreRemoteAgentOrigins:
             raise HTTPException(409, 'A remote ask requires an active project task of a FULI Agent')
         await authorize_personal_project(self, actor, space, project_id)
         policy = await self.get_project_agent_coordination_policy(actor, request.personal_space_id, project_id)
-        # Members reach other devices through their own lead, never directly.
+        # Execution stays with the project lead; chat grants communication only.
         if request.purpose == 'execution' and (not policy.team_lead_agent_id or agent_id != policy.team_lead_agent_id):
             raise HTTPException(403, 'Only the project lead can ask Agents on other devices')
         agent = await self.get_project_agent(actor, request.personal_space_id, project_id, agent_id)
