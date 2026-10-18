@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js'
+import { fitView } from './framing'
 
 // One WebGL stage for every 3D workbench design: renderer, soft-shadow
 // lighting defaults, crisp HTML labels, gentle orbit controls, click picking,
@@ -14,6 +15,11 @@ export interface StageOptions {
   target?: THREE.Vector3
   onPick: (href: unknown) => void
   controls?: { minDistance: number; maxDistance: number; minPolar: number; maxPolar: number; autoRotate?: boolean }
+  /**
+   * Refit on every resize so these points fill the view; the camera keeps its
+   * direction and the zoom limits are fractions of the fitted distance.
+   */
+  frame?: { points: THREE.Vector3[]; zoomIn: number; zoomOut: number }
 }
 
 export interface Stage {
@@ -103,6 +109,15 @@ export function createStage(options: StageOptions): Stage {
     const { clientWidth: width, clientHeight: height } = container
     if (!width || !height) return
     camera.aspect = width / height
+    if (options.frame) {
+      const { points, zoomIn, zoomOut } = options.frame
+      const direction = camera.position.clone().sub(controls.target).normalize()
+      const { target, distance } = fitView(camera, controls.target, points)
+      controls.target.copy(target)
+      camera.position.copy(target).addScaledVector(direction, distance)
+      controls.minDistance = distance * zoomIn
+      controls.maxDistance = distance * zoomOut
+    }
     camera.updateProjectionMatrix()
     renderer.setSize(width, height)
     labels.setSize(width, height)

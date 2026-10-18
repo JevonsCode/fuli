@@ -24,7 +24,7 @@ export function officeLayout(projects: readonly SceneProject[]): { islands: Isla
     const agents = project.agents.slice(0, MAX_SCENE_AGENTS)
     const columns = Math.min(PER_ROW, Math.max(agents.length, 1))
     const rows = Math.max(1, Math.ceil(agents.length / PER_ROW))
-    const width = columns * DESK_GAP_X + 1.2
+    const width = columns * DESK_GAP_X + 0.9
     const depth = rows * DESK_GAP_Z + 1.4
     const desks = agents.map((agent, index) => {
       const column = index % PER_ROW
@@ -35,7 +35,7 @@ export function officeLayout(projects: readonly SceneProject[]): { islands: Isla
     return { project, x: 0, z: 0, width, depth, desks }
   })
   const columns = islands.length <= 2 ? islands.length : islands.length <= 4 ? 2 : 3
-  const cellWidth = Math.max(...islands.map(island => island.width), 1) + 1.6
+  const cellWidth = Math.max(...islands.map(island => island.width), 1) + 1
   // Rows need room for the next row's name bubbles above the heads.
   const cellDepth = Math.max(...islands.map(island => island.depth), 1) + 3.2
   const rows = Math.max(1, Math.ceil(islands.length / Math.max(columns, 1)))
