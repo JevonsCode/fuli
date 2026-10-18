@@ -163,12 +163,50 @@ test('fl stop refuses to kill a reused or unverifiable PID', async () => {
     fileExists: () => false,
     isProcessAlive: () => true,
     consoleHealth: async () => false,
+    waitForExit: async () => false,
     stopProcess: () => { killed = true; }
   });
 
   assert.equal(killed, false);
   assert.equal(result.status, 'partial');
   assert.equal(result.console, 'unverified');
+});
+
+test('fl stop waits for a console that is already shutting down instead of failing', async () => {
+  const calls = [];
+  const result = await stopLocalRuntime(input(), {
+    readConfig: () => ({ workspaces: [] }),
+    readState: () => ({ version: 3, pid: 27, url: 'http://127.0.0.1:2727' }),
+    fileExists: () => false,
+    isProcessAlive: () => true,
+    consoleHealth: async () => false,
+    waitForExit: async (pid, timeoutMs) => { calls.push(`wait:${pid}:${timeoutMs > 0}`); return true; },
+    removeState: () => calls.push('state:removed'),
+    stopProcess: () => calls.push('killed')
+  });
+
+  assert.deepEqual(calls, ['wait:27:true', 'state:removed']);
+  assert.equal(result.status, 'stopped');
+  assert.equal(result.console, 'not_running');
+});
+
+test('fl stop retries the identity check once when the console answered late', async () => {
+  let checks = 0;
+  const calls = [];
+  const result = await stopLocalRuntime(input(), {
+    readConfig: () => ({ workspaces: [] }),
+    readState: () => ({ version: 3, pid: 27, url: 'http://127.0.0.1:2727' }),
+    fileExists: () => false,
+    isProcessAlive: () => true,
+    consoleHealth: async () => (checks += 1) > 1,
+    waitForExit: async () => calls.length > 0,
+    removeState: () => calls.push('state:removed'),
+    stopProcess: (pid) => calls.push(`process:${pid}`)
+  });
+
+  assert.equal(checks, 2);
+  assert.deepEqual(calls, ['process:27', 'state:removed']);
+  assert.equal(result.console, 'stopped');
 });
 
 test('fl status keeps Provider credentials out of its result', async () => {
