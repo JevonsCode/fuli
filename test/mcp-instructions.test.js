@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { MCP_INSTRUCTIONS } from '../src/mcp/instructions.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+
+import { listAgentTools } from '../src/agent-tools.js';
+import { createMcpServer } from '../src/mcp/create-mcp-server.js';
+import { MCP_CHAT_INSTRUCTIONS, MCP_INSTRUCTIONS } from '../src/mcp/instructions.js';
+import { toolNamesForProfile } from '../src/mcp/tool-profiles.js';
 
 test('MCP instructions support task identity, hook context and an exact fallback within 2KiB', () => {
   assert.ok(Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8') <= 2048);
@@ -62,4 +68,28 @@ test('MCP instructions support task identity, hook context and an exact fallback
   assert.match(MCP_INSTRUCTIONS, /all workerStatus terminal/i);
   assert.match(MCP_INSTRUCTIONS, /source-labelled cumulative tokens/i);
   assert.match(MCP_INSTRUCTIONS, /Missing token usage=-.*never invent\/estimate\/copy totals/i);
+});
+
+test('chat instructions name only tools the chat profile lists', () => {
+  const listed = new Set([...toolNamesForProfile('chat'), 'fuli_call']);
+  const unlisted = listAgentTools().map(({ name }) => name).filter(name => !listed.has(name) && name !== 'list_agent_interfaces');
+  // Mentioning an unlisted tool sent clients to discovery before every task.
+  assert.deepEqual(unlisted.filter(name => new RegExp(`\\b${name}\\b`).test(MCP_CHAT_INSTRUCTIONS)), []);
+  for (const pattern of [/Final replies MUST copy agent_receipt.markdown unchanged once/, /else before tools\/answer call exactly get_collaboration_preferences/,
+    /projectPath=cwd/, /taskPrompt=current user request/, /never guess personalProjectId/, /writes=actual payload/, /task_knowledge_recall/,
+    /search_current_project_knowledge/, /search_knowledge_graph/, /checkpoint_task_knowledge/, /retain_nothing/, /capture_candidates/,
+    /list_agent_interfaces.*fuli_call/, /executionSummary/, /MUST begin sourceMarker.leadMarkdown/, /noMatchSourceMarker/]) {
+    assert.match(MCP_CHAT_INSTRUCTIONS, pattern);
+  }
+});
+
+test('each profile sends its own instructions', async () => {
+  for (const [profile, expected] of [['chat', MCP_CHAT_INSTRUCTIONS], ['full', MCP_INSTRUCTIONS]]) {
+    const server = createMcpServer({}, { env: {}, toolProfile: profile, registerResources: false });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'instructions', version: '1.0.0' });
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    assert.equal(client.getInstructions(), expected, profile);
+    await client.close();
+  }
 });
