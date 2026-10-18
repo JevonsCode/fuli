@@ -73,6 +73,7 @@ test('Codex command failure preserves a known native session for checkpointable 
   assert.match(context, /sessionId="synthetic-native-session"/);
   assert.match(context, /fresh taskContextToken/);
   assert.match(context, /truthful workLog/);
+  assert.match(context, /checkpoint_required.*checkpoint_guidance/);
   assert.match(context, /do not reuse an old token/);
   assert.doesNotMatch(result.stdout, /PRIVATE_|private-project|private-missing/);
   assert.notEqual(output.decision, 'block');

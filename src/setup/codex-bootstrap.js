@@ -6,8 +6,11 @@ import { writeTextFileAtomic } from '../storage/json-file.js';
 const BLOCK_START = '<!-- BEGIN FULI MANAGED INSTRUCTIONS -->';
 const BLOCK_END = '<!-- END FULI MANAGED INSTRUCTIONS -->';
 
+// Only tools the default chat profile lists are named here; naming others sent
+// Codex to tool discovery before every task (T-P00). The full profile's own
+// server instructions cover team and worker tools.
 const GLOBAL_INSTRUCTIONS = `${BLOCK_START}
-At start of every user task, use \`begin_task_context\` hook context if supplied;
+At start of every user task, use the FULI hook context if supplied;
 do not repeat the fallback. Otherwise before any other tool or answer, call exactly
 \`get_collaboration_preferences\` with \`projectPath\`=current working directory,
 \`taskPrompt\`=current user request. Never substitute a project action.
@@ -16,9 +19,8 @@ Before reasking a stable project fact or method, inspect \`task_knowledge_recall
 On miss: \`search_current_project_knowledge\`; focused action/artifact/target/identifier;
 never use the full request as the only query.
 Write tools: preferences in actual payload; mentioning later is not compliance.
-Resolve relevant \`deferred_conflict\`; ignore others.
-Team: \`coordinate_project_agent_task\`; \`acquire_runtime_lease\`, run/report workers,
-\`release_runtime_lease\` in finally.
+Other FULI work (teams, workers, saved decisions, a relevant \`deferred_conflict\`)
+only when the task needs it: find the tool with \`list_agent_interfaces\`.
 ${codexReviewCommandBridge()}
 ${BLOCK_END}`;
 
