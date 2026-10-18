@@ -31,12 +31,6 @@ export const preferenceMessages = {
         pending: '待确认',
         conflicts: '疑似冲突',
       },
-      alert: {
-        aria: '待处理的疑似冲突',
-        title: '发现 {count} 组疑似冲突',
-        copy: '可以现在处理，也可以交给 AI 在用到时处理。',
-        action: '查看冲突双方并处理',
-      },
       filters: {
         aspectAria: '协作偏好维度',
         all: '全部',
@@ -70,11 +64,8 @@ export const preferenceMessages = {
       },
       directory: {
         aria: '协作偏好内容',
-        aspect: '维度',
-        content: '内容',
-        statusScopeSource: '状态、范围与来源',
-        updated: '更新时间',
         sourceCount: '{count} 个来源',
+        showMore: '再显示 {count} 条',
         loading: '正在读取协作偏好与冲突记录…',
         noFiltered: '当前维度和范围还没有内容',
         empty: '协作中出现稳定的偏好后，会显示在这里。',
@@ -190,12 +181,6 @@ export const preferenceMessages = {
         pending: 'Pending',
         conflicts: 'Possible conflicts',
       },
-      alert: {
-        aria: 'Possible conflicts requiring attention',
-        title: '{count} possible conflict found | {count} possible conflicts found',
-        copy: 'Handle them now, or let AI handle them when a task needs them.',
-        action: 'Compare and handle both sides',
-      },
       filters: {
         aspectAria: 'Collaboration preference dimension',
         all: 'All',
@@ -229,11 +214,8 @@ export const preferenceMessages = {
       },
       directory: {
         aria: 'Collaboration preference content',
-        aspect: 'Dimension',
-        content: 'Content',
-        statusScopeSource: 'Status, scope & source',
-        updated: 'Updated',
         sourceCount: '{count} source | {count} sources',
+        showMore: 'Show {count} more',
         loading: 'Loading collaboration preferences and conflict records…',
         noFiltered: 'No content in the current dimension and scope',
         empty: 'Stable preferences from your collaboration will appear here.',
