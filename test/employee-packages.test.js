@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { installEmployeePackage } from '../src/employees/install-package.js';
 import { createEmployeePackageRegistry, employeeDirectories } from '../src/employees/package-registry.js';
 import { parseEmployeeManifest } from '../src/employees/manifest.js';
+import { requiresSymlinks } from '../test-support/platform-capabilities.js';
 
 const original = JSON.parse(readFileSync(new URL('../src/employees/catalog/jefa.json', import.meta.url)));
 function fixture(t) {
@@ -90,12 +91,15 @@ test('a stale installation receipt cannot hide a modified runtime', (t) => {
   assert.equal(installEmployeePackage({ sourceDirectory: f.source, runtimeConfigPath: f.runtimeConfigPath, replace: true }).backupCreated, true);
 });
 
-test('package traversal, credential files, and symlinks are refused without importing code', (t) => {
+test('package traversal and credential files are refused without importing code', (t) => {
   const f = fixture(t);
   assert.throws(() => parseEmployeeManifest({ ...original, runtime: { ...original.runtime, entry: '../outside.mjs' } }));
   writeFileSync(join(f.source, '.env'), 'EXAMPLE=fixture');
   assert.throws(() => installEmployeePackage({ sourceDirectory: f.source, runtimeConfigPath: f.runtimeConfigPath }), /built artifacts/);
-  rmSync(join(f.source, '.env'));
+});
+
+test('package symlinks are refused without importing code', requiresSymlinks, (t) => {
+  const f = fixture(t);
   symlinkSync(join(f.source, 'runtime/index.mjs'), join(f.source, 'linked.mjs'));
   assert.throws(() => installEmployeePackage({ sourceDirectory: f.source, runtimeConfigPath: f.runtimeConfigPath }), /symlinks/);
 });

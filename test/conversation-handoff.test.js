@@ -11,6 +11,7 @@ import { syncConversationTranscript, claimTranscriptBoundary, recordTranscriptTa
 import { normalizeCodexRecord, verifyCodexTranscript } from '../src/agents/codex/conversation-transcript.js';
 import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
 import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
+import { assertFileMode } from '../test-support/platform-capabilities.js';
 
 const adapter = { normalize: normalizeCodexRecord, verify: verifyCodexTranscript };
 const header = JSON.stringify({ type: 'session_meta', payload: { id: 'session' } }) + '\n';
@@ -270,7 +271,7 @@ test('guard serializes same-session hooks and persists only hashes and cursors w
   const files = await readdir(directory);
   assert.equal(files.length, 1);
   const path = join(directory, files[0]);
-  assert.equal((await stat(path)).mode & 0o777, 0o600);
+  assertFileMode(path, 0o600);
   const data = await readFile(path, 'utf8');
   assert.ok(!data.includes('incoming') && !data.includes(f.input.transcript_path));
   await f.run(async guard => { assert.equal(guard.value.scanCursor, header.length); });

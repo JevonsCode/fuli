@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { formatUpdateInstallation, inspectUpdateInstallation, updateEnvironment } from '../src/cli/update-installation.js';
+import { requiresSymlinks } from '../test-support/platform-capabilities.js';
 
-test('update identifies duplicate PATH launchers without executing them', () => {
+test('update identifies duplicate PATH launchers without executing them', requiresSymlinks, () => {
   const dir = mkdtempSync(join(tmpdir(), 'fuli-update-'));
   try {
     const bin = join(dir, 'bin');
@@ -17,7 +18,8 @@ test('update identifies duplicate PATH launchers without executing them', () => 
     symlinkSync(join(root, 'src/cli.js'), join(bin, 'fl'));
     symlinkSync(join(root, 'src/cli.js'), join(bin, 'fuli'));
     writeFileSync(join(secondBin, 'fl'), '#!/bin/sh\nexit 99\n');
-    const result = inspectUpdateInstallation({ env: { PATH: `${bin}:${secondBin}:${bin}` }, platform: 'linux' });
+    // Real temporary directories, so PATH uses the host delimiter and launcher names.
+    const result = inspectUpdateInstallation({ env: { PATH: [bin, secondBin, bin].join(delimiter) } });
     assert.equal(result.launchers.length, 3);
     assert.deepEqual(result.launchers.map(({ version }) => version), ['0.1.0', '0.1.0', null]);
     const text = formatUpdateInstallation(result, { nodePath: '/node/bin/node', npmCommand: 'npm' });

@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
+import { requiresSymlinks } from '../test-support/platform-capabilities.js';
+
 const cli = fileURLToPath(new URL('../src/cli.js', import.meta.url));
 const manifest = {
   schemaVersion: 1, id: 'fixture-reviewer', version: '1.0.0',
@@ -14,7 +16,7 @@ const manifest = {
   initialPreferences: [], permissions: [], runtime: null
 };
 
-test('employee install rejects a receipt symlink without overwriting a file outside the package', (t) => {
+test('employee install rejects a receipt symlink without overwriting a file outside the package', requiresSymlinks, (t) => {
   const f = fixture(t);
   const outside = join(f.root, 'outside.txt');
   writeFileSync(outside, 'synthetic file must stay unchanged');

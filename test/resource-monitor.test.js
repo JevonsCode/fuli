@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import {
@@ -196,9 +197,10 @@ test('native resource monitor measures owned Provider and Neo4j processes withou
         workspace: { pid: 4101, command: '/native/python' }
       }
     };
+    // The monitor reads real PID files, so their paths use the host separator.
     const pidFiles = new Map([
-      ['/native/personal/run/neo4j.pid', '4200\n'],
-      ['/native/workspace/run/neo4j.pid', '4201\n']
+      [join('/native/personal', 'run', 'neo4j.pid'), '4200\n'],
+      [join('/native/workspace', 'run', 'neo4j.pid'), '4201\n']
     ]);
     const processTable = [
       '4100 1 51200',
