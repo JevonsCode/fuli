@@ -1,6 +1,6 @@
 import { defineComponent, h, type PropType } from 'vue'
 
-import RealUiSelect from '@/components/ui/UiSelect.vue'
+import RealUiSelect from '@/ui/UiSelect.vue'
 
 // A distinct name keeps test-utils from replacing the real component with this stub again.
 const UiSelect = { ...RealUiSelect, name: 'RealUiSelect', __name: 'RealUiSelect' }

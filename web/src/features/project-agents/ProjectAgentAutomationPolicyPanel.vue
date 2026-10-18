@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { getJson, patchJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import UiSelect from '@/components/ui/UiSelect.vue'
+import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import type { ProjectAgentCoordinationPolicy, ProjectAgentRecord } from '@/types'
 
