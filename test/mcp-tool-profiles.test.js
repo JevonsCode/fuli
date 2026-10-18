@@ -8,14 +8,15 @@ import { toolNamesForProfile } from '../src/mcp/tool-profiles.js';
 const schemaBytes = (tools) => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
   ({ name, title, description, inputSchema }))));
 
-test('the chat profile is a small subset of real tools that keeps memory and Roundtable', () => {
+test('the chat profile is the everyday memory set; the rest, Roundtable included, stays one discovery away', () => {
   const all = listAgentTools();
   const chat = toolNamesForProfile('chat');
   const known = new Set(all.map(({ name }) => name));
   assert.deepEqual(chat.filter((name) => !known.has(name)), []);
-  for (const name of ['get_collaboration_preferences', 'search_current_project_knowledge', 'checkpoint_task_knowledge', 'message_agent']) {
+  for (const name of ['get_collaboration_preferences', 'search_current_project_knowledge', 'search_knowledge_graph', 'checkpoint_task_knowledge', 'list_agent_interfaces']) {
     assert.ok(chat.includes(name), name);
   }
+  assert.ok(!chat.includes('message_agent'), 'Roundtable tools are discovered on demand');
   const chatTools = all.filter(({ name }) => chat.includes(name));
   assert.ok(schemaBytes(chatTools) < schemaBytes(all) / 3, 'chat profile should be under a third of the full schema');
   assert.equal(toolNamesForProfile('full'), null);
@@ -24,8 +25,10 @@ test('the chat profile is a small subset of real tools that keeps memory and Rou
 
 test('connect prints the requested profile and source application', () => {
   const paths = { nodePath: '/node', mcpServerPath: '/fuli/src/mcp-server.js', runtimeConfigPath: '/data/graph-runtime.json' };
+  // Without a choice a client gets the small chat set; full must be asked for.
   assert.deepEqual(clientConnectionConfig(paths, 'server').args,
-    ['/fuli/src/mcp-server.js', '--runtime-config', '/data/graph-runtime.json', '--source-application', 'other', '--tool-profile', 'full']);
+    ['/fuli/src/mcp-server.js', '--runtime-config', '/data/graph-runtime.json', '--source-application', 'other', '--tool-profile', 'chat']);
+  assert.deepEqual(clientConnectionConfig(paths, 'server', { profile: 'full' }).args.slice(-2), ['--tool-profile', 'full']);
   assert.deepEqual(clientConnectionConfig(paths, 'server', { profile: 'chat', sourceApplication: 'claude' }).args,
     ['/fuli/src/mcp-server.js', '--runtime-config', '/data/graph-runtime.json', '--source-application', 'claude', '--tool-profile', 'chat']);
   assert.throws(() => clientConnectionConfig(paths, 'server', { profile: 'tiny' }), /Unknown MCP tool profile/);

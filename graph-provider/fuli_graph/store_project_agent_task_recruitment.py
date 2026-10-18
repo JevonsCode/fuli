@@ -28,6 +28,9 @@ from .project_agent_task_models import (
 from .provider_values import native_datetime, now_utc, stable_uuid
 from .store_project_agents import SYSTEM_HR_AGENT_ID
 from .store_transactions import query_store_transaction
+from .occupation_catalog import BUILTIN_OCCUPATION_KEYS
+from .store_occupation_catalog import OCCUPATION_LOCK, active_occupation_predicate, require_active_occupations
+from .store_recruitment_fulfillment import StoreRecruitmentFulfillment
 from .project_agent_team_growth import enroll_recruited_team_member
 from .task_participant_running import running_since_set
 
@@ -35,7 +38,7 @@ from .task_participant_running import running_since_set
 RECRUITMENT_CLAIM_TTL = timedelta(minutes=2)
 
 
-class StoreProjectAgentTaskRecruitment:
+class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
     """Own the audited AR lifecycle independently from task routing mechanics."""
 
     _normalized_recruitment_profile = staticmethod(normalized_recruitment_profile)
@@ -113,6 +116,38 @@ class StoreProjectAgentTaskRecruitment:
             space,
             request.personal_project_id,
         )
+        # Keep catalog validation, decision CAS, and identity provisioning in
+        # one transaction. A rejected/failed approval leaves the pending choice
+        # and task revision unchanged, so it can be corrected or cancelled.
+        async with query_store_transaction(self) as scoped:
+            raw, selected = await scoped._decide_recruitment_transaction(actor, request)
+        if request.decision == 'cancel':
+            return self._recruitment(raw)
+        await self._activate_approved_recruitment(
+            actor,
+            raw,
+            selected,
+            request.reason,
+        )
+        record = await self._get_recruitment(
+            request.personal_space_id,
+            request.recruitment_id,
+        )
+        if not record:
+            raise HTTPException(status_code=404, detail='recruitment not found')
+        return record
+
+    async def _decide_recruitment_transaction(self, actor, request):
+        await self.runtime.driver.execute_query(
+            'MATCH (space:FuliSpace {id: $space_id, kind: \'personal\'}) ' + OCCUPATION_LOCK,
+            space_id=request.personal_space_id,
+        )
+        current = await self._get_recruitment(request.personal_space_id, request.recruitment_id)
+        if request.decision == 'approve' or request.occupation:
+            occupation = request.occupation or (current.occupation if current else None)
+            if occupation:
+                await require_active_occupations(self, request.personal_space_id,
+                                                 [occupation.role, *occupation.tags])
         updated_at = now_utc()
         decision_status = (
             'cancelled' if request.decision == 'cancel' else 'requested'
@@ -213,7 +248,7 @@ class StoreProjectAgentTaskRecruitment:
             )
         raw = dict(records[0]['recruitment'])
         if request.decision == 'cancel':
-            return self._recruitment(raw)
+            return raw, None
         if not raw.get('hr_agent_id'):
             raise HTTPException(
                 status_code=409,
@@ -221,19 +256,7 @@ class StoreProjectAgentTaskRecruitment:
             )
         raw['_guarded_task_id'] = raw['task_id']
         selected = await self._provision_recruitment(actor, raw)
-        await self._activate_approved_recruitment(
-            actor,
-            raw,
-            selected,
-            request.reason,
-        )
-        record = await self._get_recruitment(
-            request.personal_space_id,
-            request.recruitment_id,
-        )
-        if not record:
-            raise HTTPException(status_code=404, detail='recruitment not found')
-        return record
+        return raw, selected
 
     async def _activate_approved_recruitment(
         self,
@@ -905,91 +928,6 @@ class StoreProjectAgentTaskRecruitment:
         )
         return existing, recruited
 
-    async def _finalize_ready_recruitment(
-        self,
-        request,
-        recruitment_id,
-        *,
-        task_id=None,
-        expected_task_revision=None,
-    ):
-        updated_at = now_utc()
-        records, _, _ = await self.runtime.driver.execute_query(
-            '''
-            MATCH (space:FuliSpace {
-              id: $personal_space_id, kind: 'personal'
-            })-[:HAS_PROJECT_AGENT_RECRUITMENT]->
-                  (recruitment:FuliProjectAgentRecruitment {
-                    recruitment_id: $recruitment_id,
-                    status: 'requested'
-                  })
-            OPTIONAL MATCH (space)-[:HAS_PROJECT_AGENT_TASK]->
-                  (task:FuliProjectAgentTask {task_id: $task_id})
-            FOREACH (_ IN CASE WHEN task IS NULL THEN [] ELSE [1] END |
-              SET task._task_lifecycle_lock = true
-            )
-            FOREACH (_ IN CASE WHEN task IS NULL THEN [] ELSE [1] END |
-              REMOVE task._task_lifecycle_lock
-            )
-            WITH space, recruitment, task
-            MATCH (space)-[:HAS_PROJECT_AGENT_IDENTITY]->
-                  (agent:FuliProjectAgent)
-            WHERE agent.agent_id = recruitment.proposed_agent_id
-            SET agent._task_lifecycle_lock = true
-            REMOVE agent._task_lifecycle_lock
-            WITH space, recruitment, agent, task
-            WHERE agent.status = 'active' AND recruitment.occupation_role IS NOT NULL
-              AND recruitment.occupation_role <> 'assistant'
-            MATCH (space)-[:CONTAINS_PROJECT]->
-                  (:FuliPersonalProject {project_id: $personal_project_id})-
-                  [:HAS_PROJECT_AGENT_ASSIGNMENT]->
-                  (:FuliProjectAgentAssignment {status: 'active'})-
-                  [:ASSIGNED_AGENT]->(agent)
-            WITH recruitment, agent, task
-            WHERE $task_id IS NULL
-               OR (
-                 recruitment.task_id = $task_id
-                 AND task.status = 'awaiting_recruitment'
-                 AND coalesce(task.revision, 0) = $expected_task_revision
-               )
-            SET recruitment.status = 'fulfilled',
-                recruitment.recruited_agent_id = agent.agent_id,
-                recruitment.fulfilled_at = $updated_at,
-                recruitment.updated_at = $updated_at,
-                recruitment.revision = coalesce(recruitment.revision, 0) + 1,
-                agent.occupation_role = recruitment.occupation_role,
-                agent.occupation_tags = coalesce(recruitment.occupation_tags, []),
-                agent.occupation_updated_at = $updated_at,
-                agent.occupation_recruitment_id = recruitment.recruitment_id,
-                agent.recruitment_id = recruitment.recruitment_id,
-                agent.recruited_at = coalesce(agent.recruited_at, $updated_at),
-                agent.recruitment_reason = recruitment.reason,
-                agent.recruitment_source_application =
-                  recruitment.trigger_source_application,
-                agent.temporary_task_id = CASE recruitment.position_kind
-                  WHEN 'temporary' THEN recruitment.task_id
-                  ELSE agent.temporary_task_id END,
-                agent.test_source = recruitment.test_source,
-                agent.cleanup_eligible =
-                  coalesce(recruitment.cleanup_eligible, false)
-            FOREACH (_ IN CASE WHEN $task_id IS NULL THEN [] ELSE [1] END |
-              SET task.recruitment_provisioning_claim_id = null,
-                  task.recruitment_provisioning_claimed_at = null,
-                  task.revision = coalesce(task.revision, 0) + 1,
-                  task.updated_at = $updated_at
-            )
-            MERGE (recruitment)-[:CREATED_AGENT]->(agent)
-            RETURN recruitment
-            ''',
-            personal_space_id=request.personal_space_id,
-            personal_project_id=request.personal_project_id,
-            recruitment_id=recruitment_id,
-            task_id=task_id,
-            expected_task_revision=expected_task_revision,
-            updated_at=updated_at,
-        )
-        return dict(records[0]['recruitment']) if records else None
-
     async def _claim_requested_recruitment(
         self,
         request,
@@ -1057,6 +995,8 @@ class StoreProjectAgentTaskRecruitment:
         records, _, _ = await self.runtime.driver.execute_query(
             '''
             MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
+            ''' + OCCUPATION_LOCK + '''
+            WITH space WHERE ''' + active_occupation_predicate() + '''
             MATCH (space)-[:CONTAINS_PROJECT]->
                   (project:FuliPersonalProject {project_id: $personal_project_id})
             MERGE (recruitment:FuliProjectAgentRecruitment {id: $id})
@@ -1076,17 +1016,19 @@ class StoreProjectAgentTaskRecruitment:
             personal_project_id=raw['personal_project_id'],
             id=raw['id'],
             properties=raw,
+            occupation_keys=[raw['occupation_role'], *raw.get('occupation_tags', [])],
+            builtin_occupation_keys=BUILTIN_OCCUPATION_KEYS,
             hr_agent_id=raw.get('hr_agent_id'),
             provisioning_claim_id=raw.get('provisioning_claim_id'),
         )
-        return bool(
-            records
-            and dict(records[0]).get('provisioning_claimed')
-        )
+        if not records:
+            await require_active_occupations(self, raw['personal_space_id'],
+                [raw['occupation_role'], *raw.get('occupation_tags', [])])
+        return bool(records and dict(records[0]).get('provisioning_claimed'))
 
     async def _provision_recruitment(self, actor, raw):
         # Identity, assignment and fulfillment either all commit or all roll back.
-        # The audit/claim intentionally remains outside for recoverable retries.
+        # Task submission and approval also join this transaction with their claim.
         async with query_store_transaction(self) as scoped:
             return await scoped._provision_recruitment_transaction(actor, raw)
 

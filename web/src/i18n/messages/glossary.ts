@@ -2,6 +2,7 @@ export const glossaryMessages = {
   'zh-CN': {
     toggle: '术语解释（也可按住 Alt）',
     toggleOn: '关闭术语解释',
+    return: '收回问号',
     modeOn: '术语解释已开启：点击状态或术语查看解释',
     groups: {
       quadrant: '认知象限',
@@ -47,6 +48,7 @@ export const glossaryMessages = {
   'en-US': {
     toggle: 'Explain terms (or hold Alt)',
     toggleOn: 'Stop explaining terms',
+    return: 'Put it back',
     modeOn: 'Term explanations on: click a status or term to explain it',
     groups: {
       quadrant: 'Knowledge quadrant',

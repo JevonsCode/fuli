@@ -100,7 +100,7 @@ test('real CLI worker initializes offline from a package path with spaces and ig
         await client.connect(transport);
         const tools = (await client.listTools()).tools.map(item => item.name);
         if (worker) assert.deepEqual(tools, []);
-        else assert.ok(tools.includes('message_agent'), 'ordinary MCP must ignore worker environment');
+        else assert.ok(tools.includes('checkpoint_task_knowledge'), 'ordinary MCP must ignore worker environment');
         assert.equal(providerCalls, 0);
       } finally {
         await client.close();

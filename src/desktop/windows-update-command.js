@@ -29,6 +29,8 @@ export async function runWindowsUpdateCommand(args = [], dependencies = {}) {
   const result = await (dependencies.update ?? updateWindowsInstallation)({ ...options,
     expectedInstallationId: plan.current.installationId, expectedInventorySha256: plan.inventorySha256 }, { write });
   write('已更新 / Updated: ' + result.applicationVersion + '\n请从桌面或开始菜单重新打开 Fuli。 / Reopen Fuli from Desktop or Start menu.');
+  // Clients keep the MCP server they started; only a restart loads this version.
+  write('已打开的 Claude Code / Codex 等会话需要重启才会用上新版（更省 Token）。 / Restart open Claude Code, Codex and other client sessions to load the new version (it uses fewer tokens).');
   if (result.clients !== 'reconnected') write('客户端重新连接未完成；请检查后运行新版 setup。 / Client reconnection did not finish; inspect the installation and run setup from the new version.');
   return result;
 }

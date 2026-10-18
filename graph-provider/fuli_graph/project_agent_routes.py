@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException, Query
 
 from .project_agent_memory_routes import register_project_agent_memory_routes
 from .project_agent_occupation_models import ProjectAgentOccupationUpdate
+from .occupation_routes import register_occupation_routes
 from .store_project_agent_pages import ProjectAgentPage
 from .project_agent_worker_routes import register_project_agent_worker_routes
 from .task_notifications import register_task_notification_routes
@@ -64,6 +65,7 @@ def register_project_agent_routes(
     """Attach Project Agent routes while keeping ``create_app`` orchestration small."""
 
     register_project_agent_memory_routes(application, store, Actor)
+    register_occupation_routes(application, store, Actor)
     register_project_agent_worker_routes(application, store, Actor)
     notify_task_change = register_task_notification_routes(application, store, Actor)
     from .project_agent_attention_routes import register_project_agent_attention_routes

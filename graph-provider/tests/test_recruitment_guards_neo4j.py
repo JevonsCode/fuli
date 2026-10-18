@@ -135,7 +135,7 @@ async def test_approval_rechecks_hr_active_status_before_any_provisioning(hr_sta
 
 
 @pytest.mark.asyncio
-async def test_activity_cancellation_rejects_unexpired_provisioning_claim(monkeypatch):
+async def test_failed_approval_rolls_back_claim_and_allows_immediate_cancellation(monkeypatch):
     async with provider_client(fixture_settings(), raise_app_exceptions=False) as (client, _):
         scope, payload = await recruitment_setup(client, confirmation=True)
         submitted = await client.post('/v1/project-agent-tasks', json=payload)
@@ -156,9 +156,8 @@ async def test_activity_cancellation_rejects_unexpired_provisioning_claim(monkey
                 and kwargs.get('provisioning_claim_id')
             ):
                 fired = True
-                # The approval CAS has already committed the fresh claim in a
-                # separate query. Fail at the first guarded provisioning query,
-                # before identity or assignment writes can begin.
+                # Fail after the approval CAS but before identity writes; the
+                # enclosing approval transaction must also roll back the claim.
                 raise RuntimeError(
                     'Synthetic interruption before recruitment provisioning'
                 )
@@ -179,9 +178,8 @@ async def test_activity_cancellation_rejects_unexpired_provisioning_claim(monkey
         )).json()
         claimed_recruitment = (await recruitments(client, scope))[0]
         assert claimed_task['status'] == 'awaiting_recruitment'
-        assert claimed_task['revision'] == task['revision'] + 1
-        assert claimed_recruitment['status'] == 'requested'
-        assert claimed_recruitment['revision'] == recruitment['revision'] + 1
+        assert claimed_task == task
+        assert claimed_recruitment == recruitment
 
         identity = await client.get(
             f'/v1/project-agents/{recruitment["proposed_agent_id"]}',
@@ -194,16 +192,12 @@ async def test_activity_cancellation_rejects_unexpired_provisioning_claim(monkey
             json={**scope, 'task_id': task['task_id'],
                   'expected_revision': claimed_task['revision'],
                   'status': 'cancelled',
-                  'idempotency_key': 'synthetic-unexpired-claim-cancel',
+                  'idempotency_key': 'synthetic-failed-approval-cancel',
                   'source_application': 'codex',
-                  'summary': 'Synthetic cancellation during provisioning claim.'},
+                  'summary': 'Synthetic cancellation after failed approval rollback.'},
         )
-        assert cancellation.status_code == 409, cancellation.text
-        assert (await client.get(
-            f'/v1/project-agent-tasks/{task["task_id"]}',
-            params=scope,
-        )).json() == claimed_task
-        assert (await recruitments(client, scope))[0] == claimed_recruitment
+        assert cancellation.status_code == 200, cancellation.text
+        assert cancellation.json()['status'] == 'cancelled'
         identity = await client.get(
             f'/v1/project-agents/{recruitment["proposed_agent_id"]}',
             params={'personal_space_id': scope['personal_space_id']},

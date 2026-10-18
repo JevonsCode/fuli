@@ -1,0 +1,32 @@
+// How the chat profile lists its few tools. Clients send every listed schema
+// with each request, so chat gets short descriptions and a compact checkpoint
+// shape. Calls are still validated against the full definitions, and
+// list_agent_interfaces(toolName) returns the full text and schema.
+export const CHAT_LISTING = Object.freeze({
+  get_collaboration_preferences: {
+    description: 'Task entry fallback: when no Hook supplied FULI task context, call this first with projectPath=current working directory and taskPrompt=current request; pass sessionId only when the host gave a native one, never guess. Returns effective_preferences to apply (in actual write payloads too), recall, and a fresh taskContextToken for checkpoint_task_knowledge; never reuse old tokens. Full rules: resource fuli://rules/task-entry.'
+  },
+  search_knowledge_graph: {
+    description: 'Search remembered facts, decisions, URLs, runbooks and preferences before saying you do not know. Scope is your profile, the active project and its authorized PART_OF/USES_KNOWLEDGE_FROM parents; RELATED_TO never expands it, and all_local_confirmed needs explicit user consent. Results carry sourceMarker or noMatchSourceMarker and retrievalGuidance for the next step.'
+  },
+  search_current_project_knowledge: {
+    description: 'Project recall for normal work: projectPath plus 1-4 focused queries (an action, artifact, system or ID, not the whole request). Searches this project, then its authorized parents; never guesses an ambiguous project. related_project_suggestions need the user\'s OK before any expansion.'
+  },
+  checkpoint_task_knowledge: {
+    description: 'End-of-task review, once per task: retain_nothing or capture_candidates with a reason; assigned employees add workLog {status, summary}. Optional agentMemory (loaded revision), experiences, knowledgeUsage and collaborators (actual contributors only). Never store transcripts, guesses, logs or secrets; Agent proposals stay pending. End the reply with the returned agent_receipt.markdown.',
+    // A graph capture is rare at checkpoint; experiences covers reusable approaches.
+    properties: {
+      capture: { type: 'object', description: 'Rare graph capture; exact shape via list_agent_interfaces(toolName). Prefer experiences.' },
+      captureRouting: { type: 'array', items: { type: 'object' }, maxItems: 2, description: 'Scopes for capture; shape via list_agent_interfaces(toolName).' }
+    }
+  },
+  list_agent_interfaces: {
+    description: 'Discover more FULI tools. Without toolName: names and trust boundaries only. With toolName: that tool\'s full description and schema; then call it by name, or through fuli_call when the host has not refreshed its tool list. Local-user-only boundaries are never Agent-callable.'
+  }
+});
+
+// The schema a chat client sees for a definition: compact properties swapped in.
+export function chatListedSchema(definition) {
+  const properties = CHAT_LISTING[definition.name]?.properties;
+  return properties ? { ...definition.inputSchema, properties: { ...definition.inputSchema.properties, ...properties } } : definition.inputSchema;
+}

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch, type Component } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { getJson } from '@/api/client'
@@ -20,6 +20,14 @@ import { formatDateTime } from '@/lib/date-time'
 import { personalProjectsPath } from '@/router/paths'
 import { projectDisplayName } from '@/features/projects/project-origin'
 import { useConsoleStore } from '@/stores/console'
+import { agentIdentitySwatch } from '@/features/agent-profile/agent-identity-color'
+import { designLab } from '@/features/design-lab/design-lab'
+import { employeeAvatarUrl } from '@/features/employees/avatars'
+import FocusBoard from '@/features/workbench/FocusBoard.vue'
+import KanbanBoard from '@/features/workbench/KanbanBoard.vue'
+import TimelineBoard from '@/features/workbench/TimelineBoard.vue'
+import type { AgentFace, WorkbenchBoard } from '@/features/workbench/workbench-board'
+import { formatRelativeTime } from '@/lib/relative-time'
 import type { ProjectAgentTaskRecord } from '@/types'
 
 const store = useConsoleStore()
@@ -51,7 +59,36 @@ const recentProjectItems = computed(() => recentProjects(tasks.value, personalPr
 const hasTaskData = computed(() => tasks.value.length > 0)
 const attentionItems = computed(() => attention.previewItems)
 // Names are read only for the Agents this preview shows, not the whole roster.
-const attentionAgents = useAgentRecords(activeSpaceId, computed(() => attentionItems.value.map(item => item.agentId)))
+// Names are read only for the Agents shown here: who asks and who leads current work.
+const shownAgentIds = computed(() => [...new Set([
+  ...attentionItems.value.map(item => item.agentId),
+  ...tasks.value.map(task => task.leadAgentId ?? task.ownerAgentId).filter((id): id is string => Boolean(id)),
+])].slice(0, 40))
+const attentionAgents = useAgentRecords(activeSpaceId, shownAgentIds)
+
+// Design-lab workbench designs share this page's data and links.
+const WORKBENCH_DESIGNS: Record<string, Component> = { focus: FocusBoard, board: KanbanBoard, timeline: TimelineBoard }
+const workbenchDesign = computed(() => WORKBENCH_DESIGNS[designLab.value.workbench] ?? null)
+function agentFace(agentId?: string | null): AgentFace {
+  const record = agentId ? attentionAgents.records.value[agentId] : undefined
+  const swatch = agentIdentitySwatch(agentId)
+  return {
+    name: (record && attentionAgentName(record.agentId)) || t('workbench.unknownAgent'),
+    image: agentId ? employeeAvatarUrl(agentId) ?? null : null,
+    color: swatch === null ? null : `var(--identity-${swatch})`,
+    softColor: swatch === null ? null : `var(--identity-${swatch}-soft)`,
+  }
+}
+const board = computed<WorkbenchBoard>(() => ({
+  tasks: tasks.value,
+  attention: attentionItems.value,
+  projectName,
+  agentFace,
+  taskHref: overviewTaskHref,
+  questionHref: item => inboxLocation(item.agentId, item.requestId),
+  statusLabel: taskStatusLabel,
+  since: value => formatRelativeTime(value, currentLocale()) ?? t('overview.notReported'),
+}))
 const attentionHasData = computed(() => attentionItems.value.length > 0)
 
 const localServiceStatus = computed(() => {
@@ -172,6 +209,7 @@ function taskMeta(task: ProjectAgentTaskRecord) {
 <template>
   <section class="view overview-view">
     <GrowthLoading v-if="consoleBootstrapLoading" :label="t('common.status.loadingConsole')" />
+    <component :is="workbenchDesign" v-else-if="workbenchDesign" :board="board" />
     <div v-else class="overview-content-grid">
       <div class="overview-column">
       <section class="overview-section overview-attention-section" aria-labelledby="overview-attention-heading">
