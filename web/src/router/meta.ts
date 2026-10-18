@@ -1,12 +1,9 @@
-import { t } from '@/i18n'
-
-const TRANSLATION_KEY_PREFIXES = ['routes.', 'common.', 'employees.', 'agentProfiles.']
+import { i18n, t } from '@/i18n'
 
 export function routeMetaText(value: unknown, fallbackKey = '') {
   const text = typeof value === 'string' && value ? value : fallbackKey
-  return TRANSLATION_KEY_PREFIXES.some((prefix) => text.startsWith(prefix))
-    ? t(text)
-    : text
+  // Any catalog key is translated; plain legacy titles pass through unchanged.
+  return text && i18n.global.te(text) ? t(text) : text
 }
 
 export function updateDocumentTitle(value: unknown) {
