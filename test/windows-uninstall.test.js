@@ -105,3 +105,18 @@ test('the deferred removal deletes the running slot without following a junction
   assert.equal(existsSync(f.current.installRoot), false);
   assert.equal(readFileSync(join(outside, 'keep.txt'), 'utf8'), 'keep');
 });
+
+test('uninstall returns only after the deferred removal has been launched', async t => {
+  const f = installed(t); let launched = false;
+  const result = await uninstallWindowsInstallation(f.uninstall, { ...f.deps,
+    runningFrom: join(f.current.packageRoot, 'runtime', 'node', 'node.exe'),
+    removeAfterExit: async () => { await delay(50); launched = true; } });
+  assert.equal(result.status, 'removing_after_exit');
+  assert.equal(launched, true);
+});
+
+test('an install root given in different case is the same installation on Windows', { skip: process.platform !== 'win32' && 'Windows paths only' }, async t => {
+  const f = installed(t);
+  const plan = planWindowsUninstall({ ...f.uninstall, installRoot: f.current.installRoot.toUpperCase(), readShortcut: f.deps.readShortcut });
+  assert.equal(plan.current.installationId, f.current.installationId);
+});

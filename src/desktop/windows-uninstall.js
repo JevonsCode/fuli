@@ -61,7 +61,7 @@ export async function uninstallWindowsInstallation(options, {
     }
     const containers = [plan.versions, plan.installRoot];
     for (const path of containers) removeIfEmpty(path);
-    if (pending.length) removeAfterExit(pending, containers);
+    if (pending.length) await removeAfterExit(pending, containers);
     return { status: pending.length ? 'removing_after_exit' : 'removed', applicationVersion: current.applicationVersion,
       dataDir: current.dataDir, installRoot: plan.installRoot, keptShortcuts,
       leftover: existsSync(plan.installRoot) && !pending.length ? plan.installRoot : null };
@@ -76,7 +76,8 @@ function removeIfEmpty(path) {
 // PowerShell waits for this process and its console to exit. .NET Directory.Delete
 // removes junctions without following them into other folders. A detached PowerShell
 // has no console and exits at once, and a direct child dies with Node's job, so
-// cmd's start launches it as a grandchild outside that job.
+// cmd's start launches it as a grandchild outside that job. This process must not
+// exit before cmd does: closing Node's job while cmd is still starting kills both.
 function removeWindowsDirectoriesAfterExit(directories, containers) {
   const input = Buffer.from(JSON.stringify({ directories, containers })).toString('base64');
   const script = '$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("' + input + '")) | ConvertFrom-Json; '
@@ -85,7 +86,9 @@ function removeWindowsDirectoriesAfterExit(directories, containers) {
     + 'if(-not @($p.directories | Where-Object { [IO.Directory]::Exists($_) }).Count){ break } }; '
     + 'foreach($c in $p.containers){ try { if([IO.Directory]::Exists($c) -and -not [IO.Directory]::EnumerateFileSystemEntries($c).GetEnumerator().MoveNext()){ [IO.Directory]::Delete($c,$false) } } catch {} }';
   const system = join(process.env.SystemRoot, 'System32');
-  spawn(join(system, 'cmd.exe'), ['/d', '/c', 'start', '""', '/b', join(system, 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
-    '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
-    { cwd: tmpdir(), stdio: 'ignore', windowsHide: true }).unref();
+  return new Promise(resolve => {
+    spawn(join(system, 'cmd.exe'), ['/d', '/c', 'start', '""', '/b', join(system, 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+      '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
+      { cwd: tmpdir(), stdio: 'ignore', windowsHide: true }).once('error', resolve).once('exit', resolve);
+  });
 }
