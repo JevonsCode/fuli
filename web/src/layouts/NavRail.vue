@@ -45,7 +45,7 @@ watch(expanded, value => {
           :aria-current="destination.key === activeKey ? 'page' : undefined"
           :aria-label="t(`shell.destinations.${destination.key}`)" :title="expanded ? undefined : t(`shell.destinations.${destination.key}`)"
           :data-destination="destination.key">
-          <UiIcon :name="destination.icon" :size="22" />
+          <UiIcon :name="destination.icon" :size="expanded ? 20 : 22" />
           <span class="nav-rail-label">{{ t(`shell.destinations.${destination.key}`) }}</span>
           <span v-if="destination.key === 'chat' && attentionCount" class="nav-rail-badge"
             :aria-label="t('shell.attentionBadge', { count: attentionCount })" data-attention-badge>{{ attentionCount > 9 ? '9+' : attentionCount }}</span>
@@ -92,7 +92,7 @@ watch(expanded, value => {
   transition: color var(--motion-fast), background var(--motion-fast), transform var(--motion-fast) var(--motion-ease);
 }
 .nav-rail.is-expanded .nav-rail-link {
-  display: flex; align-items: center; gap: 10px; width: 100%; height: 40px; padding: 0 12px; line-height: 1;
+  display: flex; align-items: center; gap: 8px; width: 100%; height: 40px; padding: 0 10px; line-height: 1;
 }
 /* Expanded, the active row is a flat tint centred on its text, no glow. */
 .nav-rail.is-expanded .nav-rail-link.is-active { box-shadow: none; }
@@ -113,7 +113,7 @@ watch(expanded, value => {
 /* Second level: same column as the first-level names, told apart by colour. */
 .nav-rail-sublinks { display: grid; gap: 2px; margin: 0 0 4px; padding: 0; list-style: none; }
 .nav-rail-sublink {
-  display: flex; align-items: center; height: 32px; padding: 0 12px 0 44px; border-radius: 10px;
+  display: flex; align-items: center; height: 32px; padding: 0 10px 0 38px; border-radius: 10px;
   color: var(--color-faint); font-size: 13px; font-weight: 500; line-height: 1; text-decoration: none;
   transition: color var(--motion-fast), background var(--motion-fast);
 }

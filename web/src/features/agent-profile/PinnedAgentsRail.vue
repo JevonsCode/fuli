@@ -57,7 +57,7 @@ function retry() {
 }
 /* Same column and weight as the other second-level rows; the portrait starts where the parent name starts. */
 .pinned-rail.is-expanded .pinned-rail-link {
-  display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 12px 0 44px;
+  display: flex; align-items: center; gap: 6px; width: 100%; height: 32px; padding: 0 10px 0 38px;
   font-size: 13px; font-weight: 500; line-height: 1;
 }
 .pinned-rail-link:hover { color: var(--color-ink); background: var(--color-surface-hover); }
@@ -68,9 +68,9 @@ function retry() {
   color: var(--agent-identity, var(--color-accent)); background: var(--agent-identity-soft, var(--color-accent-soft));
   font-size: 12px; font-weight: 700;
 }
-.pinned-rail.is-expanded .pinned-rail-portrait { width: 20px; height: 20px; font-size: 11px; }
+.pinned-rail.is-expanded .pinned-rail-portrait { width: 18px; height: 18px; font-size: 10px; }
 .pinned-rail-portrait img { width: 100%; height: 100%; object-fit: cover; }
 .pinned-rail-link.is-active .pinned-rail-portrait { box-shadow: 0 0 0 2px var(--color-accent); }
 .pinned-rail-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pinned-rail-error { display: flex; align-items: center; gap: 6px; padding: 0 4px 0 44px; color: var(--color-muted); font-size: 12px; }
+.pinned-rail-error { display: flex; align-items: center; gap: 6px; padding: 0 4px 0 38px; color: var(--color-muted); font-size: 12px; }
 </style>
