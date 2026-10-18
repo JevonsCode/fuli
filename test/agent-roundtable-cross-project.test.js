@@ -113,3 +113,37 @@ test('the scoped receiving MCP cannot open a follow-up into a different project'
     to: 'project:source', body: 'Foreign follow-up' }));
   assert.equal(f.wakes.length, 0);
 });
+
+test('another project lead addressed by agent ID is a cross-project ask to that project', async () => {
+  const f = fixture();
+  const roster = await f.app.listProjectAgents();
+  roster.find(a => a.agentId === 'source-lead').assignments = [{ status: 'active', personalProjectId: 'source' }];
+  roster.find(a => a.agentId === 'target-lead').assignments = [{ status: 'active', personalProjectId: 'target' }];
+  const result = await f.roundtable.messageAgent({ taskContextToken: 'source', to: 'target-lead',
+    body: 'Return one bounded target fact', projectPath: '/work/source' });
+  assert.equal(result.status, 'answered');
+  assert.equal(f.grants[0].target_personal_project_id, 'target');
+  assert.equal(f.wakes[0].cwd, '/work/target-session');
+});
+
+test('an Agent working in several other projects must be addressed by project', async () => {
+  const f = fixture();
+  const roster = await f.app.listProjectAgents();
+  roster.find(a => a.agentId === 'target-lead').assignments = [{ status: 'active', personalProjectId: 'target' },
+    { status: 'active', personalProjectId: 'other' }];
+  await assert.rejects(f.roundtable.messageAgent({ taskContextToken: 'source', to: 'target-lead', body: 'Which one?' }),
+    /several projects; address one as project:<projectId>/);
+  assert.equal(f.grants.length, 0);
+});
+
+test('a delivery attempt records its client and session together', () => {
+  const store = createRoundtableStore();
+  store.createThread({ id: 'thread-attempts', spaceId: 'space', projectId: 'source', subject: 'Attempts' });
+  const ask = store.appendMessage('thread-attempts', { id: 'ask-attempts', kind: 'ask', body: 'b', status: 'queued',
+    from: { agentId: 'a', name: 'a', client: 'codex', session: 's' }, to: { agentId: 'b', name: 'b' } });
+  store.updateMessage(ask.id, { status: 'delivering', toClient: 'claude_code', toSession: 'claude-session' });
+  const fresh = store.updateMessage(ask.id, { status: 'delivering', toClient: 'codex', toSession: null });
+  assert.deepEqual([fresh.to_client, fresh.to_session], ['codex', null]);
+  const failed = store.updateMessage(ask.id, { status: 'queued', error: 'wake_failed' });
+  assert.deepEqual([failed.to_client, failed.to_session], ['codex', null]);
+});
