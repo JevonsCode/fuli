@@ -14,9 +14,46 @@ Current task tokens, identity, role constraints, authority and conflicts remain
 in every result. The cache never supplies permission or current business data.
 
 Instruction fingerprints use the same mandatory projection as compact entry.
-The full `read_task_preferences` result can establish that baseline while keeping
-its additional source metadata; the reader itself always returns full current
-preferences for its original owned task.
+A single complete `read_task_preferences` result can establish that baseline
+while keeping its additional source metadata. Paginated results, including the
+last page, never establish a whole-preference baseline on their own.
+
+## Same-task reader pages
+
+`read_task_preferences({ taskContextToken, cursor? })` reads current preferences
+for the original owned task. Small results retain the existing `complete`
+response. Larger results use `preference_delivery.status = paginated`, a full
+projection `revision`, zero-based `page_index`, `page_count`, collection `totals`
+and opaque `next_cursor`. Only the final page has `preferences_complete=true`.
+
+Every page repeats the complete task token, native/worker identity, scope,
+receipt and checkpoint boundary. Other top-level instruction fields (role,
+application/task/judgment guidance) occur once in the page chain, as indivisible
+fields. Each preference or conflict is also indivisible. Collect **all** pages
+of the same revision in order before applying anything: merge the instruction
+fields and concatenate `effective_preferences`, `active_conflicts` and
+`deferred_conflicts`. Do not treat a final page alone as the complete set.
+No instruction text, qualifier, authority or conflict alternative is shortened.
+
+The implementation budget is 32 KiB for UTF-8 `JSON.stringify` of the complete
+MCP envelope, including both identical content and structured channels. This
+is a conservative implementation contract, not a documented universal Codex
+token/display limit. Every page is preflighted before the first is returned.
+A single instruction field/item plus required identity that cannot fit blocks
+the whole delivery without returning preference fragments. Source-window or
+unsafe-projection failures also stay blocked.
+
+Cursors bind the token and complete current projection (all instruction,
+identity and scope fields). Every continuation reauthorizes and rereads the
+Provider before checking its cursor. Snapshot changes, permission revocation,
+cross-token/session/scope use, unknown or expired cursors reject. Cursor metadata
+is private to the application process, contains no preference bodies, expires
+after 15 minutes, and retains at most 128 snapshots. Retries within that lifetime
+return identical pages. After restart, eviction, expiry or snapshot rejection,
+discard the old chain and call this reader without a cursor using the **same**
+task token. Never restart task entry to recover. Older clients that do not
+support continuation see incomplete delivery and must stop; small-result
+compatibility remains unchanged.
 
 ## Native boundaries
 
@@ -31,8 +68,9 @@ preferences for its original owned task.
   store the custom tool name as `exec`. Failed, running, truncated, unpaired or
   unknown results never acknowledge preferences.
 - Claude evidence requires same-session `tool_use`/non-error `tool_result`
-  pairs. Its ordinary MCP caller has no verified native identity and receives
-  full entry; a trusted lifecycle adapter can inspect that chat's native file.
+  pairs. Its MCP process can use the host's own UUID `CLAUDE_CODE_SESSION_ID`
+  for same-task recovery; a caller without verified provenance cannot invent
+  that identity. A trusted lifecycle adapter can inspect that chat's native file.
 - SessionStart and PreCompact command definitions invalidate prior delivery.
   Compact/resume recovery reads the existing active task's full preferences,
   without creating another task or selecting another owner. Clear/startup do

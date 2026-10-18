@@ -1,6 +1,6 @@
 import { ApplicationError } from '../app/application-error.js';
 import { BLOCKED_PREFERENCE_LABEL, blockedPreferenceDelivery, completeBlockedPreferenceDelivery,
-  preferenceDeliveryReason, stablePreferencePrefix } from './preference-delivery.js';
+  preferenceDeliveryReason, stablePreferencePrefix, TASK_PREFERENCE_RESULT_LIMIT_BYTES } from './preference-delivery.js';
 
 const OMITTED_KEYS = new Set([
   'store',
@@ -33,8 +33,8 @@ export function completeToolResult(value, limitBytes) {
 
 // The reader already supplies an explicit business projection. Never pass it
 // through the generic string/array sanitizer and then call it complete.
-export function completePreferenceToolResult(value, limitBytes = 512 * 1024) {
-  if (!value || (value.preferences_complete !== true && value.preference_delivery?.status !== 'blocked')) {
+export function completePreferenceToolResult(value, limitBytes = TASK_PREFERENCE_RESULT_LIMIT_BYTES) {
+  if (!value || (value.preferences_complete !== true && !['blocked', 'paginated'].includes(value.preference_delivery?.status))) {
     throw new ApplicationError('validation', 'Incomplete preference reader projection');
   }
   const allowed = new Set(['effective_preferences', 'active_conflicts', 'deferred_conflicts',

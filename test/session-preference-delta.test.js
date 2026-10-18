@@ -15,6 +15,14 @@ function entry(token = 'task-a', changes = {}) {
     task_guidance: { rules: 'fuli://rules/task-entry#task_guidance', version: 'synthetic-rules' }, ...changes }, scope);
 }
 
+test('neither an intermediate nor a final paginated suffix is a whole-preference baseline', () => {
+  for (const complete of [false, true]) {
+    assert.equal(preferenceSnapshot(entry('page', { preferences_complete: complete,
+      preference_delivery: { status: 'paginated', revision: 'same-revision', page_index: 5,
+        page_count: 6, next_cursor: complete ? null : 'next' } })), null);
+  }
+});
+
 test('a complete snapshot ignores task token churn and preference ordering, but binds every authority dimension', () => {
   const first = preferenceSnapshot(entry());
   const second = entry('task-b');

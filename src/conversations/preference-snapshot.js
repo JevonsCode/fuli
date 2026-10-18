@@ -31,6 +31,7 @@ export function preferenceSnapshot(value) {
   if (!scope?.personal_space_id || !scope.project_agent_id || !Object.hasOwn(scope, 'personal_project_id')
       || !scope.source_application || !scope.session_id
       || scope.session_id.startsWith('fuli-host-') || !validScope(scope.preference_scope) || value.preferences_complete === false
+      || value.preference_delivery?.status === 'paginated'
       || value.context?.source_truncated || value.worker_run || !Array.isArray(value.effective_preferences)
       || !value.taskContextToken) return null;
   if (value.effective_preferences.some(item => !item?.preference_key || !item.preference_scope || typeof item.instruction !== 'string')) return null;

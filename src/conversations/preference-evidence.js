@@ -63,7 +63,8 @@ function preferenceFrames(output, codeMode = false, depth = 0) {
   }
   if (Array.isArray(output)) return output.flatMap(block =>
     ['text', 'input_text', 'output_text'].includes(block?.type) ? preferenceFrames(block.text, false, depth + 1) : []);
-  if (output.isError || output.is_error || output.error || output.preferences_complete === false) return [];
+  if (output.isError || output.is_error || output.error || output.preferences_complete === false
+      || output.preference_delivery?.status === 'paginated') return [];
   const structured = output.structuredContent ?? output.structured_content;
   if (structured) {
     const visible = preferenceFrames(output.content, false, depth + 1);
