@@ -12,7 +12,7 @@ const cameraAt = (aspect: number) => {
 describe('fitDistance', () => {
   it('moves the camera back in a narrow stage and keeps every corner in view', () => {
     const target = new THREE.Vector3()
-    const wide = fitDistance(cameraAt(2.4), target, boxCorners(floor))
+    const wide = fitDistance(cameraAt(2.4), target, boxCorners(floor))!
     const narrow = fitDistance(cameraAt(0.8), target, boxCorners(floor))
     expect(narrow).toBeGreaterThan(wide)
     const camera = cameraAt(2.4)
@@ -28,13 +28,28 @@ describe('fitDistance', () => {
 
   it('centres the floor on screen and comes closer than aiming at its middle', () => {
     const points = boxCorners(floor)
-    const centred = fitView(cameraAt(1.5), new THREE.Vector3(), points)
-    expect(centred.distance).toBeLessThan(fitDistance(cameraAt(1.5), new THREE.Vector3(), points))
+    const centred = fitView(cameraAt(1.5), new THREE.Vector3(), points)!
+    expect(centred.distance).toBeLessThan(fitDistance(cameraAt(1.5), new THREE.Vector3(), points)!)
     const camera = cameraAt(1.5)
     camera.position.normalize().multiplyScalar(centred.distance).add(centred.target)
     camera.lookAt(centred.target)
     camera.updateMatrixWorld()
     const heights = points.map(point => point.clone().project(camera).y)
     expect(Math.max(...heights) + Math.min(...heights)).toBeCloseTo(0, 1)
+  })
+})
+
+describe('fitView', () => {
+  it('gives up after a bounded search when nothing can fit', () => {
+    // A zero-width view: no distance fits, so the caller keeps its framing.
+    expect(fitDistance(cameraAt(0), new THREE.Vector3(), boxCorners(floor))).toBeNull()
+    expect(fitView(cameraAt(0), new THREE.Vector3(), boxCorners(floor))).toBeNull()
+  })
+
+  it('fits past the camera far plane instead of searching forever', () => {
+    const camera = cameraAt(0.4)
+    camera.far = 10
+    const fit = fitView(camera, new THREE.Vector3(), boxCorners(floor))
+    expect(fit!.distance).toBeGreaterThan(camera.far)
   })
 })

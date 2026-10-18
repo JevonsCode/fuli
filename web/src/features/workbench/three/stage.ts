@@ -105,18 +105,23 @@ export function createStage(options: StageOptions): Stage {
   }
   if (reducedMotion) controls.addEventListener('change', render)
 
+  const baseFar = camera.far
   const resize = () => {
     const { clientWidth: width, clientHeight: height } = container
     if (!width || !height) return
     camera.aspect = width / height
-    if (options.frame) {
-      const { points, zoomIn, zoomOut } = options.frame
+    // Without a fit the camera keeps its current (starting) framing.
+    const fit = options.frame && fitView(camera, controls.target, options.frame.points)
+    if (options.frame && fit) {
+      const { zoomIn, zoomOut } = options.frame
+      const { target, distance, reach } = fit
       const direction = camera.position.clone().sub(controls.target).normalize()
-      const { target, distance } = fitView(camera, controls.target, points)
       controls.target.copy(target)
       camera.position.copy(target).addScaledVector(direction, distance)
       controls.minDistance = distance * zoomIn
       controls.maxDistance = distance * zoomOut
+      // Fully zoomed out, the farthest framed point still lies inside the far plane.
+      camera.far = Math.max(baseFar, distance * zoomOut + reach)
     }
     camera.updateProjectionMatrix()
     renderer.setSize(width, height)
