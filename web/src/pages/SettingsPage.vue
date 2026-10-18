@@ -11,6 +11,7 @@ import JudgmentPolicySettings from '@/features/judgment/JudgmentPolicySettings.v
 import ClientConnectionSettings from '@/features/settings/ClientConnectionSettings.vue'
 import PeerSettings from '@/features/settings/PeerSettings.vue'
 import { waitForSettingsApply } from '@/features/settings/settings-apply'
+import { useSettingsSearch } from '@/features/settings/settings-search'
 import {
   CONVERSATION_SOURCE_APPLICATIONS,
   sourceApplicationName,
@@ -36,6 +37,10 @@ const loading = ref(true)
 const saving = computed(() => store.settingsSaving)
 const loadingResources = ref(false)
 const loadError = ref('')
+const searchRoot = ref<HTMLElement | null>(null)
+const searchQuery = ref('')
+const searchMatches = ref(0)
+useSettingsSearch(searchRoot, searchQuery, count => { searchMatches.value = count })
 const resourceError = ref('')
 const saveController = new AbortController()
 let refreshTimer: ReturnType<typeof setInterval> | null = null
@@ -287,7 +292,12 @@ function revealInvalidField(event: Event) {
 
 <template>
   <section class="view settings-view" :aria-label="t('settings.aria')">
-    <div class="settings-content">
+    <div ref="searchRoot" class="settings-content">
+      <label v-if="form" class="settings-search">
+        <span class="ui-sr-only">{{ t('settings.search.label') }}</span>
+        <input v-model="searchQuery" type="search" maxlength="80" :placeholder="t('settings.search.placeholder')" />
+      </label>
+      <p v-if="searchQuery.trim() && !searchMatches" class="settings-search-empty" role="status">{{ t('settings.search.empty', { query: searchQuery.trim() }) }}</p>
       <GrowthLoading v-if="loading && !form" variant="compact" :label="t('settings.loading')" />
       <form v-if="form" id="settings-form" class="settings-form" :aria-busy="saving" @submit.prevent="saveSettings" @invalid.capture="revealInvalidField">
         <fieldset class="settings-fields" :disabled="saving">
@@ -543,6 +553,8 @@ function revealInvalidField(event: Event) {
 }
 
 .settings-form { display: grid; min-width: 0; gap: var(--space-6); }
+.settings-search input { box-sizing: border-box; width: 100%; }
+.settings-search-empty { margin: 0; color: var(--color-muted); font-size: 13px; text-align: center; }
 
 .settings-card {
   min-width: 0;

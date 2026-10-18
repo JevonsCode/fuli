@@ -318,7 +318,7 @@ function handleProjectCreated(project: PersonalProject) {
 
     <div class="ui-toolbar agents-directory-filters">
       <label class="agents-directory-search">
-        <span class="sr-only">{{ t("agentProfiles.search") }}</span>
+        <span class="ui-sr-only">{{ t("agentProfiles.search") }}</span>
         <input
           v-model="search"
           type="search"

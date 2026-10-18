@@ -148,6 +148,9 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(2px);
 .list-title { display: inline-flex; align-items: baseline; gap: 8px; margin: 0; color: var(--color-ink); font-size: 15px; font-weight: 650; }
 .list-title span { color: var(--color-faint); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
 
+/* Hidden by an in-page filter (settings search); wins over component display rules. */
+[data-search-hidden] { display: none !important; }
+
 /* One list look for every page: a card of rows split by hairlines. */
 .ui-list { min-width: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); overflow: hidden; }
 .ui-list-row { display: flex; align-items: flex-start; gap: 16px; padding: 14px 16px; }
