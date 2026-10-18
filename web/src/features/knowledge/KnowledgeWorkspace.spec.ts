@@ -182,7 +182,7 @@ describe('KnowledgeWorkspace', () => {
     expect(wrapper.get('#directory-tab-materials').attributes('aria-selected')).toBe('true')
     expect(wrapper.findAll('.project-material-row')).toHaveLength(3)
 
-    await wrapper.get('.inspector-actions button.secondary-action').trigger('click')
+    await wrapper.get('.inspector-actions button.ui-button--default').trigger('click')
     await flushPromises()
 
     expect(router.currentRoute.value.params.mode).toBe('graph')

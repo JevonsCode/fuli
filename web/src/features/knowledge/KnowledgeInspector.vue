@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from '@/ui/UiButton.vue'
 import { computed, ref } from 'vue'
 
 import UiDisclosure from '@/components/UiDisclosure.vue'
@@ -363,74 +364,58 @@ async function copyEvidenceSession(evidence: EvidenceRecord, index: number) {
       </template>
 
       <div v-if="hasActions" class="inspector-actions">
-        <button
+        <UiButton size="sm" variant="primary" class="inspector-confirm-action"
           v-if="canConfirm"
-          class="primary-action inspector-confirm-action"
-          type="button"
           @click="emit('confirm', item)"
         >
           {{ item.profileAspect
             ? t('knowledge.workspace.inspector.confirmPreference')
             : t('knowledge.workspace.inspector.confirmKnowledge') }}
-        </button>
-        <button
+        </UiButton>
+        <UiButton size="sm" variant="primary"
           v-if="canManageProjectMaterial"
-          class="primary-action"
-          type="button"
           @click="emit('manageProject', item)"
         >
           {{ t('knowledge.workspace.inspector.editMaterials') }}
-        </button>
-        <button
+        </UiButton>
+        <UiButton size="sm"
           v-if="mode === 'graph'"
-          class="secondary-action"
-          type="button"
           @click="emit('openDirectory', item)"
         >
           {{ t('knowledge.workspace.inspector.locateDirectory') }}
-        </button>
-        <button
+        </UiButton>
+        <UiButton size="sm"
           v-if="mode === 'directory'"
-          class="secondary-action"
-          type="button"
           @click="emit('openGraph', item)"
         >
           {{ t('knowledge.workspace.inspector.locateGraph') }}
-        </button>
-        <button
+        </UiButton>
+        <UiButton size="sm" variant="primary"
           v-if="projectItem && personalProjectId && personalProjectId !== currentProjectId"
-          class="primary-action"
-          type="button"
           @click="emit('openProject', personalProjectId)"
         >
           {{ t('knowledge.workspace.inspector.enterProject') }}
-        </button>
-        <button
+        </UiButton>
+        <UiButton size="sm"
           v-if="projectItem && personalProjectId && canPublishProject"
-          class="secondary-action"
-          type="button"
           @click="emit('publishProject', personalProjectId)"
         >
           {{ t('knowledge.workspace.inspector.publish') }}
-        </button>
-        <button
+        </UiButton>
+        <UiButton size="sm" variant="primary"
           v-if="canCreateProject"
-          class="primary-action"
-          type="button"
           @click="emit('createProject', item)"
         >
           {{ t('knowledge.workspace.inspector.createProject') }}
-        </button>
-        <button
+        </UiButton>
+        <UiButton size="sm" class="inspector-edit-action"
           v-if="canEdit"
-          class="secondary-action inspector-edit-action"
-          type="button"
           @click="emit('edit', item)"
         >
           {{ item.profileAspect
             ? t('knowledge.workspace.inspector.correctPreference')
             : t('knowledge.workspace.inspector.correctOrAssign') }}
-        </button>
+        </UiButton>
       </div>
 
       <template v-if="related.length">

@@ -348,10 +348,10 @@ function formatDate(value?: string) {
           </span>
         </div>
         <footer class="project-card-footer">
-          <button class="secondary-action" type="button" @click="toggleSubscription(project)">
+          <UiButton size="sm" @click="toggleSubscription(project)">
             {{ subscribedKeys.has(projectKey(project)) ? t('pages.publicProjects.unsubscribe') : t('pages.publicProjects.subscribe') }}
-          </button>
-          <button class="primary-action" type="button" @click="openDetails(project)">{{ t('common.actions.viewDetails') }}</button>
+          </UiButton>
+          <UiButton size="sm" variant="primary" @click="openDetails(project)">{{ t('common.actions.viewDetails') }}</UiButton>
         </footer>
       </article>
       <div v-if="!projects.length" class="empty-state project-empty">{{ t('pages.publicProjects.noProjects') }}</div>
@@ -360,9 +360,9 @@ function formatDate(value?: string) {
     <section class="project-section">
       <div class="section-toolbar compact-toolbar relation-section-toolbar">
         <div><h3>{{ t('pages.publicProjects.relationsTitle') }}</h3></div>
-        <button class="primary-action" type="button" :disabled="!relationProjects.length" @click="relationOpen = !relationOpen">
+        <UiButton size="sm" variant="primary" :disabled="!relationProjects.length" @click="relationOpen = !relationOpen">
           {{ t('pages.publicProjects.addRelation') }}
-        </button>
+        </UiButton>
       </div>
       <p v-if="maintainable.length && !relationProjects.length" class="muted">
         {{ t('pages.publicProjects.providerOperationsUnavailable') }}
@@ -408,7 +408,7 @@ function formatDate(value?: string) {
           </p>
           <p v-else>{{ t('pages.publicProjects.relationBoundary') }}</p>
         </div>
-        <button class="primary-action" type="submit">{{ t('pages.publicProjects.addRelation') }}</button>
+        <UiButton size="sm" variant="primary" type="submit">{{ t('pages.publicProjects.addRelation') }}</UiButton>
       </form>
     </section>
 

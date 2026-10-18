@@ -522,11 +522,11 @@ describe('PersonalProfilePage', () => {
     expect(wrapper.text()).toContain('A · 较早记录')
     expect(wrapper.text()).toContain('B · 较新记录')
     expect(wrapper.text()).toContain('B 新增：类型高度、全文提示、不透明确认区')
-    expect(wrapper.get('.preference-conflict-card .primary-action').text()).toBe(
+    expect(wrapper.get('.preference-conflict-card .ui-button--primary').text()).toBe(
       '现在人工处理',
     )
     expect(
-      wrapper.get('.preference-conflict-card .secondary-action').text(),
+      wrapper.get('.preference-conflict-card .ui-button--default').text(),
     ).toBe('交给 AI，使用时处理')
 
     postJson.mockResolvedValue({
@@ -545,7 +545,7 @@ describe('PersonalProfilePage', () => {
       deferred_at: '2026-07-29T01:00:00Z',
       updated_at: '2026-07-29T01:00:00Z',
     })
-    await wrapper.get('.preference-conflict-card .secondary-action').trigger('click')
+    await wrapper.get('.preference-conflict-card .ui-button--default').trigger('click')
     await finishProfileLoading()
 
     expect(postJson).toHaveBeenCalledWith(
@@ -557,7 +557,7 @@ describe('PersonalProfilePage', () => {
         rightItemId: 'conflict-b',
       }),
     )
-    expect(wrapper.get('.preference-conflict-card .secondary-action').text()).toBe(
+    expect(wrapper.get('.preference-conflict-card .ui-button--default').text()).toBe(
       '已交给 AI',
     )
     expect(wrapper.text()).toContain('待 AI 使用时判断')

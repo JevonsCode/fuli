@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from '@/ui/UiButton.vue'
 import { computed, onMounted, ref, watch, type Component } from 'vue'
 import { RouterLink } from 'vue-router'
 
@@ -227,7 +228,7 @@ function taskMeta(task: ProjectAgentTaskRecord) {
         <GrowthLoading v-if="attention.previewLoading && !attentionHasData" variant="compact" :label="t('overview.attention.loading')" />
         <div v-else-if="attention.previewError && !attentionHasData" class="ui-empty overview-state" role="alert">
           <p>{{ t('overview.attention.loadFailed') }} · {{ attention.previewError }}</p>
-          <button class="quiet-button" type="button" @click="retryAttention">{{ t('overview.attention.retry') }}</button>
+          <UiButton size="sm" variant="ghost" @click="retryAttention">{{ t('overview.attention.retry') }}</UiButton>
         </div>
         <div v-else-if="!attentionHasData" class="ui-empty overview-state">
           <p>{{ t('overview.attention.empty') }}</p>
@@ -250,7 +251,7 @@ function taskMeta(task: ProjectAgentTaskRecord) {
         </ul>
         <div v-if="attention.previewError && attentionHasData" class="overview-inline-error" role="alert">
           <span>{{ t('overview.attention.loadFailed') }} · {{ attention.previewError }}</span>
-          <button class="quiet-button" type="button" @click="retryAttention">{{ t('overview.attention.retry') }}</button>
+          <UiButton size="sm" variant="ghost" @click="retryAttention">{{ t('overview.attention.retry') }}</UiButton>
         </div>
       </section>
 
@@ -265,7 +266,7 @@ function taskMeta(task: ProjectAgentTaskRecord) {
         <GrowthLoading v-if="tasksLoading && !hasTaskData" variant="compact" :label="t('overview.work.loading')" />
         <div v-else-if="tasksError && !hasTaskData" class="ui-empty overview-state" role="alert">
           <p>{{ t('overview.work.loadFailed') }} · {{ tasksError }}</p>
-          <button class="quiet-button" type="button" data-testid="overview-work-retry" @click="retryTasks">{{ t('overview.work.retry') }}</button>
+          <UiButton size="sm" variant="ghost" data-testid="overview-work-retry" @click="retryTasks">{{ t('overview.work.retry') }}</UiButton>
         </div>
         <div v-else-if="tasksIncomplete && !currentTasks.length" class="ui-empty overview-state" role="status">
           <p>{{ t('agentProfiles.partial') }}</p>
@@ -289,7 +290,7 @@ function taskMeta(task: ProjectAgentTaskRecord) {
         </div>
         <div v-if="tasksError && hasTaskData" class="overview-inline-error" role="alert">
           <span>{{ t('overview.work.loadFailed') }} · {{ tasksError }}</span>
-          <button class="quiet-button" type="button" data-testid="overview-work-retry" @click="retryTasks">{{ t('overview.work.retry') }}</button>
+          <UiButton size="sm" variant="ghost" data-testid="overview-work-retry" @click="retryTasks">{{ t('overview.work.retry') }}</UiButton>
         </div>
       </section>
       </div>

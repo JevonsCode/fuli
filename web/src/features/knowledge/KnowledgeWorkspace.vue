@@ -1076,25 +1076,23 @@ function queryValues(value: unknown) {
 
 
       <div class="graph-view-actions">
-        <button
+        <UiButton size="sm" variant="ghost"
           v-if="
             personalProjectsOnly
               && activePersonalProject
               && store.state?.capabilities?.publishProject
           "
-          class="toolbar-action"
-          type="button"
           @click="publishingProject = activePersonalProject"
         >
           {{ t('knowledge.workspace.workspace.view.publishProject') }}
-        </button>
+        </UiButton>
         <div v-if="mode === 'graph'" class="graph-controls" role="group" :aria-label="t('knowledge.workspace.workspace.view.graphControls')">
-          <button class="toolbar-action" type="button" :aria-label="t('knowledge.workspace.workspace.view.zoomOut')" @click="graphCanvas?.zoomOut()">−</button>
-          <button class="toolbar-action" type="button" :aria-label="t('knowledge.workspace.workspace.view.zoomIn')" @click="graphCanvas?.zoomIn()">＋</button>
-          <button class="toolbar-action" type="button" @click="graphCanvas?.fit()">{{ t('knowledge.workspace.workspace.view.fit') }}</button>
-          <button class="toolbar-action" type="button" @click="graphCanvas?.reset()">{{ t('knowledge.workspace.workspace.view.reset') }}</button>
+          <UiButton size="sm" variant="ghost" :aria-label="t('knowledge.workspace.workspace.view.zoomOut')" @click="graphCanvas?.zoomOut()">−</UiButton>
+          <UiButton size="sm" variant="ghost" :aria-label="t('knowledge.workspace.workspace.view.zoomIn')" @click="graphCanvas?.zoomIn()">＋</UiButton>
+          <UiButton size="sm" variant="ghost" @click="graphCanvas?.fit()">{{ t('knowledge.workspace.workspace.view.fit') }}</UiButton>
+          <UiButton size="sm" variant="ghost" @click="graphCanvas?.reset()">{{ t('knowledge.workspace.workspace.view.reset') }}</UiButton>
         </div>
-        <button class="toolbar-action ui-button--icon" type="button" :aria-label="t('common.actions.refresh')" :title="t('common.actions.refresh')" @click="loadGraph"><span aria-hidden="true">↻</span></button>
+        <UiButton size="sm" variant="ghost" class="ui-button--icon" :aria-label="t('common.actions.refresh')" :title="t('common.actions.refresh')" @click="loadGraph"><span aria-hidden="true">↻</span></UiButton>
       </div>
     </div>
 

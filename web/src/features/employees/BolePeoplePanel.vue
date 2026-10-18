@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from '@/ui/UiButton.vue'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { getJson } from '@/api/client'
@@ -266,7 +267,7 @@ function formattedDate(value: string) {
   <div class="bole-panel" :aria-busy="loading">
     <div v-if="partialError" class="bole-alert" role="alert">
       <span>{{ t('employees.bole.partialError') }}</span>
-      <button class="quiet-button" type="button" @click="load">{{ t('employees.retry') }}</button>
+      <UiButton size="sm" variant="ghost" @click="load">{{ t('employees.retry') }}</UiButton>
     </div>
 
     <header class="bole-header">
@@ -281,7 +282,7 @@ function formattedDate(value: string) {
         <div data-testid="people-working"><dt>{{ t('employees.bole.workingNow') }}</dt><dd>{{ loading ? '—' : workingAgentIds.size }}</dd></div>
         <div><dt>{{ t('employees.bole.coveredProjects') }}</dt><dd>{{ loading ? '—' : coveredProjectIds.size }}</dd></div>
       </dl>
-      <button class="quiet-button bole-refresh" type="button" :disabled="loading" @click="load">{{ t('common.actions.refresh') }}</button>
+      <UiButton size="sm" variant="ghost" class="bole-refresh" :disabled="loading" @click="load">{{ t('common.actions.refresh') }}</UiButton>
     </header>
 
     <div class="bole-controls">
@@ -293,7 +294,7 @@ function formattedDate(value: string) {
       <div class="bole-role-filters" role="group" :aria-label="t('employees.bole.distribution')">
         <button type="button" :aria-pressed="!roleFilter" @click="roleFilter = ''">{{ t('employees.bole.allRoles') }}</button>
         <button v-for="item in distribution" :key="item.type" type="button" :aria-pressed="roleFilter === item.type" @click="roleFilter = roleFilter === item.type ? '' : item.type">{{ item.label }} <span>{{ item.count }}</span></button>
-        <button v-if="filtersActive" class="quiet-button bole-clear" type="button" @click="clearFilters">{{ t('employees.bole.clearFilters') }}</button>
+        <UiButton size="sm" variant="ghost" class="bole-clear" v-if="filtersActive" @click="clearFilters">{{ t('employees.bole.clearFilters') }}</UiButton>
         <span v-if="filtersActive && !loading" class="bole-result-count" role="status">{{ t('employees.bole.resultCount', { count: activeView === 'people' ? filteredAgents.length : filteredRecruitments.length }) }}</span>
       </div>
     </div>

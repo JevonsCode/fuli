@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from '@/ui/UiButton.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -496,9 +497,7 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
               </small>
             </div>
             <div class="preference-conflict-actions">
-              <button
-                class="secondary-action"
-                type="button"
+              <UiButton size="sm"
                 :disabled="Boolean(conflict.aiRecord) || deferringConflictId === conflict.id"
                 @click="deferConflictToAi(conflict)"
               >
@@ -509,10 +508,10 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
                       ? t('preferences.profile.workbench.deferring')
                       : t('preferences.profile.workbench.defer')
                 }}
-              </button>
-              <button class="primary-action" type="button" @click="activeConflict = conflict">
+              </UiButton>
+              <UiButton size="sm" variant="primary" @click="activeConflict = conflict">
                 {{ t('preferences.profile.workbench.handleNow') }}
-              </button>
+              </UiButton>
             </div>
           </footer>
         </article>
