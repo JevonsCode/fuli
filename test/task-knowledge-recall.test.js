@@ -276,3 +276,13 @@ test('a recovered checkpoint gets its own source marker when recall found nothin
   assert.equal(withRecoveredSource({ ...recall, status: 'matched' }, conversation, { spaceId: 'space', agentId: 'lead' }).sourceMarker.status, 'no_match');
   assert.equal(withRecoveredSource(recall, { recovery: null }, { spaceId: 'space', agentId: 'lead' }), recall);
 });
+
+test('a prior-context prompt keeps the named target when it also quotes search parameters', () => {
+  const prompt = 'Use the prior Cobalt rollout note and answer with region, shard and rollback window as JSON. '
+    + 'If the note is not in context, call search_knowledge_graph with {"personalSpaceId": "4f0c2a3e-1b2c-4d5e-8f90-123456789abc", '
+    + '"personalProjectId": "sample-project", "includePending": true}.';
+  const plan = planTaskKnowledgeRecall(prompt);
+  assert.ok(plan.trigger_categories.includes('prior_context'), plan.trigger_categories.join());
+  assert.ok(plan.queries.every((query) => query.includes('Cobalt')), plan.queries.join(' | '));
+  assert.ok(plan.queries.every((query) => !/personalSpaceId|4f0c2a3e|personalProjectId/.test(query)), plan.queries.join(' | '));
+});
