@@ -125,7 +125,7 @@ export const projectAgentAssignmentReplaceInput = objectSchema({
   'responsibility', 'reason', 'assignmentId', 'expectedRevision', 'replacementAgentId'
 ]);
 const projectAgentTaskStatus = enumSchema([
-  'awaiting_recruitment', 'queued', 'running', 'paused', 'failed',
+  'awaiting_recruitment', 'backlog', 'queued', 'running', 'paused', 'failed',
   'awaiting_review', 'blocked', 'completed', 'cancelled'
 ]);
 const projectAgentTaskDuration = enumSchema(['ongoing', 'one_off']);
@@ -168,7 +168,8 @@ export const projectAgentTaskSubmitInput = objectSchema({
   sourceSessionId: nullableStringSchema(),
   routingReason: shortText,
   recruitmentOccupation: { ...projectAgentOccupation, type: ['object', 'null'] },
-  recruitmentProfile: { ...projectAgentProfile, type: ['object', 'null'] }
+  recruitmentProfile: { ...projectAgentProfile, type: ['object', 'null'] },
+  start: booleanSchema()
 }, [
   'personalSpaceId', 'personalProjectId', 'idempotencyKey', 'title', 'objective',
   'workKind', 'routingReason'
@@ -198,6 +199,7 @@ export const projectAgentTaskCoordinateInput = objectSchema({
   routingReason: shortText,
   recruitmentOccupation: { ...projectAgentOccupation, type: ['object', 'null'] },
   recruitmentProfile: { ...projectAgentProfile, type: ['object', 'null'] },
+  start: booleanSchema(),
   contextQueries: arraySchema(shortText, { minItems: 1, maxItems: 10 }),
   contextLimitPerQuery: integerSchema({ minimum: 1, maximum: 20 }),
   includePendingContext: booleanSchema()

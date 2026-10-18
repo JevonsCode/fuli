@@ -26,7 +26,7 @@ export const AGENT_INTERFACE_DEFINITIONS = [
       personalSpaceId: id,
       personalProjectId: nullableStringSchema(),
       agentId: nullableStringSchema(),
-      status: enumSchema(['awaiting_recruitment', 'queued', 'running', 'paused', 'failed', 'awaiting_review', 'blocked', 'completed', 'cancelled']),
+      status: enumSchema(['awaiting_recruitment', 'backlog', 'queued', 'running', 'paused', 'failed', 'awaiting_review', 'blocked', 'completed', 'cancelled']),
       limit: integerSchema({ minimum: 1, maximum: 200 }),
     }, ['personalSpaceId']),
   },

@@ -3,7 +3,8 @@ import test from 'node:test';
 
 import {
   planTaskKnowledgeRecall,
-  recallTaskKnowledge
+  recallTaskKnowledge,
+  withRecoveredSource
 } from '../src/graphiti/task-knowledge-recall.js';
 
 test('release requests produce focused recall queries instead of the full conversation', () => {
@@ -263,4 +264,25 @@ test('confirmed matches keep pending items out of the automatic recall', async (
   ]), { personalProjectId: 'delta' }, 'Use the amount format we decided previously for Delta Ledger.');
   assert.deepEqual(recall.entities.map(({ id }) => id).sort(), ['agent-note', 'human-note']);
   assert.equal('pending_fallback' in recall, false);
+});
+
+test('a recovered checkpoint gets its own source marker when recall found nothing', () => {
+  const recall = { status: 'no_match', sourceMarker: { status: 'no_match' }, noMatchSourceMarker: { status: 'no_match' }, facts: [], entities: [] };
+  const conversation = { recovery: { latest_checkpoint: { status: 'incomplete', summary: 'Plan decided; parser not written.' } } };
+  const marked = withRecoveredSource(recall, conversation, { consoleUrl: 'http://127.0.0.1:2727', spaceId: 'space', agentId: 'lead' });
+  assert.equal(marked.sourceMarker.status, 'recovered');
+  assert.match(marked.sourceMarker.leadMarkdown, /接续上次进度\]\(http:\/\/127\.0\.0\.1:2727\/agents\/space\/lead\)/);
+  assert.equal(marked.noMatchSourceMarker.status, 'no_match');
+  assert.equal(withRecoveredSource({ ...recall, status: 'matched' }, conversation, { spaceId: 'space', agentId: 'lead' }).sourceMarker.status, 'no_match');
+  assert.equal(withRecoveredSource(recall, { recovery: null }, { spaceId: 'space', agentId: 'lead' }), recall);
+});
+
+test('a prior-context prompt keeps the named target when it also quotes search parameters', () => {
+  const prompt = 'Use the prior Cobalt rollout note and answer with region, shard and rollback window as JSON. '
+    + 'If the note is not in context, call search_knowledge_graph with {"personalSpaceId": "4f0c2a3e-1b2c-4d5e-8f90-123456789abc", '
+    + '"personalProjectId": "sample-project", "includePending": true}.';
+  const plan = planTaskKnowledgeRecall(prompt);
+  assert.ok(plan.trigger_categories.includes('prior_context'), plan.trigger_categories.join());
+  assert.ok(plan.queries.every((query) => query.includes('Cobalt')), plan.queries.join(' | '));
+  assert.ok(plan.queries.every((query) => !/personalSpaceId|4f0c2a3e|personalProjectId/.test(query)), plan.queries.join(' | '));
 });

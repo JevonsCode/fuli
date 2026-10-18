@@ -368,7 +368,7 @@ async function projectsSaved() {
     <div v-else-if="!template && !(isJefa && (jefaRead.loading || jefaRead.timedOut || jefaRead.failure))" class="employee-workbench-state"><p>{{ t('employees.unavailable') }}</p><RouterLink to="/project-agents">{{ t('employees.backToAgents') }}</RouterLink></div>
     <BolePeoplePanel v-else-if="isNativePeople" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" />
     <JudgmentWorkbench v-else-if="isNativeJudgment" :personal-space-id="personalSpaceId" />
-    <UnassignedConversationsPanel v-else-if="isNativeUnclaimed" :space-id="personalSpaceId" :formal-projects="spaceProjects.filter(isFormalProject)" :existing-project-ids="spaceProjects.map(project => project.project_id)" @project-created="store.rememberPersonalProject" />
+    <UnassignedConversationsPanel v-else-if="isNativeUnclaimed" class="employee-workbench-unclaimed" :space-id="personalSpaceId" :formal-projects="spaceProjects.filter(isFormalProject)" :existing-project-ids="spaceProjects.map(project => project.project_id)" @project-created="store.rememberPersonalProject" />
     <div v-else-if="isJefa && template && !jefaRead.loading && template.runtimeStatus !== 'ready'" class="employee-workbench-state"><p>{{ t('employees.installRequired') }}</p><small>{{ t('employees.installHelp') }}</small></div>
     <div v-else-if="!projectId && !(isJefa && (jefaRead.loading || jefaRead.timedOut || jefaRead.failure))" class="employee-workbench-state"><h2>{{ t('employees.emptyWorkbench') }}</h2><p>{{ t('employees.manageHint') }}</p><UiButton size="sm" variant="ghost" @click="manageProjectsOpen = true">{{ t('employees.manageProjects') }}</UiButton></div>
     <EmployeeTaskBoard
@@ -416,6 +416,8 @@ async function projectsSaved() {
 .employee-manage-projects:disabled { color: var(--color-muted); cursor: default; }
 .employee-manage-projects:focus-visible, .employee-back-to-all:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
 .employee-workbench-frame { flex: 1; width: 100%; height: 100%; min-height: 0; border: 0; }
+.employee-workbench-unclaimed { margin: 16px 24px; }
+@media (max-width: 640px) { .employee-workbench-unclaimed { margin: 12px; } }
 .employee-workbench-state { display: grid; flex: 1; gap: 14px; place-content: center; justify-items: center; padding: 30px; color: var(--color-muted); font-size: 14px; text-align: center; }
 .employee-workbench-state a { color: var(--color-ink); }
 .employee-workbench-state h2 { font-size: 20px; font-weight: 600; color: var(--color-ink); }

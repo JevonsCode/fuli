@@ -1,4 +1,4 @@
-import { createFuliSourceMarker } from './source-marker.js';
+import { createFuliSourceMarker, sourceConsoleUrl } from './source-marker.js';
 import { knowledgeItemRole } from './knowledge-item-role.js';
 import { detectSensitiveContent } from '../security/sensitive-content.js';
 import { budgetAutomaticRecall } from './knowledge-result-budget.js';
@@ -40,7 +40,7 @@ const RECALL_INTENTS = Object.freeze([
   },
   {
     category: 'prior_context',
-    pattern: /(?:之前|以前|上次|已经存|保存过|记得|照旧|同样|还是用|不用再|先前|previous|earlier|remember|same as|again)/iu,
+    pattern: /(?:之前|以前|上次|已经存|保存过|记得|照旧|同样|还是用|不用再|先前|约定|定好的|previous|earlier|\bprior\b|last time|remember|same as|again|we (?:decided|agreed|settled|chose))/iu,
     queries: ['先前 方法 规则 决策 runbook previous method decision']
   }
 ]);
@@ -173,6 +173,15 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt) {
   }) : result;
 }
 
+// An answer can rest on the recovered conversation instead of searched knowledge.
+// Without its own marker such a reply could only cite "searched, no match".
+export function withRecoveredSource(recall, conversation, { consoleUrl, spaceId, agentId }) {
+  if (!recall || recall.status === 'matched' || !conversation?.recovery?.latest_checkpoint || !spaceId || !agentId) return recall;
+  const url = `${consoleUrl ?? sourceConsoleUrl()}/agents/${encodeURIComponent(spaceId)}/${encodeURIComponent(agentId)}`;
+  return { ...recall, sourceMarker: { required: true, label: 'FULI 来源', status: 'recovered', count: 1,
+    leadMarkdown: `**[◇ FULI · 接续上次进度](${url})**`, markdown: '' } };
+}
+
 function recallWithoutSearch(status, plan) {
   return {
     status,
@@ -255,9 +264,16 @@ function compactItem(item, content) {
   };
 }
 
+// Tool parameters and opaque IDs quoted in a prompt (a fallback search call, a
+// JSON shape) are not what the user is asking about; they must not take the
+// few focus slots from the names that are.
+const METADATA_TERM = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[a-z][A-Za-z0-9]*(?:Id|ID|Ids)|[a-z0-9]+(?:_[a-z0-9]+)*_ids?|true|false|null)$/u;
+
 function distinctivePromptTerms(prompt) {
   const quoted = [...prompt.matchAll(/[“”"']([^“”"']{2,80})[“”"']/gu)]
     .map((match) => match[1]);
+  // A capitalized word inside a sentence is usually a name (a service, a product).
+  const names = prompt.match(/(?<=[a-z0-9,;:)]\s+)[A-Z][a-z]{2,}\b/gu) ?? [];
   const productPhrases = prompt.match(
     /\b[A-Z][A-Za-z0-9]*(?:[ \t]+[A-Z][A-Za-z0-9]*){1,5}\b/gu
   ) ?? [];
@@ -275,10 +291,11 @@ function distinctivePromptTerms(prompt) {
     ...quoted,
     ...productPhrases,
     ...acronyms,
+    ...names,
     ...identifiers,
     ...urls,
     ...versions
-  ]).slice(0, 4);
+  ].filter((term) => !METADATA_TERM.test(term))).slice(0, 4);
 }
 
 function filterRecallCandidates(items, focusTerms) {

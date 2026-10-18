@@ -1268,3 +1268,17 @@ def candidate(agent_id, work_kinds, capabilities, *, allowed_clients=None):
         ),
         'assigned_at': '2026-08-17T00:00:00Z',
     }
+
+
+def test_backlog_tasks_start_only_through_the_queue():
+    StoreProjectAgentTasks._validate_task_transition('backlog', 'queued')
+    StoreProjectAgentTasks._validate_task_transition('backlog', 'cancelled')
+    StoreProjectAgentTasks._validate_task_transition('queued', 'backlog')
+    for requested in ('running', 'completed', 'awaiting_review'):
+        with pytest.raises(HTTPException, match=f'backlog -> {requested}'):
+            StoreProjectAgentTasks._validate_task_transition('backlog', requested)
+
+
+def test_tasks_start_by_default_and_can_be_assigned_without_starting():
+    assert task_request().start is True
+    assert task_request(start=False).start is False

@@ -85,6 +85,7 @@ export const agentRedesignMessages = {
     workStatus: {
       label: "工作状态",
       awaiting_recruitment: "等待招聘",
+      backlog: "待开工",
       queued: "排队中",
       running: "运行中",
       paused: "已暂停",
@@ -184,6 +185,7 @@ export const agentRedesignMessages = {
     workStatus: {
       label: "Work status",
       awaiting_recruitment: "Awaiting recruitment",
+      backlog: "Backlog",
       queued: "Queued",
       running: "Running",
       paused: "Paused",
