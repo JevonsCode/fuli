@@ -45,3 +45,10 @@ async def test_tonborg_role_copy_upgrade_preserves_custom_profile(responsibility
 
 def test_new_tonborg_uses_decision_specialist_role():
     assert judgment_profile().responsibility.startswith('决策员：')
+
+
+def test_the_fixed_assistant_has_a_person_name_and_the_assistant_occupation():
+    from fuli_graph.system_agents import SYSTEM_ASSISTANT_AGENT_ID, SYSTEM_PROFILES
+    profile = SYSTEM_PROFILES[SYSTEM_ASSISTANT_AGENT_ID]()
+    assert profile.name == 'Astro'
+    assert 'fuli.employee:assistant' in profile.capabilities

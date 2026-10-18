@@ -72,7 +72,8 @@ def judgment_profile() -> ProjectAgentProfile:
 
 def assistant_profile() -> ProjectAgentProfile:
     return ProjectAgentProfile(
-        name='Assistant', occupation_emoji='💬',
+        # A person's name, like Jefa, Bole and Tonborg; 'assistant' is the occupation.
+        name='Astro', occupation_emoji='💬',
         responsibility='全局助手：接待未归属项目的对话，只用全局偏好，不自动询问项目归属。',
         work_kinds=['conversation'],
         capabilities=['全局对话', 'fuli.employee:assistant'],
