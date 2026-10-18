@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { JudgmentStore } from './store.js';
 import { EmployeeError } from '../employees/manifest.js';
+import { judgmentHumanInteraction } from './conversation.js';
 
 const id = z.string().trim().min(1).max(256);
 export const policySchema = z.object({ mode: z.enum(['manual', 'shared', 'autonomous']),
@@ -46,7 +47,16 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
     },
     async records(input) {
       const parsed = parse(scopeSchema.extend({ limit: z.number().int().min(1).max(100).default(50) }).strict(), input);
-      await scope(parsed); return { records: store().records(parsed.personalSpaceId, parsed) };
+      await scope(parsed);
+      const records = store().records(parsed.personalSpaceId, parsed);
+      return { ...judgmentHumanInteraction(records, parsed.personalSpaceId), records };
+    },
+    async conversationQuestions(input) {
+      const parsed = parse(scopeSchema.strict(), input); await scope(parsed);
+      const records = store().records(parsed.personalSpaceId, { personalProjectId: parsed.personalProjectId ?? null });
+      if (parsed.personalProjectId) records.push(...store().records(parsed.personalSpaceId, { personalProjectId: null }));
+      records.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      return judgmentHumanInteraction(records, parsed.personalSpaceId);
     },
     feedback(input) { const parsed = parse(feedbackSchema, input); space(parsed);
       return store().feedback(parsed.personalSpaceId, parsed.decisionId, parsed.vote, parsed.reason, parsed.expectedRevision); },

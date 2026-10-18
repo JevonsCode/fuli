@@ -161,7 +161,8 @@ function settingsResult(configured, active) {
       {
         ...configured,
         resourceRefreshSeconds: active.resourceRefreshSeconds,
-        conversationLaunchers: active.conversationLaunchers
+        conversationLaunchers: active.conversationLaunchers,
+        notifications: active.notifications
       },
       active
     )

@@ -1,3 +1,5 @@
+import { nativeChoiceInteraction } from '../conversations/human-interaction.js';
+
 const fields = {
   personalSpaceId: 'personal_space_id', personalProjectId: 'personal_project_id',
   agentId: 'agent_id', taskId: 'task_id', requestId: 'request_id',
@@ -18,9 +20,20 @@ export function attentionRecord(value) {
 
 export async function listAgentAttention(application, input) {
   const value = await application.personal.listAgentAttention(attentionInput(input));
-  return { ...value, items: value.items.map(attentionRecord) };
+  const items = value.items.map(attentionRecord);
+  return { ...attentionInteraction(items.find(item => item.status === 'open')), ...value, items };
 }
 
 export async function changeAgentAttention(application, operation, input) {
-  return attentionRecord(await application.personal.changeAgentAttention(operation, attentionInput(input)));
+  const record = attentionRecord(await application.personal.changeAgentAttention(operation, attentionInput(input)));
+  return { ...attentionInteraction(record), ...record };
+}
+
+function attentionInteraction(record) {
+  if (record?.status !== 'open') return {};
+  return { human_interaction: nativeChoiceInteraction({
+    source: { kind: 'agent_attention', id: record.requestId, revision: record.revision,
+      personalSpaceId: record.personalSpaceId, personalProjectId: record.personalProjectId },
+    title: record.title, question: record.requestedAction, options: record.options
+  }) };
 }
