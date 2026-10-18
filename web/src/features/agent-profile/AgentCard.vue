@@ -18,8 +18,11 @@ import {
 import type { AgentWorkbenchEntry } from "./agent-workbench";
 import { agentPinsText } from "./agent-pins";
 import { agentIdentityStyle } from "./agent-identity-color";
+import { loopPhaseDelay } from "@/lib/motion-phase";
 import { occupationLabels } from "./agent-occupation";
 import type { ProjectAgentRecord } from "@/types";
+
+const WORKING_RING_MS = 2400;
 
 const props = defineProps<{
   agent: ProjectAgentRecord;
@@ -36,6 +39,8 @@ const emit = defineEmits<{
 }>();
 
 const name = computed(() => agentDisplayName(props.agent));
+// Fixed at mount: a re-created card resumes the shared ring cycle instead of restarting it.
+const workingPhase = loopPhaseDelay(WORKING_RING_MS);
 const projectIds = computed(() => profileProjectIds(props.agent));
 const projectLabels = computed(() =>
   projectIds.value.slice(0, 2).map((id) => props.projectNames?.[id] || id),
@@ -121,7 +126,7 @@ function togglePin() {
       <span
         class="agent-portrait small agent-card-identity"
         :class="{ 'is-working': workStatus === 'running' }"
-        :style="agentIdentityStyle(agent.agentId)"
+        :style="[agentIdentityStyle(agent.agentId), { '--working-phase': workingPhase }]"
         aria-hidden="true"
         data-card-portrait
       >
@@ -160,7 +165,7 @@ function togglePin() {
         :data-work-status="workStatus"
         :aria-label="`${t('agentRedesign.workStatus.label')} · ${workStatusLabel}`"
       >
-        {{ workStatusLabel }}
+        <span class="agent-card-work-status-text">{{ workStatusLabel }}</span>
       </span>
       <button
         class="agent-card-pin quiet-button"

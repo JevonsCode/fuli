@@ -9,43 +9,39 @@ def topic_key(topic):
 
 
 class StoreConversationTriage:
-    async def _pending_conversation(self, space_id, conversation_id):
-        # Only the assistant's global conversations are unclaimed; project
-        # conversations already belong somewhere and are never relabelled here.
-        scope = stable_uuid('global-conversation-scope', space_id, ASSISTANT_AGENT_ID)
-        rows, _, _ = await self.runtime.driver.execute_query(
-            'MATCH (c:FuliConversation {id: $id, scope: $scope}) RETURN c.id AS id',
-            id=conversation_id, scope=scope)
-        if not rows:
-            raise HTTPException(404, 'Unclaimed conversation not found')
-
     async def record_conversation_triage(self, actor, request):
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
-        await self._pending_conversation(space['id'], request.conversation_id)
         if request.personal_project_id is not None:
             await self.get_personal_project(actor, request.personal_space_id, request.personal_project_id)
-        rows, _, _ = await self.runtime.driver.execute_query(
-            'MATCH (t:FuliConversationTriage {id: $id}) RETURN t', id=request.conversation_id)
-        current = dict(rows[0]['t']) if rows else None
-        kept = current and request.source == 'host' and (
-            'formed_project' if current.get('formed_project_id') else
-            'user_label' if current.get('source') == 'user' else None)
-        if kept:
-            return {'triage': self._triage_view(current), 'kept': kept,
-                    'topic_count': await self._topic_count(space['id'], current.get('topic_key'))}
         key = topic_key(request.topic) if request.topic else None
         label = {'kind': request.kind, 'personal_project_id': request.personal_project_id,
                  'topic': ' '.join(request.topic.split()) if request.topic else None,
                  'topic_key': key, 'source': request.source, 'labeled_at': now_utc().isoformat()}
+        # One statement. Only the assistant's global conversations are unclaimed;
+        # project conversations already belong somewhere. Locking that existing
+        # conversation first serializes every writer, including the first one,
+        # since a label that does not exist yet has no lock of its own to take.
+        # The label lock then orders writers against topic formation, so a
+        # correction committed meanwhile is never overwritten by an older read.
         rows, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (c:FuliConversation {id: $id, scope: $scope}) '
+            'SET c._triage_lock = true REMOVE c._triage_lock '
             'MERGE (t:FuliConversationTriage {id: $id}) '
             'ON CREATE SET t.space_id=$space_id '
-            'SET t += $label RETURN t',
-            id=request.conversation_id, space_id=space['id'], label=label)
-        return {'triage': self._triage_view(dict(rows[0]['t'])),
-                'topic_count': await self._topic_count(space['id'], key)}
-
+            'SET t._triage_lock = true REMOVE t._triage_lock '
+            'WITH t, CASE WHEN $source <> "host" THEN null '
+            "WHEN t.formed_project_id IS NOT NULL THEN 'formed_project' "
+            "WHEN t.source = 'user' THEN 'user_label' ELSE null END AS kept "
+            'FOREACH (_ IN CASE WHEN kept IS NULL THEN [1] ELSE [] END | SET t += $label) '
+            'RETURN t, kept',
+            id=request.conversation_id, space_id=space['id'], label=label, source=request.source,
+            scope=stable_uuid('global-conversation-scope', space['id'], ASSISTANT_AGENT_ID))
+        if not rows:
+            raise HTTPException(404, 'Unclaimed conversation not found')
+        record, kept = dict(rows[0]['t']), rows[0]['kept']
+        return {'triage': self._triage_view(record), **({'kept': kept} if kept else {}),
+                'topic_count': await self._topic_count(space['id'], record.get('topic_key'))}
     async def _topic_count(self, space_id, key):
         if not key:
             return 0

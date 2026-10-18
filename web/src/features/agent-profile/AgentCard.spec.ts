@@ -1,5 +1,5 @@
 import { mount, RouterLinkStub } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import AgentCard from './AgentCard.vue'
 import type { ProjectAgentRecord } from '@/types'
 
@@ -33,12 +33,19 @@ describe('AgentCard projects', () => {
     }
   })
   it('gives each initials portrait the same identity colour as the profile and pinned nav', () => {
-    const style = (agentId: string) => render({ agent: { ...agent, agentId } }).get('[data-card-portrait]').attributes('style')
+    // Only the identity colours; the working-ring phase follows the wall clock.
+    const style = (agentId: string) => (render({ agent: { ...agent, agentId } }).get('[data-card-portrait]').attributes('style') ?? '')
+      .split(';').filter(rule => rule.includes('--agent-identity')).join(';')
     expect(style('custom-a')).toMatch(/--agent-identity: #[0-9a-f]{6}/)
     expect(style('custom-a')).toBe(style('custom-a'))
     const colours = new Set(['a', 'b', 'c', 'd', 'e', 'f'].map(id => style(`agent-${id}`)))
     expect(colours.size).toBeGreaterThan(1)
     expect(render({ agent: { ...agent, agentId: 'custom-a' } }).get('[data-card-portrait]').classes()).toContain('agent-card-identity')
+  })
+  it('starts the working ring at the shared clock phase so re-renders never restart it', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(2400 * 10 + 900)
+    expect(render({ agent: { ...agent, agentId: 'custom-a' } }).get('[data-card-portrait]').attributes('style')).toContain('--working-phase: -900ms')
+    vi.restoreAllMocks()
   })
   it('shows the person-set occupation next to the name and nothing when unset', () => {
     const classified = render({ agent: { ...agent, occupation: { role: 'product', tags: ['writing'], updatedAt: '2026-10-17T00:00:00Z' } } })

@@ -5,8 +5,8 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
-import UiButton from '@/components/ui/UiButton.vue'
-import UiSelect from '@/components/ui/UiSelect.vue'
+import UiButton from '@/ui/UiButton.vue'
+import UiSelect from '@/ui/UiSelect.vue'
 import {
   isLoadingPreviewEnabled,
   useMinimumLoadingDisplay,

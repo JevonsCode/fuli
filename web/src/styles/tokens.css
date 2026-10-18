@@ -59,4 +59,54 @@
   --measure: 72ch;
   --page-gutter: clamp(20px, 2.4vw, 56px);
   --inspector-width: clamp(320px, 24vw, 460px);
+  /* State is read from colour and motion first, text second. */
+  --status-working: var(--color-accent);
+  --status-waiting: var(--color-warning);
+  --status-idle: var(--color-faint);
+  --status-error: var(--color-danger);
+  --glow-accent: 0 0 0 3px var(--color-accent-soft);
+  --motion-medium: 220ms;
+  --motion-pulse: 2400ms;
+  --motion-blink: 1400ms;
+  --radius-pill: 999px;
+  --z-nav: 20;
+  --z-popover: 40;
+  --z-dialog: 50;
+  --z-glossary: 60;
+}
+
+/* 墨空: the same jade becomes the glow colour so the constellation and status
+   rings light up. Staged rollout: it applies only with data-theme="dark" until
+   every page is rebuilt on these tokens, then it follows the system. */
+@media all {
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --color-bg: #0e1210;
+    --color-surface: #151a17;
+    --color-surface-subtle: #1b211e;
+    --color-surface-hover: #202723;
+    --color-sidebar: #111613;
+    --color-ink: #e8ece9;
+    --color-ink-soft: #c8cfca;
+    --color-muted: #93a09a;
+    --color-faint: #66716b;
+    --color-border: #26302b;
+    --color-border-strong: #34403a;
+    --color-control-border: #3a4640;
+    --color-accent: #2fb38f;
+    --color-accent-hover: #3cc79f;
+    --color-accent-soft: #12392f;
+    --color-accent-line: #1f6b55;
+    --color-success: #4cc28a;
+    --color-success-soft: #13301f;
+    --color-warning: #e0a84a;
+    --color-warning-soft: #33270f;
+    --color-danger: #ef7a6c;
+    --color-danger-soft: #3a1915;
+    --color-on-accent: #04110c;
+    --color-overlay: rgb(0 0 0 / 55%);
+    --shadow-popover: 0 1px 2px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 45%);
+    --shadow-dialog: 0 2px 6px rgb(0 0 0 / 40%), 0 24px 64px rgb(0 0 0 / 55%);
+    --glow-accent: 0 0 14px rgb(47 179 143 / 45%);
+  }
 }
