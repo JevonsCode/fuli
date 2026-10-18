@@ -29,7 +29,7 @@ export const employeeManifestSchema = z.object({
   }).strict().optional(),
   workbench: z.object({
     kind: z.literal('native'),
-    view: z.enum(['people', 'judgment'])
+    view: z.enum(['people', 'judgment', 'unclaimed'])
   }).strict().optional(),
   runtime: z.object({
     apiVersion: z.literal(1),

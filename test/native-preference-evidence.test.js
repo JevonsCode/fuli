@@ -86,3 +86,25 @@ test('Claude requires the same session and paired non-error tool_use/tool_result
   result.sessionId = 'foreign';
   assert.equal((await inspect([call, result], claudePreferenceEvidence)).frames.length, 0);
 });
+
+test('Claude Hook task entry recorded as a rendered attachment establishes delivery', async () => {
+  const rendered = text => [{ content: `<system-reminder>
+UserPromptSubmit hook additional context: Fuli task context.
+${text}
+</system-reminder>` }];
+  const hook = (text, extra = {}) => ({ sessionId: session, type: 'attachment', uuid: 'hook-a', rendered: rendered(text),
+    attachment: { type: 'hook_additional_context', hookEvent: 'UserPromptSubmit', content: ['ignored'] }, ...extra });
+  const proof = await inspect([hook(JSON.stringify(value))], claudePreferenceEvidence);
+  assert.equal(proof.frames.length, 1);
+  assert.equal(proof.frames[0].callId, 'hook-a');
+  assert.deepEqual(proof.frames[0].value, value);
+  // A preview of an oversized output, another event, another session, or text
+  // that is not a complete entry is not delivery.
+  for (const record of [hook(JSON.stringify(value).slice(0, 80)), hook(JSON.stringify(value), { sessionId: 'foreign' }),
+    { ...hook(JSON.stringify(value)), attachment: { type: 'hook_additional_context', hookEvent: 'SessionStart' } },
+    hook(JSON.stringify({ ...value, preferences_complete: false }))]) {
+    assert.equal(((await inspect([record], claudePreferenceEvidence)).frames ?? []).length, 0);
+  }
+  const boundary = { sessionId: session, type: 'system', subtype: 'compact_boundary' };
+  assert.equal((await inspect([hook(JSON.stringify(value)), boundary], claudePreferenceEvidence)).frames.length, 0);
+});

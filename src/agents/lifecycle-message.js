@@ -1,3 +1,7 @@
+// Every listed rule fetch is a model round trip (Codex re-sends its whole
+// prompt each time), so ordinary tasks must not read the shared rules at all.
+export const TASK_RULES_ON_DEMAND = 'Shared rules are referenced by version. Do not read fuli://rules/task-entry for an ordinary task; read one referenced section only when you must act on it (workers, memory merge, conflicts).';
+
 const DEFAULT_MAX_BYTES = 8_000;
 const TRUNCATION_SUFFIX = '… [truncated]';
 

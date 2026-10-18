@@ -21,7 +21,7 @@ export interface EmployeeTemplate {
   // Fixed roles are provisioned for every space, never hired.
   fixed?: boolean
   defaultProjectScope?: 'all' | 'selected'
-  workbench?: { kind: 'native'; view: 'people' | 'judgment' }
+  workbench?: { kind: 'native'; view: 'people' | 'judgment' | 'unclaimed' }
   management?: EmployeeManagement
   managedProjects?: { id: string; name: string }[]
 }

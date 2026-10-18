@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { appendFile, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createSessionPreferenceDelivery } from '../src/conversations/preference-session.js';
 import { withPreferenceScope } from '../src/conversations/preference-snapshot.js';
 import { successToolResult } from '../src/mcp/tool-result.js';
 import { codexPreferenceEvidence } from '../src/agents/codex/preference-evidence.js';
+import { assertFileMode } from '../test-support/platform-capabilities.js';
 
 const session = '019fc6ed-02a5-7832-8821-68e3b03e7cef';
 const scope = { personal_space_id: 'synthetic-space', personal_project_id: 'project', project_agent_id: 'lead',
@@ -68,7 +69,7 @@ test('writing a result never acknowledges it; verified native delivery enables u
   const cache = await readFile(join(f.options.directory, files[0]), 'utf8');
   assert.doesNotMatch(cache, /SYNTHETIC_PRIVATE_PREFERENCE|task-a|task-c|Current owner/);
   // Windows has no POSIX permission bits; the cache stays private on POSIX hosts.
-  if (process.platform !== 'win32') assert.equal((await stat(join(f.options.directory, files[0]))).mode & 0o777, 0o600);
+  assertFileMode(join(f.options.directory, files[0]), 0o600);
 }));
 
 test('new scope, unverified host, force-full reader and explicit reset always deliver full preferences', () => fixture(async f => {

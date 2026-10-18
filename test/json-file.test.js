@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { readJsonFile, writeJsonFileAtomic } from '../src/storage/json-file.js';
+import { assertFileMode } from '../test-support/platform-capabilities.js';
 
 test('JSON file reads parsed content and falls back for absent or blank files', () => {
   const dir = mkdtempSync(join(tmpdir(), 'fuli-json-file-'));
@@ -53,6 +54,9 @@ test('atomic JSON rewrite passes the existing file mode to the replacement', () 
   try {
     writeFileSync(filePath, '{"version":1}\n');
     chmodSync(filePath, 0o640);
+    // NTFS reports only the read-only attribute, so Windows sees 0o666 here.
+    const existingMode = statSync(filePath).mode & 0o777;
+    if (process.platform !== 'win32') assert.equal(existingMode, 0o640);
 
     writeJsonFileAtomic(filePath, { version: 2 }, {
       writeFileSync(tempPath, contents, options) {
@@ -61,7 +65,7 @@ test('atomic JSON rewrite passes the existing file mode to the replacement', () 
       }
     });
 
-    assert.equal(requestedMode, 0o640);
+    assert.equal(requestedMode, existingMode);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -75,8 +79,8 @@ test('atomic JSON write creates private directories and files by default', () =>
   try {
     writeJsonFileAtomic(filePath, { version: 1 });
 
-    assert.equal(statSync(directory).mode & 0o777, 0o700);
-    assert.equal(statSync(filePath).mode & 0o777, 0o600);
+    assertFileMode(directory, 0o700);
+    assertFileMode(filePath, 0o600);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

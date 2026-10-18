@@ -8,6 +8,7 @@ import { compactTaskContext } from '../src/conversations/task-context-view.js';
 import { entryRules } from '../src/conversations/entry-rules.js';
 import { registerRepositoryProject } from '../src/graphiti/repository-project-registration.js';
 import { providerProjectProfile } from '../src/graphiti/project-profile-mapping.js';
+import { requiresSymlinks } from '../test-support/platform-capabilities.js';
 
 const agent = { profile: { name: 'A', responsibility: 'Keep responsibility', initialPreferences: ['Keep instruction'], character: {} } };
 test('entry carries a bounded single-line brief and roster primary occupations, retaining current role and preferences', () => {
@@ -63,7 +64,7 @@ test('large team roster deduplicates stable identities and defers overflow', () 
   assert.deepEqual(Object.keys(view.team.roster[0]), ['name', 'occupation']);
 });
 
-test('repository brief ignores README symlinks escaping the repository', async t => {
+test('repository brief ignores README symlinks escaping the repository', requiresSymlinks, async t => {
   const { symlink } = await import('node:fs/promises');
   const root = await mkdtemp(path.join(tmpdir(), 'fuli-brief-links-'));
   t.after(() => rm(root, { recursive: true, force: true }));

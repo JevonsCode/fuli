@@ -5,13 +5,13 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
-  statSync,
   writeFileSync
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { backupAgentConfig } from '../src/setup/config-backup.js';
+import { assertFileMode } from '../test-support/platform-capabilities.js';
 
 test('agent config backup copies an existing config before mutation', () => {
   const root = mkdtempSync(join(tmpdir(), 'fuli-setup-backup-'));
@@ -27,8 +27,8 @@ test('agent config backup copies an existing config before mutation', () => {
 
   assert.equal(backupPath, join(backupDir, 'codex-2026-07-15T01-02-03-004Z.toml'));
   assert.equal(readFileSync(backupPath, 'utf8'), 'sensitive = "not-for-logs"\n');
-  assert.equal(statSync(backupDir).mode & 0o777, 0o700);
-  assert.equal(statSync(backupPath).mode & 0o777, 0o600);
+  assertFileMode(backupDir, 0o700);
+  assertFileMode(backupPath, 0o600);
 });
 
 test('agent config backup does nothing when the config is absent', () => {
@@ -82,7 +82,7 @@ test('standalone lifecycle hook files are included in Agent config backup', () =
     copyFile: (from, to) => copies.push([from, to]), setMode: () => {}
   });
   assert.equal(copies.length, 2);
-  assert.deepEqual(copies[1], ['/synthetic/hooks.json', '/synthetic/backups/cursor-hooks-2026-08-30T00-00-00-000Z.json']);
+  assert.deepEqual(copies[1], ['/synthetic/hooks.json', join('/synthetic/backups', 'cursor-hooks-2026-08-30T00-00-00-000Z.json')]);
 });
 
 test('Codex global instruction files are included in Agent config backup', () => {
@@ -102,8 +102,8 @@ test('Codex global instruction files are included in Agent config backup', () =>
   });
 
   assert.deepEqual(copies, [
-    ['/synthetic/config.toml', '/synthetic/backups/codex-2026-08-30T00-00-00-000Z.toml'],
-    ['/synthetic/AGENTS.md', '/synthetic/backups/codex-instructions-2026-08-30T00-00-00-000Z.md'],
-    ['/synthetic/AGENTS.override.md', '/synthetic/backups/codex-instructions-override-2026-08-30T00-00-00-000Z.md']
+    ['/synthetic/config.toml', join('/synthetic/backups', 'codex-2026-08-30T00-00-00-000Z.toml')],
+    ['/synthetic/AGENTS.md', join('/synthetic/backups', 'codex-instructions-2026-08-30T00-00-00-000Z.md')],
+    ['/synthetic/AGENTS.override.md', join('/synthetic/backups', 'codex-instructions-override-2026-08-30T00-00-00-000Z.md')]
   ]);
 });

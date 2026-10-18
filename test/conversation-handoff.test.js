@@ -11,6 +11,7 @@ import { syncConversationTranscript, claimTranscriptBoundary, recordTranscriptTa
 import { normalizeCodexRecord, verifyCodexTranscript } from '../src/agents/codex/conversation-transcript.js';
 import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
 import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
+import { assertFileMode } from '../test-support/platform-capabilities.js';
 
 const adapter = { normalize: normalizeCodexRecord, verify: verifyCodexTranscript };
 const header = JSON.stringify({ type: 'session_meta', payload: { id: 'session' } }) + '\n';
@@ -255,6 +256,8 @@ test('Claude Code resumes normal Hook task entry after a same-session fallback',
   });
   assert.deepEqual(f.entries, ['begin_task_context']);
   assert.match(output.hookSpecificOutput.additionalContext, /Fuli task context/);
+  // Each rule fetch is an extra model round trip; ordinary tasks must not read them.
+  assert.match(output.hookSpecificOutput.additionalContext, /Do not read fuli:\/\/rules\/task-entry for an ordinary task/);
   const recovery = f.calls.find(call => call.fallback_recovery);
   assert.equal(recovery.source_application, 'claude_code');
   assert.deepEqual(f.appended, []);
@@ -270,7 +273,7 @@ test('guard serializes same-session hooks and persists only hashes and cursors w
   const files = await readdir(directory);
   assert.equal(files.length, 1);
   const path = join(directory, files[0]);
-  assert.equal((await stat(path)).mode & 0o777, 0o600);
+  assertFileMode(path, 0o600);
   const data = await readFile(path, 'utf8');
   assert.ok(!data.includes('incoming') && !data.includes(f.input.transcript_path));
   await f.run(async guard => { assert.equal(guard.value.scanCursor, header.length); });

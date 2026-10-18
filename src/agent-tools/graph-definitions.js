@@ -1,5 +1,5 @@
 import { projectRelationDefinitions } from './project-relation-definitions.js';
-import { checkpointExperiencesSchema, checkpointTriageSchema } from './checkpoint-definitions.js';
+import { checkpointCompactFields } from './checkpoint-definitions.js';
 import { AGENT_COLLABORATION_DEFINITIONS } from './agent-collaboration-definitions.js';
 import { AGENT_CONVERSATION_DEFINITIONS } from './agent-conversation-definitions.js';
 import {
@@ -337,8 +337,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
         memory: workingMemorySchema
       }, ['expectedRevision', 'memory']),
       collaborators: arraySchema(boundedString(128), { maxItems: 16 }),
-      experiences: checkpointExperiencesSchema,
-      triage: checkpointTriageSchema
+      ...checkpointCompactFields
     }, ['taskContextToken', 'disposition', 'reason'])
   },
   {

@@ -30,6 +30,7 @@ import {
   completeToolResult
 } from './tool-result.js';
 import { jsonSchemaToZod, openObjectSchema } from './tool-schema.js';
+import { nativeSessionFromEnv } from '../agents/native-session-env.js';
 import {
   mcpHostSessionId,
   nativeCodexThreadId,
@@ -129,9 +130,9 @@ export function createMcpServer(
   const authoritativeSourceApplication = normalizeMcpSourceApplication(
     sourceApplication
   );
-  const environmentThread = authoritativeSourceApplication === 'codex' ? nativeCodexThreadId(env) : null;
+  const environmentThread = nativeSessionFromEnv(authoritativeSourceApplication, env);
   const nativeThreadId = hostSessionId === null || hostSessionId === environmentThread ? environmentThread : null;
-  const effectiveHostSessionId = hostSessionId ?? mcpHostSessionId(authoritativeSourceApplication === 'codex' ? env : {});
+  const effectiveHostSessionId = hostSessionId ?? environmentThread ?? mcpHostSessionId({});
   const projectActionPreviews = createProjectActionPreviewTokens();
   const tools = createToolMap(
     app,

@@ -231,3 +231,36 @@ test('automatic recall failure stays non-blocking and does not claim a completed
     assert.equal('noMatchSourceMarker' in recall, false);
     assert.equal(JSON.stringify(recall).includes(prompt), false);
   });
+
+function recallApplication(entities, calls = []) {
+  return {
+    config: { personal: { spaceId: 'personal-space' } },
+    consoleUrl: 'http://127.0.0.1:2727',
+    async searchKnowledge(input) { calls.push(input); return { facts: [], entities }; }
+  };
+}
+const ledgerNote = (id, confirmation_status, score) => ({ id, space_id: 'personal-space', scope: 'personal',
+  name: 'Delta Ledger amounts', type: 'ProjectFact', summary: `Amounts are stored in cents (${id}).`,
+  defined_project_id: 'delta', scope_distance: 0, confirmation_status, score });
+
+test('prior-context recall carries an agent-proposed pending note when nothing confirmed matched',
+  async () => {
+    const calls = [];
+    const recall = await recallTaskKnowledge(recallApplication([ledgerNote('pending-note', 'pending', 5)], calls),
+      { personalProjectId: 'delta' }, 'Use the amount format we decided previously for Delta Ledger.');
+    assert.equal(recall.status, 'matched');
+    assert.equal(recall.entities[0].id, 'pending-note');
+    assert.equal(recall.entities[0].confirmation_status, 'pending');
+    assert.deepEqual(recall.pending_fallback.slots, ['entities']);
+    assert.match(recall.pending_fallback.note, /not confirmed by a person/);
+    assert.ok(calls.length > 0 && calls.every((call) => call.includePending === true));
+  });
+
+test('confirmed matches keep pending items out of the automatic recall', async () => {
+  const recall = await recallTaskKnowledge(recallApplication([
+    ledgerNote('pending-note', 'pending', 50), ledgerNote('agent-note', 'agent_confirmed', 1),
+    ledgerNote('human-note', 'confirmed', 2)
+  ]), { personalProjectId: 'delta' }, 'Use the amount format we decided previously for Delta Ledger.');
+  assert.deepEqual(recall.entities.map(({ id }) => id).sort(), ['agent-note', 'human-note']);
+  assert.equal('pending_fallback' in recall, false);
+});

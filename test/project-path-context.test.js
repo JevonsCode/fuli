@@ -89,6 +89,8 @@ test('case-insensitive resolution never guesses between colliding IDs or similar
   }).status, 'unmatched');
 });
 
+// Synthetic paths must not reach the host filesystem: wherever /workspace or
+// /outside exists (such as T:\workspace on Windows), realpath would rewrite it.
 test('a workspace root resolves only one exact registered child project', () => {
   const existing = new Set([
     '/workspace',
@@ -97,6 +99,7 @@ test('a workspace root resolves only one exact registered child project', () => 
   const resolution = resolvePersonalProjectPath('/workspace', PROJECTS, {
     fileExists: (candidate) => existing.has(candidate),
     isDirectory: (candidate) => candidate === '/workspace',
+    realPath: (candidate) => candidate,
     pathApi: path.posix
   });
 
@@ -118,6 +121,7 @@ test('ambiguous, unmatched, and invalid project paths never guess a project', ()
     resolvePersonalProjectPath('/workspace', PROJECTS, {
       fileExists,
       isDirectory: (candidate) => candidate === '/workspace',
+      realPath: (candidate) => candidate,
       pathApi: path.posix
     }),
     {
@@ -131,6 +135,7 @@ test('ambiguous, unmatched, and invalid project paths never guess a project', ()
     resolvePersonalProjectPath('/outside', PROJECTS, {
       fileExists,
       isDirectory: (candidate) => candidate === '/outside',
+      realPath: (candidate) => candidate,
       pathApi: path.posix
     }).status,
     'unmatched'
@@ -138,6 +143,7 @@ test('ambiguous, unmatched, and invalid project paths never guess a project', ()
   assert.throws(
     () => resolvePersonalProjectPath('relative/project', PROJECTS, {
       fileExists,
+      realPath: (candidate) => candidate,
       pathApi: path.posix
     }),
     /existing absolute directory/
@@ -146,6 +152,7 @@ test('ambiguous, unmatched, and invalid project paths never guess a project', ()
     () => resolvePersonalProjectPath('/outside/file.txt', PROJECTS, {
       fileExists,
       isDirectory: () => false,
+      realPath: (candidate) => candidate,
       pathApi: path.posix
     }),
     /existing absolute directory/

@@ -130,7 +130,8 @@ test('Codex connector keeps one hook representation when config.toml already has
   };
   const writes = [];
 
-  const result = connectCodex(AGENT_WITH_HOOKS, CONTEXT, {
+  // The expected hook command is the POSIX shell form, whatever the host is.
+  const result = connectCodex(AGENT_WITH_HOOKS, { ...CONTEXT, platform: 'linux' }, {
     readConfig: () => current,
     writeConfig: (path, value) => { writes.push({ path, value }); },
     readHooks: () => currentHooks,
@@ -156,6 +157,30 @@ test('Codex connector keeps one hook representation when config.toml already has
   assert.deepEqual(hooksWrite.value, {});
   assert.equal(result.trustReviewRequired, true);
   assert.equal(result.newTaskRequired, true);
+});
+
+test('Codex Windows hook commands locate the lifecycle script with Windows paths on any host', () => {
+  const writes = [];
+  connectCodex(AGENT_WITH_HOOKS, {
+    nodePath: 'C:\\runtime\\node.exe',
+    mcpServerPath: 'C:\\package\\src\\mcp-server.js',
+    runtimeConfigPath: 'C:\\data\\graph-runtime.json',
+    platform: 'win32'
+  }, {
+    readConfig: () => '[[hooks.Stop]]\n\n[[hooks.Stop.hooks]]\ncommand = "notify-existing"\ntype = "command"\n',
+    writeConfig: (path, value) => { writes.push({ path, value }); },
+    readHooks: () => ({}),
+    writeHooks: () => {},
+    installBootstrap: () => ({ changed: false }),
+    installHooks: () => {
+      throw new Error('separate hooks.json installation must not run');
+    }
+  });
+
+  const configWrite = writes.find(({ path }) => path === AGENT.configPath);
+  // TOML escapes each backslash of the PowerShell command.
+  assert.ok(configWrite.value.includes(
+    String.raw`& 'C:\\runtime\\node.exe' 'C:\\package\\src\\agents\\codex\\lifecycle-hook.js'`));
 });
 
 test('Codex consolidated TOML hooks report no reload or trust review on an idempotent reconnect', () => {

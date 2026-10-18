@@ -129,6 +129,21 @@ test('a new-project prefix creates exactly one registered project', async () => 
   assert.match(cjk.context.personal_project_id, /^project-[a-f0-9]{12}$/);
 });
 
+test('an unregistered repository that is not auto-registered still honours the prompt and the assistant', async () => {
+  // Auto-registration needs the capture policy and a readable repository; when
+  // it does not happen the repository ID is only a hint, not an end of resolution.
+  const resolution = { status: 'unmatched', personalProjectId: null, repositoryProjectId: 'alpha-ledger' };
+  const { run, writes } = fixture({ resolution });
+  const named = await run({ taskPrompt: '新项目：Alpha Ledger。记一下账本格式' });
+  assert.equal(named.context.personal_project_id, 'alpha-ledger');
+  assert.equal(writes.filter(write => write.profile.name === 'Alpha Ledger').length, 1);
+  const unclaimed = fixture({ resolution });
+  const pending = await unclaimed.run({ taskPrompt: 'just a question' });
+  assert.equal(pending.context.personal_project_id, null);
+  assert.equal(pending.context.project_resolution.basis, 'pending_assignment');
+  assert.equal(unclaimed.writes.length, 0);
+});
+
 test('a name shared by several projects is ambiguous in either listing order', async () => {
   const { app, run, writes, projects } = fixture({ existing: ['alpha-one', 'alpha-two'] });
   for (const id of projects.keys()) projects.get(id).profile.name = 'Alpha';

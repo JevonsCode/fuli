@@ -5,6 +5,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 import { getEventListeners } from 'node:events';
 import { startCodexAcpProcess } from '../src/agents/codex/acp-process.js';
 import { createCodexAcpWorkerAdapter } from '../src/agents/codex/acp-worker.js';
@@ -115,13 +116,23 @@ function reply(id){
 }
 input.on('close',()=>{if(mode!=='hang')process.exit(0);});
 `);
+  // Startup keeps the product's initialize budget: the owned job helper compiles
+  // C# in PowerShell, which a parallel suite can slow past a few seconds.
   return { root, record, options: { adapterPath, codexPath: process.execPath, codexHome, cwd,
-    initializeTimeoutMs: 3000, stopTimeoutMs: 8000,
+    stopTimeoutMs: 8000,
     env: { ...process.env, CODEX_THREAD_ID: secret, OPENAI_API_KEY: secret, ANTHROPIC_API_KEY: secret,
       DEFAULT_AUTH_REQUEST: secret, CODEX_CONFIG: secret, APP_SERVER_LOGS: secret,
       NODE_OPTIONS: '--this-must-be-removed', NODE_PATH: secret, MODEL_PROVIDER: secret } } };
 }
 const gone = pid => { try { process.kill(pid, 0); return false; } catch { return true; } };
+// The adapter rewrites its record on every method, so a torn read is retried.
+async function recordedMethod(record, method, timeoutMs = 15_000) {
+  for (const deadline = Date.now() + timeoutMs; Date.now() < deadline; await delay(25)) {
+    const observed = await readFile(record, 'utf8').then(JSON.parse).catch(() => null);
+    if (observed?.methods.includes(method)) return;
+  }
+  throw new Error(`The synthetic adapter never received ${method}`);
+}
 const trust = options => writeFile(join(options.codexHome, 'config.toml'),
   '[projects.' + JSON.stringify(options.cwd) + ']\ntrust_level = "trusted"\n');
 
@@ -410,20 +421,24 @@ test('ACP timeout and caller cancellation reject pending initialize and stop onl
   for (const cancel of [false, true]) {
     const { options, record } = await fixture(t, 'hang');
     const controller = new AbortController();
-    const timer = cancel ? setTimeout(() => controller.abort(new Error(secret)), 1500) : null;
-    const start = performance.now();
-    try {
-      await assert.rejects(startCodexAcpProcess({ ...options, initializeTimeoutMs: cancel ? 5000 : 1500,
-        signal: controller.signal }), error => {
-        assert.equal(error.code, cancel ? 'acp_cancelled' : 'acp_timeout');
-        assert.equal((error.stack + JSON.stringify(error)).includes(secret), false);
-        return true;
-      });
-      const observed = JSON.parse(await readFile(record, 'utf8'));
-      assert.equal(gone(observed.pid), true);
-      if (observed.childPid) assert.equal(gone(observed.childPid), true);
-      assert.ok(performance.now() - start < 15_000);
-    } finally { clearTimeout(timer); }
+    let stoppedAt = performance.now();
+    // Cancel once the adapter is waiting on initialize, so a slow job-helper
+    // start cannot turn the cancellation into a timeout or leave no record.
+    const cancelled = cancel && recordedMethod(record, 'initialize').then(() => {
+      stoppedAt = performance.now();
+      controller.abort(new Error(secret));
+    });
+    await assert.rejects(startCodexAcpProcess({ ...options, initializeTimeoutMs: cancel ? 15_000 : 5000,
+      signal: controller.signal }), error => {
+      assert.equal(error.code, cancel ? 'acp_cancelled' : 'acp_timeout');
+      assert.equal((error.stack + JSON.stringify(error)).includes(secret), false);
+      return true;
+    });
+    await cancelled;
+    const observed = JSON.parse(await readFile(record, 'utf8'));
+    assert.equal(gone(observed.pid), true);
+    if (observed.childPid) assert.equal(gone(observed.childPid), true);
+    assert.ok(performance.now() - stoppedAt < 15_000);
   }
 });
 

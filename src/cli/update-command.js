@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { dirname, posix, resolve, win32 } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -17,6 +17,7 @@ import {
   parseSemanticVersion
 } from '../semantic-version.js';
 import { confirmInTerminal, writeLine } from './terminal-io.js';
+import { platformPath } from '../system/platform-path.js';
 
 export { compareSemanticVersions } from '../semantic-version.js';
 
@@ -189,7 +190,7 @@ export function formatUpdateResult(result) {
 }
 
 export function resolveGlobalCliPath(globalRoot, platform = process.platform) {
-  const path = platform === 'win32' ? win32 : posix;
+  const path = platformPath(platform);
   if (typeof globalRoot !== 'string' || !path.isAbsolute(globalRoot.trim())) return null;
   return path.join(globalRoot.trim(), FULI_PACKAGE_NAME, 'src', 'cli.js');
 }

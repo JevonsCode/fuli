@@ -14,6 +14,7 @@ import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vu
 import EmployeeTaskDialog from '@/features/employees/EmployeeTaskDialog.vue'
 import BolePeoplePanel from '@/features/employees/BolePeoplePanel.vue'
 import JudgmentWorkbench from '@/features/judgment/JudgmentWorkbench.vue'
+import UnassignedConversationsPanel from '@/features/agent-profile/UnassignedConversationsPanel.vue'
 import { projectBoardFilterKey } from '@/features/employees/project-board-filter'
 
 const mounted: Array<{ unmount: () => void }> = []
@@ -461,6 +462,23 @@ describe('employee workbench', () => {
     expect(wrapper.find('.employee-manage-projects').exists()).toBe(false)
     expect(wrapper.vm.$route.query.project).toBeUndefined()
     expect(getJson.mock.calls.some(([url]) => String(url).includes('/workspace?'))).toBe(false)
+  })
+
+  it('opens Astro on the unclaimed conversations it receives, not on the Bole people panel', async () => {
+    getJson.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/employee-templates?')) return { templates: [{
+        id: 'assistant', name: 'Astro', role: '全局助手', workbench: { kind: 'native', view: 'unclaimed' }, runtime: null,
+        runtimeStatus: 'not_required', capabilities: ['全局对话'], permissions: [],
+        agentId: 'employee.assistant', agentStatus: 'active', assignmentsVersion: 'version-assistant', assignments: [],
+      }] }
+      throw new Error(`unexpected URL: ${url}`)
+    })
+
+    const wrapper = await setup('/employees/assistant')
+
+    expect(wrapper.getComponent(UnassignedConversationsPanel).props('spaceId')).toBe('space-a')
+    expect(wrapper.findComponent(BolePeoplePanel).exists()).toBe(false)
+    expect(wrapper.find('iframe').exists()).toBe(false)
   })
 
   it('opens Tonborg as the native judgment workbench and keeps profile navigation available', async () => {

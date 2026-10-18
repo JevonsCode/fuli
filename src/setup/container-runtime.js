@@ -1,8 +1,8 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { delimiter, dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { platformPath } from '../system/platform-path.js';
 import { nonEmptyText } from '../validation/values.js';
 
 const DOCKER_INFO_ARGS = ['info', '--format', '{{.ServerVersion}}'];
@@ -143,12 +143,13 @@ export function selectDockerEnvironment({
   dockerAvailable = defaultDockerAvailable,
   socketExists = existsSync
 } = {}) {
+  const path = platformPath(platform);
   const selected = { ...env };
   if (nonEmptyText(env.DOCKER_HOST) || nonEmptyText(env.DOCKER_CONTEXT)) return selected;
   if (dockerAvailable(selected)) return selected;
   if (platform !== 'darwin') return selected;
 
-  const rancherSocket = join(homeDir, '.rd', 'docker.sock');
+  const rancherSocket = path.join(homeDir, '.rd', 'docker.sock');
   if (socketExists(rancherSocket)) {
     selected.DOCKER_HOST = `unix://${rancherSocket}`;
   }
@@ -194,17 +195,18 @@ function resolveDockerCommand({ env, platform, homeDir, pathExists, run }) {
 }
 
 function bundledDockerCandidates({ env, platform, homeDir }) {
+  const path = platformPath(platform);
   if (platform === 'darwin') {
     return [
-      join(homeDir, '.rd', 'bin', 'docker'),
+      path.join(homeDir, '.rd', 'bin', 'docker'),
       '/Applications/Docker.app/Contents/Resources/bin/docker',
-      join(homeDir, 'Applications', 'Docker.app', 'Contents', 'Resources', 'bin', 'docker')
+      path.join(homeDir, 'Applications', 'Docker.app', 'Contents', 'Resources', 'bin', 'docker')
     ];
   }
   if (platform === 'win32') {
     return [
-      env.ProgramFiles && join(env.ProgramFiles, 'Docker', 'Docker', 'resources', 'bin', 'docker.exe'),
-      env.LOCALAPPDATA && join(env.LOCALAPPDATA, 'Programs', 'Rancher Desktop', 'resources',
+      env.ProgramFiles && path.join(env.ProgramFiles, 'Docker', 'Docker', 'resources', 'bin', 'docker.exe'),
+      env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Programs', 'Rancher Desktop', 'resources',
         'resources', 'win32', 'bin', 'docker.exe')
     ].filter(Boolean);
   }
@@ -212,27 +214,29 @@ function bundledDockerCandidates({ env, platform, homeDir }) {
 }
 
 function dockerCommandEnvironment(command, env, platform) {
+  const path = platformPath(platform);
   const selected = { ...env };
   if (platform !== 'darwin' || !command.includes('/Docker.app/')) return selected;
   const resources = command.slice(0, command.indexOf('/bin/docker'));
-  const pluginDirectory = join(resources, 'cli-plugins');
+  const pluginDirectory = path.join(resources, 'cli-plugins');
   const current = nonEmptyText(selected.DOCKER_CLI_PLUGIN_EXTRA_DIRS);
   selected.DOCKER_CLI_PLUGIN_EXTRA_DIRS = current
-    ? `${current}${delimiter}${pluginDirectory}`
+    ? `${current}${path.delimiter}${pluginDirectory}`
     : pluginDirectory;
   return selected;
 }
 
 function detectDesktopRuntime({ env, platform, homeDir, pathExists }) {
+  const path = platformPath(platform);
   const candidates = desktopCandidates({ env, platform, homeDir });
   const detected = candidates.find(({ applicationPath }) => pathExists(applicationPath));
   if (!detected) return null;
 
   if (detected.id === 'rancher-desktop') {
     const rdctlPath = platform === 'win32'
-      ? join(dirname(detected.applicationPath), 'resources', 'resources', 'win32', 'bin',
+      ? path.join(path.dirname(detected.applicationPath), 'resources', 'resources', 'win32', 'bin',
         'rdctl.exe')
-      : join(homeDir, '.rd', 'bin', 'rdctl');
+      : path.join(homeDir, '.rd', 'bin', 'rdctl');
     if (pathExists(rdctlPath)) {
       return {
         ...detected,
@@ -256,6 +260,7 @@ function detectDesktopRuntime({ env, platform, homeDir, pathExists }) {
 }
 
 function desktopCandidates({ env, platform, homeDir }) {
+  const path = platformPath(platform);
   if (platform === 'darwin') {
     return [
       {
@@ -266,7 +271,7 @@ function desktopCandidates({ env, platform, homeDir }) {
       {
         id: 'rancher-desktop',
         label: 'Rancher Desktop',
-        applicationPath: join(homeDir, 'Applications', 'Rancher Desktop.app')
+        applicationPath: path.join(homeDir, 'Applications', 'Rancher Desktop.app')
       },
       {
         id: 'docker-desktop',
@@ -276,7 +281,7 @@ function desktopCandidates({ env, platform, homeDir }) {
       {
         id: 'docker-desktop',
         label: 'Docker Desktop',
-        applicationPath: join(homeDir, 'Applications', 'Docker.app')
+        applicationPath: path.join(homeDir, 'Applications', 'Docker.app')
       }
     ];
   }
@@ -285,18 +290,18 @@ function desktopCandidates({ env, platform, homeDir }) {
       env.LOCALAPPDATA && {
         id: 'rancher-desktop',
         label: 'Rancher Desktop',
-        applicationPath: join(env.LOCALAPPDATA, 'Programs', 'Rancher Desktop',
+        applicationPath: path.join(env.LOCALAPPDATA, 'Programs', 'Rancher Desktop',
           'Rancher Desktop.exe')
       },
       env.ProgramFiles && {
         id: 'rancher-desktop',
         label: 'Rancher Desktop',
-        applicationPath: join(env.ProgramFiles, 'Rancher Desktop', 'Rancher Desktop.exe')
+        applicationPath: path.join(env.ProgramFiles, 'Rancher Desktop', 'Rancher Desktop.exe')
       },
       env.ProgramFiles && {
         id: 'docker-desktop',
         label: 'Docker Desktop',
-        applicationPath: join(env.ProgramFiles, 'Docker', 'Docker', 'Docker Desktop.exe')
+        applicationPath: path.join(env.ProgramFiles, 'Docker', 'Docker', 'Docker Desktop.exe')
       }
     ].filter(Boolean);
   }
