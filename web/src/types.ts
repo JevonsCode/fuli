@@ -308,6 +308,14 @@ export interface ProjectAgentRoutingDecision {
   fallback?: string | null
 }
 
+/** Set only for work the Provider verified as AI-internal (issue #15); display only. */
+export interface TaskActivityOrigin {
+  version: 1
+  kind: 'ai_internal'
+  source: 'sealed_worker' | 'roundtable_delegation'
+  purpose: 'test' | 'input_suggestion' | 'consultation' | 'delegated_work'
+}
+
 export interface ProjectAgentTaskRecord {
   taskId: string
   personalSpaceId?: string
@@ -316,6 +324,7 @@ export interface ProjectAgentTaskRecord {
   title: string
   objective?: string | null
   workKind?: string | null
+  activityOrigin?: TaskActivityOrigin | null
   status: ProjectAgentTaskStatus
   runId?: string | null
   executionId?: string | null
