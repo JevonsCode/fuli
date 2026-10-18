@@ -34,3 +34,11 @@ async def test_member_chat_proof_cannot_sign_an_execution_and_expires_with_its_t
         assert next_turn.status_code == 200, next_turn.text
         stale = await client.post('/v1/project-agent-context/remote-origins', json={**body, 'message_id': 'stale-chat'})
         assert stale.status_code in {404, 409}, stale.text
+        worker_token = token + '-worker'
+        worker = await client.put('/v1/task-contexts', json={
+            **scope, 'token': worker_token, 'project_agent_id': 'member', 'source_application': 'codex',
+            'session_id': 'synthetic-member-worker', 'turn_id': 'worker-run:synthetic-chat'})
+        assert worker.status_code == 200, worker.text
+        denied = await client.post('/v1/project-agent-context/remote-origins',
+                                   json={**body, 'task_context_token': worker_token, 'message_id': 'worker-chat'})
+        assert denied.status_code == 403, denied.text

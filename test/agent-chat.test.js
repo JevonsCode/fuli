@@ -11,6 +11,7 @@ import { Readable } from 'node:stream';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { runWithAgentRequestContext, sealedWorkerRequestContext } from '../src/app/agent-request-context.js';
 
 function fixture(t) {
   const agents = ['alpha', 'beta', 'gamma'].map(agentId => ({ agentId,
@@ -20,7 +21,9 @@ function fixture(t) {
   const tasks = Object.fromEntries(agents.map(a => [a.agentId, { projectAgentId: a.agentId,
     personalProjectId: 'garden', sourceApplication: 'codex' }]));
   tasks.completed = { ...tasks.alpha, completed: true };
-  tasks.sealed = { ...tasks.alpha, roundtableDelegation: { token: 'restricted' } };
+  tasks.sealed = { ...tasks.alpha, agentMemoryScope: 'task_only' };
+  tasks.worker = { ...tasks.alpha, agentMemoryScope: 'reviewed_agent', turnId: 'worker-run:bounded' };
+  tasks.adopted = { ...tasks.alpha, agentMemoryScope: 'reviewed_agent', turnId: 'ordinary-task' };
   let wakes = 0;
   const app = { config: { personal: { spaceId: 'space' } },
     listProjectAgents: async () => agents,
@@ -117,8 +120,16 @@ test('chat validates bounded input, immutable direct members, current identity a
   await assert.rejects(chat('alpha', 'send', { chatId: room.chatId, requestId: 'large', body: 'x'.repeat(16001) }), /long|16000|body/i);
   await assert.rejects(chat('completed', 'list'), /active|current|completed/i);
   await assert.rejects(chat('sealed', 'list'), /restricted/i);
+  await assert.rejects(chat('worker', 'list'), /restricted/i);
+  await assert.rejects(runWithAgentRequestContext(sealedWorkerRequestContext({}), () => chat('alpha', 'list')), /restricted/i);
   agents[0].profile.status = 'retired';
   await assert.rejects(chat('alpha', 'list'), /active/i);
+});
+
+test('an ordinary recruited lead can chat after adopting its reviewed Agent memory', async t => {
+  const { chat } = fixture(t);
+  const room = await chat('adopted', 'create', { requestId: 'adopted-chat', kind: 'direct', members: ['local:beta'] });
+  assert.deepEqual(room.members.map(m => m.address).sort(), ['local:alpha', 'local:beta']);
 });
 
 test('the advertised MCP chat contract preserves a complete long message on both channels and rejects impersonation', async t => {

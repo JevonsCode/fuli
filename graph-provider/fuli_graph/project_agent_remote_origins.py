@@ -93,6 +93,9 @@ class StoreRemoteAgentOrigins:
         project_id = context.get('personal_project_id')
         if not agent_id or not project_id or (context.get('checkpoint') or {}).get('phase') == 'complete':
             raise HTTPException(409, 'A remote ask requires an active project task of a FULI Agent')
+        if request.purpose == 'chat' and (context.get('agent_memory_scope') == 'task_only'
+                or (context.get('turn_id') or '').startswith('worker-run:')):
+            raise HTTPException(403, 'A restricted worker cannot open cross-device chats')
         await authorize_personal_project(self, actor, space, project_id)
         policy = await self.get_project_agent_coordination_policy(actor, request.personal_space_id, project_id)
         # Execution stays with the project lead; chat grants communication only.
