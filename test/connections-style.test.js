@@ -31,7 +31,8 @@ test('external knowledge create action uses a flat button and a geometry-based c
   assert.doesNotMatch(actionStyles, /linear-gradient/);
   assert.doesNotMatch(actionStyles, /box-shadow/);
   const page = readFileSync('web/src/pages/ConnectionsPage.vue', 'utf8');
-  assert.match(page, /class="primary-action external-create-action"/);
+  // The create action is the shared primary UiButton; its flat accent fill comes from the design system.
+  assert.match(page, /<UiButton\s+variant="primary"\s+class="external-create-action"/);
   const primitives = readFileSync('web/src/styles/primitives.css', 'utf8');
   assert.match(primitives, /background:\s*var\(--color-accent\)/);
   assert.match(actionStyles, /\.external-create-action-icon::before/);
