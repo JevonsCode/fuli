@@ -53,6 +53,8 @@ class RecordingDriver:
             }], None, None)
         if 'AS linked_count' in query:
             return ([{'linked_count': 1}], None, None)
+        if 'AS provisioning_claimed' in query:
+            return ([{'provisioning_claimed': False}], None, None)
         if (
             "WHERE recruitment.status = 'requested'" in query
             and 'RETURN recruitment' in query
@@ -265,6 +267,7 @@ async def test_recruitment_persistence_scopes_duplicate_project_and_hr_ids():
             'personal_space_id': space_id,
             'personal_project_id': 'shared-project-id',
             'hr_agent_id': 'shared-hr-id',
+            'occupation_role': 'engineering',
         })
 
     assert len(driver.calls) == 2
@@ -275,10 +278,10 @@ async def test_recruitment_persistence_scopes_duplicate_project_and_hr_ids():
     ):
         assert_query_contains(
             query,
-            "MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'}) "
             "MATCH (space)-[:CONTAINS_PROJECT]-> "
             "(project:FuliPersonalProject {project_id: $personal_project_id})",
         )
+        assert_query_contains(query, "MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})")
         assert_query_contains(
             query,
             "OPTIONAL MATCH (space)-[:HAS_PROJECT_AGENT_IDENTITY]-> "

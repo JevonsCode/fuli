@@ -141,7 +141,7 @@ const projectAgentParallelPlan = objectSchema({
   workstreamBoundaries: arraySchema(shortText, { maxItems: 16 })
 });
 export const projectAgentOccupation = objectSchema({
-  role: { type: 'string', enum: ['lead', 'assistant', 'product', 'engineering', 'design', 'operations', 'testing', 'research', 'data', 'writing', 'management'] },
+  role: { type: 'string', pattern: '^[a-z][a-z0-9_]{0,79}$', maxLength: 80 },
   tags: arraySchema(boundedString(128), { maxItems: 5 })
 }, ['role']);
 

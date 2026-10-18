@@ -295,6 +295,7 @@ class ProjectAgentRecord(StrictModel):
     open_task_count: int = Field(default=0, ge=0)
     current_task_id: str | None = None
     occupation: ProjectAgentOccupation | None = None
+    occupation_locked: bool = False
     current_task_running_since: datetime | None = None
     observed_clients: list[SourceApplication] = Field(default_factory=list)
     recruited_at: datetime | None = None

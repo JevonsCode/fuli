@@ -1,25 +1,13 @@
 """Long-term occupation of a project Agent, kept apart from its current task."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated
 
 from pydantic import Field, field_validator
 
 from .models import StrictModel
 
-ProjectAgentOccupationKey = Literal[
-    'lead',
-    'assistant',
-    'product',
-    'engineering',
-    'design',
-    'operations',
-    'testing',
-    'research',
-    'data',
-    'writing',
-    'management',
-]
+ProjectAgentOccupationKey = Annotated[str, Field(min_length=1, max_length=80, pattern=r'^[a-z][a-z0-9_]{0,79}$')]
 
 
 class ProjectAgentOccupationInput(StrictModel):

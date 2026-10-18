@@ -1,5 +1,6 @@
 """Read-only, project-scoped occupational demand from existing durable task history."""
 from datetime import timedelta
+import re
 
 from pydantic import Field, field_validator
 
@@ -7,6 +8,7 @@ from .models import StrictModel
 from .personal_project_access import authorize_personal_project
 from .project_agent_occupation_models import ProjectAgentOccupationKey
 from .provider_values import now_utc
+from .occupation_catalog import BUILTIN_OCCUPATION_KEYS
 
 
 class StaffingDemandQuery(StrictModel):
@@ -19,6 +21,8 @@ class StaffingDemandQuery(StrictModel):
     def specialist_roles(cls, roles):
         if len(set(roles)) != len(roles) or any(role in {'lead', 'assistant'} for role in roles):
             raise ValueError('demand requires distinct specialist occupations')
+        if any(role not in BUILTIN_OCCUPATION_KEYS and not re.fullmatch(r'custom_[0-9a-f]{32}', role) for role in roles):
+            raise ValueError('demand requires catalog occupation keys')
         return roles
 
 

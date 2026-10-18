@@ -297,6 +297,18 @@ export class GraphitiProviderClient {
       method: 'PUT', body: input
     });
   }
+  occupationCatalog(operation, input) {
+    const { key, ...body } = input;
+    const methods = { list: 'GET', create: 'POST', update: 'PUT', archive: 'POST', delete: 'DELETE' };
+    if (!Object.hasOwn(methods, operation)) throw new TypeError('Unknown occupation operation');
+    const item = ['update', 'archive', 'delete'].includes(operation);
+    if (item && (typeof key !== 'string' || !key)) throw new TypeError('Occupation key is required');
+    const path = '/v1/occupations' + (item ? `/${encodeURIComponent(key)}` : '')
+      + (operation === 'archive' ? '/archive' : '');
+    return operation === 'list'
+      ? this.#request(`${path}?${new URLSearchParams(body)}`)
+      : this.#request(path, { method: methods[operation], body });
+  }
   deleteProjectAgent(personalSpaceId, agentId, reason = 'archived by user') {
     const query = new URLSearchParams({
       personal_space_id: personalSpaceId,
@@ -969,7 +981,8 @@ function providerErrorDiagnostic(status, payload) {
   }
   const validationErrors = providerValidationErrors(payload);
   return {
-    category,
+    category: typeof payload?.detail?.code === 'string' && /^[a-z][a-z0-9_]{1,79}$/.test(payload.detail.code)
+      ? payload.detail.code : category,
     status,
     detail: sanitizeProviderDetail(providerErrorMessage(payload, validationErrors)),
     validationErrors
@@ -978,6 +991,7 @@ function providerErrorDiagnostic(status, payload) {
 
 function providerErrorMessage(payload, validationErrors = providerValidationErrors(payload)) {
   if (typeof payload?.detail === 'string') return payload.detail;
+  if (typeof payload?.detail?.message === 'string') return payload.detail.message;
   if (!validationErrors.length) return 'Graphiti provider request failed';
   const messages = validationErrors.map(({ field, message }) => (
     field ? `${field} — ${message}` : message

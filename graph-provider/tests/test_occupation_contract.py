@@ -195,7 +195,8 @@ async def test_legacy_recruitment_approval_can_record_explicit_role_before_provi
     await store.decide_project_agent_recruitment({'id': 'principal'}, ProjectAgentRecruitmentDecision(
         personal_space_id='personal-space', personal_project_id='project-a', recruitment_id='recruitment-approval',
         expected_revision=0, decision='approve', reason='Choose missing role', occupation={'role': 'research'}))
-    query, parameters = store.runtime.driver.calls[1]
+    query, parameters = next((query, parameters) for query, parameters in store.runtime.driver.calls
+                             if 'SET recruitment.status = $decision_status' in query)
     assert parameters['occupation_role'] == 'research'
     assert "ELSE 'approval_choice' END" in query
     assert "recruitment.status = 'requested' AND recruitment.occupation_role IS NULL" in query
