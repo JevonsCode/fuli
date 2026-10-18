@@ -32,6 +32,11 @@ export function createNodeStore(path = ':memory:') {
       message_id TEXT PRIMARY KEY, target_node TEXT NOT NULL, binding_id TEXT NOT NULL, created_at TEXT NOT NULL
     );
   `);
+  const shareColumns = new Set(database.prepare('PRAGMA table_info(shares)').all().map(c => c.name));
+  if (!shareColumns.has('chat_only')) {
+    try { database.exec('ALTER TABLE shares ADD COLUMN chat_only INTEGER NOT NULL DEFAULT 0'); }
+    catch (error) { if (!/duplicate column/i.test(error.message)) throw error; }
+  }
   const now = () => new Date().toISOString();
   const transaction = (work) => {
     database.exec('BEGIN IMMEDIATE');
@@ -40,7 +45,8 @@ export function createNodeStore(path = ':memory:') {
   };
   const shareKey = (share) => [share.spaceId, share.projectId, share.agentId].join('\u0000');
   const shareView = (row) => row && ({ bindingId: row.binding_id, spaceId: row.space_id, projectId: row.project_id, agentId: row.agent_id,
-    clients: JSON.parse(row.clients_json), workingDirectory: row.working_directory ?? null, createdAt: row.created_at, revokedAt: row.revoked_at });
+    clients: JSON.parse(row.clients_json), workingDirectory: row.working_directory ?? null, createdAt: row.created_at, revokedAt: row.revoked_at,
+    ...(row.chat_only === 1 ? { communicationOnly: true } : {}) });
 
   return {
     setting(key) {
@@ -65,15 +71,15 @@ export function createNodeStore(path = ':memory:') {
           const next = wanted.get(key);
           if (!next) database.prepare('UPDATE shares SET revoked_at = ? WHERE binding_id = ?').run(at, row.binding_id);
           else {
-            database.prepare('UPDATE shares SET clients_json = ?, working_directory = ? WHERE binding_id = ?')
-              .run(JSON.stringify(next.clients), next.workingDirectory ?? null, row.binding_id);
+            database.prepare('UPDATE shares SET clients_json = ?, working_directory = ?, chat_only = ? WHERE binding_id = ?')
+              .run(JSON.stringify(next.clients), next.workingDirectory ?? null, next.communicationOnly ? 1 : 0, row.binding_id);
             wanted.delete(key);
           }
         }
         for (const share of wanted.values()) {
-          database.prepare(`INSERT INTO shares(binding_id, space_id, project_id, agent_id, clients_json, working_directory, created_at)
-            VALUES(?,?,?,?,?,?,?)`).run(idFactory(), share.spaceId, share.projectId, share.agentId, JSON.stringify(share.clients),
-            share.workingDirectory ?? null, at);
+          database.prepare(`INSERT INTO shares(binding_id, space_id, project_id, agent_id, clients_json, working_directory, created_at, chat_only)
+            VALUES(?,?,?,?,?,?,?,?)`).run(idFactory(), share.spaceId, share.projectId, share.agentId, JSON.stringify(share.clients),
+            share.workingDirectory ?? null, at, share.communicationOnly ? 1 : 0);
         }
         return this.shares();
       });

@@ -8,6 +8,8 @@ import { createNodeStore } from './node-store.js';
 import { assertionDigest, authorityFromProvider } from './origin-proof.js';
 import { createPeerClient } from './peer-transport.js';
 import { PEER_LIMITS, PEER_PROTOCOL, PeerError, peerCleanup, TERMINAL_STATUSES } from './protocol.js';
+import { createPeerChatPort } from './chat-port.js';
+import { matchesAgentDiscovery } from '../agent-roundtable/discovery.js';
 
 const ADDRESS = /^peer:([0-9a-f]{16}):([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/;
 const STATUS_POLL_MS = 2_000;
@@ -65,18 +67,22 @@ export function createPeerPort({ dataDir, provider, spaceId, clock = Date.now, i
     return devices.filter((device) => device.nodeId !== self);
   }
 
-  async function remoteAgents({ query = null } = {}) {
+  async function remoteAgents({ query = null, occupation = null, capability = null, projectId = null } = {}) {
     let devices;
     try { devices = await remoteDirectory(); }
     catch (error) { return { agents: [], unavailable: error.code ?? 'coordinator_unreachable' }; }
     if (!devices) return null;
     const needle = query?.trim().toLowerCase();
     const agents = devices.flatMap((device) => device.agents.map((agent) => ({
-      address: `peer:${device.nodeId.slice(0, 16)}:${agent.bindingId}`, name: agent.name, role: 'shared_project_lead',
+      address: `peer:${device.nodeId.slice(0, 16)}:${agent.bindingId}`, name: agent.name,
+      role: agent.communicationOnly ? 'shared_agent' : 'shared_project_lead', agentId: agent.agentId,
+      occupation: agent.occupation ?? null, capabilities: agent.capabilities ?? [], projectId: agent.projectId ?? null,
+      communicationOnly: agent.communicationOnly === true,
       employeeNumber: agent.employeeNumber, responsibility: agent.responsibility, projectName: agent.projectName,
       device: { name: device.name, online: device.online } })))
-      .filter((agent) => !needle || [agent.name, agent.projectName, agent.responsibility, agent.device.name]
-        .some((value) => value?.toLowerCase().includes(needle)));
+      .filter((agent) => matchesAgentDiscovery(agent, { occupation, capability }) && (!projectId || agent.projectId === projectId)
+        && (!needle || [agent.name, agent.occupation, ...agent.capabilities, agent.projectName, agent.responsibility, agent.device.name]
+        .some((value) => value?.toLowerCase().includes(needle))));
     return { agents: agents.slice(0, 50) };
   }
 
@@ -86,6 +92,7 @@ export function createPeerPort({ dataDir, provider, spaceId, clock = Date.now, i
     const device = (await remoteDirectory() ?? []).find((entry) => entry.nodeId.startsWith(match[1]));
     const agent = device?.agents.find((entry) => entry.bindingId === match[2]);
     if (!agent) throw new PeerError('agent_not_shared', 'That remote Agent is not shared any more; call find_agents again', 404);
+    if (agent.communicationOnly) throw new PeerError('chat_only', 'This Agent is shared for communication only; use agent_chat', 403);
     return { address: match[0], node: device.nodeId, bindingId: agent.bindingId, agentId: agent.agentId,
       name: agent.name, deviceName: device.name };
   }
@@ -143,6 +150,7 @@ export function createPeerPort({ dataDir, provider, spaceId, clock = Date.now, i
     store = null;
   }
 
-  return { configured, isRemoteAddress, remoteAgents, resolveRemote, send, status, cancel, waitFor, hasSent, localAuthority,
+  return { ...createPeerChatPort({ connection, post, nodeStore, provider, spaceId, clock }),
+    configured, isRemoteAddress, remoteAgents, resolveRemote, send, status, cancel, waitFor, hasSent, localAuthority,
     nodeStore, directory, idFactory, close };
 }

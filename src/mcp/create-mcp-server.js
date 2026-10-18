@@ -2,6 +2,7 @@ import { compactTaskContext } from '../conversations/task-context-view.js';
 import { employeeToolCatalogResult } from './employee-tool-catalog.js';
 import { agentToolCatalogResult } from './agent-tool-catalog.js';
 import { toolNamesForProfile } from './tool-profiles.js';
+import { parseChatResult } from '../agent-roundtable/chat-contract.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   CallToolRequestSchema,
@@ -24,7 +25,8 @@ import {
   hookAdditionalContextToolResult,
   protocolErrorResult,
   successToolResult,
-  completePreferenceToolResult
+  completePreferenceToolResult,
+  completeToolResult
 } from './tool-result.js';
 import { jsonSchemaToZod, openObjectSchema } from './tool-schema.js';
 import {
@@ -35,6 +37,8 @@ import {
 } from './session-id.js';
 
 const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
+  agent_chat: 512 * 1024,
+  find_agents: 128 * 1024,
   read_agent_conversation: 600 * 1024,
   list_agent_conversations: 32 * 1024,
   resume_agent_conversation: 24 * 1024,
@@ -295,6 +299,7 @@ async function invokeTool(tool, input, requestContext = null) {
     const value = await tool.invoke(input, requestContext);
     auditLifecycleTool(tool.definition.name);
     const limitBytes = TOOL_RESULT_LIMIT_BYTES[tool.definition.name];
+    if (tool.definition.name === 'agent_chat') return completeToolResult(parseChatResult(value), limitBytes);
     if (['begin_task_context', 'get_collaboration_preferences', 'read_task_preferences'].includes(tool.definition.name)) {
       const name = tool.definition.name;
       const view = name === 'read_task_preferences' ? value : compactTaskContext(value);

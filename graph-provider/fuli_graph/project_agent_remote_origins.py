@@ -11,6 +11,7 @@ import json
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
+from typing import Literal
 
 from fastapi import HTTPException
 from nacl.signing import SigningKey
@@ -24,6 +25,7 @@ OPAQUE = r'^[A-Za-z0-9][A-Za-z0-9._:-]*$'
 DIGEST = r'^[0-9a-f]{64}$'
 CANONICAL_TIME = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$'
 PROOF_VERSION = 'fuli-remote-origin/1'
+CHAT_PROOF_VERSION = 'fuli-chat-origin/1'
 MAX_LIFETIME = timedelta(minutes=30)
 
 
@@ -36,6 +38,7 @@ class AgentRemoteOriginIssue(StrictModel):
     target_node: str = Field(pattern=DIGEST)
     binding_id: str = Field(min_length=1, max_length=128, pattern=OPAQUE)
     expires_at: str = Field(pattern=CANONICAL_TIME)
+    purpose: Literal['execution', 'chat'] = 'execution'
 
 
 def _encode(value):
@@ -93,7 +96,7 @@ class StoreRemoteAgentOrigins:
         await authorize_personal_project(self, actor, space, project_id)
         policy = await self.get_project_agent_coordination_policy(actor, request.personal_space_id, project_id)
         # Members reach other devices through their own lead, never directly.
-        if not policy.team_lead_agent_id or agent_id != policy.team_lead_agent_id:
+        if request.purpose == 'execution' and (not policy.team_lead_agent_id or agent_id != policy.team_lead_agent_id):
             raise HTTPException(403, 'Only the project lead can ask Agents on other devices')
         agent = await self.get_project_agent(actor, request.personal_space_id, project_id, agent_id)
         if agent.profile.status != 'active':
@@ -120,35 +123,42 @@ class StoreRemoteAgentOrigins:
                       MATCH (project)-[:HAS_PROJECT_AGENT_ASSIGNMENT]->
                             (:FuliProjectAgentAssignment {status: 'active'})-[:ASSIGNED_AGENT]->(role)
                     } AS assigned
-               WITH live_task, lead, assigned, live_task AND lead AND assigned AS allowed
+               WITH live_task, lead, assigned, live_task AND (lead OR $purpose = 'chat') AND assigned AS allowed
                FOREACH (ignored IN CASE WHEN allowed THEN [1] ELSE [] END |
                  MERGE (origin:FuliRemoteAgentOrigin {space_id: $space_id, message_id: $message_id})
                  ON CREATE SET origin.digest = $digest, origin.agent_id = $agent_id, origin.project_id = $project_id,
                    origin.target_node = $target_node, origin.binding_id = $binding_id, origin.task_hash = $task_hash,
-                   origin.issued_at = datetime(), origin.expires_at = datetime($expires_at))
+                   origin.issued_at = datetime(), origin.expires_at = datetime($expires_at), origin.purpose = $purpose)
                WITH live_task, lead, assigned, allowed
                OPTIONAL MATCH (origin:FuliRemoteAgentOrigin {space_id: $space_id, message_id: $message_id})
                WITH live_task, lead, assigned,
                     allowed AND origin.digest = $digest AND origin.agent_id = $agent_id AND origin.task_hash = $task_hash
-                      AND origin.target_node = $target_node AND origin.binding_id = $binding_id AS same
+                      AND origin.target_node = $target_node AND origin.binding_id = $binding_id
+                      AND coalesce(origin.purpose, 'execution') = $purpose AS same
                RETURN live_task, lead, assigned, same''',
             space_id=request.personal_space_id, token=request.task_context_token, message_id=request.message_id,
             digest=request.digest, agent_id=agent_id, project_id=project_id, target_node=request.target_node,
-            binding_id=request.binding_id, task_hash=task_hash, expires_at=request.expires_at)
+            binding_id=request.binding_id, task_hash=task_hash, expires_at=request.expires_at, purpose=request.purpose)
         row = rows[0] if rows else None
         if not row or not row['live_task']:
             raise HTTPException(404, 'The sending task is no longer current')
-        if not row['lead'] or not row['assigned']:
+        if (request.purpose == 'execution' and not row['lead']) or not row['assigned']:
             raise HTTPException(403, 'Only the project lead can ask Agents on other devices')
         if not row['same']:
             raise HTTPException(409, 'This message ID already belongs to a different remote ask')
         key = await self._remote_origin_key(request.personal_space_id)
-        payload = json.dumps({
-            'version': PROOF_VERSION, 'key_id': key['key_id'], 'space_id': request.personal_space_id,
+        claims = {
+            'version': CHAT_PROOF_VERSION if request.purpose == 'chat' else PROOF_VERSION,
+            'key_id': key['key_id'], 'space_id': request.personal_space_id,
             'project_id': project_id, 'agent_id': agent_id, 'task_hash': task_hash,
             'message_id': request.message_id, 'digest': request.digest, 'target_node': request.target_node,
             'binding_id': request.binding_id, 'issued_at': canonical_time(now), 'expires_at': request.expires_at,
-        }, sort_keys=True, separators=(',', ':')).encode()
+        }
+        # Existing execution proofs retain their exact wire shape. Chat proofs
+        # use a distinct version so even older execution ports reject them.
+        if request.purpose == 'chat':
+            claims['purpose'] = 'chat'
+        payload = json.dumps(claims, sort_keys=True, separators=(',', ':')).encode()
         signature = SigningKey(_decode(key['private_key'])).sign(payload).signature
         return {'agent_id': agent_id, 'agent_name': agent.profile.display_name or agent.profile.name or agent_id,
                 'proof': {'payload': _encode(payload), 'signature': _encode(signature)}}
