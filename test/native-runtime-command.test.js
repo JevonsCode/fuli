@@ -7,7 +7,7 @@ test('CLI validates actions and requires explicit values without duplicate flags
 });
 test('CLI preview and cancelled confirmation never mutate assets', async () => {
   let mutations = 0;
-  const deps = { write: () => {}, resolvePaths: () => ({ dataDir: '/synthetic' }),
+  const deps = { platform: 'darwin', write: () => {}, resolvePaths: () => ({ dataDir: '/synthetic' }),
     plan: async () => ({ neo4jVersion: '5.26.28' }), manage: async () => { mutations++; }, confirm: async () => false };
   assert.equal((await runNativeRuntimeCommand(['update', '--preview'], deps)).status, 'preview');
   assert.equal((await runNativeRuntimeCommand(['update'], deps)).status, 'cancelled');
@@ -15,7 +15,7 @@ test('CLI preview and cancelled confirmation never mutate assets', async () => {
 });
 test('CLI update --yes calls the lifecycle and installation delegates existing native setup', async () => {
   const calls = [];
-  const deps = { write: () => {}, resolvePaths: () => ({ dataDir: '/synthetic' }),
+  const deps = { platform: 'darwin', write: () => {}, resolvePaths: () => ({ dataDir: '/synthetic' }),
     plan: async () => ({}), manage: async input => { calls.push(input.action); return { status: 'updated' }; },
     setup: async args => { calls.push(args); return { status: 'ready' }; } };
   await runNativeRuntimeCommand(['update', '--yes'], deps);

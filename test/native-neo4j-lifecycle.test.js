@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { requiresSymlinks, requiresUnixNativeAssets } from '../test-support/platform-capabilities.js';
 import { manageNativeNeo4j, planNativeNeo4j } from '../src/native-runtime/neo4j-lifecycle.js';
 import { resolveSetupPaths } from '../src/setup/paths.js';
 import { NATIVE_NEO4J_VERSION } from '../src/native-runtime/runtime.js';
@@ -69,7 +70,7 @@ test('failed old stop leaves the descriptor unchanged', async t => {
   await assert.rejects(manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps), /stop/i);
   assert.deepEqual(await f.manifest(), f.current); assert.ok(!f.events.includes('start-new'));
 });
-test('uninstall removes managed Neo4j assets and retains external instance data', async t => {
+test('uninstall removes managed Neo4j assets and retains external instance data', requiresUnixNativeAssets, async t => {
   const f = await fixture(t);
   await manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps);
   await manageNativeNeo4j({ paths: f.paths, action: 'uninstall' }, f.deps);
@@ -105,7 +106,7 @@ test('concurrent descriptor changes are preserved and never cause an old process
   await assert.rejects(manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps), /concurrently/);
   assert.equal((await f.manifest()).foreign, true); assert.ok(!f.events.includes('start-old'));
 });
-test('uninstall removes every created asset generation while preserving data', async t => {
+test('uninstall removes every created asset generation while preserving data', requiresUnixNativeAssets, async t => {
   const f = await fixture(t); const homes = [f.current.neo4jHome];
   for (let i = 0; i < 3; i++) { await manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps); homes.push((await f.manifest()).neo4jHome); }
   await manageNativeNeo4j({ paths: f.paths, action: 'uninstall' }, f.deps);
@@ -120,7 +121,7 @@ test('offline inspection failure resumes the previously running console without 
   assert.ok(f.events.includes('start-console'));
 });
 
-test('a symbolic-link asset parent cannot redirect candidate installation outside the runtime', async t => {
+test('a symbolic-link asset parent cannot redirect candidate installation outside the runtime', requiresSymlinks, async t => {
   const { symlink } = await import('node:fs/promises');
   const f = await fixture(t); const outside = await mkdtemp(join(tmpdir(), 'fuli-assets-outside-'));
   t.after(() => rm(outside, { recursive: true, force: true }));

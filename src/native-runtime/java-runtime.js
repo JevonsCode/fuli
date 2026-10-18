@@ -1,5 +1,8 @@
 import { execFile } from 'node:child_process';
-import { isAbsolute, join } from 'node:path';
+import { posix } from 'node:path';
+
+// Only macOS and Linux resolve a system JDK; Windows uses the bundled runtime.
+const { isAbsolute, join } = posix;
 
 export async function resolveNativeJavaHome(env, {
   platform = process.platform, arch = process.arch, run = commandResult

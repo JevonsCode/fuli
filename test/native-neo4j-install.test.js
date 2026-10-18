@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { requiresUnixNativeAssets } from '../test-support/platform-capabilities.js';
 import { installNativeNeo4j } from '../src/native-runtime/neo4j-install.js';
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'fuli-neo4j-install-'));
@@ -19,7 +20,7 @@ async function fixture(t) {
     input: { paths: { nativeRuntimeDir: runtime }, home: join(runtime, name), url: 'https://dist.neo4j.org/synthetic.tar.gz', sha256: createHash('sha256').update(bytes).digest('hex') },
     download: async (_url, path) => writeFile(path, bytes) };
 }
-test('verified extraction publishes complete binaries and preserves external data', async t => {
+test('verified extraction publishes complete binaries and preserves external data', requiresUnixNativeAssets, async t => {
   const f = await fixture(t);
   await mkdir(join(f.runtime, 'personal', 'data'), { recursive: true });
   await writeFile(join(f.runtime, 'personal', 'data', 'sentinel'), 'synthetic-data');
@@ -28,24 +29,24 @@ test('verified extraction publishes complete binaries and preserves external dat
   assert.equal(await readFile(join(f.runtime, 'personal', 'data', 'sentinel'), 'utf8'), 'synthetic-data');
   assert.deepEqual((await readdir(f.runtime)).filter(n => /stage|lock/.test(n)), []);
 });
-test('existing incomplete directory is preserved on failure', async t => {
+test('existing incomplete directory is preserved on failure', requiresUnixNativeAssets, async t => {
   const f = await fixture(t); await mkdir(f.home, { recursive: true }); await writeFile(join(f.home, 'keep'), 'old');
   await assert.rejects(installNativeNeo4j(f.input, { download: f.download }), /existing|incomplete/i);
   assert.equal(await readFile(join(f.home, 'keep'), 'utf8'), 'old');
 });
-test('checksum failure never publishes binaries', async t => {
+test('checksum failure never publishes binaries', requiresUnixNativeAssets, async t => {
   const f = await fixture(t);
   await assert.rejects(installNativeNeo4j({ ...f.input, sha256: 'a'.repeat(64) }, { download: f.download }), /checksum/i);
   await assert.rejects(readFile(join(f.home, 'bin', 'neo4j')), /ENOENT/);
 });
-test('extraction failure cleans staging and permits retry', async t => {
+test('extraction failure cleans staging and permits retry', requiresUnixNativeAssets, async t => {
   const f = await fixture(t);
   await assert.rejects(installNativeNeo4j(f.input, { download: f.download, extract: async () => { throw new Error('injected extraction failure'); } }), /injected/);
   await assert.rejects(readFile(join(f.home, 'bin', 'neo4j')), /ENOENT/);
   await installNativeNeo4j(f.input, { download: f.download });
   assert.ok(await readFile(join(f.home, 'bin', 'neo4j')));
 });
-test('concurrent installation is rejected while the first holds its lock', async t => {
+test('concurrent installation is rejected while the first holds its lock', requiresUnixNativeAssets, async t => {
   const f = await fixture(t); let unblock, entered;
   const held = new Promise(resolve => { entered = resolve; });
   const pending = installNativeNeo4j(f.input, { download: async (_url, path) => { entered(); await new Promise(resolve => { unblock = resolve; }); await writeFile(path, f.bytes); } });
@@ -53,12 +54,12 @@ test('concurrent installation is rejected while the first holds its lock', async
   try { await assert.rejects(installNativeNeo4j(f.input, { download: f.download }), /lock|progress/i); }
   finally { unblock(); await pending; }
 });
-test('destination outside managed runtime is rejected before downloading', async t => {
+test('destination outside managed runtime is rejected before downloading', requiresUnixNativeAssets, async t => {
   const f = await fixture(t);
   await assert.rejects(installNativeNeo4j({ ...f.input, home: join(f.root, 'outside') }, { download: async () => assert.fail('must not download') }), /destination|managed/i);
 });
 
-test('a verified public archive is reused after extraction failure', async t => {
+test('a verified public archive is reused after extraction failure', requiresUnixNativeAssets, async t => {
   const f = await fixture(t); let downloads = 0;
   const download = async (...args) => { downloads++; await f.download(...args); };
   await assert.rejects(installNativeNeo4j(f.input, { download, extract: async () => { throw new Error('injected'); } }), /injected/);
