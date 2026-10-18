@@ -20,6 +20,7 @@ from .project_agent_task_models import (
 )
 from .provider_values import native_datetime
 from .temporary_project_scope import TEMPORARY_SCOPE
+from .task_activity_origin import read_activity_origin
 
 
 TERMINAL_TASK_STATUSES = {'completed', 'failed', 'cancelled'}
@@ -296,6 +297,7 @@ class StoreProjectAgentTaskReads:
             'recruitment_id': raw.get('recruitment_id'),
             'source_application': raw.get('source_application'),
             'source_session_id': raw.get('source_session_id'),
+            'activity_origin': read_activity_origin(raw.get('activity_origin_json')),
             'result_summary': raw.get('result_summary'),
             'failure_reason': raw.get('failure_reason'),
             'created_at': native_datetime(raw['created_at']),
@@ -576,7 +578,17 @@ class StoreProjectAgentTaskReads:
 
     @staticmethod
     def _payload_hash(request):
+        # Shared by legacy activity-store users; submission adds provenance
+        # through its distinct helper instead of relying on GraphStore's MRO.
+        return StoreProjectAgentTaskReads._task_payload_hash(request)
+
+    @staticmethod
+    def _task_payload_hash(request, activity_origin=None):
         payload = request.model_dump(mode='json', exclude={'idempotency_key'})
+        # The optional proof handle is excluded by its model. Untagged input
+        # retains the old hash; internal provenance is immutable semantic input.
+        if activity_origin:
+            payload['activity_origin'] = activity_origin.model_dump(mode='json')
         return hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(',', ':')).encode()
         ).hexdigest()

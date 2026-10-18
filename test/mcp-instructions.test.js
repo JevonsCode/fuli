@@ -90,6 +90,10 @@ test('each profile sends its own instructions', async () => {
     const client = new Client({ name: 'instructions', version: '1.0.0' });
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
     assert.equal(client.getInstructions(), expected, profile);
+    if (profile === 'chat') {
+      assert.match(client.getInstructions(), /checkpoint_required.*checkpoint_guidance/);
+      assert.doesNotMatch(client.getInstructions(), /End: checkpoint_task_knowledge/);
+    }
     await client.close();
   }
 });

@@ -28,6 +28,7 @@ from .store_project_agent_task_staffing import (
 from .store_project_agent_coordination_policy import StoreProjectAgentCoordinationPolicy
 from .store_project_agent_task_activity import StoreProjectAgentTaskActivity, TERMINAL_TASK_STATUSES
 from .store_transactions import TransactionQueryDriver, query_store_transaction
+from .task_activity_origin import coordination_activity_origin, read_activity_origin
 class StoreProjectAgentTasks(
     StoreProjectAgentTaskActivity,
     StoreProjectAgentCoordinationPolicy,
@@ -62,10 +63,13 @@ class StoreProjectAgentTasks(
             'project-agent-task',
             request.idempotency_key,
         )
-        payload_hash = self._payload_hash(request)
         existing = await self._find_task_row(request.personal_space_id, task_id)
         if existing:
             raw = dict(existing['task'])
+            # Proof authenticates creation. Replays keep the original source,
+            # even after that context completes or is superseded by a new turn.
+            activity_origin = read_activity_origin(raw.get('activity_origin_json'))
+            payload_hash = self._task_payload_hash(request, activity_origin)
             if raw.get('payload_hash') != payload_hash:
                 raise HTTPException(
                     status_code=409,
@@ -109,6 +113,8 @@ class StoreProjectAgentTasks(
                 recruitments=recruitments,
             )
 
+        activity_origin = await coordination_activity_origin(self, actor, request)
+        payload_hash = self._task_payload_hash(request, activity_origin)
         if request.coordinator_agent_id:
             await authorize_project_agent(
                 self,
@@ -415,6 +421,7 @@ class StoreProjectAgentTasks(
         )
         await self._persist_task(
             request,
+            activity_origin=activity_origin,
             task_id=task_id,
             payload_hash=payload_hash,
             coordinator_agent_id=coordinator_agent_id,
@@ -806,6 +813,7 @@ class StoreProjectAgentTasks(
         executor_decision,
         created_at,
         recruitments=None,
+        activity_origin=None,
     ):
         linked_recruitments = list(recruitments or [])
         if recruitment and not any(
@@ -876,6 +884,7 @@ class StoreProjectAgentTasks(
               model_strategy_source: $model_source,
               source_application: $source_application,
               source_session_id: $source_session_id,
+              activity_origin_json: $activity_origin_json,
               executor_decision_json: $executor_decision_json,
               executor_policy_json: $executor_policy_json,
               selected_executor_id: $selected_executor_id,
@@ -951,6 +960,7 @@ class StoreProjectAgentTasks(
             model_source=model_source,
             source_application=request.source_application,
             source_session_id=request.source_session_id,
+            activity_origin_json=activity_origin.model_dump_json() if activity_origin else None,
             executor_decision_json=(
                 json.dumps(executor_raw, sort_keys=True) if executor_raw else None
             ),
