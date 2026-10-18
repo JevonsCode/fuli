@@ -474,8 +474,12 @@ export interface ProjectAgentCoordinationPolicy {
   autoGrowTeam?: boolean
   teamLeadAgentId?: string | null
   teamMemberAgentIds?: string[]
+  /** Optional groups under the lead (R-11); absent on older servers. */
+  subTeams?: ProjectSubTeamPolicy[]
   updatedAt?: string | null
 }
+
+export interface ProjectSubTeamPolicy { id: string; name: string; leadAgentId: string; memberAgentIds: string[] }
 
 export interface ProjectAgentLearningEvidence {
   learningKey?: string
