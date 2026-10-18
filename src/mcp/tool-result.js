@@ -49,7 +49,7 @@ export function completePreferenceToolResult(value, limitBytes = 512 * 1024) {
 }
 
 export function successToolResult(value, { limitBytes = RESULT_LIMIT_BYTES, itemLimit = RESULT_ITEM_LIMIT,
-  preferenceContext = false } = {}) {
+  preferenceContext = false, preserveHumanInteraction = false } = {}) {
   const blockedResult = reason => {
     const envelope = blockedPreferenceDelivery(value, reason);
     const sanitized = sanitize(envelope, { truncated: false, itemLimit: 1000 });
@@ -72,6 +72,11 @@ export function successToolResult(value, { limitBytes = RESULT_LIMIT_BYTES, item
   if (value?.agent_receipt?.required === true) {
     required.agent_receipt = sanitize(value.agent_receipt, state);
     if (state.truncated) throw new ApplicationError('validation', 'Cannot deliver the complete required Agent receipt');
+  }
+  if (preserveHumanInteraction && value?.human_interaction) {
+    const nativeState = { truncated: false, itemLimit: 3 };
+    required.human_interaction = sanitize(value.human_interaction, nativeState);
+    if (nativeState.truncated) throw new ApplicationError('validation', 'Cannot deliver the complete human question');
   }
   const sanitized = sanitize(Object.keys(required).length ? { ...required, ...value } : value, state);
   const candidate = isObject(sanitized) && !Array.isArray(sanitized)

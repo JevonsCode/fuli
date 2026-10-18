@@ -87,6 +87,8 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   list_workflow_candidates: 32 * 1024,
   recommend_next_workflow_steps: 32 * 1024
 });
+const NATIVE_CHOICE_TOOLS = new Set(['checkpoint_task_knowledge', 'review_with_tonborg',
+  'list_judgments', 'request_agent_attention', 'list_agent_attention']);
 // A truncated result would be a misleading partial file, so these fail instead.
 const COMPLETE_RESULT_TOOLS = new Set(['export_project_agent_memory']);
 const NATIVE_CONTEXT = Symbol('fuli.nativeMcpRequestContext');
@@ -294,7 +296,11 @@ async function invokeTool(tool, input, requestContext = null) {
   try {
     const value = await tool.invoke(input, requestContext);
     auditLifecycleTool(tool.definition.name);
-    const limitBytes = TOOL_RESULT_LIMIT_BYTES[tool.definition.name];
+    const preserveHumanInteraction = NATIVE_CHOICE_TOOLS.has(tool.definition.name)
+      && value?.human_interaction?.presentation === 'host_native_single_choice';
+    const limitBytes = preserveHumanInteraction
+      ? Math.max(TOOL_RESULT_LIMIT_BYTES[tool.definition.name] ?? 0, 32 * 1024)
+      : TOOL_RESULT_LIMIT_BYTES[tool.definition.name];
     if (['begin_task_context', 'get_collaboration_preferences', 'read_task_preferences'].includes(tool.definition.name)) {
       const name = tool.definition.name;
       const view = name === 'read_task_preferences' ? value : compactTaskContext(value);
@@ -330,7 +336,7 @@ async function invokeTool(tool, input, requestContext = null) {
     const itemLimit = ({ list_agent_interfaces: 200, list_project_agent_tasks: 200,
       list_preference_conflicts: 1000, list_external_knowledge_bindings: 200,
       get_collaboration_preferences: 1000 })[tool.definition.name];
-    const result = successToolResult(value, { limitBytes, itemLimit });
+    const result = successToolResult(value, { limitBytes, itemLimit, preserveHumanInteraction });
     if (COMPLETE_RESULT_TOOLS.has(tool.definition.name) && result.structuredContent.truncated) {
       throw new ApplicationError(ApplicationErrorCode.VALIDATION, 'The export is too large to deliver completely');
     }

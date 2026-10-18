@@ -171,6 +171,35 @@ test('sealed worker retain_nothing checkpoints are unchanged', async () => {
   assert.equal(calls.complete[0].captureStatus, null);
 });
 
+test('an owned checkpoint surfaces scoped native questions only after its write completes', async () => {
+  const { app, calls } = fixture();
+  const hint = { presentation: 'host_native_single_choice', source: { id: 'question', revision: 2 },
+    question: 'Choose A or B', options: ['A', 'B'], allow_custom_input: true };
+  app.listAgentAttention = async input => {
+    assert.equal(calls.complete.length, 1);
+    assert.deepEqual(input, { personalSpaceId: 'synthetic-space', personalProjectId: 'synthetic-project',
+      agentId: 'synthetic-lead', status: 'open', limit: 1 });
+    return { human_interaction: hint };
+  };
+  const result = await checkpointTaskKnowledge(app, request({ disposition: 'retain_nothing', capture: null }));
+  assert.deepEqual(result.human_interaction, hint);
+  assert.equal(result.status, 'checkpointed');
+  assert.equal(result.agent_receipt.owner.agent_id, 'synthetic-lead');
+});
+
+test('sealed checkpoints never read owner attention and optional delivery failure does not undo a checkpoint', async () => {
+  const worker = fixture();
+  worker.app.listAgentAttention = () => assert.fail('sealed worker cannot read owner questions');
+  worker.app.judgment = { conversationQuestions: () => assert.fail('sealed worker cannot read global judgments') };
+  assert.equal((await sealed(() => checkpointTaskKnowledge(worker.app,
+    request({ disposition: 'retain_nothing', capture: null })))).human_interaction, undefined);
+  const ordinary = fixture();
+  ordinary.app.listAgentAttention = async () => { throw new Error('fixture unavailable'); };
+  const result = await checkpointTaskKnowledge(ordinary.app, request({ disposition: 'retain_nothing', capture: null }));
+  assert.equal(result.status, 'checkpointed');
+  assert.equal(result.human_question_delivery?.status, 'unavailable');
+});
+
 function mcpCall(server, name, args) {
   return server.server._requestHandlers.get('tools/call')({ method: 'tools/call',
     params: { name, arguments: args } }, { signal: new AbortController().signal, requestId: 1 });
