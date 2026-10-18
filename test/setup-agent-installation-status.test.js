@@ -62,7 +62,9 @@ test('setup distinguishes current, outdated, and missing Agent integrations', ()
     '--runtime-config',
     CONTEXT.runtimeConfigPath,
     '--source-application',
-    'codex'
+    'codex',
+    '--tool-profile',
+    'chat'
   ];
   const currentCodex = replaceFuliTable('', {
     command: CONTEXT.nodePath,

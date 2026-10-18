@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 
-import { replaceFuliTable } from './codex-config.js';
+import { existingFuliArgs, replaceFuliTable } from './codex-config.js';
 import { isCodexBootstrapCurrent } from './codex-bootstrap.js';
 import { hasCurrentClaudeCodeHooks } from './claude-code-config.js';
 import { CLAUDE_DESKTOP_SERVER_ARGS } from './claude-desktop-config.js';
@@ -100,6 +100,7 @@ function inspectRegistration(agent, context, readers) {
     if (agent.id === 'codex') {
       const current = readers.readText(agent.configPath);
       const present = /^\s*\[mcp_servers\.(?:fuli|"fuli"|'fuli')]/m.test(current);
+      expected.args.push('--tool-profile', installedToolProfile(existingFuliArgs(current), context.toolProfile));
       const expectedConfig = replaceFuliTable(current, expected);
       const normalizedExpected = hasCodexTomlHookDefinitions(current)
         ? withCodexTomlLifecycleHooks(expectedConfig, { context })

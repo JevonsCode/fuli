@@ -74,7 +74,9 @@ test('Codex connector avoids rewriting a current config and reports no reload', 
       '--runtime-config',
       CONTEXT.runtimeConfigPath,
       '--source-application',
-      'codex'
+      'codex',
+      '--tool-profile',
+      'chat'
     ]
   });
   let writes = 0;
@@ -86,6 +88,22 @@ test('Codex connector avoids rewriting a current config and reports no reload', 
 
   assert.equal(writes, 0);
   assert.equal(result.newTaskRequired, false);
+});
+
+test('Codex gets the chat tool profile, and an explicit profile in its config survives', () => {
+  const legacy = replaceFuliTable('', { command: CONTEXT.nodePath,
+    args: [CONTEXT.mcpServerPath, '--runtime-config', CONTEXT.runtimeConfigPath, '--source-application', 'codex'] });
+  const explicit = replaceFuliTable('', { command: CONTEXT.nodePath,
+    args: [CONTEXT.mcpServerPath, '--runtime-config', CONTEXT.runtimeConfigPath, '--source-application', 'codex', '--tool-profile', 'full'] });
+  const written = source => {
+    let value = '';
+    connectCodex(AGENT, CONTEXT, { readConfig: () => source, writeConfig: (_path, next) => { value = next; },
+      installBootstrap: () => ({ changed: false }) });
+    return value || source;
+  };
+  assert.match(written(''), /"--tool-profile", "chat"]/);
+  assert.match(written(legacy), /"--tool-profile", "chat"]/);
+  assert.match(written(explicit), /"--tool-profile", "full"]/);
 });
 
 test('Codex connector keeps one hook representation when config.toml already has hooks', () => {

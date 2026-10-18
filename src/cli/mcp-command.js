@@ -55,7 +55,8 @@ export async function runMcpCommand(args, { env = process.env } = {}) {
     sourceApplication: configuredSourceApplication
       ? normalizeMcpSourceApplication(configuredSourceApplication)
       : undefined,
-    toolProfile: args.includes('--tool-profile') ? requiredOption(args, '--tool-profile') : 'full'
+    // A config without a profile gets the small chat set; full must be asked for.
+    toolProfile: args.includes('--tool-profile') ? requiredOption(args, '--tool-profile') : 'chat'
   });
 }
 
