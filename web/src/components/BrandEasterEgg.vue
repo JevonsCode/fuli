@@ -15,7 +15,7 @@ interface PackageVersionStatus {
   checkedAt: string
 }
 
-// compact: the icon rail shows only the mark; the effect ends with the orbit,
+// compact: the icon rail shows only the mark; the effect ends with the ripple,
 // and an available update appears as a dot on the mark.
 const props = withDefaults(defineProps<{ compact?: boolean }>(), { compact: false })
 const root = ref<HTMLElement | null>(null)
@@ -37,9 +37,13 @@ const packageUrl = computed(() => (
 const versionRequestController = new AbortController()
 let lastInputWasKeyboard = false
 
+let finishTimer: ReturnType<typeof setTimeout> | undefined
 function playEffect() {
   effectRun.value += 1
   isPlaying.value = true
+  // With reduced motion the ripple is hidden and fires no animationend.
+  clearTimeout(finishTimer)
+  if (props.compact) finishTimer = setTimeout(finishEffect, 1200)
 }
 
 function finishEffect() {
@@ -88,6 +92,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  clearTimeout(finishTimer)
   versionRequestController.abort()
   window.removeEventListener('pointerdown', handleGlobalPointerDown, true)
   window.removeEventListener('keydown', handleGlobalKeyDown, true)
@@ -115,7 +120,7 @@ onBeforeUnmount(() => {
       <span class="brand-mark-wrap">
         <img class="brand-mark" :src="fuliLogoUrl" alt="" aria-hidden="true" />
         <template v-if="isPlaying">
-          <span :key="`orbit-${effectRun}`" class="brand-orbit" aria-hidden="true" @animationend.self="props.compact && finishEffect()" />
+          <span :key="`ripple-${effectRun}`" class="brand-ripple" aria-hidden="true" @animationend.self="!$event.pseudoElement && props.compact && finishEffect()" />
         </template>
       </span>
     </button>
@@ -235,45 +240,29 @@ onBeforeUnmount(() => {
   object-fit: contain;
 }
 
-.brand-orbit {
+/* Two rings ripple out from the mark and fade inside the brand area, so the
+   effect never leaves a stray dot outside the rail. */
+.brand-ripple {
   position: absolute;
   z-index: 3;
-  inset: -8px;
+  inset: 0;
   border-radius: 50%;
-  opacity: 0;
   pointer-events: none;
-  animation: brand-orbit-travel .94s cubic-bezier(.2, .7, .22, 1) both;
+  animation: brand-ripple-host 1.1s linear both;
 }
 
-.brand-orbit::before {
+.brand-ripple::before,
+.brand-ripple::after {
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: inherit;
-  background: conic-gradient(
-    from 20deg,
-    transparent 0 74%,
-    rgba(230, 177, 74, 0) 79%,
-    rgba(230, 177, 74, .24) 87%,
-    rgba(255, 244, 211, .78) 96%,
-    transparent 100%
-  );
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), var(--color-ink) calc(100% - 2.5px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), var(--color-ink) calc(100% - 2.5px));
+  border: 2px solid var(--color-warning);
+  border-radius: 50%;
+  opacity: 0;
+  animation: brand-ripple .9s cubic-bezier(.2, .7, .3, 1) both;
 }
 
-.brand-orbit::after {
-  content: '';
-  position: absolute;
-  top: -3px;
-  left: 50%;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 34% 30%, var(--color-surface) 0 14%, var(--color-warning-soft) 30%, var(--color-warning) 58%, rgba(232, 182, 83, 0) 74%);
-  box-shadow: 0 0 6px rgba(244, 198, 104, .78), 0 0 14px rgba(244, 198, 104, .32);
-  transform: translateX(-50%);
-}
+.brand-ripple::after { animation-delay: .18s; }
 
 .brand-copy {
   position: relative;
@@ -447,12 +436,14 @@ onBeforeUnmount(() => {
   100% { transform: scale(1) rotate(0deg); }
 }
 
-@keyframes brand-orbit-travel {
-  0% { opacity: 0; transform: rotate(-132deg) scale(.94); }
-  18% { opacity: 0; }
-  32% { opacity: 1; }
-  72% { opacity: .9; }
-  100% { opacity: 0; transform: rotate(80deg) scale(1.01); }
+@keyframes brand-ripple {
+  0% { opacity: .75; transform: scale(.72); }
+  100% { opacity: 0; transform: scale(1.22); }
+}
+
+@keyframes brand-ripple-host {
+  from { opacity: 1; }
+  to { opacity: 1; }
 }
 
 @keyframes brand-copy-reflection {
@@ -473,7 +464,7 @@ onBeforeUnmount(() => {
     animation: none;
   }
 
-  .brand-orbit {
+  .brand-ripple {
     display: none;
   }
 
@@ -491,7 +482,7 @@ onBeforeUnmount(() => {
   animation: none;
 }
 
-:root[data-motion="reduced"] .brand-orbit {
+:root[data-motion="reduced"] .brand-ripple {
   display: none;
 }
 
