@@ -5,15 +5,6 @@ export const writingTasteMessages = {
       preview_ready: '初稿已形成',
       active: '已启用',
     },
-    milestone: {
-      aria: '文风画像成熟度',
-      collectingTitle: '文风画像',
-      previewTitle: '文风画像 · 初稿',
-      activeTitle: '文风画像 · 已形成',
-      rules: '{current}/{target} 条规则',
-      sessions: '{current}/{target} 次会话',
-      open: '查看',
-    },
     page: {
       loading: '正在读取文风画像…',
       collectingCopy: '跨多个会话积累到足够证据，或你确认足够多的规则后生成。',
@@ -58,15 +49,6 @@ export const writingTasteMessages = {
       collecting: 'Collecting',
       preview_ready: 'Draft ready',
       active: 'Active',
-    },
-    milestone: {
-      aria: 'Writing taste readiness',
-      collectingTitle: 'Writing taste',
-      previewTitle: 'Writing taste · draft',
-      activeTitle: 'Writing taste · ready',
-      rules: '{current}/{target} rules',
-      sessions: '{current}/{target} sessions',
-      open: 'View',
     },
     page: {
       loading: 'Loading writing preferences and rule evidence…',

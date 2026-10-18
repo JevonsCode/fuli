@@ -75,19 +75,18 @@ describe('PersonalProfilePage', () => {
     await flushPromises()
 
     expect(wrapper.findAll('.growth-loading')).toHaveLength(0)
-    expect(wrapper.findAll('.virtual-directory-list')).toHaveLength(0)
+    expect(wrapper.findAll('.personal-profile-list')).toHaveLength(0)
     await vi.advanceTimersByTimeAsync(LOADING_VISIBILITY_DELAY_MS)
     expect(wrapper.findAll('.growth-loading')).toHaveLength(1)
-    expect(wrapper.findAll('.virtual-directory-list')).toHaveLength(0)
-    expect(wrapper.findAll('.virtual-directory-list__empty')).toHaveLength(0)
+    expect(wrapper.findAll('.personal-profile-list')).toHaveLength(0)
+    expect(wrapper.findAll('.ui-empty')).toHaveLength(0)
 
     resolvers[0]?.(profileGraph())
     resolvers[1]?.([])
-    resolvers[2]?.(writingTasteProfile('collecting'))
     await finishProfileLoading()
 
     expect(wrapper.findAll('.growth-loading')).toHaveLength(0)
-    expect(wrapper.findAll('.virtual-directory-list')).toHaveLength(1)
+    expect(wrapper.findAll('.personal-profile-list')).toHaveLength(1)
   })
 
   it('keeps the latest personal-space response when loads resolve out of order', async () => {
@@ -184,54 +183,7 @@ describe('PersonalProfilePage', () => {
     wrapper.unmount()
   })
 
-  it('reveals the writing-taste page entry only when its profile is ready', async () => {
-    getJson.mockImplementation((url: string) => {
-      if (url.startsWith('/api/preference-conflicts')) return Promise.resolve([])
-      if (url.startsWith('/api/writing-taste-profile')) {
-        return Promise.resolve(writingTasteProfile('preview_ready'))
-      }
-      return Promise.resolve(profileGraph())
-    })
-
-    const pinia = createPinia()
-    setActivePinia(pinia)
-    const store = useConsoleStore()
-    store.state = {
-      mode: 'personal_only',
-      activePersonalSpaceId: 'personal-space',
-      personalSpaces: [{ id: 'personal-space', name: '我' }],
-      personalProjects: [],
-      projects: [],
-      subscriptions: [],
-    }
-
-    const wrapper = mount(PersonalProfilePage, {
-      global: {
-        plugins: [pinia],
-        stubs: {
-          KnowledgeEditDialog: true,
-          KnowledgeInspector: true,
-          PreferenceConflictDialog: true,
-        },
-      },
-    })
-    await finishProfileLoading()
-
-    expect(wrapper.get('.writing-taste-milestone').text())
-      .toContain('文风画像 · 初稿')
-    expect(wrapper.get('a.writing-taste-milestone').attributes('href'))
-      .toBe('/preferences/writing')
-  })
-
-  it('keeps collaboration preferences usable when the optional taste projection is unavailable', async () => {
-    getJson.mockImplementation((url: string) => {
-      if (url.startsWith('/api/preference-conflicts')) return Promise.resolve([])
-      if (url.startsWith('/api/writing-taste-profile')) {
-        return Promise.reject(new Error('projection unavailable'))
-      }
-      return Promise.resolve(profileGraph())
-    })
-
+  it('leaves writing taste to its own tab and reads only preferences and conflicts', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = useConsoleStore()
@@ -257,7 +209,7 @@ describe('PersonalProfilePage', () => {
     await finishProfileLoading()
 
     expect(wrapper.findAll('.personal-profile-row')).toHaveLength(3)
-    expect(wrapper.find('.writing-taste-milestone').exists()).toBe(false)
+    expect(getJson.mock.calls.some(([url]) => String(url).startsWith('/api/writing-taste-profile'))).toBe(false)
   })
 
   it('filters collaboration preferences by global or one exact personal project', async () => {
@@ -288,7 +240,6 @@ describe('PersonalProfilePage', () => {
     await finishProfileLoading()
 
     expect(wrapper.findAll('.personal-profile-row')).toHaveLength(3)
-    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001/ 003')
     const scope = wrapper.getComponent({ name: 'UiSelect' })
     expect(scope.props('options')).toEqual(expect.arrayContaining([
       expect.objectContaining({ value: 'all', label: '全部范围' }),
@@ -307,7 +258,6 @@ describe('PersonalProfilePage', () => {
 
     await chooseScope('项目 A')
     expect(wrapper.findAll('.personal-profile-row')).toHaveLength(1)
-    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001/ 001')
     expect(wrapper.text()).toContain('A 项目判断')
     expect(wrapper.text()).not.toContain('B 项目个性')
     expect(wrapper.text()).not.toContain('全局品味')
@@ -318,7 +268,7 @@ describe('PersonalProfilePage', () => {
     expect(wrapper.text()).not.toContain('A 项目判断')
   })
 
-  it('virtualizes a large collaboration-preference directory with shared indexing', async () => {
+  it('shows a large collaboration-preference directory a page at a time', async () => {
     const largeGraph = profileGraph()
     largeGraph.nodes = Array.from({ length: 101 }, (_, index) =>
       preferenceNode(`preference-${index}`, `偏好 ${index + 1}`, 'taste'),
@@ -353,16 +303,11 @@ describe('PersonalProfilePage', () => {
     })
     await finishProfileLoading()
 
-    expect(wrapper.findAll('.personal-profile-row').length).toBeLessThan(101)
-    expect(wrapper.get('.virtual-directory-list__canvas').attributes('style'))
-      .toContain('height: 7676px')
-    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001/ 101')
-
-    const scroller = wrapper.get('.virtual-directory-list__scroller')
-    scroller.element.scrollTop = 76 * 50
-    await scroller.trigger('scroll')
-
-    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('051/ 101')
+    expect(wrapper.findAll('.personal-profile-row')).toHaveLength(100)
+    expect(wrapper.get('[data-profile-more]').text()).toBe('再显示 1 条')
+    await wrapper.get('[data-profile-more]').trigger('click')
+    expect(wrapper.findAll('.personal-profile-row')).toHaveLength(101)
+    expect(wrapper.find('[data-profile-more]').exists()).toBe(false)
   })
 
   it('treats a project preference as an override instead of a global conflict', async () => {
@@ -397,7 +342,7 @@ describe('PersonalProfilePage', () => {
     await finishProfileLoading()
 
     const conflictAction = wrapper
-      .findAll('.personal-profile-summary > button')
+      .findAll('[data-stat]')
       .find((button) => button.attributes('aria-label') === '当前没有疑似冲突')
     expect(conflictAction?.text()).toContain('0')
   })
@@ -442,7 +387,7 @@ describe('PersonalProfilePage', () => {
     })
     await finishProfileLoading()
 
-    const summaryActions = wrapper.findAll('.personal-profile-summary > button')
+    const summaryActions = wrapper.findAll('[data-stat]')
     expect(summaryActions).toHaveLength(4)
     expect(summaryActions.some(
       (button) => button.attributes('aria-label') === '查看 0 条 Agent 已确认偏好',
@@ -568,13 +513,10 @@ describe('PersonalProfilePage', () => {
     })
     await finishProfileLoading()
 
-    expect(wrapper.get('.preference-conflict-alert').text()).toContain(
-      '发现 1 组疑似冲突',
-    )
-    expect(wrapper.get('.preference-conflict-alert .primary-action').text()).toBe(
-      '查看冲突双方并处理',
-    )
-    await wrapper.get('.preference-conflict-alert .primary-action').trigger('click')
+    const conflictCount = wrapper.get('[data-stat="conflict"]')
+    expect(conflictCount.attributes('aria-label')).toContain('1')
+    await conflictCount.trigger('click')
+    expect(conflictCount.attributes('aria-pressed')).toBe('true')
 
     expect(wrapper.findAll('.preference-conflict-card')).toHaveLength(1)
     expect(wrapper.text()).toContain('A · 较早记录')
