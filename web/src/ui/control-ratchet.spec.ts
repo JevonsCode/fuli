@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 // Pages compose the design system instead of hand-building controls. These
 // counts may only go down: lower them in the same change that rebuilds a page
-// on UiButton / UiIconButton / UiToggle (2026-10-18 baseline: 195 / 3, after the settings toggles).
-const BASELINE = { button: 195, switch: 3 }
+// on UiButton / UiIconButton / UiToggle (2026-10-18 baseline: 129 / 3, after the settings toggles and the knowledge, conversation and orchestration pages).
+const BASELINE = { button: 129, switch: 3 }
 const sources = import.meta.glob<string>(['../**/*.vue', '!./**'], { query: '?raw', import: 'default', eager: true })
 
 describe('design system adoption', () => {

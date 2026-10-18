@@ -30,7 +30,7 @@ describe('KnowledgeInspector', () => {
 
     const confirm = wrapper.get('.inspector-confirm-action')
     expect(confirm.text()).toBe('确认这条偏好')
-    expect(confirm.classes()).toContain('primary-action')
+    expect(confirm.classes()).toContain('ui-button--primary')
 
     await confirm.trigger('click')
     expect(wrapper.emitted('confirm')).toEqual([[item]])
