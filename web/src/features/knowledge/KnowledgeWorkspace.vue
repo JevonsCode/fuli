@@ -7,6 +7,8 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
 import UiButton from '@/ui/UiButton.vue'
 import UiSelect from '@/ui/UiSelect.vue'
+import { UiToggle } from '@/ui'
+import { filterListedProjectGraph, isListedProject } from '@/features/projects/project-list-visibility'
 import {
   isLoadingPreviewEnabled,
   useMinimumLoadingDisplay,
@@ -79,6 +81,7 @@ const store = useConsoleStore()
 const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
+const showTemporaryProjects = ref(false)
 const graph = ref<KnowledgeGraph | null>(null)
 const loadingPreview = isLoadingPreviewEnabled()
 const initialLoading = computed(() => loadingPreview || (loading.value && !graph.value))
@@ -128,9 +131,16 @@ const graphContextKey = computed(() => JSON.stringify([
   projectId.value,
   contextIds.value,
 ]))
-const allItems = computed(() => knowledgeItems(graph.value))
+const projectListingOptions = computed(() => ({
+  showTemporary: showTemporaryProjects.value,
+  selectedProjectId: projectId.value,
+}))
+const listedGraph = computed(() => graph.value && props.personalProjectsOnly
+  ? filterListedProjectGraph(graph.value, personalProjects.value, projectListingOptions.value)
+  : graph.value)
+const allItems = computed(() => knowledgeItems(listedGraph.value))
 const projectMaterialItems = computed(() =>
-  props.personalProjectsOnly ? managementKnowledgeItems(graph.value) : [],
+  props.personalProjectsOnly ? managementKnowledgeItems(listedGraph.value) : [],
 )
 const visibleProjectMaterialItems = computed(() => {
   const query = searchDraft.value.trim().toLocaleLowerCase()
@@ -145,8 +155,8 @@ const visibleProjectMaterialItems = computed(() => {
   )
 })
 const selectableItems = computed(() => [
-  ...projectMaterialItems.value,
-  ...allItems.value,
+  ...(props.personalProjectsOnly ? managementKnowledgeItems(graph.value) : []),
+  ...knowledgeItems(graph.value),
 ])
 const directorySection = computed<DirectorySection>(() => {
   if (!props.personalProjectsOnly) return 'knowledge'
@@ -210,8 +220,10 @@ const selectedStatusLabel = computed(() => {
   return t('knowledge.workspace.workspace.status.all')
 })
 const currentGraphView = computed(() =>
-  graph.value
-    ? filterFormalProjectGraph(currentKnowledgeGraph(graph.value), personalProjects.value)
+  listedGraph.value
+    ? props.personalProjectsOnly
+      ? currentKnowledgeGraph(listedGraph.value)
+      : filterFormalProjectGraph(currentKnowledgeGraph(listedGraph.value), personalProjects.value)
     : null,
 )
 const activeFrequentProjects = computed(() =>
@@ -270,7 +282,8 @@ const personalProjects = computed(() =>
   ),
 )
 const availableContexts = computed(() =>
-  personalProjects.value.filter(({ project_id }) => project_id !== projectId.value),
+  personalProjects.value.filter(project => project.project_id !== projectId.value
+    && (!props.personalProjectsOnly || isListedProject(project, projectListingOptions.value))),
 )
 const spaceChoices = computed<SpaceChoice[]>(() => {
   const state = store.state
@@ -287,7 +300,11 @@ const spaceChoices = computed<SpaceChoice[]>(() => {
       }),
     }
     const projects = pickerOrder((state.personalProjects ?? [])
-      .filter(({ personal_space_id }) => personal_space_id === space.id))
+      .filter(project => project.personal_space_id === space.id
+        && (!props.personalProjectsOnly || isListedProject(project, {
+          ...projectListingOptions.value,
+          selectedProjectId: space.id === spaceId.value ? projectId.value : null,
+        }))))
       .map((project): SpaceChoice => ({
         key: choiceKey('personal', space.id, project.project_id),
         scope: 'personal',
@@ -1005,6 +1022,10 @@ function queryValues(value: unknown) {
         searchable
         @update:model-value="changeSpace"
       />
+      <label v-if="personalProjectsOnly" class="project-visibility-toggle">
+        <UiToggle v-model="showTemporaryProjects" :label="t('knowledge.workspace.workspace.view.showTemporaryProjects')" />
+        <span>{{ t('knowledge.workspace.workspace.view.showTemporaryProjects') }}</span>
+      </label>
       <CreateProjectEntry v-if="personalProjectsOnly && spaceId" :space-id="spaceId" />
 
       <details v-if="projectId && availableContexts.length" class="personal-context-picker">
@@ -1181,6 +1202,7 @@ function queryValues(value: unknown) {
           </aside>
           <GraphRelationLegend :relation-types="graphRelationTypes" />
           <GraphCanvas
+            :project-visibility="personalProjectsOnly ? 'provided' : 'formal'"
             v-if="graphView?.nodes.length"
             ref="graphCanvas"
             :graph="graphView"
@@ -1239,3 +1261,12 @@ function queryValues(value: unknown) {
     />
   </section>
 </template>
+
+<style scoped>
+.project-visibility-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  white-space: nowrap;
+}
+</style>

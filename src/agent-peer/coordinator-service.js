@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 
 import { certificateFingerprint, verifyDeviceSignature } from './device-identity.js';
 import { isAuthorityKey } from './origin-proof.js';
+import { createCoordinatorChat } from './chat-coordinator.js';
 import {
   canonicalJson, encodeInvitation, PEER_LIMITS, PeerError, peerCleanup, pemToDer, publicDirectoryEntry,
   RESULT_OUTCOMES, sha256Hex, TERMINAL_STATUSES, validateAssertion,
@@ -19,6 +20,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
   const pairingFailures = [];
   if (!isAuthorityKey(authority)) throw new PeerError('authority_unavailable', 'The coordinator needs its local origin authority', 500);
   store.upsertNode({ id: identity.fingerprint, name, certPem: identity.certPem, authority, at: iso() });
+  const chat = createCoordinatorChat({ store, identity, clock });
 
   function createInvitation({ url }) {
     const code = randomCode();
@@ -83,7 +85,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
     const target = store.node(assertion.to.node);
     if (!target || target.status !== 'active') throw new PeerError('device_unavailable', 'The receiving device is not paired', 404);
     const shared = JSON.parse(target.directory_json)
-      .some((entry) => entry.bindingId === assertion.to.bindingId && entry.agentId === assertion.to.agentId);
+      .some((entry) => entry.bindingId === assertion.to.bindingId && entry.agentId === assertion.to.agentId && !entry.communicationOnly);
     if (!shared) throw new PeerError('agent_not_shared', 'That Agent is not shared by the receiving device', 404);
     const assertionJson = canonicalJson(assertion);
     return store.transaction(() => {
@@ -242,7 +244,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
       sharedAgents: JSON.parse(node.directory_json).length }));
   }
 
-  return { createInvitation, pair, authenticate, publishDirectory, directory, submit, claim, renew, result,
+  return { chat: chat.execute, chatOwner: chat.ownerRead, createInvitation, pair, authenticate, publishDirectory, directory, submit, claim, renew, result,
     status, cancel, revoke, sweep, devices, trustedCertificates: () => store.activeCertificates(),
     openInvitations: () => store.openInvitations(iso()).length };
 }

@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { createChatStore } from './chat-store.js';
 
 // Every Agent-to-Agent exchange is kept as a thread of messages so people can
 // see who talked to whom, through which client, and what was said. The file
@@ -47,6 +48,8 @@ export function createRoundtableStore(path = ':memory:') {
   };
 
   return {
+    chat: createChatStore(database),
+    transaction,
     createThread({ id, spaceId, projectId = null, subject }) {
       const at = now();
       database.prepare('INSERT INTO threads(id, space_id, project_id, subject, created_at, updated_at) VALUES(?,?,?,?,?,?)')

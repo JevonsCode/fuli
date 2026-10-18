@@ -128,7 +128,7 @@ const NAMES = [
   'list_project_review_queue',
   'review_project_proposal',
   'get_graphiti_status',
-  'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
+  'agent_chat', 'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
     'get_agent_message_status', 'cancel_agent_message'
 ];
 

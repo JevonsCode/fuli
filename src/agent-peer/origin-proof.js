@@ -25,9 +25,9 @@ export function authorityFromProvider(response) {
 }
 
 // A device signature only proves which installation relayed a message. This
-// proves the sender's own FULI authority let its current project lead send
-// exactly this message to exactly this binding, until a short expiry.
-export function verifyOriginProof(assertion, authority, { now = Date.now() } = {}) {
+// proves the sender's own FULI authority allowed this exact message, binding
+// and purpose until a short expiry. Execution keeps its project-lead restriction.
+export function verifyOriginProof(assertion, authority, { now = Date.now(), purpose = 'execution' } = {}) {
   const fail = (message) => { throw new PeerError('origin_rejected', message, 403); };
   if (!isAuthorityKey(authority)) fail('No origin authority was bound when this device was paired');
   const proof = assertion?.origin;
@@ -40,7 +40,9 @@ export function verifyOriginProof(assertion, authority, { now = Date.now() } = {
   if (!valid) fail('The origin proof signature is invalid');
   let claims;
   try { claims = JSON.parse(payload.toString('utf8')); } catch { fail('The origin proof is malformed'); }
-  if (claims?.version !== PROOF_VERSION || claims.key_id !== authority.keyId) fail('The origin proof uses another authority');
+  const version = purpose === 'chat' ? 'fuli-chat-origin/1' : PROOF_VERSION;
+  if (claims?.version !== version || claims.key_id !== authority.keyId) fail('The origin proof uses another authority or purpose');
+  if ((claims.purpose ?? 'execution') !== purpose) fail('The origin proof has a different purpose');
   if (claims.digest !== assertionDigest(assertion)) fail('The origin proof covers a different message');
   if (claims.message_id !== assertion.messageId || claims.agent_id !== assertion.from.agentId
     || claims.target_node !== assertion.to.node || claims.binding_id !== assertion.to.bindingId

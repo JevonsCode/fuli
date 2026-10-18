@@ -13,6 +13,7 @@ import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
 import { isMainModule } from '../../system/main-module.js';
 import { readHookInput } from '../lifecycle-input.js';
 import { boundedHookMessage } from '../lifecycle-message.js';
+import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 
 export async function claudeLifecycleOutput(event, input, invoke, { delivery, currentTask } = {}) {
   if (!['UserPromptSubmit', 'Stop', ...PREFERENCE_RESET_EVENTS].includes(event)) throw new TypeError('Unsupported Claude lifecycle event');
@@ -32,12 +33,10 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
       sessionId, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192), ...source
     });
     return preferenceHookOutput(compactTaskContext(context), event, input, delivery, 'claude_code',
-      'Fuli task context. Read full context; apply effective_preferences. Finish with checkpoint_task_knowledge and a truthful workLog. Shared rules are referenced by version; read MCP resource fuli://rules/task-entry when one applies.');
+      'Fuli task context. Read full context; apply effective_preferences. Follow checkpoint_guidance: checkpoint_task_knowledge only when there is something to record; the Stop hook closes the rest. Shared rules are referenced by version; read MCP resource fuli://rules/task-entry when one applies.');
   }
   const check = await invoke('verify_task_checkpoint', { sessionId, ...source });
-  const reason = boundedHookMessage(check?.reason);
-  if (check?.decision !== 'block' || !reason.trim()) return {};
-  return { systemMessage: reason };
+  return stopHookOutcome(check, invoke, source);
 }
 
 export function claudeLifecycleUnavailable(event, input = null, reason = null) {

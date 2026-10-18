@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { projectAddress, resolveProjectLead, verifiedProjectFolder } from './project-target.js';
 import { observeReturnedMemory, taskContextHash } from './memory-observation.js';
+import { createAgentChat } from './chat.js';
+import { agentDiscoveryProfile, matchesAgentDiscovery } from './discovery.js';
 
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { WAKE_CLIENTS, resolveClientCommand, sessionWorkingDirectory, wakeAgent } from './wake.js';
@@ -63,19 +65,20 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
         projectId: session.personal_project_id, lastActive: session.last_active }));
   }
 
-  async function findAgents({ query = null, personalProjectId = null } = {}) {
+  async function findAgents({ query = null, personalProjectId = null, occupation = null, capability = null, projectId = null } = {}) {
     const project = personalProjectId ? await resolveProjectLead(app, personalProjectId) : null;
     const needle = query?.trim().toLowerCase();
-    const matches = (project ? (project.agent ? [project.agent] : []) : await agents()).filter((agent) => !needle || [agent.agentId,
+    const matches = (project ? (project.agent ? [project.agent] : []) : await agents()).filter((agent) => matchesAgentDiscovery(agentDiscoveryProfile(agent), { occupation, capability, projectId }) && (!needle || [agent.agentId,
       agent.employeeNumber ? `FLA ${agent.employeeNumber}` : null, agent.profile.displayName,
       agent.profile.name, agent.profile.responsibility, ...(agent.profile.capabilities ?? [])]
-      .some((value) => value?.toLowerCase().includes(needle)));
+      .some((value) => value?.toLowerCase().includes(needle))));
     const local = await Promise.all(matches.slice(0, 20).map(async (agent) => ({
       agentId: agent.agentId, employeeNumber: agent.employeeNumber, name: label(agent), responsibility: agent.profile.responsibility,
+      ...agentDiscoveryProfile(agent),
       clients: (agent.profile.allowedClients ?? []).filter((client) => WAKE_CLIENTS.includes(client)),
       recentConversations: await conversations(agent, personalProjectId)
     })));
-    const remote = app.peer ? await app.peer.remoteAgents({ query: needle }).catch(() => null) : null;
+    const remote = app.peer ? await app.peer.remoteAgents({ query: needle, occupation, capability, projectId }).catch(() => null) : null;
     return { agents: local,
       ...(project ? { project: { projectId: personalProjectId, address: `project:${personalProjectId}`, reason: project.reason } } : {}),
       ...(remote ? { remoteAgents: remote.agents, ...(remote.unavailable ? { remoteUnavailable: remote.unavailable } : {}) } : {}),
@@ -511,7 +514,8 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
   }
 
   const messageProject = message => message.target_project_id ?? store.getThread(message.thread_id)?.project_id ?? null;
-  return { findAgents, messageAgent, readMessages, replyMessage, threads, thread, refreshRemote, taskEntryDelegation,
+  const chat = createAgentChat({ app, store, agents, idFactory });
+  return { ...chat, findAgents, messageAgent, readMessages, replyMessage, threads, thread, refreshRemote, taskEntryDelegation,
     messageStatus, cancelMessage, answerRemote,
     ownerMessageStatus: ({ messageId }) => statusOf(ownedAsk(messageId)),
     // Cancelling is not evidence that a possibly running process exited; any cleanup hold stays.

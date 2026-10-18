@@ -88,6 +88,18 @@ test('a verified, accepted ask runs once and reports a verified answer', async (
   } finally { await f.runner.stop(); f.store.close(); }
 });
 
+test('a communication-only binding is refused before entering the execution port', async () => {
+  const f = await fixture();
+  try {
+    f.store.replaceShares([{ spaceId: 'local-space', projectId: 'local-project', agentId: 'local-lead',
+      clients: ['codex'], communicationOnly: true }], () => 'fixture-binding');
+    await f.runner.handle(f.claimFor());
+    assert.deepEqual(f.calls, []);
+    assert.equal(f.results[0].outcome, 'failed');
+    assert.equal(f.results[0].error, 'agent_not_shared');
+  } finally { await f.runner.stop(); f.store.close(); }
+});
+
 test('an unconfirmed cleanup is reported with the original error code, bounded to known fields', async () => {
   for (const [thrown, outcome, error, cleanup] of [
     [{ code: 'wake_timeout', cleanup: { status: 'unconfirmed', code: 'cleanup_timeout', pid: 1234, path: 'C:\\private' } },

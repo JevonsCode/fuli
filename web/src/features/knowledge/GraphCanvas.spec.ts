@@ -29,6 +29,20 @@ afterEach(() => {
 })
 
 describe('GraphCanvas', () => {
+  it('passes the project visibility policy through to the renderer', async () => {
+    const wrapper = mount(GraphCanvas, { props: {
+      graph: { nodes: [], edges: [] }, projectVisibility: 'provided',
+    } })
+    await vi.waitFor(() => expect(renderKnowledgeGraph).toHaveBeenCalledWith(
+      expect.anything(), expect.anything(), expect.objectContaining({ projectVisibility: 'provided' }),
+    ))
+    await wrapper.setProps({ projectVisibility: 'formal' })
+    await vi.waitFor(() => expect(renderKnowledgeGraph).toHaveBeenLastCalledWith(
+      expect.anything(), expect.anything(), expect.objectContaining({ projectVisibility: 'formal' }),
+    ))
+    wrapper.unmount()
+  })
+
   it('restores the URL-selected graph item after rendering', async () => {
     const wrapper = mount(GraphCanvas, {
       props: {

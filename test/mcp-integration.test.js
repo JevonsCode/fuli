@@ -210,7 +210,8 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   assert.match(instructions, /before (?:saying|answering|claiming).*(?:do not know|don't know|unknown)/i);
   assert.match(instructions, /active child first.*inheritable parent/i);
   assert.match(instructions, /extra projects=exact IDs/i);
-  assert.match(instructions, /Batch durable confirmed knowledge/i);
+  assert.match(instructions, /capture_session_knowledge; no secrets/);
+  assert.match(instructions, /Unlisted: list_agent_interfaces/);
   assert.match(instructions, /writes?.*actual payload/i);
   assert.match(instructions, /final text.*not compliance/i);
   assert.match(instructions, /monitoring\/Git MCP/i);
@@ -296,7 +297,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'subscribe_public_project', 'unsubscribe_public_project',
     'list_project_review_queue', 'review_project_proposal',
     'get_graphiti_status',
-    'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
+    'agent_chat', 'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
     'get_agent_message_status', 'cancel_agent_message'
   ]);
   const preferencesTool = listed.tools.find(
@@ -444,10 +445,8 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     taskHookOutput.hookSpecificOutput.additionalContext,
     /taskContextToken/
   );
-  assert.equal(
-    taskContext.structuredContent.context.source_truncated,
-    false
-  );
+  // Compact entries omit off-flags: an untruncated source has no flag.
+  assert.notEqual(taskContext.structuredContent.context.source_truncated, true);
   assert.equal(
     taskContext.structuredContent.effective_preferences[0].instruction,
     'Use direct, low-fluff writing.'
@@ -645,10 +644,9 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'writing.direct'
   );
   assert.equal('global_preferences' in preferences.structuredContent, false);
-  assert.equal(
-    preferences.structuredContent.application_guidance.apply,
-    'effective_preferences'
-  );
+  // The scope lines are a template over context IDs, referenced from the rules.
+  assert.equal(preferences.structuredContent.application_guidance.scope_rules,
+    'fuli://rules/task-entry#scope_guidance');
 
   const tasteSkill = await connection.client.callTool({
     name: 'get_user_taste_skill',
