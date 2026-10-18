@@ -120,6 +120,7 @@ export function taskRecord(value) {
     turnId: value.turn_id ?? null,
     entryVia: value.entry_via ?? 'tool',
     activityOrigin: taskActivityOrigin(value.activity_origin),
+    routineAutoCloseEligible: value.routine_auto_close_eligible === true,
     preferenceScope: taskPreferenceScope(value.preference_scope),
     agentAssignment: storedAgentAssignment(value.agent_assignment),
     memoryRevision: value.memory_revision,

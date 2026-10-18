@@ -19,6 +19,7 @@ from .task_context_coordination import bind_coordination_task, task_context_json
 from .collaboration_context import read_collaboration_context
 from .knowledge_audit import record_knowledge_usage
 from .knowledge_usage_models import KnowledgeUsageCreate
+from .task_context_auto_close import close_previous_routine_fallback, routine_context_state
 from .task_worker_attribution import lock_checkpoint_context, checkpoint_collaboration
 from .task_activity_origin import context_activity_origin
 
@@ -86,6 +87,8 @@ class StoreTaskContexts:
         record.update(checkpoint=None, created_at=now_utc().isoformat())
         if worker_run_id:
             record['agent_memory_scope'] = agent_memory_scope
+        else:
+            await close_previous_routine_fallback(self, actor, request)
         try:
             rows, _, _ = await self.runtime.driver.execute_query(
                 '''
@@ -156,7 +159,12 @@ class StoreTaskContexts:
             raise HTTPException(409, 'Task preference scope is immutable; begin a new task for different dimensions')
         # Retries return the first stored provenance, including legacy unknown.
         # Creation alone derives origin; a fresh proof never backfills old tasks.
-        return {**saved, 'previous_checkpoint_missing': rows[0]['previous_checkpoint_missing']}
+        _, routine_eligible = await routine_context_state(self, request.personal_space_id,
+            self._task_session_id(request.personal_space_id, request.source_application, request.session_id))
+        return {**saved, 'previous_checkpoint_missing': rows[0]['previous_checkpoint_missing'],
+                # Admission creates FOR_WORKER_RUN after this call. The sealed
+                # identity already rules out routine closure on its first entry.
+                'routine_auto_close_eligible': worker_run_id is None and routine_eligible}
 
     async def current_task_context(self, actor, space_id, session_id, source_application):
         self._require_personal()

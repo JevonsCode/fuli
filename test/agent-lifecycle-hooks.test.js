@@ -191,6 +191,8 @@ test('Cursor adapter uses documented events and never reads raw transcript or id
   }]);
   const start = await cursorLifecycleOutput('sessionStart', input, invoke);
   assert.match(start.additional_context, /get_collaboration_preferences/);
+  assert.match(start.additional_context, /checkpoint_required.*checkpoint_guidance/);
+  assert.doesNotMatch(start.additional_context, /Before finishing, call/);
   const stop = await cursorLifecycleOutput('stop', { ...input, status: 'completed' }, invoke);
   assert.deepEqual(stop, {});
   assert.deepEqual(await cursorLifecycleOutput('stop', { ...input, status: 'aborted' }, invoke), {});

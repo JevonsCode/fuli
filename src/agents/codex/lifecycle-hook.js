@@ -135,7 +135,7 @@ function codexLifecycleUnavailable(event, input) {
   }
   // The host supplied this identity before the failure. A process-local MCP
   // session cannot replace it when the Agent falls back to the preferences tool.
-  const fallback = ` No valid Hook task context was supplied. First call get_collaboration_preferences with sessionId=${JSON.stringify(sessionId)}, projectPath=current working directory and taskPrompt=current user request. Use its fresh taskContextToken for checkpoint_task_knowledge with a truthful workLog. Native transcript capture remains unverified; do not reuse an old token or claim this Hook delivered task context.`;
+  const fallback = ` No valid Hook task context was supplied. First call get_collaboration_preferences with sessionId=${JSON.stringify(sessionId)}, projectPath=current working directory and taskPrompt=current user request. Follow checkpoint_required and checkpoint_guidance; use its fresh taskContextToken for checkpoint_task_knowledge with a truthful workLog when there is something to record. Native transcript capture remains unverified; do not reuse an old token or claim this Hook delivered task context.`;
   return { systemMessage: warning, hookSpecificOutput: {
     hookEventName: event, additionalContext: warning + fallback
   } };
