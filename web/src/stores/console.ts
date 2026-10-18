@@ -8,6 +8,7 @@ import type {
   CapabilityName,
   CapturePolicy,
   ConsoleState,
+  PersonalProject,
 } from '@/types'
 
 export type RuntimeStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -96,6 +97,13 @@ export const useConsoleStore = defineStore('console', () => {
     feedback.value = null
   }
 
+  // A project created on a page shows up everywhere at once. state is a
+  // shallowRef, so it is replaced rather than mutated in place.
+  function rememberPersonalProject(project: PersonalProject) {
+    if (!state.value || state.value.personalProjects?.some(item => item.project_id === project.project_id)) return
+    state.value = { ...state.value, personalProjects: [...(state.value.personalProjects ?? []), project] }
+  }
+
   return {
     state,
     runtimeStatus,
@@ -111,5 +119,6 @@ export const useConsoleStore = defineStore('console', () => {
     notify,
     reportError,
     clearFeedback,
+    rememberPersonalProject,
   }
 })

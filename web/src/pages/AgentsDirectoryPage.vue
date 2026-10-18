@@ -281,11 +281,7 @@ async function retryDirectory() {
 }
 
 function handleProjectCreated(project: PersonalProject) {
-  if (!store.state) return;
-  const current = store.state.personalProjects ?? [];
-  if (!current.some((item) => item.project_id === project.project_id)) {
-    store.state.personalProjects = [...current, project];
-  }
+  store.rememberPersonalProject(project);
 }
 </script>
 
