@@ -281,7 +281,8 @@ test('setup applies every configured service port to Provider URLs and Compose e
     },
     lanAccess: false,
     resourceRefreshSeconds: 10,
-    conversationLaunchers: DEFAULT_CONVERSATION_LAUNCHERS
+    conversationLaunchers: DEFAULT_CONVERSATION_LAUNCHERS,
+    notifications: { needsPersonUrl: '' }
   };
   let environment = '';
   let savedSettings = null;

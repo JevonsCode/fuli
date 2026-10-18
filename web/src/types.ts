@@ -685,6 +685,7 @@ export interface RuntimeSettings {
   lanAccess: boolean
   resourceRefreshSeconds: 5 | 10 | 30 | 60
   conversationLaunchers: ConversationLauncherConfiguration
+  notifications: { needsPersonUrl: string }
 }
 
 export interface SystemSettingsResult {
