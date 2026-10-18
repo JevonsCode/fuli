@@ -83,7 +83,7 @@ test('Vue Router owns primary navigation and addressable knowledge state', () =>
 
 test('state and API effects live outside page templates', () => {
   assert.match(store, /defineStore\('console'/);
-  assert.match(store, /getJson<ConsoleState>\('\/api\/state'\)/);
+  assert.match(store, /getJson<ConsoleState>\('\/api\/state'[,)]/);
   assert.match(store, /\/api\/capture-policy/);
   assert.match(store, /\/api\/agent-access-policy/);
   assert.match(settings, /updateCapturePolicy/);

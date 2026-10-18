@@ -34,7 +34,10 @@ const BASELINE = Object.freeze({
   // F-P2-05 ⑤: coordinate/submit take start:false to assign a task to the
   // backlog without starting a worker, and the status enums gain backlog:
   // 169,425 -> 169,565 B (+140 B). The chat profile is unchanged.
-  fullToolSchemaBytes: 169565,
+  // F-P2-05 ⑥: one full-profile tool, manage_project_agent_schedule, covers
+  // scheduled tasks and their circuit breaker (create/update/pause/resume/list/
+  // runs share one schema): 169,565 -> 171,156 B (+1,591 B). Chat is unchanged.
+  fullToolSchemaBytes: 171156,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

@@ -70,23 +70,32 @@ describe('workbench designs', () => {
     expect(wrapper.text()).toContain('Project fuli')
   })
 
-  it('Star map says the Agents are resting when nothing is in progress', () => {
+  it('Star map empty projection refers to the semantic list without claiming idle Agents', () => {
     const wrapper = mountDesign(ConstellationBoard, board([]))
     expect(wrapper.find('svg').exists()).toBe(false)
-    expect(wrapper.text()).toContain('休息')
+    expect(wrapper.text()).toContain('请查看工作列表')
+    expect(wrapper.text()).not.toContain('休息')
   })
 })
 
 describe('3D workbench designs', () => {
-  it('fall back to the 2D star map where WebGL is unavailable', async () => {
+  it('report semantic-list fallback where WebGL is unavailable', async () => {
     const { default: Workbench3D } = await import('./Workbench3D.vue')
     const CustomLink = { props: ['to', 'custom'], template: '<slot :href="String(to)" :navigate="() => {}" />' }
     const wrapper = mount(Workbench3D, {
       props: { board: board([task('r', 'running')]), scene: 'office' },
       global: { plugins: [createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })], stubs: { RouterLink: CustomLink } },
     })
-    // three.js loads on demand; jsdom has no WebGL, so the 2D map stands in.
-    await vi.waitFor(async () => { await flushPromises(); expect(wrapper.find('[data-workbench="constellation"]').exists()).toBe(true) }, { timeout: 4000 })
+    // The page owns the semantic list; a failed 3D view emits fallback.
+    await vi.waitFor(async () => { await flushPromises(); expect(wrapper.emitted('fallback')).toHaveLength(1) }, { timeout: 4000 })
     wrapper.unmount()
   })
+})
+
+it('does not label a paused member as in progress', () => {
+  const CustomLink = { props:['to','custom'], template:'<slot :href="String(to)" :navigate="() => {}" />' }
+  const wrapper=mount(ConstellationBoard,{props:{board:{personalSpaceId:'space-a',tasks:[{taskId:'paused',title:'Paused work',status:'paused',participants:[],leadAgentId:'owner',personalProjectId:'project-a'}],attention:[],projectName:()=> 'Project',agentFace:()=>({name:'Ada',image:null,color:null,softColor:null}),taskHref:()=>'/task',questionHref:()=>'/inbox',statusLabel:s=>s,since:()=>''}},global:{stubs:{RouterLink:CustomLink}}})
+  const label=wrapper.get('[data-moon]').attributes('aria-label')
+  wrapper.unmount()
+  expect(label).not.toContain('进行中')
 })

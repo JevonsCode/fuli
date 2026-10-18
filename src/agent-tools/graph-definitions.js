@@ -2,16 +2,8 @@ import { projectRelationDefinitions } from './project-relation-definitions.js';
 import { checkpointCompactFields } from './checkpoint-definitions.js';
 import { AGENT_COLLABORATION_DEFINITIONS } from './agent-collaboration-definitions.js';
 import { AGENT_CONVERSATION_DEFINITIONS } from './agent-conversation-definitions.js';
-import {
-  arraySchema,
-  booleanSchema,
-  enumSchema,
-  integerSchema,
-  nullableStringSchema,
-  numberSchema,
-  objectSchema,
-  stringSchema
-} from './schema.js';
+import { arraySchema, booleanSchema, enumSchema, integerSchema, nullableStringSchema, numberSchema, objectSchema, stringSchema }
+  from './schema.js';
 import {
   executorActualReportInput,
   executorAuthorizationStatus,
@@ -39,6 +31,7 @@ import {
 import { PROJECT_AGENT_MEMORY_DEFINITIONS, workingMemorySchema } from './project-agent-memory-definitions.js';
 import { EMPLOYEE_TOOL_DEFINITIONS } from './employee-definitions.js';
 import { JUDGMENT_TOOL_DEFINITIONS } from './judgment-definitions.js';
+import { TASK_SCHEDULE_DEFINITIONS } from './task-schedule-definitions.js';
 import { TASK_PREFERENCE_DEFINITIONS } from './task-preference-definitions.js';
 import { AGENT_INTERFACE_DEFINITIONS } from './interface-definitions.js';
 import { AGENT_ATTENTION_DEFINITIONS } from './agent-attention-definitions.js';
@@ -293,6 +286,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   ...AGENT_INTERFACE_DEFINITIONS,
   ...EMPLOYEE_TOOL_DEFINITIONS,
   ...JUDGMENT_TOOL_DEFINITIONS,
+  ...TASK_SCHEDULE_DEFINITIONS,
   ...TASK_PREFERENCE_DEFINITIONS,
   {
     name: 'begin_task_context',
