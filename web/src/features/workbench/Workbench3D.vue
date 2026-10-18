@@ -68,9 +68,10 @@ async function mount() {
 async function relationLinks(): Promise<SceneLink[]> {
   if (!props.board.personalSpaceId) return []
   try {
-    const result = await getJson<{ links?: { fromProjectId: string; toProjectId: string; tier: SceneLink['tier'] }[] }>(
+    type Weight = { fromProjectId: string; toProjectId: string; tier: SceneLink['tier'] }
+    const result = await getJson<Weight[] | { links?: Weight[] }>(
       `/api/projects/relation-weights?personalSpaceId=${encodeURIComponent(props.board.personalSpaceId)}`)
-    return (result.links ?? []).map(link => ({ from: link.fromProjectId, to: link.toProjectId, tier: link.tier }))
+    return (Array.isArray(result) ? result : result.links ?? []).map(link => ({ from: link.fromProjectId, to: link.toProjectId, tier: link.tier }))
   } catch {
     return []
   }
