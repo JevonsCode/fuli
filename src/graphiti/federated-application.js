@@ -886,6 +886,18 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return this.personal.listPersonalProjects(personalSpaceId);
   }
 
+  async listProjectRelationWeights(input = {}) {
+    const personalSpaceId = input.personalSpaceId ?? this.config.personal.spaceId;
+    if (personalSpaceId !== this.config.personal.spaceId) {
+      throw new TypeError('Project relation weights must use the active personal space');
+    }
+    // The authenticated observation reader filters temporary/archived projects
+    // and applies the same directional thresholds as the graph projection.
+    const observations = await this.personal.readProjectMemoryUsage(personalSpaceId);
+    return observations.map(row => ({ fromProjectId: row.source_project_id, toProjectId: row.target_project_id,
+      tier: row.statistics.tier, recent30dCount: row.statistics.recent30dCount }));
+  }
+
   async createProjectRelation(input) {
     const workspace = this.#workspace(input.providerUrl);
     return workspace.client.createProjectRelation(input.sourceProjectId, {
