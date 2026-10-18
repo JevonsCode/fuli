@@ -16,6 +16,9 @@ import {
 } from '../system/runtime-settings.js';
 import { isProcessAlive, stopProcess } from './processes.js';
 
+const CONSOLE_EXIT_TIMEOUT_MS = 15_000;
+const STOPPING_CONSOLE_GRACE_MS = 3_000;
+
 export async function startLocalRuntime(input, dependencies = {}) {
   const deps = lifecycleDependencies(dependencies);
   const runtimeSettings = input.runtimeSettings ?? DEFAULT_RUNTIME_SETTINGS;
@@ -173,9 +176,15 @@ async function stopRecordedConsole(state, paths, deps) {
     deps.removeState(paths.graphRuntimeStatePath);
     return 'not_running';
   }
-  if (!isLoopbackConsoleUrl(state.url) ||
-      !await deps.consoleHealth(state.url, state.pid, state.version)) {
-    return 'unverified';
+  if (!isLoopbackConsoleUrl(state.url)) return 'unverified';
+  if (!await deps.consoleHealth(state.url, state.pid, state.version)) {
+    // A console that is already shutting down stops answering health checks
+    // before its process exits; wait for it instead of reporting a failure.
+    if (await deps.waitForExit(state.pid, STOPPING_CONSOLE_GRACE_MS)) {
+      deps.removeState(paths.graphRuntimeStatePath);
+      return 'not_running';
+    }
+    if (!await deps.consoleHealth(state.url, state.pid, state.version)) return 'unverified';
   }
 
   deps.stopProcess(state.pid);
@@ -302,10 +311,12 @@ function safeLanUrls(value) {
     : [];
 }
 
-async function waitForExit(pid) {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
+// Closing graph connections can take several seconds on macOS.
+async function waitForExit(pid, timeoutMs = CONSOLE_EXIT_TIMEOUT_MS) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
     if (!isProcessAlive(pid)) return true;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  return false;
+  return !isProcessAlive(pid);
 }
