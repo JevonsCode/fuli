@@ -41,7 +41,7 @@ test('experiences are bounded and need a registered current project', () => {
 test('a checkpoint takes experiences instead of, never alongside, a capture', async () => {
   const app = { taskContextRegistry: { context: async () => task } };
   await assert.rejects(checkpointTaskKnowledge(app, { taskContextToken: 't', disposition: 'capture_candidates', reason: 'r',
-    experiences: [experience], capture: { entities: [] } }), /experiences or capture/);
+    experiences: [experience], capture: { entities: [] } }), /not both/);
   await assert.rejects(checkpointTaskKnowledge(app, { taskContextToken: 't', disposition: 'retain_nothing', reason: 'r',
     experiences: [experience] }), /capture_candidates/);
   const tool = GRAPH_TOOL_DEFINITIONS.find(item => item.name === 'checkpoint_task_knowledge');

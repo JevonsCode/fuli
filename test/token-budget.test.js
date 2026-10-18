@@ -25,13 +25,19 @@ const BASELINE = Object.freeze({
   // Settings guide: explain_settings is full-profile only (chat reaches it
   // through list_agent_interfaces/fuli_call): 168,566 -> 169,002 B (+436 B).
   // P6: checkpoint guidance becomes conditional; descriptions shrink 195 B.
-  fullToolSchemaBytes: 168807,
+  // F-P0-08: checkpoint takes `remember` (preference / project_fact items the
+  // server routes) because models could not build the referenced capture shape
+  // and saved nothing natively: 168,807 -> 169,269 B (+462 B).
+  fullToolSchemaBytes: 169269,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
   // tools/list: 30,047 -> 7,782 B (-74%).
   // P6: explicit optional routine closure, 7,782 -> 7,722 B (real SDK list).
-  chatToolSchemaBytes: 7722,
+  // F-P0-08: the same `remember` items are listed in chat (+469 B, about 120
+  // tokens per request). Without them a native haiku run failed five times on
+  // the referenced capture shape and wrote nothing to FULI.
+  chatToolSchemaBytes: 8191,
   instructionsBytes: 2041,
   // T-P00: the chat profile's own instructions name only listed tools, so a
   // client no longer spends a request on discovery first: 2,041 -> 1,251 B.
