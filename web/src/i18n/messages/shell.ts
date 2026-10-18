@@ -4,7 +4,7 @@ export const shellMessages = {
     destinations: { constellation: '星图', agents: 'Agents', chat: '对话', projects: '项目', memory: '记忆', settings: '设置' },
     sections: {
       agentDirectory: '全部 Agent', orchestrate: '编排', occupations: '职业',
-      roundtables: '圆桌', askedYou: '问过你', myProjects: '我的项目', publicProjects: '公开项目',
+      roundtables: '圆桌', askedYou: '待决策', myProjects: '我的项目', publicProjects: '公开项目',
       knowledge: '知识', preferences: '偏好', writing: '写作品味', organize: '知识整理',
       settings: '设置', connections: '连接', about: '关于',
     },
@@ -14,7 +14,7 @@ export const shellMessages = {
     destinations: { constellation: 'Constellation', agents: 'Agents', chat: 'Chat', projects: 'Projects', memory: 'Memory', settings: 'Settings' },
     sections: {
       agentDirectory: 'All Agents', orchestrate: 'Orchestrate', occupations: 'Occupations',
-      roundtables: 'Roundtable', askedYou: 'Asked you', myProjects: 'My projects', publicProjects: 'Public projects',
+      roundtables: 'Roundtable', askedYou: 'Decisions', myProjects: 'My projects', publicProjects: 'Public projects',
       knowledge: 'Knowledge', preferences: 'Preferences', writing: 'Writing taste', organize: 'Organize',
       settings: 'Settings', connections: 'Connections', about: 'About',
     },
