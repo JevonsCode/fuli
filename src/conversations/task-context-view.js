@@ -1,4 +1,5 @@
-import { containsEntryRules, entryRules, entryRulesReference, ruleTextView } from './entry-rules.js';
+import { containsEntryRules, DETAILS_GUIDANCE, entryRules, entryRulesReference, ruleTextView } from './entry-rules.js';
+import { preferenceScopeGuidance } from '../graphiti/collaboration-preference-workflow.js';
 import { copyPreferenceScope } from './preference-snapshot.js';
 import { preferenceInstructionView } from './preference-view.js';
 
@@ -30,11 +31,18 @@ export function compactTaskContext(value) {
   }
   if (sharedApplication) {
     const shared = entryRules().sections.application_guidance;
+    // The scope lines are a template over the IDs already in context.
+    const scope = preferenceScopeGuidance(value.context?.personal_project_id ?? null, value.context?.project_agent_id ?? null);
+    const templated = Object.entries(scope).every(([key, text]) => value.application_guidance[key] === text);
     result.application_guidance = { ...Object.fromEntries(Object.entries(value.application_guidance)
-      .filter(([key]) => !Object.hasOwn(shared, key))), ...entryRulesReference('application_guidance') };
+      .filter(([key]) => !Object.hasOwn(shared, key) && !(templated && Object.hasOwn(scope, key)))),
+    ...entryRulesReference('application_guidance'),
+    ...(templated ? { scope_rules: entryRulesReference('scope_guidance').rules } : {}) };
   }
+  if (share && value.context) result.context = withoutDefaults(value.context, { counts: true, flags: true });
   if (value.conversation) result.conversation = conversationView(value.conversation, share);
-  if (value.agent_receipt?.continuation) result.agent_receipt = { ...value.agent_receipt,
+  if (share && value.agent_receipt) result.agent_receipt = receiptView(value.agent_receipt);
+  else if (value.agent_receipt?.continuation) result.agent_receipt = { ...value.agent_receipt,
     continuation: { ...value.agent_receipt.continuation,
       guidance: text(value.agent_receipt.continuation.guidance, 'continuation_guidance') } };
   if (Array.isArray(value.effective_preferences)) result.effective_preferences = value.effective_preferences.map(preferenceInstructionView);
@@ -53,14 +61,44 @@ export function compactTaskContext(value) {
     recent_tasks: undefined,
     guidance: text(continuity.guidance, 'continuity_guidance'),
     ...(teamGuidance ? { team_guidance: teamGuidance } : {}),
-    details_guidance: 'Read get_project_team for staffing and list_project_agent_tasks for task history when needed.' };
+    details_guidance: text(DETAILS_GUIDANCE, 'details_guidance') };
   if (continuity?.memory || continuity?.global_memory) {
     result.project_agent_context = { ...result.project_agent_context, knowledge: undefined,
       memory: continuity.memory && memoryPreview(continuity.memory, ruleOrReference('memory_guidance', share)),
       ...(continuity.global_memory !== undefined ? { global_memory: continuity.global_memory
         && memoryPreview(continuity.global_memory, ruleOrReference('global_memory_guidance', share)) } : {}) };
   }
+  if (share && result.project_agent_context) result.project_agent_context = withoutDefaults(result.project_agent_context,
+    { flags: false, keep: AGENT_CONTEXT_STATES });
   return copyPreferenceScope(value, result);
+}
+
+// The entry receipt only has to be copied: the markdown plus the shared rule.
+// Owner details and the hand-off prompt stay on the checkpoint receipt.
+function receiptView(receipt) {
+  return withoutDefaults({ required: receipt.required, markdown: receipt.markdown,
+    collaborators: receipt.collaborators, work_status: receipt.work_status, persistence: receipt.persistence,
+    guidance: ruleTextView(receipt.guidance, 'receipt_guidance') }, { flags: true });
+}
+
+// null memory means that layer is unavailable and an empty team means no
+// members, so these keys stay even when empty.
+const AGENT_CONTEXT_STATES = new Set(['memory', 'global_memory', 'team']);
+
+// Empty values are defaults; omitting them changes nothing a reader can act on.
+// Zero and false are pruned only where they are counts and off-flags: a memory
+// revision of 0 is still the next expectedRevision.
+function withoutDefaults(value, { keep = new Set(), ...options } = {}) {
+  if (Array.isArray(value)) return value.map(item => withoutDefaults(item, options)).filter(item => !isDefault(item, options));
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value)
+    .map(([key, item]) => [key, keep.has(key) ? item : withoutDefaults(item, options)])
+    .filter(([key, item]) => keep.has(key) || !isDefault(item, options)));
+}
+
+function isDefault(value, { counts = false, flags = false } = {}) {
+  return value === undefined || value === null || (flags && value === false) || (counts && value === 0) || value === ''
+    || (Array.isArray(value) && !value.length) || (typeof value === 'object' && value !== null && !Array.isArray(value) && !Object.keys(value).length);
 }
 
 // Inside the same native chat the host already holds the recent messages, so
