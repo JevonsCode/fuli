@@ -5,6 +5,7 @@ import { agentInterfaceCatalog } from './interface-catalog.js';
 
 const HANDLERS = Object.freeze({
   get_judgment_policy: (app, input) => app.judgment.policy(input),
+  manage_project_agent_schedule: (app, input) => app.taskSchedules.manage(input),
   list_judgments: (app, input) => app.judgment.records(input),
   review_with_tonborg: (app, input) => app.judgment.review(input),
   assess_agent_action: (app, input) => app.judgment.assess(input),
