@@ -13,6 +13,7 @@ import { internalCaptureSkip, normalizeTaskCaptures, taskCaptureInput, taskCaptu
 import { activeSealedWorkerRequest } from '../app/agent-request-context.js';
 import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
 import { checkpointHumanInteraction } from './checkpoint-human-interaction.js';
+import { budgetKnowledgeSearch } from './knowledge-result-budget.js';
 
 import { onlineSourceUri } from './source-uri.js';
 import {
@@ -338,7 +339,8 @@ export async function searchCurrentProjectKnowledge(
     queries,
     limitPerQuery = 12,
     includeHistorical = false,
-    includePending = false
+    includePending = false,
+    cursor = null
   }
 ) {
   const projectResolution = agentProjectResolution(resolution);
@@ -370,7 +372,7 @@ export async function searchCurrentProjectKnowledge(
     )),
     loadRelatedProjectSuggestions(application, resolution.personalProjectId)
   ]);
-  return {
+  return budgetKnowledgeSearch({
     status: 'searched',
     personal_space_id: application.config.personal.spaceId,
     personal_project_id: resolution.personalProjectId,
@@ -387,7 +389,9 @@ export async function searchCurrentProjectKnowledge(
     related_project_suggestions: relatedProjects.suggestions,
     related_project_suggestions_status: relatedProjects.status,
     related_project_guidance: relatedProjectGuidance(relatedProjects.suggestions)
-  };
+  }, { cursor, consoleUrl: application.consoleUrl, toolName: 'search_current_project_knowledge',
+    context: { personalSpaceId: application.config.personal.spaceId,
+      personalProjectId: resolution.personalProjectId, queries, limitPerQuery, includeHistorical, includePending } });
 }
 
 async function loadRelatedProjectSuggestions(application, personalProjectId) {

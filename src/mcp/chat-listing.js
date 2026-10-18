@@ -28,5 +28,10 @@ export const CHAT_LISTING = Object.freeze({
 // The schema a chat client sees for a definition: compact properties swapped in.
 export function chatListedSchema(definition) {
   const properties = CHAT_LISTING[definition.name]?.properties;
-  return properties ? { ...definition.inputSchema, properties: { ...definition.inputSchema.properties, ...properties } } : definition.inputSchema;
+  const schema = properties ? { ...definition.inputSchema, properties: { ...definition.inputSchema.properties, ...properties } } : definition.inputSchema;
+  if (!['search_knowledge_graph', 'search_current_project_knowledge'].includes(definition.name)) return schema;
+  // Rare continuation arguments use the already-listed fuli_call dispatcher;
+  // the default tools/list cost stays unchanged. Full discovery keeps cursor.
+  const { cursor, ...listed } = schema.properties;
+  return { ...schema, properties: listed };
 }
