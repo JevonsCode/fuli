@@ -8,6 +8,7 @@ import { mkdtemp, writeFile, appendFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { normalizeClaudeRecord } from '../src/agents/claude-code/conversation-transcript.js';
+import { requiresSymlinks } from '../test-support/platform-capabilities.js';
 
 test('Codex captures visible text and tool output, skips reasoning/system and duplicate event_msg', () => {
   assert.deepEqual(normalizeCodexRecord({ type: 'response_item', payload: { type: 'reasoning', summary: ['private'] } }), []);
@@ -92,10 +93,16 @@ for (const state of ['missing', 'empty']) {
   });
 }
 
-test('initial boundary still rejects partial headers and symlinks', async t => {
+test('initial boundary still rejects partial headers', async t => {
   const path = await fixture(t, '');
   await writeFile(path, '{"type":"session_meta"');
   await assert.rejects(initialTranscriptBoundary(path, 'current', 'first task', adapter));
+});
+
+test('initial boundary still rejects symlinks', requiresSymlinks, async t => {
+  const path = await fixture(t, '');
+  // The target itself is accepted, so only the link is refused.
+  await initialTranscriptBoundary(path, 'current', 'first task', adapter);
   const link = path + '.link';
   await symlink(path, link);
   await assert.rejects(initialTranscriptBoundary(link, 'current', 'first task', adapter));
@@ -103,7 +110,7 @@ test('initial boundary still rejects partial headers and symlinks', async t => {
   await assert.rejects(initialTranscriptBoundary(link, 'current', 'first task', adapter));
 });
 
-test('reader retries incomplete writes, preserves unicode, and rejects foreign sessions and symlinks', async t => {
+test('reader retries incomplete writes, preserves unicode, and rejects foreign sessions', async t => {
   const path = await fixture(t, row('user', 'visible'));
   const first = await readTranscriptBatch(path, 'current', 0, adapter);
   const next = row('assistant', '你好🌟'.repeat(7000));
@@ -114,6 +121,12 @@ test('reader retries incomplete writes, preserves unicode, and rejects foreign s
   const complete = await readTranscriptBatch(path, 'current', first.cursor, adapter);
   assert.equal(complete.events.map(e => e.content).join(''), '你好🌟'.repeat(7000));
   await assert.rejects(readTranscriptBatch(path, 'foreign', 0, adapter));
+});
+
+test('reader rejects symlinked transcripts', requiresSymlinks, async t => {
+  const path = await fixture(t, row('user', 'visible'));
+  // The target itself is readable, so only the link is refused.
+  await readTranscriptBatch(path, 'current', 0, adapter);
   const link = path + '.link';
   await symlink(path, link);
   await assert.rejects(readTranscriptBatch(link, 'current', 0, adapter));

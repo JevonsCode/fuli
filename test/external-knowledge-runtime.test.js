@@ -32,7 +32,7 @@ test('external knowledge runtime wires persistent bindings, connectors, and conn
   }
 });
 
-test('the normal Graphiti application factory attaches external knowledge beside the runtime config', () => {
+test('the normal Graphiti application factory attaches external knowledge beside the runtime config', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-external-attachment-'));
   const runtimeConfigPath = join(directory, 'graph-runtime.json');
   writeFileSync(runtimeConfigPath, JSON.stringify({
@@ -48,12 +48,16 @@ test('the normal Graphiti application factory attaches external knowledge beside
 
   try {
     const app = openFederatedGraphApplication({ runtimeConfigPath, env: {} });
-    assert.ok(app.externalKnowledge);
-    assert.ok(app.connectedKnowledge);
-    assert.equal(
-      existsSync(join(directory, 'external-knowledge', 'connectors')),
-      true
-    );
+    try {
+      assert.ok(app.externalKnowledge);
+      assert.ok(app.connectedKnowledge);
+      assert.equal(
+        existsSync(join(directory, 'external-knowledge', 'connectors')),
+        true
+      );
+    } finally {
+      await app.close();
+    }
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

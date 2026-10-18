@@ -40,9 +40,11 @@ test('capture policy accepts only an explicit boolean', () => {
 });
 
 test('capture policy lives beside the shared graph runtime configuration', () => {
+  // An absolute host path: the policy path is resolved, so a POSIX literal is not absolute on Windows.
+  const runtimeDirectory = join(tmpdir(), 'fuli-runtime');
   assert.equal(
-    capturePolicyPathForRuntime('/data/fuli/graph-runtime.json'),
-    '/data/fuli/capture-policy.json'
+    capturePolicyPathForRuntime(join(runtimeDirectory, 'graph-runtime.json')),
+    join(runtimeDirectory, 'capture-policy.json')
   );
 });
 

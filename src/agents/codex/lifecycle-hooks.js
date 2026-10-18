@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import { quoteShellArgument } from '../../cli/shell-argument.js';
 import { readJsonFile, writeJsonFileAtomic } from '../../storage/json-file.js';
+import { platformPath } from '../../system/platform-path.js';
 
 const TOOLS = new Set(['begin_task_context', 'verify_task_checkpoint']);
 const COMMAND_MARKER = '--fuli-lifecycle';
@@ -221,8 +221,9 @@ function isManagedCodexHook(hook) {
 
 function codexStopCommand(context, event = 'Stop') {
   const platform = context.platform ?? process.platform;
+  const path = platformPath(platform);
   const script = context.codexLifecycleHookPath ??
-    join(dirname(context.mcpServerPath), 'agents', 'codex', 'lifecycle-hook.js');
+    path.join(path.dirname(context.mcpServerPath), 'agents', 'codex', 'lifecycle-hook.js');
   const command = [
     context.nodePath,
     script,

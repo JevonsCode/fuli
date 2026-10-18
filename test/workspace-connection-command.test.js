@@ -3,7 +3,6 @@ import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
   readFileSync,
-  statSync,
   symlinkSync,
   writeFileSync
 } from 'node:fs';
@@ -16,6 +15,11 @@ import {
   runWorkspaceConnectionCommand,
   WorkspaceConnectionError
 } from '../src/cli/workspace-connection-command.js';
+import {
+  assertFileMode,
+  requiresPosixFileModes,
+  requiresSymlinks
+} from '../test-support/platform-capabilities.js';
 
 const TOKEN = 'fws_admin_unit-test-token-abcdefghijklmnopqrstuvwxyz';
 const NODE = process.execPath;
@@ -103,7 +107,7 @@ test('connect-workspace validates the service and securely upserts runtime confi
     workspaceIds: '*',
     label: 'Local workspace'
   });
-  assert.equal(statSync(configPath).mode & 0o777, 0o600);
+  assertFileMode(configPath, 0o600);
 
   const visibleOutput = output.join('\n');
   assert.match(visibleOutput, /Restart required/);
@@ -187,7 +191,7 @@ test('connect-workspace rejects redirects and cross-origin authentication endpoi
   assert.equal(writes, 0);
 });
 
-test('connect-workspace rejects symlinks and overly broad token permissions', async (t) => {
+test('connect-workspace rejects a symlinked token file', requiresSymlinks, async () => {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-workspace-token-'));
   const tokenPath = join(directory, 'token');
   writeFileSync(tokenPath, TOKEN, { encoding: 'utf8', mode: 0o600 });
@@ -200,11 +204,12 @@ test('connect-workspace rejects symlinks and overly broad token permissions', as
     ]),
     /regular file, not a symlink/
   );
+});
 
-  if (process.platform === 'win32') {
-    t.skip('POSIX permission bits are not available on Windows');
-    return;
-  }
+test('connect-workspace rejects overly broad token permissions', requiresPosixFileModes, async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-workspace-token-'));
+  const tokenPath = join(directory, 'token');
+  writeFileSync(tokenPath, TOKEN, { encoding: 'utf8', mode: 0o600 });
   chmodSync(tokenPath, 0o640);
   await assert.rejects(
     runWorkspaceConnectionCommand([

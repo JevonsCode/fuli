@@ -1,13 +1,13 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import path from 'node:path';
 import { agentAdapters, agentAdapter } from './agents/registry.js';
+import { platformPath } from '../system/platform-path.js';
 
 export function discoverAgents({ platform = process.platform, env = process.env, homeDir = homedir(),
   cwd = process.cwd(), includeUnavailable = false, fileExists = existsSync, commandExists = (command) => defaultCommandExists(command, platform) } = {}) {
   const environment = { platform, env, homeDir, cwd, includeUnavailable, fileExists, commandExists,
-    pathApi: platform === 'win32' ? path.win32 : path.posix };
+    pathApi: platformPath(platform) };
   return agentAdapters.map((adapter) => adapter.detect(environment)).filter(Boolean);
 }
 export function connectAgent(agent, context, dependencies = {}) {
