@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { parse as parseToml } from 'smol-toml';
 
 import {
   installCodexBootstrap,
@@ -138,18 +139,18 @@ export function replaceFuliTable(source, { command, args }) {
   return `${[...lines, ...(lines.length ? [''] : []), ...block].join('\n')}\n`;
 }
 
-// The args of an existing [mcp_servers.fuli] table, written as JSON strings.
+// The args of the existing fuli MCP entry, so an explicit choice the person
+// made (such as --tool-profile full) survives a reconnect. Any valid TOML form
+// is read (quoted table names, multi-line arrays, literal strings, comments).
+// If the file does not parse, an explicit profile is still kept.
 export function existingFuliArgs(source) {
-  const lines = source.replaceAll('\r\n', '\n').split('\n');
-  const start = lines.findIndex(line => line.trim() === '[mcp_servers.fuli]');
-  if (start < 0) return [];
-  for (const line of lines.slice(start + 1)) {
-    if (/^\s*\[/.test(line)) break;
-    const match = line.match(/^\s*args\s*=\s*(\[.*\])\s*$/);
-    if (!match) continue;
-    try { return JSON.parse(match[1]); } catch { return []; }
+  try {
+    const args = parseToml(source)?.mcp_servers?.fuli?.args;
+    return Array.isArray(args) ? args.filter(value => typeof value === 'string') : [];
+  } catch {
+    const profile = /["']--tool-profile["']\s*,\s*(?:#[^\n]*\n\s*)*["']([^"']+)["']/.exec(source)?.[1];
+    return profile ? ['--tool-profile', profile] : [];
   }
-  return [];
 }
 
 export function removeFuliTables(source) {

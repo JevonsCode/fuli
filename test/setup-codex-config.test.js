@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  existingFuliArgs,
   connectCodex,
   disconnectCodex,
   removeFuliTables,
@@ -299,4 +300,19 @@ test('Codex disconnect removes consolidated Fuli hooks and preserves unrelated h
   assert.match(write.value, /command = "notify-existing"/);
   assert.doesNotMatch(write.value, /mcp_servers\.fuli/);
   assert.doesNotMatch(write.value, /begin_task_context|verify_task_checkpoint/);
+});
+
+test('an explicit Codex profile survives every valid TOML form and an unparseable file', () => {
+  const forms = {
+    quotedTable: '[mcp_servers."fuli"]\ncommand = "/node"\nargs = ["/srv.js", "--source-application", "codex", "--tool-profile", "full"]\n',
+    multiline: '[mcp_servers.fuli]\ncommand = "/node"\nargs = [\n  "/srv.js",\n  "--tool-profile",\n  "full",\n]\n',
+    literalStrings: "[mcp_servers.fuli]\ncommand = '/node'\nargs = ['/srv.js', '--tool-profile', 'full']\n",
+    inlineComment: '[mcp_servers.fuli]\ncommand = "/node"\nargs = ["/srv.js", "--tool-profile", "full"] # keep full\n',
+    unparseable: '[mcp_servers.fuli\nargs = ["/srv.js", "--tool-profile", "full"]\n',
+  };
+  for (const [name, source] of Object.entries(forms)) {
+    const args = existingFuliArgs(source);
+    assert.equal(args[args.indexOf('--tool-profile') + 1], 'full', name);
+  }
+  assert.deepEqual(existingFuliArgs('[other]\nkey = 1\n'), []);
 });
