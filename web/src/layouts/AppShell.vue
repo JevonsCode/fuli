@@ -5,6 +5,8 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
+import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
+import { useGlossaryMode } from '@/features/glossary/glossary-mode'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
 import { t } from '@/i18n'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
@@ -48,6 +50,7 @@ onBeforeUnmount(() => {
   attention.setSpace('')
 })
 watchEffect(() => updateDocumentTitle(route.meta.title))
+const glossary = useGlossaryMode()
 </script>
 
 <template>
@@ -63,6 +66,8 @@ watchEffect(() => updateDocumentTitle(route.meta.title))
             <GrowthLoading v-if="store.settingsSaving" variant="inline" :label="t(store.settingsSaveState === 'applying' ? 'settings.applying' : 'settings.saving')" />
             <UiButton variant="primary" :disabled="store.settingsSaving" form="settings-form" type="submit">{{ t(store.settingsSaveState === 'saved' ? 'settings.savedShort' : 'settings.save') }}</UiButton>
           </template>
+          <UiIconButton icon="info" data-glossary-toggle :aria-pressed="glossary.pinned.value"
+            :label="t(glossary.pinned.value ? 'glossary.toggleOn' : 'glossary.toggle')" @click="glossary.toggle" />
           <LocaleSwitcher />
           <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="store.runtimeStatus === 'loading'" @click="store.refresh" />
         </div>
@@ -74,6 +79,7 @@ watchEffect(() => updateDocumentTitle(route.meta.title))
         <UiIconButton icon="close" size="sm" :label="t('common.actions.close')" @click="store.clearFeedback" />
       </div>
       <RouterView v-slot="{ Component }"><component :is="Component" /></RouterView>
+      <GlossaryLayer />
     </main>
   </div>
 </template>
