@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
+import PinnedAgentsRail from '@/features/agent-profile/PinnedAgentsRail.vue'
 import { t } from '@/i18n'
 import { UiButton, UiIcon, UiIconButton } from '@/ui'
 import { FULI_VERSION } from '@/version'
@@ -9,7 +10,7 @@ import type { NavDestination } from './nav-destinations'
 
 // Wide screens: an icon rail that expands to show names (remembered per
 // browser). Narrow screens: the same links as a bottom tab bar with labels.
-defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; attentionCount: number; runtimeReady: boolean }>()
+const props = defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; attentionCount: number; runtimeReady: boolean; spaceId: string }>()
 
 const STORAGE_KEY = 'fuli.nav.expanded'
 // Expanded until the person collapses it: names are clearer than icons alone.
@@ -23,7 +24,9 @@ const PROFILE_ASPECTS = ['taste', 'personality', 'judgment_preference'] as const
 const aspectActive = (aspect: string) => route.path === '/preferences' && route.query.aspect === aspect
 // While a sub-item is current, its parent keeps only the accent text so the
 // two highlighted rows never merge into one block.
-const childActive = (key: string) => expanded.value && key === 'memory' && PROFILE_ASPECTS.some(aspectActive)
+const pinnedActive = () => Boolean(props.spaceId) && route.path.startsWith(`/agents/${encodeURIComponent(props.spaceId)}/`)
+const childActive = (key: string) => expanded.value && (
+  (key === 'memory' && PROFILE_ASPECTS.some(aspectActive)) || (key === 'agents' && pinnedActive()))
 watch(expanded, value => {
   try { localStorage.setItem(STORAGE_KEY, value ? '1' : '0') } catch { /* storage may be unavailable */ }
 })
@@ -53,6 +56,7 @@ watch(expanded, value => {
               :aria-current="aspectActive(aspect) ? 'page' : undefined" :data-aspect="aspect">{{ t(`knowledge.domain.profiles.${aspect}`) }}</RouterLink>
           </li>
         </ul>
+        <PinnedAgentsRail v-if="destination.key === 'agents'" :space-id="spaceId" :expanded="expanded" />
       </li>
     </ul>
     <div class="nav-rail-foot">
@@ -135,7 +139,7 @@ watch(expanded, value => {
     position: fixed; inset: auto 0 0; flex-direction: row; width: 100%; height: calc(60px + env(safe-area-inset-bottom));
     padding: 0 6px env(safe-area-inset-bottom); border-top: 1px solid var(--color-border); border-right: 0;
   }
-  .nav-rail-brand, .nav-rail-foot, .nav-rail-sublinks { display: none; }
+  .nav-rail-brand, .nav-rail-foot, .nav-rail-sublinks, .nav-rail-links :deep(.pinned-rail) { display: none; }
   .nav-rail-links, .nav-rail.is-expanded .nav-rail-links { flex-direction: row; justify-content: space-around; width: 100%; gap: 0; }
   /* Six tabs share the width, so 320px screens never clip the last one. */
   .nav-rail-links > li { display: flex; flex: 1 1 0; min-width: 0; justify-content: center; }

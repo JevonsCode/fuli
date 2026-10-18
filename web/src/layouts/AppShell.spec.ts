@@ -16,13 +16,17 @@ vi.mock('@/api/client', () => ({
 }))
 
 let attentionTotal = 0
+let pinnedIds: string[] = []
 
 beforeEach(() => {
   attentionTotal = 0
+  pinnedIds = []
   vi.mocked(getJson).mockReset()
   vi.mocked(getJson).mockImplementation(async (url: string) => {
     if (url.startsWith('/api/agent-attention?')) return { items: [], total: attentionTotal, counts: {} }
-    if (url === '/api/agent-pins?personalSpaceId=personal-1') return { revision: 1, agentIds: [] }
+    if (url === '/api/agent-pins?personalSpaceId=personal-1') return { revision: 1, agentIds: pinnedIds }
+    if (url === '/api/project-agents/agent-a?personalSpaceId=personal-1')
+      return { agentId: 'agent-a', personalSpaceId: 'personal-1', profile: { name: 'Ada', displayName: 'Ada' } }
     if (url === '/api/system/version') return { status: 'unavailable', currentVersion: '0.20.0', latestVersion: null, updateAvailable: false, packageUrl: '', checkedAt: '' }
     throw new Error(`Unexpected request: ${url}`)
   })
@@ -75,6 +79,21 @@ describe('AppShell', () => {
     await router.push('/organize')
     await flushPromises()
     expect(wrapper.findAll('[data-section]').map(tab => tab.attributes('data-section'))).toContain('review')
+    wrapper.unmount()
+  })
+
+  it('lists pinned Agents under Agents and marks the current one without tinting both rows', async () => {
+    pinnedIds = ['agent-a']
+    const { wrapper, router } = await setup('/agents/personal-1/agent-a')
+    const pinned = wrapper.get('[data-pinned-agent="agent-a"]')
+    expect(pinned.get('.pinned-rail-name').text()).toBe('Ada')
+    expect(pinned.attributes('href')).toBe('/agents/personal-1/agent-a')
+    expect(pinned.attributes('aria-current')).toBe('page')
+    expect(wrapper.get('[data-destination="agents"]').classes()).toContain('has-active-child')
+    await router.push('/project-agents')
+    await flushPromises()
+    expect(wrapper.get('[data-pinned-agent="agent-a"]').attributes('aria-current')).toBeUndefined()
+    expect(wrapper.get('[data-destination="agents"]').classes()).not.toContain('has-active-child')
     wrapper.unmount()
   })
 

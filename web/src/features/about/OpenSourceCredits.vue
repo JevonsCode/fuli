@@ -70,7 +70,7 @@ const credits = computed(() => [
     logo: 'https://avatars.githubusercontent.com/u/132832125?s=128&v=4',
   },
   {
-    name: 'Model Context Protocol',
+    name: 'MCP',
     role: t('about.credits.roles.mcp'),
     url: 'https://modelcontextprotocol.io/',
     logo: 'https://raw.githubusercontent.com/modelcontextprotocol/docs/main/favicon.svg',
@@ -90,7 +90,7 @@ const credits = computed(() => [
             <span v-else aria-hidden="true">{{ credit.name.charAt(0) }}</span>
           </span>
           <span class="credit-copy">
-            <strong>{{ credit.name }}</strong>
+            <strong :title="credit.name">{{ credit.name }}</strong>
             <small>{{ credit.role }}</small>
           </span>
           <span class="credit-arrow" aria-hidden="true">↗</span>
@@ -136,7 +136,10 @@ const credits = computed(() => [
   list-style: none;
 }
 
+.credit-grid > li { display: flex; }
+
 .credit-card {
+  flex: 1;
   position: relative;
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
@@ -168,7 +171,8 @@ const credits = computed(() => [
 .credit-mark.is-fallback { color: var(--color-accent); background: var(--color-accent-soft); font-size: 18px; font-weight: 700; }
 
 .credit-copy { display: grid; gap: 3px; min-width: 0; }
-.credit-copy strong { color: var(--color-ink); font-size: 14px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
+.credit-copy strong, .credit-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.credit-copy strong { color: var(--color-ink); font-size: 14px; font-weight: 650; line-height: 1.3; }
 .credit-copy small { color: var(--color-muted); font-size: 12px; line-height: 1.4; }
 
 .credit-arrow {
