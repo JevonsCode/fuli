@@ -4,6 +4,8 @@ import { RouterLink, useRoute } from 'vue-router'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { currentLocale, t } from '@/i18n'
+import { useConsoleStore } from '@/stores/console'
+import { subscribeChatUpdates } from '@/features/project-agents/task-updates'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { listChats, listThreads, readChat, readThread, type RoundtableChatPage, type RoundtableChatRoom, type RoundtableMessage, type RoundtablePerson, type RoundtableThread, type RoundtableThreadSummary } from './roundtable-api'
 import { chatRoomName, splitThread, tableSeats } from './roundtable-model'
@@ -13,6 +15,7 @@ import RoundtableSeats from './RoundtableSeats.vue'
 // A read-only record of Agents talking to each other: chat rooms (agent_chat,
 // 1:1 or groups) and asks between Agents (message_agent). People only watch.
 const route = useRoute()
+const consoleStore = useConsoleStore()
 const threads = ref<RoundtableThreadSummary[]>([])
 const thread = ref<RoundtableThread | null>(null)
 const chats = ref<RoundtableChatRoom[]>([])
@@ -25,24 +28,52 @@ const selectedChatId = computed(() => typeof route.params.chatId === 'string' ? 
 const CLIENTS: Record<string, string> = { claude_code: 'Claude Code', codex: 'Codex', cursor: 'Cursor', claude: 'Claude', other: 'Agent' }
 let timer: ReturnType<typeof setInterval> | undefined
 let version = 0
+let stopped = false
+let chatRefreshPending = false
+let chatRefreshing = false
+let stopChatUpdates = () => {}
+
+async function refreshChats() {
+  chatRefreshPending = true
+  if (chatRefreshing) return
+  chatRefreshing = true
+  try {
+    while (chatRefreshPending && !stopped) {
+      chatRefreshPending = false
+      const selected = selectedChatId.value
+      const [rooms, open] = await Promise.all([listChats().catch(() => null), selected ? readChat(selected) : Promise.resolve(null)])
+      if (stopped || selected !== selectedChatId.value) continue
+      chats.value = rooms?.chats ?? []
+      chatsUnavailable.value = Boolean(rooms?.remoteUnavailable)
+      room.value = open
+    }
+  } catch (cause) { error.value = cause instanceof Error ? cause.message : String(cause) }
+  finally { chatRefreshing = false }
+}
+
+async function refreshThreads() {
+  const selected = selectedId.value
+  try {
+    const [list, detail] = await Promise.all([listThreads(), selected ? readThread(selected) : Promise.resolve(null)])
+    if (stopped || selected !== selectedId.value) return
+    threads.value = list.threads; thread.value = detail
+  } catch (cause) { error.value = cause instanceof Error ? cause.message : String(cause) }
+}
 
 async function refresh() {
   const current = ++version
   try {
     // Rooms are optional: an older server without agent_chat still shows its threads.
-    const [list, detail, rooms, open] = await Promise.all([
+    error.value = ''
+    const [list, detail] = await Promise.all([
       listThreads(),
       selectedId.value ? readThread(selectedId.value) : Promise.resolve(null),
-      listChats().catch(() => null),
-      selectedChatId.value ? readChat(selectedChatId.value) : Promise.resolve(null),
+      refreshChats(),
     ])
     if (current !== version) return
     threads.value = list.threads
     thread.value = detail
-    chats.value = rooms?.chats ?? []
-    chatsUnavailable.value = Boolean(rooms?.remoteUnavailable)
-    room.value = open
-    error.value = ''
+
   } catch (cause) {
     if (current === version) error.value = cause instanceof Error ? cause.message : String(cause)
   } finally {
@@ -53,9 +84,18 @@ async function refresh() {
 watch([selectedId, selectedChatId], () => { thread.value = null; room.value = null; void refresh() })
 onMounted(() => {
   void refresh()
-  timer = setInterval(() => { if (document.visibilityState === 'visible') void refresh() }, 5000)
+  // Legacy execution asks have their own status lifecycle. Chat uses SSE only.
+  timer = setInterval(() => { if (document.visibilityState === 'visible') void refreshThreads() }, 5000)
 })
-onBeforeUnmount(() => clearInterval(timer))
+watch(() => consoleStore.activePersonalSpace?.id, (spaceId, _old, cleanup) => {
+  if (!spaceId) return
+  stopChatUpdates = subscribeChatUpdates(spaceId, {
+    chatChanged: () => { void refreshChats() }, reconnected: () => { void refreshChats() },
+    unavailable: () => { chatsUnavailable.value = true },
+  })
+  cleanup(stopChatUpdates)
+}, { immediate: true })
+onBeforeUnmount(() => { stopped = true; version++; stopChatUpdates(); clearInterval(timer) })
 
 const split = computed(() => splitThread(thread.value?.messages ?? []))
 const seats = computed(() => tableSeats(thread.value?.messages ?? [], split.value.pending))

@@ -10,7 +10,7 @@ const agent = (agentId, name, allowedClients = ['claude_code', 'codex']) => ({ a
   employeeNumber: agentId === 'lead-1' ? '000001' : '000002',
   profile: { name, displayName: name, status: 'active', responsibility: `${name} 的职责`, capabilities: [], allowedClients } });
 
-function fixture({ wake, sessions = {}, redeemed = true, env = {} } = {}) {
+function fixture({ wake, sessions = {}, redeemed = true, env = {}, openStore = () => createRoundtableStore(), idFactory = null } = {}) {
   const agents = [agent('lead-1', 'Milo Reed'), agent('reviewer-1', 'Nova Lane', ['codex'])];
   const tasks = {
     'token-milo': { token: 'token-milo', projectAgentId: 'lead-1', personalProjectId: 'app', sessionId: 'cc-1', sourceApplication: 'claude_code' },
@@ -34,10 +34,10 @@ function fixture({ wake, sessions = {}, redeemed = true, env = {} } = {}) {
     }
   };
   let id = 0;
-  const roundtable = createAgentRoundtable({ app, env, openStore: () => createRoundtableStore(), idFactory: () => `id-${++id}`,
+  const roundtable = createAgentRoundtable({ app, env, openStore, idFactory: idFactory ?? (() => `id-${++id}`),
     locateCwd: (client, sessionId) => `/work/${client}/${sessionId}`, clientAvailable: () => true,
     wake: async (input) => { woken.push(input); return wake ? wake(input) : { body: 'Nova 的回答', sessionId: 'fork-1' }; } });
-  return { roundtable, woken, grants, revoked, verified };
+  return { app, roundtable, woken, grants, revoked, verified };
 }
 
 test('an Agent asks another Agent, which answers from its latest conversation', async () => {
@@ -294,4 +294,114 @@ test('task entry delivers the unstaffed execution decision beside the lead conte
   assert.equal(context.execution_agent_id, null);
   assert.equal(context.worker_started, false);
   assert.ok(context.match_basis.includes(guidance));
+});
+
+test('direct chat wakes once through the existing read-only adapter and records its verified answer', async t => {
+  const entered = Promise.withResolvers(), answer = Promise.withResolvers();
+  const { roundtable, woken, grants } = fixture({ wake: async input => { entered.resolve(input); return answer.promise; } });
+  t.after(() => roundtable.close());
+  const chat = (token, action, data = {}) => roundtable.chat({ taskContextToken: token, sourceApplication: token === 'token-milo' ? 'claude_code' : 'codex', action, ...data });
+  const { chatId } = await chat('token-milo', 'create', { requestId: 'auto-wake-room', kind: 'direct', members: ['local:reviewer-1'] });
+  await chat('token-milo', 'send', { chatId, requestId: 'auto-wake-message', body: 'review the unread note' });
+  // One turn of the event loop, not a timer scan, lets asynchronous grant work run.
+  const { scheduler } = await import('node:timers/promises');
+  await scheduler.yield();
+  assert.equal(woken.length, 1);
+  assert.match((await entered.promise).prompt, /review the unread note/);
+  await chat('token-milo', 'send', { chatId, requestId: 'auto-wake-message', body: 'review the unread note' });
+  await chat('token-milo', 'send', { chatId, requestId: 'auto-wake-message-2', body: 'another unread note' });
+  await scheduler.yield();
+  assert.equal(woken.length, 1);
+  assert.equal(grants.length, 1);
+  answer.resolve({ body: 'read-only answer', sessionId: 'verified-chat-session' });
+  await scheduler.yield();
+  const page = await chat('token-nova', 'read', { chatId });
+  assert.deepEqual(page.messages.map(m => m.body), ['review the unread note','another unread note']);
+});
+
+test('an active wait suppresses automatic direct chat wake', async t => {
+  const { roundtable, woken } = fixture();
+  t.after(() => roundtable.close());
+  const { chatId } = await roundtable.chat({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', action: 'create', requestId: 'wait-no-wake', kind: 'direct', members: ['local:reviewer-1'] });
+  const waiting = roundtable.chat({ taskContextToken: 'token-nova', sourceApplication: 'codex', action: 'wait', chatId });
+  await roundtable.chat({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', action: 'send', chatId, requestId: 'wait-delivery', body: 'delivered to waiter' });
+  assert.equal((await waiting).messages[0].body, 'delivered to waiter');
+  assert.equal(woken.length, 0);
+});
+
+test('messages arriving during a chat wake are consumed by the next wake without a timer scan', async t => {
+  const first = Promise.withResolvers(), second = Promise.withResolvers();
+  let runs = 0;
+  const { roundtable, woken } = fixture({ wake: async () => ++runs === 1 ? first.promise : second.promise });
+  t.after(() => { first.resolve({ body: 'first answer', sessionId: 'one' }); second.resolve({ body: 'second answer', sessionId: 'two' }); return roundtable.close(); });
+  const chat = (action, data) => roundtable.chat({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', action, ...data });
+  const { chatId } = await chat('create', { requestId: 'during-wake', kind: 'direct', members: ['local:reviewer-1'] });
+  const { scheduler } = await import('node:timers/promises');
+  await chat('send', { chatId, requestId: 'during-1', body: 'first note' });
+  await scheduler.yield();
+  assert.equal(woken.length, 1);
+  await chat('send', { chatId, requestId: 'during-2', body: 'second note' });
+  first.resolve({ body: 'first answer', sessionId: 'one' });
+  await scheduler.yield();
+  assert.equal(woken.length, 2);
+  assert.match(woken[1].prompt, /second note/);
+  assert.doesNotMatch(woken[1].prompt, /first note/);
+});
+
+test('shared-store instances wait for the existing claim and then wake another room', { timeout: 5000 }, async t => {
+  const {mkdtemp,rm}=await import('node:fs/promises'); const {join}=await import('node:path');
+  const dir=await mkdtemp(join(tmpdir(),'chat-wake-instances-')); const path=join(dir,'chats.sqlite');
+  const one=Promise.withResolvers(), firstEntered=Promise.withResolvers(), secondEntered=Promise.withResolvers();
+  const {randomUUID}=await import('node:crypto');
+  const openStore=()=>createRoundtableStore(path);
+  const a=fixture({openStore,idFactory:randomUUID,wake:async input=>{firstEntered.resolve(input);return one.promise;}});
+  const b=fixture({openStore,idFactory:randomUUID,wake:async input=>{secondEntered.resolve(input);return {body:'second result',sessionId:'second'};}});
+  t.after(async()=>{one.resolve({body:'first result',sessionId:'first'});await a.roundtable.close();await b.roundtable.close();await rm(dir,{recursive:true,force:true});});
+  const call=(r,action,data)=>r.chat({taskContextToken:'token-milo',sourceApplication:'claude_code',action,...data});
+  const r1=await call(a.roundtable,'create',{requestId:'r1',kind:'group',members:['local:reviewer-1']});
+  const r2=await call(a.roundtable,'create',{requestId:'r2',kind:'group',members:['local:reviewer-1']});
+  await call(a.roundtable,'send',{chatId:r1.chatId,requestId:'r1-send',body:'@{local:reviewer-1} room one'});
+  await firstEntered.promise;
+  await call(b.roundtable,'send',{chatId:r2.chatId,requestId:'r2-send',body:'@{local:reviewer-1} room two'});
+  one.resolve({body:'first result',sessionId:'first'});
+  assert.match((await secondEntered.promise).prompt,/room two/);
+  assert.equal(a.woken.length+b.woken.length,2);
+});
+
+test('group wake uses stable addresses and a bounded post-admission unread snapshot', async t => {
+  const {roundtable,woken}=fixture();t.after(()=>roundtable.close());
+  const chat=(action,data)=>roundtable.chat({taskContextToken:'token-milo',sourceApplication:'claude_code',action,...data});
+  const {chatId}=await chat('create',{requestId:'snapshot-room',kind:'group',members:['local:reviewer-1']});
+  await chat('members',{chatId,expectedRevision:1,remove:['local:reviewer-1']});
+  await chat('send',{chatId,requestId:'before-admission',body:'secret before joining'});
+  await chat('members',{chatId,expectedRevision:2,add:['local:reviewer-1']});
+  await chat('send',{chatId,requestId:'name-only',body:'@Nova Lane is just prose'});
+  const {scheduler}=await import('node:timers/promises');await scheduler.yield();assert.equal(woken.length,0);
+  await chat('send',{chatId,requestId:'stable-mention',body:'@{local:reviewer-1} '+ '中'.repeat(15000)});
+  await scheduler.yield();assert.equal(woken.length,1);
+  assert.doesNotMatch(woken[0].prompt,/secret before joining/);
+  assert.match(woken[0].prompt,/"unshown":true/);
+  assert.match(woken[0].prompt,/"bodyTruncated":true/);
+  assert.ok(Buffer.byteLength(woken[0].prompt)<13000);
+});
+
+test('escaped control characters fit the unread snapshot budget without poisoning later wakes', async t => {
+  const {roundtable,woken}=fixture();t.after(()=>roundtable.close());
+  const call=(action,data)=>roundtable.chat({taskContextToken:'token-milo',sourceApplication:'claude_code',action,...data});
+  const {chatId}=await call('create',{requestId:'escaped-room',kind:'direct',members:['local:reviewer-1']});
+  await call('send',{chatId,requestId:'escaped-message',body:'\u0001'.repeat(2000)});
+  const {scheduler}=await import('node:timers/promises');await scheduler.yield();
+  assert.equal(woken.length,1);assert.ok(Buffer.byteLength(woken[0].prompt)<13000);
+  assert.match(woken[0].prompt,/"bodyTruncated":true/);
+  await call('send',{chatId,requestId:'after-escaped',body:'next message'});await scheduler.yield();
+  assert.equal(woken.length,2);assert.match(woken[1].prompt,/next message/);
+});
+
+test('a definite remote queue rejection releases the source execution claim', async t => {
+  const store=createRoundtableStore();const {app,roundtable}=fixture({openStore:()=>store});t.after(()=>roundtable.close());
+  const to='peer:0123456789abcdef:binding';
+  app.peer={isRemoteAddress:value=>value.startsWith('peer:'),resolveRemote:async()=>({address:to,agentId:'remote-lead',name:'lead',deviceName:'other'}),
+    send:async()=>{throw Object.assign(new Error('queue full'),{status:429,code:'queue_full'});}};
+  await assert.rejects(roundtable.messageAgent({taskContextToken:'token-milo',sourceApplication:'claude_code',to,body:'snapshot',chatWake:{}}),/queue full/);
+  assert.deepEqual(store.executionState('space',to),{busy:false,held:false});
 });

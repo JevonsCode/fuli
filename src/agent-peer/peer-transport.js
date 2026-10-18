@@ -7,7 +7,7 @@ import { PEER_LIMITS, PeerError, parseCoordinatorUrl, sha256Hex } from './protoc
 export function createPeerClient({ identity, coordinator }) {
   const origin = parseCoordinatorUrl(coordinator.url);
   const tls = pinnedTls(identity, coordinator);
-  const agent = new Agent({ ...tls, keepAlive: true, maxSockets: 4 });
+  const agent = new Agent({ ...tls, keepAlive: true, maxSockets: 64 });
   return {
     post: (path, body, options = {}) => post(origin, path, body, { ...options, agent }),
     close: () => agent.destroy(),

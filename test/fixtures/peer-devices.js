@@ -69,7 +69,7 @@ export async function device(label, { tamper = null, wake = null } = {}) {
   const runtime = createPeerRuntime({ app, port: app.peer, allowLoopback: true, claimWaitMs: 300, interfaces: () => ({}),
     resolveFolder: (path) => ({ personalProjectId: path === folder ? projectId : null }) });
   return { app, runtime, calls, projectId, folder, close: async () => {
-    await runtime.close(); app.roundtable.close(); app.peer.close(); await rm(dataDir, { recursive: true, force: true });
+    await runtime.close(); await app.roundtable.close(); app.peer.close(); await rm(dataDir, { recursive: true, force: true });
   } };
 }
 
