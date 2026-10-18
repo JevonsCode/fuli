@@ -209,3 +209,5 @@ async function handleProjectCreated(project: PersonalProject) {
     />
   </section>
 </template>
+
+<style src="./agent-profile.css" />
