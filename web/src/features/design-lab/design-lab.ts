@@ -9,6 +9,16 @@ const STORAGE_KEY = 'fuli.lab'
 
 export const PAGE_TRANSITIONS = ['none', 'fade', 'rise'] as const
 export type PageTransition = (typeof PAGE_TRANSITIONS)[number]
+// A/B choices, each a design question from the UX review (see Notion).
+export const LAB_CHOICES = {
+  theme: ['light', 'dark'],
+  cards: ['outline', 'shadow', 'flat'],
+  density: ['compact', 'standard', 'roomy'],
+  radius: ['small', 'medium', 'large'],
+  ring: ['breathe', 'pulse', 'still'],
+} as const
+export type LabChoice = keyof typeof LAB_CHOICES
+type Choices = { [K in LabChoice]: (typeof LAB_CHOICES)[K][number] }
 
 export interface DesignLabState {
   open: boolean
@@ -17,9 +27,17 @@ export interface DesignLabState {
   transition: PageTransition
   cardLift: boolean
   workbench: string
+  choices: Choices
 }
 
-const DEFAULTS: DesignLabState = { open: false, x: null, y: null, transition: 'none', cardLift: false, workbench: 'current' }
+const DEFAULT_CHOICES: Choices = { theme: 'light', cards: 'outline', density: 'standard', radius: 'medium', ring: 'breathe' }
+const DEFAULTS: DesignLabState = { open: false, x: null, y: null, transition: 'none', cardLift: false, workbench: 'current', choices: DEFAULT_CHOICES }
+
+function validChoices(value: unknown): Choices {
+  const stored = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>
+  return Object.fromEntries(Object.entries(LAB_CHOICES).map(([key, options]) => [key,
+    (options as readonly string[]).includes(stored[key] as string) ? stored[key] : DEFAULT_CHOICES[key as LabChoice]])) as Choices
+}
 
 function read(): DesignLabState {
   try {
@@ -28,6 +46,7 @@ function read(): DesignLabState {
       ...DEFAULTS,
       ...stored,
       transition: PAGE_TRANSITIONS.includes(stored.transition as PageTransition) ? stored.transition as PageTransition : DEFAULTS.transition,
+      choices: validChoices(stored.choices),
     }
   } catch {
     return { ...DEFAULTS }
@@ -44,6 +63,17 @@ function apply(state: DesignLabState) {
   else root.labTransition = state.transition
   if (state.cardLift) root.labLift = 'on'
   else delete root.labLift
+  // Each choice becomes data-lab-<name> unless it is the default; the theme
+  // uses the existing data-theme switch.
+  for (const key of Object.keys(LAB_CHOICES) as LabChoice[]) {
+    const value = state.choices[key]
+    const attribute = `lab${key[0]!.toUpperCase()}${key.slice(1)}`
+    if (key === 'theme') {
+      if (value === 'dark') root.theme = 'dark'
+      else delete root.theme
+    } else if (value === DEFAULT_CHOICES[key]) delete root[attribute]
+    else root[attribute] = value
+  }
 }
 
 watch(designLab, state => {
@@ -52,5 +82,5 @@ watch(designLab, state => {
 }, { deep: true, immediate: true })
 
 export function resetDesignLab() {
-  designLab.value = { ...DEFAULTS, open: designLab.value.open, x: designLab.value.x, y: designLab.value.y }
+  designLab.value = { ...DEFAULTS, choices: { ...DEFAULT_CHOICES }, open: designLab.value.open, x: designLab.value.x, y: designLab.value.y }
 }
