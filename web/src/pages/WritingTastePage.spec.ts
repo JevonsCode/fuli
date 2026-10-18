@@ -44,12 +44,12 @@ describe('WritingTastePage', () => {
     const wrapper = mountPage()
     await finishLoading()
 
-    expect(wrapper.text()).toContain('文风画像收集中')
+    expect(wrapper.get('[data-stat="status"]').text()).toContain('收集中')
     expect(wrapper.text()).toContain('工作假设')
     expect(wrapper.text()).toContain('可以尝试大胆隐喻')
-    expect(wrapper.find('.writing-taste-agent-preview').exists()).toBe(false)
+    expect(wrapper.find('[data-agent-preview-toggle]').exists()).toBe(false)
 
-    await wrapper.get('.writing-taste-rule .primary-action').trigger('click')
+    await wrapper.get('[data-writing-rule] [data-rule-confirm]').trigger('click')
     expect(wrapper.get('.confirm-dialog-stub').text()).toContain('隐喻偏好')
   })
 
@@ -70,18 +70,18 @@ describe('WritingTastePage', () => {
     const wrapper = mountPage()
     await finishLoading()
 
-    expect(wrapper.findAll('.writing-taste-rule')).toHaveLength(3)
+    expect(wrapper.findAll('[data-writing-rule]')).toHaveLength(3)
     expect(wrapper.text()).toContain('可以尝试大胆隐喻')
 
-    await wrapper.get('.writing-taste-agent-preview > button').trigger('click')
-    const preview = wrapper.get('.writing-taste-agent-preview pre').text()
+    await wrapper.get('[data-agent-preview-toggle]').trigger('click')
+    const preview = wrapper.get('[data-agent-preview]').text()
     expect(preview).toContain('先给结论')
     expect(preview).toContain('使用短标题')
     expect(preview).not.toContain('大胆隐喻')
 
-    const hypothesisCard = wrapper.findAll('.writing-taste-rule')
+    const hypothesisCard = wrapper.findAll('[data-writing-rule]')
       .find((card) => card.text().includes('大胆隐喻'))
-    await hypothesisCard!.get('.secondary-action').trigger('click')
+    await hypothesisCard!.get('[data-rule-edit]').trigger('click')
     expect(wrapper.get('.edit-dialog-stub').text()).toContain('隐喻偏好')
   })
 
@@ -91,7 +91,7 @@ describe('WritingTastePage', () => {
     mockProfileRequests(profile)
     const wrapper = mountPage()
     await finishLoading()
-    await wrapper.get('.writing-taste-rule .primary-action').trigger('click')
+    await wrapper.get('[data-writing-rule] [data-rule-confirm]').trigger('click')
     expect(wrapper.find('.confirm-dialog-stub').exists()).toBe(true)
 
     getJson.mockImplementation(() => new Promise(() => {}))
@@ -119,7 +119,7 @@ describe('WritingTastePage', () => {
     profile.rules = [writingRule('confirmed', 'Confirmed')]
     resolveProfile(profile)
     await finishLoading()
-    expect(wrapper.find('.writing-taste-rule').exists()).toBe(false)
+    expect(wrapper.find('[data-writing-rule]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -132,9 +132,9 @@ describe('WritingTastePage', () => {
     const profile = writingTasteProfile('active')
     profile.rules = [writingRule('confirmed', 'Confirmed')]
     mockProfileRequests(profile)
-    await wrapper.get('.writing-taste-unavailable button').trigger('click')
+    await wrapper.get('[data-retry]').trigger('click')
     await finishLoading()
-    expect(wrapper.find('.writing-taste-rule').exists()).toBe(true)
+    expect(wrapper.find('[data-writing-rule]').exists()).toBe(true)
     expect(useConsoleStore().feedback).toBeNull()
     getJson.mockImplementation(() => new Promise(() => {}))
     const store = useConsoleStore()

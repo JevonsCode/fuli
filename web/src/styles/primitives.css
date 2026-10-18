@@ -142,6 +142,23 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(2px);
 .ui-segmented-swatch { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 50%; vertical-align: -1px; }
 .ui-segmented small { margin-left: 4px; color: var(--color-faint); font-variant-numeric: tabular-nums; }
 
+/* Page rhythm shared by list pages: stat row, one-line lede, toolbar, list. */
+.view.page-stack { display: flex; flex-direction: column; gap: 14px; }
+.page-lede { margin: -4px 0 0; color: var(--color-muted); font-size: 13px; line-height: 1.6; }
+.list-title { display: inline-flex; align-items: baseline; gap: 8px; margin: 0; color: var(--color-ink); font-size: 15px; font-weight: 650; }
+.list-title span { color: var(--color-faint); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* One list look for every page: a card of rows split by hairlines. */
+.ui-list { min-width: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); overflow: hidden; }
+.ui-list-row { display: flex; align-items: flex-start; gap: 16px; padding: 14px 16px; }
+.ui-list-row + .ui-list-row { border-top: 1px solid var(--color-border); }
+.ui-list-main { display: grid; flex: 1; gap: 6px; min-width: 0; }
+.ui-list-heading { color: var(--color-ink); font-size: 14px; font-weight: 600; line-height: 1.45; }
+.ui-list-text { margin: 0; color: var(--color-ink-soft); font-size: 13px; line-height: 1.6; }
+.ui-list-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; color: var(--color-faint); font-size: 12px; }
+.ui-list-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
+@media (max-width: 720px) { .ui-list-row { flex-direction: column; gap: 10px; } }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0s !important; animation-duration: 0s !important; }
 }
