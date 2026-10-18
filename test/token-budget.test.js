@@ -23,8 +23,8 @@ const BASELINE = Object.freeze({
   // +1,836 B in each profile. With dependency #103, both remain below the
   // pre-refactor 169,321/40,502 B; task entry and instructions do not grow.
   // Settings guide: explain_settings is full-profile only (chat reaches it
-  // through list_agent_interfaces/fuli_call): 168,725 -> 169,161 B (+436 B).
-  fullToolSchemaBytes: 169161,
+  // through list_agent_interfaces/fuli_call): 168,566 -> 169,002 B (+436 B).
+  fullToolSchemaBytes: 169002,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
