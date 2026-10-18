@@ -80,31 +80,29 @@ function delivery(message: RoundtableMessage) {
       <strong>{{ t('roundtable.empty') }}</strong>
       <p>{{ t('roundtable.emptyHint') }}</p>
     </div>
-    <div v-else class="roundtable-layout">
-      <nav class="roundtable-threads" :aria-label="t('roundtable.threads')">
-        <RouterLink v-for="item in threads" :key="item.id" class="roundtable-thread" :class="{ 'is-active': item.id === selectedId }"
-          :to="`/roundtables/${encodeURIComponent(item.id)}`" data-testid="roundtable-thread">
-          <span class="roundtable-faces" aria-hidden="true">
-            <span v-for="person in item.participants.slice(0, 3)" :key="person.agentId ?? person.name ?? ''" :style="agentIdentityStyle(person.agentId)">{{ initial(person) }}</span>
-          </span>
-          <span class="roundtable-thread-copy">
-            <strong>{{ item.subject }}</strong>
-            <small>{{ item.participants.map((person) => person.name).join(' · ') }}</small>
-            <small v-if="item.last" class="roundtable-preview">{{ item.last.from }}：{{ item.last.body }}</small>
-          </span>
-          <span class="roundtable-thread-meta">
-            <time :datetime="item.updatedAt">{{ time(item.updatedAt) }}</time>
-            <span v-if="item.waiting" class="ui-badge ui-badge--warning" data-roundtable-waiting>{{ waitingLabel(item) }}</span>
-          </span>
-        </RouterLink>
+    <div v-else class="ui-split roundtable-layout">
+      <nav class="ui-split-list" :aria-label="t('roundtable.threads')">
+        <div class="ui-split-head"><span role="status">{{ t('roundtable.count', { count: threads.length }) }}</span></div>
+        <div class="ui-split-items">
+          <RouterLink v-for="item in threads" :key="item.id" class="ui-split-item" :class="{ 'is-selected': item.id === selectedId }"
+            :aria-current="item.id === selectedId ? 'page' : undefined" :to="`/roundtables/${encodeURIComponent(item.id)}`" data-testid="roundtable-thread">
+            <span class="ui-split-item-meta">
+              <span>{{ item.participants.map((person) => person.name).join(' · ') }}</span>
+              <span v-if="item.waiting" class="roundtable-waiting" data-roundtable-waiting>{{ waitingLabel(item) }}</span>
+              <time v-else :datetime="item.updatedAt">{{ time(item.updatedAt) }}</time>
+            </span>
+            <strong class="ui-split-item-title">{{ item.subject }}</strong>
+            <span v-if="item.last" class="ui-split-item-sub">{{ item.last.from }}：{{ item.last.body }}</span>
+          </RouterLink>
+        </div>
       </nav>
-      <article v-if="thread" class="roundtable-timeline" data-testid="roundtable-timeline">
-        <header>
+      <article v-if="thread" class="ui-split-detail" data-testid="roundtable-timeline">
+        <header class="ui-split-detail-head">
           <h2>{{ thread.subject }}</h2>
-          <p class="ui-meta">{{ t('roundtable.messages', { count: thread.messages.length }) }} · {{ time(thread.createdAt) }}</p>
-        </header>
-        <div class="roundtable-scroll">
+          <p class="ui-list-meta">{{ t('roundtable.messages', { count: thread.messages.length }) }} · {{ time(thread.createdAt) }}</p>
           <RoundtableSeats :seats="seats" />
+        </header>
+        <div class="ui-split-detail-body">
           <section class="roundtable-section" :aria-label="t('roundtable.exchanges')" data-roundtable-exchanges>
             <h3>{{ t('roundtable.exchanges') }}</h3>
             <ol v-if="split.exchanges.length">
@@ -142,34 +140,18 @@ function delivery(message: RoundtableMessage) {
           </section>
         </div>
       </article>
-      <p v-else class="roundtable-select ui-meta">{{ t('roundtable.select') }}</p>
+      <p v-else class="ui-split-placeholder">{{ t('roundtable.select') }}</p>
     </div>
   </section>
 </template>
 
 <style scoped>
-.roundtable-view { display: flex; flex-direction: column; overflow: hidden; }
+.roundtable-view { display: flex; flex-direction: column; }
 .roundtable-empty { max-width: 520px; margin: 12vh auto 0; text-align: center; }
 .roundtable-empty strong { font-size: 16px; font-weight: 600; }
 .roundtable-empty p { margin-top: 8px; color: var(--color-muted); }
-.roundtable-layout { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); flex: 1; min-height: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); overflow: hidden; }
-.roundtable-threads { min-height: 0; overflow-y: auto; border-right: 1px solid var(--color-border); background: var(--color-bg); }
-.roundtable-thread { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--color-border); color: var(--color-ink); text-decoration: none; transition: background-color var(--motion-fast); }
-.roundtable-thread:hover { background: var(--color-surface-hover); }
-.roundtable-thread.is-active { background: var(--color-surface); box-shadow: inset 3px 0 0 var(--color-accent); }
-.roundtable-faces { display: flex; padding-top: 2px; }
-.roundtable-faces span, .roundtable-avatar { display: grid; width: 26px; height: 26px; place-items: center; border: 2px solid var(--color-bg); border-radius: 50%; color: var(--agent-identity, var(--color-accent)); background: var(--agent-identity-soft, var(--color-accent-soft)); font-size: 12px; font-weight: 650; }
-.roundtable-faces span + span { margin-left: -9px; }
-.roundtable-thread-copy { display: grid; gap: 2px; min-width: 0; }
-.roundtable-thread-copy strong { overflow: hidden; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.roundtable-thread-copy small { overflow: hidden; color: var(--color-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.roundtable-preview { color: var(--color-faint) !important; }
-.roundtable-thread-meta { display: grid; justify-items: end; align-content: start; gap: 6px; color: var(--color-faint); font-size: 11px; white-space: nowrap; }
-.roundtable-timeline { display: flex; flex-direction: column; min-height: 0; }
-.roundtable-timeline header { padding: 20px 28px 14px; border-bottom: 1px solid var(--color-border); }
-.roundtable-timeline h2 { font-size: 17px; overflow-wrap: anywhere; }
-.roundtable-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 28px 32px; }
-.roundtable-section { margin-top: 20px; }
+.roundtable-section + .roundtable-section { margin-top: 24px; }
+.roundtable-waiting { color: var(--color-warning); font-weight: 600; }
 .roundtable-section h3 { margin: 0 0 12px; color: var(--color-muted); font-size: 13px; font-weight: 600; }
 .roundtable-section ol, .roundtable-section ul { margin: 0; padding: 0; list-style: none; display: grid; align-content: start; gap: 18px; }
 .roundtable-request { display: grid; gap: 6px; max-width: 760px; padding: 12px 14px; border: 1px dashed var(--color-border-strong, var(--color-border)); border-radius: 12px; }
@@ -178,7 +160,7 @@ function delivery(message: RoundtableMessage) {
 .roundtable-request.is-closed .roundtable-request-state { color: var(--color-danger); }
 .roundtable-message { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; max-width: 760px; }
 .roundtable-message.is-reply { margin-left: 42px; }
-.roundtable-avatar { width: 30px; height: 30px; border: 0; }
+.roundtable-avatar { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; color: var(--agent-identity, var(--color-accent)); background: var(--agent-identity-soft, var(--color-accent-soft)); font-size: 12px; font-weight: 650; }
 .roundtable-bubble { min-width: 0; }
 .roundtable-byline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
 .roundtable-byline > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
@@ -186,15 +168,10 @@ function delivery(message: RoundtableMessage) {
 .roundtable-body { padding: 12px 14px; border: 1px solid var(--color-border); border-radius: 4px 12px 12px 12px; background: var(--color-bg); color: var(--color-ink); font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .roundtable-message.is-reply .roundtable-body { background: var(--color-surface); }
 .roundtable-delivery { margin-top: 6px; color: var(--color-faint); font-size: 12px; }
-.roundtable-select { align-self: center; justify-self: center; }
 @media (max-width: 860px) {
-  .roundtable-layout { grid-template-columns: minmax(0, 1fr); }
-  .roundtable-threads { max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--color-border); }
   .roundtable-message.is-reply { margin-left: 16px; }
 }
 @media (max-width: 480px) {
-  .roundtable-timeline header { padding: 16px; }
-  .roundtable-scroll { padding: 12px 16px 24px; }
   .roundtable-message { gap: 8px; }
   .roundtable-message.is-reply { margin-left: 8px; }
 }

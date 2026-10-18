@@ -10,6 +10,7 @@ import { withTranscriptGuard, transcriptDigest } from '../src/conversations/tran
 import { syncConversationTranscript, claimTranscriptBoundary, recordTranscriptTaskEntry } from '../src/conversations/sync-transcript.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from '../src/agents/codex/conversation-transcript.js';
 import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
+import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
 
 const adapter = { normalize: normalizeCodexRecord, verify: verifyCodexTranscript };
 const header = JSON.stringify({ type: 'session_meta', payload: { id: 'session' } }) + '\n';
@@ -38,7 +39,7 @@ async function fixture(t, tail) {
       calls.push({ operation, ...request });
       if (request.mode === 'policy') return { enabled: policyEnabled };
       if (request.mode === 'session') return { cursor, initialized: true };
-      if (request.expected_cursor !== cursor) throw new Error('CAS mismatch');
+      if (request.expected_cursor !== cursor && !(request.fallback_recovery && request.cursor === cursor)) throw new Error('CAS mismatch');
       if (operation === 'append') {
         if (request.agent_id !== owner) throw new Error('Wrong owner');
         appended.push(...request.events.map(event => ({ ...event, owner })));
@@ -47,7 +48,8 @@ async function fixture(t, tail) {
       }
       if (operation === 'boundary') {
         if (failClaim) throw new Error('Claim failed');
-        owner = request.agent_id; return { status: 'bound', cursor };
+        if (request.fallback_recovery) cursor = request.cursor;
+        owner = request.agent_id; return { status: request.fallback_recovery ? 'saved' : 'bound', cursor };
       }
     }
   } };
@@ -127,6 +129,135 @@ test('stale guard does not bind an unrelated task and disabled capture leaves it
     assert.equal((await syncConversationTranscript(f.app, f.input, 'codex', adapter, guard)).status, 'capture_disabled');
     assert.deepEqual(guard.value, before);
   });
+});
+
+function identifyFallback(f, changes = {}) {
+  const current = f.app.personal.currentTaskContext;
+  f.app.personal.currentTaskContext = async () => ({ ...await current(),
+    entry_via: 'tool', session_id: f.input.session_id,
+    source_application: 'codex', personal_space_id: 'space', ...changes });
+}
+
+for (const phase of ['scan', 'ready', 'beginning', 'claim']) {
+  test(`same-session fallback recovers a ${phase} guard without importing the uncertain interval`, async t => {
+    const f = await fixture(t, row('user', 'host-decorated task') + row('assistant', 'fallback answer'));
+    await f.run(guard => guard.write({ version: 1, phase, owner: transcriptDigest('old'),
+      prompt: transcriptDigest('incoming'), scanCursor: header.length,
+      boundary: header.length, ...(phase === 'claim' ? { nextOwner: transcriptDigest('interrupted') } : {}) }));
+    f.switchTask('fallback'); identifyFallback(f);
+    const end = (await stat(f.input.transcript_path)).size;
+    const recovered = await f.run(guard => syncConversationTranscript(f.app,
+      { ...f.input, prompt: undefined }, 'codex', adapter, guard));
+    assert.notEqual(recovered.entryBlocked, true);
+    assert.equal(recovered.cursor, end);
+    assert.equal(recovered.omitted, true);
+    const request = f.calls.find(call => call.fallback_recovery);
+    assert.equal(request.task_context_token, 'fallback');
+    assert.equal(request.expected_cursor, header.length);
+    assert.equal(request.cursor, end);
+    assert.deepEqual(request.events ?? [], []);
+    assert.deepEqual(f.appended, [], 'Uncertain native text is never submitted as events');
+    await f.run(guard => assert.equal(guard.value, null));
+    f.input.prompt = 'next task';
+    await appendFile(f.input.transcript_path, row('user', 'next task'));
+    await f.hook();
+    assert.deepEqual(f.entries, ['begin_task_context'], 'The next prompt uses the Hook rather than fallback');
+    await appendFile(f.input.transcript_path, row('assistant', 'new verified answer'));
+    const saved = await f.run(guard => syncConversationTranscript(f.app,
+      { ...f.input, prompt: undefined }, 'codex', adapter, guard));
+    assert.notEqual(saved.entryBlocked, true);
+    assert.deepEqual(f.appended.map(event => [event.content, event.owner]),
+      [['next task', 'new'], ['new verified answer', 'new']]);
+  });
+}
+
+test('fallback recovery retains a retryable guard after a boundary failure', async t => {
+  const f = await fixture(t, row('user', 'uncertain'));
+  await f.run(guard => syncConversationTranscript(f.app, f.input, 'codex', adapter, guard));
+  f.switchTask('fallback'); identifyFallback(f); f.failClaim(true);
+  const first = await f.run(guard => syncConversationTranscript(f.app, f.input, 'codex', adapter, guard));
+  assert.equal(first.entryBlocked, true);
+  f.failClaim(false);
+  const retry = await f.run(guard => syncConversationTranscript(f.app, f.input, 'codex', adapter, guard));
+  assert.notEqual(retry.entryBlocked, true);
+  assert.equal(retry.omitted, true);
+  await f.run(guard => assert.equal(guard.value, null));
+});
+
+test('fallback recovery replays a committed boundary after a lost response', async t => {
+  const f = await fixture(t, row('user', 'uncertain'));
+  await f.run(guard => syncConversationTranscript(f.app, f.input, 'codex', adapter, guard));
+  f.switchTask('fallback'); identifyFallback(f);
+  const conversation = f.app.personal.conversation;
+  let loseResponse = true;
+  f.app.personal.conversation = async (operation, request) => {
+    const result = await conversation(operation, request);
+    if (request.fallback_recovery && loseResponse) { loseResponse = false; throw new Error('Lost response'); }
+    return result;
+  };
+  const first = await f.run(guard => syncConversationTranscript(f.app, f.input, 'codex', adapter, guard));
+  assert.equal(first.entryBlocked, true);
+  const retry = await f.run(guard => syncConversationTranscript(f.app, f.input, 'codex', adapter, guard));
+  assert.notEqual(retry.entryBlocked, true);
+  const requests = f.calls.filter(call => call.fallback_recovery);
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[0], requests[1]);
+  await f.run(guard => assert.equal(guard.value, null));
+});
+
+for (const changes of [{ session_id: 'foreign' }, { source_application: 'other' },
+  { personal_space_id: 'foreign' }, { entry_via: 'hook' }, { entry_via: undefined }]) {
+  test(`fallback recovery rejects unverifiable native ownership ${JSON.stringify(changes)}`, async t => {
+    const f = await fixture(t, row('user', 'uncertain'));
+    await f.run(guard => syncConversationTranscript(f.app, f.input, 'codex', adapter, guard));
+    f.switchTask('fallback'); identifyFallback(f, changes);
+    const result = await f.run(guard => syncConversationTranscript(f.app, f.input, 'codex', adapter, guard));
+    assert.equal(result.entryBlocked, true);
+    assert.equal(f.calls.some(call => call.fallback_recovery), false);
+    assert.deepEqual(f.appended, []);
+  });
+}
+
+test('fallback recovery waits for a complete native tail', async t => {
+  const f = await fixture(t, row('user', 'uncertain'));
+  await f.run(guard => syncConversationTranscript(f.app, f.input, 'codex', adapter, guard));
+  await appendFile(f.input.transcript_path, '{"unfinished":');
+  f.switchTask('fallback'); identifyFallback(f);
+  const result = await f.run(guard => syncConversationTranscript(f.app, f.input, 'codex', adapter, guard));
+  assert.equal(result.entryBlocked, true);
+  assert.equal(f.calls.some(call => call.fallback_recovery), false);
+});
+
+test('fallback recovery rejects a native file belonging to another session', async t => {
+  const f = await fixture(t, row('user', 'uncertain'));
+  await f.run(guard => syncConversationTranscript(f.app, f.input, 'codex', adapter, guard));
+  await writeFile(f.input.transcript_path, JSON.stringify({ type: 'session_meta', payload: { id: 'foreign' } }) + '\n');
+  f.switchTask('fallback'); identifyFallback(f);
+  const result = await f.run(guard => syncConversationTranscript(f.app, f.input, 'codex', adapter, guard));
+  assert.equal(result.entryBlocked, true);
+  assert.equal(f.calls.some(call => call.fallback_recovery), false);
+});
+
+test('Claude Code resumes normal Hook task entry after a same-session fallback', async t => {
+  const f = await fixture(t, '');
+  const native = (role, text) => JSON.stringify({ sessionId: 'session', type: role,
+    message: { content: [{ type: 'text', text }] } }) + '\n';
+  await writeFile(f.input.transcript_path, native('user', 'unverified prior task') + native('assistant', 'fallback answer'));
+  await withTranscriptGuard(f.runtime, f.input, 'claude_code', true, guard => guard.write({
+    version: 1, phase: 'scan', owner: transcriptDigest('old'), prompt: transcriptDigest('old prompt'),
+    scanCursor: header.length, userMessages: 0, omitted: false }));
+  f.switchTask('fallback'); identifyFallback(f, { source_application: 'claude_code' });
+  const output = await runClaudeLifecycleHook(['--event', 'UserPromptSubmit'], {
+    readInput: async () => f.input, write: () => {},
+    resolveRuntimeOptions: () => ({ runtimeConfigPath: f.runtime }), openApplication: () => f.app,
+    createLeases: () => ({ withGraphLease: async (_owner, operation) => operation() }),
+    callTool: async (_app, name) => { f.entries.push(name); f.switchTask('new'); return { taskContextToken: 'new' }; }
+  });
+  assert.deepEqual(f.entries, ['begin_task_context']);
+  assert.match(output.hookSpecificOutput.additionalContext, /Fuli task context/);
+  const recovery = f.calls.find(call => call.fallback_recovery);
+  assert.equal(recovery.source_application, 'claude_code');
+  assert.deepEqual(f.appended, []);
 });
 
 test('guard serializes same-session hooks and persists only hashes and cursors with private permissions', async t => {

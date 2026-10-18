@@ -86,7 +86,7 @@ describe('Agent profile integration', () => {
     await editor.trigger('submit')
     await flushPromises()
     expect(putJson).toHaveBeenCalledWith('/api/project-agents/alpha/occupation', { personalSpaceId: 'space-a', role: null, tags: ['testing', 'design'] })
-    expect(wrapper.get('[data-profile-occupation]').text()).toBe('测试 · 设计')
+    expect(wrapper.findAll('[data-profile-occupation] [data-occupation]').map(chip => chip.text())).toEqual(['测试', '设计'])
     // The free-text responsibility stays as it was.
     expect(wrapper.text()).toContain('Synthetic alpha role')
   })

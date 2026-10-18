@@ -1,6 +1,7 @@
 export const roundtableMessages = {
   'zh-CN': {
     threads: 'Agent 之间的对话',
+    count: '{count} 段对话',
     empty: '还没有 Agent 之间的对话',
     emptyHint: 'Agent 在任意已接入的客户端里调用 message_agent，就会出现在这里。',
     select: '选择一段对话查看',
@@ -27,6 +28,7 @@ export const roundtableMessages = {
   },
   'en-US': {
     threads: 'Agent conversations',
+    count: '{count} conversations',
     empty: 'No Agent conversations yet',
     emptyHint: 'They appear here when an Agent calls message_agent in any connected client.',
     select: 'Select a conversation',

@@ -31,10 +31,10 @@ async function mountAt(path: string) {
 describe('RoundtablesPage', () => {
   beforeEach(() => { setLocale('zh-CN', { persist: false }); getJson.mockReset() })
 
-  it('gives each participant one stable identity colour across the thread list and timeline', async () => {
+  it('gives each participant one stable identity colour across the participant chips and timeline', async () => {
     getJson.mockImplementation(async (url: string) => url === '/api/roundtable/threads' ? { threads: [thread] } : detail)
     const wrapper = await mountAt('/roundtables/thread-1')
-    const faces = wrapper.findAll('.roundtable-faces span').map((face) => face.attributes('style'))
+    const faces = wrapper.findAll('[data-roundtable-seat]').map((seat) => seat.attributes('style'))
     const avatars = wrapper.findAll('.roundtable-avatar').map((avatar) => avatar.attributes('style'))
     expect(faces[0]).toMatch(/--agent-identity: var\(--identity-[0-7]\)/)
     expect(avatars).toEqual(faces)

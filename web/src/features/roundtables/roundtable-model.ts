@@ -56,9 +56,3 @@ export function tableSeats(messages: RoundtableMessage[], pending: RoundtableMes
   }
   return [...seats.values()]
 }
-
-/** Seat position on a circle, as percentages of the table box; first seat at the top. */
-export function seatPosition(index: number, count: number) {
-  const angle = (2 * Math.PI * index) / Math.max(count, 1) - Math.PI / 2
-  return { left: `${50 + 42 * Math.cos(angle)}%`, top: `${50 + 42 * Math.sin(angle)}%` }
-}

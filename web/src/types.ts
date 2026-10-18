@@ -500,10 +500,8 @@ export interface ProjectAgentLearningEvidence {
   neutral?: boolean
 }
 
-export type AgentOccupationKey =
-  | 'lead' | 'assistant'
-  | 'product' | 'engineering' | 'design' | 'operations' | 'testing'
-  | 'research' | 'data' | 'writing' | 'management'
+/** A key from the space's occupation catalog (built-in or custom). */
+export type AgentOccupationKey = string
 
 /** Person-set long-term role; never inferred from a task, never a permission. */
 export interface AgentOccupation {
@@ -514,6 +512,8 @@ export interface AgentOccupation {
 
 export interface ProjectAgentRecord {
   agentId: string
+  /** Fixed roles keep the occupation their manifest gives them. */
+  occupationLocked?: boolean
   employeeNumber?: string | null
   legacyAgentIds?: string[]
   personalSpaceId: string

@@ -2,6 +2,7 @@ import { initialTranscriptBoundary, readTranscriptBatch } from './transcript-rea
 import { transcriptDigest } from './transcript-guard.js';
 import { lookupTranscriptTask } from './current-task-lookup.js';
 import { appendTranscriptPage } from './transcript-append.js';
+import { recoverFallbackTranscript } from './fallback-transcript-boundary.js';
 
 const pending = reason => ({ status: 'partial', entryBlocked: true, reason });
 const retryReason = 'Transcript handoff is pending. Retry task entry to continue its saved progress; no new Agent context was supplied';
@@ -20,6 +21,8 @@ export async function syncConversationTranscript(application, input, sourceAppli
     const policy = await application.personal.conversation('query', { ...scope, mode: 'policy' });
     if (!policy.enabled) return { status: 'capture_disabled' };
     let session = await application.personal.conversation('query', { ...scope, mode: 'session', session_id: input.session_id });
+    const recovered = await recoverFallbackTranscript(application, input, sourceApplication, adapter, guard, task, session);
+    if (recovered) return recovered;
     if (!session.initialized) return guard?.value ? pending('Transcript initialization changed during handoff. Start a new host session and resume the intended Agent') : { status: 'partial', reason: 'Transcript capture needs a verified task entry boundary' };
     if (guard?.value?.phase === 'claim') {
       if (guard.value.nextOwner !== transcriptDigest(task.token)) return pending('Transcript task ownership changed during handoff. Start a new host session and resume the intended Agent');
@@ -109,7 +112,7 @@ export async function recordTranscriptTaskEntry(guard, context) {
 }
 
 export function withTranscriptNotice(output, sync) {
-  if (!sync?.entryBlocked && !['unsaved', 'partial'].includes(sync?.status)) return output;
+  if (!sync?.entryBlocked && !sync?.omitted && !['unsaved', 'partial'].includes(sync?.status)) return output;
   return { ...output, systemMessage: [output.systemMessage, `Fuli: ${sync.reason}.`].filter(Boolean).join('\n') };
 }
 

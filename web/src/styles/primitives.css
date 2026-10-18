@@ -162,6 +162,34 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(2px);
 .ui-list-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
 @media (max-width: 720px) { .ui-list-row { flex-direction: column; gap: 10px; } }
 
+/* One split look for conversation pages (圆桌, 问过你): list on the left, the open item on the right. */
+.ui-split { display: grid; grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); height: min(780px, calc(100dvh - 180px)); min-height: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); overflow: hidden; }
+.ui-split-list { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--color-border); background: var(--color-surface-subtle); }
+.ui-split-head { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 8px 12px 8px 16px; border-bottom: 1px solid var(--color-border); color: var(--color-muted); font-size: 12px; }
+.ui-split-head > span { min-width: 0; overflow-wrap: anywhere; }
+.ui-split-items { display: grid; flex: 1; align-content: start; gap: 4px; min-height: 0; padding: 8px; overflow-y: auto; overscroll-behavior: contain; }
+.ui-split-item { display: grid; gap: 4px; width: 100%; min-width: 0; padding: 12px; border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; color: var(--color-ink); text-align: left; text-decoration: none; cursor: pointer; transition: background-color var(--motion-fast); }
+.ui-split-item:hover { background: var(--color-surface-hover); }
+.ui-split-item.is-selected { border-color: var(--color-border); background: var(--color-surface); box-shadow: var(--shadow-sm); }
+.ui-split-item-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; color: var(--color-muted); font-size: 11px; }
+.ui-split-item-meta > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-split-item-meta > :not(:first-child) { flex-shrink: 0; }
+.ui-split-item-title { font-size: 13px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.ui-split-item-sub { overflow: hidden; color: var(--color-faint); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.ui-split-detail { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.ui-split-detail-head { display: grid; flex: 0 0 auto; gap: 6px; padding: 18px 28px 14px; border-bottom: 1px solid var(--color-border); }
+.ui-split-detail-head h2 { margin: 0; font-size: 16px; font-weight: 650; overflow-wrap: anywhere; }
+.ui-split-detail-body { flex: 1; min-height: 0; padding: 20px 28px 32px; overflow-y: auto; overscroll-behavior: contain; }
+.ui-split-placeholder { align-self: center; justify-self: center; margin: auto; color: var(--color-muted); font-size: 13px; }
+@media (max-width: 860px) {
+  .ui-split { display: flex; flex-direction: column; height: auto; min-height: min(640px, calc(100dvh - 160px)); }
+  .ui-split-list { flex: 0 0 auto; max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--color-border); }
+}
+@media (max-width: 480px) {
+  .ui-split-detail-head { padding: 14px 16px 12px; }
+  .ui-split-detail-body { padding: 16px 16px 24px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0s !important; animation-duration: 0s !important; }
 }

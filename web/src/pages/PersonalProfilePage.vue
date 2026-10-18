@@ -6,13 +6,12 @@ import { getJson, postJson } from '@/api/client'
 import { readPersonalProfileGraph } from '@/api/personal-profile-graph'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiSelect from '@/ui/UiSelect.vue'
-import VirtualDirectoryList from '@/components/VirtualDirectoryList.vue'
+import { UiEmpty, UiIconButton, UiSegmented, UiStatRow, UiToolbar, type UiStat } from '@/ui'
 import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay'
 import KnowledgeConfirmDialog from '@/features/knowledge/KnowledgeConfirmDialog.vue'
 import KnowledgeInspector from '@/features/knowledge/KnowledgeInspector.vue'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
 import PreferenceConflictDialog from '@/features/preferences/PreferenceConflictDialog.vue'
-import WritingTasteMilestone from '@/features/preferences/WritingTasteMilestone.vue'
 import {
   detectPreferenceConflicts,
   preferenceConflictRecordItemIds,
@@ -31,11 +30,10 @@ import {
 } from '@/features/knowledge/model'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
-import type { KnowledgeGraph, KnowledgeItem, WritingTasteProfile } from '@/types'
+import type { KnowledgeGraph, KnowledgeItem } from '@/types'
 
 const store = useConsoleStore()
 const graph = ref<KnowledgeGraph | null>(null)
-const writingTaste = ref<WritingTasteProfile | null>(null)
 const loading = ref(false)
 const initialLoading = computed(() => loading.value && !graph.value)
 const showInitialLoading = useMinimumLoadingDisplay(initialLoading)
@@ -97,17 +95,11 @@ const visibleItems = computed(() =>
       ),
   ),
 )
-const profileListResetKey = computed(() => JSON.stringify([
-  activeAspect.value,
-  activeScope.value,
-  activeReviewState.value,
-  conflictsOnly.value,
-]))
-const selectedItemIndex = computed(() => selectedItem.value
-  ? visibleItems.value.findIndex(({ id, itemKind }) =>
-      id === selectedItem.value?.id && itemKind === selectedItem.value?.itemKind)
-  : -1,
-)
+// A plain list shows the first page; "show more" adds the next one.
+const PAGE = 100
+const shownLimit = ref(PAGE)
+const shownItems = computed(() => visibleItems.value.slice(0, shownLimit.value))
+watch([activeAspect, activeScope, activeReviewState, conflictsOnly], () => { shownLimit.value = PAGE })
 const visibleConflicts = computed(() =>
   conflicts.value.filter(
     ({ left, right }) => matchesActiveFilters(left) || matchesActiveFilters(right),
@@ -180,13 +172,47 @@ const agentConfirmedCount = computed(
     (item) => knowledgeReviewState(item) === 'agent_confirmed',
   ).length,
 )
+// The same stat row as every memory page; each count is also its filter.
+const stats = computed<UiStat[]>(() => [
+  { key: 'confirmed', label: t('preferences.profile.summary.confirmed'), value: confirmedCount.value, tone: 'success',
+    pressed: !conflictsOnly.value && activeReviewState.value === 'confirmed',
+    ariaLabel: t('preferences.profile.summary.confirmedAria', { count: confirmedCount.value }) },
+  { key: 'agent_confirmed', label: t('preferences.profile.summary.agentConfirmed'), value: agentConfirmedCount.value, tone: 'accent',
+    pressed: !conflictsOnly.value && activeReviewState.value === 'agent_confirmed',
+    ariaLabel: t('preferences.profile.summary.agentConfirmedAria', { count: agentConfirmedCount.value }) },
+  { key: 'pending', label: t('preferences.profile.summary.pending'), value: observedCount.value, tone: 'warning',
+    pressed: !conflictsOnly.value && activeReviewState.value === 'pending',
+    ariaLabel: t('preferences.profile.summary.pendingAria', { count: observedCount.value }) },
+  { key: 'conflict', label: t('preferences.profile.summary.conflicts'), value: conflicts.value.length,
+    tone: conflicts.value.length ? 'danger' : 'neutral', pressed: conflictsOnly.value,
+    ariaLabel: conflicts.value.length ? t('preferences.profile.summary.conflictAria', { count: conflicts.value.length })
+      : t('preferences.profile.summary.noConflictsAria') },
+])
+const aspectSegments = computed(() => aspectOptions.value.map(([value, label]) => ({ value, label })))
+const countText = computed(() => {
+  if (conflictsOnly.value) return t('preferences.profile.filters.conflictsCount', { visible: visibleConflicts.value.length, total: conflicts.value.length })
+  if (activeReviewState.value !== 'all') return t('preferences.profile.filters.reviewCount', { count: visibleItems.value.length,
+    status: activeReviewState.value === 'pending' ? t('preferences.profile.summary.pending')
+      : activeReviewState.value === 'agent_confirmed' ? t('preferences.profile.summary.agentConfirmed') : t('preferences.profile.summary.confirmed') })
+  return visibleItems.value.length === items.value.length
+    ? t('preferences.profile.filters.personalUnderstanding', { count: items.value.length })
+    : t('preferences.profile.filters.visibleCount', { visible: visibleItems.value.length, total: items.value.length })
+})
+function selectStat(key: string) {
+  if (key === 'conflict') toggleConflictWorkbench()
+  else toggleReviewState(key as KnowledgeReviewState)
+}
+const isSelected = (item: KnowledgeItem) => selectedItem.value?.id === item.id && selectedItem.value?.itemKind === item.itemKind
+// Details open inline under their row; a second click closes them.
+function toggleItem(item: KnowledgeItem) {
+  selectedItem.value = isSelected(item) ? null : item
+}
 
 watch(
   () => store.activePersonalSpace?.id,
   (spaceId, previousSpaceId) => {
     if (spaceId !== previousSpaceId) {
       graph.value = null
-      writingTaste.value = null
       conflictRecords.value = []
       selectedItem.value = null
       confirmingItem.value = null
@@ -236,50 +262,30 @@ async function load(spaceId = store.activePersonalSpace?.id) {
       personalSpaceId: spaceId,
       limit: '500',
     })
-    const writingTasteQuery = new URLSearchParams({
-      personalSpaceId: spaceId,
-      limit: '500',
-    })
-    const [nextGraph, nextConflictRecords, nextWritingTaste] = await Promise.all([
+    const [nextGraph, nextConflictRecords] = await Promise.all([
       readPersonalProfileGraph(spaceId, controller.signal),
       getJson<PreferenceConflictRecord[]>(
         `/api/preference-conflicts?${conflictQuery}`,
         { signal: controller.signal },
       ),
-      getJson<WritingTasteProfile>(
-        `/api/writing-taste-profile?${writingTasteQuery}`,
-        { signal: controller.signal },
-      ).catch(() => null),
     ])
     if (requestVersion !== loadVersion || controller.signal.aborted) return
     graph.value = nextGraph
     conflictRecords.value = Array.isArray(nextConflictRecords)
       ? nextConflictRecords
       : []
-    writingTaste.value = isWritingTasteProfile(nextWritingTaste)
-      ? nextWritingTaste
-      : null
     if (selectedItem.value) {
       selectedItem.value = items.value.find(({ id }) => id === selectedItem.value?.id) ?? null
     }
   } catch (error) {
     if (requestVersion !== loadVersion || controller.signal.aborted) return
     graph.value = null
-    writingTaste.value = null
     store.reportError(error)
   } finally {
     if (requestVersion !== loadVersion || controller.signal.aborted) return
     loading.value = false
     if (loadController === controller) loadController = null
   }
-}
-
-function isWritingTasteProfile(value: unknown): value is WritingTasteProfile {
-  if (!value || typeof value !== 'object') return false
-  const candidate = value as Partial<WritingTasteProfile>
-  return ['collecting', 'preview_ready', 'active'].includes(candidate.status ?? '')
-    && Boolean(candidate.readiness)
-    && Array.isArray(candidate.rules)
 }
 
 function statusLabel(item: KnowledgeItem) {
@@ -404,131 +410,23 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 </script>
 
 <template>
-  <section class="view vue-personal-profile">
-    <div
-      class="personal-profile-summary"
-      :aria-label="t('preferences.profile.summaryAria')"
-    >
-      <button
-        type="button"
-        class="profile-summary-action state-confirmed"
-        :aria-label="t('preferences.profile.summary.confirmedAria', { count: confirmedCount })"
-        :aria-pressed="!conflictsOnly && activeReviewState === 'confirmed'"
-        @click="toggleReviewState('confirmed')"
-      >
-        {{ t('preferences.profile.summary.confirmed') }}<strong>{{ confirmedCount }}</strong>
-      </button>
-      <button
-        type="button"
-        class="profile-summary-action state-agent-confirmed"
-        :aria-label="t('preferences.profile.summary.agentConfirmedAria', { count: agentConfirmedCount })"
-        :aria-pressed="!conflictsOnly && activeReviewState === 'agent_confirmed'"
-        @click="toggleReviewState('agent_confirmed')"
-      >
-        {{ t('preferences.profile.summary.agentConfirmed') }}<strong>{{ agentConfirmedCount }}</strong>
-      </button>
-      <button
-        type="button"
-        class="profile-summary-action state-pending"
-        :aria-label="t('preferences.profile.summary.pendingAria', { count: observedCount })"
-        :aria-pressed="!conflictsOnly && activeReviewState === 'pending'"
-        @click="toggleReviewState('pending')"
-      >
-        {{ t('preferences.profile.summary.pending') }}<strong>{{ observedCount }}</strong>
-      </button>
-      <button
-        type="button"
-        class="profile-summary-action state-conflict"
-        :aria-label="conflicts.length
-          ? t('preferences.profile.summary.conflictAria', { count: conflicts.length })
-          : t('preferences.profile.summary.noConflictsAria')"
-        :aria-pressed="conflictsOnly"
-        @click="toggleConflictWorkbench()"
-      >
-        {{ t('preferences.profile.summary.conflicts') }}<strong>{{ conflicts.length }}</strong>
-      </button>
-    </div>
+  <section class="view page-stack vue-personal-profile">
+    <UiStatRow :items="stats" :label="t('preferences.profile.summaryAria')" @select="selectStat" />
 
-    <div v-if="writingTaste || (conflicts.length && !conflictsOnly && activeReviewState === 'all')" class="personal-profile-notices">
-      <section
-        v-if="conflicts.length && !conflictsOnly && activeReviewState === 'all'"
-        class="preference-conflict-alert"
-        :aria-label="t('preferences.profile.alert.aria')"
-      >
-        <div class="preference-conflict-alert-icon" aria-hidden="true">!</div>
-        <div>
-          <h2>{{ t('preferences.profile.alert.title', { count: conflicts.length }) }}</h2>
-          <p>{{ t('preferences.profile.alert.copy') }}</p>
-        </div>
-        <button class="primary-action" type="button" @click="toggleConflictWorkbench(true)">
-          {{ t('preferences.profile.alert.action') }}
-        </button>
-      </section>
-
-      <WritingTasteMilestone :profile="writingTaste" />
-    </div>
-
-    <div class="personal-profile-toolbar">
-      <div class="personal-profile-filter-groups">
-        <div
-          class="personal-profile-filters ui-segmented"
-          role="group"
-          :aria-label="t('preferences.profile.filters.aspectAria')"
-        >
-          <button
-            v-for="[value, label] in aspectOptions"
-            :key="value"
-            type="button"
-            :aria-pressed="activeAspect === value"
-            @click="activeAspect = value"
-          >
-            {{ label }}
-          </button>
-        </div>
-        <UiSelect
-          v-model="activeScope"
-          class="personal-profile-scope-filter"
-          control-id="personal-profile-scope"
-          :label="t('preferences.profile.filters.scopeLabel')"
-          :options="scopeOptions"
-        />
-      </div>
-      <div class="personal-profile-toolbar-actions">
-        <span v-if="conflictsOnly" class="muted">
-          {{
-            t('preferences.profile.filters.conflictsCount', {
-              visible: visibleConflicts.length,
-              total: conflicts.length,
-            })
-          }}
-        </span>
-        <span v-else-if="activeReviewState !== 'all'" class="muted">
-          {{
-            t('preferences.profile.filters.reviewCount', {
-              count: visibleItems.length,
-              status: activeReviewState === 'pending'
-                ? t('preferences.profile.summary.pending')
-                : activeReviewState === 'agent_confirmed'
-                  ? t('preferences.profile.summary.agentConfirmed')
-                  : t('preferences.profile.summary.confirmed'),
-            })
-          }}
-        </span>
-        <span v-else class="muted">
-          {{
-            visibleItems.length === items.length
-              ? t('preferences.profile.filters.personalUnderstanding', { count: items.length })
-              : t('preferences.profile.filters.visibleCount', {
-                visible: visibleItems.length,
-                total: items.length,
-              })
-          }}
-        </span>
-        <button class="toolbar-action" type="button" :disabled="loading" @click="load()">
-          {{ t('common.actions.refresh') }}
-        </button>
-      </div>
-    </div>
+    <UiToolbar>
+      <UiSegmented v-model="activeAspect" data-profile-aspects :options="aspectSegments" :label="t('preferences.profile.filters.aspectAria')" />
+      <UiSelect
+        v-model="activeScope"
+        class="personal-profile-scope-filter"
+        control-id="personal-profile-scope"
+        :label="t('preferences.profile.filters.scopeLabel')"
+        :options="scopeOptions"
+      />
+      <template #end>
+        <span data-profile-count>{{ countText }}</span>
+        <UiIconButton icon="refresh" size="sm" :label="t('common.actions.refresh')" :disabled="loading" @click="load()" />
+      </template>
+    </UiToolbar>
 
     <GrowthLoading v-if="loading && graph && !showInitialLoading && !conflictsOnly" variant="inline" :label="t('preferences.profile.directory.loading')" />
     <GrowthLoading
@@ -628,69 +526,46 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
       </div>
     </section>
 
-    <div v-else class="personal-profile-layout" :class="{ 'has-selection': selectedItem }">
-      <!-- @vue-generic {import('@/types').KnowledgeItem} -->
-      <VirtualDirectoryList
-        class="personal-profile-directory"
-        :items="visibleItems"
-        :row-height="76"
-        :active-index="selectedItemIndex"
-        :reset-key="profileListResetKey"
-        :item-key="itemKey"
-        :label="t('preferences.profile.directory.aria')"
+    <UiEmpty v-else-if="!visibleItems.length" class="ui-list"
+      :text="items.length ? t('preferences.profile.directory.noFiltered') : t('preferences.profile.directory.empty')" />
+    <div v-else class="ui-list personal-profile-list" :aria-label="t('preferences.profile.directory.aria')">
+      <article
+        v-for="item in shownItems"
+        :key="itemKey(item)"
+        class="personal-profile-row"
+        :class="{
+          selected: isSelected(item),
+          'pending-review': knowledgeReviewState(item) === 'pending',
+          'ai-resolved-conflict': aiResolvedIds.has(item.id),
+        }"
       >
-        <template #header>
-          <div class="personal-profile-table-head" aria-hidden="true">
-            <span>{{ t('preferences.profile.directory.aspect') }}</span>
-            <span>{{ t('preferences.profile.directory.content') }}</span>
-            <span>{{ t('preferences.profile.directory.statusScopeSource') }}</span>
-            <span>{{ t('preferences.profile.directory.updated') }}</span>
-          </div>
-        </template>
-
-        <template #default="{ item }">
-          <button
-            class="personal-profile-row"
-            :class="{
-              selected: selectedItem?.id === item.id,
-              'pending-review': knowledgeReviewState(item) === 'pending',
-              'ai-resolved-conflict': aiResolvedIds.has(item.id),
-            }"
-            type="button"
-            @click="selectedItem = item"
-          >
-            <span class="profile-aspect-mark" :class="item.profileAspect">{{ profileAspectLabel(item.profileAspect) }}</span>
-            <span class="personal-profile-copy"><strong>{{ item.title }}</strong><small>{{ item.body }}</small></span>
-            <span class="personal-profile-origin">
-              <strong :class="{ 'has-conflict': conflictingIds.has(item.id) }">{{ statusLabel(item) }}</strong>
-              <small>
-                {{ scopeLabel(item) }} ·
-                {{ t('preferences.profile.directory.sourceCount', { count: item.evidence.length }) }}
-              </small>
-            </span>
-            <time>{{ formatTime(latestItemValue(item)) }}</time>
-          </button>
-        </template>
-
-        <template #empty>
-          <div class="empty-state">
-            {{
-              items.length
-                ? t('preferences.profile.directory.noFiltered')
-                : t('preferences.profile.directory.empty')
-            }}
-          </div>
-        </template>
-      </VirtualDirectoryList>
-      <KnowledgeInspector
-        class="personal-profile-inspector"
-        :item="selectedItem"
-        :graph="graph"
-        editable
-        @confirm="confirmingItem = $event"
-        @edit="editingItem = $event"
-        @open-replacement="openReplacement"
-      />
+        <button class="personal-profile-open" type="button" :aria-expanded="isSelected(item)" @click="toggleItem(item)">
+          <span class="profile-aspect-mark" :class="item.profileAspect">{{ profileAspectLabel(item.profileAspect) }}</span>
+          <span class="personal-profile-copy"><strong>{{ item.title }}</strong><small>{{ item.body }}</small></span>
+          <span class="personal-profile-origin">
+            <strong :class="{ 'has-conflict': conflictingIds.has(item.id) }">{{ statusLabel(item) }}</strong>
+            <small>
+              {{ scopeLabel(item) }} ·
+              {{ t('preferences.profile.directory.sourceCount', { count: item.evidence.length }) }}
+            </small>
+          </span>
+          <time>{{ formatTime(latestItemValue(item)) }}</time>
+        </button>
+        <KnowledgeInspector
+          v-if="isSelected(item)"
+          class="personal-profile-detail"
+          :item="item"
+          :graph="graph"
+          editable
+          @confirm="confirmingItem = $event"
+          @edit="editingItem = $event"
+          @open-replacement="openReplacement"
+        />
+      </article>
+      <button v-if="shownItems.length < visibleItems.length" class="personal-profile-more" type="button" data-profile-more
+        @click="shownLimit += PAGE">
+        {{ t('preferences.profile.directory.showMore', { count: Math.min(PAGE, visibleItems.length - shownItems.length) }) }}
+      </button>
     </div>
     <KnowledgeEditDialog
       :item="editingItem"
@@ -720,65 +595,13 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 </template>
 
 <style scoped>
-.personal-profile-notices {
-  display: grid;
-  flex: 0 0 auto;
-  gap: var(--space-4);
-  margin-block: var(--space-4) var(--space-6);
-}
 
-.preference-conflict-alert {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 13px;
-  padding: 12px 14px;
-  border: 1px solid var(--color-border);
-  border-radius: 11px;
-  background: var(--color-surface);
-  box-shadow: var(--shadow-md);
-}
 
-.preference-conflict-alert-icon {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--color-muted);
-  color: var(--color-surface);
-  font-size: 16px;
-  font-weight: 800;
-}
 
-.preference-conflict-alert > div:nth-child(2) {
-  display: grid;
-  gap: 2px;
-}
 
-.preference-conflict-alert span {
-  color: var(--color-muted);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
 
-.preference-conflict-alert h2,
-.preference-conflict-alert p {
-  margin: 0;
-}
 
-.preference-conflict-alert h2 {
-  color: var(--color-ink);
-  font-size: 14px;
-}
 
-.preference-conflict-alert p {
-  color: var(--color-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
 
 .preference-conflict-workbench {
   min-height: 0;
@@ -962,26 +785,18 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
   color: var(--color-ink);
 }
 
-.personal-profile-inspector :deep(.inspector-classification.state-pending),
-.personal-profile-inspector :deep(.inspector-classification.state-needs_review) {
+.personal-profile-detail :deep(.inspector-classification.state-pending),
+.personal-profile-detail :deep(.inspector-classification.state-needs_review) {
   border-color: var(--color-warning-soft);
   background: var(--color-warning-soft);
 }
 
-.personal-profile-inspector :deep(.inspector-classification.state-pending strong),
-.personal-profile-inspector :deep(.inspector-classification.state-needs_review strong) {
+.personal-profile-detail :deep(.inspector-classification.state-pending strong),
+.personal-profile-detail :deep(.inspector-classification.state-needs_review strong) {
   color: var(--color-warning);
 }
 
 @media (max-width: 860px) {
-  .preference-conflict-alert {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .preference-conflict-alert > button {
-    grid-column: 1 / -1;
-  }
-
   .preference-conflict-workbench > header,
   .preference-conflict-card-heading,
   .preference-conflict-card footer {
@@ -1005,5 +820,26 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
     justify-content: flex-start;
     flex-wrap: wrap;
   }
+}
+
+.personal-profile-row { display: grid; }
+.personal-profile-row + .personal-profile-row { border-top: 1px solid var(--color-border); }
+.personal-profile-open {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(140px, 220px) auto; align-items: center; gap: 14px;
+  width: 100%; padding: 14px 16px; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; cursor: pointer;
+}
+.personal-profile-open:hover, .personal-profile-row.selected .personal-profile-open { background: var(--color-surface-hover); }
+.personal-profile-open:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.personal-profile-copy, .personal-profile-origin { display: grid; gap: 4px; min-width: 0; }
+.personal-profile-copy strong { color: var(--color-ink); font-size: 14px; font-weight: 600; }
+.personal-profile-copy small { display: -webkit-box; overflow: hidden; color: var(--color-ink-soft); font-size: 13px; line-height: 1.55; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.personal-profile-origin strong { color: var(--color-ink-soft); font-size: 12px; font-weight: 600; }
+.personal-profile-origin small, .personal-profile-open time { color: var(--color-faint); font-size: 12px; }
+.personal-profile-detail { margin: 0 16px 14px; padding: 14px 16px; border: 1px solid var(--color-border); border-left: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface); }
+.personal-profile-more { width: 100%; padding: 12px; border: 0; border-top: 1px solid var(--color-border); color: var(--color-accent); background: transparent; font: inherit; font-size: 13px; cursor: pointer; }
+.personal-profile-scope-filter { width: min(240px, 28vw); }
+@media (max-width: 720px) {
+  .personal-profile-open { grid-template-columns: auto minmax(0, 1fr); }
+  .personal-profile-origin, .personal-profile-open time { grid-column: 2; }
 }
 </style>

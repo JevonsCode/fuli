@@ -26,6 +26,7 @@ import {
 } from '@/features/knowledge/model'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
+import { UiButton, UiIconButton, UiSegmented, UiStatRow, UiToolbar, type UiStat } from '@/ui'
 import type { KnowledgeGraph, KnowledgeItem } from '@/types'
 
 const store = useConsoleStore()
@@ -224,9 +225,20 @@ function itemKey(item: Pick<KnowledgeItem, 'itemKind' | 'id'>) {
   return `${item.itemKind}:${item.id}`
 }
 
-function selectQuadrant(value: string) {
-  activeQuadrant.value = activeQuadrant.value === value ? 'all' : value
-}
+// The same stat row and toolbar as every memory page: confirmation counts on
+// top (each one a filter), discovery source as one segmented control.
+const reviewStats = computed<UiStat[]>(() => [
+  { key: 'all', label: t('common.status.all'), value: activeQuadrantItems.value.length, pressed: activeReviewState.value === 'all' },
+  ...reviewChoices.value.map((choice): UiStat => ({
+    key: choice.value, label: choice.label, value: activeReviewCounts.value[choice.value],
+    tone: choice.value === 'pending' ? 'warning' : choice.value === 'confirmed' ? 'success' : 'accent',
+    pressed: activeReviewState.value === choice.value, ariaLabel: `${choice.label} · ${choice.hint}`,
+  })),
+])
+const quadrantSegments = computed(() => [
+  { value: 'all', label: t('common.status.all'), count: items.value.length },
+  ...quadrantChoices.value.map(choice => ({ value: choice.value, label: choice.short, count: quadrantCounts.value[choice.value] })),
+])
 
 function selectReviewState(value: 'all' | KnowledgeReviewState) {
   activeReviewState.value = value
@@ -245,86 +257,24 @@ function openReplacement(item: KnowledgeItem) {
   <section
     class="view knowledge-organizer"
   >
-    <div class="organizer-toolbar">
+    <UiStatRow :items="reviewStats" :label="t('knowledge.workspace.organizer.reviewFilterAria')"
+      @select="key => selectReviewState(key as 'all' | KnowledgeReviewState)" />
+    <UiToolbar class="organizer-toolbar">
       <label class="organizer-search">
-        <span>{{ t('knowledge.workspace.organizer.filterKnowledge') }}</span>
+        <span class="ui-sr-only">{{ t('knowledge.workspace.organizer.filterKnowledge') }}</span>
         <input v-model="query" type="search" :placeholder="t('knowledge.workspace.organizer.searchPlaceholder')" />
       </label>
-
-      <div class="quadrant-filter" :aria-label="t('knowledge.workspace.organizer.quadrantFilterAria')">
-        <span>{{ t('knowledge.workspace.organizer.discoverySource') }}</span>
-        <button
-          type="button"
-          data-quadrant="all"
-          :class="{ active: activeQuadrant === 'all' }"
-          :aria-pressed="activeQuadrant === 'all'"
-          @click="activeQuadrant = 'all'"
-        >
-          {{ t('common.status.all') }} <strong>{{ items.length }}</strong>
-        </button>
-        <button
-          v-for="choice in quadrantChoices"
-          :key="choice.value"
-          type="button"
-          :data-quadrant="choice.value"
-          :class="{ active: activeQuadrant === choice.value }"
-          :aria-pressed="activeQuadrant === choice.value"
-          :title="choice.coordinate"
-          @click="selectQuadrant(choice.value)"
-        >
-          {{ choice.short }} <strong>{{ quadrantCounts[choice.value] }}</strong>
-        </button>
-      </div>
-
-      <div class="review-state-filter" :aria-label="t('knowledge.workspace.organizer.reviewFilterAria')">
-        <span>{{ t('knowledge.workspace.organizer.reviewStatus') }}</span>
-        <button
-          type="button"
-          data-review-state="all"
-          :class="{ active: activeReviewState === 'all' }"
-          :aria-pressed="activeReviewState === 'all'"
-          @click="selectReviewState('all')"
-        >
-          {{ t('common.status.all') }} <strong>{{ activeQuadrantItems.length }}</strong>
-        </button>
-        <button
-          v-for="choice in reviewChoices"
-          :key="choice.value"
-          type="button"
-          :data-review-state="choice.value"
-          :class="[
-            `state-${choice.value}`,
-            { active: activeReviewState === choice.value },
-          ]"
-          :aria-pressed="activeReviewState === choice.value"
-          :title="choice.hint"
-          @click="selectReviewState(choice.value)"
-        >
-          {{ choice.label }} <strong>{{ activeReviewCounts[choice.value] }}</strong>
-        </button>
-      </div>
-
-      <div class="organizer-toolbar-actions">
-        <p class="organizer-result-summary">
-          {{ t('knowledge.workspace.organizer.showing', {
-            visible: visibleItems.length,
-            total: activeQuadrantItems.length,
-          }) }}
-          <span v-if="activeReviewState !== 'all'">
-            · {{ reviewChoices.find(({ value }) => value === activeReviewState)?.label }}
-          </span>
-        </p>
-        <button
-          v-if="confirmationGroups.length"
-          class="toolbar-action batch-confirm-action"
-          type="button"
-          @click="batchDialogOpen = true"
-        >
+      <UiSegmented v-model="activeQuadrant" data-organizer-quadrants :options="quadrantSegments"
+        :label="t('knowledge.workspace.organizer.quadrantFilterAria')" />
+      <template #end>
+        <span class="organizer-result-summary">{{ t('knowledge.workspace.organizer.showing', {
+          visible: visibleItems.length, total: activeQuadrantItems.length }) }}</span>
+        <UiButton v-if="confirmationGroups.length" class="batch-confirm-action" size="sm" @click="batchDialogOpen = true">
           {{ t('knowledge.workspace.organizer.batchConfirm', { count: confirmationGroups.length }) }}
-        </button>
-        <button class="toolbar-action" type="button" :disabled="loading || loadingMore" @click="load()">{{ t('common.actions.refresh') }}</button>
-      </div>
-    </div>
+        </UiButton>
+        <UiIconButton icon="refresh" size="sm" :label="t('common.actions.refresh')" :disabled="loading || loadingMore" @click="load()" />
+      </template>
+    </UiToolbar>
 
     <GrowthLoading v-if="loading && graph && !loadingMore && !showInitialLoading" variant="inline" :label="t('common.status.loadingKnowledge')" />
     <GrowthLoading
@@ -438,134 +388,13 @@ function openReplacement(item: KnowledgeItem) {
   overflow: hidden;
 }
 
-.organizer-toolbar {
-  min-width: 0;
-  min-height: 34px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  align-content: center;
-  gap: 6px 8px;
-}
-
-.organizer-search {
-  flex: 1 1 300px;
-  min-width: 180px;
-  max-width: 360px;
-}
-
-.organizer-search > span {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-}
-
+.organizer-search { flex: 1 1 260px; min-width: 200px; }
 .organizer-search input {
-  width: 100%;
+  width: 100%; height: var(--control-height-sm); padding: 0 12px; border: 1px solid var(--color-control-border);
+  border-radius: var(--radius-control); color: var(--color-ink); background: var(--color-surface); font: inherit; font-size: 13px;
 }
-
-.review-state-filter,
-.quadrant-filter {
-  min-width: 0;
-  max-width: 100%;
-  flex: 0 1 auto;
-  height: 31px;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-surface-subtle);
-  overflow-x: auto;
-  overflow-y: hidden;
-  white-space: nowrap;
-}
-
-.quadrant-filter {
-  max-width: 470px;
-  overflow-x: auto;
-}
-
-.review-state-filter > span,
-.quadrant-filter > span {
-  padding: 0 6px;
-  color: var(--color-muted);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.review-state-filter button,
-.quadrant-filter button {
-  height: 25px;
-  padding: 0 7px;
-  border: 0;
-  border-radius: 5px;
-  color: var(--color-muted);
-  background: transparent;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.review-state-filter button:hover,
-.quadrant-filter button:hover {
-  color: var(--color-ink);
-  background: color-mix(in srgb, var(--color-surface) 66%, transparent);
-}
-
-.review-state-filter button.active,
-.quadrant-filter button.active {
-  color: var(--color-ink);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-sm);
-}
-
-.review-state-filter button.state-pending.active {
-  color: var(--color-warning);
-}
-
-.review-state-filter button.state-agent_confirmed.active {
-  color: var(--color-success);
-}
-
-.review-state-filter button.state-confirmed.active {
-  color: var(--color-success);
-}
-
-.review-state-filter button.state-ai_reviewed.active {
-  color: var(--color-accent);
-}
-
-.review-state-filter button strong,
-.quadrant-filter button strong {
-  margin-left: 2px;
-  font-size: 12px;
-  font-weight: 720;
-}
-
-.organizer-result-summary {
-  flex: 0 0 auto;
-  color: var(--color-muted);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.organizer-toolbar-actions {
-  min-width: 0;
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  white-space: nowrap;
-}
-
-.organizer-toolbar-actions .toolbar-action {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
+.organizer-search input:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+.organizer-result-summary { color: var(--color-muted); font-size: 12px; white-space: nowrap; }
 
 .organizer-layout {
   min-height: 0;
@@ -627,8 +456,7 @@ function openReplacement(item: KnowledgeItem) {
 }
 
 .organizer-row.selected {
-  background: var(--color-surface-subtle);
-  box-shadow: inset 2px 0 var(--color-accent);
+  background: var(--color-accent-soft);
 }
 
 .organizer-item-copy {
@@ -732,8 +560,6 @@ function openReplacement(item: KnowledgeItem) {
 
 
 @media (max-width: 1260px) {
-  .review-state-filter > span,
-  .quadrant-filter > span,
   .organizer-result-summary {
     display: none;
   }
@@ -750,18 +576,7 @@ function openReplacement(item: KnowledgeItem) {
 
 @media (max-width: 1040px) {
   .organizer-search {
-    max-width: none;
     flex-basis: 100%;
-  }
-
-  .review-state-filter,
-  .quadrant-filter {
-    flex: 1 1 auto;
-  }
-
-  .organizer-toolbar-actions {
-    flex: 1 0 100%;
-    justify-content: flex-end;
   }
 
   .organizer-layout.has-selection {
@@ -787,10 +602,5 @@ function openReplacement(item: KnowledgeItem) {
 
 @media (max-width: 720px) {
   .organizer-layout.has-selection { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(160px, 1fr) minmax(160px, .8fr); }
-  .review-state-filter,
-  .quadrant-filter {
-    width: 100%;
-    flex-basis: 100%;
-  }
 }
 </style>

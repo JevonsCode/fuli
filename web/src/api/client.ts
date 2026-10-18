@@ -55,6 +55,10 @@ export function patchJson<T>(url: string, body: unknown): Promise<T> {
   })
 }
 
-export function deleteJson<T>(url: string): Promise<T> {
-  return requestJson<T>(url, { method: 'DELETE' })
+export function deleteJson<T>(url: string, body?: unknown): Promise<T> {
+  return requestJson<T>(url, body === undefined ? { method: 'DELETE' } : {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
 }

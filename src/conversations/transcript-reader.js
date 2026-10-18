@@ -3,6 +3,26 @@ import { transcriptDigest } from './transcript-guard.js';
 import { safeConversationContent } from '../graphiti/agent-conversations.js';
 
 const WINDOW = 512 * 1024;
+
+// Recovery skips an uncertain interval, so it needs only a verified native
+// identity and a complete current EOF. Never parse/import the skipped payload.
+export async function verifiedTranscriptEnd(path, sessionId, adapter) {
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const stat = await file.stat();
+    if (!stat.isFile() || !stat.size) throw new Error('Native transcript is unavailable');
+    const header = Buffer.alloc(Math.min(WINDOW, stat.size));
+    await file.read(header, 0, header.length, 0);
+    const firstEnd = header.indexOf(10);
+    if (firstEnd < 0 || !adapter.verify(JSON.parse(header.subarray(0, firstEnd).toString()), sessionId)) {
+      throw new Error('Native transcript identity changed');
+    }
+    const last = Buffer.alloc(1);
+    await file.read(last, 0, 1, stat.size - 1);
+    if (last[0] !== 10) throw new Error('Native transcript tail is incomplete');
+    return stat.size;
+  } finally { await file.close(); }
+}
 // Start capture at this task, never import an existing file's unrelated past.
 // Read only a bounded tail; a prompt not yet written by the host starts at EOF.
 export async function initialTranscriptBoundary(path, sessionId, prompt, adapter) {
