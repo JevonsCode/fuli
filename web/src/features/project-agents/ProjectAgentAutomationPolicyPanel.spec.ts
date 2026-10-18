@@ -148,7 +148,9 @@ describe('ProjectAgentAutomationPolicyPanel', () => {
     // A group needs a name and a sub-lead before the team can be saved.
     expect(save().attributes('disabled')).toBeDefined()
     await row.get('.sub-team-name').setValue('后端')
-    row.findComponent(UiSelect).vm.$emit('update:modelValue', 'backend')
+    // The newest select on the panel is the group's sub-lead; UiSelect is generic, so its wrapper is typed loosely.
+    const subLead = wrapper.findAllComponents(UiSelect).at(-1) as unknown as { vm: { $emit: (event: string, value: string) => void } }
+    subLead.vm.$emit('update:modelValue', 'backend')
     await flushPromises()
     await row.findAll('.sub-team-members input').find(input => input.attributes('value') === 'engineer')!.setValue(true)
     expect(row.findAll('.sub-team-members input').map(input => input.attributes('value'))).not.toContain('backend')
