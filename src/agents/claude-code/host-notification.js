@@ -1,4 +1,5 @@
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
+import { isSystemPromptEntry, systemPromptOutput } from '../system-prompt.js';
 
 const HOST_NOTIFICATION = /^\s*<task-notification>\s*<task-id>([^<>\r\n]+)<\/task-id>([\s\S]*)<\/task-notification>\s*$/;
 const TAIL_BYTES = 512 * 1024;
@@ -13,6 +14,7 @@ export function looksLikeHostNotification(prompt) {
 // it after delivery. Only a pending, exact, main-session enqueue can continue
 // the current task. A queued user command always takes precedence for that enqueue.
 export function isHostNotificationEntry(input, { readTail = readTranscriptTail } = {}) {
+  if (isSystemPromptEntry(input)) return true;
   if (!looksLikeHostNotification(input?.prompt)
       || typeof input.session_id !== 'string' || !input.session_id.trim() || input.session_id.length > 256
       || typeof input.cwd !== 'string' || !input.cwd.trim()
@@ -44,11 +46,7 @@ export function isHostNotificationEntry(input, { readTail = readTranscriptTail }
   } catch { return false; }
 }
 
-export function hostNotificationOutput(event) {
-  return { hookSpecificOutput: { hookEventName: event, additionalContext:
-    'Fuli: host background-task notification, not a new user task. Keep the current task context and its '
-    + 'taskContextToken; no new task entry or fallback call is needed.' } };
-}
+export const hostNotificationOutput = systemPromptOutput;
 
 function readTranscriptTail(path) {
   const descriptor = openSync(path, 'r');

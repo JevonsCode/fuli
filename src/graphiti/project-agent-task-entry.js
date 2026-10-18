@@ -108,7 +108,7 @@ async function resolveGlobalAgent(application, resolution, input) {
 
 export async function loadProjectAgentContinuity(application, {
   projectId, agent, sourceApplication = 'other', taskPrompt = null,
-  selectionReason = null, matchBasis = [], includeKnowledge = true
+  selectionReason = null, matchBasis = [], includeKnowledge = true, includeTeam = true
 }) {
   const scope = { personalSpaceId: application.config.personal.spaceId,
     personalProjectId: projectId, agentId: agent.agentId };
@@ -126,7 +126,7 @@ export async function loadProjectAgentContinuity(application, {
       ? application.personal.getProjectAgentMemory({ ...memoryScope, limit: 1 })
       : Promise.resolve(null)]),
     ...(projectId ? [
-      ['team', loadProjectTeamContext(application, scope.personalSpaceId, projectId)],
+      ...(includeTeam ? [['team', loadProjectTeamContext(application, scope.personalSpaceId, projectId)]] : []),
       ['project', application.personal.getPersonalProject(scope.personalSpaceId, projectId)],
       ['tasks', application.personal.listProjectAgentTasks({ ...scope, limit: 4 })],
       ['knowledge', includeKnowledge ? Promise.all(queries.map(query => application.searchKnowledge({
@@ -171,7 +171,7 @@ export async function loadProjectAgentContinuity(application, {
     ...projectAgentRoleContext(agent, profile),
     memory: data.memory ?? null,
     ...(projectId ? { global_memory: data.global_memory ?? null } : {}),
-    team: data.team ?? null,
+    ...(includeTeam ? { team: data.team ?? null } : {}),
     recent_tasks: (Array.isArray(data.tasks) ? data.tasks : []).map(task => ({
       task_id: task.task_id, title: task.title, status: task.status,
       result_summary: task.result_summary, updated_at: task.updated_at

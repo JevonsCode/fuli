@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
 import { FULI_VERSION } from '../../package-metadata.js';
-import { transcriptGuardFailureMessage, withTranscriptGuard } from '../../conversations/transcript-guard.js';
+import { transcriptLifecycle } from '../../conversations/transcript-lifecycle.js';
 import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { PREFERENCE_RESET_EVENTS, preferenceHookOutput, preferenceLifecycleOutput } from '../../conversations/preference-lifecycle.js';
-import { syncConversationTranscript, withTranscriptNotice, claimTranscriptBoundary, recordTranscriptTaskEntry } from '../../conversations/sync-transcript.js';
+import { isSystemPromptEntry, systemPromptOutput } from '../system-prompt.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from './conversation-transcript.js';
 
 import { callAgentTool } from '../../agent-tools.js';
@@ -13,7 +13,6 @@ import { openFederatedGraphApplication } from '../../graphiti/federated-applicat
 import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
 import { isMainModule } from '../../system/main-module.js';
 import { readHookInput } from '../lifecycle-input.js';
-import { boundedHookMessage } from '../lifecycle-message.js';
 import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 
 export async function codexStopLifecycleOutput(input, invoke) {
@@ -32,6 +31,7 @@ export async function codexStopLifecycleOutput(input, invoke) {
 }
 
 export async function codexLifecycleOutput(event, input, invoke, { delivery, currentTask } = {}) {
+  if (event === 'UserPromptSubmit' && isSystemPromptEntry(input)) return systemPromptOutput(event);
   if (PREFERENCE_RESET_EVENTS.includes(event)) return preferenceLifecycleOutput(event, input,
     { sourceApplication: 'codex', delivery, currentTask, invoke });
   if (event === 'Stop') return codexStopLifecycleOutput(input, invoke);
@@ -50,6 +50,9 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
   if (!['Stop', 'UserPromptSubmit', ...PREFERENCE_RESET_EVENTS].includes(event)) throw new TypeError('Missing Codex lifecycle event');
   const input = await (dependencies.readInput ?? readHookInput)();
   const write = dependencies.write ?? ((value) => process.stdout.write(value));
+  if (event === 'UserPromptSubmit' && isSystemPromptEntry(input)) {
+    const output = systemPromptOutput(event); write(`${JSON.stringify(output)}\n`); return output;
+  }
   if (dependencies.invoke) {
     const output = await codexLifecycleOutput(event, input, dependencies.invoke);
     write(`${JSON.stringify(output)}\n`);
@@ -78,36 +81,14 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
       if (PREFERENCE_RESET_EVENTS.includes(event)) return codexLifecycleOutput(event, input,
         (name, parameters) => invokeTool(app, name, parameters, { signal: dependencies.signal }),
         { delivery: app.preferenceDelivery, currentTask: app.taskContextRegistry?.current?.bind(app.taskContextRegistry) });
-      try {
-        return await withTranscriptGuard(runtimeConfigPath, input, 'codex', app.getCapturePolicy?.('codex').enabled, async guard => {
-          let sync = await syncConversationTranscript(app, input, 'codex', {
-            normalize: normalizeCodexRecord, verify: verifyCodexTranscript
-          }, guard);
-          if (event === 'UserPromptSubmit' && !guard?.value
-            && ['current_task_endpoint_unavailable', 'current_task_lookup_unavailable'].includes(sync.code)) {
-            // Before any ownership was read, let the native message proceed
-            // without beginning a Fuli task or restoring/importing history.
-            // Existing guards and all later failures remain fail-closed.
-            return { systemMessage: `Fuli: ${sync.reason}. Message submission is allowed; no saved Agent context was loaded or changed.` };
-          }
-          if (event === 'UserPromptSubmit' && sync.entryBlocked) return { systemMessage: boundedHookMessage(sync.reason) };
-          const entryGuard = sync.status === 'capture_disabled' ? null : guard;
-          if (event === 'UserPromptSubmit' && entryGuard?.value) await entryGuard.write({ ...entryGuard.value, phase: 'beginning' });
-          const result = await codexLifecycleOutput(event, input, async (name, parameters) => {
-            const context = await invokeTool(app, name, parameters, { signal: dependencies.signal });
-            if (name === 'begin_task_context') await recordTranscriptTaskEntry(entryGuard, context);
-            return context;
-          }, { delivery: app.preferenceDelivery });
-          if (event === 'UserPromptSubmit') sync = await claimTranscriptBoundary(app, input, 'codex', sync, {
-            normalize: normalizeCodexRecord, verify: verifyCodexTranscript
-          }, entryGuard);
-          if (event === 'UserPromptSubmit' && sync.entryBlocked) return { systemMessage: boundedHookMessage(sync.reason) };
-          return withTranscriptNotice(result, sync);
-        });
-      } catch (error) {
-        if (event !== 'UserPromptSubmit' || !app.getCapturePolicy?.('codex').enabled || !input.transcript_path) throw error;
-        return { systemMessage: transcriptGuardFailureMessage(error) };
-      }
+      return transcriptLifecycle({ application: app, runtimeConfigPath, input, event, sourceApplication: 'codex',
+        captureTimeoutMs: dependencies.captureTimeoutMs, signal: dependencies.signal,
+        adapter: { normalize: normalizeCodexRecord, verify: verifyCodexTranscript },
+        run: onContext => codexLifecycleOutput(event, input, async (name, parameters) => {
+          const context = await invokeTool(app, name, parameters, { signal: dependencies.signal });
+          if (name === 'begin_task_context') onContext(context);
+          return context;
+        }, { delivery: app.preferenceDelivery }) });
     }, { signal: dependencies.signal });
     const delivered = event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, outdatedMcpNotice(runtimeConfigPath,
       { sourceApplication: 'codex', version: FULI_VERSION, sessionId: input?.session_id })) : output;
@@ -172,6 +153,7 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
   });
   try {
     const running = runCodexLifecycleHook(args, { ...dependencies, signal: controller.signal, write,
+      captureTimeoutMs: Math.max(1, Math.min(750, Math.floor(timeoutMs / 4))),
       readInput: async () => { input = await readInput(); return input; },
       onCleanup: close => { cleanup = close; } }).then(() => ({ timedOut: false }), () => {
       // Never print prompts, transcripts, paths or credentials.

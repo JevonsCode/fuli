@@ -208,7 +208,7 @@ test('Claude command quotes shell metacharacters and never interpolates user inp
   assert.doesNotMatch(command, /\$\{prompt\}|\$\{session_id\}/);
 });
 
-test('Claude blocked handoff supplies exact host fallback identity without bypassing the guard', async () => {
+test('Claude blocked handoff delivers a fresh task without importing history or changing the pending guard', async () => {
   const { mkdtemp, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
@@ -219,8 +219,11 @@ test('Claude blocked handoff supplies exact host fallback identity without bypas
   const guardState = { version: 1, phase: 'claim', owner: transcriptDigest('old-token'),
     nextOwner: transcriptDigest('interrupted-token'), prompt: transcriptDigest(native.prompt), scanCursor: 0, boundary: 0 };
   const calls = [];
+  let savedState;
   try {
-    await withTranscriptGuard(runtimeConfigPath, native, 'claude_code', true, guard => guard.write(guardState));
+    await withTranscriptGuard(runtimeConfigPath, native, 'claude_code', true, async guard => {
+      await guard.write(guardState); savedState = structuredClone(guard.value);
+    });
     const output = await runClaudeLifecycleHook(['--event', 'UserPromptSubmit'], {
       readInput: async () => native,
       resolveRuntimeOptions: () => ({ runtimeConfigPath }),
@@ -230,16 +233,16 @@ test('Claude blocked handoff supplies exact host fallback identity without bypas
           currentTaskContext: async () => ({ token: 'externally-replaced-token', project_agent_id: 'engineer', personal_project_id: 'project' }),
           conversation: async (_operation, query) => query.mode === 'policy' ? { enabled: true } : { initialized: true, cursor: 0 }
         } }),
-      callTool: async (_app, name) => calls.push(name)
+      callTool: async (_app, name) => { calls.push(name); return { taskContextToken: 'fresh-entry-token' }; }
     });
-    assert.match(output.systemMessage, /ownership changed/);
+    assert.match(output.systemMessage, /not imported/);
     assert.equal(output.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
     const context = output.hookSpecificOutput.additionalContext;
-    assert.match(context, /get_collaboration_preferences/);
-    assert.match(context, /synthetic-claude-session/);
+    assert.doesNotMatch(context, /First call get_collaboration_preferences/);
+    assert.match(context, /fresh-entry-token/);
     assert.doesNotMatch(context, /old-token|interrupted-token|externally-replaced-token|missing.jsonl/);
-    assert.deepEqual(calls, []);
-    await withTranscriptGuard(runtimeConfigPath, native, 'claude_code', true, guard => assert.deepEqual(guard.value, guardState));
+    assert.deepEqual(calls, ['begin_task_context']);
+    await withTranscriptGuard(runtimeConfigPath, native, 'claude_code', true, guard => assert.deepEqual(guard.value, savedState));
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
@@ -283,7 +286,7 @@ test('Claude task entry is not blocked by an unrelated listener on the former gu
   assert.deepEqual(f.calls, ['begin_task_context']);
 });
 
-test('Claude same-session hook reports a held guard as another Fuli hook without beginning a task', async t => {
+test('Claude same-session hook skips the held transcript guard while delivering a task', async t => {
   const { withTranscriptGuard } = await import('../src/conversations/transcript-guard.js');
   const f = await claudeGuardFixture(t);
   await withTranscriptGuard(f.runtimeConfigPath, f.native, 'claude_code', true, async () => {
@@ -291,6 +294,6 @@ test('Claude same-session hook reports a held guard as another Fuli hook without
     assert.match(output.systemMessage, /Another Fuli hook for this host session is still running/);
     assert.notEqual(output.decision, 'block');
   });
-  assert.deepEqual(f.calls, []);
+  assert.deepEqual(f.calls, ['begin_task_context']);
   assert.deepEqual(f.lookups, []);
 });

@@ -55,10 +55,15 @@ export function compactTaskContext(value) {
     }))
   };
   const continuity = value.project_agent_context;
-  const teamRules = continuity?.team?.guidance ?? continuity?.team_guidance;
+  const management = value.project_management_context;
+  const omitTeam = !value.worker_run && Object.hasOwn(value, 'project_management_context')
+    && (management?.status === 'degraded' || !management?.managers?.length);
+  if (omitTeam) delete result.judgment_context;
+  const teamRules = !omitTeam && (continuity?.team?.guidance ?? continuity?.team_guidance);
   const teamGuidance = teamRules ? text(teamRules, 'team_guidance') : undefined;
   if (continuity) result.project_agent_context = { ...continuity,
-    team: compactTeamRoster(continuity.team, teamGuidance),
+    team: omitTeam ? undefined : compactTeamRoster(continuity.team, teamGuidance),
+    team_guidance: undefined,
     recent_tasks: undefined,
     guidance: text(continuity.guidance, 'continuity_guidance'),
     ...(teamGuidance ? { team_guidance: teamGuidance } : {}),

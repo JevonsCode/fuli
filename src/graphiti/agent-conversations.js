@@ -1,5 +1,6 @@
 import { detectSensitiveContent } from '../security/sensitive-content.js';
 import { agentContinuation, taskAgentReceipt } from '../agents/identity-receipt.js';
+import { captureWindow } from '../conversations/capture-window.js';
 
 export function conversationScope(application, input) {
   return { personal_space_id: application.config.personal.spaceId,
@@ -22,24 +23,26 @@ export async function beginConversation(application, task) {
   if (!task.projectAgentId) return { status: 'unassigned' };
   if (!application.getCapturePolicy?.(task.sourceApplication).enabled) return { status: 'capture_disabled' };
   try {
-    const scope = conversationScope(application, task);
-    const session = await application.personal.conversation('query', { ...scope, mode: 'session', session_id: task.sessionId });
-    const recent = session.conversation_id ? null : await application.personal.conversation('query', {
-      ...scope, mode: 'list', limit: 1
+    return await captureWindow(application, null, async application => {
+      const scope = conversationScope(application, task);
+      const session = await application.personal.conversation('query', { ...scope, mode: 'session', session_id: task.sessionId });
+      // A different native chat is a new task, not implicit consent to resume
+      // whichever conversation happened to finish last. Explicit resume binds
+      // that conversation to this session before the next entry.
+      const previousId = session.conversation_id ?? null;
+      // Recover before opening this turn. Native visible messages are persisted
+      // only by the transcript collector, with its stable byte-based event IDs.
+      const previous = previousId
+        ? await application.personal.conversation('query', { ...scope, mode: 'context', conversation_id: previousId })
+        : null;
+      const saved = await application.personal.conversation('append', {
+        ...conversationTask(application, task), events: []
+      });
+      return { ...saved, recovery: previous?.context ?? null, recovered_from: previousId ?? null,
+        compacted: (previous?.compacted_through ?? 0) > 0,
+        // The same native chat already holds its recent messages.
+        same_session: Boolean(session.conversation_id), guidance: CONVERSATION_GUIDANCE };
     });
-    const previousId = session.conversation_id ?? recent?.conversations?.[0]?.id;
-    // Recover before opening this turn. Native visible messages are persisted
-    // only by the transcript collector, with its stable byte-based event IDs.
-    const previous = previousId
-      ? await application.personal.conversation('query', { ...scope, mode: 'context', conversation_id: previousId })
-      : null;
-    const saved = await application.personal.conversation('append', {
-      ...conversationTask(application, task), events: []
-    });
-    return { ...saved, recovery: previous?.context ?? null, recovered_from: previousId ?? null,
-      compacted: (previous?.compacted_through ?? 0) > 0,
-      // The same native chat already holds its recent messages.
-      same_session: Boolean(session.conversation_id), guidance: CONVERSATION_GUIDANCE };
   } catch { return unavailable(); }
 }
 

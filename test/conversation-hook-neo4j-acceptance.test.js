@@ -50,16 +50,18 @@ test('candidate Hook subprocesses persist visible history and recover only the s
         ? { authorization: `Bearer ${accessToken}` } : { 'x-fuli-bootstrap-token': bootstrapToken }) },
       ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(15_000)
     });
-    assert.equal(response.ok, true, `Synthetic HTTP ${response.status}: ${path}`);
-    return response.json();
+    const payload = await response.json();
+    assert.equal(response.ok, true, `Synthetic HTTP ${response.status}: ${path}: ${JSON.stringify(payload)}`);
+    return payload;
   }
   const principal = await request('/v1/bootstrap', { principal_name: 'Synthetic Hook acceptance' });
   accessToken = principal.access_token;
   const space = await request('/v1/spaces', { name: 'Synthetic Hook journal', kind: 'personal' });
   await request('/v1/personal-projects', { personal_space_id: space.id, project_id: projectId,
-    profile: { name: 'Synthetic Hook project', lifecycle: 'active' } }, 'PUT');
+    profile: { name: 'Synthetic Hook project', lifecycle: 'active', purpose: 'Verify synthetic Hook task entry and transcript boundaries.' } }, 'PUT');
   for (const [agentId, workKind, capability] of [['engineer', 'implementation', 'coding'], ['reviewer', 'code_review', 'review']]) {
     await request('/v1/project-agents', { personal_space_id: space.id, personal_project_id: projectId, agent_id: agentId,
+      occupation: { role: 'engineering' },
       profile: { name: `Synthetic ${agentId}`, responsibility: 'Maintain the synthetic fixture.',
         allowed_clients: ['claude_code', 'codex'], work_kinds: [workKind], capabilities: [capability] } }, 'PUT');
   }
@@ -120,14 +122,6 @@ test('candidate Hook subprocesses persist visible history and recover only the s
   await appendFile(transcript, claudeRow(session, 'assistant', [
     { type: 'thinking', thinking: 'PRIVATE_THINKING_NOT_CAPTURED' }, { type: 'text', text: marker }
   ]));
-  const stop = await hook('claude-code', 'Stop', { session_id: session, cwd: projectPath, transcript_path: transcript });
-  assert.notEqual(stop.decision, 'block', 'pending checkpoint does not intercept completion');
-  assert.equal(typeof stop.systemMessage, 'string');
-  const saved = await query({ mode: 'events', conversation_id: initialized.conversation_id });
-  assert.ok(saved.events.some(event => event.content === marker));
-  assert.equal(saved.events.filter(event => event.role === 'user' && event.content === prompt).length, 1,
-    'task entry and the native collector must not duplicate the user prompt');
-  assert.doesNotMatch(JSON.stringify(saved.events), /OLD_SCOPE_DO_NOT_IMPORT|PRIVATE_THINKING_NOT_CAPTURED/);
   // Explicit synthetic checkpoint, with no model call and no fabricated completion from the Hook.
   const application = openFederatedGraphApplication({ runtimeConfigPath });
   try {
@@ -139,8 +133,17 @@ test('candidate Hook subprocesses persist visible history and recover only the s
     });
     assert.equal(checkpoint.agent_memory.revision, 1);
   } finally { await application.close(); }
+  const stop = await hook('claude-code', 'Stop', { session_id: session, cwd: projectPath, transcript_path: transcript });
+  assert.notEqual(stop.decision, 'block', 'pending checkpoint does not intercept completion');
+  assert.deepEqual(stop, {}, 'explicit work was checkpointed before Stop; no second model turn is needed');
+  const saved = await query({ mode: 'events', conversation_id: initialized.conversation_id });
+  assert.ok(saved.events.some(event => event.content === marker));
+  assert.equal(saved.events.filter(event => event.role === 'user' && event.content === prompt).length, 1,
+    'task entry and the native collector must not duplicate the user prompt');
+  assert.doesNotMatch(JSON.stringify(saved.events), /OLD_SCOPE_DO_NOT_IMPORT|PRIVATE_THINKING_NOT_CAPTURED/);
   assert.deepEqual(await hook('claude-code', 'Stop', { session_id: session, cwd: projectPath, transcript_path: transcript }), {});
-  // A different host format + new chat selects the same role and restores both layers.
+  // A different native chat restores the role's memory, but does not infer
+  // that the latest conversation is the user's intended continuation.
   const codexSession = 'synthetic-second';
   const codexPath = join(directory, 'second.jsonl');
   const nextPrompt = 'Implement the next synthetic change.';
@@ -148,22 +151,24 @@ test('candidate Hook subprocesses persist visible history and recover only the s
   const next = context(await hook('codex', 'UserPromptSubmit', { session_id: codexSession,
     turn_id: 'turn-two', cwd: projectPath, transcript_path: codexPath, prompt: nextPrompt }));
   assert.equal(next.context.project_agent_id, 'engineer');
-  assert.deepEqual(next.conversation.recovery.messages.map(message => message.content), [prompt, marker]);
-  assert.equal(next.conversation.recovery.messagesOmitted, undefined);
-  assert.equal(next.conversation.recovery.truncated, false);
-  assert.equal(next.conversation.recovery.conversation_id, next.conversation.recovered_from);
-  assert.notEqual(next.conversation.recovered_from, next.conversation.conversation_id);
-  assert.ok(Buffer.byteLength(JSON.stringify(next.conversation.recovery)) <= 4000);
-  assert.doesNotMatch(JSON.stringify(next.conversation.recovery), /PRIVATE_THINKING_NOT_CAPTURED|OLD_SCOPE_DO_NOT_IMPORT/);
-  assert.equal(next.conversation.recovery.latest_checkpoint.summary, 'Synthetic Hook flow verified.');
+  assert.equal(next.conversation.recovery, null);
+  assert.equal(next.conversation.recovered_from, null);
   // Each raw message can be reread exactly from the recovered source, which
   // differs from the new conversation. No external model/host is involved.
   const historyApplication = openFederatedGraphApplication({ runtimeConfigPath });
   try {
+    const resumed = await callAgentTool(historyApplication, 'resume_agent_conversation', {
+      taskContextToken: next.task_context_token, conversationId: first.conversation.conversation_id,
+      sourceApplication: 'codex', sourceSessionId: codexSession
+    });
+    assert.equal(resumed.context.latest_checkpoint.summary, 'Synthetic Hook flow verified.');
+    assert.deepEqual(resumed.context.messages.map(message => message.content), [prompt, marker]);
+    assert.ok(Buffer.byteLength(JSON.stringify(resumed.context)) <= 4000);
+    assert.doesNotMatch(JSON.stringify(resumed.context), /PRIVATE_THINKING_NOT_CAPTURED|OLD_SCOPE_DO_NOT_IMPORT/);
     const history = await callAgentTool(historyApplication, 'read_agent_conversation', {
       personalSpaceId: space.id, personalProjectId: projectId, agentId: 'engineer',
-      conversationId: next.conversation.recovered_from, sourceApplication: 'codex',
-      sourceSessionId: codexSession, after: next.conversation.recovery.messages.at(-1).sequence - 1, limit: 1
+      conversationId: first.conversation.conversation_id, sourceApplication: 'codex',
+      sourceSessionId: codexSession, after: resumed.context.messages.at(-1).sequence - 1, limit: 1
     });
     assert.deepEqual(history.events.map(message => message.content), [marker]);
   } finally { await historyApplication.close(); }
@@ -192,6 +197,35 @@ test('candidate Hook subprocesses persist visible history and recover only the s
   assert.doesNotMatch(JSON.stringify(reviewer), /VISIBLE_TRANSCRIPT_SYNTHETIC_MARKER|SYNTHETIC_DURABLE_MEMORY_MARKER/);
   // Disable this Agent's capture through the real Provider, then exercise another Hook pair.
   await selectLead('engineer');
+  // An oversized/unmatched native interval must not disable the next real
+  // user entry. Exercise actual Hook subprocesses and Provider transactions.
+  for (const source of ['claude-code', 'codex']) {
+    const sourceApplication = source === 'claude-code' ? 'claude_code' : source;
+    const nativeSession = `synthetic-unblock-${source}`;
+    const nativePath = join(directory, `${source}-unblock.jsonl`);
+    const nativeRow = (role, text) => source === 'claude-code' ? claudeRow(nativeSession, role, text)
+      : JSON.stringify({ type: 'response_item', payload: { type: 'message', role,
+        content: [{ type: role === 'user' ? 'input_text' : 'output_text', text }] } }) + '\n';
+    await writeFile(nativePath, (source === 'codex' ? JSON.stringify({ type: 'session_meta', payload: { id: nativeSession } }) + '\n' : '')
+      + nativeRow('user', 'Implement the synthetic prior task.'));
+    const nativeInput = { session_id: nativeSession, cwd: projectPath, transcript_path: nativePath };
+    const before = context(await hook(source, 'UserPromptSubmit', { ...nativeInput, prompt: 'Implement the synthetic prior task.' }));
+    await appendFile(nativePath, 'x'.repeat(2 * 1024 * 1024) + '\n' + nativeRow('user', 'UNCERTAIN_NATIVE_USER_RECORD'));
+    const incoming = 'Implement the synthetic unblocked task.';
+    const after = context(await hook(source, 'UserPromptSubmit', { ...nativeInput, prompt: incoming }));
+    assert.notEqual(after.task_context_token, before.task_context_token);
+    assert.equal(after.context.project_agent_id, 'engineer');
+    assert.equal(Array.isArray(after.effective_preferences), true);
+    const scoped = extra => query({ source_application: sourceApplication, ...extra });
+    const boundary = await scoped({ mode: 'session', session_id: nativeSession });
+    const quarantined = await scoped({ mode: 'events', conversation_id: boundary.conversation_id });
+    assert.ok(quarantined.events.some(event => /omitted.*unverified/i.test(event.content)));
+    assert.doesNotMatch(JSON.stringify(quarantined.events), /UNCERTAIN_NATIVE_USER_RECORD|x{100}/);
+    await appendFile(nativePath, nativeRow('user', incoming) + nativeRow('assistant', 'VERIFIED_AFTER_UNBLOCK'));
+    await hook(source, 'Stop', nativeInput);
+    const continued = await scoped({ mode: 'events', conversation_id: boundary.conversation_id });
+    assert.ok(continued.events.some(event => event.content === 'VERIFIED_AFTER_UNBLOCK'));
+  }
   await request('/v1/agent-conversations/policy', { ...scope, policy: { compact_after_kb: 64, context_budget: 2000, enabled: false } }, 'PUT');
   const beforeDisabled = await query({ mode: 'list' });
   const disabledSession = 'synthetic-disabled';
