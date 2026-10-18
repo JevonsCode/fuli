@@ -9,3 +9,17 @@ export const MCP_INSTRUCTIONS = [
   "all workerStatus terminal. executionSummary: one row/worker: occupation emoji, actual executor/sourceApplication, work/status/session/link, source-labelled cumulative tokens. Missing token usage=-; never invent/estimate/copy totals. Empty: omit; configured/allowed/available not evidence",
   "Terminal-safe Markdown; no HTML. Match=candidate only. If supported: MUST begin sourceMarker.leadMarkdown; append sourceMarker.markdown; else noMatchSourceMarker (empty); Keep unchanged."
 ].join(' ');
+
+// The chat profile lists only the everyday tools. Naming unlisted tools here
+// made clients spend a model request on discovery before every task, so this
+// text names only what is listed and sends everything else through discovery
+// when a task actually needs it.
+export const MCP_CHAT_INSTRUCTIONS = [
+  'Final replies MUST copy agent_receipt.markdown unchanged once; checkpoint\'s wins; no stale owner.',
+  'Each user task: if the host hook already supplied FULI task context, use it; else before tools/answer call exactly get_collaboration_preferences(projectPath=cwd taskPrompt=current user request); never substitute a project action; never guess personalProjectId.',
+  'Apply effective_preferences; writes=actual payload; final text not compliance.',
+  'Before asking a stable project fact/method: task_knowledge_recall; miss: search_current_project_knowledge with focused action/artifact/target/ID queries, never only the full request. Before saying unknown: search_knowledge_graph.',
+  'End: checkpoint_task_knowledge with retain_nothing, or capture_candidates, plus workLog.',
+  'Other FULI work (saving decisions, teams, coordination, external knowledge) only when the task needs it: list_agent_interfaces(toolName), then fuli_call; follow that tool\'s rules. Coordinated work: executionSummary one row per worker with actual executor and source-labelled tokens; missing=-; never invent.',
+  'Terminal-safe Markdown; no HTML. Match=candidate only. If supported: MUST begin sourceMarker.leadMarkdown; append sourceMarker.markdown; else noMatchSourceMarker (empty); Keep unchanged.',
+].join(' ');

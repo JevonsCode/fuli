@@ -14,7 +14,7 @@ import { callAgentTool, listAgentTools } from '../agent-tools.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { runWithAgentRequestContext, sealedWorkerRequestContext } from '../app/agent-request-context.js';
 import { FULI_VERSION } from '../package-metadata.js';
-import { MCP_INSTRUCTIONS } from './instructions.js';
+import { MCP_CHAT_INSTRUCTIONS, MCP_INSTRUCTIONS } from './instructions.js';
 import { createProjectActionPreviewTokens } from './project-action-preview-tokens.js';
 import { createCommonKnowledgePreviewTokens } from './common-knowledge-preview-tokens.js';
 import { auditLifecycleTool } from './lifecycle-audit.js';
@@ -106,7 +106,7 @@ export function createMcpServer(
     sourceApplication = nativeCodexThreadId(env) ? 'codex' : 'other',
     withRuntimeLease = (_owner, operation) => operation(),
     hostSessionId = null,
-    instructions = MCP_INSTRUCTIONS,
+    instructions = null,
     toolNames = null,
     toolProfile = 'full',
     prepareToolInput = (_name, input) => input,
@@ -123,7 +123,7 @@ export function createMcpServer(
   }
   const server = new McpServer(
     { name: 'fuli', version: FULI_VERSION },
-    { instructions }
+    { instructions: instructions ?? (toolProfile === 'chat' ? MCP_CHAT_INSTRUCTIONS : MCP_INSTRUCTIONS) }
   );
 
   const authoritativeSourceApplication = normalizeMcpSourceApplication(
