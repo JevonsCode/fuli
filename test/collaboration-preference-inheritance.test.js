@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
+import { searchFederatedKnowledge } from '../src/graphiti/federated-search.js';
 
 test('agent collaboration preferences preserve inherited scope and rationale metadata', async () => {
   const calls = [];
@@ -82,8 +83,6 @@ test('agent collaboration preferences preserve inherited scope and rationale met
     preference_project_id: 'platform-a',
     confirmation_status: 'confirmed',
     confirmation_basis: inherited.confirmation_basis,
-    weight_percent: 100,
-    confirmed_by_person: false,
     attributes: inherited.attributes,
     weight: 0.85,
     reason: 'A 的项目约定明确陈述了这条偏好。',
@@ -98,6 +97,26 @@ test('agent collaboration preferences preserve inherited scope and rationale met
       .body.items[0].item_id,
     'parent-a-preference'
   );
+});
+
+test('Agent search omits console weight fields while console search and confirmation evidence remain complete', async () => {
+  const metadata = { weight_percent: 95, confirmed_by_person: false, confirmation_status: 'agent_confirmed',
+    confirmation_basis: { confirmed_by: { kind: 'agent', agent_id: 'synthetic-reviewer' } } };
+  const app = { config: { personal: { spaceId: 'space' } }, consoleUrl: 'http://console.invalid',
+    personal: { search: async () => ({ facts: [{ id: 'fact', fact: 'Synthetic fact', score: 1, ...metadata }],
+      entities: [{ id: 'entity', name: 'Synthetic entity', score: 1, ...metadata }] }) } };
+  const input = { personalSpaceId: 'space', query: 'Synthetic', agentInvocation: true };
+  const ports = { workspaceFor: () => { throw new Error('Unexpected workspace'); }, recordAgentViews: async () => {} };
+  const agent = await searchFederatedKnowledge(app, input, ports);
+  const consoleView = await searchFederatedKnowledge(app, { ...input, agentInvocation: false }, ports);
+  for (const key of ['facts', 'entities']) {
+    assert.equal(Object.hasOwn(agent[key][0], 'weight_percent'), false);
+    assert.equal(Object.hasOwn(agent[key][0], 'confirmed_by_person'), false);
+    assert.deepEqual(agent[key][0].confirmation_basis, metadata.confirmation_basis);
+    assert.equal(agent[key][0].confirmation_status, 'agent_confirmed');
+    assert.equal(consoleView[key][0].weight_percent, 95);
+    assert.equal(consoleView[key][0].confirmed_by_person, false);
+  }
 });
 
 test('conflicting preferences from equally near parents stay deferred regardless of weight',
