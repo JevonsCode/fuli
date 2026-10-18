@@ -115,8 +115,10 @@ if [ "${FULI_USE_STANDALONE_NODE:-0}" = "1" ] || ! node_meets_minimum; then
   provision_standalone_node
 fi
 
-echo "Installing fuli-context with npm..."
-npm install --global fuli-context@latest
+# FULI_NPM_PACKAGE_SPEC installs a release candidate or mirror tarball before it is published.
+package_spec="${FULI_NPM_PACKAGE_SPEC:-fuli-context@latest}"
+echo "Installing ${package_spec} with npm..."
+npm install --global "$package_spec"
 
 # The wizard asks before changing anything; reconnect stdin so it can when piped from curl.
 if [ -t 1 ] && [ -r /dev/tty ]; then

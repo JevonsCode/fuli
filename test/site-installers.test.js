@@ -20,7 +20,8 @@ test('site installers require the same Node.js version as the package and pin st
   assert.match(powershell, /\$standaloneVersion = '24\.18\.0'/);
   assert.match(powershell, /0ae68406b42d7725661da979b1403ec9926da205c6770827f33aac9d8f26e821/);
   for (const script of [shell, powershell]) {
-    assert.match(script, /npm install --global fuli-context@latest/);
+    assert.match(script, /fuli-context@latest/);
+    assert.match(script, /FULI_NPM_PACKAGE_SPEC/);
     assert.match(script, /fuli setup/);
   }
 });
@@ -104,6 +105,16 @@ test('the PowerShell installer provisions a SHA-256-verified standalone Node.js 
       'npm install --global fuli-context@latest',
       'fuli setup --yes'
     ]);
+
+    // 3. A release candidate tarball replaces the published package when named explicitly
+    rmSync(logPath);
+    const candidate = spawnSync(psExe, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '--yes'], {
+      encoding: 'utf8', windowsHide: true,
+      env: { ...process.env, FULI_USE_STANDALONE_NODE: '1', FULI_RUNTIME_HOME: runtimeHome,
+        FULI_NODE_ARCHIVE_PATH: archivePath, FULI_NODE_SHA256: sha256, FULI_NPM_PACKAGE_SPEC: 'fuli-context@0.20.0-rc.5' }
+    });
+    assert.equal(candidate.status, 0, candidate.stderr || candidate.stdout);
+    assert.equal(readFileSync(logPath, 'utf8').trim().split(/\r?\n/)[0], 'npm install --global fuli-context@0.20.0-rc.5');
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
