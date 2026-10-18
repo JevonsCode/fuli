@@ -32,6 +32,10 @@ class JournalDriver:
             if 'DESC' in query:
                 rows = list(reversed(rows))
             return rows[:params.get('limit', len(rows))], None, None
+        if query.startswith('MATCH (c:FuliConversation {id: $id}) WHERE c.digest = $old SET c.digest'):
+            if self.conversation.get('digest') == params['old']:
+                self.conversation['digest'] = params['digest']
+            return [], None, None
         if query.startswith('MATCH (c:FuliConversation {id: $id}) SET c.digest'):
             self.conversation.update(digest=params['digest'], compacted_through=params['through'],
                                      unfolded_bytes=params['kept'])
@@ -211,3 +215,41 @@ async def test_context_safety_caps_report_real_omission(monkeypatch, limit_name,
     assert context['scan_truncated'] is True and context['truncated'] is True
     assert [message['content'] for message in context['messages']] == ['newest visible']
     assert 1 <= context['omitted_sequence'] < driver.conversation['revision']
+
+
+@pytest.mark.asyncio
+async def test_an_older_digest_is_rebuilt_from_raw_events_and_keeps_checkpoint_tasks():
+    store = Store()
+    driver = store.runtime.driver
+    policy = await store._conversation_policy(None)
+    driver.append('user', 'Synthetic ledger import\nDecision: amounts are stored in cents.\n' + 'detail ' * 300)
+    for index in range(8):
+        driver.append('assistant', f'filler {index}\n' + 'noise ' * 300)
+        await store._compact_conversation('synthetic-conversation', policy)
+    assert driver.conversation['compacted_through'] > 1
+    # A digest written by older folding rules: no version, stale entries, one checkpoint task.
+    task = {'at': '2026-10-12T00:00:00+00:00', 'status': 'completed', 'summary': 'Synthetic earlier task'}
+    legacy = json.dumps({'tasks': [task], 'entries': [{'kind': 'request', 'text': 'stale', 'sources': []}], 'omitted': 0})
+    driver.conversation['digest'] = legacy
+    digest = (await store.query_conversations(None, query('events', limit=50)))['digest']
+    assert digest['version'] == 2
+    assert digest['tasks'] == [task]
+    assert 'Decision: amounts are stored in cents.' in {entry['text'] for entry in digest['entries']}
+    assert 'stale' not in {entry['text'] for entry in digest['entries']}
+    assert json.loads(driver.conversation['digest']) == digest
+
+
+@pytest.mark.asyncio
+async def test_a_rebuild_never_overwrites_a_digest_that_changed_meanwhile():
+    store = Store()
+    driver = store.runtime.driver
+    policy = await store._conversation_policy(None)
+    driver.append('user', 'Synthetic request\n' + 'detail ' * 300)
+    for index in range(8):
+        driver.append('assistant', f'filler {index}\n' + 'noise ' * 300)
+        await store._compact_conversation('synthetic-conversation', policy)
+    driver.conversation['digest'] = json.dumps({'tasks': [], 'entries': [], 'omitted': 0})
+    record = dict(driver.conversation)
+    driver.conversation['digest'] = json.dumps({'tasks': [], 'entries': [], 'omitted': 1, 'version': 2})
+    await store._current_digest(record)
+    assert json.loads(driver.conversation['digest'])['omitted'] == 1
