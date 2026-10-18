@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/client'
+import panelSource from './UnassignedConversationsPanel.vue?raw'
 import {
   ASSISTANT_AGENT_ID,
   readUnassignedConversations,
@@ -77,5 +78,13 @@ describe('unassigned conversations reader and triage', () => {
       topic: null,
       source: 'user',
     })
+  })
+})
+
+// The panel also renders inside Astro's workbench, which does not load the
+// Agents directory stylesheet; without its own copy the chevron rendered unsized.
+describe('UnassignedConversationsPanel styles', () => {
+  it('loads its stylesheet wherever it renders', () => {
+    expect(panelSource).toContain('<style src="./agent-profile.css" />')
   })
 })
