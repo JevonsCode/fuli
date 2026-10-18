@@ -84,6 +84,11 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
   const backupConfig = dependencies.backupConfig ?? backupAgentConfig;
   const connect = dependencies.connect ?? connectAgent;
   const installSkill = dependencies.installSkill ?? installSessionSkill;
+  const inspectInstallations = dependencies.inspectInstallations ?? (
+    connect === connectAgent && installSkill === installSessionSkill
+      ? inspectAgentInstallations
+      : null
+  );
   const runtimeSettings = plan.runtimeSettings ?? runtimeSettingsWithOverrides(
     DEFAULT_RUNTIME_SETTINGS,
     { consolePort: options.port }
@@ -106,7 +111,11 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
   const context = {
     nodePath: dependencies.nodePath ?? process.execPath,
     mcpServerPath: plan.paths.mcpServerPath,
-    runtimeConfigPath: plan.paths.graphRuntimeConfigPath
+    runtimeConfigPath: plan.paths.graphRuntimeConfigPath,
+    sessionSkillPath: plan.paths.sessionSkillPath,
+    projectSkillPath: plan.paths.projectSkillPath,
+    reviewSkillPath: plan.paths.reviewSkillPath,
+    operationSkillPath: plan.paths.operationSkillPath
   };
   const agents = [];
 
@@ -130,7 +139,39 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
           backupDir: plan.paths.backupDir
         }));
       }
-      agents.push({ ...connected, backupPath, skills });
+      const [inspected] = inspectInstallations
+        ? inspectInstallations([agent], context)
+        : [];
+      if (inspected && inspected.integrationStatus !== 'connected') {
+        const failedChecks = Object.entries(inspected.integrationDetails ?? {})
+          .filter(([, state]) => state !== 'current')
+          .map(([component, state]) => `${component}=${state}`);
+        agents.push({
+          ...connected,
+          status: 'partial',
+          backupPath,
+          skills,
+          selfCheck: {
+            status: 'failed',
+            details: inspected.integrationDetails
+          },
+          message: `Self-check failed (${failedChecks.join(', ') || inspected.integrationStatus})`
+        });
+        continue;
+      }
+      agents.push({
+        ...connected,
+        backupPath,
+        skills,
+        ...(inspected
+          ? {
+              selfCheck: {
+                status: 'passed',
+                details: inspected.integrationDetails
+              }
+            }
+          : {})
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Agent connection failed';
       agents.push(connected

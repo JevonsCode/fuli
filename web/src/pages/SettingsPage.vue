@@ -68,6 +68,9 @@ const conversationIdFormatOptions = computed(() => [
   { value: 'uuid', label: t('settings.conversationLaunchers.idFormats.uuid') },
 ])
 const captureEnabled = computed(() => store.state?.capturePolicy?.enabled !== false)
+// Capture is per client; a client that is off still reads memory through its tools.
+const CAPTURE_CLIENTS = [['claude_code', 'Claude Code'], ['codex', 'Codex'], ['cursor', 'Cursor']] as const
+const disabledCaptureSources = computed(() => store.state?.capturePolicy?.disabledSources ?? [])
 const agentAccessEnabled = computed(() =>
   store.state?.agentAccessPolicy?.enabled !== false,
 )
@@ -203,6 +206,12 @@ function stopPolling() {
   refreshTimer = null
 }
 
+function toggleClientCapture(source: string, event: Event) {
+  const capture = (event.currentTarget as HTMLInputElement).checked
+  const others = disabledCaptureSources.value.filter(value => value !== source)
+  void store.updateCapturePolicy(captureEnabled.value, capture ? others : [...others, source])
+}
+
 function toggleCapture(event: Event) {
   void store.updateCapturePolicy((event.currentTarget as HTMLInputElement).checked)
 }
@@ -288,6 +297,13 @@ function revealInvalidField(event: Event) {
               <span><strong>{{ t('settings.behavior.capture') }}</strong><small>{{ t('settings.behavior.captureMeta') }}</small></span>
               <input type="checkbox" role="switch" :checked="captureEnabled" @change="toggleCapture" />
             </label>
+            <template v-if="captureEnabled">
+              <p class="setting-note">{{ t('settings.behavior.captureClientsMeta') }}</p>
+              <label v-for="[source, label] in CAPTURE_CLIENTS" :key="source" class="setting-row setting-row-nested" :data-capture-source="source">
+                <span><strong>{{ label }}</strong></span>
+                <input type="checkbox" role="switch" :checked="!disabledCaptureSources.includes(source)" @change="toggleClientCapture(source, $event)" />
+              </label>
+            </template>
             <label class="setting-row">
               <span><strong>{{ t('settings.behavior.agentAccess') }}</strong><small>{{ t('settings.behavior.agentAccessMeta') }}</small></span>
               <input type="checkbox" role="switch" :checked="agentAccessEnabled" @change="toggleAgentAccess" />
@@ -651,6 +667,8 @@ function revealInvalidField(event: Event) {
 .setting-row > span { display: grid; min-width: 0; gap: 4px; }
 .setting-row strong { color: var(--color-ink); font-size: 14px; }
 .setting-row small { color: var(--color-muted); font-size: 12px; }
+.setting-note { margin: 0; padding: 4px 0 4px 20px; color: var(--color-muted); font-size: 12px; }
+.setting-row-nested { min-height: 48px; padding-left: 20px; border-top-style: dashed; }
 .setting-row input[role='switch'],
 .conversation-launcher-switch input[role='switch'] {
   flex: 0 0 auto;

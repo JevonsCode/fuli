@@ -89,6 +89,7 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
 });
 // A truncated result would be a misleading partial file, so these fail instead.
 const COMPLETE_RESULT_TOOLS = new Set(['export_project_agent_memory']);
+const NATIVE_CONTEXT = Symbol('fuli.nativeMcpRequestContext');
 
 export function createMcpServer(
   app,
@@ -103,7 +104,8 @@ export function createMcpServer(
     toolProfile = 'full',
     prepareToolInput = (_name, input) => input,
     registerResources = true,
-    workerTaskContext = null
+    workerTaskContext = null,
+    nativeRequestContext = null
   } = {}
 ) {
   if (workerTaskContext !== null && (!Array.isArray(workerTaskContext.toolNames) ||
@@ -120,7 +122,8 @@ export function createMcpServer(
   const authoritativeSourceApplication = normalizeMcpSourceApplication(
     sourceApplication
   );
-  const nativeThreadId = authoritativeSourceApplication === 'codex' ? nativeCodexThreadId(env) : null;
+  const environmentThread = authoritativeSourceApplication === 'codex' ? nativeCodexThreadId(env) : null;
+  const nativeThreadId = hostSessionId === null || hostSessionId === environmentThread ? environmentThread : null;
   const effectiveHostSessionId = hostSessionId ?? mcpHostSessionId(authoritativeSourceApplication === 'codex' ? env : {});
   const projectActionPreviews = createProjectActionPreviewTokens();
   const tools = createToolMap(
@@ -145,7 +148,8 @@ export function createMcpServer(
   const onDemandTools = isChatProfile ? createToolMap(app,
     projectActionPreviews, nativeThreadId, effectiveHostSessionId,
     clock, authoritativeSourceApplication, withRuntimeLease, null, prepareToolInput, env) : null;
-  registerCallHandler(server, tools, onDemandTools);
+  registerCallHandler(server, tools, onDemandTools,
+    !workerTaskContext && hostSessionId === null ? nativeRequestContext : null);
   return server;
 }
 
@@ -168,6 +172,7 @@ function createToolMap(
   workerTaskContext = null
 ) {
   const commonKnowledgePreviews = createCommonKnowledgePreviewTokens();
+  const preferenceState = { resets: new Map() };
   if (toolNames !== null && !Array.isArray(toolNames)) {
     throw new TypeError('MCP toolNames must be an array or null');
   }
@@ -189,11 +194,16 @@ function createToolMap(
     .map((definition) => [definition.name, {
     definition,
     worker: Boolean(workerTaskContext),
+    preferenceDelivery: workerTaskContext ? null : app.preferenceDelivery,
+    preferenceState,
+    preferenceOrigin: { sourceApplication, nativeSessionId: nativeThreadId === hostSessionId ? nativeThreadId : null },
     catalogDefinitions: definition.name === 'list_agent_interfaces' ? definitions.filter(item =>
       includeTestTools || !isTestOnlyToolName(item.name)) : null,
     schema: jsonSchemaToZod(definition.inputSchema),
     invoke: (input, requestContext = null) => {
       requestContext?.signal?.throwIfAborted?.();
+      const requestNative = requestContext?.[NATIVE_CONTEXT]?.nativeSessionId ?? nativeThreadId;
+      const requestHost = requestContext?.[NATIVE_CONTEXT]?.nativeSessionId ?? hostSessionId;
       return withRuntimeLease(
         `mcp-tool:${definition.name}`,
         () => workerTaskContext ? runWithAgentRequestContext(requestContext, async () => {
@@ -219,8 +229,8 @@ function createToolMap(
           normalizeAgentSessionInput(
             definition.name,
             prepareToolInput(definition.name, input),
-            nativeThreadId,
-            hostSessionId,
+            requestNative,
+            requestHost,
             clock,
             sourceApplication
           ),
@@ -245,7 +255,7 @@ function registerTool(server, tool) {
   }, (input, extra) => invokeTool(tool, input, extra));
 }
 
-function registerCallHandler(server, tools, onDemandTools) {
+function registerCallHandler(server, tools, onDemandTools, resolveNativeContext = null) {
   server.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const tool = tools.get(request.params.name);
     if (!tool) {
@@ -264,7 +274,10 @@ function registerCallHandler(server, tools, onDemandTools) {
         }))
       );
     }
-    const result = await invokeTool(tool, parsed.data, extra);
+    let native;
+    try { native = resolveNativeContext?.(request.params._meta); }
+    catch (error) { return errorToolResult(error); }
+    const result = await invokeTool(tool, parsed.data, native ? { ...extra, [NATIVE_CONTEXT]: native } : extra);
     if (!result.isError && tool.definition.name === 'list_agent_interfaces' && parsed.data.toolName && onDemandTools) {
       const discovered = onDemandTools.get(parsed.data.toolName);
       if (!discovered) return errorToolResult(new ApplicationError(ApplicationErrorCode.NOT_FOUND, 'Unknown Fuli tool'));
@@ -282,27 +295,42 @@ async function invokeTool(tool, input, requestContext = null) {
     const value = await tool.invoke(input, requestContext);
     auditLifecycleTool(tool.definition.name);
     const limitBytes = TOOL_RESULT_LIMIT_BYTES[tool.definition.name];
-    if (tool.definition.name === 'read_task_preferences') return completePreferenceToolResult(value);
+    if (['begin_task_context', 'get_collaboration_preferences', 'read_task_preferences'].includes(tool.definition.name)) {
+      const name = tool.definition.name;
+      const view = name === 'read_task_preferences' ? value : compactTaskContext(value);
+      const format = projected => name === 'read_task_preferences' ? completePreferenceToolResult(projected)
+        : name === 'begin_task_context' ? hookAdditionalContextToolResult(projected, {
+          hookEventName: 'UserPromptSubmit',
+          label: 'Fuli task context. Apply effective_preferences and use taskContextToken for the final checkpoint.',
+          limitBytes, itemLimit: 1000
+        }) : successToolResult(projected, { limitBytes, itemLimit: 1000, preferenceContext: true });
+      if (!tool.preferenceDelivery) return format(view);
+      // A new MCP process may be a resume/restart. It always establishes a new
+      // full baseline, even when an older process left valid cache metadata.
+      const native = requestContext?.[NATIVE_CONTEXT];
+      const origin = { ...tool.preferenceOrigin, ...(native ? { nativeSessionId: native.nativeSessionId,
+        nativeGeneration: { execution: native.nativeExecutionId, window: native.contextWindowId } } : {}) };
+      if (origin.nativeSessionId) {
+        const key = JSON.stringify([origin.nativeSessionId, origin.nativeGeneration]);
+        if (!tool.preferenceState.resets.has(key)) {
+          tool.preferenceState.resets.set(key, tool.preferenceDelivery.reset(origin));
+          if (tool.preferenceState.resets.size > 16) tool.preferenceState.resets.delete(tool.preferenceState.resets.keys().next().value);
+        }
+        await tool.preferenceState.resets.get(key);
+      }
+      return await tool.preferenceDelivery.deliver(view,
+        { ...origin, forceFull: name === 'read_task_preferences' || !native?.contextWindowId }, format);
+    }
     if (tool.definition.name === 'list_agent_interfaces') {
       return agentToolCatalogResult(value, tool.catalogDefinitions, input.toolName, limitBytes);
     }
     if (tool.definition.name === 'list_employee_tools') {
       return employeeToolCatalogResult(value, { limitBytes });
     }
-    if (tool.definition.name === 'begin_task_context') {
-      return hookAdditionalContextToolResult(compactTaskContext(value), {
-        hookEventName: 'UserPromptSubmit',
-        label: 'Fuli task context. Apply effective_preferences and use taskContextToken for the final checkpoint.',
-        limitBytes,
-        itemLimit: 1000
-      });
-    }
     const itemLimit = ({ list_agent_interfaces: 200, list_project_agent_tasks: 200,
       list_preference_conflicts: 1000, list_external_knowledge_bindings: 200,
       get_collaboration_preferences: 1000 })[tool.definition.name];
-    const result = successToolResult(tool.definition.name === 'get_collaboration_preferences'
-      ? compactTaskContext(value) : value, { limitBytes, itemLimit,
-        preferenceContext: tool.definition.name === 'get_collaboration_preferences' });
+    const result = successToolResult(value, { limitBytes, itemLimit });
     if (COMPLETE_RESULT_TOOLS.has(tool.definition.name) && result.structuredContent.truncated) {
       throw new ApplicationError(ApplicationErrorCode.VALIDATION, 'The export is too large to deliver completely');
     }

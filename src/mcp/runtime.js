@@ -8,6 +8,7 @@ import { openFederatedGraphApplication } from '../graphiti/federated-application
 import { createWorkerTaskContext } from '../graphiti/worker-task-context.js';
 import { createRoundtableTaskContext } from '../agent-roundtable/task-context.js';
 import { createMcpServer } from './create-mcp-server.js';
+import { nativeMcpRequestContextResolver } from '../agents/native-mcp-context.js';
 
 export async function runStdio({ runtimeConfigPath, sourceApplication, toolNames = null, toolProfile = 'full', worker = null }) {
   const app = openFederatedGraphApplication({ runtimeConfigPath });
@@ -19,6 +20,7 @@ export async function runStdio({ runtimeConfigPath, sourceApplication, toolNames
         ? createRoundtableTaskContext(application, { token: process.env.FULI_ROUNDTABLE_DELEGATION }) : null
   }), {
     sourceApplication,
+    nativeRequestContext: nativeMcpRequestContextResolver(sourceApplication),
     toolNames,
     toolProfile,
     withRuntimeLease: leaseClient.withGraphLease

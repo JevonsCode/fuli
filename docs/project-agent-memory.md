@@ -26,6 +26,7 @@ FLA 是个人空间中的持久身份，兼容 MCP 的客户端是工作入口�
    不建项目、不招人，作为待归属会话交给固定助理（`employee.assistant`）在全局范围接待，助理身份
    尚未就绪时如实显示“待归属会话”。同名命中多个项目时如实显示“项目归属待确认”，归档项目不参与
    名称匹配。待归属会话的入口只附 `triage_candidates`（项目名与话题名）；收尾时宿主在
+   收尾时也可以用 `checkpoint_task_knowledge.experiences`（最多 3 条：task、searchKeys、solution、可选 boundary）记下可复用的经验，代替手写 capture：它们以 `ReusableExperience` 写入当前项目，状态为待确认，用 searchKeys 检索；未归属的会话不能写入。
    `checkpoint_task_knowledge.triage` 中标注“属于某项目 / 话题 / 一次性”，记在 Jefa 名下，不调用模型。
    用户的纠正和已成形的项目不会被后续宿主标注覆盖。同一话题累计 3 个会话即自动立项：简介标为
    AI 草稿，经 AR 配组长，这些会话关联到新项目；标注失败只让会话继续待归属，不影响收尾。

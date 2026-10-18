@@ -7,6 +7,8 @@ export const projectAgentMessages = {
     firstTask: {
       title: '开始第一个任务',
       hint: '在已接入 Fuli 的 AI 客户端里，于项目目录中直接提需求。Fuli 会登记项目并安排负责的 Agent。',
+      stepTellPreference: '先在任一已连接客户端里说一条协作偏好，确认 Fuli 已记录。',
+      stepVerifyAcrossClients: '切到另一已连接客户端提问，验证“它记住了”刚才的偏好。',
     },
     diagnostics: {
       title: '任务启动与执行状态', project: '项目归属', assignment: 'Agent 分配', execution: '实际执行',
@@ -382,6 +384,8 @@ export const projectAgentMessages = {
     firstTask: {
       title: 'Start your first task',
       hint: 'In an AI client connected to Fuli, ask for the work from your project folder. Fuli registers the project and assigns a responsible Agent.',
+      stepTellPreference: 'Tell one connected client a collaboration preference so Fuli records it.',
+      stepVerifyAcrossClients: 'Switch to another connected client and ask to verify it remembered that preference.',
     },
     diagnostics: {
       title: 'Task start and execution status', project: 'Project scope', assignment: 'Agent assignment', execution: 'Actual execution',

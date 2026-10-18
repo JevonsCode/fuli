@@ -10,6 +10,7 @@ import { projectAgentRecord } from './project-agent-mapping.js';
 import { PROJECT_AGENT_CONTINUITY_GUIDANCE, projectAgentRoleContext, projectAgentRoleTextOverflows } from './project-agent-task-entry.js';
 import { loadProjectTeamContext } from './project-agent-team-context.js';
 import { applyAgentAssignment } from './task-agent-assignment.js';
+import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
 
 // Worker entry always uses this fixed admission selection (worker-task-context.js).
 const WORKER_ASSIGNMENT = Object.freeze({ selection_reason: 'worker_run_admitted', match_basis: ['sealed_worker_run'] });
@@ -104,7 +105,8 @@ export async function readTaskPreferences(application, {
         coordination.personal_project_id !== task.personalProjectId) throw blocked('Worker coordination identity changed.');
     result = withWorkerTaskGuidance(result, workerRun, coordination);
   }
-  return projection.context.source_truncated ? blockedPreferenceDelivery(result, 'source_window') : result;
+  return projection.context.source_truncated ? blockedPreferenceDelivery(result, 'source_window')
+    : withPreferenceScope(result, taskPreferenceMetadata(task, spaceId));
 }
 
 function blocked(message) { return new ApplicationError('preference_recovery_blocked', message); }
