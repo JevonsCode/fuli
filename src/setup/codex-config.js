@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { parse as parseToml } from 'smol-toml';
 
 import {
   installCodexBootstrap,
@@ -138,18 +139,34 @@ export function replaceFuliTable(source, { command, args }) {
   return `${[...lines, ...(lines.length ? [''] : []), ...block].join('\n')}\n`;
 }
 
-// The args of an existing [mcp_servers.fuli] table, written as JSON strings.
+// The args of the existing fuli MCP entry, so an explicit choice the person
+// made (such as --tool-profile full) survives a reconnect. Any valid TOML form
+// is read (quoted table names, multi-line arrays, literal strings, comments).
+// If the file does not parse, an explicit profile is still kept, read only
+// from the fuli table so another server's or a commented-out profile never wins.
 export function existingFuliArgs(source) {
+  try {
+    const args = parseToml(source)?.mcp_servers?.fuli?.args;
+    return Array.isArray(args) ? args.filter(value => typeof value === 'string') : [];
+  } catch {
+    const profile = /["']--tool-profile["']\s*,\s*["']([^"']+)["']/.exec(fuliTableText(source))?.[1];
+    return profile ? ['--tool-profile', profile] : [];
+  }
+}
+
+const FULI_TABLE_HEADER = /^\s*\[\s*["']?mcp_servers["']?\s*\.\s*["']?fuli["']?\s*\]?\s*(?:#.*)?$/;
+
+// The lines of the first fuli table up to the next table, without comments.
+function fuliTableText(source) {
   const lines = source.replaceAll('\r\n', '\n').split('\n');
-  const start = lines.findIndex(line => line.trim() === '[mcp_servers.fuli]');
-  if (start < 0) return [];
+  const start = lines.findIndex(line => FULI_TABLE_HEADER.test(line));
+  if (start < 0) return '';
+  const body = [];
   for (const line of lines.slice(start + 1)) {
     if (/^\s*\[/.test(line)) break;
-    const match = line.match(/^\s*args\s*=\s*(\[.*\])\s*$/);
-    if (!match) continue;
-    try { return JSON.parse(match[1]); } catch { return []; }
+    if (!/^\s*#/.test(line)) body.push(line.replace(/#[^"']*$/, ''));
   }
-  return [];
+  return body.join('\n');
 }
 
 export function removeFuliTables(source) {
