@@ -28,7 +28,10 @@ const BASELINE = Object.freeze({
   // F-P0-08: checkpoint takes `remember` (preference / project_fact items the
   // server routes) because models could not build the referenced capture shape
   // and saved nothing natively: 168,807 -> 169,269 B (+462 B).
-  fullToolSchemaBytes: 169269,
+  // RT-1: agent_chat (full profile only) gains action wait with its cursor and
+  // timeout so an Agent waits for pushed messages instead of polling:
+  // 169,269 -> 169,425 B (+156 B). The chat profile is unchanged.
+  fullToolSchemaBytes: 169425,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
