@@ -2,9 +2,9 @@
 import { computed, ref, watch } from 'vue'
 
 import { postJson } from '@/api/client'
-import UiButton from '@/components/ui/UiButton.vue'
-import UiDialog from '@/components/ui/UiDialog.vue'
-import UiSelect from '@/components/ui/UiSelect.vue'
+import UiButton from '@/ui/UiButton.vue'
+import UiDialog from '@/ui/UiDialog.vue'
+import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import type { PersonalProject, ProjectAgentAssignmentRecord, ProjectAgentRecord } from '@/types'
 

@@ -15,7 +15,7 @@ vi.mock('@/api/client', () => ({
   patchJson,
 }))
 
-import UiSelect from '@/components/ui/UiSelect.vue'
+import UiSelect from '@/ui/UiSelect.vue'
 import { useConsoleStore } from '@/stores/console'
 import PersonalProfilePage from './PersonalProfilePage.vue'
 

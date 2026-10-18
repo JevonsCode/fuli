@@ -29,8 +29,8 @@ import ProjectAgentFirstTask from "@/features/project-agents/ProjectAgentFirstTa
 import { useAgentWorkSummary } from "@/features/agent-profile/useAgentWorkSummary";
 import { agentWorkbenchEntry, compareWorkbenchRows } from "@/features/agent-profile/agent-workbench";
 import { useStableOrder } from "@/features/agent-profile/useStableOrder";
-import UiSegmented from "@/components/ui/UiSegmented.vue";
-import UiSelect from "@/components/ui/UiSelect.vue";
+import UiSegmented from "@/ui/UiSegmented.vue";
+import UiSelect from "@/ui/UiSelect.vue";
 import EmployeeRecruitDialog from "@/features/employees/EmployeeRecruitDialog.vue";
 import EmployeeWorkbenchLinks from "@/features/employees/EmployeeWorkbenchLinks.vue";
 import { employeeTemplates } from "@/features/employees/catalog";

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import GrowthLoading from '../GrowthLoading.vue'
+import GrowthLoading from '@/components/GrowthLoading.vue'
 
 withDefaults(defineProps<{
   variant?: 'default' | 'primary' | 'ghost' | 'danger'

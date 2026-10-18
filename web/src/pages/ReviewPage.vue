@@ -3,7 +3,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { getJson, postJson } from '@/api/client'
-import UiSelect from '@/components/ui/UiSelect.vue'
+import UiSelect from '@/ui/UiSelect.vue'
 import { formatTime } from '@/features/knowledge/model'
 import { t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
