@@ -134,6 +134,8 @@ const currentWork = computed(() =>
 const workbench = computed(() =>
   employeeTemplates.value.find((item) => item.agentId === agent.value?.agentId),
 );
+// Bole is the AR: its own profile has nobody else to ask.
+const isAr = computed(() => workbench.value?.id === "bole");
 const date = (value?: string | null) =>
   value && !Number.isNaN(Date.parse(value))
     ? new Date(value).toLocaleDateString()
@@ -362,6 +364,7 @@ onMounted(() => {
             {{ t("agentProfiles.settings") }}
           </button>
           <RouterLink
+            v-if="!isAr"
             class="quiet-button"
             :to="{
               path: '/employees/bole',
@@ -643,6 +646,7 @@ onMounted(() => {
           <div class="agent-section-heading">
             <h2>{{ t("agentProfiles.organization") }}</h2>
             <RouterLink
+              v-if="!isAr"
               :to="{
                 path: '/employees/bole',
                 query: { q: agentDisplayName(agent) },
@@ -759,41 +763,19 @@ onMounted(() => {
           <p class="agent-muted">{{ t("agentProfiles.locked") }}</p>
           <div class="agent-profile-management-links">
             <RouterLink
-              v-if="workbench"
               class="quiet-button"
-              :to="`/employees/${encodeURIComponent(workbench.id)}`"
-            >
-              {{ t("agentProfiles.workbench") }}
-            </RouterLink>
-            <RouterLink
-              class="quiet-button"
+              data-open-management
               :to="{
                 path: '/project-agents/manage',
                 query: { agent: agent.agentId },
               }"
             >
-              {{ t("agentProfiles.advanced") }}
+              {{ t("agentProfiles.openManagement") }}
             </RouterLink>
           </div>
         </section>
       </section>
 
-      <footer class="agent-profile-footer">
-        <RouterLink
-          v-if="workbench"
-          :to="`/employees/${encodeURIComponent(workbench.id)}`"
-        >
-          {{ t("agentProfiles.workbench") }}
-        </RouterLink>
-        <RouterLink
-          :to="{
-            path: '/project-agents/manage',
-            query: { agent: agent.agentId },
-          }"
-        >
-          {{ t("agentProfiles.advanced") }}
-        </RouterLink>
-      </footer>
     </template>
   </section>
 </template>
