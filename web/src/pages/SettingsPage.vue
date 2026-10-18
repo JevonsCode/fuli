@@ -5,6 +5,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { ApiError, getJson, putJson } from '@/api/client'
 import UiSelect from '@/ui/UiSelect.vue'
+import UiToggle from '@/ui/UiToggle.vue'
 import { normalizedConfiguration, setConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
 import JudgmentPolicySettings from '@/features/judgment/JudgmentPolicySettings.vue'
 import ClientConnectionSettings from '@/features/settings/ClientConnectionSettings.vue'
@@ -82,6 +83,7 @@ const diskMax = computed(() => Math.max(
   1,
   ...(resources.value?.disk.components.map(({ bytes }) => bytes) ?? [1]),
 ))
+const showsRuntimeMode = computed(() => settings.value?.active.graphRuntimeMode === 'container' || form.value?.graphRuntimeMode === 'container')
 const recommendsNativeRuntime = computed(() =>
   form.value?.graphRuntimeMode === 'container'
   && Number.isFinite(resources.value?.memory.hostTotalBytes)
@@ -206,26 +208,25 @@ function stopPolling() {
   refreshTimer = null
 }
 
-function toggleClientCapture(source: string, event: Event) {
-  const capture = (event.currentTarget as HTMLInputElement).checked
+function toggleClientCapture(source: string, capture: boolean) {
   const others = disabledCaptureSources.value.filter(value => value !== source)
   void store.updateCapturePolicy(captureEnabled.value, capture ? others : [...others, source])
 }
 
-function toggleCapture(event: Event) {
-  void store.updateCapturePolicy((event.currentTarget as HTMLInputElement).checked)
+function toggleCapture(enabled: boolean) {
+  void store.updateCapturePolicy(enabled)
 }
 
-function toggleAgentAccess(event: Event) {
-  void store.updateAgentAccessPolicy((event.currentTarget as HTMLInputElement).checked)
+function toggleAgentAccess(enabled: boolean) {
+  void store.updateAgentAccessPolicy(enabled)
 }
 
 function updateLocale(value: string) {
   if (value === 'zh-CN' || value === 'en-US') setLocale(value)
 }
 
-function toggleReducedMotion(event: Event) {
-  setMotionPreference((event.target as HTMLInputElement).checked ? 'reduced' : 'system')
+function toggleReducedMotion(reduced: boolean) {
+  setMotionPreference(reduced ? 'reduced' : 'system')
 }
 
 function updateRefreshInterval(value: string) {
@@ -295,24 +296,26 @@ function revealInvalidField(event: Event) {
           <div class="setting-list">
             <label class="setting-row">
               <span><strong>{{ t('settings.behavior.capture') }}</strong><small>{{ t('settings.behavior.captureMeta') }}</small></span>
-              <input type="checkbox" role="switch" :checked="captureEnabled" @change="toggleCapture" />
+              <UiToggle :model-value="captureEnabled" :label="t('settings.behavior.capture')" @update:model-value="toggleCapture" />
             </label>
             <template v-if="captureEnabled">
               <p class="setting-note">{{ t('settings.behavior.captureClientsMeta') }}</p>
               <label v-for="[source, label] in CAPTURE_CLIENTS" :key="source" class="setting-row setting-row-nested" :data-capture-source="source">
                 <span><strong>{{ label }}</strong></span>
-                <input type="checkbox" role="switch" :checked="!disabledCaptureSources.includes(source)" @change="toggleClientCapture(source, $event)" />
+                <UiToggle :model-value="!disabledCaptureSources.includes(source)" :label="label" @update:model-value="toggleClientCapture(source, $event)" />
               </label>
             </template>
             <label class="setting-row">
               <span><strong>{{ t('settings.behavior.agentAccess') }}</strong><small>{{ t('settings.behavior.agentAccessMeta') }}</small></span>
-              <input type="checkbox" role="switch" :checked="agentAccessEnabled" @change="toggleAgentAccess" />
+              <UiToggle :model-value="agentAccessEnabled" :label="t('settings.behavior.agentAccess')" @update:model-value="toggleAgentAccess" />
             </label>
             <label class="setting-row">
               <span><strong>{{ t('settings.behavior.lanAccess') }}</strong><small>{{ t('settings.behavior.lanAccessMeta') }}</small></span>
-              <input v-model="form.lanAccess" type="checkbox" role="switch" />
+              <UiToggle v-model="form.lanAccess" :label="t('settings.behavior.lanAccess')" />
             </label>
-            <div class="setting-row select-row">
+            <!-- Native is the default runtime; the choice only matters while an
+                 older container install still needs to move over. -->
+            <div v-if="showsRuntimeMode" class="setting-row select-row">
               <span>
                 <strong>{{ t('settings.behavior.runtimeMode') }}</strong>
                 <small>{{ recommendsNativeRuntime
@@ -343,7 +346,7 @@ function revealInvalidField(event: Event) {
             </div>
             <label class="setting-row">
               <span><strong>{{ t('settings.behavior.reduceMotion') }}</strong><small>{{ t('settings.behavior.reduceMotionMeta') }}</small></span>
-              <input type="checkbox" role="switch" data-reduce-motion :checked="motionPreference === 'reduced'" @change="toggleReducedMotion" />
+              <UiToggle data-reduce-motion :model-value="motionPreference === 'reduced'" :label="t('settings.behavior.reduceMotion')" @update:model-value="toggleReducedMotion" />
             </label>
             <div class="setting-row select-row">
               <span><strong>{{ t('settings.resources.refresh') }}</strong></span>
@@ -399,11 +402,7 @@ function revealInvalidField(event: Event) {
                 </span>
                 <label class="conversation-launcher-switch">
                   <span>{{ t('settings.conversationLaunchers.enabled') }}</span>
-                  <input
-                    v-model="form.conversationLaunchers[application].enabled"
-                    type="checkbox"
-                    role="switch"
-                  />
+                  <UiToggle v-model="form.conversationLaunchers[application].enabled" :label="t('settings.conversationLaunchers.enabled')" />
                 </label>
               </div>
               <small

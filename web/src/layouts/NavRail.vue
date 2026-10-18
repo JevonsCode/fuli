@@ -3,7 +3,8 @@ import { ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
 import { t } from '@/i18n'
-import { UiIcon, UiIconButton } from '@/ui'
+import { UiButton, UiIcon, UiIconButton } from '@/ui'
+import { FULI_VERSION } from '@/version'
 import type { NavDestination } from './nav-destinations'
 
 // Wide screens: an icon rail that expands to show names (remembered per
@@ -30,7 +31,11 @@ watch(expanded, value => {
 
 <template>
   <nav class="nav-rail" :class="{ 'is-expanded': expanded }" :aria-label="t('shell.aria')" :data-expanded="expanded">
-    <div class="nav-rail-brand"><BrandEasterEgg compact /><span v-if="expanded" class="nav-rail-wordmark">{{ t('shell.brand') }}</span></div>
+    <div class="nav-rail-brand" :title="expanded ? undefined : `${t('shell.brand')} v${FULI_VERSION}`">
+      <BrandEasterEgg compact />
+      <span v-if="expanded" class="nav-rail-wordmark">{{ t('shell.brand') }}</span>
+      <span v-if="expanded" class="nav-rail-version" data-version>v{{ FULI_VERSION }}</span>
+    </div>
     <ul class="nav-rail-links">
       <li v-for="destination in destinations" :key="destination.key">
         <RouterLink :to="destination.to" class="nav-rail-link" :class="{ 'is-active': destination.key === activeKey, 'has-active-child': childActive(destination.key) }"
@@ -51,12 +56,14 @@ watch(expanded, value => {
       </li>
     </ul>
     <div class="nav-rail-foot">
-      <span class="nav-rail-runtime" role="status" :title="t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline')">
-        <span class="nav-rail-runtime-dot" :class="{ 'is-ready': runtimeReady }" aria-hidden="true" />
+      <span class="nav-rail-runtime" :class="{ 'is-ready': runtimeReady }" role="status" :title="t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline')">
+        <span class="nav-rail-runtime-dot" aria-hidden="true" />
         <span class="nav-rail-runtime-text">{{ t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline') }}</span>
       </span>
-      <UiIconButton class="nav-rail-toggle" :icon="expanded ? 'chevron-left' : 'chevron-right'" size="sm"
-        :label="t(expanded ? 'shell.collapse' : 'shell.expand')" data-nav-toggle @click="expanded = !expanded" />
+      <UiButton v-if="expanded" class="nav-rail-toggle" variant="ghost" size="sm" :title="t('shell.collapse')" data-nav-toggle @click="expanded = false">
+        <UiIcon name="chevron-left" :size="16" />{{ t('shell.collapseShort') }}
+      </UiButton>
+      <UiIconButton v-else class="nav-rail-toggle" icon="chevron-right" size="sm" :label="t('shell.expand')" data-nav-toggle @click="expanded = true" />
     </div>
   </nav>
 </template>
@@ -71,6 +78,7 @@ watch(expanded, value => {
 .nav-rail-brand { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding-bottom: 6px; }
 .nav-rail.is-expanded .nav-rail-brand { justify-content: flex-start; padding-left: 4px; }
 .nav-rail-wordmark { color: var(--color-ink); font-size: 17px; font-weight: 800; letter-spacing: .08em; white-space: nowrap; }
+.nav-rail-version { min-width: 0; overflow: hidden; color: var(--color-faint); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
 .nav-rail-links { display: flex; flex: 1; flex-direction: column; align-items: center; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .nav-rail.is-expanded .nav-rail-links { align-items: stretch; }
 .nav-rail-link {
@@ -107,15 +115,19 @@ watch(expanded, value => {
 .nav-rail-sublink:hover { color: var(--color-ink); background: var(--color-surface-hover); }
 .nav-rail-sublink.is-active { color: var(--color-accent); background: var(--color-accent-soft); }
 .nav-rail-sublink:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-.nav-rail-foot { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-/* Status first, the collapse control alone on the last line. */
-.nav-rail.is-expanded .nav-rail-foot { align-items: flex-start; padding-left: 12px; }
-.nav-rail.is-expanded .nav-rail-toggle { margin-left: -7px; }
-.nav-rail-runtime { display: inline-flex; align-items: center; gap: 8px; color: var(--color-muted); font-size: 12px; }
+/* Footer: a hairline, then the service state, then the collapse control. */
+.nav-rail-foot { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; padding-top: 10px; border-top: 1px solid var(--color-border); }
+.nav-rail.is-expanded .nav-rail-foot { align-items: stretch; }
+.nav-rail-runtime { display: inline-flex; align-items: center; gap: 8px; --runtime: var(--status-error); }
+.nav-rail-runtime.is-ready { --runtime: var(--status-working); }
+.nav-rail-runtime-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--runtime); box-shadow: 0 0 0 3px color-mix(in srgb, var(--runtime) 22%, transparent); }
 .nav-rail-runtime-text { display: none; }
-.nav-rail.is-expanded .nav-rail-runtime-text { display: inline; }
-.nav-rail-runtime-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--status-error); }
-.nav-rail-runtime-dot.is-ready { background: var(--status-working); box-shadow: var(--glow-accent); }
+.nav-rail.is-expanded .nav-rail-runtime {
+  align-self: flex-start; padding: 5px 12px 5px 10px; border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--runtime) 10%, transparent);
+}
+.nav-rail.is-expanded .nav-rail-runtime-text { display: inline; color: var(--color-ink-soft); font-size: 12px; font-weight: 600; }
+.nav-rail.is-expanded .nav-rail-toggle { justify-content: flex-start; gap: 6px; width: 100%; padding-inline: 8px; color: var(--color-muted); }
 
 @media (max-width: 720px) {
   .nav-rail, .nav-rail.is-expanded {
