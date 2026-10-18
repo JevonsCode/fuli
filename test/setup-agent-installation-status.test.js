@@ -150,8 +150,8 @@ test('Claude Code requires always-loaded Fuli plus task lifecycle hooks', () => 
         fuli: {
           type: 'stdio',
           command: CONTEXT.nodePath,
-          args: desiredArgs,
-          alwaysLoad: true
+          // Current without alwaysLoad: schemas load on demand.
+          args: desiredArgs
         }
       }
     }],
