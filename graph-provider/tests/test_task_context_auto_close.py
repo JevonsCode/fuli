@@ -21,4 +21,3 @@ def test_employee_summary_requirement_accepts_only_a_reported_auto_close():
     assert routine_fallback_eligible({**BASE, 'work_log_required': True})
     assert not routine_fallback_eligible(BASE, protected=True)
     assert not routine_fallback_eligible(BASE, claimed=True)
-
