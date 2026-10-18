@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "assistant",
   "version": "1.0.0",
-  "name": "Assistant",
+  "name": "Astro",
   "role": "全局助手",
   "description": "接待未归属项目的对话，只用全局偏好，不自动询问项目归属。",
   "occupationEmoji": "💬",

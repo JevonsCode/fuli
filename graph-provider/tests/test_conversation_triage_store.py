@@ -19,17 +19,20 @@ class TriageDriver:
     def __init__(self, conversations):
         self.conversations = conversations
         self.labels = {}
+        self.queries = []
 
     async def execute_query(self, query, **p):
-        if query.startswith('MATCH (c:FuliConversation'):
-            return ([{'id': p['id']}] if self.conversations.get(p['id']) == p['scope'] else []), None, None
-        if query.startswith('MATCH (t:FuliConversationTriage {id: $id}) RETURN t'):
-            label = self.labels.get(p['id'])
-            return ([{'t': dict(label)}] if label else []), None, None
-        if query.startswith('MERGE (t:FuliConversationTriage'):
-            label = self.labels.setdefault(p['id'], {'id': p['id'], 'space_id': p['space_id']})
-            label.update(p['label'])
-            return [{'t': dict(label)}], None, None
+        self.queries.append(query)
+        if 'MERGE (t:FuliConversationTriage' in query:
+            if self.conversations.get(p['id']) != p['scope']:
+                return [], None, None
+            label =self.labels.setdefault(p['id'], {'id': p['id'], 'space_id': p['space_id']})
+            kept = None if p['source'] != 'host' else (
+                'formed_project' if label.get('formed_project_id') else
+                'user_label' if label.get('source') == 'user' else None)
+            if not kept:
+                label.update(p['label'])
+            return [{'t': dict(label), 'kept': kept}], None, None
         open_labels = [t for t in self.labels.values() if t['space_id'] == p['space_id']
                        and t['kind'] == 'topic' and not t.get('formed_project_id')]
         if 'RETURN count(t)' in query:
@@ -161,3 +164,24 @@ async def test_conversation_lists_carry_their_triage_label():
         personal_space_id=SPACE, personal_project_id=None, agent_id='employee.assistant', mode='list'))
     assert [row['triage'] and row['triage']['topic'] for row in result['conversations']] == ['Garden', None]
     assert result['conversations'][0]['triage']['source'] == 'user'
+
+
+@pytest.mark.asyncio
+async def test_a_host_label_cannot_overwrite_a_correction_made_while_it_was_running():
+    """SOL's #68 repro: the host prepares a label, a person corrects meanwhile, the host then writes."""
+    store = TriageStore({'c1': PENDING})
+    await store.record_conversation_triage({}, write('c1'))
+    await store.record_conversation_triage({}, write('c1', kind='one_off', topic=None, source='user'))
+    late = await store.record_conversation_triage({}, write('c1', topic='Late host topic'))
+    assert late['kept'] == 'user_label'
+    assert (late['triage']['kind'], late['triage']['source']) == ('one_off', 'user')
+    # The decision and the write happen in one statement; nothing reads the label first.
+    assert not any(q.startswith('MATCH (t:FuliConversationTriage {id: $id}) RETURN t') for q in store.runtime.driver.queries)
+
+@pytest.mark.asyncio
+async def test_the_conversation_lock_comes_before_the_first_label_is_created():
+    """SOL's #93 repro: two first labels must not each MERGE their own node."""
+    store = TriageStore({'c1': PENDING})
+    await store.record_conversation_triage({}, write('c1'))
+    query = store.runtime.driver.queries[0]
+    assert query.index('SET c._triage_lock') < query.index('MERGE (t:FuliConversationTriage')
