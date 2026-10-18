@@ -255,6 +255,8 @@ test('Claude Code resumes normal Hook task entry after a same-session fallback',
   });
   assert.deepEqual(f.entries, ['begin_task_context']);
   assert.match(output.hookSpecificOutput.additionalContext, /Fuli task context/);
+  // Each rule fetch is an extra model round trip; ordinary tasks must not read them.
+  assert.match(output.hookSpecificOutput.additionalContext, /Do not read fuli:\/\/rules\/task-entry for an ordinary task/);
   const recovery = f.calls.find(call => call.fallback_recovery);
   assert.equal(recovery.source_application, 'claude_code');
   assert.deepEqual(f.appended, []);
