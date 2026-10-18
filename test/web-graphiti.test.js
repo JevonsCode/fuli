@@ -162,7 +162,7 @@ test('all existing workspace areas have Vue pages and API actions', () => {
 test('writing taste stays evidence-backed and separates review from Agent use', () => {
   assert.match(profile, /WritingTasteMilestone/);
   assert.match(profile, /\/api\/writing-taste-profile/);
-  assert.match(writingTaste, /profile\.readiness\.criteria/);
+  assert.match(writingTaste, /readiness\.criteria/);
   assert.match(writingTaste, /Working hypothesis/);
   assert.match(writingTaste, /profile\.agent_markdown/);
   assert.match(writingTaste, /KnowledgeConfirmDialog/);
