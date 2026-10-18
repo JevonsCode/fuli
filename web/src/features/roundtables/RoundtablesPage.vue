@@ -5,18 +5,23 @@ import { RouterLink, useRoute } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { currentLocale, t } from '@/i18n'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
-import { listThreads, readThread, type RoundtableMessage, type RoundtablePerson, type RoundtableThread, type RoundtableThreadSummary } from './roundtable-api'
-import { splitThread, tableSeats } from './roundtable-model'
+import { listChats, listThreads, readChat, readThread, type RoundtableChatPage, type RoundtableChatRoom, type RoundtableMessage, type RoundtablePerson, type RoundtableThread, type RoundtableThreadSummary } from './roundtable-api'
+import { chatRoomName, splitThread, tableSeats } from './roundtable-model'
+import RoundtableRoom from './RoundtableRoom.vue'
 import RoundtableSeats from './RoundtableSeats.vue'
 
-// A read-only record of Agents talking to each other. Agents start these
-// conversations themselves through message_agent; people only watch.
+// A read-only record of Agents talking to each other: chat rooms (agent_chat,
+// 1:1 or groups) and asks between Agents (message_agent). People only watch.
 const route = useRoute()
 const threads = ref<RoundtableThreadSummary[]>([])
 const thread = ref<RoundtableThread | null>(null)
+const chats = ref<RoundtableChatRoom[]>([])
+const chatsUnavailable = ref(false)
+const room = ref<RoundtableChatPage | null>(null)
 const loading = ref(true)
 const error = ref('')
 const selectedId = computed(() => typeof route.params.threadId === 'string' ? route.params.threadId : '')
+const selectedChatId = computed(() => typeof route.params.chatId === 'string' ? route.params.chatId : '')
 const CLIENTS: Record<string, string> = { claude_code: 'Claude Code', codex: 'Codex', cursor: 'Cursor', claude: 'Claude', other: 'Agent' }
 let timer: ReturnType<typeof setInterval> | undefined
 let version = 0
@@ -24,10 +29,19 @@ let version = 0
 async function refresh() {
   const current = ++version
   try {
-    const [list, detail] = await Promise.all([listThreads(), selectedId.value ? readThread(selectedId.value) : Promise.resolve(null)])
+    // Rooms are optional: an older server without agent_chat still shows its threads.
+    const [list, detail, rooms, open] = await Promise.all([
+      listThreads(),
+      selectedId.value ? readThread(selectedId.value) : Promise.resolve(null),
+      listChats().catch(() => null),
+      selectedChatId.value ? readChat(selectedChatId.value) : Promise.resolve(null),
+    ])
     if (current !== version) return
     threads.value = list.threads
     thread.value = detail
+    chats.value = rooms?.chats ?? []
+    chatsUnavailable.value = Boolean(rooms?.remoteUnavailable)
+    room.value = open
     error.value = ''
   } catch (cause) {
     if (current === version) error.value = cause instanceof Error ? cause.message : String(cause)
@@ -36,7 +50,7 @@ async function refresh() {
   }
 }
 
-watch(selectedId, () => { thread.value = null; void refresh() })
+watch([selectedId, selectedChatId], () => { thread.value = null; room.value = null; void refresh() })
 onMounted(() => {
   void refresh()
   timer = setInterval(() => { if (document.visibilityState === 'visible') void refresh() }, 5000)
@@ -76,14 +90,23 @@ function delivery(message: RoundtableMessage) {
       <p>{{ t('roundtable.loadFailed') }} · {{ error }}</p>
       <button class="ui-button" type="button" @click="refresh">{{ t('roundtable.retry') }}</button>
     </div>
-    <div v-else-if="!threads.length" class="roundtable-empty">
+    <div v-else-if="!threads.length && !chats.length" class="roundtable-empty">
       <strong>{{ t('roundtable.empty') }}</strong>
       <p>{{ t('roundtable.emptyHint') }}</p>
     </div>
     <div v-else class="ui-split roundtable-layout">
       <nav class="ui-split-list" :aria-label="t('roundtable.threads')">
-        <div class="ui-split-head"><span role="status">{{ t('roundtable.count', { count: threads.length }) }}</span></div>
+        <div class="ui-split-head"><span role="status">{{ t('roundtable.count', { count: threads.length + chats.length }) }}</span></div>
+        <p v-if="chatsUnavailable" class="ui-meta roundtable-remote-note">{{ t('roundtable.chat.remoteUnavailable') }}</p>
         <div class="ui-split-items">
+          <RouterLink v-for="item in chats" :key="item.chatId" class="ui-split-item" :class="{ 'is-selected': item.chatId === selectedChatId }"
+            :aria-current="item.chatId === selectedChatId ? 'page' : undefined" :to="`/roundtables/chat/${encodeURIComponent(item.chatId)}`" data-testid="roundtable-chat-room">
+            <span class="ui-split-item-meta">
+              <span>{{ t(`roundtable.chat.kinds.${item.kind}`) }} · {{ item.members.length }}</span>
+              <time :datetime="item.updatedAt">{{ time(item.updatedAt) }}</time>
+            </span>
+            <strong class="ui-split-item-title">{{ chatRoomName(item) }}</strong>
+          </RouterLink>
           <RouterLink v-for="item in threads" :key="item.id" class="ui-split-item" :class="{ 'is-selected': item.id === selectedId }"
             :aria-current="item.id === selectedId ? 'page' : undefined" :to="`/roundtables/${encodeURIComponent(item.id)}`" data-testid="roundtable-thread">
             <span class="ui-split-item-meta">
@@ -140,6 +163,7 @@ function delivery(message: RoundtableMessage) {
           </section>
         </div>
       </article>
+      <RoundtableRoom v-else-if="room" :room="room" :time="time" />
       <p v-else class="ui-split-placeholder">{{ t('roundtable.select') }}</p>
     </div>
   </section>
@@ -152,6 +176,7 @@ function delivery(message: RoundtableMessage) {
 .roundtable-empty p { margin-top: 8px; color: var(--color-muted); }
 .roundtable-section + .roundtable-section { margin-top: 24px; }
 .roundtable-waiting { color: var(--color-warning); font-weight: 600; }
+.roundtable-remote-note { margin: 8px 16px 0; }
 .roundtable-section h3 { margin: 0 0 12px; color: var(--color-muted); font-size: 13px; font-weight: 600; }
 .roundtable-section ol, .roundtable-section ul { margin: 0; padding: 0; list-style: none; display: grid; align-content: start; gap: 18px; }
 .roundtable-request { display: grid; gap: 6px; max-width: 760px; padding: 12px 14px; border: 1px dashed var(--color-border-strong, var(--color-border)); border-radius: 12px; }

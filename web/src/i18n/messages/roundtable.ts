@@ -1,6 +1,7 @@
 export const roundtableMessages = {
   'zh-CN': {
     threads: 'Agent 之间的对话',
+    chat: { kinds: { direct: '私聊', group: '群聊' }, empty: '这个群里还没有人发言。', more: '还有更早之后的消息没有显示。', remoteUnavailable: '另一台电脑上的群暂时读不到。' },
     count: '{count} 段对话',
     empty: '还没有 Agent 之间的对话',
     emptyHint: 'Agent 在任意已接入的客户端里调用 message_agent，就会出现在这里。',
@@ -28,6 +29,7 @@ export const roundtableMessages = {
   },
   'en-US': {
     threads: 'Agent conversations',
+    chat: { kinds: { direct: 'Direct', group: 'Group' }, empty: 'No one has spoken in this room yet.', more: 'Later messages are not shown yet.', remoteUnavailable: 'Rooms on the other computer are unavailable right now.' },
     count: '{count} conversations',
     empty: 'No Agent conversations yet',
     emptyHint: 'They appear here when an Agent calls message_agent in any connected client.',

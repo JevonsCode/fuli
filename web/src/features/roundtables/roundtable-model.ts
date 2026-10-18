@@ -56,3 +56,8 @@ export function tableSeats(messages: RoundtableMessage[], pending: RoundtableMes
   }
   return [...seats.values()]
 }
+
+/** A chat room's name: its title, or for an untitled room the members' names. */
+export function chatRoomName(room: { title: string | null; members: { name: string | null; address: string }[] }) {
+  return room.title?.trim() || room.members.map(member => member.name ?? member.address).join(' · ')
+}

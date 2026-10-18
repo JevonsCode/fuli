@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,13 @@ import { fileURLToPath } from 'node:url';
 import { installSessionSkill, removeBundledSkill } from '../src/setup/session-skill.js';
 
 const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+// The Skill is SKILL.md plus the reference files it opens on demand.
+const bundledSkillText = () => {
+  const root = join(PROJECT_ROOT, 'skills', 'capturing-session-knowledge');
+  return ['SKILL.md', ...readdirSync(join(root, 'references')).map((name) => join('references', name))]
+    .map((name) => readFileSync(join(root, name), 'utf8')).join('\n');
+};
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'fuli-session-skill-'));
@@ -121,10 +128,7 @@ test('uninstall removes an unchanged bundled Skill but preserves a modified one'
 });
 
 test('bundled session Skill advertises both retrieval and capture triggers', () => {
-  const skill = readFileSync(
-    join(PROJECT_ROOT, 'skills', 'capturing-session-knowledge', 'SKILL.md'),
-    'utf8'
-  );
+  const skill = bundledSkillText();
   const description = skill.match(/^description:\s*(.+)$/m)?.[1] ?? '';
 
   assert.match(description, /^Use when /);
@@ -134,10 +138,7 @@ test('bundled session Skill advertises both retrieval and capture triggers', () 
 });
 
 test('bundled session Skill uses hook context with an exact preference fallback', () => {
-  const skill = readFileSync(
-    join(PROJECT_ROOT, 'skills', 'capturing-session-knowledge', 'SKILL.md'),
-    'utf8'
-  );
+  const skill = bundledSkillText();
 
   assert.match(skill, /start of every user task/i);
   assert.match(skill, /UserPromptSubmit.*begin_task_context/is);
@@ -161,10 +162,7 @@ test('bundled session Skill uses hook context with an exact preference fallback'
 });
 
 test('bundled session Skill never gives the Agent a direct scope-expansion path', () => {
-  const skill = readFileSync(
-    join(PROJECT_ROOT, 'skills', 'capturing-session-knowledge', 'SKILL.md'),
-    'utf8'
-  );
+  const skill = bundledSkillText();
 
   assert.doesNotMatch(skill, /set_personal_preference_scope/);
   assert.match(skill, /safe\s+narrowing.*global.*exact project/is);
@@ -173,10 +171,7 @@ test('bundled session Skill never gives the Agent a direct scope-expansion path'
 });
 
 test('bundled session Skill gates all-local content lookup behind explicit consent', () => {
-  const skill = readFileSync(
-    join(PROJECT_ROOT, 'skills', 'capturing-session-knowledge', 'SKILL.md'),
-    'utf8'
-  );
+  const skill = bundledSkillText();
 
   assert.match(skill, /obvious content-location request/i);
   assert.match(skill, /ask.*widen.*all\s+registered local\s+personal projects/is);
@@ -195,10 +190,7 @@ test('bundled session Skill gates all-local content lookup behind explicit conse
 });
 
 test('bundled session Skill reports only provider-reported worker execution summaries', () => {
-  const skill = readFileSync(
-    join(PROJECT_ROOT, 'skills', 'capturing-session-knowledge', 'SKILL.md'),
-    'utf8'
-  );
+  const skill = bundledSkillText();
 
   assert.match(skill, /executionSummary/);
   assert.match(skill, /one .*row.*worker|one .*line.*worker/i);
