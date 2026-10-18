@@ -15,10 +15,7 @@ function submit() { if (!props.busy && !props.refreshing && response.value && re
 
 <template>
   <form class="attention-reply" @submit.prevent="submit">
-    <div class="attention-question">
-      <h3>{{ item.title }}</h3>
-      <p>{{ item.requestedAction }}</p>
-    </div>
+    <p class="attention-question">{{ item.requestedAction }}</p>
     <UiDisclosure :key="item.requestId" :title="t('attention.context')">
       <p class="attention-context">{{ item.detail }}</p>
     </UiDisclosure>
@@ -51,8 +48,7 @@ function submit() { if (!props.busy && !props.refreshing && response.value && re
 
 <style scoped>
 .attention-reply { display: grid; gap: 20px; min-width: 0; }
-.attention-question h3 { margin: 0 0 12px; font-size: 22px; line-height: 1.4; letter-spacing: -.025em; }
-.attention-question p, .attention-context { margin: 0; font-size: 14px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.attention-question, .attention-context { margin: 0; font-size: 14px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
 .attention-context { color: var(--color-muted); }
 .attention-reply .ui-disclosure { padding-block: 12px; border-bottom: 1px solid var(--color-border); }
 .attention-choices { display: grid; gap: 8px; min-width: 0; padding: 0; margin: 0; border: 0; }
@@ -69,7 +65,6 @@ function submit() { if (!props.busy && !props.refreshing && response.value && re
 .attention-submit button { flex: 0 0 auto; }
 .attention-response-error { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
 @media (max-width: 640px) {
-  .attention-question h3 { font-size: 19px; }
   .attention-input textarea { font-size: 16px; }
   .attention-submit { align-items: stretch; flex-direction: column; gap: 12px; }
   .attention-submit p { max-width: none; }

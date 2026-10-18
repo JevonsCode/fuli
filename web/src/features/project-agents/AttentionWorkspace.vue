@@ -77,30 +77,35 @@ async function respond(item: AgentAttention, response: string) {
 
 <template>
   <div class="attention-page-body">
-    <p class="ui-meta attention-page-count" role="status">{{ pendingCount ? t('attention.count', { count: pendingCount }) : '' }}</p>
     <div v-if="attention.error" role="alert" class="attention-error"><span>{{ t('attention.loadError') }}</span><UiButton size="sm" :disabled="attention.loading" @click="attention.refresh()">{{ t('attention.refresh') }}</UiButton></div>
     <GrowthLoading v-if="attention.loading && !attention.items.length" variant="page" :label="t('attention.loading')" />
     <div v-else-if="!attention.items.length && !attention.error" class="attention-empty"><span aria-hidden="true">✓</span><p>{{ t('attention.empty') }}</p></div>
-    <div v-else-if="attention.items.length" class="attention-workspace" :aria-busy="attention.loading">
-      <aside class="attention-queue" :aria-label="t('attention.queue')">
-        <div class="attention-queue-toolbar">
-          <span>{{ attention.agentId ? names[attention.agentId] || t('attention.agentFallback') : t('attention.all') }}</span>
+    <div v-else-if="attention.items.length" class="ui-split attention-workspace" :aria-busy="attention.loading">
+      <aside class="ui-split-list" :aria-label="t('attention.queue')">
+        <div class="ui-split-head">
+          <span class="attention-page-count" role="status">{{ attention.agentId ? names[attention.agentId] || t('attention.agentFallback') : t('attention.all') }} · {{ t('attention.count', { count: pendingCount }) }}</span>
           <RouterLink v-if="attention.agentId" class="ui-button ui-button--ghost ui-button--sm" :to="inboxLocation()">{{ t('attention.all') }}</RouterLink>
           <UiButton v-else-if="!attention.error" size="sm" variant="ghost" :disabled="attention.loading || Boolean(busy)" @click="attention.refresh()">{{ t('attention.refresh') }}</UiButton>
         </div>
         <UiSelect v-model="selectedId" class="attention-mobile-picker" field :label="t('attention.selectRequest')" :options="requestOptions" :disabled="Boolean(busy)" />
-        <div class="attention-request-list">
-          <button v-for="item in attention.items" :key="item.requestId" type="button" class="attention-request" :class="{ 'is-selected': selectedId === item.requestId }" :aria-current="selectedId === item.requestId ? 'true' : undefined" :disabled="Boolean(busy)" @click="selectedId = item.requestId">
-            <span class="attention-request-meta">{{ names[item.agentId] || t('attention.agentFallback') }}<span>{{ t(`attention.kinds.${item.kind}`) }}</span></span>
-            <strong>{{ item.title }}</strong><span class="attention-request-project">{{ projectNames.get(item.personalProjectId) || t('attention.projectFallback') }}</span>
+        <div class="ui-split-items attention-request-list">
+          <button v-for="item in attention.items" :key="item.requestId" type="button" class="ui-split-item attention-request" :class="{ 'is-selected': selectedId === item.requestId }" :aria-current="selectedId === item.requestId ? 'true' : undefined" :disabled="Boolean(busy)" @click="selectedId = item.requestId">
+            <span class="ui-split-item-meta"><span>{{ names[item.agentId] || t('attention.agentFallback') }}</span><span>{{ t(`attention.kinds.${item.kind}`) }}</span></span>
+            <strong class="ui-split-item-title">{{ item.title }}</strong>
+            <span class="ui-split-item-sub">{{ projectNames.get(item.personalProjectId) || t('attention.projectFallback') }}</span>
           </button>
+          <UiButton v-if="attention.items.length < attention.filteredTotal" class="attention-more" :disabled="attention.loading || Boolean(busy)" @click="attention.more()">{{ t('attention.more') }}</UiButton>
         </div>
-        <UiButton v-if="attention.items.length < attention.filteredTotal" class="attention-more" :disabled="attention.loading || Boolean(busy)" @click="attention.more()">{{ t('attention.more') }}</UiButton>
       </aside>
-      <section v-if="selected" :key="selected.requestId" class="attention-detail">
-        <div class="attention-detail-meta"><span>{{ names[selected.agentId] || t('attention.agentFallback') }} · {{ projectNames.get(selected.personalProjectId) || t('attention.projectFallback') }}</span><span class="ui-badge">{{ t(`attention.kinds.${selected.kind}`) }}</span></div>
-        <AttentionReply v-model="draft" :item="selected" :busy="busy === selected.requestId" :refreshing="attention.loading" :error="responseError" @submit="respond(selected, $event)" />
-        <a v-if="selected.taskId && !busy" class="attention-task-link" :href="attentionTaskHref(selected)">{{ t('attention.task') }} ↗</a>
+      <section v-if="selected" :key="selected.requestId" class="ui-split-detail attention-detail">
+        <header class="ui-split-detail-head">
+          <h2>{{ selected.title }}</h2>
+          <p class="ui-list-meta"><span>{{ names[selected.agentId] || t('attention.agentFallback') }} · {{ projectNames.get(selected.personalProjectId) || t('attention.projectFallback') }}</span><span class="ui-badge">{{ t(`attention.kinds.${selected.kind}`) }}</span></p>
+        </header>
+        <div class="ui-split-detail-body">
+          <AttentionReply v-model="draft" :item="selected" :busy="busy === selected.requestId" :refreshing="attention.loading" :error="responseError" @submit="respond(selected, $event)" />
+          <a v-if="selected.taskId && !busy" class="attention-task-link" :href="attentionTaskHref(selected)">{{ t('attention.task') }} ↗</a>
+        </div>
       </section>
     </div>
   </div>
