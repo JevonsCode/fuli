@@ -7,6 +7,8 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import EmployeeTaskBoard, { type EmployeeBoardItem, type EmployeeBoardStatus, type EmployeeProjectBoard } from '@/features/employees/EmployeeTaskBoard.vue'
 import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
 import BolePeoplePanel from '@/features/employees/BolePeoplePanel.vue'
+import UnassignedConversationsPanel from '@/features/agent-profile/UnassignedConversationsPanel.vue'
+import { isFormalProject } from '@/features/projects/project-origin'
 import EmployeeTaskDialog from '@/features/employees/EmployeeTaskDialog.vue'
 import EmployeeShareDialog from '@/features/employees/EmployeeShareDialog.vue'
 import { employeeAvatarUrl } from '@/features/employees/avatars'
@@ -44,7 +46,10 @@ const nativeWorkbenchView = computed(() => {
 })
 const isNativePeople = computed(() => nativeWorkbenchView.value === 'people')
 const isNativeJudgment = computed(() => nativeWorkbenchView.value === 'judgment')
-const isNativeWorkbench = computed(() => isNativePeople.value || isNativeJudgment.value)
+// Astro receives conversations no project has claimed yet.
+const isNativeUnclaimed = computed(() => nativeWorkbenchView.value === 'unclaimed')
+const isNativeWorkbench = computed(() => isNativePeople.value || isNativeJudgment.value || isNativeUnclaimed.value)
+const spaceProjects = computed(() => (store.state?.personalProjects ?? []).filter(project => project.personal_space_id === personalSpaceId.value))
 const isJefa = computed(() => templateId.value === 'jefa')
 const pageLoading = computed(() => (!store.state
   && (store.runtimeStatus === 'idle' || store.runtimeStatus === 'loading'))
@@ -333,6 +338,7 @@ async function projectsSaved() {
     <div v-else-if="!template" class="employee-workbench-state"><p>{{ t('employees.unavailable') }}</p><RouterLink to="/project-agents">{{ t('employees.backToAgents') }}</RouterLink></div>
     <BolePeoplePanel v-else-if="isNativePeople" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" />
     <JudgmentWorkbench v-else-if="isNativeJudgment" :personal-space-id="personalSpaceId" />
+    <UnassignedConversationsPanel v-else-if="isNativeUnclaimed" :space-id="personalSpaceId" :formal-projects="spaceProjects.filter(isFormalProject)" :existing-project-ids="spaceProjects.map(project => project.project_id)" @project-created="store.rememberPersonalProject" />
     <div v-else-if="isJefa && template.runtimeStatus !== 'ready'" class="employee-workbench-state"><p>{{ t('employees.installRequired') }}</p><small>{{ t('employees.installHelp') }}</small></div>
     <div v-else-if="!projectId" class="employee-workbench-state"><h2>{{ t('employees.emptyWorkbench') }}</h2><p>{{ t('employees.manageHint') }}</p><UiButton size="sm" variant="ghost" @click="manageProjectsOpen = true">{{ t('employees.manageProjects') }}</UiButton></div>
     <EmployeeTaskBoard
