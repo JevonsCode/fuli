@@ -7,9 +7,9 @@ import { knowledgePath, personalProjectsPath } from '@/router/paths'
 export interface NavSection { key: string; to: string; owns: readonly string[] }
 export interface NavDestination { key: string; icon: IconName; to: string; owns: readonly string[]; exact?: boolean; sections: readonly NavSection[] }
 
-export interface NavContext { spaceId: string; publicProjects: boolean; review: boolean }
+export interface NavContext { spaceId: string; publicProjects: boolean }
 
-export function navDestinations({ spaceId, publicProjects, review }: NavContext): NavDestination[] {
+export function navDestinations({ spaceId, publicProjects }: NavContext): NavDestination[] {
   const projects = personalProjectsPath(spaceId, 'graph')
   const knowledge = knowledgePath('personal', spaceId, 'directory')
   return [
@@ -28,12 +28,11 @@ export function navDestinations({ spaceId, publicProjects, review }: NavContext)
       { key: 'myProjects', to: projects, owns: ['/personal/'] },
       ...(publicProjects ? [{ key: 'publicProjects', to: '/public-projects', owns: ['/public-projects'] }] : []),
     ] },
-    { key: 'memory', icon: 'memory', to: knowledge, owns: ['/knowledge', '/preferences', '/organize', '/review'], sections: [
+    { key: 'memory', icon: 'memory', to: knowledge, owns: ['/knowledge', '/preferences', '/organize'], sections: [
       { key: 'knowledge', to: knowledge, owns: ['/knowledge'] },
       { key: 'preferences', to: '/preferences', owns: ['/preferences'] },
       { key: 'writing', to: '/preferences/writing', owns: ['/preferences/writing'] },
       { key: 'organize', to: '/organize', owns: ['/organize'] },
-      ...(review ? [{ key: 'review', to: '/review', owns: ['/review'] }] : []),
     ] },
     { key: 'settings', icon: 'settings', to: '/settings', owns: ['/settings', '/connections', '/about'], sections: [
       { key: 'settings', to: '/settings', owns: ['/settings'] },

@@ -64,7 +64,7 @@ export const knowledgeDomainMessages = {
     humanChanges: {
       none: '没有人工变更',
       unseen: '人工改动 · Agent 未查看',
-      viewed: 'Agent 已查看 · 待审核',
+      viewed: 'Agent 已查看 · 待确认',
       reviewed: 'Agent 已审核',
     },
     auditActions: {
@@ -262,7 +262,7 @@ export const knowledgeDomainMessages = {
     humanChanges: {
       none: 'No human changes',
       unseen: 'Human edit · Agent has not viewed',
-      viewed: 'Agent viewed · awaiting review',
+      viewed: 'Agent viewed · unconfirmed',
       reviewed: 'Agent reviewed',
     },
     auditActions: {

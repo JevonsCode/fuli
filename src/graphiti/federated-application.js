@@ -42,6 +42,7 @@ import { attachExternalKnowledgeRuntime } from '../external-knowledge/runtime.js
 import { resolveSetupPaths } from '../setup/paths.js';
 import { createNeedsPersonNotifier } from '../notifications/needs-person.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
+import { describeSettings } from '../system/settings-guide.js';
 import {
   beginTaskContext as beginTaskContextWorkflow,
   checkpointTaskKnowledge as checkpointTaskKnowledgeWorkflow,
@@ -134,6 +135,8 @@ export function openFederatedGraphApplication({
     // Read per call so a saved settings change applies without a restart.
     app.needsPerson = createNeedsPersonNotifier({ fetchImpl, consoleUrl: app.consoleUrl,
       readUrl: () => readRuntimeSettings(paths.runtimeSettingsPath).notifications.needsPersonUrl });
+    app.explainSettings = () => describeSettings({ settings: readRuntimeSettings(paths.runtimeSettingsPath),
+      capturePolicy: app.getCapturePolicy(), consoleUrl: app.consoleUrl });
   }
   return app;
 }

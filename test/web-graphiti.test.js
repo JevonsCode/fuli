@@ -34,7 +34,7 @@ const inspector = readFileSync(
 const profile = readFileSync('web/src/pages/PersonalProfilePage.vue', 'utf8');
 const writingTaste = readFileSync('web/src/pages/WritingTastePage.vue', 'utf8');
 const publicProjects = readFileSync('web/src/pages/PublicProjectsPage.vue', 'utf8');
-const review = readFileSync('web/src/pages/ReviewPage.vue', 'utf8');
+const review = readFileSync('web/src/features/publishing/PublishQueue.vue', 'utf8');
 const connections = readFileSync('web/src/pages/ConnectionsPage.vue', 'utf8');
 const settingsMessages = readFileSync('web/src/i18n/messages/settings.ts', 'utf8');
 const knowledgeMessages = readFileSync(
@@ -154,7 +154,7 @@ test('all existing workspace areas have Vue pages and API actions', () => {
   assert.match(connections, /pages\.connections\.statusAria/);
   assert.match(connections, /pages\.connections\.unsubscribe/);
   assert.match(pageMessages, /viewGraph: '查看知识图谱'/);
-  assert.match(pageMessages, /publicTitle: '公共项目维护审核'/);
+  assert.match(pageMessages, /publicTitle: '别人提交的内容'/);
   assert.match(pageMessages, /unsubscribe: '取消订阅'/);
   assert.match(pageMessages, /unsubscribe: '取消订阅'/);
 });

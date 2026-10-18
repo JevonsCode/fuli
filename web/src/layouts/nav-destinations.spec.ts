@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { activeDestination, activeSection, navDestinations } from './nav-destinations'
 
-const all = navDestinations({ spaceId: 'personal-1', publicProjects: true, review: true })
+const all = navDestinations({ spaceId: 'personal-1', publicProjects: true })
 
 describe('nav destinations', () => {
   it('keeps six destinations and hides sections the capabilities do not allow', () => {
     expect(all.map(d => d.key)).toEqual(['constellation', 'agents', 'chat', 'projects', 'memory', 'settings'])
-    const limited = navDestinations({ spaceId: 'personal-1', publicProjects: false, review: false })
+    const limited = navDestinations({ spaceId: 'personal-1', publicProjects: false })
     expect(limited.find(d => d.key === 'projects')?.sections.map(s => s.key)).toEqual(['myProjects'])
-    expect(limited.find(d => d.key === 'memory')?.sections.map(s => s.key)).not.toContain('review')
+    expect(all.find(d => d.key === 'memory')?.sections.map(s => s.key)).toEqual(['knowledge', 'preferences', 'writing', 'organize'])
   })
 
   it.each([

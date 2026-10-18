@@ -29,6 +29,7 @@ const HANDLERS = Object.freeze({
   list_preference_conflicts: (app, input) => app.listPreferenceConflicts(input),
   list_agent_interfaces: () => agentInterfaceCatalog(),
   get_capture_policy: (app) => app.getCapturePolicy(),
+  explain_settings: (app) => settingsGuide(app),
   update_capture_policy: (app, input) => app.updateCapturePolicy(input),
   list_external_knowledge_connectors: (app) => externalKnowledge(app).listConnectorTypes(),
   discover_external_knowledge_sources: (app, input) => externalKnowledge(app).discover(input),
@@ -237,6 +238,11 @@ const HANDLERS = Object.freeze({
 function employeeService(app) {
   if (!app.employees) throw new Error('Employee runtime is unavailable');
   return app.employees;
+}
+
+function settingsGuide(app) {
+  if (!app.explainSettings) throw new Error('Settings are unavailable without a local installation');
+  return app.explainSettings();
 }
 
 function externalKnowledge(app) {
