@@ -32,6 +32,7 @@ from .knowledge_audit_models import (
     PreferenceScopeChange,
 )
 from .model_base import StrictModel
+from .knowledge_weight_models import KnowledgeWeightView
 from .provider_values import json_object
 from .model_validation import (
     complete_epistemic_state,
@@ -785,7 +786,7 @@ class SearchRequest(StrictModel):
         return self
 
 
-class EntitySearchResult(StrictModel):
+class EntitySearchResult(KnowledgeWeightView):
     id: str
     space_id: str
     group_id: str
@@ -832,7 +833,7 @@ class EntitySearchResult(StrictModel):
     score: float | None = None
 
 
-class FactResult(StrictModel):
+class FactResult(KnowledgeWeightView):
     id: str
     space_id: str
     group_id: str
@@ -888,7 +889,7 @@ class SearchResult(StrictModel):
     entities: list[EntitySearchResult] = Field(default_factory=list)
 
 
-class CollaborationPreferenceItem(StrictModel):
+class CollaborationPreferenceItem(KnowledgeWeightView):
     id: str
     item_kind: KnowledgeItemKind
     key: str

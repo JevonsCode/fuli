@@ -17,6 +17,8 @@ export function agentCollaborationPreference(item) {
     'attributes',
     'preference_qualifiers',
     'weight',
+    'weight_percent',
+    'confirmed_by_person',
     'reason',
     'confirmation_basis',
     'reasoning_summary',

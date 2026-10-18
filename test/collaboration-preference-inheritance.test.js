@@ -16,6 +16,8 @@ test('agent collaboration preferences preserve inherited scope and rationale met
     preference_scope: 'project',
     preference_project_id: 'platform-a',
     confirmation_status: 'confirmed',
+    weight_percent: 100,
+    confirmed_by_person: false,
     confirmation_basis: {
       existence_reason: 'A 的项目约定明确陈述了这条偏好。',
       quadrant_reason: '这条偏好由权威项目资料确认。'
@@ -80,6 +82,8 @@ test('agent collaboration preferences preserve inherited scope and rationale met
     preference_project_id: 'platform-a',
     confirmation_status: 'confirmed',
     confirmation_basis: inherited.confirmation_basis,
+    weight_percent: 100,
+    confirmed_by_person: false,
     attributes: inherited.attributes,
     weight: 0.85,
     reason: 'A 的项目约定明确陈述了这条偏好。',

@@ -20,6 +20,7 @@ from .models import (
     ScopedPreferenceScope,
     StrictModel,
 )
+from .knowledge_weight_models import KnowledgeWeightView
 from .project_action_models import (
     KnowledgeConflictRecord,
     KnowledgeProjectReferenceRecord,
@@ -46,7 +47,7 @@ class AgentConfirmationProgress(StrictModel):
     )
 
 
-class GraphNode(StrictModel):
+class GraphNode(KnowledgeWeightView):
     id: str
     name: str
     type: str
@@ -106,7 +107,7 @@ class GraphNode(StrictModel):
     audit_events: list[KnowledgeAuditRecord] = Field(default_factory=list)
 
 
-class GraphEdge(StrictModel):
+class GraphEdge(KnowledgeWeightView):
     id: str
     source: str
     target: str
