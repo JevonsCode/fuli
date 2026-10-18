@@ -131,11 +131,15 @@ If `capture_session_knowledge` or automatic project creation returns `capture_di
 user has disabled automatic capture. Do not retry, do not create a fallback record elsewhere,
 and do not describe the skipped batch as stored. Existing knowledge may still be queried.
 
-Before sending the final response for a task you own, perform one checkpoint. A coordinated
-worker returns its result to the owner instead of checkpointing an inherited token. For a hook-managed task, call
-`checkpoint_task_knowledge` exactly once with either `capture_candidates` and the bounded durable
-batch, or `retain_nothing`. For a prompt-only Agent, either flush the durable batch directly or
-determine that the turn produced no reusable knowledge. Do not finish a reusable project decision
-with an unflushed batch.
+For an owned task, follow its `checkpoint_required` and `checkpoint_guidance`. Routine tasks
+with nothing new to record may use the entry receipt without a model checkpoint; eligible
+fallback tasks are closed as `retain_nothing` / `reported` at the next entry in the same native
+session, and hook-delivered tasks by Stop. Capture candidates, experiences, memory changes,
+explicit knowledge usage, collaborators and meaningful work logs (including failures/blockers)
+still require `checkpoint_task_knowledge` with `capture_candidates` or `retain_nothing`.
+Assigned employees include a truthful workLog, even
+with `retain_nothing`; never claim automatic closure completed work or saved memory. A coordinated
+worker returns its result instead of checkpointing an inherited token. Do not finish a reusable
+project decision with an unflushed batch.
 
 Only notify the user when capture fails, conflicts with existing knowledge, or requires an ownership decision. If project knowledge was proposed successfully, do not interrupt merely to announce the pending review item.

@@ -21,7 +21,7 @@ exists. A Claude Code `UserPromptSubmit` hook calls `begin_task_context`, which 
 collaboration preferences and resolves the exact local personal project from the current working
 directory. It also uses the submitted prompt transiently for bounded automatic project-memory
 recall and never stores or returns that prompt. Apply the returned `task_knowledge_recall` and
-preferences, then retain the opaque task token for the final checkpoint;
+preferences, then retain the opaque task token for any required checkpoint;
 do not redundantly call `get_collaboration_preferences`.
 
 When the host has not supplied lifecycle context, call exactly
@@ -33,7 +33,12 @@ or guess `personalProjectId` in the Agent.
 
 Pass the actual native `sessionId` when the host or this turn's Hook supplies it; never guess
 one or use an MCP process ID. With `sessionId` and `taskPrompt`, the fallback also starts a fresh
-durable task and returns its `taskContextToken` for the final checkpoint. An existing pending
+durable task and returns its `taskContextToken`. Follow `checkpoint_required` and
+`checkpoint_guidance`: a routine task with nothing new to record may finish with its entry
+receipt; the next entry in the same native session auto-closes an eligible fallback task as
+`retain_nothing` / `reported`. Capture candidates, experiences, memory changes, explicit knowledge
+usage, collaborators, failures/blockers and meaningful work summaries still need an explicit
+checkpoint. Automatic closure never claims completed work or saved memory. An existing pending
 task is not proof that its Hook context reached this turn. If `task_lifecycle.status=not_started`,
 preferences are available but checkpoint ownership is not established; report the missing
 host identity or prompt rather than reusing an earlier token. A blocked transcript handoff

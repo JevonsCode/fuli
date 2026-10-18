@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ActivityOriginBadge from "@/features/agent-profile/ActivityOriginBadge.vue";
 import { employeeAvatarUrl } from "@/features/employees/avatars";
 import { agentIdentityStyle } from "@/features/agent-profile/agent-identity-color";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
@@ -466,6 +467,7 @@ onMounted(() => {
                   {{ task.title }}
                 </RouterLink>
                 <span class="ui-badge">{{ t(`projectAgents.taskStatus.${task.status}`) }}</span>
+                <ActivityOriginBadge :origin="task.activityOrigin" />
                 <TaskExecutionPlan :task="task" :personal-space-id="space" :active="activeTab === 'overview'" />
               </li>
             </ul>
@@ -576,6 +578,7 @@ onMounted(() => {
                   {{ task.title }}
                 </RouterLink>
                 <span>{{ t(`projectAgents.taskStatus.${task.status}`) }}</span>
+                <ActivityOriginBadge :origin="task.activityOrigin" />
               </div>
               <p v-if="task.resultSummary">{{ task.resultSummary }}</p>
               <small>{{ date(task.completedAt || task.updatedAt || task.createdAt) }}</small>

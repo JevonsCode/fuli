@@ -29,7 +29,7 @@ export const adapter = {
   connect(agent, context, dependencies = {}) { return (dependencies.connectClaudeCodeConfig ?? connectClaudeCode)(agent, context); },
   disconnect(agent, dependencies = {}) { return (dependencies.disconnectClaudeCodeConfig ?? disconnectClaudeCode)(agent); },
   status(agent, context, readers) {
-    return { registration: jsonRegistration(agent, context, readers, { source: 'claude_code', profile: true, alwaysLoad: true }),
+    return { registration: jsonRegistration(agent, context, readers, { source: 'claude_code', profile: true }),
       lifecycleHooks: hasCurrentClaudeCodeHooks(readers.readJson(agent.settingsPath), { ...context, hookTimeoutSec: context.hookTimeoutSec ?? 30 }) };
   }
 };

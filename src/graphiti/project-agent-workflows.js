@@ -226,6 +226,7 @@ export async function coordinateProjectAgentTask(
     modelStrategyOverride: input.modelStrategyOverride,
     executorPolicyOverride: input.executorPolicyOverride,
     sourceApplication: input.sourceApplication,
+    ...(entryTask ? { taskContextToken: entryTask.token } : {}),
     sourceSessionId: projectResolution.scope?.type === 'temporary' && entryTask
       ? entryTask.sessionId : input.sourceSessionId,
     routingReason: input.routingReason,
