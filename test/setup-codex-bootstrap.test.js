@@ -22,7 +22,7 @@ test('Codex global instructions preserve unrelated guidance and keep a short boo
   assert.equal(second, first);
   assert.match(first, /# Existing guidance/);
   assert.match(managed, /start of every user task/i);
-  assert.match(managed, /use.*begin_task_context.*hook context if supplied/is);
+  assert.match(managed, /use the FULI hook context if supplied/i);
   assert.match(managed, /do not repeat the fallback/i);
   assert.match(managed, /otherwise before any other tool or answer/i);
   assert.match(managed, /before any other tool or answer/i);
@@ -40,8 +40,9 @@ test('Codex global instructions preserve unrelated guidance and keep a short boo
   assert.match(managed, /all returned `effective_preferences`/);
   assert.match(managed, /write tools?.*actual payload/is);
   assert.match(managed, /mentioning.*later.*not compliance/is);
-  assert.match(managed, /coordinate_project_agent_task/);
-  assert.match(managed, /release_runtime_lease.*finally/is);
+  // Unlisted chat-profile tools are not named, so Codex does not run discovery first.
+  assert.doesNotMatch(managed, /begin_task_context|coordinate_project_agent_task|runtime_lease|resolve_deferred/);
+  assert.match(managed, /only when the task needs it.*list_agent_interfaces/is);
   assert.ok(Buffer.byteLength(managed, 'utf8') < 1000);
   assert.equal(removeFuliGlobalInstructions(first), source);
 });
