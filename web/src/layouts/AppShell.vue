@@ -28,7 +28,11 @@ const destinations = computed(() => navDestinations({
 }))
 const destination = computed(() => activeDestination(destinations.value, route.path))
 const section = computed(() => activeSection(destination.value, route.path))
-const title = computed(() => routeMetaText(route.meta.title, 'routes.overview.title'))
+// On a section's own page the tabs already name it, so the heading names the
+// destination (对话 beside 圆桌 | 待决策) instead of repeating the active tab.
+const title = computed(() => destination.value && (destination.value.sections.length > 1) && section.value?.to === route.path
+  ? t(`shell.destinations.${destination.value.key}`)
+  : routeMetaText(route.meta.title, 'routes.overview.title'))
 const dedicatedWorkspace = computed(() => route.meta.dedicatedWorkspace === true)
 
 // Pins are shared by the rail, Agent cards and profiles.

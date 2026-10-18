@@ -82,6 +82,16 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
+  it('names the destination, not the active tab, on a section page and keeps detail titles', async () => {
+    const { wrapper, router } = await setup('/roundtables')
+    expect(wrapper.get('.app-title').text()).toBe('对话')
+    expect(wrapper.findAll('[data-section]').map(tab => tab.text())).toEqual(['圆桌', '待决策'])
+    await router.push('/roundtables/thread-1')
+    await flushPromises()
+    expect(wrapper.get('.app-title').text()).toBe('页面')
+    wrapper.unmount()
+  })
+
   it('lists pinned Agents under Agents and marks the current one without tinting both rows', async () => {
     pinnedIds = ['agent-a']
     const { wrapper, router } = await setup('/agents/personal-1/agent-a')
