@@ -3,6 +3,7 @@ import { computed } from 'vue'
 
 import VirtualDirectoryList from '@/components/VirtualDirectoryList.vue'
 import { t } from '@/i18n'
+import { UiStatRow, type UiStat } from '@/ui'
 import type { KnowledgeItem } from '@/types'
 import {
   formatTime,
@@ -34,6 +35,13 @@ const props = defineProps<{
   listResetKey: unknown
   sourceLabel: (item: KnowledgeItem) => string
 }>()
+
+// The same stat row as every memory page: each validity count is its filter.
+const statusStats = computed<UiStat[]>(() => [
+  { key: 'current', label: t('common.status.current'), value: props.currentItemCount, tone: 'success', pressed: props.contentStatus === 'current' },
+  { key: 'historical', label: t('common.status.invalid'), value: props.historicalItemCount, pressed: props.contentStatus === 'historical' },
+  { key: 'all', label: t('common.status.all'), value: props.allItems.length, pressed: props.contentStatus === 'all' },
+])
 
 const emit = defineEmits<{
   'change-section': [section: DirectorySection]
@@ -108,39 +116,8 @@ const selectedMaterialIndex = computed(() => props.selectedItem
         <div class="directory-section-copy">
           <strong>{{ t('knowledge.workspace.workspace.view.knowledgeContent') }}</strong>
         </div>
-        <div
-          class="knowledge-status-filter"
-          role="group"
-          :aria-label="t('knowledge.workspace.workspace.view.knowledgeStatusAria')"
-        >
-          <button
-            class="knowledge-status-option"
-            data-status="current"
-            type="button"
-            :aria-pressed="contentStatus === 'current'"
-            @click="emit('update-status', 'current')"
-          >
-            {{ t('common.status.current') }} <span>{{ currentItemCount }}</span>
-          </button>
-          <button
-            class="knowledge-status-option"
-            data-status="historical"
-            type="button"
-            :aria-pressed="contentStatus === 'historical'"
-            @click="emit('update-status', 'historical')"
-          >
-            {{ t('common.status.invalid') }} <span>{{ historicalItemCount }}</span>
-          </button>
-          <button
-            class="knowledge-status-option"
-            data-status="all"
-            type="button"
-            :aria-pressed="contentStatus === 'all'"
-            @click="emit('update-status', 'all')"
-          >
-            {{ t('common.status.all') }} <span>{{ allItems.length }}</span>
-          </button>
-        </div>
+        <UiStatRow class="knowledge-status-filter" :items="statusStats" :label="t('knowledge.workspace.workspace.view.knowledgeStatusAria')"
+          @select="key => emit('update-status', key as ContentStatus)" />
         <small class="directory-section-count">
           {{ t('common.counts.items', { count: visibleItems.length }) }}
         </small>
