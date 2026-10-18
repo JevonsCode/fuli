@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from '@/ui/UiButton.vue'
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { getJson, patchJson, postJson } from '@/api/client'
@@ -328,12 +329,12 @@ async function projectsSaved() {
     <EmployeeTaskDialog v-if="isJefa" :open="taskOpen" :item="selectedTask" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" :default-project-id="visibleProjectIds.length === 1 ? visibleProjectIds[0] : undefined" :personal-space-id="personalSpaceId" :can-write="template?.permissions.includes('board.write') ?? false" @close="taskOpen = false" @saved="loadWorkspace" />
     <EmployeeShareDialog v-if="isJefa" :open="shareOpen" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" @close="shareOpen = false" />
     <GrowthLoading v-if="pageLoading" :label="pageLoadingLabel" />
-    <div v-else-if="visibleError" class="employee-workbench-state" role="alert"><p>{{ visibleError }}</p><button class="quiet-button" type="button" @click="retry">{{ t('employees.retry') }}</button></div>
+    <div v-else-if="visibleError" class="employee-workbench-state" role="alert"><p>{{ visibleError }}</p><UiButton size="sm" variant="ghost" @click="retry">{{ t('employees.retry') }}</UiButton></div>
     <div v-else-if="!template" class="employee-workbench-state"><p>{{ t('employees.unavailable') }}</p><RouterLink to="/project-agents">{{ t('employees.backToAgents') }}</RouterLink></div>
     <BolePeoplePanel v-else-if="isNativePeople" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" />
     <JudgmentWorkbench v-else-if="isNativeJudgment" :personal-space-id="personalSpaceId" />
     <div v-else-if="isJefa && template.runtimeStatus !== 'ready'" class="employee-workbench-state"><p>{{ t('employees.installRequired') }}</p><small>{{ t('employees.installHelp') }}</small></div>
-    <div v-else-if="!projectId" class="employee-workbench-state"><h2>{{ t('employees.emptyWorkbench') }}</h2><p>{{ t('employees.manageHint') }}</p><button class="quiet-button" type="button" @click="manageProjectsOpen = true">{{ t('employees.manageProjects') }}</button></div>
+    <div v-else-if="!projectId" class="employee-workbench-state"><h2>{{ t('employees.emptyWorkbench') }}</h2><p>{{ t('employees.manageHint') }}</p><UiButton size="sm" variant="ghost" @click="manageProjectsOpen = true">{{ t('employees.manageProjects') }}</UiButton></div>
     <EmployeeTaskBoard
       v-else-if="projectId === ALL_PROJECTS && supportsAllProjects"
       v-model:visible-project-ids="visibleProjectIds"

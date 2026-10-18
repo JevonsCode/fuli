@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from '@/ui/UiButton.vue'
 import { computed, ref, watch } from 'vue'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -243,7 +244,7 @@ function hasDetails(record: JudgmentDecisionRecord) {
       </div>
       <div class="judgment-workbench-actions">
         <GrowthLoading v-if="reviewing" variant="inline" :label="judgmentText('workbench.reviewing')" />
-        <button class="quiet-button" type="button" :disabled="busy" @click="load">{{ judgmentText('workbench.refresh') }}</button>
+        <UiButton size="sm" variant="ghost" :disabled="busy" @click="load">{{ judgmentText('workbench.refresh') }}</UiButton>
         <button class="ui-button ui-button--primary" type="button" data-action="review" :disabled="busy || !props.personalSpaceId" @click="review">
           {{ judgmentText('workbench.review') }}
         </button>
@@ -254,7 +255,7 @@ function hasDetails(record: JudgmentDecisionRecord) {
     <GrowthLoading v-else-if="loading" variant="inline" :label="judgmentText('workbench.loading')" />
     <div v-if="error" class="judgment-workbench-error" role="alert">
       <span>{{ error }}</span>
-      <button class="quiet-button" type="button" :disabled="busy" @click="load">{{ judgmentText('workbench.retry') }}</button>
+      <UiButton size="sm" variant="ghost" :disabled="busy" @click="load">{{ judgmentText('workbench.retry') }}</UiButton>
     </div>
     <div v-if="reviewError" class="judgment-workbench-error" role="alert">{{ reviewError }}</div>
 

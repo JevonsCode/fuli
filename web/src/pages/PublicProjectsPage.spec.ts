@@ -97,12 +97,12 @@ describe('PublicProjectsPage', () => {
     expect(cards[0].text()).toContain('查看详情')
     expect(cards[0].text()).toContain('v1.0.0')
 
-    await cards[0].get('.primary-action').trigger('click')
+    await cards[0].get('.ui-button--primary').trigger('click')
     await flushPromises()
     expect(wrapper.get('.public-project-details').text()).toContain('首次发布')
     expect(wrapper.get('.public-project-details').text()).toContain('PART_OF')
 
-    await wrapper.get('.relation-section-toolbar .primary-action').trigger('click')
+    await wrapper.get('.relation-section-toolbar .ui-button--primary').trigger('click')
     await wrapper.get('[aria-label="关系来源项目"]').setValue('project-a')
     await wrapper.get('[aria-label="项目关系类型"]').setValue('PART_OF')
     await wrapper.get('[aria-label="关系目标项目"]').setValue('project-b')
@@ -183,7 +183,7 @@ describe('PublicProjectsPage', () => {
     })
 
     const cards = wrapper.findAll('.project-card')
-    await cards[0].get('.primary-action').trigger('click')
+    await cards[0].get('.ui-button--primary').trigger('click')
     await flushPromises()
     expect(pending.map(({ url }) => url)).toEqual([
       expect.stringContaining('/api/projects/project-a/releases'),
@@ -194,7 +194,7 @@ describe('PublicProjectsPage', () => {
       .get('.public-project-details button')
       .trigger('click')
     await flushPromises()
-    await cards[1].get('.primary-action').trigger('click')
+    await cards[1].get('.ui-button--primary').trigger('click')
     await flushPromises()
 
     pending[2]?.resolve({
@@ -266,7 +266,7 @@ describe('PublicProjectsPage', () => {
       },
     })
 
-    const detailsTrigger = wrapper.get('.project-card .primary-action')
+    const detailsTrigger = wrapper.get('.project-card .ui-button--primary')
     ;(detailsTrigger.element as HTMLElement).focus()
     await detailsTrigger.trigger('click')
     await flushPromises()
@@ -357,7 +357,7 @@ describe('PublicProjectsPage', () => {
     expect(fuliCard.find('.management-action').exists()).toBe(false)
     expect(fuliCard.find('.project-release-meta').exists()).toBe(false)
 
-    await fuliCard.get('.primary-action').trigger('click')
+    await fuliCard.get('.ui-button--primary').trigger('click')
     await flushPromises()
     expect(getJson).not.toHaveBeenCalled()
     expect(wrapper.get('.public-project-details').text())
@@ -368,7 +368,7 @@ describe('PublicProjectsPage', () => {
       .get('.public-project-details button')
       .trigger('click')
     await flushPromises()
-    await graphitiCard.get('.primary-action').trigger('click')
+    await graphitiCard.get('.ui-button--primary').trigger('click')
     await flushPromises()
     expect(getJson).toHaveBeenCalledTimes(2)
     expect(getJson.mock.calls.every(([url]) =>
@@ -377,7 +377,7 @@ describe('PublicProjectsPage', () => {
     expect(wrapper.get('.public-project-details').text())
       .toContain('首次发布')
 
-    const addRelation = wrapper.get('.relation-section-toolbar .primary-action')
+    const addRelation = wrapper.get('.relation-section-toolbar .ui-button--primary')
     expect(addRelation.attributes('disabled')).toBeUndefined()
     await addRelation.trigger('click')
     const relationSource = wrapper.get('[aria-label="关系来源项目"]')

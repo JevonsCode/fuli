@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from '@/ui/UiButton.vue'
 import { ref, watch } from "vue";
 import GrowthLoading from "@/components/GrowthLoading.vue";
 import CreateProjectDialog from "@/features/projects/CreateProjectDialog.vue";
@@ -125,7 +126,7 @@ async function handleProjectCreated(project: PersonalProject) {
       </button>
       <p v-if="loadError" class="ui-meta" role="alert">
         {{ t("agentRedesign.unassigned.loadError") }}
-        <button type="button" class="quiet-button" @click="load">{{ t("agentProfiles.retry") }}</button>
+        <UiButton size="sm" variant="ghost" @click="load">{{ t("agentProfiles.retry") }}</UiButton>
       </p>
     </div>
 
@@ -153,30 +154,27 @@ async function handleProjectCreated(project: PersonalProject) {
             :label="t('agentRedesign.unassigned.triaging')"
           />
           <template v-else>
-            <button
-              type="button"
-              class="quiet-button"
+            <UiButton size="sm" variant="ghost"
+             
               data-unassigned-move
               @click="startMove(item)"
             >
               {{ t("agentRedesign.unassigned.moveToProject") }}
-            </button>
-            <button
-              type="button"
-              class="quiet-button"
+            </UiButton>
+            <UiButton size="sm" variant="ghost"
+             
               data-unassigned-create-project
               @click="creatingForItem = item"
             >
               {{ t("agentRedesign.unassigned.createProject") }}
-            </button>
-            <button
-              type="button"
-              class="quiet-button"
+            </UiButton>
+            <UiButton size="sm" variant="ghost"
+             
               data-unassigned-one-off
               @click="applyTriage(item.conversationId, 'one_off')"
             >
               {{ t("agentRedesign.unassigned.markOneOff") }}
-            </button>
+            </UiButton>
           </template>
         </div>
         <div v-if="movingConversationId === item.conversationId" class="unassigned-conversation-picker">
@@ -189,15 +187,14 @@ async function handleProjectCreated(project: PersonalProject) {
               {{ project.profile.name }}
             </option>
           </select>
-          <button
-            type="button"
-            class="quiet-button"
+          <UiButton size="sm" variant="ghost"
+           
             data-unassigned-confirm-move
             :disabled="!targetProjectId"
             @click="applyTriage(item.conversationId, 'project', targetProjectId)"
           >
             {{ t("agentRedesign.unassigned.confirmMove") }}
-          </button>
+          </UiButton>
         </div>
       </article>
     </div>
