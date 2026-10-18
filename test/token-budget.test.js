@@ -13,9 +13,13 @@ import { hookAdditionalContextToolResult } from '../src/mcp/tool-result.js';
 const BASELINE = Object.freeze({
   // R-02: +1,730 B for required occupation contracts on full-profile writers.
   // The default chat schema and task entry budgets remain unchanged.
-  fullToolSchemaBytes: 169321,
-  chatToolSchemaBytes: 40502,
-  instructionsBytes: 2043,
+  // T-TOKEN-1: chat drops capture_session_knowledge and record_decision_trace
+  // (both on demand via list_agent_interfaces) and the repeated profileAspect
+  // text shrinks: chat -12,291 B, full -2,004 B; instructions -2 B while adding
+  // the pointer that tells chat clients how to reach unlisted tools.
+  fullToolSchemaBytes: 167317,
+  chatToolSchemaBytes: 28211,
+  instructionsBytes: 2041,
   projectEntryChars: 3449
 });
 

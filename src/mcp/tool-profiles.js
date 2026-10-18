@@ -1,15 +1,15 @@
 // Named MCP tool sets. Chat clients such as Claude Desktop load every tool schema
 // into each conversation, so they get only the day-to-day memory, preference and
 // Roundtable tools; management stays in the console and the full profile.
+// Mid-task capture and decision traces are rare: checkpoint_task_knowledge
+// captures at task end, and list_agent_interfaces exposes either on demand.
 const CHAT_TOOLS = Object.freeze([
   'list_agent_interfaces',
   'get_collaboration_preferences',
   'get_user_taste_skill',
   'search_current_project_knowledge',
   'search_knowledge_graph',
-  'capture_session_knowledge',
   'record_knowledge_usage',
-  'record_decision_trace',
   'checkpoint_task_knowledge',
   'list_personal_projects',
   'list_project_agents',
