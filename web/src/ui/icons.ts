@@ -18,6 +18,7 @@ export const ICONS = {
   'chevron-up': '<path d="m6 15 6-6 6 6"/>',
   'chevron-down': '<path d="m6 9 6 6 6-6"/>',
   'chevron-right': '<path d="m9 6 6 6-6 6"/>',
+  'chevron-left': '<path d="m15 6-6 6 6 6"/>',
   grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
   refresh: '<path d="M19.5 9A7.8 7.8 0 1 0 20 14"/><path d="M20 4v5h-5"/>',

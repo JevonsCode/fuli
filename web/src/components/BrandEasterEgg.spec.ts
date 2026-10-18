@@ -40,7 +40,7 @@ describe('BrandEasterEgg', () => {
     await button.trigger('click')
     const firstReflection = wrapper.get('.brand-copy-reflection').element
     expect(wrapper.get('.brand-block').classes()).toContain('is-sparkling')
-    expect(wrapper.find('.brand-orbit').exists()).toBe(true)
+    expect(wrapper.find('.brand-ripple').exists()).toBe(true)
     expect(wrapper.find('.brand-mark-reflection').exists()).toBe(false)
     expect(wrapper.findAll('.brand-copy-reflection')).toHaveLength(1)
     expect(wrapper.get('.brand-copy-reflection').text()).not.toContain('Context Graph')
@@ -48,7 +48,7 @@ describe('BrandEasterEgg', () => {
 
     await wrapper.get('.brand-copy-reflection').trigger('animationend')
     expect(wrapper.get('.brand-block').classes()).not.toContain('is-sparkling')
-    expect(wrapper.find('.brand-orbit').exists()).toBe(false)
+    expect(wrapper.find('.brand-ripple').exists()).toBe(false)
 
     await button.trigger('click')
     expect(wrapper.get('.brand-copy-reflection').element).not.toBe(firstReflection)

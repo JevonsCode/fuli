@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import { getJson, postJson } from '@/api/client'
 import { readPersonalProfileGraph } from '@/api/personal-profile-graph'
@@ -39,6 +40,24 @@ const loading = ref(false)
 const initialLoading = computed(() => loading.value && !graph.value)
 const showInitialLoading = useMinimumLoadingDisplay(initialLoading)
 const activeAspect = ref('all')
+// ?aspect= keeps the dimension addressable, so the sidebar can open 品味,
+// 个性 or 判断 directly and a reload keeps the choice.
+const PROFILE_ASPECTS = ['taste', 'personality', 'judgment_preference']
+// Embedded without a router (tests, previews) the filter stays local.
+const route = useRoute() as ReturnType<typeof useRoute> | undefined
+const router = useRouter() as ReturnType<typeof useRouter> | undefined
+watch(() => route?.query.aspect, aspect => {
+  activeAspect.value = typeof aspect === 'string' && PROFILE_ASPECTS.includes(aspect) ? aspect : 'all'
+}, { immediate: true })
+watch(activeAspect, aspect => {
+  if (!route || !router) return
+  const current = typeof route.query.aspect === 'string' ? route.query.aspect : 'all'
+  if (current === aspect) return
+  const query = { ...route.query }
+  if (aspect === 'all') delete query.aspect
+  else query.aspect = aspect
+  void router.replace({ query })
+})
 const activeScope = ref('all')
 const activeReviewState = ref<'all' | KnowledgeReviewState>('all')
 const conflictsOnly = ref(false)
