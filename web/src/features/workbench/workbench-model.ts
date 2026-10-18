@@ -72,3 +72,42 @@ export function timelineHours(tasks: readonly ProjectAgentTaskRecord[], now = Da
     hour, label: format.format(hour), tasks: list.sort((a, b) => (latest(b) || 0) - (latest(a) || 0)),
   }))
 }
+
+export type StarState = 'waiting' | 'stuck' | 'running' | 'done'
+export interface StarAgent { agentId: string; state: StarState; task: ProjectAgentTaskRecord | null; question: AgentAttention | null }
+export interface StarProject { projectId: string; agents: StarAgent[]; busy: number }
+
+// Most urgent first: a question to you, then stuck, then working, then just done.
+const STAR_RANK: Record<StarState, number> = { waiting: 0, stuck: 1, running: 2, done: 3 }
+
+/**
+ * The star map: each project with work is a planet, each Agent on it a moon in
+ * its most urgent state. An open question makes that Agent "waiting" whatever
+ * its tasks say. Busiest projects come first.
+ */
+export function starProjects(tasks: readonly ProjectAgentTaskRecord[], attention: readonly AgentAttention[], now = Date.now()): StarProject[] {
+  const projects = new Map<string, Map<string, StarAgent>>()
+  const place = (projectId: string, agent: StarAgent) => {
+    const agents = projects.get(projectId) ?? new Map<string, StarAgent>()
+    projects.set(projectId, agents)
+    const known = agents.get(agent.agentId)
+    if (!known || STAR_RANK[agent.state] < STAR_RANK[known.state]) agents.set(agent.agentId, agent)
+  }
+  const lanes = workLanes(tasks, now)
+  for (const lane of ['done', 'running', 'stuck', 'waiting'] as const) {
+    for (const task of lanes[lane]) {
+      const agentId = task.leadAgentId ?? task.ownerAgentId
+      if (!agentId || !task.personalProjectId) continue
+      // Work awaiting the person's review reads as running on the map; questions are the waiting state.
+      place(task.personalProjectId, { agentId, state: lane === 'waiting' ? 'running' : lane, task, question: null })
+    }
+  }
+  for (const item of attention) {
+    if (item.status !== 'open') continue
+    place(item.personalProjectId, { agentId: item.agentId, state: 'waiting', task: null, question: item })
+  }
+  return [...projects.entries()].map(([projectId, agents]) => {
+    const list = [...agents.values()].sort((a, b) => STAR_RANK[a.state] - STAR_RANK[b.state] || a.agentId.localeCompare(b.agentId))
+    return { projectId, agents: list, busy: list.filter(agent => agent.state !== 'done').length }
+  }).sort((a, b) => b.busy - a.busy || b.agents.length - a.agents.length || a.projectId.localeCompare(b.projectId))
+}

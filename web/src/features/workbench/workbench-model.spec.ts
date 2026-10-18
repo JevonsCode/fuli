@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentAttention } from '@/features/project-agents/attention-store'
 import type { ProjectAgentTaskRecord } from '@/types'
-import { focusItem, laneOf, timelineHours, workLanes } from './workbench-model'
+import { focusItem, laneOf, starProjects, timelineHours, workLanes } from './workbench-model'
 
 const NOW = Date.parse('2026-10-18T12:00:00Z')
 const at = (hoursAgo: number) => new Date(NOW - hoursAgo * 3_600_000).toISOString()
@@ -38,5 +38,23 @@ describe('workbench model', () => {
   it('groups the last day by hour, newest hour first', () => {
     const hours = timelineHours([task('a', 'running', 0.2), task('b', 'completed', 0.4), task('c', 'blocked', 3), task('old', 'running', 30)], NOW, 'en-US')
     expect(hours.map(hour => hour.tasks.map(item => item.taskId))).toEqual([['a', 'b'], ['c']])
+  })
+})
+
+describe('star map', () => {
+  it('puts each Agent on its project once, in its most urgent state, busiest project first', () => {
+    const tasks = [
+      task('t1', 'running', 1, { personalProjectId: 'app', leadAgentId: 'lead' }),
+      task('t2', 'completed', 2, { personalProjectId: 'app', leadAgentId: 'lead' }),
+      task('t3', 'blocked', 3, { personalProjectId: 'app', leadAgentId: 'qa' }),
+      task('t4', 'completed', 1, { personalProjectId: 'docs', leadAgentId: 'writer' }),
+      task('t5', 'running', 1, { leadAgentId: 'nowhere' }),
+      task('t6', 'completed', 30, { personalProjectId: 'old', leadAgentId: 'gone' }),
+    ]
+    const ask = { ...question('q1', 1), personalProjectId: 'docs', agentId: 'writer' }
+    const map = starProjects(tasks, [ask, question('closed', 1, 'resolved')], NOW)
+    expect(map.map(project => [project.projectId, project.busy])).toEqual([['app', 2], ['docs', 1]])
+    expect(map[0]!.agents.map(agent => [agent.agentId, agent.state, agent.task?.taskId])).toEqual([['qa', 'stuck', 't3'], ['lead', 'running', 't1']])
+    expect(map[1]!.agents.map(agent => [agent.agentId, agent.state, agent.question?.requestId])).toEqual([['writer', 'waiting', 'q1']])
   })
 })
