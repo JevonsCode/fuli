@@ -106,7 +106,7 @@ test('knowledge directory, graph, filters, context, and exact item links share o
   assert.match(directoryPanel, /directory-tab-knowledge/);
   assert.match(directoryPanel, /directory-tab-materials/);
   assert.match(directoryPanel, /knowledgeStatusAria/);
-  assert.match(directoryPanel, /data-status="historical"/);
+  assert.match(directoryPanel, /key: 'historical'/);
   assert.doesNotMatch(workspace, /compactFilteredCount|control-id="knowledge-status-filter"/);
   assert.match(workspace, /contextPersonalProjectId/);
   assert.doesNotMatch(workspace, /personalProfileGraph|readGraph\(null\)/);
