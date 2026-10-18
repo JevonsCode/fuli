@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { t } from '@/i18n'
 import { motionPreference, setMotionPreference } from '@/lib/motion-preference'
 import { PALETTES, palettePreference, setPalettePreference } from '@/lib/palette-preference'
@@ -14,7 +14,7 @@ const paletteOptions = computed(() => PALETTES.map(value => ({
   value, label: t(`designLab.palettes.${value}`), swatch: `var(--palette-swatch-${value})`,
 })))
 const transitionOptions = computed(() => PAGE_TRANSITIONS.map(value => ({ value, label: t(`designLab.transitions.${value}`) })))
-const LOOK: readonly LabChoice[] = ['theme', 'cards', 'density', 'radius']
+const LOOK: readonly LabChoice[] = ['cards', 'density', 'radius']
 const choiceOptions = (key: LabChoice) => LAB_CHOICES[key].map(value => ({ value, label: t(`designLab.choices.${key}.${value}`) }))
 const workbenchOptions = computed(() => WORKBENCH_VARIANTS.map(({ id, labelKey }) => ({ value: id, label: t(labelKey) })))
 const position = computed(() => designLab.value.x === null || designLab.value.y === null
@@ -41,6 +41,47 @@ function endDrag() {
   window.removeEventListener('pointermove', moveDrag)
 }
 onBeforeUnmount(endDrag)
+
+// The launcher can be dragged anywhere on screen; a press that barely moves is
+// still a click. Any window resize puts it back in its default corner.
+const DRAG_THRESHOLD = 4
+const launcher = ref<{ x: number; y: number } | null>(null)
+const launcherStyle = computed(() => launcher.value
+  ? { left: `${launcher.value.x}px`, top: `${launcher.value.y}px`, right: 'auto', bottom: 'auto' }
+  : undefined)
+let press: { startX: number; startY: number; dx: number; dy: number; width: number; height: number; moved: boolean } | null = null
+let suppressClick = false
+function startLauncherDrag(event: PointerEvent) {
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  press = { startX: event.clientX, startY: event.clientY, dx: event.clientX - rect.left, dy: event.clientY - rect.top,
+    width: rect.width, height: rect.height, moved: false }
+  window.addEventListener('pointermove', moveLauncher)
+  window.addEventListener('pointerup', endLauncherDrag, { once: true })
+}
+function moveLauncher(event: PointerEvent) {
+  if (!press) return
+  if (!press.moved && Math.hypot(event.clientX - press.startX, event.clientY - press.startY) < DRAG_THRESHOLD) return
+  press.moved = true
+  launcher.value = {
+    x: Math.round(Math.min(Math.max(0, event.clientX - press.dx), window.innerWidth - press.width)),
+    y: Math.round(Math.min(Math.max(0, event.clientY - press.dy), window.innerHeight - press.height)),
+  }
+}
+function endLauncherDrag() {
+  suppressClick = Boolean(press?.moved)
+  press = null
+  window.removeEventListener('pointermove', moveLauncher)
+}
+function openLab() {
+  if (suppressClick) { suppressClick = false; return }
+  designLab.value.open = true
+}
+const resetLauncher = () => { launcher.value = null }
+onMounted(() => window.addEventListener('resize', resetLauncher))
+onBeforeUnmount(() => {
+  endLauncherDrag()
+  window.removeEventListener('resize', resetLauncher)
+})
 function reset() {
   resetDesignLab()
   setPalettePreference('jade')
@@ -50,7 +91,7 @@ function reset() {
 
 <template>
   <UiIconButton v-if="!designLab.open" class="design-lab-launcher" icon="grid" :label="t('designLab.open')" data-design-lab-open
-    @click="designLab.open = true" />
+    :style="launcherStyle" @pointerdown="startLauncherDrag" @click="openLab" />
   <section v-else ref="panel" class="design-lab" :style="position" :aria-label="t('designLab.title')" data-design-lab>
     <header class="design-lab-head" :title="t('designLab.drag')" @pointerdown="startDrag">
       <strong>{{ t('designLab.title') }}</strong>
@@ -109,7 +150,9 @@ function reset() {
 .design-lab-launcher {
   position: fixed; right: 20px; bottom: 20px; z-index: var(--z-popover);
   border: 1px solid var(--color-border); background: var(--color-surface); box-shadow: var(--shadow-md);
+  cursor: grab; touch-action: none; user-select: none;
 }
+.design-lab-launcher:active { cursor: grabbing; }
 .design-lab {
   position: fixed; right: 20px; bottom: 20px; z-index: var(--z-popover); display: grid; gap: 14px; width: 340px; max-width: calc(100vw - 32px);
   padding: 12px 14px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-card);

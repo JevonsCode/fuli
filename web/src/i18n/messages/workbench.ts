@@ -1,6 +1,7 @@
 export const workbenchMessages = {
   'zh-CN': {
-    variants: { focus: '今日焦点', board: '看板', timeline: '时间线' },
+    variants: { focus: '今日焦点', board: '看板', timeline: '时间线', constellation: '星图' },
+    constellation: { aria: '{count} 个项目的星图', empty: '现在没有进行中的工作，Agent 们都在休息。' },
     lanes: { waiting: '等你', running: '进行中', stuck: '卡住了', done: '刚完成' },
     focus: {
       kicker: '现在最需要你',
@@ -22,7 +23,8 @@ export const workbenchMessages = {
     unknownAgent: '未署名 Agent',
   },
   'en-US': {
-    variants: { focus: 'Focus', board: 'Board', timeline: 'Timeline' },
+    variants: { focus: 'Focus', board: 'Board', timeline: 'Timeline', constellation: 'Star map' },
+    constellation: { aria: 'Star map of {count} projects', empty: 'No work in progress; the Agents are resting.' },
     lanes: { waiting: 'Needs you', running: 'In progress', stuck: 'Stuck', done: 'Just done' },
     focus: {
       kicker: 'What needs you now',

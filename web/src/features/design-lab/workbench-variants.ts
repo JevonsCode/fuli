@@ -13,4 +13,5 @@ export const WORKBENCH_VARIANTS: readonly WorkbenchVariant[] = [
   { id: 'focus', labelKey: 'workbench.variants.focus' },
   { id: 'board', labelKey: 'workbench.variants.board' },
   { id: 'timeline', labelKey: 'workbench.variants.timeline' },
+  { id: 'constellation', labelKey: 'workbench.variants.constellation' },
 ]

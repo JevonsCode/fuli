@@ -15,6 +15,7 @@ import { createPackageVersionChecker } from './package-version-checker.js';
 import { clientConnectionConfig } from '../setup/client-connection.js';
 import { discoverAgents } from '../setup/agents.js';
 import { createClientConnectionObserver } from './client-connection-status.js';
+import { createClientInstaller } from './client-connection-install.js';
 import { createSettingsApplier } from './settings-apply.js';
 
 export function createSystemService({
@@ -28,7 +29,7 @@ export function createSystemService({
   writeSettings = writeRuntimeSettings,
   settingsApplier = createSettingsApplier({ paths, writeSettings }),
   clientObserver = createClientConnectionObserver({
-    discover: () => discoverAgents(),
+    discover: discoverAgents,
     // The same expected integration that `fuli setup` installs.
     context: {
       nodePath: process.execPath,
@@ -41,6 +42,7 @@ export function createSystemService({
     },
     historyPath: join(paths.dataDir, 'client-connection-observations.json')
   }),
+  clientInstaller = createClientInstaller({ paths, runtimeConfigPath }),
   executorAdapters = new Map(),
   versionChecker = createPackageVersionChecker(),
   runtimeBroker = createAdaptiveRuntimeBroker({
@@ -101,6 +103,7 @@ export function createSystemService({
       format, clientConnectionConfig({ mcpServerPath: paths.mcpServerPath, runtimeConfigPath }, format)
     ])),
     clientConnectionStatus: () => clientObserver.observe(),
+    connectClient: clientInstaller,
     resources: () => resourceMonitor.sample(),
     versionStatus: () => versionChecker.check(),
     runtimeStatus: () => runtimeBroker.status(),

@@ -16,7 +16,6 @@ export const designLabMessages = {
     workbench: { title: '工作台方案', current: '当前' },
     look: '外观',
     choices: {
-      theme: { label: '主题', light: '浅色', dark: '深色' },
       cards: { label: '卡片', outline: '描边', shadow: '阴影', flat: '平铺' },
       density: { label: '密度', compact: '紧凑', standard: '标准', roomy: '舒展' },
       radius: { label: '圆角', small: '小', medium: '中', large: '大' },
@@ -40,7 +39,6 @@ export const designLabMessages = {
     workbench: { title: 'Workbench design', current: 'Current' },
     look: 'Look',
     choices: {
-      theme: { label: 'Theme', light: 'Light', dark: 'Dark' },
       cards: { label: 'Cards', outline: 'Outline', shadow: 'Shadow', flat: 'Flat' },
       density: { label: 'Density', compact: 'Compact', standard: 'Standard', roomy: 'Roomy' },
       radius: { label: 'Corners', small: 'Small', medium: 'Medium', large: 'Large' },

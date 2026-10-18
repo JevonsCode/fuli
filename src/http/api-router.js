@@ -1,3 +1,4 @@
+import { isLoopbackAddress } from './request-policy.js';
 import { readJson, sendJson } from './response.js';
 import { handleExternalKnowledgeApiRequest } from './external-knowledge-api-router.js';
 import { handleGraphApiRequest } from './graph-api-router.js';
@@ -39,6 +40,16 @@ export async function handleApiRequest({
   if (system && url.pathname === '/api/system/client-connection' && request.method === 'GET') {
     response.setHeader('Cache-Control', 'no-store');
     sendJson(response, 200, system.clientConnection());
+    return true;
+  }
+
+  if (system && url.pathname === '/api/system/client-connection/connect' && request.method === 'POST') {
+    response.setHeader('Cache-Control', 'no-store');
+    if (!isLoopbackAddress(request.socket?.remoteAddress)) {
+      sendJson(response, 403, { error: 'Client connection is only available on this computer' });
+      return true;
+    }
+    sendJson(response, 200, await system.connectClient(await readJson(request)));
     return true;
   }
 

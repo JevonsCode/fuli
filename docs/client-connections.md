@@ -173,3 +173,20 @@ service. See the [remote connector setup](../README.md#remote-claude--cowork-con
 - [VS Code MCP configuration](https://code.visualstudio.com/docs/agent-customization/mcp-servers)
 - [Gemini CLI MCP servers](https://geminicli.com/docs/tools/mcp-server/)
 - [Cline MCP connections](https://docs.cline.bot/mcp/mcp-overview)
+
+## 自动发现与一键接入
+
+在设置 → 客户端接入展开“本机客户端”，点击已检测客户端的“接入”。操作只在运行控制台的本机可用：先备份已有配置，再安装并自检，成功后需重启客户端。客户端自己的信任/启用步骤仍由客户端提示；配置自检不代表 MCP 已成功运行。失败或部分完成时，可重试或运行 `fuli setup` 查看详细原因。
+
+| 客户端 | 全局配置 | 官方格式 |
+| --- | --- | --- |
+| Gemini CLI | `~/.gemini/settings.json` | [`mcpServers`，command + args](https://geminicli.com/docs/tools/mcp-server/) |
+| Qwen Code | `~/.qwen/settings.json` | [`mcpServers`，command + args](https://qwenlm.github.io/qwen-code-docs/en/users/configuration/settings/) |
+| OpenCode | `~/.config/opencode/opencode.json` 或 `.jsonc`（支持 `XDG_CONFIG_HOME`） | [`mcp`，type=local，command 数组](https://opencode.ai/docs/mcp-servers/) |
+| Kiro | `~/.kiro/settings/mcp.json` | [`mcpServers`，command + args](https://kiro.dev/docs/mcp/configuration/) |
+
+新接入使用 chat 工具配置，已有显式 profile 会保留。一键接入 Cursor 也会补上 chat；旧 CLI Cursor 配置仍兼容。现有 Codex、Claude Code、Cursor 的生命周期/技能安装和 Claude Desktop 的 MCP 接入继续复用原流程。新增四客户端仅安装 MCP，不导入聊天历史、不安装采集 Hook、不替用户批准工具信任。
+
+OpenCode 的 [配置分层](https://opencode.ai/docs/config/) 可覆盖全局配置；同时存在全局 JSON/JSONC，或设置了配置覆盖环境变量时，界面提供官方手动接入指引，不自动写入。其他项目级配置也可能覆盖全局项。Kiro CLI 的 agent 配置或 `includeMcpJson` 设置可能覆盖/禁用全局 MCP，需按官方说明检查。格式不合法时自动接入会失败并保留原文件。
+
+配置目录遵循客户端官方覆盖变量：Gemini 的 `GEMINI_CLI_HOME` 替代主目录后追加 `.gemini/settings.json`，Qwen 的 `QWEN_HOME` 替代 `.qwen`，Kiro 的 `KIRO_HOME` 替代 `.kiro`。后两者分别追加 `settings.json` 和 `settings/mcp.json`。

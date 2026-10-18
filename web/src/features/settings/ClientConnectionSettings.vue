@@ -1,18 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { getJson } from '@/api/client'
+import { getJson, postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 
-type Format = 'standard' | 'vscode' | 'server'
-type ClientStatus = 'connected' | 'changed' | 'skills_left' | 'removed' | 'not_connected' | 'not_detected' | 'unknown'
-type ClientChange = { from: ClientStatus, to: ClientStatus, detectedAt: string }
-type ClientObservation = { id: string, label: string, status: ClientStatus, previouslyConnected: boolean,
-  changes: ClientChange[], lastKnownStatus?: ClientStatus | null }
-type ConnectionStatus = { observedAt: string, historySaved: boolean, clients: ClientObservation[] }
+import type { Format, ClientStatus, ClientObservation, ConnectionStatus, ConnectionResult } from './client-connection-model'
 // Re-read configuration this often while the card is open and the page visible.
 const RECHECK_MS = 15_000
 
@@ -24,6 +19,8 @@ const feedback = ref<'copied' | 'manual' | ''>('')
 const observation = ref<ConnectionStatus | null>(null)
 const checking = ref(false)
 const checkError = ref(false)
+const connecting = ref('')
+const connectionFeedback = ref<Record<string, 'restart' | 'connectError'>>({})
 let active = false
 let unmounted = false
 // Bumped whenever the view closes or hides, so a response requested before then is dropped.
@@ -57,7 +54,7 @@ const watching = () => active && !unmounted && document.visibilityState === 'vis
 // One request at a time; a response older than the shown one, or requested
 // before the view closed or hid, never replaces it.
 async function check() {
-  if (checking.value || !watching()) return
+  if (checking.value || connecting.value || !watching()) return
   clearTimeout(timer)
   checking.value = true
   const requested = generation
@@ -75,6 +72,24 @@ async function check() {
     // A dropped response is replaced at once if the view is watched again.
     if (fresh) schedule()
     else void check()
+  }
+}
+async function connect(client: ClientObservation) {
+  if (connecting.value || !client.detected || client.manualOnly || client.status === 'unknown') return
+  connecting.value = client.id
+  delete connectionFeedback.value[client.id]
+  generation += 1
+  clearTimeout(timer)
+  try {
+    const result = await postJson<ConnectionResult>('/api/system/client-connection/connect', { clientId: client.id })
+    if (!unmounted) connectionFeedback.value[client.id] = result.status === 'connected' ? 'restart' : 'connectError'
+  } catch {
+    if (!unmounted) connectionFeedback.value[client.id] = 'connectError'
+  } finally {
+    connecting.value = ''
+    // Any in-flight observation is invalidated; its finalizer will recheck.
+    generation += 1
+    void check()
   }
 }
 function schedule() {
@@ -152,6 +167,17 @@ async function copy() {
             <strong>{{ client.label }}</strong>
             <span class="client-status__label">{{ t(`settings.connection.clients.status.${client.status}`) }}</span>
             <p>{{ explanation(client) }}</p>
+            <button v-if="client.detected && !client.manualOnly && client.status !== 'unknown' && client.status !== 'connected'"
+              class="ui-button" type="button" :data-connect-client="client.id" :disabled="Boolean(connecting)" @click="connect(client)">
+              {{ t('settings.connection.clients.connect') }}
+            </button>
+            <GrowthLoading v-if="connecting === client.id" variant="compact" :label="t('settings.connection.clients.connecting', { client: client.label })" />
+            <p v-if="connectionFeedback[client.id]" :role="connectionFeedback[client.id] === 'connectError' ? 'alert' : 'status'">
+              {{ t(`settings.connection.clients.${connectionFeedback[client.id]}`) }}
+            </p>
+            <a v-if="client.manualOnly" :href="client.manualUrl" target="_blank" rel="noopener noreferrer">
+              {{ t('settings.connection.clients.manualConnect') }}
+            </a>
             <p v-if="client.changes.length" class="client-status__change">
               {{ t('settings.connection.clients.lastChange', {
                 from: t(`settings.connection.clients.status.${client.changes.at(-1)!.from}`),
