@@ -67,7 +67,8 @@ export async function stopLocalRuntime(input, dependencies = {}) {
   if (deps.fileExists(input.paths.graphEnvPath)) {
     await deps.stopProviders(input.paths, input.paths.graphEnvPath, {
       personalOnly: !managesDevelopmentWorkspace,
-      runtimeMode: activeRuntimeMode
+      runtimeMode: activeRuntimeMode,
+      ...(input.env ? { env: input.env } : {})
     });
     providers = 'stopped';
   }

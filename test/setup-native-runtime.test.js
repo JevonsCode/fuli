@@ -7,13 +7,14 @@ import test from 'node:test';
 
 import {
   NATIVE_NEO4J_VERSION,
-  ensureNativeRuntime,
+  ensureNativeRuntime as ensureNativeRuntimeImpl,
   nativeNeo4jConfiguration,
   nativeProviderInstallArguments
 } from '../src/native-runtime/runtime.js';
 import { resolveSetupPaths } from '../src/setup/paths.js';
 import { DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
 import { FULI_VERSION } from '../src/package-metadata.js';
+const ensureNativeRuntime = (input, dependencies = {}) => ensureNativeRuntimeImpl(input, { withOperation: (_paths, env, action) => action(env), ...dependencies });
 
 test('native runtime installs pinned Neo4j and the Provider once, then reuses them', async () => {
   const root = await mkdtemp(join(tmpdir(), 'fuli-native-runtime-'));
@@ -244,3 +245,73 @@ test(`native setup refuses to overwrite newer Provider ${providerVersion} before
   assert.deepEqual(mutations, []);
 });
 }
+
+for (const neo4jVersion of ['5.26.0', '2026.09.0']) {
+  test(`native setup refuses Neo4j ${neo4jVersion} data reuse before mutation`, async () => {
+    const paths = resolveSetupPaths({ dataDir: '/synthetic', packageRoot: '/package' });
+    const mutations = [];
+    await assert.rejects(ensureNativeRuntime({ paths, env: {}, runtimeSettings: DEFAULT_RUNTIME_SETTINGS }, {
+      platform: 'darwin', resolveJavaHome: async () => '/jdk-21', resolveUvCommand: async () => 'uv',
+      providerSourceFingerprint: async () => 'a'.repeat(64), pathExists: () => true,
+      readManifest: () => ({ neo4jVersion }),
+      installProvider: async () => mutations.push('install'), installNeo4j: async () => mutations.push('database'),
+      writeManifest: () => mutations.push('manifest')
+    }), /Neo4j.*version|migration|downgrade/i);
+    assert.deepEqual(mutations, []);
+  });
+}
+
+test('setup preserves a lifecycle-selected immutable Neo4j home and rollback metadata', async () => {
+  const { readFile, rm } = await import('node:fs/promises');
+  const root = await mkdtemp(join(tmpdir(), 'fuli-selected-assets-'));
+  try {
+    const paths = resolveSetupPaths({ dataDir: root, packageRoot: '/package' });
+    const deps = { platform: 'darwin', resolveJavaHome: async () => '/jdk-21', resolveUvCommand: async () => 'uv',
+      providerSourceFingerprint: async () => 'a'.repeat(64),
+      installNeo4j: async ({ home }) => { await mkdir(join(home, 'bin'), { recursive: true }); for (const name of ['neo4j', 'neo4j-admin']) await writeFile(join(home, 'bin', name), ''); },
+      installProvider: async ({ venvPath }) => { await mkdir(join(venvPath, 'bin'), { recursive: true }); await writeFile(join(venvPath, 'bin', 'python'), ''); } };
+    const initial = await ensureNativeRuntime({ paths, env: {} }, deps);
+    const home = join(paths.nativeRuntimeDir, 'neo4j-assets', 'jvs-a-1234', `neo4j-community-${NATIVE_NEO4J_VERSION}`);
+    await deps.installNeo4j({ home });
+    const selected = { ...initial, neo4jHome: home, previousNeo4jAsset: { home: initial.neo4jHome, version: NATIVE_NEO4J_VERSION } };
+    await writeFile(paths.nativeRuntimeManifestPath, JSON.stringify(selected));
+    assert.deepEqual(await ensureNativeRuntime({ paths, env: {} }, deps), selected);
+    assert.deepEqual(JSON.parse(await readFile(paths.nativeRuntimeManifestPath, 'utf8')), selected);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('ordinary setup refuses an active asset switch before touching Java or Provider', async () => {
+  const { rm } = await import('node:fs/promises');
+  const root = await mkdtemp(join(tmpdir(), 'fuli-switch-lock-'));
+  try {
+    const paths = resolveSetupPaths({ dataDir: root, packageRoot: '/package' });
+    await mkdir(join(paths.nativeRuntimeDir, '.neo4j-lifecycle.lock'), { recursive: true });
+    await writeFile(join(paths.nativeRuntimeDir, '.neo4j-lifecycle.lock', 'owner'), 'synthetic-owner');
+    await assert.rejects(ensureNativeRuntime({ paths, env: {} }, {
+      platform: 'darwin', resolveJavaHome: async () => { assert.fail('must not run Java'); }
+    }), /lifecycle|switch|recovery/i);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('asset-only console resume refuses Provider refresh without installing or rewriting anything', async () => {
+  const { requireReusableNativeRuntime } = await import('../src/native-runtime/runtime.js');
+  const { rm } = await import('node:fs/promises');
+  const root = await mkdtemp(join(tmpdir(), 'fuli-asset-only-resume-'));
+  try {
+    const paths = resolveSetupPaths({ dataDir: root, packageRoot: '/package' });
+    await mkdir(join(paths.nativeNeo4jHome, 'bin'), { recursive: true });
+    for (const name of ['neo4j', 'neo4j-admin']) await writeFile(join(paths.nativeNeo4jHome, 'bin', name), '');
+    await mkdir(join(paths.nativeProviderVenvPath, 'bin'), { recursive: true });
+    await writeFile(join(paths.nativeProviderVenvPath, 'bin', 'python'), '');
+    const mutations = [];
+    const deps = { platform: 'darwin', resolveJavaHome: async () => '/jdk-21', resolveUvCommand: async () => 'uv',
+      providerSourceFingerprint: async () => 'a'.repeat(64), installProvider: async () => mutations.push('provider') };
+    await ensureNativeRuntime({ paths, env: {} }, deps);
+    mutations.length = 0;
+    await assert.rejects(requireReusableNativeRuntime({ paths, env: {} }, { ...deps,
+      withOperation: (_paths, env, action) => action(env),
+      providerSourceFingerprint: async () => 'b'.repeat(64),
+      writeManifest: () => mutations.push('manifest') }), /separate setup|asset-only/i);
+    assert.deepEqual(mutations, []);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

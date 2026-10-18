@@ -5,8 +5,6 @@ import { CENSUS_QUERIES, censusFromRows } from '../backup/graph-census.js';
 import {
   chmodSync,
   closeSync,
-  createReadStream,
-  createWriteStream,
   existsSync,
   mkdirSync,
   openSync,
@@ -17,16 +15,15 @@ import {
   mkdir,
   readdir,
   readFile,
-  rename,
-  rm,
-  stat,
   writeFile
 } from 'node:fs/promises';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 import { createConnection } from 'node:net';
 import { dirname, join, relative } from 'node:path';
 
+import { assertManagedNeo4jHome, withNativeAssetOperation } from './neo4j-asset-state.js';
+import { assertMacNativePortFree, assertMacNativePortOwner } from './macos-ports.js';
+import { resolveNativeJavaHome } from './java-runtime.js';
+import { installNativeNeo4j } from './neo4j-install.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { compareSemanticVersions } from '../semantic-version.js';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from './windows-assets.js';
@@ -53,11 +50,11 @@ export const NATIVE_NEO4J_URL =
 const MANIFEST_VERSION = 1;
 const PROVIDER_RUNTIME_REVISION = 2;
 const COMMAND_TIMEOUT_MS = 10 * 60_000;
-const DOWNLOAD_TIMEOUT_MS = 30 * 60_000;
 
 export function createNativeGraphServices({
   paths,
   platform = process.platform,
+  env = process.env,
   runtimeDescriptor = null,
   personalOnly = null,
   readText = (path) => readFile(path, 'utf8'),
@@ -74,15 +71,26 @@ export function createNativeGraphServices({
   writeProcessState = writeJsonFileAtomic,
   processMatches = platform === 'win32' ? windowsNativeProcessMatches : processMatchesCommand,
   stopProcess = platform === 'win32' ? stopWindowsNativeProcess : stopOwnedProcess,
-  verifyPortOwner = platform === 'win32' ? assertWindowsNativePortOwner : async () => {},
-  verifyPortFree = platform === 'win32' ? assertWindowsNativePortFree : async () => {},
+  verifyPortOwner = platform === 'win32' ? assertWindowsNativePortOwner
+    : platform === 'darwin' ? assertMacNativePortOwner : async () => {},
+  verifyPortFree = platform === 'win32' ? assertWindowsNativePortFree
+    : platform === 'darwin' ? assertMacNativePortFree : async () => {},
   fetchImpl = globalThis.fetch,
   wait = delay,
   now = () => new Date()
 }) {
   const descriptor = runtimeDescriptor ?? readJson(paths.nativeRuntimeManifestPath);
 
-  async function start({ providers: startProviders = true } = {}) {
+  const operation = action => platform === 'darwin' ? withNativeAssetOperation(paths, env, action) : action(env);
+  const start = options => operation(() => startUnlocked(options));
+  const stopProviders = () => operation(() => stopProvidersUnlocked());
+  const stopDatabases = () => operation(() => stopDatabasesUnlocked());
+
+  async function startUnlocked({ providers: startProviders = true } = {}) {
+    if (platform === 'darwin') {
+      const selected = readJson(paths.nativeRuntimeManifestPath);
+      if (selected && (selected.status !== 'ready' || selected.neo4jHome !== descriptor?.neo4jHome)) throw new Error('Native Neo4j descriptor is stale or uninstalled. Recreate the service from the selected manifest.');
+    }
     assertDescriptor(descriptor);
     const specs = await serviceSpecs();
     const previousState = readProcessState(paths.nativeProcessStatePath) ?? {};
@@ -119,6 +127,10 @@ export function createNativeGraphServices({
         persistProcessState(databases, providers);
         await waitForDatabase('127.0.0.1', spec.boltPort, databases[spec.id]);
         await verifyPortOwner(databases[spec.id], spec.boltPort);
+        if (platform === 'darwin') {
+          await waitForTcp('127.0.0.1', spec.httpPort, databases[spec.id]);
+          await verifyPortOwner(databases[spec.id], spec.httpPort);
+        }
       }
       if (!startProviders) {
         persistProcessState(databases, providers);
@@ -166,7 +178,7 @@ export function createNativeGraphServices({
     }
   }
 
-  async function stopProviders() {
+  async function stopProvidersUnlocked() {
     const state = readProcessState(paths.nativeProcessStatePath) ?? {};
     await stopProviderEntries(state.providers ?? {});
     writeProcessState(paths.nativeProcessStatePath, {
@@ -179,8 +191,8 @@ export function createNativeGraphServices({
     });
   }
 
-  async function stopDatabases() {
-    await stopProviders();
+  async function stopDatabasesUnlocked() {
+    await stopProvidersUnlocked();
     if (!descriptor) return;
     const state = readProcessState(paths.nativeProcessStatePath) ?? {};
     if (Object.keys(state.databases ?? {}).length > 0) {
@@ -318,7 +330,9 @@ export function createNativeGraphServices({
     return spec;
   }
 
-  async function adminDatabase(spec, args) {
+  async function adminDatabase(spec, args) { return operation(() => adminDatabaseUnlocked(spec, args)); }
+
+  async function adminDatabaseUnlocked(spec, args) {
     await prepareInstance(spec);
     return run(join(descriptor.neo4jHome, 'bin', 'neo4j-admin'), args, {
       env: neo4jEnvironment(spec)
@@ -367,10 +381,36 @@ export function createNativeGraphServices({
       [key, (body.results?.[index]?.data ?? []).map(({ row }) => row)])));
   }
 
-  return { start, stopProviders, stopDatabases, ready, dumpDatabase, loadDatabase, censusDatabase };
+  async function checkDatabaseHealth(instanceId) {
+    const spec = await instanceSpec(instanceId);
+    const response = await fetchImpl(`http://127.0.0.1:${spec.httpPort}/db/neo4j/tx/commit`, {
+      method: 'POST', headers: { 'content-type': 'application/json',
+        authorization: `Basic ${Buffer.from(`neo4j:${spec.password}`).toString('base64')}` },
+      body: JSON.stringify({ statements: [{ statement: 'CALL dbms.components() YIELD versions RETURN versions[0]' }] }),
+      signal: AbortSignal.timeout(10_000)
+    });
+    if (!response.ok) throw new Error('Native Neo4j authenticated health check failed.');
+    const body = await response.json(), rows = body.results?.[0]?.data;
+    if (body.errors?.length || rows?.length !== 1 || rows[0].row?.[0] !== descriptor.neo4jVersion) throw new Error('Native Neo4j health/version check failed.');
+  }
+
+  return { start, stopProviders, stopDatabases, ready, dumpDatabase, loadDatabase, censusDatabase, checkDatabaseHealth };
 }
 
 export async function ensureNativeRuntime(input, dependencies = {}) {
+  if ((dependencies.platform ?? process.platform) === 'darwin') {
+    return (dependencies.withOperation ?? withNativeAssetOperation)(input.paths, input.env ?? process.env,
+      env => ensureNativeRuntimeUnlocked({ ...input, env }, dependencies));
+  }
+  return ensureNativeRuntimeUnlocked(input, dependencies);
+}
+
+export async function requireReusableNativeRuntime(input, dependencies = {}) {
+  const refuse = () => { throw new Error('Asset-only operation requires separate setup before resuming this console. No Provider or runtime descriptor was changed.'); };
+  return ensureNativeRuntime(input, { ...dependencies, installNeo4j: refuse, installProvider: refuse, writeManifest: refuse, onProgress: () => {} });
+}
+
+async function ensureNativeRuntimeUnlocked(input, dependencies = {}) {
   const deps = nativeDependencies(dependencies);
   if (deps.platform === 'win32') {
     const saved = deps.readManifest(input.paths.nativeRuntimeManifestPath);
@@ -390,6 +430,13 @@ export async function ensureNativeRuntime(input, dependencies = {}) {
   if (!['darwin', 'linux'].includes(deps.platform)) {
     throw new Error('Native graph mode currently supports macOS and Linux. Use container mode here.');
   }
+  const assetLock = join(input.paths.nativeRuntimeDir, '.neo4j-lifecycle.lock');
+  const recovery = join(input.paths.nativeRuntimeDir, 'neo4j-transaction.json');
+  if (existsSync(assetLock) || existsSync(recovery)) {
+    let owner = null;
+    try { owner = readFileSync(join(assetLock, 'owner'), 'utf8'); } catch { /* Incomplete ownership is blocked. */ }
+    if (!owner || input.env?.FULI_NATIVE_ASSET_OPERATION !== owner) throw new Error('Native Neo4j lifecycle switch or recovery is in progress.');
+  }
   const javaHome = await deps.resolveJavaHome(input.env ?? process.env);
   if (!javaHome) throw nativeJavaError(deps.platform);
   const uvCommand = await deps.resolveUvCommand(input.env ?? process.env);
@@ -403,7 +450,14 @@ export async function ensureNativeRuntime(input, dependencies = {}) {
   if (!/^[a-f0-9]{64}$/.test(providerFingerprint)) {
     throw new Error('Native Graph Provider source fingerprint is invalid.');
   }
+  const saved = deps.readManifest(input.paths.nativeRuntimeManifestPath);
+  let neo4jHome = input.paths.nativeNeo4jHome;
+  if (saved?.status === 'ready' && saved.neo4jHome && saved.neo4jVersion === NATIVE_NEO4J_VERSION) {
+    neo4jHome = await assertManagedNeo4jHome(input.paths, saved.neo4jHome, NATIVE_NEO4J_VERSION);
+  }
   const expected = {
+    ...(saved?.previousNeo4jAsset ? { previousNeo4jAsset: saved.previousNeo4jAsset } : {}),
+    ...(saved?.neo4jAssetFingerprint ? { neo4jAssetFingerprint: saved.neo4jAssetFingerprint } : {}),
     version: MANIFEST_VERSION,
     status: 'ready',
     mode: 'native',
@@ -412,18 +466,20 @@ export async function ensureNativeRuntime(input, dependencies = {}) {
     providerFingerprint,
     javaHome,
     uvCommand,
-    neo4jHome: input.paths.nativeNeo4jHome,
+    neo4jHome,
     providerPython
   };
-  const saved = deps.readManifest(input.paths.nativeRuntimeManifestPath);
+  if (saved?.neo4jVersion && saved.neo4jVersion !== NATIVE_NEO4J_VERSION) {
+    throw new Error('Native Neo4j version changes require an explicit data migration plan. Refusing implicit upgrade or downgrade.');
+  }
   assertProviderUpgrade(saved?.providerVersion, expected.providerVersion);
   if (manifestReady(saved, expected, input.paths, deps.pathExists)) return saved;
 
   deps.onProgress(input, `Installing native Neo4j ${NATIVE_NEO4J_VERSION}…`);
-  if (!neo4jReady(input.paths, deps.pathExists)) {
+  if (!neo4jReady(input.paths, deps.pathExists, neo4jHome)) {
     await deps.installNeo4j({
       paths: input.paths,
-      home: input.paths.nativeNeo4jHome,
+      home: neo4jHome,
       url: NATIVE_NEO4J_URL,
       sha256: NATIVE_NEO4J_SHA256
     });
@@ -441,7 +497,7 @@ export async function ensureNativeRuntime(input, dependencies = {}) {
       providerSource
     });
   }
-  if (!neo4jReady(input.paths, deps.pathExists) || !deps.pathExists(providerPython)) {
+  if (!neo4jReady(input.paths, deps.pathExists, neo4jHome) || !deps.pathExists(providerPython)) {
     throw new Error('Native graph runtime installation did not produce the required executables.');
   }
   const manifest = { ...expected, installedAt: new Date().toISOString() };
@@ -488,13 +544,13 @@ function manifestReady(saved, expected, paths, pathExists) {
     saved.uvCommand === expected.uvCommand &&
     saved.neo4jHome === expected.neo4jHome &&
     saved.providerPython === expected.providerPython &&
-    neo4jReady(paths, pathExists) &&
+    neo4jReady(paths, pathExists, expected.neo4jHome) &&
     pathExists(expected.providerPython);
 }
 
-function neo4jReady(paths, pathExists) {
-  return pathExists(join(paths.nativeNeo4jHome, 'bin', 'neo4j')) &&
-    pathExists(join(paths.nativeNeo4jHome, 'bin', 'neo4j-admin'));
+function neo4jReady(paths, pathExists, home = paths.nativeNeo4jHome) {
+  return pathExists(join(home, 'bin', 'neo4j')) &&
+    pathExists(join(home, 'bin', 'neo4j-admin'));
 }
 
 function nativeJavaError(platform) {
@@ -509,11 +565,11 @@ function nativeDependencies(overrides) {
     pathExists: existsSync,
     readManifest: (path) => readJsonFile(path, null),
     writeManifest: writeJsonFileAtomic,
-    resolveJavaHome,
+    resolveJavaHome: resolveNativeJavaHome,
     resolveUvCommand,
     resolveWindowsNativeBundle,
     readWindowsNativeBundle,
-    installNeo4j,
+    installNeo4j: installNativeNeo4j,
     installProvider,
     providerSourceFingerprint,
     onProgress: (input, message) => input.onProgress?.(message),
@@ -521,45 +577,9 @@ function nativeDependencies(overrides) {
   };
 }
 
-async function resolveJavaHome(env) {
-  const configured = nonEmptyText(env.FULI_NATIVE_JAVA_HOME) ?? nonEmptyText(env.JAVA_HOME);
-  if (configured && existsSync(join(configured, 'bin', 'java'))) return configured;
-  if (process.platform === 'darwin') {
-    const apple = await commandResult('/usr/libexec/java_home', ['-v', '21'], { env });
-    const appleHome = nonEmptyText(apple.stdout);
-    if (apple.status === 0 && appleHome && existsSync(join(appleHome, 'bin', 'java'))) {
-      return appleHome;
-    }
-    const brew = await commandResult('brew', ['--prefix', 'openjdk@21'], { env });
-    const brewHome = nonEmptyText(brew.stdout);
-    if (brew.status === 0 && brewHome && existsSync(join(brewHome, 'bin', 'java'))) {
-      return brewHome;
-    }
-  }
-  const java = await commandResult('java', ['-version'], { env });
-  if (java.status === 0 && /(?:version\s+")?21(?:[.\s"]|$)/i.test(java.stderr + java.stdout)) {
-    return dirname(dirname(java.command ?? 'java'));
-  }
-  return null;
-}
-
 async function resolveUvCommand(env) {
   const result = await commandResult('uv', ['--version'], { env });
   return result.status === 0 ? 'uv' : null;
-}
-
-async function installNeo4j({ paths, home, url, sha256 }) {
-  const downloadDir = join(paths.nativeRuntimeDir, 'downloads');
-  const archive = join(downloadDir, `neo4j-community-${NATIVE_NEO4J_VERSION}-unix.tar.gz`);
-  await mkdir(downloadDir, { recursive: true });
-  if (!existsSync(archive) || await sha256File(archive) !== sha256) {
-    await downloadFile(url, archive);
-  }
-  if (await sha256File(archive) !== sha256) {
-    throw new Error('The downloaded Neo4j archive failed checksum verification.');
-  }
-  await rm(home, { recursive: true, force: true });
-  await runCommand('tar', ['-xzf', archive, '-C', paths.nativeRuntimeDir]);
 }
 
 async function installProvider({ uvCommand, venvPath, providerPython, providerSource }) {
@@ -609,38 +629,6 @@ async function pythonSourceFiles(directory) {
     }
   }
   return files;
-}
-
-async function downloadFile(url, destination) {
-  const partial = `${destination}.partial`;
-  let existingBytes = 0;
-  try {
-    existingBytes = (await stat(partial)).size;
-  } catch {
-    // No partial download is available to resume.
-  }
-  const response = await fetch(url, {
-    headers: existingBytes > 0 ? { range: `bytes=${existingBytes}-` } : {},
-    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS)
-  });
-  if (!response.ok || !response.body) {
-    throw new Error(`Neo4j download failed with HTTP ${response.status}.`);
-  }
-  const resumed = existingBytes > 0 && response.status === 206;
-  if (!resumed && existingBytes > 0) {
-    await rm(partial, { force: true });
-  }
-  await pipeline(Readable.fromWeb(response.body), createWriteStream(partial, {
-    mode: 0o600,
-    flags: resumed ? 'a' : 'w'
-  }));
-  await rename(partial, destination);
-}
-
-async function sha256File(path) {
-  const hash = createHash('sha256');
-  await pipeline(createReadStream(path), hash);
-  return hash.digest('hex');
 }
 
 function runCommand(command, args, options = {}) {
@@ -768,7 +756,9 @@ async function secureMarker(path) {
 function spawnNativeDatabase(spec) {
   if (existsSync(spec.pidPath)) {
     const pid = Number(readFileSync(spec.pidPath, 'utf8').trim());
-    if (Number.isInteger(pid) && isProcessAlive(pid)) return { pid };
+    if (Number.isInteger(pid) && isProcessAlive(pid)) {
+      throw new Error('A live process is recorded in the Neo4j PID file without verified runtime ownership. Stop its verified owner before starting another copy.');
+    }
     unlinkSync(spec.pidPath);
   }
   mkdirSync(dirname(spec.logPath), { recursive: true });
@@ -852,9 +842,13 @@ function assertProviderUpgrade(installed, requested) {
   }
 }
 
-async function waitForTcp(host, port) {
+export async function waitForTcp(host, port, entry) {
   for (let attempt = 0; attempt < 120; attempt += 1) {
-    if (await tcpReady(host, port)) return;
+    if (entry?.pid && !isProcessAlive(entry.pid)) throw new Error('Native Neo4j process exited before becoming ready.');
+    if (await tcpReady(host, port)) {
+      if (entry?.pid && !isProcessAlive(entry.pid)) throw new Error('Native Neo4j process exited before becoming ready.');
+      return;
+    }
     if (attempt < 119) await delay(1000);
   }
   throw new Error(`Native Neo4j did not open its local Bolt port ${port}.`);
@@ -878,17 +872,31 @@ async function processMatchesCommand(pid, command) {
   return result.status === 0 && result.stdout.includes(command);
 }
 
-async function stopOwnedProcess(pid) {
+export async function stopOwnedProcess(pid) {
   const target = process.platform === 'win32' ? pid : -pid;
-  try {
-    process.kill(target, 'SIGTERM');
-  } catch (error) {
-    if (error?.code === 'ESRCH') return;
-    throw error;
-  }
+  const alive = process.platform === 'win32' ? async () => isProcessAlive(pid) : () => processGroupAlive(pid);
+  try { process.kill(target, 'SIGTERM'); }
+  catch (error) { if (error?.code !== 'ESRCH') throw error; }
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (!isProcessAlive(pid)) return;
+    if (!await alive()) return;
     await delay(100);
   }
-  if (isProcessAlive(pid)) process.kill(target, 'SIGKILL');
+  if (await alive()) {
+    try { process.kill(target, 'SIGKILL'); }
+    catch (error) { if (error?.code !== 'ESRCH') throw error; }
+  }
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (!await alive()) return;
+    await delay(100);
+  }
+  throw new Error('The owned native process group did not stop; recovery requires attention.');
+}
+
+async function processGroupAlive(group) {
+  const result = await commandResult('ps', ['-eo', 'pgid=,stat=']);
+  if (result.status !== 0) throw new Error('Could not verify the native process group stopped.');
+  return result.stdout.split('\n').some(line => {
+    const [pgid, state] = line.trim().split(/\s+/);
+    return Number(pgid) === group && state && !state.startsWith('Z');
+  });
 }
