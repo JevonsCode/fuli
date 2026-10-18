@@ -802,3 +802,27 @@ test('saving acknowledges before applying once and readiness exposes only the ma
     })).status, 403);
   } finally { await closeServer(server); }
 });
+
+test('client connection POST obeys origin/host policy and passes only the request body to the installer', async () => {
+  const inputs = [];
+  const system = { connectClient: async (input) => { inputs.push(input); return { id: input.clientId, status: 'connected', restartRequired: true }; } };
+  const { server, url } = await createServer({ app: { graphiti: true, close() {} }, system, port: 0 });
+  try {
+    const target = `${url}/api/system/client-connection/connect`;
+    for (const headers of [{ Origin: 'https://foreign.example' }, { Host: 'foreign.example' }]) {
+      const code = await new Promise((resolve, reject) => {
+        const request = httpRequest(target, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' } }, (response) => {
+          response.resume(); response.on('end', () => resolve(response.statusCode));
+        });
+        request.on('error', reject); request.end('{"clientId":"gemini"}');
+      });
+      assert.equal(code, 403);
+    }
+    assert.deepEqual(inputs, []);
+    const response = await fetch(target, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"clientId":"gemini"}' });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal((await response.json()).restartRequired, true);
+    assert.deepEqual(inputs, [{ clientId: 'gemini' }]);
+  } finally { await closeServer(server); }
+});

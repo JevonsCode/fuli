@@ -81,6 +81,7 @@ const REQUIRED_AGENT_MUTATIONS = new Map([
 const REQUIRED_LOCAL_USER_BOUNDARIES = new Set([
   'PATCH /api/agent-access-policy',
   'PUT /api/system/settings',
+  'POST /api/system/client-connection/connect',
   'POST /api/knowledge/batch-confirmation',
   'POST /api/knowledge/:itemKind/:itemId/preference-scope',
   'POST /api/preference-conflicts/:conflictId/complete',

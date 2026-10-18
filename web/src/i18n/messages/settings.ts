@@ -18,6 +18,11 @@ export const settingsMessages = {
       guide: '接入说明',
       clients: {
         title: '本机客户端',
+        connect: '接入',
+        connecting: '正在接入 {client}…',
+        restart: '需要重启客户端，配置才会生效。',
+        connectError: '接入未完成。请检查客户端配置后重试，或运行 fuli setup 查看详情。',
+        manualConnect: '配置存在覆盖规则，请按官方说明手动接入',
         refresh: '重新检查',
         checking: '正在检查本机客户端的 FULI 接入配置…',
         checkError: '暂时无法检查客户端接入，下方保留上次结果。',
@@ -217,6 +222,12 @@ export const settingsMessages = {
       boundary: 'MCP provides tools and memory. Automatic conversation capture and wake/resume need a client adapter.',
       guide: 'Connection guide',
       clients: {
+        connect: 'Connect',
+        connecting: 'Connecting {client}…',
+        restart: 'Restart the client to apply this configuration.',
+        connectError: 'Connection incomplete. Check the client configuration and retry, or run fuli setup for details.',
+        manualConnect: 'Configuration overrides detected. Follow the official manual setup guide',
+
         title: 'Clients on this computer',
         refresh: 'Check again',
         checking: 'Checking FULI connection settings of local clients…',

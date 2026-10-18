@@ -1,5 +1,7 @@
 import { existsSync } from 'node:fs';
 
+import { installedToolProfile } from './installed-tool-profile.js';
+
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import { assertJsonObject } from '../validation/values.js';
 
@@ -27,7 +29,8 @@ export function connectClaudeDesktop(agent, context, {
           context.mcpServerPath,
           '--runtime-config',
           context.runtimeConfigPath,
-          ...CLAUDE_DESKTOP_SERVER_ARGS
+          ...CLAUDE_DESKTOP_SERVER_ARGS.slice(0, -1),
+          installedToolProfile(currentServers.fuli?.args, context.toolProfile)
         ]
       }
     }

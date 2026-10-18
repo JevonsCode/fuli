@@ -1,5 +1,6 @@
 import { readFileSync, statSync } from 'node:fs';
 
+import { parseMcpJson } from '../setup/agents/json-mcp.js';
 import { parse as parseToml } from 'smol-toml';
 
 import { inspectAgentInstallations } from '../setup/agent-installation-status.js';
@@ -50,10 +51,10 @@ export function createClientConnectionObserver({
       return text;
     };
     // Only an absent file is empty configuration; existing empty JSON is malformed.
-    const readJson = (path) => {
+    const readJson = (path, options) => {
       const text = read(path);
       if (text === null) return {};
-      try { return JSON.parse(text); } catch { unreadable.add(path); return {}; }
+      try { return parseMcpJson(text, options); } catch { unreadable.add(path); return {}; }
     };
     const fileExists = (path) => {
       try { statSync(path); return true; } catch (error) {
@@ -61,7 +62,7 @@ export function createClientConnectionObserver({
         return false;
       }
     };
-    const agents = discover();
+    const agents = discover({ includeUnavailable: true });
     const history = sanitizeHistory(retained ?? readHistory(historyPath), agents);
     let dirty = retained !== null;
     const clients = inspect(agents, context, { readText, readJson, fileExists }).map((agent) => {
@@ -114,6 +115,7 @@ function ownPaths(agent) {
 // Only bounded, path-free fields leave this module.
 function view(agent, record, extra) {
   return { id: agent.id, label: agent.label, detected: Boolean(agent.available),
+    ...(agent.manualOnly ? { manualOnly: true, manualUrl: agent.manualUrl } : {}),
     status: record.status, previouslyConnected: record.previouslyConnected,
     since: record.since, changes: record.changes, ...extra };
 }
