@@ -19,7 +19,8 @@ test('experiences become one pending current-project capture searchable by their
   assert.deepEqual(entity.attributes.searchTerms, experience.searchKeys);
   assert.match(entity.summary, /适用边界：Only when dependencies are unchanged/);
   assert.equal(entity.confirmationBasis.proposedBy.label, 'lead-fuli');
-  assert.deepEqual(captureRouting, [{ scope: 'current_project', entityKeys: ['experience-1'], relationshipKeys: [] }]);
+  assert.deepEqual(captureRouting, [{ scope: 'current_project', entityKeys: [entity.key], relationshipKeys: [] }]);
+  assert.match(entity.key, /^experience-[0-9a-f]{24}$/);
   // The generated capture passes the same routing and pending rules as a hand-written one.
   const [batch] = normalizeTaskCaptures(task, capture, captureRouting);
   assert.equal(batch.scope, 'current_project');
