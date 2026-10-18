@@ -137,8 +137,9 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(2px);
 }
 .ui-segmented > button:hover { color: var(--color-ink); }
 .ui-segmented > button[aria-pressed=true], .ui-segmented > button[aria-selected=true], .ui-segmented > button[aria-checked=true] {
-  color: var(--color-ink); background: var(--color-surface); box-shadow: 0 1px 2px rgb(27 31 29 / 10%);
+  color: var(--color-ink); background: var(--color-surface); box-shadow: var(--shadow-xs);
 }
+.ui-segmented-swatch { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 50%; vertical-align: -1px; }
 .ui-segmented small { margin-left: 4px; color: var(--color-faint); font-variant-numeric: tabular-nums; }
 
 @media (prefers-reduced-motion: reduce) {

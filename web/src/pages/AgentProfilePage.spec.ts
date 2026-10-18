@@ -263,7 +263,7 @@ describe('Agent profile integration', () => {
   it('uses recorded assignments, team policy and actual shared work for its resume', async () => {
     const { wrapper } = await setup()
     expect(wrapper.get('h1').text()).toBe('Aster')
-    expect(wrapper.get('.agent-portrait').attributes('style')).toMatch(/--agent-identity: #[0-9a-f]{6}/)
+    expect(wrapper.get('.agent-portrait').attributes('style')).toMatch(/--agent-identity: var\(--identity-[0-7]\)/)
     expect(wrapper.text()).toContain('Synthetic active project')
     expect(wrapper.text()).toContain('Synthetic previous project')
     expect(wrapper.get('.agent-org-lead a').text()).toBe('Birch')

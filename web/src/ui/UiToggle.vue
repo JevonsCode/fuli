@@ -21,7 +21,7 @@ defineEmits<{ 'update:modelValue': [value: boolean] }>()
 .ui-toggle[aria-checked='true'] { background: var(--color-accent); }
 .ui-toggle-thumb {
   position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%;
-  background: var(--color-surface); box-shadow: 0 1px 2px rgb(0 0 0 / 20%);
+  background: var(--color-surface); box-shadow: var(--shadow-xs);
   transition: transform var(--motion-medium) var(--motion-ease);
 }
 .ui-toggle[aria-checked='true'] .ui-toggle-thumb { transform: translateX(16px); }

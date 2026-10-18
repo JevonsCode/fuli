@@ -1,0 +1,18 @@
+/* Lab-only motion options, keyed on attributes design-lab.ts sets on <html>. */
+@keyframes lab-page-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes lab-page-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+:root[data-lab-transition="fade"] .app-main > .view { animation: lab-page-fade var(--motion-medium) var(--motion-ease); }
+:root[data-lab-transition="rise"] .app-main > .view { animation: lab-page-rise var(--motion-medium) var(--motion-ease); }
+
+:root[data-lab-lift="on"] :is(.ui-card, .agent-card, .credit-card) {
+  transition: transform var(--motion-fast) var(--motion-ease), box-shadow var(--motion-fast);
+}
+:root[data-lab-lift="on"] :is(.ui-card, .agent-card, .credit-card):hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-lab-transition] .app-main > .view { animation: none; }
+  :root[data-lab-lift="on"] :is(.ui-card, .agent-card, .credit-card):hover { transform: none; }
+}
+:root[data-motion="reduced"][data-lab-transition] .app-main > .view { animation: none; }
+:root[data-motion="reduced"][data-lab-lift="on"] :is(.ui-card, .agent-card, .credit-card):hover { transform: none; }

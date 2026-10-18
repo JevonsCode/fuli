@@ -201,7 +201,7 @@ onBeforeUnmount(() => {
   width: 58px;
   height: 58px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(244, 201, 112, .2), rgba(244, 201, 112, 0) 68%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--brand-gold) 20%, transparent), transparent 68%);
   opacity: 0;
   pointer-events: none;
 }
@@ -326,7 +326,7 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   border-radius: 50%;
   background: var(--color-danger);
-  box-shadow: 0 1px 4px rgba(189, 30, 30, .28);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--color-danger) 28%, transparent);
 }
 
 .brand-subtitle {
@@ -352,7 +352,7 @@ onBeforeUnmount(() => {
 .brand-copy-reflection .brand-name,
 .brand-copy-reflection .brand-version {
   color: var(--color-warning);
-  text-shadow: 0 0 6px rgba(239, 190, 93, .28);
+  text-shadow: 0 0 6px color-mix(in srgb, var(--brand-gold) 28%, transparent);
 }
 
 /* In the rail the mark only presses and pops: no halo or rings around it. */
@@ -375,7 +375,7 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   color: var(--color-ink);
   background: var(--color-surface);
-  box-shadow: 0 10px 28px rgba(35, 48, 39, .16);
+  box-shadow: var(--shadow-popover);
 }
 
 .brand-update-popover strong {

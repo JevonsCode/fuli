@@ -59,7 +59,7 @@ function backToTop() {
   border-radius: 50%;
   color: var(--color-ink);
   background: var(--color-surface);
-  box-shadow: 0 4px 14px rgb(27 31 29 / 12%);
+  box-shadow: var(--shadow-md);
   cursor: pointer;
   transition: transform var(--motion-fast) var(--motion-ease), color var(--motion-fast);
 }

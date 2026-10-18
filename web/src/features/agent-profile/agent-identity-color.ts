@@ -1,17 +1,8 @@
 /**
- * Agent identity swatches. None is green, amber or red, so an identity
- * colour never reads as a status; each initial stays readable on its tint.
+ * Agent identity swatches live in tokens.css as --identity-0 … --identity-7
+ * (and their -soft tints), so a palette can retune them in one place.
  */
-export const AGENT_IDENTITY_PALETTE = [
-  { color: "#1f5ea8", soft: "#e6eef8" },
-  { color: "#4a4aad", soft: "#ececf8" },
-  { color: "#7340a3", soft: "#f1eaf7" },
-  { color: "#9c2f73", soft: "#f8e8f1" },
-  { color: "#0b6a82", soft: "#e3f2f6" },
-  { color: "#485870", soft: "#eceff3" },
-  { color: "#6c3a62", soft: "#f3eaf1" },
-  { color: "#2c4672", soft: "#e8ecf3" },
-] as const;
+export const AGENT_IDENTITY_COUNT = 8;
 
 /**
  * Pick a stable swatch from the Agent id alone, so the same Agent keeps one
@@ -27,13 +18,12 @@ export function agentIdentitySwatch(agentId: string | null | undefined) {
     hash ^= id.charCodeAt(index);
     hash = Math.imul(hash, 0x01000193);
   }
-  return (hash >>> 0) % AGENT_IDENTITY_PALETTE.length;
+  return (hash >>> 0) % AGENT_IDENTITY_COUNT;
 }
 
 /** CSS custom properties for an Agent; unknown ids keep the default accent. */
 export function agentIdentityStyle(agentId: string | null | undefined) {
   const swatch = agentIdentitySwatch(agentId);
   if (swatch === null) return undefined;
-  const { color, soft } = AGENT_IDENTITY_PALETTE[swatch]!;
-  return { "--agent-identity": color, "--agent-identity-soft": soft };
+  return { "--agent-identity": `var(--identity-${swatch})`, "--agent-identity-soft": `var(--identity-${swatch}-soft)` };
 }

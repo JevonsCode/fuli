@@ -13,7 +13,7 @@
 .project-agents-search input:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 .project-agents-status-filter { display: flex; gap: 3px; padding: 3px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-subtle); }
 .project-agents-status-filter button { min-height: 34px; border: 0; border-radius: 6px; background: transparent; color: var(--color-muted); padding: 7px 10px; font-size: 12px; cursor: pointer; }
-.project-agents-status-filter button[aria-pressed='true'] { background: var(--color-surface); color: var(--color-ink); box-shadow: 0 1px 3px rgb(39 57 47 / 12%); font-weight: 700; }
+.project-agents-status-filter button[aria-pressed='true'] { background: var(--color-surface); color: var(--color-ink); box-shadow: var(--shadow-sm); font-weight: 700; }
 .project-agents-directory { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(360px, .94fr) minmax(390px, 1.06fr); overflow: hidden; }
 .project-agent-list { min-width: 0; min-height: 0; overflow: auto; border-right: 1px solid var(--color-border); }
 .project-agent-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 14px; padding: 14px 16px; border: 0; border-bottom: 1px solid var(--color-border); background: var(--color-surface); color: inherit; text-align: left; }

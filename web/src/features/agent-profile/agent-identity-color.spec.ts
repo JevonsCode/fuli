@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { AGENT_IDENTITY_PALETTE, agentIdentityStyle, agentIdentitySwatch } from './agent-identity-color'
+import tokens from '@/styles/tokens.css?raw'
+import { AGENT_IDENTITY_COUNT, agentIdentityStyle, agentIdentitySwatch } from './agent-identity-color'
+
+// The swatches live in tokens.css (light theme block); read them from there.
+const lightTokens = tokens.slice(0, tokens.indexOf('@media'))
+const token = (name: string) => {
+  const match = lightTokens.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6});`))
+  if (!match) throw new Error(`missing token ${name}`)
+  return match[1]!
+}
+const AGENT_IDENTITY_PALETTE = Array.from({ length: AGENT_IDENTITY_COUNT }, (_, index) => ({
+  color: token(`--identity-${index}`),
+  soft: token(`--identity-${index}-soft`),
+}))
 
 const channels = (hex: string) => [1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16) / 255)
 const luminance = (hex: string) => {
@@ -32,11 +45,11 @@ describe('agentIdentitySwatch', () => {
     expect(used.size).toBe(AGENT_IDENTITY_PALETTE.length)
   })
 
-  it('exposes the swatch as CSS custom properties', () => {
-    const swatch = AGENT_IDENTITY_PALETTE[agentIdentitySwatch('lead-1')!]!
+  it('exposes the swatch as the identity tokens', () => {
+    const swatch = agentIdentitySwatch('lead-1')!
     expect(agentIdentityStyle('lead-1')).toEqual({
-      '--agent-identity': swatch.color,
-      '--agent-identity-soft': swatch.soft,
+      '--agent-identity': `var(--identity-${swatch})`,
+      '--agent-identity-soft': `var(--identity-${swatch}-soft)`,
     })
   })
 })
@@ -46,7 +59,7 @@ describe('AGENT_IDENTITY_PALETTE', () => {
     for (const { color, soft } of AGENT_IDENTITY_PALETTE) {
       expect(contrast(color, soft)).toBeGreaterThanOrEqual(4.5)
       // --color-bg, the darkest surface a portrait sits on.
-      expect(contrast(color, '#f6f5f1')).toBeGreaterThanOrEqual(4.5)
+      expect(contrast(color, token('--color-bg'))).toBeGreaterThanOrEqual(4.5)
     }
   })
 

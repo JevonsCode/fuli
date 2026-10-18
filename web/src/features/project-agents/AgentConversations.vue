@@ -319,7 +319,7 @@ ol { padding: 0; list-style: none; margin: 0; }
 .digest-kind { font-weight: 650; margin-right: 8px; }
 .digest-source { display: block; color: var(--color-muted); font-size: 12px; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.65; max-height: 320px; overflow: auto; margin-block: 8px; }
-textarea { width: 100%; box-sizing: border-box; border: 1px solid #a8b7ad; border-radius: 6px; padding: 8px; font: inherit; color: inherit; background: #fff; resize: vertical; }
+textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--color-control-border); border-radius: 6px; padding: 8px; font: inherit; color: inherit; background: var(--color-surface); resize: vertical; }
 button:disabled { cursor: wait; opacity: .65; }
 @media (max-width: 640px) { .agent-conversations { font-size: 16px; } }
 </style>

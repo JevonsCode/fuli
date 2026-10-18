@@ -210,10 +210,10 @@ textarea { display: block; box-sizing: border-box; width: 100%; min-width: 0; re
 .client-status__item p { margin: 2px 0 0; }
 .client-status__icon { flex: 0 0 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center;
   font-size: 12px; font-weight: 600; border: 1px solid currentColor; color: var(--color-muted); }
-.client-status__item--connected .client-status__icon { color: var(--color-success, #2f7d4f); }
+.client-status__item--connected .client-status__icon { color: var(--color-success); }
 .client-status__item--removed .client-status__icon,
 .client-status__item--changed .client-status__icon,
-.client-status__item--skills_left .client-status__icon { color: var(--color-warning, #a5650b); }
+.client-status__item--skills_left .client-status__icon { color: var(--color-warning); }
 .client-status__label { margin-left: 8px; font-size: 13px; color: var(--color-muted); }
 .connection-settings .client-status__change, .connection-settings .client-status__meta { font-size: 12px; }
 .connection-settings .client-status__meta { margin: 10px 0 0; }

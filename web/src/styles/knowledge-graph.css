@@ -62,8 +62,8 @@
 .graph-relation-legend > summary {
   min-height: 30px; display: grid; grid-template-columns: 15px auto auto 8px;
   align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid var(--color-border);
-  border-radius: var(--radius-control); color: var(--color-ink); background: rgba(255,255,255,.95);
-  box-shadow: 0 3px 12px rgba(38,52,43,.08); cursor: pointer; font-size: 12px;
+  border-radius: var(--radius-control); color: var(--color-ink); background: color-mix(in srgb, var(--color-surface) 95%, transparent);
+  box-shadow: var(--shadow-sm); cursor: pointer; font-size: 12px;
   font-weight: 660; list-style: none;
 }
 .graph-relation-legend > summary::-webkit-details-marker { display: none; }
@@ -84,7 +84,7 @@
 .graph-relation-legend[open] > summary i { transform: translateY(2px) rotate(225deg); }
 .graph-relation-legend-panel {
   width: 250px; margin-top: 6px; padding: 12px; border: 1px solid var(--color-border);
-  border-radius: var(--radius-control); background: rgba(255,255,255,.98);
+  border-radius: var(--radius-control); background: color-mix(in srgb, var(--color-surface) 98%, transparent);
   box-shadow: var(--shadow-popover);
 }
 .graph-relation-legend-panel header { display: grid; gap: 2px; padding-bottom: 9px; }
@@ -117,7 +117,7 @@
   position: absolute; z-index: 3; top: 18px; left: 50%; width: min(440px, calc(100% - 36px));
   box-sizing: border-box; padding: 15px 16px; transform: translateX(-50%);
   border: 1px solid var(--color-border); border-radius: var(--radius-control); color: var(--color-ink);
-  background: rgba(255, 255, 255, .97); box-shadow: var(--shadow-popover);
+  background: color-mix(in srgb, var(--color-surface) 97%, transparent); box-shadow: var(--shadow-popover);
 }
 .graph-search-status[hidden] { display: none; }
 .graph-search-status-kicker {
@@ -154,7 +154,7 @@
 .graph-edge-hit { stroke: transparent; stroke-width: 15; cursor: pointer; }
 .graph-edge-label { opacity: .9; pointer-events: none; transition: opacity .12s; }
 .graph-edge-label-bg {
-  fill: rgba(249,250,248,.94); stroke: var(--color-border); stroke-width: .8;
+  fill: color-mix(in srgb, var(--color-bg) 94%, transparent); stroke: var(--color-border); stroke-width: .8;
   transition: fill .12s, stroke .12s;
 }
 .graph-edge-label-icon {
@@ -176,12 +176,12 @@
 }
 .graph-node.human-change-viewed .graph-node-human-marker { fill: var(--color-muted); }
 .graph-node-shape {
-  stroke: var(--color-surface); stroke-width: 2.5; filter: drop-shadow(0 1px 2px rgba(28,42,33,.15));
+  stroke: var(--color-surface); stroke-width: 2.5; filter: drop-shadow(0 1px 2px rgb(var(--shadow-rgb) / 15%));
   transition: stroke .12s, stroke-width .12s, opacity .12s;
 }
 .graph-project-ring {
   fill: var(--color-surface); stroke: var(--color-border-strong); stroke-width: 1.5;
-  filter: drop-shadow(0 2px 4px rgba(31,49,39,.12));
+  filter: drop-shadow(0 2px 4px rgb(var(--shadow-rgb) / 12%));
   transition: fill .12s, stroke .12s, stroke-width .12s;
 }
 .graph-node.project-node .graph-node-shape { fill: var(--color-ink); stroke: var(--color-surface); stroke-width: 2.5; }
@@ -216,11 +216,11 @@
 .graph-node.project-node.selected .graph-project-ring { fill: var(--color-surface-subtle); stroke: var(--color-accent); stroke-width: 2.4; }
 .graph-node.project-node.related .graph-project-ring { stroke: var(--color-muted); stroke-width: 2; }
 .graph-node:not(.project-node).search-match .graph-node-shape {
-  stroke: var(--color-warning); stroke-width: 5; filter: drop-shadow(0 0 5px rgba(189,116,22,.42));
+  stroke: var(--color-warning); stroke-width: 5; filter: drop-shadow(0 0 5px color-mix(in srgb, var(--color-warning) 42%, transparent));
 }
 .graph-node.project-node.search-match .graph-project-ring {
   fill: var(--color-warning-soft); stroke: var(--color-warning); stroke-width: 3;
-  filter: drop-shadow(0 0 5px rgba(189,116,22,.32));
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--color-warning) 32%, transparent));
 }
 .graph-node.pinned .graph-node-shape { stroke: var(--color-muted); stroke-width: 3; }
 .graph-node.dimmed, .graph-edge.dimmed, .graph-edge-label.dimmed { opacity: .08; }

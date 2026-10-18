@@ -36,7 +36,7 @@ describe('RoundtablesPage', () => {
     const wrapper = await mountAt('/roundtables/thread-1')
     const faces = wrapper.findAll('.roundtable-faces span').map((face) => face.attributes('style'))
     const avatars = wrapper.findAll('.roundtable-avatar').map((avatar) => avatar.attributes('style'))
-    expect(faces[0]).toMatch(/--agent-identity: #[0-9a-f]{6}/)
+    expect(faces[0]).toMatch(/--agent-identity: var\(--identity-[0-7]\)/)
     expect(avatars).toEqual(faces)
     expect(wrapper.findAll('.roundtable-avatar').map((avatar) => avatar.text())).toEqual(['M', 'N'])
     wrapper.unmount()
