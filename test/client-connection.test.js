@@ -76,8 +76,9 @@ test('exported connection completes MCP initialization and an authenticated read
     await client.connect(transport);
     assert.equal(client.getServerVersion().name, 'fuli');
     assert.ok((await client.listTools()).tools.some(({ name }) => name === 'get_collaboration_preferences'));
-    const result = await client.callTool({ name: 'list_personal_projects',
-      arguments: { personalSpaceId: 'synthetic-space' } });
+    // A default (chat) client reaches unlisted tools through the dispatcher.
+    const result = await client.callTool({ name: 'fuli_call',
+      arguments: { toolName: 'list_personal_projects', input: { personalSpaceId: 'synthetic-space' } } });
     assert.notEqual(result.isError, true, JSON.stringify(result));
     assert.match(JSON.stringify(result), /synthetic-project/);
     assert.ok(requests.some(({ path, authorization }) => path.startsWith('/v1/personal-projects')

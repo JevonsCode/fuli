@@ -537,3 +537,36 @@ test('mismatched worker context identity, timeout and cancellation never reach b
     assert.equal(calls.business.length, 0);
   } finally { await server.close(); }
 });
+
+test('a chat client runs a discovered tool through fuli_call without a tool list refresh', async () => {
+  let listed = 0;
+  const server = createMcpServer({ listKnowledgeSpaces: async () => { listed += 1; return []; } }, {
+    env: {}, toolProfile: 'chat', registerResources: false
+  });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'chat-client', version: '1.0.0' });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  const before = (await client.listTools()).tools.map(({ name }) => name);
+  assert.ok(before.includes('fuli_call'));
+  assert.ok(!before.includes('list_knowledge_spaces'));
+
+  const result = await client.callTool({ name: 'fuli_call', arguments: { toolName: 'list_knowledge_spaces', input: {} } });
+  assert.equal(result.isError, undefined);
+  assert.equal(listed, 1);
+  const invalid = await client.callTool({ name: 'fuli_call', arguments: { toolName: 'list_knowledge_spaces', input: { unexpected: 1 } } });
+  assert.equal(invalid.isError, true);
+  const unknown = await client.callTool({ name: 'fuli_call', arguments: { toolName: 'fuli_call', input: {} } });
+  assert.equal(unknown.isError, true);
+  await client.close();
+  await server.close();
+});
+
+test('the full profile has no dispatcher because every tool is already listed', async () => {
+  const server = createMcpServer({}, { env: {}, registerResources: false });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'full-client', version: '1.0.0' });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  assert.ok(!(await client.listTools()).tools.some(({ name }) => name === 'fuli_call'));
+  await client.close();
+  await server.close();
+});
