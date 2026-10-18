@@ -24,16 +24,19 @@ const BASELINE = Object.freeze({
   // pre-refactor 169,321/40,502 B; task entry and instructions do not grow.
   // Settings guide: explain_settings is full-profile only (chat reaches it
   // through list_agent_interfaces/fuli_call): 168,566 -> 169,002 B (+436 B).
-  fullToolSchemaBytes: 169002,
+  // P6: checkpoint guidance becomes conditional; descriptions shrink 195 B.
+  fullToolSchemaBytes: 168807,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
   // tools/list: 30,047 -> 7,782 B (-74%).
-  chatToolSchemaBytes: 7782,
+  // P6: explicit optional routine closure, 7,782 -> 7,722 B (real SDK list).
+  chatToolSchemaBytes: 7722,
   instructionsBytes: 2041,
   // T-P00: the chat profile's own instructions name only listed tools, so a
   // client no longer spends a request on discovery first: 2,041 -> 1,251 B.
-  chatInstructionsBytes: 1251,
+  // P6: keep the new chat instructions conditional, 1,251 -> 1,238 B.
+  chatInstructionsBytes: 1238,
   // T-TOKEN-2: the entry receipt keeps only what must be copied, defaults and
   // empty values are omitted, and the scope, receipt and details rule text is
   // referenced: 3,449 -> 1,775 chars.

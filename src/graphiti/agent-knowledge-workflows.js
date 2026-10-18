@@ -80,7 +80,7 @@ export async function beginTaskContext(application, {
     entryVia: 'hook' });
 }
 
-export const STOP_HOOK_CHECKPOINT_GUIDANCE = 'This task was delivered by the lifecycle hook. Call checkpoint_task_knowledge when you have something to record: capture candidates, experiences, agentMemory changes, collaborators or a work status other than a routine finish. Otherwise the Stop hook closes the task as retain_nothing with a work log marked auto-closed.';
+export const STOP_HOOK_CHECKPOINT_GUIDANCE = 'Call checkpoint_task_knowledge for capture candidates, experiences, agentMemory changes, knowledgeUsage, collaborators or a meaningful workLog, including failures and blockers. Otherwise a routine fallback closes at the next entry in the same native session as retain_nothing/reported; the Stop hook closes hook-delivered tasks. Copy the current entry receipt when skipping checkpoint; never claim unsaved memory was saved.';
 
 // Hook and model fallback share the same durable lifecycle. A stored pending
 // task is not evidence that its context reached this model turn.
@@ -101,16 +101,16 @@ export async function beginTaskFromPreferences(application, preferences, {
     workLogRequired: Boolean(preferences.project_agent_context?.memory),
     entryVia
   });
-  // A hook-delivered task is closed by its Stop hook when nothing is recorded,
-  // so the Agent checkpoints only when it has something to record.
-  const hookClosed = entryVia === 'hook' && task.entryVia === 'hook';
+  // Only the Provider can establish that a fallback has no claim or worker /
+  // coordination associations. Missing metadata keeps the legacy requirement.
+  const autoClosed = (entryVia === 'hook' && task.entryVia === 'hook') || task.routineAutoCloseEligible === true;
   const conversation = await beginConversation(application, task);
   return withPreferenceScope({
     conversation,
     taskContextToken: task.token,
     task_context_token: task.token,
-    checkpoint_required: !hookClosed && task.checkpoint?.phase !== 'complete',
-    ...(hookClosed ? { checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE } : {}),
+    checkpoint_required: !autoClosed && task.checkpoint?.phase !== 'complete',
+    ...(autoClosed ? { checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE } : {}),
     resumed_checkpoint: Boolean(resumed),
     previous_checkpoint_missing: task.previousCheckpointMissing,
     ...preferences,
@@ -127,7 +127,7 @@ export function taskKnowledgeGuidance() {
       knowledge_routing: 'Finish with retain_nothing+reason or one capture+captureRouting using explicit personal_global/current_project scopes. Partition each entity/relationship key exactly once; keep relationships with endpoints. Project-limited preferences stay current_project; global scope requires explicit sourceExcerpt evidence, never inferred from profileAspect. Global capture uses standalone preference entities (e.g. PersonalPreference/profileAspect taste), never relabelled Person/Project anchors. Every routed AI proposal remains pending; excerpts do not verify global applicability. Routine review goes to Tonborg under saved policy and must not block independent work. For human decisions use human_interaction: ask native choices with custom input in this conversation, without requiring a review page. review_paths are optional inspection links. Private employee working context belongs in agentMemory, not shared knowledge.',
       human_attention: 'When the selected Project Agent needs a human answer, decision, review or permission, use request_agent_attention with the exact current space/project/Agent IDs, a stable idempotency key and a specific requestedAction. Never raise a hand for ordinary running, queueing or automatic retries. Read list_agent_attention with status=resolved for replies; cancel obsolete requests with cancel_agent_attention. A response does not grant permission or accept task completion.',
       retrieval: 'Inspect task_knowledge_recall before asking for a stable project fact or method again. On a miss, use search_current_project_knowledge with focused action, artifact, target-system, or identifier queries; never use the full conversational request as the only query.',
-      checkpoint: 'The task owner checkpoints once after integration. Coordinated workers return results and evidence to the coordinator; they must not begin or checkpoint an inherited parent context. Before finishing the owned task, call checkpoint_task_knowledge with capture_candidates or retain_nothing. For an assigned employee include workLog with a concise result summary and truthful status (completed, incomplete, failed, no_change, or reported), even when there is no knowledge to capture. When durable role context changed, also include agentMemory with the loaded revision and bounded merged notes. Do not overwrite from truncated context or store raw transcripts.'
+      checkpoint: 'The owner checkpoints after integration when there are capture candidates, experiences, memory changes, explicit knowledge usage, collaborators or a meaningful workLog. For routine finishes follow checkpoint_guidance; checkpoint_required remains true when automatic closure is unavailable. Coordinated workers return evidence and must not begin or checkpoint an inherited parent context. Explicit checkpoints use capture_candidates or retain_nothing; assigned employees include a concise truthful workLog, even without knowledge capture. Memory changes include agentMemory with the loaded revision and bounded merged notes. Do not overwrite truncated context or store raw transcripts.'
     };
 }
 

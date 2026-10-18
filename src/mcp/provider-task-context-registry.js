@@ -117,6 +117,7 @@ export function taskRecord(value) {
     sourceSessionId: value.source_session_id ?? null,
     turnId: value.turn_id ?? null,
     entryVia: value.entry_via ?? 'tool',
+    routineAutoCloseEligible: value.routine_auto_close_eligible === true,
     preferenceScope: taskPreferenceScope(value.preference_scope),
     agentAssignment: storedAgentAssignment(value.agent_assignment),
     memoryRevision: value.memory_revision,
