@@ -258,17 +258,17 @@ onBeforeUnmount(() => {
     rgba(255, 244, 211, .78) 96%,
     transparent 100%
   );
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), var(--color-ink) calc(100% - 1.5px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), var(--color-ink) calc(100% - 1.5px));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), var(--color-ink) calc(100% - 2.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), var(--color-ink) calc(100% - 2.5px));
 }
 
 .brand-orbit::after {
   content: '';
   position: absolute;
-  top: -2px;
+  top: -3px;
   left: 50%;
-  width: 6px;
-  height: 6px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: radial-gradient(circle at 34% 30%, var(--color-surface) 0 14%, var(--color-warning-soft) 30%, var(--color-warning) 58%, rgba(232, 182, 83, 0) 74%);
   box-shadow: 0 0 6px rgba(244, 198, 104, .78), 0 0 14px rgba(244, 198, 104, .32);
@@ -283,11 +283,15 @@ onBeforeUnmount(() => {
 
 .brand-title-row {
   display: flex;
+  min-width: 0;
   align-items: baseline;
   gap: 7px;
 }
 
 .brand-name {
+  /* The brand never wraps; a long version label truncates instead. */
+  flex: 0 0 auto;
+  white-space: nowrap;
   font-size: 18px;
   font-weight: 700;
   letter-spacing: -.02em;
@@ -300,6 +304,9 @@ onBeforeUnmount(() => {
   font-weight: 600;
   letter-spacing: .02em;
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .brand-version-button {
@@ -429,6 +436,17 @@ onBeforeUnmount(() => {
   animation: brand-halo 1.05s ease-out both;
 }
 
+/* The mark itself answers the click: a short compositor-only bounce. */
+.brand-block.is-sparkling .brand-mark {
+  animation: brand-mark-pop .62s cubic-bezier(.34, 1.56, .64, 1) both;
+}
+
+@keyframes brand-mark-pop {
+  0% { transform: scale(1) rotate(0deg); }
+  35% { transform: scale(1.14) rotate(-8deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
 @keyframes brand-orbit-travel {
   0% { opacity: 0; transform: rotate(-132deg) scale(.94); }
   18% { opacity: 0; }
@@ -451,6 +469,10 @@ onBeforeUnmount(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .brand-block.is-sparkling .brand-mark {
+    animation: none;
+  }
+
   .brand-orbit {
     display: none;
   }
@@ -463,6 +485,10 @@ onBeforeUnmount(() => {
     clip-path: inset(0);
     animation: brand-reduced-glint .28s ease-out both;
   }
+}
+
+:root[data-motion="reduced"] .brand-block.is-sparkling .brand-mark {
+  animation: none;
 }
 
 :root[data-motion="reduced"] .brand-orbit {

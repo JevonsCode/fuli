@@ -14,7 +14,9 @@ function render() {
   return mount(AgentConversations, { props: { personalSpaceId: 'space', agentId: 'agent',
     projects: [{ id: 'project-a', name: 'Project A' }, { id: 'project-b', name: 'Project B' }] }, global: { stubs: { UiSelect: UiSelectStub } } })
 }
-async function open(wrapper: ReturnType<typeof render>, selector = 'details') {
+async function open(wrapper: ReturnType<typeof render>, selector?: string) {
+  // The panel itself is always shown and loads on display; only nested settings still open.
+  if (!selector) return flushPromises()
   const details = wrapper.get(selector)
   ;(details.element as HTMLDetailsElement).open = true
   await details.trigger('toggle')
@@ -107,11 +109,10 @@ it('names the working-memory source client readably', async () => {
   expect(wrapper.get('[data-working-memory]').text()).toContain('Claude Code')
   expect(wrapper.get('[data-working-memory]').text()).not.toContain('claude_code')
 })
-it('reads only on expansion, with exact project and Agent scope', async () => {
+it('reads once on display, with exact project and Agent scope', async () => {
   const wrapper = render()
-  await flushPromises()
-  expect(postJson).not.toHaveBeenCalled()
   await open(wrapper)
+  expect(postJson).toHaveBeenCalledTimes(1)
   expect(postJson).toHaveBeenCalledWith('/api/agent-conversations/query', { ...scope, mode: 'list', limit: 20 })
   expect(wrapper.text()).toContain('Prepare a new page')
   expect(wrapper.get('[data-memory-settings]').attributes('open')).toBeUndefined()
@@ -308,9 +309,7 @@ it('never downloads an export answered after the scope, Agent or panel changed',
   pending[2](exported('previous-agent.md'))
   await flushPromises()
   await wrapper.get('[data-export-memory]').trigger('click')
-  const details = wrapper.get('details')
-  ;(details.element as HTMLDetailsElement).open = false
-  await details.trigger('toggle')
+  wrapper.unmount()
   pending[3](exported('closed-panel.md'))
   await flushPromises()
   expect(saved.map(({ name }) => name)).toEqual(['global.md'])

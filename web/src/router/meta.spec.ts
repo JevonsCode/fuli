@@ -12,6 +12,7 @@ describe('localized route metadata', () => {
   it('translates configured keys while preserving literal metadata', () => {
     expect(routeMetaText('routes.overview.title')).toBe('工作台')
     expect(routeMetaText('Legacy title')).toBe('Legacy title')
+    expect(routeMetaText('attention.title')).toBe('待你处理')
 
     setLocale('en-US', { persist: false })
     expect(routeMetaText('routes.overview.title')).toBe('Workspace')

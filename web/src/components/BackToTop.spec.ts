@@ -12,7 +12,9 @@ describe('BackToTop', () => {
     scroller.dispatchEvent(new Event('scroll'))
     await wrapper.vm.$nextTick()
     const button = wrapper.get('[data-back-to-top]')
-    expect(button.text()).toMatch(/回到顶部|Back to top/)
+    // Icon only: the words live in the accessible name, not on the button face.
+    expect(button.text()).toBe('')
+    expect(button.attributes('aria-label')).toMatch(/回到顶部|Back to top/)
 
     await button.trigger('click')
     expect(scroller.scrollTop).toBe(0)
