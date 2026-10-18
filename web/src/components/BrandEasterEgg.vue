@@ -15,7 +15,7 @@ interface PackageVersionStatus {
   checkedAt: string
 }
 
-// compact: the icon rail shows only the mark; the effect ends with the ripple,
+// compact: the icon rail shows only the mark; the mark only pops and the effect ends on a short timer,
 // and an available update appears as a dot on the mark.
 const props = withDefaults(defineProps<{ compact?: boolean }>(), { compact: false })
 const root = ref<HTMLElement | null>(null)
@@ -43,7 +43,7 @@ function playEffect() {
   isPlaying.value = true
   // With reduced motion the ripple is hidden and fires no animationend.
   clearTimeout(finishTimer)
-  if (props.compact) finishTimer = setTimeout(finishEffect, 1200)
+  if (props.compact) finishTimer = setTimeout(finishEffect, 700)
 }
 
 function finishEffect() {
@@ -120,7 +120,7 @@ onBeforeUnmount(() => {
       <span class="brand-mark-wrap">
         <img class="brand-mark" :src="fuliLogoUrl" alt="" aria-hidden="true" />
         <template v-if="isPlaying">
-          <span :key="`ripple-${effectRun}`" class="brand-ripple" aria-hidden="true" @animationend.self="!$event.pseudoElement && props.compact && finishEffect()" />
+          <span v-if="!props.compact" :key="`ripple-${effectRun}`" class="brand-ripple" aria-hidden="true" />
         </template>
       </span>
     </button>
@@ -355,7 +355,10 @@ onBeforeUnmount(() => {
   text-shadow: 0 0 6px rgba(239, 190, 93, .28);
 }
 
-.brand-block.is-compact { justify-content: center; padding: 0; }
+/* In the rail the mark only presses and pops: no halo or rings around it. */
+.brand-block.is-compact { flex: 0 0 auto; width: auto; justify-content: center; padding: 0; }
+.brand-block.is-compact.is-sparkling::before { content: none; }
+.brand-block.is-compact .brand-effect-button:active .brand-mark { transform: scale(.9); transition: transform 90ms ease-out; }
 .brand-compact-update {
   position: absolute; top: -2px; right: 10px; width: 12px; height: 12px; padding: 0;
   border: 2px solid var(--color-sidebar); border-radius: 50%; background: var(--status-waiting); cursor: pointer;
