@@ -95,6 +95,7 @@ export async function beginTaskFromPreferences(application, preferences, {
     projectAgentId: preferences.context.project_agent_id,
     sourceApplication,
     sourceSessionId,
+    delegationToken: application.roundtable?.taskEntryDelegation?.({ sessionId })?.token,
     preferenceScope: taskPreferenceScope({ version: 1, work_kind: workKind, workflow }),
     agentAssignment: taskAgentAssignment(preferences.project_agent_context),
     memoryRevision: preferences.project_agent_context?.memory?.revision ?? null,

@@ -1,3 +1,5 @@
+import { taskActivityOrigin } from './task-activity-origin.js';
+
 export function providerProjectAgentProfile(profile) {
   if (!profile || typeof profile !== 'object') {
     throw new TypeError('Project Agent profile is required');
@@ -291,6 +293,8 @@ export function providerProjectAgentTaskSubmit(input) {
       input.executorPolicyOverride ?? input.executor_policy_override
     )
   };
+  copyOptional(result, 'task_context_token', input.taskContextToken ?? input.task_context_token,
+    hasAny(input, ['taskContextToken', 'task_context_token']));
   copyOptional(result, 'recruitment_occupation', input.recruitmentOccupation ?? input.recruitment_occupation,
     hasAny(input, ['recruitmentOccupation', 'recruitment_occupation']));
   return result;
@@ -454,6 +458,7 @@ export function projectAgentTaskRecord(value = {}) {
     recruitmentId: value.recruitment_id ?? null,
     sourceApplication: value.source_application ?? null,
     sourceSessionId: value.source_session_id ?? null,
+    activityOrigin: taskActivityOrigin(value.activity_origin),
     resultSummary: value.result_summary ?? null,
     failureReason: value.failure_reason ?? null,
     runId: value.actual_run_id ?? value.run_id ?? null,

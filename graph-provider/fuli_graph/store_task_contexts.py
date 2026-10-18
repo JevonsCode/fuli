@@ -21,6 +21,7 @@ from .knowledge_audit import record_knowledge_usage
 from .knowledge_usage_models import KnowledgeUsageCreate
 from .task_context_auto_close import close_previous_routine_fallback, routine_context_state
 from .task_worker_attribution import lock_checkpoint_context, checkpoint_collaboration
+from .task_activity_origin import context_activity_origin
 
 
 class StoreTaskContexts:
@@ -81,6 +82,8 @@ class StoreTaskContexts:
             if request.source_application not in allowed_clients:
                 raise HTTPException(status_code=403, detail='Agent is not allowed in this client')
         record = request.model_dump(mode='json')
+        origin = await context_activity_origin(self, actor, request, worker_run_id=worker_run_id)
+        record['activity_origin'] = origin.model_dump() if origin else None
         record.update(checkpoint=None, created_at=now_utc().isoformat())
         if worker_run_id:
             record['agent_memory_scope'] = agent_memory_scope
@@ -154,6 +157,8 @@ class StoreTaskContexts:
                 raise HTTPException(status_code=409, detail='Task turn already has another context')
         if saved.get('preference_scope') != record['preference_scope']:
             raise HTTPException(409, 'Task preference scope is immutable; begin a new task for different dimensions')
+        # Retries return the first stored provenance, including legacy unknown.
+        # Creation alone derives origin; a fresh proof never backfills old tasks.
         _, routine_eligible = await routine_context_state(self, request.personal_space_id,
             self._task_session_id(request.personal_space_id, request.source_application, request.session_id))
         return {**saved, 'previous_checkpoint_missing': rows[0]['previous_checkpoint_missing'],
