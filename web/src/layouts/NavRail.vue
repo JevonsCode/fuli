@@ -106,7 +106,9 @@ watch(expanded, value => {
 .nav-rail-badge {
   position: absolute; top: 4px; right: 4px; display: grid; min-width: 18px; height: 18px; padding: 0 4px; place-items: center;
   border-radius: var(--radius-pill); color: var(--color-on-accent); background: var(--status-waiting);
-  font-size: 11px; font-weight: 700; line-height: 1;
+  font-size: 11px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums;
+  /* Trim the line box to the digits so the number sits optically centred in the dot. */
+  text-box: trim-both cap alphabetic;
 }
 .nav-rail.is-expanded .nav-rail-badge { position: static; margin-left: auto; }
 /* Second level: same column as the first-level names, told apart by colour. */
