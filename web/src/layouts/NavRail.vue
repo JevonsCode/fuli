@@ -4,7 +4,7 @@ import { RouterLink, useRoute } from 'vue-router'
 import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
 import PinnedAgentsRail from '@/features/agent-profile/PinnedAgentsRail.vue'
 import { t } from '@/i18n'
-import { UiButton, UiIcon, UiIconButton } from '@/ui'
+import { UiIcon, UiIconButton } from '@/ui'
 import { FULI_VERSION } from '@/version'
 import type { NavDestination } from './nav-destinations'
 
@@ -34,10 +34,9 @@ watch(expanded, value => {
 
 <template>
   <nav class="nav-rail" :class="{ 'is-expanded': expanded }" :aria-label="t('shell.aria')" :data-expanded="expanded">
-    <div class="nav-rail-brand" :title="expanded ? undefined : `${t('shell.brand')} v${FULI_VERSION}`">
+    <div class="nav-rail-brand" :title="expanded ? undefined : t('shell.brand')">
       <BrandEasterEgg compact />
       <span v-if="expanded" class="nav-rail-wordmark">{{ t('shell.brand') }}</span>
-      <span v-if="expanded" class="nav-rail-version" data-version>v{{ FULI_VERSION }}</span>
     </div>
     <ul class="nav-rail-links">
       <li v-for="destination in destinations" :key="destination.key">
@@ -59,15 +58,16 @@ watch(expanded, value => {
         <PinnedAgentsRail v-if="destination.key === 'agents'" :space-id="spaceId" :expanded="expanded" />
       </li>
     </ul>
+    <!-- One quiet row: service dot and version, then the collapse control. Words appear only when the service is not ready. -->
     <div class="nav-rail-foot">
-      <span class="nav-rail-runtime" :class="{ 'is-ready': runtimeReady }" role="status" :title="t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline')">
+      <span class="nav-rail-runtime" :class="{ 'is-ready': runtimeReady }" role="status"
+        :title="`${t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline')} · v${FULI_VERSION}`">
         <span class="nav-rail-runtime-dot" aria-hidden="true" />
-        <span class="nav-rail-runtime-text">{{ t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline') }}</span>
+        <span class="nav-rail-runtime-text" :class="{ 'is-visible': !runtimeReady }">{{ t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline') }}</span>
+        <span v-if="expanded && runtimeReady" class="nav-rail-version" data-version>v{{ FULI_VERSION }}</span>
       </span>
-      <UiButton v-if="expanded" class="nav-rail-toggle" variant="ghost" size="sm" :title="t('shell.collapse')" data-nav-toggle @click="expanded = false">
-        <UiIcon name="chevron-left" :size="16" />{{ t('shell.collapseShort') }}
-      </UiButton>
-      <UiIconButton v-else class="nav-rail-toggle" icon="chevron-right" size="sm" :label="t('shell.expand')" data-nav-toggle @click="expanded = true" />
+      <UiIconButton class="nav-rail-toggle" :icon="expanded ? 'chevron-left' : 'chevron-right'" size="sm"
+        :label="t(expanded ? 'shell.collapse' : 'shell.expand')" data-nav-toggle @click="expanded = !expanded" />
     </div>
   </nav>
 </template>
@@ -83,7 +83,6 @@ watch(expanded, value => {
 .nav-rail.is-expanded .nav-rail-brand { justify-content: flex-start; padding-left: 4px; }
 /* Same wordmark as the brand mark everywhere: 700, -.02em, ink. */
 .nav-rail-wordmark { color: var(--color-ink); font-size: 18px; font-weight: 700; letter-spacing: -.02em; white-space: nowrap; }
-.nav-rail-version { min-width: 0; overflow: hidden; color: var(--color-muted); font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .nav-rail-links { display: flex; flex: 1; flex-direction: column; align-items: center; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .nav-rail.is-expanded .nav-rail-links { align-items: stretch; }
 .nav-rail-link {
@@ -120,19 +119,17 @@ watch(expanded, value => {
 .nav-rail-sublink:hover { color: var(--color-ink); background: var(--color-surface-hover); }
 .nav-rail-sublink.is-active { color: var(--color-accent); background: var(--color-accent-soft); }
 .nav-rail-sublink:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-/* Footer: a hairline, then the service state, then the collapse control. */
-.nav-rail-foot { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; padding-top: 10px; border-top: 1px solid var(--color-border); }
-.nav-rail.is-expanded .nav-rail-foot { align-items: stretch; }
-.nav-rail-runtime { display: inline-flex; align-items: center; gap: 8px; --runtime: var(--status-error); }
+/* Footer: one quiet row, no pill, no hairline. */
+.nav-rail-foot { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; }
+.nav-rail.is-expanded .nav-rail-foot { flex-direction: row; justify-content: space-between; padding-left: 12px; }
+.nav-rail-runtime { display: inline-flex; min-width: 0; align-items: center; gap: 8px; --runtime: var(--status-error); }
 .nav-rail-runtime.is-ready { --runtime: var(--status-working); }
-.nav-rail-runtime-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--runtime); box-shadow: 0 0 0 3px color-mix(in srgb, var(--runtime) 22%, transparent); }
-.nav-rail-runtime-text { display: none; }
-.nav-rail.is-expanded .nav-rail-runtime {
-  align-self: flex-start; padding: 5px 12px 5px 10px; border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--runtime) 10%, transparent);
-}
-.nav-rail.is-expanded .nav-rail-runtime-text { display: inline; color: var(--color-ink-soft); font-size: 12px; font-weight: 600; }
-.nav-rail.is-expanded .nav-rail-toggle { justify-content: flex-start; gap: 6px; width: 100%; padding-inline: 8px; color: var(--color-muted); }
+.nav-rail-runtime-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--runtime); }
+/* The ready state is said by the dot; its words stay for screen readers. */
+.nav-rail-runtime-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.nav-rail.is-expanded .nav-rail-runtime-text.is-visible { position: static; width: auto; height: auto; overflow: visible; clip-path: none; color: var(--runtime); font-size: 12px; font-weight: 500; }
+.nav-rail-version { min-width: 0; overflow: hidden; color: var(--color-faint); font-family: var(--font-mono); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.nav-rail-toggle { color: var(--color-faint); }
 
 @media (max-width: 720px) {
   .nav-rail, .nav-rail.is-expanded {
