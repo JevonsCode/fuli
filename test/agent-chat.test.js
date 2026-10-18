@@ -90,11 +90,11 @@ test('group membership is versioned, only the owner admits members, removal revo
 
 test('separate clients and a restart share one durable chat with atomic create/send and membership CAS', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'fuli-chat-store-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
   const { app } = fixture(t);
   const open = () => createAgentRoundtable({ app, openStore: () => createRoundtableStore(join(directory, 'chat.sqlite')) });
   const clients = [open(), open()];
-  t.after(() => clients.forEach(client => client.close()));
+  // Close before removing: Windows cannot delete a SQLite file that is still open.
+  t.after(async () => { clients.forEach(client => client.close()); await rm(directory, { recursive: true, force: true }); });
   const call = (client, action, data) => client.chat({ taskContextToken: 'alpha', sourceApplication: 'codex', action, ...data });
   const rooms = await Promise.all(clients.map(client => call(client, 'create', { requestId: 'shared-create', kind: 'group', members: ['local:beta'] })));
   assert.equal(rooms[0].chatId, rooms[1].chatId);
