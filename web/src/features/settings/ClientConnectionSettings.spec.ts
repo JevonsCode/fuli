@@ -213,3 +213,52 @@ it('a response that arrives while hidden or after unmount never updates the view
   expect(statusCalls(calls)).toBe(2)
   vi.useRealTimers()
 })
+
+it('connects only the selected detected client and shows restart feedback', async () => {
+  let finish: ((value: Response) => void) | undefined
+  const fetch = vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.endsWith('/connect')) return new Promise<Response>((resolve) => { finish = resolve })
+    return Response.json(url.endsWith('/status') ? statusOf([{ id: 'gemini', label: 'Gemini CLI', status: 'not_connected' }]) : configuration)
+  })
+  vi.stubGlobal('fetch', fetch)
+  const wrapper = mount(ClientConnectionSettings)
+  await open(wrapper)
+  await wrapper.get('[data-connect-client="gemini"]').trigger('click')
+  expect(wrapper.get('[data-connect-client="gemini"]').attributes('disabled')).toBeDefined()
+  expect(wrapper.text()).toContain('正在接入 Gemini CLI')
+  const call = fetch.mock.calls.find(([url]) => url.endsWith('/connect'))!
+  expect(call[1]?.method).toBe('POST')
+  expect(JSON.parse(call[1]?.body as string)).toEqual({ clientId: 'gemini' })
+  finish!(Response.json({ id: 'gemini', status: 'connected', restartRequired: true }))
+  await flushPromises()
+  expect(wrapper.text()).toContain('需要重启客户端')
+  wrapper.unmount()
+})
+
+it('does not offer writes for undetected, unreadable or manual-only configurations', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url.endsWith('/status') ? {
+    ...statusOf([{ id: 'codex', status: 'unknown' }, { id: 'cursor', status: 'removed', detected: false }]),
+    clients: [...statusOf([{ id: 'codex', status: 'unknown' }, { id: 'cursor', status: 'removed', detected: false }]).clients,
+      { ...statusOf([{ id: 'opencode', label: 'OpenCode', status: 'not_connected' }]).clients[0], manualOnly: true,
+        manualUrl: 'https://opencode.ai/docs/config/' }],
+  } : configuration)))
+  const wrapper = mount(ClientConnectionSettings)
+  await open(wrapper)
+  expect(wrapper.find('[data-connect-client]').exists()).toBe(false)
+  expect(wrapper.text()).toContain('手动接入')
+  wrapper.unmount()
+})
+
+it('reports partial installs without claiming success and allows retry', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url.endsWith('/connect')
+    ? { id: 'gemini', status: 'partial', restartRequired: false }
+    : url.endsWith('/status') ? statusOf([{ id: 'gemini', status: 'not_connected' }]) : configuration)))
+  const wrapper = mount(ClientConnectionSettings)
+  await open(wrapper)
+  await wrapper.get('[data-connect-client="gemini"]').trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('接入未完成')
+  expect(wrapper.text()).not.toContain('需要重启客户端')
+  expect(wrapper.get('[data-connect-client="gemini"]').attributes('disabled')).toBeUndefined()
+  wrapper.unmount()
+})

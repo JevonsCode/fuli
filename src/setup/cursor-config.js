@@ -1,5 +1,7 @@
 import { existsSync } from 'node:fs';
 
+import { installedToolProfile } from './installed-tool-profile.js';
+
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import { withCursorLifecycleHooks, withoutCursorLifecycleHooks } from '../agents/cursor/lifecycle-hooks.js';
 import { assertJsonObject } from '../validation/values.js';
@@ -27,7 +29,9 @@ export function connectCursor(agent, context, {
           '--runtime-config',
           context.runtimeConfigPath,
           '--source-application',
-          'cursor'
+          'cursor',
+          ...(context.defaultToolProfile || context.toolProfile || currentServers.fuli?.args?.includes('--tool-profile')
+            ? ['--tool-profile', installedToolProfile(currentServers.fuli?.args, context.toolProfile)] : [])
         ]
       }
     }
