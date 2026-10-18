@@ -97,6 +97,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
         }
         return statusView(existing);
       }
+      chat.validateWake(assertion);
       if (store.queuedCount(target.id) >= PEER_LIMITS.queuePerNode) throw new PeerError('queue_full', 'The receiving device has too many waiting messages', 429);
       store.insertMessage({ id: key, senderNode: nodeId, targetNode: target.id,
         bindingId: assertion.to.bindingId, assertionJson, signature, expiresAt: assertion.expiresAt, at: iso() });
@@ -108,6 +109,11 @@ export function createCoordinatorService({ store, identity, authority, name, clo
     return store.transaction(() => {
       const next = store.nextQueued(nodeId, iso());
       if (!next) return null;
+      try { chat.validateWake(JSON.parse(next.assertion_json)); }
+      catch (error) {
+        store.updateMessage(next.id, { status: 'failed', error: error.code ?? 'chat_wake_rejected' }, iso(), 'failed');
+        return null;
+      }
       const attemptId = idFactory();
       // A short acceptance window: the runner may only start after its acceptance is recorded.
       store.updateMessage(next.id, { status: 'claimed', attempt_id: attemptId, accepted_attempt: null,
@@ -135,11 +141,14 @@ export function createCoordinatorService({ store, identity, authority, name, clo
       if (!(Date.parse(message.lease_expires_at) > clock())) throw new PeerError('lease_expired', 'This delivery attempt lost its lease', 409);
       const accepted = message.accepted_attempt === attemptId;
       if (!accepted && state !== 'accepted') throw new PeerError('attempt_not_accepted', 'Accept the attempt before starting it', 409);
-      const changes = { lease_expires_at: iso(PEER_LIMITS.leaseSeconds * 1000) };
+      let chatRevoked = false;
+      try { chat.validateWake(JSON.parse(message.assertion_json)); }
+      catch { chatRevoked = true; }
+      const changes = { lease_expires_at: iso(PEER_LIMITS.leaseSeconds * 1000), ...(chatRevoked ? { cancel_requested: 1 } : {}) };
       if (!accepted) changes.accepted_attempt = attemptId;
       if (state === 'running' && message.status === 'claimed') changes.status = 'running';
       store.updateMessage(messageId, changes, iso(), changes.status ? 'started' : accepted ? 'renewed' : 'accepted', attemptId);
-      return { cancel: message.cancel_requested === 1 || Date.parse(message.expires_at) <= clock() };
+      return { cancel: chatRevoked || message.cancel_requested === 1 || Date.parse(message.expires_at) <= clock() };
     });
   }
 
@@ -171,6 +180,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
           ...(unconfirmed ? { cleanup_status: unconfirmed.status, cleanup_code: unconfirmed.code } : {}) },
         iso(), outcome, attemptId);
       }
+      if (outcome === 'answered') chat.acknowledgeWake(JSON.parse(message.assertion_json));
       return statusView(store.message(messageId));
     });
   }
@@ -244,7 +254,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
       sharedAgents: JSON.parse(node.directory_json).length }));
   }
 
-  return { chat: chat.execute, chatOwner: chat.ownerRead, createInvitation, pair, authenticate, publishDirectory, directory, submit, claim, renew, result,
+  return { chat: chat.execute, chatOwner: chat.ownerRead, chatUpdates: chat.ownerUpdates, createInvitation, pair, authenticate, publishDirectory, directory, submit, claim, renew, result,
     status, cancel, revoke, sweep, devices, trustedCertificates: () => store.activeCertificates(),
     openInvitations: () => store.openInvitations(iso()).length };
 }

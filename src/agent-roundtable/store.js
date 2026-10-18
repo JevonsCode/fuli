@@ -41,14 +41,18 @@ export function createRoundtableStore(path = ':memory:') {
     catch (error) { if (!/duplicate column/i.test(error.message)) throw error; }
   }
   const now = () => new Date().toISOString();
+  const chat = createChatStore(database, path);
   const transaction = (work) => {
     database.exec('BEGIN IMMEDIATE');
-    try { const result = work(); database.exec('COMMIT'); return result; }
-    catch (error) { database.exec('ROLLBACK'); throw error; }
+    let result;
+    try { result = work(); database.exec('COMMIT'); }
+    catch (error) { database.exec('ROLLBACK'); chat.rollbackChanges(); throw error; }
+    chat.flushChanges();
+    return result;
   };
 
   return {
-    chat: createChatStore(database),
+    chat,
     transaction,
     createThread({ id, spaceId, projectId = null, subject }) {
       const at = now();
@@ -107,6 +111,7 @@ export function createRoundtableStore(path = ':memory:') {
         updated_at = ? WHERE id = ?`)
         .run(status, code, now(), anchor ? '1' : null, anchor?.machineHash ?? null,
           anchor?.anchor?.pid == null ? null : String(anchor.anchor.pid), anchor?.anchor?.critical === true ? '1' : null, now(), id);
+      chat.publishChanges();
       return this.getMessage(id);
     },
     // Asks to this Agent whose woken process may still be running.
@@ -119,26 +124,32 @@ export function createRoundtableStore(path = ':memory:') {
     // One durable decision: no unreleased hold and no other active execution of
     // this Agent in this space, then this ask owns the next process. Parallel
     // coordinators and restarts share the file, so the check and claim are atomic.
-    claimExecution(spaceId, agentId, askId) {
+    claimExecution(spaceId, agentId, askId, { chatWakeChatId = null } = {}) {
       return transaction(() => {
-        const blocking = database.prepare(`SELECT m.cleanup_status, m.cleanup_released_at, m.execution_claim
-          FROM messages m JOIN threads t ON t.id = m.thread_id
-          WHERE t.space_id = ? AND m.to_agent = ? AND m.kind = 'ask' AND m.id != ? AND (m.execution_claim = 'active'
-            OR (m.cleanup_status = 'unconfirmed' AND m.cleanup_released_at IS NULL))`).all(spaceId, agentId, askId);
-        if (blocking.some((row) => row.cleanup_status === 'unconfirmed' && row.cleanup_released_at === null)) {
-          return { claimed: false, reason: 'cleanup_unconfirmed' };
-        }
-        if (blocking.length) return { claimed: false, reason: 'execution_claimed' };
+        if (chatWakeChatId && chat.waiting(spaceId, `local:${agentId}`, chatWakeChatId)) return { claimed: false, reason: 'chat_waiting' };
+        const state = this.executionState(spaceId, agentId, askId);
+        if (state.held) return { claimed: false, reason: 'cleanup_unconfirmed' };
+        if (state.busy) return { claimed: false, reason: 'execution_claimed' };
         const claimed = database.prepare(`UPDATE messages SET execution_claim = 'active', execution_claimed_at = ?
           WHERE id = ? AND execution_claim IS NULL`).run(now(), askId).changes === 1;
         return claimed ? { claimed: true } : { claimed: false, reason: 'execution_claimed' };
       });
+    },
+    executionState(spaceId, agentId, exceptAskId = '') {
+      const blocking = database.prepare(`SELECT m.cleanup_status,m.cleanup_released_at,m.execution_claim
+        FROM messages m JOIN threads t ON t.id=m.thread_id
+        WHERE t.space_id=? AND m.to_agent=? AND m.kind='ask' AND m.id!=? AND
+          (m.execution_claim='active' OR (m.cleanup_status='unconfirmed' AND m.cleanup_released_at IS NULL))`)
+        .all(spaceId, agentId, exceptAskId);
+      return { busy: blocking.some(row => row.execution_claim === 'active'),
+        held: blocking.some(row => row.cleanup_status === 'unconfirmed' && row.cleanup_released_at === null) };
     },
     // Only after the owned process was observed to end, or never started. An
     // unconfirmed cleanup leaves the claim active until a proof releases it.
     finishExecution(askId) {
       database.prepare(`UPDATE messages SET execution_claim = 'finished' WHERE id = ? AND execution_claim = 'active'
         AND (cleanup_status IS NULL OR cleanup_status != 'unconfirmed')`).run(askId);
+      chat.publishChanges();
       return this.getMessage(askId);
     },
     // Compare-and-set bound to the recorded evidence: it succeeds at most once and
@@ -162,6 +173,6 @@ export function createRoundtableStore(path = ':memory:') {
         WHERE t.space_id = ? AND m.to_agent = ? AND m.kind = 'ask' AND m.status = 'queued'
         ORDER BY m.created_at LIMIT ?`).all(spaceId, agentId, limit);
     },
-    close() { database.close(); }
+    close() { chat.close(); database.close(); }
   };
 }

@@ -108,3 +108,44 @@ The console's separate LAN-access switch does not turn this feature on.
 The equivalent local controls are available with `fuli peer --help`. Full database
 backups contain private device and origin-authority material; keep those backups
 private. Public knowledge exports do not include those keys.
+
+## Chat push and unread delivery (RT-1)
+
+`agent_chat` keeps direct/group messages separate from execution asks. Its `wait`
+action takes `taskContextToken`, `chatId`, optional `after` (default `0`), `limit`
+(default `50`, maximum `100`), and `timeoutSeconds` (default `60`, maximum `300`).
+It returns the same member-scoped page as `read`: `messages`, `nextAfter`,
+`hasMore`, and the room header. Existing backlog returns immediately. A timeout
+returns an empty page without advancing the cursor. Use `nextAfter` for the next
+wait. Cancellation releases the subscription; membership, task, sharing and
+pairing authority are checked again before returning new content.
+
+SQLite remains authoritative. A post-commit native file notification wakes other
+local MCP/console processes; waits do not scan on an interval or hold a database
+transaction open. The existing `/api/project-agent-task-events` SSE also emits
+`event: chat` with only `chatId` and `seq`. The console reads rooms after a signal
+and after reconnection. Paired owner notifications use a durable cursor; a peer
+transport failure leaves local task events connected. Transport retries back off;
+they are separate from waiting for messages. Legacy execution-ask status refresh
+and the existing remote execution supervisor retain their own lifecycle.
+
+A private message or group `@{local:agentId}` / `@{peer:device:binding}` mention can
+request the existing read-only wake path if that room has no active wait. Plain
+`@name` text does not route a wake. Local delivery uses the Agent's existing
+client authorization; cross-device delivery is restricted to explicitly shared
+executable leads. A communication-only share receives inbox/wait messages only.
+
+The worker receives a bounded unread snapshot with cursors and explicit omitted
+content/truncation flags. Its communication restrictions remain in place, and its
+answer uses the existing verified return path. Device signatures and chat proofs
+do not substitute for an execution origin proof or delegation. Snapshot access
+honors both sender and recipient admission boundaries. Per-message delivery
+receipts advance only a contiguous target cursor, so a newer member cannot erase
+older unread history it was not allowed to see. Durable execution claims keep
+one wake active per Agent; subsequent rooms wait for completion notifications.
+Unknown execution or unconfirmed cleanup keeps its safety hold.
+
+Local tests use synthetic Agent/project identities and loopback mTLS devices.
+They verify protocol behavior, not real paired-computer acceptance or an actual
+model/client run. Actual paired devices still need matching code, explicit owner
+shares, fingerprint verification, and separate end-to-end acceptance.

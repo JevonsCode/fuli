@@ -203,3 +203,111 @@ test('Agent discovery includes occupation, projects and capabilities without sel
   assert.deepEqual(result.agents[0].projects, ['garden']);
   assert.equal(result.agents[0].address, 'local:beta');
 });
+
+test('wait exchanges ten rounds from storage notifications and returns ordered offline backlog', { timeout: 5000 }, async t => {
+  const { chat } = fixture(t);
+  const { chatId } = await chat('alpha', 'create', { requestId: 'wait-room', kind: 'direct', members: ['local:beta'] });
+  let after = 0;
+  for (let round = 0; round < 10; round++) {
+    for (const [from, to] of [['alpha', 'beta'], ['beta', 'alpha']]) {
+      const waiting = chat(to, 'wait', { chatId, after });
+      await chat(from, 'send', { chatId, requestId: `${round}-${from}`, body: `${round}:${from}` });
+      const result = await waiting;
+      assert.deepEqual(result.messages.map(m => m.body), [`${round}:${from}`]);
+      after = result.nextAfter;
+    }
+  }
+  for (let i = 0; i < 3; i++) await chat('alpha', 'send', { chatId, requestId: `offline-${i}`, body: `offline-${i}` });
+  const backlog = await chat('beta', 'wait', { chatId, after, limit: 2 });
+  assert.deepEqual(backlog.messages.map(m => m.seq), [21, 22]);
+  assert.equal(backlog.hasMore, true);
+  assert.deepEqual((await chat('beta', 'wait', { chatId, after: backlog.nextAfter })).messages.map(m => m.seq), [23]);
+});
+
+test('wait validates its deadline and rechecks membership after a pending read', async t => {
+  const { chat } = fixture(t);
+  const { chatId } = await chat('alpha', 'create', { requestId: 'wait-group', kind: 'group', members: ['local:beta'] });
+  await assert.rejects(chat('beta', 'wait', { chatId, timeoutSeconds: 301 }), /300|timeout/i);
+  await assert.rejects(chat('beta', 'wait', { chatId, timeoutSeconds: 0 }), /timeout|1/i);
+  const waiting = chat('beta', 'wait', { chatId });
+  const denied = assert.rejects(waiting, /member|not found/i);
+  await chat('alpha', 'members', { chatId, expectedRevision: 1, remove: ['local:beta'] });
+  await denied;
+});
+
+test('wait returns an empty page and unchanged cursor on timeout', { timeout: 3000 }, async t => {
+  const { chat } = fixture(t);
+  const { chatId } = await chat('alpha', 'create', { requestId: 'wait-timeout', kind: 'direct', members: ['local:beta'] });
+  const result = await chat('beta', 'wait', { chatId, timeoutSeconds: 1 });
+  assert.deepEqual(result.messages, []);
+  assert.equal(result.nextAfter, 0);
+});
+
+test('a separate MCP process wait observes a committed message without polling', { timeout: 5000 }, async t => {
+  const { spawn } = await import('node:child_process');
+  const { once } = await import('node:events');
+  const { app } = fixture(t);
+  const directory = await mkdtemp(join(tmpdir(), 'fuli-chat-process-'));
+  const path = join(directory, 'chat.sqlite');
+  const roundtable = createAgentRoundtable({ app, openStore: () => createRoundtableStore(path) });
+  const room = await roundtable.chat({ taskContextToken: 'alpha', sourceApplication: 'codex', action: 'create',
+    requestId: 'process-chat', kind: 'direct', members: ['local:beta'] });
+  const code = `import {createRoundtableStore} from './src/agent-roundtable/store.js';
+    import {createChatService} from './src/agent-roundtable/chat-service.js';
+    const store=createRoundtableStore(process.argv[1]);
+    const chat=createChatService({store:store.chat,transaction:store.transaction,scope:'space',transport:'local'});
+    const pending=chat({address:'local:beta'},{action:'wait',chatId:process.argv[2],timeoutSeconds:3});
+    process.send('ready'); process.send(await pending); store.close(); process.disconnect();`;
+  const child = spawn(process.execPath, ['--input-type=module','-e',code,path,room.chatId], { stdio: ['ignore','ignore','pipe','ipc'] });
+  t.after(async () => { child.kill(); roundtable.close(); await rm(directory, { recursive: true, force: true }); });
+  assert.deepEqual(await once(child, 'message'), ['ready', undefined]);
+  const result = once(child, 'message');
+  await roundtable.chat({ taskContextToken: 'alpha', sourceApplication: 'codex', action: 'send',
+    chatId: room.chatId, requestId: 'process-send', body: 'committed cross process' });
+  assert.equal((await result)[0].messages[0].body, 'committed cross process');
+  await once(child, 'exit');
+});
+
+test('cancelled waits release their storage subscriptions', async t => {
+  const { roundtable, chat } = fixture(t);
+  const { chatId } = await chat('alpha', 'create', { requestId: 'abort-chat', kind: 'direct', members: ['local:beta'] });
+  const controller = new AbortController();
+  const waiting = roundtable.chat({ taskContextToken: 'beta', sourceApplication: 'codex', action: 'wait', chatId }, { signal: controller.signal });
+  const cancelled = assert.rejects(waiting, /cancelled/);
+  controller.abort(new Error('cancelled'));
+  await cancelled;
+});
+
+test('tool cancellation uses the host request signal and leaves messages unread', async t => {
+  const { callRoundtableTool } = await import('../src/agent-roundtable/tools.js');
+  const { chat, roundtable } = fixture(t);
+  const { chatId } = await chat('alpha','create',{ requestId:'host-abort',kind:'direct',members:['local:beta'] });
+  const controller = new AbortController();
+  const waiting = runWithAgentRequestContext({signal:controller.signal},()=>callRoundtableTool(roundtable,'agent_chat',{
+    action:'wait',chatId,taskContextToken:'beta',sourceApplication:'codex',timeoutSeconds:1
+  }));
+  const denied = assert.rejects(waiting,/host cancelled/);
+  controller.abort(new Error('host cancelled'));
+  await denied;
+});
+
+test('abort while authorization is pending never advances the durable read cursor', async t => {
+  const { createChatService } = await import('../src/agent-roundtable/chat-service.js');
+  const store = createRoundtableStore(); t.after(()=>store.close());
+  const directory = async()=>['alpha','beta'].map(agentId=>({address:`local:${agentId}`,agentId,name:agentId}));
+  const chat = createChatService({store:store.chat,transaction:store.transaction,scope:'space',transport:'local',directory});
+  const actor={address:'local:alpha'}, receiver={address:'local:beta'};
+  const {chatId}=await chat(actor,{action:'create',requestId:'pending-auth',kind:'direct',members:['local:beta']});
+  const paused=Promise.withResolvers(), entered=Promise.withResolvers(); let calls=0;
+  const controller=new AbortController();
+  const waiting=chat(receiver,{action:'wait',chatId},{signal:controller.signal,authorize:async()=>{
+    if(++calls===2){entered.resolve();await paused.promise;}
+  }});
+  const denied=assert.rejects(waiting,/cancelled/);
+  await entered.promise;
+  await chat(actor,{action:'send',chatId,requestId:'during-auth',body:'must remain unread'});
+  controller.abort(new Error('cancelled')); await denied;
+  paused.resolve();
+  const {scheduler}=await import('node:timers/promises'); await scheduler.yield();
+  assert.equal(store.chat.readCursor(chatId,'local:beta'),0);
+});

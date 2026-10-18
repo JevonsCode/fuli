@@ -183,12 +183,17 @@ export function createPeerRunner({ store, client, roundtable, provider, nodeId, 
           catch { stop('persistence_failed'); return; }
           void renew('running');
         },
-        issueGrant: (delivery, lifetime) => provider.issueRemoteAgentDelegation({
+        issueGrant: async (delivery, lifetime) => {
+          if (claim.assertion.chatWake) {
+            const current = await client.post('/peer/1/renew', { messageId, attemptId, state: 'starting' }, { signal: controller.signal });
+            if (current.cancel) throw new PeerError('cancelled', 'Chat membership or sharing was revoked', 499);
+          }
+          return provider.issueRemoteAgentDelegation({
           personal_space_id: share.spaceId, personal_project_id: share.projectId, agent_id: share.agentId,
           target_application: delivery.client,
           target_session_id: delivery.client === 'codex' ? delivery.sessionId : null,
           lifetime_seconds: Math.max(30, Math.min(900, Math.round(lifetime))),
-          origin_node: claim.sender.nodeId, origin_message_id: messageId, origin_attempt_id: attemptId }) });
+          origin_node: claim.sender.nodeId, origin_message_id: messageId, origin_attempt_id: attemptId }); } });
       if (controller.signal.aborted) throw new PeerError('cancelled', 'The delivery was stopped', 499);
       return { outcome: 'answered', reply: answer.body, via: answer.via, verified: true };
     } catch (error) {

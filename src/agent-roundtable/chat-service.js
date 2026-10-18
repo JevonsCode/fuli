@@ -1,3 +1,4 @@
+import { waitForChatChange } from './chat-wait.js';
 import { randomUUID } from 'node:crypto';
 import { canonicalJson } from '../publication/canonical-json.js';
 import { PeerError } from '../agent-peer/protocol.js';
@@ -16,12 +17,24 @@ export function createChatService({ store, transaction, scope, transport, direct
     if (!room || room.scope !== scope || !visible(room, actor)) error('chat_not_found', 'Chat not found for this member', 404);
     return room;
   }
-  return async (actor, raw) => {
+  async function execute(actor, raw, { signal, authorize, onMessage } = {}) {
+    signal?.throwIfAborted();
+    await authorize?.();
+    signal?.throwIfAborted();
     const request = parseChatRequest(raw);
+    if (request.action === 'wait') {
+      if (actor.owner) error('chat_owner_read_only', 'The owner view is read only');
+      const { timeoutSeconds, ...page } = request;
+      const release = store.beginWait(scope, actor.address, request.chatId, timeoutSeconds);
+      try { return await waitForChatChange(() => execute(actor, { ...page, action: 'read' }, { authorize, signal }),
+        { store, timeoutSeconds, signal, ready: page => page.messages.length > 0 }); }
+      finally { release(); }
+    }
     if (actor.owner && !['list', 'read'].includes(request.action)) error('chat_owner_read_only', 'The owner view is read only');
     const known = ['create', 'members'].includes(request.action) ? await directory() : [];
     const resolve = address => known.find(m => m.address === address) ?? error('chat_member_unavailable', `No active shared Agent at ${address}`, 404);
-    return transaction(() => {
+    let delivered;
+    const result = transaction(() => {
       const at = new Date(clock()).toISOString();
       if (request.action === 'list') {
         const all = store.list(scope).filter(room => visible(room, actor));
@@ -68,11 +81,16 @@ export function createChatService({ store, transaction, scope, transport, direct
           if (messages.length && bytes + size > CHAT_LIMITS.readBytes) break;
           bytes += size; messages.push(item);
         }
-        return { ...view(room), messages, nextAfter: messages.at(-1)?.seq ?? after, hasMore: rows.length > messages.length };
+        const nextAfter = messages.at(-1)?.seq ?? after;
+        if (!actor.owner) store.markRead(room.id, actor.address, nextAfter);
+        return { ...view(room), messages, nextAfter, hasMore: rows.length > messages.length };
       }
       if (request.action === 'send') {
         const saved = store.message(room.id, actor.address, request.requestId);
         if (saved && saved.body !== request.body) error('chat_conflict', 'This request ID belongs to a different message', 409);
+        if (!saved) delivered = { chatId: room.id, targets: store.members(room.id).filter(m => m.address !== actor.address
+          && (room.kind === 'direct' || request.body.includes(`@{${m.address}}`))
+          && !store.waiting(scope, m.address, room.id)).map(m => m.address) };
         return messageView(saved ?? store.append({ chatId: room.id, seq: store.lastSeq(room.id) + 1,
           id: idFactory(), sender: actor.address, requestId: request.requestId, body: request.body, at }));
       }
@@ -94,7 +112,10 @@ export function createChatService({ store, transaction, scope, transport, direct
       // The leaving member receives only the new header, never remaining history.
       return { ...view(store.get(room.id)), ...(leave ? { left: true } : {}) };
     });
-  };
+    if (delivered) onMessage?.(delivered);
+    return result;
+  }
+  return execute;
 }
 
 function messageView(row) {

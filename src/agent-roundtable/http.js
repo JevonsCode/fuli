@@ -14,7 +14,13 @@ export async function handleRoundtableApiRequest({ request, response, url, round
   if (chat) {
     try {
       let result;
-      if (request.method === 'POST' && !chat[1]) result = await roundtable.chat(await readJson(request));
+      if (request.method === 'POST' && !chat[1]) {
+        const controller = new AbortController();
+        const disconnect = () => controller.abort();
+        response.once?.('close', disconnect);
+        try { result = await roundtable.chat(await readJson(request), { signal: controller.signal }); }
+        finally { response.off?.('close', disconnect); }
+      }
       else if (request.method === 'GET') result = await roundtable.chatOwner(chat[1]
         ? { action: 'read', chatId: decodeURIComponent(chat[1]), after: Number(url.searchParams.get('after') ?? 0), limit: Number(url.searchParams.get('limit') ?? 50) }
         : { action: 'list', limit: Number(url.searchParams.get('limit') ?? 50),

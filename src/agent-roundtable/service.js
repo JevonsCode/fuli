@@ -1,3 +1,4 @@
+import { waitForChatChange } from './chat-wait.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { projectAddress, resolveProjectLead, verifiedProjectFolder } from './project-target.js';
 import { observeReturnedMemory, taskContextHash } from './memory-observation.js';
@@ -198,10 +199,10 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
   }
 
   async function messageAgent({ taskContextToken = null, sourceApplication, to, body, threadId = null,
-    conversation = 'auto', wait = true, timeoutSeconds = 300, projectPath = null, roundtableProjectId = null } = {}) {
+    conversation = 'auto', wait = true, timeoutSeconds = 300, projectPath = null, roundtableProjectId = null, signal, chatWakeChatId = null, chatWake = null } = {}) {
     if (roundtableProjectId && app.peer?.isRemoteAddress(to)) throw validation('This scoped consultation cannot leave its project');
     if (app.peer?.isRemoteAddress(to)) {
-      return messageRemote({ taskContextToken, sourceApplication, to, body, threadId, conversation, wait, timeoutSeconds });
+      return messageRemote({ taskContextToken, sourceApplication, to, body, threadId, conversation, wait, timeoutSeconds, chatWake, signal });
     }
     const from = await sender({ taskContextToken, sourceApplication });
     const projectId = projectAddress(to);
@@ -224,7 +225,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     const nested = history.filter((message) => message.kind === 'ask' && message.status === 'delivering').length;
     if (!wait || nested >= NESTED_ASK_LIMIT) return queued(thread, ask, target, nested ? 'nested_limit' : 'not_waiting');
     if (!taskContextToken || !from.projectId) return queued(thread, ask, target, 'task_context_required');
-    const claim = store.claimExecution(spaceId(), target.agentId, ask.id);
+    const claim = store.claimExecution(spaceId(), target.agentId, ask.id, { chatWakeChatId });
     if (!claim.claimed) return queued(thread, ask, target, claim.reason);
     let attempts;
     try { attempts = await deliveryTargets(target, conversation, targetProjectId, crossProject ? null : projectPath,
@@ -237,7 +238,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
       targetProjectId: crossProject ? targetProjectId : null });
     const timeoutMs = Math.min(Math.max(timeoutSeconds, 30), 900) * 1000;
     try {
-      const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs,
+      const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, signal,
         issueGrant: (delivery, lifetime) => app.personal.issueAgentDelegation({ personal_space_id: spaceId(),
           task_context_token: taskContextToken, source_application: from.client, agent_id: target.agentId,
           ...(crossProject ? { target_personal_project_id: targetProjectId } : {}),
@@ -274,7 +275,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
 
   // A remote ask is signed by this device for one verified local task. The task
   // token itself never leaves this computer.
-  async function messageRemote({ taskContextToken, sourceApplication, to, body, threadId, conversation, wait, timeoutSeconds }) {
+  async function messageRemote({ taskContextToken, sourceApplication, to, body, threadId, conversation, wait, timeoutSeconds, chatWake, signal }) {
     if (!['auto', 'new'].includes(conversation ?? 'auto')) throw validation('Remote Agents accept conversation "auto" or "new"');
     const from = await sender({ taskContextToken, sourceApplication });
     if (!from.agent || !from.projectId) throw validation('A remote message must come from an active project task of a FULI Agent; pass taskContextToken');
@@ -284,16 +285,25 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     const ask = store.appendMessage(thread.id, { id: idFactory(), kind: 'ask', body, status: 'sent', via: 'peer',
       from: { agentId: from.agent.agentId, name: label(from.agent), client: from.client, session: from.session },
       to: { agentId: target.address, name: `${target.name} · ${target.deviceName}` } });
+    if (chatWake) {
+      const claim = store.claimExecution(spaceId(), target.address, ask.id);
+      if (!claim.claimed) {
+        store.updateMessage(ask.id, { status: 'failed', error: claim.reason });
+        return { status: 'queued', reason: claim.reason, threadId: thread.id, messageId: ask.id };
+      }
+    }
     let state;
     try {
       state = await app.peer.send({ messageId: ask.id, threadId: thread.id, target, body,
-        conversation: conversation ?? 'auto', depth: peerDepth(env) + 1, taskContextToken, sourceApplication: from.client,
+        ...(chatWake ? { chatWake } : {}), conversation: conversation ?? 'auto', depth: peerDepth(env) + 1, taskContextToken, sourceApplication: from.client,
         from: { agentId: from.agent.agentId, name: label(from.agent), client: from.client } });
     } catch (error) {
       store.updateMessage(ask.id, { status: 'failed', error: error.code ?? 'peer_send_failed' });
+      // A rejected request did not start. Transport ambiguity retains the claim.
+      if (chatWake && error.status >= 400 && error.status < 500 && error.code !== 'aborted') store.finishExecution(ask.id);
       throw error;
     }
-    if (wait) state = await app.peer.waitFor(ask.id, Math.min(Math.max(timeoutSeconds, 30), 900) * 1000);
+    if (wait) state = await app.peer.waitFor(ask.id, Math.min(Math.max(timeoutSeconds, 30), 900) * 1000, { signal });
     return remoteView(applyRemote(ask.id, state));
   }
 
@@ -309,6 +319,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     } else if (status !== ask.status) {
       store.updateMessage(ask.id, { status, error: state.error ?? null });
     }
+    if (REMOTE_FINAL.has(status) && status !== 'unknown' && state.cleanup?.status !== 'unconfirmed') store.finishExecution(ask.id);
     // The peer port already bounded it; only an unanswered remote run can leave one.
     if (status !== 'answered' && state.cleanup?.status === 'unconfirmed') store.setCleanup(ask.id, state.cleanup);
     return store.getMessage(ask.id);
@@ -529,7 +540,13 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
   }
 
   const messageProject = message => message.target_project_id ?? store.getThread(message.thread_id)?.project_id ?? null;
-  const chat = createAgentChat({ app, store, agents, idFactory });
+  const chat = createAgentChat({ app, store, agents, idFactory, messageAgent,
+    waitUntilIdle: async (agentId, signal) => {
+      const state = await waitForChatChange(() => store.executionState(spaceId(), agentId),
+        { store: store.chat, signal, ready: state => state.held || !state.busy });
+      return !state.held;
+    },
+    canWake: agent => (agent.profile.allowedClients ?? []).some(client => WAKE_CLIENTS.includes(client) && clientAvailable(client)) });
   return { ...chat, findAgents, messageAgent, readMessages, replyMessage, threads, thread, refreshRemote, taskEntryDelegation,
     messageStatus, cancelMessage, answerRemote,
     ownerMessageStatus: ({ messageId }) => statusOf(ownedAsk(messageId)),
@@ -537,7 +554,10 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     ownerCancelMessage: ({ messageId }) => cancelAsk(ownedAsk(messageId)),
     pending: (agentId, projectId = undefined) => store.pendingFor(spaceId(), agentId)
       .filter(message => projectId === undefined || messageProject(message) === projectId).map(inboxItem),
-    close: () => opened?.close() };
+    close: () => {
+      const pending = chat.closeChatWakes();
+      return pending ? pending.then(() => opened?.close()) : opened?.close();
+    } };
 }
 
 function remoteRowId(kind, parts) {

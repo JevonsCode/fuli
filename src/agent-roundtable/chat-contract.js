@@ -11,6 +11,8 @@ const input = z.discriminatedUnion('action', [
     title: text(160).optional(), members: z.array(address).min(1).max(CHAT_LIMITS.members - 1) }).strict(),
   z.object({ action: z.literal('list'), limit: page.limit, afterChat: text(160).optional() }).strict(),
   z.object({ action: z.literal('read'), chatId: text(160), ...page }).strict(),
+  z.object({ action: z.literal('wait'), chatId: text(160), ...page,
+    timeoutSeconds: z.number().int().min(1).max(300).default(60) }).strict(),
   z.object({ action: z.literal('send'), chatId: text(160), requestId: text(128), body }).strict(),
   z.object({ action: z.literal('members'), chatId: text(160), expectedRevision: z.number().int().positive(),
     add: z.array(address).max(CHAT_LIMITS.members).default([]), remove: z.array(address).max(CHAT_LIMITS.members).default([]),

@@ -75,3 +75,133 @@ test('valid signatures cannot exchange chat and execution proof versions', { tim
     assert.equal(beta.calls.grants.length, 0);
   } finally { await alpha.close(); await beta.close(); }
 });
+
+test('paired chat uses the same wait cursor for ten bidirectional rounds over mTLS', { timeout: 10000 }, async () => {
+  const [alpha, beta] = await Promise.all([device('alpha'), device('beta')]);
+  try {
+    await pair(alpha, beta);
+    await alpha.runtime.setShares({ shares: [{ projectId: alpha.projectId, clients: ['codex'] }] });
+    await beta.runtime.setShares({ shares: [{ projectId: beta.projectId, clients: ['codex'] }] });
+    const target = (await alpha.app.roundtable.findAgents({})).remoteAgents[0].address;
+    const a = (action, data) => alpha.app.roundtable.chat({ taskContextToken: 'alpha-task', sourceApplication: 'codex', action, ...data });
+    const b = (action, data) => beta.app.roundtable.chat({ taskContextToken: 'beta-task', sourceApplication: 'codex', action, ...data });
+    const { chatId } = await a('create', { requestId: 'wait-peer', kind: 'direct', members: [target] });
+    let after = 0;
+    for (let i = 0; i < 10; i++) {
+      for (const [send, receive, who] of [[a,b,'a'],[b,a,'b']]) {
+        const waiting = receive('wait', { chatId, after, timeoutSeconds: 2 });
+        await send('send', { chatId, requestId: `${who}-${i}`, body: `${who}:${i}` });
+        const page = await waiting;
+        assert.deepEqual(page.messages.map(m => m.body), [`${who}:${i}`]);
+        after = page.nextAfter;
+      }
+    }
+    assert.equal(after, 20);
+    assert.equal(alpha.calls.wakes.length + beta.calls.wakes.length, 0);
+  } finally { await alpha.close(); await beta.close(); }
+});
+
+test('paired owner notifications deliver metadata only and resume from durable history', { timeout: 5000 }, async () => {
+  const [alpha, beta] = await Promise.all([device('alpha'), device('beta')]);
+  let stop;
+  try {
+    await pair(alpha, beta);
+    await alpha.runtime.setShares({ shares: [{ projectId: alpha.projectId, clients: ['codex'] }] });
+    await beta.runtime.setShares({ shares: [{ projectId: beta.projectId, clients: ['codex'] }] });
+    const target = (await alpha.app.roundtable.findAgents({})).remoteAgents[0].address;
+    const a = (action, data) => alpha.app.roundtable.chat({ taskContextToken: 'alpha-task', sourceApplication: 'codex', action, ...data });
+    const { chatId } = await a('create', { requestId: 'updates-room', kind: 'direct', members: [target] });
+    await a('send', { chatId, requestId: 'updates-send', body: 'not in notifications' });
+    const received = Promise.withResolvers();
+    stop = beta.app.peer.subscribeChatUpdates((event, error) => {
+      if (error) received.reject(error);
+      else if (event?.seq === 1) received.resolve(event);
+    });
+    assert.deepEqual(await received.promise, { chatId, seq: 1 });
+  } finally { stop?.(); await alpha.close(); await beta.close(); }
+});
+
+test('a pending signed wait cannot consume messages after its sharing is revoked', { timeout: 5000 }, async () => {
+  const [alpha, beta] = await Promise.all([device('alpha'), device('beta')]);
+  try {
+    await pair(alpha, beta);
+    await alpha.runtime.setShares({ shares: [{ projectId: alpha.projectId, clients: ['codex'] }] });
+    await beta.runtime.setShares({ shares: [{ projectId: beta.projectId, clients: ['codex'] }] });
+    const target = (await alpha.app.roundtable.findAgents({})).remoteAgents[0].address;
+    const a = (action, data) => alpha.app.roundtable.chat({ taskContextToken: 'alpha-task', sourceApplication: 'codex', action, ...data });
+    const { chatId } = await a('create', { requestId: 'revoke-room', kind: 'direct', members: [target] });
+    const waiting = beta.app.roundtable.chat({ taskContextToken: 'beta-task', sourceApplication: 'codex', action: 'wait', chatId, timeoutSeconds: 2 });
+    const denied = assert.rejects(waiting, /share|sharing|revoked/i);
+    await beta.runtime.setShares({ shares: [] });
+    await a('send', { chatId, requestId: 'revoked-send', body: 'private after revoke' });
+    await denied;
+  } finally { await alpha.close(); await beta.close(); }
+});
+
+test('an offline executable shared lead wakes read-only from its chat snapshot over mTLS', { timeout: 10000 }, async () => {
+  const entered=Promise.withResolvers();
+  const [alpha,beta]=await Promise.all([device('alpha'),device('beta',{wake:async input=>{
+    entered.resolve(input); return {body:'read-only remote answer',sessionId:'beta-chat-wake'};
+  }})]);
+  try {
+    await pair(alpha,beta);
+    await alpha.runtime.setShares({shares:[{projectId:alpha.projectId,clients:['codex']}]});
+    const target=(await alpha.app.roundtable.findAgents({})).remoteAgents[0].address;
+    const call=(action,data)=>alpha.app.roundtable.chat({taskContextToken:'alpha-task',sourceApplication:'codex',action,...data});
+    const {chatId}=await call('create',{requestId:'remote-wake-room',kind:'direct',members:[target]});
+    await call('send',{chatId,requestId:'remote-wake-send',body:'remote unread message'});
+    const input=await entered.promise;
+    assert.match(input.prompt,/remote unread message/);
+    assert.match(input.prompt,/nextAfter/);
+    assert.equal(beta.calls.wakes.length,1);
+    assert.equal(beta.calls.grants.length,1);
+    assert.ok(!JSON.stringify(input).includes(alpha.folder));
+  } finally { await alpha.close(); await beta.close(); }
+});
+
+test('concurrent paired senders serialize snapshots without consuming a message twice', { timeout: 7000 }, async () => {
+  const first=Promise.withResolvers(),firstEntered=Promise.withResolvers(),secondEntered=Promise.withResolvers();let runs=0;
+  const [alpha,beta,gamma]=await Promise.all([device('alpha'),device('beta',{wake:async input=>{
+    runs++;if(runs===1){firstEntered.resolve();await first.promise;}else secondEntered.resolve();
+    return {body:'answer',sessionId:`beta-${runs}`};
+  }}),device('gamma')]);
+  try {
+    await pair(alpha,beta);
+    const {invitation}=alpha.runtime.createInvitation();await gamma.runtime.join({invitation,name:'Third'});
+    for(const d of [alpha,gamma])await d.runtime.setShares({shares:[{projectId:d.projectId,clients:['codex'],workingDirectory:d.folder}]});
+    const found=(await alpha.app.roundtable.findAgents({})).remoteAgents;
+    const b=found.find(a=>a.agentId==='beta-lead').address,c=found.find(a=>a.agentId==='gamma-lead').address;
+    const call=(d,token,action,data)=>d.app.roundtable.chat({taskContextToken:token,sourceApplication:'codex',action,...data});
+    const {chatId}=await call(alpha,'alpha-task','create',{requestId:'multi-sender',kind:'group',members:[b,c]});
+    await call(alpha,'alpha-task','send',{chatId,requestId:'first',body:`@{${b}} FIRST`});await firstEntered.promise;
+    await call(gamma,'gamma-task','send',{chatId,requestId:'second',body:`@{${b}} SECOND`});
+    first.resolve();await secondEntered.promise;
+    const {setTimeout:delay}=await import('node:timers/promises');await delay(1200); // Allow queued claims/results, never inbox polling.
+    assert.equal(beta.calls.wakes.length,2);
+    assert.deepEqual(beta.calls.wakes.map(w=>[w.prompt.includes('FIRST'),w.prompt.includes('SECOND')]),[[true,false],[false,true]]);
+  }finally{first.resolve();await gamma.close();await beta.close();await alpha.close();}
+});
+
+test('a new member wake cannot reveal or acknowledge the target older unread history', { timeout: 7000 }, async () => {
+  const entered=Promise.withResolvers();
+  const [alpha,beta,gamma]=await Promise.all([device('alpha'),device('beta',{wake:async input=>{
+    entered.resolve(input);return{body:'answer',sessionId:'gap-answer'};
+  }}),device('gamma')]);
+  try {
+    await pair(alpha,beta);const {invitation}=alpha.runtime.createInvitation();await gamma.runtime.join({invitation,name:'Third'});
+    for(const d of [alpha,gamma])await d.runtime.setShares({shares:[{projectId:d.projectId,clients:['codex'],workingDirectory:d.folder}]});
+    const found=(await alpha.app.roundtable.findAgents({})).remoteAgents;
+    const b=found.find(a=>a.agentId==='beta-lead').address,c=found.find(a=>a.agentId==='gamma-lead').address;
+    const call=(d,token,action,data)=>d.app.roundtable.chat({taskContextToken:token,sourceApplication:'codex',action,...data});
+    const room=await call(alpha,'alpha-task','create',{requestId:'gap-room',kind:'group',members:[b]});
+    await call(alpha,'alpha-task','send',{chatId:room.chatId,requestId:'old',body:'OLD PRIVATE UNREAD'});
+    await call(alpha,'alpha-task','members',{chatId:room.chatId,expectedRevision:room.revision,add:[c]});
+    await call(gamma,'gamma-task','send',{chatId:room.chatId,requestId:'new',body:`@{${b}} NEW VISIBLE`});
+    const wake=await entered.promise;assert.doesNotMatch(wake.prompt,/OLD PRIVATE UNREAD/);assert.match(wake.prompt,/NEW VISIBLE/);
+    const {setTimeout:delay}=await import('node:timers/promises');await delay(700);
+    const snapshot=await alpha.app.peer.chatWakeSnapshot({request:{action:'wake_snapshot',chatId:room.chatId,to:b},
+      taskContextToken:'alpha-task',sourceApplication:'codex',agentId:'alpha-lead',projectId:alpha.projectId,name:'alpha lead'});
+    assert.deepEqual(snapshot.messages.map(m=>m.body),['OLD PRIVATE UNREAD']);
+    assert.equal(snapshot.nextAfter,1);assert.equal(beta.calls.wakes.length,1);
+  }finally{await gamma.close();await beta.close();await alpha.close();}
+});

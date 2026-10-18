@@ -2,7 +2,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const config = vi.hoisted(() => ({ space: null as { id: string } | null }))
 const getJson = vi.fn()
+vi.mock('@/stores/console', () => ({ useConsoleStore: () => ({ activePersonalSpace: config.space }) }))
 vi.mock('@/api/client', () => ({ getJson: (url: string) => getJson(url) }))
 
 import { setLocale } from '@/i18n'
@@ -141,4 +143,32 @@ describe('RoundtablesPage', () => {
     expect(wrapper.find('button').exists()).toBe(false)
     wrapper.unmount()
   })
+})
+
+
+it('keeps a newer SSE chat refresh after an older initial response completes', async () => {
+  const sources: EventTarget[] = []
+  class Source extends EventTarget { constructor() { super(); sources.push(this) } close() {} }
+  vi.stubGlobal('EventSource', Source)
+  config.space = { id: 'space' }
+  let resolveInitial!: (value: unknown) => void
+  const initial = new Promise(resolve => { resolveInitial = resolve })
+  let lists = 0, reads = 0
+  const members = [{ address: 'local:lead', agentId: 'lead', name: 'Lead', joinedSeq: 0 }]
+  const room = { chatId: 'room', kind: 'group', title: 'Room', members, transport: 'local', createdAt: '2026-10-10T09:00:00Z', updatedAt: '2026-10-10T09:05:00Z' }
+  getJson.mockImplementation(async (url: string) => {
+    if (url === '/api/roundtable/chats') return ++lists === 1 ? initial : { chats: [room] }
+    if (url.startsWith('/api/roundtable/chats/room')) return { ...room, hasMore: false, nextAfter: ++reads,
+      messages: [{ messageId: `m-${reads}`, seq: reads, from: 'local:lead', body: reads === 1 ? 'old snapshot' : 'latest snapshot', createdAt: room.updatedAt }] }
+    return { threads: [] }
+  })
+  const wrapper = await mountAt('/roundtables/chat/room')
+  try {
+    sources[0]!.dispatchEvent(new MessageEvent('chat', { data: '{"chatId":"room","seq":2}' }))
+    await flushPromises()
+    resolveInitial({ chats: [room] })
+    await flushPromises()
+    expect(wrapper.text()).toContain('latest snapshot')
+    expect(wrapper.text()).not.toContain('old snapshot')
+  } finally { wrapper.unmount(); config.space = null; vi.unstubAllGlobals() }
 })

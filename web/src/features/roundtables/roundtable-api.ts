@@ -46,4 +46,4 @@ export interface RoundtableChatPage extends RoundtableChatRoom { messages: Round
 
 export const listChats = () => getJson<{ chats: RoundtableChatRoom[]; hasMore: boolean; remoteUnavailable?: string }>('/api/roundtable/chats')
 export const readChat = (id: string, after = 0) =>
-  getJson<RoundtableChatPage>(`/api/roundtable/chats/${encodeURIComponent(id)}?after=${after}&limit=200`)
+  getJson<RoundtableChatPage>(`/api/roundtable/chats/${encodeURIComponent(id)}?after=${after}&limit=100`)

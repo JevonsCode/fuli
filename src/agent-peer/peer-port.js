@@ -99,13 +99,13 @@ export function createPeerPort({ dataDir, provider, spaceId, clock = Date.now, i
 
   // The task token is only used with this device's own authority; the remote
   // device receives the authority's signed statement, never the token.
-  async function send({ messageId, threadId, target, body, conversation, depth, from, taskContextToken, sourceApplication }) {
+  async function send({ messageId, threadId, target, body, conversation, depth, from, taskContextToken, sourceApplication, chatWake }) {
     const { identity } = await connection();
     const now = clock();
     const assertion = { protocol: PEER_PROTOCOL, messageId, threadId,
       from: { node: identity.fingerprint, agentId: from.agentId, name: from.name, client: from.client },
       to: { node: target.node, bindingId: target.bindingId, agentId: target.agentId },
-      body, conversation, depth,
+      body, conversation, depth, ...(chatWake ? { chatWake } : {}),
       issuedAt: new Date(now).toISOString(),
       expiresAt: new Date(now + PEER_LIMITS.defaultTtlSeconds * 1000 - PROOF_MARGIN_MS).toISOString() };
     const issued = await provider.issueRemoteAgentOrigin({ personal_space_id: spaceId(), task_context_token: taskContextToken,
@@ -125,13 +125,14 @@ export function createPeerPort({ dataDir, provider, spaceId, clock = Date.now, i
     return boundedState(await post('/peer/1/cancel', { messageId }));
   }
 
-  async function waitFor(messageId, timeoutMs) {
+  async function waitFor(messageId, timeoutMs, { signal } = {}) {
     const deadline = clock() + timeoutMs;
     let last = null;
     for (;;) {
-      try { last = await status(messageId); } catch (error) { if (!last) last = { status: 'queued', error: error.code }; }
+      signal?.throwIfAborted();
+      try { last = await status(messageId, { signal }); } catch (error) { if (!last) last = { status: 'queued', error: error.code }; }
       if (TERMINAL_STATUSES.has(last.status) || clock() >= deadline) return last;
-      await delay(Math.min(statusPollMs, Math.max(0, deadline - clock())));
+      await delay(Math.min(statusPollMs, Math.max(0, deadline - clock())), undefined, { signal });
     }
   }
 

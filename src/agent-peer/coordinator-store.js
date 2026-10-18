@@ -40,16 +40,20 @@ export function createCoordinatorStore(path = ':memory:') {
     try { database.exec(`ALTER TABLE messages ADD COLUMN ${column} TEXT`); }
     catch (error) { if (!/duplicate column/i.test(error.message)) throw error; }
   }
+  const chat = createChatStore(database, path);
   const transaction = (work) => {
     database.exec('BEGIN IMMEDIATE');
-    try { const result = work(); database.exec('COMMIT'); return result; }
-    catch (error) { database.exec('ROLLBACK'); throw error; }
+    let result;
+    try { result = work(); database.exec('COMMIT'); }
+    catch (error) { database.exec('ROLLBACK'); chat.rollbackChanges(); throw error; }
+    chat.flushChanges();
+    return result;
   };
   const event = (at, { messageId = null, nodeId = null, kind, detail = null }) => database.prepare(
     'INSERT INTO events(message_id, node_id, kind, detail, at) VALUES(?,?,?,?,?)').run(messageId, nodeId, kind, detail, at);
 
   return {
-    chat: createChatStore(database),
+    chat,
     transaction,
     event,
     node: (id) => database.prepare('SELECT * FROM nodes WHERE id = ?').get(id) ?? null,
@@ -66,9 +70,13 @@ export function createCoordinatorStore(path = ':memory:') {
     revokeNode(id, at) {
       database.prepare("UPDATE nodes SET status = 'revoked', revoked_at = ?, directory_json = '[]' WHERE id = ?").run(at, id);
       event(at, { nodeId: id, kind: 'revoked' });
+      chat.publishChanges();
     },
     touchNode: (id, at) => database.prepare('UPDATE nodes SET last_seen_at = ? WHERE id = ?').run(at, id),
-    setDirectory: (id, entries) => database.prepare('UPDATE nodes SET directory_json = ? WHERE id = ?').run(JSON.stringify(entries), id),
+    setDirectory(id, entries) {
+      database.prepare('UPDATE nodes SET directory_json = ? WHERE id = ?').run(JSON.stringify(entries), id);
+      chat.publishChanges();
+    },
     createInvitation: ({ codeHash, at, expiresAt }) => database.prepare(
       'INSERT INTO invitations(code_hash, created_at, expires_at) VALUES(?,?,?)').run(codeHash, at, expiresAt),
     invitation: (codeHash) => database.prepare('SELECT * FROM invitations WHERE code_hash = ?').get(codeHash) ?? null,
@@ -85,8 +93,11 @@ export function createCoordinatorStore(path = ':memory:') {
     message: (id) => database.prepare('SELECT * FROM messages WHERE id = ?').get(id) ?? null,
     queuedCount: (targetNode) => database.prepare(
       "SELECT count(*) AS count FROM messages WHERE target_node = ? AND status IN ('queued','claimed','running')").get(targetNode).count,
-    nextQueued: (targetNode, at) => database.prepare(`SELECT * FROM messages WHERE target_node = ? AND status = 'queued'
-      AND expires_at > ? AND cancel_requested = 0 ORDER BY created_at LIMIT 1`).get(targetNode, at) ?? null,
+    nextQueued: (targetNode, at) => database.prepare(`SELECT q.* FROM messages q WHERE q.target_node = ? AND q.status = 'queued'
+      AND q.expires_at > ? AND q.cancel_requested = 0 AND (json_type(q.assertion_json,'$.chatWake') IS NULL OR NOT EXISTS (SELECT 1 FROM messages a
+        WHERE a.target_node=q.target_node AND json_extract(a.assertion_json,'$.to.agentId')=json_extract(q.assertion_json,'$.to.agentId')
+          AND (a.status IN ('claimed','running','unknown') OR a.cleanup_status='unconfirmed')))
+      ORDER BY q.created_at LIMIT 1`).get(targetNode, at) ?? null,
     updateMessage(id, changes, at, kind, detail = null) {
       const columns = Object.keys(changes);
       database.prepare(`UPDATE messages SET ${columns.map((column) => `${column} = ?`).join(', ')}, updated_at = ? WHERE id = ?`)
@@ -99,6 +110,6 @@ export function createCoordinatorStore(path = ':memory:') {
     openForNode: (nodeId) => database.prepare(`SELECT * FROM messages WHERE (target_node = ? OR sender_node = ?)
       AND status IN ('queued','claimed','running')`).all(nodeId, nodeId),
     events: (messageId) => database.prepare('SELECT * FROM events WHERE message_id = ? ORDER BY seq').all(messageId),
-    close: () => database.close(),
+    close: () => { chat.close(); database.close(); },
   };
 }
