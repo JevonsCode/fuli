@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { getJson } from '@/api/client'
-import { AGENT_IDENTITY_PALETTE, agentIdentitySwatch } from '@/features/agent-profile/agent-identity-color'
+import { agentIdentitySwatch } from '@/features/agent-profile/agent-identity-color'
 import { celebrateOnce } from '@/lib/celebration'
 import { currentLocale, t } from '@/i18n'
 import type { ProjectAgentTaskEvent, ProjectAgentTaskRecord } from '@/types'
@@ -33,8 +33,7 @@ const updatedAt = computed(() => planEvent.value
 watch(() => [snapshot.value.taskId, snapshot.value.status] as const, ([taskId, status], previous) => {
   if (!previous || previous[0] !== taskId || status !== 'completed' || previous[1] === 'completed') return
   const swatch = agentIdentitySwatch(snapshot.value.leadAgentId)
-  const color = swatch === null ? undefined : AGENT_IDENTITY_PALETTE[swatch]?.color
-  celebrateOnce(`task-completed:${taskId}`, root.value, color)
+  celebrateOnce(`task-completed:${taskId}`, root.value, swatch === null ? undefined : `--identity-${swatch}`)
 })
 
 function visibilityChanged() { visible.value = !document.hidden }
@@ -97,16 +96,16 @@ watch([
 </template>
 
 <style scoped>
-.task-execution-plan { grid-column: 1 / -1; min-width: 0; padding: 12px; background: var(--color-surface-subtle, #f5f7f6); border-radius: 8px; overflow-wrap: anywhere; }
+.task-execution-plan { grid-column: 1 / -1; min-width: 0; padding: 12px; background: var(--color-surface-subtle); border-radius: 8px; overflow-wrap: anywhere; }
 .plan-heading, .plan-step-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .plan-heading strong { font-size: 13px; }
-.plan-heading small, .plan-updated, .plan-steps p { color: var(--color-muted, #667085); font-size: 12px; }
+.plan-heading small, .plan-updated, .plan-steps p { color: var(--color-muted); font-size: 12px; }
 .plan-steps { margin: 12px 0; padding-left: 24px; display: grid; gap: 12px; }
 .plan-steps li { padding-left: 2px; font-size: 13px; line-height: 1.6; }
-.plan-step-status { flex-shrink: 0; color: var(--color-muted, #667085); }
+.plan-step-status { flex-shrink: 0; color: var(--color-muted); }
 .plan-steps .is-in_progress { font-weight: 600; }
-.is-in_progress .plan-step-status, .is-completed .plan-step-status { color: #286444; }
-.is-blocked .plan-step-status { color: #9a4e16; }
+.is-in_progress .plan-step-status, .is-completed .plan-step-status { color: var(--color-success); }
+.is-blocked .plan-step-status { color: var(--color-warning); }
 .plan-steps p { margin: 3px 0 0; white-space: pre-wrap; font-weight: 400; }
 .plan-updated { margin: 0; line-height: 1.5; }
 @media (max-width: 540px) { .plan-heading { flex-wrap: wrap; } }

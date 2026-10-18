@@ -26,6 +26,6 @@ defineProps<{ sections: readonly NavSection[]; activeKey?: string }>()
   transition: color var(--motion-fast), background var(--motion-fast);
 }
 .section-tab:hover { color: var(--color-ink); }
-.section-tab.is-active { color: var(--color-ink); background: var(--color-surface); box-shadow: 0 1px 3px rgb(0 0 0 / 8%); }
+.section-tab.is-active { color: var(--color-ink); background: var(--color-surface); box-shadow: var(--shadow-sm); }
 .section-tab:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 </style>

@@ -171,7 +171,7 @@ it('celebrates a completion it saw happen, once, and never one already done on l
   const wrapper = render({ ...task(), leadAgentId: 'agent-a' })
   source().change(); await flushPromises()
   expect(celebrateOnce).toHaveBeenCalledTimes(1)
-  expect(celebrateOnce).toHaveBeenCalledWith('task-completed:task-a', wrapper.get('[data-execution-plan]').element, expect.stringMatching(/^#[0-9a-f]{6}$/))
+  expect(celebrateOnce).toHaveBeenCalledWith('task-completed:task-a', wrapper.get('[data-execution-plan]').element, expect.stringMatching(/^--identity-[0-7]$/))
 
   celebrateOnce.mockClear()
   render({ ...task('completed'), status: 'completed' })

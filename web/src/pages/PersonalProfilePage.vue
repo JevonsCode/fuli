@@ -736,7 +736,7 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
   border: 1px solid var(--color-border);
   border-radius: 11px;
   background: var(--color-surface);
-  box-shadow: 0 7px 20px rgba(49, 66, 56, 0.05);
+  box-shadow: var(--shadow-md);
 }
 
 .preference-conflict-alert-icon {
@@ -825,7 +825,7 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
   border: 1px solid var(--color-border);
   border-radius: 11px;
   background: var(--color-surface);
-  box-shadow: 0 7px 20px rgba(45, 61, 52, 0.04);
+  box-shadow: var(--shadow-md);
 }
 
 .preference-conflict-card-heading,

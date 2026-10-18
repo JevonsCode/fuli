@@ -15,5 +15,7 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['src/**/*.spec.ts'],
     setupFiles: ['src/test-support/setup.ts'],
+    // Tokens are read as text by specs that check colour contrast.
+    css: { include: [/tokens\.css/] },
   },
 })

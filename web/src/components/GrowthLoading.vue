@@ -37,7 +37,7 @@ const props = withDefaults(defineProps<{
   --growth-loading-size: 48px;
   display: block;
   min-width: 0;
-  color: var(--color-muted, #667085);
+  color: var(--color-muted);
   font-family: inherit;
   font-size: 14px;
   line-height: 1.4;
@@ -90,7 +90,7 @@ const props = withDefaults(defineProps<{
   --growth-loading-start: 0deg;
   --growth-loading-end: 0deg;
   fill: none;
-  stroke: var(--color-accent, #2563EB);
+  stroke: var(--color-accent);
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 3.25;
@@ -121,7 +121,7 @@ const props = withDefaults(defineProps<{
 }
 
 .growth-loading__label {
-  color: var(--color-muted, #667085);
+  color: var(--color-muted);
   font-size: 14px;
   line-height: 1.4;
   text-align: center;

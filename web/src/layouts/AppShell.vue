@@ -5,6 +5,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
+import DesignLabPanel from '@/features/design-lab/DesignLabPanel.vue'
 import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
 import { useGlossaryMode } from '@/features/glossary/glossary-mode'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
@@ -81,6 +82,8 @@ const glossary = useGlossaryMode()
       <RouterView v-slot="{ Component }"><component :is="Component" /></RouterView>
       <GlossaryLayer />
     </main>
+    <!-- Temporary: the design lab goes away once a design is chosen. -->
+    <DesignLabPanel />
   </div>
 </template>
 

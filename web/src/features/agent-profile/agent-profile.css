@@ -1,7 +1,7 @@
 .agents-directory,
 .agent-profile-page {
   min-width: 0;
-  color: var(--color-ink, #1d2129);
+  color: var(--color-ink);
 }
 
 .agents-directory {
@@ -16,7 +16,7 @@
 
 .agents-directory-count {
   margin: 0;
-  color: var(--color-muted, #667085);
+  color: var(--color-muted);
   font-size: 14px;
 }
 
@@ -26,7 +26,7 @@
   justify-content: space-between;
   gap: var(--space-3, 12px);
   margin: calc(var(--space-6, 24px) * -1) 0 var(--space-4, 16px);
-  color: var(--color-danger, #b93838);
+  color: var(--color-danger);
   font-size: 13px;
 }
 
@@ -82,7 +82,7 @@
   display: flex; height: 100%; box-sizing: border-box; flex-direction: column; gap: 6px;
   padding: 12px 16px; transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
 }
-.agent-card:hover { border-color: var(--color-border-strong); box-shadow: 0 6px 20px rgb(27 31 29 / 6%); }
+.agent-card:hover { border-color: var(--color-border-strong); box-shadow: var(--shadow-md); }
 .agent-card-topline, .agent-card-meta, .agent-section-heading, .agent-resume-name-row {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
@@ -210,7 +210,7 @@
   align-items: center;
   gap: var(--space-2, 8px);
   margin-bottom: var(--space-5, 20px);
-  color: var(--color-muted, #667085);
+  color: var(--color-muted);
   font-size: 14px;
   text-decoration: none;
 }
@@ -218,7 +218,7 @@
 .agent-profile-back:hover,
 .agent-profile-footer a,
 .agent-section-heading > a {
-  color: var(--color-accent, #2563eb);
+  color: var(--color-accent);
 }
 
 .agent-resume-header {
@@ -256,7 +256,7 @@
   max-width: 650px;
   margin: var(--space-3, 12px) 0;
   overflow-wrap: anywhere;
-  color: var(--color-muted, #667085);
+  color: var(--color-muted);
   line-height: 1.65;
 }
 
@@ -264,14 +264,14 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3, 12px);
-  color: var(--color-muted, #667085);
+  color: var(--color-muted);
   font-size: 12px;
 }
 
 .agent-profile-refresh-status,
 .agent-profile-partial {
   margin: var(--space-4, 16px) 0 0;
-  color: var(--color-muted, #667085);
+  color: var(--color-muted);
   font-size: 13px;
 }
 
@@ -280,7 +280,7 @@
   gap: var(--space-5, 20px);
   overflow-x: auto;
   margin-top: var(--space-6, 24px);
-  border-bottom: 1px solid var(--color-border, #e2e5ea);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .agent-profile-tab {
@@ -290,7 +290,7 @@
   padding: 8px 2px;
   border: 0;
   border-bottom: 2px solid transparent;
-  color: var(--color-muted, #667085);
+  color: var(--color-muted);
   background: transparent;
   font-size: 13px;
   cursor: pointer;
@@ -298,11 +298,11 @@
 
 .agent-profile-tab:hover,
 .agent-profile-tab[aria-selected="true"] {
-  color: var(--color-accent, #2563eb);
+  color: var(--color-accent);
 }
 
 .agent-profile-tab[aria-selected="true"] {
-  border-bottom-color: var(--color-accent, #2563eb);
+  border-bottom-color: var(--color-accent);
   font-weight: 650;
 }
 
@@ -354,7 +354,7 @@
 }
 
 .agent-section-heading > span {
-  color: var(--color-muted, #667085);
+  color: var(--color-muted);
   font-size: 12px;
 }
 
@@ -369,11 +369,11 @@
 }
 
 .agent-resume-list li + li {
-  border-top: 1px solid var(--color-border, #e2e5ea);
+  border-top: 1px solid var(--color-border);
 }
 
 .agent-project-link {
-  color: var(--color-accent, #2563eb);
+  color: var(--color-accent);
   text-decoration: none;
 }
 
@@ -386,7 +386,7 @@
 }
 
 .agent-project-overflow summary {
-  color: var(--color-accent, #2563eb);
+  color: var(--color-accent);
   cursor: pointer;
   font-size: 13px;
 }
@@ -407,7 +407,7 @@
   gap: var(--space-3, 12px);
   min-width: 0;
   padding: var(--space-3, 12px);
-  border: 1px solid var(--color-border, #e2e5ea);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-control, 10px);
 }
 
@@ -420,7 +420,7 @@
 .agent-current-work-list a {
   min-width: 0;
   overflow-wrap: anywhere;
-  color: var(--color-accent, #2563eb);
+  color: var(--color-accent);
   font-weight: 600;
   text-decoration: none;
 }
@@ -429,7 +429,7 @@
 .agent-org-lead-unavailable,
 .agent-work-timeline small,
 .agent-collaborators span {
-  color: var(--color-muted, #667085);
+  color: var(--color-muted);
 }
 
 .agent-character {
@@ -453,8 +453,8 @@
 .agent-expectation {
   padding: var(--space-4, 16px);
   border-radius: var(--radius-control, 10px);
-  color: var(--color-ink, #1d2129);
-  background: var(--color-accent-soft, #edf3ff);
+  color: var(--color-ink);
+  background: var(--color-accent-soft);
 }
 
 .agent-expectation strong {
@@ -477,14 +477,14 @@
 .agent-org-lead > span,
 .agent-org-members > span {
   min-width: 70px;
-  color: var(--color-muted, #667085);
+  color: var(--color-muted);
   font-size: 12px;
 }
 
 .agent-org-members {
   margin-left: var(--space-3, 12px);
   padding-left: var(--space-4, 16px);
-  border-left: 2px solid var(--color-border, #e2e5ea);
+  border-left: 2px solid var(--color-border);
 }
 
 .agent-org-members ul {
@@ -500,7 +500,7 @@
   list-style: none;
   margin: var(--space-5, 20px) 0 0 var(--space-2, 8px);
   padding: 0 0 0 var(--space-6, 24px);
-  border-left: 1px solid var(--color-border-strong, #c5cbd5);
+  border-left: 1px solid var(--color-border-strong);
 }
 
 .agent-work-timeline > li {
@@ -515,7 +515,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--color-accent, #2563eb);
+  background: var(--color-accent);
   content: "";
 }
 
@@ -524,7 +524,7 @@
 }
 
 .agent-work-timeline a {
-  color: var(--color-accent, #2563eb);
+  color: var(--color-accent);
   font-weight: 600;
   text-decoration: none;
 }
@@ -566,7 +566,7 @@
   gap: var(--space-5, 20px);
   margin-top: var(--space-5, 20px);
   padding: var(--space-5, 20px) 0;
-  border-top: 1px solid var(--color-border, #e2e5ea);
+  border-top: 1px solid var(--color-border);
   font-size: 13px;
 }
 
@@ -575,9 +575,9 @@
   box-sizing: border-box;
   margin-top: var(--space-4, 16px);
   padding: var(--space-6, 24px);
-  border: 1px solid var(--color-border, #e2e5ea);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-card, 16px);
-  background: var(--color-surface, #ffffff);
+  background: var(--color-surface);
 }
 
 .agent-simple-settings h3 {
@@ -590,12 +590,12 @@
   flex-direction: column;
   gap: var(--space-2, 8px);
   margin-bottom: var(--space-5, 20px);
-  color: var(--color-ink, #1d2129);
+  color: var(--color-ink);
   font-size: 14px;
 }
 
 .agent-simple-settings small {
-  color: var(--color-muted, #667085);
+  color: var(--color-muted);
   font-size: 12px;
 }
 
@@ -605,7 +605,7 @@
 
 .agent-simple-settings summary {
   margin-bottom: var(--space-4, 16px);
-  color: var(--color-ink, #1d2129);
+  color: var(--color-ink);
   cursor: pointer;
   font-size: 13px;
 }
@@ -619,7 +619,7 @@
 }
 
 .agent-locked-platforms p {
-  color: var(--color-ink, #1d2129);
+  color: var(--color-ink);
 }
 
 @media (min-width: 640px) {

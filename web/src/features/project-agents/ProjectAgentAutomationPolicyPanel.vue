@@ -372,7 +372,7 @@ function stringValue(value: unknown) {
   height: 13px;
   border-radius: 50%;
   background: var(--color-surface);
-  box-shadow: 0 1px 2px rgb(36 55 44 / 22%);
+  box-shadow: var(--shadow-xs);
   content: '';
   transition: transform 140ms ease-out;
 }

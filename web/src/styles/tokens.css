@@ -49,8 +49,25 @@
   --space-10: 40px;
   --control-height: 36px;
   --control-height-sm: 30px;
-  --shadow-popover: 0 1px 2px rgb(27 31 29 / 6%), 0 12px 32px rgb(27 31 29 / 10%);
-  --shadow-dialog: 0 2px 6px rgb(27 31 29 / 6%), 0 24px 64px rgb(27 31 29 / 16%);
+  /* Every shadow is built from one ink so a palette changes it in one place. */
+  --shadow-rgb: 27 31 29;
+  --shadow-xs: 0 1px 2px rgb(var(--shadow-rgb) / 12%);
+  --shadow-sm: 0 1px 3px rgb(var(--shadow-rgb) / 10%);
+  --shadow-md: 0 6px 20px rgb(var(--shadow-rgb) / 7%);
+  --shadow-lg: 0 12px 32px rgb(var(--shadow-rgb) / 9%);
+  --shadow-popover: 0 1px 2px rgb(var(--shadow-rgb) / 6%), 0 12px 32px rgb(var(--shadow-rgb) / 10%);
+  --shadow-dialog: 0 2px 6px rgb(var(--shadow-rgb) / 6%), 0 24px 64px rgb(var(--shadow-rgb) / 16%);
+  /* The brand mark's sparkle. */
+  --brand-gold: #f4c970;
+  /* Agent identity swatches: none is green, amber or red, so identity never reads as a status. */
+  --identity-0: #1f5ea8; --identity-0-soft: #e6eef8;
+  --identity-1: #4a4aad; --identity-1-soft: #ececf8;
+  --identity-2: #7340a3; --identity-2-soft: #f1eaf7;
+  --identity-3: #9c2f73; --identity-3-soft: #f8e8f1;
+  --identity-4: #0b6a82; --identity-4-soft: #e3f2f6;
+  --identity-5: #485870; --identity-5-soft: #eceff3;
+  --identity-6: #6c3a62; --identity-6-soft: #f3eaf1;
+  --identity-7: #2c4672; --identity-7-soft: #e8ecf3;
   --motion-fast: 140ms;
   --motion-ease: cubic-bezier(.2, .8, .2, 1);
   --font-ui: "PingFang SC", "Hiragino Sans GB", -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
@@ -112,6 +129,11 @@
     --color-danger-soft: #3a1915;
     --color-on-accent: #04110c;
     --color-overlay: rgb(0 0 0 / 55%);
+    --shadow-rgb: 0 0 0;
+    --shadow-xs: 0 1px 2px rgb(0 0 0 / 40%);
+    --shadow-sm: 0 1px 3px rgb(0 0 0 / 40%);
+    --shadow-md: 0 6px 20px rgb(0 0 0 / 35%);
+    --shadow-lg: 0 12px 32px rgb(0 0 0 / 40%);
     --shadow-popover: 0 1px 2px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 45%);
     --shadow-dialog: 0 2px 6px rgb(0 0 0 / 40%), 0 24px 64px rgb(0 0 0 / 55%);
     --glow-accent: 0 0 14px rgb(47 179 143 / 45%);

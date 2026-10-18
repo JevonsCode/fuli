@@ -512,14 +512,14 @@ function openReplacement(item: KnowledgeItem) {
 .review-state-filter button:hover,
 .quadrant-filter button:hover {
   color: var(--color-ink);
-  background: rgba(255, 255, 255, .66);
+  background: color-mix(in srgb, var(--color-surface) 66%, transparent);
 }
 
 .review-state-filter button.active,
 .quadrant-filter button.active {
   color: var(--color-ink);
   background: var(--color-surface);
-  box-shadow: 0 1px 3px rgba(47, 61, 52, .12);
+  box-shadow: var(--shadow-sm);
 }
 
 .review-state-filter button.state-pending.active {

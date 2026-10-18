@@ -8,16 +8,18 @@ const celebrated = new Set<string>()
 let running = false
 
 // A key is only spent by a burst that actually started; a skipped one
-// (another playing, hidden page, no anchor) leaves a later chance.
-export function celebrateOnce(key: string, anchor: HTMLElement | null, color = '#1f5ea8') {
+// (another playing, hidden page, no anchor) leaves a later chance. The colour
+// is a token name, read from the anchor so it follows the active palette.
+export function celebrateOnce(key: string, anchor: HTMLElement | null, colorToken = '--color-accent') {
   if (celebrated.has(key)) return false
-  const started = burst(anchor, color)
+  const started = burst(anchor, colorToken)
   if (started) celebrated.add(key)
   return started
 }
 
-function burst(anchor: HTMLElement | null, color: string) {
+function burst(anchor: HTMLElement | null, colorToken: string) {
   if (!anchor || running || motionReduced() || document.hidden) return false
+  const color = getComputedStyle(anchor).getPropertyValue(colorToken).trim()
   const rect = anchor.getBoundingClientRect()
   const canvas = document.createElement('canvas')
   const context = canvas.getContext('2d')
@@ -51,7 +53,7 @@ function burst(anchor: HTMLElement | null, color: string) {
       return
     }
     context.globalAlpha = 1 - progress
-    context.fillStyle = color
+    if (color) context.fillStyle = color
     for (const particle of particles) {
       particle.x += particle.dx
       particle.y += particle.dy

@@ -349,7 +349,7 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
   border: 1px solid var(--color-border);
   border-radius: 14px;
   background: var(--color-surface);
-  box-shadow: 0 12px 32px rgba(45, 61, 52, 0.06);
+  box-shadow: var(--shadow-lg);
 }
 
 .writing-taste-hero.status-preview_ready,

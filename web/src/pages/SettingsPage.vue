@@ -706,7 +706,7 @@ function revealInvalidField(event: Event) {
   left: 2px;
   border-radius: 50%;
   background: var(--color-surface);
-  box-shadow: 0 0 4px rgb(0 0 0 / 18%);
+  box-shadow: var(--shadow-xs);
   transform: translateY(-50%);
   transition: transform .18s ease;
 }
