@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PublishQueue from '@/features/publishing/PublishQueue.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -308,6 +309,8 @@ function formatDate(value?: string) {
         <span><strong>{{ store.state?.subscriptions.length ?? 0 }}</strong>{{ t('pages.publicProjects.subscribedCount') }}</span>
       </div>
     </div>
+
+    <PublishQueue />
 
     <div class="project-grid">
       <article v-for="project in projects" :key="projectKey(project)" class="project-card">

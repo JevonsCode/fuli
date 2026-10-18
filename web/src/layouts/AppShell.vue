@@ -25,7 +25,6 @@ const activeSpaceId = computed(() => store.activePersonalSpace?.id ?? '')
 const destinations = computed(() => navDestinations({
   spaceId: activeSpaceId.value || 'current',
   publicProjects: store.state?.capabilities?.browsePublicProjects !== false,
-  review: store.state?.capabilities?.submitKnowledge !== false || store.state?.capabilities?.reviewProposals === true,
 }))
 const destination = computed(() => activeDestination(destinations.value, route.path))
 const section = computed(() => activeSection(destination.value, route.path))

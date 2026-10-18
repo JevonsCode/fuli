@@ -88,7 +88,7 @@ describe('PublicProjectsPage', () => {
     const wrapper = mount(PublicProjectsPage, {
       global: {
         plugins: [pinia, router],
-        stubs: { UiSelect: UiSelectStub },
+        stubs: { UiSelect: UiSelectStub, PublishQueue: true },
       },
     })
 
@@ -178,7 +178,7 @@ describe('PublicProjectsPage', () => {
       attachTo: document.body,
       global: {
         plugins: [pinia, router],
-        stubs: { UiSelect: UiSelectStub },
+        stubs: { UiSelect: UiSelectStub, PublishQueue: true },
       },
     })
 
@@ -262,7 +262,7 @@ describe('PublicProjectsPage', () => {
       attachTo: document.body,
       global: {
         plugins: [pinia, router],
-        stubs: { UiSelect: UiSelectStub },
+        stubs: { UiSelect: UiSelectStub, PublishQueue: true },
       },
     })
 
@@ -346,7 +346,7 @@ describe('PublicProjectsPage', () => {
     const wrapper = mount(PublicProjectsPage, {
       global: {
         plugins: [pinia, router],
-        stubs: { UiSelect: UiSelectStub },
+        stubs: { UiSelect: UiSelectStub, PublishQueue: true },
       },
     })
 

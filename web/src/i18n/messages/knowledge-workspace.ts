@@ -25,7 +25,7 @@ export const knowledgeWorkspaceMessages = {
         allHumanStates: '全部人工状态',
         allHumanChanged: '人工改过（全部）',
         agentUnseen: 'Agent 未查看',
-        viewedPending: '已查看待审核',
+        viewedPending: '已查看 · 待确认',
         agentReviewed: 'Agent 已审核',
       },
       status: {
@@ -304,7 +304,7 @@ export const knowledgeWorkspaceMessages = {
         allHumanStates: 'All human-change states',
         allHumanChanged: 'All human edits',
         agentUnseen: 'Agent has not viewed',
-        viewedPending: 'Viewed, awaiting review',
+        viewedPending: 'Viewed · unconfirmed',
         agentReviewed: 'Agent reviewed',
       },
       status: {
