@@ -1,28 +1,10 @@
 import assert from 'node:assert/strict';
-import { cpSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
-import { windowsInstallationFixture } from './fixtures/windows-installation.js';
-import { installWindowsForCurrentUser } from '../src/desktop/windows-installation.js';
-import { installationSha256, readWindowsInstallation } from '../src/desktop/windows-installation-context.js';
+import { installedWindowsFixture as fixture } from './fixtures/windows-installation.js';
+import { readWindowsInstallation } from '../src/desktop/windows-installation-context.js';
 import { planWindowsUpdate, updateWindowsInstallation } from '../src/desktop/windows-update.js';
-
-function fixture(t) {
-  const f = windowsInstallationFixture(t);
-  const current = installWindowsForCurrentUser(f.options, f.deps);
-  mkdirSync(current.dataDir, { recursive: true });
-  writeFileSync(join(current.dataDir, 'sentinel'), 'existing user data');
-  writeFileSync(join(current.dataDir, 'runtime-settings.json'), JSON.stringify({ graphRuntimeMode: 'native' }));
-  const source = join(f.root, 'upgrade');
-  cpSync(f.source, source, { recursive: true });
-  writeFileSync(join(source, 'package.json'), JSON.stringify({ name: 'fuli-context', version: '0.12.5' }));
-  const inventory = JSON.parse(readFileSync(join(source, 'tray-files.sha256.json')));
-  for (const entry of inventory) entry[1] = installationSha256(readFileSync(join(source, entry[0])));
-  writeFileSync(join(source, 'tray-files.sha256.json'), JSON.stringify(inventory));
-  const calls = [];
-  return { ...f, current, source, calls, options: { source, env: f.env },
-    deps: { ...f.deps, acquireLock: async () => ({ assertHeld() {}, async release() {} }), runCli: async (root, args) => { calls.push({ root, args }); return { code: 0 }; } } };
-}
 
 test('update preview is read-only; successful switch preserves data and keeps the previous version', async t => {
   const f = fixture(t);
