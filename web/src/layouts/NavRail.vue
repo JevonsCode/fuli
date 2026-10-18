@@ -65,7 +65,9 @@ defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; atten
   }
   .nav-rail-brand, .nav-rail-runtime { display: none; }
   .nav-rail-links { flex-direction: row; justify-content: space-around; width: 100%; gap: 0; }
-  .nav-rail-link { width: 56px; height: 52px; grid-template-rows: auto auto; gap: 2px; border-radius: 12px; box-shadow: none; }
-  .nav-rail-label { position: static; width: auto; height: auto; overflow: visible; clip-path: none; font-size: 11px; font-weight: 600; }
+  /* Six tabs share the width, so 320px screens never clip the last one. */
+  .nav-rail-links > li { display: flex; flex: 1 1 0; min-width: 0; justify-content: center; }
+  .nav-rail-link { width: 100%; max-width: 64px; min-width: 0; height: 52px; grid-template-rows: auto auto; gap: 2px; border-radius: 12px; box-shadow: none; }
+  .nav-rail-label { position: static; width: auto; max-width: 100%; height: auto; overflow: hidden; clip-path: none; font-size: 11px; font-weight: 600; text-overflow: ellipsis; }
 }
 </style>
