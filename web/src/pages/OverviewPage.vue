@@ -86,6 +86,7 @@ function agentFace(agentId?: string | null): AgentFace {
   }
 }
 const board = computed<WorkbenchBoard>(() => ({
+  personalSpaceId: activeSpaceId.value,
   tasks: tasks.value,
   attention: attentionItems.value,
   projectName,

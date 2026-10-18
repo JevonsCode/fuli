@@ -48,6 +48,9 @@ export function officeLayout(projects: readonly SceneProject[]): { islands: Isla
   return { islands, width: Math.max(columns, 1) * cellWidth, depth: rows * cellDepth }
 }
 
+/** How much one project draws memory from another (project memory usage tiers). */
+export interface SceneLink { from: string; to: string; tier: 'related' | 'frequent' | 'close' }
+
 export interface Orbit { agent: SceneAgent; radius: number; phase: number; speed: number; tilt: number }
 export interface Planet { project: SceneProject; x: number; z: number; radius: number; orbits: Orbit[] }
 
