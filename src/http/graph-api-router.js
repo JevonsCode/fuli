@@ -193,6 +193,12 @@ export async function handleGraphApiRequest({
     }));
     return true;
   }
+  if (url.pathname === '/api/projects/relation-weights' && request.method === 'GET') {
+    sendJson(response, 200, await app.listProjectRelationWeights({
+      personalSpaceId: url.searchParams.get('personalSpaceId')
+    }));
+    return true;
+  }
   if (url.pathname === '/api/personal-projects' && request.method === 'PUT') {
     sendJson(response, 200, await app.upsertPersonalProject(await readJson(request)));
     return true;
