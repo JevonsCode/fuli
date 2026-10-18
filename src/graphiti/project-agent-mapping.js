@@ -118,6 +118,7 @@ export function projectAgentRecord(value) {
     tags: value.occupation.tags ?? [],
     updatedAt: value.occupation.updated_at
   } : null, Object.hasOwn(value, 'occupation'));
+  copyOptional(result, 'occupationLocked', value.occupation_locked, Object.hasOwn(value, 'occupation_locked'));
   copyOptional(result, 'currentTaskRunningSince', value.current_task_running_since,
     Object.hasOwn(value, 'current_task_running_since'));
   copyOptional(result, 'observedClients', value.observed_clients,

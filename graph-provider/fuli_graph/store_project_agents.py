@@ -24,6 +24,8 @@ from .provider_values import native_datetime, now_utc, stable_uuid
 from .project_agent_names import agent_display_name
 from .store_transactions import query_store_transaction
 from .store_project_agent_occupation import occupation_from_agent_node
+from .occupation_catalog import BUILTIN_AGENT_OCCUPATIONS, BUILTIN_OCCUPATION_KEYS
+from .store_occupation_catalog import active_occupation_predicate, occupation_error, require_active_occupations
 from .system_agents import (
     SYSTEM_PROFILES,
     SYSTEM_ASSISTANT_AGENT_ID,
@@ -70,6 +72,8 @@ class StoreProjectAgents:
         recruitment_id: str | None = None,
     ) -> ProjectAgentRecord:
         self._require_personal()
+        if request.occupation and request.agent_id in {*BUILTIN_AGENT_OCCUPATIONS, LEGACY_HR_AGENT_ID}:
+            occupation_error(409, 'occupation_locked', 'The built-in Agent occupation is locked.')
         if request.occupation and request.occupation.role == 'assistant':
             raise HTTPException(422, 'assistant occupation is reserved for the fixed global assistant')
         if request.agent_id == SYSTEM_ASSISTANT_AGENT_ID:
@@ -150,6 +154,8 @@ class StoreProjectAgents:
             OPTIONAL MATCH (existing:FuliProjectAgent {id: $id})
             WITH space, existing
             WHERE existing IS NOT NULL OR $occupation_role IS NOT NULL
+            WITH space, existing
+            WHERE ''' + active_occupation_predicate() + '''
             MERGE (agent:FuliProjectAgent {id: $id})
             ON CREATE SET agent.agent_id = $agent_id,
                           agent.created_at = $updated_at,
@@ -199,6 +205,8 @@ class StoreProjectAgents:
             occupation_role=occupation_role,
             occupation_explicit=request.occupation is not None,
             occupation_tags=request.occupation.tags if request.occupation else [],
+            occupation_keys=[request.occupation.role, *request.occupation.tags] if request.occupation else [],
+            builtin_occupation_keys=BUILTIN_OCCUPATION_KEYS,
             responsibility=request.profile.responsibility,
             capabilities=request.profile.capabilities,
             work_kinds=request.profile.work_kinds,
@@ -211,6 +219,9 @@ class StoreProjectAgents:
             updated_at=updated_at,
         )
         if not records:
+            if request.occupation:
+                await require_active_occupations(self, request.personal_space_id,
+                    [request.occupation.role, *request.occupation.tags])
             raise HTTPException(
                 status_code=409,
                 detail=(
@@ -1180,6 +1191,7 @@ class StoreProjectAgents:
             open_task_count=len(tasks),
             current_task_id=tasks[0]['task_id'] if tasks else None,
             occupation=occupation_from_agent_node(raw),
+            occupation_locked=raw['agent_id'] in BUILTIN_AGENT_OCCUPATIONS,
             # Only a stamped entry into running is a start time; rows written
             # before the stamp existed stay unknown instead of using updated_at.
             current_task_running_since=(

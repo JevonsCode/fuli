@@ -2,6 +2,7 @@ import { readJson, sendJson } from './response.js';
 import { testToolsEnabled } from '../app/test-tools.js';
 import { handleAgentAttentionRequest } from './agent-attention-api-router.js';
 import { handleTaskEventsRequest } from './task-events-api-router.js';
+import { handleOccupationRequest } from './occupation-api-router.js';
 
 export async function handleGraphApiRequest({
   request,
@@ -11,6 +12,7 @@ export async function handleGraphApiRequest({
 }) {
   if (await handleAgentAttentionRequest({ request, response, url, app })) return true;
   if (await handleTaskEventsRequest({ request, response, url, app })) return true;
+  if (await handleOccupationRequest({ request, response, url, app })) return true;
   if (url.pathname === '/api/agent-conversations/query' && request.method === 'POST') {
     sendJson(response, 200, await app.queryAgentConversations({ ...(await readJson(request)), ownerInspection: true }));
     return true;

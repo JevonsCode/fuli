@@ -629,7 +629,9 @@ async def test_recruitment_approval_claims_revision_in_one_atomic_write():
         request,
     )
 
-    decision_query, decision_parameters = store.runtime.driver.calls[1]
+    decision_query, decision_parameters = next((query, parameters)
+        for query, parameters in store.runtime.driver.calls
+        if 'SET recruitment.status = $decision_status' in query)
     normalized_query = ''.join(decision_query.split())
     assert "recruitment.status='awaiting_confirmation'" in normalized_query
     assert 'coalesce(recruitment.revision,0)=$expected_revision' in normalized_query
@@ -1025,10 +1027,24 @@ class AtomicDecisionDriver:
         self.claimed = False
         self.store = None
 
+    @asynccontextmanager
+    async def transaction(self):
+        yield self
+
+    async def run(self, query, **parameters):
+        rows, _, _ = await self.execute_query(query, **parameters)
+
+        async def result():
+            for row in rows:
+                yield row
+        return result()
+
     async def execute_query(self, query, **parameters):
         self.calls.append((query, parameters))
         if 'RETURN project' in query:
             return ([{'project': {'project_id': 'project-a'}}], None, None)
+        if 'AS valid' in query:
+            return ([{'valid': True}], None, None)
         if 'SET recruitment.status = $decision_status' not in query:
             return ([], None, None)
         if self.claimed:

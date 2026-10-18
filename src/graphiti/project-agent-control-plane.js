@@ -1,4 +1,5 @@
 import { withOccupationDemand } from './occupation-staffing.js';
+import { occupationCatalog } from './occupation-catalog.js';
 import { planAgentCollaboration, agentLoan, agentVerification } from './agent-collaboration.js';
 import { queryConversations, resumeConversation, updateConversationPolicy } from './agent-conversations.js';
 import { recordUserTriage } from './conversation-triage.js';
@@ -63,6 +64,10 @@ export const projectAgentControlPlaneHooks = Object.freeze({
 });
 
 export class ProjectAgentControlPlaneApplication {
+  async occupationCatalog(operation, input) {
+    this.#assertSpace(input.personalSpaceId);
+    return occupationCatalog(this, operation, input);
+  }
   async agentVerification(operation, input) {
     this.#assertSpace(input.personalSpaceId);
     return agentVerification(this, operation, input);
