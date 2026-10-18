@@ -629,7 +629,9 @@ try {
   assert.equal(data.context.project_agent_id,'specialist');
   assert.equal(data.project_agent_context.memory.current.memory.summary,'SYNTHETIC_MEMORY_project');
   assert.equal(data.project_agent_context.global_memory.current.memory.summary,'SYNTHETIC_MEMORY_global');
-  assert.equal(data.conversation.recovery.messages[0].content,'SYNTHETIC_project');
+  // A new native worker chat does not implicitly resume an older conversation
+  // (#159). Explicit own-project/global history reads below remain available.
+  assert.equal(data.conversation.recovery,null);
   const admitted = await request(fixture.path + '?' + new URLSearchParams(fixture.scope), null, 'GET', true);
   const context = await request('/v1/task-contexts/' + ownToken + '?' + new URLSearchParams({
     personal_space_id:fixture.scope.personal_space_id,source_application:'codex'}), null,'GET');

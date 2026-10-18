@@ -55,6 +55,8 @@ ProjectAgentRoutingReason = Literal[
     # or the roster has no qualified member and HR recruitment is opened.
     'project_team_member',
     'project_team_gap',
+    'project_sub_team_lead',
+    'project_sub_team_gap',
     'explicit_agent',
     'project_continuity',
     'project_default',

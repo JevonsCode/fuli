@@ -235,5 +235,5 @@ test('entry assignment record keeps reporting constraints and drops unbounded in
   assert.equal(taskAgentAssignment({ ...context, match_basis: Array(33).fill('basis') }), null);
   assert.equal(taskAgentAssignment({ status: 'unassigned', reason: 'project_lead_required' }), null);
   const replayed = applyAgentAssignment({}, taskAgentAssignment(context));
-  assert.match(replayed.reporting_guidance, /Return results and blockers to the project lead/);
+  assert.match(replayed.reporting_guidance, /Return results and blockers to reporting_lead_agent_id/);
 });

@@ -1,11 +1,14 @@
 """Project-local Agent continuity and recruitment authorization."""
 
+import json
+
 from fastapi import HTTPException
 
 from .personal_project_access import authorize_personal_project
 from .project_agent_coordination_models import (
     ProjectAgentCoordinationPolicyRecord,
     ProjectAgentCoordinationPolicyUpdate,
+    validate_sub_team_membership,
 )
 from .provider_values import native_datetime, now_utc, stable_uuid
 
@@ -58,6 +61,8 @@ class StoreProjectAgentCoordinationPolicy:
             team_lead_agent_id=raw.get('team_lead_agent_id'),
             auto_grow_team=raw.get('auto_grow_team', True),
             team_member_agent_ids=raw.get('team_member_agent_ids') or [],
+            sub_teams=json.loads(raw.get('sub_teams_json') or '[]'),
+            sub_team_suggestion_threshold=raw.get('sub_team_suggestion_threshold') or 6,
             updated_at=native_datetime(raw.get('updated_at')),
         )
 
@@ -93,13 +98,20 @@ class StoreProjectAgentCoordinationPolicy:
         members = (request.team_member_agent_ids if 'team_member_agent_ids' in request.model_fields_set
                    else current.team_member_agent_ids)
         auto_grow = current.auto_grow_team if request.auto_grow_team is None else request.auto_grow_team
+        groups = request.sub_teams if 'sub_teams' in request.model_fields_set else current.sub_teams
+        threshold = (request.sub_team_suggestion_threshold if 'sub_team_suggestion_threshold' in request.model_fields_set
+                     else current.sub_team_suggestion_threshold)
+        try:
+            validate_sub_team_membership(lead, members, groups)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
         if 'team_lead_agent_id' in request.model_fields_set and not lead:
             raise HTTPException(status_code=422, detail='each project requires a lead; select a replacement instead of clearing the lead')
         if members and not lead:
             raise HTTPException(status_code=422, detail='select a team lead before adding members')
         if lead in members:
             raise HTTPException(status_code=422, detail='the team lead cannot also be a team member')
-        if 'team_lead_agent_id' in request.model_fields_set or 'team_member_agent_ids' in request.model_fields_set:
+        if {'team_lead_agent_id', 'team_member_agent_ids', 'sub_teams'}.intersection(request.model_fields_set):
             for agent_id in ([lead] if lead else []) + members:
                 agent = await self.get_project_agent(
                     actor, request.personal_space_id, request.personal_project_id, agent_id,
@@ -149,6 +161,8 @@ class StoreProjectAgentCoordinationPolicy:
                 policy.auto_grow_team = $auto_grow_team,
                 policy.team_lead_agent_id = $team_lead_agent_id,
                 policy.team_member_agent_ids = $team_member_agent_ids,
+                policy.sub_teams_json = $sub_teams_json,
+                policy.sub_team_suggestion_threshold = $sub_team_suggestion_threshold,
                 policy.updated_at = $updated_at
             MERGE (project)-[:HAS_PROJECT_AGENT_COORDINATION_POLICY]->(policy)
             RETURN policy
@@ -161,6 +175,8 @@ class StoreProjectAgentCoordinationPolicy:
             auto_grow_team=auto_grow,
             team_lead_agent_id=lead,
             team_member_agent_ids=members,
+            sub_teams_json=json.dumps([group.model_dump() for group in groups], separators=(',', ':')),
+            sub_team_suggestion_threshold=threshold,
             team_agent_ids=([lead] if lead else []) + members,
             expected_updated_at=current.updated_at,
             updated_at=updated_at,
@@ -175,6 +191,8 @@ class StoreProjectAgentCoordinationPolicy:
             auto_grow_team=auto_grow,
             team_lead_agent_id=lead,
             team_member_agent_ids=members,
+            sub_teams=groups,
+            sub_team_suggestion_threshold=threshold,
             updated_at=updated_at,
         )
 

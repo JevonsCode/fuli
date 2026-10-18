@@ -20,10 +20,19 @@ export function buildProjectTeam({ policy, agents, projectId }) {
     if (assignment && isActive(agent)) assigned.set(agent.agent_id, person(agent, assignment));
   }
   const lead = leadId ? assigned.get(leadId) ?? null : null;
+  const groups = policy?.sub_teams ?? [];
+  const parents = new Map(groups.flatMap(group => (group.member_agent_ids ?? []).map(id => [id, group.lead_agent_id])));
   // Legacy or reclassified policies may still name a peer role as a member;
   // it stays a peer and never gains a reporting line.
   const members = memberIds.filter(id => assigned.has(id) && !assigned.get(id).peerRole)
-    .map(id => ({ ...assigned.get(id), reportsToAgentId: lead ? leadId : null }));
+    .map(id => ({ ...assigned.get(id), reportsToAgentId: parents.get(id) ?? (lead ? leadId : null) }));
+  const memberMap = new Map(members.map(person => [person.agentId, person]));
+  const subTeams = groups.map(group => ({ id: group.id, name: group.name,
+    lead: memberMap.get(group.lead_agent_id) ?? null,
+    unavailableLead: memberMap.has(group.lead_agent_id) ? null : { agentId: group.lead_agent_id,
+      name: all.find(agent => agent.agent_id === group.lead_agent_id)?.profile?.name ?? null },
+    members: (group.member_agent_ids ?? []).filter(id => memberMap.has(id)).map(id => memberMap.get(id)),
+    unavailableMemberIds: (group.member_agent_ids ?? []).filter(id => !memberMap.has(id)) }));
   const reporting = new Set([leadId, ...members.map(member => member.agentId)]);
   const collaborators = [];
   const peers = [];
@@ -39,6 +48,9 @@ export function buildProjectTeam({ policy, agents, projectId }) {
     lead,
     unavailableLead: leadId && !lead ? { agentId: leadId, name: former ? displayName(former) : null } : null,
     members,
+    subTeams,
+    subTeamSuggestion: { suggested: members.length > (policy?.sub_team_suggestion_threshold ?? 6) && !groups.length,
+      memberCount: members.length, threshold: policy?.sub_team_suggestion_threshold ?? 6 },
     collaborators: collaborators.sort(byName),
     peers: peers.sort(byName),
     unavailableMemberIds: memberIds.filter(id => !assigned.has(id))

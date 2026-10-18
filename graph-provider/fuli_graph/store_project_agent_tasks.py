@@ -29,6 +29,7 @@ from .store_project_agent_coordination_policy import StoreProjectAgentCoordinati
 from .store_project_agent_task_activity import StoreProjectAgentTaskActivity, TERMINAL_TASK_STATUSES
 from .store_transactions import TransactionQueryDriver, query_store_transaction
 from .task_activity_origin import coordination_activity_origin, read_activity_origin
+from .project_agent_hierarchy import reporting_parent, bind_task_coordinator, validate_task_reports
 class StoreProjectAgentTasks(
     StoreProjectAgentTaskActivity,
     StoreProjectAgentCoordinationPolicy,
@@ -115,6 +116,9 @@ class StoreProjectAgentTasks(
 
         activity_origin = await coordination_activity_origin(self, actor, request)
         payload_hash = self._task_payload_hash(request, activity_origin)
+        reporting_policy = await self.get_project_agent_coordination_policy(
+            actor, request.personal_space_id, request.personal_project_id)
+        request = await bind_task_coordinator(self, actor, request, reporting_policy)
         if request.coordinator_agent_id:
             await authorize_project_agent(
                 self,
@@ -133,6 +137,21 @@ class StoreProjectAgentTasks(
             request,
         )
         lead = selected[0] if selected else None
+        reporting_coordinator = (reporting_parent(reporting_policy, lead['agent_id'])
+                                 if lead and getattr(reporting_policy, 'sub_teams', []) else None)
+        immediate_coordinator = (request.coordinator_agent_id or reporting_coordinator
+                                 or getattr(reporting_policy, 'team_lead_agent_id', None))
+        grouped = bool(getattr(reporting_policy, 'sub_teams', []))
+        if grouped:
+            candidates = [row for row in candidates if row['agent_id'] == immediate_coordinator
+                          or reporting_parent(reporting_policy, row['agent_id']) == immediate_coordinator]
+        if (reporting_coordinator and request.coordinator_agent_id
+                and request.coordinator_agent_id != reporting_coordinator):
+            raise HTTPException(403, 'Task coordination must use the immediate reporting lead')
+        if (getattr(reporting_policy, 'sub_teams', []) and lead
+                and lead['agent_id'] == reporting_policy.team_lead_agent_id
+                and request.coordinator_agent_id not in {None, reporting_policy.team_lead_agent_id}):
+            raise HTTPException(403, 'The project lead cannot report to a sub-team')
         team_lead_agent_id = None
         if reason in TEAM_ROUTING_REASONS or reason == 'agent_unavailable':
             policy = await self.get_project_agent_coordination_policy(
@@ -150,6 +169,9 @@ class StoreProjectAgentTasks(
                 'assignment_summary': lead.get('responsibility'),
             })
         for collaborator in await self._explicit_collaborators(actor, space, request):
+            if (getattr(reporting_policy, 'sub_teams', [])
+                    and reporting_parent(reporting_policy, collaborator['agent_id']) != immediate_coordinator):
+                raise HTTPException(403, 'Collaborators must report to the immediate task coordinator')
             if not any(item['agent_id'] == collaborator['agent_id'] for item in participants):
                 participants.append({
                     'agent_id': collaborator['agent_id'],
@@ -167,7 +189,7 @@ class StoreProjectAgentTasks(
                 request,
                 candidates,
                 participants,
-                **({'team_only': True} if reason in TEAM_ROUTING_REASONS else {}),
+                **({'team_only': True} if grouped or reason in TEAM_ROUTING_REASONS else {}),
             )
             candidate_ids = {item['agent_id'] for item in candidates}
             candidates.extend(
@@ -188,7 +210,8 @@ class StoreProjectAgentTasks(
                     'qualified durable Agent candidates'
                 )
 
-        parallel_recruitment_slots = (
+        validate_task_reports(reporting_policy, immediate_coordinator, participants)
+        parallel_recruitment_slots = [] if grouped and immediate_coordinator != reporting_policy.team_lead_agent_id else (
             await self._automatic_parallel_recruitment_slots(
                 actor,
                 request,
@@ -235,6 +258,8 @@ class StoreProjectAgentTasks(
             # for work it delegates to a member, asks HR to staff, or that is
             # blocked because the qualified member is unavailable to this client.
             coordinator_agent_id = team_lead_agent_id
+        if not request.coordinator_agent_id and reporting_coordinator:
+            coordinator_agent_id = reporting_coordinator
 
         model_strategy, model_source = self._effective_model_strategy(
             request,
