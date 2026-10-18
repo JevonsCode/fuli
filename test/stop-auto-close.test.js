@@ -35,19 +35,21 @@ test('a failed auto-close falls back to the reminder', async () => {
   assert.deepEqual(result, { systemMessage: 'Checkpoint pending' });
 });
 
-test('only a hook-delivered task relaxes the checkpoint requirement and names the rule', async () => {
+test('hook and eligible routine fallback entries allow a finish without a model checkpoint', async () => {
   const { beginTaskFromPreferences } = await import('../src/graphiti/agent-knowledge-workflows.js');
   const { taskRecord } = await import('../src/mcp/provider-task-context-registry.js');
   const sent = [];
   const application = { config: { personal: { spaceId: 'space' } }, taskContextRegistry: {
     begin: async input => { sent.push(input.entryVia); return taskRecord({ token: 'fuli-task-synthetic-1', session_id: 's',
-      personal_project_id: null, entry_via: input.entryVia === 'hook' ? 'hook' : 'tool' }); } } };
+      personal_project_id: null, routine_auto_close_eligible: true,
+      entry_via: input.entryVia === 'hook' ? 'hook' : 'tool' }); } } };
   const preferences = { context: { personal_project_id: null, project_agent_id: null }, effective_preferences: [] };
   const viaHook = await beginTaskFromPreferences(application, preferences, { sessionId: 's' }, { entryVia: 'hook' });
   assert.equal(viaHook.checkpoint_required, false);
-  assert.match(viaHook.checkpoint_guidance, /Stop hook closes the task as retain_nothing/);
+  assert.match(viaHook.checkpoint_guidance, /Stop hook closes hook-delivered tasks/);
   const viaTool = await beginTaskFromPreferences(application, preferences, { sessionId: 's' });
-  assert.equal(viaTool.checkpoint_required, true);
-  assert.equal('checkpoint_guidance' in viaTool, false);
+  assert.equal(viaTool.checkpoint_required, false);
+  assert.match(viaTool.checkpoint_guidance, /next entry.*same native session/);
+  assert.match(viaTool.checkpoint_guidance, /capture|workLog/);
   assert.deepEqual(sent, ['hook', 'tool']);
 });
