@@ -10,8 +10,9 @@ const STORAGE_KEY = 'fuli.lab'
 export const PAGE_TRANSITIONS = ['none', 'fade', 'rise'] as const
 export type PageTransition = (typeof PAGE_TRANSITIONS)[number]
 // A/B choices, each a design question from the UX review (see Notion).
+// No theme choice: dark mode is not being built yet; its tokens stay reserved
+// under data-theme="dark" in tokens.css.
 export const LAB_CHOICES = {
-  theme: ['light', 'dark'],
   cards: ['outline', 'shadow', 'flat'],
   density: ['compact', 'standard', 'roomy'],
   radius: ['small', 'medium', 'large'],
@@ -30,7 +31,7 @@ export interface DesignLabState {
   choices: Choices
 }
 
-const DEFAULT_CHOICES: Choices = { theme: 'light', cards: 'outline', density: 'standard', radius: 'medium', ring: 'breathe' }
+const DEFAULT_CHOICES: Choices = { cards: 'outline', density: 'standard', radius: 'medium', ring: 'breathe' }
 const DEFAULTS: DesignLabState = { open: false, x: null, y: null, transition: 'none', cardLift: false, workbench: 'current', choices: DEFAULT_CHOICES }
 
 function validChoices(value: unknown): Choices {
@@ -63,15 +64,11 @@ function apply(state: DesignLabState) {
   else root.labTransition = state.transition
   if (state.cardLift) root.labLift = 'on'
   else delete root.labLift
-  // Each choice becomes data-lab-<name> unless it is the default; the theme
-  // uses the existing data-theme switch.
+  // Each choice becomes data-lab-<name> unless it is the default.
   for (const key of Object.keys(LAB_CHOICES) as LabChoice[]) {
     const value = state.choices[key]
     const attribute = `lab${key[0]!.toUpperCase()}${key.slice(1)}`
-    if (key === 'theme') {
-      if (value === 'dark') root.theme = 'dark'
-      else delete root.theme
-    } else if (value === DEFAULT_CHOICES[key]) delete root[attribute]
+    if (value === DEFAULT_CHOICES[key]) delete root[attribute]
     else root[attribute] = value
   }
 }
