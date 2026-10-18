@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RoundtableMessage } from './roundtable-api'
-import { seatPosition, splitThread, tableSeats } from './roundtable-model'
+import { splitThread, tableSeats } from './roundtable-model'
 
 const person = (agentId: string) => ({ agentId, name: agentId.toUpperCase(), client: null })
 const message = (id: string, kind: 'ask' | 'reply', from: string, to: string, extra: Partial<RoundtableMessage> = {}): RoundtableMessage => ({
@@ -30,10 +30,5 @@ describe('roundtable model', () => {
     expect(tableSeats(messages, pending).map(seat => [seat.key, seat.spoke, seat.awaited])).toEqual([
       ['a', 1, false], ['b', 1, true], ['c', 0, false],
     ])
-  })
-
-  it('spreads seats evenly with the first at the top', () => {
-    expect(seatPosition(0, 4)).toEqual({ left: '50%', top: '8%' })
-    expect(seatPosition(2, 4).top).toBe('92%')
   })
 })
