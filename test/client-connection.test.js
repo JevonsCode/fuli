@@ -17,7 +17,7 @@ test('generic connection exports usable JSON without a client installation or mo
     const { fuli } = JSON.parse(output).mcpServers;
     assert.equal(fuli.command, process.execPath);
     assert.deepEqual(fuli.args.slice(1), ['--runtime-config', join(directory, 'graph-runtime.json'),
-      '--source-application', 'other', '--tool-profile', 'full']);
+      '--source-application', 'other', '--tool-profile', 'chat']);
     assert.equal(fuli.args[0], resolve('src/mcp-server.js'));
     assert.equal(fuli.env, undefined);
     assert.deepEqual(readdirSync(directory), []);

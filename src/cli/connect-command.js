@@ -23,7 +23,7 @@ export function runConnectCommand(args, { env = process.env, write = console.log
   const runtimeConfigPath = options.has('--data-dir') ? paths.graphRuntimeConfigPath
     : resolveGraphRuntimeOptions(options.has('--runtime-config') ? ['--runtime-config', options.get('--runtime-config')] : [], env).runtimeConfigPath;
   const config = clientConnectionConfig({ mcpServerPath: paths.mcpServerPath, runtimeConfigPath }, options.get('--format'), {
-    profile: options.get('--profile') ?? 'full',
+    profile: options.get('--profile') ?? 'chat',
     sourceApplication: options.get('--source-application') ?? 'other'
   });
   write(JSON.stringify(config, null, 2));

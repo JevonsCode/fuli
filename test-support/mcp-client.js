@@ -11,7 +11,9 @@ const PROJECT_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
 export async function connectMcp(runtimeConfigPath, {
   serverPath = 'src/mcp-server.js',
-  sourceApplication = null
+  sourceApplication = null,
+  // A client config without a profile now gets chat; these tests drive every tool.
+  toolProfile = 'full'
 } = {}) {
   const statusPath = join(mkdtempSync(join(tmpdir(), 'fuli-mcp-status-')), 'status.json');
   const transport = new StdioClientTransport({
@@ -21,7 +23,8 @@ export async function connectMcp(runtimeConfigPath, {
       statusPath,
       serverPath,
       '--runtime-config', runtimeConfigPath,
-      ...(sourceApplication ? ['--source-application', sourceApplication] : [])
+      ...(sourceApplication ? ['--source-application', sourceApplication] : []),
+      '--tool-profile', toolProfile
     ],
     cwd: PROJECT_ROOT,
     stderr: 'pipe'

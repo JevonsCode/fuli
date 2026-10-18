@@ -14,6 +14,7 @@ import {
   withoutCodexTomlLifecycleHooks
 } from '../agents/codex/lifecycle-hooks.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { installedToolProfile } from './installed-tool-profile.js';
 import { writeTextFileAtomic } from '../storage/json-file.js';
 
 export function connectCodex(agent, context, {
@@ -25,6 +26,8 @@ export function connectCodex(agent, context, {
   installHooks = installCodexLifecycleHooks
 } = {}) {
   const current = readConfig(agent.configPath);
+  // Codex sends every listed tool schema with each request, so it gets the
+  // chat profile; an explicit profile already in the config is kept.
   let next = replaceFuliTable(current, {
     command: context.nodePath,
     args: [
@@ -32,7 +35,9 @@ export function connectCodex(agent, context, {
       '--runtime-config',
       context.runtimeConfigPath,
       '--source-application',
-      'codex'
+      'codex',
+      '--tool-profile',
+      installedToolProfile(existingFuliArgs(current))
     ]
   });
   const tomlHooksPresent = Boolean(
@@ -131,6 +136,20 @@ export function replaceFuliTable(source, { command, args }) {
     'default_tools_approval_mode = "auto"'
   ];
   return `${[...lines, ...(lines.length ? [''] : []), ...block].join('\n')}\n`;
+}
+
+// The args of an existing [mcp_servers.fuli] table, written as JSON strings.
+export function existingFuliArgs(source) {
+  const lines = source.replaceAll('\r\n', '\n').split('\n');
+  const start = lines.findIndex(line => line.trim() === '[mcp_servers.fuli]');
+  if (start < 0) return [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^\s*\[/.test(line)) break;
+    const match = line.match(/^\s*args\s*=\s*(\[.*\])\s*$/);
+    if (!match) continue;
+    try { return JSON.parse(match[1]); } catch { return []; }
+  }
+  return [];
 }
 
 export function removeFuliTables(source) {
