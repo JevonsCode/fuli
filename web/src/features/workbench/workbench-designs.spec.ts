@@ -6,6 +6,7 @@ import type { ProjectAgentTaskRecord } from '@/types'
 import FocusBoard from './FocusBoard.vue'
 import KanbanBoard from './KanbanBoard.vue'
 import TimelineBoard from './TimelineBoard.vue'
+import ConstellationBoard from './ConstellationBoard.vue'
 import type { WorkbenchBoard } from './workbench-board'
 
 const recent = new Date(Date.now() - 30 * 60_000).toISOString()
@@ -53,5 +54,24 @@ describe('workbench designs', () => {
     expect(wrapper.findAll('[data-timeline-hour]')).toHaveLength(1)
     expect(wrapper.text()).toContain('Ada')
     expect(wrapper.text()).toContain('Task r')
+  })
+
+  it('Star map draws a planet per project and a moon per Agent in its state, linking to the work', () => {
+    // RouterLink in custom mode hands its href to the SVG anchor.
+    const CustomLink = { props: ['to', 'custom'], template: '<slot :href="String(to)" :navigate="() => {}" />' }
+    const value = board([task('r', 'running'), task('b', 'blocked', { leadAgentId: 'agent-b' }), task('x', 'running', { personalProjectId: 'docs', leadAgentId: 'agent-c' })], [question])
+    const wrapper = mount(ConstellationBoard, { props: { board: value }, global: { stubs: { RouterLink: CustomLink } } })
+    expect(wrapper.findAll('[data-planet]')).toHaveLength(2)
+    const moons = wrapper.findAll('[data-moon]')
+    expect(moons.map(moon => moon.classes().find(name => name.startsWith('is-')))).toEqual(['is-waiting', 'is-stuck', 'is-running'])
+    expect(moons[0]!.attributes('href')).toBe('/inbox/q1')
+    expect(moons[1]!.attributes('href')).toBe('/tasks/b')
+    expect(wrapper.text()).toContain('Project fuli')
+  })
+
+  it('Star map says the Agents are resting when nothing is in progress', () => {
+    const wrapper = mountDesign(ConstellationBoard, board([]))
+    expect(wrapper.find('svg').exists()).toBe(false)
+    expect(wrapper.text()).toContain('休息')
   })
 })

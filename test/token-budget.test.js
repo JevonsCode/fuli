@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { listAgentTools } from '../src/agent-tools.js';
-import { MCP_INSTRUCTIONS } from '../src/mcp/instructions.js';
+import { MCP_CHAT_INSTRUCTIONS, MCP_INSTRUCTIONS } from '../src/mcp/instructions.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
 import { hookAdditionalContextToolResult } from '../src/mcp/tool-result.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -33,6 +33,9 @@ const BASELINE = Object.freeze({
   // P6: explicit optional routine closure, 7,782 -> 7,722 B (real SDK list).
   chatToolSchemaBytes: 7722,
   instructionsBytes: 2041,
+  // T-P00: the chat profile's own instructions name only listed tools, so a
+  // client no longer spends a request on discovery first: 2,041 -> 1,251 B.
+  chatInstructionsBytes: 1251,
   // T-TOKEN-2: the entry receipt keeps only what must be copied, defaults and
   // empty values are omitted, and the scope, receipt and details rule text is
   // referenced: 3,449 -> 1,775 chars.
@@ -94,6 +97,7 @@ async function measure() {
   return { fullToolSchemaBytes: schemaBytes(all),
     chatToolSchemaBytes: await listedChatBytes(),
     instructionsBytes: Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8'),
+    chatInstructionsBytes: Buffer.byteLength(MCP_CHAT_INSTRUCTIONS, 'utf8'),
     projectEntryChars: await projectEntryChars() };
 }
 
