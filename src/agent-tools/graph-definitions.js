@@ -800,7 +800,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'submit_project_agent_task',
     title: 'WRITE · Submit a routed Agent task',
-    description: 'Submit one durable FULI control-plane task. Every new task needs a passed quality gate for its exact artifact revision before completion; use record_agent_verification with actual run evidence. Prefer existing matching durable Agents; creates no anonymous temporary Agent. Locked Agent executor policy outranks task, assignment, project, space rules; never lower explicit user priority for token savings. Provider persists space coordinator, complexity, model strategy, routing decision, boundaries, actual executor/model/rule/fallback audit fields, and any AR disclosure. AR should derive recruitmentProfile.character from role responsibilities, preserve user expectations, distinguish configured traits from demonstrated growth, and never invent past achievements.',
+    description: 'Submit a durable control-plane task; grouped Agent staffing requires the current host taskContextToken. Completion needs a passed exact-revision quality gate via record_agent_verification with actual run evidence. Prefer matching durable Agents; creates no anonymous worker. Locked executor policy and explicit user priorities remain binding. Provider retains routing, boundaries and actual execution audit. AR derives character from responsibilities, preserves user expectations and distinguishes configured traits from proven growth.',
     inputSchema: projectAgentTaskSubmitInput
   },
   {
@@ -835,7 +835,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'get_project_agent_coordination_policy',
     title: 'READ · Get project Agent continuity policy',
-    description: 'Read the exact project policy for asking before recruitment and automatically reusing the previous effective Agent. Both switches default on.',
+    description: 'Read project policy, membership, sub-teams and threshold.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectId: id
@@ -844,7 +844,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'get_project_team',
     title: 'READ · Get project team',
-    description: 'Read the exact project people view: one accountable lead, explicit members reporting to it, other actively assigned Agents as collaborators, and assigned peer roles such as AR/project managers. Excludes ended/archived assignments; truthfully reports no_lead or lead_unavailable. Never includes private memory or resolves parent/child projects.',
+    description: 'Read active team, sub-teams, collaborators, peers, reporting lines and unavailable roles; no private memory.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectId: id
@@ -853,7 +853,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'update_project_agent_coordination_policy',
     title: 'WRITE · Set project Agent continuity policy',
-    description: 'Persist project collaboration switches and an optional stable team lead with members. AR and employee project managers remain peer roles and cannot be team members. Omitted team fields preserve the current team. Read policy first and send expectedUpdatedAt to prevent overwriting concurrent edits. This changes policy only and never starts a worker.',
+    description: 'Set project policy and sub-teams. Omitted fields persist; [] clears groups. Send expectedUpdatedAt from a fresh read. AR/managers stay peers; starts no worker.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectId: id,
@@ -862,6 +862,9 @@ export const GRAPH_TOOL_DEFINITIONS = [
       autoGrowTeam: booleanSchema(),
       teamLeadAgentId: nullableStringSchema(),
       teamMemberAgentIds: arraySchema(id, { maxItems: 32, uniqueItems: true }),
+      subTeams: arraySchema(objectSchema({ id, name: stringSchema({ minLength: 1, maxLength: 120 }), leadAgentId: id,
+        memberAgentIds: arraySchema(id, { maxItems: 32, uniqueItems: true }) }, ['id', 'name', 'leadAgentId', 'memberAgentIds']), { maxItems: 32 }),
+      subTeamSuggestionThreshold: integerSchema({ minimum: 1, maximum: 32 }),
       expectedUpdatedAt: { ...dateTime, type: ['string', 'null'] }
     }, [
       'personalSpaceId', 'personalProjectId',

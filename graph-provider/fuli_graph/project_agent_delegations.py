@@ -9,6 +9,7 @@ from .auth import token_hash
 from .models import SourceApplication, StrictModel
 from .personal_project_access import authorize_personal_project
 from .project_agent_context_models import ProjectAgentContextRequest
+from .project_agent_hierarchy import direct_reporting_link
 
 
 class AgentDelegationIssue(StrictModel):
@@ -115,10 +116,18 @@ class StoreAgentDelegations:
         policy = await self.get_project_agent_coordination_policy(actor, request.personal_space_id, project_id)
         lead = policy.team_lead_agent_id
         sender = context.get('project_agent_id')
-        if not lead or not sender or (sender != lead and request.agent_id != lead):
-            raise HTTPException(403, 'Members must communicate through the project lead')
         target_project_id = request.target_personal_project_id or project_id
+        if target_project_id == project_id and not direct_reporting_link(policy, sender, request.agent_id):
+            raise HTTPException(403, 'Communicate only with the immediate reporting lead or direct reports')
+        sender_profile_updated_at = None
+        if getattr(policy, 'sub_teams', []):
+            source = await self.get_project_agent(actor, request.personal_space_id, project_id, sender)
+            if (source.profile.status != 'active' or request.source_application not in source.profile.allowed_clients
+                    or not any(a.status == 'active' and a.personal_project_id == project_id for a in source.assignments)):
+                raise HTTPException(403, 'The sending Agent no longer has an active project assignment')
+            sender_profile_updated_at = getattr(source, 'updated_at', None)
         target_lead = lead
+        target_policy = policy
         if target_project_id != project_id:
             if sender != lead:
                 raise HTTPException(403, 'Cross-project requests must come from the source lead')
@@ -142,11 +151,17 @@ class StoreAgentDelegations:
             '''CREATE (:FuliAgentDelegation {token_hash: $token_hash, space_id: $space_id,
                  project_id: $project_id, agent_id: $agent_id, source_application: $application,
                  session_id: $session_id, sender_token: $sender_token, lead_agent_id: $lead,
+                 sender_agent_id: $sender_agent_id, sender_policy_updated_at: $sender_policy_updated_at,
+                 sender_profile_updated_at: $sender_profile_updated_at,
+                 target_policy_updated_at: $target_policy_updated_at,
                  sender_project_id: $sender_project, sender_lead_agent_id: $sender_lead,
                  expires_at: datetime() + duration({seconds: $lifetime}), redeemed: false})''',
             token_hash=token_hash(token), space_id=request.personal_space_id, project_id=target_project_id,
             agent_id=request.agent_id, application=request.target_application,
             session_id=request.target_session_id, sender_token=request.task_context_token,
+            sender_agent_id=sender, sender_policy_updated_at=getattr(policy, 'updated_at', None),
+            sender_profile_updated_at=sender_profile_updated_at,
+            target_policy_updated_at=getattr(target_policy, 'updated_at', None),
             lead=target_lead, sender_project=project_id, sender_lead=lead, lifetime=request.lifetime_seconds)
         return {'token': token}
 
@@ -183,6 +198,7 @@ class StoreAgentDelegations:
                CREATE (:FuliAgentDelegation {token_hash: $token_hash, space_id: $space_id,
                  project_id: $project_id, agent_id: $agent_id, source_application: $application,
                  session_id: $session_id, sender_token: null, lead_agent_id: $lead, origin: 'remote',
+                 target_policy_updated_at: $policy_updated_at,
                  origin_node: $origin_node, origin_message_id: $message_id, origin_attempt_id: $attempt_id,
                  expires_at: datetime() + duration({seconds: $lifetime}), redeemed: false})
                RETURN attempt.issued_at AS issued_at''',
@@ -190,7 +206,8 @@ class StoreAgentDelegations:
             message_id=request.origin_message_id, attempt_id=request.origin_attempt_id,
             project_id=request.personal_project_id, agent_id=request.agent_id,
             token_hash=token_hash(token), application=request.target_application,
-            session_id=request.target_session_id, lead=lead, lifetime=request.lifetime_seconds)
+            session_id=request.target_session_id, lead=lead, policy_updated_at=getattr(policy, 'updated_at', None),
+            lifetime=request.lifetime_seconds)
         if not rows:
             raise HTTPException(409, 'This remote delivery attempt already received authority')
         return {'token': token}
@@ -210,6 +227,10 @@ class StoreAgentDelegations:
                MATCH (grant:FuliAgentDelegation {token_hash: $token_hash, space_id: $space_id,
                   project_id: $project_id, agent_id: $agent_id, source_application: $application,
                   lead_agent_id: $lead})
+               WHERE (grant.target_policy_updated_at IS NOT NULL
+                      AND policy.updated_at.epochSeconds = grant.target_policy_updated_at.epochSeconds
+                      AND policy.updated_at.nanosecond = grant.target_policy_updated_at.nanosecond)
+                  OR (grant.target_policy_updated_at IS NULL AND coalesce(policy.sub_teams_json, '[]') = '[]')
                SET grant.write_serial = coalesce(grant.write_serial, 0) + 1
                WITH grant
                WHERE grant.expires_at > datetime()
@@ -219,14 +240,28 @@ class StoreAgentDelegations:
                  AND task.token = grant.sender_token AND session.current_token = task.token
                  AND NOT task.completed AND task.personal_space_id = grant.space_id
                  AND task.personal_project_id = coalesce(grant.sender_project_id, grant.project_id)
-                 AND (task.project_agent_id = coalesce(grant.sender_lead_agent_id, grant.lead_agent_id)
-                      OR (grant.project_id = task.personal_project_id AND grant.agent_id = grant.lead_agent_id))
+                 AND ((grant.sender_agent_id IS NOT NULL AND task.project_agent_id = grant.sender_agent_id)
+                      OR (grant.sender_agent_id IS NULL
+                          AND (task.project_agent_id = coalesce(grant.sender_lead_agent_id, grant.lead_agent_id)
+                               OR (grant.project_id = task.personal_project_id AND grant.agent_id = grant.lead_agent_id))))
                  AND EXISTS {
                    MATCH (:FuliSpace {id: $space_id})-[:CONTAINS_PROJECT]->
                          (:FuliPersonalProject {project_id: task.personal_project_id})-
                          [:HAS_PROJECT_AGENT_COORDINATION_POLICY]->(sender_policy:FuliProjectAgentCoordinationPolicy)
                    WHERE sender_policy.team_lead_agent_id = coalesce(grant.sender_lead_agent_id, grant.lead_agent_id)
+                     AND ((grant.sender_policy_updated_at IS NOT NULL
+                           AND sender_policy.updated_at.epochSeconds = grant.sender_policy_updated_at.epochSeconds
+                           AND sender_policy.updated_at.nanosecond = grant.sender_policy_updated_at.nanosecond)
+                          OR (grant.sender_policy_updated_at IS NULL AND coalesce(sender_policy.sub_teams_json, '[]') = '[]'))
                  }
+                 AND (grant.sender_profile_updated_at IS NULL OR EXISTS {
+                   MATCH (:FuliSpace {id: $space_id})-[:CONTAINS_PROJECT]->
+                         (:FuliPersonalProject {project_id: task.personal_project_id})-
+                         [:HAS_PROJECT_AGENT_ASSIGNMENT]->(:FuliProjectAgentAssignment {status: 'active'})-
+                         [:ASSIGNED_AGENT]->(sender:FuliProjectAgent {agent_id: task.project_agent_id, status: 'active'})
+                   WHERE sender.updated_at.epochSeconds = grant.sender_profile_updated_at.epochSeconds
+                     AND sender.updated_at.nanosecond = grant.sender_profile_updated_at.nanosecond
+                 })
                WITH grant, count(task) AS live_sender
                // A local grant needs its live sender task; a remote grant has no
                // local sender and may only ever restore the current lead.

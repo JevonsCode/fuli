@@ -146,11 +146,11 @@ const HANDLERS = Object.freeze({
   export_project_agent_memory: (app, input) => app.exportProjectAgentMemory(input),
   checkpoint_project_agent_memory: (app, input) => app.checkpointProjectAgentMemory(input),
   coordinate_project_agent_task: (app, input) =>
-    app.coordinateProjectAgentTask(input),
+    app.coordinateProjectAgentTask({ ...input, agentInvocation: true }),
   acquire_runtime_lease: (app, input) => app.acquireRuntimeLease(input),
   refresh_runtime_lease: (app, input) => app.refreshRuntimeLease(input),
   release_runtime_lease: (app, input) => app.releaseRuntimeLease(input),
-  submit_project_agent_task: (app, input) => app.submitProjectAgentTask(input),
+  submit_project_agent_task: (app, input) => app.submitProjectAgentTask({ ...input, agentInvocation: true }),
   view_project_agent_task: (app, input) => app.viewProjectAgentTask(input),
   record_project_agent_task_activity: (app, input) =>
     app.recordProjectAgentTaskActivity(input),

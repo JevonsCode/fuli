@@ -146,6 +146,7 @@ export const projectAgentOccupation = objectSchema({
 }, ['role']);
 
 export const projectAgentTaskSubmitInput = objectSchema({
+  taskContextToken: id,
   personalSpaceId: id,
   personalProjectId: id,
   idempotencyKey,

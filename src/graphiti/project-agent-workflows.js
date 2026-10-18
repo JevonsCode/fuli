@@ -1,4 +1,5 @@
 import { loadProjectAgentContinuity } from './project-agent-task-entry.js';
+import { requireGroupedAgentTaskContext } from './project-team-hierarchy.js';
 import { resolveCoordinationScope, scopedTaskIdempotencyKey } from './temporary-project-scope.js';
 import { enrichProjectAgentTaskActivity } from '../agents/token-usage-resolver.js';
 import {
@@ -166,6 +167,7 @@ export async function replaceProjectAgentAssignment(application, input) {
 }
 
 export async function submitProjectAgentTask(application, input) {
+  await requireGroupedAgentTaskContext(application, input);
   const value = await application.personal.submitProjectAgentTask(
     providerProjectAgentTaskSubmit(input)
   );
@@ -205,6 +207,7 @@ export async function coordinateProjectAgentTask(
   const route = await submitProjectAgentTask(application, {
     personalSpaceId: application.config.personal.spaceId,
     personalProjectId: projectId,
+    agentInvocation: input.agentInvocation,
     idempotencyKey: projectResolution.scope?.type === 'temporary'
       ? scopedTaskIdempotencyKey(projectId, input) : input.idempotencyKey,
     title: input.title,

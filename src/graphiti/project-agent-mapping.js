@@ -815,6 +815,9 @@ export function projectAgentCoordinationPolicyRecord(value = {}) {
     autoGrowTeam: value.auto_grow_team ?? true,
     teamLeadAgentId: value.team_lead_agent_id ?? null,
     teamMemberAgentIds: value.team_member_agent_ids ?? [],
+    subTeams: (value.sub_teams ?? []).map(group => ({ id: group.id, name: group.name,
+      leadAgentId: group.lead_agent_id, memberAgentIds: group.member_agent_ids ?? [] })),
+    subTeamSuggestionThreshold: value.sub_team_suggestion_threshold ?? 6,
     updatedAt: value.updated_at ?? null
   };
 }
@@ -833,6 +836,12 @@ export function providerProjectAgentCoordinationPolicy(input) {
       ? { team_lead_agent_id: input.teamLeadAgentId ?? input.team_lead_agent_id ?? null } : {}),
     ...(Object.hasOwn(input, 'teamMemberAgentIds') || Object.hasOwn(input, 'team_member_agent_ids')
       ? { team_member_agent_ids: input.teamMemberAgentIds ?? input.team_member_agent_ids ?? [] } : {}),
+    ...(Object.hasOwn(input, 'subTeams') || Object.hasOwn(input, 'sub_teams')
+      ? { sub_teams: (input.subTeams ?? input.sub_teams ?? []).map(group => ({ id: group.id, name: group.name,
+        lead_agent_id: group.leadAgentId ?? group.lead_agent_id,
+        member_agent_ids: group.memberAgentIds ?? group.member_agent_ids ?? [] })) } : {}),
+    ...(Object.hasOwn(input, 'subTeamSuggestionThreshold') || Object.hasOwn(input, 'sub_team_suggestion_threshold')
+      ? { sub_team_suggestion_threshold: input.subTeamSuggestionThreshold ?? input.sub_team_suggestion_threshold } : {}),
     ...(Object.hasOwn(input, 'expectedUpdatedAt') || Object.hasOwn(input, 'expected_updated_at')
       ? { expected_updated_at: input.expectedUpdatedAt ?? input.expected_updated_at ?? null } : {})
   };

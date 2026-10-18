@@ -241,6 +241,8 @@ test('project coordination policy stays project-local across provider seams', as
     autoGrowTeam: true,
     teamLeadAgentId: null,
     teamMemberAgentIds: [],
+    subTeams: [],
+    subTeamSuggestionThreshold: 6,
     updatedAt: '2026-08-24T00:00:00Z'
   });
   assert.deepEqual(calls[0].query, {

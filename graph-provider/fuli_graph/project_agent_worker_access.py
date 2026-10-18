@@ -13,6 +13,7 @@ from fastapi import HTTPException
 
 from .personal_project_access import authorize_personal_project
 from .project_agent_delegations import token_hash
+from .project_agent_hierarchy import validate_worker_reporting
 from .project_agent_executor_models import project_agent_model_strategy_key
 from .project_agent_models import ProjectAgentExecutorPolicy, ProjectAgentModelStrategy, ProjectAgentProfile
 from .provider_values import native_datetime, now_utc
@@ -167,6 +168,7 @@ async def validate_worker_authority(store, scope, data):
     owner_profile = strict_worker_policy(owner['profile_json'], ProjectAgentProfile).model_dump(mode='json')
     agent_profile = strict_worker_policy(agent['profile_json'], ProjectAgentProfile).model_dump(mode='json')
     policy = dict(row.get('policy') or {})
+    validate_worker_reporting(policy, scope, run, task, owner['agent_id'], agent['agent_id'])
     if owner['agent_id'] not in {task.get('coordinator_agent_id'), task.get('lead_agent_id'), policy.get('team_lead_agent_id')}:
         raise HTTPException(403, 'Parent owner is not a current coordinator or responsible lead')
     parent_record = json.loads(parent['record_json'])
@@ -174,8 +176,11 @@ async def validate_worker_authority(store, scope, data):
             or run['source_application'] not in owner_profile.get('allowed_clients', [])
             or not any(item.get('status') == 'active' for item in row['owner_assignments'])):
         raise HTTPException(403, 'Parent owner authority is unavailable')
+    sub_lead = any(group.get('lead_agent_id') == agent['agent_id']
+                   for group in json.loads(policy.get('sub_teams_json') or '[]'))
     assignments = [dict(item) for item in row['assignments'] if item.get('status') == 'active'
-                   and task['work_kind'] in (item.get('work_kinds') or [])]
+                   and (task['work_kind'] in (item.get('work_kinds') or [])
+                        or sub_lead and task['work_kind'] == 'delegation')]
     if (agent.get('status') != 'active' or run['target_application'] not in agent_profile.get('allowed_clients', [])
             or not assignments or row['participant'].get('status') not in {'queued', 'running', 'paused'}):
         raise HTTPException(403, 'Worker participant assignment or client access is unavailable')

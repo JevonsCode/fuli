@@ -79,7 +79,7 @@ test('owned reader delivers all long instructions and mandatory guidance in both
   assert.equal(role.role.expectations, 'ROLE_EXPECTATIONS');
   assert.equal(role.project_brief.summary, 'PROJECT_PURPOSE · PROJECT_BOUNDARY');
   assert.equal(role.reporting_lead_agent_id, 'lead-a');
-  assert.match(role.reporting_guidance, /Return results and blockers to the project lead/);
+  assert.match(role.reporting_guidance, /Return results and blockers to reporting_lead_agent_id/);
   assert.equal(role.selection_reason, 'delegated_member');
   for (const key of ['memory', 'global_memory', 'team', 'knowledge', 'recent_tasks']) assert.equal(Object.hasOwn(role, key), false);
   assert.deepEqual(value.active_conflicts, []); assert.deepEqual(value.deferred_conflicts, []);

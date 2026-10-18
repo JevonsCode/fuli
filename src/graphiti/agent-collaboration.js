@@ -1,5 +1,6 @@
 import { verificationPreference } from './verification-preference.js';
 import { executionPlan } from './execution-mode.js';
+import { dispatchTarget, subLeadIds, reportingParent } from './project-team-hierarchy.js';
 const lower = values => (values ?? []).map(value => String(value).toLowerCase());
 // Matches Provider staffing: a nonempty assignment list overrides the profile list.
 const effective = (assignment, profile, field) => lower(assignment[field]?.length ? assignment[field] : profile?.[field]);
@@ -33,8 +34,10 @@ function matchCandidates(agents, task, input) {
   return candidates;
 }
 
-function nextSteps(candidate, taskContextToken, sourceLeadId, personalProjectId) {
-  const steps = { ask: { tool: 'message_agent', arguments: { to: candidate.agentId }, advisoryOnly: true,
+function nextSteps(candidate, taskContextToken, sourceLeadId, personalProjectId, hierarchy = null) {
+  const target = hierarchy && !candidate.requiresLoan
+    ? dispatchTarget(hierarchy.policy, hierarchy.coordinatorAgentId, candidate.agentId) : candidate.agentId;
+  const steps = { ask: { tool: 'message_agent', arguments: { to: target }, advisoryOnly: true,
     guidance: 'A roundtable answer is advice from a read-only session, not executed work.' } };
   if (candidate.requiresLoan) {
     steps.borrow = { tool: 'request_agent_loan', arguments: { sourceProjectId: candidate.projectId, specialistId: candidate.agentId },
@@ -42,7 +45,10 @@ function nextSteps(candidate, taskContextToken, sourceLeadId, personalProjectId)
       guidance: 'Only the destination project lead may request. The source lead approves with decide_agent_loan in its own task context before any assignment or execution.' };
   }
   steps.execute = { tool: 'coordinate_project_agent_task',
-    arguments: { taskContextToken, personalProjectId, collaboratorAgentIds: [candidate.agentId] },
+    arguments: { taskContextToken, personalProjectId, ...(hierarchy ? {
+      coordinatorAgentId: hierarchy.coordinatorAgentId, leadAgentId: target,
+      ...(target !== candidate.agentId ? { workKind: 'delegation', requiredCapabilities: [] } : {})
+    } : { collaboratorAgentIds: [candidate.agentId] }) },
     guidance: `${candidate.requiresLoan ? 'After the loan is approved, ' : ''}coordinate under the project lead with an authorized runtime; record the actual worker and result back to the lead.` };
   return steps;
 }
@@ -76,7 +82,28 @@ export async function planAgentCollaboration(application, input) {
   const sourceLeads = Object.fromEntries(await Promise.all(sourceProjects.map(async projectId => [projectId,
     (await application.personal.getProjectAgentCoordinationPolicy(spaceId, projectId))?.team_lead_agent_id ?? null])));
   const token = input.taskContextToken;
-  const eligible = (pool, excluded = [], available = true) => pool.filter(item => item.clientAvailable === available && !excluded.includes(item.agentId)
+  const subLeads = subLeadIds(policy);
+  const coordinatorAgentId = subLeads.has(task.projectAgentId) ? task.projectAgentId
+    : policy.team_lead_agent_id ?? task.projectAgentId;
+  const memberOwner = Boolean(policy.sub_teams?.length && task.projectAgentId !== policy.team_lead_agent_id
+    && !subLeads.has(task.projectAgentId));
+  const hierarchy = policy.sub_teams?.length ? { policy, coordinatorAgentId } : null;
+  const candidateSteps = candidate => nextSteps(candidate, token, sourceLeads[candidate.projectId], task.personalProjectId, hierarchy);
+  const dispatchable = candidate => !policy.sub_teams?.length || (memberOwner ? candidate.agentId === task.projectAgentId : candidate.requiresLoan
+    ? coordinatorAgentId === policy.team_lead_agent_id
+    : dispatchTarget(policy, coordinatorAgentId, candidate.agentId) !== null);
+  const throughLead = item => {
+    const target = hierarchy && !item.requiresLoan ? dispatchTarget(policy, coordinatorAgentId, item.agentId) : item.agentId;
+    if (target === item.agentId || !target) return item;
+    const lead = agents.find(agent => agent.agent_id === target && agent.profile?.status !== 'archived'
+      && agent.assignments?.some(assignment => assignment.status === 'active' && assignment.personal_project_id === task.personalProjectId));
+    return { ...item, clientAvailable: item.clientAvailable && Boolean(lead?.profile?.allowed_clients?.includes(input.sourceApplication)),
+      dispatchAgentId: target };
+  };
+  const eligible = (pool, excluded = [], available = true) => pool.map(throughLead).filter(item => item.clientAvailable === available && !excluded.includes(item.agentId)
+    && dispatchable(item)
+    && !(subLeads.has(item.agentId) && item.agentId === coordinatorAgentId
+      && !['planning', 'delegation', 'integration', 'reporting'].includes(input.workKind))
     && (!item.requiresLoan || (sourceLeads[item.projectId] && sourceLeads[item.projectId] !== item.agentId)))
     .sort((a, b) => Number(b.occupationMatch) - Number(a.occupationMatch)
       || Number(a.requiresLoan) - Number(b.requiresLoan) || Number(b.workMatch) - Number(a.workMatch)
@@ -86,7 +113,7 @@ export async function planAgentCollaboration(application, input) {
   const unavailableCandidates = eligible(pools.main, independentAcceptance ? authors : [], false);
   const shown = mainCandidates.slice(0, 8).map(item => ({ ...item,
     ...(item.requiresLoan ? { sourceLeadId: sourceLeads[item.projectId] } : {}),
-    nextSteps: nextSteps(item, token, sourceLeads[item.projectId], task.personalProjectId) }));
+    nextSteps: candidateSteps(item) }));
   const preferencePrompt = verificationPreference({ executors, rules, projectId: task.personalProjectId,
     lockedExecutorIds: currentAgent.profile?.executorPolicy?.mode === 'locked' ? currentAgent.profile.executorPolicy.lockedExecutorIds : null });
   const judgmentPolicy = await application.judgment?.policy({ personalSpaceId: spaceId, personalProjectId: task.personalProjectId });
@@ -105,25 +132,32 @@ export async function planAgentCollaboration(application, input) {
     requires: ['idempotencyKey', 'title', 'objective', 'routingReason', 'contextQueries'],
     coordinatorAgentId: policy.team_lead_agent_id ?? null, askBeforeRecruitment: policy.ask_before_recruitment !== false,
     guidance: 'Reuse one stable idempotencyKey for this staffing need so a retry reuses the same recruitment. When askBeforeRecruitment is true, AR only proposes a hire; confirm with the user before it is staffed. Recruiting executes nothing.' });
-  const recruitment = shown.length || unavailableCandidates.length ? null : recruit(input);
-  const coordinatorAgentId = policy.team_lead_agent_id ?? task.projectAgentId;
+  const subTeamCoordinator = subLeads.has(coordinatorAgentId) || memberOwner;
+  const recruitment = shown.length || unavailableCandidates.length || subTeamCoordinator ? null : recruit(input);
   function workstream(id, spec, candidate, dependsOn = [], unavailable = []) {
-    const continuing = id === 'main' && !independentAcceptance && candidate?.agentId === task.projectAgentId;
-    const blocked = !candidate && unavailable.length > 0;
+    const target = candidate && !candidate.requiresLoan ? dispatchTarget(policy, coordinatorAgentId, candidate.agentId) : candidate?.agentId;
+    const viaSubLead = Boolean(candidate && target !== coordinatorAgentId && subLeads.has(target));
+    const continuing = id === 'main' && !independentAcceptance && target === task.projectAgentId;
+    const scopeGap = !candidate && !unavailable.length && subTeamCoordinator;
+    const blocked = !candidate && (unavailable.length > 0 || scopeGap);
     const dispatch = continuing || blocked ? null : candidate ? { tool: 'coordinate_project_agent_task',
       arguments: { taskContextToken: token, workKind: spec.workKind, requiredCapabilities: spec.requiredCapabilities ?? [],
-        leadAgentId: candidate.agentId },
+        leadAgentId: target, ...(viaSubLead ? { workKind: 'delegation', requiredCapabilities: [] } : {}) },
       requires: ['idempotencyKey', 'title', 'objective', 'contextQueries'] } : recruit(spec);
     if (dispatch) Object.assign(dispatch.arguments, { personalProjectId: task.personalProjectId, coordinatorAgentId, contextLimitPerQuery: 3,
       routingReason: `Bounded ${id} workstream; ${dependsOn.length ? 'independent acceptance after stable artifacts' : 'explicit scope'}; report evidence to the project lead.`,
       ...(spec.contextQueries ? { contextQueries: spec.contextQueries } : {}) });
-    return { id, workKind: spec.workKind, agentId: candidate?.agentId ?? null,
+    return { id, workKind: spec.workKind, agentId: target ?? null,
+      ...(viaSubLead ? { executionCandidateAgentId: candidate.agentId,
+        reportingGuidance: 'Send a bounded coordination brief to the sub-lead; it delegates within its group and reports to the project lead.' } : {}),
       boundary: spec.boundary ?? (verificationOnly || id === 'verification'
         ? '独立检查约定产物与验收条件，返回问题、命令和结果；不改动主线实现。'
         : '负责主线实施与集成；独立工作包之外的修改由此处统一处理。'),
       action: continuing ? 'continue_current' : blocked ? 'blocked' : candidate?.requiresLoan ? 'request_loan' : candidate ? 'delegate' : 'recruit',
       dependsOn, startWhen: dependsOn.length ? 'artifacts_ready' : 'now', dispatch,
-      ...(blocked ? { blockedReason: 'qualified_agent_client_unavailable', unavailableCandidates: unavailable,
+      ...(scopeGap ? { blockedReason: 'sub_team_scope_gap', reportToAgentId: reportingParent(policy, task.projectAgentId),
+        guidance: 'Report this staffing gap to the project lead; do not bypass your group or recruit a replacement.' }
+        : blocked ? { blockedReason: 'qualified_agent_client_unavailable', unavailableCandidates: unavailable,
         guidance: 'A qualified FLA exists but cannot use this client. Select an already authorized eligible client with assess_agent_action or report the constraint; do not recruit a replacement or relax its allowed clients.' } : {}),
       ...(candidate?.requiresLoan ? { borrow: nextSteps(candidate, token, sourceLeads[candidate.projectId], task.personalProjectId).borrow } : {}) };
   }
@@ -158,7 +192,7 @@ export async function planAgentCollaboration(application, input) {
     candidates: shown, unavailableCandidates, recruitment, pendingLoans: loans.loans?.filter(loan => loan.status === 'requested') ?? [],
     executionStarted: false,
     preferencePrompt, divisionPlan,
-    guidance: 'Keep the project lead as owner. Choose a qualified specialist. Discovery and roundtable answers are advisory and are not executed work. For another project, the destination lead calls request_agent_loan; the source lead approves with decide_agent_loan in its own scoped task. Then coordinate_project_agent_task with the borrowed Agent. Share only the bounded task brief and authorized artifacts. Workers report results to the project lead; record actual workers. Verify each artifact; use record_agent_verification. Two failed attempts at one capability tier require escalation, not another identical retry. A selected model is not proof of execution or success.' };
+    guidance: 'Keep the project lead as user-facing owner. Choose a qualified specialist through its immediate reporting lead; each lead integrates reports upward. Discovery and roundtable answers are advisory and are not executed work. For another project, the destination lead calls request_agent_loan; the source lead approves with decide_agent_loan in its own scoped task. Then coordinate_project_agent_task with the borrowed Agent. Share only the bounded task brief and authorized artifacts; record actual workers. Verify each artifact; use record_agent_verification. Two failed attempts at one capability tier require escalation, not another identical retry. A selected model is not proof of execution or success.' };
 }
 
 export async function agentLoan(application, operation, input) {

@@ -6,6 +6,7 @@ from .project_agent_task_models import ProjectAgentTaskSubmit
 from .task_context_temporary_owner import temporary_task_owner
 from .project_agent_delegations import StoreAgentDelegations
 from .project_agent_remote_origins import StoreRemoteAgentOrigins
+from .project_agent_hierarchy import reporting_parent
 
 
 class StoreProjectAgentContext(StoreAgentDelegations, StoreRemoteAgentOrigins):
@@ -107,9 +108,11 @@ class StoreProjectAgentContext(StoreAgentDelegations, StoreRemoteAgentOrigins):
                 if delegated:
                     # A real lead-to-member worker invocation keeps the member's
                     # isolated identity; its result returns to the project lead.
-                    reporting_lead_agent_id = project_lead
+                    reporting_lead_agent_id = reporting_parent(policy, selected[0]['agent_id'])
+                    if not any(row['agent_id'] == reporting_lead_agent_id for row in rows):
+                        return ProjectAgentContextResolution(status='agent_unavailable', reason='reporting_lead_unavailable')
                     reason = 'delegated_member'
-                    basis = ['This member worker reports to the configured project lead.']
+                    basis = ['This member worker reports to its immediate configured lead.']
                 else:
                     requested_agent_id = request.agent_id
                     selected = [lead]

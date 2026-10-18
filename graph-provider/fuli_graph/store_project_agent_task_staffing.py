@@ -9,6 +9,7 @@ from .project_agent_models import ProjectAgentProfile
 from .project_agent_task_models import ProjectAgentParallelPlan
 from .store_project_agents import SYSTEM_HR_AGENT_ID
 from .system_hr_identity import LEGACY_HR_AGENT_ID
+from .project_agent_hierarchy import reporting_parent, direct_reports
 
 
 IMPLICIT_PEER_AGENT_IDS = frozenset({
@@ -21,10 +22,10 @@ IMPLICIT_PEER_AGENT_IDS = frozenset({
 IMPLICIT_PEER_CAPABILITIES = frozenset({'fuli.employee:jefa', 'fuli.employee:bole', 'fuli.employee:tonborg', 'fuli.employee:assistant'})
 IMPLICIT_PEER_AGENT_TYPES = frozenset({'hr'})
 # Routing reasons produced inside a configured project team roster.
-TEAM_ROUTING_REASONS = frozenset({'project_team_lead', 'project_team_member', 'project_team_gap'})
+TEAM_ROUTING_REASONS = frozenset({'project_team_lead', 'project_team_member', 'project_team_gap', 'project_sub_team_lead', 'project_sub_team_gap'})
 # A user decision is pending: manual selection, or a qualified/configured Agent
 # exists but is unavailable to this client. Never recruit a silent replacement.
-HOLD_RECRUITMENT_REASONS = frozenset({'manual_agent_selection', 'agent_unavailable'})
+HOLD_RECRUITMENT_REASONS = frozenset({'manual_agent_selection', 'agent_unavailable', 'project_sub_team_gap'})
 
 
 class StoreProjectAgentTaskStaffing:
@@ -99,9 +100,28 @@ class StoreProjectAgentTaskStaffing:
                     f'{len(members)} active team member(s) available for explicit workstreams',
                     'AR and project manager remain peer roles',
                 ]
-            return await self._select_team_executor(
+            groups = getattr(policy, 'sub_teams', [])
+            coordinator = getattr(request, 'coordinator_agent_id', None)
+            if groups and coordinator in {group.lead_agent_id for group in groups}:
+                lead = next((row for row in rows if row['agent_id'] == coordinator), None)
+                if lead is None:
+                    return [], rows, 'agent_unavailable', ['The immediate sub-team lead is unavailable.']
+                member_ids = set(direct_reports(policy, coordinator))
+                members = [row for row in rows if row['agent_id'] in member_ids]
+                return await self._select_team_executor(lead, members, member_ids, assignment_rows, request,
+                                                        coordinator_only=True)
+            result = await self._select_team_executor(
                 lead, members, member_ids, assignment_rows, request,
             )
+            if groups and result[0]:
+                parent = reporting_parent(policy, result[0][0]['agent_id'])
+                if parent and parent != team_lead:
+                    sub = next((row for row in rows if row['agent_id'] == parent), None)
+                    if sub is None:
+                        return [], rows, 'agent_unavailable', ['The specialist reports to an unavailable sub-team lead.']
+                    return [sub], result[1], 'project_sub_team_lead', [
+                        f'Coordinate through sub-team lead {parent}; it delegates to its own direct reports.']
+            return result
         normalized_work_kind = request.work_kind.casefold()
         required = {item.casefold() for item in request.required_capabilities}
         eligible = [row for row in rows if required.issubset({
@@ -207,7 +227,7 @@ class StoreProjectAgentTaskStaffing:
         selected = continuity[0]
         return selected, self._project_history_match_basis(project_history.get(selected['agent_id']))
 
-    async def _select_team_executor(self, lead, members, member_ids, assignment_rows, request):
+    async def _select_team_executor(self, lead, members, member_ids, assignment_rows, request, *, coordinator_only=False):
         """Keep execution inside the team roster; the lead stays accountable.
 
         Uses the ordinary fit, load, work-kind history and project continuity
@@ -220,7 +240,7 @@ class StoreProjectAgentTaskStaffing:
         if request.work_kind.casefold() == 'project_context' and not request.required_capabilities:
             ranked, history = [lead], {}
         else:
-            executors = (members if lead.get('occupation_role') == 'lead'
+            executors = (members if (coordinator_only or lead.get('occupation_role') == 'lead')
                          and request.work_kind not in {'planning', 'delegation', 'integration', 'reporting'}
                          else team)
             ranked, history = await self._rank_agent_candidates(executors, request)
@@ -238,7 +258,7 @@ class StoreProjectAgentTaskStaffing:
                     f'{request.source_application or "other"}',
                 ]
             required = ', '.join(request.required_capabilities) or 'none'
-            return [], team, 'project_team_gap', [
+            return [], team, 'project_sub_team_gap' if coordinator_only else 'project_team_gap', [
                 f'{accountable}; no active team member fits work kind '
                 f'{request.work_kind} with required capabilities: {required}',
             ]

@@ -8,7 +8,7 @@ export function applyAgentAssignment(context, selection) {
   }
   if (selection?.reporting_lead_agent_id) {
     context.reporting_lead_agent_id = selection.reporting_lead_agent_id;
-    context.reporting_guidance = 'This is a delegated member turn. Keep this member identity and private memory isolated. Return results and blockers to the project lead; the lead integrates the final user report.';
+    context.reporting_guidance = 'This is a delegated member turn. Keep this member identity and private memory isolated. Return results and blockers to reporting_lead_agent_id; only the project lead integrates the final user report.';
   }
   // Conversation ownership is not execution staffing: deliver the Provider's
   // deterministic execution choice; no task, hire or worker exists yet.
