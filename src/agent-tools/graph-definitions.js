@@ -107,7 +107,7 @@ const knowledgeConflictResolution = enumSchema([
 const profileAspect = {
   type: ['string', 'null'],
   enum: ['taste', 'personality', 'judgment_preference', null],
-  description: 'Use "taste" for durable stylistic preference about the artifact itself, including writing voice, tone, wording, structure, formatting, and visual style; a writing or formatting style rule belongs here, not in judgment_preference. Use "judgment_preference" only for how a decision or process should be made, such as verification, risk, or sequencing rules. Use "personality" only for stable collaboration personality; an Agent-inferred personality item must stay confirmationStatus "pending" until a human confirms it.'
+  description: 'taste: artifact style (writing voice, wording, structure, format, visuals). judgment_preference: decision/process rules. personality: stable collaboration style; Agent-inferred stays pending.'
 };
 const sourceApplication = {
   type: ['string', 'null'],

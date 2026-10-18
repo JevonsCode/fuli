@@ -210,7 +210,8 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   assert.match(instructions, /before (?:saying|answering|claiming).*(?:do not know|don't know|unknown)/i);
   assert.match(instructions, /active child first.*inheritable parent/i);
   assert.match(instructions, /extra projects=exact IDs/i);
-  assert.match(instructions, /Batch durable confirmed knowledge/i);
+  assert.match(instructions, /capture_session_knowledge; no secrets/);
+  assert.match(instructions, /Unlisted: list_agent_interfaces/);
   assert.match(instructions, /writes?.*actual payload/i);
   assert.match(instructions, /final text.*not compliance/i);
   assert.match(instructions, /monitoring\/Git MCP/i);
