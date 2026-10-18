@@ -212,7 +212,7 @@ async function resetOverride() {
 .judgment-mode-option span { display: grid; gap: 3px; }
 .judgment-mode-option strong { color: var(--color-ink); font-size: 13px; }
 .judgment-mode-option small { color: var(--color-muted); font-size: 12px; line-height: 1.5; }
-.judgment-progressive-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 3px; padding: 12px; border-left: 2px solid var(--color-accent); background: var(--color-surface-subtle); }
+.judgment-progressive-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 8px; }
 .judgment-progressive-fields label { display: grid; gap: 6px; }
 .judgment-policy-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
 .judgment-policy-saved { color: var(--color-muted); font-size: 12px; }

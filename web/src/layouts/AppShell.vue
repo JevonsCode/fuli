@@ -31,7 +31,7 @@ const section = computed(() => activeSection(destination.value, route.path))
 const title = computed(() => routeMetaText(route.meta.title, 'routes.overview.title'))
 const dedicatedWorkspace = computed(() => route.meta.dedicatedWorkspace === true)
 
-// Pins stay a feature of Agent cards and profiles even without a sidebar list.
+// Pins are shared by the rail, Agent cards and profiles.
 provide(AGENT_PINS_KEY, useAgentPins(activeSpaceId))
 
 // The 对话 badge keeps the waiting count fresh while the page is visible.
@@ -56,7 +56,7 @@ const glossary = useGlossaryMode()
 <template>
   <div class="app-frame">
     <NavRail :destinations="destinations" :active-key="destination?.key" :attention-count="attention.total"
-      :runtime-ready="store.runtimeStatus === 'ready'" />
+      :runtime-ready="store.runtimeStatus === 'ready'" :space-id="activeSpaceId" />
     <main class="app-main">
       <header v-if="!dedicatedWorkspace" class="app-topbar">
         <h1 class="app-title">{{ title }}</h1>

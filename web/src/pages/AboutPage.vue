@@ -81,11 +81,10 @@ import fuliLogoUrl from '../../assets/brand/fuli-logo.png'
 }
 
 .about-brand-name {
-  color: var(--color-accent);
-  font-size: 12px;
+  color: var(--color-ink);
+  font-size: 18px;
   font-weight: 700;
-  letter-spacing: .18em;
-  text-transform: uppercase;
+  letter-spacing: -.02em;
 }
 
 .about-opening-claim {

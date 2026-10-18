@@ -21,6 +21,10 @@
   --color-success-soft: #e8f2ec;
   --color-warning: #8a5a12;
   --color-warning-soft: #f8f0e0;
+  /* Profile aspects: their own hues, never a status colour (red read as an error). */
+  --aspect-taste: #8a4f9e; --aspect-taste-soft: #f3ebf6;
+  --aspect-personality: #2f7f9a; --aspect-personality-soft: #e6f2f6;
+  --aspect-judgment: #4f5f86; --aspect-judgment-soft: #eceff6;
   --color-danger: #a8392e;
   --color-danger-soft: #f8e9e6;
   --color-on-accent: #ffffff;
@@ -80,6 +84,9 @@
    every page is rebuilt on these tokens, then it follows the system. */
 @media all {
   :root[data-theme="dark"] {
+    --aspect-taste: #c79bd6; --aspect-taste-soft: #2c2333;
+    --aspect-personality: #7cc3da; --aspect-personality-soft: #1d2c32;
+    --aspect-judgment: #a3b2d9; --aspect-judgment-soft: #232836;
     color-scheme: dark;
     --color-bg: #0e1210;
     --color-surface: #151a17;

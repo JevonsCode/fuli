@@ -42,7 +42,7 @@ describe('SettingsPage', () => {
     await flushPromises()
     expect(wrapper.findAll('.conversation-launcher-row')).toHaveLength(7)
     const codex = wrapper.findAll('.conversation-launcher-row').find((row) => row.text().includes('Codex'))!
-    expect((codex.get('input[role="switch"]').element as HTMLInputElement).checked).toBe(false)
+    expect(codex.get('[role="switch"]').attributes('aria-checked')).toBe('false')
     expect(wrapper.find('#settings-form').exists()).toBe(true)
     wrapper.unmount()
   })
@@ -72,6 +72,20 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
+  it('hides the runtime-mode choice once the install already runs native', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().runtimeStatus = 'ready'
+    const native = { ...configured, graphRuntimeMode: 'native' as const }
+    vi.stubGlobal('fetch', vi.fn(async (input) => String(input) === '/api/system/settings'
+      ? Response.json({ configured: native, active: native, restartRequired: false })
+      : Response.json({}, { status: 503 })))
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    await flushPromises()
+    expect(wrapper.find('[data-select-id="settings-runtime-mode"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('turns decorative motion off for this browser without touching the saved settings', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -84,14 +98,14 @@ describe('SettingsPage', () => {
     const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
     await flushPromises()
     const requests = fetch.mock.calls.length
-    const toggle = wrapper.get('input[data-reduce-motion]')
-    expect((toggle.element as HTMLInputElement).checked).toBe(false)
+    const toggle = wrapper.get('[data-reduce-motion]')
+    expect(toggle.attributes('aria-checked')).toBe('false')
 
-    await toggle.setValue(true)
+    await toggle.trigger('click')
     expect(document.documentElement.dataset.motion).toBe('reduced')
     expect(window.localStorage.getItem('fuli.motion')).toBe('reduced')
 
-    await toggle.setValue(false)
+    await toggle.trigger('click')
     expect(document.documentElement.dataset.motion).toBeUndefined()
     expect(window.localStorage.getItem('fuli.motion')).toBeNull()
     expect(fetch.mock.calls).toHaveLength(requests)
@@ -247,13 +261,13 @@ describe('SettingsPage', () => {
       .findAll('.conversation-launcher-row')
       .find((row) => row.text().includes('Claude') && !row.text().includes('Claude Code'))
     expect(claudeLauncher).toBeDefined()
-    expect((claudeLauncher?.get('input[role="switch"]').element as HTMLInputElement).checked).toBe(false)
+    expect(claudeLauncher?.get('[role="switch"]').attributes('aria-checked')).toBe('false')
 
     const cursorLauncher = wrapper
       .findAll('.conversation-launcher-row')
       .find((row) => row.text().includes('Cursor'))
     expect(cursorLauncher).toBeDefined()
-    await cursorLauncher?.get('input[role="switch"]').setValue(true)
+    await cursorLauncher?.get('[role="switch"]').trigger('click')
     const cursorInputs = cursorLauncher?.findAll('input[type="text"]') ?? []
     expect(cursorInputs).toHaveLength(2)
     await cursorInputs[1]?.setValue('cursor://conversation/{id}')
@@ -309,13 +323,13 @@ describe('SettingsPage', () => {
     }))
     const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
     await flushPromises()
-    const codex = wrapper.get('[data-capture-source="codex"] input[role="switch"]')
-    const claude = wrapper.get('[data-capture-source="claude_code"] input[role="switch"]')
-    expect((codex.element as HTMLInputElement).checked).toBe(false)
-    expect((claude.element as HTMLInputElement).checked).toBe(true)
-    await claude.setValue(false)
+    const codex = wrapper.get('[data-capture-source="codex"] [role="switch"]')
+    const claude = wrapper.get('[data-capture-source="claude_code"] [role="switch"]')
+    expect(codex.attributes('aria-checked')).toBe('false')
+    expect(claude.attributes('aria-checked')).toBe('true')
+    await claude.trigger('click')
     expect(update).toHaveBeenLastCalledWith(true, ['codex', 'claude_code'])
-    await codex.setValue(true)
+    await codex.trigger('click')
     expect(update).toHaveBeenLastCalledWith(true, [])
     wrapper.unmount()
   })})

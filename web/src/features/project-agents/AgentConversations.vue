@@ -308,7 +308,7 @@ ol { padding: 0; list-style: none; margin: 0; }
 .conversation-link strong { overflow-wrap: anywhere; }
 .conversation-messages { padding-bottom: 16px; }
 .conversation-messages li { padding-block: 12px; }
-.working-memory, .conversation-digest { border-left: 3px solid var(--color-border); padding-left: 12px; margin-block: 16px; }
+.working-memory, .conversation-digest { margin-block: 16px; }
 .working-memory h3, .conversation-digest h4, .working-memory h4 { font-size: inherit; margin-block: 8px; }
 .memory-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
 .memory-export { width: 32px; height: 32px; flex: 0 0 32px; padding: 6px; }

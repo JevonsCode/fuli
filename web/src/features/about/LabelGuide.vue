@@ -400,9 +400,9 @@ const statuses = computed(() => [
   opacity: .8;
 }
 
-.profile-token[data-kind="taste"] { color: var(--color-danger); background: var(--color-danger-soft); }
-.profile-token[data-kind="personality"] { color: var(--color-accent); background: var(--color-accent-soft); }
-.profile-token[data-kind="judgment"] { color: var(--color-warning); background: var(--color-warning-soft); }
+.profile-token[data-kind="taste"] { color: var(--aspect-taste); background: var(--aspect-taste-soft); }
+.profile-token[data-kind="personality"] { color: var(--aspect-personality); background: var(--aspect-personality-soft); }
+.profile-token[data-kind="judgment"] { color: var(--aspect-judgment); background: var(--aspect-judgment-soft); }
 .origin-token { color: var(--color-ink); }
 .status-token[data-status="pending"] { color: var(--color-warning); background: var(--color-warning-soft); }
 .status-token[data-status="agent-confirmed"],

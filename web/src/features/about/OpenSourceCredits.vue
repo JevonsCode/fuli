@@ -1,65 +1,79 @@
 <script setup lang="ts">
 import AboutSectionHeading from './AboutSectionHeading.vue'
-import { computed } from 'vue'
+import { computed, reactive } from 'vue'
 
 import fuliLogoUrl from '../../../assets/brand/fuli-logo.png'
 import { t } from '@/i18n'
 
+// Logos come from each project's own repository, as before; the browser
+// caches them. A logo that cannot load becomes a quiet initial tile.
+const failed = reactive(new Set<string>())
 const credits = computed(() => [
   {
     name: 'Vue.js',
     role: t('about.credits.roles.vue'),
     url: 'https://vuejs.org/',
+    logo: 'https://raw.githubusercontent.com/vuejs/docs/main/src/public/logo.svg',
   },
   {
     name: 'Vite',
     role: t('about.credits.roles.vite'),
     url: 'https://vite.dev/',
+    logo: 'https://raw.githubusercontent.com/vitejs/vite/main/docs/public/logo-without-border.svg',
   },
   {
     name: 'Pinia',
     role: t('about.credits.roles.pinia'),
     url: 'https://pinia.vuejs.org/',
+    logo: 'https://raw.githubusercontent.com/vuejs/pinia/v4/packages/docs/public/logo.svg',
   },
   {
     name: 'D3.js',
     role: t('about.credits.roles.d3'),
     url: 'https://d3js.org/',
+    logo: 'https://raw.githubusercontent.com/d3/d3-logo/master/d3.svg',
   },
   {
     name: 'Vitest',
     role: t('about.credits.roles.vitest'),
     url: 'https://vitest.dev/',
+    logo: 'https://raw.githubusercontent.com/vitest-dev/vitest/main/docs/public/logo-without-border.svg',
   },
   {
     name: 'Hono',
     role: t('about.credits.roles.hono'),
     url: 'https://hono.dev/',
+    logo: 'https://raw.githubusercontent.com/honojs/website/main/public/images/logo.svg',
   },
   {
     name: 'Neo4j',
     role: t('about.credits.roles.neo4j'),
     url: 'https://neo4j.com/',
+    logo: 'https://avatars.githubusercontent.com/u/201120?v=4',
   },
   {
     name: 'Zod',
     role: t('about.credits.roles.zod'),
     url: 'https://zod.dev/',
+    logo: 'https://raw.githubusercontent.com/colinhacks/zod/main/packages/docs/public/logo/logo_square.png',
   },
   {
     name: 'FastAPI',
     role: t('about.credits.roles.fastapi'),
     url: 'https://fastapi.tiangolo.com/',
+    logo: 'https://raw.githubusercontent.com/fastapi/fastapi/master/docs/en/docs/img/favicon.png',
   },
   {
     name: 'Graphiti',
     role: t('about.credits.roles.graphiti'),
     url: 'https://github.com/getzep/graphiti',
+    logo: 'https://avatars.githubusercontent.com/u/132832125?s=128&v=4',
   },
   {
-    name: 'Model Context Protocol',
+    name: 'MCP',
     role: t('about.credits.roles.mcp'),
     url: 'https://modelcontextprotocol.io/',
+    logo: 'https://raw.githubusercontent.com/modelcontextprotocol/docs/main/favicon.svg',
   },
 ])
 </script>
@@ -68,19 +82,18 @@ const credits = computed(() => [
   <section class="open-source-credits" aria-labelledby="credits-title">
     <AboutSectionHeading title-id="credits-title" :title="t('about.credits.title')" :description="t('about.credits.description')" />
 
-    <ul class="credit-list">
-      <li v-for="credit in credits" :key="credit.name" class="credit-item">
-        <a
-          class="credit-row"
-          :href="credit.url"
-          target="_blank"
-          rel="noreferrer"
-        >
-          <span class="credit-role">{{ credit.role }}</span>
-          <span class="credit-name">
-            <strong>{{ credit.name }}</strong>
-            <span class="credit-arrow" aria-hidden="true">↗</span>
+    <ul class="credit-grid">
+      <li v-for="credit in credits" :key="credit.name">
+        <a class="credit-card" :href="credit.url" target="_blank" rel="noreferrer" :data-credit="credit.name">
+          <span class="credit-mark" :class="{ 'is-fallback': failed.has(credit.name) }">
+            <img v-if="!failed.has(credit.name)" :src="credit.logo" alt="" loading="lazy" referrerpolicy="no-referrer" @error="failed.add(credit.name)" />
+            <span v-else aria-hidden="true">{{ credit.name.charAt(0) }}</span>
           </span>
+          <span class="credit-copy">
+            <strong :title="credit.name">{{ credit.name }}</strong>
+            <small>{{ credit.role }}</small>
+          </span>
+          <span class="credit-arrow" aria-hidden="true">↗</span>
         </a>
       </li>
     </ul>
@@ -114,69 +127,65 @@ const credits = computed(() => [
   min-width: 0;
 }
 
-.credit-list {
+.credit-grid {
   display: grid;
-  margin: 2px 0 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 24px 0 0;
   padding: 0;
   list-style: none;
-  border-top: 1px solid var(--color-border);
 }
 
-.credit-item { display: block; }
+.credit-grid > li { display: flex; }
 
-.credit-row {
+.credit-card {
+  flex: 1;
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, .75fr) minmax(0, 1.25fr);
+  grid-template-columns: 44px minmax(0, 1fr);
   align-items: center;
-  gap: 20px;
-  padding: 16px 0;
-  border-bottom: 1px solid var(--color-border);
+  gap: 12px;
+  min-height: 84px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
   color: inherit;
   text-decoration: none;
-  transition: color var(--motion-fast), background-color var(--motion-fast);
+  transition: border-color var(--motion-fast), transform var(--motion-fast) var(--motion-ease);
 }
 
-.credit-row:hover {
-  color: var(--color-accent-hover);
-  background: var(--color-surface);
+.credit-card:hover { border-color: var(--color-border-strong); transform: translateY(-2px); }
+.credit-card:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+.credit-mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--color-surface-subtle);
 }
 
-.credit-row:focus-visible {
-  position: relative;
-  z-index: 1;
-  outline: 2px solid var(--color-accent);
-  outline-offset: 3px;
-}
+.credit-mark img { width: 30px; height: 30px; object-fit: contain; }
+.credit-mark.is-fallback { color: var(--color-accent); background: var(--color-accent-soft); font-size: 18px; font-weight: 700; }
 
-.credit-role {
-  color: var(--color-muted);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.credit-name {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  min-width: 0;
-  color: var(--color-ink);
-  font-size: 15px;
-  font-weight: 650;
-  text-align: right;
-}
-
-.credit-name strong {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
+.credit-copy { display: grid; gap: 3px; min-width: 0; }
+.credit-copy strong, .credit-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.credit-copy strong { color: var(--color-ink); font-size: 14px; font-weight: 650; line-height: 1.3; }
+.credit-copy small { color: var(--color-muted); font-size: 12px; line-height: 1.4; }
 
 .credit-arrow {
-  flex: 0 0 auto;
+  position: absolute;
+  top: 10px;
+  right: 12px;
   color: var(--color-accent);
-  font-size: 16px;
-  font-weight: 400;
+  font-size: 13px;
+  opacity: 0;
+  transition: opacity var(--motion-fast);
 }
+
+.credit-card:hover .credit-arrow, .credit-card:focus-visible .credit-arrow { opacity: 1; }
 
 .credit-source-note {
   margin-top: 18px;
@@ -255,10 +264,13 @@ const credits = computed(() => [
   outline-offset: 5px;
 }
 
+@media (max-width: 980px) { .credit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (prefers-reduced-motion: reduce) { .credit-card:hover { transform: none; } }
+:root[data-motion="reduced"] .credit-card:hover { transform: none; }
+
 @media (max-width: 680px) {
+  .credit-grid { grid-template-columns: 1fr; }
   .credits-heading { gap: 12px; }
-  .credit-row { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 14px; padding: 15px 0; }
-  .credit-name { font-size: 14px; }
   .fuli-finale { margin-top: 64px; padding-top: 56px; }
 }
 </style>
