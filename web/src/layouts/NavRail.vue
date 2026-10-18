@@ -20,6 +20,9 @@ const route = useRoute()
 // The three profile aspects open the preferences page already filtered.
 const PROFILE_ASPECTS = ['taste', 'personality', 'judgment_preference'] as const
 const aspectActive = (aspect: string) => route.path === '/preferences' && route.query.aspect === aspect
+// While a sub-item is current, its parent keeps only the accent text so the
+// two highlighted rows never merge into one block.
+const childActive = (key: string) => expanded.value && key === 'memory' && PROFILE_ASPECTS.some(aspectActive)
 watch(expanded, value => {
   try { localStorage.setItem(STORAGE_KEY, value ? '1' : '0') } catch { /* storage may be unavailable */ }
 })
@@ -30,7 +33,7 @@ watch(expanded, value => {
     <div class="nav-rail-brand"><BrandEasterEgg compact /><span v-if="expanded" class="nav-rail-wordmark">{{ t('shell.brand') }}</span></div>
     <ul class="nav-rail-links">
       <li v-for="destination in destinations" :key="destination.key">
-        <RouterLink :to="destination.to" class="nav-rail-link" :class="{ 'is-active': destination.key === activeKey }"
+        <RouterLink :to="destination.to" class="nav-rail-link" :class="{ 'is-active': destination.key === activeKey, 'has-active-child': childActive(destination.key) }"
           :aria-current="destination.key === activeKey ? 'page' : undefined"
           :aria-label="t(`shell.destinations.${destination.key}`)" :title="expanded ? undefined : t(`shell.destinations.${destination.key}`)"
           :data-destination="destination.key">
@@ -80,6 +83,7 @@ watch(expanded, value => {
 }
 /* Expanded, the active row is a flat tint centred on its text, no glow. */
 .nav-rail.is-expanded .nav-rail-link.is-active { box-shadow: none; }
+.nav-rail-link.is-active.has-active-child { background: transparent; }
 .nav-rail-link:hover { color: var(--color-ink); background: var(--color-surface-hover); }
 .nav-rail-link:active { transform: scale(.96); }
 .nav-rail-link.is-active { color: var(--color-accent); background: var(--color-accent-soft); box-shadow: var(--glow-accent); }
