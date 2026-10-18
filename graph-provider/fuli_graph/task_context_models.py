@@ -47,6 +47,9 @@ class TaskContextBegin(StrictModel):
     work_log_required: bool = False
     preference_scope: TaskPreferenceScope | None = None
     agent_assignment: TaskAgentAssignment | None = None
+    # 'hook' when a lifecycle hook delivered the context, so its Stop hook will
+    # run and may close a task that has nothing to record.
+    entry_via: Literal['hook', 'tool'] = 'tool'
 
 
 class TaskContextAgentMemory(StrictModel):

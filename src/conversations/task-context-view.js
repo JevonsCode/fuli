@@ -39,6 +39,7 @@ export function compactTaskContext(value) {
     ...entryRulesReference('application_guidance'),
     ...(templated ? { scope_rules: entryRulesReference('scope_guidance').rules } : {}) };
   }
+  if (share && value.checkpoint_guidance) result.checkpoint_guidance = ruleTextView(value.checkpoint_guidance, 'checkpoint_guidance');
   if (share && value.context) result.context = withoutDefaults(value.context, { counts: true, flags: true });
   if (value.conversation) result.conversation = conversationView(value.conversation, share);
   if (share && value.agent_receipt) result.agent_receipt = receiptView(value.agent_receipt);

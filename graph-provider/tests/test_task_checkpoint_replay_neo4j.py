@@ -334,3 +334,17 @@ async def test_new_turn_may_supersede_prepared_context_without_undoing_committed
         })
         assert verified.status_code == 200, verified.text
         assert verified.json()['task_context_token'] == newer['token']
+
+
+@pytest.mark.asyncio
+async def test_the_stop_hook_learns_whether_the_lifecycle_hook_delivered_the_open_task():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        for entry_via in ('hook', 'tool'):
+            context = await context_fixture(client, entry_via=entry_via)
+            response = await client.get('/v1/task-context-sessions/checkpoint', params={
+                'personal_space_id': context['personal_space_id'], 'session_id': context['session_id'],
+                'source_application': 'codex'})
+            assert response.status_code == 200, response.text
+            assert response.json()['status'] == 'checkpoint_required'
+            assert response.json()['entry_via'] == entry_via

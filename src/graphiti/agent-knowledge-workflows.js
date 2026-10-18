@@ -75,15 +75,18 @@ export async function beginTaskContext(application, {
   return beginTaskFromPreferences(application, preferences, {
     sessionId, turnId: existingTask?.turnId ?? turnId, sourceApplication, sourceSessionId,
     workKind: preferenceScope.work_kind, workflow: preferenceScope.workflow
-  }, { existingTask: resumed ?? (scopeRetry?.projectScope?.type === 'temporary' ? scopeRetry : null), resumed: Boolean(resumed) });
+  }, { existingTask: resumed ?? (scopeRetry?.projectScope?.type === 'temporary' ? scopeRetry : null), resumed: Boolean(resumed),
+    entryVia: 'hook' });
 }
+
+export const STOP_HOOK_CHECKPOINT_GUIDANCE = 'This task was delivered by the lifecycle hook. Call checkpoint_task_knowledge when you have something to record: capture candidates, experiences, agentMemory changes, collaborators or a work status other than a routine finish. Otherwise the Stop hook closes the task as retain_nothing with a work log marked auto-closed.';
 
 // Hook and model fallback share the same durable lifecycle. A stored pending
 // task is not evidence that its context reached this model turn.
 export async function beginTaskFromPreferences(application, preferences, {
   sessionId, turnId = null, sourceApplication = 'other', sourceSessionId = null,
   workKind = null, workflow = null
-}, { existingTask = null, resumed = false } = {}) {
+}, { existingTask = null, resumed = false, entryVia = 'tool' } = {}) {
   const task = existingTask ?? await application.taskContextRegistry.begin({
     sessionId,
     turnId,
@@ -94,14 +97,19 @@ export async function beginTaskFromPreferences(application, preferences, {
     preferenceScope: taskPreferenceScope({ version: 1, work_kind: workKind, workflow }),
     agentAssignment: taskAgentAssignment(preferences.project_agent_context),
     memoryRevision: preferences.project_agent_context?.memory?.revision ?? null,
-    workLogRequired: Boolean(preferences.project_agent_context?.memory)
+    workLogRequired: Boolean(preferences.project_agent_context?.memory),
+    entryVia
   });
+  // A hook-delivered task is closed by its Stop hook when nothing is recorded,
+  // so the Agent checkpoints only when it has something to record.
+  const hookClosed = entryVia === 'hook' && task.entryVia === 'hook';
   const conversation = await beginConversation(application, task);
   return withPreferenceScope({
     conversation,
     taskContextToken: task.token,
     task_context_token: task.token,
-    checkpoint_required: task.checkpoint?.phase !== 'complete',
+    checkpoint_required: !hookClosed && task.checkpoint?.phase !== 'complete',
+    ...(hookClosed ? { checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE } : {}),
     resumed_checkpoint: Boolean(resumed),
     previous_checkpoint_missing: task.previousCheckpointMissing,
     ...preferences,

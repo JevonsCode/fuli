@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 import { contentHash } from '../publication/canonical-json.js';
-import { taskKnowledgeGuidance } from '../graphiti/agent-knowledge-workflows.js';
+import { STOP_HOOK_CHECKPOINT_GUIDANCE, taskKnowledgeGuidance } from '../graphiti/agent-knowledge-workflows.js';
 import { GENERIC_SCOPE_GUIDANCE, STATIC_APPLICATION_GUIDANCE } from '../graphiti/collaboration-preference-workflow.js';
 import { CONVERSATION_GUIDANCE } from '../graphiti/agent-conversations.js';
 import { PROJECT_AGENT_CONTINUITY_GUIDANCE } from '../graphiti/project-agent-task-entry.js';
@@ -27,7 +27,7 @@ export function entryRules() {
       team_guidance: TEAM_GUIDANCE, memory_guidance: MEMORY_GUIDANCE,
       global_memory_guidance: GLOBAL_MEMORY_GUIDANCE, continuation_guidance: CONTINUATION_GUIDANCE,
       scope_guidance: { ...GENERIC_SCOPE_GUIDANCE }, receipt_guidance: RECEIPT_GUIDANCE,
-      details_guidance: DETAILS_GUIDANCE };
+      details_guidance: DETAILS_GUIDANCE, checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE };
     rules = Object.freeze({ sections, version: contentHash(sections).slice(0, 12) });
   }
   return rules;
