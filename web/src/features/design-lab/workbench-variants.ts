@@ -10,4 +10,7 @@ export interface WorkbenchVariant {
 
 export const WORKBENCH_VARIANTS: readonly WorkbenchVariant[] = [
   { id: 'current', labelKey: 'designLab.workbench.current' },
+  { id: 'focus', labelKey: 'workbench.variants.focus' },
+  { id: 'board', labelKey: 'workbench.variants.board' },
+  { id: 'timeline', labelKey: 'workbench.variants.timeline' },
 ]

@@ -22,6 +22,7 @@ import { employeeMessages } from './messages/employees'
 import { attentionMessages } from './messages/attention'
 import { shellMessages } from './messages/shell'
 import { designLabMessages } from './messages/design-lab'
+import { workbenchMessages } from './messages/workbench'
 import { glossaryMessages } from './messages/glossary'
 import { roundtableMessages } from './messages/roundtable'
 import { agentPinsMessages } from './messages/agent-pins'
@@ -82,6 +83,7 @@ export const messages = {
     attention: attentionMessages['zh-CN'],
     shell: shellMessages['zh-CN'],
     designLab: designLabMessages['zh-CN'],
+    workbench: workbenchMessages['zh-CN'],
     glossary: glossaryMessages['zh-CN'],
     roundtable: roundtableMessages['zh-CN'],
     employees: employeeMessages['zh-CN'],
@@ -112,6 +114,7 @@ export const messages = {
     attention: attentionMessages['en-US'],
     shell: shellMessages['en-US'],
     designLab: designLabMessages['en-US'],
+    workbench: workbenchMessages['en-US'],
     glossary: glossaryMessages['en-US'],
     roundtable: roundtableMessages['en-US'],
     employees: employeeMessages['en-US'],
