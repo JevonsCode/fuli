@@ -83,6 +83,58 @@ describe('KnowledgeWorkspace', () => {
     vi.useRealTimers()
   })
 
+  it.each(['graph', 'directory'])('defaults to formal projects in the %s view and reveals temporary projects without writes', async (mode) => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const fallback = `conversation-${'a'.repeat(64)}`
+    const projects = [
+      { project_id: 'formal', personal_space_id: 'space-1', profile: { name: '正式项目' } },
+      { project_id: 'temporary', personal_space_id: 'space-1', scope_type: 'temporary' as const, profile: { name: '临时项目测试' } },
+      { project_id: fallback, personal_space_id: 'space-1', profile: { name: '会话回退测试' } },
+      { project_id: 'archived', personal_space_id: 'space-1', status: 'archived', profile: { name: '归档项目测试' } },
+    ]
+    useConsoleStore().state = {
+      mode: 'personal_only', activePersonalSpaceId: 'space-1',
+      personalSpaces: [{ id: 'space-1', name: '我' }], personalProjects: projects,
+      projects: [], subscriptions: [],
+    }
+    getJson.mockResolvedValue({ nodes: projects.map(project => ({
+      id: `personal-project:space-1:${project.project_id}`, name: project.profile.name,
+      type: 'PersonalProject', attributes: { projectId: project.project_id },
+    })), edges: [] })
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/personal/:spaceId/projects/:mode', name: 'personal-projects', component: { template: '<div />' } },
+      { path: '/personal/:spaceId/projects/:projectId/:mode', name: 'personal-project', component: { template: '<div />' } },
+    ] })
+    await router.push(`/personal/space-1/projects/${mode}?section=materials`)
+    const wrapper = mount(KnowledgeWorkspace, { props: { personalProjectsOnly: true }, global: {
+      plugins: [pinia, router], stubs: { KnowledgeWorkspaceDialogs: true, CreateProjectEntry: true },
+    } })
+    await finishInitialLoading()
+    const names = () => mode === 'graph'
+      ? wrapper.getComponent({ name: 'GraphCanvasStub' }).props('graph').nodes.map((node: { name: string }) => node.name)
+      : wrapper.findAll('.project-material-row').map(row => row.text())
+    const choices = () => wrapper.getComponent({ name: 'UiSelect' }).props('options').map((option: { value: string }) => JSON.parse(option.value)[2])
+    expect(names()).toHaveLength(1)
+    expect(choices()).toEqual([null, 'formal'])
+    const requests = getJson.mock.calls.length
+    await wrapper.get('[role="switch"]').trigger('click')
+    expect(names()).toHaveLength(3)
+    expect(choices()).toEqual([null, 'formal', 'temporary', fallback])
+    expect(wrapper.get('[role="switch"]').attributes('aria-checked')).toBe('true')
+    await wrapper.get('[role="switch"]').trigger('click')
+    expect(names()).toHaveLength(1)
+    expect(getJson.mock.calls).toHaveLength(requests)
+    // A direct project URL remains usable even with the switch off.
+    await router.push('/personal/space-1/projects/temporary/graph')
+    await flushPromises()
+    expect(router.currentRoute.value.params.projectId).toBe('temporary')
+    expect(choices()).toEqual([null, 'formal', 'temporary'])
+    expect(wrapper.getComponent({ name: 'GraphCanvasStub' }).props('graph').nodes.map((node: { name: string }) => node.name))
+      .toEqual(['正式项目', '临时项目测试'])
+    wrapper.unmount()
+  })
+
   it('restores graph highlighting after a deep-linked directory item returns to the graph', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
