@@ -35,7 +35,8 @@ const BASELINE = Object.freeze({
   instructionsBytes: 2041,
   // T-P00: the chat profile's own instructions name only listed tools, so a
   // client no longer spends a request on discovery first: 2,041 -> 1,251 B.
-  chatInstructionsBytes: 1251,
+  // P6: keep the new chat instructions conditional, 1,251 -> 1,238 B.
+  chatInstructionsBytes: 1238,
   // T-TOKEN-2: the entry receipt keeps only what must be copied, defaults and
   // empty values are omitted, and the scope, receipt and details rule text is
   // referenced: 3,449 -> 1,775 chars.
