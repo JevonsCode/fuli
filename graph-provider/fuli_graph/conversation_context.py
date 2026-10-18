@@ -12,6 +12,8 @@ the digest; its whole serialized JSON is bounded in UTF-8 bytes.
 import json
 import re
 
+# Bump when the folding rules change; an older digest is rebuilt from raw events.
+DIGEST_VERSION = 2
 DIGEST_TASKS = 12
 DIGEST_BYTES = 6000
 DIGEST_ENTRIES = 80
@@ -120,7 +122,15 @@ def fold_messages(digest, events):
         total -= len(entries[position]['text'].encode())
     omitted += len(dropped)
     entries = [entry for position, entry in enumerate(entries) if position not in dropped]
-    return {**digest, 'entries': entries, 'omitted': omitted}
+    return {**digest, 'entries': entries, 'omitted': omitted, 'version': DIGEST_VERSION}
+
+
+def refold_digest(digest, events):
+    """Rebuild extracted entries with the current rules from the raw events they came from.
+
+    Task results come from checkpoints, not from raw events, so they are kept.
+    """
+    return fold_messages({'tasks': digest.get('tasks', [])}, events)
 
 
 def entry_line(entry):

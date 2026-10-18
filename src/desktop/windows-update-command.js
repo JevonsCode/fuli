@@ -2,24 +2,12 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isMainModule } from '../system/main-module.js';
 import { confirmInTerminal, writeLine } from '../cli/terminal-io.js';
+import { parseWindowsCommandOptions } from './windows-command-options.js';
 import { planWindowsUpdate, updateWindowsInstallation } from './windows-update.js';
 
 export async function runWindowsUpdateCommand(args = [], dependencies = {}) {
-  if ((dependencies.platform ?? process.platform) !== 'win32' || (dependencies.arch ?? process.arch) !== 'x64') {
-    throw new Error('Update on Windows x64.');
-  }
-  const options = { source: dependencies.source ?? resolve(dirname(fileURLToPath(import.meta.url)), '../..'), env: dependencies.env ?? process.env };
-  let yes = false, preview = false;
-  const seen = new Set();
-  for (let index = 0; index < args.length; index++) {
-    const arg = args[index];
-    if (seen.has(arg)) throw new Error('Duplicate update option: ' + arg);
-    seen.add(arg);
-    if (arg === '--yes') yes = true;
-    else if (arg === '--preview') preview = true;
-    else if (arg === '--install-root' && args[index + 1] && !args[index + 1].startsWith('--')) options.installRoot = args[++index];
-    else throw new Error('Unknown or missing update option: ' + arg);
-  }
+  const { options, yes, preview } = parseWindowsCommandOptions(args, dependencies, 'Update');
+  options.source = dependencies.source ?? resolve(dirname(fileURLToPath(import.meta.url)), '../..');
   const write = dependencies.write ?? writeLine;
   const plan = (dependencies.plan ?? planWindowsUpdate)(options);
   write(`更新 / Update: ${plan.current.applicationVersion} → ${plan.applicationVersion}\n程序 / Application: ${plan.installRoot}\n保留数据 / Keep data: ${plan.current.dataDir}\n请先退出 Fuli 托盘；服务会自动停止后重启。 / Exit the tray first; services will be stopped and restarted.`);
