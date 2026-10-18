@@ -2,7 +2,7 @@
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { getJson, postJson, putJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import UiSelect from '@/components/ui/UiSelect.vue'
+import UiSelect from '@/ui/UiSelect.vue'
 import { currentLocale, t } from '@/i18n'
 
 const props = defineProps<{ personalSpaceId: string; agentId: string; projects: Array<{ id: string; name: string }> }>()
@@ -17,7 +17,9 @@ interface MemoryView { revision: number; current: { revision: number; createdAt:
 interface CopyFeedback { conversationId: string; state: 'copied' | 'fallback' }
 interface MemoryExport { filename: string; markdown: string }
 const projectId = ref('')
-const opened = ref(false)
+// Global stays selected only when a person picked it; otherwise the first project wins once projects load.
+const globalChosen = ref(false)
+function chooseScope(value: string) { globalChosen.value = value === ''; projectId.value = value }
 const settingsOpen = ref(false)
 const conversations = ref<Conversation[]>([])
 const loading = ref(false)
@@ -51,12 +53,14 @@ let memoryVersion = 0
 let exportVersion = 0
 function scope() { return { personalSpaceId: props.personalSpaceId, personalProjectId: projectId.value || null, agentId: props.agentId } }
 function failure(cause: unknown) { return cause instanceof Error ? cause.message : t('projectAgents.conversations.loadFailed') }
-watch(() => [props.agentId, props.personalSpaceId, props.projects.map(project => project.id).join('\n')], () => {
-  const next = (opened.value && projectId.value === '') ? '' : props.projects.some(project => project.id === projectId.value) ? projectId.value : props.projects[0]?.id ?? ''
+// Declared first so the initial scope choice below also loads.
+watch(projectId, () => void load())
+// A string key: parent re-renders that hand over an equal project list must not reload.
+watch(() => [props.agentId, props.personalSpaceId, ...props.projects.map(project => project.id)].join('\n'), () => {
+  const next = (globalChosen.value && projectId.value === '') ? '' : props.projects.some(project => project.id === projectId.value) ? projectId.value : props.projects[0]?.id ?? ''
   if (next !== projectId.value) projectId.value = next
   else void load()
 }, { immediate: true })
-watch(projectId, () => void load())
 async function load() {
   const current = ++version
   ++messageVersion
@@ -69,7 +73,6 @@ async function load() {
   copyFeedback.value = undefined
   policyReady.value = false; policyLoading.value = false; policyError.value = ''; saved.value = false; saving.value = false
   loading.value = false; messagesLoading.value = false; hasMore.value = false
-  if (!opened.value) return
   loading.value = true
   if (settingsOpen.value) void loadPolicy()
   void loadMemory()
@@ -115,13 +118,6 @@ async function exportMemory() {
   } catch { if (current === exportVersion) exportFeedback.value = 'failed' }
   finally { if (current === exportVersion) exporting.value = false }
 }
-function toggle(event: Event) {
-  const next = (event.target as HTMLDetailsElement).open
-  if (next === opened.value) return
-  opened.value = next
-  if (next) void load()
-  else { ++version; ++messageVersion; ++policyVersion; ++copyVersion; ++memoryVersion; resetExport(); copyFeedback.value = undefined; settingsOpen.value = false }
-}
 async function readMessages(id: string, more = false) {
   if (messagesLoading.value) return
   const current = ++messageVersion
@@ -142,7 +138,7 @@ async function readMessages(id: string, more = false) {
 }
 function settingsToggle(event: Event) {
   settingsOpen.value = (event.target as HTMLDetailsElement).open
-  if (settingsOpen.value && !policyReady.value && !policyLoading.value && opened.value) void loadPolicy()
+  if (settingsOpen.value && !policyReady.value && !policyLoading.value) void loadPolicy()
 }
 function applyPolicy(value: Policy) { compactAfterKb.value = value.compact_after_kb; contextBudget.value = value.context_budget; enabled.value = value.enabled }
 async function loadPolicy() {
@@ -202,10 +198,10 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
 </script>
 
 <template>
-  <details class="agent-conversations" @toggle="toggle">
-    <summary>{{ t('projectAgents.conversations.title') }}</summary>
-    <template v-if="opened">
-      <UiSelect v-model="projectId" field :label="t('projectAgents.conversations.scope')" :options="[{ value: '', label: t('projectAgents.conversations.global') }, ...projects.map(project => ({ value: project.id, label: project.name }))]" />
+  <section class="agent-conversations" :aria-label="t('projectAgents.conversations.title')">
+    <!-- Always shown: an empty state is information, not something to hide behind a toggle. -->
+    <h2 class="agent-conversations-title">{{ t('projectAgents.conversations.title') }}</h2>
+      <UiSelect :model-value="projectId" field @update:model-value="chooseScope" :label="t('projectAgents.conversations.scope')" :options="[{ value: '', label: t('projectAgents.conversations.global') }, ...projects.map(project => ({ value: project.id, label: project.name }))]" />
       <p class="conversation-hint">{{ t('projectAgents.conversations.hint') }}</p>
       <section data-working-memory class="working-memory" :aria-label="t('projectAgents.conversations.memoryTitle')">
         <div class="memory-heading">
@@ -287,12 +283,12 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
         <div v-if="policyError" role="alert"><p>{{ policyError }}</p><button v-if="!policyReady" class="quiet-button" type="button" @click="loadPolicy">{{ t('projectAgents.retry') }}</button></div>
         <p v-if="saved" role="status">{{ t('projectAgents.conversations.saved') }}</p>
       </details>
-    </template>
-  </details>
+  </section>
 </template>
 
 <style scoped>
 .agent-conversations { margin-block: 20px; color: var(--color-ink); font-size: 14px; }
+.agent-conversations-title { margin: 0; padding-block: 12px; font-size: 15px; font-weight: 650; }
 summary { cursor: pointer; padding-block: 12px; font-weight: 650; }
 summary:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
 label { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }

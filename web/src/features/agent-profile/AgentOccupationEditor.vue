@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import GrowthLoading from "@/components/GrowthLoading.vue";
-import UiSelect from "@/components/ui/UiSelect.vue";
+import UiSelect from "@/ui/UiSelect.vue";
 import { t } from "@/i18n";
 import type { AgentOccupationKey, ProjectAgentRecord } from "@/types";
 import {

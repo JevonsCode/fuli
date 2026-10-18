@@ -2,7 +2,7 @@
 import { ref, watch } from 'vue'
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import UiSelect from '@/components/ui/UiSelect.vue'
+import UiSelect from '@/ui/UiSelect.vue'
 import { currentLocale, t } from '@/i18n'
 
 const props = defineProps<{

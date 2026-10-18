@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiButton from '@/components/ui/UiButton.vue'
+import UiButton from '@/ui/UiButton.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch, watchEffect } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'

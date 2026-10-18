@@ -98,7 +98,8 @@
 /* Only a reported running state moves; the ring is compositor-only and stops when motion is reduced. */
 .agent-portrait.agent-card-identity.is-working::after {
   content: ""; position: absolute; inset: -4px; border: 2px solid var(--agent-identity, var(--color-accent)); border-radius: 14px;
-  opacity: 0; animation: agent-working-ring 2.4s ease-out infinite; pointer-events: none;
+  opacity: 0; animation: agent-working-ring 2.4s ease-out var(--working-phase, 0ms) infinite; pointer-events: none;
+  will-change: transform, opacity;
 }
 @keyframes agent-working-ring { 0% { opacity: 0.55; transform: scale(0.92); } 100% { opacity: 0; transform: scale(1.12); } }
 @media (prefers-reduced-motion: reduce) {
@@ -166,8 +167,10 @@
 .agent-card-status.is-archived, .agent-profile-membership.is-archived { color: var(--color-muted); background: var(--color-surface-subtle); }
 .agent-card-work-status {
   display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; margin-left: auto; max-width: 140px;
-  overflow: hidden; color: var(--color-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap;
+  padding-left: 3px; color: var(--color-muted); font-size: 12px; white-space: nowrap;
 }
+/* Only the label truncates; the dot and its ring are never clipped. */
+.agent-card-work-status-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .agent-card-work-status::before { content: ''; width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--color-faint); }
 .agent-card-work-status.is-running { color: var(--color-accent); }
 .agent-card-work-status.is-running::before { background: var(--color-accent); box-shadow: 0 0 0 3px var(--color-accent-soft); }

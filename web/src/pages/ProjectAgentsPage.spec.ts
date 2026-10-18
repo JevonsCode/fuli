@@ -428,7 +428,8 @@ describe('ProjectAgentsPage', () => {
       await conversations.trigger('toggle')
       await flushPromises()
       if (assigned) {
-        expect(postJson).toHaveBeenCalledExactlyOnceWith('/api/agent-conversations/query', {
+        // The panel reads on display, so the final read follows the assigned projects once they load.
+        expect(postJson).toHaveBeenLastCalledWith('/api/agent-conversations/query', {
           personalSpaceId: 'personal-1', personalProjectId: 'project-a', agentId: employee.agentId, mode: 'list', limit: 20,
         })
         expect(conversations.findAll('option').map(option => option.attributes('value')).filter(Boolean)).toEqual(['project-a'])

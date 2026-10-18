@@ -10,7 +10,7 @@ vi.mock('@/api/client', () => ({
   postJson,
 }))
 
-import UiSelect from '@/components/ui/UiSelect.vue'
+import UiSelect from '@/ui/UiSelect.vue'
 import KnowledgeEditDialog from './KnowledgeEditDialog.vue'
 import { knowledgeItemFromNode } from './model'
 
