@@ -47,6 +47,31 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
+  it('saves the local address that is told when a person is needed', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().runtimeStatus = 'ready'
+    const withNotifications = { ...configured, notifications: { needsPersonUrl: '' } }
+    const puts: unknown[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input, init?: RequestInit) => {
+      if (String(input) === '/api/system/settings' && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body))
+        puts.push(body)
+        return Response.json({ configured: body, active: body, restartRequired: false })
+      }
+      if (String(input) === '/api/system/settings') return Response.json({ configured: withNotifications, active: withNotifications, restartRequired: false })
+      return Response.json({}, { status: 503 })
+    }))
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    await flushPromises()
+    await wrapper.get('[data-needs-person-url]').setValue('http://127.0.0.1:9123/fuli')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(puts).toHaveLength(1)
+    expect((puts[0] as { notifications: unknown }).notifications).toEqual({ needsPersonUrl: 'http://127.0.0.1:9123/fuli' })
+    wrapper.unmount()
+  })
+
   it('turns decorative motion off for this browser without touching the saved settings', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

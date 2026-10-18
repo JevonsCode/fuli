@@ -161,6 +161,11 @@ export const settingsMessages = {
       zh: '简体中文',
       en: 'English',
     },
+    notifications: {
+      title: '通知',
+      needsPersonUrl: '需要你时通知',
+      needsPersonUrlMeta: 'Agent 举手等你决定时，FULI 把事件发到这个本机地址（例如 DingDong）。只接受 127.0.0.1、localhost 或 [::1]；留空就关闭。',
+    },
     conversationLaunchers: {
       title: '会话打开方式',
       enabled: '启用',
@@ -356,6 +361,11 @@ export const settingsMessages = {
       reduceMotionMeta: 'Applies to this browser only; the system reduce-motion setting is always respected',
       zh: '简体中文',
       en: 'English',
+    },
+    notifications: {
+      title: 'Notifications',
+      needsPersonUrl: 'Notify when you are needed',
+      needsPersonUrlMeta: 'When an Agent raises a hand for your decision, FULI posts the event to this address on this machine (for example DingDong). Only 127.0.0.1, localhost or [::1]; leave empty to turn it off.',
     },
     conversationLaunchers: {
       title: 'Conversation openers',

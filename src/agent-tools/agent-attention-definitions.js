@@ -9,17 +9,18 @@ const decision = objectSchema({
 export const AGENT_ATTENTION_DEFINITIONS = [
   {
     name: 'request_agent_attention',
-    description: 'Raise a hand only when a person must answer, review, decide or supply permission. Explain the requested action explicitly; do not use for routine running, queueing or retrying. Idempotent, project-scoped; does not execute approvals.',
+    description: 'Create a scoped, idempotent human-action request with optional native choices. Only for decisions/actions, never routine progress; creates no permission.',
     inputSchema: objectSchema({
       ...scope, agentId: text(128), taskId: text(128),
       idempotencyKey: { ...text(256), minLength: 8 },
       kind: enumSchema(['question', 'approval', 'review', 'permission', 'blocked']),
-      title: text(160), detail: text(4096), requestedAction: text(2048)
+      title: text(160), detail: text(4096), requestedAction: text(2048),
+      options: { type: 'array', items: text(160), minItems: 2, maxItems: 3, uniqueItems: true }
     }, ['personalSpaceId', 'personalProjectId', 'agentId', 'idempotencyKey', 'kind', 'title', 'detail', 'requestedAction'])
   },
   {
     name: 'list_agent_attention',
-    description: 'Read human-action requests or responses in one personal space, optionally filtered by project and Agent. Open counts cover the complete filtered set, not only this page. Use resolved status to read human replies.',
+    description: 'Read scoped requests/replies. Open counts cover all matches. Resolved contains human replies; open requests include native host choices and custom input.',
     inputSchema: objectSchema({
       ...scope, agentId: text(128), status: enumSchema(['open', 'resolved', 'cancelled']),
       limit: integerSchema({ minimum: 1, maximum: 200 }), offset: integerSchema({ minimum: 0 })
@@ -27,7 +28,7 @@ export const AGENT_ATTENTION_DEFINITIONS = [
   },
   {
     name: 'cancel_agent_attention',
-    description: 'Withdraw an obsolete request with a reason and its latest revision. Records Agent cancellation, never impersonates a human response or acceptance.',
+    description: 'Cancel an obsolete request at its current revision; records Agent cancellation, never human acceptance.',
     inputSchema: decision
   }
 ];

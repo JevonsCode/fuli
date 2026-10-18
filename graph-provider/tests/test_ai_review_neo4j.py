@@ -39,6 +39,7 @@ async def _create_review_fixture(client, suffix):
         'project_id': project_id,
         'profile': {
             'name': 'Synthetic Tonborg review project',
+            'purpose': 'Verify version-bound AI review without changing human confirmation.',
             'lifecycle': 'active',
         },
     })
@@ -76,6 +77,7 @@ async def _create_project(client, space_id, project_id, name):
         'project_id': project_id,
         'profile': {
             'name': name,
+            'purpose': 'Verify synthetic AI review races and project-scope evidence.',
             'lifecycle': 'active',
         },
     })

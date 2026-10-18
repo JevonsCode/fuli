@@ -12,7 +12,7 @@ const band = computed(() => weightBand(value.value, props.confirmedByPerson))
 
 <template>
   <span class="ui-weight" :class="`is-${band}`" role="meter" :aria-label="label" aria-valuemin="0" aria-valuemax="100"
-    :aria-valuenow="value" :data-weight-band="band">
+    :aria-valuenow="value" :data-weight-band="band" :data-term="`weight.${band}`">
     <span class="ui-weight-track" aria-hidden="true"><span class="ui-weight-fill" :style="{ transform: `scaleX(${value / 100})` }" /></span>
     <span class="ui-weight-number">{{ value }}%</span>
     <UiIcon v-if="band === 'person'" name="check" :size="14" />
