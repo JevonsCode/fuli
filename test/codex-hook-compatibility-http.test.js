@@ -48,7 +48,11 @@ for (const [name, status, body, blocked, reads] of [
   const result = JSON.parse(stdout);
   assert.equal(result.decision === 'block', blocked);
   if (!blocked) assert.equal(typeof result.systemMessage, 'string');
-  assert.equal(result.hookSpecificOutput, undefined);
-  assert.deepEqual(requests, Array.from({ length: reads }, () => ({ path: '/v1/task-context-sessions/current', method: 'GET' })));
+  assert.match(result.hookSpecificOutput.additionalContext, /No valid Hook task context/);
+  assert.match(result.hookSpecificOutput.additionalContext, /synthetic-session/);
+  assert.deepEqual(requests.slice(0, reads), Array.from({ length: reads }, () => ({ path: '/v1/task-context-sessions/current', method: 'GET' })));
+  assert.ok(requests.length > reads, 'Preference entry is attempted independently of transcript lookup');
+  assert.ok(requests.every(request => request.method === 'GET'), 'The failing Provider authorizes no task/history writes');
+  assert.ok(requests.every(request => !request.path.startsWith('/v1/agent-conversations/')));
   assert.deepEqual(await readdir(join(directory, 'transcript-guards')), []);
 });

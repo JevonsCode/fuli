@@ -5,7 +5,9 @@ from test_project_agent_memory_neo4j import fixture_settings, provider_client, s
 
 
 @pytest.mark.asyncio
-async def test_fallback_boundary_records_only_omission_and_rejects_stale_tokens():
+@pytest.mark.parametrize('via', ['tool', 'hook'])
+async def test_fallback_boundary_records_only_omission_and_rejects_stale_tokens(via, monkeypatch):
+    from fuli_graph.store_agent_conversations import StoreAgentConversations
     async with provider_client(fixture_settings(), raise_app_exceptions=False) as (client, _):
         space = (await client.post('/v1/spaces', json={'name': 'Synthetic fallback', 'kind': 'personal'})).json()['id']
         await seed_agent(client, space)
@@ -22,13 +24,22 @@ async def test_fallback_boundary_records_only_omission_and_rejects_stale_tokens(
         initialized = await client.post('/v1/agent-conversations/boundary', json={
             **scope, 'task_context_token': old, 'expected_cursor': 0, 'cursor': 10, 'initialize_cursor': True})
         assert initialized.status_code == 200, initialized.text
-        new = await begin()
+        new = await begin(via)
         request = {**scope, 'task_context_token': new, 'expected_cursor': 10, 'cursor': 100,
                    'fallback_recovery': True}
         for changes in [dict(task_context_token=old), dict(session_id='foreign-session')]:
             denied = await client.post('/v1/agent-conversations/boundary', json={**request, **changes})
             assert denied.status_code in {404, 409}, denied.text
+        # Simulate a committed pre-upgrade marker whose response was lost. The
+        # stable event ID must keep exactly the old canonical marker bytes.
+        original_append = StoreAgentConversations.append_conversation
+        async def append_old_marker(store, actor, write):
+            events = [event.model_copy(update={'content': event.content.replace('during handoff', 'after fallback')})
+                      for event in write.events]
+            return await original_append(store, actor, write.model_copy(update={'events': events}))
+        monkeypatch.setattr(StoreAgentConversations, 'append_conversation', append_old_marker)
         recovered = await client.post('/v1/agent-conversations/boundary', json=request)
+        monkeypatch.setattr(StoreAgentConversations, 'append_conversation', original_append)
         assert recovered.status_code == 200, recovered.text
         assert recovered.json()['status'] == 'saved'
         retry = await client.post('/v1/agent-conversations/boundary', json=request)
@@ -49,14 +60,19 @@ async def test_fallback_boundary_records_only_omission_and_rejects_stale_tokens(
         assert 'omitted' in events[0]['content'] and 'unverified' in events[0]['content']
         state = await client.post('/v1/agent-conversations/query', json={**scope, 'mode': 'session'})
         assert state.json()['cursor'] == 100
-        hook = await begin('hook')
+        replacement = await begin('hook')
         rejected = await client.post('/v1/agent-conversations/boundary', json={
-            **request, 'task_context_token': hook, 'expected_cursor': 100, 'cursor': 200})
-        assert rejected.status_code == 409, rejected.text
+            **request, 'expected_cursor': 100, 'cursor': 200})
+        assert rejected.status_code in {404, 409}, rejected.text
+        invalid = await client.put('/v1/task-contexts', json={
+            **{key: value for key, value in scope.items() if key != 'agent_id'},
+            'project_agent_id': 'engineer', 'token': replacement, 'entry_via': 'unknown'})
+        assert invalid.status_code == 422, invalid.text
 
 
 @pytest.mark.asyncio
-async def test_fallback_omission_and_scope_transfer_roll_back_together(monkeypatch):
+@pytest.mark.parametrize('via', ['tool', 'hook'])
+async def test_fallback_omission_and_scope_transfer_roll_back_together(monkeypatch, via):
     from fuli_graph.store_agent_conversations import StoreAgentConversations
     async with provider_client(fixture_settings(), raise_app_exceptions=False) as (client, _):
         space = (await client.post('/v1/spaces', json={'name': 'Synthetic atomic fallback', 'kind': 'personal'})).json()['id']
@@ -75,7 +91,7 @@ async def test_fallback_omission_and_scope_transfer_roll_back_together(monkeypat
             **scope, 'agent_id': 'engineer', 'task_context_token': old,
             'expected_cursor': 0, 'cursor': 10, 'initialize_cursor': True})
         assert initialized.status_code == 200, initialized.text
-        new = await begin('replacement', 'tool')
+        new = await begin('replacement', via)
         original = StoreAgentConversations.append_conversation
         interrupted = False
         async def fail_once(store, actor, request):

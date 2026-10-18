@@ -1,5 +1,5 @@
 import { initialTranscriptBoundary, readTranscriptBatch } from './transcript-reader.js';
-import { transcriptDigest } from './transcript-guard.js';
+import { transcriptDigest, TRANSCRIPT_SCAN_PAGE_LIMIT } from './transcript-guard.js';
 import { lookupTranscriptTask } from './current-task-lookup.js';
 import { appendTranscriptPage } from './transcript-append.js';
 import { recoverFallbackTranscript } from './fallback-transcript-boundary.js';
@@ -10,11 +10,16 @@ const retryReason = 'Transcript handoff is pending. Retry task entry to continue
 export async function syncConversationTranscript(application, input, sourceApplication, adapter, guard = null) {
   if (!application.getCapturePolicy?.(sourceApplication).enabled) return { status: 'capture_disabled' };
   if (!input?.transcript_path) return { status: 'partial', reason: 'Host did not supply a visible transcript' };
-  let committedPages = 0;
+  if (guard?.expired) return pending('Transcript guard lifetime expired; this unverified interval was not imported');
+  if (guard?.value?.phase === 'scan' && (guard.value.scanPages ?? 0) >= TRANSCRIPT_SCAN_PAGE_LIMIT) {
+    return pending('Transcript scan budget limit reached; this unverified interval was not imported');
+  }
+  let committedPages = 0, ownershipKnown = false;
   try {
     const lookup = await lookupTranscriptTask(application, input, sourceApplication);
     if (lookup.failure) return lookup.failure;
     const task = lookup.task;
+    ownershipKnown = true;
     if (!task?.project_agent_id) return guard?.value ? pending(retryReason) : { status: 'unassigned' };
     const scope = { personal_space_id: application.config.personal.spaceId, personal_project_id: task.personal_project_id,
       agent_id: task.project_agent_id, source_application: sourceApplication };
@@ -43,9 +48,12 @@ export async function syncConversationTranscript(application, input, sourceAppli
     if (guard?.value?.phase === 'scan') {
       for (let page = 0; page < 8; page++) {
         const state = guard.value;
+        if ((state.scanPages ?? 0) >= TRANSCRIPT_SCAN_PAGE_LIMIT) {
+          return pending('Transcript scan budget limit reached; this unverified interval was not imported');
+        }
         const batch = await readTranscriptBatch(input.transcript_path, input.session_id, state.scanCursor, adapter,
           { stopBeforeDigest: state.prompt });
-        const next = { ...state, scanCursor: batch.cursor,
+        const next = { ...state, scanCursor: batch.cursor, scanPages: (state.scanPages ?? 0) + 1,
           userMessages: state.userMessages + (batch.userMessages ?? 0), omitted: state.omitted || batch.omitted === true,
           uncertainFrom: state.uncertainFrom ?? batch.uncertainFrom ?? null };
         if (batch.atPromptBoundary) {
@@ -99,6 +107,7 @@ export async function syncConversationTranscript(application, input, sourceAppli
     return pending(retryReason);
   } catch {
     return { status: committedPages ? 'partial' : 'unsaved', entryBlocked: typeof input.prompt === 'string',
+      ...(!ownershipKnown ? { code: 'current_task_lookup_failed' } : {}),
       reason: committedPages ? 'Some transcript pages were saved before capture failed; the next hook resumes from committed progress'
         : 'Visible transcript capture could not be confirmed; native history will be retried at the next hook' };
   }

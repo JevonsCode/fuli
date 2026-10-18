@@ -12,8 +12,8 @@ async def recover_fallback_boundary(store, actor, request):
     async with query_store_transaction(store) as scoped:
         scope = await scoped._conversation_scope(actor, request, write=True)
         task = await scoped._conversation_task(actor, request)
-        if task.get('entry_via') != 'tool':
-            raise HTTPException(409, 'Fallback boundary requires a current tool-created task')
+        if task.get('entry_via') not in {'tool', 'hook'}:
+            raise HTTPException(409, 'Omission boundary requires a current native task entry')
         policy = await scoped._conversation_policy(scope)
         if not policy.enabled:
             return {'status': 'capture_disabled'}
@@ -44,6 +44,8 @@ async def recover_fallback_boundary(store, actor, request):
         event = ConversationEvent(
             event_id=f'jsonl-v1:{request.expected_cursor}:{request.cursor}:fallback',
             role='tool', kind='tool_result',
+            # These canonical bytes predate Hook omission recovery. Keep them
+            # stable so an old committed request can replay after an upgrade.
             content=f'[Visible transcript content omitted: unverified task ownership after fallback; '
                     f'bytes {request.expected_cursor} to {request.cursor} remain in native history.]')
         result = await scoped.append_conversation(actor, request.model_copy(update={
