@@ -25,6 +25,7 @@ import { listenServer } from './server/listen.js';
 import { resolveSetupPaths } from './setup/paths.js';
 import { createSystemService } from './system/system-service.js';
 import { startJudgmentScheduler } from './judgment/scheduler.js';
+import { startTaskScheduler } from './task-schedules/scheduler.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -61,12 +62,13 @@ export async function createServer(options = {}) {
   let system = null;
   let resourcesClosing = null;
   let stopJudgment = () => {};
+  let stopTaskSchedules = () => {};
   let peer = null;
   let workerRuntime = null;
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => stopJudgment(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => runtime.close()]) {
+      for (const close of [() => stopJudgment(), () => stopTaskSchedules(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => runtime.close()]) {
         try {
           const pending = close();
           if (pending?.then) await pending;
@@ -163,6 +165,8 @@ export async function createServer(options = {}) {
       await failStartup(new Error('Server did not bind to a valid local authority'));
     }
     stopJudgment = startJudgmentScheduler({ app: application,
+      ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
+    stopTaskSchedules = startTaskScheduler({ app: application,
       ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
     // Resumes only what the owner already turned on; console LAN access never enables it.
     if (application.peer && options.peer !== false) {
