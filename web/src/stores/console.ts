@@ -17,6 +17,9 @@ export type FeedbackTone = 'success' | 'error'
 export const useConsoleStore = defineStore('console', () => {
   const state = shallowRef<ConsoleState | null>(null)
   const runtimeStatus = ref<RuntimeStatus>('idle')
+  const refreshError = ref('')
+  let refreshVersion = 0
+  let refreshController: AbortController | undefined
   const settingsSaveState = ref<'idle' | 'saving' | 'applying' | 'saved' | 'error'>('idle')
   const settingsSaving = computed(() => ['saving', 'applying'].includes(settingsSaveState.value))
   const feedback = ref<{ message: string; tone: FeedbackTone } | null>(null)
@@ -36,13 +39,37 @@ export const useConsoleStore = defineStore('console', () => {
   })
 
   async function refresh() {
+    const current = ++refreshVersion
+    refreshController?.abort()
+    const controller = new AbortController()
+    refreshController = controller
     runtimeStatus.value = 'loading'
+    refreshError.value = ''
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      state.value = await getJson<ConsoleState>('/api/state')
+      const timeout = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          controller.abort()
+          reject(Object.assign(new Error(t('common.errors.operationFailed')), { code: 'scope_timeout' }))
+        }, 30000)
+      })
+      const result = await Promise.race([getJson<ConsoleState>('/api/state', { signal: controller.signal }), timeout])
+      if (current !== refreshVersion) return
+      state.value = result
       runtimeStatus.value = 'ready'
-    } catch (error) {
+      return
+    } catch (cause) {
+      if (current !== refreshVersion) return
+      const error = cause as { status?: number; code?: string }
+      const denied = error?.status === 401 || error?.status === 403
+      if (denied) state.value = null
+      refreshError.value = denied ? 'denied' : error?.code === 'scope_timeout' ? 'timeout' : 'failed'
       runtimeStatus.value = 'error'
-      reportError(error)
+      reportError(denied ? new Error(t('common.errors.requestFailed', { status: error.status! })) : cause)
+      return
+    } finally {
+      clearTimeout(timer)
+      if (current === refreshVersion) refreshController = undefined
     }
   }
 
@@ -107,6 +134,7 @@ export const useConsoleStore = defineStore('console', () => {
   return {
     state,
     runtimeStatus,
+    refreshError,
     settingsSaving,
     settingsSaveState,
     feedback,

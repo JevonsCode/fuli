@@ -1,100 +1,74 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter, type RouteLocationRaw } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { t } from '@/i18n'
 import { motionReduced } from '@/lib/motion-preference'
-import ConstellationBoard from './ConstellationBoard.vue'
 import type { WorkbenchBoard } from './workbench-board'
 import { starProjects, type StarState } from './workbench-model'
 import { getJson } from '@/api/client'
 import type { SceneLink, SceneProject } from './three/layout'
 import type { Stage } from './three/stage'
-
-// The 3D workbench designs. three.js loads only when one is shown; without
-// WebGL the 2D star map stands in, and reduced motion renders a still frame.
 const props = defineProps<{ board: WorkbenchBoard; scene: 'office' | 'galaxy' }>()
-const router = useRouter()
+const emit = defineEmits<{ fallback: []; pick: [href: unknown] }>()
 const host = ref<HTMLElement | null>(null)
-const loading = ref(true)
-const fallback = ref(false)
-let stage: Stage | null = null
-// Each mount bumps this; a slower earlier mount drops its result instead of
-// leaving a second scene (and its labels) behind.
-let version = 0
-
+const loading = ref(true), slow = ref(false), fallback = ref(false)
+let stage: Stage | null = null, version = 0
+let controller: AbortController | undefined
+let slowTimer: ReturnType<typeof setTimeout> | undefined, endTimer: ReturnType<typeof setTimeout> | undefined
 const STATES: readonly StarState[] = ['waiting', 'stuck', 'running', 'done']
 const projects = computed<SceneProject[]>(() => starProjects(props.board.tasks, props.board.attention).map(project => ({
-  id: project.projectId,
-  name: props.board.projectName(project.projectId),
-  agents: project.agents.map(agent => ({
-    id: agent.agentId,
-    name: props.board.agentFace(agent.agentId).name,
-    state: agent.state,
-    color: props.board.agentFace(agent.agentId).color,
-    href: agent.question ? props.board.questionHref(agent.question) : agent.task ? props.board.taskHref(agent.task) : null,
-  })),
+  id: project.projectId, name: props.board.projectName(project.projectId),
+  agents: project.agents.map(agent => ({ id: agent.agentId, name: props.board.agentFace(agent.agentId).name, state: agent.state,
+    color: props.board.agentFace(agent.agentId).color, href: agent.question ? props.board.questionHref(agent.question) : agent.task ? props.board.taskHref(agent.task) : null })),
 })))
-const counts = computed(() => Object.fromEntries(STATES.map(state => [state,
-  projects.value.reduce((sum, project) => sum + project.agents.filter(agent => agent.state === state).length, 0)])) as Record<StarState, number>)
-
+const counts = computed(() => Object.fromEntries(STATES.map(state => [state, projects.value.reduce((sum, project) => sum + project.agents.filter(agent => agent.state === state).length, 0)])) as Record<StarState, number>)
+function stop() { version++; controller?.abort(); clearTimeout(slowTimer); clearTimeout(endTimer); stage?.dispose(); stage = null }
+function fail() { stop(); loading.value = false; fallback.value = true; emit('fallback') }
+function contextLost(event: Event) { event.preventDefault(); fail() }
 async function mount() {
-  const current = ++version
-  stage?.dispose()
-  stage = null
+  stop()
+  const current = version
   if (!host.value || !projects.value.length) { loading.value = false; return }
-  loading.value = true
+  loading.value = true; slow.value = false; fallback.value = false
+  controller = new AbortController()
+  slowTimer = setTimeout(() => { if (current === version) slow.value = true }, 8000)
+  endTimer = setTimeout(() => { if (current === version) fail() }, 30000)
   try {
     const { webglAvailable } = await import('./three/stage')
-    if (!webglAvailable()) { fallback.value = true; return }
+    if (current !== version || !host.value) return
+    if (!webglAvailable()) { fail(); return }
     const module = props.scene === 'office' ? await import('./three/office-scene') : await import('./three/galaxy-scene')
-    if (!host.value || current !== version) return
+    if (current !== version || !host.value) return
     const mountScene = 'mountOffice' in module ? module.mountOffice : module.mountGalaxy
-    const links = props.scene === 'galaxy' ? await relationLinks() : []
-    if (!host.value || current !== version) return
-    stage = mountScene(host.value, projects.value, {
-      links,
-      reducedMotion: motionReduced(),
-      onPick: href => { if (href) void router.push(href as RouteLocationRaw) },
-    })
-  } catch {
-    fallback.value = true
-  } finally {
-    if (current === version) loading.value = false
-  }
+    const links = props.scene === 'galaxy' ? await relationLinks(controller.signal) : []
+    if (current !== version || !host.value) return
+    stage = mountScene(host.value, projects.value, { links, reducedMotion: motionReduced(), onPick: href => emit('pick', href) })
+  } catch { if (current === version) fail() }
+  finally { if (current === version) { loading.value = false; clearTimeout(slowTimer); clearTimeout(endTimer) } }
 }
-
-// Memory beams are optional: an install without the weights endpoint shows none.
-async function relationLinks(): Promise<SceneLink[]> {
+async function relationLinks(signal: AbortSignal): Promise<SceneLink[]> {
   if (!props.board.personalSpaceId) return []
   try {
     type Weight = { fromProjectId: string; toProjectId: string; tier: SceneLink['tier'] }
-    const result = await getJson<Weight[] | { links?: Weight[] }>(
-      `/api/projects/relation-weights?personalSpaceId=${encodeURIComponent(props.board.personalSpaceId)}`)
+    const result = await getJson<Weight[] | { links?: Weight[] }>(`/api/projects/relation-weights?personalSpaceId=${encodeURIComponent(props.board.personalSpaceId)}`, { signal })
     return (Array.isArray(result) ? result : result.links ?? []).map(link => ({ from: link.fromProjectId, to: link.toProjectId, tier: link.tier }))
-  } catch {
-    return []
-  }
+  } catch { return [] }
 }
-
-onMounted(mount)
-// Rebuild only when who works where, their names or their state change.
-// Names arrive after the first paint, so they are part of the key.
-watch(() => JSON.stringify(projects.value.map(project => [project.id, project.name, project.agents.map(agent => [agent.id, agent.name, agent.state])])), mount)
+onMounted(() => { host.value?.addEventListener('webglcontextlost', contextLost, true); void mount() })
+watch(() => JSON.stringify([props.board.personalSpaceId, projects.value]), mount)
 watch(() => props.scene, mount)
-onBeforeUnmount(() => stage?.dispose())
+onBeforeUnmount(() => { host.value?.removeEventListener('webglcontextlost', contextLost, true); stop() })
 </script>
-
 <template>
-  <ConstellationBoard v-if="fallback" :board="board" />
+  <div v-if="fallback" role="status">{{ t('overview.views.fallback') }}</div>
   <div v-else class="workbench-3d" :class="`is-${scene}`" :data-workbench="scene">
-    <p v-if="!loading && !projects.length" class="workbench-3d-empty">{{ t('workbench.constellation.empty') }}</p>
-    <div v-show="projects.length" ref="host" class="workbench-3d-stage" role="img"
-      :aria-label="t(`workbench.scene.${scene}.aria`, { count: projects.length })">
+    <div v-show="projects.length" ref="host" class="workbench-3d-stage" role="img" :aria-label="t(`workbench.scene.${scene}.aria`, { count: projects.length })">
       <GrowthLoading v-if="loading" variant="compact" :label="t('workbench.scene.loading')" />
     </div>
+    <p v-if="slow && loading" role="status">{{ t('overview.read.slow') }}</p>
+    <p class="workbench-3d-count-label">{{ t('workbench.scene.memberCounts') }}</p>
     <ul class="workbench-3d-legend">
-      <li v-for="state in STATES" :key="state" :class="`is-${state}`"><i aria-hidden="true" />{{ t(`workbench.lanes.${state}`) }} <span>{{ counts[state] }}</span></li>
+      <li v-for="state in STATES" :key="state" :class="`is-${state}`"><i aria-hidden="true" />{{ t(`workbench.projection.${state}`) }} <span>{{ counts[state] }}</span></li>
       <li class="workbench-3d-hint">{{ t('workbench.scene.hint') }}</li>
     </ul>
   </div>
@@ -105,6 +79,8 @@ onBeforeUnmount(() => stage?.dispose())
 .workbench-3d-stage { position: relative; height: clamp(420px, 62vh, 640px); overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-card);
   background: radial-gradient(ellipse at 50% 30%, var(--color-surface), var(--color-surface-subtle)); }
 .is-galaxy .workbench-3d-stage { border-color: transparent; background: radial-gradient(ellipse at 40% 30%, var(--scene-space), var(--scene-space-deep) 70%); }
+.workbench-3d-stage :deep(.stage-label--agent) { display: none; }
+.workbench-3d-count-label { margin: 0; color: var(--color-muted); font-size: 12px; }
 .workbench-3d-stage :deep(canvas) { display: block; }
 .workbench-3d-stage :deep(.stage-labels) { position: absolute; inset: 0; cursor: grab; }
 .workbench-3d-stage :deep(.stage-labels:active) { cursor: grabbing; }
@@ -130,7 +106,7 @@ onBeforeUnmount(() => stage?.dispose())
 .workbench-3d-legend .is-stuck i { background: var(--status-error, var(--color-danger)); }
 .workbench-3d-legend .is-running i { background: var(--status-working, var(--color-accent)); }
 .workbench-3d-legend span { color: var(--color-ink); font-variant-numeric: tabular-nums; }
-.workbench-3d-legend .workbench-3d-hint { margin-left: auto; color: var(--color-faint); }
+.workbench-3d-legend .workbench-3d-hint { margin-left: auto; color: var(--color-muted); }
 @media (prefers-reduced-motion: reduce) { .workbench-3d-stage :deep(.stage-bubble) { animation: none; } }
 :root[data-motion="reduced"] .workbench-3d-stage :deep(.stage-bubble) { animation: none; }
 </style>
