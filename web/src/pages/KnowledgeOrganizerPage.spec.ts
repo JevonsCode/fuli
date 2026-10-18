@@ -62,21 +62,22 @@ describe('KnowledgeOrganizerPage', () => {
     expect(wrapper.find('.organizer-layout').exists()).toBe(true)
     expect(wrapper.get('.organizer-toolbar').element.closest('template')).toBeNull()
     expect(wrapper.get('.organizer-layout').element.closest('template')).toBeNull()
-    expect(wrapper.findAll('.quadrant-filter button')).toHaveLength(5)
-    expect(wrapper.findAll('.review-state-filter button')).toHaveLength(5)
+    expect(wrapper.findAll('[data-organizer-quadrants] button')).toHaveLength(5)
+    expect(wrapper.findAll('[data-stat]')).toHaveLength(5)
 
-    const toolbarActions = wrapper.get('.organizer-toolbar-actions')
+    const toolbarActions = wrapper.get('.organizer-toolbar .ui-toolbar-end')
     expect(toolbarActions.find('.organizer-result-summary').exists()).toBe(true)
-    expect(toolbarActions.findAll('.toolbar-action')).toHaveLength(1)
+    expect(toolbarActions.findAll('.batch-confirm-action')).toHaveLength(0)
+    expect(toolbarActions.findAll('.ui-icon-button')).toHaveLength(1)
 
-    await wrapper.get('[data-quadrant="known_known"]').trigger('click')
+    await wrapper.get('[data-organizer-quadrants] [data-value="known_known"]').trigger('click')
 
-    expect(wrapper.get('[data-quadrant="known_known"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('[data-organizer-quadrants] [data-value="known_known"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.find('.organizer-layout').exists()).toBe(true)
 
-    await wrapper.get('[data-quadrant="all"]').trigger('click')
+    await wrapper.get('[data-organizer-quadrants] [data-value="all"]').trigger('click')
 
-    expect(wrapper.get('[data-quadrant="all"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('[data-organizer-quadrants] [data-value="all"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.find('.organizer-layout').exists()).toBe(true)
     wrapper.unmount()
   })
@@ -212,16 +213,16 @@ describe('KnowledgeOrganizerPage', () => {
     })
     await flushPromises()
 
-    expect(wrapper.get('[data-review-state="ai_reviewed"] strong').text()).toBe('1')
-    expect(wrapper.get('[data-review-state="pending"] strong').text()).toBe('1')
-    await wrapper.get('[data-review-state="ai_reviewed"]').trigger('click')
+    expect(wrapper.get('[data-stat="ai_reviewed"] strong').text()).toBe('1')
+    expect(wrapper.get('[data-stat="pending"] strong').text()).toBe('1')
+    await wrapper.get('[data-stat="ai_reviewed"]').trigger('click')
     expect(wrapper.findAll('.organizer-row')).toHaveLength(1)
     expect(wrapper.get('.organizer-row').text()).toContain('Tonborg item')
 
-    await wrapper.get('.organizer-toolbar-actions .toolbar-action').trigger('click')
+    await wrapper.get('.organizer-toolbar .ui-toolbar-end .ui-icon-button').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-review-state="ai_reviewed"] strong').text()).toBe('0')
-    expect(wrapper.get('[data-review-state="pending"] strong').text()).toBe('2')
+    expect(wrapper.get('[data-stat="ai_reviewed"] strong').text()).toBe('0')
+    expect(wrapper.get('[data-stat="pending"] strong').text()).toBe('2')
     wrapper.unmount()
   })
 
