@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { installWindowsForCurrentUser } from '../../src/desktop/windows-installation.js';
+import { installationSha256 } from '../../src/desktop/windows-installation-context.js';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -41,4 +43,22 @@ export function windowsInstallationFixture(t) {
   };
   const deps = { createShortcut, readShortcut };
   return { root, source, env, options, createShortcut, deps };
+}
+
+// An installed 0.12.4 with native data and a verified 0.12.5 candidate to update to.
+export function installedWindowsFixture(t) {
+  const f = windowsInstallationFixture(t);
+  const current = installWindowsForCurrentUser(f.options, f.deps);
+  mkdirSync(current.dataDir, { recursive: true });
+  writeFileSync(join(current.dataDir, 'sentinel'), 'existing user data');
+  writeFileSync(join(current.dataDir, 'runtime-settings.json'), JSON.stringify({ graphRuntimeMode: 'native' }));
+  const source = join(f.root, 'upgrade');
+  cpSync(f.source, source, { recursive: true });
+  writeFileSync(join(source, 'package.json'), JSON.stringify({ name: 'fuli-context', version: '0.12.5' }));
+  const inventory = JSON.parse(readFileSync(join(source, 'tray-files.sha256.json')));
+  for (const entry of inventory) entry[1] = installationSha256(readFileSync(join(source, entry[0])));
+  writeFileSync(join(source, 'tray-files.sha256.json'), JSON.stringify(inventory));
+  const calls = [];
+  return { ...f, current, source, calls, options: { source, env: f.env },
+    deps: { ...f.deps, acquireLock: async () => ({ assertHeld() {}, async release() {} }), runCli: async (root, args) => { calls.push({ root, args }); return { code: 0 }; } } };
 }
