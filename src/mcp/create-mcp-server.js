@@ -2,6 +2,7 @@ import { compactTaskContext } from '../conversations/task-context-view.js';
 import { employeeToolCatalogResult } from './employee-tool-catalog.js';
 import { agentToolCatalogResult } from './agent-tool-catalog.js';
 import { toolNamesForProfile } from './tool-profiles.js';
+import { CHAT_LISTING, chatListedSchema } from './chat-listing.js';
 import { parseChatResult } from '../agent-roundtable/chat-contract.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
@@ -145,18 +146,33 @@ export function createMcpServer(
     env,
     workerTaskContext
   );
-  for (const tool of tools.values()) registerTool(server, tool);
-  if (!tools.size) registerEmptyToolList(server);
-  if (registerResources && !workerTaskContext) registerFuliContextResources(server, app, { withRuntimeLease });
   // Only the named chat profile expands on demand. Restricted custom/remote
   // allow-lists remain a security boundary. Every call keeps its original name.
   const isChatProfile = !workerTaskContext && toolProfile === 'chat' && toolNames === null;
+  for (const tool of tools.values()) registerTool(server, tool, isChatProfile);
+  if (!tools.size) registerEmptyToolList(server);
+  if (registerResources && !workerTaskContext) registerFuliContextResources(server, app, { withRuntimeLease });
   const onDemandTools = isChatProfile ? createToolMap(app,
     projectActionPreviews, nativeThreadId, effectiveHostSessionId,
     clock, authoritativeSourceApplication, withRuntimeLease, null, prepareToolInput, env) : null;
+  if (onDemandTools) registerDispatchTool(server);
   registerCallHandler(server, tools, onDemandTools,
     !workerTaskContext && hostSessionId === null ? nativeRequestContext : null);
   return server;
+}
+
+// Chat clients list only a few tools. Hosts that do not refresh after
+// tools/list_changed can still call a discovered tool through this one name;
+// the call is validated and run exactly as the original tool.
+const DISPATCH_TOOL = 'fuli_call';
+function registerDispatchTool(server) {
+  server.registerTool(DISPATCH_TOOL, {
+    title: 'CALL · Run a discovered Fuli tool',
+    description: 'Run a Fuli tool by exact name with its input, after list_agent_interfaces(toolName) showed its schema. Same validation and permissions as calling it directly.',
+    inputSchema: jsonSchemaToZod({ type: 'object', additionalProperties: false, required: ['toolName'],
+      properties: { toolName: { type: 'string', minLength: 1, maxLength: 128 }, input: { type: 'object' } } }),
+    outputSchema: openObjectSchema()
+  }, () => { throw new Error('Handled by the Fuli call handler'); });
 }
 
 function registerEmptyToolList(server) {
@@ -250,12 +266,15 @@ function createToolMap(
   }]));
 }
 
-function registerTool(server, tool) {
+// Chat clients list a compact form (chat-listing.js); calls are always
+// validated against the full schema in tool.schema.
+function registerTool(server, tool, chat = false) {
   const { definition, schema } = tool;
+  const listing = chat ? CHAT_LISTING[definition.name] : null;
   server.registerTool(definition.name, {
     title: definition.title,
-    description: definition.description,
-    inputSchema: schema,
+    description: listing?.description ?? definition.description,
+    inputSchema: listing?.properties ? jsonSchemaToZod(chatListedSchema(definition)) : schema,
     outputSchema: openObjectSchema(),
     annotations: annotationsFor(definition.name)
   }, (input, extra) => invokeTool(tool, input, extra));
@@ -263,6 +282,16 @@ function registerTool(server, tool) {
 
 function registerCallHandler(server, tools, onDemandTools, resolveNativeContext = null) {
   server.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    if (request.params.name === DISPATCH_TOOL && onDemandTools) {
+      const { toolName, input } = request.params.arguments ?? {};
+      const target = toolName === DISPATCH_TOOL ? null : tools.get(toolName) ?? onDemandTools.get(toolName);
+      if (!target) return errorToolResult(new ApplicationError(ApplicationErrorCode.NOT_FOUND, 'Unknown Fuli tool'));
+      if (!tools.has(target.definition.name)) {
+        tools.set(target.definition.name, target);
+        registerTool(server, target);
+      }
+      request = { ...request, params: { ...request.params, name: target.definition.name, arguments: input ?? {} } };
+    }
     const tool = tools.get(request.params.name);
     if (!tool) {
       return errorToolResult(new ApplicationError(

@@ -8,14 +8,15 @@ import { toolNamesForProfile } from '../src/mcp/tool-profiles.js';
 const schemaBytes = (tools) => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
   ({ name, title, description, inputSchema }))));
 
-test('the chat profile is a small subset of real tools that keeps memory and Roundtable', () => {
+test('the chat profile is the everyday memory set; the rest, Roundtable included, stays one discovery away', () => {
   const all = listAgentTools();
   const chat = toolNamesForProfile('chat');
   const known = new Set(all.map(({ name }) => name));
   assert.deepEqual(chat.filter((name) => !known.has(name)), []);
-  for (const name of ['get_collaboration_preferences', 'search_current_project_knowledge', 'checkpoint_task_knowledge', 'message_agent']) {
+  for (const name of ['get_collaboration_preferences', 'search_current_project_knowledge', 'search_knowledge_graph', 'checkpoint_task_knowledge', 'list_agent_interfaces']) {
     assert.ok(chat.includes(name), name);
   }
+  assert.ok(!chat.includes('message_agent'), 'Roundtable tools are discovered on demand');
   const chatTools = all.filter(({ name }) => chat.includes(name));
   assert.ok(schemaBytes(chatTools) < schemaBytes(all) / 3, 'chat profile should be under a third of the full schema');
   assert.equal(toolNamesForProfile('full'), null);

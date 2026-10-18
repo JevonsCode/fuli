@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { listAgentTools } from '../src/agent-tools.js';
-import { toolNamesForProfile } from '../src/mcp/tool-profiles.js';
 import { MCP_INSTRUCTIONS } from '../src/mcp/instructions.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
 import { hookAdditionalContextToolResult } from '../src/mcp/tool-result.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 
 // R-13 token gate: what every session pays before doing any work. A change
 // that grows a number fails here; lower the baseline when a change shrinks it,
@@ -21,7 +23,11 @@ const BASELINE = Object.freeze({
   // +1,836 B in each profile. With dependency #103, both remain below the
   // pre-refactor 169,321/40,502 B; task entry and instructions do not grow.
   fullToolSchemaBytes: 169153,
-  chatToolSchemaBytes: 30047,
+  // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
+  // recall, checkpoint) plus list_agent_interfaces and the fuli_call
+  // dispatcher; checkpoint lists capture compactly. Measured from the real
+  // tools/list: 30,047 -> 7,782 B (-74%).
+  chatToolSchemaBytes: 7782,
   instructionsBytes: 2041,
   // T-TOKEN-2: the entry receipt keeps only what must be copied, defaults and
   // empty values are omitted, and the scope, receipt and details rule text is
@@ -66,11 +72,23 @@ async function projectEntryChars() {
   return JSON.parse(delivered.content[0].text).hookSpecificOutput.additionalContext.length;
 }
 
+// What a chat client actually receives from tools/list, dispatcher included.
+async function listedChatBytes() {
+  const server = createMcpServer({}, { env: {}, toolProfile: 'chat', registerResources: false });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'budget', version: '1.0.0' });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  const { tools } = await client.listTools();
+  await client.close();
+  await server.close();
+  return Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
+    ({ name, title, description, inputSchema }))));
+}
+
 async function measure() {
   const all = listAgentTools();
-  const chat = toolNamesForProfile('chat');
   return { fullToolSchemaBytes: schemaBytes(all),
-    chatToolSchemaBytes: schemaBytes(all.filter(({ name }) => chat.includes(name))),
+    chatToolSchemaBytes: await listedChatBytes(),
     instructionsBytes: Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8'),
     projectEntryChars: await projectEntryChars() };
 }
