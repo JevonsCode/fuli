@@ -64,6 +64,11 @@ function addSubTeam() {
   subTeams.value = [...subTeams.value, { id: `group-${Date.now().toString(36)}`, name: '', leadAgentId: '', memberAgentIds: [] }]
 }
 function removeSubTeam(group: ProjectSubTeamPolicy) { subTeams.value = subTeams.value.filter(other => other !== group) }
+// A promoted member stops being a member of the group they now lead.
+function setSubLead(group: ProjectSubTeamPolicy, agentId: string) {
+  group.leadAgentId = agentId
+  group.memberAgentIds = group.memberAgentIds.filter(id => id !== agentId)
+}
 // Leaving the team also leaves its group; a departed sub-lead empties the group's lead.
 watch(teamMembers, ids => {
   subTeams.value = subTeams.value.map(group => ({ ...group,
@@ -309,7 +314,7 @@ function stringValue(value: unknown) {
           <p class="sub-team-hint">{{ t('projectAgents.team.subTeamsHint') }}</p>
           <div v-for="group in subTeams" :key="group.id" class="sub-team-row" data-sub-team-row>
             <input v-model="group.name" class="sub-team-name" type="text" maxlength="40" :placeholder="t('projectAgents.team.subTeamName')" :aria-label="t('projectAgents.team.subTeamName')" />
-            <UiSelect v-model="group.leadAgentId" field :label="t('projectAgents.team.subLead')" :options="subLeadOptions(group)" />
+            <UiSelect :model-value="group.leadAgentId" field @update:model-value="setSubLead(group, $event)" :label="t('projectAgents.team.subLead')" :options="subLeadOptions(group)" />
             <div class="sub-team-members">
               <label v-for="agent in groupMemberOptions(group)" :key="agent.agentId"><input v-model="group.memberAgentIds" type="checkbox" :value="agent.agentId" />{{ label(agent) }}</label>
             </div>

@@ -130,8 +130,7 @@ describe('ProjectAgentAutomationPolicyPanel', () => {
     expect(wrapper.findAll('option').some(option => option.attributes('value') === 'temporary')).toBe(false)
     expect(wrapper.findAll('fieldset input').map(input => input.attributes('value'))).not.toContain('temporary')
     await wrapper.get('.unavailable-team-member input').setValue(false)
-    const save = wrapper.findAll('button').find(button => button.text() === t('projectAgents.team.save'))!
-    await save.trigger('click')
+    await saveButton(wrapper).trigger('click')
     await flushPromises()
     expect(patchJson.mock.lastCall?.[1]).toMatchObject({ teamLeadAgentId: 'lead',
       teamMemberAgentIds: ['member'], expectedUpdatedAt: '2026-09-16T00:00:00Z' })
@@ -142,11 +141,10 @@ describe('ProjectAgentAutomationPolicyPanel', () => {
       updatedAt: '2026-10-18T00:00:00Z' })
     const wrapper = mountPanel([agent('lead'), agent('backend'), agent('engineer'), agent('designer')])
     await flushPromises()
-    const save = () => wrapper.findAll('button').find(button => button.text() === t('projectAgents.team.save'))!
     await wrapper.get('[data-sub-team-add]').trigger('click')
     const row = wrapper.get('[data-sub-team-row]')
     // A group needs a name and a sub-lead before the team can be saved.
-    expect(save().attributes('disabled')).toBeDefined()
+    expect(saveButton(wrapper).attributes('disabled')).toBeDefined()
     await row.get('.sub-team-name').setValue('后端')
     // The newest select on the panel is the group's sub-lead; UiSelect is generic, so its wrapper is typed loosely.
     const subLead = wrapper.findAllComponents(UiSelect).at(-1) as unknown as { vm: { $emit: (event: string, value: string) => void } }
@@ -154,11 +152,47 @@ describe('ProjectAgentAutomationPolicyPanel', () => {
     await flushPromises()
     await row.findAll('.sub-team-members input').find(input => input.attributes('value') === 'engineer')!.setValue(true)
     expect(row.findAll('.sub-team-members input').map(input => input.attributes('value'))).not.toContain('backend')
-    expect(save().attributes('disabled')).toBeUndefined()
-    await save().trigger('click')
+    expect(saveButton(wrapper).attributes('disabled')).toBeUndefined()
+    await saveButton(wrapper).trigger('click')
     await flushPromises()
     expect(patchJson.mock.lastCall?.[1]).toMatchObject({ teamLeadAgentId: 'lead', expectedUpdatedAt: '2026-10-18T00:00:00Z',
       subTeams: [{ name: '后端', leadAgentId: 'backend', memberAgentIds: ['engineer'] }] })
+  })
+
+  it('drops a promoted member from the group so the lead is never also a member', async () => {
+    getJson.mockResolvedValueOnce({ teamLeadAgentId: 'lead', teamMemberAgentIds: ['backend', 'engineer', 'designer'],
+      subTeams: [{ id: 'group-a', name: '后端', leadAgentId: 'backend', memberAgentIds: ['engineer', 'designer'] }] })
+    const wrapper = mountPanel([agent('lead'), agent('backend'), agent('engineer'), agent('designer')])
+    await flushPromises()
+    const row = wrapper.get('[data-sub-team-row]')
+    const subLead = wrapper.findAllComponents(UiSelect).at(-1) as unknown as { vm: { $emit: (event: string, value: string) => void } }
+    subLead.vm.$emit('update:modelValue', 'engineer')
+    await flushPromises()
+    // The former lead can step down into the same group in the same edit.
+    await row.findAll('.sub-team-members input').find(input => input.attributes('value') === 'backend')!.setValue(true)
+    await saveButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(patchJson.mock.lastCall?.[1]).toMatchObject({
+      subTeams: [{ id: 'group-a', leadAgentId: 'engineer', memberAgentIds: ['designer', 'backend'] }] })
+  })
+
+  it('moves a member between groups once they leave the first group', async () => {
+    getJson.mockResolvedValueOnce({ teamLeadAgentId: 'lead', teamMemberAgentIds: ['backend', 'engineer', 'designer', 'writer'],
+      subTeams: [{ id: 'group-a', name: '后端', leadAgentId: 'backend', memberAgentIds: ['engineer'] },
+        { id: 'group-b', name: '设计', leadAgentId: 'designer', memberAgentIds: [] }] })
+    const wrapper = mountPanel([agent('lead'), agent('backend'), agent('engineer'), agent('designer'), agent('writer')])
+    await flushPromises()
+    const [first, second] = wrapper.findAll('[data-sub-team-row]')
+    const memberValues = (row: typeof first) => row.findAll('.sub-team-members input').map(input => input.attributes('value'))
+    expect(memberValues(second)).not.toContain('engineer')
+    await first.findAll('.sub-team-members input').find(input => input.attributes('value') === 'engineer')!.setValue(false)
+    await second.findAll('.sub-team-members input').find(input => input.attributes('value') === 'engineer')!.setValue(true)
+    expect(memberValues(first)).not.toContain('engineer')
+    await saveButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(patchJson.mock.lastCall?.[1]).toMatchObject({ subTeams: [
+      { id: 'group-a', leadAgentId: 'backend', memberAgentIds: [] },
+      { id: 'group-b', leadAgentId: 'designer', memberAgentIds: ['engineer'] }] })
   })
 
   it('does not offer an empty lead once the project has a lead', async () => {
@@ -178,6 +212,10 @@ function mountPanel(agents?: ProjectAgentRecord[]) {
       agents,
     },
   })
+}
+
+function saveButton(wrapper: ReturnType<typeof mountPanel>) {
+  return wrapper.findAll('button').find(button => button.text() === t('projectAgents.team.save'))!
 }
 
 function switchFor(wrapper: ReturnType<typeof mountPanel>, key: string) {
