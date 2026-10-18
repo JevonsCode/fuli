@@ -166,5 +166,10 @@ export function publicDirectoryEntry(entry) {
   return { bindingId: entry.bindingId, agentId: entry.agentId, name: text(entry.name, 120) ?? entry.agentId,
     employeeNumber: text(entry.employeeNumber, 32), responsibility: text(entry.responsibility, 500),
     projectName: text(entry.projectName, 120),
+    ...(entry.projectId !== undefined ? { projectId: text(entry.projectId, 128) } : {}),
+    ...(entry.occupation !== undefined ? { occupation: text(entry.occupation, 120) } : {}),
+    ...(entry.capabilities !== undefined ? { capabilities: (Array.isArray(entry.capabilities) ? entry.capabilities : [])
+      .filter(c => typeof c === 'string').slice(0, 20).map(c => c.slice(0, 128)) } : {}),
+    ...(entry.communicationOnly === true ? { communicationOnly: true } : {}),
     clients: (Array.isArray(entry.clients) ? entry.clients : []).filter((client) => isOpaqueId(client)).slice(0, 4) };
 }

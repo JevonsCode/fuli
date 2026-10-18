@@ -18,6 +18,7 @@ const CHAT_TOOLS = Object.freeze([
   'read_agent_conversation',
   'resume_agent_conversation',
   'find_agents',
+  'agent_chat',
   'message_agent',
   'read_agent_messages',
   'reply_agent_message',

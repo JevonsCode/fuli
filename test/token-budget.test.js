@@ -17,8 +17,11 @@ const BASELINE = Object.freeze({
   // (both on demand via list_agent_interfaces) and the repeated profileAspect
   // text shrinks: chat -12,291 B, full -2,004 B; instructions -2 B while adding
   // the pointer that tells chat clients how to reach unlisted tools.
-  fullToolSchemaBytes: 167317,
-  chatToolSchemaBytes: 28211,
+  // UI-09 adds one required chat-operation contract and discovery filters:
+  // +1,836 B in each profile. With dependency #103, both remain below the
+  // pre-refactor 169,321/40,502 B; task entry and instructions do not grow.
+  fullToolSchemaBytes: 169153,
+  chatToolSchemaBytes: 30047,
   instructionsBytes: 2041,
   // T-TOKEN-2: the entry receipt keeps only what must be copied, defaults and
   // empty values are omitted, and the scope, receipt and details rule text is

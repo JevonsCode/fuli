@@ -36,6 +36,8 @@ export async function startCoordinatorServer({ service, identity, host, port = 0
     switch (pathname) {
       case '/peer/1/directory/publish': return sendJson(response, service.publishDirectory(nodeId, body));
       case '/peer/1/directory': return sendJson(response, service.directory(nodeId));
+      case '/peer/1/chat': return sendJson(response, await service.chat(nodeId, body));
+      case '/peer/1/chat/read': return sendJson(response, await service.chatOwner(nodeId, body));
       case '/peer/1/messages': return sendJson(response, service.submit(nodeId, body));
       case '/peer/1/claim': return sendJson(response, { claim: await longPollClaim(nodeId, request, response) });
       case '/peer/1/renew': return sendJson(response, service.renew(nodeId, body));

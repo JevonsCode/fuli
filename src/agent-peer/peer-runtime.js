@@ -13,6 +13,7 @@ import { createPeerRunner } from './runner.js';
 
 const PUBLISH_MS = 60_000;
 const WAKE_CLIENTS = new Set(['codex', 'claude_code']);
+const teamPeople = team => team ? [team.lead, ...team.members, ...team.collaborators, ...team.peers].filter(Boolean) : [];
 
 // The local owner's LAN roundtable controls, run only by the console process.
 // Nothing here starts unless the owner turned it on; console LAN access does not.
@@ -102,17 +103,22 @@ export function createPeerRuntime({ app, port, interfaces = networkInterfaces, a
       .map((project) => [project.project_id ?? project.personal_project_id ?? project.id, project.profile?.name ?? project.name]));
     return Promise.all(store().shares().filter((share) => share.spaceId === spaceId()).map(async (share) => {
       const team = await loadProjectTeam(app, share.spaceId, share.projectId).catch(() => null);
-      const current = team?.lead?.agentId === share.agentId;
-      return { ...share, projectName: names.get(share.projectId) ?? share.projectId, lead: team?.lead ?? null,
+      const person = share.communicationOnly ? teamPeople(team).find(a => a.agentId === share.agentId) : team?.lead;
+      const current = person?.agentId === share.agentId;
+      return { ...share, projectName: names.get(share.projectId) ?? share.projectId, lead: person ?? null,
         state: current ? 'shared' : team?.lead ? 'lead_changed' : 'lead_unavailable' };
     }));
   }
 
   async function publish() {
     if (!runnerClient) return;
+    const profiles = await app.listProjectAgents({ personalSpaceId: spaceId() });
     const agents = (await shareStates()).filter((share) => share.state === 'shared').map((share) => ({
       bindingId: share.bindingId, agentId: share.agentId, name: share.lead.name, employeeNumber: share.lead.employeeNumber,
-      responsibility: share.lead.responsibility, projectName: share.projectName, clients: share.clients }));
+      responsibility: share.lead.responsibility, projectName: share.projectName, projectId: share.projectId,
+      occupation: profiles.find(a => a.agentId === share.agentId)?.occupation?.role ?? null,
+      capabilities: profiles.find(a => a.agentId === share.agentId)?.profile.capabilities ?? [],
+      ...(share.communicationOnly ? { communicationOnly: true } : {}), clients: share.clients }));
     await runner?.reconcileShares(new Set(agents.map((agent) => agent.bindingId)));
     await runnerClient.post('/peer/1/directory/publish', { agents });
   }
@@ -129,7 +135,9 @@ export function createPeerRuntime({ app, port, interfaces = networkInterfaces, a
       const allowed = (agents.find((agent) => agent.agentId === team?.lead?.agentId)?.profile.allowedClients ?? [])
         .filter((client) => WAKE_CLIENTS.has(client));
       return { projectId, projectName: project.profile?.name ?? project.name ?? projectId,
-        lead: team?.lead ? { agentId: team.lead.agentId, name: team.lead.name } : null, clients: allowed };
+        lead: team?.lead ? { agentId: team.lead.agentId, name: team.lead.name } : null, clients: allowed,
+        communicationAgents: teamPeople(team).map(person => ({ agentId: person.agentId, name: person.name,
+          occupation: agents.find(a => a.agentId === person.agentId)?.occupation?.role ?? null })) };
     }));
   }
 
@@ -208,18 +216,21 @@ export function createPeerRuntime({ app, port, interfaces = networkInterfaces, a
     const shares = [];
     for (const entry of wanted) {
       const projectId = entry?.projectId;
-      if (typeof projectId !== 'string' || !projectId || shares.some((share) => share.projectId === projectId)) {
-        throw new PeerError('invalid_shares', 'Each shared project must be listed once', 422);
-      }
+      if (typeof projectId !== 'string' || !projectId) throw new PeerError('invalid_shares', 'A shared Agent needs a project', 422);
       const team = await loadProjectTeam(app, spaceId(), projectId);
-      if (!team.lead) throw new PeerError('lead_unavailable', 'A shared project needs an active project lead', 409);
-      const allowed = (agents.find((agent) => agent.agentId === team.lead.agentId)?.profile.allowedClients ?? [])
+      const communicationOnly = entry.communicationOnly === true;
+      const target = communicationOnly ? teamPeople(team).find(a => a.agentId === entry.agentId) : team.lead;
+      if (!target) throw new PeerError('lead_unavailable', 'A share needs an active assigned Agent; execution requires the project lead', 409);
+      if (shares.some(s => s.projectId === projectId && s.agentId === target.agentId)) throw new PeerError('invalid_shares', 'List each project Agent once', 422);
+      const allowed = (agents.find((agent) => agent.agentId === target.agentId)?.profile.allowedClients ?? [])
         .filter((client) => WAKE_CLIENTS.has(client));
       const clients = Array.isArray(entry.clients) ? [...new Set(entry.clients)] : [];
-      if (!clients.length || !clients.every((client) => allowed.includes(client))) {
+      if ((!communicationOnly && !clients.length) || !clients.every((client) => allowed.includes(client)) || (communicationOnly && clients.length)) {
         throw new PeerError('invalid_clients', 'Choose at least one client the project lead may use', 422);
       }
-      shares.push({ spaceId: spaceId(), projectId, agentId: team.lead.agentId, clients,
+      if (communicationOnly && entry.workingDirectory) throw new PeerError('invalid_shares', 'Communication-only shares have no working directory', 422);
+      shares.push({ spaceId: spaceId(), projectId, agentId: target.agentId, clients,
+        ...(communicationOnly ? { communicationOnly: true } : {}),
         workingDirectory: entry.workingDirectory ? confirmedFolder(entry.workingDirectory, projectId, known) : null });
     }
     store().replaceShares(shares, port.idFactory);

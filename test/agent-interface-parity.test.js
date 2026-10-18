@@ -183,13 +183,15 @@ test('external knowledge configuration is controllable through explicit Agent to
 test('Agent interface catalog lists roundtable reads and requested-Agent identity guidance', () => {
   const catalog = agentInterfaceCatalog();
   const roundtable = catalog.readWorkflows.find(({ domain }) => domain === 'roundtable');
-  assert.deepEqual(roundtable.toolNames, ['find_agents', 'read_agent_messages', 'read_agent_thread', 'get_agent_message_status']);
-  assert.deepEqual(roundtable.readRoutes, ['GET /api/roundtable/threads', 'GET /api/roundtable/threads/:threadId',
+  assert.deepEqual(roundtable.toolNames, ['find_agents', 'agent_chat', 'read_agent_messages', 'read_agent_thread', 'get_agent_message_status']);
+  assert.deepEqual(roundtable.readRoutes, ['GET /api/roundtable/agents', 'GET /api/roundtable/chats', 'GET /api/roundtable/chats/:chatId',
+    'GET /api/roundtable/threads', 'GET /api/roundtable/threads/:threadId',
     'GET /api/roundtable/messages/:messageId']);
   assert.match(roundtable.guidance, /requested_agent_id/);
   assert.match(roundtable.guidance, /not evidence/);
   const byRoute = new Map(catalog.uiMutationParity.map((entry) => [entry.route, entry]));
   assert.equal(byRoute.get('POST /api/roundtable/messages/:messageId/cancel')?.toolName, 'cancel_agent_message');
+  assert.equal(byRoute.get('POST /api/roundtable/chats')?.toolName, 'agent_chat');
   for (const route of ['POST /api/peer/coordinator', 'POST /api/peer/invitations', 'POST /api/peer/join',
     'PUT /api/peer/shares', 'POST /api/peer/devices/:nodeId/revoke', 'POST /api/peer/disable']) {
     assert.equal(byRoute.get(route)?.access, 'local_user_only', route);

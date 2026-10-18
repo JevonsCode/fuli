@@ -109,7 +109,7 @@ export function createPeerRunner({ store, client, roundtable, provider, nodeId, 
     if (!verifyDeviceSignature(sender.certPem, assertion, signature)) throw new PeerError('invalid_signature', 'Invalid device signature', 403);
     if (assertion.to.node !== nodeId) throw new PeerError('wrong_device', 'The message is for another device', 403);
     const share = store.share(assertion.to.bindingId);
-    if (!share || share.agentId !== assertion.to.agentId || share.spaceId !== spaceId()) {
+    if (!share || share.communicationOnly || share.agentId !== assertion.to.agentId || share.spaceId !== spaceId()) {
       throw new PeerError('agent_not_shared', 'That Agent is not shared on this device', 403);
     }
     const authority = pinnedAuthority(sender);

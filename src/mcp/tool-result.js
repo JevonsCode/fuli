@@ -19,6 +19,18 @@ const MESSAGE_LIMIT = 240;
 const TRUNCATION_MARKER = '...[truncated]';
 const VALIDATION_ERROR_LIMIT = 5;
 
+function jsonEnvelope(value) {
+  const text = JSON.stringify(value);
+  return { content: [{ type: 'text', text }], structuredContent: JSON.parse(text) };
+}
+
+// Used only for explicit, bounded business projections that must remain whole.
+export function completeToolResult(value, limitBytes) {
+  const result = jsonEnvelope(value);
+  if (jsonBytes(result) > limitBytes) throw new ApplicationError('result_too_large', 'Request a smaller page to receive the complete result');
+  return result;
+}
+
 // The reader already supplies an explicit business projection. Never pass it
 // through the generic string/array sanitizer and then call it complete.
 export function completePreferenceToolResult(value, limitBytes = 512 * 1024) {
@@ -30,8 +42,7 @@ export function completePreferenceToolResult(value, limitBytes = 512 * 1024) {
     'project_agent_context', 'taskContextToken', 'task_context_token', 'checkpoint_required', 'checkpoint_guidance', 'project_scope', 'worker_run',
     'preference_delivery', 'preferences_complete', 'same_task_recovery_available', 'truncated']);
   // One JSON form for both channels: undefined fields never differ between them.
-  const envelope = candidate => { const text = JSON.stringify(candidate);
-    return { content: [{ type: 'text', text }], structuredContent: JSON.parse(text) }; };
+  const envelope = jsonEnvelope;
   const unsafe = (item, depth = 0) => depth > 64 || (item && typeof item === 'object' &&
     Object.entries(item).some(([key, nested]) => OMITTED_KEYS.has(key.replace(/[_-]/g, '').toLowerCase()) || unsafe(nested, depth + 1)));
   let candidate = value;
