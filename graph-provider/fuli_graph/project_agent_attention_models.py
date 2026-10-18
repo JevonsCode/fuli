@@ -20,9 +20,15 @@ class AgentAttentionCreate(StrictModel):
     title: str = Field(min_length=1, max_length=160)
     detail: str = Field(min_length=1, max_length=4096)
     requested_action: str = Field(min_length=1, max_length=2048)
+    options: list[str] | None = Field(default=None, min_length=2, max_length=3)
 
     @model_validator(mode='after')
     def reject_sensitive_values(self):
+        if self.options is not None and (
+            len(set(self.options)) != len(self.options)
+            or any(not value or len(value) > 160 for value in self.options)
+        ):
+            raise ValueError('attention options must be distinct non-empty labels up to 160 characters')
         reject_credentials(self, 'Agent attention request')
         return self
 
@@ -50,6 +56,7 @@ class AgentAttentionRecord(StrictModel):
     title: str
     detail: str
     requested_action: str
+    options: list[str] | None = None
     status: AttentionStatus = 'open'
     revision: int = 0
     response: str | None = None

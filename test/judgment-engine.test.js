@@ -54,9 +54,34 @@ test('manual mode and sensitive preference evidence remain human decisions', asy
   assert.equal((await manual.service.review(input)).records[0].execution.status, 'not_applied');
   assert.equal(manual.writes.length, 0);
   const sensitive = fixture(t);
-  sensitive.candidates[0].profile_aspect = 'judgment';
+  sensitive.candidates[0].requires_attention = true;
   assert.equal((await sensitive.service.review(input)).records[0].outcome, 'escalate');
   assert.equal(sensitive.writes.length, 0);
+});
+
+test('routine pending preference review is acknowledged automatically without confirming it', async t => {
+  const { service, candidates, writes } = fixture(t);
+  candidates[0].profile_aspect = 'judgment_preference';
+  candidates[0].confirmation_status = 'pending';
+  const result = await service.review(input);
+  assert.equal(result.records[0].outcome, 'approve');
+  assert.equal(result.records[0].execution.status, 'applied');
+  assert.equal(writes[0].outcome, 'ai_reviewed');
+  assert.equal(Object.hasOwn(writes[0], 'confirmationStatus'), false);
+});
+
+test('uncertain review returns a stable native choice hint and never writes approval', async t => {
+  const { service, candidates, writes } = fixture(t);
+  candidates[0].requires_attention = true;
+  const result = await service.review(input);
+  const hint = result.human_interaction;
+  assert.equal(hint?.presentation, 'host_native_single_choice');
+  assert.equal(hint.source.id, result.records[0].id);
+  assert.equal(hint.source.personalProjectId, 'p');
+  assert.equal(hint.allow_custom_input, true);
+  assert.ok(hint.options.length >= 2 && hint.options.length <= 3);
+  assert.equal((await service.review(input)).human_interaction.source.id, hint.source.id);
+  assert.equal(writes.length, 0);
 });
 test('changed evidence makes a decision stale before any write', async t => {
   const { service, writes } = fixture(t, { mutate: candidates => { candidates[0].content = 'Different'; } });
