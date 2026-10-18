@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from '@/ui/UiButton.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -79,9 +80,9 @@ function mergeLabel(item: ProjectPreview) {
         <p class="project-history-hint">{{ t('projectHistory.hint') }}</p>
       </div>
       <GrowthLoading v-if="loading" variant="inline" :label="loadingLabel" />
-      <button v-else class="quiet-button" type="button" data-generate @click="generate">
+      <UiButton size="sm" variant="ghost" v-else data-generate @click="generate">
         {{ preview ? t('projectHistory.regenerate') : t('projectHistory.generate') }}
-      </button>
+      </UiButton>
     </header>
 
     <div v-if="failed" class="project-history-state" role="alert">

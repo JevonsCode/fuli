@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiButton from '@/ui/UiButton.vue'
 import ActivityOriginBadge from "@/features/agent-profile/ActivityOriginBadge.vue";
 import { employeeAvatarUrl } from "@/features/employees/avatars";
 import { agentIdentityStyle } from "@/features/agent-profile/agent-identity-color";
@@ -314,9 +315,9 @@ onMounted(() => {
       role="alert"
     >
       <p>{{ error || t("agentProfiles.loadError") }}</p>
-      <button class="quiet-button" type="button" @click="store.state ? load() : store.refresh()">
+      <UiButton size="sm" variant="ghost" @click="store.state ? load() : store.refresh()">
         {{ t("agentProfiles.retry") }}
-      </button>
+      </UiButton>
     </div>
     <p v-else-if="!agent" class="ui-card ui-empty agent-profile-empty">
       {{ t("agentProfiles.unavailable") }}
@@ -366,14 +367,12 @@ onMounted(() => {
           >
             {{ t("agentProfiles.workbench") }}
           </RouterLink>
-          <button
-            class="quiet-button"
-            type="button"
+          <UiButton size="sm" variant="ghost"
             :aria-expanded="showSettings"
             @click="showSettings = !showSettings"
           >
             {{ t("agentProfiles.settings") }}
-          </button>
+          </UiButton>
           <RouterLink
             v-if="!isAr"
             class="quiet-button"
