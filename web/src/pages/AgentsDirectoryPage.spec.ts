@@ -206,6 +206,14 @@ describe('Agent directory integration', () => {
     const { wrapper } = await setup()
     const names = () => wrapper.findAll('.agent-directory-name a').map(link => link.text())
     expect(names()).toEqual(['Birch', 'Aster'])
+    // Sorting by name is plain alphabetical; switching back restores recent work.
+    const page = wrapper.getComponent(AgentsDirectoryPage).vm as unknown as { sort: 'recent' | 'name' }
+    page.sort = 'name'
+    await flushPromises()
+    expect(names()).toEqual(['Aster', 'Birch'])
+    page.sort = 'recent'
+    await flushPromises()
+    expect(names()).toEqual(['Birch', 'Aster'])
     const current = wrapper.get('[data-current-task]')
     expect(current.text()).toContain('Synthetic review task')
     // No recorded run start: say unknown rather than turn the update time into a duration.
@@ -425,7 +433,9 @@ describe('Agent directory integration', () => {
     expect((wrapper.get('input[type="search"]').element as HTMLInputElement).value).toBe('birch')
     await router.push('/project-agents')
     await flushPromises()
-    expect((wrapper.get('input[type="search"]').element as HTMLInputElement).value).toBe('')
+    // An empty search folds back into its icon.
+    expect(wrapper.find('input[type="search"]').exists()).toBe(false)
+    expect(wrapper.find('[data-directory-search]').exists()).toBe(true)
     expect(wrapper.findAll('.agent-directory-name a')).toHaveLength(2)
     router.back()
     await flushPromises()
@@ -435,6 +445,7 @@ describe('Agent directory integration', () => {
 
   it('keeps the latest filter when leaving before the old debounce interval', async () => {
     const { router, wrapper } = await setup()
+    await wrapper.get('[data-directory-search]').trigger('click')
     await wrapper.get('input[type="search"]').setValue('aster')
     // Separate browser input and click events drain navigation microtasks,
     // without waiting for the former 250ms debounce timer.
