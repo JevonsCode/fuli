@@ -32,11 +32,11 @@ describe('localized route metadata', () => {
     expect(router.resolve('/').meta.eyebrow).toBe('')
   })
 
-  it('registers writing taste as a concise child of collaboration preferences', () => {
+  it('titles writing taste the same as its section tab', () => {
     const route = router.resolve('/preferences/writing')
     expect(route.name).toBe('writing-taste')
     expect(route.meta.eyebrow).toBe('')
-    expect(routeMetaText(route.meta.title)).toBe('文风画像')
+    expect(routeMetaText(route.meta.title)).toBe('写作品味')
   })
 
   it('registers the concise project Agent directory', () => {
