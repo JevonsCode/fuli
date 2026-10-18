@@ -110,4 +110,10 @@ function reset() {
 .design-lab-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--color-ink-soft); font-size: 13px; }
 .design-lab-choices { flex-wrap: wrap; }
 .design-lab-foot { display: flex; justify-content: flex-end; }
+/* Narrow screens have the bottom tab bar: sit above it, never over a tab. */
+@media (max-width: 720px) {
+  .design-lab-launcher, .design-lab { bottom: calc(60px + env(safe-area-inset-bottom) + 12px); }
+  .design-lab { right: 16px; max-height: calc(100dvh - 60px - env(safe-area-inset-bottom) - 28px); overflow: auto; }
+  .design-lab-launcher { right: 16px; }
+}
 </style>
