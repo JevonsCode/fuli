@@ -59,6 +59,8 @@
   --shadow-dialog: 0 2px 6px rgb(var(--shadow-rgb) / 6%), 0 24px 64px rgb(var(--shadow-rgb) / 16%);
   /* The brand mark's sparkle. */
   --brand-gold: #f4c970;
+  /* The logo is a black-and-gold PNG; dark mode flips the black and keeps the gold's hue. */
+  --brand-mark-filter: none;
   /* Agent identity swatches: none is green, amber or red, so identity never reads as a status. */
   --identity-0: #1f5ea8; --identity-0-soft: #e6eef8;
   --identity-1: #4a4aad; --identity-1-soft: #ececf8;
@@ -105,6 +107,7 @@
     --aspect-personality: #7cc3da; --aspect-personality-soft: #1d2c32;
     --aspect-judgment: #a3b2d9; --aspect-judgment-soft: #232836;
     color-scheme: dark;
+    --brand-mark-filter: invert(1) hue-rotate(180deg) brightness(1.05);
     --color-bg: #0e1210;
     --color-surface: #151a17;
     --color-surface-subtle: #1b211e;

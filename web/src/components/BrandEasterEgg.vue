@@ -238,6 +238,7 @@ onBeforeUnmount(() => {
   width: 38px;
   height: 38px;
   object-fit: contain;
+  filter: var(--brand-mark-filter);
 }
 
 /* Two rings ripple out from the mark and fade inside the brand area, so the
