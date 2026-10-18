@@ -15,7 +15,7 @@ test('OpenCode keeps JSONC comments and offers manual setup for layered global o
   mkdirSync(path.dirname(configPath), { recursive: true });
   const raw = '{\n // user theme\n "theme":"dark",\n "mcp": {"other":{"type":"local","command":["other"]}},\n}';
   writeFileSync(configPath, raw);
-  const environment = { homeDir, pathApi: path.posix, env: {}, commandExists: () => false,
+  const environment = { homeDir, pathApi: path, env: {}, commandExists: () => false,
     fileExists: (file) => file === configPath };
   const agent = adapter.detect(environment);
   assert.equal(agent.configPath, configPath);
@@ -27,4 +27,13 @@ test('OpenCode keeps JSONC comments and offers manual setup for layered global o
   assert.equal(manual.manualOnly, true);
   assert.throws(() => adapter.connect(manual, {}), /manual/);
   assert.equal(adapter.detect({ ...environment, fileExists: () => true }).manualOnly, true);
+});
+
+test('OpenCode discovers a Windows JSONC config without accessing the host filesystem', () => {
+  const configPath = String.raw`C:\Users\Tester\.config\opencode\opencode.jsonc`;
+  const agent = adapter.detect({ homeDir: String.raw`C:\Users\Tester`, env: {}, pathApi: path.win32,
+    commandExists: () => false, fileExists: (file) => file === configPath });
+  assert.equal(agent?.configPath, configPath);
+  assert.equal(agent?.available, true);
+  assert.notEqual(agent?.manualOnly, true);
 });
