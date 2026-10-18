@@ -9,8 +9,10 @@ export const ASSISTANT_AGENT_ID = 'employee.assistant';
 // An unclaimed conversation never creates a project or hires a lead: it stays
 // pending in the assistant's global scope until it is assigned to a project.
 export async function resolveTaskEntryProject(application, resolution, input) {
+  // An unregistered repository ID is only a hint: when auto-registration did
+  // not apply, the prompt, the session and the assistant still decide.
   if (!input.agentInvocation || !TASK_ENTRY_TOOLS.has(input.agentToolName)
-    || resolution.personalProjectId || resolution.repositoryProjectId
+    || resolution.personalProjectId
     || !['unmatched', 'not_provided'].includes(resolution.status)) return resolution;
   // An explicit FLA outside a project uses its independent global context.
   if (input.projectAgentId || String(input.taskPrompt ?? '').trimStart().startsWith('@')) {
