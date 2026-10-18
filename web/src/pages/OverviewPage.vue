@@ -26,6 +26,7 @@ import { employeeAvatarUrl } from '@/features/employees/avatars'
 import FocusBoard from '@/features/workbench/FocusBoard.vue'
 import KanbanBoard from '@/features/workbench/KanbanBoard.vue'
 import TimelineBoard from '@/features/workbench/TimelineBoard.vue'
+import ConstellationBoard from '@/features/workbench/ConstellationBoard.vue'
 import type { AgentFace, WorkbenchBoard } from '@/features/workbench/workbench-board'
 import { formatRelativeTime } from '@/lib/relative-time'
 import type { ProjectAgentTaskRecord } from '@/types'
@@ -67,7 +68,7 @@ const shownAgentIds = computed(() => [...new Set([
 const attentionAgents = useAgentRecords(activeSpaceId, shownAgentIds)
 
 // Design-lab workbench designs share this page's data and links.
-const WORKBENCH_DESIGNS: Record<string, Component> = { focus: FocusBoard, board: KanbanBoard, timeline: TimelineBoard }
+const WORKBENCH_DESIGNS: Record<string, Component> = { focus: FocusBoard, board: KanbanBoard, timeline: TimelineBoard, constellation: ConstellationBoard }
 const workbenchDesign = computed(() => WORKBENCH_DESIGNS[designLab.value.workbench] ?? null)
 function agentFace(agentId?: string | null): AgentFace {
   const record = agentId ? attentionAgents.records.value[agentId] : undefined
