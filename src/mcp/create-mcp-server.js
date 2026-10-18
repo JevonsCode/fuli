@@ -274,7 +274,7 @@ function registerTool(server, tool, chat = false) {
   server.registerTool(definition.name, {
     title: definition.title,
     description: listing?.description ?? definition.description,
-    inputSchema: listing?.properties ? jsonSchemaToZod(chatListedSchema(definition)) : schema,
+    inputSchema: chat ? jsonSchemaToZod(chatListedSchema(definition)) : schema,
     outputSchema: openObjectSchema(),
     annotations: annotationsFor(definition.name)
   }, (input, extra) => invokeTool(tool, input, extra));
@@ -335,6 +335,8 @@ async function invokeTool(tool, input, requestContext = null) {
       ? Math.max(TOOL_RESULT_LIMIT_BYTES[tool.definition.name] ?? 0, 32 * 1024)
       : TOOL_RESULT_LIMIT_BYTES[tool.definition.name];
     if (tool.definition.name === 'agent_chat') return completeToolResult(parseChatResult(value), limitBytes);
+    if (['search_knowledge_graph', 'search_current_project_knowledge'].includes(tool.definition.name)
+      && value?.retrieval_budget) return completeToolResult(value, limitBytes);
     if (['begin_task_context', 'get_collaboration_preferences', 'read_task_preferences'].includes(tool.definition.name)) {
       const name = tool.definition.name;
       const view = name === 'read_task_preferences' ? value : compactTaskContext(value);

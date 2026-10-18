@@ -1,6 +1,7 @@
 import { createFuliSourceMarker } from './source-marker.js';
 import { knowledgeItemRole } from './knowledge-item-role.js';
 import { detectSensitiveContent } from '../security/sensitive-content.js';
+import { budgetAutomaticRecall } from './knowledge-result-budget.js';
 
 const MAX_QUERIES = 4;
 const MAX_ITEMS_PER_KIND = 3;
@@ -144,7 +145,7 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt) {
     projectScopePriority: 'strict'
   });
   const searched = results.length > 0;
-  return {
+  const result = {
     status: facts.length || entities.length
       ? 'matched'
       : failedQueryCount === settlements.length ? 'unavailable' : 'no_match',
@@ -162,6 +163,9 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt) {
     facts,
     entities
   };
+  return facts.length || entities.length ? budgetAutomaticRecall(result, {
+    consoleUrl: application.consoleUrl, compare: compareRecallItems
+  }) : result;
 }
 
 function recallWithoutSearch(status, plan) {

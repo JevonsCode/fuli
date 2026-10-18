@@ -47,6 +47,33 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
+  it('narrows the page to matching settings and says when nothing matches', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().runtimeStatus = 'ready'
+    vi.stubGlobal('fetch', vi.fn(async (input) => {
+      if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
+      return Response.json({}, { status: 503 })
+    }))
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] }, attachTo: document.body })
+    await flushPromises()
+    const search = wrapper.get('.settings-search input')
+    await search.setValue('Neo4j Bolt')
+    await flushPromises()
+    const ports = wrapper.get<HTMLDetailsElement>('.ports-card')
+    expect(ports.attributes('data-search-hidden')).toBeUndefined()
+    expect(ports.element.open).toBe(true)
+    expect(wrapper.get('.behavior-card').attributes('data-search-hidden')).toBe('')
+    await search.setValue('zzz-no-such-setting')
+    await flushPromises()
+    expect(wrapper.get('.settings-search-empty').text()).toContain('zzz-no-such-setting')
+    await search.setValue('')
+    await flushPromises()
+    expect(wrapper.findAll('[data-search-hidden]')).toHaveLength(0)
+    expect(ports.element.open).toBe(false)
+    wrapper.unmount()
+  })
+
   it('saves the local address that is told when a person is needed', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
