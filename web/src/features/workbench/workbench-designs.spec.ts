@@ -1,5 +1,6 @@
 import { mount, RouterLinkStub } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import type { Component } from 'vue'
 import type { AgentAttention } from '@/features/project-agents/attention-store'
 import type { ProjectAgentTaskRecord } from '@/types'
 import FocusBoard from './FocusBoard.vue'
@@ -19,8 +20,8 @@ const board = (tasks: ProjectAgentTaskRecord[], attention: AgentAttention[] = []
   statusLabel: status => status,
   since: () => 'now',
 })
-const mountDesign = (component: unknown, value: WorkbenchBoard) =>
-  mount(component as never, { props: { board: value }, global: { stubs: { RouterLink: RouterLinkStub } } })
+const mountDesign = (component: Component, value: WorkbenchBoard) =>
+  mount(component, { props: { board: value } as Record<string, unknown>, global: { stubs: { RouterLink: RouterLinkStub } } })
 const question = { requestId: 'q1', personalSpaceId: 's', personalProjectId: 'fuli', agentId: 'agent-a', taskId: null, kind: 'decision',
   title: 'Pick a palette', detail: 'Gold or ink', requestedAction: '', revision: 1, status: 'open', createdAt: recent } as AgentAttention
 
