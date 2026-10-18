@@ -1,6 +1,7 @@
 import type { PersonalProject, ProjectAgentTaskRecord, ProjectAgentTaskStatus } from '@/types'
 import { arrayOf, normalizeTask, unknownRecord } from '@/features/project-agents/task-evidence'
 import { projectDisplayName } from '@/features/projects/project-origin'
+import type { AgentAttention } from '@/features/project-agents/attention-store'
 
 export const CURRENT_WORK_STATUSES = new Set<ProjectAgentTaskStatus>([
   'awaiting_recruitment',
@@ -9,6 +10,7 @@ export const CURRENT_WORK_STATUSES = new Set<ProjectAgentTaskStatus>([
   'paused',
   'awaiting_review',
   'blocked',
+  'failed',
 ])
 
 export interface OverviewProject {
@@ -28,11 +30,29 @@ export function normalizeOverviewTasks(value: unknown, personalSpaceId?: string)
     ))
 }
 
-export function currentWork(tasks: ProjectAgentTaskRecord[], limit = 6) {
+export function currentWork(tasks: readonly ProjectAgentTaskRecord[], limit = 6) {
   return tasks
     .filter((task) => CURRENT_WORK_STATUSES.has(task.status))
     .sort(compareTasks)
     .slice(0, limit)
+}
+
+/** Missing content stays missing; normalized identifiers are never business titles. */
+export function overviewTaskTitle(task: ProjectAgentTaskRecord) {
+  const title = task.title?.trim()
+  if (title && title !== task.taskId) return title
+  const objective = task.objective?.trim()
+  return objective && objective !== task.taskId ? objective : ''
+}
+
+export function overviewOwnerId(task: ProjectAgentTaskRecord) {
+  return task.leadAgentId?.trim() || task.ownerAgentId?.trim() || null
+}
+
+export function overviewOpenRequest(task: ProjectAgentTaskRecord, items: readonly AgentAttention[], spaceId: string) {
+  return items.find(item => item.status === 'open' && item.personalSpaceId === spaceId
+    && task.personalSpaceId === spaceId
+    && item.personalProjectId === task.personalProjectId && item.taskId === task.taskId)
 }
 
 export function recentProjects(
@@ -88,7 +108,9 @@ export function overviewAttentionTaskHref(item: {
 }
 
 function compareTasks(left: ProjectAgentTaskRecord, right: ProjectAgentTaskRecord) {
-  return compareDates(left.updatedAt ?? left.createdAt ?? null, right.updatedAt ?? right.createdAt ?? null)
+  const rank = (task: ProjectAgentTaskRecord) => task.status === 'blocked' || task.status === 'failed' ? 0 : task.status === 'awaiting_review' ? 1 : 2
+  return rank(left) - rank(right)
+    || compareDates(left.updatedAt ?? left.createdAt ?? null, right.updatedAt ?? right.createdAt ?? null)
     || right.taskId.localeCompare(left.taskId)
 }
 

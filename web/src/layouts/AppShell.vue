@@ -84,7 +84,7 @@ watchEffect(() => updateDocumentTitle(route.meta.title))
       <GlossaryLayer />
     </main>
     <!-- Temporary: the design lab goes away once a design is chosen. -->
-    <DesignLabPanel />
+    <DesignLabPanel v-if="route.name !== 'overview'" />
   </div>
 </template>
 
