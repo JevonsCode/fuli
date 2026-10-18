@@ -44,8 +44,10 @@
   margin-bottom: var(--space-6, 24px);
 }
 
+.agents-directory-filters { align-items: center; }
+
 .agents-directory-search {
-  flex: 1 1 280px;
+  flex: 1 1 220px;
   min-width: 160px;
 }
 

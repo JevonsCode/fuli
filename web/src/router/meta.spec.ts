@@ -48,7 +48,7 @@ describe('localized route metadata', () => {
 
   it('localizes Agent profile and management routes', () => {
     expect(routeMetaText(router.resolve('/agents/space/agent').meta.title)).toBe('主页')
-    expect(routeMetaText(router.resolve('/project-agents/manage').meta.title)).toBe('高级管理')
+    expect(routeMetaText(router.resolve('/project-agents/manage').meta.title)).toBe('编排')
     setLocale('en-US', { persist: false })
     expect(routeMetaText(router.resolve('/agents/space/agent').meta.title)).toBe('Profile')
   })

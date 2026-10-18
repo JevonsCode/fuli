@@ -16,6 +16,8 @@ export function navDestinations({ spaceId, publicProjects, review }: NavContext)
     { key: 'constellation', icon: 'constellation', to: '/', owns: ['/'], exact: true, sections: [] },
     { key: 'agents', icon: 'agents', to: '/project-agents', owns: ['/project-agents', '/agents/', '/employees/'], sections: [
       { key: 'agentDirectory', to: '/project-agents', owns: ['/project-agents', '/agents/', '/employees/'] },
+      // The one entry to team management: assign work, staff projects, automation rules.
+      { key: 'orchestrate', to: '/project-agents/manage', owns: ['/project-agents/manage'] },
       { key: 'occupations', to: '/project-agents/occupations', owns: ['/project-agents/occupations'] },
     ] },
     { key: 'chat', icon: 'chat', to: '/roundtables', owns: ['/roundtables', '/inbox'], sections: [

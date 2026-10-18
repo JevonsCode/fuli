@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import BackToTop from "@/components/BackToTop.vue";
 import GrowthLoading from "@/components/GrowthLoading.vue";
@@ -31,11 +31,12 @@ import { agentWorkbenchEntry, compareWorkbenchRows } from "@/features/agent-prof
 import { useStableOrder } from "@/features/agent-profile/useStableOrder";
 import UiSegmented from "@/ui/UiSegmented.vue";
 import UiSelect from "@/ui/UiSelect.vue";
+import UiIconButton from "@/ui/UiIconButton.vue";
 import EmployeeRecruitDialog from "@/features/employees/EmployeeRecruitDialog.vue";
 import EmployeeWorkbenchLinks from "@/features/employees/EmployeeWorkbenchLinks.vue";
 import { employeeTemplates } from "@/features/employees/catalog";
 import { useConsoleStore } from "@/stores/console";
-import { t } from "@/i18n";
+import { currentLocale, t } from "@/i18n";
 import type { EmployeeRecruitmentResult } from "@/features/employees/catalog";
 import type { PersonalProject } from "@/types";
 
@@ -153,7 +154,25 @@ const freshOrder = computed(() =>
 const stableOrder = useStableOrder(freshOrder, computed(() => !busy.value), space);
 const visibleIn = (ids: string[]) =>
   ids.map((id) => agentsById.value.get(id)!).filter((agent) => agent && matches(agent));
-const visible = computed(() => visibleIn(stableOrder.order.value));
+const sort = ref<"recent" | "name">("recent");
+const sortOptions = computed(() => [
+  { value: "recent" as const, label: t("agentProfiles.sort.recent") },
+  { value: "name" as const, label: t("agentProfiles.sort.name") },
+]);
+// Recent work keeps the frozen order; by name is a plain alphabetical list.
+const visible = computed(() => {
+  const rows = visibleIn(stableOrder.order.value);
+  return sort.value === "name"
+    ? [...rows].sort((a, b) => agentDisplayName(a).localeCompare(agentDisplayName(b), currentLocale()))
+    : rows;
+});
+const searchOpen = ref(false);
+const searchInput = ref<HTMLInputElement | null>(null);
+async function openSearch() {
+  searchOpen.value = true;
+  await nextTick();
+  searchInput.value?.focus();
+}
 const viewOptions = computed(() => [
   { value: "agents" as const, label: t("agentRedesign.projectView.agents") },
   { value: "projects" as const, label: t("agentRedesign.projectView.projects") },
@@ -317,15 +336,6 @@ function handleProjectCreated(project: PersonalProject) {
     </p>
 
     <div class="ui-toolbar agents-directory-filters">
-      <label class="agents-directory-search">
-        <span class="sr-only">{{ t("agentProfiles.search") }}</span>
-        <input
-          v-model="search"
-          type="search"
-          maxlength="160"
-          :placeholder="t('agentProfiles.search')"
-        />
-      </label>
       <UiSelect
         v-model="selectedProjects"
         class="agents-directory-select"
@@ -340,6 +350,13 @@ function handleProjectCreated(project: PersonalProject) {
         :options="statusOptions"
         :label="t('projectAgents.fields.status')"
       />
+      <UiSelect
+        v-model="sort"
+        class="agents-directory-select"
+        data-directory-sort
+        :options="sortOptions"
+        :label="t('agentProfiles.sort.label')"
+      />
       <UiSegmented
         v-model="view"
         class="agents-directory-view"
@@ -347,6 +364,21 @@ function handleProjectCreated(project: PersonalProject) {
         :options="viewOptions"
         :label="t('agentRedesign.projectView.label')"
       />
+      <!-- Search stays one icon until it is needed or holds a query. -->
+      <label v-if="searchOpen || search" class="agents-directory-search">
+        <span class="ui-sr-only">{{ t("agentProfiles.search") }}</span>
+        <input
+          ref="searchInput"
+          v-model="search"
+          type="search"
+          maxlength="160"
+          :placeholder="t('agentProfiles.search')"
+          @focus="searchOpen = true"
+          @blur="searchOpen = false"
+          @keydown.esc="search = ''; searchOpen = false"
+        />
+      </label>
+      <UiIconButton v-else icon="search" :label="t('agentProfiles.search')" data-directory-search @click="openSearch" />
     </div>
 
     <GrowthLoading
