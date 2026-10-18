@@ -4,7 +4,8 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
 import type { ConsoleState } from '@/types'
 const { getJson, patchJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), patchJson: vi.fn(), postJson: vi.fn() }))
-vi.mock('@/api/client', () => ({ getJson, patchJson, postJson }))
+vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(), getJson, patchJson, postJson }))
+import { ApiError } from '@/api/client'
 import EmployeeWorkbenchPage from './EmployeeWorkbenchPage.vue'
 import { useConsoleStore } from '@/stores/console'
 import { refreshEmployeeCatalog } from '@/features/employees/catalog'
@@ -48,10 +49,10 @@ beforeEach(async () => {
     return { templateId: 'jefa', name: 'Jefa', project: { id: 'project-a', name: '验收项目' }, runtimeStatus: 'ready', workbenchUrl: '/employee-workspaces/jefa/project-a/' }
   })
 })
-afterEach(() => { for (const wrapper of mounted.splice(0)) wrapper.unmount() })
+afterEach(() => { for (const wrapper of mounted.splice(0)) wrapper.unmount(); vi.useRealTimers() })
 
 async function setup(path: string) {
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/employees/:templateId', component: EmployeeWorkbenchPage }] })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/employees/:templateId', component: EmployeeWorkbenchPage }, { path: '/project-agents', component: { template: '<p>Agents</p>' } }] })
   await router.push(path)
   const wrapper = mount(EmployeeWorkbenchPage, { global: { plugins: [router] } })
   mounted.push(wrapper)
@@ -507,4 +508,259 @@ describe('employee workbench', () => {
     await flushPromises()
     expect(wrapper.findComponent(BolePeoplePanel).exists()).toBe(true)
   })
+})
+
+describe('Jefa bounded progressive reads', () => {
+  function twoProjects() {
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation(async (url: string) => {
+      const result = await original(url)
+      if (url.startsWith('/api/employee-templates?')) {
+        result.templates[0].managedProjects = [{ id: 'project-a', name: '项目 A' }, { id: 'project-b', name: '项目 B' }]
+      }
+      return result
+    })
+  }
+  it('shows a successful project while another board is pending', async () => {
+    twoProjects()
+    postJson.mockImplementation((_url: string, body: { personalProjectId: string }) => body.personalProjectId === 'project-b'
+      ? new Promise(() => {}) : Promise.resolve({ items: [{ id: 'a1', projectId: 'project-a', title: '已成功的任务', status: 'planned' }], total: 1, truncated: false }))
+    const wrapper = await setup('/employees/jefa')
+    expect(wrapper.text()).toContain('已成功的任务')
+    expect(wrapper.text()).toContain('1 个仍在读取')
+  })
+  it('ends a hung board after one 30s budget and ignores a late response', async () => {
+    vi.useFakeTimers()
+    let resolveBoard!: (value: unknown) => void
+    postJson.mockImplementation(() => new Promise(resolve => { resolveBoard = resolve }))
+    const wrapper = await setup('/employees/jefa')
+    await vi.advanceTimersByTimeAsync(8000)
+    expect(wrapper.text()).toContain('读取时间较长')
+    await vi.advanceTimersByTimeAsync(22000)
+    expect(wrapper.find('.growth-loading').exists()).toBe(false)
+    expect(wrapper.get('[role="alert"]').text()).toContain('任务看板读取超时')
+    resolveBoard({ items: [], total: 0, truncated: false })
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('任务看板读取超时')
+  })
+  it('keeps partial tasks and reports a hung project as unavailable at timeout', async () => {
+    vi.useFakeTimers(); twoProjects()
+    postJson.mockImplementation((_url: string, body: { personalProjectId: string }) => body.personalProjectId === 'project-b'
+      ? new Promise(() => {}) : Promise.resolve({ items: [{ id: 'a1', projectId: 'project-a', title: '保留任务', status: 'planned' }], total: 1, truncated: false }))
+    const wrapper = await setup('/employees/jefa')
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(wrapper.text()).toContain('保留任务')
+    expect(wrapper.text()).toContain('部分项目暂不可用')
+    expect(wrapper.find('.growth-loading').exists()).toBe(false)
+  })
+  it('uses the same budget for catalog and board instead of restarting at the board', async () => {
+    vi.useFakeTimers()
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/employee-templates?')) await new Promise(resolve => setTimeout(resolve, 20000))
+      return original(url)
+    })
+    postJson.mockImplementation(() => new Promise(() => {}))
+    const wrapper = await setup('/employees/jefa')
+    await vi.advanceTimersByTimeAsync(20000)
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(wrapper.find('.growth-loading').exists()).toBe(false)
+    expect(wrapper.get('[role="alert"]').text()).toContain('任务看板读取超时')
+  })
+  it('times out a hanging catalog and aborts its request without accepting late catalog data', async () => {
+    vi.useFakeTimers()
+    let resolveCatalog!: (value: unknown) => void
+    let catalogSignal: AbortSignal | undefined
+    getJson.mockImplementation((_url: string, init?: { signal: AbortSignal }) => {
+      catalogSignal = init?.signal
+      return new Promise(resolve => { resolveCatalog = resolve })
+    })
+    const wrapper = await setup('/employees/jefa')
+    await vi.advanceTimersByTimeAsync(8000)
+    expect(wrapper.text()).toContain('正在读取 Jefa 的负责项目')
+    await vi.advanceTimersByTimeAsync(22000)
+    expect(catalogSignal?.aborted).toBe(true)
+    expect(wrapper.get('[role="alert"]').text()).toContain('任务看板读取超时')
+    resolveCatalog({ templates: [] }); await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('任务看板读取超时')
+  })
+  it('keeps truncated content when a complete snapshot hangs, using the original read deadline', async () => {
+    vi.useFakeTimers()
+    postJson.mockResolvedValue({ items: [{ id: 'a1', projectId: 'project-a', title: '截断任务', status: 'planned' }], total: 200, truncated: true })
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => url.endsWith('/api/snapshot') ? new Promise(() => {}) : original(url))
+    const wrapper = await setup('/employees/jefa')
+    expect(wrapper.text()).toContain('截断任务')
+    expect(wrapper.text()).toContain('正在读取完整任务列表')
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(wrapper.text()).toContain('截断任务')
+    expect(wrapper.findComponent(EmployeeTaskBoard).props('boards')[0].truncated).toBe(true)
+    expect(wrapper.find('.growth-loading').exists()).toBe(false)
+  })
+  it('does not call incomplete or failed reads an empty successful board', async () => {
+    twoProjects()
+    postJson.mockImplementation((_url: string, body: { personalProjectId: string }) => body.personalProjectId === 'project-b'
+      ? Promise.reject(new ApiError('unavailable', 503)) : Promise.resolve({ items: [], total: 0, truncated: false }))
+    const wrapper = await setup('/employees/jefa')
+    expect(wrapper.text()).toContain('部分项目暂不可用')
+    expect(wrapper.text()).not.toContain('所有项目都很清爽')
+    expect(wrapper.text()).toContain('任务读取尚未完整')
+  })
+  it('retains successful content, search and filter across one manual retry and ignores repeated retries', async () => {
+    twoProjects()
+    let round = 0
+    postJson.mockImplementation((_url: string, body: { personalProjectId: string }) => {
+      if (body.personalProjectId === 'project-b') return Promise.reject(new ApiError('unavailable', 503))
+      return round ? new Promise(() => {}) : Promise.resolve({ items: [{ id: 'a1', projectId: 'project-a', title: '上次任务', status: 'planned' }], total: 1, truncated: false })
+    })
+    const wrapper = await setup('/employees/jefa')
+    await wrapper.get('input[type="search"]').setValue('上次任务')
+    const before = postJson.mock.calls.length
+    round++
+    const reload = wrapper.get('.jefa-read-actions button')
+    await reload.trigger('click'); await reload.trigger('click'); await flushPromises()
+    expect(postJson.mock.calls.length).toBe(before + 2)
+    expect(wrapper.get('input[type="search"]').element).toHaveProperty('value', '上次任务')
+    expect(wrapper.text()).toContain('上次任务')
+    expect(wrapper.findComponent(EmployeeTaskBoard).props('canMoveTasks')).toBe(false)
+    expect(wrapper.text()).not.toContain('更新失败')
+  })
+  it('removes revoked data after a manual refresh and permits details but no writes for old data', async () => {
+    twoProjects()
+    postJson.mockImplementation((_url: string, body: { personalProjectId: string }) => body.personalProjectId === 'project-b'
+      ? Promise.reject(new ApiError('unavailable', 503)) : Promise.resolve({ items: [{ id: 'a1', projectId: 'project-a', title: '将撤权的任务', status: 'planned' }], total: 1, truncated: false }))
+    const wrapper = await setup('/employees/jefa')
+    postJson.mockRejectedValue(new ApiError('forbidden', 403))
+    await wrapper.get('.jefa-read-actions button').trigger('click'); await flushPromises()
+    expect(wrapper.text()).not.toContain('将撤权的任务')
+    expect(wrapper.findComponent(EmployeeTaskBoard).exists()).toBe(false)
+  })
+  it('invalidates pending board work on unmount and changing personal space', async () => {
+    let oldResponse!: (value: unknown) => void
+    const signals: AbortSignal[] = []
+    postJson.mockImplementation((_url: string, _body: unknown, init: { signal: AbortSignal }) => {
+      signals.push(init.signal)
+      return new Promise(resolve => { oldResponse = resolve })
+    })
+    const wrapper = await setup('/employees/jefa')
+    const first = oldResponse
+    const store = useConsoleStore()
+    store.state = { ...defaultConsoleState(), activePersonalSpaceId: 'space-b', personalSpaces: [{ id: 'space-b', name: '另一个合成空间' }] }
+    await flushPromises()
+    first({ items: [{ id: 'old', projectId: 'project-a', title: '旧空间任务', status: 'planned' }], total: 1, truncated: false })
+    await flushPromises()
+    expect(signals[0]?.aborted).toBe(true)
+    expect(wrapper.text()).not.toContain('旧空间任务')
+    wrapper.unmount()
+    expect(signals.at(-1)?.aborted).toBe(true)
+  })
+
+  it('loads another employee after navigating away from the Jefa-specific reader', async () => {
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation(async (url: string) => {
+      const result = await original(url)
+      if (url.startsWith('/api/employee-templates?')) result.templates.push({ id: 'bole', name: 'Bole', role: 'AR', workbench: { kind: 'native', view: 'people' }, runtimeStatus: 'not_required', assignments: [], permissions: [] })
+      return result
+    })
+    const wrapper = await setup('/employees/jefa')
+    await wrapper.vm.$router.push('/employees/bole'); await flushPromises()
+    expect(wrapper.findComponent(BolePeoplePanel).exists()).toBe(true)
+  })
+
+  it('does not silently restart after a timed-out initial console read finishes late', async () => {
+    vi.useFakeTimers()
+    const store = useConsoleStore(); store.state = null; store.runtimeStatus = 'loading'
+    const wrapper = await setup('/employees/jefa')
+    await vi.advanceTimersByTimeAsync(30000)
+    store.state = defaultConsoleState(); store.runtimeStatus = 'ready'; await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('任务看板读取超时')
+    expect(postJson).not.toHaveBeenCalled()
+    await wrapper.get('.jefa-read-actions button').trigger('click'); await flushPromises()
+    expect(wrapper.findComponent(EmployeeTaskBoard).exists()).toBe(true)
+  })
+
+  it('closes an open task detail after that project is revoked, without re-enabling its save action', async () => {
+    twoProjects()
+    postJson.mockImplementation((_url: string, body: { personalProjectId: string; tool: string }) => body.tool === 'get_task'
+      ? Promise.resolve({ item: { id: 'a1', projectId: 'project-a', title: '已打开的任务', summary: '已加载私密详情', status: 'planned', updatedAt: '2026-10-18T17:00:00Z' } })
+      : body.personalProjectId === 'project-b' ? Promise.reject(new ApiError('unavailable', 503))
+        : Promise.resolve({ items: [{ id: 'a1', projectId: 'project-a', title: '已打开的任务', status: 'planned' }], total: 1, truncated: false }))
+    const wrapper = await setup('/employees/jefa')
+    wrapper.findComponent(EmployeeTaskBoard).vm.$emit('select-task', { id: 'a1', projectId: 'project-a', title: '已打开的任务', status: 'planned' })
+    await flushPromises()
+    const dialog = wrapper.findComponent(EmployeeTaskDialog)
+    expect(dialog.props('open')).toBe(true)
+    expect(dialog.props('canWrite')).toBe(true)
+    expect(dialog.get('textarea').element).toHaveProperty('value', '已加载私密详情')
+    expect(dialog.get('button[type="submit"]').attributes('disabled')).toBeUndefined()
+    postJson.mockRejectedValue(new ApiError('forbidden', 403))
+    await wrapper.get('.jefa-read-actions button').trigger('click'); await flushPromises()
+    expect(wrapper.findComponent(EmployeeTaskDialog).props('open')).toBe(false)
+    expect(wrapper.findComponent(EmployeeTaskDialog).props('item')).toBeNull()
+    expect(wrapper.text()).not.toContain('已加载私密详情')
+    expect(postJson.mock.calls.some(([, body]) => ['update_tasks', 'create_tasks'].includes(body.tool))).toBe(false)
+  })
+
+  it('drops a project removed by an authoritative catalog even if the following reload fails', async () => {
+    postJson.mockResolvedValue({ items: [{ id: 'a1', projectId: 'project-a', title: '目录已撤销任务', status: 'planned' }], total: 1, truncated: false })
+    const wrapper = await setup('/employees/jefa')
+    const original = getJson.getMockImplementation()!
+    let reads = 0
+    getJson.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/employee-templates?') && ++reads > 1) throw new ApiError('offline', 503)
+      const result = await original(url)
+      if (url.startsWith('/api/employee-templates?')) { result.templates[0].assignmentsVersion = 'removed-a'; result.templates[0].managedProjects = [{ id: 'project-b', name: '项目 B' }] }
+      return result
+    })
+    await refreshEmployeeCatalog('space-a'); await flushPromises()
+    expect(wrapper.text()).not.toContain('目录已撤销任务')
+    expect(wrapper.findComponent(EmployeeTaskBoard).exists()).toBe(false)
+  })
+
+  it('shows an explicit permission failure instead of a blank ready workbench', async () => {
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation(async (url: string) => {
+      const result = await original(url)
+      if (url.startsWith('/api/employee-templates?')) result.templates[0].permissions = []
+      return result
+    })
+    const wrapper = await setup('/employees/jefa')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+    expect(postJson).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('请检查负责范围')
+  })
+
+  it('shows a confirmed empty result only after successful project reads', async () => {
+    const wrapper = await setup('/employees/jefa')
+    expect(wrapper.text()).toContain('当前范围暂无任务')
+    expect(wrapper.text()).not.toContain('任务读取尚未完整')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+  })
+  it('keeps search with no matches distinct from a successful empty board', async () => {
+    postJson.mockResolvedValue({ items: [{ id: 'a1', projectId: 'project-a', title: '实际有任务', status: 'planned' }], total: 1, truncated: false })
+    const wrapper = await setup('/employees/jefa')
+    await wrapper.get('input[type="search"]').setValue('no-such-task')
+    expect(wrapper.text()).toContain('没有匹配的任务')
+    expect(wrapper.text()).not.toContain('当前范围暂无任务')
+  })
+
+  it('discards a private task response arriving after its project was revoked', async () => {
+    twoProjects()
+    let detail!: (value: unknown) => void
+    postJson.mockImplementation((_url: string, body: { personalProjectId: string; tool: string }) => body.tool === 'get_task'
+      ? new Promise(resolve => { detail = resolve })
+      : body.personalProjectId === 'project-b' ? Promise.reject(new ApiError('unavailable', 503))
+        : Promise.resolve({ items: [{ id: 'a1', projectId: 'project-a', title: '任务 A', status: 'planned' }], total: 1, truncated: false }))
+    const wrapper = await setup('/employees/jefa')
+    wrapper.findComponent(EmployeeTaskBoard).vm.$emit('select-task', { id: 'a1', projectId: 'project-a', title: '任务 A', status: 'planned' })
+    await flushPromises()
+    postJson.mockRejectedValue(new ApiError('forbidden', 403))
+    await wrapper.get('.jefa-read-actions button').trigger('click'); await flushPromises()
+    detail({ item: { id: 'a1', projectId: 'project-a', title: '旧任务', summary: '撤权后晚到私密正文', status: 'planned', updatedAt: '2026-10-18T17:00:00Z' } })
+    await flushPromises()
+    expect(wrapper.findComponent(EmployeeTaskDialog).props('open')).toBe(false)
+    expect(wrapper.find('dialog').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('撤权后晚到私密正文')
+  })
+
 })

@@ -5,25 +5,8 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { t } from '@/i18n'
 import ProjectScopePicker from './ProjectScopePicker.vue'
 
-export type EmployeeBoardStatus = 'planned' | 'active' | 'blocked' | 'review' | 'done'
-
-export interface EmployeeBoardItem {
-  id: string
-  projectId: string
-  title: string
-  summary?: string
-  status: EmployeeBoardStatus
-  priority?: 'critical' | 'high' | 'medium' | 'low'
-  tags?: string[]
-  updatedAt?: string
-}
-
-export interface EmployeeProjectBoard {
-  project: { id: string; name: string }
-  items: EmployeeBoardItem[]
-  total: number
-  truncated: boolean
-}
+import type { EmployeeBoardItem, EmployeeBoardStatus, EmployeeProjectBoard } from './task-board-model'
+export type { EmployeeBoardItem, EmployeeBoardStatus, EmployeeProjectBoard } from './task-board-model'
 
 const props = defineProps<{
   boards: EmployeeProjectBoard[]
@@ -34,6 +17,8 @@ const props = defineProps<{
   actionError?: string
   canMoveTasks: boolean
   readOnly?: boolean
+  incomplete?: boolean
+  allowReadOnlyDetails?: boolean
   resettableFilter?: boolean
   filterStorageUnavailable?: boolean
 }>()
@@ -369,8 +354,8 @@ onBeforeUnmount(() => {
       <button type="button" @click="showAllProjects">{{ t('employees.allProjects.showAllProjects') }}</button>
     </div>
     <div v-else-if="!hasItems" class="employee-all-projects-empty">
-      <h3>{{ t('employees.allProjects.empty') }}</h3>
-      <p>{{ t('employees.allProjects.emptyHint') }}</p>
+      <h3>{{ t(incomplete || truncatedProjects ? 'employees.read.incomplete' : 'employees.allProjects.empty') }}</h3>
+      <p>{{ t(incomplete || truncatedProjects ? 'employees.read.incompleteHint' : 'employees.allProjects.emptyHint') }}</p>
     </div>
     <div v-else-if="!hasMatches" class="employee-all-projects-empty">
       <h3>{{ t('employees.allProjects.noMatch') }}</h3>
@@ -402,7 +387,7 @@ onBeforeUnmount(() => {
             <button
               type="button"
               class="employee-all-projects-task-open"
-              :disabled="isMoving(item) || readOnly"
+              :disabled="isMoving(item) || (readOnly && !allowReadOnlyDetails)"
               :aria-label="t('employees.allProjects.openTask', { project: projectName(item.projectId), task: item.title })"
               @click="emit('select-task', item)"
             >

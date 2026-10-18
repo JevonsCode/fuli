@@ -31,8 +31,9 @@ export function getJson<T>(
   return requestJson<T>(url, init)
 }
 
-export function postJson<T>(url: string, body: unknown): Promise<T> {
+export function postJson<T>(url: string, body: unknown, init?: Pick<RequestInit, 'signal'>): Promise<T> {
   return requestJson<T>(url, {
+    ...init,
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import UiButton from '@/ui/UiButton.vue'
-import { computed, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { isEmployeeBoardItem } from '@/features/employees/task-board-model'
+import { useJefaBoardLoad } from '@/features/employees/useJefaBoardLoad'
+import JefaReadStatus from '@/features/employees/JefaReadStatus.vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { getJson, patchJson, postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -37,7 +40,13 @@ const taskOpen = ref(false)
 const selectedTask = ref<EmployeeBoardItem | null>(null)
 const personalSpaceId = computed(() => store.activePersonalSpace?.id ?? '')
 const templateId = computed(() => String(route.params.templateId ?? ''))
-const template = computed(() => employeeTemplates.value.find((entry) => entry.id === templateId.value))
+const isJefa = computed(() => templateId.value === 'jefa')
+const jefaRead = reactive(useJefaBoardLoad({
+  enabled: isJefa, spaceId: personalSpaceId, boards: projectBoards, scopeValid: () => !projectFilter.invalidScope.value,
+  consoleError: computed(() => !store.state && store.runtimeStatus === 'error' ? store.feedback?.message || t('employees.loadError') : ''),
+  projectNames: computed(() => new Map((store.state?.personalProjects ?? []).filter(p => p.personal_space_id === personalSpaceId.value).map(p => [p.project_id, p.profile.name]))),
+}))
+const template = computed(() => isJefa.value ? jefaRead.template : employeeTemplates.value.find((entry) => entry.id === templateId.value))
 const nativeWorkbenchView = computed(() => {
   const workbench = template.value?.workbench
   return workbench?.kind === 'native' ? (workbench as { view?: string }).view ?? null : null
@@ -45,8 +54,7 @@ const nativeWorkbenchView = computed(() => {
 const isNativePeople = computed(() => nativeWorkbenchView.value === 'people')
 const isNativeJudgment = computed(() => nativeWorkbenchView.value === 'judgment')
 const isNativeWorkbench = computed(() => isNativePeople.value || isNativeJudgment.value)
-const isJefa = computed(() => templateId.value === 'jefa')
-const pageLoading = computed(() => (!store.state
+const pageLoading = computed(() => isJefa.value ? jefaRead.loading && !jefaRead.hasContent : (!store.state
   && (store.runtimeStatus === 'idle' || store.runtimeStatus === 'loading'))
   || !catalogReady.value || loading.value)
 const pageLoadingLabel = computed(() => !store.state
@@ -55,10 +63,9 @@ const pageLoadingLabel = computed(() => !store.state
     ? t('employees.loading') : t('employees.loadingBoard'))
 const pageError = computed(() => !store.state && store.runtimeStatus === 'error'
   ? store.feedback?.message || t('employees.loadError') : '')
-const visibleError = computed(() => pageError.value || employeeCatalogError.value
-  || (isJefa.value && projectFilter.invalidScope.value ? t('employees.invalidScope') : error.value))
+const visibleError = computed(() => isJefa.value ? (projectFilter.invalidScope.value ? t('employees.invalidScope') : '') : pageError.value || employeeCatalogError.value || error.value)
 const ALL_PROJECTS = 'all'
-const managedProjectOptions = computed(() => template.value?.managedProjects !== undefined
+const managedProjectOptions = computed(() => isJefa.value ? jefaRead.projects.map(p => ({ value: p.id, label: p.name })) : template.value?.managedProjects !== undefined
   ? template.value.managedProjects.map(project => ({ value: project.id, label: project.name }))
   : (template.value?.assignments ?? []).filter(assignment => assignment.status === 'active').map((assignment) => ({
   value: assignment.personalProjectId,
@@ -67,7 +74,8 @@ const managedProjectOptions = computed(() => template.value?.managedProjects !==
 const managedProjectSignature = computed(() => JSON.stringify(
   [...new Set(managedProjectOptions.value.map(project => project.value))].sort(),
 ))
-watch(personalSpaceId, (id) => {
+watch([personalSpaceId, isJefa], ([id]) => {
+  if (isJefa.value) return
   catalogReady.value = false
   void refreshEmployeeCatalog(id)
 }, { immediate: true })
@@ -75,7 +83,7 @@ const projectFilter = useProjectBoardFilter({
   enabled: isJefa,
   spaceId: personalSpaceId,
   projectIds: computed(() => managedProjectOptions.value.map(project => project.value)),
-  ready: computed(() => !employeeCatalogLoading.value && !employeeCatalogError.value && Boolean(template.value)),
+  ready: computed(() => isJefa.value ? Boolean(jefaRead.template) : !employeeCatalogLoading.value && !employeeCatalogError.value && Boolean(template.value)),
 })
 const visibleProjectIds = computed({
   get: () => {
@@ -135,9 +143,10 @@ watch([projectOptions, () => route.query.project, () => route.query.empty, templ
   }
 }, { immediate: true })
 watch([templateId, projectId, personalSpaceId, supportsAllProjects, catalogReady], () => {
-  if (!isNativeWorkbench.value && catalogReady.value) void loadWorkspace()
+  if (!isJefa.value && !isNativeWorkbench.value && catalogReady.value) void loadWorkspace()
 }, { immediate: true })
 watch(employeeCatalogLoading, (catalogLoading) => {
+  if (isJefa.value) return
   // Only the first catalog read gates the workbench. A management dialog refresh
   // must not clear or remount an already loaded board.
   if (catalogLoading) return
@@ -150,12 +159,31 @@ watch(employeeCatalogLoading, (catalogLoading) => {
     void loadWorkspace()
   }
 }, { immediate: true })
-watch(projectFilter.invalidScope, (invalid) => { if (!invalid && isJefa.value && catalogReady.value) void loadWorkspace() })
 watch(managedProjectSignature, (signature, previous) => {
-  if (signature === previous || !catalogReady.value || isNativeWorkbench.value) return
+  if (isJefa.value || signature === previous || !catalogReady.value || isNativeWorkbench.value) return
   void loadWorkspace()
 })
+watch(projectFilter.invalidScope, (invalid, previous) => {
+  if (isJefa.value && previous && !invalid) jefaRead.scopeChanged()
+})
+watch([employeeTemplates, employeeCatalogLoading, employeeCatalogError], ([templates, catalogLoading, catalogError]) => {
+  if (!isJefa.value || !jefaRead.template || catalogLoading || catalogError) return
+  const candidate = templates.find(t => t.id === 'jefa')
+  const signature = (value: typeof candidate) => JSON.stringify(value && [value.assignmentsVersion, value.managedProjects, value.assignments, value.permissions, value.runtimeStatus])
+  if (signature(candidate) !== signature(jefaRead.template)) jefaRead.scopeChanged(candidate ?? null)
+})
+watch([() => jefaRead.projects, () => jefaRead.failures, () => jefaRead.template], () => {
+  if (!isJefa.value || !taskOpen.value) return
+  const project = selectedTask.value?.projectId
+  const revoked = project && (!jefaRead.projects.some(p => p.id === project)
+    || jefaRead.failures.some(f => f.projectId === project && ['HTTP 401', 'HTTP 403', 'HTTP 404'].includes(f.category)))
+  if (revoked || !jefaRead.template?.permissions.includes('board.read')) {
+    taskOpen.value = false
+    selectedTask.value = null
+  }
+})
 async function loadWorkspace() {
+  if (isJefa.value) { jefaRead.reload(); return }
   const current = ++version
   workspace.value = null
   projectBoards.value = []
@@ -228,6 +256,7 @@ function taskMoveRequestId() {
   return `aggregate-board-move-${suffix}`
 }
 async function moveTask(item: EmployeeBoardItem, status: EmployeeBoardStatus) {
+  if (isJefa.value && jefaRead.readOnly) return
   if (item.status === status) return
   const key = boardItemKey(item)
   if (movingItemKeys.value.includes(key)) return
@@ -272,13 +301,8 @@ async function moveTask(item: EmployeeBoardItem, status: EmployeeBoardStatus) {
     movingItemKeys.value = movingItemKeys.value.filter((candidate) => candidate !== key)
   }
 }
-function isEmployeeBoardItem(value: unknown): value is EmployeeBoardItem {
-  if (!value || typeof value !== 'object') return false
-  const item = value as Partial<EmployeeBoardItem>
-  return typeof item.id === 'string' && typeof item.projectId === 'string' && typeof item.title === 'string'
-    && ['planned', 'active', 'blocked', 'review', 'done'].includes(item.status ?? '')
-}
 async function retry() {
+  if (isJefa.value) { if (!store.state) void store.refresh(); jefaRead.reload(); return }
   if (!store.state) {
     await store.refresh()
     return
@@ -289,7 +313,7 @@ async function retry() {
 async function projectsSaved() {
   if (isJefa.value) {
     await router.replace({ query: { ...route.query, project: ALL_PROJECTS, empty: undefined } })
-    await loadWorkspace()
+    jefaRead.scopeChanged()
     return
   }
   const current = projectId.value === ALL_PROJECTS && supportsAllProjects.value
@@ -310,7 +334,7 @@ async function projectsSaved() {
           <img v-if="employeeAvatarUrl(templateId)" :src="employeeAvatarUrl(templateId)" alt="" />
           <template v-else>{{ template?.name.slice(0, 1) ?? 'A' }}</template>
         </span>
-        <h1>{{ template?.name ?? t('employees.workbench') }} <span>{{ template?.role }}</span></h1>
+        <h1>{{ template?.name ?? (isJefa ? 'Jefa' : t('employees.workbench')) }} <span>{{ isJefa ? t('employees.read.role') : template?.role }}</span></h1>
         <button v-if="isJefa && supportsAllProjects" class="employee-share-button" type="button" :aria-label="t('employees.share.title')" :title="t('employees.share.title')" @click="shareOpen = true">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7m0-7-9 9M10 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M7 16v-3m4 3v-1"/></svg>
         </button>
@@ -326,22 +350,31 @@ async function projectsSaved() {
       </div>
     </header>
     <EmployeeRecruitDialog v-if="!isNativeWorkbench" :open="manageProjectsOpen" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" :template-id="templateId" @close="manageProjectsOpen = false" @recruited="projectsSaved" />
-    <EmployeeTaskDialog v-if="isJefa" :open="taskOpen" :item="selectedTask" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" :default-project-id="visibleProjectIds.length === 1 ? visibleProjectIds[0] : undefined" :personal-space-id="personalSpaceId" :can-write="template?.permissions.includes('board.write') ?? false" @close="taskOpen = false" @saved="loadWorkspace" />
+    <EmployeeTaskDialog v-if="isJefa" :open="taskOpen" :item="selectedTask" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" :default-project-id="visibleProjectIds.length === 1 ? visibleProjectIds[0] : undefined" :personal-space-id="personalSpaceId" :can-write="!jefaRead.readOnly && (template?.permissions.includes('board.write') ?? false)" @close="taskOpen = false" @saved="loadWorkspace" />
     <EmployeeShareDialog v-if="isJefa" :open="shareOpen" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" @close="shareOpen = false" />
-    <GrowthLoading v-if="pageLoading" :label="pageLoadingLabel" />
+    <JefaReadStatus v-if="isJefa && !projectFilter.invalidScope.value"
+      :loading="jefaRead.loading" :long-wait="jefaRead.longWait" :stage="jefaRead.stage"
+      :timed-out="jefaRead.timedOut" :failure="jefaRead.failure" :failures="jefaRead.failures"
+      :total="jefaRead.projects.length" :loaded="jefaRead.loadedIds.length" :pending="jefaRead.pendingIds.length"
+      :has-content="jefaRead.hasContent" :stale="jefaRead.stale" :updated-at="jefaRead.updatedAt" @reload="retry"
+    />
+    <GrowthLoading v-if="pageLoading && !isJefa" :label="pageLoadingLabel" />
     <div v-else-if="visibleError" class="employee-workbench-state" role="alert"><p>{{ visibleError }}</p><UiButton size="sm" variant="ghost" @click="retry">{{ t('employees.retry') }}</UiButton></div>
-    <div v-else-if="!template" class="employee-workbench-state"><p>{{ t('employees.unavailable') }}</p><RouterLink to="/project-agents">{{ t('employees.backToAgents') }}</RouterLink></div>
+    <div v-else-if="!template && !(isJefa && (jefaRead.loading || jefaRead.timedOut || jefaRead.failure))" class="employee-workbench-state"><p>{{ t('employees.unavailable') }}</p><RouterLink to="/project-agents">{{ t('employees.backToAgents') }}</RouterLink></div>
     <BolePeoplePanel v-else-if="isNativePeople" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" />
     <JudgmentWorkbench v-else-if="isNativeJudgment" :personal-space-id="personalSpaceId" />
-    <div v-else-if="isJefa && template.runtimeStatus !== 'ready'" class="employee-workbench-state"><p>{{ t('employees.installRequired') }}</p><small>{{ t('employees.installHelp') }}</small></div>
-    <div v-else-if="!projectId" class="employee-workbench-state"><h2>{{ t('employees.emptyWorkbench') }}</h2><p>{{ t('employees.manageHint') }}</p><UiButton size="sm" variant="ghost" @click="manageProjectsOpen = true">{{ t('employees.manageProjects') }}</UiButton></div>
+    <div v-else-if="isJefa && template && !jefaRead.loading && template.runtimeStatus !== 'ready'" class="employee-workbench-state"><p>{{ t('employees.installRequired') }}</p><small>{{ t('employees.installHelp') }}</small></div>
+    <div v-else-if="!projectId && !(isJefa && (jefaRead.loading || jefaRead.timedOut || jefaRead.failure))" class="employee-workbench-state"><h2>{{ t('employees.emptyWorkbench') }}</h2><p>{{ t('employees.manageHint') }}</p><UiButton size="sm" variant="ghost" @click="manageProjectsOpen = true">{{ t('employees.manageProjects') }}</UiButton></div>
     <EmployeeTaskBoard
-      v-else-if="projectId === ALL_PROJECTS && supportsAllProjects"
+      v-else-if="projectId === ALL_PROJECTS && supportsAllProjects && (!isJefa || jefaRead.hasContent)"
       v-model:visible-project-ids="visibleProjectIds"
       :boards="visibleProjectBoards"
       :projects="managedProjectOptions.map((project) => ({ id: project.value, name: project.label }))"
-      :failed-projects="visibleFailedProjects"
-      :can-move-tasks="template.permissions.includes('board.write')"
+      :failed-projects="isJefa ? 0 : visibleFailedProjects"
+      :can-move-tasks="(!isJefa || !jefaRead.readOnly) && (template?.permissions.includes('board.write') ?? false)"
+      :read-only="isJefa && jefaRead.readOnly"
+      :allow-read-only-details="isJefa"
+      :incomplete="isJefa && (jefaRead.loading || jefaRead.failures.length > 0)"
       :moving-item-keys="movingItemKeys"
       :action-error="boardActionError"
       :resettable-filter="isJefa"

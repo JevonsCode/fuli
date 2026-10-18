@@ -69,9 +69,10 @@ let currentSpace = ''
 let pending: Promise<void> | null = null
 let generation = 0
 
-export async function fetchEmployeeCatalog(spaceId: string): Promise<EmployeeTemplate[]> {
+export async function fetchEmployeeCatalog(spaceId: string, init?: Pick<RequestInit, 'signal'>): Promise<EmployeeTemplate[]> {
   if (!spaceId) return []
-  const result = await getJson<{ templates: EmployeeTemplate[] }>(`/api/employee-templates?${new URLSearchParams({ personalSpaceId: spaceId })}`)
+  const url = `/api/employee-templates?${new URLSearchParams({ personalSpaceId: spaceId })}`
+  const result = await (init ? getJson<{ templates: EmployeeTemplate[] }>(url, init) : getJson<{ templates: EmployeeTemplate[] }>(url))
   return Array.isArray(result.templates) ? result.templates : []
 }
 
