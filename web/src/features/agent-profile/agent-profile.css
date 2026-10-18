@@ -82,7 +82,8 @@
   display: flex; height: 100%; box-sizing: border-box; flex-direction: column; gap: 6px;
   padding: 12px 16px; transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
 }
-.agent-card:hover { border-color: var(--color-border-strong); box-shadow: var(--shadow-md); }
+/* Raised above its neighbours so the hover shadow is never covered by the next card. */
+.agent-card:hover { position: relative; z-index: 1; border-color: var(--color-border-strong); box-shadow: var(--shadow-md); }
 .agent-card-topline, .agent-card-meta, .agent-section-heading, .agent-resume-name-row {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
@@ -98,10 +99,11 @@
 /* Only a reported running state moves; the ring is compositor-only and stops when motion is reduced. */
 .agent-portrait.agent-card-identity.is-working::after {
   content: ""; position: absolute; inset: -4px; border: 2px solid var(--agent-identity, var(--color-accent)); border-radius: 14px;
-  opacity: 0; animation: agent-working-ring 2.4s ease-out var(--working-phase, 0ms) infinite; pointer-events: none;
+  opacity: 0; animation: agent-working-ring 2.4s ease-in-out var(--working-phase, 0ms) infinite; pointer-events: none;
   will-change: transform, opacity;
 }
-@keyframes agent-working-ring { 0% { opacity: 0.55; transform: scale(0.92); } 100% { opacity: 0; transform: scale(1.12); } }
+/* A breathing ring: first and last frames match, so the loop never jumps back. */
+@keyframes agent-working-ring { 0%, 100% { opacity: 0.3; transform: scale(0.98); } 50% { opacity: 0.85; transform: scale(1.06); } }
 @media (prefers-reduced-motion: reduce) {
   .agent-portrait.agent-card-identity.is-working::after { animation: none; opacity: 0.5; transform: none; }
 }

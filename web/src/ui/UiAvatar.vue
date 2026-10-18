@@ -53,7 +53,7 @@ const style = computed(() => ({
 }
 .ui-avatar.is-working::after {
   border-color: var(--status-working);
-  animation: ui-avatar-pulse var(--motion-pulse) ease-out var(--avatar-phase, 0ms) infinite;
+  animation: ui-avatar-breathe var(--motion-pulse) ease-in-out var(--avatar-phase, 0ms) infinite;
 }
 .ui-avatar.is-waiting::after {
   border-color: var(--status-waiting);
@@ -61,7 +61,8 @@ const style = computed(() => ({
 }
 .ui-avatar.is-error::after { border-color: var(--status-error); }
 .ui-avatar.is-idle::after { border-color: var(--color-border-strong); }
-@keyframes ui-avatar-pulse { 0% { opacity: .7; transform: scale(.94); } 100% { opacity: 0; transform: scale(1.18); } }
+/* Working breathes: the first and last frames match, so the loop never jumps. */
+@keyframes ui-avatar-breathe { 0%, 100% { opacity: .3; transform: scale(.98); } 50% { opacity: .85; transform: scale(1.06); } }
 @keyframes ui-avatar-blink { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .ui-avatar::after { animation: none !important; opacity: 1; } }
 :root[data-motion="reduced"] .ui-avatar::after { animation: none !important; opacity: 1; }

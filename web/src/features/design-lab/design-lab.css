@@ -8,7 +8,7 @@
 :root[data-lab-lift="on"] :is(.ui-card, .agent-card, .credit-card) {
   transition: transform var(--motion-fast) var(--motion-ease), box-shadow var(--motion-fast);
 }
-:root[data-lab-lift="on"] :is(.ui-card, .agent-card, .credit-card):hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+:root[data-lab-lift="on"] :is(.ui-card, .agent-card, .credit-card):hover { position: relative; z-index: 1; transform: translateY(-2px); box-shadow: var(--shadow-md); }
 
 @media (prefers-reduced-motion: reduce) {
   :root[data-lab-transition] .app-main > .view { animation: none; }
