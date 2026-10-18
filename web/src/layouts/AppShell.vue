@@ -7,7 +7,7 @@ import NavigationRecovery from '@/components/NavigationRecovery.vue'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
 import DesignLabPanel from '@/features/design-lab/DesignLabPanel.vue'
 import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
-import { useGlossaryMode } from '@/features/glossary/glossary-mode'
+import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
 import { t } from '@/i18n'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
@@ -51,7 +51,6 @@ onBeforeUnmount(() => {
   attention.setSpace('')
 })
 watchEffect(() => updateDocumentTitle(route.meta.title))
-const glossary = useGlossaryMode()
 </script>
 
 <template>
@@ -67,8 +66,7 @@ const glossary = useGlossaryMode()
             <GrowthLoading v-if="store.settingsSaving" variant="inline" :label="t(store.settingsSaveState === 'applying' ? 'settings.applying' : 'settings.saving')" />
             <UiButton variant="primary" :disabled="store.settingsSaving" form="settings-form" type="submit">{{ t(store.settingsSaveState === 'saved' ? 'settings.savedShort' : 'settings.save') }}</UiButton>
           </template>
-          <UiIconButton icon="info" data-glossary-toggle :active="glossary.active.value"
-            :label="t(glossary.pinned.value ? 'glossary.toggleOn' : 'glossary.toggle')" @click="glossary.toggle" />
+          <GlossaryToggle />
           <LocaleSwitcher />
           <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="store.runtimeStatus === 'loading'" @click="store.refresh" />
         </div>
