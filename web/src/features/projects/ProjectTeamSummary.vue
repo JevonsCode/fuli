@@ -20,6 +20,21 @@ const showRefreshing = useMinimumLoadingDisplay(computed(() => loading.value && 
 let sequence = 0
 
 const panelId = computed(() => `project-team-organization-${props.projectId}`)
+// With sub-teams the members read as the reporting chain: each group under its
+// sub-lead, then whoever reports to the lead directly.
+const memberGroups = computed(() => {
+  const value = team.value
+  if (!value) return []
+  const subTeams = value.subTeams ?? []
+  if (!subTeams.length) return [{ key: 'members', title: t('projects.overview.members'), lead: null, unavailableLead: null, people: value.members }]
+  const grouped = new Set(subTeams.flatMap(group => [group.lead?.agentId, ...group.members.map(person => person.agentId)]))
+  return [
+    ...subTeams.map(group => ({ key: `sub-${group.id}`, title: group.name, lead: group.lead, unavailableLead: group.unavailableLead,
+      people: group.members.filter(person => person.agentId !== group.lead?.agentId) })),
+    { key: 'direct', title: t('projects.overview.directReports'), lead: null, unavailableLead: null,
+      people: value.members.filter(person => !grouped.has(person.agentId)) },
+  ].filter(group => group.lead || group.unavailableLead || group.people.length)
+})
 const teamSettingsTo = computed(() => ({ path: '/project-agents/manage', query: { project: props.projectId } }))
 const summary = computed(() => {
   const value = team.value
@@ -135,8 +150,34 @@ function number(person: ProjectTeamPerson) {
             <span class="ui-meta">{{ t('projects.overview.lead') }}<template v-if="number(team.lead)"> · {{ number(team.lead) }}</template></span>
           </li>
         </ul>
+        <div v-for="group in memberGroups" :key="group.key" class="project-team-group" :class="[`is-${group.key}`, { 'is-sub-team': group.lead || group.unavailableLead }]" :data-team-group="group.key">
+          <h4>{{ group.title }}</h4>
+          <p v-if="group.lead" class="project-team-sub-lead">
+            <span class="project-team-avatar is-small" aria-hidden="true">{{ initial(group.lead) }}</span>
+            <AgentName :space-id="spaceId" :agent-id="group.lead.agentId" :name="group.lead.name" />
+            <span class="ui-meta">{{ t('projects.overview.subLead') }}</span>
+          </p>
+          <p v-else-if="group.unavailableLead" class="ui-meta project-team-sub-lead is-unavailable" role="status">
+            {{ t('projects.overview.subLeadUnavailable', { name: group.unavailableLead.name ?? '' }) }}
+          </p>
+          <ul v-if="group.people.length" class="project-team-list">
+            <li v-for="person in group.people" :key="person.agentId">
+              <span class="project-team-avatar is-small" aria-hidden="true">{{ initial(person) }}</span>
+              <span class="project-team-person">
+                <span>
+                  <AgentName :space-id="spaceId" :agent-id="person.agentId" :name="person.name" />
+                  <span v-if="number(person)" class="ui-meta"> · {{ number(person) }}</span>
+                </span>
+                <span v-if="person.responsibility" class="project-team-responsibility">{{ person.responsibility }}</span>
+              </span>
+            </li>
+          </ul>
+        </div>
+        <p v-if="team.subTeamSuggestion?.suggested" class="ui-meta project-team-suggestion" data-sub-team-suggestion>
+          {{ t('projects.overview.subTeamSuggestion', { count: team.subTeamSuggestion.memberCount }) }}
+          <RouterLink :to="teamSettingsTo">{{ t('projects.overview.subTeamSuggestionLink') }}</RouterLink>
+        </p>
         <template v-for="group in [
-          { key: 'members', title: t('projects.overview.members'), people: team.members },
           { key: 'collaborators', title: t('projects.overview.collaborators'), people: team.collaborators },
           { key: 'peers', title: t('projects.overview.peers'), people: team.peers },
         ]" :key="group.key">
