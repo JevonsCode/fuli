@@ -316,3 +316,11 @@ test('an explicit Codex profile survives every valid TOML form and an unparseabl
   }
   assert.deepEqual(existingFuliArgs('[other]\nkey = 1\n'), []);
 });
+
+test('an unparseable file only reads the profile from the fuli table, never another server or a comment', () => {
+  const otherServerFirst = 'broken=[\n[mcp_servers.other]\nargs=["--tool-profile","chat"]\n[mcp_servers.fuli]\nargs=["--tool-profile","full"]\n';
+  assert.deepEqual(existingFuliArgs(otherServerFirst), ['--tool-profile', 'full']);
+  const commentedOut = 'broken=[\n[mcp_servers.fuli]\n# args=["--tool-profile","chat"]\nargs=["/srv.js", # server\n  "--tool-profile", "full"]\n';
+  assert.deepEqual(existingFuliArgs(commentedOut), ['--tool-profile', 'full']);
+  assert.deepEqual(existingFuliArgs('broken=[\n[mcp_servers.other]\nargs=["--tool-profile","full"]\n'), []);
+});
