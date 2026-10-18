@@ -16,4 +16,5 @@ withDefaults(defineProps<{ interactive?: boolean; tag?: string }>(), { interacti
 .ui-card-surface.is-interactive { cursor: pointer; }
 .ui-card-surface.is-interactive:hover { border-color: var(--color-border-strong); transform: translateY(-2px); }
 @media (prefers-reduced-motion: reduce) { .ui-card-surface.is-interactive:hover { transform: none; } }
+:root[data-motion="reduced"] .ui-card-surface.is-interactive:hover { transform: none; }
 </style>
