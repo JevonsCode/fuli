@@ -9,7 +9,7 @@
   "defaultProjectScope": "selected",
   "workbench": {
     "kind": "native",
-    "view": "people"
+    "view": "unclaimed"
   },
   "capabilities": [
     "全局对话",

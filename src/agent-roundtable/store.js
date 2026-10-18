@@ -89,10 +89,13 @@ export function createRoundtableStore(path = ':memory:') {
     recordMemoryResult(id, count) {
       database.prepare('UPDATE messages SET memory_result_count = ? WHERE id = ?').run(String(count), id);
     },
+    // A delivery attempt names its client and session together; a fresh session
+    // must not keep the previous attempt's session ID.
     updateMessage(id, { status, via, error, toClient, toSession }) {
       database.prepare(`UPDATE messages SET status = coalesce(?, status), via = coalesce(?, via), error = ?,
-        to_client = coalesce(?, to_client), to_session = coalesce(?, to_session), updated_at = ? WHERE id = ?`)
-        .run(status ?? null, via ?? null, error ?? null, toClient ?? null, toSession ?? null, now(), id);
+        to_client = coalesce(?, to_client), to_session = CASE WHEN ? IS NULL THEN to_session ELSE ? END,
+        updated_at = ? WHERE id = ?`)
+        .run(status ?? null, via ?? null, error ?? null, toClient ?? null, toClient ?? null, toSession ?? null, now(), id);
       return this.getMessage(id);
     },
     // Kept apart from updateMessage so later status changes never erase it. Boot

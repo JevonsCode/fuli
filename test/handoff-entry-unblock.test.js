@@ -113,9 +113,13 @@ for (const stage of ['before entry', 'after entry']) {
       }
       return conversation(operation, query, options);
     };
-    const result = await runCodexLifecycleCommand(['--event', 'UserPromptSubmit', '--timeout-ms', '160'], {
+    // A quarter of the hook budget goes to each capture. It must outlast the
+    // real transcript and guard I/O on a loaded Windows host, or the capture
+    // times out on its own before reaching the hung RPC under test.
+    const result = await runCodexLifecycleCommand(['--event', 'UserPromptSubmit', '--timeout-ms', '1000'], {
       ...f.dependencies, write: value => { output += value; }
     });
+    assert.equal(typeof finishLate, 'function', `the capture RPC ${stage} was reached and hung`);
     assert.equal(result.timedOut, false);
     assert.equal(f.entries(), 1);
     const delivered = JSON.parse(output);

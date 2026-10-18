@@ -5,6 +5,15 @@ export const claudePreferenceEvidence = Object.freeze({
   events(record, sessionId) {
     if (record?.sessionId !== sessionId) return [];
     if (record.type === 'system' && record.subtype === 'compact_boundary') return [{ type: 'reset' }];
+    // Hook-delivered task entry is stored as an attachment; `rendered` is the
+    // exact text the model saw. Claude stores an oversized Hook output as a
+    // preview, which does not parse as a frame and so stays a full delivery.
+    if (record.type === 'attachment' && record.attachment?.type === 'hook_additional_context'
+        && record.attachment.hookEvent === 'UserPromptSubmit' && typeof record.uuid === 'string') {
+      const text = (Array.isArray(record.rendered) ? record.rendered : []).map(block => block?.content)
+        .filter(content => typeof content === 'string').join('\n');
+      return text ? [{ type: 'context', id: record.uuid, output: text }] : [];
+    }
     if (!['assistant', 'user'].includes(record.type) || !Array.isArray(record.message?.content)) return [];
     return record.message.content.flatMap(block => {
       if (record.type === 'assistant' && block.type === 'tool_use') {

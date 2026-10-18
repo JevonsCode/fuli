@@ -30,6 +30,14 @@ export async function readPreferenceEvidence(path, sessionId, adapter) {
       for (const event of adapter.events(record, sessionId)) {
         if (event.type === 'reset') { calls.clear(); frames = []; generation = contentHash({ offset, line }); }
         if (event.type === 'call' && typeof event.id === 'string') calls.set(event.id, event.name);
+        // A host-recorded Hook context is model-facing like a tool result; each
+        // line is parsed on its own, so only a complete JSON frame counts.
+        if (event.type === 'context') {
+          for (const value of preferenceFrames({ hookSpecificOutput: { additionalContext: event.output } })) {
+            frames.push({ callId: event.id, value, offset, end, recordHash: contentHash(line) });
+          }
+          continue;
+        }
         if (event.type !== 'result') continue;
         const name = calls.get(event.id);
         calls.delete(event.id);

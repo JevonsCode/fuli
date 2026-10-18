@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync,
-  rmSync, statSync, symlinkSync, writeFileSync
+  rmSync, symlinkSync, writeFileSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,13 +11,13 @@ import { callAgentTool } from '../src/agent-tools.js';
 import { createAgentDirectorySnapshots } from '../src/agents/directory-snapshots.js';
 import { FederatedGraphApplication, openFederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { withTaskMemorySnapshot } from '../src/graphiti/project-agent-memory.js';
+import { assertFileMode, requiresPermissionDenial, requiresSymlinks } from '../test-support/platform-capabilities.js';
 
 // Synthetic temp data and an HTTP Provider double only.
 const SPACE = 'test-space';
 const config = (spaceId = SPACE, providerUrl = 'http://127.0.0.1:8787') => ({ version: 1,
   personal: { providerUrl, accessToken: 'synthetic-provider-token', principalId: 'test-person', spaceId },
   workspaces: [] });
-const permissionsEnforced = process.getuid?.() !== 0;
 
 function agentRecord({ agentId = 'engineer', spaceId = SPACE, name = 'Engineer', legacy = false, updatedAt } = {}) {
   return { agent_id: agentId, personal_space_id: spaceId, personal_project_id: 'sample-project',
@@ -119,8 +119,8 @@ test('a legacy Agent without a directory or optional fields gets a truthful snap
     const project = read(view.directorySnapshot, view.directorySnapshot.files[1].file);
     assert.match(project, /Database revision: 0/);
     assert.match(project, /No working memory has been recorded in this scope yet\./);
-    assert.equal(statSync(files(view.directorySnapshot)).mode & 0o777, 0o700);
-    assert.equal(statSync(join(files(view.directorySnapshot), 'AGENTS.md')).mode & 0o777, 0o600);
+    assertFileMode(files(view.directorySnapshot), 0o700);
+    assertFileMode(join(files(view.directorySnapshot), 'AGENTS.md'), 0o600);
   } finally { cleanup(); }
 });
 
@@ -366,7 +366,7 @@ test('the owner console inspection creates and regenerates snapshots without the
   } finally { cleanup(); }
 });
 
-test('symlinked managed paths are refused and never followed', async () => {
+test('symlinked managed paths are refused and never followed', requiresSymlinks, async () => {
   const { app, files, home, cleanup } = fixture();
   try {
     const application = app(provider());
@@ -390,7 +390,7 @@ test('symlinked managed paths are refused and never followed', async () => {
   } finally { cleanup(); }
 });
 
-test('read-only storage keeps the database result and reports a recoverable status', { skip: !permissionsEnforced }, async () => {
+test('read-only storage keeps the database result and reports a recoverable status', requiresPermissionDenial, async () => {
   const { app, files, lock, cleanup } = fixture();
   try {
     const memories = { 'sample-project': memoryView('sample-project', 1, 'First.') };
@@ -413,8 +413,10 @@ test('the application factory attaches snapshots below the runtime data director
     const runtimeConfigPath = join(dataDir, 'graph-runtime.json');
     writeFileSync(runtimeConfigPath, JSON.stringify(config()));
     const application = openFederatedGraphApplication({ runtimeConfigPath, env: {}, fetchImpl: provider().fetchImpl });
-    const view = await callAgentTool(application, 'get_project_agent_memory', memoryInput());
-    assert.equal(view.directorySnapshot.status, 'current');
-    assert.equal(existsSync(join(dataDir, ...view.directorySnapshot.path.split('/'), 'AGENTS.md')), true);
+    try {
+      const view = await callAgentTool(application, 'get_project_agent_memory', memoryInput());
+      assert.equal(view.directorySnapshot.status, 'current');
+      assert.equal(existsSync(join(dataDir, ...view.directorySnapshot.path.split('/'), 'AGENTS.md')), true);
+    } finally { await application.close(); }
   } finally { cleanup(); }
 });

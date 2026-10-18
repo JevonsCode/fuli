@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { TASK_RULES_ON_DEMAND } from '../lifecycle-message.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
 import { FULI_VERSION } from '../../package-metadata.js';
 import { transcriptLifecycle } from '../../conversations/transcript-lifecycle.js';
@@ -42,7 +43,7 @@ export async function codexLifecycleOutput(event, input, invoke, { delivery, cur
     turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192),
     sourceApplication: 'codex', sourceSessionId: input.session_id });
   return preferenceHookOutput(compactTaskContext(context), event, input, delivery, 'codex',
-    'Fuli task context. Apply effective_preferences. Follow checkpoint_guidance: checkpoint with taskContextToken only when there is something to record; the Stop hook closes the rest. Shared rules are referenced by version; read MCP resource fuli://rules/task-entry when one applies.');
+    'Fuli task context. Apply effective_preferences. Follow checkpoint_guidance: checkpoint with taskContextToken only when there is something to record; the Stop hook closes the rest. ' + TASK_RULES_ON_DEMAND);
 }
 
 export async function runCodexLifecycleHook(args, dependencies = {}) {

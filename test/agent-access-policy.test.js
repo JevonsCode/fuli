@@ -37,8 +37,10 @@ test('Agent access accepts only an explicit boolean', () => {
 });
 
 test('Agent access policy lives beside the shared graph runtime configuration', () => {
+  // An absolute host path: the policy path is resolved, so a POSIX literal is not absolute on Windows.
+  const runtimeDirectory = join(tmpdir(), 'fuli-runtime');
   assert.equal(
-    agentAccessPolicyPathForRuntime('/data/fuli/graph-runtime.json'),
-    '/data/fuli/agent-access-policy.json'
+    agentAccessPolicyPathForRuntime(join(runtimeDirectory, 'graph-runtime.json')),
+    join(runtimeDirectory, 'agent-access-policy.json')
   );
 });

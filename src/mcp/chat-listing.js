@@ -13,10 +13,10 @@ export const CHAT_LISTING = Object.freeze({
     description: 'Project recall for normal work: projectPath plus 1-4 focused queries (an action, artifact, system or ID, not the whole request). Searches this project, then its authorized parents; never guesses an ambiguous project. related_project_suggestions need the user\'s OK before any expansion.'
   },
   checkpoint_task_knowledge: {
-    description: 'Record capture candidates or meaningful workLog once per task; routine empty finishes follow entry checkpoint_guidance. Use retain_nothing or capture_candidates and reason; employees add truthful workLog. Optional agentMemory (loaded revision), experiences, knowledgeUsage, actual collaborators. No transcripts or secrets; proposals stay pending. Copy returned agent_receipt.markdown.',
+    description: 'Record capture candidates or meaningful workLog once per task; routine empty finishes follow entry checkpoint_guidance. Use retain_nothing or capture_candidates and reason; employees add truthful workLog. Optional agentMemory (loaded revision), remember, experiences, knowledgeUsage, actual collaborators. No transcripts or secrets; proposals stay pending. Copy returned agent_receipt.markdown.',
     // A graph capture is rare at checkpoint; experiences covers reusable approaches.
     properties: {
-      capture: { type: 'object', description: 'Rare graph capture; exact shape via list_agent_interfaces(toolName). Prefer experiences.' },
+      capture: { type: 'object', description: 'Rare graph capture; exact shape via list_agent_interfaces(toolName). Prefer remember or experiences.' },
       captureRouting: { type: 'array', items: { type: 'object' }, maxItems: 2, description: 'Scopes for capture; shape via list_agent_interfaces(toolName).' }
     }
   },

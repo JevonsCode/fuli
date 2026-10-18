@@ -1,10 +1,10 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { posix, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FULI_PACKAGE_NAME, FULI_VERSION } from '../package-metadata.js';
+import { platformPath } from '../system/platform-path.js';
 
 export function updateEnvironment(env, nodePath, platform = process.platform) {
-  const path = platform === 'win32' ? win32 : posix;
+  const path = platformPath(platform);
   const key = platform === 'win32'
     ? Object.keys(env).find((name) => name.toLowerCase() === 'path') ?? 'PATH'
     : 'PATH';
@@ -12,7 +12,7 @@ export function updateEnvironment(env, nodePath, platform = process.platform) {
 }
 
 export function inspectUpdateInstallation({ env = process.env, platform = process.platform } = {}) {
-  const path = platform === 'win32' ? win32 : posix;
+  const path = platformPath(platform);
   const pathKey = Object.keys(env).find((name) => name.toLowerCase() === 'path') ?? 'PATH';
   const directories = [...new Set((env[pathKey] ?? '').split(path.delimiter).filter(Boolean))];
   const launchers = [];

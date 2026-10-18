@@ -6,7 +6,7 @@ import json
 from fastapi import HTTPException
 from .agent_conversation_models import ConversationPolicy
 from .conversation_context import (
-    add_task_result, fold_messages, message_bytes, pack_context, render_digest,
+    DIGEST_VERSION, add_task_result, fold_messages, message_bytes, pack_context, refold_digest, render_digest,
 )
 from .project_agent_access import authorize_project_agent
 from .provider_values import now_utc, stable_uuid
@@ -120,8 +120,28 @@ class StoreAgentConversations:
         page = {**view, 'events': decoded, 'next_cursor': cursor, 'has_more': cursor < record['revision']}
         if request.after == 0:
             # The first history page shows what compaction extracted and where it came from.
-            page['digest'] = json.loads(record['digest']) if record.get('digest') else None
+            page['digest'] = await self._current_digest(record)
         return page
+
+    async def _current_digest(self, record):
+        """The stored digest, rebuilt once from raw events when older folding rules made it."""
+        if not record.get('digest'):
+            return None
+        digest = json.loads(record['digest'])
+        through = record.get('compacted_through') or 0
+        if digest.get('version') == DIGEST_VERSION or not through:
+            return digest
+        events, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent) '
+            'WHERE e.sequence > $after AND e.sequence <= $revision '
+            'RETURN e.payload AS payload, e.sequence AS sequence ORDER BY e.sequence ASC',
+            id=record['id'], after=0, revision=through)
+        rebuilt = refold_digest(digest, [decode_event(event) for event in events])
+        # Only replace the digest that was read; a concurrent compaction wins.
+        await self.runtime.driver.execute_query(
+            'MATCH (c:FuliConversation {id: $id}) WHERE c.digest = $old SET c.digest = $digest',
+            id=record['id'], old=record['digest'], digest=json.dumps(rebuilt, ensure_ascii=False))
+        return rebuilt
 
     async def _context_events(self, record, after):
         """Read a fixed revision backwards; folding never deletes raw recovery.

@@ -7,6 +7,7 @@ import test from 'node:test';
 import { discoverAgents } from '../src/setup/agents.js';
 import { CLAUDE_DESKTOP_SERVER_ARGS } from '../src/setup/claude-desktop-config.js';
 import { createClientConnectionObserver } from '../src/system/client-connection-status.js';
+import { requiresPermissionDenial } from '../test-support/platform-capabilities.js';
 
 // Synthetic home only: no real client configuration is read or changed.
 function fixture() {
@@ -38,8 +39,6 @@ function fixture() {
   return { home, make, codexConfig, writeCodex, writeHistory, fuliTable, lock, cleanup };
 }
 const byId = (result, id) => result.clients.find(client => client.id === id);
-// Permission bits do not block root, so these cases cannot be reproduced there.
-const permissionsEnforced = process.getuid?.() !== 0;
 
 test('a client never connected is listed without paths, and configuration is not proof of a running client', () => {
   const { make, home, cleanup } = fixture();
@@ -176,7 +175,7 @@ test('an existing empty or whitespace JSON config is unknown, not a removal', ()
   } finally { cleanup(); }
 });
 
-test('a configuration directory that cannot be read is unknown, not a removal', { skip: !permissionsEnforced }, () => {
+test('a configuration directory that cannot be read is unknown, not a removal', requiresPermissionDenial, () => {
   const { make, home, writeCodex, fuliTable, lock, cleanup } = fixture();
   try {
     writeCodex(fuliTable);
@@ -191,7 +190,7 @@ test('a configuration directory that cannot be read is unknown, not a removal', 
   } finally { cleanup(); }
 });
 
-test('JSON clients and their settings or hooks are unknown when they cannot be read', { skip: !permissionsEnforced }, () => {
+test('JSON clients and their settings or hooks are unknown when they cannot be read', requiresPermissionDenial, () => {
   const { make, home, lock, cleanup } = fixture();
   try {
     const server = { mcpServers: { fuli: { command: 'node', args: ['mcp-server.js'] } } };

@@ -72,6 +72,34 @@ test('macOS inspection recognizes Rancher Desktop and its user-scoped Docker soc
     'unix:///Users/example/.rd/docker.sock');
 });
 
+test('Windows inspection builds Rancher Desktop paths with Windows separators on any host', () => {
+  const local = 'C:\\Users\\example\\AppData\\Local';
+  const rancher = `${local}\\Programs\\Rancher Desktop`;
+  const existing = new Set([
+    `${rancher}\\Rancher Desktop.exe`,
+    `${rancher}\\resources\\resources\\win32\\bin\\docker.exe`,
+    `${rancher}\\resources\\resources\\win32\\bin\\rdctl.exe`
+  ]);
+  const runtime = inspectContainerRuntime({
+    env: { Path: 'C:\\Windows', LOCALAPPDATA: local },
+    platform: 'win32',
+    homeDir: 'C:\\Users\\example',
+    pathExists: (path) => existing.has(path),
+    run(command, args) {
+      if (args[0] === '--version' && command.endsWith('\\bin\\docker.exe')) {
+        return succeeded('Docker version 27');
+      }
+      if (args[0] === 'compose') return succeeded('Docker Compose version v2.30');
+      if (args[0] === 'info') return failed('connection refused');
+      return failed('command not found');
+    }
+  });
+
+  assert.equal(runtime.status, 'stopped');
+  assert.equal(runtime.dockerCommand, `${rancher}\\resources\\resources\\win32\\bin\\docker.exe`);
+  assert.equal(runtime.desktop.launchCommand, `${rancher}\\resources\\resources\\win32\\bin\\rdctl.exe`);
+});
+
 test('setup launches an installed desktop runtime and waits until Docker is ready', async () => {
   const progress = [];
   const launched = [];
