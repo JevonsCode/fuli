@@ -20,6 +20,7 @@ import { settingsMessages } from './messages/settings'
 import { writingTasteMessages } from './messages/writing-taste'
 import { employeeMessages } from './messages/employees'
 import { attentionMessages } from './messages/attention'
+import { shellMessages } from './messages/shell'
 import { roundtableMessages } from './messages/roundtable'
 import { agentPinsMessages } from './messages/agent-pins'
 import { judgmentMessages } from './messages/judgment'
@@ -77,6 +78,7 @@ export const messages = {
     agentRedesign: agentRedesignMessages['zh-CN'],
     agentProfiles: agentProfileMessages['zh-CN'],
     attention: attentionMessages['zh-CN'],
+    shell: shellMessages['zh-CN'],
     roundtable: roundtableMessages['zh-CN'],
     employees: employeeMessages['zh-CN'],
     about: aboutMessages['zh-CN'],
@@ -104,6 +106,7 @@ export const messages = {
     agentRedesign: agentRedesignMessages['en-US'],
     agentProfiles: agentProfileMessages['en-US'],
     attention: attentionMessages['en-US'],
+    shell: shellMessages['en-US'],
     roundtable: roundtableMessages['en-US'],
     employees: employeeMessages['en-US'],
     about: aboutMessages['en-US'],
