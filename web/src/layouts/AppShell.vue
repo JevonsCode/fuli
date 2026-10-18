@@ -66,7 +66,7 @@ const glossary = useGlossaryMode()
             <GrowthLoading v-if="store.settingsSaving" variant="inline" :label="t(store.settingsSaveState === 'applying' ? 'settings.applying' : 'settings.saving')" />
             <UiButton variant="primary" :disabled="store.settingsSaving" form="settings-form" type="submit">{{ t(store.settingsSaveState === 'saved' ? 'settings.savedShort' : 'settings.save') }}</UiButton>
           </template>
-          <UiIconButton icon="info" data-glossary-toggle :aria-pressed="glossary.pinned.value"
+          <UiIconButton icon="info" data-glossary-toggle :active="glossary.active.value"
             :label="t(glossary.pinned.value ? 'glossary.toggleOn' : 'glossary.toggle')" @click="glossary.toggle" />
           <LocaleSwitcher />
           <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="store.runtimeStatus === 'loading'" @click="store.refresh" />
