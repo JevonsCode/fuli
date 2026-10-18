@@ -70,8 +70,10 @@ if ($useStandalone) {
   Use-FuliStandaloneNode
 }
 
-Write-Host 'Installing fuli-context with npm...'
-& npm install --global fuli-context@latest
+# FULI_NPM_PACKAGE_SPEC installs a release candidate or mirror tarball before it is published.
+$packageSpec = if ($env:FULI_NPM_PACKAGE_SPEC) { $env:FULI_NPM_PACKAGE_SPEC } else { 'fuli-context@latest' }
+Write-Host "Installing $packageSpec with npm..."
+& npm install --global $packageSpec
 if ($LASTEXITCODE -ne 0) { throw 'npm could not install fuli-context.' }
 
 & fuli setup @args
