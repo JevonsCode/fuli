@@ -100,6 +100,26 @@ describe('Agent directory integration', () => {
     expect(wrapper.get('.agent-card-project-count').text()).toBe('+1')
   })
 
+  it('names a session fallback project on a card instead of showing its id', async () => {
+    const fallbackId = `conversation-${'e'.repeat(64)}`
+    const store = useConsoleStore()
+    store.state!.personalProjects = [{ project_id: fallbackId, personal_space_id: 'space-a', profile: { name: 'Conversation project' } }]
+    const assignments = [{
+      assignmentId: 'assignment-fallback', personalSpaceId: 'space-a', personalProjectId: fallbackId, agentId: 'agent-0',
+      responsibility: 'Synthetic review role', status: 'active' as const, assignedAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
+    }]
+    getJson.mockImplementation(async (url: string) => {
+      if (isRosterPage(url)) return rosterPage(url, [{ ...roster[0], assignments }])
+      if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') return []
+      if (url === '/api/agent-pins?personalSpaceId=space-a') return { revision: 1, agentIds: [] }
+      throw new Error(`Unexpected detail request: ${url}`)
+    })
+    const { wrapper } = await setup()
+    const badge = wrapper.get('.agent-card-project-badge')
+    expect(badge.text()).toMatch(/会话项目|Conversation project/)
+    expect(badge.text()).not.toContain('conversation-')
+  })
+
   it('loads only the roster and sends each name to its own profile', async () => {
     const { router, wrapper } = await setup()
     const links = wrapper.findAll('.agent-directory-name a')
