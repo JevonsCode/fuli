@@ -115,8 +115,10 @@ export function normalizeAgentSessionInput(
       ...(SESSION_ID_TOOLS.has(name) && nativeThreadId ? { sessionId: nativeThreadId } : {}),
       sourceApplication: safeSourceApplication,
       sourceSessionId: hostSessionId,
+      // nativeThreadId is set only from the environment of the client this
+      // process was started for (agents/native-session-env.js).
       ...(name === 'read_task_preferences' ? { sourceSessionVerified: Boolean(
-        nativeThreadId && nativeThreadId === hostSessionId && safeSourceApplication === 'codex') } : {}),
+        nativeThreadId && nativeThreadId === hostSessionId) } : {}),
       ...(name === 'call_employee_tool' ? { sourceSessionVerified: Boolean(nativeThreadId && nativeThreadId === hostSessionId) } : {}),
     };
   }
