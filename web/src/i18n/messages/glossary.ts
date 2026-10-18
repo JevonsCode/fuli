@@ -26,6 +26,7 @@ export const glossaryMessages = {
     work: {
       running: 'Agent 正在处理这项任务。',
       queued: '任务已排队，等前面的工作完成后开始。',
+      backlog: '已经指派给人，但还没开工；改成排队后才会开始。',
       paused: '任务被暂停，恢复后从中断处继续。',
       blocked: '遇到需要别人处理的障碍，暂时无法推进。',
       awaiting_review: '工作已完成，等待验收。',
@@ -72,6 +73,7 @@ export const glossaryMessages = {
     work: {
       running: 'An Agent is working on this task.',
       queued: 'Queued; it starts when earlier work finishes.',
+      backlog: 'Assigned but not started; it starts once it is moved to the queue.',
       paused: 'Paused; it resumes where it stopped.',
       blocked: 'Blocked on something someone else must handle.',
       awaiting_review: 'Done and waiting for acceptance.',

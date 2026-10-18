@@ -44,6 +44,7 @@ export const overviewMessages = {
     },
     taskStatus: {
       awaiting_recruitment: '等待招聘',
+      backlog: '待开工',
       queued: '排队中',
       running: '进行中',
       paused: '已暂停',
@@ -100,6 +101,7 @@ export const overviewMessages = {
     },
     taskStatus: {
       awaiting_recruitment: 'Awaiting recruitment',
+      backlog: 'Backlog',
       queued: 'Queued',
       running: 'In progress',
       paused: 'Paused',

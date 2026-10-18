@@ -32,6 +32,8 @@ ProjectAgentStaffingIntent = Literal[
 ]
 ProjectAgentTaskStatus = Literal[
     'awaiting_recruitment',
+    # Assigned but not started: no worker runs until someone moves it to queued.
+    'backlog',
     'queued',
     'running',
     'paused',
@@ -179,6 +181,8 @@ class ProjectAgentTaskSubmit(StrictModel):
     routing_reason: str = Field(min_length=1, max_length=2048)
     recruitment_profile: ProjectAgentProfile | None = None
     recruitment_occupation: ProjectAgentOccupationInput | None = None
+    # False assigns a staffed task to the backlog instead of queueing it.
+    start: bool = True
 
     @field_validator('required_capabilities')
     @classmethod

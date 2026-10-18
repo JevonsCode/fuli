@@ -717,7 +717,7 @@ test('task activity schema and mapping preserve optional concrete worker attribu
   });
   assert.deepEqual(projectAgentTaskActivityInput.properties.workerStatus.type, ['string', 'null']);
   assert.deepEqual(projectAgentTaskActivityInput.properties.workerStatus.enum, [
-    'awaiting_recruitment', 'queued', 'running', 'paused', 'failed',
+    'awaiting_recruitment', 'backlog', 'queued', 'running', 'paused', 'failed',
     'awaiting_review', 'blocked', 'completed', 'cancelled'
   ]);
   assert.deepEqual(projectAgentTaskActivityInput.properties.tokenUsage.required, [
@@ -949,3 +949,11 @@ function providerClient(calls, routes) {
     }
   });
 }
+
+test('start:false reaches the Provider so a task is assigned to the backlog without starting', () => {
+  const base = { personalSpaceId: 'space', personalProjectId: 'project', idempotencyKey: 'backlog-request',
+    title: 'Later', objective: 'Do this later.', workKind: 'implementation', routingReason: 'Assign now, start later.' };
+  assert.equal(providerProjectAgentTaskSubmit({ ...base, start: false }).start, false);
+  assert.equal('start' in providerProjectAgentTaskSubmit(base), false);
+  assert.equal(projectAgentTaskSubmitInput.properties.start.type, 'boolean');
+});

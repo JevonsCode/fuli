@@ -462,7 +462,7 @@ class StoreProjectAgents:
             WITH space, agent, [item IN tasks
                          WHERE item.task_id IS NOT NULL
                            AND item.status IN [
-                             'awaiting_recruitment', 'queued', 'running',
+                             'awaiting_recruitment', 'backlog', 'queued', 'running',
                              'paused', 'blocked', 'awaiting_review'
                            ]] AS open_tasks
             WHERE (agent.status = 'archived' OR size(open_tasks) = 0)
@@ -560,7 +560,7 @@ class StoreProjectAgents:
                 OR EXISTS {
                   MATCH (space)-[:HAS_PROJECT_AGENT_TASK]->(:FuliProjectAgentTask)-
                         [open:HAS_PARTICIPANT]->(agent)
-                  WHERE open.status IN ['awaiting_recruitment', 'queued', 'running',
+                  WHERE open.status IN ['awaiting_recruitment', 'backlog', 'queued', 'running',
                                         'paused', 'blocked', 'awaiting_review']
                 }
               )

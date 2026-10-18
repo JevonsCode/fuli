@@ -415,6 +415,8 @@ class StoreProjectAgentTasks(
         if lead and executor_decision and self._executor_decision_blocked(executor_decision):
             routing_outcome = 'blocked'
             task_status = 'blocked'
+        if task_status == 'queued' and not request.start:
+            task_status = 'backlog'
 
         decision_id = stable_uuid(
             self.settings.provider_id,
@@ -683,7 +685,8 @@ class StoreProjectAgentTasks(
             return
         allowed = {
             'awaiting_recruitment': {'blocked', 'cancelled'},
-            'queued': {'running', 'paused', 'blocked', 'failed', 'cancelled'},
+            'backlog': {'queued', 'cancelled'},
+            'queued': {'running', 'paused', 'blocked', 'failed', 'cancelled', 'backlog'},
             'running': {
                 'paused', 'blocked', 'awaiting_review',
                 'completed', 'failed', 'cancelled',

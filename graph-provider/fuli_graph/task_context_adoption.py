@@ -51,7 +51,7 @@ async def adopt_task_agent(store, actor, token, request):
           AND context.fingerprint IS NULL AND NOT context.completed
           AND context.record_json = $before
           AND agent.profile_json = $profile_json
-          AND task.status IN ['queued', 'running', 'paused', 'blocked', 'awaiting_recruitment']
+          AND task.status IN ['backlog', 'queued', 'running', 'paused', 'blocked', 'awaiting_recruitment']
           AND EXISTS {
             MATCH (:FuliSpace {id: $space_id})-[:CONTAINS_PROJECT]->
               (:FuliPersonalProject {project_id: $project_id})-[:HAS_PROJECT_AGENT_ASSIGNMENT]->
