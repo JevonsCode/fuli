@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
+import { boxCorners } from './framing'
 import { createStage, cssColor, label, tokenColor, type Stage } from './stage'
 import { officeLayout, type SceneAgent, type SceneProject } from './layout'
 
@@ -13,17 +14,32 @@ interface OfficePalette { accent: THREE.Color; danger: THREE.Color; skin: THREE.
 // Shoulder angle that rests the hands on the desk in front.
 const ARM_DESK = -1.25
 
+// The floor's border past the outer rugs (room for the project names), and
+// the height above it that heads and name bubbles reach.
+const FLOOR_MARGIN = 0.9
+const HEADROOM = 2.6
+// Camera elevation: looking down at about 36°.
+const VIEW = new THREE.Vector3(0, 0.82, 1.12).normalize()
+
 const RUG_TONES = ['--identity-0-soft', '--identity-1-soft', '--identity-2-soft', '--identity-3-soft', '--identity-4-soft', '--identity-5-soft']
 
 export function mountOffice(container: HTMLElement, projects: readonly SceneProject[],
   { reducedMotion, onPick }: { reducedMotion: boolean; onPick: (href: unknown) => void }): Stage {
   const plan = officeLayout(projects)
-  // Frame the whole floor with a margin at a wide aspect.
-  const span = Math.max(plan.width * 0.9, plan.depth * 1.4, 8)
+  const span = Math.max(plan.width, plan.depth, 6)
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 200)
-  camera.position.set(0, span * 0.82, span * 1.12)
+  camera.position.copy(VIEW).multiplyScalar(span)
+  // The floor hugs the islands; the stage frames it and the people and
+  // bubbles standing on the islands.
+  const rugs = plan.islands.map(island => new THREE.Box3(new THREE.Vector3(island.x - island.width / 2, 0, island.z - island.depth / 2),
+    new THREE.Vector3(island.x + island.width / 2, HEADROOM, island.z + island.depth / 2)))
+  const ground = rugs.reduce((box, rug) => box.union(rug), new THREE.Box3()).expandByVector(new THREE.Vector3(FLOOR_MARGIN, 0, FLOOR_MARGIN))
+  ground.min.y = -0.3
+  ground.max.y = 0
+  const points = [ground, ...rugs].flatMap(boxCorners)
   const stage = createStage({ container, camera, reducedMotion, onPick,
-    controls: { minDistance: span * 0.6, maxDistance: span * 1.9, minPolar: 0.35, maxPolar: 1.15 } })
+    controls: { minDistance: span * 0.6, maxDistance: span * 1.9, minPolar: 0.35, maxPolar: 1.15 },
+    frame: { points, zoomIn: 0.45, zoomOut: 1.6 } })
   const { scene } = stage
 
   const color = (name: string) => tokenColor(container, name)
@@ -44,9 +60,10 @@ export function mountOffice(container: HTMLElement, projects: readonly SceneProj
   Object.assign(key.shadow.camera, { left: -reach, right: reach, top: reach, bottom: -reach, near: 0.5, far: span * 3 })
   scene.add(key)
 
-  const floor = new THREE.Mesh(new RoundedBoxGeometry(plan.width + 2, 0.3, plan.depth + 2, 4, 0.4),
+  const groundSize = ground.getSize(new THREE.Vector3())
+  const floor = new THREE.Mesh(new RoundedBoxGeometry(groundSize.x, 0.3, groundSize.z, 4, 0.4),
     new THREE.MeshStandardMaterial({ color: color('--color-surface'), roughness: 0.95 }))
-  floor.position.y = -0.15
+  floor.position.copy(ground.getCenter(new THREE.Vector3()))
   floor.receiveShadow = true
   scene.add(floor)
 
