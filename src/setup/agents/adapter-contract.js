@@ -7,7 +7,7 @@ import path from 'node:path';
 export async function exerciseAdapter(t, adapter) {
   const homeDir = mkdtempSync(path.join(tmpdir(), 'fuli-adapter-'));
   t.after(() => rmSync(homeDir, { recursive: true, force: true }));
-  const environment = { homeDir, env: {}, platform: 'linux', pathApi: path.posix,
+  const environment = { homeDir, env: {}, platform: process.platform, pathApi: path,
     fileExists: () => false, commandExists: () => false };
   assert.equal(adapter.detect(environment), null);
   const agent = adapter.detect({ ...environment, commandExists: () => true });
