@@ -14,6 +14,8 @@ import { isMainModule } from '../../system/main-module.js';
 import { readHookInput } from '../lifecycle-input.js';
 import { boundedHookMessage } from '../lifecycle-message.js';
 import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
+import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
+import { FULI_VERSION } from '../../package-metadata.js';
 
 export async function claudeLifecycleOutput(event, input, invoke, { delivery, currentTask } = {}) {
   if (!['UserPromptSubmit', 'Stop', ...PREFERENCE_RESET_EVENTS].includes(event)) throw new TypeError('Unsupported Claude lifecycle event');
@@ -65,7 +67,7 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
     app = (dependencies.openApplication ?? openFederatedGraphApplication)({ runtimeConfigPath });
     leases = (dependencies.createLeases ?? createRuntimeLeaseClient)({ runtimeConfigPath });
     const request = { signal: dependencies.signal };
-    return await leases.withGraphLease('claude-code-lifecycle', async () => {
+    const output = await leases.withGraphLease('claude-code-lifecycle', async () => {
       if (PREFERENCE_RESET_EVENTS.includes(event)) return claudeLifecycleOutput(event, input,
         (name, parameters) => (dependencies.callTool ?? callAgentTool)(app, name, parameters, request),
         { delivery: app.preferenceDelivery, currentTask: app.taskContextRegistry?.current?.bind(app.taskContextRegistry) });
@@ -94,6 +96,8 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
         return claudeLifecycleUnavailable(event, input, transcriptGuardFailureMessage(error));
       }
     }, request);
+    return event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, outdatedMcpNotice(runtimeConfigPath,
+      { sourceApplication: 'claude_code', version: FULI_VERSION, sessionId: input.session_id })) : output;
   } finally {
     await Promise.allSettled([close(leases), close(app)]);
   }

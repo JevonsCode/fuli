@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
+import { FULI_VERSION } from '../../package-metadata.js';
 import { transcriptGuardFailureMessage, withTranscriptGuard } from '../../conversations/transcript-guard.js';
 import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { PREFERENCE_RESET_EVENTS, preferenceHookOutput, preferenceLifecycleOutput } from '../../conversations/preference-lifecycle.js';
@@ -107,8 +109,10 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
         return { systemMessage: transcriptGuardFailureMessage(error) };
       }
     }, { signal: dependencies.signal });
-    write(`${JSON.stringify(output)}\n`);
-    return output;
+    const delivered = event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, outdatedMcpNotice(runtimeConfigPath,
+      { sourceApplication: 'codex', version: FULI_VERSION, sessionId: input?.session_id })) : output;
+    write(`${JSON.stringify(delivered)}\n`);
+    return delivered;
   } finally {
     await cleanup();
   }
