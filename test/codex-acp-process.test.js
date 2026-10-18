@@ -226,7 +226,7 @@ test('host connects one synthetic ACP process to a mocked Provider WorkerRun and
     requested_model_provider: request.provider, requested_model: request.model,
     requested_model_strategy: request.model_strategy });
   const activities = [];
-  let authorityReads = 0;
+  let authorityReads = 0, dispatches = 0;
   const provider = {
     prepareProjectAgentWorkerRun: async () => run('prepared'),
     claimProjectAgentWorkerStart: async () => ({ ...run('claimed'), start_claimed: true }),
@@ -244,6 +244,8 @@ test('host connects one synthetic ACP process to a mocked Provider WorkerRun and
         status: 'completed', summary: 'Synthetic child handled one prompt; no real model was invoked.' } } };
     },
     closeProjectAgentWorkerRun: async () => run('closed'),
+    dispatchProjectAgentWorkerPrompt: async () => { dispatches += 1; return { dispatch_claimed: true }; },
+    recordProjectAgentWorkerResult: async (_id, input) => ({ execution_result: { ...input, retry_eligible: false } }),
     recordProjectAgentTaskActivity: async input => { activities.push(input); }
   };
   const leases = { acquireGraphLease: async () => ({ enabled: false, leaseId: null }),
@@ -256,6 +258,7 @@ test('host connects one synthetic ACP process to a mocked Provider WorkerRun and
     toolNames: ['get_collaboration_preferences', 'checkpoint_task_knowledge'] }).run();
   assert.equal(result.outcome.status, 'completed', JSON.stringify(result.outcome));
   assert.ok(authorityReads > 0, 'the native process fixture must exercise the authority monitor');
+  assert.equal(dispatches, 1, 'the prompt is claimed once before it is sent');
   assert.deepEqual(result.cleanup, { processStopped: true, runClosed: true, errors: [] });
   const observed = JSON.parse(await readFile(record, 'utf8'));
   assert.equal(gone(observed.pid), true);
