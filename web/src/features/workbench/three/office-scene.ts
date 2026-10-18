@@ -1,8 +1,8 @@
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
-import { boxCorners } from './framing'
 import { createStage, cssColor, label, tokenColor, type Stage } from './stage'
 import { officeLayout, type SceneAgent, type SceneProject } from './layout'
+import { officeFrame } from './office-frame'
 
 // 办公室: a warm, softly lit low-poly office. Each project is an island on its
 // own rug; each Agent is a small character at a desk. Working Agents type and
@@ -14,29 +14,12 @@ interface OfficePalette { accent: THREE.Color; danger: THREE.Color; skin: THREE.
 // Shoulder angle that rests the hands on the desk in front.
 const ARM_DESK = -1.25
 
-// The floor's border past the outer rugs (room for the project names), and
-// the height above it that heads and name bubbles reach.
-const FLOOR_MARGIN = 0.9
-const HEADROOM = 2.6
-// Camera elevation: looking down at about 36°.
-const VIEW = new THREE.Vector3(0, 0.82, 1.12).normalize()
-
 const RUG_TONES = ['--identity-0-soft', '--identity-1-soft', '--identity-2-soft', '--identity-3-soft', '--identity-4-soft', '--identity-5-soft']
 
 export function mountOffice(container: HTMLElement, projects: readonly SceneProject[],
   { reducedMotion, onPick }: { reducedMotion: boolean; onPick: (href: unknown) => void }): Stage {
   const plan = officeLayout(projects)
-  const span = Math.max(plan.width, plan.depth, 6)
-  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 200)
-  camera.position.copy(VIEW).multiplyScalar(span)
-  // The floor hugs the islands; the stage frames it and the people and
-  // bubbles standing on the islands.
-  const rugs = plan.islands.map(island => new THREE.Box3(new THREE.Vector3(island.x - island.width / 2, 0, island.z - island.depth / 2),
-    new THREE.Vector3(island.x + island.width / 2, HEADROOM, island.z + island.depth / 2)))
-  const ground = rugs.reduce((box, rug) => box.union(rug), new THREE.Box3()).expandByVector(new THREE.Vector3(FLOOR_MARGIN, 0, FLOOR_MARGIN))
-  ground.min.y = -0.3
-  ground.max.y = 0
-  const points = [ground, ...rugs].flatMap(boxCorners)
+  const { span, camera, ground, points } = officeFrame(plan)
   const stage = createStage({ container, camera, reducedMotion, onPick,
     controls: { minDistance: span * 0.6, maxDistance: span * 1.9, minPolar: 0.35, maxPolar: 1.15 },
     frame: { points, zoomIn: 0.45, zoomOut: 1.6 } })
