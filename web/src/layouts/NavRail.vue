@@ -65,8 +65,8 @@ watch(expanded, value => {
   transition: width var(--motion-medium) var(--motion-ease);
 }
 .nav-rail.is-expanded { width: 208px; align-items: stretch; padding-inline: 12px; }
-.nav-rail-brand { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding-bottom: 6px; }
-.nav-rail.is-expanded .nav-rail-brand { justify-content: flex-start; padding-left: 2px; }
+.nav-rail-brand { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding-bottom: 6px; }
+.nav-rail.is-expanded .nav-rail-brand { justify-content: flex-start; padding-left: 4px; }
 .nav-rail-wordmark { color: var(--color-ink); font-size: 17px; font-weight: 800; letter-spacing: .08em; white-space: nowrap; }
 .nav-rail-links { display: flex; flex: 1; flex-direction: column; align-items: center; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .nav-rail.is-expanded .nav-rail-links { align-items: stretch; }
@@ -76,8 +76,10 @@ watch(expanded, value => {
   transition: color var(--motion-fast), background var(--motion-fast), transform var(--motion-fast) var(--motion-ease);
 }
 .nav-rail.is-expanded .nav-rail-link {
-  display: flex; align-items: center; gap: 12px; width: 100%; height: 44px; padding: 0 12px; place-items: initial;
+  display: flex; align-items: center; gap: 10px; width: 100%; height: 40px; padding: 0 12px; line-height: 1;
 }
+/* Expanded, the active row is a flat tint centred on its text, no glow. */
+.nav-rail.is-expanded .nav-rail-link.is-active { box-shadow: none; }
 .nav-rail-link:hover { color: var(--color-ink); background: var(--color-surface-hover); }
 .nav-rail-link:active { transform: scale(.96); }
 .nav-rail-link.is-active { color: var(--color-accent); background: var(--color-accent-soft); box-shadow: var(--glow-accent); }
@@ -91,16 +93,20 @@ watch(expanded, value => {
   font-size: 11px; font-weight: 700; line-height: 1;
 }
 .nav-rail.is-expanded .nav-rail-badge { position: static; margin-left: auto; }
-.nav-rail-sublinks { display: grid; gap: 2px; margin: 2px 0 4px; padding: 0 0 0 46px; list-style: none; }
+/* Second level: same column as the first-level names, told apart by colour. */
+.nav-rail-sublinks { display: grid; gap: 2px; margin: 0 0 4px; padding: 0; list-style: none; }
 .nav-rail-sublink {
-  display: block; padding: 6px 10px; border-radius: 10px; color: var(--color-muted); font-size: 13px; font-weight: 600; text-decoration: none;
+  display: flex; align-items: center; height: 32px; padding: 0 12px 0 44px; border-radius: 10px;
+  color: var(--color-faint); font-size: 13px; font-weight: 500; line-height: 1; text-decoration: none;
   transition: color var(--motion-fast), background var(--motion-fast);
 }
 .nav-rail-sublink:hover { color: var(--color-ink); background: var(--color-surface-hover); }
 .nav-rail-sublink.is-active { color: var(--color-accent); background: var(--color-accent-soft); }
 .nav-rail-sublink:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .nav-rail-foot { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.nav-rail.is-expanded .nav-rail-foot { flex-direction: row; justify-content: space-between; padding-left: 12px; }
+/* Status first, the collapse control alone on the last line. */
+.nav-rail.is-expanded .nav-rail-foot { align-items: flex-start; padding-left: 12px; }
+.nav-rail.is-expanded .nav-rail-toggle { margin-left: -7px; }
 .nav-rail-runtime { display: inline-flex; align-items: center; gap: 8px; color: var(--color-muted); font-size: 12px; }
 .nav-rail-runtime-text { display: none; }
 .nav-rail.is-expanded .nav-rail-runtime-text { display: inline; }
