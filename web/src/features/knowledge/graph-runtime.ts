@@ -25,6 +25,8 @@ export interface GraphController {
 }
 
 export interface GraphRenderOptions {
+  /** Project listings already apply their visibility policy before rendering. */
+  projectVisibility?: 'formal' | 'provided'
   onNodeSelect?(node: KnowledgeNode): void
   onEdgeSelect?(edge: KnowledgeEdge): void
 }
@@ -64,10 +66,10 @@ export function renderKnowledgeGraph(
     : options
   const width = Math.max(svg.clientWidth || 0, 760)
   const height = Math.max(svg.clientHeight || 0, 520)
-  const formalGraph = filterFormalProjectGraph(graph)
-  const nodes: GraphNodeDatum[] = formalGraph.nodes.map((node) => ({ ...node }))
+  const visibleGraph = callbacks.projectVisibility === 'provided' ? graph : filterFormalProjectGraph(graph)
+  const nodes: GraphNodeDatum[] = visibleGraph.nodes.map((node) => ({ ...node }))
   const nodeIds = new Set(nodes.map(({ id }) => id))
-  const links = formalGraph.edges
+  const links = visibleGraph.edges
     .map(normalizeEdge)
     .filter(({ sourceId, targetId }) => nodeIds.has(sourceId) && nodeIds.has(targetId))
 

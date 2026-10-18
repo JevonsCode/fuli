@@ -65,6 +65,23 @@ describe('typed graph runtime', () => {
     }
   })
 
+  it('renders caller-filtered temporary projects while retaining formal-only defaults', () => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    document.body.append(svg)
+    const graph = { nodes: [
+      { id: 'temp', name: 'Temp', type: 'PersonalProject', attributes: { projectId: 'temp', scope_type: 'temporary' } },
+      { id: 'fallback', name: 'Fallback', type: 'PersonalProject', attributes: { projectId: `conversation-${'a'.repeat(64)}` } },
+    ], edges: [] }
+    const formal = renderKnowledgeGraph(svg, graph)
+    expect(svg.querySelectorAll('.graph-node')).toHaveLength(0)
+    formal.destroy()
+    const listed = renderKnowledgeGraph(svg, graph, { projectVisibility: 'provided' })
+    expect(svg.querySelectorAll('.graph-node')).toHaveLength(2)
+    expect(listed.selectItem('entity', 'temp')).toBe(true)
+    expect(listed.selectItem('entity', 'fallback')).toBe(true)
+    listed.destroy()
+  })
+
   it('renders selectable nodes and valid edges without a global D3 bridge', () => {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
     Object.defineProperty(svg, 'clientWidth', { value: 900 })

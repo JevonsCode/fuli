@@ -7,6 +7,7 @@ import type { KnowledgeEdge, KnowledgeGraph, KnowledgeNode } from '@/types'
 
 const props = defineProps<{
   graph: KnowledgeGraph
+  projectVisibility?: 'formal' | 'provided'
   selectedItem?: {
     itemKind: 'entity' | 'relationship'
     id: string
@@ -22,7 +23,7 @@ const svg = ref<SVGSVGElement | null>(null)
 let controller: GraphController | null = null
 
 onMounted(render)
-watch(() => props.graph, render, { deep: false })
+watch([() => props.graph, () => props.projectVisibility], render, { deep: false })
 watch(() => currentLocale(), render)
 watch(
   [() => props.selectedItem?.itemKind, () => props.selectedItem?.id],
@@ -49,6 +50,7 @@ async function render() {
   if (!svg.value) return
   controller?.destroy()
   controller = renderKnowledgeGraph(svg.value, props.graph, {
+    projectVisibility: props.projectVisibility,
     onNodeSelect: (node) => emit('selectNode', node),
     onEdgeSelect: (edge) => emit('selectEdge', edge),
   })
