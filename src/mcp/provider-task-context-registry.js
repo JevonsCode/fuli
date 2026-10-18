@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { parseTaskAgentAssignment } from '../graphiti/task-agent-assignment.js';
+import { taskActivityOrigin } from '../graphiti/task-activity-origin.js';
 
 // The Provider is the sole source of truth. Hooks commonly use separate MCP
 // processes; a process-local cache cannot prove that a task was checkpointed.
@@ -23,6 +24,7 @@ export class ProviderTaskContextRegistry {
       memory_revision: input.memoryRevision ?? null,
       work_log_required: input.workLogRequired ?? false,
       entry_via: input.entryVia === 'hook' ? 'hook' : 'tool',
+      ...(input.delegationToken ? { delegation_token: input.delegationToken } : {}),
       ...(input.preferenceScope !== undefined ? { preference_scope: scope } : {}),
       ...(input.agentAssignment ? { agent_assignment: parseTaskAgentAssignment(input.agentAssignment) } : {})
     }));
@@ -117,6 +119,7 @@ export function taskRecord(value) {
     sourceSessionId: value.source_session_id ?? null,
     turnId: value.turn_id ?? null,
     entryVia: value.entry_via ?? 'tool',
+    activityOrigin: taskActivityOrigin(value.activity_origin),
     preferenceScope: taskPreferenceScope(value.preference_scope),
     agentAssignment: storedAgentAssignment(value.agent_assignment),
     memoryRevision: value.memory_revision,

@@ -10,6 +10,7 @@ from .model_validation import (
     validate_emoji_sequence,
 )
 from .models import SourceApplication, StrictModel
+from .task_activity_origin import TaskActivityOrigin
 from .project_agent_occupation_models import ProjectAgentOccupationInput
 from .project_agent_models import (
     ProjectAgentExecutorPolicy,
@@ -171,6 +172,8 @@ class ProjectAgentTaskSubmit(StrictModel):
     executor_override: ProjectAgentExecutorPolicy | None = None
     source_application: SourceApplication | None = None
     source_session_id: str | None = Field(default=None, min_length=1, max_length=256)
+    # Provenance is copied from this authenticated context, never caller labels.
+    task_context_token: str | None = Field(default=None, min_length=1, max_length=256, exclude=True, repr=False)
     routing_reason: str = Field(min_length=1, max_length=2048)
     recruitment_profile: ProjectAgentProfile | None = None
     recruitment_occupation: ProjectAgentOccupationInput | None = None
@@ -512,6 +515,7 @@ class ProjectAgentTaskRecord(StrictModel):
     recruitment_id: str | None = None
     source_application: SourceApplication | None = None
     source_session_id: str | None = None
+    activity_origin: TaskActivityOrigin | None = None
     result_summary: str | None = None
     failure_reason: str | None = None
     created_at: datetime
