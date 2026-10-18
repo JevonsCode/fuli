@@ -57,6 +57,40 @@ describe('ProjectTeamSummary', () => {
     expect(panel.get('.is-peers').text()).toContain('Bole')
   })
 
+  it('shows each sub-team under its sub-lead, then direct reports, and suggests grouping a large flat team', async () => {
+    const backendLead = person('BackLead', { reportsToAgentId: 'Lead' })
+    const engineer = person('Engineer', { reportsToAgentId: 'BackLead' })
+    const designer = person('Designer', { reportsToAgentId: 'Lead' })
+    getJson.mockResolvedValue(team({
+      members: [backendLead, engineer, designer],
+      subTeams: [
+        { id: 'backend', name: '后端', lead: backendLead, unavailableLead: null, members: [engineer], unavailableMemberIds: [] },
+        { id: 'growth', name: '增长', lead: null, unavailableLead: { agentId: 'gone', name: 'Gone' }, members: [], unavailableMemberIds: [] },
+      ],
+    }))
+    const wrapper = mountSummary()
+    await flushPromises()
+    await wrapper.get('button.project-team-lead').trigger('click')
+    const backend = wrapper.get('[data-team-group="sub-backend"]')
+    expect(backend.get('h4').text()).toBe('后端')
+    expect(backend.get('.project-team-sub-lead').text()).toContain('BackLead')
+    expect(backend.get('.project-team-list').text()).toContain('Engineer')
+    expect(backend.get('.project-team-list').text()).not.toContain('BackLead')
+    expect(wrapper.get('[data-team-group="sub-growth"]').text()).toContain('子组长 Gone 暂时不可用')
+    const direct = wrapper.get('[data-team-group="direct"]')
+    expect(direct.text()).toContain('Designer')
+    expect(direct.text()).not.toContain('Engineer')
+    expect(wrapper.find('[data-sub-team-suggestion]').exists()).toBe(false)
+    wrapper.unmount()
+
+    getJson.mockResolvedValue(team({ subTeams: [], subTeamSuggestion: { suggested: true, memberCount: 8, threshold: 6 } }))
+    const flat = mountSummary()
+    await flushPromises()
+    await flat.get('button.project-team-lead').trigger('click')
+    expect(flat.get('[data-sub-team-suggestion]').text()).toContain('已有 8 位成员')
+    flat.unmount()
+  })
+
   it('counts other assignments in the collapsed summary instead of claiming nobody is assigned', async () => {
     getJson.mockResolvedValue(team({ members: [] }))
     const wrapper = mountSummary()
