@@ -58,4 +58,5 @@ onBeforeUnmount(() => {
 .ui-popover:focus { outline: none; }
 @keyframes ui-popover-in { from { opacity: 0; transform: translateY(-3px); } }
 @media (prefers-reduced-motion: reduce) { .ui-popover { animation: none; } }
+:root[data-motion="reduced"] .ui-popover { animation: none; }
 </style>
