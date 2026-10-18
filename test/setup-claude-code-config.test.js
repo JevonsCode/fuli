@@ -60,8 +60,7 @@ test('Claude Code connection keeps unrelated config and installs deterministic t
           'claude_code',
           '--tool-profile',
           'chat'
-        ],
-        alwaysLoad: true
+        ]
       }
     }
   });

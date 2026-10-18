@@ -38,6 +38,8 @@ export function connectClaudeCode(agent, context, {
     ...current,
     mcpServers: {
       ...(current.mcpServers ?? {}),
+      // No alwaysLoad: Claude Code then loads FULI's schemas on demand instead of
+      // carrying them in every request; hooks supply the task context (T-P00).
       [FULI_SERVER]: {
         type: 'stdio',
         command: context.nodePath,
@@ -49,8 +51,7 @@ export function connectClaudeCode(agent, context, {
           'claude_code',
           '--tool-profile',
           profile
-        ],
-        alwaysLoad: true
+        ]
       }
     }
   };
