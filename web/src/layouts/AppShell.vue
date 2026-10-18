@@ -79,16 +79,16 @@ watchEffect(() => updateDocumentTitle(route.meta.title))
 </template>
 
 <style scoped>
-.app-frame { display: flex; min-height: 100dvh; background: var(--color-bg); color: var(--color-ink); }
-.app-main { flex: 1; min-width: 0; padding: 0 var(--page-gutter) 32px; }
-.app-topbar {
-  position: sticky; top: 0; z-index: calc(var(--z-nav) - 1); display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px;
-  min-height: 64px; padding: 10px 0; background: color-mix(in srgb, var(--color-bg) 88%, transparent); backdrop-filter: blur(10px);
-}
+/* The page root (.view) is the scroll container: body never scrolls, so the
+   main column keeps a fixed height and lets the routed page take the rest. */
+.app-frame { display: flex; height: 100dvh; overflow: hidden; background: var(--color-bg); color: var(--color-ink); }
+.app-main { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.app-topbar { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 12px 20px; min-height: 64px; padding: 10px var(--page-gutter); }
 .app-title { margin: 0; font-size: var(--text-title); font-weight: 700; letter-spacing: -.01em; }
 .app-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.feedback-message { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; margin: 0 var(--page-gutter) 8px; }
 @media (max-width: 720px) {
-  .app-main { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .app-main { padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
   .app-topbar { min-height: 56px; }
   .app-title { font-size: 19px; }
   /* Title and actions share the first row; the section tabs take their own. */
