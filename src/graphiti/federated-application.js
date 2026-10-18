@@ -40,6 +40,8 @@ import { ProviderTaskContextRegistry } from '../mcp/provider-task-context-regist
 import { readTaskPreferences } from './task-preference-reader.js';
 import { attachExternalKnowledgeRuntime } from '../external-knowledge/runtime.js';
 import { resolveSetupPaths } from '../setup/paths.js';
+import { createNeedsPersonNotifier } from '../notifications/needs-person.js';
+import { readRuntimeSettings } from '../system/runtime-settings.js';
 import {
   beginTaskContext as beginTaskContextWorkflow,
   checkpointTaskKnowledge as checkpointTaskKnowledgeWorkflow,
@@ -129,6 +131,9 @@ export function openFederatedGraphApplication({
       spaceId: () => app.config.personal.spaceId });
     app.roundtable = createAgentRoundtable({ app, env,
       openStore: () => createRoundtableStore(join(dirname(runtimeConfigPath), 'agent-roundtable.sqlite')) });
+    // Read per call so a saved settings change applies without a restart.
+    app.needsPerson = createNeedsPersonNotifier({ fetchImpl, consoleUrl: app.consoleUrl,
+      readUrl: () => readRuntimeSettings(paths.runtimeSettingsPath).notifications.needsPersonUrl });
   }
   return app;
 }

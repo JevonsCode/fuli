@@ -15,6 +15,9 @@ interface PackageVersionStatus {
   checkedAt: string
 }
 
+// compact: the icon rail shows only the mark; the effect ends with the orbit,
+// and an available update appears as a dot on the mark.
+const props = withDefaults(defineProps<{ compact?: boolean }>(), { compact: false })
 const root = ref<HTMLElement | null>(null)
 const versionButton = ref<HTMLButtonElement | null>(null)
 const effectRun = ref(0)
@@ -96,6 +99,7 @@ onBeforeUnmount(() => {
     ref="root"
     class="brand-block"
     :class="{
+      'is-compact': props.compact,
       'is-sparkling': isPlaying,
       'is-keyboard-focused': isKeyboardFocused,
     }"
@@ -111,12 +115,15 @@ onBeforeUnmount(() => {
       <span class="brand-mark-wrap">
         <img class="brand-mark" :src="fuliLogoUrl" alt="" aria-hidden="true" />
         <template v-if="isPlaying">
-          <span :key="`orbit-${effectRun}`" class="brand-orbit" aria-hidden="true" />
+          <span :key="`orbit-${effectRun}`" class="brand-orbit" aria-hidden="true" @animationend.self="props.compact && finishEffect()" />
         </template>
       </span>
     </button>
+    <button v-if="props.compact && updateAvailable" ref="versionButton" class="brand-compact-update" type="button"
+      :aria-label="t('console.update.aria', { version: latestVersion })" :aria-expanded="isUpdateOpen"
+      aria-controls="brand-update-details" @click="toggleUpdateDetails" />
 
-    <span class="brand-copy">
+    <span v-if="!props.compact" class="brand-copy">
       <span class="brand-title-row">
         <span class="brand-name">{{ t('common.brand') }}</span>
         <button
@@ -358,6 +365,13 @@ onBeforeUnmount(() => {
   color: var(--color-warning);
   text-shadow: 0 0 6px rgba(239, 190, 93, .28);
 }
+
+.brand-block.is-compact { justify-content: center; padding: 0; }
+.brand-compact-update {
+  position: absolute; top: -2px; right: 10px; width: 12px; height: 12px; padding: 0;
+  border: 2px solid var(--color-sidebar); border-radius: 50%; background: var(--status-waiting); cursor: pointer;
+}
+.brand-block.is-compact .brand-update-popover { top: 0; left: 64px; right: auto; width: 260px; }
 
 .brand-update-popover {
   position: absolute;

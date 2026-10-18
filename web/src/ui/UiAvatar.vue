@@ -27,7 +27,8 @@ const style = computed(() => ({
 </script>
 
 <template>
-  <span class="ui-avatar" :class="[`is-${size}`, `is-${status}`]" :style="style" :data-status="status">
+  <span class="ui-avatar" :class="[`is-${size}`, `is-${status}`]" :style="style" :data-status="status"
+    :data-term="status === 'none' ? undefined : `presence.${status}`">
     <img v-if="image" :src="image" alt="" />
     <span v-else aria-hidden="true">{{ initial }}</span>
   </span>

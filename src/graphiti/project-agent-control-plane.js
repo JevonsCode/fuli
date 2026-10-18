@@ -94,7 +94,10 @@ export class ProjectAgentControlPlaneApplication {
 
   async requestAgentAttention(input) {
     this.#assertSpace(input.personalSpaceId);
-    return changeAgentAttention(this, 'create', input);
+    const record = await changeAgentAttention(this, 'create', input);
+    // A person is needed: tell the local notifier without waiting for it.
+    void this.needsPerson?.notify(record);
+    return record;
   }
 
   async cancelAgentAttention(input) {

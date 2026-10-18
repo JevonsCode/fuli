@@ -8,7 +8,9 @@ const graphRuntime = readFileSync(
   'web/src/features/knowledge/graph-runtime.ts',
   'utf8'
 );
-const layout = readFileSync('web/src/layouts/ConsoleLayout.vue', 'utf8');
+const layout = ['AppShell', 'NavRail', 'SectionTabs']
+  .map((name) => readFileSync(`web/src/layouts/${name}.vue`, 'utf8'))
+  .join('\n');
 const settings = readFileSync('web/src/pages/SettingsPage.vue', 'utf8');
 const routes = readFileSync('web/src/router/index.ts', 'utf8');
 const routePaths = readFileSync('web/src/router/paths.ts', 'utf8');
@@ -177,7 +179,8 @@ test('the UI keeps the restrained visual system and routed anchor states', () =>
   assert.match(css, /background:\s*var\(--color-bg\)/);
   assert.match(css, /html, body, #app \{ height: 100%; \}/);
   assert.match(css, /html, body \{ overflow: hidden; \}/);
-  assert.match(css, /\.primary-nav > a\.is-active/);
+  assert.match(layout, /\.nav-rail-link\.is-active/);
+  assert.match(layout, /\.section-tab\.is-active/);
   assert.match(vueCss, /\.vue-knowledge-view/);
   assert.doesNotMatch(`${css}${vueCss}`, /linear-gradient|radial-gradient/);
 });

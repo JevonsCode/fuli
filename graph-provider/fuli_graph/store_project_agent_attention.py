@@ -35,6 +35,9 @@ class StoreProjectAgentAttention:
             if not task:
                 raise HTTPException(status_code=404, detail='project Agent task not found')
         payload = request.model_dump(exclude={'idempotency_key'})
+        # Preserve pre-options idempotency fingerprints on an upgraded server.
+        if payload.get('options') is None:
+            payload.pop('options', None)
         fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
         payload['agent_id'] = agent_id
         request_id = stable_uuid(

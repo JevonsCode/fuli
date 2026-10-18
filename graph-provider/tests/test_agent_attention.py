@@ -36,6 +36,17 @@ def test_attention_requires_human_action_not_generic_work_status():
             AgentAttentionCreate(**(base | changes))
 
 
+def test_native_attention_choices_are_optional_bounded_and_distinct():
+    base = dict(personal_space_id='space', personal_project_id='project', agent_id='agent',
+                idempotency_key='request-choice', kind='question', title='Choice', detail='Two targets',
+                requested_action='Choose a target')
+    value = AgentAttentionCreate(**base, options=['Target A', 'Target B'])
+    assert value.model_dump().get('options') == ['Target A', 'Target B']
+    for options in ([], ['one'], ['a', 'b', 'c', 'd'], ['a', 'a'], ['a', ' ']):
+        with pytest.raises(ValidationError):
+            AgentAttentionCreate(**base, options=options)
+
+
 class Store(StoreProjectAgentAttention):
     def __init__(self, rows):
         self.driver = SimpleNamespace(execute_query=AsyncMock(return_value=(rows, None, None)))
@@ -88,10 +99,12 @@ async def test_request_scope_and_idempotency_are_checked_before_return(monkeypat
     authorize_agent = AsyncMock()
     monkeypatch.setattr('fuli_graph.store_project_agent_attention.authorize_project_agent', authorize_agent)
     request = AgentAttentionCreate(personal_space_id='space', personal_project_id='project', agent_id='agent', idempotency_key='request-1', kind='review', title='Review', detail='Changes are ready', requested_action='Review the changes')
-    fingerprint = hashlib.sha256(json.dumps(request.model_dump(exclude={'idempotency_key'}), sort_keys=True).encode()).hexdigest()
+    # A request without choices must keep the pre-UI-07 fingerprint on upgrade.
+    fingerprint = hashlib.sha256(json.dumps(request.model_dump(exclude={'idempotency_key', 'options'}), sort_keys=True).encode()).hexdigest()
     store = Store([{'request': raw_request(fingerprint=fingerprint)}])
     store.settings = SimpleNamespace(provider_id='provider')
     await store.create_agent_attention({}, request)
+    assert 'options' not in store.driver.execute_query.call_args.kwargs['payload']
     assert authorize_agent.call_args.args[3:5] == ('project', 'agent')
     assert authorize_agent.call_args.kwargs['require_active'] is True
     first_id = store.driver.execute_query.call_args.kwargs['request_id']
