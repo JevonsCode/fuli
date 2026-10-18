@@ -142,31 +142,49 @@ export function replaceFuliTable(source, { command, args }) {
 // The args of the existing fuli MCP entry, so an explicit choice the person
 // made (such as --tool-profile full) survives a reconnect. Any valid TOML form
 // is read (quoted table names, multi-line arrays, literal strings, comments).
-// If the file does not parse, an explicit profile is still kept, read only
-// from the fuli table so another server's or a commented-out profile never wins.
+// If the file does not parse, the fuli table is read on its own, so an
+// unrelated syntax error, another server's profile or a commented-out
+// profile never changes the person's choice.
 export function existingFuliArgs(source) {
   try {
-    const args = parseToml(source)?.mcp_servers?.fuli?.args;
-    return Array.isArray(args) ? args.filter(value => typeof value === 'string') : [];
+    return stringArgs(parseToml(source)?.mcp_servers?.fuli?.args);
   } catch {
-    const profile = /["']--tool-profile["']\s*,\s*["']([^"']+)["']/.exec(fuliTableText(source))?.[1];
-    return profile ? ['--tool-profile', profile] : [];
+    const body = fuliTableBody(source);
+    try {
+      return stringArgs(parseToml(body.join('\n'))?.args);
+    } catch {
+      const text = body.map(stripTomlComment).join('\n');
+      const profile = /["']--tool-profile["']\s*,\s*["']([^"']+)["']/.exec(text)?.[1];
+      return profile ? ['--tool-profile', profile] : [];
+    }
   }
 }
 
+const stringArgs = (args) => (Array.isArray(args) ? args.filter(value => typeof value === 'string') : []);
+
 const FULI_TABLE_HEADER = /^\s*\[\s*["']?mcp_servers["']?\s*\.\s*["']?fuli["']?\s*\]?\s*(?:#.*)?$/;
 
-// The lines of the first fuli table up to the next table, without comments.
-function fuliTableText(source) {
+// The lines of the first fuli table, up to the next table header.
+function fuliTableBody(source) {
   const lines = source.replaceAll('\r\n', '\n').split('\n');
   const start = lines.findIndex(line => FULI_TABLE_HEADER.test(line));
-  if (start < 0) return '';
-  const body = [];
-  for (const line of lines.slice(start + 1)) {
-    if (/^\s*\[/.test(line)) break;
-    if (!/^\s*#/.test(line)) body.push(line.replace(/#[^"']*$/, ''));
+  if (start < 0) return [];
+  const end = lines.findIndex((line, index) => index > start && /^\s*\[/.test(line));
+  return lines.slice(start + 1, end < 0 ? undefined : end);
+}
+
+// Drop a TOML comment while leaving a # inside a basic or literal string alone.
+function stripTomlComment(line) {
+  let quote = '';
+  for (let index = 0; index < line.length; index++) {
+    const char = line[index];
+    if (quote) {
+      if (quote === '"' && char === '\\') index++;
+      else if (char === quote) quote = '';
+    } else if (char === '"' || char === "'") quote = char;
+    else if (char === '#') return line.slice(0, index);
   }
-  return body.join('\n');
+  return line;
 }
 
 export function removeFuliTables(source) {

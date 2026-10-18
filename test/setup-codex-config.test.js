@@ -321,6 +321,17 @@ test('an unparseable file only reads the profile from the fuli table, never anot
   const otherServerFirst = 'broken=[\n[mcp_servers.other]\nargs=["--tool-profile","chat"]\n[mcp_servers.fuli]\nargs=["--tool-profile","full"]\n';
   assert.deepEqual(existingFuliArgs(otherServerFirst), ['--tool-profile', 'full']);
   const commentedOut = 'broken=[\n[mcp_servers.fuli]\n# args=["--tool-profile","chat"]\nargs=["/srv.js", # server\n  "--tool-profile", "full"]\n';
-  assert.deepEqual(existingFuliArgs(commentedOut), ['--tool-profile', 'full']);
+  assert.deepEqual(existingFuliArgs(commentedOut), ['/srv.js', '--tool-profile', 'full']);
   assert.deepEqual(existingFuliArgs('broken=[\n[mcp_servers.other]\nargs=["--tool-profile","full"]\n'), []);
+});
+
+test('an unparseable file reads inline comments with quotes the way TOML does', () => {
+  // SOL's repros: a quoted comment between flag and value, and a profile that only exists in a comment.
+  const quotedComment = 'broken=[\n[mcp_servers.fuli]\nargs=["--tool-profile", # keep "full"\n"full"]\n';
+  assert.deepEqual(existingFuliArgs(quotedComment), ['--tool-profile', 'full']);
+  const commentedProfile = 'broken=[\n[mcp_servers.fuli]\ncommand="node" # old args=["--tool-profile","full"]\nargs=["/srv.js"]\n';
+  assert.deepEqual(existingFuliArgs(commentedProfile), ['/srv.js']);
+  // When the fuli table itself is broken, a # inside a string is not a comment.
+  const brokenTable = 'broken=[\n[mcp_servers.fuli]\nurl = "http://x/#a"\nargs=["--tool-profile", "full" # "chat"\n';
+  assert.deepEqual(existingFuliArgs(brokenTable), ['--tool-profile', 'full']);
 });
