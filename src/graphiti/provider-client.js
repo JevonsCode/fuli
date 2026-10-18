@@ -119,6 +119,22 @@ export class GraphitiProviderClient {
       capability, signal, method: 'POST', body: input
     });
   }
+  dispatchProjectAgentWorkerPrompt(runId, input, { capability, signal } = {}) {
+    return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/dispatch`, {
+      capability, signal, method: 'POST', body: input
+    });
+  }
+  recordProjectAgentWorkerResult(runId, input, { capability, signal } = {}) {
+    return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/result`, {
+      capability, signal, method: 'POST', body: input
+    });
+  }
+  listProjectAgentTaskRuns({ personalSpaceId, personalProjectId, taskId, limit = 50, cursor }) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId, personal_project_id: personalProjectId,
+      limit: String(limit) });
+    if (cursor) query.set('cursor', cursor);
+    return this.#request(`/v1/project-agent-tasks/${encodeURIComponent(taskId)}/runs?${query}`);
+  }
   revokeProjectAgentWorkerRun(runId, input, { signal } = {}) {
     return this.#workerHostRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/revoke`, {
       signal, method: 'POST', body: input

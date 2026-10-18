@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { createWorkerRunAttempt } from './worker-run-host.js';
 
 export const workerRuntimeBindingKey = (spaceId, projectId, executorId) =>
@@ -36,16 +37,49 @@ export function createWorkerPlanHost({ provider, leases, workerRuntimeBindings, 
     }
     const key = createHash('sha256').update(JSON.stringify([task.taskId, task.leadAgentId, idempotencyKey])).digest('hex');
     const cancellation = new AbortController();
-    const running = createWorkerRunAttempt({ ...attemptOptions, provider, leases, adapter: binding.adapter,
-      projectPath: binding.projectPath, taskPrompt: task.objective,
-      toolNames: ['get_collaboration_preferences', 'checkpoint_task_knowledge'], leaseExecutor: binding.leaseExecutor,
-      request: { personal_space_id: plan.personal_space_id, personal_project_id: plan.personal_project_id,
-        task_context_token: plan.task_context.task_context_token, source_application: task.sourceApplication,
-        task_id: task.taskId, agent_id: task.leadAgentId, worker_id: `worker-${key.slice(0, 32)}`,
-        executor_id: decision.selected_executor_id, target_application: binding.adapter.application,
-        provider: decision.selected_provider, model: decision.selected_model,
-        model_strategy: structuredClone(decision.model_strategy), idempotency_key: `worker-plan:${key}` }
-    }).run({ signal: signal ? AbortSignal.any([signal, cancellation.signal]) : cancellation.signal });
+    const running = runChain();
+    async function runChain() {
+      const attempts = [];
+      const combinedSignal = signal ? AbortSignal.any([signal, cancellation.signal]) : cancellation.signal;
+      let previous = null;
+      while (true) {
+        const number = attempts.length + 1;
+        const result = await createWorkerRunAttempt({ ...attemptOptions, provider, leases, adapter: binding.adapter,
+          projectPath: binding.projectPath, taskPrompt: task.objective,
+          toolNames: ['get_collaboration_preferences', 'checkpoint_task_knowledge'], leaseExecutor: binding.leaseExecutor,
+          request: { personal_space_id: plan.personal_space_id, personal_project_id: plan.personal_project_id,
+            task_context_token: plan.task_context.task_context_token, source_application: task.sourceApplication,
+            task_id: task.taskId, agent_id: task.leadAgentId, worker_id: `worker-${key.slice(0, 32)}${previous ? `-${number}` : ''}`,
+            executor_id: decision.selected_executor_id, target_application: binding.adapter.application,
+            provider: decision.selected_provider, model: decision.selected_model,
+            model_strategy: structuredClone(decision.model_strategy),
+            idempotency_key: previous ? `worker-plan:${key}:retry:${previous}` : `worker-plan:${key}`,
+            ...(previous ? { retry_of_run_id: previous } : {}) }
+        }).run({ signal: combinedSignal });
+        attempts.push({ runId: result.runId, outcome: result.outcome, executionResult: result.executionResult });
+        const evidence = result.executionResult;
+        const limit = evidence?.attempt_limit;
+        // A durable decision is necessary, and the host independently checks the
+        // exact cleanup facts. Neither text errors nor a lost result ACK retry.
+        if (evidence?.retry_eligible !== true || result.outcome.status !== 'failed' ||
+            evidence.prompt_dispatched !== false || evidence.process_stopped !== true || evidence.run_closed !== true ||
+            evidence.terminal_recorded !== true || result.cleanup.errors.length ||
+            !Number.isSafeInteger(limit) || limit < 1 || limit > 32 || number >= limit) {
+          return { ...result, attempts };
+        }
+        const retryAt = Date.parse(evidence.retry_not_before);
+        const waitMs = Math.max(0, retryAt - Date.now());
+        if (!Number.isFinite(retryAt) || waitMs > 60_000) return { ...result, attempts };
+        try {
+          combinedSignal.throwIfAborted();
+          if (waitMs) await delay(waitMs, undefined, { signal: combinedSignal });
+          combinedSignal.throwIfAborted();
+        } catch {
+          return { ...result, outcome: { status: 'cancelled', code: 'worker_cancelled' }, attempts };
+        }
+        previous = result.runId;
+      }
+    }
     const entry = { cancellation, running };
     active.add(entry);
     try { return await running; }

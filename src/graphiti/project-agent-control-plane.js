@@ -1,5 +1,6 @@
 import { withOccupationDemand } from './occupation-staffing.js';
 import { occupationCatalog } from './occupation-catalog.js';
+import { workerRunRecord } from './worker-run-view.js';
 import { planAgentCollaboration, agentLoan, agentVerification } from './agent-collaboration.js';
 import { queryConversations, resumeConversation, updateConversationPolicy } from './agent-conversations.js';
 import { recordUserTriage } from './conversation-triage.js';
@@ -230,6 +231,12 @@ export class ProjectAgentControlPlaneApplication {
   async viewProjectAgentTask(input) {
     this.#assertSpace(input.personalSpaceId);
     return viewProjectAgentTaskWorkflow(this, input);
+  }
+
+  async listProjectAgentTaskRuns(input) {
+    this.#assertSpace(input.personalSpaceId);
+    const history = await this.personal.listProjectAgentTaskRuns(input);
+    return { runs: history.runs.map(workerRunRecord), nextCursor: history.next_cursor, complete: history.complete };
   }
 
   openProjectAgentTaskEvents(input, options) {

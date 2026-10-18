@@ -116,7 +116,7 @@ try {
         const value = await observed(join(projectPath, 'synthetic-observed.json'), value => value.runId);
         assert.throws(() => process.kill(value.pid, 0), /ESRCH/);
         const task = await app.personal.viewProjectAgentTask(space.id, plan.route.task.taskId, { personalProjectId: scope.personal_project_id });
-        assert.equal(task.status, 'running');
+        assert.equal(task.status, kind === 'revoked' ? 'running' : 'awaiting_review');
         assert.equal(task.execution_summary.length, 1);
         assert.equal(task.execution_summary[0].status, kind === 'revoked' ? 'cancelled' : 'completed');
         assert.equal(task.execution_summary[0].actual_model, null);
