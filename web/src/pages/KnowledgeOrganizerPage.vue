@@ -627,8 +627,7 @@ function openReplacement(item: KnowledgeItem) {
 }
 
 .organizer-row.selected {
-  background: var(--color-surface-subtle);
-  box-shadow: inset 2px 0 var(--color-accent);
+  background: var(--color-accent-soft);
 }
 
 .organizer-item-copy {
