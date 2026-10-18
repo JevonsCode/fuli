@@ -97,6 +97,21 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
+  it('keeps the version in the footer and names the service only when it is not ready', async () => {
+    const { wrapper, store } = await setup('/')
+    expect(wrapper.find('.nav-rail-brand [data-version]').exists()).toBe(false)
+    expect(wrapper.get('.nav-rail-foot [data-version]').text()).toMatch(/^v[0-9]/)
+    expect(wrapper.get('.nav-rail-runtime-text').classes()).not.toContain('is-visible')
+    store.runtimeStatus = 'error'
+    await flushPromises()
+    expect(wrapper.get('.nav-rail-runtime-text').classes()).toContain('is-visible')
+    expect(wrapper.find('.nav-rail-foot [data-version]').exists()).toBe(false)
+    await wrapper.get('[data-nav-toggle]').trigger('click')
+    expect(wrapper.get('nav').attributes('data-expanded')).toBe('false')
+    expect(wrapper.get('[data-nav-toggle]').attributes('aria-label')).toBe('展开侧边栏')
+    wrapper.unmount()
+  })
+
   it('badges 对话 with the waiting count and hides the badge at zero', async () => {
     attentionTotal = 12
     const { wrapper } = await setup('/')
