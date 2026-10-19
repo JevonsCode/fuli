@@ -566,6 +566,11 @@ onMounted(() => {
           <h2>{{ t("agentProfiles.experience") }}</h2>
           <p class="agent-muted">{{ t("agentProfiles.recent") }}</p>
           <ol class="agent-work-timeline">
+            <li v-if="agent.archiveReason" data-profile-departure>
+              <h3>{{ t("agentProfiles.departure") }}</h3>
+              <p>{{ agent.archiveReason }}</p>
+              <small>{{ date(agent.archivedAt) }}</small>
+            </li>
             <li v-for="task in tasks.slice(0, 12)" :key="task.taskId">
               <div class="agent-section-heading">
                 <RouterLink
@@ -592,6 +597,7 @@ onMounted(() => {
             v-if="
               !detailsLoading &&
               !tasks.length &&
+              !agent.archiveReason &&
               !agent.recruitmentReason &&
               !agent.recruitedAt
             "

@@ -85,6 +85,16 @@ describe('ProjectAgentDialog', () => {
     expect(wrapper.emitted('close')).toHaveLength(1)
   })
 
+  it('never offers archiving: only Bole dismisses an Agent, with a reason', async () => {
+    const statuses = (wrapper: ReturnType<typeof mountDialog>) => wrapper.get('[name="project-agent-status"]')
+      .findAll('option').map((option) => option.attributes('value')).filter(Boolean)
+    expect(statuses(mountDialog())).toEqual(['active', 'inactive'])
+    expect(statuses(mountDialog(savedAgent))).toEqual(['active', 'inactive'])
+    const archived = { ...savedAgent, profile: { ...savedAgent.profile, status: 'archived' as const } }
+    // An archived Agent still shows its state, but it is not a choice to make here.
+    expect(statuses(mountDialog(archived))).toEqual(['active', 'inactive', 'archived'])
+  })
+
   it('persists an occupation emoji separately from the Agent name', async () => {
     const wrapper = mountDialog()
 

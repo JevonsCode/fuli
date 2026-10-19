@@ -553,6 +553,8 @@ export interface ProjectAgentRecord {
   recruitedAt?: string | null
   recruitmentReason?: string | null
   recruitmentSourceApplication?: ConversationSourceApplication | null
+  archivedAt?: string | null
+  archiveReason?: string | null
   tasks?: ProjectAgentTaskRecord[]
   recruitments?: ProjectAgentRecruitmentRecord[]
   recruitmentPolicy?: ProjectAgentRecruitmentPolicy | null
