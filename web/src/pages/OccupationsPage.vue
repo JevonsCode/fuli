@@ -7,7 +7,8 @@ import {
 } from '@/features/occupations/occupation-catalog'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
-import { UiButton, UiChip, UiDialog, UiEmpty, UiStatRow, UiToolbar, type UiStat } from '@/ui'
+import { Button } from '@/components/ui/button'
+import { UiChip, UiDialog, UiEmpty, UiStatRow, UiToolbar, type UiStat } from '@/ui'
 
 // 职业: the space's occupation catalog on the shared list layout. Built-in
 // occupations can be archived, never deleted; custom ones need their duties.
@@ -86,7 +87,7 @@ async function act(entry: OccupationEntry, action: 'archive' | 'restore' | 'remo
       </label>
       <template #end>
         <GrowthLoading v-if="catalog.loading.value && entries.length" variant="inline" :label="t('occupations.loading')" />
-        <UiButton variant="primary" size="sm" data-occupation-new @click="openDialog(null)">{{ t('occupations.new') }}</UiButton>
+        <Button size="sm" data-occupation-new @click="openDialog(null)">{{ t('occupations.new') }}</Button>
       </template>
     </UiToolbar>
     <p v-if="actionError || catalog.error.value" class="occupations-error" role="alert">{{ actionError || catalog.error.value }}</p>
@@ -105,15 +106,15 @@ async function act(entry: OccupationEntry, action: 'archive' | 'restore' | 'remo
           </div>
         </div>
         <div class="ui-list-actions">
-          <UiButton variant="ghost" size="sm" :disabled="busyKey === entry.key" data-occupation-edit @click="openDialog(entry)">{{ t('occupations.edit') }}</UiButton>
-          <UiButton v-if="entry.status === 'active'" variant="ghost" size="sm" :disabled="busyKey === entry.key" data-occupation-archive
-            @click="act(entry, 'archive')">{{ t('occupations.archive') }}</UiButton>
-          <UiButton v-else variant="ghost" size="sm" :disabled="busyKey === entry.key" data-occupation-restore
-            @click="act(entry, 'restore')">{{ t('occupations.restore') }}</UiButton>
-          <UiButton v-if="!entry.builtin" variant="danger" size="sm" :disabled="busyKey === entry.key || entry.agent_count > 0"
+          <Button variant="ghost" size="sm" :disabled="busyKey === entry.key" data-occupation-edit @click="openDialog(entry)">{{ t('occupations.edit') }}</Button>
+          <Button v-if="entry.status === 'active'" variant="ghost" size="sm" :disabled="busyKey === entry.key" data-occupation-archive
+            @click="act(entry, 'archive')">{{ t('occupations.archive') }}</Button>
+          <Button v-else variant="ghost" size="sm" :disabled="busyKey === entry.key" data-occupation-restore
+            @click="act(entry, 'restore')">{{ t('occupations.restore') }}</Button>
+          <Button v-if="!entry.builtin" variant="destructive" size="sm" :disabled="busyKey === entry.key || entry.agent_count > 0"
             :title="entry.agent_count > 0 ? t('occupations.inUse') : undefined" data-occupation-remove @click="act(entry, 'remove')">
             {{ t('occupations.remove') }}
-          </UiButton>
+          </Button>
         </div>
       </article>
     </div>
@@ -128,8 +129,8 @@ async function act(entry: OccupationEntry, action: 'archive' | 'restore' | 'remo
       </div>
       <template #footer>
         <GrowthLoading v-if="saving" variant="inline" :label="t('occupations.dialog.saving')" />
-        <UiButton variant="ghost" :disabled="saving" @click="dialogOpen = false">{{ t('occupations.dialog.cancel') }}</UiButton>
-        <UiButton variant="primary" type="submit" :disabled="saving" data-occupation-save>{{ t('occupations.dialog.save') }}</UiButton>
+        <Button variant="ghost" :disabled="saving" @click="dialogOpen = false">{{ t('occupations.dialog.cancel') }}</Button>
+        <Button type="submit" :disabled="saving" data-occupation-save>{{ t('occupations.dialog.save') }}</Button>
       </template>
     </UiDialog>
   </section>

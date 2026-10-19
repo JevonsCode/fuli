@@ -243,12 +243,12 @@ describe('OverviewPage', () => {
   it('restores the expanded read set after returning within the same space', async () => {
     const items = Array.from({ length: 8 }, (_, i) => task(`return-${i}`, 'running', '', 'project-a'))
     const first = await setup({ taskPayload: { items } })
-    await first.wrapper.get('[aria-expanded="false"].ui-button').trigger('click')
+    await first.wrapper.get('[aria-expanded="false"][data-slot="button"]').trigger('click')
     expect(first.wrapper.findAll('[data-testid="overview-current-work-item"]')).toHaveLength(8)
     first.wrapper.unmount()
     const second = await setup({ taskPayload: { items } })
     expect(second.wrapper.findAll('[data-testid="overview-current-work-item"]')).toHaveLength(8)
-    await second.wrapper.get('[aria-expanded="true"].ui-button').trigger('click')
+    await second.wrapper.get('[aria-expanded="true"][data-slot="button"]').trigger('click')
     second.wrapper.unmount()
   })
 

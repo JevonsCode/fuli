@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 
 import { postJson } from '@/api/client'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
@@ -157,8 +157,8 @@ function createIdempotencyKey() {
       </label>
     </div>
     <template #footer>
-      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</UiButton>
-      <UiButton variant="primary" type="submit" :busy="busy" :busy-label="t('projectAgents.assignmentDialog.saving')">{{ t(`projectAgents.assignmentDialog.${editing ? 'saveChange' : 'saveAssign'}`) }}</UiButton>
+      <Button variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</Button>
+      <Button type="submit" :loading="busy" :loading-label="t('projectAgents.assignmentDialog.saving')">{{ t(`projectAgents.assignmentDialog.${editing ? 'saveChange' : 'saveAssign'}`) }}</Button>
     </template>
   </UiDialog>
 </template>

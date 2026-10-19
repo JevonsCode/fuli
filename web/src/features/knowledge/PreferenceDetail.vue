@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import type { ConversationLauncherConfiguration, KnowledgeGraph, KnowledgeItem } from '@/types'
 import KnowledgeRecords from './KnowledgeRecords.vue'
@@ -80,16 +80,16 @@ async function showEvidence() {
       <p v-if="item.humanEdited" class="preference-risk">{{ humanChangeStatusLabel(item.humanChangeStatus) }}</p>
       <div v-if="item.invalidAt" class="preference-risk">
         <strong>{{ t('knowledge.workspace.inspector.historical') }}</strong>
-        <UiButton v-if="replacement" @click="emit('openReplacement', replacement)">{{ t('knowledge.workspace.inspector.viewReplacement') }}</UiButton>
+        <Button variant="outline" v-if="replacement" @click="emit('openReplacement', replacement)">{{ t('knowledge.workspace.inspector.viewReplacement') }}</Button>
         <p v-else>{{ t(item.replacedByItemId ? 'knowledge.workspace.inspector.replacementOutOfScope' : 'knowledge.workspace.inspector.missingReplacement') }}</p>
       </div>
       <div v-if="editable && !managed" class="preference-actions">
-        <UiButton v-if="canConfirm" variant="primary" class="inspector-confirm-action" @click="emit('confirm', item)">{{ t('knowledge.workspace.inspector.confirmPreference') }}</UiButton>
-        <UiButton class="inspector-edit-action" @click="emit('edit', item)">{{ t('knowledge.workspace.inspector.correctPreference') }}</UiButton>
+        <Button v-if="canConfirm" class="inspector-confirm-action" @click="emit('confirm', item)">{{ t('knowledge.workspace.inspector.confirmPreference') }}</Button>
+        <Button variant="outline" class="inspector-edit-action" @click="emit('edit', item)">{{ t('knowledge.workspace.inspector.correctPreference') }}</Button>
       </div>
       <p ref="bodyElement" class="preference-body" :class="{ 'is-preview': longText && !fullText }">{{ item.body }}</p>
-      <UiButton v-if="longText" variant="ghost" :aria-expanded="fullText" @click="fullText = !fullText">{{ t(fullText ? 'preferences.detail.hideText' : 'preferences.detail.fullText') }}</UiButton>
-      <button v-if="item.evidence.length" type="button" class="preference-evidence-link" data-evidence-jump @click="showEvidence">{{ t('preferences.detail.evidenceCount', { count: item.evidence.length }) }} ↓</button>
+      <Button v-if="longText" variant="ghost" :aria-expanded="fullText" @click="fullText = !fullText">{{ t(fullText ? 'preferences.detail.hideText' : 'preferences.detail.fullText') }}</Button>
+      <Button v-if="item.evidence.length" variant="link" class="preference-evidence-link" data-evidence-jump @click="showEvidence">{{ t('preferences.detail.evidenceCount', { count: item.evidence.length }) }} ↓</Button>
       <span v-else>{{ t('preferences.detail.noEvidence') }}</span>
     </section>
     <UiDisclosure :title="t('preferences.detail.basis')" data-preference-basis>
@@ -126,7 +126,7 @@ async function showEvidence() {
 .preference-actions :deep(button) { min-height: 44px; white-space: normal; }
 .preference-body { margin: 0; white-space: pre-wrap; line-height: 1.65; font-size: 16px; }
 .preference-body.is-preview { display: -webkit-box; -webkit-line-clamp: 8; -webkit-box-orient: vertical; overflow: hidden; }
-.preference-evidence-link { justify-self: start; min-height: 44px; padding: 0; border: 0; color: var(--color-accent-strong, var(--color-accent)); background: none; font: inherit; text-align: start; cursor: pointer; }
+.preference-evidence-link { justify-self: start; min-height: 44px; padding: 0; }
 .preference-risk { margin: 0; color: var(--color-ink); font-weight: 600; }
 .preference-risk p { font-weight: 400; }
 .preference-basis { display: grid; gap: 12px; }

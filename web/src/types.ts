@@ -792,6 +792,8 @@ export type ConfirmationStatus = 'pending' | 'agent_confirmed' | 'confirmed'
 export type AgentConfirmationBlockingReason =
   | 'not_pending'
   | 'open_conflict'
+  | 'negative_feedback_block'
+  | 'negative_evidence'
   | 'usage_unknown'
   | 'qualified_uses_below_threshold'
   | 'distinct_tasks_below_threshold'

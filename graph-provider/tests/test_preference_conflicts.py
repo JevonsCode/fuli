@@ -14,6 +14,7 @@ from fuli_graph.preference_conflicts import (
     defer_preference_conflict,
     resolve_preference_conflict,
 )
+from sequential_driver_support import SequentialDriver
 
 
 @pytest.mark.asyncio
@@ -100,7 +101,7 @@ async def test_ai_keep_left_invalidates_right_and_marks_the_resolution():
         [entity_item('right')],
         [entity_item('right')],
         [entity_item('left')],
-        [],
+        [{'item_id': 'right'}],  # the compare-and-set write matched
         [],
         [{'conflict': resolved}],
     ])
@@ -192,16 +193,6 @@ class StoreStub:
             'kind': 'personal',
             'group_id': 'personal-group',
         }
-
-
-class SequentialDriver:
-    def __init__(self, responses):
-        self.responses = list(responses)
-        self.calls = []
-
-    async def execute_query(self, query, **parameters):
-        self.calls.append((query, parameters))
-        return self.responses.pop(0), None, None
 
 
 def entity_item(item_id):

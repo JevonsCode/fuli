@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import { postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
@@ -395,8 +395,8 @@ function fail(message: string) {
       </label>
     </fieldset>
     <template #footer>
-      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</UiButton>
-      <UiButton variant="primary" type="submit" :disabled="submitDisabled" :busy="busy" :busy-label="submitPendingLabel">{{ submitLabel }}</UiButton>
+      <Button variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</Button>
+      <Button type="submit" :disabled="submitDisabled" :loading="busy" :loading-label="submitPendingLabel">{{ submitLabel }}</Button>
     </template>
   </UiDialog>
 </template>

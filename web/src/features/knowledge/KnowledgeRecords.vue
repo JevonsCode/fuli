@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import type { ConversationLauncherConfiguration, EvidenceRecord, KnowledgeItem } from '@/types'
 import { formatTime, revisionActionLabel, knowledgeAuditActionLabel } from './model'
@@ -46,7 +46,7 @@ async function copyEvidenceSession(evidence: EvidenceRecord, index: number) {
             </span>
             <p v-if="evidence.source_excerpt" class="evidence-excerpt">{{ evidence.source_excerpt }}</p>
             <div v-if="evidence.session_id" class="evidence-source-actions">
-              <UiButton class="evidence-source-action" :aria-label="copiedEvidenceKey === evidenceKey(evidence, index) ? t('knowledge.workspace.inspector.copiedSessionId') : t('knowledge.workspace.inspector.copySessionId')" @click="copyEvidenceSession(evidence, index)"><span v-if="!rawFields">{{ copiedEvidenceKey === evidenceKey(evidence, index) ? t('knowledge.workspace.inspector.copiedSessionId') : t('knowledge.workspace.inspector.copySessionId') }}</span><svg v-else viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg></UiButton>
+              <Button variant="outline" class="evidence-source-action" :aria-label="copiedEvidenceKey === evidenceKey(evidence, index) ? t('knowledge.workspace.inspector.copiedSessionId') : t('knowledge.workspace.inspector.copySessionId')" @click="copyEvidenceSession(evidence, index)"><span v-if="!rawFields">{{ copiedEvidenceKey === evidenceKey(evidence, index) ? t('knowledge.workspace.inspector.copiedSessionId') : t('knowledge.workspace.inspector.copySessionId') }}</span><svg v-else viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg></Button>
               <span v-if="rawFields && copiedEvidenceKey === evidenceKey(evidence, index)" role="status">{{ t('knowledge.workspace.inspector.copiedSessionId') }}</span>
               <a
                 v-if="conversationLink(evidence)"

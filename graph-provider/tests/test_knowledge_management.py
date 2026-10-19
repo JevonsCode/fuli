@@ -25,6 +25,7 @@ from fuli_graph.project_knowledge import (
     apply_knowledge_project_action,
     preview_knowledge_project_action,
 )
+from sequential_driver_support import SequentialDriver
 
 
 @pytest.mark.asyncio
@@ -50,7 +51,7 @@ async def test_entity_correction_preserves_a_revision_record_before_updating_cur
             'last_used_at': datetime(2026, 7, 28, tzinfo=timezone.utc),
             'usage_generation': 3,
         }],
-        [],
+        [{'item_id': 'written'}],  # the compare-and-set write matched
         [],
     ])
     store = StoreStub(driver)
@@ -86,6 +87,37 @@ async def test_entity_correction_preserves_a_revision_record_before_updating_cur
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('item_kind,content', [
+    ('entity', {'name': 'Corrected name'}),
+    ('relationship', {'fact': 'Corrected fact.'}),
+])
+async def test_revision_from_a_stale_read_is_refused_and_records_nothing(item_kind, content):
+    current = {
+        'name': 'Old name', 'summary': 'Old summary', 'type': 'PREFERS', 'fact': 'Old fact.',
+        'invalid_at': None, 'confirmation_status': 'pending',
+        'ai_review_lock_version': 7,
+    }
+    # The item moved after the read, so the compare-and-set write matches nothing.
+    driver = SequentialDriver([[current], []])
+
+    with pytest.raises(HTTPException) as stale:
+        await revise_knowledge_item(StoreStub(driver), {'id': 'principal-1'}, 'item-1',
+                                    KnowledgeRevisionCreate(
+            personal_space_id='personal-space', item_kind=item_kind, action='update',
+            reason='Correct the wording.', operation_actor='human', **content,
+        ))
+
+    assert stale.value.status_code == 409
+    query, parameters = driver.calls[1]
+    assert parameters['expected_lock_version'] == 7
+    assert (
+        'SET item.fuli_ai_review_lock_version = coalesce(item.fuli_ai_review_lock_version, 0) + 1 '
+        'WITH item WHERE item.fuli_ai_review_lock_version = $expected_lock_version + 1'
+    ) in ' '.join(query.split())
+    assert len(driver.calls) == 2, 'No revision record and no human-change audit.'
+
+
+@pytest.mark.asyncio
 async def test_legacy_item_can_establish_origin_once_but_cannot_rewrite_it_later():
     legacy_driver = SequentialDriver([
         [{
@@ -98,7 +130,7 @@ async def test_legacy_item_can_establish_origin_once_but_cannot_rewrite_it_later
             'confirmation_status': 'pending',
             'usage_generation': 1,
         }],
-        [],
+        [{'item_id': 'written'}],  # the compare-and-set write matched
         [],
     ])
     store = StoreStub(legacy_driver)
@@ -151,7 +183,7 @@ async def test_legacy_item_can_establish_origin_once_but_cannot_rewrite_it_later
 async def test_human_entity_correction_starts_an_unseen_agent_review_marker():
     driver = SequentialDriver([
         [{'name': 'Old name', 'summary': 'Old summary', 'invalid_at': None}],
-        [],
+        [{'item_id': 'written'}],  # the compare-and-set write matched
         [],
         [{'human_change_version': 1}],
     ])
@@ -190,7 +222,7 @@ async def test_single_confirmation_records_server_time_without_changing_content(
             'confirmation_status': 'pending',
             'confirmation_state_explicit': False,
         }],
-        [],
+        [{'item_id': 'written'}],  # the compare-and-set write matched
         [],
     ])
     store = StoreStub(driver)
@@ -275,7 +307,7 @@ async def test_historical_knowledge_can_link_to_a_current_replacement_with_audit
             'summary': 'The reviewed replacement.',
             'invalid_at': None,
         }],
-        [],
+        [{'item_id': 'written'}],  # the compare-and-set write matched
         [],
     ])
     store = StoreStub(driver)
@@ -326,6 +358,8 @@ async def test_batch_confirmation_updates_one_source_group_with_individual_revis
             'confirmation_status': 'pending',
             'confirmation_state_explicit': False,
         }],
+        UNCHANGED_SINCE_READ['entity-1'],
+        UNCHANGED_SINCE_READ['relationship-1'],
         [{'confirmed_count': 2}],
     ])
     store = StoreStub(driver)
@@ -373,6 +407,121 @@ async def test_batch_confirmation_updates_one_source_group_with_individual_revis
 
 
 @pytest.mark.asyncio
+async def test_batch_confirmation_lifts_a_negative_feedback_block_and_keeps_it_in_history():
+    block = {
+        'audit_id': 'feedback-audit-1',
+        'blocked_at': '2026-10-20T08:00:00+00:00',
+        'feedback_kind': 'rejected',
+        'reported_by_kind': 'user',
+        'usage_generation': 1,
+    }
+    driver = SequentialDriver([
+        [{
+            'name': 'Style',
+            'summary': 'Use dramatic parallelism.',
+            'invalid_at': None,
+            'origin_quadrant': 'known_known',
+            'current_quadrant': 'known_known',
+            'epistemic_status': 'observed',
+            'confirmation_status': 'pending',
+            'confirmation_state_explicit': True,
+            'negative_evidence_count': 1,
+            'requires_attention': True,
+            'negative_feedback_block_json': json.dumps(block),
+        }],
+        [{
+            'type': 'SUPPORTS',
+            'fact': 'An unrelated fact from the same source.',
+            'invalid_at': None,
+            'origin_quadrant': 'known_known',
+            'current_quadrant': 'known_known',
+            'epistemic_status': 'observed',
+            'confirmation_status': 'pending',
+            'confirmation_state_explicit': False,
+        }],
+        UNCHANGED_SINCE_READ['entity-1'],
+        UNCHANGED_SINCE_READ['relationship-1'],
+        [{'confirmed_count': 2}],
+    ])
+
+    await confirm_knowledge_batch(StoreStub(driver), {'id': 'principal-1'},
+                                  KnowledgeBatchConfirmationCreate(
+        personal_space_id='personal-space',
+        group_kind='source',
+        group_value='episode-1',
+        reason='The user restored this style explicitly.',
+        confirmer={'kind': 'user', 'label': 'Current user'},
+        items=[{
+            'item_id': 'entity-1',
+            'item_kind': 'entity',
+            'existence_reason': 'The user restored it.',
+            'quadrant_reason': 'Stated directly.',
+            'proposed_by': {'kind': 'agent', 'label': 'Codex'},
+        }, {
+            'item_id': 'relationship-1',
+            'item_kind': 'relationship',
+            'existence_reason': 'The source records it.',
+            'quadrant_reason': 'Stated directly.',
+            'proposed_by': {'kind': 'agent', 'label': 'Codex'},
+        }],
+    ))
+
+    query, parameters = driver.calls[-1]
+    blocked, unrelated = parameters['items']
+    assert query.count('item.fuli_negative_feedback_block_json = NULL') == 2
+    assert json.loads(blocked['previous_json'])['negativeFeedbackBlock'] == block
+    assert json.loads(blocked['current_json'])['negativeFeedbackBlock'] is None
+    assert json.loads(unrelated['previous_json'])['negativeFeedbackBlock'] is None
+
+
+# Version each item reports once the batch locks it, when nothing wrote it
+# after its read (read rows without a version read as version 0).
+UNCHANGED_SINCE_READ = {
+    item_id: [{'item_id': item_id, 'lock_version': 1}]
+    for item_id in ['entity-1', 'relationship-1']
+}
+
+
+@pytest.mark.asyncio
+async def test_batch_confirmation_refuses_every_item_when_one_moved_after_its_read():
+    read = {
+        'name': 'Decision', 'summary': 'Keep it.', 'type': 'SUPPORTS', 'fact': 'Keep it.',
+        'invalid_at': None, 'origin_quadrant': 'known_known', 'current_quadrant': 'known_known',
+        'epistemic_status': 'observed', 'confirmation_status': 'pending',
+        'confirmation_state_explicit': False, 'ai_review_lock_version': 4,
+    }
+    driver = SequentialDriver([
+        [read],
+        [read],
+        [{'item_id': 'entity-1', 'lock_version': 5}],
+        # A rejection wrote the relationship after it was read.
+        [{'item_id': 'relationship-1', 'lock_version': 6}],
+    ])
+
+    with pytest.raises(HTTPException) as stale:
+        await confirm_knowledge_batch(StoreStub(driver), {'id': 'principal-1'},
+                                      KnowledgeBatchConfirmationCreate(
+            personal_space_id='personal-space', group_kind='source', group_value='episode-1',
+            reason='Reviewed every item from this source.', confirmer={'kind': 'user'},
+            items=[{
+                'item_id': item_id, 'item_kind': item_kind,
+                'existence_reason': 'Captured.', 'quadrant_reason': 'Stated.',
+                'proposed_by': {'kind': 'agent'},
+            } for item_kind, item_id in [('entity', 'entity-1'),
+                                         ('relationship', 'relationship-1')]],
+        ))
+
+    assert stale.value.status_code == 409
+    assert stale.value.detail.endswith('read these items again before confirming: '
+                                       'relationship:relationship-1')
+    entity_lock, relationship_lock = driver.calls[2], driver.calls[3]
+    assert 'MATCH (item:Entity {uuid: item_id' in entity_lock[0]
+    assert 'MATCH ()-[item:RELATES_TO {uuid: item_id' in relationship_lock[0]
+    assert relationship_lock[1]['item_ids'] == ['relationship-1']
+    assert len(driver.calls) == 4, 'The confirmation query never ran.'
+
+
+@pytest.mark.asyncio
 async def test_batch_confirmation_saves_nothing_when_the_source_group_changed():
     driver = SequentialDriver([
         [{
@@ -395,6 +544,7 @@ async def test_batch_confirmation_saves_nothing_when_the_source_group_changed():
             'confirmation_status': 'pending',
             'confirmation_state_explicit': False,
         }],
+        [{'item_id': 'entity-1', 'lock_version': 1}, {'item_id': 'entity-2', 'lock_version': 1}],
         [],
     ])
     store = StoreStub(driver)
@@ -734,16 +884,6 @@ def test_new_project_relation_points_from_extracted_child_to_original_parent():
     assert _relation_endpoints(
         'hotel-theme', 'activity-fulfillment', existing_request
     ) == ('hotel-theme', 'activity-fulfillment')
-
-
-class SequentialDriver:
-    def __init__(self, responses):
-        self.responses = iter(responses)
-        self.calls = []
-
-    async def execute_query(self, query, **parameters):
-        self.calls.append((query, parameters))
-        return next(self.responses), None, None
 
 
 class EmbedderStub:

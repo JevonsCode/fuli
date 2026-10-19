@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -26,6 +26,6 @@ async function created(project: PersonalProject) {
 </script>
 
 <template>
-  <UiButton size="sm" variant="ghost" data-create-project @click="open = true">＋ {{ t('projects.createDialog.open') }}</UiButton>
+  <Button size="sm" variant="ghost" data-create-project @click="open = true">＋ {{ t('projects.createDialog.open') }}</Button>
   <CreateProjectDialog :open="open" :personal-space-id="spaceId" :existing-project-ids="existingProjectIds" @close="open = false" @created="created" />
 </template>

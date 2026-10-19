@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { computed, ref, watch } from "vue";
-import GrowthLoading from "@/components/GrowthLoading.vue";
 import UiSelect from "@/ui/UiSelect.vue";
 import { t } from "@/i18n";
 import type { AgentOccupationKey, ProjectAgentRecord } from "@/types";
@@ -96,7 +95,7 @@ async function save() {
         {{ t("agentRedesign.occupation.tags") }}
         <small class="ui-meta">{{ t("agentRedesign.occupation.tagsHint") }}</small>
       </legend>
-      <UiButton size="sm" variant="ghost"
+      <Button size="sm" variant="ghost"
         v-for="key in keys"
         :key="key"
        
@@ -107,17 +106,13 @@ async function save() {
         @click="toggleTag(key)"
       >
         {{ occupationLabel(key) }}<small v-if="key === role" class="agent-occupation-main"> · {{ t('agentRedesign.occupation.mainRoleShort') }}</small>
-      </UiButton>
+      </Button>
     </fieldset>
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-if="saved" role="status">{{ t("agentRedesign.occupation.saved") }}</p>
-    <UiButton size="sm" variant="primary" type="submit" :disabled="saving">
-      <GrowthLoading
-        v-if="saving"
-        variant="inline"
-        :label="t('agentRedesign.occupation.saving')"
-      /><template v-else>{{ t("agentRedesign.occupation.save") }}</template>
-    </UiButton>
+    <Button size="sm" type="submit" :loading="saving" :loading-label="t('agentRedesign.occupation.saving')">
+      {{ t("agentRedesign.occupation.save") }}
+    </Button>
   </form>
 </template>
 
@@ -147,8 +142,5 @@ async function save() {
   color: var(--color-accent);
   border-color: var(--color-accent);
   background: var(--color-accent-soft);
-}
-.agent-occupation-editor .primary-button {
-  justify-self: start;
 }
 </style>

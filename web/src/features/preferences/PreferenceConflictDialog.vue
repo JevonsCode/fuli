@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 
 import { patchJson, postJson } from '@/api/client'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import UiSegmented from '@/ui/UiSegmented.vue'
 import UiSelect from '@/ui/UiSelect.vue'
@@ -321,7 +321,7 @@ function fail(message: string) {
         <h3>{{ conflict[side].title }}</h3>
         <p>{{ preferenceValue(conflict[side]) }}</p>
         <small>{{ t('preferences.dialog.sourceCount', { count: conflict[side].evidence.length }) }} · {{ conflict[side].id }}</small>
-        <UiButton size="sm" variant="ghost" @click="emit('edit', conflict[side])">{{ t(side === 'left' ? 'preferences.dialog.editA' : 'preferences.dialog.editB') }}</UiButton>
+        <Button size="sm" variant="ghost" @click="emit('edit', conflict[side])">{{ t(side === 'left' ? 'preferences.dialog.editA' : 'preferences.dialog.editB') }}</Button>
       </article>
     </section>
 
@@ -382,8 +382,8 @@ function fail(message: string) {
 
     <template #footer>
       <span class="conflict-footer-note">{{ t('preferences.dialog.pendingCopy') }}</span>
-      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('preferences.dialog.defer') }}</UiButton>
-      <UiButton variant="primary" :disabled="!action" :busy="busy" :busy-label="t('preferences.dialog.processing')" @click="resolveConflict">{{ t('preferences.dialog.confirm') }}</UiButton>
+      <Button variant="ghost" :disabled="busy" @click="emit('close')">{{ t('preferences.dialog.defer') }}</Button>
+      <Button :disabled="!action" :loading="busy" :loading-label="t('preferences.dialog.processing')" @click="resolveConflict">{{ t('preferences.dialog.confirm') }}</Button>
     </template>
   </UiDialog>
 </template>
@@ -401,7 +401,7 @@ function fail(message: string) {
 .conflict-side h3 { font-size: 14px; font-weight: 600; }
 .conflict-side p { min-height: 48px; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
 .conflict-side small { overflow: hidden; color: var(--color-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.conflict-side .ui-button { justify-self: start; }
+.conflict-side [data-slot="button"] { justify-self: start; }
 .conflict-difference { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-control); }
 .conflict-difference > div { display: grid; align-content: start; gap: 6px; min-width: 0; }
 .conflict-difference span { color: var(--color-muted); font-size: 12px; font-weight: 600; }

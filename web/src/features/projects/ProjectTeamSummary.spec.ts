@@ -108,7 +108,7 @@ describe('ProjectTeamSummary', () => {
     await flushPromises()
     expect(wrapper.find('button.project-team-lead').exists()).toBe(false)
     expect(wrapper.text()).toContain(t('projects.overview.leadUnavailable', { name: 'Former' }))
-    const actions = wrapper.findAllComponents(RouterLinkStub).filter(link => link.classes('primary-button'))
+    const actions = wrapper.findAllComponents(RouterLinkStub).filter(link => link.attributes('data-variant') === 'default')
     expect(actions).toHaveLength(1)
     expect(actions[0].props('to')).toEqual({ path: '/project-agents/manage', query: { project: 'project-a' } })
     expect(wrapper.text()).toContain(t('projects.overview.unavailableMembers', { count: 1 }))

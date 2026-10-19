@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import { navigationFailure } from '@/router/navigation-recovery'
 </script>
@@ -9,8 +10,8 @@ import { navigationFailure } from '@/router/navigation-recovery'
       <strong>{{ t('routes.loadFailure.title') }}</strong>
       <p>{{ t(navigationFailure.resourceFailure ? 'routes.loadFailure.resources' : 'routes.loadFailure.message') }}</p>
     </div>
-    <a :href="navigationFailure.href" class="quiet-button">{{ t('routes.loadFailure.reload') }}</a>
-    <button type="button" class="navigation-recovery-dismiss" @click="navigationFailure = null">{{ t('routes.loadFailure.dismiss') }}</button>
+    <Button as-child variant="outline"><a :href="navigationFailure.href">{{ t('routes.loadFailure.reload') }}</a></Button>
+    <Button variant="ghost" @click="navigationFailure = null">{{ t('routes.loadFailure.dismiss') }}</Button>
   </div>
 </template>
 
@@ -19,8 +20,6 @@ import { navigationFailure } from '@/router/navigation-recovery'
 .navigation-recovery > div { flex: 1; min-width: 0; }
 .navigation-recovery strong { font-weight: 650; }
 .navigation-recovery p { margin: 4px 0 0; line-height: 1.6; }
-.navigation-recovery a { flex-shrink: 0; text-decoration: none; }
-.navigation-recovery-dismiss { border: 0; padding: 8px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
 .navigation-recovery :is(a, button):focus-visible { outline: 2px solid var(--color-warning); outline-offset: 3px; }
 @media (max-width: 640px) { .navigation-recovery { margin: 10px 12px; flex-wrap: wrap; gap: 10px; }.navigation-recovery > div { flex-basis: 100%; } }
 </style>

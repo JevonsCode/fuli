@@ -2,7 +2,7 @@
 import { employeeAvatarUrl } from "@/features/employees/avatars";
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
-import GrowthLoading from "@/components/GrowthLoading.vue";
+import { Button } from "@/components/ui/button";
 import PinIcon from "@/components/PinIcon.vue";
 import AgentHand from "@/features/project-agents/AgentHand.vue";
 import { currentLocale, t } from "@/i18n";
@@ -167,19 +167,20 @@ function togglePin() {
       >
         <span class="agent-card-work-status-text">{{ workStatusLabel }}</span>
       </span>
-      <button
-        class="agent-card-pin quiet-button"
+      <Button
+        variant="outline"
+        size="icon-sm"
+        class="agent-card-pin"
         data-agent-pin-toggle
-        type="button"
         :aria-label="`${pinLabel} · ${name}`"
         :aria-pressed="Boolean(pinned)"
         :title="pinLabel"
-        :disabled="pinPending"
+        :loading="pinPending"
+        :loading-label="pinLabel"
         @click.stop="togglePin"
       >
-        <GrowthLoading v-if="pinPending" variant="inline" :label="pinLabel" />
-        <PinIcon v-else :filled="pinned" />
-      </button>
+        <PinIcon :filled="pinned" />
+      </Button>
     </div>
     <p v-if="entry?.taskId" class="agent-card-current" data-current-task>
       <span class="agent-card-current-label">{{ t("agentRedesign.workbench.current") }}</span>
@@ -229,10 +230,6 @@ function togglePin() {
 
 <style scoped>
 .agent-card-pin {
-  flex: 0 0 auto;
-  width: var(--control-height-sm);
-  min-height: var(--control-height-sm);
-  padding: 0;
   color: var(--color-muted);
 }
 

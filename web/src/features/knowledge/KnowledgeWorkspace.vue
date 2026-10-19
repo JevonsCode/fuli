@@ -5,7 +5,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiSelect from '@/ui/UiSelect.vue'
 import { UiToggle } from '@/ui'
 import { filterListedProjectGraph, isListedProject } from '@/features/projects/project-list-visibility'
@@ -1027,7 +1027,7 @@ function queryValues(value: unknown) {
       />
       <div v-else-if="!store.state" class="project-overview-failed" role="alert">
         <p>{{ t('common.errors.loadFailed') }}</p>
-        <UiButton @click="store.refresh">{{ t('common.actions.retry') }}</UiButton>
+        <Button variant="outline" @click="store.refresh">{{ t('common.actions.retry') }}</Button>
       </div>
       <p v-else class="muted" role="status">{{ t('knowledge.workspace.workspace.errors.projectUnknown') }}</p>
     </template>
@@ -1096,7 +1096,7 @@ function queryValues(value: unknown) {
 
 
       <div class="graph-view-actions">
-        <UiButton size="sm" variant="ghost"
+        <Button size="sm" variant="ghost"
           v-if="
             personalProjectsOnly
               && activePersonalProject
@@ -1105,14 +1105,14 @@ function queryValues(value: unknown) {
           @click="publishingProject = activePersonalProject"
         >
           {{ t('knowledge.workspace.workspace.view.publishProject') }}
-        </UiButton>
+        </Button>
         <div v-if="mode === 'graph'" class="graph-controls" role="group" :aria-label="t('knowledge.workspace.workspace.view.graphControls')">
-          <UiButton size="sm" variant="ghost" :aria-label="t('knowledge.workspace.workspace.view.zoomOut')" @click="graphCanvas?.zoomOut()">−</UiButton>
-          <UiButton size="sm" variant="ghost" :aria-label="t('knowledge.workspace.workspace.view.zoomIn')" @click="graphCanvas?.zoomIn()">＋</UiButton>
-          <UiButton size="sm" variant="ghost" @click="graphCanvas?.fit()">{{ t('knowledge.workspace.workspace.view.fit') }}</UiButton>
-          <UiButton size="sm" variant="ghost" @click="graphCanvas?.reset()">{{ t('knowledge.workspace.workspace.view.reset') }}</UiButton>
+          <Button size="sm" variant="ghost" :aria-label="t('knowledge.workspace.workspace.view.zoomOut')" @click="graphCanvas?.zoomOut()">−</Button>
+          <Button size="sm" variant="ghost" :aria-label="t('knowledge.workspace.workspace.view.zoomIn')" @click="graphCanvas?.zoomIn()">＋</Button>
+          <Button size="sm" variant="ghost" @click="graphCanvas?.fit()">{{ t('knowledge.workspace.workspace.view.fit') }}</Button>
+          <Button size="sm" variant="ghost" @click="graphCanvas?.reset()">{{ t('knowledge.workspace.workspace.view.reset') }}</Button>
         </div>
-        <UiButton size="sm" variant="ghost" class="ui-button--icon" :aria-label="t('common.actions.refresh')" :title="t('common.actions.refresh')" @click="loadGraph"><span aria-hidden="true">↻</span></UiButton>
+        <Button size="icon-sm" variant="ghost" :aria-label="t('common.actions.refresh')" :title="t('common.actions.refresh')" @click="loadGraph"><span aria-hidden="true">↻</span></Button>
       </div>
     </div>
 

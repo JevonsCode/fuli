@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
@@ -83,15 +83,15 @@ async function respond(item: AgentAttention, answer: AttentionAnswer) {
 <template>
   <div class="attention-page-body">
     <p v-if="attention.lastReply" class="attention-outcome" :class="`is-${attention.lastReply.status}`" role="status">{{ replyOutcome }}</p>
-    <div v-if="attention.error" role="alert" class="attention-error"><span>{{ t('attention.loadError') }}</span><UiButton size="sm" :disabled="attention.loading" @click="attention.refresh()">{{ t('attention.refresh') }}</UiButton></div>
+    <div v-if="attention.error" role="alert" class="attention-error"><span>{{ t('attention.loadError') }}</span><Button variant="outline" size="sm" :disabled="attention.loading" @click="attention.refresh()">{{ t('attention.refresh') }}</Button></div>
     <GrowthLoading v-if="attention.loading && !attention.items.length" variant="page" :label="t('attention.loading')" />
     <div v-else-if="!attention.items.length && !attention.error" class="attention-empty"><span aria-hidden="true">✓</span><p>{{ t('attention.empty') }}</p></div>
     <div v-else-if="attention.items.length" class="ui-split attention-workspace" :aria-busy="attention.loading">
       <aside class="ui-split-list" :aria-label="t('attention.queue')">
         <div class="ui-split-head">
           <span class="attention-page-count" role="status">{{ attention.agentId ? names[attention.agentId] || t('attention.agentFallback') : t('attention.all') }} · {{ t('attention.count', { count: pendingCount }) }}</span>
-          <RouterLink v-if="attention.agentId" class="ui-button ui-button--ghost ui-button--sm" :to="inboxLocation()">{{ t('attention.all') }}</RouterLink>
-          <UiButton v-else-if="!attention.error" size="sm" variant="ghost" :disabled="attention.loading || Boolean(busy)" @click="attention.refresh()">{{ t('attention.refresh') }}</UiButton>
+          <Button v-if="attention.agentId" as-child variant="ghost" size="sm"><RouterLink :to="inboxLocation()">{{ t('attention.all') }}</RouterLink></Button>
+          <Button v-else-if="!attention.error" size="sm" variant="ghost" :disabled="attention.loading || Boolean(busy)" @click="attention.refresh()">{{ t('attention.refresh') }}</Button>
         </div>
         <UiSelect v-model="selectedId" class="attention-mobile-picker" field :label="t('attention.selectRequest')" :options="requestOptions" :disabled="Boolean(busy)" />
         <div class="ui-split-items attention-request-list">
@@ -100,7 +100,7 @@ async function respond(item: AgentAttention, answer: AttentionAnswer) {
             <strong class="ui-split-item-title">{{ item.title }}</strong>
             <span class="ui-split-item-sub">{{ projectNames.get(item.personalProjectId) || t('attention.projectFallback') }}</span>
           </button>
-          <UiButton v-if="attention.items.length < attention.filteredTotal" class="attention-more" :disabled="attention.loading || Boolean(busy)" @click="attention.more()">{{ t('attention.more') }}</UiButton>
+          <Button variant="outline" v-if="attention.items.length < attention.filteredTotal" class="attention-more" :disabled="attention.loading || Boolean(busy)" @click="attention.more()">{{ t('attention.more') }}</Button>
         </div>
       </aside>
       <section v-if="selected" :key="selected.requestId" class="ui-split-detail attention-detail">

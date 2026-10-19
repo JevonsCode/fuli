@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { computed } from 'vue'
-import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
 import { t } from '@/i18n'
 import type { AgentAttention } from './attention-store'
@@ -40,10 +39,9 @@ function submit() { if (!props.busy && !props.refreshing && answer.value && !too
     <p v-if="tooLong" role="alert" class="inline-error">{{ t('attention.tooLong') }}</p>
     <div class="attention-submit">
       <p>{{ t('attention.replyHint') }}</p>
-      <UiButton size="sm" variant="primary" type="submit" :disabled="busy || refreshing || !answer || tooLong">
-        <GrowthLoading v-if="busy" variant="inline" :label="t('attention.sending')" />
-        <span v-else>{{ t('attention.send') }}</span>
-      </UiButton>
+      <Button size="sm" type="submit" :disabled="refreshing || !answer || tooLong" :loading="busy" :loading-label="t('attention.sending')">
+        {{ t('attention.send') }}
+      </Button>
     </div>
   </form>
 </template>

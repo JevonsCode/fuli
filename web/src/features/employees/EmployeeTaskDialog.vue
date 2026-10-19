@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
@@ -71,7 +71,7 @@ function close() { if (!busy.value) emit('close') }
 <template>
   <UiDialog :open="open" class="employee-dialog" :title="t(item ? 'employees.task.detail' : 'employees.task.create')" :busy="busy" form @close="close" @submit="save">
     <GrowthLoading v-if="loading" variant="compact" :label="t('employees.loadingTask')" />
-    <div v-if="error" class="ui-dialog__error employee-dialog-error" role="alert"><p>{{ error }}</p><UiButton size="sm" :disabled="busy" @click="load">{{ t('employees.task.reload') }}</UiButton></div>
+    <div v-if="error" class="ui-dialog__error employee-dialog-error" role="alert"><p>{{ error }}</p><Button variant="outline" size="sm" :disabled="busy" @click="load">{{ t('employees.task.reload') }}</Button></div>
     <template v-if="!loading">
       <UiSelect v-model="project" field :label="t('employees.task.project')" :placeholder="t('employees.task.chooseProject')" :options="projectOptions" :disabled="Boolean(item) || busy || !canWrite" required />
       <label class="ui-field">{{ t('employees.task.title') }}<input v-model="title" autofocus minlength="2" maxlength="180" required :readonly="!canWrite" :disabled="busy" /></label>
@@ -82,8 +82,8 @@ function close() { if (!busy.value) emit('close') }
       <label class="ui-field">{{ t('employees.task.tags') }}<input v-model="tags" :readonly="!canWrite" :disabled="busy" /></label>
     </template>
     <template #footer>
-      <UiButton :disabled="busy" @click="close">{{ t('employees.close') }}</UiButton>
-      <UiButton v-if="canWrite" variant="primary" type="submit" :disabled="!valid" :busy="busy" :busy-label="t('employees.task.saving')">{{ t('employees.task.save') }}</UiButton>
+      <Button variant="outline" :disabled="busy" @click="close">{{ t('employees.close') }}</Button>
+      <Button v-if="canWrite" type="submit" :disabled="!valid" :loading="busy" :loading-label="t('employees.task.saving')">{{ t('employees.task.save') }}</Button>
     </template>
   </UiDialog>
 </template>

@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { getJson, postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { Button } from '@/components/ui/button'
 import UiDisclosure from '@/components/UiDisclosure.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { currentLocale, t } from '@/i18n'
@@ -152,10 +153,10 @@ async function copy() {
     <section class="client-status" :aria-label="t('settings.connection.clients.title')">
       <div class="client-status__header">
         <h3>{{ t('settings.connection.clients.title') }}</h3>
-        <button class="ui-button client-status__refresh" type="button" data-refresh-clients :disabled="checking"
+        <Button variant="outline" size="icon-sm" class="client-status__refresh" data-refresh-clients :disabled="checking"
           :title="t('settings.connection.clients.refresh')" :aria-label="t('settings.connection.clients.refresh')" @click="check">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8" /><path d="M4 3v5h5" /><path d="M4 13a8 8 0 0 0 14.6 4.5L20 16" /><path d="M20 21v-5h-5" /></svg>
-        </button>
+        </Button>
       </div>
       <GrowthLoading v-if="checking && !observation" variant="compact" :label="t('settings.connection.clients.checking')" />
       <p v-if="checkError" role="alert">{{ t('settings.connection.clients.checkError') }}</p>
@@ -167,10 +168,10 @@ async function copy() {
             <strong>{{ client.label }}</strong>
             <span class="client-status__label">{{ t(`settings.connection.clients.status.${client.status}`) }}</span>
             <p>{{ explanation(client) }}</p>
-            <button v-if="client.detected && !client.manualOnly && client.status !== 'unknown' && client.status !== 'connected'"
-              class="ui-button" type="button" :data-connect-client="client.id" :disabled="Boolean(connecting)" @click="connect(client)">
+            <Button v-if="client.detected && !client.manualOnly && client.status !== 'unknown' && client.status !== 'connected'"
+              variant="outline" :data-connect-client="client.id" :disabled="Boolean(connecting)" @click="connect(client)">
               {{ t('settings.connection.clients.connect') }}
-            </button>
+            </Button>
             <GrowthLoading v-if="connecting === client.id" variant="compact" :label="t('settings.connection.clients.connecting', { client: client.label })" />
             <p v-if="connectionFeedback[client.id]" :role="connectionFeedback[client.id] === 'connectError' ? 'alert' : 'status'">
               {{ t(`settings.connection.clients.${connectionFeedback[client.id]}`) }}
@@ -197,16 +198,16 @@ async function copy() {
     <GrowthLoading v-if="loading" variant="compact" :label="t('settings.connection.loading')" />
     <div v-if="error" role="alert">
       <span>{{ error }}</span>
-      <button class="ui-button" type="button" data-retry-connection @click="load">{{ t('settings.connection.retry') }}</button>
+      <Button variant="outline" data-retry-connection @click="load">{{ t('settings.connection.retry') }}</Button>
     </div>
     <template v-if="configuration">
       <div class="connection-toolbar">
         <UiSelect control-id="client-connection-format" :model-value="format" :options="options"
           :label="t('settings.connection.format')" @update:model-value="select" />
-        <button class="ui-button connection-copy" type="button" data-copy-connection
+        <Button variant="outline" size="icon" class="connection-copy" data-copy-connection
           :title="t('settings.connection.copy')" :aria-label="t('settings.connection.copy')" @click="copy">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></svg>
-        </button>
+        </Button>
       </div>
       <textarea :value="text" readonly rows="8" spellcheck="false" :aria-label="t('settings.connection.configuration')" />
       <p v-if="feedback" role="status">{{ t(`settings.connection.${feedback}`) }}</p>
