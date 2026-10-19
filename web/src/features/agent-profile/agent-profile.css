@@ -686,3 +686,7 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Untitled conversations: the full ID is shown on request and stays selectable. */
+.unassigned-conversation-id summary { cursor: pointer; }
+.unassigned-conversation-full-id { display: block; margin: 4px 0; font-family: var(--font-mono, monospace); font-size: 12px; overflow-wrap: anywhere; user-select: all; }

@@ -30,6 +30,8 @@ describe('unassigned conversations reader and triage', () => {
     expect(items.map(item => item.shortId)).toEqual(['3f1a2b3c-aaaa-4bbb-8ccc-000000000001', '3f1a2b3c-aaaa-4bbb-8ccc-000000000002', 'b7c8d9e0'])
     expect(items[0].conversationId).toBe('3f1a2b3c-aaaa-4bbb-8ccc-000000000001')
     expect(panelSource).toMatch(/agentRedesign.unassigned.untitled/)
+    // The full ID is reachable by keyboard and touch, with a copy control.
+    expect(panelSource).toMatch(/data-unassigned-copy/)
   })
 
   it('lists global-scope employee.assistant conversations and extracts opening line and Jefa triage state', async () => {

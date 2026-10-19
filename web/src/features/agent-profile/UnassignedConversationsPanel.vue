@@ -12,6 +12,12 @@ import {
   type UnassignedConversationItem,
 } from "./unassigned-conversations";
 
+// The full ID stays selectable when copying is unavailable.
+const copied = ref('')
+async function copyId(id: string) {
+  try { await navigator.clipboard.writeText(id); copied.value = id } catch { copied.value = '' }
+}
+
 const props = defineProps<{
   spaceId: string;
   formalProjects: readonly PersonalProject[];
@@ -143,7 +149,13 @@ async function handleProjectCreated(project: PersonalProject) {
             {{ formatStartedAt(item.startedAt) }}
           </span>
           <span class="unassigned-conversation-line">{{ item.openingLine || t('agentRedesign.unassigned.untitled') }}</span>
-          <span v-if="!item.openingLine" class="ui-meta unassigned-conversation-id" :title="item.conversationId">#{{ item.shortId }}</span>
+          <details v-if="!item.openingLine" class="unassigned-conversation-id" data-unassigned-id>
+            <summary class="ui-meta">#{{ item.shortId }}</summary>
+            <span class="unassigned-conversation-full-id">{{ item.conversationId }}</span>
+            <UiButton size="sm" variant="ghost" data-unassigned-copy @click="copyId(item.conversationId)">
+              {{ copied === item.conversationId ? t('agentRedesign.unassigned.copied') : t('agentRedesign.unassigned.copyId') }}
+            </UiButton>
+          </details>
           <span class="ui-badge unassigned-conversation-triage" data-unassigned-triage>
             {{ triageBadgeText(item) }}
           </span>

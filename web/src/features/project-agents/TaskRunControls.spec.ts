@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import TaskRunControls from './TaskRunControls.vue'
 import { runOutcomeUncertain, type TaskRunRecord } from './task-runs'
+import { forgetRetryOutcome } from './retry-outcomes'
 import type { ProjectAgentTaskRecord } from '@/types'
 
 const task = (status: ProjectAgentTaskRecord['status']) => ({ taskId: 'task-1', personalProjectId: 'project-a', title: 'Port tests',
@@ -31,7 +32,7 @@ async function mountControls(status: ProjectAgentTaskRecord['status']) {
   return wrapper
 }
 
-afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = '' })
+afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = ''; forgetRetryOutcome('space', 'task-1') })
 
 describe('task run controls', () => {
   it('reads history in order and pages with the returned cursor', async () => {
@@ -109,5 +110,108 @@ describe('task run controls', () => {
     const wrapper = await mountControls('awaiting_review')
     expect(wrapper.findAll('button').some(button => /重试|Retry/.test(button.text()))).toBe(false)
     expect(wrapper.text()).toMatch(/暂无运行记录|No recorded runs/)
+  })
+})
+
+describe('task run controls after acceptance review', () => {
+  const openRetryDialog = async (wrapper: Awaited<ReturnType<typeof mountControls>>) => {
+    await wrapper.findAll('button').find(button => /重试|Retry/.test(button.text()))!.trigger('click')
+    await flushPromises()
+  }
+  const choose = async (value: string) => {
+    const input = document.querySelector(`dialog input[value="${value}"]`) as HTMLInputElement
+    input.checked = true
+    input.dispatchEvent(new Event('change'))
+    await flushPromises()
+  }
+  const submitButton = () => document.querySelector('dialog button[type="submit"]') as HTMLButtonElement
+
+  it('treats an unreadable history as an unknown risk that needs the acknowledgement', async () => {
+    respond({ '/api/project-agent-tasks/task-1/runs?': new Response('down', { status: 503 }) })
+    const wrapper = await mountControls('failed')
+    await openRetryDialog(wrapper)
+    await choose('backlog')
+    expect(submitButton().disabled).toBe(true)
+    expect(document.body.textContent).toMatch(/结果不明|unknown outcome/)
+  })
+
+  it('treats a dispatched prompt without a recorded result as uncertain', () => {
+    expect(runOutcomeUncertain(run({ promptDispatchedAt: '2026-10-19T00:00:00Z', executionResult: null, state: 'admitted' }))).toBe(true)
+  })
+
+  it('clears the evidence and closes the dialog when access is lost', async () => {
+    respond({
+      '/api/project-agent-tasks/task-1/retry': new Response('forbidden', { status: 403 }),
+      '/api/project-agent-tasks/task-1/runs?': { runs: [run()], nextCursor: null, complete: true },
+    })
+    const wrapper = await mountControls('failed')
+    expect(wrapper.findAll('.task-run-item')).toHaveLength(1)
+    await openRetryDialog(wrapper)
+    await choose('queue')
+    submitButton().click()
+    await flushPromises()
+    expect(wrapper.findAll('.task-run-item')).toHaveLength(0)
+    expect(document.querySelector('dialog')).toBeNull()
+  })
+
+  it('freezes an unconfirmed retry and allows exactly one resend of the same request', async () => {
+    const calls = respond({
+      '/api/project-agent-tasks/task-1/retry': new Response('bad gateway', { status: 502 }),
+      '/api/project-agent-tasks/task-1/runs?': { runs: [run()], nextCursor: null, complete: true },
+    })
+    const wrapper = await mountControls('failed')
+    await openRetryDialog(wrapper)
+    await choose('backlog')
+    submitButton().click()
+    await flushPromises()
+    expect((document.querySelector('dialog fieldset') as HTMLFieldSetElement).disabled).toBe(true)
+    expect(submitButton().disabled).toBe(false)
+    submitButton().click()
+    await flushPromises()
+    expect(submitButton().disabled).toBe(true)
+    const retries = calls.filter(call => call.url.endsWith('/retry'))
+    expect(retries.map(call => call.body)).toEqual([
+      { personalSpaceId: 'space', personalProjectId: 'project-a', start: false },
+      { personalSpaceId: 'space', personalProjectId: 'project-a', start: false },
+    ])
+    expect(document.body.textContent).toMatch(/结果仍未确认|still unconfirmed/)
+  })
+
+  it('shows the recruitment notice a retry must disclose', async () => {
+    respond({
+      '/api/project-agent-tasks/task-1/retry': { task: { taskId: 'task-2', status: 'awaiting_recruitment' }, mustDiscloseRecruitment: true, clientNotice: 'SYNTHETIC REQUIRED DISCLOSURE' },
+      '/api/project-agent-tasks/task-1/runs?': { runs: [run()], nextCursor: null, complete: true },
+    })
+    const wrapper = await mountControls('failed')
+    await openRetryDialog(wrapper)
+    await choose('queue')
+    submitButton().click()
+    await flushPromises()
+    expect(wrapper.get('[data-task-run-disclosure]').text()).toBe('SYNTHETIC REQUIRED DISCLOSURE')
+  })
+
+  it('keeps the new task and the required notice when the page refresh redraws the panel', async () => {
+    respond({
+      '/api/project-agent-tasks/task-1/retry': { task: { taskId: 'task-2', status: 'queued', leadAgentId: 'engineer' }, mustDiscloseRecruitment: true, clientNotice: 'SYNTHETIC REQUIRED DISCLOSURE' },
+      '/api/project-agent-tasks/task-1/runs?': { runs: [run()], nextCursor: null, complete: true },
+    })
+    const first = await mountControls('failed')
+    await openRetryDialog(first)
+    await choose('queue')
+    submitButton().click()
+    await flushPromises()
+    expect(first.emitted('changed')).toHaveLength(1)
+    // The parent refresh unmounts the panel and mounts a new one.
+    first.unmount()
+    const redrawn = await mountControls('failed')
+    expect(redrawn.get('[data-task-run-disclosure]').text()).toBe('SYNTHETIC REQUIRED DISCLOSURE')
+    expect(redrawn.find('a[href*="task=task-2"]').exists()).toBe(true)
+  })
+
+  it('ends the history loading state when reading it is refused', async () => {
+    respond({ '/api/project-agent-tasks/task-1/runs?': new Response('forbidden', { status: 403 }) })
+    const wrapper = await mountControls('failed')
+    expect(wrapper.text()).toContain('没有权限')
+    expect(wrapper.text()).not.toContain('正在读取这个任务的运行记录')
   })
 })

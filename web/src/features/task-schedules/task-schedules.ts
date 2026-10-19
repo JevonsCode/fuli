@@ -65,8 +65,8 @@ export function scheduleRuns(spaceId: string, scheduleId: string) {
     `/api/task-schedules/${encodeURIComponent(scheduleId)}/runs?${new URLSearchParams({ personalSpaceId: spaceId })}`)
 }
 
-export function createSchedule(spaceId: string, draft: ScheduleDraft) {
-  return postJson<TaskSchedule>('/api/task-schedules', { personalSpaceId: spaceId, ...draft })
+export function createSchedule(spaceId: string, draft: ScheduleDraft, signal?: AbortSignal) {
+  return postJson<TaskSchedule>('/api/task-schedules', { personalSpaceId: spaceId, ...draft }, { signal })
 }
 
 // Pause and resume carry the revision the person saw; a stale one is a 409.
@@ -74,3 +74,14 @@ export function setScheduleEnabled(spaceId: string, schedule: TaskSchedule, enab
   return postJson<TaskSchedule>(`/api/task-schedules/${encodeURIComponent(schedule.id)}/${enabled ? 'resume' : 'pause'}`,
     { personalSpaceId: spaceId, expectedRevision: schedule.revision })
 }
+
+export type ScheduleChanges = Pick<ScheduleDraft, 'title' | 'objective' | 'workKind' | 'every' | 'startMode' | 'failureThreshold'>
+
+// Updating carries the revision the person edited; a stale one is a 409.
+export function updateSchedule(spaceId: string, schedule: TaskSchedule, changes: ScheduleChanges) {
+  return postJson<TaskSchedule>(`/api/task-schedules/${encodeURIComponent(schedule.id)}/update`,
+    { personalSpaceId: spaceId, expectedRevision: schedule.revision, ...changes })
+}
+
+const UNIT_MS: Record<ScheduleUnit, number> = { minutes: 60_000, hours: 3_600_000, days: 86_400_000 }
+export const intervalMs = (every: { unit: ScheduleUnit; count: number }) => UNIT_MS[every.unit] * every.count

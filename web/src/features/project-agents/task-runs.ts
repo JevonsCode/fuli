@@ -26,6 +26,14 @@ export interface TaskRunRecord {
   state: string
   executionStatus: string
   attemptNumber?: number | null
+  rootRunId?: string | null
+  retryOfRunId?: string | null
+  requestedModelProvider?: string | null
+  requestedModel?: string | null
+  requestedModelStrategy?: unknown
+  actualSessionId?: string | null
+  promptDispatchedAt?: string | null
+  finishedAt?: string | null
   createdAt: string
   closedAt?: string | null
   revokedAt?: string | null
@@ -46,8 +54,9 @@ export const taskIsRetryable = (status: ProjectAgentTaskStatus) => RETRYABLE.has
 // record, a process stop that was not reported, or cleanup that failed.
 export function runOutcomeUncertain(run: TaskRunRecord): boolean {
   const result = run.executionResult
-  if (!result) return Boolean(run.state === 'closed' || run.state === 'revoked')
-  return (result.promptDispatched === true && result.terminalRecorded !== true)
+  if (!result) return Boolean(run.promptDispatchedAt || run.state === 'closed' || run.state === 'revoked')
+  const dispatched = result.promptDispatched === true || Boolean(run.promptDispatchedAt)
+  return (dispatched && result.terminalRecorded !== true)
     || result.processStopped !== true
     || Boolean(result.cleanupErrors?.length)
 }
@@ -76,13 +85,16 @@ export function stopTaskRun(scope: TaskScope, runId: string): Promise<StopRunRes
 export interface RetryResponse {
   task: { taskId: string; status: ProjectAgentTaskStatus; leadAgentId?: string | null }
   assignedAgent?: { agentId: string } | null
+  // Normal routing may require telling the person about recruitment or limits.
+  mustDiscloseRecruitment?: boolean
+  clientNotice?: string | null
 }
 
 // One retry per task: the server keys it by the original task, so a double
 // click or a resend after a lost response returns the same new task.
-export function retryTask(scope: TaskScope, start: boolean): Promise<RetryResponse> {
+export function retryTask(scope: TaskScope, start: boolean, signal?: AbortSignal): Promise<RetryResponse> {
   return postJson<RetryResponse>(`/api/project-agent-tasks/${encodeURIComponent(scope.taskId)}/retry`,
-    { personalSpaceId: scope.personalSpaceId, personalProjectId: scope.personalProjectId, start })
+    { personalSpaceId: scope.personalSpaceId, personalProjectId: scope.personalProjectId, start }, { signal })
 }
 
 export type ActionFailure = 'conflict' | 'not_found' | 'denied' | 'unknown' | 'rejected'
