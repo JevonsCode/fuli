@@ -17,9 +17,14 @@ import { verifiedTranscriptEnd } from './transcript-reader.js';
 // (they deny) and the settings version (they change it).
 export const UNATTRIBUTABLE = 'capture_changed';
 
+// A denial says recording was off; a settings change only says FULI could
+// not confirm the stretch was allowed. Neither names any skipped content.
 export function notRecordedEvent(from, to, reason) {
+  const why = reason === UNATTRIBUTABLE
+    ? 'capture settings changed, so this stretch could not be confirmed as allowed and was skipped'
+    : `automatic recording was off (${reason})`;
   return { event_id: `jsonl-v1:${from}:${to}:not_recorded`, role: 'tool', kind: 'tool_result',
-    content: `[Not recorded: automatic recording was off (${reason}); native bytes ${from} to ${to} were skipped and remain in native history.]` };
+    content: `[Not recorded: ${why}; native bytes ${from} to ${to} remain in native history.]` };
 }
 
 // Best effort: when the marker cannot be written the cursor stays, and the
@@ -45,8 +50,10 @@ export async function skipTranscriptWhileOff(application, input, sourceApplicati
   }
 }
 
-// The settings version this host session was last synchronized under. A
+// The settings generation this host session was last synchronized under. A
 // session without one is unattributable unless no settings were ever saved.
+// The generation is global for now (any client's switch moves it); see
+// the capture settings store's version() for the planned per-layer generations.
 export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplication) {
   const path = join(dirname(runtimeConfigPath), 'transcript-capture',
     `${transcriptDigest(`${runtimeConfigPath}\0${sourceApplication}\0${input.session_id}`)}.json`);

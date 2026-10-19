@@ -13,8 +13,11 @@ const REASON_NOTICES = Object.freeze({
 const RECORDING_OFF = '自动记录已关闭';
 const EXPLICIT_OPERATION_RESULTS = Object.freeze({ project_created: '已创建项目，会话未记录' });
 
+// reason is a capture decision's denial, or capture_changed when a transcript
+// stretch was skipped because the settings changed while it was written.
 export function captureNotice(reason) {
   if (!reason) return null;
+  if (reason === 'capture_changed') return '记录设置有变动，无法确认这段是否允许记录，已跳过';
   return `${REASON_NOTICES[reason] ?? RECORDING_OFF}；${EXPLICIT_EDITS_SAVED}`;
 }
 

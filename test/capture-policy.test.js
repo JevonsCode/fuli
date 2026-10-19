@@ -205,3 +205,45 @@ test('the policy file is parsed again only when it changes, and a corrupt file i
   rmSync(path);
   assert.deepEqual(store.read(), { enabled: true, disabledSources: [], ...ALL_PROJECTS, updatedAt: null });
 });
+
+test('the settings generation moves on every change and never returns to "never saved"', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-capture-generation-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const path = join(directory, 'capture-policy.json');
+  const store = new CapturePolicyStore(path);
+  const seen = [store.version()];
+  assert.equal(seen[0], 'absent', 'no settings were ever saved');
+  assert.equal(store.version(), seen[0], 'nothing changed');
+  store.update({ enabled: false, disabledSources: [] });
+  seen.push(store.version());
+  const bytes = readFileSync(path);
+  rmSync(path);
+  seen.push(store.version());
+  writeFileSync(path, bytes);
+  seen.push(store.version());
+  assert.equal(store.version(), seen.at(-1), 'an unchanged file keeps its generation');
+  writeFileSync(join(directory, 'capture-settings-generation.json'), '{ not json');
+  seen.push(store.version());
+  assert.equal(new Set(seen).size, seen.length, `every change is a new generation: ${seen.join(', ')}`);
+  assert.equal(seen.slice(1).includes('absent'), false, 'a removed file is not "never saved"');
+});
+
+// rec#5 C2: a project switch is a settings change like any other, so turns
+// written while a project was off are never imported later.
+test('every project mode or list change moves the settings generation by one', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-capture-project-generation-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const path = join(directory, 'capture-policy.json');
+  const store = new CapturePolicyStore(path);
+  const generation = () => JSON.parse(readFileSync(join(directory, 'capture-settings-generation.json'), 'utf8')).generation;
+  const seen = [];
+  for (const change of [{ enabled: true }, { projectMode: 'all_except', excludedProjectIds: ['job-hunt'] },
+    { excludedProjectIds: [] }, { projectMode: 'selected' }, { selectedProjectIds: ['thesis'] },
+    { unregisteredDirectories: 'capture' }, { projectMode: 'all' }]) {
+    store.update(change);
+    seen.push([generation(), store.version()]);
+  }
+  assert.deepEqual(seen.map(([value]) => value), [1, 2, 3, 4, 5, 6, 7], 'one step per save, as for the global switch');
+  assert.equal(new Set(seen.map(([, version]) => version)).size, seen.length);
+  assert.equal(store.version(), seen.at(-1)[1], 'reading changes nothing');
+});

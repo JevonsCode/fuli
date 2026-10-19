@@ -13,7 +13,7 @@ const header = JSON.stringify({ type: 'session_meta', payload: { id: 'session' }
 const row = (role, text) => JSON.stringify({ type: 'response_item', payload: { type: 'message', role,
   content: [{ type: role === 'user' ? 'input_text' : 'output_text', text }] } }) + '\n';
 
-async function session(t) {
+async function session(t, { saved = true } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'fuli-capture-gap-'));
   t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
   const runtimeConfigPath = join(directory, 'runtime.json');
@@ -21,7 +21,7 @@ async function session(t) {
   const transcript = join(directory, 'transcript.jsonl');
   await writeFile(transcript, header);
   const store = new CapturePolicyStore(policyPath);
-  store.update({ enabled: true, disabledSources: [] });
+  if (saved) store.update({ enabled: true, disabledSources: [] });
   let cursor = header.length;
   const appended = [];
   const app = { config: { personal: { spaceId: 'space' } },
@@ -44,12 +44,14 @@ async function session(t) {
         return { status: 'bound', cursor };
       }
     } };
+  const notices = [];
   const hook = (event, prompt) => runCodexLifecycleHook(['--event', event], { write: () => {},
     readInput: async () => ({ transcript_path: transcript, session_id: 'session', cwd: directory,
       ...(prompt === undefined ? {} : { prompt }) }),
     resolveRuntimeOptions: () => ({ runtimeConfigPath }), openApplication: () => app,
     createLeases: () => ({ withGraphLease: async (_owner, operation) => operation(), close: async () => {} }),
-    callTool: async (_app, name) => name === 'begin_task_context' ? { taskContextToken: 'task' } : {} });
+    callTool: async (_app, name) => name === 'begin_task_context' ? { taskContextToken: 'task' } : {} })
+    .then(output => { if (output?.systemMessage) notices.push(output.systemMessage); return output; });
   // One host turn: the prompt is written, the entry hook runs, the reply is
   // written and the Stop hook runs.
   const turn = async (prompt, reply, { hooks = true } = {}) => {
@@ -58,17 +60,19 @@ async function session(t) {
     await appendFile(transcript, row('assistant', reply));
     if (hooks) await hook('Stop');
   };
-  return { store, policyPath, appended, turn, hook,
+  return { store, policyPath, transcriptPath: transcript, appended, turn, hook, notices,
     contents: () => appended.map(event => event.content),
     markers: () => appended.filter(event => event.event_id.endsWith(':not_recorded')) };
 }
 
+// Content-free: a reason and a byte range. A settings change is not called "off".
+const MARKER = /^\[Not recorded: (automatic recording was off \((global_off|client_off|policy_unavailable)\)|capture settings changed, so this stretch could not be confirmed as allowed and was skipped); native bytes \d+ to \d+ remain in native history\.\]$/;
+const SKIPPED_NOTICE = 'Fuli: 记录设置有变动，无法确认这段是否允许记录，已跳过';
+
 function assertOnlyOnPeriodTurns(s) {
   assert.deepEqual(s.contents().filter(text => !text.startsWith('[')), ['on before', 'answer before', 'on after', 'answer after']);
   assert.equal(s.contents().some(text => text.includes('private')), false, 'no off-period turn is imported');
-  for (const marker of s.markers()) {
-    assert.match(marker.content, /^\[Not recorded: automatic recording was off \((global_off|client_off|policy_unavailable|capture_changed)\); native bytes \d+ to \d+ were skipped and remain in native history\.\]$/);
-  }
+  for (const marker of s.markers()) assert.match(marker.content, MARKER);
 }
 
 for (const { name, off } of [
@@ -102,4 +106,18 @@ test('turns written while no hook saw capture off are not imported once it is ba
   await s.turn('on after', 'answer after');
   assertOnlyOnPeriodTurns(s);
   assert.equal(s.markers().length, 1, 'the unattributable interval is marked instead');
+  assert.ok(s.notices.includes(SKIPPED_NOTICE), 'the hook that skipped the stretch says so');
+});
+
+test('a policy file removed after an unobserved off period does not look like settings never saved', async (t) => {
+  const s = await session(t, { saved: false });
+  await s.turn('on before', 'answer before');
+  s.store.update({ enabled: false, disabledSources: [] });
+  await appendFile(s.transcriptPath, row('user', 'private one') + row('assistant', 'private answer one'));
+  await rm(s.policyPath);
+  await s.hook('Stop');
+  await s.turn('on after', 'answer after');
+  assertOnlyOnPeriodTurns(s);
+  assert.equal(s.markers().length, 1);
+  assert.ok(s.notices.includes(SKIPPED_NOTICE), 'the hook that skipped the stretch says so');
 });

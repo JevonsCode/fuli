@@ -513,6 +513,6 @@ test('turns written while a project was off are never imported after it is switc
   await codexStop(f, input);
 
   assert.equal(imported().includes(PRIVATE), false, 'nothing from the off period is imported');
-  assert.ok(imported().includes('[Not recorded: automatic recording was off (capture_changed)'), imported());
+  assert.ok(imported().includes('[Not recorded: capture settings changed, so this stretch could not be confirmed'), imported());
   assert.match(imported(), /turn-after/, 'recording resumes for new turns');
 });
