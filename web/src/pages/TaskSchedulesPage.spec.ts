@@ -276,4 +276,30 @@ describe('task schedules page after acceptance review', () => {
     expect(updates.map(call => call.body!.expectedRevision)).toEqual([2, 3])
     expect(updates[1]!.body!.title).toBe('Nightly check')
   })
+
+  it('locks the form while a create is sent and shows what was sent when the result is unknown', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    serve({ '/api/task-schedules?': () => ({ schedules: [] }) })
+    const fetch = globalThis.fetch as ReturnType<typeof vi.fn>
+    const list = fetch.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>
+    fetch.mockImplementation((url: string, init?: RequestInit) => init?.method === 'POST'
+      ? new Promise((_resolve, reject) => init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))))
+      : list(url, init))
+    const wrapper = await mountPage()
+    await fillCreate(wrapper)
+    await chooseProject(wrapper)
+    await submit()
+    expect((document.querySelector('dialog fieldset') as HTMLFieldSetElement).disabled).toBe(true)
+    // A change made while the request is out cannot reach what is shown as sent.
+    ;(wrapper.vm as unknown as { draft: { title: string } }).draft.title = 'NOT-SENT'
+    vi.advanceTimersByTime(30_000)
+    await flushPromises()
+    const summary = document.querySelector('[data-schedule-submitted]')!.textContent!
+    const sent = fetch.mock.calls.find(([, init]) => init?.method === 'POST')![1]!
+    expect(JSON.parse(String(sent.body)).title).toBe('Nightly check')
+    expect(summary).toContain('Nightly check')
+    expect(summary).not.toContain('NOT-SENT')
+    expect(summary).toContain(JSON.parse(String(sent.body)).firstRunAt)
+  })
 })
+

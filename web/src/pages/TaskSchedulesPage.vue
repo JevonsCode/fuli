@@ -82,6 +82,8 @@ const editing = ref<TaskSchedule | null>(null)
 const saving = ref(false)
 const formError = ref('')
 const createUnknown = ref(false)
+// What an unconfirmed create actually sent, and when; never the draft as edited since.
+const submitted = ref<{ title: string; project: string; every: string; startMode: StartMode; firstRunAt: string; at: string } | null>(null)
 const draft = reactive({ project: '', title: '', objective: '', workKind: '', count: '1', unit: 'days' as ScheduleUnit,
   startMode: '' as StartMode | '', threshold: '3', firstRunAt: '' })
 const projectOptions = computed(() => projects.value.map(project => ({ value: project.project_id, label: project.profile.name })))
@@ -101,6 +103,7 @@ function openCreate() {
   openedAt.value = Date.now()
   formError.value = ''
   createUnknown.value = false
+  submitted.value = null
   dialogOpen.value = true
 }
 function openEdit(schedule: TaskSchedule) {
@@ -147,9 +150,12 @@ async function save() {
   try {
     if (editing.value) await updateSchedule(spaceId.value, editing.value, changes)
     else {
+      const payload = { personalProjectId: draft.project, ...changes, firstRunAt: plannedFirst.value!.toISOString() }
+      submitted.value = { title: payload.title, project: projectName(payload.personalProjectId), startMode: payload.startMode,
+        every: t('taskSchedules.every', { count: payload.every.count, unit: t(`taskSchedules.unit.${payload.every.unit}`) }),
+        firstRunAt: payload.firstRunAt, at: new Date().toISOString() }
       createTimer = setTimeout(() => controller.abort(), CREATE_LIMIT_MS)
-      await createSchedule(spaceId.value, { personalProjectId: draft.project, ...changes, firstRunAt: plannedFirst.value!.toISOString() },
-        controller.signal)
+      await createSchedule(spaceId.value, payload, controller.signal)
     }
     dialogOpen.value = false
     await load()
@@ -317,7 +323,15 @@ async function toggleRuns(schedule: TaskSchedule) {
 
     <UiDialog :open="dialogOpen" form :busy="saving" :error="formError" :title="t(editing ? 'taskSchedules.form.editTitle' : 'taskSchedules.form.title')"
       :description="editing ? undefined : t('taskSchedules.form.description')" @close="dialogOpen = false" @submit="save">
-      <fieldset class="task-schedule-form" :disabled="createUnknown">
+      <dl v-if="createUnknown && submitted" class="task-schedule-submitted" data-schedule-submitted>
+        <dt>{{ t('taskSchedules.form.submittedAt') }}</dt><dd>{{ formatDate(submitted.at) }}</dd>
+        <dt>{{ t('taskSchedules.form.name') }}</dt><dd>{{ submitted.title }}</dd>
+        <dt>{{ t('taskSchedules.form.project') }}</dt><dd>{{ submitted.project }}</dd>
+        <dt>{{ t('taskSchedules.form.interval') }}</dt><dd>{{ submitted.every }}</dd>
+        <dt>{{ t('taskSchedules.form.startMode') }}</dt><dd>{{ t(`taskSchedules.startMode.${submitted.startMode}`) }}</dd>
+        <dt>{{ t('taskSchedules.form.firstRun') }}</dt><dd>{{ formatDate(submitted.firstRunAt) }} ({{ submitted.firstRunAt }})</dd>
+      </dl>
+      <fieldset class="task-schedule-form" :disabled="createUnknown || saving">
         <UiSelect v-model="draft.project" field :label="t('taskSchedules.form.project')" :options="projectOptions" required :disabled="Boolean(editing)" />
         <TextField v-model="draft.title" :label="t('taskSchedules.form.name')" required data-schedule-title />
         <TextField v-model="draft.objective" :label="t('taskSchedules.form.objective')" multiline :rows="3" required data-schedule-objective />
@@ -372,4 +386,7 @@ async function toggleRuns(schedule: TaskSchedule) {
 .task-schedule-start { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; }
 .task-schedule-start label { display: flex; gap: 8px; align-items: center; min-height: 32px; }
 .task-schedule-first { display: grid; gap: 4px; }
+.task-schedule-submitted { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0 0 12px; font-size: 13px; }
+.task-schedule-submitted dt { color: var(--color-muted); }
+.task-schedule-submitted dd { margin: 0; overflow-wrap: anywhere; }
 </style>
