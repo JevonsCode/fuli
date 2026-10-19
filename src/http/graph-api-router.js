@@ -41,6 +41,14 @@ export async function handleGraphApiRequest({
     sendJson(response, 200, app.updateCapturePolicy(await readJson(request)));
     return true;
   }
+  if (url.pathname === '/api/recall-policy' && request.method === 'GET') {
+    sendJson(response, 200, app.getRecallPolicy());
+    return true;
+  }
+  if (url.pathname === '/api/recall-policy' && request.method === 'PATCH') {
+    sendJson(response, 200, app.updateRecallPolicy(await readJson(request)));
+    return true;
+  }
   if (url.pathname === '/api/agent-access-policy' && request.method === 'GET') {
     sendJson(response, 200, app.getAgentAccessPolicy());
     return true;

@@ -13,6 +13,10 @@ export const consoleMessages = {
       enabledNotice: 'Agent 使用已开启；已连接的 Agent 可以调用 FULI。',
       disabledNotice: 'Agent 使用已关闭，所有 Agent 调用会被拦截。',
     },
+    recall: {
+      directNotice: '已开启：Agent 会直接使用你确认过的知识回答。',
+      verifyNotice: '已关闭：Agent 每次都会去文件里核对已确认的知识。',
+    },
     captureNotices: {
       enabled: '自动沉淀已开启。',
       disabled: '自动沉淀已关闭，已有知识仍可读取。',
@@ -31,6 +35,10 @@ export const consoleMessages = {
     agentAccess: {
       enabledNotice: 'Agent access is on. Connected Agents can use FULI.',
       disabledNotice: 'Agent access is off; all Agent calls are blocked.',
+    },
+    recall: {
+      directNotice: 'On: Agents answer from knowledge you confirmed.',
+      verifyNotice: 'Off: Agents check confirmed knowledge against the files every time.',
     },
     captureNotices: {
       enabled: 'Automatic capture is on.',

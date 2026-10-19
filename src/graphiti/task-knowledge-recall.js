@@ -7,6 +7,8 @@ const MAX_QUERIES = 4;
 const MAX_ITEMS_PER_KIND = 3;
 const MAX_ITEM_TEXT = 1000;
 const CONFIRMED = new Set(['confirmed', 'agent_confirmed']);
+// People confirmed every returned item; reading files only to re-check them costs the tokens recall saves.
+const CONFIRMED_USE = 'A person confirmed these items: answer from them directly; open files only for what they do not cover.';
 const PENDING_NOTE = 'Pending items are agent-proposed and not confirmed by a person; judge them before use.';
 
 const RECALL_INTENTS = Object.freeze([
@@ -75,12 +77,13 @@ export function planTaskKnowledgeRecall(taskPrompt) {
     return { status: 'not_needed', trigger_categories: [], queries: [] };
   }
   const focus = distinctivePromptTerms(prompt).join(' ').slice(0, 180);
-  const queries = unique(matched.flatMap(({ queries: values }) => values)
-    .map((query) => focus ? `${focus} ${query}` : query));
+  // Named targets already focus every query; a plain question uses its own clauses.
+  const queries = unique([...(focus ? [] : clauseQueries(prompt)), ...matched.flatMap(({ queries: values }) => values)
+    .map((query) => focus ? `${focus} ${query}` : query)]);
   return {
     status: 'planned',
     trigger_categories: matched.map(({ category }) => category),
-    queries: unique(queries).slice(0, MAX_QUERIES)
+    queries: queries.slice(0, MAX_QUERIES)
   };
 }
 
@@ -165,6 +168,8 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt) {
       })
     } : {}),
     ...(pendingSlots.length ? { pending_fallback: { slots: pendingSlots, note: PENDING_NOTE } } : {}),
+    ...(answersFromConfirmed(application) && confirmedByPeople([...facts, ...entities])
+      ? { confirmed_use: CONFIRMED_USE } : {}),
     facts,
     entities
   };
@@ -296,6 +301,35 @@ function distinctivePromptTerms(prompt) {
     ...urls,
     ...versions
   ].filter((term) => !METADATA_TERM.test(term))).slice(0, 4);
+}
+
+// A question about several things finds each stored fact only with a short
+// query of its own: the Provider keeps an item when a quarter of the query's
+// words appear in it, so one long query of every word matches nothing.
+const MAX_CLAUSE_QUERIES = 3;
+const CLAUSE_WORD_LIMIT = 5;
+const CLAUSE_STOP_WORDS = new Set(('about after also answer because been before bullet bullets could does from have here into '
+  + 'just know like list make more most much need only please reply repo short should show some tell than that their them '
+  + 'then there these they this those three what when where which while will with would your').split(' '));
+
+function clauseQueries(prompt) {
+  return prompt.split(/[,;:，；：。!?！？]|\.(?:\s|$)|\b(?:and|or|then)\b/iu)
+    .map((clause) => unique((clause.toLocaleLowerCase('en-US').match(/[a-z][a-z0-9-]{2,}/gu) ?? [])
+      .filter((word) => !CLAUSE_STOP_WORDS.has(word) && !['the', 'who', 'how', 'for', 'are', 'was'].includes(word)))
+      .slice(0, CLAUSE_WORD_LIMIT))
+    .filter((words) => words.length >= 2)
+    .slice(0, MAX_CLAUSE_QUERIES)
+    .map((words) => words.join(' '));
+}
+
+// On unless the person asked for every answer to be checked against the files.
+function answersFromConfirmed(application) {
+  return application.getRecallPolicy?.().answerFromConfirmed !== false;
+}
+
+// Only items a person confirmed; agent_confirmed ones were promoted by repeated use.
+function confirmedByPeople(items) {
+  return items.length > 0 && items.every((item) => item.confirmation_status === 'confirmed');
 }
 
 function filterRecallCandidates(items, focusTerms) {
