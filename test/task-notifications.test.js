@@ -69,8 +69,8 @@ test('server shutdown releases notification streams, and provider errors remain 
 });
 
 test('the existing SSE carries chat metadata from the roundtable without message bodies', async t => {
-  const { createRoundtableStore } = await import('../src/agent-roundtable/store.js');
-  const { createAgentRoundtable } = await import('../src/agent-roundtable/service.js');
+  const { createRoundtableStore } = await import('../packages/roundtable/src/roundtable/store.js');
+  const { createAgentRoundtable } = await import('../packages/roundtable/src/roundtable/service.js');
   const app = { config: { personal: { spaceId: 'space-a' } },
     listProjectAgents: async () => ['alpha','beta'].map(agentId => ({ agentId, profile: { name: agentId, status: 'active' } })),
     taskContextRegistry: { context: async token => ({ projectAgentId: token, personalProjectId: 'project' }) },

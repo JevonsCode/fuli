@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { resolveSetupPaths } from '../setup/paths.js';
 import { DEFAULT_RUNTIME_SETTINGS, readRuntimeSettings } from '../system/runtime-settings.js';
-import { shortFingerprint } from '../agent-peer/protocol.js';
+import { shortFingerprint } from '../../packages/roundtable/src/peer/protocol.js';
 
 const USAGE = `fuli peer <action>  (LAN roundtable Beta; the local console must be running)
   status

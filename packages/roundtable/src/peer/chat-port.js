@@ -1,11 +1,11 @@
 import { z } from 'zod';
-import { parseChatSnapshot } from '../agent-roundtable/chat-snapshot.js';
+import { parseChatSnapshot } from '../roundtable/chat-snapshot.js';
 import { setTimeout as delay } from 'node:timers/promises';
-import { parseChatUpdates } from '../agent-roundtable/chat-updates.js';
+import { parseChatUpdates } from '../roundtable/chat-updates.js';
 import { randomUUID } from 'node:crypto';
 import { assertionDigest } from './origin-proof.js';
 import { PeerError } from './protocol.js';
-import { parseChatRequest, parseChatResult } from '../agent-roundtable/chat-contract.js';
+import { parseChatRequest, parseChatResult } from '../roundtable/chat-contract.js';
 
 export function createPeerChatPort({ connection, post, nodeStore, host, clock }) {
   async function chat({ request: raw, taskContextToken, sourceApplication, agentId, projectId, name, signal, onMessage }, { snapshot = false } = {}) {

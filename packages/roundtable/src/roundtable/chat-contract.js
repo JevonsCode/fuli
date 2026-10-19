@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PeerError } from '../agent-peer/protocol.js';
+import { PeerError } from '../peer/protocol.js';
 
 const text = max => z.string().trim().min(1).max(max);
 const address = text(300);

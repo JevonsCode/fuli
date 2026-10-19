@@ -1,5 +1,5 @@
 import { readJson, sendJson } from '../http/response.js';
-import { PeerError } from '../agent-peer/protocol.js';
+import { PeerError } from '../../packages/roundtable/src/peer/protocol.js';
 
 // Console view of Agent-to-Agent threads, plus the owner's status and cancel
 // for one message (the same actions Agents have as MCP tools).

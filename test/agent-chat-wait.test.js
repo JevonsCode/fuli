@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { waitForChatChange } from '../src/agent-roundtable/chat-wait.js';
+import { waitForChatChange } from '../packages/roundtable/src/roundtable/chat-wait.js';
 
 // A store whose change signal never arrives, like a file event macOS dropped.
 const silentStore = () => ({ subscribe: () => () => {} });

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
-import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
-import { createRoundtableStore } from '../src/agent-roundtable/store.js';
-import { parseChatResult } from '../src/agent-roundtable/chat-contract.js';
+import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
+import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
+import { parseChatResult } from '../packages/roundtable/src/roundtable/chat-contract.js';
 import { respondToAgentAttention } from '../src/graphiti/agent-attention.js';
 import { taskEntryPreferences } from '../src/graphiti/task-entry-preferences.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
@@ -132,9 +132,9 @@ test('the console wakes a wait in a separate MCP process through the shared roun
   const { app, chat } = fixture(t, { roundtable: false });
   app.roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore(path) });
   const { chatId } = await chat('milo', 'create', { requestId: 'room', kind: 'direct', members: ['local:nova'] });
-  const code = `import {createRoundtableStore} from './src/agent-roundtable/store.js';
-    import {createChatService} from './src/agent-roundtable/chat-service.js';
-    import {createAttentionInbox} from './src/agent-roundtable/attention-inbox.js';
+  const code = `import {createRoundtableStore} from './packages/roundtable/src/roundtable/store.js';
+    import {createChatService} from './packages/roundtable/src/roundtable/chat-service.js';
+    import {createAttentionInbox} from './packages/roundtable/src/roundtable/attention-inbox.js';
     const store=createRoundtableStore(process.argv[1]);
     const chat=createChatService({store:store.chat,transaction:store.transaction,scope:'space',transport:'local'});
     const inbox=createAttentionInbox({store,spaceId:()=>'space'}).forWait('milo','garden');

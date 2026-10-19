@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { chatSnapshot, chatWakePrompt, parseChatSnapshot } from '../agent-roundtable/chat-snapshot.js';
-import { waitForChatUpdates } from '../agent-roundtable/chat-updates.js';
-import { createChatService } from '../agent-roundtable/chat-service.js';
+import { chatSnapshot, chatWakePrompt, parseChatSnapshot } from '../roundtable/chat-snapshot.js';
+import { waitForChatUpdates } from '../roundtable/chat-updates.js';
+import { createChatService } from '../roundtable/chat-service.js';
 import { verifyDeviceSignature } from './device-identity.js';
 import { verifyOriginProof } from './origin-proof.js';
 import { canonicalTime, PeerError } from './protocol.js';

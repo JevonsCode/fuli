@@ -2,7 +2,7 @@ import { Buffer } from 'node:buffer';
 
 import { z } from 'zod';
 
-import { canonicalJson } from '../publication/canonical-json.js';
+import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
 import { rejectDuplicateValues } from './array-validation.js';
 import { createCanonicalBase64UrlSchema } from './base64url-contract.js';
 import {

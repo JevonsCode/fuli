@@ -1,7 +1,7 @@
 import { waitForChatChange } from './chat-wait.js';
 import { randomUUID } from 'node:crypto';
-import { canonicalJson } from '../publication/canonical-json.js';
-import { PeerError } from '../agent-peer/protocol.js';
+import { canonicalJson } from '../canonical-json.js';
+import { PeerError } from '../peer/protocol.js';
 import { CHAT_LIMITS, parseChatRequest } from './chat-contract.js';
 
 // Only message membership is granted here. No execution, knowledge or weight ports.

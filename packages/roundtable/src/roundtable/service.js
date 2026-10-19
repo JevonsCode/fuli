@@ -6,8 +6,8 @@ import { createAgentChat } from './chat.js';
 import { ATTENTION_REPLIES_GUIDANCE, createAttentionInbox } from './attention-inbox.js';
 import { agentDiscoveryProfile, matchesAgentDiscovery } from './discovery.js';
 
-import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
-import { assertRoundtableHost } from './host.js';
+import { RoundtableError } from '../errors.js';
+import { assertRoundtableHost } from '../host.js';
 import { WAKE_CLIENTS, resolveClientCommand, sessionWorkingDirectory, wakeAgent } from './wake.js';
 
 const CLIENT_LABELS = { claude_code: 'Claude Code', codex: 'Codex', cursor: 'Cursor', claude: 'Claude', other: 'Agent' };
@@ -603,7 +603,7 @@ function label(agent) {
 }
 
 function validation(message) {
-  return new ApplicationError(ApplicationErrorCode.VALIDATION, message);
+  return new RoundtableError('validation', message);
 }
 
 // Release proof for one recorded hold: the same machine, an anchor recorded as

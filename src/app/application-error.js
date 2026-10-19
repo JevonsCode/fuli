@@ -1,3 +1,5 @@
+import { RoundtableError } from '../../packages/roundtable/src/errors.js';
+
 export const ApplicationErrorCode = Object.freeze({
   AGENT_ACCESS_DISABLED: 'agent_access_disabled',
   NOT_FOUND: 'not_found',
@@ -13,4 +15,10 @@ export class ApplicationError extends Error {
     this.code = code;
     if (status) this.status = status;
   }
+}
+
+// Errors whose code and message are written for the caller: FULI's own and those
+// raised inside the Roundtable package it hosts.
+export function isControlledError(error) {
+  return error instanceof ApplicationError || error instanceof RoundtableError;
 }

@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { claudeCodeWake } from '../src/agents/claude-code/wake.js';
-import { parseFinalAnswer, wakeArguments } from '../src/agent-roundtable/wake.js';
+import { claudeCodeWake } from '../packages/roundtable/src/agents/claude-code/wake.js';
+import { parseFinalAnswer, wakeArguments } from '../packages/roundtable/src/roundtable/wake.js';
 
 test('Claude Code resumes by forking, so an open window is never written', () => {
   assert.deepEqual(wakeArguments('claude_code', { sessionId: 'cc-session-1' }),
@@ -38,7 +38,7 @@ test('Claude Code honours an explicit binary before searching PATH', () => {
 });
 
 test('a delegated Claude Code wake binds its named session before the client starts', async () => {
-  const { wakeAgent } = await import('../src/agent-roundtable/wake.js');
+  const { wakeAgent } = await import('../packages/roundtable/src/roundtable/wake.js');
   const order = [];
   let launchArgs = null;
   const answer = await wakeAgent({ client: 'claude_code', sessionId: 'cc-session-1', cwd: '/work/app', prompt: 'Question',

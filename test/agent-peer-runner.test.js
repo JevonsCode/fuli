@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import test from 'node:test';
 
-import { createDeviceCertificate, deviceIdentity } from '../src/agent-peer/device-identity.js';
-import { createNodeStore } from '../src/agent-peer/node-store.js';
-import { assertionDigest } from '../src/agent-peer/origin-proof.js';
-import { canonicalJson, sha256Hex } from '../src/agent-peer/protocol.js';
-import { createPeerRunner } from '../src/agent-peer/runner.js';
+import { createDeviceCertificate, deviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
+import { createNodeStore } from '../packages/roundtable/src/peer/node-store.js';
+import { assertionDigest } from '../packages/roundtable/src/peer/origin-proof.js';
+import { canonicalJson, sha256Hex } from '../packages/roundtable/src/peer/protocol.js';
+import { createPeerRunner } from '../packages/roundtable/src/peer/runner.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 const TARGET = 'b'.repeat(64);

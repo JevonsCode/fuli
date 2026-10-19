@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { runProcess, wakeAgent, wakeArguments } from '../src/agent-roundtable/wake.js';
+import { runProcess, wakeAgent, wakeArguments } from '../packages/roundtable/src/roundtable/wake.js';
 
 const program = `
 const first = JSON.stringify({type:'thread.started',thread_id:'native-receiver-123'})+'\\n';

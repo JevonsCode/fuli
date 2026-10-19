@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { ApplicationError } from '../app/application-error.js';
-import { contentHash } from '../publication/canonical-json.js';
+import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { completePreferenceToolResult } from '../mcp/tool-result.js';
 import { blockedPreferenceDelivery, TASK_PREFERENCE_RESULT_LIMIT_BYTES } from '../mcp/preference-delivery.js';
 

@@ -3,11 +3,11 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { createPeerPort } from '../../src/agent-peer/peer-port.js';
-import { createPeerRuntime } from '../../src/agent-peer/peer-runtime.js';
-import { canonicalJson, sha256Hex } from '../../src/agent-peer/protocol.js';
-import { createAgentRoundtable } from '../../src/agent-roundtable/service.js';
-import { createRoundtableStore } from '../../src/agent-roundtable/store.js';
+import { createPeerPort } from '../../packages/roundtable/src/peer/peer-port.js';
+import { createPeerRuntime } from '../../packages/roundtable/src/peer/peer-runtime.js';
+import { canonicalJson, sha256Hex } from '../../packages/roundtable/src/peer/protocol.js';
+import { createAgentRoundtable } from '../../packages/roundtable/src/roundtable/service.js';
+import { createRoundtableStore } from '../../packages/roundtable/src/roundtable/store.js';
 import { createFuliRoundtableHost } from '../../src/graphiti/roundtable-host.js';
 
 // Signs exactly like the FULI Provider does: the private key stays in here.

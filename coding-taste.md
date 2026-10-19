@@ -35,7 +35,7 @@ Each row is the single home for that behavior; reuse it or extend it.
 
 | Behavior | Home | Notes |
 | --- | --- | --- |
-| Canonical JSON for hashing and signing | `src/publication/canonical-json.js` | One canonical form for the whole product. Hashes and signatures must not depend on which module computed them. |
+| Canonical JSON for hashing and signing | `packages/roundtable/src/canonical-json.js` | One canonical form for the whole product. Hashes and signatures must not depend on which module computed them. |
 | Input value checks (`requiredString`, `nonEmptyText`, `positiveInteger`, `uniqueTextArray`, `assertJsonObject`) | `src/validation/values.js` | Throw `TypeError` with the caller's label. Shared by connectors, MCP argument parsing and HTTP routes. |
 | Deep freeze of config defaults | `src/validation/values.js` | |
 | SHA-256 of text, bytes and files | `src/security/digest.js` (create on first move) | One place that decides encoding (`hex`) and streaming for files. |
@@ -49,6 +49,7 @@ Each row is the single home for that behavior; reuse it or extend it.
 | Web identity, debounce | `web/src/lib/identity.ts`, `web/src/lib/debounce.ts` | |
 | Web loading feedback | `web/src/components/GrowthLoading.vue` | See `AGENTS.md`. |
 | Web modal behavior | `web/src/composables/useModalDialog.ts` | |
+| Roundtable (agent-to-agent asks, chat, wake, LAN peers) | `packages/roundtable/` (`fuli-roundtable`) | Reaches its host only through `src/host.js`; FULI's host is `src/graphiti/roundtable-host.js`. Agent-specific wake adapters live in `packages/roundtable/src/agents/<agent>/`. |
 | Python shared values | `provider_values.py` (`json_object`, `sha256_text`), `model_validation.py` (`unique_text_list`), `models.py` (`stored_confirmation_basis`), `auth.py` (`token_hash`) | Do not redefine a private `_helper` that one of these already provides. |
 
 Python follows the same rule: a private `_helper` copied into a second module is a signal to promote it

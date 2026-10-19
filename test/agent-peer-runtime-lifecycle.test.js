@@ -5,11 +5,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { createPeerPort } from '../src/agent-peer/peer-port.js';
-import { createPeerRuntime } from '../src/agent-peer/peer-runtime.js';
-import { canonicalJson, sha256Hex } from '../src/agent-peer/protocol.js';
-import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
-import { createRoundtableStore } from '../src/agent-roundtable/store.js';
+import { createPeerPort } from '../packages/roundtable/src/peer/peer-port.js';
+import { createPeerRuntime } from '../packages/roundtable/src/peer/peer-runtime.js';
+import { canonicalJson, sha256Hex } from '../packages/roundtable/src/peer/protocol.js';
+import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
+import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
 
 // Signs exactly like the FULI Provider does: the private key stays in here.
 function signingAuthority() {
@@ -114,7 +114,7 @@ test('a sender reconnects to the current coordinator address after re-enable', {
 });
 
 
-import { runProcess } from '../src/agent-roundtable/wake.js';
+import { runProcess } from '../packages/roundtable/src/roundtable/wake.js';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 

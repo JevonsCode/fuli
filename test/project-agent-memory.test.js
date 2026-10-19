@@ -5,7 +5,7 @@ import { callAgentTool } from '../src/agent-tools.js';
 import { checkpointTaskKnowledge } from '../src/graphiti/agent-knowledge-workflows.js';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { taskEntryPreferences } from '../src/graphiti/task-entry-preferences.js';
-import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
+import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 // Synthetic data and an HTTP boundary double; real Neo4j coverage is separate.

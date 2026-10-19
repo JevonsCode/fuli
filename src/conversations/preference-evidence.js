@@ -1,6 +1,6 @@
 import { constants } from 'node:fs';
 import { openWithoutFollowing } from '../system/open-without-following.js';
-import { canonicalJson, contentHash } from '../publication/canonical-json.js';
+import { canonicalJson, contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { preferenceAuthorityView } from '../mcp/preference-delivery.js';
 
 const MAX_BYTES = 32 * 1024 * 1024;

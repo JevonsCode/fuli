@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { assertRoundtableHost, ROUNDTABLE_HOST_METHODS } from '../src/agent-roundtable/host.js';
-import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
-import { createRoundtableStore } from '../src/agent-roundtable/store.js';
+import { assertRoundtableHost, ROUNDTABLE_HOST_METHODS } from '../packages/roundtable/src/host.js';
+import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
+import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 test('Roundtable refuses a host that is missing part of the port', () => {

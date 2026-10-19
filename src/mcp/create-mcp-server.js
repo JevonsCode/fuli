@@ -3,7 +3,7 @@ import { employeeToolCatalogResult } from './employee-tool-catalog.js';
 import { agentToolCatalogResult } from './agent-tool-catalog.js';
 import { toolNamesForProfile } from './tool-profiles.js';
 import { CHAT_LISTING, chatListedSchema } from './chat-listing.js';
-import { parseChatResult } from '../agent-roundtable/chat-contract.js';
+import { parseChatResult } from '../../packages/roundtable/src/roundtable/chat-contract.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   CallToolRequestSchema,
