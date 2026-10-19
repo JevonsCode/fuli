@@ -31,7 +31,7 @@ class Probe { static void Main(string[] args) {
 } }`);
   const probe = join(root, 'Probe.exe');
   await run(compiler, ['/nologo', '/target:exe', '/platform:x64', '/reference:System.Web.Extensions.dll',
-    '/out:' + probe, resolve('desktop/windows/ControllerRunner.cs'), harness]);
+    '/out:' + probe, resolve('desktop/windows/ControllerRunner.cs'), harness], 60_000);
   t.after(async () => {
     await cleanup();
     assert.equal(dirname(root), realpathSync(tmpdir()));
@@ -83,8 +83,10 @@ class Probe { static void Main(string[] args) {
 });
 
 function alive(pid) { try { process.kill(pid, 0); return true; } catch { return false; } }
-function run(command, args) {
+// Compiling the probe can take longer than a run on a busy CI machine; the
+// runs themselves keep the short bound the test is about.
+function run(command, args, timeout = 10000) {
   return new Promise((resolveRun, reject) => execFile(command, args, {
-    windowsHide: true, encoding: 'utf8', timeout: 10000, maxBuffer: 2 * 1024 * 1024
+    windowsHide: true, encoding: 'utf8', timeout, maxBuffer: 2 * 1024 * 1024
   }, (error, stdout, stderr) => error ? reject(new Error(stderr || stdout || error.message)) : resolveRun(stdout)));
 }
