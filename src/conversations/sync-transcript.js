@@ -3,12 +3,19 @@ import { transcriptDigest, TRANSCRIPT_SCAN_PAGE_LIMIT } from './transcript-guard
 import { lookupTranscriptTask } from './current-task-lookup.js';
 import { appendTranscriptPage } from './transcript-append.js';
 import { recoverFallbackTranscript } from './fallback-transcript-boundary.js';
+import { captureDecision, captureDisabled } from '../graphiti/capture-decision.js';
 
 const pending = reason => ({ status: 'partial', entryBlocked: true, reason });
 const retryReason = 'Transcript handoff is pending. Retry task entry to continue its saved progress; no new Agent context was supplied';
 
+// What a host hook knows about the session whose transcript it would capture.
+export function transcriptCaptureScope(input, sourceApplication) {
+  return { sourceApplication, projectPath: input?.cwd ?? null, sessionId: input?.session_id ?? null };
+}
+
 export async function syncConversationTranscript(application, input, sourceApplication, adapter, guard = null) {
-  if (!application.getCapturePolicy?.(sourceApplication).enabled) return { status: 'capture_disabled' };
+  const capture = captureDecision(application, transcriptCaptureScope(input, sourceApplication));
+  if (!capture.allowed) return captureDisabled(capture);
   if (!input?.transcript_path) return { status: 'partial', reason: 'Host did not supply a visible transcript' };
   if (guard?.expired) return pending('Transcript guard lifetime expired; this unverified interval was not imported');
   if (guard?.value?.phase === 'scan' && (guard.value.scanPages ?? 0) >= TRANSCRIPT_SCAN_PAGE_LIMIT) {
@@ -120,16 +127,24 @@ export async function recordTranscriptTaskEntry(guard, context) {
   await guard.write({ ...guard.value, phase: 'claim', nextOwner: transcriptDigest(token) });
 }
 
+// Capture the user switched off needs no notice each turn. Settings FULI could
+// not read do: the user believes capture is on. The notice names no content.
+const UNREADABLE_CAPTURE_SETTINGS = 'Capture settings could not be read, so nothing from this turn was recorded';
+
 export function withTranscriptNotice(output, sync) {
-  if (!sync?.entryBlocked && !sync?.omitted && !['unsaved', 'partial'].includes(sync?.status)) return output;
-  return { ...output, systemMessage: [output.systemMessage, `Fuli: ${sync.reason}.`].filter(Boolean).join('\n') };
+  const unreadable = sync?.status === 'capture_disabled' && sync.reason === 'policy_unavailable';
+  if (!unreadable && !sync?.entryBlocked && !sync?.omitted && !['unsaved', 'partial'].includes(sync?.status)) return output;
+  const notice = unreadable ? UNREADABLE_CAPTURE_SETTINGS : sync.reason;
+  return { ...output, systemMessage: [output.systemMessage, `Fuli: ${notice}.`].filter(Boolean).join('\n') };
 }
 
 // A scope switch is safe only after the old scope was flushed up to the current
 // prompt. Failed flushes keep the old owner, so new Agents cannot inherit an
 // unrelated session tail. Native files remain available for explicit recovery.
 export async function claimTranscriptBoundary(application, input, sourceApplication, sync, adapter, guard = null) {
-  if (!application.getCapturePolicy?.(sourceApplication).enabled || !input.transcript_path) return sync;
+  if (!input.transcript_path) return sync;
+  const capture = captureDecision(application, transcriptCaptureScope(input, sourceApplication));
+  if (!capture.allowed) return captureDisabled(capture);
   try {
     const task = await application.personal.currentTaskContext({ personal_space_id: application.config.personal.spaceId,
       session_id: input.session_id, source_application: sourceApplication });

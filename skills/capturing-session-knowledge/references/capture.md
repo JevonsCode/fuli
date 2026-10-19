@@ -127,9 +127,11 @@ Use `capture_session_knowledge` with a small, coherent batch:
 5. Use `supersedes` when replacing a known relationship and set confidence below `1` only when the source itself expresses uncertainty.
 6. Flush silently at the boundary. Continue the user's task without narrating routine capture.
 
-If `capture_session_knowledge` or automatic project creation returns `capture_disabled`, the
-user has disabled automatic capture. Do not retry, do not create a fallback record elsewhere,
-and do not describe the skipped batch as stored. Existing knowledge may still be queried.
+If `capture_session_knowledge`, a checkpoint or automatic project creation returns
+`capture_disabled`, nothing was stored: `reason` is `global_off` or `client_off` when the user
+switched capture off, and `policy_unavailable` when FULI could not read the capture settings.
+Do not retry, do not create a fallback record elsewhere, and do not describe the skipped batch as
+stored. Existing knowledge may still be queried.
 
 For an owned task, follow its `checkpoint_required` and `checkpoint_guidance`. Routine tasks
 with nothing new to record may use the entry receipt without a model checkpoint; eligible

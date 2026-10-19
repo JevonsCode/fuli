@@ -1,5 +1,7 @@
 import { transcriptGuardFailureMessage, withTranscriptGuard } from './transcript-guard.js';
-import { syncConversationTranscript, claimTranscriptBoundary, recordTranscriptTaskEntry, withTranscriptNotice } from './sync-transcript.js';
+import { syncConversationTranscript, claimTranscriptBoundary, recordTranscriptTaskEntry, transcriptCaptureScope,
+  withTranscriptNotice } from './sync-transcript.js';
+import { captureDecision } from '../graphiti/capture-decision.js';
 import { recoverFailedTranscriptEntry } from './fallback-transcript-boundary.js';
 import { captureWindow, withCaptureBudget } from './capture-window.js';
 
@@ -9,7 +11,7 @@ import { captureWindow, withCaptureBudget } from './capture-window.js';
 export async function transcriptLifecycle({ application, runtimeConfigPath, input, sourceApplication, event, adapter, run,
   captureTimeoutMs = 750, signal }) {
   const entry = event === 'UserPromptSubmit';
-  const enabled = application.getCapturePolicy?.(sourceApplication).enabled;
+  const enabled = captureDecision(application, transcriptCaptureScope(input, sourceApplication)).allowed;
   let started = false, output, context;
   const invoke = async () => {
     started = true;

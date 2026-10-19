@@ -91,7 +91,9 @@ test('checkpoint sends explicit usage in both atomic requests and replays the Pr
   for (const body of writes) {
     assert.equal(body.personal_space_id, 'personal-space');
     assert.equal(body.source_application, 'codex');
-    assert.deepEqual(body.work_log, input.workLog);
+    // Capture is off here, so the stored work log keeps its status but not the Agent's words.
+    assert.equal(body.work_log.status, input.workLog.status);
+    assert.equal(JSON.stringify(body).includes(input.workLog.summary), false);
     assert.deepEqual(body.knowledge_usage, [{ item_id: 'entity-1', item_kind: 'entity', use_kind: 'applied' }]);
     assert.equal(Object.hasOwn(body, 'task_id'), false, 'The Provider derives the stable task identity.');
   }

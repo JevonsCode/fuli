@@ -10,7 +10,9 @@ import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { agentMemoryRecord, prepareProjectAgentMemory } from './project-agent-memory.js';
-import { internalCaptureSkip, normalizeTaskCaptures, taskCaptureInput, taskCaptureReceipt, taskCaptureReviewPaths, taskCaptureStatus } from './task-knowledge-routing.js';
+import { internalCaptureSkip, normalizeTaskCaptures, taskCaptureInput, taskCaptureReceipt, taskCaptureReviewPaths, taskCaptureStatus,
+  uncapturedCheckpoint } from './task-knowledge-routing.js';
+import { captureDecision, captureDisabled, taskCaptureScope } from './capture-decision.js';
 import { activeSealedWorkerRequest } from '../app/agent-request-context.js';
 import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
 import { checkpointHumanInteraction } from './checkpoint-human-interaction.js';
@@ -166,6 +168,7 @@ export async function checkpointTaskKnowledge(application, {
   if (remoteSessionId && task.sessionId !== remoteSessionId) {
     throw validationError('Task checkpoint belongs to another remote session');
   }
+  const captureCheck = captureDecision(application, taskCaptureScope(task));
   // experiences and remember are compact forms of one routed capture.
   if (experiences !== null || remember !== null) {
     if (capture || captureRouting !== null) throw validationError('Send experiences or remember, or a capture, not both');
@@ -238,7 +241,7 @@ export async function checkpointTaskKnowledge(application, {
   for (const batch of scopedInputs ?? []) application.validateCaptureSessionKnowledge(batch.input);
   // The Provider owns the full commit model and scope authorization. Validate
   // every scoped batch before claiming the checkpoint or advancing memory.
-  if (scopedInputs) await application.preflightPersonalKnowledgeCaptures(scopedInputs.map(batch => batch.input));
+  if (scopedInputs && captureCheck.allowed) await application.preflightPersonalKnowledgeCaptures(scopedInputs.map(batch => batch.input));
   let memoryResult = null;
   let memoryRequest = null;
   if (agentMemory) {
@@ -261,11 +264,12 @@ export async function checkpointTaskKnowledge(application, {
     else memoryRequest = { expected_revision: prepared.request.expected_revision,
       memory: prepared.request.memory };
   }
-  const checkpoint = { disposition, reason, fingerprint, captureStatus: null,
+  const recorded = { disposition, reason, fingerprint, captureStatus: null,
     ...(knowledgeUsage ? { knowledgeUsage } : {}),
     ...(task.projectAgentId ? { workLog: workLog ?? {
       status: agentMemory ? 'reported' : 'unreported', summary: reason
     } } : {}) };
+  const checkpoint = captureCheck.allowed ? recorded : uncapturedCheckpoint(recorded);
   const preparedTask = await application.taskContextRegistry.prepare(
     taskContextToken, checkpoint, sourceApplication, memoryRequest
   );
@@ -294,7 +298,7 @@ export async function checkpointTaskKnowledge(application, {
     reason,
     personal_project_id: task.personalProjectId,
     project_agent_id: task.projectAgentId ?? null,
-    capture: captureResult,
+    capture: captureResult ?? (captureCheck.allowed ? null : { route: 'disabled', ...captureDisabled(captureCheck) }),
     ...(preparedTask.checkpoint?.knowledgeUsageResult ? { knowledge_usage: preparedTask.checkpoint.knowledgeUsageResult } : {}),
     ...(captureResults ? { capture_status: captureStatus, capture_results: taskCaptureReviewPaths(application.config.personal.spaceId, captureResults) } : {}),
     ...(internalActivity ? { capture_status: captureStatus } : {}),

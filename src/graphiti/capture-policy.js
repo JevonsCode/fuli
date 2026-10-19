@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 
 // Capturing a client's sessions is separate from that client using FULI tools:
 // a disabled source still queries existing memory, it just adds nothing new.
+// This module stores the settings; capture-decision.js decides each write.
 export const CAPTURE_SOURCES = Object.freeze(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other']);
 
 const DEFAULT_POLICY = Object.freeze({
@@ -84,12 +85,6 @@ function validSources(value, ErrorType) {
     throw new ErrorType('Capture policy disabledSources must list distinct supported clients');
   }
   return [...value].sort();
-}
-
-// The effective policy for one client's capture; without a client, the global switch.
-export function capturePolicyFor(policy, sourceApplication = null) {
-  if (!policy.enabled || !sourceApplication || !policy.disabledSources?.includes(sourceApplication)) return policy;
-  return { ...policy, enabled: false, disabledFor: sourceApplication };
 }
 
 function writeAtomically(path, value) {

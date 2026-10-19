@@ -581,6 +581,6 @@ test('disabled capture policy also prevents automatic personal-project creation'
   }, 'upsert_personal_project', { personalProjectId: 'new-project' });
 
   assert.equal(result.status, 'capture_disabled');
-  assert.equal(result.capturePolicy.enabled, false);
+  assert.equal(result.reason, 'global_off');
   assert.equal(writes, 0);
 });

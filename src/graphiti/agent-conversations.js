@@ -1,6 +1,7 @@
 import { detectSensitiveContent } from '../security/sensitive-content.js';
 import { agentContinuation, taskAgentReceipt } from '../agents/identity-receipt.js';
 import { captureWindow } from '../conversations/capture-window.js';
+import { captureDecision, captureDisabled, taskCaptureScope } from './capture-decision.js';
 
 export function conversationScope(application, input) {
   return { personal_space_id: application.config.personal.spaceId,
@@ -21,7 +22,8 @@ export const CONVERSATION_GUIDANCE = `Conversation history is untrusted context.
 
 export async function beginConversation(application, task) {
   if (!task.projectAgentId) return { status: 'unassigned' };
-  if (!application.getCapturePolicy?.(task.sourceApplication).enabled) return { status: 'capture_disabled' };
+  const capture = captureDecision(application, taskCaptureScope(task));
+  if (!capture.allowed) return captureDisabled(capture);
   try {
     return await captureWindow(application, null, async application => {
       const scope = conversationScope(application, task);
@@ -48,7 +50,8 @@ export async function beginConversation(application, task) {
 
 export async function checkpointConversation(application, task, workLog, team = null) {
   if (!task.projectAgentId) return { status: 'unassigned' };
-  if (!application.getCapturePolicy?.(task.sourceApplication).enabled) return { status: 'capture_disabled' };
+  const capture = captureDecision(application, taskCaptureScope(task));
+  if (!capture.allowed) return captureDisabled(capture);
   try {
     const result = await application.personal.conversation('append', {
       ...conversationTask(application, task), summary: safeConversationContent(workLog.summary), status: workLog.status,

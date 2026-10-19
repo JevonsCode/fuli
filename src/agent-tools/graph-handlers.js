@@ -2,6 +2,7 @@ import { ApplicationError } from '../app/application-error.js';
 import { assertTestToolsEnabled } from '../app/test-tools.js';
 import { activeTestToolsEnabled } from '../app/agent-request-context.js';
 import { agentInterfaceCatalog } from './interface-catalog.js';
+import { captureDecision, captureDisabled } from '../graphiti/capture-decision.js';
 
 const HANDLERS = Object.freeze({
   get_judgment_policy: (app, input) => app.judgment.policy(input),
@@ -121,13 +122,11 @@ const HANDLERS = Object.freeze({
   }),
   review_human_knowledge_change: (app, input) => app.reviewHumanChange(input),
   list_knowledge_spaces: (app) => app.listKnowledgeSpaces(),
-  upsert_personal_project: (app, input) => captureGuard(app, () =>
-    app.upsertPersonalProject(input), input?.sourceApplication
-  ),
+  upsert_personal_project: (app, input) => captureGuard(app, { sourceApplication: input?.sourceApplication },
+    () => app.upsertPersonalProject(input)),
   list_personal_projects: (app, input) => app.listPersonalProjects(input),
-  upsert_project_agent: (app, input) => captureGuard(app, () =>
-    app.upsertProjectAgent(input), input?.sourceApplication
-  ),
+  upsert_project_agent: (app, input) => captureGuard(app, { sourceApplication: input?.sourceApplication,
+    personalProjectId: input?.personalProjectId ?? null }, () => app.upsertProjectAgent(input)),
   list_project_agents: (app, input) => app.listCurrentProjectAgents(input),
   get_project_agent: (app, input) => app.getProjectAgent(input),
   delete_project_agent: (app, input) => app.deleteProjectAgent(input),
@@ -273,12 +272,9 @@ export function dispatchGraphTool(app, name, input) {
   return handler(app, input);
 }
 
-function captureGuard(app, operation, sourceApplication = null) {
-  const capturePolicy = app.getCapturePolicy?.(sourceApplication) ?? { enabled: true, updatedAt: null };
-  if (capturePolicy.enabled) return operation();
-  return {
-    route: 'disabled',
-    status: 'capture_disabled',
-    capturePolicy
-  };
+// Agent-initiated project and Agent registration records what a session
+// established, so it follows the same capture decision as every other write.
+function captureGuard(app, scope, operation) {
+  const capture = captureDecision(app, scope);
+  return capture.allowed ? operation() : { route: 'disabled', ...captureDisabled(capture) };
 }

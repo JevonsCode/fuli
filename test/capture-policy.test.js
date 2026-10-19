@@ -6,11 +6,11 @@ import test from 'node:test';
 
 import {
   CapturePolicyStore,
-  capturePolicyFor,
   capturePolicyPathForRuntime
 } from '../src/graphiti/capture-policy.js';
 import { writeFileSync } from 'node:fs';
 import { checkpointConversation } from '../src/graphiti/agent-conversations.js';
+import { captureDecision } from '../src/graphiti/capture-decision.js';
 
 test('capture policy defaults to enabled and is shared across runtime processes', (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-capture-policy-'));
@@ -53,15 +53,14 @@ test('one client can stop being captured while every client keeps using FULI', (
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const path = join(directory, 'capture-policy.json');
   const store = new CapturePolicyStore(path, { now: () => '2026-10-18T00:00:00.000Z' });
-  const policy = store.update({ enabled: true, disabledSources: ['codex'] });
-  assert.deepEqual(policy.disabledSources, ['codex']);
-  assert.equal(capturePolicyFor(policy, 'codex').enabled, false);
-  assert.equal(capturePolicyFor(policy, 'codex').disabledFor, 'codex');
-  assert.equal(capturePolicyFor(policy, 'claude_code').enabled, true);
-  assert.equal(capturePolicyFor(policy).enabled, true);
+  const app = { getCapturePolicy: () => store.read() };
+  assert.deepEqual(store.update({ enabled: true, disabledSources: ['codex'] }).disabledSources, ['codex']);
+  assert.deepEqual(captureDecision(app, { sourceApplication: 'codex' }), { allowed: false, reason: 'client_off', layer: 'client' });
+  assert.equal(captureDecision(app, { sourceApplication: 'claude_code' }).allowed, true);
+  assert.equal(captureDecision(app).allowed, true);
   // A later global toggle keeps the per-client choice unless it is sent again.
   assert.deepEqual(store.update({ enabled: false }).disabledSources, ['codex']);
-  assert.equal(capturePolicyFor(store.read(), 'claude_code').enabled, false);
+  assert.equal(captureDecision(app, { sourceApplication: 'claude_code' }).reason, 'global_off');
   assert.throws(() => store.update({ enabled: true, disabledSources: ['unknown'] }), /distinct supported clients/);
   assert.throws(() => store.update({ enabled: true, disabledSources: ['codex', 'codex'] }), /distinct supported clients/);
 });
@@ -77,13 +76,13 @@ test('policies saved before per-client capture still capture every client', (t) 
 test('a disabled client saves no conversation while the others still do', async () => {
   const saved = [];
   const application = { config: { personal: { spaceId: 'space' } },
-    getCapturePolicy: source => capturePolicyFor({ enabled: true, disabledSources: ['codex'] }, source),
+    getCapturePolicy: () => ({ enabled: true, disabledSources: ['codex'] }),
     personal: { conversation: async (operation, input) => { saved.push(input.source_application); return { status: 'saved', conversation_id: 'c' }; },
       getProjectAgent: async () => ({ profile: { name: 'Lead' } }) } };
   const task = { token: 't', projectAgentId: 'lead', personalProjectId: 'p', sessionId: 's' };
   const log = { status: 'completed', summary: 'done' };
   assert.deepEqual(await checkpointConversation(application, { ...task, sourceApplication: 'codex' }, log),
-    { status: 'capture_disabled' });
+    { status: 'capture_disabled', reason: 'client_off', layer: 'client' });
   assert.equal((await checkpointConversation(application, { ...task, sourceApplication: 'claude_code' }, log)).status, 'saved');
   assert.deepEqual(saved, ['claude_code']);
 });

@@ -362,7 +362,8 @@ durable, evidence-backed batch; otherwise use `retain_nothing`. A prompt-fallbac
 same rule and writes through `capture_session_knowledge`. Personal preferences set the correct
 `profileAspect` and stable `attributes.preferenceKey`; project facts omit `profileAspect`. If
 automatic capture is disabled under Settings, writes return `capture_disabled` and no category is
-created.
+created. If the capture settings cannot be read, nothing is written either
+(`reason: policy_unavailable`); reading existing knowledge keeps working.
 
 Run these local contract tests to check that the README and project-path behavior still match the
 implementation:

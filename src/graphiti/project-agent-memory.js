@@ -1,6 +1,7 @@
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { renderAgentMemoryExport } from '../agents/directory-snapshots.js';
 import { detectSensitiveContent } from '../security/sensitive-content.js';
+import { captureDecision, captureDisabled } from './capture-decision.js';
 
 export function agentMemoryRecord(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
@@ -196,8 +197,9 @@ export async function prepareProjectAgentMemory(application, input) {
     throw new ApplicationError(ApplicationErrorCode.VALIDATION, 'Agent working memory contains credentials');
   }
   const agent = await requireAgentMemoryAccess(application, input);
-  const policy = application.getCapturePolicy?.(input.sourceApplication) ?? { enabled: true };
-  if (!policy.enabled) return { status: 'capture_disabled', capturePolicy: policy };
+  const capture = captureDecision(application, { sourceApplication: input.sourceApplication,
+    personalProjectId: input.personalProjectId ?? null, sessionId: input.sourceSessionId ?? null });
+  if (!capture.allowed) return captureDisabled(capture);
   return { agent, request: {
     personal_space_id: input.personalSpaceId,
     personal_project_id: input.personalProjectId ?? null,

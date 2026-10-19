@@ -110,6 +110,16 @@ export function internalCaptureSkip(origin) {
     guidance: 'A Provider-admitted sealed worker does not write personal preferences or project knowledge candidates. Nothing from this capture payload was persisted; the checkpoint, work log and memory are unaffected. Return results to the coordinator; a human may capture knowledge later through an ordinary task.' };
 }
 
+// With capture off the task still closes for its Stop hook, but the stored
+// checkpoint keeps no words from the session: its work log is later delivered
+// to the Agent as working context.
+const UNCAPTURED_SUMMARY = 'Capture was off for this task; FULI kept no summary.';
+
+export function uncapturedCheckpoint(checkpoint) {
+  return { ...checkpoint, reason: UNCAPTURED_SUMMARY,
+    ...(checkpoint.workLog ? { workLog: { status: checkpoint.workLog.status, summary: UNCAPTURED_SUMMARY } } : {}) };
+}
+
 export function taskCaptureStatus(receipts) {
   const disabled = receipts.filter(item => item.status === 'capture_disabled').length;
   if (disabled === receipts.length) return 'capture_disabled';

@@ -48,3 +48,36 @@ test('the Vue browser entry remains an orchestration layer', () => {
     'web/src/main.ts should only initialize Vue and application plugins'
   );
 });
+
+// rec#5 C1: one capture port decides every write. Settings surfaces may hand the
+// stored capture settings on whole (HTTP, MCP, console state) or forward the
+// reader (capture window); a call that names a client, inspects the result,
+// falls back to a default or keeps it for later decides a write outside the port.
+const CAPTURE_PORT = join('src', 'graphiti', 'capture-decision.js');
+const CAPTURE_SETTINGS_HANDOFF = /^getCapturePolicy(?:\(\)\s*(?=[,)}]|$)|\??\.bind\(|\s*:)/;
+
+function captureDecisionsOutsidePort(path, source) {
+  if (path === CAPTURE_PORT) return [];
+  return source.split(/\r?\n/).flatMap((line, index) => {
+    const offending = [...line.matchAll(/getCapturePolicy/g)].some(({ index: at }) => {
+      if (/^\s*getCapturePolicy\(\)\s*\{\s*$/.test(line)) return false;
+      if (/(?:const|let|var)\s+[\w$]+\s*=\s*[\w$.?]*$/.test(line.slice(0, at))) return true;
+      return !CAPTURE_SETTINGS_HANDOFF.test(line.slice(at));
+    }) || (line.includes('capturePolicyStore.read(') && line.trim() !== 'return this.capturePolicyStore.read();');
+    return offending ? [`- ${path}:${index + 1}: ${line.trim()}`] : [];
+  });
+}
+
+test('capture writes are decided only by the capture port', () => {
+  const offenders = sourceFiles('src').filter(path => extname(path) === '.js')
+    .flatMap(path => captureDecisionsOutsidePort(path, readFileSync(path, 'utf8')));
+  assert.deepEqual(offenders, [], `Ask captureDecision() from ${CAPTURE_PORT} instead:\n${offenders.join('\n')}`);
+  // The check must keep recognising the bypasses it exists for.
+  for (const bypass of [
+    "if (!app.getCapturePolicy?.('codex').enabled) return;",
+    'const policy = this.getCapturePolicy(sourceApplication);',
+    'const policy = app.getCapturePolicy();',
+    'const policy = app.getCapturePolicy?.() ?? { enabled: true };',
+    'if (this.capturePolicyStore.read().enabled) write();'
+  ]) assert.equal(captureDecisionsOutsidePort('src/example.js', bypass).length, 1, bypass);
+});
