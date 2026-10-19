@@ -5,6 +5,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query
 
+from .project_agent_dismissal_routes import register_project_agent_dismissal_routes
 from .project_agent_memory_routes import register_project_agent_memory_routes
 from .project_agent_occupation_models import ProjectAgentOccupationUpdate
 from .occupation_routes import register_occupation_routes
@@ -65,6 +66,7 @@ def register_project_agent_routes(
     """Attach Project Agent routes while keeping ``create_app`` orchestration small."""
 
     register_project_agent_memory_routes(application, store, Actor)
+    register_project_agent_dismissal_routes(application, store, Actor)
     register_occupation_routes(application, store, Actor)
     register_project_agent_worker_routes(application, store, Actor)
     notify_task_change = register_task_notification_routes(application, store, Actor)
@@ -146,13 +148,13 @@ def register_project_agent_routes(
         '/v1/project-agents/{agent_id}',
         response_model=ProjectAgentRecord,
     )
-    async def archive_project_agent(
+    async def archive_test_project_agent(
         agent_id: str,
         actor: Actor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
-        reason: Annotated[str, Query(min_length=1, max_length=2048)] = 'archived by user',
+        reason: Annotated[str, Query(min_length=1, max_length=2048)],
     ) -> ProjectAgentRecord:
-        return await store.archive_project_agent(
+        return await store.archive_test_project_agent(
             actor,
             personal_space_id,
             agent_id,

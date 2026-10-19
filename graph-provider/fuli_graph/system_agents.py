@@ -18,7 +18,11 @@ SYSTEM_JUDGMENT_AGENT_ID = 'employee.tonborg'
 SYSTEM_ASSISTANT_AGENT_ID = 'employee.assistant'
 # Upgrade only the former built-in copy; custom responsibilities are user data.
 LEGACY_ASSISTANT_NAME = 'Assistant'
-LEGACY_HR_RESPONSIBILITY = 'HR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录。'
+# Earlier built-in Bole copies, upgraded in place; any other text is the user's.
+LEGACY_HR_RESPONSIBILITIES = (
+    'HR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录。',
+    'AR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录。',
+)
 LEGACY_JUDGMENT_RESPONSIBILITY = '判断官：依照用户偏好审核日常事项、建议客户端和模型，保留判断依据与反馈。'
 
 
@@ -42,13 +46,17 @@ def hr_profile() -> ProjectAgentProfile:
     return ProjectAgentProfile(
         name='Bole',
         occupation_emoji='🔎',
-        responsibility='AR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录。',
+        responsibility=(
+            'AR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录；'
+            '在用户发起或同意时办理离职：先问理由，沉淀教训并留下交接。'
+        ),
         agent_type='hr',
-        work_kinds=['agent-recruitment', 'staffing-review'],
-        capabilities=['Agent 招募', '人员分布', '工作状态', '招募审计', 'fuli.employee:bole'],
+        work_kinds=['agent-recruitment', 'staffing-review', 'agent-dismissal'],
+        capabilities=['Agent 招募', '人员分布', '工作状态', '招募审计', 'Agent 离职', 'fuli.employee:bole'],
         initial_preferences=[
             '每次招募保留任务、原因、触发来源与时间线。',
             '只展示 Provider 已记录的人员状态，不推测未上报的工作。',
+            '不自己决定开除谁；没有用户给出的理由不办理离职。',
         ],
         status='active',
     )
@@ -108,7 +116,7 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
         stored = json.loads(rows[0]['profile_json'])
         upgrade_responsibility = (
             (agent_id == SYSTEM_HR_AGENT_ID
-             and stored.get('responsibility') == LEGACY_HR_RESPONSIBILITY)
+             and stored.get('responsibility') in LEGACY_HR_RESPONSIBILITIES)
             or (agent_id == SYSTEM_JUDGMENT_AGENT_ID
                 and stored.get('responsibility') == LEGACY_JUDGMENT_RESPONSIBILITY)
         )

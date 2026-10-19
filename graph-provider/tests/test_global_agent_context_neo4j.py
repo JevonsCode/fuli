@@ -1,7 +1,9 @@
 """Global identity, conversations and working notes against a disposable graph."""
 from uuid import uuid4
 import pytest
-from test_project_agent_memory_neo4j import fixture_settings, provider_client, seed_agent, write_payload
+from test_project_agent_memory_neo4j import (
+    dismiss_agent, fixture_settings, provider_client, seed_agent, write_payload,
+)
 
 
 @pytest.mark.asyncio
@@ -109,7 +111,6 @@ async def test_global_context_survives_assignment_and_remains_isolated():
             'name': 'Synthetic other space', 'kind': 'personal'})).json()['id']
         assert (await client.post('/v1/agent-conversations/query', json={**scope,
             'personal_space_id': other, 'conversation_id': cid, 'mode': 'events'})).status_code == 404
-        await client.delete('/v1/project-agents/engineer', params={
-            'personal_space_id': space, 'reason': 'Synthetic archive'})
+        assert (await dismiss_agent(client, space, 'engineer')).status_code == 200
         assert (await client.put('/v1/project-agents/engineer/memory', json=write_payload(
             space, personal_project_id=None, expected_revision=1))).status_code == 409

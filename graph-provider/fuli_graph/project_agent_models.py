@@ -180,7 +180,8 @@ class ProjectAgentUpsert(StrictModel):
     def require_dedicated_archive_operation(self):
         if self.profile.status == 'archived':
             raise ValueError(
-                'archive Project Agents through the dedicated archive operation'
+                'archive Project Agents through the dedicated archive operation: '
+                'dismissal with a reason'
             )
         return self
 
@@ -301,5 +302,7 @@ class ProjectAgentRecord(StrictModel):
     recruited_at: datetime | None = None
     recruitment_reason: str | None = None
     recruitment_source_application: SourceApplication | None = None
+    archived_at: datetime | None = None
+    archive_reason: str | None = None
     created_at: datetime
     updated_at: datetime
