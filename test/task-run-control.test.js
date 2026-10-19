@@ -28,6 +28,18 @@ test('stop revokes a running run once and reports a stopped run without touching
   await assert.rejects(stopProjectAgentTaskRun(app, { ...scope, runId: 'run-x' }), /not found/);
 });
 
+test('stop finds a run beyond the first history page', async () => {
+  const pages = { '': { runs: [{ run_id: 'run-1', state: 'closed' }], next_cursor: 'run-1', complete: false },
+    'run-1': { runs: [{ run_id: 'run-101', state: 'admitted' }], next_cursor: null, complete: true } };
+  const app = fakeApp({ runs: [{ run_id: 'run-101', state: 'admitted' }] });
+  app.personal.listProjectAgentTaskRuns = async input => { app.calls.push(['runs', input]); return pages[input.cursor ?? '']; };
+  const stopped = await stopProjectAgentTaskRun(app, { ...scope, runId: 'run-101' });
+  assert.equal(stopped.status, 'stopping');
+  assert.deepEqual(app.calls.filter(([name]) => name === 'runs').map(([, input]) => input.cursor ?? null), [null, 'run-1']);
+  const missing = stopProjectAgentTaskRun(app, { ...scope, runId: 'run-x' });
+  await assert.rejects(missing, error => error.status === 404 && error.code === 'task_run_not_found');
+});
+
 test('retry submits a failed task again as new work and keeps the old task untouched', async () => {
   const app = fakeApp({ task: { status: 'failed', title: 'Port tests', objective: 'Port the suite.', workKind: 'implementation',
     requiredCapabilities: ['testing'], leadAgentId: 'lead-1' } });
@@ -44,7 +56,22 @@ test('retry submits a failed task again as new work and keeps the old task untou
 test('only failed or cancelled tasks can be retried', async () => {
   for (const status of ['running', 'queued', 'completed', 'awaiting_review']) {
     const app = fakeApp({ task: { status, title: 't', objective: 'o', workKind: 'w', requiredCapabilities: [] } });
-    await assert.rejects(retryProjectAgentTask(app, scope), /Only a failed or cancelled task/);
+    await assert.rejects(retryProjectAgentTask(app, scope),
+      error => /Only a failed or cancelled task/.test(error.message) && error.status === 409);
     assert.equal(app.calls.some(([name]) => name === 'submit'), false);
   }
+});
+
+test('an Agent stop or retry in a grouped team needs the current host task context', async () => {
+  const app = fakeApp({ runs: [{ run_id: 'run-a', state: 'admitted' }],
+    task: { status: 'failed', title: 't', objective: 'o', workKind: 'w', requiredCapabilities: [] } });
+  app.personal.getProjectAgentCoordinationPolicy = async () => ({ team_lead_agent_id: 'lead', sub_teams: [{ lead_agent_id: 'sub' }] });
+  await assert.rejects(stopProjectAgentTaskRun(app, { ...scope, runId: 'run-a', agentInvocation: true }), /taskContextToken/);
+  assert.equal(app.calls.some(([name]) => name === 'revoke'), false);
+  await retryProjectAgentTask(app, { ...scope, agentInvocation: true, taskContextToken: 'fuli-task-1',
+    sourceApplication: 'codex', sourceSessionId: 'session-1' });
+  const [, submitted] = app.calls.find(([name]) => name === 'submit');
+  assert.deepEqual([submitted.agentInvocation, submitted.taskContextToken, submitted.sourceSessionId], [true, 'fuli-task-1', 'session-1']);
+  await retryProjectAgentTask(app, scope);
+  assert.equal(Object.hasOwn(app.calls.filter(([name]) => name === 'submit')[1][1], 'agentInvocation'), false);
 });
