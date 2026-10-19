@@ -717,6 +717,12 @@ class ProjectAgentTaskRouteResult(StrictModel):
     client_notice: str | None = None
 
 
+class ProjectAgentTaskLookup(StrictModel):
+    """The task a submit with one idempotency key created; None: it created none."""
+
+    task: ProjectAgentTaskRecord | None = None
+
+
 class ProjectAgentRecruitmentPolicyRecord(StrictModel):
     personal_space_id: str
     confirmation_mode: ProjectAgentRecruitmentConfirmationMode = 'automatic'

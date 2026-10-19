@@ -395,6 +395,12 @@ export class GraphitiProviderClient {
     if (limit !== null && limit !== undefined) query.set('limit', String(limit));
     return this.#request(`/v1/project-agent-tasks?${query}`);
   }
+  // The task a submit with this idempotency key created, or { task: null }.
+  findProjectAgentTaskByIdempotencyKey({ personalSpaceId, personalProjectId, idempotencyKey }) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId,
+      personal_project_id: personalProjectId, idempotency_key: idempotencyKey });
+    return this.#request(`/v1/project-agent-task-lookup?${query}`);
+  }
   viewProjectAgentTask(personalSpaceId, taskId, {
     personalProjectId = null,
     includeEvents = true

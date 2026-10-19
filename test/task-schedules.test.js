@@ -11,7 +11,8 @@ function fixture() {
   const app = {
     config: { personal: { spaceId: SPACE } },
     async submitProjectAgentTask(input) {
-      if (failSubmit) throw Object.assign(new Error('routing failed'), { code: 'synthetic_failure' });
+      // The Provider answered and refused the task, so nothing was created.
+      if (failSubmit) throw Object.assign(new Error('routing failed'), { code: 'synthetic_failure', status: 422 });
       submitted.push(input);
       const taskId = `task-${++nextId}`;
       statuses.set(taskId, input.start ? 'queued' : 'backlog');

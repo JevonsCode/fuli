@@ -1,4 +1,6 @@
 import { getJson, postJson } from '@/api/client'
+import { taskStatusLabel } from '@/features/project-agents/task-labels'
+import { t } from '@/i18n'
 
 // Scheduled project Agent tasks (F-P2-05 ⑥). The console routes share the
 // service behind the manage_project_agent_schedule tool, so both enforce the
@@ -7,7 +9,18 @@ import { getJson, postJson } from '@/api/client'
 export type ScheduleUnit = 'minutes' | 'hours' | 'days'
 export type StartMode = 'queue' | 'backlog'
 
-export interface ScheduleRun { slot: string; taskId: string | null; status: string; createdAt: string }
+// One slot's claim. Until the Provider's task ID is saved, status is claimed
+// (a submit is in flight or being recovered), unresolved (its outcome could not
+// be checked yet) or failed (no task was created).
+export interface ScheduleRun {
+  slot: string
+  taskId: string | null
+  status: string
+  createdAt: string
+  leaseExpiresAt: string | null
+  progress: string | null
+  lastError: string | null
+}
 
 export interface TaskSchedule {
   id: string
@@ -54,6 +67,17 @@ export function scheduleState(schedule: TaskSchedule): 'enabled' | 'paused' | 'c
   if (schedule.pausedReason === 'paused_by_user') return 'paused'
   if (schedule.pausedReason === 'circuit_open') return 'circuit_open'
   return 'unknown'
+}
+
+// A slot with a task shows the task's own status. Without one, a claim is never
+// shown as working: it is being created while its first submit holds a live
+// lease, recovering after a crash or a retry, or unknown until checked again.
+export function scheduleRunLabel(run: ScheduleRun, now = Date.now()): string {
+  if (run.taskId) return taskStatusLabel(run.status)
+  if (run.status === 'unresolved') return t('taskSchedules.runState.unresolved')
+  if (run.status !== 'claimed') return t('taskSchedules.runState.submitFailed')
+  const leaseLive = run.leaseExpiresAt !== null && Date.parse(run.leaseExpiresAt) > now
+  return t(leaseLive && run.progress === 'submitting' ? 'taskSchedules.runState.creating' : 'taskSchedules.runState.recovering')
 }
 
 export function listSchedules(spaceId: string, signal?: AbortSignal) {
