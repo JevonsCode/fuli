@@ -57,7 +57,7 @@ for (const [mode, code] of [['cancel', 'cancelled'], ['timeout', 'wake_timeout']
       await result;
       // A failing old implementation still has an asynchronous kill in flight.
       await waitFor(() => pids.every((pid) => !alive(pid)));
-      await rm(cwd, { recursive: true, force: true });
+      await rm(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
 }
@@ -106,6 +106,6 @@ test('confirmed cleanup waits for a slow-exiting descendant, not only the leader
     controller.abort('fixture_cleanup');
     await result;
     await waitFor(() => pids.every((pid) => !alive(pid)));
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
