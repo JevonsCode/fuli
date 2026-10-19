@@ -36,8 +36,11 @@ export async function transcriptLifecycle({ application, runtimeConfigPath, inpu
             // Keep the guard and old cursor retryable; task context is valid.
           }
         }
+        // A capture that ran out of time is retried at the next hook; say so,
+        // so a report can tell a slow import from unverified history.
         return withTranscriptNotice(output, { ...sync, status: 'partial',
-          reason: 'Unverified native transcript history was not imported; preferences and current task context are available' });
+          reason: sync.code === 'transcript_capture_timeout' ? sync.reason
+            : 'Unverified native transcript history was not imported; preferences and current task context are available' });
       }
       const entryGuard = sync.status === 'capture_disabled' ? null : guard;
       if (entry && entryGuard?.value) await entryGuard.write({ ...entryGuard.value, phase: 'beginning' });

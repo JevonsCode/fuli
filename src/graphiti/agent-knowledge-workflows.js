@@ -81,7 +81,7 @@ export async function beginTaskContext(application, {
     entryVia: 'hook' });
 }
 
-export const STOP_HOOK_CHECKPOINT_GUIDANCE = 'Call checkpoint_task_knowledge for capture candidates, experiences, agentMemory changes, knowledgeUsage, collaborators or a meaningful workLog, including failures and blockers. Otherwise a routine fallback closes at the next entry in the same native session as retain_nothing/reported; the Stop hook closes hook-delivered tasks. Copy the current entry receipt when skipping checkpoint; never claim unsaved memory was saved.';
+export const STOP_HOOK_CHECKPOINT_GUIDANCE = 'Call checkpoint_task_knowledge for capture candidates, experiences, agentMemory changes, knowledgeUsage, collaborators or a meaningful workLog, including failures and blockers. Otherwise the Stop hook closes the task as retain_nothing/reported; without a Stop hook a routine fallback closes at the next entry in the same native session. Copy the current entry receipt when skipping checkpoint; never claim unsaved memory was saved.';
 
 // Hook and model fallback share the same durable lifecycle. A stored pending
 // task is not evidence that its context reached this model turn.
