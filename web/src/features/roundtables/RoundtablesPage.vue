@@ -20,42 +20,66 @@ import RoundtableSeats from './RoundtableSeats.vue'
 
 // A read-only record of Agents talking to each other: chat rooms (agent_chat,
 // 1:1 or groups) and asks between Agents (message_agent). People only watch.
-// Each source and the open detail load and fail on their own, so one failure
-// never hides another source or claims the list is empty. On a phone the list
-// and the detail take turns; going back restores the list position and focus.
+// Each source and the open detail load and fail on their own: one failure
+// never hides another source or claims the list is empty, and a deep-linked
+// detail shows even when the lists are empty or still loading. A change of
+// space or lost access clears everything shown; late responses are dropped.
 const route = useRoute()
 const router = useRouter()
 const consoleStore = useConsoleStore()
+const spaceId = computed(() => consoleStore.activePersonalSpace?.id ?? '')
 const selectedId = computed(() => typeof route.params.threadId === 'string' ? route.params.threadId : '')
 const selectedChatId = computed(() => typeof route.params.chatId === 'string' ? route.params.chatId : '')
 const hasSelection = computed(() => Boolean(selectedId.value || selectedChatId.value))
 const CLIENTS: Record<string, string> = { claude_code: 'Claude Code', codex: 'Codex', cursor: 'Cursor', claude: 'Claude', other: 'Agent' }
+const SLOW_MS = 8_000
+const LIMIT_MS = 30_000
 let stopped = false
+// Bumped when the space changes or access is lost; any response from before is dropped.
+let scope = 0
 
-// Asks: the latest 50 only, refreshed every 5 seconds while visible.
+const denied = (cause: unknown) => cause instanceof ApiError && (cause.status === 401 || cause.status === 403)
+const inaccessible = (cause: unknown) => cause instanceof ApiError && [400, 401, 403, 404, 422].includes(cause.status)
+// Every read has a deadline; a hanging request ends as a failure the person can retry.
+function deadline<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), LIMIT_MS)
+  return run(controller.signal).finally(() => clearTimeout(timer))
+}
+
+// Asks: the latest 50 only, refreshed every 5 seconds while visible, one read at a time.
 const threads = ref<RoundtableThreadSummary[]>([])
 const threadsState = ref<'loading' | 'ready' | 'failed'>('loading')
 const threadsStale = ref(false)
+let threadsReading = false
 async function loadThreads() {
+  if (threadsReading) return
+  threadsReading = true
+  const current = scope
   try {
-    const list = await listThreads()
-    if (stopped) return
+    const list = await deadline(signal => listThreads(signal))
+    if (stopped || current !== scope) return
     threads.value = list.threads
     threadsState.value = 'ready'
     threadsStale.value = false
-  } catch {
-    if (stopped) return
+  } catch (cause) {
+    if (stopped || current !== scope) return
+    if (denied(cause)) { revoke(); return }
     if (threadsState.value === 'ready') threadsStale.value = true
     else threadsState.value = 'failed'
+  } finally {
+    threadsReading = false
   }
 }
 
 // Chat rooms: local and remote pages each follow their own cursor.
 const chats = ref<RoundtableChatRoom[]>([])
 const chatsState = ref<'loading' | 'ready' | 'failed'>('loading')
-const chatsUnavailable = ref(false)
+const remoteUnavailable = ref(false)
+const liveDisconnected = ref(false)
 const localNext = ref<string | null>(null)
 const remoteNext = ref<string | null>(null)
+const localMoreFailed = ref(false)
 const loadingMoreChats = ref(false)
 let chatListGeneration = 0
 // A refreshed first page keeps later pages already loaded below it.
@@ -67,38 +91,47 @@ function mergeRooms(rooms: RoundtableChatRoom[], firstPage: boolean) {
 }
 async function loadChats() {
   const generation = ++chatListGeneration
+  const current = scope
   try {
-    const page = await listChats()
-    if (stopped || generation !== chatListGeneration) return
+    const page = await deadline(signal => listChats({}, signal))
+    if (stopped || generation !== chatListGeneration || current !== scope) return
     const firstLoad = chatsState.value !== 'ready'
     mergeRooms(page.chats, true)
     if (firstLoad) {
       localNext.value = page.hasMore ? page.nextChat ?? null : null
       remoteNext.value = page.remotePage?.hasMore ? page.remotePage.nextChat : null
     }
-    chatsUnavailable.value = Boolean(page.remoteUnavailable)
+    remoteUnavailable.value = Boolean(page.remoteUnavailable)
     chatsState.value = 'ready'
-  } catch {
-    if (!stopped && generation === chatListGeneration && chatsState.value === 'loading') chatsState.value = 'failed'
+  } catch (cause) {
+    if (stopped || generation !== chatListGeneration || current !== scope) return
+    if (denied(cause)) { revoke(); return }
+    if (chatsState.value === 'loading') chatsState.value = 'failed'
   }
 }
 async function loadMoreChats() {
   if (loadingMoreChats.value) return
   loadingMoreChats.value = true
+  localMoreFailed.value = false
+  const current = scope
   try {
     for (const transport of ['local', 'peer'] as const) {
       const cursor = transport === 'local' ? localNext.value : remoteNext.value
       if (!cursor) continue
       try {
-        const page = await listChats({ transport, afterChat: cursor })
-        if (stopped) return
+        const page = await deadline(signal => listChats({ transport, afterChat: cursor }, signal))
+        if (stopped || current !== scope) return
         mergeRooms(page.chats, false)
         // A cursor that does not move would loop; stop rather than refetch it.
         const next = page.hasMore && page.nextChat && page.nextChat !== cursor ? page.nextChat : null
         if (transport === 'local') localNext.value = next
         else remoteNext.value = next
-      } catch {
-        if (transport === 'peer') chatsUnavailable.value = true
+      } catch (cause) {
+        if (current !== scope) return
+        if (denied(cause)) { revoke(); return }
+        // The failed source keeps its cursor, so the same page can be read again.
+        if (transport === 'local') localMoreFailed.value = true
+        else remoteUnavailable.value = true
       }
     }
   } finally {
@@ -106,36 +139,50 @@ async function loadMoreChats() {
   }
 }
 
-// The open detail. A newer route always wins over a late response.
+// The open detail. A newer route or scope always wins over a late response.
 const thread = ref<RoundtableThread | null>(null)
 const room = ref<RoundtableChatPage | null>(null)
 const detailState = ref<'idle' | 'loading' | 'ready' | 'missing' | 'failed'>('idle')
+const detailSlow = ref(false)
 const detailStale = ref(false)
 const loadingLater = ref(false)
 const laterFailed = ref(false)
+const laterStuck = ref(false)
 const newMessages = ref(false)
 let detailGeneration = 0
-const inaccessible = (cause: unknown) => cause instanceof ApiError && [400, 401, 403, 404, 422].includes(cause.status)
-async function loadDetail() {
-  const generation = ++detailGeneration
+let slowTimer: ReturnType<typeof setTimeout> | undefined
+function resetDetail() {
+  detailGeneration += 1
+  clearTimeout(slowTimer)
   thread.value = null
   room.value = null
+  detailSlow.value = false
   detailStale.value = false
   laterFailed.value = false
+  laterStuck.value = false
   newMessages.value = false
+}
+async function loadDetail() {
+  resetDetail()
+  const generation = detailGeneration
   if (!hasSelection.value) { detailState.value = 'idle'; return }
   detailState.value = 'loading'
+  slowTimer = setTimeout(() => { if (generation === detailGeneration) detailSlow.value = true }, SLOW_MS)
   try {
     if (selectedId.value) {
-      const value = await readThread(selectedId.value)
+      const value = await deadline(signal => readThread(selectedId.value, signal))
       if (generation === detailGeneration) thread.value = value
     } else {
-      const value = await readChat(selectedChatId.value)
+      const value = await deadline(signal => readChat(selectedChatId.value, 0, signal))
       if (generation === detailGeneration) room.value = value
     }
     if (generation === detailGeneration) { detailState.value = 'ready'; void focusDetailTitle() }
   } catch (cause) {
-    if (generation === detailGeneration) detailState.value = inaccessible(cause) ? 'missing' : 'failed'
+    if (generation !== detailGeneration) return
+    if (denied(cause)) { revoke(); return }
+    detailState.value = inaccessible(cause) ? 'missing' : 'failed'
+  } finally {
+    if (generation === detailGeneration) { clearTimeout(slowTimer); detailSlow.value = false }
   }
 }
 async function refreshThreadDetail() {
@@ -143,10 +190,11 @@ async function refreshThreadDetail() {
   if (!id || detailState.value !== 'ready') return
   const generation = detailGeneration
   try {
-    const value = await readThread(id)
+    const value = await deadline(signal => readThread(id, signal))
     if (generation === detailGeneration) { thread.value = value; detailStale.value = false }
   } catch (cause) {
     if (generation !== detailGeneration) return
+    if (denied(cause)) { revoke(); return }
     if (inaccessible(cause)) { thread.value = null; detailState.value = 'missing' }
     else detailStale.value = true
   }
@@ -160,43 +208,112 @@ async function loadLater() {
   loadingLater.value = true
   laterFailed.value = false
   try {
-    const next = await readChat(current.chatId, current.nextAfter)
+    const next = await deadline(signal => readChat(current.chatId, current.nextAfter, signal))
     if (generation !== detailGeneration) return
-    room.value = appendChatPage(current, next)
+    const merged = appendChatPage(current, next)
+    // A cursor that did not move cannot reach more messages; stop offering it.
+    laterStuck.value = next.hasMore && next.nextAfter <= current.nextAfter
+    room.value = laterStuck.value ? { ...merged, hasMore: false } : merged
     newMessages.value = false
   } catch (cause) {
     if (generation !== detailGeneration) return
+    if (denied(cause)) { revoke(); return }
     if (inaccessible(cause)) { room.value = null; detailState.value = 'missing' }
     else laterFailed.value = true
   } finally {
     loadingLater.value = false
   }
 }
+// A change signal checks the open room; a room with more pages to read is only
+// marked, so loaded pages are never replaced.
 async function chatChanged(chatId?: string) {
   void loadChats()
   if (!room.value || (chatId && chatId !== room.value.chatId)) return
   if (room.value.hasMore) { newMessages.value = true; return }
   await loadLater()
 }
+// A reconnect always re-checks access to the open room, even with pages left.
+async function reconnected() {
+  liveDisconnected.value = false
+  void loadChats()
+  if (!room.value) return
+  const generation = detailGeneration
+  const current = room.value
+  try {
+    const next = await deadline(signal => readChat(current.chatId, current.nextAfter, signal))
+    if (generation !== detailGeneration) return
+    if (current.hasMore) newMessages.value = next.messages.length > 0 || newMessages.value
+    else room.value = appendChatPage(current, next)
+  } catch (cause) {
+    if (generation !== detailGeneration) return
+    if (denied(cause)) revoke()
+    else if (inaccessible(cause)) { room.value = null; detailState.value = 'missing' }
+  }
+}
 
-// Phone navigation: remember where the person was, and return them there.
+// Lost access or a new space: nothing from before stays on the page.
+const accessNotice = ref(false)
+function clearAll() {
+  scope += 1
+  chatListGeneration += 1
+  resetDetail()
+  threads.value = []
+  chats.value = []
+  localNext.value = null
+  remoteNext.value = null
+  localMoreFailed.value = false
+  threadsStale.value = false
+  memory = null
+}
+function revoke() {
+  clearAll()
+  accessNotice.value = true
+  threadsState.value = 'failed'
+  chatsState.value = 'failed'
+  detailState.value = hasSelection.value ? 'missing' : 'idle'
+}
+function reloadAll() {
+  clearAll()
+  accessNotice.value = false
+  threadsState.value = 'loading'
+  chatsState.value = 'loading'
+  void loadThreads()
+  void loadChats()
+  void loadDetail()
+}
+
+// Phone navigation: remember the card and its place in the scrolling list,
+// and return the person there. Memory lives only in this page, never in storage.
 const listElement = ref<HTMLElement | null>(null)
-let memory: { key: string; scrollY: number; listScroll: number } | null = null
+let memory: { key: string; anchor: string | null; offset: number; scrollTop: number; scrollY: number } | null = null
+const itemsElement = () => listElement.value?.querySelector<HTMLElement>('.ui-split-items') ?? null
 function remember(key: string) {
-  memory = { key, scrollY: window.scrollY, listScroll: listElement.value?.scrollTop ?? 0 }
+  const container = itemsElement()
+  const items = [...(container?.querySelectorAll<HTMLElement>('[data-roundtable-key]') ?? [])]
+  const top = container?.getBoundingClientRect().top ?? 0
+  const anchor = items.find(item => item.getBoundingClientRect().bottom > top) ?? null
+  memory = { key, anchor: anchor?.dataset.roundtableKey ?? null, offset: anchor ? anchor.getBoundingClientRect().top - top : 0,
+    scrollTop: container?.scrollTop ?? 0, scrollY: window.scrollY }
 }
 async function focusDetailTitle() {
   await nextTick()
   document.querySelector<HTMLElement>('[data-roundtable-detail-title]')?.focus({ preventScroll: true })
 }
+const byKey = (key: string) => [...document.querySelectorAll<HTMLElement>('[data-roundtable-key]')].find(item => item.dataset.roundtableKey === key)
 async function restoreList() {
   const saved = memory
   if (!saved) return
   await nextTick()
-  if (listElement.value) listElement.value.scrollTop = saved.listScroll
+  const container = itemsElement()
+  // The first visible card keeps its offset even if items were added above it.
+  const anchor = saved.anchor ? byKey(saved.anchor) : undefined
+  if (container) {
+    container.scrollTop = anchor && container.contains(anchor)
+      ? anchor.offsetTop - container.offsetTop - saved.offset
+      : saved.scrollTop
+  }
   window.scrollTo?.(0, saved.scrollY)
-  const link = [...document.querySelectorAll<HTMLElement>('[data-roundtable-key]')].find(item => item.dataset.roundtableKey === saved.key)
-  ;(link ?? document.querySelector<HTMLElement>('[data-roundtable-list-head]'))?.focus({ preventScroll: true })
+  ;(byKey(saved.key) ?? document.querySelector<HTMLElement>('[data-roundtable-list-head]'))?.focus({ preventScroll: true })
 }
 // Back returns to the list this page came from; a deep link replaces itself
 // with the list instead of leaving the site.
@@ -206,14 +323,19 @@ function back() {
   else void router.replace({ path: '/roundtables', query: route.query })
 }
 
-const loadingList = computed(() => threadsState.value === 'loading' && chatsState.value === 'loading')
+const listLoading = computed(() => threadsState.value === 'loading' && chatsState.value === 'loading')
 const empty = computed(() => threadsState.value === 'ready' && chatsState.value === 'ready' && !threads.value.length && !chats.value.length)
 const hasMoreChats = computed(() => Boolean(localNext.value || remoteNext.value))
+// A wide screen shows a thread's participants open; a phone keeps them folded.
+const wide = typeof window !== 'undefined' && window.matchMedia ? !window.matchMedia('(max-width: 860px)').matches : true
+const subjectOpen = ref(false)
 
 watch([selectedId, selectedChatId], (_current, previous) => {
+  subjectOpen.value = false
   void loadDetail()
   if (!hasSelection.value && (previous?.[0] || previous?.[1])) void restoreList()
 })
+watch(spaceId, (current, previous) => { if (previous && current !== previous) reloadAll() })
 let timer: ReturnType<typeof setInterval> | undefined
 let stopChatUpdates = () => {}
 onMounted(() => {
@@ -225,16 +347,16 @@ onMounted(() => {
     if (document.visibilityState === 'visible') { void loadThreads(); void refreshThreadDetail() }
   }, 5000)
 })
-watch(() => consoleStore.activePersonalSpace?.id, (spaceId, _old, cleanup) => {
-  if (!spaceId) return
-  stopChatUpdates = subscribeChatUpdates(spaceId, {
+watch(spaceId, (id, _old, cleanup) => {
+  if (!id) return
+  stopChatUpdates = subscribeChatUpdates(id, {
     chatChanged: update => { void chatChanged(update?.chatId) },
-    reconnected: () => { void chatChanged() },
-    unavailable: () => { chatsUnavailable.value = true },
+    reconnected: () => { void reconnected() },
+    unavailable: () => { liveDisconnected.value = true },
   })
   cleanup(stopChatUpdates)
 }, { immediate: true })
-onBeforeUnmount(() => { stopped = true; detailGeneration++; chatListGeneration++; stopChatUpdates(); clearInterval(timer) })
+onBeforeUnmount(() => { stopped = true; scope += 1; resetDetail(); chatListGeneration++; stopChatUpdates(); clearInterval(timer) })
 
 const split = computed(() => splitThread(thread.value?.messages ?? []))
 const seats = computed(() => tableSeats(thread.value?.messages ?? [], split.value.pending))
@@ -252,23 +374,39 @@ function time(value: string) {
   const date = new Date(value)
   return Number.isNaN(date.valueOf()) ? '' : new Intl.DateTimeFormat(currentLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date)
 }
+// An unknown status keeps its recorded value and says it is unknown.
+function statusLabel(status: string) {
+  const key = `roundtable.status.${status}`
+  const label = t(key)
+  return label === key ? t('roundtable.statusUnknown', { status }) : label
+}
 function delivery(message: RoundtableMessage) {
   if (message.kind === 'reply') {
     const mode = message.via?.split(':')[1]
     return mode && ['resume', 'new', 'inbox'].includes(mode) ? t(`roundtable.via.${mode}`) : ''
   }
   if (message.via === 'peer' && message.status === 'sent') return t('roundtable.status.remoteQueued')
-  return message.status === 'answered' ? '' : t(`roundtable.status.${message.status}`)
+  return message.status === 'answered' ? '' : statusLabel(message.status)
 }
 // Cleanup after a wake is shown unless it was confirmed; it is never assumed clean.
 const cleanupWarning = (message: RoundtableMessage) => message.cleanup && message.cleanup.status !== 'confirmed'
   ? t('roundtable.cleanupUnconfirmed', { code: message.cleanup.code ?? message.cleanup.status }) : ''
+// A request that ended without an answer was sent to someone; it is no longer waiting.
+const requestTitle = (message: RoundtableMessage, closed: boolean) => t(closed ? 'roundtable.sentTo' : 'roundtable.waitingOn',
+  { name: message.to.name ?? t('roundtable.unknownAgent') })
+const record = (value: unknown) => JSON.stringify(value, null, 2)
 </script>
 
 <template>
   <section class="view roundtable-view">
-    <GrowthLoading v-if="loadingList" :label="t('roundtable.loading')" />
-    <div v-else-if="empty" class="roundtable-empty">
+    <p v-if="accessNotice" role="alert" class="roundtable-notice">
+      {{ t('roundtable.accessLost') }} <UiButton size="sm" variant="ghost" @click="reloadAll">{{ t('roundtable.retry') }}</UiButton>
+    </p>
+    <p v-if="liveDisconnected" role="status" class="roundtable-notice">
+      {{ t('roundtable.liveDisconnected') }} <UiButton size="sm" variant="ghost" @click="reconnected">{{ t('roundtable.reload') }}</UiButton>
+    </p>
+    <GrowthLoading v-if="listLoading && !hasSelection" :label="t('roundtable.loading')" />
+    <div v-else-if="empty && !hasSelection" class="roundtable-empty">
       <strong>{{ t('roundtable.empty') }}</strong>
       <p>{{ t('roundtable.emptyHint') }}</p>
     </div>
@@ -278,9 +416,13 @@ const cleanupWarning = (message: RoundtableMessage) => message.cleanup && messag
           <span role="status" tabindex="-1" data-roundtable-list-head>{{ t('roundtable.count', { count: threads.length + chats.length }) }}</span>
           <span v-if="threads.length" class="ui-meta">{{ t('roundtable.latest50') }}</span>
         </div>
-        <p v-if="chatsUnavailable" class="ui-meta roundtable-remote-note">{{ t('roundtable.chat.remoteUnavailable') }}</p>
-        <p v-if="chatsState === 'failed'" class="ui-meta roundtable-remote-note" role="status">{{ t('roundtable.chatsFailed') }}</p>
-        <p v-if="threadsState === 'failed'" class="roundtable-remote-note" role="alert">
+        <GrowthLoading v-if="listLoading" variant="compact" :label="t('roundtable.loading')" />
+        <p v-else-if="empty" class="ui-meta roundtable-remote-note">{{ t('roundtable.empty') }}</p>
+        <p v-if="remoteUnavailable" class="ui-meta roundtable-remote-note">{{ t('roundtable.chat.remoteUnavailable') }}</p>
+        <p v-if="chatsState === 'failed' && !accessNotice" class="ui-meta roundtable-remote-note" role="status">
+          {{ t('roundtable.chatsFailed') }} <UiButton size="sm" variant="ghost" @click="loadChats">{{ t('roundtable.retry') }}</UiButton>
+        </p>
+        <p v-if="threadsState === 'failed' && !accessNotice" class="roundtable-remote-note" role="alert">
           {{ t('roundtable.threadsFailed') }} <UiButton size="sm" variant="ghost" @click="loadThreads">{{ t('roundtable.retry') }}</UiButton>
         </p>
         <p v-else-if="threadsStale" class="ui-meta roundtable-remote-note" role="status">{{ t('roundtable.stale') }}</p>
@@ -306,6 +448,7 @@ const cleanupWarning = (message: RoundtableMessage) => message.cleanup && messag
             <span v-if="item.last" class="ui-split-item-sub">{{ item.last.from }}：{{ item.last.body }}</span>
           </RouterLink>
         </div>
+        <p v-if="localMoreFailed" role="alert" class="roundtable-remote-note">{{ t('roundtable.localMoreFailed') }}</p>
         <UiButton v-if="hasMoreChats" class="roundtable-more" size="sm" variant="ghost" :busy="loadingMoreChats"
           :busy-label="t('roundtable.loadingMoreChats')" data-roundtable-more-chats @click="loadMoreChats">{{ t('roundtable.loadMoreChats') }}</UiButton>
       </nav>
@@ -313,10 +456,20 @@ const cleanupWarning = (message: RoundtableMessage) => message.cleanup && messag
       <article v-if="thread" class="ui-split-detail" data-testid="roundtable-timeline">
         <header class="ui-split-detail-head">
           <UiIconButton class="roundtable-back" icon="chevron-left" :label="t('roundtable.back')" data-roundtable-back @click="back" />
-          <h2 tabindex="-1" data-roundtable-detail-title>{{ thread.subject }}</h2>
+          <h2 tabindex="-1" class="roundtable-subject" :class="{ 'is-open': subjectOpen }" data-roundtable-detail-title>{{ thread.subject }}</h2>
+          <button v-if="thread.subject.length > 60" type="button" class="roundtable-subject-toggle" :aria-expanded="subjectOpen" @click="subjectOpen = !subjectOpen">
+            {{ subjectOpen ? t('roundtable.subjectLess') : t('roundtable.subjectFull') }}
+          </button>
           <p class="ui-list-meta">{{ t('roundtable.messages', { count: thread.messages.length }) }} · {{ time(thread.createdAt) }}</p>
           <p v-if="detailStale" class="ui-meta" role="status">{{ t('roundtable.stale') }}</p>
-          <RoundtableSeats :seats="seats" />
+          <details class="roundtable-seats" :open="wide">
+            <summary>{{ t('roundtable.participants', { count: seats.length }) }}</summary>
+            <RoundtableSeats :seats="seats" />
+          </details>
+          <details class="roundtable-record" data-roundtable-record>
+            <summary>{{ t('roundtable.recordDetails') }}</summary>
+            <pre tabindex="0">{{ record({ id: thread.id, projectId: thread.projectId, createdAt: thread.createdAt }) }}</pre>
+          </details>
         </header>
         <div class="ui-split-detail-body">
           <p v-if="!thread.messages.length" class="ui-meta">{{ t('roundtable.emptyConversation') }}</p>
@@ -336,6 +489,7 @@ const cleanupWarning = (message: RoundtableMessage) => message.cleanup && messag
                     <p class="roundtable-body">{{ message.body }}</p>
                     <p v-if="delivery(message)" class="roundtable-delivery">{{ delivery(message) }}</p>
                     <p v-if="cleanupWarning(message)" class="roundtable-cleanup" data-roundtable-cleanup>{{ cleanupWarning(message) }}</p>
+                    <details class="roundtable-record"><summary>{{ t('roundtable.recordDetails') }}</summary><pre tabindex="0">{{ record(message) }}</pre></details>
                   </div>
                 </li>
               </template>
@@ -347,27 +501,31 @@ const cleanupWarning = (message: RoundtableMessage) => message.cleanup && messag
             <ul>
               <li v-for="message in [...split.pending, ...split.unanswered]" :key="message.id" class="roundtable-request" :class="{ 'is-closed': split.unanswered.includes(message) }" data-roundtable-request>
                 <p class="roundtable-byline">
-                  <strong>{{ t('roundtable.waitingOn', { name: message.to.name ?? t('roundtable.unknownAgent') }) }}</strong>
+                  <strong>{{ requestTitle(message, split.unanswered.includes(message)) }}</strong>
                   <span class="ui-meta">{{ t('roundtable.askedBy', { name: message.from.name ?? t('roundtable.unknownAgent') }) }}</span>
                   <time class="ui-meta" :datetime="message.createdAt">{{ time(message.createdAt) }}</time>
                 </p>
                 <p class="roundtable-request-state">{{ delivery(message) }}<template v-if="reason(message)"> · {{ reason(message) }}</template></p>
                 <p v-if="cleanupWarning(message)" class="roundtable-cleanup" data-roundtable-cleanup>{{ cleanupWarning(message) }}</p>
                 <p class="roundtable-body">{{ message.body }}</p>
+                <details class="roundtable-record"><summary>{{ t('roundtable.recordDetails') }}</summary><pre tabindex="0">{{ record(message) }}</pre></details>
               </li>
             </ul>
           </section>
         </div>
       </article>
-      <RoundtableRoom v-else-if="room" :room="room" :time="time" :loading-later="loadingLater" :later-failed="laterFailed" @later="loadLater">
+      <RoundtableRoom v-else-if="room" :room="room" :time="time" :loading-later="loadingLater" :later-failed="laterFailed" :later-stuck="laterStuck"
+        :new-messages="newMessages" :wide="wide" @later="loadLater">
         <template #back>
           <UiIconButton class="roundtable-back" icon="chevron-left" :label="t('roundtable.back')" data-roundtable-back @click="back" />
-          <p v-if="newMessages" class="ui-meta" role="status">{{ t('roundtable.newMessages') }}</p>
         </template>
       </RoundtableRoom>
       <div v-else-if="hasSelection" class="ui-split-detail roundtable-detail-state">
         <UiIconButton class="roundtable-back" icon="chevron-left" :label="t('roundtable.back')" data-roundtable-back @click="back" />
-        <GrowthLoading v-if="detailState === 'loading'" variant="compact" :label="t('roundtable.detailLoading')" />
+        <template v-if="detailState === 'loading'">
+          <GrowthLoading variant="compact" :label="t('roundtable.detailLoading')" />
+          <p v-if="detailSlow" role="status" class="ui-meta">{{ t('roundtable.detailSlow') }}</p>
+        </template>
         <p v-else-if="detailState === 'missing'" role="alert">{{ t('roundtable.detailMissing') }}</p>
         <p v-else-if="detailState === 'failed'" role="alert">
           {{ t('roundtable.loadFailed') }} <UiButton size="sm" variant="ghost" @click="loadDetail">{{ t('roundtable.retry') }}</UiButton>
@@ -383,6 +541,7 @@ const cleanupWarning = (message: RoundtableMessage) => message.cleanup && messag
 .roundtable-empty { max-width: 520px; margin: 12vh auto 0; text-align: center; }
 .roundtable-empty strong { font-size: 16px; font-weight: 600; }
 .roundtable-empty p { margin-top: 8px; color: var(--color-muted); }
+.roundtable-notice { margin: 0 0 8px; font-size: 13px; }
 .roundtable-section + .roundtable-section { margin-top: 24px; }
 .roundtable-waiting { color: var(--color-warning); font-weight: 600; }
 .roundtable-remote-note { margin: 8px 16px 0; }
@@ -390,6 +549,11 @@ const cleanupWarning = (message: RoundtableMessage) => message.cleanup && messag
 .roundtable-back { display: none; }
 .roundtable-detail-state { display: grid; align-content: start; gap: 12px; padding: 16px; }
 .roundtable-cleanup { margin-top: 6px; color: var(--color-warning); font-size: 12px; font-weight: 600; }
+.roundtable-subject { overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.roundtable-subject.is-open { display: block; -webkit-line-clamp: unset; }
+.roundtable-subject-toggle { justify-self: start; padding: 0; border: 0; background: none; color: var(--color-accent); font-size: 12px; cursor: pointer; }
+.roundtable-seats summary, .roundtable-record summary { cursor: pointer; color: var(--color-muted); font-size: 12px; }
+.roundtable-record pre { overflow: auto; max-height: 240px; margin: 4px 0 0; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .roundtable-section h3 { margin: 0 0 12px; color: var(--color-muted); font-size: 13px; font-weight: 600; }
 .roundtable-section ol, .roundtable-section ul { margin: 0; padding: 0; list-style: none; display: grid; align-content: start; gap: 18px; }
 .roundtable-request { display: grid; gap: 6px; max-width: 760px; padding: 12px 14px; border: 1px dashed var(--color-border-strong, var(--color-border)); border-radius: 12px; }
@@ -406,14 +570,14 @@ const cleanupWarning = (message: RoundtableMessage) => message.cleanup && messag
 .roundtable-body { padding: 12px 14px; border: 1px solid var(--color-border); border-radius: 4px 12px 12px 12px; background: var(--color-bg); color: var(--color-ink); font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .roundtable-message.is-reply .roundtable-body { background: var(--color-surface); }
 .roundtable-delivery { margin-top: 6px; color: var(--color-faint); font-size: 12px; }
-.ui-split-detail-head h2 { overflow-wrap: anywhere; }
 .ui-split-detail-head h2:focus { outline: none; }
 .ui-split-detail-head h2:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 /* Phone: the list and the detail take turns; the hidden one leaves the layout,
-   the tab order and the accessibility tree. */
+   the tab order and the accessibility tree. The list uses the full height. */
 @media (max-width: 860px) {
   .roundtable-layout.has-selection .roundtable-list { display: none; }
   .roundtable-layout:not(.has-selection) .ui-split-placeholder { display: none; }
+  .roundtable-layout:not(.has-selection) .roundtable-list { max-height: none; flex: 1 1 auto; border-bottom: 0; }
   .roundtable-back { display: inline-flex; width: 44px; height: 44px; margin: 0 0 4px -8px; }
   .roundtable-message.is-reply { margin-left: 16px; }
 }

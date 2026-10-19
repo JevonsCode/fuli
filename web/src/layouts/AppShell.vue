@@ -30,7 +30,8 @@ const destination = computed(() => activeDestination(destinations.value, route.p
 const section = computed(() => activeSection(destination.value, route.path))
 // On a section's own page the tabs already name it, so the heading names the
 // destination (对话 beside 圆桌 | 待决策) instead of repeating the active tab.
-const title = computed(() => route.path === '/preferences' ? t('routes.preferences.title') : destination.value && (destination.value.sections.length > 1) && section.value?.to === route.path
+// A selected conversation keeps the 对话 heading; only the conversation title changes.
+const title = computed(() => route.path === '/preferences' ? t('routes.preferences.title') : destination.value && (destination.value.sections.length > 1) && (section.value?.to === route.path || route.path.startsWith('/roundtables/'))
   ? t(`shell.destinations.${destination.value.key}`)
   : routeMetaText(route.meta.title, 'routes.overview.title'))
 const dedicatedWorkspace = computed(() => route.meta.dedicatedWorkspace === true)
