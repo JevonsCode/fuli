@@ -36,3 +36,30 @@ test('Claude Code honours an explicit binary before searching PATH', () => {
   assert.equal(claudeCodeWake.resolveCommand({ env: { FULI_CLAUDE_BIN: '/opt/claude' }, which, platform: 'linux' }), '/opt/claude');
   assert.equal(claudeCodeWake.resolveCommand({ env: {}, which, platform: 'linux' }), '/usr/bin/claude');
 });
+
+test('a delegated Claude Code wake binds its named session before the client starts', async () => {
+  const { wakeAgent } = await import('../src/agent-roundtable/wake.js');
+  const order = [];
+  let launchArgs = null;
+  const answer = await wakeAgent({ client: 'claude_code', sessionId: 'cc-session-1', cwd: '/work/app', prompt: 'Question',
+    delegationToken: 'x'.repeat(43), env: { FULI_CLAUDE_BIN: '/opt/claude' },
+    onSession: async session => { order.push(['bound', session]); },
+    run: async (_command, args, { onEvent }) => {
+      launchArgs = args;
+      const planned = args[args.indexOf('--session-id') + 1];
+      order.push(['started', planned]);
+      onEvent({ type: 'system', subtype: 'init', session_id: planned });
+      return { code: 0, stdout: [JSON.stringify({ type: 'system', subtype: 'init', session_id: planned }),
+        JSON.stringify({ type: 'result', result: 'Answer' })].join('\n') };
+    } });
+  const planned = launchArgs[launchArgs.indexOf('--session-id') + 1];
+  assert.match(planned, /^[0-9a-f-]{36}$/);
+  assert.deepEqual(launchArgs.slice(-5), ['--resume', 'cc-session-1', '--fork-session', '--session-id', planned]);
+  assert.deepEqual(order, [['bound', planned], ['started', planned]], 'bound once, before the start');
+  assert.deepEqual(answer, { body: 'Answer', sessionId: planned });
+
+  await assert.rejects(wakeAgent({ client: 'claude_code', cwd: '/work/app', prompt: 'Question', delegationToken: 'x'.repeat(43),
+    env: { FULI_CLAUDE_BIN: '/opt/claude' }, onSession: async () => {},
+    run: async (_command, _args, { onEvent }) => { onEvent({ type: 'system', subtype: 'init', session_id: 'another-session-1' }); return { code: 0, stdout: '' }; } }),
+  { code: 'session_mismatch' });
+});
