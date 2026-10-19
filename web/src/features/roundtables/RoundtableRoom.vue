@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { t } from '@/i18n'
 import UiButton from '@/ui/UiButton.vue'
 import type { RoundtableChatPage } from './roundtable-api'
 import { chatRoomName } from './roundtable-model'
+import { gapToEnd, scrollToEnd, TAIL_FOLLOW_PX } from './roundtable-scroll'
 import RoundtableSeats from './RoundtableSeats.vue'
 
 // One Agent chat room, read-only: who is in it and what they said, in order.
-// New messages are announced, never pulled in under the reader's eyes.
+// A reader at the end follows new messages; anywhere else they are announced
+// with a jump to the first one, never pulled in under the reader's eyes.
 const props = defineProps<{
   room: RoundtableChatPage
   time: (value: string) => string
@@ -30,8 +32,41 @@ const sender = (address: string) => byAddress.value.get(address)
 const senderName = (address: string) => sender(address)?.name ?? t('roundtable.unknownAgent')
 const initial = (address: string) => senderName(address).trim().slice(0, 1).toUpperCase()
 const record = (value: unknown) => JSON.stringify(value, null, 2)
-const roomRecord = computed(() => record({ chatId: props.room.chatId, kind: props.room.kind, createdAt: props.room.createdAt,
-  members: props.room.members }))
+// The full record as returned, without repeating the messages shown below it.
+const roomRecord = computed(() => { const { messages: _messages, ...rest } = props.room; return record(rest) })
+
+const body = ref<HTMLElement | null>(null)
+const unseen = ref<{ id: string; count: number } | null>(null)
+let jumpAfterLoad = false
+function show(id: string) {
+  const target = [...(body.value?.querySelectorAll<HTMLElement>('[data-message-id]') ?? [])].find(item => item.dataset.messageId === id)
+  target?.scrollIntoView?.({ block: 'start' })
+  target?.focus({ preventScroll: true })
+}
+// Measured before the new messages render: was the reader at the end?
+watch(() => props.room.messages.length, async (length, previous) => {
+  const first = props.room.messages[previous]
+  if (!previous || length <= previous || !first) return
+  const following = gapToEnd(body.value) <= TAIL_FOLLOW_PX
+  const jump = jumpAfterLoad
+  jumpAfterLoad = false
+  await nextTick()
+  if (jump) { unseen.value = null; show(first.messageId) }
+  else if (following && !unseen.value) scrollToEnd(body.value)
+  else unseen.value = { id: unseen.value?.id ?? first.messageId, count: (unseen.value?.count ?? 0) + length - previous }
+})
+function jumpToUnseen() {
+  const target = unseen.value
+  unseen.value = null
+  if (target) show(target.id)
+}
+function later() {
+  jumpAfterLoad = Boolean(props.newMessages)
+  emit('later')
+}
+const reachedEnd = () => { if (unseen.value && gapToEnd(body.value) <= TAIL_FOLLOW_PX) unseen.value = null }
+onMounted(() => document.addEventListener('scroll', reachedEnd, { capture: true, passive: true }))
+onBeforeUnmount(() => document.removeEventListener('scroll', reachedEnd, { capture: true }))
 </script>
 
 <template>
@@ -53,9 +88,10 @@ const roomRecord = computed(() => record({ chatId: props.room.chatId, kind: prop
         <pre tabindex="0">{{ roomRecord }}</pre>
       </details>
     </header>
-    <div class="ui-split-detail-body">
+    <div ref="body" class="ui-split-detail-body">
       <ol v-if="room.messages.length" class="roundtable-chat-messages">
-        <li v-for="message in room.messages" :key="message.messageId" class="roundtable-chat-message" data-roundtable-chat-message>
+        <li v-for="message in room.messages" :key="message.messageId" class="roundtable-chat-message" tabindex="-1"
+          :data-message-id="message.messageId" data-roundtable-chat-message>
           <span class="roundtable-chat-avatar" :style="agentIdentityStyle(sender(message.from)?.agentId ?? null)" aria-hidden="true">{{ initial(message.from) }}</span>
           <div class="roundtable-chat-bubble">
             <p class="roundtable-chat-byline">
@@ -72,7 +108,10 @@ const roomRecord = computed(() => record({ chatId: props.room.chatId, kind: prop
       <p v-if="laterStuck" role="status" class="ui-meta roundtable-chat-more" data-roundtable-later-stuck>{{ t('roundtable.laterStuck') }}</p>
       <p v-if="newMessages" role="status" class="roundtable-chat-more" data-roundtable-new-messages>{{ t('roundtable.newMessages') }}</p>
       <UiButton v-if="room.hasMore || newMessages" class="roundtable-chat-more" size="sm" variant="ghost" :busy="loadingLater"
-        :busy-label="t('roundtable.loadingLater')" data-roundtable-later @click="emit('later')">{{ t('roundtable.laterMessages') }}</UiButton>
+        :busy-label="t('roundtable.loadingLater')" data-roundtable-later @click="later">
+        {{ newMessages ? t('roundtable.loadNewMessages') : t('roundtable.laterMessages') }}</UiButton>
+      <UiButton v-if="unseen" class="roundtable-chat-jump" size="sm" data-roundtable-jump @click="jumpToUnseen">
+        {{ t('roundtable.jumpToNew', { count: unseen.count }) }}</UiButton>
     </div>
   </article>
 </template>
@@ -89,4 +128,7 @@ const roomRecord = computed(() => record({ chatId: props.room.chatId, kind: prop
 .roundtable-chat-byline strong { font-size: 14px; font-weight: 600; }
 .roundtable-chat-body { margin: 0; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: 4px 12px 12px 12px; background: var(--color-bg); color: var(--color-ink); font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .roundtable-chat-more { margin-top: 16px; }
+.roundtable-chat-jump { position: sticky; bottom: 12px; display: flex; margin: 16px auto 0; }
+.roundtable-chat-message:focus { outline: none; }
+.roundtable-chat-message:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 4px; border-radius: 8px; }
 </style>

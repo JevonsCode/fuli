@@ -15,6 +15,8 @@ import {
   type RoundtableChatPage, type RoundtableChatRoom, type RoundtableMessage, type RoundtablePerson, type RoundtableThread, type RoundtableThreadSummary,
 } from './roundtable-api'
 import { chatRoomName, splitThread, tableSeats } from './roundtable-model'
+import { createReadScope, serialQueue, singleFlight, type ReadScope } from './roundtable-reads'
+import { rememberPlace, restorePlace, type ListPlace } from './roundtable-scroll'
 import RoundtableRoom from './RoundtableRoom.vue'
 import RoundtableSeats from './RoundtableSeats.vue'
 
@@ -23,7 +25,7 @@ import RoundtableSeats from './RoundtableSeats.vue'
 // Each source and the open detail load and fail on their own: one failure
 // never hides another source or claims the list is empty, and a deep-linked
 // detail shows even when the lists are empty or still loading. A change of
-// space or lost access clears everything shown; late responses are dropped.
+// space or lost access clears everything shown and ends every read in flight.
 const route = useRoute()
 const router = useRouter()
 const consoleStore = useConsoleStore()
@@ -33,55 +35,45 @@ const selectedChatId = computed(() => typeof route.params.chatId === 'string' ? 
 const hasSelection = computed(() => Boolean(selectedId.value || selectedChatId.value))
 const CLIENTS: Record<string, string> = { claude_code: 'Claude Code', codex: 'Codex', cursor: 'Cursor', claude: 'Claude', other: 'Agent' }
 const SLOW_MS = 8_000
-const LIMIT_MS = 30_000
-let stopped = false
-// Bumped when the space changes or access is lost; any response from before is dropped.
-let scope = 0
 
 const denied = (cause: unknown) => cause instanceof ApiError && (cause.status === 401 || cause.status === 403)
 const inaccessible = (cause: unknown) => cause instanceof ApiError && [400, 401, 403, 404, 422].includes(cause.status)
-// Every read has a deadline; a hanging request ends as a failure the person can retry.
-function deadline<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), LIMIT_MS)
-  return run(controller.signal).finally(() => clearTimeout(timer))
-}
+// Lists belong to the space; the detail to the open conversation. Ending a
+// scope aborts its reads, so nothing from before can land or keep a button busy.
+let lists: ReadScope = createReadScope()
+let detail: ReadScope = createReadScope()
 
 // Asks: the latest 50 only, refreshed every 5 seconds while visible, one read at a time.
 const threads = ref<RoundtableThreadSummary[]>([])
 const threadsState = ref<'loading' | 'ready' | 'failed'>('loading')
 const threadsStale = ref(false)
-let threadsReading = false
-async function loadThreads() {
-  if (threadsReading) return
-  threadsReading = true
-  const current = scope
+const loadThreads = singleFlight(async () => {
+  const scope = lists
   try {
-    const list = await deadline(signal => listThreads(signal))
-    if (stopped || current !== scope) return
+    const list = await scope.read(signal => listThreads(signal))
+    if (scope !== lists) return
     threads.value = list.threads
     threadsState.value = 'ready'
     threadsStale.value = false
   } catch (cause) {
-    if (stopped || current !== scope) return
+    if (scope !== lists) return
     if (denied(cause)) { revoke(); return }
     if (threadsState.value === 'ready') threadsStale.value = true
     else threadsState.value = 'failed'
-  } finally {
-    threadsReading = false
   }
-}
+})
 
-// Chat rooms: local and remote pages each follow their own cursor.
+// Chat rooms: local and remote pages each follow their own cursor. Change
+// signals that arrive during a read ask for one more read, never a parallel one.
 const chats = ref<RoundtableChatRoom[]>([])
 const chatsState = ref<'loading' | 'ready' | 'failed'>('loading')
+const chatsStale = ref(false)
 const remoteUnavailable = ref(false)
-const liveDisconnected = ref(false)
 const localNext = ref<string | null>(null)
 const remoteNext = ref<string | null>(null)
 const localMoreFailed = ref(false)
 const loadingMoreChats = ref(false)
-let chatListGeneration = 0
+let chatsOk = false
 // A refreshed first page keeps later pages already loaded below it.
 function mergeRooms(rooms: RoundtableChatRoom[], firstPage: boolean) {
   const fresh = new Map(rooms.map(item => [item.chatId, item]))
@@ -89,12 +81,12 @@ function mergeRooms(rooms: RoundtableChatRoom[], firstPage: boolean) {
   chats.value = firstPage ? [...rooms, ...kept] : [...chats.value.map(item => fresh.get(item.chatId) ?? item),
     ...rooms.filter(item => !chats.value.some(existing => existing.chatId === item.chatId))]
 }
-async function loadChats() {
-  const generation = ++chatListGeneration
-  const current = scope
+const loadChats = singleFlight(async () => {
+  const scope = lists
+  chatsOk = false
   try {
-    const page = await deadline(signal => listChats({}, signal))
-    if (stopped || generation !== chatListGeneration || current !== scope) return
+    const page = await scope.read(signal => listChats({}, signal))
+    if (scope !== lists) return
     const firstLoad = chatsState.value !== 'ready'
     mergeRooms(page.chats, true)
     if (firstLoad) {
@@ -103,31 +95,34 @@ async function loadChats() {
     }
     remoteUnavailable.value = Boolean(page.remoteUnavailable)
     chatsState.value = 'ready'
+    chatsStale.value = false
+    chatsOk = true
   } catch (cause) {
-    if (stopped || generation !== chatListGeneration || current !== scope) return
+    if (scope !== lists) return
     if (denied(cause)) { revoke(); return }
-    if (chatsState.value === 'loading') chatsState.value = 'failed'
+    if (chatsState.value === 'ready') chatsStale.value = true
+    else chatsState.value = 'failed'
   }
-}
+})
 async function loadMoreChats() {
   if (loadingMoreChats.value) return
+  const scope = lists
   loadingMoreChats.value = true
   localMoreFailed.value = false
-  const current = scope
   try {
     for (const transport of ['local', 'peer'] as const) {
       const cursor = transport === 'local' ? localNext.value : remoteNext.value
       if (!cursor) continue
       try {
-        const page = await deadline(signal => listChats({ transport, afterChat: cursor }, signal))
-        if (stopped || current !== scope) return
+        const page = await scope.read(signal => listChats({ transport, afterChat: cursor }, signal))
+        if (scope !== lists) return
         mergeRooms(page.chats, false)
         // A cursor that does not move would loop; stop rather than refetch it.
         const next = page.hasMore && page.nextChat && page.nextChat !== cursor ? page.nextChat : null
         if (transport === 'local') localNext.value = next
         else remoteNext.value = next
       } catch (cause) {
-        if (current !== scope) return
+        if (scope !== lists) return
         if (denied(cause)) { revoke(); return }
         // The failed source keeps its cursor, so the same page can be read again.
         if (transport === 'local') localMoreFailed.value = true
@@ -135,7 +130,7 @@ async function loadMoreChats() {
       }
     }
   } finally {
-    loadingMoreChats.value = false
+    if (scope === lists) loadingMoreChats.value = false
   }
 }
 
@@ -149,80 +144,103 @@ const loadingLater = ref(false)
 const laterFailed = ref(false)
 const laterStuck = ref(false)
 const newMessages = ref(false)
-let detailGeneration = 0
+// Every read of the open room runs in order and starts from what the previous
+// one left, so a late answer can never take back messages already shown.
+let inRoomOrder = serialQueue()
+let tailQueued = false
 let slowTimer: ReturnType<typeof setTimeout> | undefined
 function resetDetail() {
-  detailGeneration += 1
+  detail.end()
+  detail = createReadScope()
+  inRoomOrder = serialQueue()
+  tailQueued = false
   clearTimeout(slowTimer)
   thread.value = null
   room.value = null
   detailSlow.value = false
   detailStale.value = false
+  loadingLater.value = false
   laterFailed.value = false
   laterStuck.value = false
   newMessages.value = false
 }
 async function loadDetail() {
   resetDetail()
-  const generation = detailGeneration
+  const scope = detail
   if (!hasSelection.value) { detailState.value = 'idle'; return }
   detailState.value = 'loading'
-  slowTimer = setTimeout(() => { if (generation === detailGeneration) detailSlow.value = true }, SLOW_MS)
+  slowTimer = setTimeout(() => { if (scope === detail) detailSlow.value = true }, SLOW_MS)
   try {
     if (selectedId.value) {
-      const value = await deadline(signal => readThread(selectedId.value, signal))
-      if (generation === detailGeneration) thread.value = value
+      const id = selectedId.value
+      const value = await scope.read(signal => readThread(id, signal))
+      if (scope === detail) thread.value = value
     } else {
-      const value = await deadline(signal => readChat(selectedChatId.value, 0, signal))
-      if (generation === detailGeneration) room.value = value
+      const id = selectedChatId.value
+      const value = await scope.read(signal => readChat(id, 0, signal))
+      if (scope === detail) room.value = value
     }
-    if (generation === detailGeneration) { detailState.value = 'ready'; void focusDetailTitle() }
+    if (scope === detail) { detailState.value = 'ready'; void focusDetailTitle() }
   } catch (cause) {
-    if (generation !== detailGeneration) return
+    if (scope !== detail) return
     if (denied(cause)) { revoke(); return }
     detailState.value = inaccessible(cause) ? 'missing' : 'failed'
   } finally {
-    if (generation === detailGeneration) { clearTimeout(slowTimer); detailSlow.value = false }
+    if (scope === detail) { clearTimeout(slowTimer); detailSlow.value = false }
   }
 }
-async function refreshThreadDetail() {
+// A timed refresh is skipped while the previous one is still reading.
+const refreshThreadDetail = singleFlight(async () => {
   const id = selectedId.value
-  if (!id || detailState.value !== 'ready') return
-  const generation = detailGeneration
+  const scope = detail
+  if (!id || !thread.value) return
   try {
-    const value = await deadline(signal => readThread(id, signal))
-    if (generation === detailGeneration) { thread.value = value; detailStale.value = false }
+    const value = await scope.read(signal => readThread(id, signal))
+    if (scope === detail) { thread.value = value; detailStale.value = false }
   } catch (cause) {
-    if (generation !== detailGeneration) return
+    if (scope !== detail) return
     if (denied(cause)) { revoke(); return }
     if (inaccessible(cause)) { thread.value = null; detailState.value = 'missing' }
     else detailStale.value = true
   }
-}
-// Later messages come on request. A change signal reads once from the end of
-// what is loaded; it never replaces the loaded pages with the first page.
-async function loadLater() {
-  if (!room.value || loadingLater.value) return
-  const generation = detailGeneration
+})
+// Reads the open room from the end of what is shown. "check" only confirms
+// access and notices new messages when unread pages are still between.
+async function readRoomTail(mode: 'append' | 'check'): Promise<boolean> {
+  const scope = detail
   const current = room.value
+  if (!current) return true
   loadingLater.value = true
   laterFailed.value = false
   try {
-    const next = await deadline(signal => readChat(current.chatId, current.nextAfter, signal))
-    if (generation !== detailGeneration) return
+    const next = await scope.read(signal => readChat(current.chatId, current.nextAfter, signal))
+    if (scope !== detail || room.value !== current) return false
+    if (mode === 'check' && current.hasMore) {
+      if (next.messages.length) newMessages.value = true
+      return true
+    }
     const merged = appendChatPage(current, next)
     // A cursor that did not move cannot reach more messages; stop offering it.
     laterStuck.value = next.hasMore && next.nextAfter <= current.nextAfter
     room.value = laterStuck.value ? { ...merged, hasMore: false } : merged
     newMessages.value = false
+    return true
   } catch (cause) {
-    if (generation !== detailGeneration) return
-    if (denied(cause)) { revoke(); return }
-    if (inaccessible(cause)) { room.value = null; detailState.value = 'missing' }
+    if (scope !== detail) return false
+    if (denied(cause)) revoke()
+    else if (inaccessible(cause)) { room.value = null; detailState.value = 'missing' }
     else laterFailed.value = true
+    return false
   } finally {
-    loadingLater.value = false
+    if (scope === detail) loadingLater.value = false
   }
+}
+// Later messages on request, or after a change signal; signals that arrive
+// while one read waits its turn share that read.
+function loadLater() {
+  if (tailQueued) return Promise.resolve(true)
+  tailQueued = true
+  return inRoomOrder(() => { tailQueued = false; return readRoomTail('append') })
 }
 // A change signal checks the open room; a room with more pages to read is only
 // marked, so loaded pages are never replaced.
@@ -232,38 +250,43 @@ async function chatChanged(chatId?: string) {
   if (room.value.hasMore) { newMessages.value = true; return }
   await loadLater()
 }
-// A reconnect always re-checks access to the open room, even with pages left.
+// The live feed counts as back only after a real read succeeds; until then the
+// disconnect notice stays, with what failed and a way to retry.
+const liveDisconnected = ref(false)
+const reloadFailed = ref(false)
+const reconnecting = ref(false)
 async function reconnected() {
-  liveDisconnected.value = false
-  void loadChats()
-  if (!room.value) return
-  const generation = detailGeneration
-  const current = room.value
+  const scope = lists
+  reconnecting.value = true
   try {
-    const next = await deadline(signal => readChat(current.chatId, current.nextAfter, signal))
-    if (generation !== detailGeneration) return
-    if (current.hasMore) newMessages.value = next.messages.length > 0 || newMessages.value
-    else room.value = appendChatPage(current, next)
-  } catch (cause) {
-    if (generation !== detailGeneration) return
-    if (denied(cause)) revoke()
-    else if (inaccessible(cause)) { room.value = null; detailState.value = 'missing' }
+    await loadChats()
+    const roomOk = room.value ? await inRoomOrder(() => readRoomTail('check')) : true
+    if (scope !== lists) return
+    const ok = chatsOk && roomOk
+    reloadFailed.value = !ok
+    if (ok) liveDisconnected.value = false
+  } finally {
+    if (scope === lists) reconnecting.value = false
   }
 }
 
 // Lost access or a new space: nothing from before stays on the page.
 const accessNotice = ref(false)
 function clearAll() {
-  scope += 1
-  chatListGeneration += 1
+  lists.end()
+  lists = createReadScope()
   resetDetail()
   threads.value = []
   chats.value = []
   localNext.value = null
   remoteNext.value = null
   localMoreFailed.value = false
+  loadingMoreChats.value = false
   threadsStale.value = false
-  memory = null
+  chatsStale.value = false
+  reloadFailed.value = false
+  reconnecting.value = false
+  place = null
 }
 function revoke() {
   clearAll()
@@ -282,38 +305,20 @@ function reloadAll() {
   void loadDetail()
 }
 
-// Phone navigation: remember the card and its place in the scrolling list,
-// and return the person there. Memory lives only in this page, never in storage.
+// Phone navigation: remember the first visible card and its offset, and return
+// the person there. Memory lives only in this page, never in storage.
 const listElement = ref<HTMLElement | null>(null)
-let memory: { key: string; anchor: string | null; offset: number; scrollTop: number; scrollY: number } | null = null
-const itemsElement = () => listElement.value?.querySelector<HTMLElement>('.ui-split-items') ?? null
-function remember(key: string) {
-  const container = itemsElement()
-  const items = [...(container?.querySelectorAll<HTMLElement>('[data-roundtable-key]') ?? [])]
-  const top = container?.getBoundingClientRect().top ?? 0
-  const anchor = items.find(item => item.getBoundingClientRect().bottom > top) ?? null
-  memory = { key, anchor: anchor?.dataset.roundtableKey ?? null, offset: anchor ? anchor.getBoundingClientRect().top - top : 0,
-    scrollTop: container?.scrollTop ?? 0, scrollY: window.scrollY }
-}
+let place: ListPlace | null = null
+function remember(key: string) { place = rememberPlace(listElement.value, key) }
 async function focusDetailTitle() {
   await nextTick()
   document.querySelector<HTMLElement>('[data-roundtable-detail-title]')?.focus({ preventScroll: true })
 }
-const byKey = (key: string) => [...document.querySelectorAll<HTMLElement>('[data-roundtable-key]')].find(item => item.dataset.roundtableKey === key)
 async function restoreList() {
-  const saved = memory
+  const saved = place
   if (!saved) return
   await nextTick()
-  const container = itemsElement()
-  // The first visible card keeps its offset even if items were added above it.
-  const anchor = saved.anchor ? byKey(saved.anchor) : undefined
-  if (container) {
-    container.scrollTop = anchor && container.contains(anchor)
-      ? anchor.offsetTop - container.offsetTop - saved.offset
-      : saved.scrollTop
-  }
-  window.scrollTo?.(0, saved.scrollY)
-  ;(byKey(saved.key) ?? document.querySelector<HTMLElement>('[data-roundtable-list-head]'))?.focus({ preventScroll: true })
+  await restorePlace(listElement.value, saved, () => document.querySelector<HTMLElement>('[data-roundtable-list-head]'))
 }
 // Back returns to the list this page came from; a deep link replaces itself
 // with the list instead of leaving the site.
@@ -327,7 +332,10 @@ const listLoading = computed(() => threadsState.value === 'loading' && chatsStat
 const empty = computed(() => threadsState.value === 'ready' && chatsState.value === 'ready' && !threads.value.length && !chats.value.length)
 const hasMoreChats = computed(() => Boolean(localNext.value || remoteNext.value))
 // A wide screen shows a thread's participants open; a phone keeps them folded.
-const wide = typeof window !== 'undefined' && window.matchMedia ? !window.matchMedia('(max-width: 860px)').matches : true
+// It follows the breakpoint when the window is resized.
+const narrowQuery = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(max-width: 860px)') : null
+const wide = ref(!narrowQuery?.matches)
+const followBreakpoint = (event: MediaQueryListEvent) => { wide.value = !event.matches }
 const subjectOpen = ref(false)
 
 watch([selectedId, selectedChatId], (_current, previous) => {
@@ -342,9 +350,10 @@ onMounted(() => {
   void loadThreads()
   void loadChats()
   void loadDetail()
+  narrowQuery?.addEventListener?.('change', followBreakpoint)
   // Legacy execution asks have their own status lifecycle. Chat uses SSE only.
   timer = setInterval(() => {
-    if (document.visibilityState === 'visible') { void loadThreads(); void refreshThreadDetail() }
+    if (document.visibilityState === 'visible') { void loadThreads(false); void refreshThreadDetail(false) }
   }, 5000)
 })
 watch(spaceId, (id, _old, cleanup) => {
@@ -356,7 +365,14 @@ watch(spaceId, (id, _old, cleanup) => {
   })
   cleanup(stopChatUpdates)
 }, { immediate: true })
-onBeforeUnmount(() => { stopped = true; scope += 1; resetDetail(); chatListGeneration++; stopChatUpdates(); clearInterval(timer) })
+onBeforeUnmount(() => {
+  lists.end()
+  resetDetail()
+  detail.end()
+  stopChatUpdates()
+  clearInterval(timer)
+  narrowQuery?.removeEventListener?.('change', followBreakpoint)
+})
 
 const split = computed(() => splitThread(thread.value?.messages ?? []))
 const seats = computed(() => tableSeats(thread.value?.messages ?? [], split.value.pending))
@@ -395,6 +411,8 @@ const cleanupWarning = (message: RoundtableMessage) => message.cleanup && messag
 const requestTitle = (message: RoundtableMessage, closed: boolean) => t(closed ? 'roundtable.sentTo' : 'roundtable.waitingOn',
   { name: message.to.name ?? t('roundtable.unknownAgent') })
 const record = (value: unknown) => JSON.stringify(value, null, 2)
+// The full record as returned, without repeating the messages shown below it.
+const threadRecord = computed(() => { if (!thread.value) return ''; const { messages: _messages, ...rest } = thread.value; return record(rest) })
 </script>
 
 <template>
@@ -402,8 +420,9 @@ const record = (value: unknown) => JSON.stringify(value, null, 2)
     <p v-if="accessNotice" role="alert" class="roundtable-notice">
       {{ t('roundtable.accessLost') }} <UiButton size="sm" variant="ghost" @click="reloadAll">{{ t('roundtable.retry') }}</UiButton>
     </p>
-    <p v-if="liveDisconnected" role="status" class="roundtable-notice">
-      {{ t('roundtable.liveDisconnected') }} <UiButton size="sm" variant="ghost" @click="reconnected">{{ t('roundtable.reload') }}</UiButton>
+    <p v-if="liveDisconnected" :role="reloadFailed ? 'alert' : 'status'" class="roundtable-notice" data-roundtable-live>
+      {{ t('roundtable.liveDisconnected') }}<template v-if="reloadFailed"> {{ t('roundtable.reloadFailed') }}</template>
+      <UiButton size="sm" variant="ghost" :busy="reconnecting" :busy-label="t('roundtable.reloading')" @click="reconnected">{{ t('roundtable.reload') }}</UiButton>
     </p>
     <GrowthLoading v-if="listLoading && !hasSelection" :label="t('roundtable.loading')" />
     <div v-else-if="empty && !hasSelection" class="roundtable-empty">
@@ -420,10 +439,11 @@ const record = (value: unknown) => JSON.stringify(value, null, 2)
         <p v-else-if="empty" class="ui-meta roundtable-remote-note">{{ t('roundtable.empty') }}</p>
         <p v-if="remoteUnavailable" class="ui-meta roundtable-remote-note">{{ t('roundtable.chat.remoteUnavailable') }}</p>
         <p v-if="chatsState === 'failed' && !accessNotice" class="ui-meta roundtable-remote-note" role="status">
-          {{ t('roundtable.chatsFailed') }} <UiButton size="sm" variant="ghost" @click="loadChats">{{ t('roundtable.retry') }}</UiButton>
+          {{ t('roundtable.chatsFailed') }} <UiButton size="sm" variant="ghost" @click="loadChats()">{{ t('roundtable.retry') }}</UiButton>
         </p>
+        <p v-else-if="chatsStale" class="ui-meta roundtable-remote-note" role="status" data-roundtable-chats-stale>{{ t('roundtable.chatsStale') }}</p>
         <p v-if="threadsState === 'failed' && !accessNotice" class="roundtable-remote-note" role="alert">
-          {{ t('roundtable.threadsFailed') }} <UiButton size="sm" variant="ghost" @click="loadThreads">{{ t('roundtable.retry') }}</UiButton>
+          {{ t('roundtable.threadsFailed') }} <UiButton size="sm" variant="ghost" @click="loadThreads()">{{ t('roundtable.retry') }}</UiButton>
         </p>
         <p v-else-if="threadsStale" class="ui-meta roundtable-remote-note" role="status">{{ t('roundtable.stale') }}</p>
         <div class="ui-split-items">
@@ -468,7 +488,7 @@ const record = (value: unknown) => JSON.stringify(value, null, 2)
           </details>
           <details class="roundtable-record" data-roundtable-record>
             <summary>{{ t('roundtable.recordDetails') }}</summary>
-            <pre tabindex="0">{{ record({ id: thread.id, projectId: thread.projectId, createdAt: thread.createdAt }) }}</pre>
+            <pre tabindex="0">{{ threadRecord }}</pre>
           </details>
         </header>
         <div class="ui-split-detail-body">
@@ -580,6 +600,10 @@ const record = (value: unknown) => JSON.stringify(value, null, 2)
   .roundtable-layout:not(.has-selection) .roundtable-list { max-height: none; flex: 1 1 auto; border-bottom: 0; }
   .roundtable-back { display: inline-flex; width: 44px; height: 44px; margin: 0 0 4px -8px; }
   .roundtable-message.is-reply { margin-left: 16px; }
+  /* A long title, participant list or record scrolls away with the messages
+     instead of pushing them out of the fixed card. */
+  .roundtable-layout.has-selection .ui-split-detail { overflow-y: auto; overscroll-behavior: contain; }
+  .roundtable-layout.has-selection :deep(.ui-split-detail-body) { flex: 0 0 auto; min-height: auto; overflow: visible; }
 }
 @media (max-width: 480px) {
   .roundtable-message { gap: 8px; }
