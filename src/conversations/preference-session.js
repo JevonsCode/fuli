@@ -1,5 +1,6 @@
 import { constants } from 'node:fs';
-import { chmod, lstat, mkdir, open } from 'node:fs/promises';
+import { chmod, lstat, mkdir } from 'node:fs/promises';
+import { openWithoutFollowing } from '../system/open-without-following.js';
 import { join } from 'node:path';
 import { contentHash } from '../publication/canonical-json.js';
 import { writeJsonFileAtomic } from '../storage/json-file.js';
@@ -105,7 +106,7 @@ function acknowledgedSnapshot(value, current, state, proof) {
 async function readState(path) {
   let file;
   try {
-    file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    file = await openWithoutFollowing(path, constants.O_RDONLY);
     const stat = await file.stat();
     if (!stat.isFile() || stat.size > 64 * 1024) return { pending: [] };
     const value = JSON.parse(await file.readFile('utf8'));

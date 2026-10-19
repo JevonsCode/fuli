@@ -1,4 +1,5 @@
-import { open, realpath, stat } from 'node:fs/promises';
+import { realpath, stat } from 'node:fs/promises';
+import { openWithoutFollowing } from '../system/open-without-following.js';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import { singleLine } from '../text/single-line.js';
@@ -26,7 +27,7 @@ export async function repositoryProjectDraft({ projectPath }) {
       const relative = path.relative(root, candidate);
       if (relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative) || relative === '..') continue;
       if (!(await stat(candidate)).isFile()) continue;
-      file = await open(candidate, constants.O_RDONLY | constants.O_NOFOLLOW);
+      file = await openWithoutFollowing(candidate, constants.O_RDONLY);
       if (!(await file.stat()).isFile()) continue;
       const buffer = Buffer.alloc(README_BYTES);
       const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);

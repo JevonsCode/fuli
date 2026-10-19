@@ -79,4 +79,19 @@ jobs:
           node-version: "24"
           cache: npm
       - run: npm ci
+      # TEMPORARY: diagnose the owned job helper on the hosted runner.
+      - name: Diagnose owned job helper
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          node --input-type=module -e "
+          import { spawnWindowsJobProcess } from './src/native-runtime/windows-job-process.js';
+          const t0 = Date.now();
+          const child = await spawnWindowsJobProcess(process.execPath, ['-e', 'setTimeout(()=>{},2000)'], { cwd: process.cwd(), env: { SystemRoot: process.env.SystemRoot, PATH: process.env.PATH }, stopTimeoutMs: 8000 });
+          let err=''; child.stderr.on('data', d => err += d); child.stdout.on('data', d => process.stdout.write('[out] '+d));
+          const timer = setTimeout(() => { console.log('TIMEOUT after', Date.now()-t0, 'ms; helper stderr:', err.slice(0, 4000)); process.exit(1); }, 60000);
+          try { const r = await child.ready; console.log('READY', r, Date.now()-t0, 'ms'); await child.stop(); console.log('STOPPED', Date.now()-t0); }
+          catch (e) { console.log('FAILED', e.message, Date.now()-t0, 'ms; stderr:', err.slice(0, 4000)); }
+          clearTimeout(timer);
+          "
       - run: npm test

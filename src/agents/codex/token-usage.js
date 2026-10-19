@@ -1,5 +1,6 @@
 import { constants } from 'node:fs';
-import { lstat, opendir, open } from 'node:fs/promises';
+import { lstat, opendir } from 'node:fs/promises';
+import { openWithoutFollowing } from '../../system/open-without-following.js';
 import { basename, extname, join } from 'node:path';
 
 const MAX_HEADER_BYTES = 64 * 1024;
@@ -120,7 +121,7 @@ async function matchingSessionFiles(root, sessionId, counters, depth = 0) {
 async function readSessionUsage(filePath, sessionId) {
   let file;
   try {
-    file = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    file = await openWithoutFollowing(filePath, constants.O_RDONLY);
     const stat = await file.stat();
     if (!stat.isFile() || stat.size <= 0) return null;
 
