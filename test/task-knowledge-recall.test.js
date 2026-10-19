@@ -301,3 +301,13 @@ test('Chinese release requests keep their focused category queries', () => {
     ['0.7.0 发布 发版 版本 release publish runbook', '0.7.0 推送 提交 push commit GitHub Connector runbook']);
 });
 
+test('recall tells the host to answer from items people confirmed, and only then', async () => {
+  const human = await recallTaskKnowledge(recallApplication([ledgerNote('human-note', 'confirmed', 2)]),
+    { personalProjectId: 'delta' }, 'Use the amount format we decided previously for Delta Ledger.');
+  assert.match(human.confirmed_use, /answer from them directly/);
+  for (const status of ['agent_confirmed', 'pending']) {
+    const recall = await recallTaskKnowledge(recallApplication([ledgerNote('note', status, 2)]),
+      { personalProjectId: 'delta' }, 'Use the amount format we decided previously for Delta Ledger.');
+    assert.equal('confirmed_use' in recall, false, status);
+  }
+});

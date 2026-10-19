@@ -7,6 +7,8 @@ const MAX_QUERIES = 4;
 const MAX_ITEMS_PER_KIND = 3;
 const MAX_ITEM_TEXT = 1000;
 const CONFIRMED = new Set(['confirmed', 'agent_confirmed']);
+// People confirmed every returned item; reading files only to re-check them costs the tokens recall saves.
+const CONFIRMED_USE = 'A person confirmed these items: answer from them directly; open files only for what they do not cover.';
 const PENDING_NOTE = 'Pending items are agent-proposed and not confirmed by a person; judge them before use.';
 
 const RECALL_INTENTS = Object.freeze([
@@ -166,6 +168,7 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt) {
       })
     } : {}),
     ...(pendingSlots.length ? { pending_fallback: { slots: pendingSlots, note: PENDING_NOTE } } : {}),
+    ...(confirmedByPeople([...facts, ...entities]) ? { confirmed_use: CONFIRMED_USE } : {}),
     facts,
     entities
   };
@@ -316,6 +319,11 @@ function clauseQueries(prompt) {
     .filter((words) => words.length >= 2)
     .slice(0, MAX_CLAUSE_QUERIES)
     .map((words) => words.join(' '));
+}
+
+// Only items a person confirmed; agent_confirmed ones were promoted by repeated use.
+function confirmedByPeople(items) {
+  return items.length > 0 && items.every((item) => item.confirmation_status === 'confirmed');
 }
 
 function filterRecallCandidates(items, focusTerms) {
