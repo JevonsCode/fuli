@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import TaskRunControls from './TaskRunControls.vue'
 import { runOutcomeUncertain, type TaskRunRecord } from './task-runs'
+import { forgetRetryOutcome } from './retry-outcomes'
 import type { ProjectAgentTaskRecord } from '@/types'
 
 const task = (status: ProjectAgentTaskRecord['status']) => ({ taskId: 'task-1', personalProjectId: 'project-a', title: 'Port tests',
@@ -31,7 +32,7 @@ async function mountControls(status: ProjectAgentTaskRecord['status']) {
   return wrapper
 }
 
-afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = '' })
+afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = ''; forgetRetryOutcome('space', 'task-1') })
 
 describe('task run controls', () => {
   it('reads history in order and pages with the returned cursor', async () => {
@@ -187,5 +188,30 @@ describe('task run controls after acceptance review', () => {
     submitButton().click()
     await flushPromises()
     expect(wrapper.get('[data-task-run-disclosure]').text()).toBe('SYNTHETIC REQUIRED DISCLOSURE')
+  })
+
+  it('keeps the new task and the required notice when the page refresh redraws the panel', async () => {
+    respond({
+      '/api/project-agent-tasks/task-1/retry': { task: { taskId: 'task-2', status: 'queued', leadAgentId: 'engineer' }, mustDiscloseRecruitment: true, clientNotice: 'SYNTHETIC REQUIRED DISCLOSURE' },
+      '/api/project-agent-tasks/task-1/runs?': { runs: [run()], nextCursor: null, complete: true },
+    })
+    const first = await mountControls('failed')
+    await openRetryDialog(first)
+    await choose('queue')
+    submitButton().click()
+    await flushPromises()
+    expect(first.emitted('changed')).toHaveLength(1)
+    // The parent refresh unmounts the panel and mounts a new one.
+    first.unmount()
+    const redrawn = await mountControls('failed')
+    expect(redrawn.get('[data-task-run-disclosure]').text()).toBe('SYNTHETIC REQUIRED DISCLOSURE')
+    expect(redrawn.find('a[href*="task=task-2"]').exists()).toBe(true)
+  })
+
+  it('ends the history loading state when reading it is refused', async () => {
+    respond({ '/api/project-agent-tasks/task-1/runs?': new Response('forbidden', { status: 403 }) })
+    const wrapper = await mountControls('failed')
+    expect(wrapper.text()).toContain('没有权限')
+    expect(wrapper.text()).not.toContain('正在读取这个任务的运行记录')
   })
 })

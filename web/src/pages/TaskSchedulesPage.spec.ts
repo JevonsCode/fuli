@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import TaskSchedulesPage from './TaskSchedulesPage.vue'
 import { intervalTooShort, scheduleState, type TaskSchedule } from '@/features/task-schedules/task-schedules'
 import { useConsoleStore } from '@/stores/console'
@@ -31,13 +32,16 @@ async function mountPage() {
   // The page reads the active space and the project list from the console store.
   Object.assign(store, { state: { personalProjects: [{ project_id: 'project-a', profile: { name: 'Alpha' } }] } })
   vi.spyOn(store, 'activePersonalSpace', 'get').mockReturnValue({ id: 'space-1' } as never)
-  const wrapper = mount(TaskSchedulesPage, { attachTo: document.body, global: { stubs: { teleport: true } } })
+  router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:any(.*)*', component: { template: '<div />' } }] })
+  await router.push('/task-schedules')
+  const wrapper = mount(TaskSchedulesPage, { attachTo: document.body, global: { plugins: [router], stubs: { teleport: true } } })
   await flushPromises()
   return wrapper
 }
+let router: ReturnType<typeof createRouter>
 
 beforeEach(() => setActivePinia(createPinia()))
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); document.body.innerHTML = '' })
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); document.body.innerHTML = '' })
 
 describe('task schedules page', () => {
   it('derives state from enabled and the paused reason, and enforces the 15 minute floor', () => {
@@ -172,5 +176,104 @@ describe('task schedules page after acceptance review', () => {
     await flushPromises()
     const update = calls.find(call => call.url.endsWith('/update'))!
     expect(update.body).toMatchObject({ personalSpaceId: 'space-1', expectedRevision: 2, title: 'Nightly check', startMode: 'backlog' })
+  })
+
+  const submit = async () => {
+    ;(document.querySelector('dialog form') as HTMLFormElement).dispatchEvent(new Event('submit'))
+    await flushPromises()
+  }
+  const chooseProject = async (wrapper: Awaited<ReturnType<typeof mountPage>>) => {
+    ;(wrapper.vm as unknown as { draft: { project: string } }).draft.project = 'project-a'
+    await flushPromises()
+  }
+
+  it('keeps an unconfirmed create locked when reading the list to check it also fails', async () => {
+    let listFails = false
+    serve({
+      '/api/task-schedules?': () => listFails ? new Response('down', { status: 503 }) : { schedules: [] },
+      '/api/task-schedules': () => new Response('down', { status: 503 }),
+    })
+    const wrapper = await mountPage()
+    await fillCreate(wrapper)
+    await chooseProject(wrapper)
+    await submit()
+    listFails = true
+    ;(document.querySelector('[data-schedule-verify]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(document.querySelector('[data-schedule-verify]')).not.toBeNull()
+    expect(document.querySelector('[data-schedule-save]')).toBeNull()
+    expect(document.body.textContent).toContain('还不能确认上一次创建的结果')
+  })
+
+  it('moves a default first slot that has passed and asks again before sending it', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-19T08:00:00Z'))
+    serve({ '/api/task-schedules?': () => ({ schedules: [] }), '/api/task-schedules': body => ({ ...schedule(), ...body }) })
+    const wrapper = await mountPage()
+    await fillCreate(wrapper)
+    await chooseProject(wrapper)
+    vi.setSystemTime(new Date('2026-10-21T08:00:00Z'))
+    await submit()
+    expect(calls.some(call => call.method === 'POST')).toBe(false)
+    expect(document.body.textContent).toContain('原来的首次计划时间已经过去')
+    await submit()
+    const sent = calls.find(call => call.method === 'POST')!.body!.firstRunAt as string
+    expect(new Date(sent).getTime()).toBeGreaterThan(Date.now())
+  })
+
+  it('treats a create with no answer within 30 seconds as unconfirmed, without sending it again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    serve({ '/api/task-schedules?': () => ({ schedules: [] }) })
+    const fetch = globalThis.fetch as ReturnType<typeof vi.fn>
+    const list = fetch.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>
+    fetch.mockImplementation((url: string, init?: RequestInit) => init?.method === 'POST'
+      ? new Promise((_resolve, reject) => init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))))
+      : list(url, init))
+    const wrapper = await mountPage()
+    await fillCreate(wrapper)
+    await chooseProject(wrapper)
+    await submit()
+    expect(document.querySelector('[data-schedule-verify]')).toBeNull()
+    vi.advanceTimersByTime(30_000)
+    await flushPromises()
+    expect(document.querySelector('[data-schedule-verify]')).not.toBeNull()
+    expect(fetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+  })
+
+  it('opens the task a schedule created from its record', async () => {
+    serve({
+      '/api/task-schedules/sched-1/runs': () => ({ runs: [{ slot: '2026-10-19T00:00:00Z', taskId: 'task-9', status: 'completed', createdAt: '2026-10-19T00:00:01Z' }] }),
+      '/api/task-schedules?': () => ({ schedules: [schedule()] }),
+      '/api/project-agent-tasks/task-9?': () => ({ taskId: 'task-9', status: 'completed', leadAgentId: 'lead-1', personalProjectId: 'project-a' }),
+    })
+    const wrapper = await mountPage()
+    await wrapper.find('[data-schedule-runs]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-schedule-open-task]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/project-agents/manage')
+    expect(router.currentRoute.value.query).toEqual({ agent: 'lead-1', project: 'project-a', task: 'task-9' })
+  })
+
+  it('after a conflict shows what changed and saves the kept draft with the latest revision', async () => {
+    let listed = 0
+    serve({
+      '/api/task-schedules/sched-1/update': body => body?.expectedRevision === 2
+        ? new Response(JSON.stringify({ error: 'changed' }), { status: 409 }) : { ...schedule(), revision: 4 },
+      '/api/task-schedules?': () => {
+        listed += 1
+        return { schedules: [listed === 1 ? schedule() : schedule({ revision: 3, body: { ...schedule().body, title: 'Changed elsewhere' } })] }
+      },
+    })
+    const wrapper = await mountPage()
+    await wrapper.find('[data-schedule-edit]').trigger('click')
+    await flushPromises()
+    await submit()
+    expect(document.body.textContent).toContain('修订 3')
+    expect(document.body.textContent).toContain('标题')
+    await submit()
+    const updates = calls.filter(call => call.url.endsWith('/update'))
+    expect(updates.map(call => call.body!.expectedRevision)).toEqual([2, 3])
+    expect(updates[1]!.body!.title).toBe('Nightly check')
   })
 })

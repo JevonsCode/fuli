@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import TextField from '@/components/TextField.vue'
-import { ApiError } from '@/api/client'
+import { ApiError, getJson } from '@/api/client'
 import { formatDate, taskStatusLabel } from '@/features/project-agents/task-labels'
+import { normalizeTask } from '@/features/project-agents/task-evidence'
 import {
   createSchedule, intervalMs, intervalTooShort, listSchedules, scheduleRuns, scheduleState, setScheduleEnabled, updateSchedule,
   type ScheduleRun, type ScheduleUnit, type StartMode, type TaskSchedule,
@@ -26,20 +28,24 @@ const loading = ref(false)
 const loaded = ref(false)
 const loadError = ref('')
 let readGeneration = 0
-async function load() {
-  if (!spaceId.value) return
+// Says whether the list was actually read, so a check that failed is never
+// taken as a check that passed.
+async function load(): Promise<boolean> {
+  if (!spaceId.value) return false
   const generation = ++readGeneration
   loading.value = true
   loadError.value = ''
   try {
     const result = await listSchedules(spaceId.value)
-    if (generation !== readGeneration) return
+    if (generation !== readGeneration) return false
     schedules.value = result.schedules
     loaded.value = true
+    return true
   } catch (cause) {
-    if (generation !== readGeneration) return
+    if (generation !== readGeneration) return false
     if (cause instanceof ApiError && (cause.status === 401 || cause.status === 403)) schedules.value = []
     loadError.value = t('taskSchedules.loadFailed')
+    return false
   } finally {
     if (generation === readGeneration) loading.value = false
   }
@@ -99,6 +105,7 @@ function openCreate() {
 }
 function openEdit(schedule: TaskSchedule) {
   editing.value = schedule
+  editedFrom = schedule
   Object.assign(draft, { project: schedule.personalProjectId, title: schedule.body.title, objective: schedule.body.objective,
     workKind: schedule.body.workKind, count: String(schedule.body.every.count), unit: schedule.body.every.unit,
     startMode: schedule.body.startMode, threshold: String(schedule.body.failureThreshold), firstRunAt: '' })
@@ -111,37 +118,96 @@ function validate(): string {
   if (intervalTooShort({ unit: draft.unit, count: Number(draft.count) })) return t('taskSchedules.form.tooShort')
   if (!draft.startMode) return t('taskSchedules.form.chooseStart')
   if (!editing.value && draft.firstRunAt && new Date(draft.firstRunAt).getTime() <= Date.now()) return t('taskSchedules.form.past')
+  // The default first slot was one interval after the form opened. If that
+  // time has passed, move it to one interval from now and ask again.
+  if (!editing.value && !draft.firstRunAt && plannedFirst.value && plannedFirst.value.getTime() <= Date.now()) {
+    openedAt.value = Date.now()
+    return t('taskSchedules.form.plannedMoved', { local: formatDate(plannedFirst.value!.toISOString()) })
+  }
   return ''
 }
 function apiMessage(error: ApiError) {
   try { return (JSON.parse(error.detail) as { error?: string }).error || error.message } catch { return error.detail || error.message }
 }
+// A create that gets no answer within this time is treated as unconfirmed.
+const CREATE_LIMIT_MS = 30_000
+let createTimer: ReturnType<typeof setTimeout> | undefined
+onBeforeUnmount(() => clearTimeout(createTimer))
+// The schedule the person started editing; a conflict compares against it.
+let editedFrom: TaskSchedule | null = null
 async function save() {
   if (createUnknown.value || saving.value) return
   formError.value = validate()
   if (formError.value) return
   saving.value = true
+  const controller = new AbortController()
   const changes = { title: draft.title.trim(), objective: draft.objective.trim(), workKind: draft.workKind.trim(),
     every: { unit: draft.unit, count: Number(draft.count) }, startMode: draft.startMode as StartMode,
     failureThreshold: Number(draft.threshold) }
   try {
     if (editing.value) await updateSchedule(spaceId.value, editing.value, changes)
-    else await createSchedule(spaceId.value, { personalProjectId: draft.project, ...changes, firstRunAt: plannedFirst.value!.toISOString() })
+    else {
+      createTimer = setTimeout(() => controller.abort(), CREATE_LIMIT_MS)
+      await createSchedule(spaceId.value, { personalProjectId: draft.project, ...changes, firstRunAt: plannedFirst.value!.toISOString() },
+        controller.signal)
+    }
     dialogOpen.value = false
     await load()
   } catch (cause) {
-    if (cause instanceof ApiError && cause.status === 409) { formError.value = t('taskSchedules.conflict'); await load(); return }
+    if (cause instanceof ApiError && cause.status === 409) { await conflict(); return }
     const unknown = !(cause instanceof ApiError) || cause.status >= 500
     if (unknown && !editing.value) createUnknown.value = true
     formError.value = unknown ? t('taskSchedules.form.unknown') : apiMessage(cause)
   } finally {
+    clearTimeout(createTimer)
     saving.value = false
   }
 }
+// Someone else saved first. Read the list again, keep the draft, and say what
+// changed on the server; the next save, if the person confirms, uses the
+// latest revision. Nothing is sent again on its own.
+const CONFLICT_FIELDS = ['title', 'objective', 'workKind', 'every', 'startMode', 'failureThreshold'] as const
+async function conflict() {
+  const id = editing.value?.id
+  if (!(await load()) || !id) { formError.value = t('taskSchedules.conflict'); return }
+  const latest = schedules.value.find(item => item.id === id)
+  if (!latest) { formError.value = t('taskSchedules.form.gone'); return }
+  const before = editedFrom?.body
+  const changed = before
+    ? CONFLICT_FIELDS.filter(field => JSON.stringify(before[field]) !== JSON.stringify(latest.body[field])).map(field => t(`taskSchedules.field.${field}`))
+    : []
+  if (editedFrom && latest.enabled !== editedFrom.enabled) changed.push(t('taskSchedules.field.enabled'))
+  editing.value = latest
+  editedFrom = latest
+  formError.value = t('taskSchedules.form.conflictChanged', { revision: latest.revision,
+    fields: changed.length ? changed.join('、') : t('taskSchedules.form.noVisibleChange') })
+}
+// Only a list that was actually read can settle an unconfirmed create.
 async function verifyCreate() {
-  await load()
+  if (!(await load())) { formError.value = t('taskSchedules.form.verifyFailed'); return }
   dialogOpen.value = false
   createUnknown.value = false
+}
+
+// A schedule run names only its task; the task is read when opened, to find
+// the Agent whose page shows it.
+const router = useRouter()
+const openingTask = ref('')
+const openTaskError = ref('')
+async function openTask(schedule: TaskSchedule, taskId: string) {
+  openingTask.value = taskId
+  openTaskError.value = ''
+  try {
+    const query = new URLSearchParams({ personalSpaceId: spaceId.value, personalProjectId: schedule.personalProjectId })
+    const task = normalizeTask(await getJson<unknown>(`/api/project-agent-tasks/${encodeURIComponent(taskId)}?${query}`))
+    const agent = task?.leadAgentId ?? schedule.body.leadAgentId
+    if (!task || !agent) { openTaskError.value = t('taskSchedules.taskUnavailable'); return }
+    await router.push({ path: '/project-agents/manage', query: { agent, project: schedule.personalProjectId, task: taskId } })
+  } catch {
+    openTaskError.value = t('taskSchedules.taskUnavailable')
+  } finally {
+    openingTask.value = ''
+  }
 }
 
 // The latest 50 tasks a schedule created, read on request.
@@ -227,9 +293,13 @@ async function toggleRuns(schedule: TaskSchedule) {
               <li v-for="run in scheduleRunList" :key="run.slot">
                 <span>{{ formatDate(run.slot) }}</span>
                 <span>{{ run.taskId ? taskStatusLabel(run.status as never) : t('taskSchedules.submitFailed') }}</span>
-                <code v-if="run.taskId">{{ run.taskId }}</code>
+                <UiButton v-if="run.taskId" variant="ghost" size="sm" :busy="openingTask === run.taskId" :busy-label="t('taskSchedules.openingTask')"
+                  :aria-label="t('taskSchedules.openTaskLabel', { id: run.taskId })" data-schedule-open-task @click="openTask(schedule, run.taskId)">
+                  {{ t('taskSchedules.openTask') }} <code>{{ run.taskId.slice(0, 8) }}</code>
+                </UiButton>
               </li>
             </ol>
+            <p v-if="openTaskError" role="alert" class="inline-error">{{ openTaskError }}</p>
           </template>
         </div>
       </article>

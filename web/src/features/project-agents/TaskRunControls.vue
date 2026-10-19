@@ -8,8 +8,9 @@ import UiDialog from '@/ui/UiDialog.vue'
 import { formatDate, taskStatusLabel } from './task-labels'
 import {
   actionFailure, mergeRunPages, readTaskRuns, retryTask, runIsActive, runOutcomeUncertain, stopTaskRun, taskIsRetryable,
-  type ActionFailure, type RetryResponse, type TaskRunRecord, type TaskScope,
+  type ActionFailure, type TaskRunRecord, type TaskScope,
 } from './task-runs'
+import { forgetRetryOutcome, keepRetryOutcome, retryOutcome } from './retry-outcomes'
 
 const props = defineProps<{ task: ProjectAgentTaskRecord; personalSpaceId: string; active: boolean }>()
 const emit = defineEmits<{ changed: [] }>()
@@ -68,13 +69,14 @@ const uncertain = computed(() => historyIncomplete.value || runs.value.some(runO
 // response from before cannot bring them back.
 function revoke() {
   readGeneration += 1
+  loading.value = false
   runs.value = []
   loaded.value = false
   complete.value = false
   nextCursor.value = null
   stopTarget.value = null
   retryOpen.value = false
-  retried.value = null
+  forgetRetryOutcome(props.personalSpaceId, props.task.taskId)
   notice.value = t('taskRuns.failure.denied')
 }
 
@@ -106,7 +108,8 @@ const retryStart = ref<'queue' | 'backlog' | ''>('')
 const retryAck = ref(false)
 const retryBusy = ref(false)
 const retryError = ref('')
-const retried = ref<RetryResponse | null>(null)
+// Kept outside this panel: the refresh after a retry redraws it.
+const retried = computed(() => retryOutcome(props.personalSpaceId, props.task.taskId))
 // After an unconfirmed result the choice is frozen: the same request may be
 // sent once more to confirm it (the server keys it by the original task); a
 // second unconfirmed result leaves only reading the history.
@@ -137,7 +140,7 @@ async function confirmRetry() {
   retryError.value = ''
   retryTimers = [setTimeout(() => { retrySlow.value = true }, SLOW_MS), setTimeout(() => controller.abort(), GIVE_UP_MS)]
   try {
-    retried.value = await retryTask(scope.value, start === 'queue', controller.signal)
+    keepRetryOutcome(props.personalSpaceId, props.task.taskId, await retryTask(scope.value, start === 'queue', controller.signal))
     retryUnknown.value = null
     retryOpen.value = false
     emit('changed')

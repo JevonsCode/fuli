@@ -65,8 +65,8 @@ export function scheduleRuns(spaceId: string, scheduleId: string) {
     `/api/task-schedules/${encodeURIComponent(scheduleId)}/runs?${new URLSearchParams({ personalSpaceId: spaceId })}`)
 }
 
-export function createSchedule(spaceId: string, draft: ScheduleDraft) {
-  return postJson<TaskSchedule>('/api/task-schedules', { personalSpaceId: spaceId, ...draft })
+export function createSchedule(spaceId: string, draft: ScheduleDraft, signal?: AbortSignal) {
+  return postJson<TaskSchedule>('/api/task-schedules', { personalSpaceId: spaceId, ...draft }, { signal })
 }
 
 // Pause and resume carry the revision the person saw; a stale one is a 409.
