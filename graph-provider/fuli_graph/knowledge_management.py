@@ -15,6 +15,7 @@ from .models import (
     KnowledgeRevisionRecord,
 )
 from .provider_values import (
+    json_object,
     native_datetime as _native_datetime,
     stable_uuid as _stable_uuid,
 )
@@ -429,6 +430,8 @@ async def _read_item(store, space: dict, item_id: str, item_kind: str):
                  AS requires_attention,
                item.fuli_last_feedback_kind AS last_feedback_kind,
                item.fuli_last_feedback_at AS last_feedback_at,
+               item.fuli_negative_feedback_block_json
+                 AS negative_feedback_block_json,
                item.fuli_replaced_by_item_id AS replaced_by_item_id,
                item.fuli_replaced_by_item_kind AS replaced_by_item_kind
         '''
@@ -471,6 +474,8 @@ async def _read_item(store, space: dict, item_id: str, item_kind: str):
                  AS requires_attention,
                item.fuli_last_feedback_kind AS last_feedback_kind,
                item.fuli_last_feedback_at AS last_feedback_at,
+               item.fuli_negative_feedback_block_json
+                 AS negative_feedback_block_json,
                item.fuli_replaced_by_item_id AS replaced_by_item_id,
                item.fuli_replaced_by_item_kind AS replaced_by_item_kind
         '''
@@ -576,6 +581,9 @@ def _snapshot(value: dict, item_kind: str) -> dict:
         'requiresAttention': value.get('requires_attention') is True,
         'lastFeedbackKind': value.get('last_feedback_kind'),
         'lastFeedbackAt': _iso(value.get('last_feedback_at')),
+        'negativeFeedbackBlock': (
+            json_object(value.get('negative_feedback_block_json')) or None
+        ),
         'replacedByItemId': value.get('replaced_by_item_id'),
         'replacedByItemKind': value.get('replaced_by_item_kind'),
     }
@@ -710,6 +718,10 @@ def _next_snapshot(previous: dict, request: KnowledgeRevisionCreate, changed_at:
         value['invalidAt'] = None
         value['replacedByItemId'] = None
         value['replacedByItemKind'] = None
+    if value.get('confirmationStatus') == 'confirmed':
+        # A person's explicit confirmation is the only thing that lifts a
+        # negative-feedback block; the revision's previous value keeps it.
+        value['negativeFeedbackBlock'] = None
     return value
 
 
@@ -753,6 +765,7 @@ async def _update_item(store, space, item_id, item_kind, value, embedding):
             item.fuli_requires_attention = $requires_attention,
             item.fuli_last_feedback_kind = $last_feedback_kind,
             item.fuli_last_feedback_at = $last_feedback_at,
+            item.fuli_negative_feedback_block_json = $negative_feedback_block_json,
             item.fuli_replaced_by_item_id = $replaced_by_item_id,
             item.fuli_replaced_by_item_kind = $replaced_by_item_kind,
             item.name_embedding = coalesce($embedding, item.name_embedding)
@@ -786,6 +799,7 @@ async def _update_item(store, space, item_id, item_kind, value, embedding):
             item.fuli_requires_attention = $requires_attention,
             item.fuli_last_feedback_kind = $last_feedback_kind,
             item.fuli_last_feedback_at = $last_feedback_at,
+            item.fuli_negative_feedback_block_json = $negative_feedback_block_json,
             item.fuli_replaced_by_item_id = $replaced_by_item_id,
             item.fuli_replaced_by_item_kind = $replaced_by_item_kind,
             item.fact_embedding = coalesce($embedding, item.fact_embedding)
@@ -826,6 +840,14 @@ async def _update_item(store, space, item_id, item_kind, value, embedding):
         requires_attention=value.get('requiresAttention') is True,
         last_feedback_kind=value.get('lastFeedbackKind'),
         last_feedback_at=_parse_datetime(value.get('lastFeedbackAt')),
+        negative_feedback_block_json=(
+            json.dumps(
+                value['negativeFeedbackBlock'],
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            if value.get('negativeFeedbackBlock') else None
+        ),
         replaced_by_item_id=value.get('replacedByItemId'),
         replaced_by_item_kind=value.get('replacedByItemKind'),
         embedding=embedding,

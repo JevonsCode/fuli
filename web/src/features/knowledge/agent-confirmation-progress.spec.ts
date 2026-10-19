@@ -102,6 +102,19 @@ describe('agent confirmation progress in the candidate inspector', () => {
     expect(view.reason).toBe('有未解决的冲突，解决前不会自动确认')
   })
 
+  it('says a rejected item needs the person, not more uses, even past the thresholds', () => {
+    const view = inspect(synthetic({
+      agent_confirmation_progress: progress({
+        qualified_use_count: 10,
+        distinct_task_count: 8,
+        blocking_reasons: ['negative_feedback_block'],
+      }),
+    }))
+
+    expect(view.reason).toBe('你或权威来源否定过这条，使用次数不会让它自动恢复；只有你明确确认才能恢复')
+    expect(view.reason).not.toContain('条件已满足')
+  })
+
   it('states that conditions are met without claiming the item is already confirmed', () => {
     setLocale('en-US', { persist: false })
     const view = inspect(synthetic({

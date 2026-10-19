@@ -373,6 +373,72 @@ async def test_batch_confirmation_updates_one_source_group_with_individual_revis
 
 
 @pytest.mark.asyncio
+async def test_batch_confirmation_lifts_a_negative_feedback_block_and_keeps_it_in_history():
+    block = {
+        'audit_id': 'feedback-audit-1',
+        'blocked_at': '2026-10-20T08:00:00+00:00',
+        'feedback_kind': 'rejected',
+        'reported_by_kind': 'user',
+        'usage_generation': 1,
+    }
+    driver = SequentialDriver([
+        [{
+            'name': 'Style',
+            'summary': 'Use dramatic parallelism.',
+            'invalid_at': None,
+            'origin_quadrant': 'known_known',
+            'current_quadrant': 'known_known',
+            'epistemic_status': 'observed',
+            'confirmation_status': 'pending',
+            'confirmation_state_explicit': True,
+            'negative_evidence_count': 1,
+            'requires_attention': True,
+            'negative_feedback_block_json': json.dumps(block),
+        }],
+        [{
+            'type': 'SUPPORTS',
+            'fact': 'An unrelated fact from the same source.',
+            'invalid_at': None,
+            'origin_quadrant': 'known_known',
+            'current_quadrant': 'known_known',
+            'epistemic_status': 'observed',
+            'confirmation_status': 'pending',
+            'confirmation_state_explicit': False,
+        }],
+        [{'confirmed_count': 2}],
+    ])
+
+    await confirm_knowledge_batch(StoreStub(driver), {'id': 'principal-1'},
+                                  KnowledgeBatchConfirmationCreate(
+        personal_space_id='personal-space',
+        group_kind='source',
+        group_value='episode-1',
+        reason='The user restored this style explicitly.',
+        confirmer={'kind': 'user', 'label': 'Current user'},
+        items=[{
+            'item_id': 'entity-1',
+            'item_kind': 'entity',
+            'existence_reason': 'The user restored it.',
+            'quadrant_reason': 'Stated directly.',
+            'proposed_by': {'kind': 'agent', 'label': 'Codex'},
+        }, {
+            'item_id': 'relationship-1',
+            'item_kind': 'relationship',
+            'existence_reason': 'The source records it.',
+            'quadrant_reason': 'Stated directly.',
+            'proposed_by': {'kind': 'agent', 'label': 'Codex'},
+        }],
+    ))
+
+    query, parameters = driver.calls[-1]
+    blocked, unrelated = parameters['items']
+    assert query.count('item.fuli_negative_feedback_block_json = NULL') == 2
+    assert json.loads(blocked['previous_json'])['negativeFeedbackBlock'] == block
+    assert json.loads(blocked['current_json'])['negativeFeedbackBlock'] is None
+    assert json.loads(unrelated['previous_json'])['negativeFeedbackBlock'] is None
+
+
+@pytest.mark.asyncio
 async def test_batch_confirmation_saves_nothing_when_the_source_group_changed():
     driver = SequentialDriver([
         [{

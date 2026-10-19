@@ -30,6 +30,8 @@ from .project_action_models import (
 AgentConfirmationBlockingReason = Literal[
     'not_pending',
     'open_conflict',
+    'negative_feedback_block',
+    'negative_evidence',
     'usage_unknown',
     'qualified_uses_below_threshold',
     'distinct_tasks_below_threshold',

@@ -60,6 +60,8 @@ async def confirm_knowledge_batch(
             'confirmationStatus': 'confirmed',
             'confirmationStateExplicit': True,
             'confirmationBasis': basis,
+            # Confirmation lifts a negative-feedback block; previous keeps it.
+            'negativeFeedbackBlock': None,
         }
         revision_id = _stable_uuid(
             space['id'],
@@ -206,7 +208,8 @@ CALL {
         coalesce(item.fuli_ai_review_lock_version, 0) + 1
   SET item.fuli_epistemic_status = 'confirmed',
       item.fuli_confirmation_status = 'confirmed',
-      item.fuli_confirmation_basis_json = row.confirmation_basis_json
+      item.fuli_confirmation_basis_json = row.confirmation_basis_json,
+      item.fuli_negative_feedback_block_json = NULL
   CREATE (revision:FuliKnowledgeRevision {
     id: row.revision_id,
     space_id: $space_id,
@@ -231,7 +234,8 @@ CALL {
         coalesce(item.fuli_ai_review_lock_version, 0) + 1
   SET item.fuli_epistemic_status = 'confirmed',
       item.fuli_confirmation_status = 'confirmed',
-      item.fuli_confirmation_basis_json = row.confirmation_basis_json
+      item.fuli_confirmation_basis_json = row.confirmation_basis_json,
+      item.fuli_negative_feedback_block_json = NULL
   CREATE (revision:FuliKnowledgeRevision {
     id: row.revision_id,
     space_id: $space_id,

@@ -17,6 +17,7 @@ from .project_agent_access import authorize_project_agent
 from .preference_conflicts import read_active_preference_conflicts
 from .provider_values import json_object, native_datetime as _native_datetime, preference_qualifiers
 from .knowledge_weight import knowledge_weight
+from .negative_feedback_block import agent_authority_suspension
 
 
 async def read_collaboration_context(
@@ -328,6 +329,7 @@ def _node_query() -> str:
                node.fuli_qualified_use_count AS qualified_use_count,
                node.fuli_distinct_task_count AS distinct_task_count,
                node.fuli_negative_evidence_count AS negative_evidence_count,
+               node.fuli_negative_feedback_block_json AS negative_feedback_block_json,
                coalesce(node.fuli_key, node.uuid) AS key,
                node.name AS title,
                coalesce(node.summary, node.name) AS instruction,
@@ -386,6 +388,7 @@ def _edge_query() -> str:
                edge.fuli_qualified_use_count AS qualified_use_count,
                edge.fuli_distinct_task_count AS distinct_task_count,
                edge.fuli_negative_evidence_count AS negative_evidence_count,
+               edge.fuli_negative_feedback_block_json AS negative_feedback_block_json,
                coalesce(edge.fuli_key, edge.uuid) AS key,
                source.uuid AS source_id,
                target.uuid AS target_id,
@@ -448,6 +451,13 @@ def _preference_item(
     except ValueError:
         return None
     if not basis.confirmed_by or not basis.confirmed_at:
+        return None
+    # The same rule that stops usage promotion withdraws usage-derived
+    # authority once negative feedback exists; a person's confirmation stays.
+    if (
+        confirmation_status == 'agent_confirmed'
+        and agent_authority_suspension(record) is not None
+    ):
         return None
     attributes = json_object(record.get('attributes_json'))
     key = str(record.get('key') or record.get('id'))

@@ -1,5 +1,6 @@
 from . import knowledge_audit
 from .graph_models import AgentConfirmationProgress
+from .negative_feedback_block import agent_authority_suspension
 
 
 def agent_confirmation_progress(
@@ -13,6 +14,7 @@ def agent_confirmation_progress(
     Thresholds are read from the write-side constants at call time. The open
     conflict test mirrors the write-side has_open_conflict check: a pending
     knowledge conflict or an ai_pending preference conflict on this item.
+    Negative feedback blocks it through the same rule the writer applies.
     Raw counts stay None when the item never stored them, so callers can show
     unknown instead of zero.
     """
@@ -31,6 +33,8 @@ def agent_confirmation_progress(
         reasons.append('not_pending')
     if has_open_conflict:
         reasons.append('open_conflict')
+    if suspension := agent_authority_suspension(record):
+        reasons.append(suspension)
     if uses is None or tasks is None:
         reasons.append('usage_unknown')
     else:

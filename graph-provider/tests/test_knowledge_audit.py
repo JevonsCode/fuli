@@ -1,4 +1,5 @@
 import json
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 import pytest
@@ -338,6 +339,7 @@ async def test_negative_evidence_flags_human_confirmed_knowledge_without_overrid
     assert "action = 'knowledge_feedback'" in query
     assert 'item.fuli_requires_attention = true' in query
     assert parameters['next_confirmation_status'] == 'confirmed'
+    assert parameters['negative_feedback_block_json'] is None
     assert result.items[0].confirmation_status == 'confirmed'
     assert result.items[0].requires_attention is True
     assert result.items[0].negative_evidence_count == 1
@@ -390,22 +392,84 @@ async def test_human_contradiction_demotes_only_agent_confirmed_knowledge_to_pen
         ),
     )
 
-    assert driver.calls[1][1]['next_confirmation_status'] == 'pending'
-    pending_basis = json.loads(
-        driver.calls[1][1]['next_confirmation_basis_json']
-    )
+    query, parameters = driver.calls[1]
+    assert parameters['next_confirmation_status'] == 'pending'
+    pending_basis = json.loads(parameters['next_confirmation_basis_json'])
     assert pending_basis['confirmed_by'] is None
     assert pending_basis['confirmed_at'] is None
     assert 'agent_policy_version' not in pending_basis
     assert result.items[0].confirmation_status == 'pending'
+    # The block names its source; an earlier block is kept, never replaced.
+    block = json.loads(parameters['negative_feedback_block_json'])
+    assert block == {
+        'audit_id': parameters['audit_id'],
+        'feedback_kind': 'contradicted',
+        'reported_by_kind': 'user',
+        'blocked_at': parameters['feedback_at'].isoformat(),
+        'usage_generation': 3,
+    }
+    assert (
+        'item.fuli_negative_feedback_block_json = coalesce( '
+        'item.fuli_negative_feedback_block_json, $negative_feedback_block_json )'
+    ) in ' '.join(query.split())
+
+
+@pytest.mark.asyncio
+async def test_user_contradiction_flags_human_confirmed_knowledge_without_blocking_it():
+    driver = SequentialDriver([
+        [{
+            'confirmation_status': 'confirmed',
+            'confirmation_basis_json': json.dumps({
+                'existence_reason': 'The user confirmed the rule.',
+                'quadrant_reason': 'It was explicitly stated.',
+                'proposed_by': {'kind': 'user'},
+                'confirmed_by': {'kind': 'user'},
+                'confirmed_at': '2026-07-30T08:00:00Z',
+            }),
+            'usage_generation': 1,
+            'invalid_at': None,
+        }],
+        [{
+            'recorded': True,
+            'confirmation_status': 'confirmed',
+            'negative_evidence_count': 1,
+            'requires_attention': True,
+        }],
+    ])
+
+    result = await record_knowledge_feedback(
+        StoreStub(driver),
+        {'id': 'principal-1'},
+        KnowledgeFeedbackCreate(
+            personal_space_id='personal-space',
+            task_id='task-negative-3',
+            items=[{
+                'item_id': 'entity-3',
+                'item_kind': 'entity',
+                'feedback_kind': 'outdated',
+                'reason': 'The user says the rule may be stale.',
+                'evidence_summary': 'Synthetic fixture.',
+                'reported_by_kind': 'user',
+            }],
+        ),
+    )
+
+    assert driver.calls[1][1]['negative_feedback_block_json'] is None
+    assert result.items[0].confirmation_status == 'confirmed'
+    assert result.items[0].requires_attention is True
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('stored_status', ['pending', 'confirmed', 'agent_confirmed'])
 @pytest.mark.parametrize('has_open_conflict', [False, True])
 @pytest.mark.parametrize('uses,tasks', [(4, 3), (5, 2), (5, 3), (8, 6)])
+@pytest.mark.parametrize('negative_feedback', [
+    {},
+    {'negative_evidence_count': 1},
+    {'negative_feedback_block_json': '{"audit_id": "feedback-1"}'},
+])
 async def test_read_progress_reports_no_blocker_exactly_when_usage_write_promotes(
-    stored_status, has_open_conflict, uses, tasks,
+    stored_status, has_open_conflict, uses, tasks, negative_feedback,
 ):
     driver = SequentialDriver([
         [{
@@ -414,6 +478,7 @@ async def test_read_progress_reports_no_blocker_exactly_when_usage_write_promote
             'usage_generation': 1,
             'invalid_at': None,
             'has_open_conflict': has_open_conflict,
+            **negative_feedback,
         }],
         [{'recorded': True}],
         [{
@@ -439,6 +504,7 @@ async def test_read_progress_reports_no_blocker_exactly_when_usage_write_promote
             'confirmation_status': stored_status,
             'raw_qualified_use_count': uses,
             'raw_distinct_task_count': tasks,
+            **negative_feedback,
         },
         knowledge_conflicts=[{'status': 'pending'}] if has_open_conflict else [],
         preference_conflicts=[],
@@ -463,6 +529,33 @@ class SequentialDriver:
     async def execute_query(self, query, **parameters):
         self.calls.append((query, parameters))
         return next(self.responses), None, None
+
+    @asynccontextmanager
+    async def transaction(self):
+        yield SequentialTransaction(self)
+
+
+class SequentialTransaction:
+    def __init__(self, driver):
+        self.driver = driver
+
+    async def run(self, query, **parameters):
+        records, _, _ = await self.driver.execute_query(query, **parameters)
+        return AsyncRows(records)
+
+
+class AsyncRows:
+    def __init__(self, records):
+        self.records = iter(records)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self.records)
+        except StopIteration:
+            raise StopAsyncIteration from None
 
 
 class RuntimeStub:
