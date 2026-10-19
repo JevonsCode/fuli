@@ -141,6 +141,8 @@ test('the console wakes a wait in a separate MCP process through the shared roun
     while(!store.chat.waitingAnywhere('space','local:milo')) await new Promise(resolve=>setTimeout(resolve,10));
     process.send('ready'); process.send(await pending); store.close(); process.disconnect();`;
   const child = spawn(process.execPath, ['--input-type=module', '-e', code, path, chatId], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+  // Listen for exit at once: the child can finish before the assertions below do.
+  const exited = once(child, 'exit');
   t.after(async () => { child.kill(); app.roundtable.close(); await rm(directory, { recursive: true, force: true }); });
   assert.equal((await once(child, 'message'))[0], 'ready');
   const page = once(child, 'message');
@@ -148,5 +150,5 @@ test('the console wakes a wait in a separate MCP process through the shared roun
     requestId: 'request-1', expectedRevision: 0, choice: '我已完成' });
   assert.equal((await page)[0].attentionReplies[0].choice, '我已完成');
   assert.equal(result.delivery.status, 'woken');
-  await once(child, 'exit');
+  assert.deepEqual(await exited, [0, null]);
 });
