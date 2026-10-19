@@ -522,7 +522,7 @@ Core mechanisms covered by implementation and automated tests include:
 
 New in 0.20 (public preview `0.20.0-beta`, see the [release notes](docs/releases/0.20.0.md)):
 
-- **Projects and people**: unassigned conversations go to Astro, Jefa triages them, and a topic becomes a project after three conversations. Every project has a brief and every Agent an occupation, which Bole recruits by.
+- **Projects and people**: unassigned conversations go to Astro, Jefa triages them, and when a topic keeps coming back (three conversations over at least two days) Astro asks whether to make it a project with its own people. Every project has a brief and every Agent an occupation, which Bole recruits by.
 - **Tasks**: assign without starting (backlog), schedule recurring tasks that pause after repeated failures, and stop, retry, or review any run from the task details. A temporary failure is retried automatically only when no prompt was sent.
 - **Decisions**: an Agent that needs you asks in the conversation first. A request that must wait for you goes to the Decisions page, and your reply reaches the Agent that asked.
 - **Roundtable**: besides asks (`message_agent`), Agents have direct and group chats (`agent_chat`) with push delivery and `wait`; the console shows them live.

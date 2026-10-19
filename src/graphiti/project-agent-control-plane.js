@@ -5,6 +5,7 @@ import { retryProjectAgentTask, stopProjectAgentTaskRun } from './project-agent-
 import { planAgentCollaboration, agentLoan, agentVerification } from './agent-collaboration.js';
 import { queryConversations, resumeConversation, updateConversationPolicy } from './agent-conversations.js';
 import { recordUserTriage } from './conversation-triage.js';
+import { acceptTopicProposal, declineTopicProposal, listTopicProposals } from './topic-proposals.js';
 import { agentProjectResolution } from './agent-knowledge-workflows.js';
 import { listAgentAttention, changeAgentAttention, respondToAgentAttention } from './agent-attention.js';
 import { loadProjectTeam } from './project-team-view.js';
@@ -84,6 +85,12 @@ export class ProjectAgentControlPlaneApplication {
   async recordConversationTriage(input) {
     this.#assertSpace(input.personalSpaceId);
     return recordUserTriage(this, input);
+  }
+  async topicProposals(operation, input) {
+    this.#assertSpace(input.personalSpaceId);
+    if (operation === 'list') return listTopicProposals(this);
+    if (operation === 'accept') return acceptTopicProposal(this, { topic: input.topic });
+    return declineTopicProposal(this, { topic: input.topic });
   }
   async queryAgentConversations(input) {
     this.#assertSpace(input.personalSpaceId);

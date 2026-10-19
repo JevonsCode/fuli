@@ -3,6 +3,9 @@ import UiButton from '@/ui/UiButton.vue'
 import { ref, watch } from "vue";
 import GrowthLoading from "@/components/GrowthLoading.vue";
 import CreateProjectDialog from "@/features/projects/CreateProjectDialog.vue";
+import TopicProposals from "./TopicProposals.vue";
+import type { TopicFormation } from "./topic-proposals";
+import { useConsoleStore } from "@/stores/console";
 import { currentLocale, t } from "@/i18n";
 import { formatDateTime } from "@/lib/date-time";
 import type { PersonalProject } from "@/types";
@@ -38,6 +41,15 @@ const creatingForItem = ref<UnassignedConversationItem | null>(null);
 const busyConversationId = ref<string | null>(null);
 const triageError = ref("");
 let sequence = 0;
+const store = useConsoleStore();
+
+// The formed project's conversations leave this list, and the new project
+// reaches every page through a fresh console state.
+function handleFormed(formation: TopicFormation) {
+  const key = formation.topic.trim().toLowerCase();
+  items.value = items.value.filter((item) => item.topic?.trim().toLowerCase() !== key);
+  void store.refresh();
+}
 
 async function load() {
   if (!props.spaceId) {
@@ -135,6 +147,8 @@ async function handleProjectCreated(project: PersonalProject) {
         <UiButton size="sm" variant="ghost" @click="load">{{ t("agentProfiles.retry") }}</UiButton>
       </p>
     </div>
+
+    <TopicProposals :space-id="spaceId" :items="items" @formed="handleFormed" />
 
     <div v-if="expanded" class="unassigned-conversations-list" data-unassigned-list>
       <p v-if="triageError" class="ui-meta" role="alert">{{ triageError }}</p>

@@ -1,10 +1,10 @@
-import { createProjectNamed, projectByName, projectNames } from './task-entry-project-mention.js';
+import { projectByName, projectNames } from './task-entry-project-mention.js';
 import { ASSISTANT_AGENT_ID } from './task-entry-project-scope.js';
+import { PROPOSAL_MIN_CONVERSATIONS, proposalForTopic } from './topic-proposals.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 
 // Jefa's triage of conversations no project has claimed yet. The finishing
 // host labels its own conversation while checkpointing; no model is called.
-export const TOPIC_FORMATION_THRESHOLD = 3;
 const PROJECT_CANDIDATES = 12;
 const TOPIC_CANDIDATES = 8;
 const KINDS = new Set(['project', 'topic', 'one_off']);
@@ -55,8 +55,9 @@ export async function recordTriage(application, task, conversation, label) {
     });
     const result = { status: 'recorded', recorded_by: 'employee.jefa', ...recorded.triage,
       ...(recorded.kept ? { kept: recorded.kept } : {}) };
-    if (!recorded.kept && label.kind === 'topic' && recorded.topic_count >= TOPIC_FORMATION_THRESHOLD) {
-      result.formed = await formTopicProject(application, task, recorded.triage.topic, recorded.topic_count);
+    if (!recorded.kept && label.kind === 'topic' && recorded.topic_count >= PROPOSAL_MIN_CONVERSATIONS) {
+      const proposal = await proposalForTopic(application, recorded.triage.topic).catch(() => null);
+      if (proposal) result.proposal = proposal;
     }
     return result;
   } catch {
@@ -73,25 +74,6 @@ export async function recordUserTriage(application, input) {
     kind: label.kind, personal_project_id: label.kind === 'project' ? input.personalProjectId : null,
     topic: label.kind === 'topic' ? label.topic : null, source: 'user'
   });
-}
-
-// A topic that keeps coming back becomes a project: an AI-draft brief, a lead
-// staffed through AR, and its conversations attached. People can rename,
-// merge, split or return it afterwards.
-async function formTopicProject(application, task, topic, count) {
-  const spaceId = application.config.personal.spaceId;
-  const reason = `话题「${topic}」累计 ${count} 个会话，Jefa 自动立项`;
-  const existing = await projectByName(application, topic);
-  if (existing?.ambiguous) return { status: 'not_formed', reason: 'project_name_ambiguous' };
-  const project = existing ?? await createProjectNamed(application, topic, `${reason}（AI 草稿，可编辑）`);
-  const projectId = project.personalProjectId;
-  const lead = await application.personal.staffDefaultProjectLead({ personal_space_id: spaceId,
-    personal_project_id: projectId, source_application: task.sourceApplication ?? 'other' })
-    .catch(() => null);
-  const attached = await application.personal.conversationTriage('form', {
-    personal_space_id: spaceId, topic, personal_project_id: projectId });
-  return { status: 'formed', personal_project_id: projectId, automatic: true, reason,
-    lead_agent_id: lead?.agent?.agent_id ?? null, conversations: attached.conversation_ids.length };
 }
 
 function invalid(message) {

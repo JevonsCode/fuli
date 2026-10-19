@@ -86,3 +86,35 @@ async def test_a_first_host_label_and_a_first_correction_leave_one_label():
         finally:
             await driver.execute_query(
                 'MATCH (n) WHERE n.id = $id DETACH DELETE n', id=conversation)
+
+
+@pytest.mark.asyncio
+async def test_topic_days_and_a_decline_read_back_from_real_cypher():
+    from neo4j import AsyncGraphDatabase
+    from fuli_graph.conversation_triage_models import ConversationTopicDecline, ConversationTopicQuery
+
+    space = 'synthetic-topics-' + uuid4().hex
+    conversations = ['synthetic-topics-' + uuid4().hex for _ in range(3)]
+    password = os.getenv('FULI_TEST_NEO4J_PASSWORD', 'fixture-pass')
+    async with AsyncGraphDatabase.driver(disposable_uri(), auth=('neo4j', password)) as driver:
+        triage = store(driver, space)
+        try:
+            for conversation in conversations:
+                await driver.execute_query(
+                    'CREATE (:FuliConversation {id: $id, scope: $scope})', id=conversation,
+                    scope=stable_uuid('global-conversation-scope', space, SYSTEM_ASSISTANT_AGENT_ID))
+                await triage.record_conversation_triage({}, ConversationTriageWrite(
+                    personal_space_id=space, conversation_id=conversation, kind='topic', topic='Garden'))
+            await driver.execute_query('MATCH (t:FuliConversationTriage {id: $id}) '
+                                       "SET t.labeled_at = '2026-10-01T08:00:00+00:00'", id=conversations[0])
+            query = ConversationTopicQuery(personal_space_id=space, topic='garden', min_count=3)
+            [garden] = (await triage.query_conversation_topics({}, query))['topics']
+            assert (garden['count'], garden['days'], garden['declined_count']) == (3, 2, None)
+            await triage.decline_conversation_topic({}, ConversationTopicDecline(personal_space_id=space, topic='Garden'))
+            [garden] = (await triage.query_conversation_topics({}, query))['topics']
+            assert garden['declined_count'] == 3
+            assert (await triage.query_conversation_topics({}, ConversationTopicQuery(
+                personal_space_id=space, min_count=4)))['topics'] == []
+        finally:
+            await driver.execute_query('MATCH (n) WHERE n.id IN $ids OR n.space_id = $space DETACH DELETE n',
+                                       ids=conversations, space=space)

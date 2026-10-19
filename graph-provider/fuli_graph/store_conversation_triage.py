@@ -52,17 +52,41 @@ class StoreConversationTriage:
         return rows[0]['count'] if rows else 0
 
     async def query_conversation_topics(self, actor, request):
-        """Open topic names for the next triage; people's own labels come first."""
+        """Open topics for the next triage, people's own labels first. Each says
+        how many conversations and distinct days it spans, and how many it had
+        when a person last said not yet, so a proposal is decided without a model."""
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'reader')
         rows, _, _ = await self.runtime.driver.execute_query(
             "MATCH (t:FuliConversationTriage {space_id: $space_id, kind: 'topic'}) "
-            'WHERE t.formed_project_id IS NULL '
-            'WITH t.topic_key AS key, collect(t.topic)[0] AS topic, count(t) AS count, '
+            'WHERE t.formed_project_id IS NULL AND ($key IS NULL OR t.topic_key = $key) '
+            'WITH t.topic_key AS key, collect(t.topic)[0] AS topic, count(t) AS total, '
+            'count(DISTINCT substring(t.labeled_at, 0, 10)) AS days, '
             "max(CASE WHEN t.source = 'user' THEN 1 ELSE 0 END) AS by_user, max(t.labeled_at) AS last "
-            'RETURN topic, count ORDER BY by_user DESC, count DESC, last DESC LIMIT $limit',
-            space_id=space['id'], limit=request.limit)
-        return {'topics': [{'topic': row['topic'], 'count': row['count']} for row in rows]}
+            'WHERE total >= $min_count '
+            'OPTIONAL MATCH (d:FuliConversationTopicDecline {space_id: $space_id, topic_key: key}) '
+            'RETURN topic, total AS count, days, last, d.declined_count AS declined_count '
+            'ORDER BY by_user DESC, total DESC, last DESC LIMIT $limit',
+            space_id=space['id'], limit=request.limit, min_count=request.min_count,
+            key=topic_key(request.topic) if request.topic else None)
+        return {'topics': [{'topic': row['topic'], 'count': row['count'], 'days': row['days'],
+                            'last_labeled_at': row['last'], 'declined_count': row['declined_count']}
+                           for row in rows]}
+
+    async def decline_conversation_topic(self, actor, request):
+        """A person said not yet; remember how many conversations the topic had then."""
+        self._require_personal()
+        space = await self.authorize(actor, request.personal_space_id, 'maintainer')
+        key = topic_key(request.topic)
+        count = await self._topic_count(space['id'], key)
+        if not count:
+            raise HTTPException(404, 'Open conversation topic not found')
+        await self.runtime.driver.execute_query(
+            'MERGE (d:FuliConversationTopicDecline {space_id: $space_id, topic_key: $key}) '
+            'SET d.topic = $topic, d.declined_count = $count, d.declined_at = $now',
+            space_id=space['id'], key=key, topic=' '.join(request.topic.split()), count=count,
+            now=now_utc().isoformat())
+        return {'topic': ' '.join(request.topic.split()), 'declined_count': count}
 
     async def form_conversation_topic(self, actor, request):
         """Attach every open conversation of a topic to its formed project; idempotent."""

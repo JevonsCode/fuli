@@ -690,3 +690,13 @@
 /* Untitled conversations: the full ID is shown on request and stays selectable. */
 .unassigned-conversation-id summary { cursor: pointer; }
 .unassigned-conversation-full-id { display: block; margin: 4px 0; font-family: var(--font-mono, monospace); font-size: 12px; overflow-wrap: anywhere; user-select: all; }
+
+.topic-proposals { display: grid; gap: var(--space-2, 8px); padding: 0 16px; }
+.topic-proposals:has(> *) { padding-bottom: 12px; }
+.topic-proposal { display: grid; gap: 6px; padding: 14px 16px; }
+.topic-proposal-eyebrow { margin: 0; }
+.topic-proposal-title { margin: 0; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
+.topic-proposal-question { margin: 0; }
+.topic-proposal-samples { margin: 0; padding-left: 18px; color: var(--color-muted); }
+.topic-proposal-samples li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topic-proposal-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
