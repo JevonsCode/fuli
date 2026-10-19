@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { codexStopLifecycleOutput, runCodexLifecycleCommand } from '../src/agents/codex/lifecycle-hook.js';
+import { codexHookTimeoutMs, codexStopLifecycleOutput, runCodexLifecycleCommand } from '../src/agents/codex/lifecycle-hook.js';
 import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-hook.js';
 import { cursorLifecycleOutput } from '../src/agents/cursor/lifecycle-hook.js';
 import { spawn, spawnSync } from 'node:child_process';
@@ -91,6 +91,7 @@ test('Codex command deadline retains the parsed native session and emits fallbac
   const output = JSON.parse(writes[0]);
   assert.equal(output.hookSpecificOutput?.hookEventName, 'UserPromptSubmit');
   assert.match(output.hookSpecificOutput.additionalContext, /sessionId="synthetic-timeout-session"/);
+  assert.match(output.systemMessage, /no answer within 20 ms/);
   assert.match(output.hookSpecificOutput.additionalContext, /checkpoint_task_knowledge/);
   assert.doesNotMatch(writes[0], /PRIVATE_PROMPT|private-project/);
   assert.notEqual(output.decision, 'block');
@@ -111,6 +112,7 @@ test('Codex command never guesses a fallback session or supplies entry context a
     const output = JSON.parse(writes[0]);
     assert.equal(output.hookSpecificOutput, undefined);
     assert.doesNotMatch(writes[0], /PRIVATE_|private-project|sessionId=/);
+    assert.match(output.systemMessage, /the hook failed/);
     assert.notEqual(output.decision, 'block');
   }
 });
@@ -135,4 +137,15 @@ for (const [host, run, source] of [
   assert.match(close.input.workLog.summary, /Auto-closed by the Stop hook/);
   assert.equal(close.input.sourceApplication, source);
   assert.equal('capture' in close.input, false);
+});
+
+test('Codex task entry waits up to 15 s for a cold start; other events keep 5 s; both stay under the host timeout', () => {
+  assert.equal(codexHookTimeoutMs(['--event', 'UserPromptSubmit']), 15_000);
+  assert.equal(codexHookTimeoutMs(['--event', 'UserPromptSubmit', '--timeout-ms', '60000']), 15_000);
+  assert.equal(codexHookTimeoutMs(['--event', 'UserPromptSubmit', '--timeout-ms', '20']), 20);
+  for (const event of ['Stop', 'SessionStart', 'PreCompact']) {
+    assert.equal(codexHookTimeoutMs(['--event', event]), 5_000);
+    assert.equal(codexHookTimeoutMs(['--event', event, '--timeout-ms', '9000']), 5_000);
+  }
+  assert.equal(codexHookTimeoutMs(['--event', 'Stop', '--timeout-ms', 'soon']), 5_000);
 });
