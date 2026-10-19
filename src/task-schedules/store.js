@@ -14,6 +14,9 @@ export class TaskScheduleStore {
         paused_reason TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS task_schedule_runs(schedule TEXT NOT NULL, slot TEXT NOT NULL, task_id TEXT,
         status TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(schedule, slot));`);
+    // Added after the first release: when a person last resumed the schedule.
+    const columns = this.db.prepare('PRAGMA table_info(task_schedules)').all().map(column => column.name);
+    if (!columns.includes('breaker_reset_at')) this.db.exec('ALTER TABLE task_schedules ADD COLUMN breaker_reset_at TEXT');
   }
 
   transaction(fn) {
@@ -23,7 +26,8 @@ export class TaskScheduleStore {
   }
 
   insert(schedule) {
-    this.db.prepare(`INSERT INTO task_schedules VALUES(?,?,?,?,?,?,?,?,?,?)`).run(schedule.id, schedule.space,
+    this.db.prepare(`INSERT INTO task_schedules(id, space, project, revision, enabled, body, next_run_at, paused_reason,
+      created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)`).run(schedule.id, schedule.space,
       schedule.project, 1, schedule.enabled ? 1 : 0, JSON.stringify(schedule.body), schedule.nextRunAt, null,
       schedule.at, schedule.at);
     return this.get(schedule.id);
@@ -50,13 +54,14 @@ export class TaskScheduleStore {
   }
 
   // Optimistic update: a stale revision changes nothing and returns null.
-  update(id, expectedRevision, { body, enabled, nextRunAt, pausedReason }, at) {
+  update(id, expectedRevision, { body, enabled, nextRunAt, pausedReason, breakerResetAt }, at) {
     const current = this.get(id);
     if (!current || current.revision !== expectedRevision) return null;
-    this.db.prepare(`UPDATE task_schedules SET revision=?, enabled=?, body=?, next_run_at=?, paused_reason=?, updated_at=?
-      WHERE id=? AND revision=?`).run(expectedRevision + 1, (enabled ?? current.enabled) ? 1 : 0,
+    this.db.prepare(`UPDATE task_schedules SET revision=?, enabled=?, body=?, next_run_at=?, paused_reason=?,
+      breaker_reset_at=?, updated_at=? WHERE id=? AND revision=?`).run(expectedRevision + 1, (enabled ?? current.enabled) ? 1 : 0,
       JSON.stringify(body ?? current.body), nextRunAt ?? current.nextRunAt,
-      pausedReason === undefined ? current.pausedReason : pausedReason, at, id, expectedRevision);
+      pausedReason === undefined ? current.pausedReason : pausedReason, breakerResetAt ?? current.breakerResetAt,
+      at, id, expectedRevision);
     return this.get(id);
   }
 
@@ -83,5 +88,5 @@ function view(row) {
   if (!row) return null;
   return { id: row.id, personalSpaceId: row.space, personalProjectId: row.project, revision: row.revision,
     enabled: row.enabled === 1, body: JSON.parse(row.body), nextRunAt: row.next_run_at, pausedReason: row.paused_reason,
-    createdAt: row.created_at, updatedAt: row.updated_at };
+    breakerResetAt: row.breaker_reset_at ?? null, createdAt: row.created_at, updatedAt: row.updated_at };
 }
