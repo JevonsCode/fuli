@@ -47,10 +47,11 @@ export function createScheduleDispatch({ app, db, now }) {
     }
   }
 
-  // Claims a slot and submits it; null when the slot was already claimed.
+  // Claims a slot and submits it, unless it is already claimed or a person paused the schedule meanwhile.
   async function claimAndSubmit(schedule, slot) {
     const run = db().claimRun(schedule.id, slot, lease());
-    return run ? submit(schedule, run) : null;
+    if (run) return submit(schedule, run);
+    return { outcome: db().get(schedule.id)?.enabled ? 'already_run' : 'paused' };
   }
 
   async function reconcile(run) {
@@ -75,8 +76,11 @@ export function createScheduleDispatch({ app, db, now }) {
       record({ status: 'failed', progress: 'not_created', lastError: 'task_schedule_not_created' });
       return settled({ outcome: 'failed', error: 'task_schedule_not_created' });
     }
-    record({ status: 'claimed', attempts: run.attempts + 1, progress: 'retrying' });
-    const sent = await submit(schedule, run);
+    // A pause saved while the lookup was pending keeps the claim; it is reconciled after resume.
+    if (!db().retryRun(run.scheduleId, run.slot, { claimedBy: claimer, at: iso() })) {
+      return db().get(run.scheduleId)?.enabled ? null : settled({ outcome: 'paused' });
+    }
+    const sent = await submit(db().get(run.scheduleId), run);
     return settled(sent.outcome === 'created' ? { ...sent, outcome: 'retried' } : sent);
   }
 

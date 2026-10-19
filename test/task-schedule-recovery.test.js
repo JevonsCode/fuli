@@ -23,10 +23,12 @@ const hourly = { action: 'create', personalSpaceId: SPACE, personalProjectId: 'p
 // real Provider derives the task ID from that key.
 function fakeProvider() {
   const tasks = new Map();
-  const calls = { submit: 0, lookup: 0 };
-  let fault = null, lookupFailure = null;
+  const calls = { submit: 0, lookup: 0 }, lookedUp = [];
+  let fault = null, lookupFailure = null, held = null;
   // The call never answers: the process died while it was in flight.
   const hang = () => new Promise(() => {});
+  // While held, reads wait like a slow Provider, so a person can act meanwhile.
+  const answered = () => held ?? Promise.resolve();
   const app = {
     config: { personal: { spaceId: SPACE } },
     async submitProjectAgentTask(input) {
@@ -34,7 +36,6 @@ function fakeProvider() {
       const point = fault;
       fault = null;
       if (point === 'before_create') return hang();
-      if (point instanceof Error) throw point;
       if (!tasks.has(input.idempotencyKey)) {
         tasks.set(input.idempotencyKey, { taskId: `task-${tasks.size + 1}`, status: input.start ? 'queued' : 'backlog' });
       }
@@ -43,17 +44,25 @@ function fakeProvider() {
     },
     async findProjectAgentTaskByIdempotencyKey({ idempotencyKey }) {
       calls.lookup += 1;
+      lookedUp.push(idempotencyKey);
+      await answered();
       if (lookupFailure) throw lookupFailure;
       return tasks.has(idempotencyKey) ? { ...tasks.get(idempotencyKey) } : null;
     },
     async viewProjectAgentTask({ taskId }) {
+      await answered();
       return { ...[...tasks.values()].find(task => task.taskId === taskId) };
     }
   };
-  return { app, tasks, calls,
+  return { app, tasks, calls, lookedUp,
     crashOnNextSubmit(point) { fault = point; },
-    failNextSubmit(error) { fault = error; },
     failLookups(error) { lookupFailure = error; },
+    // Returns the release: reads started meanwhile answer only after it.
+    holdAnswers() {
+      let release;
+      held = new Promise(resolve => { release = resolve; });
+      return () => { held = null; release(); };
+    },
     setStatus(taskId, status) { [...tasks.values()].find(task => task.taskId === taskId).status = status; } };
 }
 
@@ -260,6 +269,86 @@ test('a paused schedule creates nothing; its interrupted claim is reconciled aft
     restarted.manage({ action: 'resume', personalSpaceId: SPACE, scheduleId: schedule.id, expectedRevision: paused.revision });
     const [recovered] = await restarted.runDue();
     assert.deepEqual([recovered.outcome, recovered.taskId], ['retried', 'task-1']);
+  } finally { h.cleanup(); }
+});
+
+test('pausing while the lookup is pending keeps the claim and submits nothing until resume', async () => {
+  const h = harness();
+  try {
+    const first = h.start();
+    const schedule = await first.manage(hourly);
+    h.advance(HOUR);
+    await h.crash(first, 'before_create');
+
+    const restarted = h.start();
+    h.advance(PAST_CLAIM_LEASE);
+    const release = h.provider.holdAnswers();
+    const pass = restarted.runDue();
+    await nextTurn();
+    assert.equal(h.provider.calls.lookup, 1, 'the lookup is in flight');
+    const paused = restarted.manage({ action: 'pause', personalSpaceId: SPACE, scheduleId: schedule.id,
+      expectedRevision: schedule.revision });
+    release();
+    assert.deepEqual((await pass).map(result => result.outcome), ['paused']);
+    assert.equal(h.provider.calls.submit, 1, 'nothing is submitted while paused');
+    const [claim] = h.runs(restarted, schedule.id);
+    assert.deepEqual([claim.status, claim.taskId, claim.attempts], ['claimed', null, 1]);
+
+    restarted.manage({ action: 'resume', personalSpaceId: SPACE, scheduleId: schedule.id, expectedRevision: paused.revision });
+    h.advance(PAST_CLAIM_LEASE);
+    const [recovered] = await restarted.runDue();
+    assert.deepEqual([recovered.outcome, recovered.taskId], ['retried', 'task-1']);
+    assert.deepEqual([h.provider.calls.submit, h.provider.tasks.size], [2, 1]);
+  } finally { h.cleanup(); }
+});
+
+test('a schedule paused after the abandoned claims were listed is not taken over', async () => {
+  const h = harness();
+  try {
+    const first = h.start();
+    const a = await first.manage(hourly);
+    const b = await first.manage({ ...hourly, title: 'Second', firstRunAt: '2026-10-18T02:00:00.000Z' });
+    h.advance(HOUR);
+    await h.crash(first, 'before_create');
+    // A stays unresolved while B's own submit dies with its process.
+    const second = h.start();
+    h.provider.failLookups(unavailable());
+    h.advance(HOUR);
+    await h.crash(second, 'before_create');
+
+    const third = h.start();
+    h.provider.failLookups(null);
+    h.advance(PAST_CLAIM_LEASE);
+    const release = h.provider.holdAnswers();
+    const pass = third.runDue();
+    await nextTurn();
+    third.manage({ action: 'pause', personalSpaceId: SPACE, scheduleId: b.id, expectedRevision: b.revision });
+    release();
+    assert.deepEqual((await pass).map(result => [result.scheduleId, result.outcome]), [[a.id, 'retried']]);
+    assert.equal(h.provider.lookedUp.filter(key => key === h.runs(third, b.id)[0].dispatchKey).length, 0);
+    assert.equal(h.provider.calls.submit, 3, 'A was retried once; B was not');
+    assert.deepEqual(h.runs(third, b.id).map(run => [run.status, run.attempts]), [['claimed', 1]]);
+  } finally { h.cleanup(); }
+});
+
+test('pausing while a due slot refreshes its previous task creates no task for that slot', async () => {
+  const h = harness();
+  try {
+    const service = h.start();
+    const schedule = await service.manage(hourly);
+    h.advance(HOUR);
+    assert.equal((await service.runDue())[0].outcome, 'created');
+    h.provider.setStatus('task-1', 'completed');
+    h.advance(HOUR);
+    const release = h.provider.holdAnswers();
+    const pass = service.runDue();
+    await nextTurn();
+    const [current] = service.manage({ action: 'list', personalSpaceId: SPACE }).schedules;
+    service.manage({ action: 'pause', personalSpaceId: SPACE, scheduleId: schedule.id, expectedRevision: current.revision });
+    release();
+    assert.deepEqual((await pass).map(result => result.outcome), ['paused']);
+    assert.equal(h.provider.calls.submit, 1);
+    assert.equal(h.runs(service, schedule.id).length, 1, 'the slot is not claimed while paused');
   } finally { h.cleanup(); }
 });
 

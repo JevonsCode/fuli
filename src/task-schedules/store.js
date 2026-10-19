@@ -9,6 +9,9 @@ const RUN_FIELDS = Object.freeze({ taskId: 'task_id', status: 'status', claimedB
   leaseExpiresAt: 'lease_expires_at', attempts: 'attempts', progress: 'progress', lastError: 'last_error' });
 // A claim without a task ID is still being created, or waits for reconciliation.
 const OPEN_CLAIM = "task_id IS NULL AND status IN ('claimed','unresolved')";
+// Checked in the same statement that claims or retries, so a pause saved by any
+// process meanwhile wins over a scan or a lookup that started before it.
+const SCHEDULE_ENABLED = 'EXISTS (SELECT 1 FROM task_schedules WHERE id = task_schedule_runs.schedule AND enabled = 1)';
 
 // Local schedules that create project Agent tasks. Each slot creates at most
 // one task: the run row and its dispatch key are the dedupe key, and the
@@ -96,11 +99,13 @@ export class TaskScheduleStore {
   }
 
   // Saved before the first submit, so a crash leaves a claim that says a send may
-  // have happened. Returns the claimed run, or null when the slot was already claimed.
+  // have happened. Returns the claimed run, or null when the slot was already
+  // claimed or the schedule is no longer enabled.
   claimRun(schedule, slot, { claimedBy, leaseExpiresAt, at }) {
     const result = this.db.prepare(`INSERT OR IGNORE INTO task_schedule_runs(schedule, slot, task_id, status, created_at,
-      dispatch_key, claimed_by, lease_expires_at, attempts, progress, updated_at) VALUES(?,?,NULL,'claimed',?,?,?,?,1,'submitting',?)`)
-      .run(schedule, slot, at, dispatchKey(schedule, slot), claimedBy, leaseExpiresAt, at);
+      dispatch_key, claimed_by, lease_expires_at, attempts, progress, updated_at)
+      SELECT ?,?,NULL,'claimed',?,?,?,?,1,'submitting',? WHERE EXISTS (SELECT 1 FROM task_schedules WHERE id=? AND enabled=1)`)
+      .run(schedule, slot, at, dispatchKey(schedule, slot), claimedBy, leaseExpiresAt, at, schedule);
     return result.changes === 1
       ? runView(this.db.prepare('SELECT * FROM task_schedule_runs WHERE schedule=? AND slot=?').get(schedule, slot))
       : null;
@@ -112,11 +117,19 @@ export class TaskScheduleStore {
       WHERE schedule.enabled=1 AND run.${OPEN_CLAIM} AND run.lease_expires_at<=? ORDER BY run.slot`).all(nowIso).map(runView);
   }
 
-  // Takes over an abandoned claim; false when another process already did.
+  // Takes over an abandoned claim; false when another process already did or the schedule was paused.
   takeOverRun(schedule, slot, { claimedBy, leaseExpiresAt, at }) {
     const result = this.db.prepare(`UPDATE task_schedule_runs SET claimed_by=?, lease_expires_at=?, progress='reconciling',
-      updated_at=? WHERE schedule=? AND slot=? AND ${OPEN_CLAIM} AND lease_expires_at<=?`)
+      updated_at=? WHERE schedule=? AND slot=? AND ${OPEN_CLAIM} AND lease_expires_at<=? AND ${SCHEDULE_ENABLED}`)
       .run(claimedBy, leaseExpiresAt, at, schedule, slot, at);
+    return result.changes === 1;
+  }
+
+  // Counts the one retry of a claim this claimer holds; false once the schedule was paused.
+  retryRun(schedule, slot, { claimedBy, at }) {
+    const result = this.db.prepare(`UPDATE task_schedule_runs SET status='claimed', attempts=attempts+1, progress='retrying',
+      updated_at=? WHERE schedule=? AND slot=? AND task_id IS NULL AND claimed_by=? AND ${SCHEDULE_ENABLED}`)
+      .run(at, schedule, slot, claimedBy);
     return result.changes === 1;
   }
 

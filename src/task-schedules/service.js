@@ -111,7 +111,7 @@ export function createTaskScheduleService({ app, openStore = () => new TaskSched
     }
     const sent = await dispatch.claimAndSubmit(schedule, slot);
     advance();
-    return { scheduleId: schedule.id, slot, ...(sent ?? { outcome: 'already_run' }) };
+    return { scheduleId: schedule.id, slot, ...sent };
   }
 
   async function runDue() {
