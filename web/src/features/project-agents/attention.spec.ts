@@ -10,6 +10,7 @@ import { UiSelectStub } from '@/test-support/UiSelectStub'
 
 const item = { requestId: 'request-a', personalSpaceId: 'space-a', personalProjectId: 'project-a', agentId: 'agent-a', taskId: null,
   title: '选择方案', detail: '有两个可行的方案。', requestedAction: '请明确选择 A 或 B。', kind: 'question', status: 'open' as const, revision: 2, createdAt: '2026-09-04T00:00:00Z' }
+const resolved = { status: 'resolved', delivery: { status: 'inbox', agentId: 'agent-a' } }
 beforeEach(() => {
   setActivePinia(createPinia()); getJson.mockReset(); postJson.mockReset()
   getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents/')
@@ -23,7 +24,7 @@ describe('Agent attention', () => {
   })
   it('does not send a reply to an item from a previous space', async () => {
     const store = useAgentAttention(); store.setSpace('space-b'); await flushPromises()
-    await expect(store.respond(item, '选择 A')).rejects.toThrow('其他空间')
+    await expect(store.respond(item, { choice: null, note: '选择 A' })).rejects.toThrow('其他空间')
     expect(postJson).not.toHaveBeenCalled()
   })
   it('shows only explicit pending counts and opens the exact Agent queue', async () => {
@@ -89,11 +90,14 @@ describe('Agent attention', () => {
 
   it('records an explicit human reply with exact scope/revision; clears hand only after server refresh', async () => {
     const store = useAgentAttention(); store.setSpace('space-a'); await flushPromises()
-    postJson.mockResolvedValue({ status: 'resolved' })
+    postJson.mockResolvedValue({ status: 'resolved', delivery: { status: 'inbox', agentId: 'agent-a' } })
     getJson.mockResolvedValue({ items: [], total: 0, counts: {} })
-    await store.respond(item, '方案 A')
-    expect(postJson).toHaveBeenCalledWith('/api/agent-attention/respond', { personalSpaceId: 'space-a', personalProjectId: 'project-a', requestId: 'request-a', expectedRevision: 2, response: '方案 A' })
+    await store.respond(item, { choice: '方案 A', note: null })
+    expect(postJson).toHaveBeenCalledWith('/api/agent-attention/respond', { personalSpaceId: 'space-a', personalProjectId: 'project-a', requestId: 'request-a', expectedRevision: 2, choice: '方案 A', note: null })
     expect(store.counts).toEqual({})
+    expect(store.lastReply).toEqual({ requestId: 'request-a', title: '选择方案', status: 'inbox', agentId: 'agent-a' })
+    store.setSpace('space-b')
+    expect(store.lastReply).toBeNull()
   })
 
   it('renders the requested action, preserves a failed reply draft, and makes no write on opening', async () => {
@@ -121,9 +125,9 @@ describe('Agent attention', () => {
     expect(postJson).not.toHaveBeenCalled()
     const textarea = document.querySelector('textarea')!
     textarea.value = '保留当前布局'; textarea.dispatchEvent(new Event('input', { bubbles: true })); await flushPromises()
-    postJson.mockResolvedValue({ status: 'resolved' })
+    postJson.mockResolvedValue({ status: 'resolved', delivery: { status: 'inbox', agentId: 'agent-a' } })
     document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flushPromises()
-    expect(postJson.mock.calls[0]![1].response).toBe('审核通过\n\n保留当前布局')
+    expect(postJson.mock.calls[0]![1]).toMatchObject({ choice: '审核通过', note: '保留当前布局' })
     wrapper.unmount()
   })
 
@@ -178,7 +182,7 @@ describe('Agent attention', () => {
 
   it('releases the old space lock without allowing its completion to unlock a new submission', async () => {
     const finishes: Array<() => void> = []
-    postJson.mockImplementation(() => new Promise<void>(resolve => { finishes.push(resolve) }))
+    postJson.mockImplementation(() => new Promise(resolve => { finishes.push(() => resolve(resolved)) }))
     getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents/') ? [] : {
       items: [{ ...item, personalSpaceId: url.includes('space-b') ? 'space-b' : 'space-a' }], total: 1, counts: {},
     })
@@ -213,9 +217,9 @@ describe('Agent attention', () => {
 
   it('does not offer an already submitted request again when the follow-up refresh fails', async () => {
     const store = useAgentAttention(); store.setSpace('space-a'); await flushPromises(); store.show(); await flushPromises()
-    postJson.mockResolvedValue({ status: 'resolved' })
+    postJson.mockResolvedValue(resolved)
     getJson.mockRejectedValue(new Error('refresh unavailable'))
-    await store.respond(item, '方案 A')
+    await store.respond(item, { choice: null, note: '方案 A' })
     expect(store.items).toEqual([])
     expect(store.previewItems).toEqual([])
     expect(store.total).toBe(200)
@@ -230,7 +234,7 @@ describe('Agent attention', () => {
     await flushPromises(); const store = useAgentAttention(); store.show(); await flushPromises()
     let finish!: (value: unknown) => void
     getJson.mockImplementation(() => new Promise(resolve => { finish = resolve }))
-    postJson.mockResolvedValue({ status: 'resolved' })
+    postJson.mockResolvedValue(resolved)
     ;(document.querySelector('input[value=clarify]') as HTMLInputElement).click(); await flushPromises()
     document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flushPromises()
     expect(document.body.textContent).toContain('第二个问题')
@@ -242,4 +246,22 @@ describe('Agent attention', () => {
     wrapper.unmount()
   })
 
+  it('says where the reply went after submitting, and never that the work resumed', async () => {
+    getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents/')
+      ? { agentId: 'agent-a', personalSpaceId: 'space-a', profile: { name: '工程师', displayName: 'Milo' } }
+      : { items: postJson.mock.calls.length ? [] : [{ ...item, kind: 'blocked' }], total: postJson.mock.calls.length ? 0 : 1, counts: {} })
+    postJson.mockResolvedValue({ status: 'resolved', delivery: { status: 'inbox', agentId: 'agent-a' } })
+    const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [] }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises(); const store = useAgentAttention(); store.show(); await flushPromises()
+    ;(document.querySelector('input[value=done]') as HTMLInputElement).click(); await flushPromises()
+    document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flushPromises()
+    expect(postJson.mock.calls[0]![1]).toMatchObject({ choice: '我已完成', note: null })
+    const outcome = document.querySelector('.attention-outcome[role=status]')!
+    expect(outcome.textContent).toBe('已送达 Milo，它下次进入任务时会看到「选择方案」的回复。')
+    expect(document.body.textContent).toContain('暂时没有需要你处理的事情')
+    store.lastReply = { requestId: 'request-a', title: '选择方案', status: 'woken', agentId: 'agent-a' }; await flushPromises()
+    expect(outcome.textContent).toBe('已唤醒 Milo 正在等待的会话，它已收到「选择方案」的回复。')
+    expect(document.body.textContent).not.toMatch(/继续工作|已恢复/)
+    wrapper.unmount()
+  })
 })

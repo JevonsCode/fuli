@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { projectAddress, resolveProjectLead, verifiedProjectFolder } from './project-target.js';
 import { observeReturnedMemory, taskContextHash } from './memory-observation.js';
 import { createAgentChat } from './chat.js';
+import { ATTENTION_REPLIES_GUIDANCE, createAttentionInbox } from './attention-inbox.js';
 import { agentDiscoveryProfile, matchesAgentDiscovery } from './discovery.js';
 
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
@@ -454,9 +455,11 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
   async function readMessages({ taskContextToken, sourceApplication }) {
     const me = await sender({ taskContextToken, sourceApplication });
     if (!me.agent) return { messages: [] };
+    const attentionReplies = me.projectId ? attentionInbox.read(me.agent.agentId, me.projectId) : [];
     return { messages: store.pendingFor(spaceId(), me.agent.agentId)
       .filter(message => messageProject(message) === me.projectId).map(inboxItem),
-      guidance: 'Answer each with reply_agent_message.' };
+      guidance: 'Answer each with reply_agent_message.',
+      ...(attentionReplies.length ? { attentionReplies, attentionRepliesGuidance: ATTENTION_REPLIES_GUIDANCE } : {}) };
   }
 
   async function replyMessage({ taskContextToken, sourceApplication, messageId, body }) {
@@ -540,7 +543,8 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
   }
 
   const messageProject = message => message.target_project_id ?? store.getThread(message.thread_id)?.project_id ?? null;
-  const chat = createAgentChat({ app, store, agents, idFactory, messageAgent,
+  const attentionInbox = createAttentionInbox({ store, spaceId });
+  const chat = createAgentChat({ app, store, agents, idFactory, messageAgent, attentionInbox,
     waitUntilIdle: async (agentId, signal) => {
       const state = await waitForChatChange(() => store.executionState(spaceId(), agentId),
         { store: store.chat, signal, ready: state => state.held || !state.busy });
@@ -554,6 +558,8 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     ownerCancelMessage: ({ messageId }) => cancelAsk(ownedAsk(messageId)),
     pending: (agentId, projectId = undefined) => store.pendingFor(spaceId(), agentId)
       .filter(message => projectId === undefined || messageProject(message) === projectId).map(inboxItem),
+    deliverAttentionReply: attentionInbox.deliver,
+    attentionReplies: attentionInbox.taskEntry,
     close: () => {
       const pending = chat.closeChatWakes();
       return pending ? pending.then(() => opened?.close()) : opened?.close();

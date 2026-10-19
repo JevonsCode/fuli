@@ -17,7 +17,8 @@ export function createChatService({ store, transaction, scope, transport, direct
     if (!room || room.scope !== scope || !visible(room, actor)) error('chat_not_found', 'Chat not found for this member', 404);
     return room;
   }
-  async function execute(actor, raw, { signal, authorize, onMessage } = {}) {
+  // inbox: the waiting Agent's answered attention requests, which end a wait too.
+  async function execute(actor, raw, { signal, authorize, onMessage, inbox } = {}) {
     signal?.throwIfAborted();
     await authorize?.();
     signal?.throwIfAborted();
@@ -25,10 +26,18 @@ export function createChatService({ store, transaction, scope, transport, direct
     if (request.action === 'wait') {
       if (actor.owner) error('chat_owner_read_only', 'The owner view is read only');
       const { timeoutSeconds, ...page } = request;
+      const read = async () => {
+        const result = await execute(actor, { ...page, action: 'read' }, { authorize, signal });
+        const attentionReplies = inbox?.pending() ?? [];
+        return attentionReplies.length ? { ...result, attentionReplies } : result;
+      };
       const release = store.beginWait(scope, actor.address, request.chatId, timeoutSeconds);
-      try { return await waitForChatChange(() => execute(actor, { ...page, action: 'read' }, { authorize, signal }),
-        { store, timeoutSeconds, signal, ready: page => page.messages.length > 0 }); }
-      finally { release(); }
+      try {
+        const result = await waitForChatChange(read,
+          { store, timeoutSeconds, signal, ready: page => page.messages.length > 0 || Boolean(page.attentionReplies) });
+        if (result.attentionReplies) inbox.delivered(result.attentionReplies);
+        return result;
+      } finally { release(); }
     }
     if (actor.owner && !['list', 'read'].includes(request.action)) error('chat_owner_read_only', 'The owner view is read only');
     const known = ['create', 'members'].includes(request.action) ? await directory() : [];

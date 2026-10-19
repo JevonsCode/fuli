@@ -5,6 +5,7 @@ import { resolveTaskEntryAgent, loadProjectAgentContinuity } from './project-age
 import { applyAgentAssignment } from './task-agent-assignment.js';
 import { triageCandidates } from './conversation-triage.js';
 import { ASSISTANT_AGENT_ID } from './task-entry-project-scope.js';
+import { ATTENTION_REPLIES_GUIDANCE } from '../agent-roundtable/attention-inbox.js';
 
 export function finishTaskEntryPreferences(application, preferences, input) {
   if (!input.agentInvocation || input.agentToolName !== 'get_collaboration_preferences') return preferences;
@@ -70,6 +71,9 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
   // Questions other Agents left for this Agent while it was not running.
   const waiting = includeMessages && selection?.agent && application.roundtable
     ? application.roundtable.pending(selection.agent.agentId, projectResolution.personalProjectId) : [];
+  // Answers a person gave to this Agent's own requests while it was away.
+  const answered = includeMessages && selection?.agent && projectResolution.personalProjectId && application.roundtable?.attentionReplies
+    ? application.roundtable.attentionReplies(selection.agent.agentId, projectResolution.personalProjectId) : [];
   const judgmentContext = includeTeam ? taskJudgmentContext(application, projectResolution.personalProjectId) : null;
   // An unclaimed conversation gets names only, so its finishing host can label it.
   const triage = selection?.agent?.agentId === ASSISTANT_AGENT_ID && !projectResolution.personalProjectId
@@ -79,6 +83,7 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
     ...(judgmentContext ? { judgment_context: judgmentContext } : {}),
     ...(waiting.length ? { agent_messages: waiting,
       agent_messages_guidance: 'Other Agents are waiting for your answers. Reply to each with reply_agent_message.' } : {}),
+    ...(answered.length ? { attention_replies: answered, attention_replies_guidance: ATTENTION_REPLIES_GUIDANCE } : {}),
     agent_receipt: taskAgentReceipt(application, {
       projectId: projectResolution.personalProjectId, agentId: selection?.agent?.agentId ?? null,
       name: context?.role?.name, sourceApplication,

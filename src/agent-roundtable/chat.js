@@ -4,7 +4,7 @@ import { createChatService } from './chat-service.js';
 import { activeAgentRequestSignal, activeSealedWorkerRequest } from '../app/agent-request-context.js';
 
 // The current task supplies the sender. Neither MCP nor HTTP accepts a from ID.
-export function createAgentChat({ app, store, agents, idFactory, messageAgent, canWake, waitUntilIdle }) {
+export function createAgentChat({ app, store, agents, idFactory, messageAgent, canWake, waitUntilIdle, attentionInbox }) {
   const scope = app.config.personal.spaceId;
   const local = createChatService({ store: new Proxy({}, { get: (_, key) => store.chat[key] }),
     transaction: work => store.transaction(work), scope, transport: 'local', idFactory,
@@ -67,6 +67,7 @@ export function createAgentChat({ app, store, agents, idFactory, messageAgent, c
         return result;
       }
       const result = await local({ address: `local:${sender.agentId}` }, request, { ...options, authorize,
+        inbox: attentionInbox.forWait(sender.agentId, task.personalProjectId),
         onMessage: delivery => wakes.dispatch({ ...delivery, targets: delivery.targets.filter(address =>
           currentAgents.some(agent => address === `local:${agent.agentId}` && canWake(agent))) }, { taskContextToken, sourceApplication, authorize }) });
       if (request.action === 'list' && !transport && app.peer?.chat && app.peer.configured()) {

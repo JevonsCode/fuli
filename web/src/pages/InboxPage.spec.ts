@@ -32,7 +32,7 @@ beforeEach(() => {
   })
   postJson.mockImplementation(async (_url: string, payload: { requestId: string }) => {
     open = open.filter(item => item.requestId !== payload.requestId)
-    return { status: 'resolved' }
+    return { status: 'resolved', delivery: { status: 'inbox', agentId: 'agent-a' } }
   })
 })
 afterEach(() => mounted.splice(0).forEach(wrapper => wrapper.unmount()))
@@ -80,7 +80,7 @@ describe('Inbox page', () => {
     expect(wrapper.get('.attention-page-count').text()).toContain('2')
     await wrapper.get('textarea').setValue('Synthetic decision')
     await wrapper.get('form').trigger('submit'); await flushPromises()
-    expect(postJson).toHaveBeenCalledWith('/api/agent-attention/respond', expect.objectContaining({ requestId: 'request-a', response: 'Synthetic decision' }))
+    expect(postJson).toHaveBeenCalledWith('/api/agent-attention/respond', expect.objectContaining({ requestId: 'request-a', choice: null, note: 'Synthetic decision' }))
     expect(wrapper.findAll('.attention-request').map(item => item.text())).toEqual([expect.stringContaining('Synthetic request-b')])
     expect(wrapper.get('.attention-page-count').text()).toContain('1')
   })
