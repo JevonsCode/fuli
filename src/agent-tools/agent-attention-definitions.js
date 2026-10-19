@@ -9,7 +9,7 @@ const decision = objectSchema({
 export const AGENT_ATTENTION_DEFINITIONS = [
   {
     name: 'request_agent_attention',
-    description: 'Create a scoped, idempotent human-action request with optional native choices. Only for decisions/actions, never routine progress; creates no permission.',
+    description: 'Create a scoped, idempotent human-action request with optional native choices. If the person is in this conversation, ask there instead; this is their inbox for when they are away. Only for decisions/actions, never routine progress; creates no permission.',
     inputSchema: objectSchema({
       ...scope, agentId: text(128), taskId: text(128),
       idempotencyKey: { ...text(256), minLength: 8 },

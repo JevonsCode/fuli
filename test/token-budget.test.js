@@ -43,7 +43,10 @@ const BASELINE = Object.freeze({
   // The same tool takes the host task context (token, application, session)
   // so a grouped team's stop/retry passes the check its submissions pass:
   // 172,214 -> 172,415 B (+201 B). Chat is unchanged.
-  fullToolSchemaBytes: 172415,
+  // Attention replies: request_agent_attention says to ask in the live
+  // conversation first (the console is the away inbox) and read_agent_messages
+  // names the answers it now returns: 172,415 -> 172,573 B (+158 B). Chat is unchanged.
+  fullToolSchemaBytes: 172573,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

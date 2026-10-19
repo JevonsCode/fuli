@@ -30,8 +30,12 @@ const room = z.object({ chatId: text(160), kind: z.enum(['direct', 'group']), ti
   revision: z.number().int().positive(), members: z.array(member).max(CHAT_LIMITS.members), transport: z.enum(['local', 'peer']),
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(), left: z.boolean().optional() }).strict();
 const message = z.object({ messageId: text(128), seq: z.number().int().positive(), from: address, body, createdAt: z.string().datetime() }).strict();
+// A person's answer to the waiting Agent's own attention request (local inbox).
+const attentionReply = z.object({ requestId: text(128), revision: z.number().int().nonnegative(),
+  kind: text(32), choice: z.string().nullable(), note: z.string().nullable(), repliedAt: text(64), summary: text(8_500) }).strict();
 const result = z.union([
-  room.extend({ messages: z.array(message).max(100), nextAfter: z.number().int().nonnegative(), hasMore: z.boolean() }),
+  room.extend({ messages: z.array(message).max(100), nextAfter: z.number().int().nonnegative(), hasMore: z.boolean(),
+    attentionReplies: z.array(attentionReply).max(5).optional() }),
   room, message,
   z.object({ chats: z.array(room).max(200), remoteUnavailable: text(160).optional(),
     hasMore: z.boolean().optional(), nextChat: text(160).nullable().optional(),

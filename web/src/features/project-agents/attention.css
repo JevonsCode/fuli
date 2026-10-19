@@ -1,5 +1,7 @@
 .attention-nav-status { display: inline-flex; align-items: center; gap: 6px; justify-self: end; }
 .attention-page-body { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.attention-outcome { flex: 0 0 auto; margin: 0; padding: 12px 24px; border-radius: var(--radius-control); background: var(--color-success-soft); color: var(--color-ink); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.attention-outcome.is-unavailable { background: var(--color-warning-soft); }
 .attention-more { margin-top: 8px; width: 100%; }
 .attention-task-link { display: inline-block; margin-top: 16px; color: var(--color-accent); font-size: 13px; text-underline-offset: 4px; }
 .attention-workspace .attention-mobile-picker { display: none; margin: 8px 12px; }
