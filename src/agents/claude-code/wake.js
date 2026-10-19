@@ -19,9 +19,14 @@ export const claudeCodeWake = Object.freeze({
     return env.FULI_CLAUDE_BIN || which('claude', platform);
   },
 
-  args({ sessionId }) {
+  // Claude Code reports its session only after the prompt hook has run, so a
+  // delegated wake names the (forked) session up front and binds it first.
+  plansSession: true,
+
+  args({ sessionId, plannedSessionId = null }) {
     return ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk',
-      ...(sessionId ? ['--resume', sessionId, '--fork-session'] : [])];
+      ...(sessionId ? ['--resume', sessionId, '--fork-session'] : []),
+      ...(plannedSessionId ? ['--session-id', plannedSessionId] : [])];
   },
 
   // A session resumes only from the directory it started in.

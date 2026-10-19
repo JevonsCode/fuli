@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -23,9 +24,9 @@ export function resolveClientCommand(client, { env = process.env, platform = pro
   return wakeAdapter(client)?.resolveCommand({ env, platform, fileExists, which }) ?? null;
 }
 
-export function wakeArguments(client, { sessionId = null, cwd, delegated = false } = {}) {
+export function wakeArguments(client, { sessionId = null, cwd, delegated = false, plannedSessionId = null } = {}) {
   if (sessionId !== null && !SESSION_ID.test(sessionId)) throw new TypeError('Invalid client session id');
-  return adapterFor(client).args({ sessionId, cwd, delegated });
+  return adapterFor(client).args({ sessionId, cwd, delegated, plannedSessionId });
 }
 
 // Clients only resume a conversation from the directory it started in.
@@ -41,16 +42,22 @@ export async function wakeAgent({ client, sessionId = null, cwd, prompt, timeout
   const childEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('FULI_ROUNDTABLE_')));
   if (delegationToken) childEnv.FULI_ROUNDTABLE_DELEGATION = delegationToken;
   if (peerDepth) childEnv.FULI_ROUNDTABLE_PEER_DEPTH = String(peerDepth);
+  // A client that names its session up front is bound before it starts, so its
+  // first hook already finds the delegation; others are bound when they report it.
+  const plannedSessionId = onSession && adapterFor(client).plansSession ? randomUUID() : null;
+  if (plannedSessionId) await onSession(plannedSessionId);
   let observedSession = null;
-  const result = await run(command, wakeArguments(client, { sessionId, cwd, delegated: Boolean(delegationToken) }),
+  const result = await run(command, wakeArguments(client, { sessionId, cwd, delegated: Boolean(delegationToken), plannedSessionId }),
     { cwd, env: childEnv, input: prompt, timeoutMs, signal, onSpawn, onEvent: event => {
       const observed = adapterFor(client).nativeSessionId(event);
       if (!observed) return;
-      if (!SESSION_ID.test(observed) || (observedSession && observedSession !== observed)) {
+      if (!SESSION_ID.test(observed) || (observedSession && observedSession !== observed)
+        || (plannedSessionId && observed !== plannedSessionId)) {
         throw Object.assign(new Error('The receiving native session changed'), { code: 'session_mismatch' });
       }
       if (observedSession) return;
       observedSession = observed;
+      if (plannedSessionId) return;
       return onSession?.(observed);
     } });
   const answer = parseFinalAnswer(client, result);

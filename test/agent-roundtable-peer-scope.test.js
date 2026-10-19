@@ -75,3 +75,25 @@ test('same Agent in another project cannot read status or cancel this project as
     assert.deepEqual(f.peerCalls, ['status', 'cancel']);
   } finally { f.service.close(); }
 });
+
+test('a remote attempt uses its one grant and reports why that delivery failed', async () => {
+  const store = createRoundtableStore();
+  const grants = [];
+  const app = {
+    config: { personal: { spaceId: 'fixture-space' } },
+    listProjectAgents: async () => [{ agentId: 'shared-lead', profile: { name: 'Shared lead', status: 'active', allowedClients: ['codex', 'claude_code'] } }],
+    personal: { recentAgentSessions: async () => [], verifyAgentDelegation: async () => ({ redeemed: false }), revokeAgentDelegation: async () => {} },
+  };
+  const service = createAgentRoundtable({ app, openStore: () => store, clientAvailable: () => true,
+    wake: async () => ({ body: 'Synthetic reply', sessionId: 'fixture-session' }) });
+  try {
+    await assert.rejects(service.answerRemote({
+      claim: { messageId: 'one-grant-ask', attemptId: 'fixture-attempt', sender: { nodeId: 'c'.repeat(64), name: 'Fixture peer' },
+        assertion: { messageId: 'one-grant-ask', threadId: 'one-grant-thread', body: 'Question', conversation: 'new', depth: 1, from: { agentId: 'peer-lead', name: 'Peer lead' } } },
+      share: { spaceId: 'fixture-space', bindingId: 'shared-binding', agentId: 'shared-lead', projectId: 'shared-project', clients: ['codex', 'claude_code'], workingDirectory: process.cwd() },
+      issueGrant: async (delivery) => { grants.push(delivery.client); if (grants.length > 1) throw Object.assign(new Error('409'), { code: 'provider_error' }); return { token: 'fixture-grant' }; },
+      timeoutMs: 1000,
+    }), { code: 'delegation_not_redeemed' });
+    assert.equal(grants.length, 1);
+  } finally { service.close(); }
+});

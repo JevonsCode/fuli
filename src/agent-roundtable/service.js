@@ -146,7 +146,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
 
   // Tries each target until one answers as the restored Agent. The grant is the
   // only authority the woken session receives and is revoked after every attempt.
-  async function deliver({ ask, attempts, prompt, timeoutMs, issueGrant, signal, onSpawn, peerDepth }) {
+  async function deliver({ ask, attempts, prompt, timeoutMs, issueGrant, signal, onSpawn, peerDepth, oneGrant = false }) {
     const unusable = new Set();
     let failure = 'wake_failed';
     let cleanup = null;
@@ -180,6 +180,9 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
         if (['client_login_required', 'client_unavailable'].includes(failure)) unusable.add(delivery.client);
         // A timeout already used the caller's wait; a cancellation ends the delivery.
         if (failure === 'wake_timeout' || failure === 'cancelled') break;
+        // A remote attempt receives authority once; a second channel would only be
+        // refused and hide why the first one failed.
+        if (oneGrant) break;
         continue;
       } finally {
         // Even failed or timed-out attempts lose their authority. Expiry remains
@@ -379,7 +382,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     const prompt = promptOverride ?? wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: ask.from_client });
     try {
       const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, issueGrant, signal, onSpawn,
-        peerDepth: assertion.depth });
+        peerDepth: assertion.depth, oneGrant: true });
       finishWake(ask);
       store.updateMessage(ask.id, { status: 'answered', via });
       store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent', inReplyTo: ask.id, via,
