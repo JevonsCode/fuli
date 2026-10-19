@@ -17,6 +17,10 @@ export const taskRunMessages = {
     retryRisk: '之前的运行结果不明（已派出但没有终态记录、进程停止未报告或清理有错误），可能已经产生外部影响。',
     retryAck: '我已核对可能的外部影响', retrySubmit: '提交新任务', retrying: '正在提交新任务…',
     retried: '新任务已提交：{status}', viewNew: '查看新任务',
+    retrySlow: '仍在提交，请稍候；结果确认前不要离开', retryConfirmOnce: '按原选择再确认一次',
+    retryStillUnknown: '结果仍未确认。请先重新读取运行记录和任务列表，确认是否已经创建，不要再次提交。',
+    retryChain: '重试链（起点 → 上一次）', requestedModel: '请求的模型', actualSession: '实际会话', dispatchedAt: '指令发出时间',
+    closedAt: '关闭时间', notReported: '未报告',
     failure: {
       conflict: '状态已经变化，请刷新后重试。', not_found: '这次运行或任务已不存在。',
       denied: '没有权限，相关内容已清除。', unknown: '操作结果未确认，请重新读取运行记录后再决定。',
@@ -41,6 +45,10 @@ export const taskRunMessages = {
     retryRisk: 'An earlier run has an unknown outcome (dispatched without a terminal record, process stop not reported, or cleanup errors); it may already have had external effects.',
     retryAck: 'I have checked for possible external effects', retrySubmit: 'Submit new task', retrying: 'Submitting the new task…',
     retried: 'New task submitted: {status}', viewNew: 'View new task',
+    retrySlow: 'Still submitting; stay here until the result is confirmed', retryConfirmOnce: 'Confirm once more as chosen',
+    retryStillUnknown: 'The result is still unconfirmed. Read the run history and task list to check whether it was created; do not submit again.',
+    retryChain: 'Retry chain (first → previous)', requestedModel: 'Requested model', actualSession: 'Actual session', dispatchedAt: 'Prompt dispatched',
+    closedAt: 'Closed', notReported: 'Not reported',
     failure: {
       conflict: 'The state changed. Refresh and try again.', not_found: 'This run or task no longer exists.',
       denied: 'Access was removed; its details are cleared.', unknown: 'The result is unconfirmed. Read the run history again before deciding.',

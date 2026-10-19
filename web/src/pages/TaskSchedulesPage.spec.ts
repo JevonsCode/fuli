@@ -101,3 +101,76 @@ describe('task schedules page', () => {
     expect(document.body.textContent).toMatch(/请选择项目|Choose a project/)
   })
 })
+
+describe('task schedules page after acceptance review', () => {
+  async function fillCreate(wrapper: Awaited<ReturnType<typeof mountPage>>) {
+    await wrapper.find('[data-schedule-new]').trigger('click')
+    await flushPromises()
+    const setText = (selector: string, value: string) => {
+      const field = document.querySelector(`${selector} input, ${selector} textarea, input${selector}, textarea${selector}`) as HTMLInputElement
+      field.value = value
+      field.dispatchEvent(new Event('input'))
+    }
+    setText('[data-schedule-title]', 'Nightly check')
+    setText('[data-schedule-objective]', 'Run the checks.')
+    setText('[data-schedule-work-kind]', 'verification')
+    const backlog = document.querySelector('dialog input[value="backlog"]') as HTMLInputElement
+    backlog.checked = true
+    backlog.dispatchEvent(new Event('change'))
+    await flushPromises()
+  }
+
+  it('never offers a second create after an unconfirmed one, only reading the list again', async () => {
+    serve({
+      '/api/task-schedules?': () => ({ schedules: [] }),
+      '/api/task-schedules': () => new Response('boom', { status: 502 }),
+    })
+    const wrapper = await mountPage()
+    await fillCreate(wrapper)
+    // The project select is set through the component model directly.
+    const page = wrapper.vm as unknown as { draft: { project: string } }
+    page.draft.project = 'project-a'
+    await flushPromises()
+    ;(document.querySelector('dialog form') as HTMLFormElement).dispatchEvent(new Event('submit'))
+    await flushPromises()
+    expect(calls.filter(call => call.method === 'POST')).toHaveLength(1)
+    expect(document.querySelector('[data-schedule-save]')).toBeNull()
+    expect(document.querySelector('[data-schedule-verify]')).not.toBeNull()
+    ;(document.querySelector('dialog form') as HTMLFormElement).dispatchEvent(new Event('submit'))
+    await flushPromises()
+    expect(calls.filter(call => call.method === 'POST')).toHaveLength(1)
+  })
+
+  it('shows the exact first slot and sends that same time', async () => {
+    serve({ '/api/task-schedules?': () => ({ schedules: [] }), '/api/task-schedules': body => ({ ...schedule(), ...body }) })
+    const wrapper = await mountPage()
+    await fillCreate(wrapper)
+    const planned = document.querySelector('[data-schedule-planned]')!.textContent!
+    const page = wrapper.vm as unknown as { draft: { project: string } }
+    page.draft.project = 'project-a'
+    await flushPromises()
+    ;(document.querySelector('dialog form') as HTMLFormElement).dispatchEvent(new Event('submit'))
+    await flushPromises()
+    const sent = calls.find(call => call.method === 'POST')!.body!.firstRunAt as string
+    expect(planned).toContain(sent)
+  })
+
+  it('edits with the shown revision and lists the latest 50 task records on request', async () => {
+    serve({
+      '/api/task-schedules/sched-1/update': body => ({ ...schedule(), revision: 3, body: { ...schedule().body, title: String(body?.title) } }),
+      '/api/task-schedules/sched-1/runs': () => ({ runs: [{ slot: '2026-10-19T00:00:00Z', taskId: 'task-9', status: 'completed', createdAt: '2026-10-19T00:00:01Z' }] }),
+      '/api/task-schedules?': () => ({ schedules: [schedule()] }),
+    })
+    const wrapper = await mountPage()
+    await wrapper.find('[data-schedule-runs]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-schedule-run-panel]').text()).toContain('task-9')
+    expect(wrapper.get('[data-schedule-run-panel]').text()).toMatch(/最近 50 条|Latest 50/)
+    await wrapper.find('[data-schedule-edit]').trigger('click')
+    await flushPromises()
+    ;(document.querySelector('dialog form') as HTMLFormElement).dispatchEvent(new Event('submit'))
+    await flushPromises()
+    const update = calls.find(call => call.url.endsWith('/update'))!
+    expect(update.body).toMatchObject({ personalSpaceId: 'space-1', expectedRevision: 2, title: 'Nightly check', startMode: 'backlog' })
+  })
+})

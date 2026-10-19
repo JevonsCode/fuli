@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { t } from '@/i18n'
 import type { ProjectAgentTaskRecord } from '@/types'
@@ -44,7 +44,7 @@ async function readPage(cursor: string | null) {
     loaded.value = true
   } catch (error) {
     if (generation !== readGeneration) return
-    if (actionFailure(error) === 'denied') { runs.value = []; loaded.value = false }
+    if (actionFailure(error) === 'denied') { revoke(); return }
     historyError.value = true
   } finally {
     if (generation === readGeneration) loading.value = false
@@ -59,7 +59,24 @@ watch(() => [props.active, props.task.taskId] as const, ([active], previous) => 
 
 const activeRuns = computed(() => runs.value.filter(runIsActive))
 const retryable = computed(() => taskIsRetryable(props.task.status) && Boolean(scope.value))
-const uncertain = computed(() => runs.value.some(runOutcomeUncertain))
+// A history that could not be read in full cannot prove the earlier runs were
+// harmless, so it counts as uncertain until it is read completely.
+const historyIncomplete = computed(() => !loaded.value || loading.value || historyError.value || !complete.value)
+const uncertain = computed(() => historyIncomplete.value || runs.value.some(runOutcomeUncertain))
+
+// Lost access clears what this panel showed and closes its dialogs; a late
+// response from before cannot bring them back.
+function revoke() {
+  readGeneration += 1
+  runs.value = []
+  loaded.value = false
+  complete.value = false
+  nextCursor.value = null
+  stopTarget.value = null
+  retryOpen.value = false
+  retried.value = null
+  notice.value = t('taskRuns.failure.denied')
+}
 
 // Stop: one explicit run per confirmation.
 const stopTarget = ref<TaskRunRecord | null>(null)
@@ -76,6 +93,7 @@ async function confirmStop() {
     stopTarget.value = null
     await reload()
   } catch (error) {
+    if (actionFailure(error) === 'denied') { revoke(); return }
     stopError.value = failureText(actionFailure(error), error)
   } finally {
     stopBusy.value = false
@@ -89,26 +107,49 @@ const retryAck = ref(false)
 const retryBusy = ref(false)
 const retryError = ref('')
 const retried = ref<RetryResponse | null>(null)
-const canSubmitRetry = computed(() => Boolean(retryStart.value) && (!uncertain.value || retryAck.value))
+// After an unconfirmed result the choice is frozen: the same request may be
+// sent once more to confirm it (the server keys it by the original task); a
+// second unconfirmed result leaves only reading the history.
+const retryUnknown = ref<{ start: 'queue' | 'backlog'; resent: boolean } | null>(null)
+const retrySlow = ref(false)
+const canSubmitRetry = computed(() => retryUnknown.value
+  ? !retryUnknown.value.resent
+  : Boolean(retryStart.value) && (!uncertain.value || retryAck.value))
+const SLOW_MS = 8_000
+const GIVE_UP_MS = 30_000
+let retryTimers: ReturnType<typeof setTimeout>[] = []
+function clearRetryTimers() { retryTimers.forEach(clearTimeout); retryTimers = [] }
+onBeforeUnmount(clearRetryTimers)
 async function openRetry() {
-  retryStart.value = ''
+  retryStart.value = retryUnknown.value?.start ?? ''
   retryAck.value = false
-  retryError.value = ''
+  retryError.value = retryUnknown.value ? t('taskRuns.failure.unknown') : ''
   retryOpen.value = true
   if (!loaded.value) await reload()
 }
 async function confirmRetry() {
-  if (!scope.value || !canSubmitRetry.value) return
+  if (!scope.value || !canSubmitRetry.value || retryBusy.value) return
+  const start = retryUnknown.value?.start ?? (retryStart.value as 'queue' | 'backlog')
+  const resend = Boolean(retryUnknown.value)
+  const controller = new AbortController()
   retryBusy.value = true
+  retrySlow.value = false
   retryError.value = ''
+  retryTimers = [setTimeout(() => { retrySlow.value = true }, SLOW_MS), setTimeout(() => controller.abort(), GIVE_UP_MS)]
   try {
-    retried.value = await retryTask(scope.value, retryStart.value === 'queue')
+    retried.value = await retryTask(scope.value, start === 'queue', controller.signal)
+    retryUnknown.value = null
     retryOpen.value = false
     emit('changed')
   } catch (error) {
-    retryError.value = failureText(actionFailure(error), error)
+    const kind = actionFailure(error)
+    if (kind === 'denied') { revoke(); return }
+    if (kind === 'unknown') retryUnknown.value = { start, resent: resend }
+    retryError.value = failureText(kind, error)
   } finally {
+    clearRetryTimers()
     retryBusy.value = false
+    retrySlow.value = false
   }
 }
 
@@ -145,6 +186,7 @@ function stateLabel(state: string) {
       <RouterLink v-if="newTaskHref" :to="newTaskHref">{{ t('taskRuns.viewNew') }}</RouterLink>
       <code v-else>{{ retried.task.taskId }}</code>
     </p>
+    <p v-if="retried?.mustDiscloseRecruitment && retried.clientNotice" role="note" class="task-run-risk" data-task-run-disclosure>{{ retried.clientNotice }}</p>
 
     <div class="project-agent-section-heading">
       <h5>{{ t('taskRuns.history') }}</h5>
@@ -169,10 +211,18 @@ function stateLabel(state: string) {
           <div><dt>{{ t('taskRuns.authority') }}</dt><dd>{{ run.executionResult?.processStopped === true ? t('taskRuns.processStopped') : t('taskRuns.processNotReported') }}</dd></div>
         </dl>
         <p v-if="run.executionResult?.cleanupErrors?.length" class="inline-error">{{ t('taskRuns.cleanupErrors') }} · {{ run.executionResult.cleanupErrors.join(' · ') }}</p>
-        <details class="project-agent-task-tech">
+        <details class="project-agent-task-tech" data-task-run-evidence>
           <summary>{{ t('taskRuns.evidence') }}</summary>
-          <small>{{ t('taskRuns.runId') }} · {{ run.runId }}</small>
-          <pre class="task-run-evidence">{{ JSON.stringify(run.executionResult, null, 2) }}</pre>
+          <dl class="project-agent-execution-summary-meta">
+            <div><dt>{{ t('taskRuns.runId') }}</dt><dd>{{ run.runId }}</dd></div>
+            <div v-if="run.rootRunId || run.retryOfRunId"><dt>{{ t('taskRuns.retryChain') }}</dt><dd>{{ run.rootRunId ?? '—' }} → {{ run.retryOfRunId ?? '—' }}</dd></div>
+            <div><dt>{{ t('taskRuns.requestedModel') }}</dt><dd>{{ [run.requestedModelProvider, run.requestedModel].filter(Boolean).join(' · ') || '—' }}</dd></div>
+            <div><dt>{{ t('taskRuns.actualSession') }}</dt><dd>{{ run.actualSessionId || t('taskRuns.notReported') }}</dd></div>
+            <div><dt>{{ t('taskRuns.dispatchedAt') }}</dt><dd>{{ run.promptDispatchedAt ? formatDate(run.promptDispatchedAt) : t('taskRuns.notReported') }}</dd></div>
+            <div><dt>{{ t('taskRuns.closedAt') }}</dt><dd>{{ run.closedAt ? formatDate(run.closedAt) : '—' }}<template v-if="run.closeReason"> · {{ run.closeReason }}</template></dd></div>
+          </dl>
+          <!-- The whole record as served, unknown fields included, for checking and copying. -->
+          <pre class="task-run-evidence" tabindex="0">{{ JSON.stringify(run, null, 2) }}</pre>
         </details>
       </li>
     </ol>
@@ -192,18 +242,23 @@ function stateLabel(state: string) {
 
     <UiDialog :open="retryOpen" :title="t('taskRuns.retryTitle')" :busy="retryBusy" :error="retryError" form @close="retryOpen = false" @submit="confirmRetry">
       <p>{{ t('taskRuns.retryBody') }}</p>
-      <fieldset class="task-run-choices" :disabled="retryBusy">
+      <fieldset class="task-run-choices" :disabled="retryBusy || Boolean(retryUnknown)">
         <legend>{{ t('taskRuns.retryChoose') }}</legend>
         <label><input v-model="retryStart" type="radio" name="retry-start" value="queue" /> {{ t('taskRuns.retryQueue') }}</label>
         <label><input v-model="retryStart" type="radio" name="retry-start" value="backlog" /> {{ t('taskRuns.retryBacklog') }}</label>
       </fieldset>
-      <template v-if="uncertain">
+      <p v-if="retrySlow" role="status" class="task-run-notice">{{ t('taskRuns.retrySlow') }}</p>
+      <p v-if="retryUnknown?.resent" role="alert" class="task-run-risk">{{ t('taskRuns.retryStillUnknown') }}</p>
+      <template v-if="uncertain && !retryUnknown">
         <p role="note" class="task-run-risk">{{ t('taskRuns.retryRisk') }}</p>
         <label class="task-run-ack"><input v-model="retryAck" type="checkbox" :disabled="retryBusy" /> {{ t('taskRuns.retryAck') }}</label>
       </template>
       <template #footer>
         <UiButton :disabled="retryBusy" @click="retryOpen = false">{{ t('common.actions.cancel') }}</UiButton>
-        <UiButton type="submit" variant="primary" :disabled="!canSubmitRetry" :busy="retryBusy" :busy-label="t('taskRuns.retrying')">{{ t('taskRuns.retrySubmit') }}</UiButton>
+        <UiButton v-if="retryUnknown" :disabled="retryBusy" @click="reload">{{ t('taskRuns.retryRead') }}</UiButton>
+        <UiButton type="submit" variant="primary" :disabled="!canSubmitRetry" :busy="retryBusy" :busy-label="t('taskRuns.retrying')">
+          {{ retryUnknown ? t('taskRuns.retryConfirmOnce') : t('taskRuns.retrySubmit') }}
+        </UiButton>
       </template>
     </UiDialog>
   </section>
