@@ -8,6 +8,7 @@
     "npm-shrinkwrap.json",
     "src/",
     "packages/roundtable/package.json",
+    "packages/roundtable/bin/",
     "packages/roundtable/src/",
     "dist/web/",
     "docs/external-knowledge-architecture.md",

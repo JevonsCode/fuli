@@ -16,10 +16,16 @@
     "./*": "./src/*"
   },
   "files": [
-    "src/"
+    "bin/",
+    "src/",
+    "README.md"
   ],
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "@peculiar/x509": "2.1.0",
     "zod": "^4.4.3"
+  },
+  "bin": {
+    "fuli-roundtable": "bin/fuli-roundtable.js"
   }
 }
