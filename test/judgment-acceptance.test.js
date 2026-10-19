@@ -56,3 +56,23 @@ test('lead authorization is rechecked after judgment before any completion write
   assert.equal((await service.accept(input)).execution.status, 'failed');
   assert.equal(writes.length, 0);
 });
+test('an acceptance names the assessed lead and becomes a score-card review fact', async t => {
+  const { service } = fixture(t);
+  const record = await service.accept(input);
+  assert.equal(record.agentId, 'lead');
+  const fact = { task_id: 't', personal_project_id: 'p', result: 'passed', occurred_at: record.createdAt };
+  assert.deepEqual(service.reviewVerdicts({ personalSpaceId: 's', agentId: 'lead' }), [fact]);
+  assert.deepEqual(service.reviewVerdicts({ personalSpaceId: 's', agentId: 'lead', personalProjectId: 'other' }), []);
+  assert.deepEqual(service.reviewVerdicts({ personalSpaceId: 's', agentId: 'reviewer' }), []);
+  // The user's thumbs-down corrects Tonborg: the verdict no longer counts either way.
+  service.feedback({ personalSpaceId: 's', decisionId: record.id, vote: 'down', reason: 'Not actually done', expectedRevision: 0 });
+  assert.deepEqual(service.reviewVerdicts({ personalSpaceId: 's', agentId: 'lead' }), [{ ...fact, result: 'disputed' }]);
+  assert.throws(() => service.reviewVerdicts({ personalSpaceId: 'other', agentId: 'lead' }), { code: 'scope_mismatch' });
+});
+test('without another Agent\'s verification Tonborg did not judge, so there is no review fact', async t => {
+  for (const options of [{ verifier: 'lead' }, { artifact: 'different' }]) {
+    const { service } = fixture(t, options);
+    assert.equal((await service.accept(input)).outcome, 'escalate');
+    assert.deepEqual(service.reviewVerdicts({ personalSpaceId: 's', agentId: 'lead' }), []);
+  }
+});

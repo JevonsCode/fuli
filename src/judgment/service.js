@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { JudgmentStore } from './store.js';
 import { EmployeeError } from '../employees/manifest.js';
 import { judgmentHumanInteraction } from './conversation.js';
+import { acceptanceReviewVerdicts } from './review-verdicts.js';
 
 const id = z.string().trim().min(1).max(256);
 export const policySchema = z.object({ mode: z.enum(['manual', 'shared', 'autonomous']),
@@ -10,6 +11,7 @@ const scopeSchema = z.object({ personalSpaceId: id, personalProjectId: id.nullab
 const revision = z.number().int().min(0);
 const pinSchema = z.object({ personalSpaceId: id, agentId: id, pinned: z.boolean(), expectedRevision: revision }).strict();
 const policyWriteSchema = scopeSchema.extend({ policy: policySchema.nullable(), expectedRevision: revision }).strict();
+const reviewVerdictSchema = z.object({ personalSpaceId: id, agentId: id, personalProjectId: id.nullable().optional() }).strict();
 const feedbackSchema = z.object({ personalSpaceId: id, decisionId: id, vote: z.enum(['up', 'down']).nullable(),
   reason: z.string().trim().max(1000).default(''), expectedRevision: revision }).strict();
 
@@ -57,6 +59,11 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
       if (parsed.personalProjectId) records.push(...store().records(parsed.personalSpaceId, { personalProjectId: null }));
       records.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       return judgmentHumanInteraction(records, parsed.personalSpaceId);
+    },
+    // Reads the local ledger only; no judgment client runs.
+    reviewVerdicts(input) {
+      const parsed = parse(reviewVerdictSchema, input); space(parsed);
+      return acceptanceReviewVerdicts(store().acceptances(parsed.personalSpaceId, parsed.agentId, parsed.personalProjectId ?? null));
     },
     feedback(input) { const parsed = parse(feedbackSchema, input); space(parsed);
       return store().feedback(parsed.personalSpaceId, parsed.decisionId, parsed.vote, parsed.reason, parsed.expectedRevision); },
