@@ -286,3 +286,18 @@ test('a prior-context prompt keeps the named target when it also quotes search p
   assert.ok(plan.queries.every((query) => query.includes('Cobalt')), plan.queries.join(' | '));
   assert.ok(plan.queries.every((query) => !/personalSpaceId|4f0c2a3e|personalProjectId/.test(query)), plan.queries.join(' | '));
 });
+
+test('a question about several things gets one short query per clause before the category queries', () => {
+  const plan = planTaskKnowledgeRecall('For this repo, answer in three short bullets: the release branch naming rule, '
+    + 'the staging deploy command, and who must review payments code.');
+  assert.deepEqual(plan.trigger_categories, ['release_delivery']);
+  assert.deepEqual(plan.queries.slice(0, 3), ['release branch naming rule', 'staging deploy command', 'must review payments code']);
+  assert.match(plan.queries[3], /release publish runbook/);
+  assert.equal(plan.queries.length, 4);
+});
+
+test('Chinese release requests keep their focused category queries', () => {
+  assert.deepEqual(planTaskKnowledgeRecall('检查一下代码，有问题暂停和我讨论，没问题发布一个新版本 0.7.0').queries,
+    ['0.7.0 发布 发版 版本 release publish runbook', '0.7.0 推送 提交 push commit GitHub Connector runbook']);
+});
+
