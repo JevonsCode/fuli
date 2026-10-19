@@ -597,6 +597,10 @@ class ProjectAgentTaskActivityCreate(StrictModel):
     )
     worker_status: ProjectAgentTaskStatus | None = None
     token_usage: ProjectAgentTokenUsage | None = None
+    # The durable run reporting this activity. A late report from an older run
+    # must not overwrite a newer run of the same Agent; excluded from the
+    # payload hash so untagged input keeps its old idempotency hash.
+    worker_run_id: str | None = Field(default=None, min_length=1, max_length=128, exclude=True)
     worker_runtime: ProjectAgentWorkerRuntime | None = None
 
     _normalize_worker_aliases = model_validator(mode='before')(

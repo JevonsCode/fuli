@@ -84,7 +84,7 @@ export function createWorkerRunAttempt({ provider, leases, adapter, request, pro
       return { phase: 'complete', workLog: { status: log.status, summary: redact(log.summary) } };
     };
     const report = (workerStatus, summary, phase) => provider.recordProjectAgentTaskActivity({ ...scope,
-      task_id: selection.task_id, agent_id: selection.agent_id, worker_id: selection.worker_id,
+      task_id: selection.task_id, agent_id: selection.agent_id, worker_id: selection.worker_id, worker_run_id: runId,
       status: workerStatus === 'completed' ? 'awaiting_review' : 'running', worker_status: workerStatus, worker_runtime: runtime(),
       source_application: parent.source_application, source_session_id: parent.session_id,
       idempotency_key: `${runId}:${phase}`, summary,
