@@ -26,6 +26,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   agent('PATCH /api/system/runtime/leases/:leaseId', 'refresh_runtime_lease'),
   agent('DELETE /api/system/runtime/leases/:leaseId', 'release_runtime_lease'),
   agent('PATCH /api/capture-policy', 'update_capture_policy'),
+  local('PATCH /api/recall-policy', 'Whether Agents may answer from confirmed knowledge without re-checking files is decided by the local person.'),
   local('PATCH /api/agent-access-policy', 'The Agent access kill switch requires local user presence and cannot be changed by an Agent.'),
   local('PUT /api/system/settings', 'Device-level runtime settings remain a local user operation.'),
   local('POST /api/system/client-connection/connect', 'Local device client configuration writes require a local user operation.'),

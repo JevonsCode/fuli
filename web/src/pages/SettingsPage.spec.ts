@@ -359,4 +359,28 @@ describe('SettingsPage', () => {
     await codex.trigger('click')
     expect(update).toHaveBeenLastCalledWith(true, [])
     wrapper.unmount()
-  })})
+  })
+
+  it('answers from confirmed knowledge by default and lets the person require file checks', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.runtimeStatus = 'ready'
+    store.state = { mode: 'personal_only', activePersonalSpaceId: 'personal-1',
+      personalSpaces: [{ id: 'personal-1', name: '我' }], personalProjects: [], projects: [], subscriptions: [],
+      capturePolicy: { enabled: true }, agentAccessPolicy: { enabled: true },
+      capabilities: { browsePublicProjects: false, submitKnowledge: false, reviewProposals: false } } as never
+    const update = vi.spyOn(store, 'updateRecallPolicy').mockResolvedValue(undefined)
+    vi.stubGlobal('fetch', vi.fn(async (input) => {
+      if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
+      return Response.json({}, { status: 503 })
+    }))
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    await flushPromises()
+    const toggle = wrapper.get('[data-recall-answer-from-confirmed] [role="switch"]')
+    expect(toggle.attributes('aria-checked')).toBe('true')
+    await toggle.trigger('click')
+    expect(update).toHaveBeenLastCalledWith(false)
+    wrapper.unmount()
+  })
+})

@@ -9,6 +9,7 @@ import type {
   CapturePolicy,
   ConsoleState,
   PersonalProject,
+  RecallPolicy,
 } from '@/types'
 
 export type RuntimeStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -88,6 +89,16 @@ export const useConsoleStore = defineStore('console', () => {
     }
   }
 
+  async function updateRecallPolicy(answerFromConfirmed: boolean) {
+    try {
+      const policy = await patchJson<RecallPolicy>('/api/recall-policy', { answerFromConfirmed })
+      if (state.value) state.value = { ...state.value, recallPolicy: policy }
+      notify(answerFromConfirmed ? t('console.recall.directNotice') : t('console.recall.verifyNotice'))
+    } catch (error) {
+      reportError(error)
+    }
+  }
+
   async function updateAgentAccessPolicy(enabled: boolean) {
     try {
       const policy = await patchJson<AgentAccessPolicy>(
@@ -143,6 +154,7 @@ export const useConsoleStore = defineStore('console', () => {
     refresh,
     updateCapturePolicy,
     updateAgentAccessPolicy,
+    updateRecallPolicy,
     hasCapability,
     notify,
     reportError,

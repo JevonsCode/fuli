@@ -79,6 +79,7 @@ const captureEnabled = computed(() => store.state?.capturePolicy?.enabled !== fa
 // Capture is per client; a client that is off still reads memory through its tools.
 const CAPTURE_CLIENTS = [['claude_code', 'Claude Code'], ['codex', 'Codex'], ['cursor', 'Cursor']] as const
 const disabledCaptureSources = computed(() => store.state?.capturePolicy?.disabledSources ?? [])
+const answerFromConfirmed = computed(() => store.state?.recallPolicy?.answerFromConfirmed !== false)
 const agentAccessEnabled = computed(() =>
   store.state?.agentAccessPolicy?.enabled !== false,
 )
@@ -228,6 +229,10 @@ function toggleAgentAccess(enabled: boolean) {
   void store.updateAgentAccessPolicy(enabled)
 }
 
+function toggleAnswerFromConfirmed(enabled: boolean) {
+  void store.updateRecallPolicy(enabled)
+}
+
 function updateLocale(value: string) {
   if (value === 'zh-CN' || value === 'en-US') setLocale(value)
 }
@@ -317,6 +322,10 @@ function revealInvalidField(event: Event) {
                 <UiToggle :model-value="!disabledCaptureSources.includes(source)" :label="label" @update:model-value="toggleClientCapture(source, $event)" />
               </label>
             </template>
+            <label class="setting-row" data-recall-answer-from-confirmed>
+              <span><strong>{{ t('settings.behavior.answerFromConfirmed') }}</strong><small>{{ t('settings.behavior.answerFromConfirmedMeta') }}</small></span>
+              <UiToggle :model-value="answerFromConfirmed" :label="t('settings.behavior.answerFromConfirmed')" @update:model-value="toggleAnswerFromConfirmed" />
+            </label>
             <label class="setting-row">
               <span><strong>{{ t('settings.behavior.agentAccess') }}</strong><small>{{ t('settings.behavior.agentAccessMeta') }}</small></span>
               <UiToggle :model-value="agentAccessEnabled" :label="t('settings.behavior.agentAccess')" @update:model-value="toggleAgentAccess" />

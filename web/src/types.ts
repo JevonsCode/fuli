@@ -16,6 +16,11 @@ export interface AgentAccessPolicy {
   updatedAt?: string | null
 }
 
+export interface RecallPolicy {
+  answerFromConfirmed: boolean
+  updatedAt?: string | null
+}
+
 export interface PersonalSpace {
   id: string
   name: string
@@ -652,6 +657,7 @@ export interface ConsoleState {
   subscriptions: Subscription[]
   capturePolicy?: CapturePolicy
   agentAccessPolicy?: AgentAccessPolicy
+  recallPolicy?: RecallPolicy
   capabilities?: Partial<Record<CapabilityName, boolean>>
   providers?: {
     personal?: ProviderStatus

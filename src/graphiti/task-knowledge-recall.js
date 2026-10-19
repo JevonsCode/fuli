@@ -168,7 +168,8 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt) {
       })
     } : {}),
     ...(pendingSlots.length ? { pending_fallback: { slots: pendingSlots, note: PENDING_NOTE } } : {}),
-    ...(confirmedByPeople([...facts, ...entities]) ? { confirmed_use: CONFIRMED_USE } : {}),
+    ...(answersFromConfirmed(application) && confirmedByPeople([...facts, ...entities])
+      ? { confirmed_use: CONFIRMED_USE } : {}),
     facts,
     entities
   };
@@ -319,6 +320,11 @@ function clauseQueries(prompt) {
     .filter((words) => words.length >= 2)
     .slice(0, MAX_CLAUSE_QUERIES)
     .map((words) => words.join(' '));
+}
+
+// On unless the person asked for every answer to be checked against the files.
+function answersFromConfirmed(application) {
+  return application.getRecallPolicy?.().answerFromConfirmed !== false;
 }
 
 // Only items a person confirmed; agent_confirmed ones were promoted by repeated use.

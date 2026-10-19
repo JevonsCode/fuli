@@ -311,3 +311,12 @@ test('recall tells the host to answer from items people confirmed, and only then
     assert.equal('confirmed_use' in recall, false, status);
   }
 });
+
+test('a person who wants every answer checked against the files gets no confirmed-use note', async () => {
+  const app = { ...recallApplication([ledgerNote('human-note', 'confirmed', 2)]),
+    getRecallPolicy: () => ({ answerFromConfirmed: false, updatedAt: null }) };
+  const recall = await recallTaskKnowledge(app, { personalProjectId: 'delta' },
+    'Use the amount format we decided previously for Delta Ledger.');
+  assert.equal(recall.status, 'matched');
+  assert.equal('confirmed_use' in recall, false);
+});

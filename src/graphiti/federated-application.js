@@ -33,6 +33,7 @@ import {
   AgentAccessPolicyStore,
   agentAccessPolicyPathForRuntime
 } from './agent-access-policy.js';
+import { RecallPolicyStore, recallPolicyPathForRuntime } from './recall-policy.js';
 import {
   sourceConsoleUrl
 } from './source-marker.js';
@@ -97,6 +98,7 @@ export function openFederatedGraphApplication({
   config,
   capturePolicyStore,
   agentAccessPolicyStore,
+  recallPolicyStore,
   tokenUsageResolver,
   fetchImpl = globalThis.fetch,
   env = process.env
@@ -111,6 +113,7 @@ export function openFederatedGraphApplication({
     agentAccessPolicyStore: agentAccessPolicyStore ?? new AgentAccessPolicyStore(
       agentAccessPolicyPathForRuntime(runtimeConfigPath)
     ),
+    recallPolicyStore: recallPolicyStore ?? new RecallPolicyStore(recallPolicyPathForRuntime(runtimeConfigPath)),
     tokenUsageResolver,
     consoleUrl: sourceConsoleUrl(runtimeConfigPath),
     providerRequestTimeoutMs: providerRequestTimeoutFromEnv(env),
@@ -162,6 +165,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     fetchImpl = globalThis.fetch,
     capturePolicyStore = new CapturePolicyStore(),
     agentAccessPolicyStore = new AgentAccessPolicyStore(),
+    recallPolicyStore = new RecallPolicyStore(),
     consoleUrl = sourceConsoleUrl(null),
     projectPathResolver = resolvePersonalProjectPath,
     taskContextRegistry = null,
@@ -173,6 +177,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     this.config = config;
     this.capturePolicyStore = capturePolicyStore;
     this.agentAccessPolicyStore = agentAccessPolicyStore;
+    this.recallPolicyStore = recallPolicyStore;
     this.consoleUrl = consoleUrl;
     this.projectPathResolver = projectPathResolver;
     this.tokenUsageResolver = tokenUsageResolver;
@@ -1016,6 +1021,14 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return this.capturePolicyStore.update(input);
   }
 
+  getRecallPolicy() {
+    return this.recallPolicyStore.read();
+  }
+
+  updateRecallPolicy(input) {
+    return this.recallPolicyStore.update(input);
+  }
+
   getAgentAccessPolicy() {
     return this.agentAccessPolicyStore.read();
   }
@@ -1038,6 +1051,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       providers,
       capturePolicy: this.getCapturePolicy(),
       agentAccessPolicy: this.getAgentAccessPolicy(),
+      recallPolicy: this.getRecallPolicy(),
       publicProvider: { configured, status: publicStatus },
       capabilities: aggregatePublicCapabilities(
         this.workspaces, providers.workspaces, spaces.projects
