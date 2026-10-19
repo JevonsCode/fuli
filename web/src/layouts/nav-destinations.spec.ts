@@ -16,6 +16,7 @@ describe('nav destinations', () => {
     ['/project-agents', 'agents', 'agentDirectory'],
     ['/agents/employee.bole', 'agents', 'agentDirectory'],
     ['/project-agents/occupations', 'agents', 'occupations'],
+    ['/project-agents/schedules', 'agents', 'schedules'],
     ['/project-agents/manage', 'agents', 'orchestrate'],
     ['/inbox', 'chat', 'askedYou'],
     ['/roundtables/abc', 'chat', 'roundtables'],

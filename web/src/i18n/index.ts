@@ -28,6 +28,8 @@ import { glossaryMessages } from './messages/glossary'
 import { roundtableMessages } from './messages/roundtable'
 import { agentPinsMessages } from './messages/agent-pins'
 import { judgmentMessages } from './messages/judgment'
+import { taskScheduleMessages } from './messages/task-schedules'
+import { taskRunMessages } from './messages/task-runs'
 
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const
 export type AppLocale = typeof SUPPORTED_LOCALES[number]
@@ -88,6 +90,8 @@ export const messages = {
     workbench: workbenchMessages['zh-CN'],
     glossary: glossaryMessages['zh-CN'],
     roundtable: roundtableMessages['zh-CN'],
+    taskSchedules: taskScheduleMessages['zh-CN'],
+    taskRuns: taskRunMessages['zh-CN'],
     employees: employeeMessages['zh-CN'],
     about: aboutMessages['zh-CN'],
     common: commonMessages['zh-CN'],
@@ -120,6 +124,8 @@ export const messages = {
     workbench: workbenchMessages['en-US'],
     glossary: glossaryMessages['en-US'],
     roundtable: roundtableMessages['en-US'],
+    taskSchedules: taskScheduleMessages['en-US'],
+    taskRuns: taskRunMessages['en-US'],
     employees: employeeMessages['en-US'],
     about: aboutMessages['en-US'],
     common: commonMessages['en-US'],

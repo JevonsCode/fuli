@@ -142,7 +142,8 @@ async function handleProjectCreated(project: PersonalProject) {
           <span v-if="item.startedAt" class="ui-meta unassigned-conversation-time">
             {{ formatStartedAt(item.startedAt) }}
           </span>
-          <span class="unassigned-conversation-line">{{ item.openingLine }}</span>
+          <span class="unassigned-conversation-line">{{ item.openingLine || t('agentRedesign.unassigned.untitled') }}</span>
+          <span v-if="!item.openingLine" class="ui-meta unassigned-conversation-id" :title="item.conversationId">#{{ item.shortId }}</span>
           <span class="ui-badge unassigned-conversation-triage" data-unassigned-triage>
             {{ triageBadgeText(item) }}
           </span>
