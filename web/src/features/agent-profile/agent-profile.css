@@ -39,12 +39,12 @@
   flex-shrink: 0;
 }
 
+/* Filters sit together at the start; the view switch and search take the end. */
 .agents-directory-filters {
-  align-items: stretch;
+  align-items: center;
+  justify-content: flex-start;
   margin-bottom: var(--space-6, 24px);
 }
-
-.agents-directory-filters { align-items: center; }
 
 .agents-directory-search {
   flex: 1 1 220px;
@@ -130,7 +130,7 @@
 .agent-card-status-detail { overflow: hidden; margin: 2px 0 0; color: var(--color-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .agent-card-status-detail:is(.is-blocked, .is-unavailable) { color: var(--color-danger); }
 .agent-card-status-detail:is(.is-awaiting_review, .is-paused, .is-queued, .is-awaiting_recruitment) { color: var(--color-warning); }
-.agents-directory-view { flex: 0 0 auto; }
+.agents-directory-view { flex: 0 0 auto; margin-left: auto; }
 .agents-directory-projects { display: grid; gap: var(--space-3, 12px); }
 .directory-project, .unassigned-conversations { border: 1px solid var(--color-border); border-radius: var(--radius-md, 10px); background: var(--color-surface); }
 .directory-project-toggle {
