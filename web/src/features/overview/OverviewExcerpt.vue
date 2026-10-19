@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 const props = defineProps<{ text: string }>()
 const expanded = ref(false), overflows = ref(false), content = ref<HTMLElement | null>(null)
@@ -13,7 +13,7 @@ onBeforeUnmount(() => observer?.disconnect())
 <template>
   <div class="overview-excerpt">
     <p ref="content" :class="{ 'is-clamped': !expanded }">{{ text }}</p>
-    <UiButton v-if="overflows || expanded" variant="ghost" :aria-expanded="expanded" @click="expanded = !expanded">{{ t(expanded ? 'overview.read.less' : 'overview.read.more') }}</UiButton>
+    <Button v-if="overflows || expanded" variant="ghost" :aria-expanded="expanded" @click="expanded = !expanded">{{ t(expanded ? 'overview.read.less' : 'overview.read.more') }}</Button>
   </div>
 </template>
 <style scoped>

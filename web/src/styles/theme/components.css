@@ -1,0 +1,35 @@
+/*
+ * Theme layer 3 · Component tokens: the names shadcn-vue components read,
+ * each mapped only from a semantic token, so a skin or mode recolours every
+ * component without touching this file or the component source.
+ *
+ * shadcn's names are kept as-is; note that its "accent" is the hover surface
+ * and "muted" is a quiet surface, while FULI's --color-accent is the brand
+ * colour and --color-muted is quiet text.
+ */
+:root {
+  --background: var(--color-bg);
+  --foreground: var(--color-ink);
+  --card: var(--color-surface);
+  --card-foreground: var(--color-ink);
+  --popover: var(--color-surface);
+  --popover-foreground: var(--color-ink);
+  --primary: var(--color-accent);
+  --primary-foreground: var(--color-on-accent);
+  --secondary: var(--color-surface-subtle);
+  --secondary-foreground: var(--color-ink);
+  --muted: var(--color-surface-subtle);
+  --muted-foreground: var(--color-muted);
+  --accent: var(--color-surface-hover);
+  --accent-foreground: var(--color-ink);
+  --destructive: var(--color-danger);
+  --border: var(--color-border);
+  --input: var(--color-control-border);
+  --ring: var(--color-focus);
+  /* FULI additions: explicit hover and soft tints instead of shadcn's opacity mixes. */
+  --primary-hover: var(--color-accent-hover);
+  --primary-soft: var(--color-accent-soft);
+  --destructive-soft: var(--color-danger-soft);
+  --border-strong: var(--color-border-strong);
+  --foreground-soft: var(--color-ink-soft);
+}

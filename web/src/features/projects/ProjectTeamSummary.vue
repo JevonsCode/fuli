@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
@@ -89,22 +89,22 @@ function number(person: ProjectTeamPerson) {
       <GrowthLoading v-if="showRefreshing" variant="inline" :label="t('projects.overview.refreshingTeam')" />
       <p v-else-if="failed && team" class="project-team-stale" role="alert">
         {{ t('projects.overview.refreshFailed') }}
-        <UiButton size="sm" variant="ghost" @click="load">{{ t('projects.overview.retry') }}</UiButton>
+        <Button size="sm" variant="ghost" @click="load">{{ t('projects.overview.retry') }}</Button>
       </p>
-      <UiButton size="sm" variant="ghost" class="ui-button--icon"
+      <Button size="icon-sm" variant="ghost"
         :aria-label="t('projects.overview.refresh')"
         :title="t('projects.overview.refresh')"
         :disabled="loading"
         @click="load"
       >
         <svg class="project-team-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" /></svg>
-      </UiButton>
+      </Button>
     </header>
 
     <GrowthLoading v-if="showInitialLoading" variant="compact" :label="t('projects.overview.loadingTeam')" />
     <div v-else-if="failed && !team" class="project-team-state" role="alert">
       <p>{{ t('projects.overview.teamFailed') }}</p>
-      <UiButton size="sm" variant="ghost" @click="load">{{ t('projects.overview.retry') }}</UiButton>
+      <Button size="sm" variant="ghost" @click="load">{{ t('projects.overview.retry') }}</Button>
     </div>
 
     <template v-else-if="team">
@@ -138,9 +138,11 @@ function number(person: ProjectTeamPerson) {
           </template>
           <template v-else>{{ t('projects.overview.noLead') }}</template>
         </p>
-        <RouterLink class="primary-button" :to="teamSettingsTo">
-          {{ team.status === 'lead_unavailable' ? t('projects.overview.changeLead') : t('projects.overview.setLead') }}
-        </RouterLink>
+        <Button as-child>
+          <RouterLink :to="teamSettingsTo">
+            {{ team.status === 'lead_unavailable' ? t('projects.overview.changeLead') : t('projects.overview.setLead') }}
+          </RouterLink>
+        </Button>
       </div>
 
       <div v-show="expanded || !team.lead" :id="panelId" class="project-team-organization">

@@ -68,7 +68,7 @@ describe('KnowledgeOrganizerPage', () => {
     const toolbarActions = wrapper.get('.organizer-toolbar .ui-toolbar-end')
     expect(toolbarActions.find('.organizer-result-summary').exists()).toBe(true)
     expect(toolbarActions.findAll('.batch-confirm-action')).toHaveLength(0)
-    expect(toolbarActions.findAll('.ui-icon-button')).toHaveLength(1)
+    expect(toolbarActions.findAll('[data-size^="icon"]')).toHaveLength(1)
 
     await wrapper.get('[data-organizer-quadrants] [data-value="known_known"]').trigger('click')
 
@@ -219,7 +219,7 @@ describe('KnowledgeOrganizerPage', () => {
     expect(wrapper.findAll('.organizer-row')).toHaveLength(1)
     expect(wrapper.get('.organizer-row').text()).toContain('Tonborg item')
 
-    await wrapper.get('.organizer-toolbar .ui-toolbar-end .ui-icon-button').trigger('click')
+    await wrapper.get('.organizer-toolbar .ui-toolbar-end [data-size^="icon"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-stat="ai_reviewed"] strong').text()).toBe('0')
     expect(wrapper.get('[data-stat="pending"] strong').text()).toBe('2')

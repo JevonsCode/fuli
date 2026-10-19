@@ -6,7 +6,7 @@ const returnPosition = { spaceId: '', expanded: false, scrollTop: 0 }
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiSelect from '@/ui/UiSelect.vue'
 import { agentDisplayName } from '@/features/agent-profile/profile-model'
 import { currentWork, overviewTaskTitle, overviewOwnerId, overviewOpenRequest, overviewAttentionTaskHref, overviewTaskHref, recentProjects } from '@/features/overview/overview-data'
@@ -131,15 +131,15 @@ const publicServiceStatus = computed(() => store.publicRuntimeStatus)
     <div v-else-if="scopeTimedOut || !state || data.denied.value" class="overview-scope-error" role="alert">
       <p>{{ t(data.denied.value ? 'overview.read.denied' : scopeTimedOut || store.refreshError === 'timeout' ? 'overview.read.timeout' : 'overview.read.scopeFailed') }}</p>
       <GrowthLoading v-if="scopeRetrying" variant="inline" :label="t('overview.read.scope')" />
-      <UiButton :disabled="scopeRetrying" @click="retryScope">{{ t('overview.read.reload') }}</UiButton>
+      <Button variant="outline" :disabled="scopeRetrying" @click="retryScope">{{ t('overview.read.reload') }}</Button>
     </div>
     <div v-else class="overview-content-grid">
       <section class="overview-section overview-attention-section" aria-labelledby="overview-attention-heading">
         <header class="overview-section-header">
           <h2 id="overview-attention-heading">{{ t('overview.sections.attention') }}</h2>
           <div class="overview-request-actions">
-          <UiButton variant="ghost" :disabled="requests.loading" data-testid="overview-attention-retry" @click="data.loadRequests">{{ t('overview.attention.refresh') }}</UiButton>
-          <RouterLink class="ui-button ui-button--ghost" data-testid="overview-attention-all" :to="inboxLocation()">{{ requests.data && !requests.data.partial ? t('overview.attention.all', { count: requests.data.total }) : t('overview.attention.open') }}</RouterLink>
+          <Button variant="ghost" :disabled="requests.loading" data-testid="overview-attention-retry" @click="data.loadRequests">{{ t('overview.attention.refresh') }}</Button>
+          <Button as-child variant="ghost"><RouterLink data-testid="overview-attention-all" :to="inboxLocation()">{{ requests.data && !requests.data.partial ? t('overview.attention.all', { count: requests.data.total }) : t('overview.attention.open') }}</RouterLink></Button>
           </div>
         </header>
         <OverviewReadStatus :state="requests" :label="t('overview.attention.loading')" :failed="t('overview.attention.loadFailed')" @retry="data.loadRequests" />
@@ -152,8 +152,8 @@ const publicServiceStatus = computed(() => store.publicRuntimeStatus)
               <details v-if="attentionItem.detail" class="overview-request-detail"><summary>{{ t('overview.attention.detail') }}</summary><p>{{ attentionItem.detail }}</p></details>
             </div>
             <div class="overview-request-actions">
-              <RouterLink class="ui-button ui-button--primary" data-testid="overview-attention-open" :to="inboxLocation(attentionItem.agentId, attentionItem.requestId)">{{ t(requests.error ? 'overview.attention.recheck' : 'overview.attention.respond') }}</RouterLink>
-              <RouterLink v-if="attentionItem.taskId" class="ui-button ui-button--ghost" data-testid="overview-attention-task" :to="overviewAttentionTaskHref({ ...attentionItem, taskId: attentionItem.taskId })">{{ t('overview.attention.openTask') }}</RouterLink>
+              <Button as-child><RouterLink data-testid="overview-attention-open" :to="inboxLocation(attentionItem.agentId, attentionItem.requestId)">{{ t(requests.error ? 'overview.attention.recheck' : 'overview.attention.respond') }}</RouterLink></Button>
+              <Button v-if="attentionItem.taskId" as-child variant="ghost"><RouterLink data-testid="overview-attention-task" :to="overviewAttentionTaskHref({ ...attentionItem, taskId: attentionItem.taskId })">{{ t('overview.attention.openTask') }}</RouterLink></Button>
             </div>
           </li>
         </ul>
@@ -165,22 +165,22 @@ const publicServiceStatus = computed(() => store.publicRuntimeStatus)
           <div><h2 id="overview-work-heading">{{ t('overview.sections.currentWork') }}</h2><span v-if="tasks.data?.partial" class="ui-badge">{{ t('overview.read.partial') }}</span></div>
           <div class="overview-work-controls">
             <UiSelect :model-value="view" :options="viewOptions" :label="t('overview.views.label')" @update:model-value="chooseView" />
-            <UiButton v-if="!tasks.error" :disabled="tasks.loading" variant="ghost" data-testid="overview-work-retry" @click="data.loadTasks">{{ t('overview.work.refresh') }}</UiButton>
+            <Button v-if="!tasks.error" :disabled="tasks.loading" variant="ghost" data-testid="overview-work-retry" @click="data.loadTasks">{{ t('overview.work.refresh') }}</Button>
           </div>
         </header>
         <OverviewReadStatus :state="tasks" :label="t('overview.work.loading')" :failed="t('overview.work.loadFailed')" test-id="overview-work-retry" @retry="data.loadTasks" />
         <OverviewReadStatus :state="names" :label="t('overview.missing.nameLoading')" :failed="t('overview.missing.nameUnavailable')" @retry="data.loadNames" />
-        <p v-if="names.data?.partial" class="overview-notice">{{ t('overview.missing.nameUnavailable') }} <UiButton variant="ghost" :disabled="names.loading" @click="data.loadNames">{{ t('overview.read.reload') }}</UiButton></p>
+        <p v-if="names.data?.partial" class="overview-notice">{{ t('overview.missing.nameUnavailable') }} <Button variant="ghost" :disabled="names.loading" @click="data.loadNames">{{ t('overview.read.reload') }}</Button></p>
         <p v-if="sceneFailed" class="overview-notice" role="status">{{ t('overview.views.fallback') }}</p>
         <ConstellationBoard v-if="view === 'constellation' && (currentTasks.length || data.requestItems.value.length)" :board="board" />
         <Workbench3D v-if="view === 'office' && (currentTasks.length || data.requestItems.value.length)" :key="activeSpaceId" :board="board" scene="office" @fallback="sceneFallback" @pick="pick" />
         <div v-if="selectedTask && view !== 'list'" class="overview-selected" role="status">
           <strong>{{ owner(selectedTask) }}</strong><p>{{ taskTitle(selectedTask) }} · {{ statusLabel(selectedTask.status) }}</p>
-          <RouterLink class="ui-button ui-button--ghost" :to="nextHref(selectedTask)">{{ nextLabel(selectedTask) }}</RouterLink>
+          <Button as-child variant="ghost"><RouterLink :to="nextHref(selectedTask)">{{ nextLabel(selectedTask) }}</RouterLink></Button>
         </div>
         <div v-else-if="selectedRequest && view !== 'list'" class="overview-selected" role="status">
           <strong>{{ agentName(selectedRequest.agentId) }}</strong><p>{{ selectedRequest.title?.trim() || t('overview.missing.requestTitle') }} · {{ t('workbench.projection.waiting') }}</p>
-          <RouterLink class="ui-button ui-button--ghost" :to="inboxLocation(selectedRequest.agentId, selectedRequest.requestId)">{{ t('overview.actions.request') }}</RouterLink>
+          <Button as-child variant="ghost"><RouterLink :to="inboxLocation(selectedRequest.agentId, selectedRequest.requestId)">{{ t('overview.actions.request') }}</RouterLink></Button>
         </div>
         <p v-if="view !== 'list' && currentTasks.length" class="overview-meta">{{ t('overview.views.equivalent') }}</p>
         <div v-if="currentTasks.length || (view !== 'list' && data.requestItems.value.length)">
@@ -189,7 +189,7 @@ const publicServiceStatus = computed(() => store.publicRuntimeStatus)
             <ul v-if="view !== 'list' && group.requests.length" class="overview-request-members">
               <li v-for="request in group.requests" :key="request.requestId">
                 <p><strong>{{ agentName(request.agentId) }}</strong> · {{ request.title?.trim() || t('overview.missing.requestTitle') }} · {{ t('workbench.projection.waiting') }}</p>
-                <RouterLink class="ui-button ui-button--ghost" :to="inboxLocation(request.agentId, request.requestId)">{{ t('overview.actions.request') }}</RouterLink>
+                <Button as-child variant="ghost"><RouterLink :to="inboxLocation(request.agentId, request.requestId)">{{ t('overview.actions.request') }}</RouterLink></Button>
               </li>
             </ul>
             <ul class="overview-work-list">
@@ -200,8 +200,8 @@ const publicServiceStatus = computed(() => store.publicRuntimeStatus)
             <div class="overview-task-footer">
               <time :datetime="task.updatedAt || task.createdAt || undefined">{{ formatDate(task.updatedAt || task.createdAt) }}</time>
               <div>
-                <UiButton v-if="view !== 'list'" variant="ghost" :aria-label="t('overview.views.select', { name: owner(task) })" :aria-expanded="selected === `${task.personalProjectId}:${task.taskId}`" @click="selected = selected === `${task.personalProjectId}:${task.taskId}` ? '' : `${task.personalProjectId}:${task.taskId}`">{{ t('overview.views.inspect') }}</UiButton>
-                <RouterLink class="ui-button ui-button--ghost" :to="nextHref(task)">{{ nextLabel(task) }}</RouterLink>
+                <Button v-if="view !== 'list'" variant="ghost" :aria-label="t('overview.views.select', { name: owner(task) })" :aria-expanded="selected === `${task.personalProjectId}:${task.taskId}`" @click="selected = selected === `${task.personalProjectId}:${task.taskId}` ? '' : `${task.personalProjectId}:${task.taskId}`">{{ t('overview.views.inspect') }}</Button>
+                <Button as-child variant="ghost"><RouterLink :to="nextHref(task)">{{ nextLabel(task) }}</RouterLink></Button>
               </div>
             </div>
           </li>
@@ -209,7 +209,7 @@ const publicServiceStatus = computed(() => store.publicRuntimeStatus)
           </component>
         </div>
         <p v-else-if="tasks.data && !tasks.error && !tasks.loading" class="overview-empty">{{ t(tasks.data.partial ? 'overview.read.partial' : 'overview.work.empty') }}</p>
-        <UiButton v-if="allTaskCount > 6 && view === 'list'" variant="ghost" :aria-expanded="expanded" @click="expanded = !expanded">{{ t(expanded ? 'overview.work.collapse' : 'overview.work.expand', { count: allTaskCount }) }}</UiButton>
+        <Button v-if="allTaskCount > 6 && view === 'list'" variant="ghost" :aria-expanded="expanded" @click="expanded = !expanded">{{ t(expanded ? 'overview.work.collapse' : 'overview.work.expand', { count: allTaskCount }) }}</Button>
         <p v-if="tasks.data?.partial" class="overview-meta">{{ t('overview.work.loaded', { count: data.taskItems.value.length }) }}</p>
       </section>
 
@@ -240,8 +240,8 @@ h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--color-ink); }
 h3 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
 .overview-work-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .overview-work-controls :deep(.ui-select) { min-width: 120px; max-width: 100%; }
-.overview-view :deep(.ui-button) { white-space: normal; max-width: 100%; overflow-wrap: anywhere; }
-.overview-view :deep(.ui-button), .overview-work-controls :deep(.ui-select__trigger) { min-height: 44px; }
+.overview-view :deep([data-slot="button"]) { white-space: normal; max-width: 100%; overflow-wrap: anywhere; }
+.overview-view :deep([data-slot="button"]), .overview-work-controls :deep(.ui-select__trigger) { min-height: 44px; }
 .overview-meta, time { margin: 4px 0; color: var(--color-muted); font-size: 12px; line-height: 1.6; }
 .overview-empty, .overview-notice { margin: 14px 0; font-size: 14px; color: var(--color-ink-soft); }
 .overview-attention-list, .overview-work-list, .overview-project-list, .overview-service-list { list-style: none; margin: 0; padding: 0; }

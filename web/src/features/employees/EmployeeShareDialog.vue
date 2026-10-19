@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { getJson, patchJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import { t } from '@/i18n'
 import ProjectScopePicker from './ProjectScopePicker.vue'
@@ -106,25 +106,25 @@ function close() { if (!busy.value) emit('close') }
     <fieldset :disabled="busy || loading"><ProjectScopePicker v-model="selected" :projects="projects" :disabled="busy || loading" inline :label="t('employees.share.projects')" :hint="t('employees.share.scopeHint')" /></fieldset>
     <p v-if="selected.length && !loading" class="employee-share-preview" role="status">
       {{ selectedCount === null ? t('employees.shareContent.verifyContent') : t('employees.shareContent.publicCount', { count: selectedCount }) }}
-      <UiButton size="sm" variant="ghost" :disabled="busy || loading" @click="load(true)">{{ t('common.actions.refresh') }}</UiButton>
+      <Button size="sm" variant="ghost" :disabled="busy || loading" @click="load(true)">{{ t('common.actions.refresh') }}</Button>
     </p>
     <p v-if="selected.length && !loading && selectedCount === 0" class="employee-share-empty">{{ t('employees.shareContent.emptySelection') }}</p>
-    <div v-if="error" class="ui-dialog__error employee-dialog-error" role="alert"><p>{{ error }}</p><UiButton v-if="!busy" size="sm" @click="load(true)">{{ t('employees.retry') }}</UiButton></div>
+    <div v-if="error" class="ui-dialog__error employee-dialog-error" role="alert"><p>{{ error }}</p><Button variant="outline" v-if="!busy" size="sm" @click="load(true)">{{ t('employees.retry') }}</Button></div>
     <div v-if="link" class="employee-share-result">
       <label class="ui-field">{{ t('employees.share.link') }}<input :value="link" readonly :aria-label="t('employees.share.link')" @focus="($event.target as HTMLInputElement).select()" /></label>
-      <div><UiButton size="sm" @click="copy">{{ t(copied ? 'employees.share.copied' : 'employees.share.copy') }}</UiButton><a :href="link" target="_blank" rel="noreferrer">{{ t('employees.share.preview') }}</a></div>
+      <div><Button variant="outline" size="sm" @click="copy">{{ t(copied ? 'employees.share.copied' : 'employees.share.copy') }}</Button><a :href="link" target="_blank" rel="noreferrer">{{ t('employees.share.preview') }}</a></div>
     </div>
     <p v-if="isLocal" class="ui-meta">{{ t('employees.share.local') }}</p>
     <section v-if="enabled.length" class="employee-share-active">
       <h3>{{ t('employees.share.active') }}</h3>
       <div v-for="project in enabled" :key="project.id">
         <span>{{ project.name }}</span>
-        <UiButton size="sm" variant="ghost" :disabled="busy" :busy="busyAction === 'revoke' && busyProjectId === project.id" :busy-label="t('employees.share.revoking')" @click="revoke(project.id)">{{ t('employees.share.revoke') }}</UiButton>
+        <Button size="sm" variant="ghost" :disabled="busy" :loading="busyAction === 'revoke' && busyProjectId === project.id" :loading-label="t('employees.share.revoking')" @click="revoke(project.id)">{{ t('employees.share.revoke') }}</Button>
       </div>
     </section>
     <template #footer>
       <span class="employee-dialog-count">{{ t('employees.scope.count', { selected: selected.length, total: projects.length }) }}</span>
-      <UiButton variant="primary" :disabled="!selected.length || busy || loading || selectedCount === 0" :busy="busyAction === 'generate'" :busy-label="t('employees.share.generating')" @click="generate">{{ t('employees.share.generate') }}</UiButton>
+      <Button :disabled="!selected.length || busy || loading || selectedCount === 0" :loading="busyAction === 'generate'" :loading-label="t('employees.share.generating')" @click="generate">{{ t('employees.share.generate') }}</Button>
     </template>
   </UiDialog>
 </template>

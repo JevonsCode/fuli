@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { getJson, postJson, putJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -207,16 +207,15 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
       <section data-working-memory class="working-memory" :aria-label="t('projectAgents.conversations.memoryTitle')">
         <div class="memory-heading">
           <h3>{{ t('projectAgents.conversations.memoryTitle') }}</h3>
-          <button data-export-memory class="ui-button memory-export" type="button" :disabled="exporting" :aria-busy="exporting"
+          <Button variant="outline" size="icon-sm" data-export-memory class="memory-export" :loading="exporting" :loading-label="t('projectAgents.conversations.exportingMemory')"
             :title="t('projectAgents.conversations.exportMemory')" :aria-label="t('projectAgents.conversations.exportMemory')" @click="exportMemory">
-            <GrowthLoading v-if="exporting" variant="inline" :label="t('projectAgents.conversations.exportingMemory')" />
-            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11" /><path d="m7 10 5 5 5-5" /><path d="M5 20h14" /></svg>
-          </button>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11" /><path d="m7 10 5 5 5-5" /><path d="M5 20h14" /></svg>
+          </Button>
         </div>
         <p v-if="exportFeedback === 'done'" data-export-feedback role="status" class="conversation-hint">{{ t('projectAgents.conversations.exportedMemory') }}</p>
         <p v-else-if="exportFeedback === 'failed'" data-export-feedback role="alert" class="conversation-hint">{{ t('projectAgents.conversations.exportMemoryFailed') }}</p>
         <GrowthLoading v-if="memoryLoading" variant="compact" :label="t('projectAgents.conversations.loadingMemory')" />
-        <div v-else-if="memoryError" role="alert"><p>{{ memoryError }}</p><UiButton size="sm" variant="ghost" data-retry-memory @click="loadMemory">{{ t('projectAgents.retry') }}</UiButton></div>
+        <div v-else-if="memoryError" role="alert"><p>{{ memoryError }}</p><Button size="sm" variant="ghost" data-retry-memory @click="loadMemory">{{ t('projectAgents.retry') }}</Button></div>
         <template v-else-if="memory?.current">
           <p class="conversation-hint">{{ t('projectAgents.conversations.memoryMeta', { revision: memory.current.revision, source: client(memory.current.sourceApplication), time: date(memory.current.createdAt) }) }}</p>
           <p class="memory-summary">{{ memory.current.memory.summary }}</p>
@@ -231,14 +230,14 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
         <p v-else-if="memory" class="conversation-hint">{{ t('projectAgents.conversations.memoryEmpty') }}</p>
       </section>
       <GrowthLoading v-if="loading" variant="compact" :label="t('projectAgents.conversations.loading')" />
-      <div v-else-if="error" role="alert"><p>{{ error }}</p><UiButton size="sm" variant="ghost" data-retry-list @click="load">{{ t('projectAgents.retry') }}</UiButton></div>
+      <div v-else-if="error" role="alert"><p>{{ error }}</p><Button size="sm" variant="ghost" data-retry-list @click="load">{{ t('projectAgents.retry') }}</Button></div>
       <ol v-else-if="conversations.length" class="conversation-list">
         <li v-for="conversation in conversations" :key="conversation.id">
           <button data-read-conversation class="conversation-link" type="button" :aria-pressed="selectedId === conversation.id" :disabled="messagesLoading" @click="readMessages(conversation.id)">
             <strong>{{ conversation.summary || t('projectAgents.conversations.untitled') }}</strong>
             <span>{{ conversation.compacted_through > 0 ? t('projectAgents.conversations.compacted') : t('projectAgents.conversations.recent') }} · <time :datetime="conversation.last_activity">{{ date(conversation.last_activity) }}</time></span>
           </button>
-          <UiButton size="sm" variant="ghost" class="continuation-copy" v-if="conversation.continuation_prompt" :data-copy-continuation="conversation.id" @click="copyContinuation(conversation)">{{ t('projectAgents.conversations.copyContinuation') }}</UiButton>
+          <Button size="sm" variant="ghost" class="continuation-copy" v-if="conversation.continuation_prompt" :data-copy-continuation="conversation.id" @click="copyContinuation(conversation)">{{ t('projectAgents.conversations.copyContinuation') }}</Button>
           <div v-if="copyFeedback?.conversationId === conversation.id" data-continuation-feedback>
             <p v-if="copyFeedback.state === 'copied'" role="status" class="conversation-hint">{{ t('projectAgents.conversations.copiedContinuation') }}</p>
             <template v-else>
@@ -262,8 +261,8 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
             </section>
             <ol><li v-for="message in messages" :key="message.sequence"><strong>{{ role(message.role) }} #{{ message.sequence }}</strong><pre>{{ content(message.content) }}</pre></li></ol>
             <GrowthLoading v-if="messagesLoading" variant="compact" :label="t('projectAgents.conversations.loadingMessages')" />
-            <div v-else-if="messagesError" role="alert"><p>{{ messagesError }}</p><UiButton size="sm" variant="ghost" @click="readMessages(conversation.id, messages.length > 0)">{{ t('projectAgents.retry') }}</UiButton></div>
-            <UiButton size="sm" variant="ghost" v-else-if="hasMore" data-more-messages @click="readMessages(conversation.id, true)">{{ t('projectAgents.conversations.more') }}</UiButton>
+            <div v-else-if="messagesError" role="alert"><p>{{ messagesError }}</p><Button size="sm" variant="ghost" @click="readMessages(conversation.id, messages.length > 0)">{{ t('projectAgents.retry') }}</Button></div>
+            <Button size="sm" variant="ghost" v-else-if="hasMore" data-more-messages @click="readMessages(conversation.id, true)">{{ t('projectAgents.conversations.more') }}</Button>
             <p v-else-if="!messages.length" class="conversation-hint">{{ t('projectAgents.conversations.noMessages') }}</p>
           </div>
         </li>
@@ -278,10 +277,10 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
             <label>{{ t('projectAgents.conversations.compactAfterKb') }}<input v-model.number="compactAfterKb" name="compactAfterKb" type="number" min="8" max="1024" required /></label>
             <label>{{ t('projectAgents.conversations.budget') }}<input v-model.number="contextBudget" name="contextBudget" type="number" min="512" max="16000" required /></label>
             <p class="conversation-hint">{{ t('projectAgents.conversations.budgetHint') }}</p>
-            <UiButton size="sm" variant="ghost" type="submit"><GrowthLoading v-if="saving" variant="inline" :label="t('projectAgents.conversations.saving')" /><span v-else>{{ t('projectAgents.conversations.save') }}</span></UiButton>
+            <Button size="sm" variant="ghost" type="submit"><GrowthLoading v-if="saving" variant="inline" :label="t('projectAgents.conversations.saving')" /><span v-else>{{ t('projectAgents.conversations.save') }}</span></Button>
           </fieldset>
         </form>
-        <div v-if="policyError" role="alert"><p>{{ policyError }}</p><UiButton size="sm" variant="ghost" v-if="!policyReady" @click="loadPolicy">{{ t('projectAgents.retry') }}</UiButton></div>
+        <div v-if="policyError" role="alert"><p>{{ policyError }}</p><Button size="sm" variant="ghost" v-if="!policyReady" @click="loadPolicy">{{ t('projectAgents.retry') }}</Button></div>
         <p v-if="saved" role="status">{{ t('projectAgents.conversations.saved') }}</p>
       </details>
   </section>

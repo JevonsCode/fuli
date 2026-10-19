@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -492,9 +492,9 @@ function revealInvalidField(event: Event) {
             <h3>{{ t('settings.resources.title') }}</h3>
             <p v-if="resources">{{ t('settings.resources.measuredAt', { time: formatTime(resources.sampledAt) }) }}</p>
           </div>
-          <UiButton size="sm" variant="ghost" :disabled="loadingResources" @click="loadResources">
+          <Button size="sm" variant="ghost" :disabled="loadingResources" @click="loadResources">
             {{ t('common.actions.refresh') }}
-          </UiButton>
+          </Button>
         </header>
 
         <GrowthLoading v-if="loadingResources" :variant="resources ? 'inline' : 'compact'" :label="t('settings.resources.loading')" />

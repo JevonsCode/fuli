@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 
 import { postJson } from '@/api/client'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import {
@@ -207,9 +207,9 @@ function fail(message: string) {
             <h3>{{ t('knowledge.dialogs.batch.itemReview') }}</h3>
             <p class="ui-meta">{{ t('knowledge.dialogs.batch.selected', { selected: selectedItems.length, total: reviewableItems.length }) }}</p>
           </div>
-          <UiButton size="sm" variant="ghost" @click="toggleAll">
+          <Button size="sm" variant="ghost" @click="toggleAll">
             {{ allSelected ? t('knowledge.dialogs.batch.clearAll') : t('knowledge.dialogs.batch.selectAll') }}
-          </UiButton>
+          </Button>
         </div>
         <p v-if="(selectedGroup?.items.length ?? 0) > 200" class="ui-meta">{{ t('knowledge.dialogs.batch.limit') }}</p>
         <div class="batch-review-list">
@@ -230,10 +230,10 @@ function fail(message: string) {
       </section>
     </div>
     <template #footer>
-      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</UiButton>
-      <UiButton variant="primary" type="submit" :disabled="!canSubmit" :busy="busy" :busy-label="t('knowledge.dialogs.batch.confirming')">
+      <Button variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</Button>
+      <Button type="submit" :disabled="!canSubmit" :loading="busy" :loading-label="t('knowledge.dialogs.batch.confirming')">
         {{ t('knowledge.dialogs.batch.confirmItems', { count: selectedItems.length }) }}
-      </UiButton>
+      </Button>
     </template>
   </UiDialog>
 </template>

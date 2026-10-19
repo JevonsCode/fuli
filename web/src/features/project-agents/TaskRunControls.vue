@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { t } from '@/i18n'
 import type { ProjectAgentTaskRecord } from '@/types'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import { formatDate, taskStatusLabel } from './task-labels'
 import {
@@ -178,10 +178,10 @@ function stateLabel(state: string) {
 <template>
   <section v-if="scope" class="task-run-controls" :aria-label="t('taskRuns.history')">
     <div class="task-run-actions">
-      <UiButton v-for="run in activeRuns" :key="`stop-${run.runId}`" size="sm" variant="danger" @click="stopTarget = run; stopError = ''">
+      <Button v-for="run in activeRuns" :key="`stop-${run.runId}`" size="sm" variant="destructive" @click="stopTarget = run; stopError = ''">
         {{ t('taskRuns.stop') }}<span class="task-run-short-id">#{{ run.runId.slice(0, 8) }}</span>
-      </UiButton>
-      <UiButton v-if="retryable" size="sm" @click="openRetry">{{ t('taskRuns.retry') }}</UiButton>
+      </Button>
+      <Button variant="outline" v-if="retryable" size="sm" @click="openRetry">{{ t('taskRuns.retry') }}</Button>
     </div>
     <p v-if="notice" role="status" class="task-run-notice">{{ notice }}</p>
     <p v-if="retried" role="status" class="task-run-notice">
@@ -197,7 +197,7 @@ function stateLabel(state: string) {
     </div>
     <GrowthLoading v-if="loading && !runs.length" variant="compact" :label="t('taskRuns.loadingHistory')" />
     <p v-else-if="historyError && !runs.length" role="alert" class="inline-error">
-      {{ t('taskRuns.historyFailed') }} <UiButton size="sm" variant="ghost" @click="reload">{{ t('taskRuns.retryRead') }}</UiButton>
+      {{ t('taskRuns.historyFailed') }} <Button size="sm" variant="ghost" @click="reload">{{ t('taskRuns.retryRead') }}</Button>
     </p>
     <p v-else-if="loaded && !runs.length" class="project-agent-muted">{{ t('taskRuns.empty') }}</p>
     <ol v-if="runs.length" class="task-run-list">
@@ -230,16 +230,16 @@ function stateLabel(state: string) {
       </li>
     </ol>
     <p v-if="historyError && runs.length" role="alert" class="inline-error">{{ t('taskRuns.historyFailed') }}</p>
-    <UiButton v-if="nextCursor && !complete" size="sm" variant="ghost" :busy="loading" :busy-label="t('taskRuns.loadingMore')" @click="readPage(nextCursor)">
+    <Button v-if="nextCursor && !complete" size="sm" variant="ghost" :loading="loading" :loading-label="t('taskRuns.loadingMore')" @click="readPage(nextCursor)">
       {{ t('taskRuns.loadMore') }}
-    </UiButton>
+    </Button>
 
     <UiDialog :open="Boolean(stopTarget)" :title="t('taskRuns.stopTitle')" size="sm" :busy="stopBusy" :error="stopError" @close="stopTarget = null">
       <p>{{ task.title }} · {{ stopTarget?.agentId }} · #{{ stopTarget?.runId.slice(0, 8) }}</p>
       <p>{{ t('taskRuns.stopBody') }}</p>
       <template #footer>
-        <UiButton :disabled="stopBusy" @click="stopTarget = null">{{ t('common.actions.cancel') }}</UiButton>
-        <UiButton variant="danger" :busy="stopBusy" :busy-label="t('taskRuns.stopping')" @click="confirmStop">{{ t('taskRuns.stopConfirm') }}</UiButton>
+        <Button variant="outline" :disabled="stopBusy" @click="stopTarget = null">{{ t('common.actions.cancel') }}</Button>
+        <Button variant="destructive" :loading="stopBusy" :loading-label="t('taskRuns.stopping')" @click="confirmStop">{{ t('taskRuns.stopConfirm') }}</Button>
       </template>
     </UiDialog>
 
@@ -257,11 +257,11 @@ function stateLabel(state: string) {
         <label class="task-run-ack"><input v-model="retryAck" type="checkbox" :disabled="retryBusy" /> {{ t('taskRuns.retryAck') }}</label>
       </template>
       <template #footer>
-        <UiButton :disabled="retryBusy" @click="retryOpen = false">{{ t('common.actions.cancel') }}</UiButton>
-        <UiButton v-if="retryUnknown" :disabled="retryBusy" @click="reload">{{ t('taskRuns.retryRead') }}</UiButton>
-        <UiButton type="submit" variant="primary" :disabled="!canSubmitRetry" :busy="retryBusy" :busy-label="t('taskRuns.retrying')">
+        <Button variant="outline" :disabled="retryBusy" @click="retryOpen = false">{{ t('common.actions.cancel') }}</Button>
+        <Button variant="outline" v-if="retryUnknown" :disabled="retryBusy" @click="reload">{{ t('taskRuns.retryRead') }}</Button>
+        <Button type="submit" :disabled="!canSubmitRetry" :loading="retryBusy" :loading-label="t('taskRuns.retrying')">
           {{ retryUnknown ? t('taskRuns.retryConfirmOnce') : t('taskRuns.retrySubmit') }}
-        </UiButton>
+        </Button>
       </template>
     </UiDialog>
   </section>

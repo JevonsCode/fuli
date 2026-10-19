@@ -2,7 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 
 import { patchJson, postJson } from '@/api/client'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
@@ -435,7 +435,7 @@ function fail(message: string) {
   <UiDialog v-if="item && !accessRevoked" open class="knowledge-edit-dialog" size="xl" :busy="busy" :error="localError || requestError"
     :title="invalid ? t('knowledge.dialogs.edit.titleRestore') : t('knowledge.dialogs.edit.titleCorrect')"
     :description="t('knowledge.dialogs.edit.intro')" @close="emit('close')">
-    <UiButton v-if="locked && !busy" data-knowledge-reload @click="emit('reload')">{{ t('preferences.detail.reload') }}</UiButton>
+    <Button variant="outline" v-if="locked && !busy" data-knowledge-reload @click="emit('reload')">{{ t('preferences.detail.reload') }}</Button>
     <p v-if="takingLong" role="status">{{ t('preferences.detail.writeLong', { action: pendingLabel }) }}</p>
     <div class="knowledge-edit-columns">
       <section>
@@ -480,15 +480,15 @@ function fail(message: string) {
             </fieldset>
             <label class="ui-field">{{ t('knowledge.dialogs.edit.correctionReason') }}<textarea v-model="form.reason" maxlength="2000" rows="3" required /></label>
             <div class="knowledge-editor-actions">
-              <UiButton v-if="!invalid" variant="danger" :busy="pendingAction === 'invalidate'" :busy-label="t('knowledge.dialogs.edit.invalidating')" @click="changeStatus('invalidate')">{{ t('knowledge.dialogs.edit.invalidate') }}</UiButton>
+              <Button v-if="!invalid" variant="destructive" :loading="pendingAction === 'invalidate'" :loading-label="t('knowledge.dialogs.edit.invalidating')" @click="changeStatus('invalidate')">{{ t('knowledge.dialogs.edit.invalidate') }}</Button>
               <template v-else>
-                <UiButton :busy="pendingAction === 'restore'" :busy-label="t('knowledge.dialogs.edit.restoring')" @click="changeStatus('restore')">{{ t('knowledge.dialogs.edit.restore') }}</UiButton>
-                <UiButton :busy="pendingAction === 'replacement'" :busy-label="t('knowledge.dialogs.edit.savingReplacement')" @click="saveReplacement">{{ t('knowledge.dialogs.edit.saveReplacement') }}</UiButton>
+                <Button variant="outline" :loading="pendingAction === 'restore'" :loading-label="t('knowledge.dialogs.edit.restoring')" @click="changeStatus('restore')">{{ t('knowledge.dialogs.edit.restore') }}</Button>
+                <Button variant="outline" :loading="pendingAction === 'replacement'" :loading-label="t('knowledge.dialogs.edit.savingReplacement')" @click="saveReplacement">{{ t('knowledge.dialogs.edit.saveReplacement') }}</Button>
               </template>
-              <UiButton variant="primary" type="submit" :busy="pendingAction === 'correction'"
-                :busy-label="pendingLabel">
+              <Button type="submit" :loading="pendingAction === 'correction'"
+                :loading-label="pendingLabel">
                 {{ form.confirmationStatus === 'confirmed' ? t('knowledge.dialogs.edit.saveConfirmed') : t('knowledge.dialogs.edit.savePending') }}
-              </UiButton>
+              </Button>
             </div>
           </fieldset>
         </form>
@@ -502,7 +502,7 @@ function fail(message: string) {
             <UiSelect v-model="targetProjectId" field :options="projectOptions" :label="t('knowledge.dialogs.edit.targetProject')" searchable required />
             <label class="ui-field">{{ t('knowledge.dialogs.edit.assignmentReason') }}<textarea v-model="assignmentReason" maxlength="2000" rows="3" required /></label>
             <div class="knowledge-editor-actions">
-              <UiButton variant="primary" type="submit" :disabled="projects.length === 0" :busy="pendingAction === 'ownership'" :busy-label="t('knowledge.dialogs.edit.changingOwnership')">{{ t('knowledge.dialogs.edit.adjustOwnership') }}</UiButton>
+              <Button type="submit" :disabled="projects.length === 0" :loading="pendingAction === 'ownership'" :loading-label="t('knowledge.dialogs.edit.changingOwnership')">{{ t('knowledge.dialogs.edit.adjustOwnership') }}</Button>
             </div>
           </fieldset>
         </form>
@@ -517,7 +517,7 @@ function fail(message: string) {
             <UiSelect v-if="preferenceScope === 'project'" v-model="preferenceProjectId" field :options="projectOptions" :label="t('knowledge.dialogs.edit.personalProject')" searchable />
             <label class="ui-field">{{ t('knowledge.dialogs.edit.assignmentReason') }}<textarea v-model="preferenceReason" maxlength="2000" rows="3" required /></label>
             <div class="knowledge-editor-actions">
-              <UiButton variant="primary" type="submit" :busy="pendingAction === 'scope'" :busy-label="t('knowledge.dialogs.edit.savingScope')">{{ t('knowledge.dialogs.edit.saveScope') }}</UiButton>
+              <Button type="submit" :loading="pendingAction === 'scope'" :loading-label="t('knowledge.dialogs.edit.savingScope')">{{ t('knowledge.dialogs.edit.saveScope') }}</Button>
             </div>
           </fieldset>
         </form>

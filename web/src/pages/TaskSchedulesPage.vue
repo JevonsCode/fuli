@@ -12,7 +12,8 @@ import {
 } from '@/features/task-schedules/task-schedules'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
-import { UiButton, UiChip, UiDialog, UiEmpty, UiSelect, UiToolbar } from '@/ui'
+import { Button } from '@/components/ui/button'
+import { UiChip, UiDialog, UiEmpty, UiSelect, UiToolbar } from '@/ui'
 
 // 定时任务: schedules that create a project task at a fixed interval. The page
 // shows planned slots as plans, never as guaranteed runs, and reloads after a
@@ -244,13 +245,13 @@ async function toggleRuns(schedule: TaskSchedule) {
     <UiToolbar>
       <template #end>
         <GrowthLoading v-if="loading && schedules.length" variant="inline" :label="t('taskSchedules.loading')" />
-        <UiButton variant="ghost" size="sm" :disabled="loading" @click="load">{{ t('taskSchedules.refresh') }}</UiButton>
-        <UiButton variant="primary" size="sm" data-schedule-new @click="openCreate">{{ t('taskSchedules.new') }}</UiButton>
+        <Button variant="ghost" size="sm" :disabled="loading" @click="load">{{ t('taskSchedules.refresh') }}</Button>
+        <Button size="sm" data-schedule-new @click="openCreate">{{ t('taskSchedules.new') }}</Button>
       </template>
     </UiToolbar>
     <p v-if="actionError" role="alert" class="inline-error">{{ actionError }}</p>
     <p v-if="loadError" role="alert" class="inline-error">
-      {{ loadError }} <UiButton size="sm" variant="ghost" @click="load">{{ t('taskSchedules.retryRead') }}</UiButton>
+      {{ loadError }} <Button size="sm" variant="ghost" @click="load">{{ t('taskSchedules.retryRead') }}</Button>
     </p>
 
     <GrowthLoading v-if="loading && !schedules.length" variant="compact" :label="t('taskSchedules.loading')" />
@@ -279,15 +280,15 @@ async function toggleRuns(schedule: TaskSchedule) {
           </p>
         </div>
         <div class="ui-list-actions">
-          <UiButton variant="ghost" size="sm" data-schedule-edit @click="openEdit(schedule)">{{ t('taskSchedules.edit') }}</UiButton>
-          <UiButton variant="ghost" size="sm" :aria-expanded="runsOpen === schedule.id" data-schedule-runs @click="toggleRuns(schedule)">
+          <Button variant="ghost" size="sm" data-schedule-edit @click="openEdit(schedule)">{{ t('taskSchedules.edit') }}</Button>
+          <Button variant="ghost" size="sm" :aria-expanded="runsOpen === schedule.id" data-schedule-runs @click="toggleRuns(schedule)">
             {{ t('taskSchedules.runs') }}
-          </UiButton>
-          <UiButton v-if="schedule.enabled" variant="ghost" size="sm" :busy="busyId === schedule.id" :busy-label="t('taskSchedules.pausing')"
-            data-schedule-pause @click="toggle(schedule, false)">{{ t('taskSchedules.pause') }}</UiButton>
-          <UiButton v-else variant="ghost" size="sm" :disabled="busyId === schedule.id" data-schedule-resume @click="resumeTarget = schedule">
+          </Button>
+          <Button v-if="schedule.enabled" variant="ghost" size="sm" :loading="busyId === schedule.id" :loading-label="t('taskSchedules.pausing')"
+            data-schedule-pause @click="toggle(schedule, false)">{{ t('taskSchedules.pause') }}</Button>
+          <Button v-else variant="ghost" size="sm" :disabled="busyId === schedule.id" data-schedule-resume @click="resumeTarget = schedule">
             {{ t('taskSchedules.resume') }}
-          </UiButton>
+          </Button>
         </div>
         <div v-if="runsOpen === schedule.id" class="task-schedule-run-panel" data-schedule-run-panel>
           <GrowthLoading v-if="runsLoading" variant="inline" :label="t('taskSchedules.loadingRuns')" />
@@ -299,10 +300,10 @@ async function toggleRuns(schedule: TaskSchedule) {
               <li v-for="run in scheduleRunList" :key="run.slot">
                 <span>{{ formatDate(run.slot) }}</span>
                 <span :title="run.lastError ?? undefined">{{ scheduleRunLabel(run) }}</span>
-                <UiButton v-if="run.taskId" variant="ghost" size="sm" :busy="openingTask === run.taskId" :busy-label="t('taskSchedules.openingTask')"
+                <Button v-if="run.taskId" variant="ghost" size="sm" :loading="openingTask === run.taskId" :loading-label="t('taskSchedules.openingTask')"
                   :aria-label="t('taskSchedules.openTaskLabel', { id: run.taskId })" data-schedule-open-task @click="openTask(schedule, run.taskId)">
                   {{ t('taskSchedules.openTask') }} <code>{{ run.taskId.slice(0, 8) }}</code>
-                </UiButton>
+                </Button>
               </li>
             </ol>
             <p v-if="openTaskError" role="alert" class="inline-error">{{ openTaskError }}</p>
@@ -315,9 +316,9 @@ async function toggleRuns(schedule: TaskSchedule) {
       <p>{{ resumeTarget?.body.title }}</p>
       <p>{{ t('taskSchedules.resumeBody') }}</p>
       <template #footer>
-        <UiButton variant="ghost" :disabled="Boolean(busyId)" @click="resumeTarget = null">{{ t('taskSchedules.form.cancel') }}</UiButton>
-        <UiButton variant="primary" :busy="Boolean(busyId)" :busy-label="t('taskSchedules.resuming')" data-schedule-resume-confirm
-          @click="resumeTarget && toggle(resumeTarget, true)">{{ t('taskSchedules.resumeConfirm') }}</UiButton>
+        <Button variant="ghost" :disabled="Boolean(busyId)" @click="resumeTarget = null">{{ t('taskSchedules.form.cancel') }}</Button>
+        <Button :loading="Boolean(busyId)" :loading-label="t('taskSchedules.resuming')" data-schedule-resume-confirm
+          @click="resumeTarget && toggle(resumeTarget, true)">{{ t('taskSchedules.resumeConfirm') }}</Button>
       </template>
     </UiDialog>
 
@@ -360,13 +361,13 @@ async function toggleRuns(schedule: TaskSchedule) {
       </fieldset>
       <template #footer>
         <template v-if="createUnknown">
-          <UiButton variant="primary" data-schedule-verify @click="verifyCreate">{{ t('taskSchedules.form.verify') }}</UiButton>
+          <Button data-schedule-verify @click="verifyCreate">{{ t('taskSchedules.form.verify') }}</Button>
         </template>
         <template v-else>
-          <UiButton variant="ghost" :disabled="saving" @click="dialogOpen = false">{{ t('taskSchedules.form.cancel') }}</UiButton>
-          <UiButton variant="primary" type="submit" :busy="saving" :busy-label="t('taskSchedules.form.saving')" data-schedule-save>
+          <Button variant="ghost" :disabled="saving" @click="dialogOpen = false">{{ t('taskSchedules.form.cancel') }}</Button>
+          <Button type="submit" :loading="saving" :loading-label="t('taskSchedules.form.saving')" data-schedule-save>
             {{ editing ? t('taskSchedules.form.saveEdit') : t('taskSchedules.form.save') }}
-          </UiButton>
+          </Button>
         </template>
       </template>
     </UiDialog>

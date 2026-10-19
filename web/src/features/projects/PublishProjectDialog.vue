@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 
 import { postJson } from '@/api/client'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
@@ -111,8 +111,8 @@ function suggestedVersion(current: string | null) {
       <div><dt>{{ t('projects.publishDialog.syncProfile') }}</dt><dd>{{ t('projects.publishDialog.syncProfileCopy') }}</dd></div>
     </dl>
     <template #footer>
-      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</UiButton>
-      <UiButton variant="primary" :busy="busy" :busy-label="t('projects.publishDialog.publishing')" @click="publish">{{ t('projects.publishDialog.confirm') }}</UiButton>
+      <Button variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</Button>
+      <Button :loading="busy" :loading-label="t('projects.publishDialog.publishing')" @click="publish">{{ t('projects.publishDialog.confirm') }}</Button>
     </template>
   </UiDialog>
 </template>

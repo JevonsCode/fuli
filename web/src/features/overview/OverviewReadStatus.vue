@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 const props = defineProps<{ state: { loading: boolean; slow: boolean; error: string; data: unknown; updatedAt: string | null; status: number | null }; label: string; failed: string; testId?: string }>()
 const emit = defineEmits<{ retry: [] }>()
@@ -16,7 +16,7 @@ const emit = defineEmits<{ retry: [] }>()
         <time v-if="state.data !== null && state.updatedAt" :datetime="state.updatedAt">{{ t('overview.read.lastRead', { date: new Date(state.updatedAt).toLocaleTimeString() }) }}</time>
         <details v-if="state.status"><summary>{{ t('overview.read.diagnostics') }}</summary>HTTP {{ state.status }}</details>
       </div>
-      <UiButton :data-testid="testId" :disabled="state.loading" variant="ghost" @click="emit('retry')">{{ t('overview.read.reload') }}</UiButton>
+      <Button :data-testid="testId" :disabled="state.loading" variant="ghost" @click="emit('retry')">{{ t('overview.read.reload') }}</Button>
     </div>
   </div>
 </template>

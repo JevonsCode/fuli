@@ -6,7 +6,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import ProjectScopePicker from './ProjectScopePicker.vue'
 import { employeeAvatarUrl } from './avatars'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import { t } from '@/i18n'
 import { personalProjectsPath } from '@/router/paths'
@@ -187,7 +187,7 @@ function scopeKeydown(event: KeyboardEvent) {
     <GrowthLoading v-if="selectionLoading && !templates.length" variant="compact" :label="t('employees.loading')" />
     <div v-else-if="catalogError" role="alert" class="ui-dialog__error employee-message">
       <p>{{ catalogError }}</p>
-      <UiButton size="sm" @click="reloadSelection(true)">{{ t('employees.retry') }}</UiButton>
+      <Button variant="outline" size="sm" @click="reloadSelection(true)">{{ t('employees.retry') }}</Button>
     </div>
     <p v-else-if="!selected" class="ui-muted">{{ t('employees.noTemplates') }}</p>
     <template v-else>
@@ -232,16 +232,16 @@ function scopeKeydown(event: KeyboardEvent) {
       </section>
       <p v-if="selected.runtime" class="employee-runtime" :class="{ 'is-warning': selected.runtimeStatus !== 'ready' }">{{ selected.runtimeStatus === 'ready' ? t('employees.hostReady') : t('employees.installRequired') }}</p>
       <p v-if="error || selected.identityConflict" class="ui-dialog__error" role="alert">{{ error || t('employees.errors.identity_conflict') }}</p>
-      <UiButton v-if="requiresReload" size="sm" :disabled="selectionLoading" @click="reloadSelection()">{{ t('employees.reloadScope') }}</UiButton>
+      <Button variant="outline" v-if="requiresReload" size="sm" :disabled="selectionLoading" @click="reloadSelection()">{{ t('employees.reloadScope') }}</Button>
       <div v-if="success" class="employee-success" role="status">
         <strong>{{ t('employees.scopeSaved') }}</strong>
         <p>{{ scopeMode === 'all' ? t('employees.scope.successAll', { count: selectionIds.length }) : selectionIds.length ? t('employees.successMultiple', { count: selectionIds.length }) : t('employees.successUnassigned') }}</p>
       </div>
     </template>
     <template v-if="selected && !catalogError" #footer>
-      <UiButton variant="ghost" :disabled="busy" @click="close">{{ t('employees.cancel') }}</UiButton>
-      <RouterLink v-if="noChange && workbenchLink && !busy && !selectionLoading && !requiresReload && selected.runtimeStatus === 'ready'" class="ui-button ui-button--primary" :to="workbenchLink" @click="close">{{ t('employees.open') }}</RouterLink>
-      <UiButton v-else variant="primary" type="submit" :busy="busy" :busy-label="actionLabel" :disabled="selectionLoading || requiresReload || !expectedVersion || noChange || selected.identityConflict || !personalSpaceId">{{ actionLabel }}</UiButton>
+      <Button variant="ghost" :disabled="busy" @click="close">{{ t('employees.cancel') }}</Button>
+      <Button v-if="noChange && workbenchLink && !busy && !selectionLoading && !requiresReload && selected.runtimeStatus === 'ready'" as-child><RouterLink :to="workbenchLink" @click="close">{{ t('employees.open') }}</RouterLink></Button>
+      <Button v-else type="submit" :loading="busy" :loading-label="actionLabel" :disabled="selectionLoading || requiresReload || !expectedVersion || noChange || selected.identityConflict || !personalSpaceId">{{ actionLabel }}</Button>
     </template>
   </UiDialog>
 </template>

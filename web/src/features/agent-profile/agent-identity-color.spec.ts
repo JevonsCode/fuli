@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import tokens from '@/styles/tokens.css?raw'
+import tokens from '@/styles/theme/semantic.css?raw'
 import { AGENT_IDENTITY_COUNT, agentIdentityStyle, agentIdentitySwatch } from './agent-identity-color'
 
-// The swatches live in tokens.css (light theme block); read them from there.
+// The swatches are semantic tokens (light block of theme/semantic.css); read them from there.
 const lightTokens = tokens.slice(0, tokens.indexOf('@media'))
 const token = (name: string) => {
   const match = lightTokens.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6});`))
