@@ -29,12 +29,19 @@ async function hookTranscriptLifecycle({ application, runtimeConfigPath, input, 
     return lines.length ? { ...value, systemMessage: [value.systemMessage, ...lines].filter(Boolean).join('\n') } : value;
   };
   // Turns written while the capture settings changed since this session last
-  // synchronized are skipped, not imported (transcript-capture-gap.js).
+  // synchronized, or while a decision denied, are skipped, not imported
+  // (transcript-capture-gap.js). A denial is kept locally first, so a Provider
+  // that cannot take its marker now cannot make the stretch importable later.
   const settings = captureSettingsVersion(application);
   const ledger = input?.session_id ? transcriptCaptureLedger(runtimeConfigPath, input, sourceApplication) : null;
-  const notRecorded = enabled && (!ledger || await ledger.unattributable(settings)) ? UNATTRIBUTABLE : null;
-  const settle = sync => {
-    if (ledger && (!enabled || ['saved', 'ready'].includes(sync?.status))) ledger.record(settings);
+  if (!enabled) await ledger?.deny(settings, captureCheck.reason);
+  const notRecorded = enabled ? (ledger ? await ledger.skipReason(settings) : UNATTRIBUTABLE) : null;
+  const settle = async sync => {
+    if (!ledger || !enabled) return;
+    // A denial found inside the sync (the session's task is in a project that
+    // is not recorded) is kept the same way.
+    if (sync?.status === 'capture_disabled') await ledger.deny(settings, sync.reason);
+    else if (['saved', 'ready'].includes(sync?.status)) ledger.record(settings);
   };
   let started = false, output, context;
   const invoke = async () => {
@@ -79,7 +86,7 @@ async function hookTranscriptLifecycle({ application, runtimeConfigPath, input, 
           return claimTranscriptBoundary(app, input, sourceApplication, sync, adapter, entryGuard ? held : null);
         });
       }
-      settle(sync);
+      await settle(sync);
       return withCaptureNotice(withTranscriptNotice(output, sync), skipped);
     });
   } catch (error) {

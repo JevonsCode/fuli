@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { captureDisabled } from '../graphiti/capture-decision.js';
@@ -50,21 +50,44 @@ export async function skipTranscriptWhileOff(application, input, sourceApplicati
   }
 }
 
-// The settings generation this host session was last synchronized under. A
-// session without one is unattributable unless no settings were ever saved.
-// The generation is global for now (any client's switch moves it); see
-// the capture settings store's version() for the planned per-layer generations.
+// What this host session's transcript was last handled under, kept locally:
+// the settings generation of its last sync, and a denial no recorded sync has
+// skipped yet. A session without a record is unattributable unless no settings
+// were ever saved. The generation is global for now (any client's switch moves
+// it); see the capture settings store's version() for the planned per-layer
+// generations.
 export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplication) {
   const path = join(dirname(runtimeConfigPath), 'transcript-capture',
     `${transcriptDigest(`${runtimeConfigPath}\0${sourceApplication}\0${input.session_id}`)}.json`);
+  const stored = async () => {
+    try { return JSON.parse(await readFile(path, 'utf8')); }
+    catch { return null; }
+  };
   return {
-    async unattributable(version) {
-      if (version === null) return true;
-      let stored = null;
-      try { stored = JSON.parse(await readFile(path, 'utf8')).settings ?? null; }
-      catch { /* missing or unreadable: compare against no record */ }
-      return stored === null ? version !== 'absent' : stored !== version;
+    // Why the next stretch must be skipped instead of imported, or null. A
+    // pending denial comes first: the Provider may have been unable to take
+    // its marker while the settings never changed (dot's #228 review).
+    async skipReason(version) {
+      if (version === null) return UNATTRIBUTABLE;
+      const record = await stored();
+      if (typeof record?.pending === 'string') return record.pending;
+      const settings = record?.settings ?? null;
+      return (settings === null ? version !== 'absent' : settings !== version) ? UNATTRIBUTABLE : null;
     },
+    // Kept before anything else when a decision denies. If it cannot be kept,
+    // the record goes: a denial means settings were saved, so a session with
+    // no record is unattributable and skipped, never imported.
+    async deny(version, reason) {
+      const pending = (await stored())?.pending;
+      try {
+        writeJsonFileAtomic(path, { version: 1, settings: version,
+          pending: typeof pending === 'string' ? pending : reason });
+      } catch {
+        await rm(path, { force: true }).catch(() => {});
+      }
+    },
+    // After a sync that covered the stretch, by importing it or by a marker
+    // the Provider saved. This clears a pending denial.
     record(version) {
       if (version === null) return;
       try { writeJsonFileAtomic(path, { version: 1, settings: version }); }

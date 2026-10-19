@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 
 import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
@@ -24,10 +24,17 @@ async function session(t, { saved = true } = {}) {
   if (saved) store.update({ enabled: true, disabledSources: [] });
   let cursor = header.length;
   const appended = [];
+  // The whole Provider can be unreachable: project lookups, task lookups and
+  // conversation writes then all fail with a network error.
+  const provider = { up: true };
+  const reach = () => { if (!provider.up) throw new TypeError('fetch failed'); };
   const app = { config: { personal: { spaceId: 'space' } },
-    getCapturePolicy: () => store.read(), getCapturePolicyVersion: () => store.version(), personal: {
-      currentTaskContext: async () => ({ personal_project_id: 'project', project_agent_id: 'lead', token: 'task' }),
+    getCapturePolicy: () => store.read(), getCapturePolicyVersion: () => store.version(),
+    resolveProjectPath: async () => { reach(); return { status: 'matched', basis: 'repository_root', personalProjectId: 'project' }; },
+    personal: {
+      currentTaskContext: async () => { reach(); return { personal_project_id: 'project', project_agent_id: 'lead', token: 'task' }; },
       conversation: async (operation, request) => {
+        reach();
         if (request.mode === 'policy') return { enabled: true };
         if (request.mode === 'session') return { cursor, initialized: true };
         if (request.expected_cursor !== cursor) throw new Error('CAS mismatch');
@@ -60,13 +67,13 @@ async function session(t, { saved = true } = {}) {
     await appendFile(transcript, row('assistant', reply));
     if (hooks) await hook('Stop');
   };
-  return { store, policyPath, transcriptPath: transcript, appended, turn, hook, notices,
+  return { store, policyPath, transcriptPath: transcript, appended, turn, hook, notices, provider,
     contents: () => appended.map(event => event.content),
     markers: () => appended.filter(event => event.event_id.endsWith(':not_recorded')) };
 }
 
 // Content-free: a reason and a byte range. A settings change is not called "off".
-const MARKER = /^\[Not recorded: (automatic recording was off \((global_off|client_off|policy_unavailable)\)|capture settings changed, so this stretch could not be confirmed as allowed and was skipped); native bytes \d+ to \d+ remain in native history\.\]$/;
+const MARKER = /^\[Not recorded: (automatic recording was off \((global_off|client_off|policy_unavailable|project_off|project_unregistered)\)|capture settings changed, so this stretch could not be confirmed as allowed and was skipped); native bytes \d+ to \d+ remain in native history\.\]$/;
 const SKIPPED_NOTICE = 'Fuli: 记录设置有变动，无法确认这段是否允许记录，已跳过';
 
 function assertOnlyOnPeriodTurns(s) {
@@ -120,4 +127,40 @@ test('a policy file removed after an unobserved off period does not look like se
   assertOnlyOnPeriodTurns(s);
   assert.equal(s.markers().length, 1);
   assert.ok(s.notices.includes(SKIPPED_NOTICE), 'the hook that skipped the stretch says so');
+});
+
+// dot's #228 review: a denial the Provider could not take a marker for, while
+// the settings never changed, must still never be imported once it is back.
+test('turns denied while the Provider was unreachable are not imported after it recovers', async (t) => {
+  const s = await session(t);
+  s.store.update({ projectMode: 'selected', selectedProjectIds: ['project'] });
+  await s.turn('on before', 'answer before');
+  s.provider.up = false;
+  await s.turn('private one', 'private answer one');
+  assert.equal(s.markers().length, 0, 'no marker could reach the Provider');
+  s.provider.up = true;
+  await s.hook('Stop');
+  assert.equal(s.contents().some(text => text.includes('private')), false, 'nothing from the outage is imported');
+  assert.equal(s.markers().length, 1, 'the denied stretch is marked once the Provider is back');
+  assert.match(s.markers()[0].content, /automatic recording was off \(policy_unavailable\)/);
+  await s.turn('on after', 'answer after');
+  assertOnlyOnPeriodTurns(s);
+  const settled = s.appended.length;
+  await s.hook('Stop');
+  assert.equal(s.appended.length, settled, 'a repeated sync adds nothing');
+});
+
+test('a denial that cannot be kept locally still imports nothing later', async (t) => {
+  const s = await session(t);
+  s.store.update({ projectMode: 'selected', selectedProjectIds: ['project'] });
+  await s.turn('on before', 'answer before');
+  s.provider.up = false;
+  // The ledger directory is replaced by a file, so no ledger can be written or read there.
+  const ledgers = join(dirname(s.policyPath), 'transcript-capture');
+  await rm(ledgers, { recursive: true, force: true });
+  await writeFile(ledgers, 'not a directory');
+  await s.turn('private one', 'private answer one');
+  s.provider.up = true;
+  await s.hook('Stop');
+  assert.equal(s.contents().some(text => text.includes('private')), false);
 });

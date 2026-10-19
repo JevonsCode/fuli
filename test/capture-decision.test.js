@@ -116,7 +116,9 @@ async function everyWritePath(f) {
 async function assertLedgerHoldsNoContent(f) {
   for (const name of await readdir(join(f.directory, 'transcript-capture'))) {
     const ledger = JSON.parse(await readFile(join(f.directory, 'transcript-capture', name), 'utf8'));
-    assert.deepEqual(Object.keys(ledger), ['version', 'settings']);
+    // A pending denial is kept as its reason code only.
+    assert.deepEqual(Object.keys(ledger).filter(key => key !== 'pending'), ['version', 'settings']);
+    if ('pending' in ledger) assert.match(ledger.pending, /^[a-z_]+$/);
     assert.equal(JSON.stringify(ledger).includes(PRIVATE), false);
   }
 }
