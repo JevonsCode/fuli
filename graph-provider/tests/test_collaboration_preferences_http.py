@@ -511,7 +511,9 @@ async def test_source_windows_use_real_neo4j_provider_and_mcp_without_space_queu
         listener.bind(('127.0.0.1', 0))
         port = listener.getsockname()[1]
     application = create_app(settings)
-    server = uvicorn.Server(uvicorn.Config(application, host='127.0.0.1', port=port, log_level='error', access_log=False))
+    server = uvicorn.Server(uvicorn.Config(application, host='127.0.0.1', port=port, log_level='error', access_log=False,
+                                           # uvloop would replace this process's event loop policy and break subprocess spawning.
+                                           loop='asyncio'))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
     url = f'http://127.0.0.1:{port}'
