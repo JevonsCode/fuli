@@ -141,7 +141,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       const cwd = locateCwd(session.client, session.sessionId);
       if (cwd) return cwd;
     }
-    return null;
+    // A host that records each project's folder answers when no session does.
+    return await host.projectFolder?.(projectId) ?? null;
   }
 
   // Tries each target until one answers as the restored Agent. The grant is the

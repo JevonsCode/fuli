@@ -31,6 +31,7 @@
 //                                               { agent_id, proof }: signed origin for a cross-device ask or chat
 //   remoteOriginAuthority()                     public keys that verify those origins
 //   recordMemoryUsage(input)                    optional: { recorded, reason? }
+//   projectFolder(projectId)                    optional: the project's known folder for fresh sessions
 //   requestSignal()                             optional, sync: the current request's AbortSignal
 //   inRestrictedWorker()                        optional, sync: true inside a sealed worker run
 export const ROUNDTABLE_HOST_METHODS = Object.freeze([
