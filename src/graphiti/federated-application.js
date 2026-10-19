@@ -6,6 +6,8 @@ import { createPeerPort } from '../agent-peer/peer-port.js';
 import { createJudgmentService } from '../judgment/service.js';
 import { JudgmentStore } from '../judgment/store.js';
 import { createJudgmentEngine } from '../judgment/engine.js';
+import { createTaskScheduleService } from '../task-schedules/service.js';
+import { TaskScheduleStore } from '../task-schedules/store.js';
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 import { withTaskMemorySnapshot } from './project-agent-memory.js';
 import { searchFederatedKnowledge } from './federated-search.js';
@@ -128,6 +130,8 @@ export function openFederatedGraphApplication({
     app.employees = createEmployeeService({ app, runtimeConfigPath });
     app.judgment = createJudgmentService({ app, engine: createJudgmentEngine({ app }),
       openStore: () => new JudgmentStore(join(dirname(runtimeConfigPath), 'judgment.sqlite')) });
+    app.taskSchedules = createTaskScheduleService({ app,
+      openStore: () => new TaskScheduleStore(join(dirname(runtimeConfigPath), 'task-schedules.sqlite')) });
     app.peer = createPeerPort({ dataDir: dirname(runtimeConfigPath), provider: app.personal,
       spaceId: () => app.config.personal.spaceId });
     app.roundtable = createAgentRoundtable({ app, env,
@@ -1041,7 +1045,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
-  close() { this.judgment?.close(); this.roundtable?.close(); this.peer?.close(); return this.employees?.close(); }
+  close() { this.judgment?.close(); this.taskSchedules?.close(); this.roundtable?.close(); this.peer?.close(); return this.employees?.close(); }
 
   async #recordAgentViews(items, toolName) {
     const unique = new Map(items.map((item) => [

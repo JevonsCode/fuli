@@ -60,7 +60,11 @@ export function label(text: string, className: string): CSS2DObject {
 }
 
 export function createStage(options: StageOptions): Stage {
-  const { container, camera, reducedMotion } = options
+  const { container, camera } = options
+  const media = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null
+  const motionState = () => document.documentElement.dataset.motion === 'reduced' || Boolean(media?.matches)
+  let reducedMotion = options.reducedMotion || motionState()
+  let disposed = false
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -96,6 +100,18 @@ export function createStage(options: StageOptions): Stage {
     controls.update()
     renderer.render(scene, camera)
     labels.render(scene, camera)
+    // Labels are optional projections. Suppress collisions while the semantic
+    // list retains every project/member and its full name.
+    const bounds = container.getBoundingClientRect()
+    const occupied: DOMRect[] = []
+    for (const element of labels.domElement.querySelectorAll<HTMLElement>('.stage-label--project, .stage-label--planet')) {
+      element.style.visibility = ''
+      const rect = element.getBoundingClientRect()
+      const overlaps = occupied.some(other => rect.left < other.right && rect.right > other.left && rect.top < other.bottom && rect.bottom > other.top)
+      const outside = rect.left < bounds.left || rect.right > bounds.right || rect.top < bounds.top || rect.bottom > bounds.bottom
+      if (overlaps || outside) element.style.visibility = 'hidden'
+      else occupied.push(rect)
+    }
   }
   const loop = () => {
     frame = requestAnimationFrame(loop)
@@ -103,7 +119,23 @@ export function createStage(options: StageOptions): Stage {
     for (const step of steps) step(elapsed)
     render()
   }
-  if (reducedMotion) controls.addEventListener('change', render)
+  const onChange = () => { if (reducedMotion && !disposed) render() }
+  controls.addEventListener('change', onChange)
+  function updateMotion() {
+    const next = motionState()
+    if (next === reducedMotion || disposed) return
+    reducedMotion = next
+    controls.enableDamping = !next
+    // Switching a preference never starts automatic rotation.
+    controls.autoRotate = false
+    cancelAnimationFrame(frame)
+    frame = 0
+    if (next) render()
+    else loop()
+  }
+  media?.addEventListener('change', updateMotion)
+  const motionObserver = new MutationObserver(updateMotion)
+  motionObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-motion'] })
 
   const baseFar = camera.far
   const resize = () => {
@@ -160,6 +192,10 @@ export function createStage(options: StageOptions): Stage {
     onFrame: step => { steps.push(step) },
     render,
     dispose() {
+      disposed = true
+      motionObserver.disconnect()
+      media?.removeEventListener('change', updateMotion)
+      controls.removeEventListener('change', onChange)
       cancelAnimationFrame(frame)
       observer.disconnect()
       labels.domElement.removeEventListener('pointerdown', onDown)

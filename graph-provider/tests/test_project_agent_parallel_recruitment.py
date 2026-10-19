@@ -1224,3 +1224,20 @@ class RecruitmentDriver:
         if 'RETURN recruitment' in query:
             return ([], None, None)
         return ([{'hr': {'agent_id': 'hr-1'}}], None, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(('start', 'expected'), [(False, 'backlog'), (True, 'queued')])
+async def test_start_false_assigns_a_staffed_task_to_the_backlog(start, expected):
+    store = AtomicSubmitStore(
+        ask_before_recruitment=False,
+        active_hr=True,
+        selected_lead='existing-lead',
+    )
+
+    await store.submit_project_agent_task(
+        {'id': 'principal'},
+        task_request(idempotency_key=f'backlog-start-{start}', start=start),
+    )
+
+    assert store.persisted['status'] == expected

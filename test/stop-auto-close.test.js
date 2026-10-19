@@ -53,3 +53,21 @@ test('hook and eligible routine fallback entries allow a finish without a model 
   assert.match(viaTool.checkpoint_guidance, /capture|workLog/);
   assert.deepEqual(sent, ['hook', 'tool']);
 });
+
+test('a request to remember something is never auto-closed and says to record it in FULI', async () => {
+  const { beginTaskFromPreferences } = await import('../src/graphiti/agent-knowledge-workflows.js');
+  const { taskRecord } = await import('../src/mcp/provider-task-context-registry.js');
+  const application = { config: { personal: { spaceId: 'space' } }, taskContextRegistry: {
+    begin: async () => taskRecord({ token: 'fuli-task-synthetic-2', session_id: 's', personal_project_id: null,
+      routine_auto_close_eligible: true, entry_via: 'hook' }) } };
+  const preferences = { context: { personal_project_id: null, project_agent_id: null }, effective_preferences: [] };
+  const remembering = await beginTaskFromPreferences(application, preferences,
+    { sessionId: 's', taskPrompt: '记住这个项目的 Cobalt 发布设定：region west-7。' }, { entryVia: 'hook' });
+  assert.equal(remembering.checkpoint_required, true);
+  assert.equal('checkpoint_guidance' in remembering, false);
+  assert.match(remembering.remember_guidance, /checkpoint_task_knowledge remember/);
+  const ordinary = await beginTaskFromPreferences(application, preferences,
+    { sessionId: 's', taskPrompt: '修一下登录页的样式。' }, { entryVia: 'hook' });
+  assert.equal(ordinary.checkpoint_required, false);
+  assert.equal('remember_guidance' in ordinary, false);
+});

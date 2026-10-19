@@ -1,7 +1,7 @@
 import { taskAgentAssignment } from './task-agent-assignment.js';
 import { beginConversation, checkpointConversation } from './agent-conversations.js';
 import { recordTriage, validateTriage } from './conversation-triage.js';
-import { compactTaskCapture } from './task-remember.js';
+import { REMEMBER_GUIDANCE, compactTaskCapture, rememberRequested } from './task-remember.js';
 import { withRecoveredSource } from './task-knowledge-recall.js';
 import { taskTeam } from './task-collaboration-attribution.js';
 import { taskAgentReceipt } from '../agents/identity-receipt.js';
@@ -75,7 +75,7 @@ export async function beginTaskContext(application, {
     throw validationError('Checkpoint continuation belongs to another project');
   }
   return beginTaskFromPreferences(application, preferences, {
-    sessionId, turnId: existingTask?.turnId ?? turnId, sourceApplication, sourceSessionId,
+    sessionId, turnId: existingTask?.turnId ?? turnId, sourceApplication, sourceSessionId, taskPrompt,
     workKind: preferenceScope.work_kind, workflow: preferenceScope.workflow
   }, { existingTask: resumed ?? (scopeRetry?.projectScope?.type === 'temporary' ? scopeRetry : null), resumed: Boolean(resumed),
     entryVia: 'hook' });
@@ -87,7 +87,7 @@ export const STOP_HOOK_CHECKPOINT_GUIDANCE = 'Call checkpoint_task_knowledge for
 // task is not evidence that its context reached this model turn.
 export async function beginTaskFromPreferences(application, preferences, {
   sessionId, turnId = null, sourceApplication = 'other', sourceSessionId = null,
-  workKind = null, workflow = null
+  workKind = null, workflow = null, taskPrompt = null
 }, { existingTask = null, resumed = false, entryVia = 'tool' } = {}) {
   const task = existingTask ?? await application.taskContextRegistry.begin({
     sessionId,
@@ -105,7 +105,9 @@ export async function beginTaskFromPreferences(application, preferences, {
   });
   // Only the Provider can establish that a fallback has no claim or worker /
   // coordination associations. Missing metadata keeps the legacy requirement.
-  const autoClosed = (entryVia === 'hook' && task.entryVia === 'hook') || task.routineAutoCloseEligible === true;
+  // A request to keep something is never a routine auto-closed task.
+  const remembering = rememberRequested(taskPrompt);
+  const autoClosed = !remembering && ((entryVia === 'hook' && task.entryVia === 'hook') || task.routineAutoCloseEligible === true);
   const conversation = await beginConversation(application, task);
   return withPreferenceScope({
     conversation,
@@ -113,6 +115,7 @@ export async function beginTaskFromPreferences(application, preferences, {
     task_context_token: task.token,
     checkpoint_required: !autoClosed && task.checkpoint?.phase !== 'complete',
     ...(autoClosed ? { checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE } : {}),
+    ...(remembering ? { remember_guidance: REMEMBER_GUIDANCE } : {}),
     resumed_checkpoint: Boolean(resumed),
     previous_checkpoint_missing: task.previousCheckpointMissing,
     ...preferences,

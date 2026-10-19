@@ -2,6 +2,7 @@ import { readJson, sendJson } from './response.js';
 import { testToolsEnabled } from '../app/test-tools.js';
 import { handleAgentAttentionRequest } from './agent-attention-api-router.js';
 import { handleTaskEventsRequest } from './task-events-api-router.js';
+import { handleTaskSchedulesRequest } from './task-schedules-api-router.js';
 import { handleOccupationRequest } from './occupation-api-router.js';
 
 export async function handleGraphApiRequest({
@@ -12,6 +13,7 @@ export async function handleGraphApiRequest({
 }) {
   if (await handleAgentAttentionRequest({ request, response, url, app })) return true;
   if (await handleTaskEventsRequest({ request, response, url, app })) return true;
+  if (await handleTaskSchedulesRequest({ request, response, url, app })) return true;
   if (await handleOccupationRequest({ request, response, url, app })) return true;
   if (url.pathname === '/api/agent-conversations/query' && request.method === 'POST') {
     sendJson(response, 200, await app.queryAgentConversations({ ...(await readJson(request)), ownerInspection: true }));
@@ -334,6 +336,28 @@ export async function handleGraphApiRequest({
   }
   if (url.pathname === '/api/project-agent-tasks' && request.method === 'POST') {
     sendJson(response, 200, await app.submitProjectAgentTask(await readJson(request)));
+    return true;
+  }
+  const taskRunsPath = url.pathname.match(/^\/api\/project-agent-tasks\/([^/]+)\/runs$/);
+  if (taskRunsPath && request.method === 'GET') {
+    sendJson(response, 200, await app.listProjectAgentTaskRuns({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('personalProjectId'),
+      taskId: decodeURIComponent(taskRunsPath[1]), limit: numberParam(url, 'limit', 50),
+      cursor: url.searchParams.get('cursor')
+    }));
+    return true;
+  }
+  const taskRunStopPath = url.pathname.match(/^\/api\/project-agent-tasks\/([^/]+)\/runs\/([^/]+)\/stop$/);
+  if (taskRunStopPath && request.method === 'POST') {
+    sendJson(response, 200, await app.controlProjectAgentTaskRun({ ...await readJson(request), action: 'stop',
+      taskId: decodeURIComponent(taskRunStopPath[1]), runId: decodeURIComponent(taskRunStopPath[2]) }));
+    return true;
+  }
+  const taskRetryPath = url.pathname.match(/^\/api\/project-agent-tasks\/([^/]+)\/retry$/);
+  if (taskRetryPath && request.method === 'POST') {
+    sendJson(response, 200, await app.controlProjectAgentTaskRun({ ...await readJson(request), action: 'retry',
+      taskId: decodeURIComponent(taskRetryPath[1]) }));
     return true;
   }
   const projectAgentTaskPath = url.pathname.match(/^\/api\/project-agent-tasks\/([^/]+)$/);

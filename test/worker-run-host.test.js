@@ -42,6 +42,10 @@ function fixture(options = {}) {
     },
     async claimProjectAgentWorkerStart() { calls.push('claim'); return view('claimed', { start_claimed: options.claimed !== false }); },
     async getProjectAgentWorkerRun() { return view('admitted'); },
+    async dispatchProjectAgentWorkerPrompt() { calls.push('dispatch'); return { dispatch_claimed: true }; },
+    async recordProjectAgentWorkerResult(_id, input) {
+      calls.push('result'); return { execution_result: { ...input, retry_eligible: false } };
+    },
     async sealProjectAgentWorkerSession(_id, input) {
       calls.push('seal'); assert.equal(input.session_id, context.session_id);
       return view('sealed', options.seal ?? {});
@@ -96,17 +100,19 @@ test('one host attempt claims once, seals the actual child session and reports i
   assert.equal(attempt.run(), first);
   const result = await first;
   assert.deepEqual(calls, ['graph-lease', 'executor-lease', 'parent', 'prepare', 'claim', 'start', 'session',
-    'seal', 'admit', 'configure', 'admit', 'running', 'prompt', 'checkpoint', 'close-run', 'close-process',
-    'terminal', 'release-executor', 'release-graph']);
+    'seal', 'admit', 'configure', 'admit', 'running', 'dispatch', 'prompt', 'checkpoint', 'close-run', 'close-process',
+    'terminal', 'release-executor', 'release-graph', 'result']);
   assert.deepEqual(result.outcome, { status: 'completed', code: 'worker_checkpoint_completed' });
   assert.equal(result.reporting.terminalRecorded, true);
   assert.deepEqual(result.cleanup, { processStopped: true, runClosed: true, errors: [] });
   assert.deepEqual(result.workerRuntime, { application: 'codex', session_id: 'child-native-session' });
-  assert.deepEqual(activities.map(value => [value.status, value.worker_status]), [['running', 'running'], ['running', 'completed']]);
+  assert.deepEqual(activities.map(value => [value.status, value.worker_status]), [['running', 'running'], ['awaiting_review', 'completed']]);
   for (const activity of activities) {
     assert.equal(activity.source_application, 'claude_code');
     assert.equal(activity.source_session_id, 'parent-native-session');
     assert.equal(activity.token_usage, null);
+    // The Provider uses the run identity to reject a late report from an older run.
+    assert.equal(activity.worker_run_id, result.runId);
     for (const name of ['actual_executor_id', 'actual_model', 'actual_model_provider']) assert.equal(Object.hasOwn(activity, name), false);
   }
 });
@@ -120,7 +126,7 @@ test('a lost or already-owned start claim never launches or closes another host 
     assert.equal(f.calls.includes('close-run'), false);
     assert.equal(f.activities.length, 0);
     assert.equal(result.outcome.code, lost ? 'worker_claim_failed' : 'worker_start_not_claimed');
-    assert.deepEqual(f.calls.slice(-2), ['release-executor', 'release-graph']);
+    assert.deepEqual(f.calls.filter(value => value.startsWith('release-')), ['release-executor', 'release-graph']);
     assert.equal(JSON.stringify(result).includes(capability), false);
   }
 });
@@ -189,7 +195,7 @@ test('session/identity and authority changes prevent prompt dispatch and still c
     assert.equal(f.calls.includes('prompt'), false);
     assert.equal(f.calls.includes('close-run'), true);
     assert.equal(f.calls.includes('close-process'), true);
-    assert.deepEqual(f.calls.slice(-2), ['release-executor', 'release-graph']);
+    assert.deepEqual(f.calls.filter(value => value.startsWith('release-')), ['release-executor', 'release-graph']);
     assert.equal(JSON.stringify(result).includes(capability), false);
   }
 });
@@ -269,7 +275,7 @@ test('out-of-band close or revocation aborts the pending prompt and cleans the o
     assert.deepEqual(result.outcome, { status: 'cancelled', code: 'worker_cancelled' });
     assert.deepEqual(result.cleanup, { processStopped: true, runClosed: true, errors: [] });
     assert.equal(f.activities.at(-1).worker_status, 'cancelled');
-    assert.deepEqual(f.calls.slice(-2), ['release-executor', 'release-graph']);
+    assert.deepEqual(f.calls.filter(value => value.startsWith('release-')), ['release-executor', 'release-graph']);
   }
 });
 
@@ -287,5 +293,90 @@ test('a timed-out authority read fails closed and a bounded attempt timeout also
     assert.equal(result.outcome.code, kind === 'poll' ? 'worker_authority_unavailable' : 'worker_timeout');
     assert.equal(result.cleanup.processStopped, true);
     assert.equal(result.cleanup.runClosed, true);
+  }
+});
+
+test('uncertain prompt results preserve one attempt and never blindly repeat side effects', async () => {
+  for (const code of ['worker_connection_closed', 'worker_timeout', 'worker_cleanup_incomplete']) {
+    const f = fixture();
+    let prompts = 0, starts = 0;
+    const start = f.adapter.start;
+    f.adapter.start = async input => { starts++; return start(input); };
+    f.child.promptOnce = async () => {
+      prompts++;
+      // A real adapter could have performed an action before losing its reply.
+      throw Object.assign(new Error('Synthetic reply lost after a possible action'), { code });
+    };
+    const result = await createWorkerRunAttempt(f.input).run();
+    assert.equal(starts, 1);
+    assert.equal(prompts, 1);
+    assert.equal(result.outcome.code, code);
+    assert.equal(result.checkpoint, null);
+    assert.equal(result.cleanup.runClosed, true);
+    assert.equal(result.cleanup.processStopped, true);
+    assert.equal(f.activities.at(-1).worker_status, 'failed');
+  }
+});
+
+test('a fresh reporting host cannot relaunch an already claimed durable run', async () => {
+  const f = fixture();
+  let claimed = false, starts = 0;
+  const claim = f.provider.claimProjectAgentWorkerStart;
+  const start = f.adapter.start;
+  f.provider.claimProjectAgentWorkerStart = async (...args) => {
+    const response = await claim(...args);
+    const start_claimed = !claimed;
+    claimed = true;
+    return { ...response, start_claimed };
+  };
+  f.adapter.start = async input => { starts++; return start(input); };
+  const first = await createWorkerRunAttempt(f.input).run();
+  const reports = f.activities.length;
+  const closeCalls = f.calls.filter(value => value === 'close-run').length;
+  // New object models a restarted host; the Provider still owns the same claim.
+  const replay = await createWorkerRunAttempt(f.input).run();
+  assert.equal(first.runId, replay.runId);
+  assert.equal(starts, 1);
+  assert.equal(replay.outcome.code, 'worker_start_not_claimed');
+  assert.equal(f.activities.length, reports);
+  assert.equal(f.calls.filter(value => value === 'close-run').length, closeCalls);
+});
+
+test('host persists a prompt claim and immutable cleanup evidence without completing the business task', async () => {
+  const f = fixture();
+  let dispatches = 0, saved;
+  f.provider.dispatchProjectAgentWorkerPrompt = async () => { dispatches++; return { dispatch_claimed: true }; };
+  f.provider.recordProjectAgentWorkerResult = async (_id, input) => {
+    saved = structuredClone(input);
+    assert.ok(f.calls.includes('close-process'));
+    assert.ok(f.calls.includes('release-graph'));
+    return { execution_result: { ...input, retry_eligible: false } };
+  };
+  const result = await createWorkerRunAttempt(f.input).run();
+  assert.equal(dispatches, 1);
+  assert.equal(saved.prompt_dispatched, true);
+  assert.equal(saved.process_stopped, true);
+  assert.equal(saved.run_closed, true);
+  assert.equal(saved.status, 'completed');
+  assert.equal(saved.stage, 'checkpoint');
+  assert.equal(f.activities.at(-1).status, 'awaiting_review');
+  assert.equal(result.executionResult.retry_eligible, false);
+});
+
+test('lost dispatch acknowledgement is never repeated and lost terminal evidence blocks automatic retry', async () => {
+  for (const phase of ['dispatch', 'result']) {
+    const f = fixture();
+    let prompts = 0;
+    const prompt = f.child.promptOnce;
+    f.child.promptOnce = async input => { prompts++; return prompt(input); };
+    f.provider.dispatchProjectAgentWorkerPrompt = async () => {
+      if (phase === 'dispatch') throw new Error('Synthetic lost dispatch response');
+      return { dispatch_claimed: true };
+    };
+    f.provider.recordProjectAgentWorkerResult = async () => { throw new Error('Synthetic lost result response'); };
+    const result = await createWorkerRunAttempt(f.input).run();
+    assert.equal(prompts, phase === 'dispatch' ? 0 : 1);
+    assert.equal(result.executionResult, null);
+    assert.ok(result.cleanup.errors.includes('worker_result_record_failed'));
   }
 });

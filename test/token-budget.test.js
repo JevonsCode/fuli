@@ -31,7 +31,19 @@ const BASELINE = Object.freeze({
   // RT-1: agent_chat (full profile only) gains action wait with its cursor and
   // timeout so an Agent waits for pushed messages instead of polling:
   // 169,269 -> 169,425 B (+156 B). The chat profile is unchanged.
-  fullToolSchemaBytes: 169425,
+  // F-P2-05 ⑤: coordinate/submit take start:false to assign a task to the
+  // backlog without starting a worker, and the status enums gain backlog:
+  // 169,425 -> 169,565 B (+140 B). The chat profile is unchanged.
+  // F-P2-05 ⑥: one full-profile tool, manage_project_agent_schedule, covers
+  // scheduled tasks and their circuit breaker (create/update/pause/resume/list/
+  // runs share one schema): 169,565 -> 171,156 B (+1,591 B). Chat is unchanged.
+  // F-P2-05 ⑦: one full-profile tool, control_project_agent_task_run, stops a
+  // run, retries a terminal task as new work or replays run history:
+  // 171,156 -> 172,214 B (+1,058 B). Chat is unchanged.
+  // The same tool takes the host task context (token, application, session)
+  // so a grouped team's stop/retry passes the check its submissions pass:
+  // 172,214 -> 172,415 B (+201 B). Chat is unchanged.
+  fullToolSchemaBytes: 172415,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

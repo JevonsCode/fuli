@@ -106,6 +106,8 @@ class StoreProjectAgentTaskActivity:
                     ),
                 )
             return self._task_from_row(row)
+        if request.worker_run_id and await self._worker_run_superseded(request):
+            return self._task_from_row(row)
         if request.status == 'completed' and raw_task.get('verification_required'):
             if (not request.artifact_revision or raw_task.get('quality_gate') != 'passed'
                 or raw_task.get('verified_artifact_revision') != request.artifact_revision):
@@ -457,3 +459,29 @@ class StoreProjectAgentTaskActivity:
             request.personal_space_id,
             request.task_id,
         )
+
+    async def _worker_run_superseded(self, request: ProjectAgentTaskActivityCreate) -> bool:
+        """True when a later run of the same Agent has started on this task.
+
+        Read inside the task write lock; the run nodes are only read, so the
+        session-then-task lock order is unchanged.
+        """
+        rows, _, _ = await self.runtime.driver.execute_query(
+            '''
+            MATCH (:FuliProjectAgentTask {personal_space_id: $space_id, task_id: $task_id})
+                  -[:HAS_WORKER_RUN]->(run:FuliProjectAgentWorkerRun {id: $run_id})
+            OPTIONAL MATCH (:FuliProjectAgentTask {personal_space_id: $space_id, task_id: $task_id})
+                  -[:HAS_WORKER_RUN]->(newer:FuliProjectAgentWorkerRun)
+            WHERE newer.id <> run.id AND newer.agent_id = run.agent_id
+              AND newer.claimed_at IS NOT NULL
+              AND (newer.created_at > run.created_at
+                OR (newer.created_at = run.created_at AND newer.id > run.id))
+            RETURN run.agent_id AS agent_id, count(newer) AS newer_runs
+            ''',
+            space_id=request.personal_space_id,
+            task_id=request.task_id,
+            run_id=request.worker_run_id,
+        )
+        if not rows or (request.agent_id and rows[0]['agent_id'] != request.agent_id):
+            raise HTTPException(409, 'Worker run does not belong to this task and Agent')
+        return rows[0]['newer_runs'] > 0

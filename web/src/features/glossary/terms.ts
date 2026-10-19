@@ -15,7 +15,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     term('review', key, `knowledge.domain.reviewStates.${key}`, `glossary.review.${key}`)),
   ...['taste', 'personality', 'judgment_preference'].map(key =>
     term('profile', key, `knowledge.domain.profiles.${key}`, `glossary.profile.${key}`)),
-  ...['running', 'queued', 'paused', 'blocked', 'awaiting_review', 'awaiting_recruitment', 'none', 'ended'].map(key =>
+  ...['running', 'queued', 'backlog', 'paused', 'blocked', 'awaiting_review', 'awaiting_recruitment', 'none', 'ended'].map(key =>
     term('work', key, `agentRedesign.workStatus.${key}`, `glossary.work.${key}`)),
   ...['working', 'waiting', 'idle', 'error'].map(key =>
     term('presence', key, `glossary.presence.${key}.label`, `glossary.presence.${key}.body`)),

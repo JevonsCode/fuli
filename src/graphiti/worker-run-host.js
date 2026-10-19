@@ -8,7 +8,8 @@ const bounded = (value, max) => typeof value === 'string' && value.trim().length
 const taskToken = value => typeof value === 'string' && /^fuli-task-[a-zA-Z0-9-]{8,128}$/.test(value);
 const knownFailures = new Set(['worker_authentication_required', 'worker_authentication_unknown', 'worker_workspace_untrusted', 'worker_model_unavailable',
   'worker_model_mismatch', 'worker_cancelled', 'worker_timeout', 'worker_connection_closed', 'worker_cleanup_incomplete',
-  'worker_identity_mismatch', 'worker_model_strategy_unmapped', 'worker_result_mismatch', 'worker_authority_unavailable']);
+  'worker_identity_mismatch', 'worker_model_strategy_unmapped', 'worker_result_mismatch', 'worker_authority_unavailable',
+  'worker_runtime_offline', 'worker_runtime_recovery']);
 
 // A trusted host creates one attempt, never a model-facing tool or a scheduler.
 // Retain the same capability and idempotency key when recovering a lost prepare;
@@ -40,7 +41,7 @@ export function createWorkerRunAttempt({ provider, leases, adapter, request, pro
     const handles = [], cleanupErrors = [];
     let runId, claimed = false, sealed = false, child, parent, sessionId, ownToken, checkpoint, result;
     let stage = 'lease', runningRecorded = false, terminalRecorded = false;
-    let processStopped = false, runClosed = false;
+    let processStopped = false, runClosed = false, promptDispatched = false, executionResult = null;
     let outcome = { status: 'blocked', code: 'worker_not_started' };
     const checkCancelled = () => { if (signal?.aborted) throw failure('cancelled'); };
     const redact = value => [capability, selection.task_context_token, ownToken].filter(Boolean)
@@ -83,8 +84,8 @@ export function createWorkerRunAttempt({ provider, leases, adapter, request, pro
       return { phase: 'complete', workLog: { status: log.status, summary: redact(log.summary) } };
     };
     const report = (workerStatus, summary, phase) => provider.recordProjectAgentTaskActivity({ ...scope,
-      task_id: selection.task_id, agent_id: selection.agent_id, worker_id: selection.worker_id,
-      status: 'running', worker_status: workerStatus, worker_runtime: runtime(),
+      task_id: selection.task_id, agent_id: selection.agent_id, worker_id: selection.worker_id, worker_run_id: runId,
+      status: workerStatus === 'completed' ? 'awaiting_review' : 'running', worker_status: workerStatus, worker_runtime: runtime(),
       source_application: parent.source_application, source_session_id: parent.session_id,
       idempotency_key: `${runId}:${phase}`, summary,
       // No transcript lookup in the reporting host's daily client home.
@@ -146,6 +147,12 @@ export function createWorkerRunAttempt({ provider, leases, adapter, request, pro
         checkCancelled();
         await report('running', 'Worker session admitted; one prompt attempt is starting. Actual model use is unverified.', 'running');
         runningRecorded = true;
+        stage = 'dispatch';
+        checkCancelled();
+        // Set the uncertainty flag before the call: a lost ACK may have committed.
+        promptDispatched = true;
+        const dispatched = await provider.dispatchProjectAgentWorkerPrompt(runId, scope, { capability, signal });
+        if (dispatched.dispatch_claimed !== true) throw failure('dispatch_not_claimed');
         stage = 'prompt';
         checkCancelled();
         const reply = await child.promptOnce({ text: workerPrompt(taskPrompt), signal });
@@ -211,7 +218,20 @@ export function createWorkerRunAttempt({ provider, leases, adapter, request, pro
       // has not delivered a successful attempt until reporting and cleanup finish.
       outcome = { status: 'incomplete', code: 'worker_host_finalization_incomplete' };
     }
+    if (claimed) {
+      try {
+        const saved = await provider.recordProjectAgentWorkerResult(runId, { ...scope,
+          status: outcome.status, code: outcome.code, stage, prompt_dispatched: promptDispatched,
+          process_stopped: processStopped, run_closed: runClosed, terminal_recorded: terminalRecorded,
+          cleanup_errors: [...cleanupErrors] }, { capability, signal: null });
+        executionResult = saved.execution_result ?? null;
+      } catch {
+        cleanupErrors.push('worker_result_record_failed');
+        if (outcome.status === 'completed') outcome = { status: 'incomplete', code: 'worker_host_finalization_incomplete' };
+      }
+    }
     return { runId: runId ?? null, outcome, ...(child ? { workerRuntime: runtime() } : {}),
+      executionResult,
       result: result ?? null, checkpoint: checkpoint ?? null,
       reporting: { runningRecorded, terminalRecorded }, cleanup: { processStopped, runClosed, errors: cleanupErrors } };
 

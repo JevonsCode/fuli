@@ -99,7 +99,7 @@ const editingRule = ref<ProjectAgentRoutingRule | null>(null)
 let loadVersion = 0
 let detailLoadVersion = 0
 const nonTerminalTaskStatuses = new Set<ProjectAgentTaskStatus>([
-  'awaiting_recruitment', 'queued', 'running', 'paused', 'awaiting_review', 'blocked',
+  'awaiting_recruitment', 'backlog', 'queued', 'running', 'paused', 'awaiting_review', 'blocked',
 ])
 function actionIdempotencyKey(prefix: string) {
   const suffix = typeof crypto !== 'undefined' && 'randomUUID' in crypto

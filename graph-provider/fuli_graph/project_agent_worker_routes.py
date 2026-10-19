@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import SecretStr
 
-from .project_agent_worker_models import WorkerRunClose, WorkerRunPrepare, WorkerRunScope, WorkerRunSession
+from .project_agent_worker_models import WorkerRunClose, WorkerRunPrepare, WorkerRunScope, WorkerRunSession, WorkerRunResult
 
 
 class WorkerRunRoute(APIRoute):
@@ -60,6 +60,26 @@ def register_project_agent_worker_routes(application, store, Actor):
     async def close_run(run_id: str, request: WorkerRunClose, actor: Actor,
         x_fuli_worker_capability: Annotated[SecretStr | None, Header()] = None):
         return await store.close_project_agent_worker_run(actor, run_id, request, x_fuli_worker_capability)
+
+    @router.post('/v1/project-agent-worker-runs/{run_id}/dispatch')
+    async def dispatch_prompt(run_id: str, request: WorkerRunScope, actor: Actor,
+        x_fuli_worker_capability: Annotated[SecretStr | None, Header()] = None):
+        return await store.dispatch_project_agent_worker_prompt(actor, run_id, request, x_fuli_worker_capability)
+
+    @router.post('/v1/project-agent-worker-runs/{run_id}/result')
+    async def record_result(run_id: str, request: WorkerRunResult, actor: Actor,
+        x_fuli_worker_capability: Annotated[SecretStr | None, Header()] = None):
+        return await store.record_project_agent_worker_result(actor, run_id, request, x_fuli_worker_capability)
+
+    @router.get('/v1/project-agent-tasks/{task_id}/runs')
+    async def task_runs(task_id: str, actor: Actor,
+        personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
+        personal_project_id: Annotated[str, Query(min_length=1, max_length=128)],
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+        cursor: Annotated[str | None, Query(min_length=1, max_length=128)] = None):
+        return await store.list_project_agent_task_runs(actor, WorkerRunScope(
+            personal_space_id=personal_space_id, personal_project_id=personal_project_id), task_id,
+            limit=limit, cursor=cursor)
 
     @router.post('/v1/project-agent-worker-runs/{run_id}/revoke')
     async def revoke_run(run_id: str, request: WorkerRunClose, actor: Actor):

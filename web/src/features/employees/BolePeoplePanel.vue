@@ -69,7 +69,7 @@ const taskLimit = 200
 const tasksMayBeTruncated = computed(() => tasks.value.length >= taskLimit)
 let requestVersion = 0
 
-const openStatuses = new Set(['awaiting_recruitment', 'queued', 'running', 'paused', 'awaiting_review', 'blocked'])
+const openStatuses = new Set(['awaiting_recruitment', 'backlog', 'queued', 'running', 'paused', 'awaiting_review', 'blocked'])
 const projectNames = computed(() => new Map(props.projects.map((project) => [project.project_id, project.profile.name])))
 const activeAgents = computed(() => agents.value.filter((agent) => agent.status === 'active'))
 const openTasks = computed(() => tasks.value.filter((task) => openStatuses.has(task.status)))
@@ -250,7 +250,7 @@ function typeLabel(type: string) {
     : t('employees.bole.types.other')
 }
 function statusLabel(status: string) {
-  return ['awaiting_recruitment', 'queued', 'running', 'paused', 'failed', 'awaiting_review', 'blocked'].includes(status)
+  return ['awaiting_recruitment', 'backlog', 'queued', 'running', 'paused', 'failed', 'awaiting_review', 'blocked'].includes(status)
     ? t(`employees.bole.status.${status}`)
     : status
 }

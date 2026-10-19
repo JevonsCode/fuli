@@ -37,7 +37,7 @@ const counts = computed(() => Object.fromEntries(STATES.map(state => [state,
 const face = (agent: StarAgent) => props.board.agentFace(agent.agentId)
 const initial = (agent: StarAgent) => face(agent).name.trim().slice(0, 1).toUpperCase()
 const target = (agent: StarAgent) => agent.question ? props.board.questionHref(agent.question) : agent.task ? props.board.taskHref(agent.task) : null
-const label = (agent: StarAgent) => `${face(agent).name} · ${t(`workbench.lanes.${agent.state === 'waiting' ? 'waiting' : agent.state}`)}`
+const label = (agent: StarAgent) => `${face(agent).name} · ${t(`workbench.projection.${agent.state}`)}`
   + (agent.question ? ` · ${agent.question.title}` : agent.task ? ` · ${agent.task.title}` : '')
 const shortName = (name: string) => (name.length > 14 ? `${name.slice(0, 13)}…` : name)
 </script>
@@ -70,13 +70,15 @@ const shortName = (name: string) => (name.length > 14 ? `${name.slice(0, 13)}…
         </template>
       </g>
     </svg>
+    <p class="constellation-count-label">{{ t('workbench.scene.memberCounts') }}</p>
     <ul class="constellation-legend">
-      <li v-for="state in STATES" :key="state" :class="`is-${state}`"><i aria-hidden="true" />{{ t(`workbench.lanes.${state}`) }} <span>{{ counts[state] }}</span></li>
+      <li v-for="state in STATES" :key="state" :class="`is-${state}`"><i aria-hidden="true" />{{ t(`workbench.projection.${state}`) }} <span>{{ counts[state] }}</span></li>
     </ul>
   </div>
 </template>
 
 <style scoped>
+.constellation-count-label { margin: 0; color: var(--color-muted); font-size: 12px; }
 .constellation { display: grid; gap: 12px; }
 .constellation-map { width: 100%; height: auto; max-height: 560px; border: 1px solid var(--color-border); border-radius: var(--radius-card);
   background: radial-gradient(ellipse at 50% 45%, var(--color-surface), var(--color-surface-subtle)); }

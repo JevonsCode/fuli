@@ -1071,7 +1071,7 @@ class StoreProjectAgentExecutors(
             WITH space, agent, [item IN tasks
                          WHERE item.task_id IS NOT NULL
                            AND item.status IN [
-                             'awaiting_recruitment', 'queued', 'running',
+                             'awaiting_recruitment', 'backlog', 'queued', 'running',
                              'paused', 'blocked', 'awaiting_review'
                            ]] AS open_tasks
             WHERE agent.status = 'archived' OR size(open_tasks) = 0

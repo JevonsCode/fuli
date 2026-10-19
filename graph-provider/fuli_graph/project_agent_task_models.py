@@ -32,6 +32,8 @@ ProjectAgentStaffingIntent = Literal[
 ]
 ProjectAgentTaskStatus = Literal[
     'awaiting_recruitment',
+    # Assigned but not started: no worker runs until someone moves it to queued.
+    'backlog',
     'queued',
     'running',
     'paused',
@@ -179,6 +181,8 @@ class ProjectAgentTaskSubmit(StrictModel):
     routing_reason: str = Field(min_length=1, max_length=2048)
     recruitment_profile: ProjectAgentProfile | None = None
     recruitment_occupation: ProjectAgentOccupationInput | None = None
+    # False assigns a staffed task to the backlog instead of queueing it.
+    start: bool = True
 
     @field_validator('required_capabilities')
     @classmethod
@@ -593,6 +597,10 @@ class ProjectAgentTaskActivityCreate(StrictModel):
     )
     worker_status: ProjectAgentTaskStatus | None = None
     token_usage: ProjectAgentTokenUsage | None = None
+    # The durable run reporting this activity. A late report from an older run
+    # must not overwrite a newer run of the same Agent; excluded from the
+    # payload hash so untagged input keeps its old idempotency hash.
+    worker_run_id: str | None = Field(default=None, min_length=1, max_length=128, exclude=True)
     worker_runtime: ProjectAgentWorkerRuntime | None = None
 
     _normalize_worker_aliases = model_validator(mode='before')(

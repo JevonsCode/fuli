@@ -9,6 +9,15 @@ import { experienceCapture } from './task-experiences.js';
 // user's own words are the evidence global scope requires. Project facts stay
 // in the current project. Everything is pending until a person confirms it.
 const MAX_ITEMS = 8;
+// Hosts such as Claude Code keep their own memory files; a request to keep
+// something must still reach FULI. Detected only on the prompt, so ordinary
+// tasks carry no extra entry text.
+const REMEMBER_REQUEST = /(?:记住|记一下|记下来|别忘|以后要用|\bremember\b|keep in mind|don't forget)/iu;
+export const REMEMBER_GUIDANCE = 'The user asked to keep something: record it with checkpoint_task_knowledge remember (preference or project_fact), not only in the host memory files.';
+
+export function rememberRequested(taskPrompt) {
+  return typeof taskPrompt === 'string' && REMEMBER_REQUEST.test(taskPrompt);
+}
 const ASPECTS = new Set(['taste', 'personality', 'judgment_preference']);
 
 export function rememberCapture(task, remember, { sourceApplication = 'other', now = new Date() } = {}) {
@@ -16,9 +25,15 @@ export function rememberCapture(task, remember, { sourceApplication = 'other', n
     throw invalid(`remember takes 1 to ${MAX_ITEMS} items`);
   }
   const quotes = [];
-  const items = remember.map((item, index) => {
+  const seen = new Set();
+  const items = remember.map(item => {
     const statement = text(item?.text, 2000, 'remember[].text');
-    const key = `remember-${index + 1}`;
+    // The key identifies the remembered content, not its position: a stable key
+    // per position made every later task's first item collide with an earlier
+    // one in the same scope, and the new knowledge was silently dropped.
+    const key = `remember-${createHash('sha256').update(JSON.stringify([item?.kind, statement])).digest('hex').slice(0, 24)}`;
+    if (seen.has(key)) return null;
+    seen.add(key);
     if (item?.kind === 'project_fact') {
       return { scope: 'current_project', entity: entity(task, key, statement, 'ProjectFact', null,
         'The user stated this project fact during the task.') };
@@ -31,7 +46,7 @@ export function rememberCapture(task, remember, { sourceApplication = 'other', n
     if (scope === 'global') quotes.push(text(item.quote, 600, 'remember[].quote (the user\'s own words, required for a global preference)'));
     return { scope: scope === 'global' ? 'personal_global' : 'current_project',
       entity: entity(task, key, statement, 'PersonalPreference', aspect, 'The user stated this preference during the task.') };
-  });
+  }).filter(Boolean);
   const entities = items.map(item => item.entity);
   const digest = createHash('sha256').update(JSON.stringify(remember)).digest('hex').slice(0, 16);
   const captureRouting = ['personal_global', 'current_project']

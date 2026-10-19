@@ -67,6 +67,7 @@ export type ProjectAgentWorkStatus =
 
 export type ProjectAgentTaskStatus =
   | 'awaiting_recruitment'
+  | 'backlog'
   | 'queued'
   | 'running'
   | 'paused'

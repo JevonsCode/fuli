@@ -26,6 +26,10 @@ export function mapHttpError(error) {
     return { status: 400, body: { error: 'Malformed JSON' } };
   }
 
+  if (error instanceof ApplicationError && error.status >= 400 && error.status <= 499) {
+    return { status: error.status, body: { error: error.message, code: error.code } };
+  }
+
   if (error instanceof ApplicationError && BAD_REQUEST_CODES.has(error.code)) {
     return { status: 400, body: { error: error.message } };
   }

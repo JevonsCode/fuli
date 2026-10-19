@@ -1,5 +1,7 @@
 import { withOccupationDemand } from './occupation-staffing.js';
 import { occupationCatalog } from './occupation-catalog.js';
+import { workerRunRecord } from './worker-run-view.js';
+import { retryProjectAgentTask, stopProjectAgentTaskRun } from './project-agent-run-control.js';
 import { planAgentCollaboration, agentLoan, agentVerification } from './agent-collaboration.js';
 import { queryConversations, resumeConversation, updateConversationPolicy } from './agent-conversations.js';
 import { recordUserTriage } from './conversation-triage.js';
@@ -230,6 +232,21 @@ export class ProjectAgentControlPlaneApplication {
   async viewProjectAgentTask(input) {
     this.#assertSpace(input.personalSpaceId);
     return viewProjectAgentTaskWorkflow(this, input);
+  }
+
+  async listProjectAgentTaskRuns(input) {
+    this.#assertSpace(input.personalSpaceId);
+    const history = await this.personal.listProjectAgentTaskRuns(input);
+    return { runs: history.runs.map(workerRunRecord), nextCursor: history.next_cursor, complete: history.complete };
+  }
+
+  // F-P2-05 ⑦: stop a running run, retry a terminal task as new work, replay run history.
+  async controlProjectAgentTaskRun(input) {
+    this.#assertSpace(input.personalSpaceId);
+    if (input.action === 'stop') return stopProjectAgentTaskRun(this, input);
+    if (input.action === 'retry') return retryProjectAgentTask(this, input);
+    if (input.action === 'history') return this.listProjectAgentTaskRuns(input);
+    throw new TypeError('action must be stop, retry or history');
   }
 
   openProjectAgentTaskEvents(input, options) {

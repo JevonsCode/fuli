@@ -13,8 +13,10 @@ const fact = { kind: 'project_fact', text: 'The ledger CSV is semicolon-delimite
 test('remember routes a global preference and a project fact through the normal pending rules', () => {
   const { capture, captureRouting } = rememberCapture(task, [preference, fact], { sourceApplication: 'claude_code',
     now: new Date('2026-10-19T00:00:00Z') });
+  const [globalKey, factKey] = capture.entities.map(entity => entity.key);
+  assert.match(globalKey, /^remember-[0-9a-f]{24}$/);
   assert.deepEqual(captureRouting.map(batch => [batch.scope, batch.entityKeys]),
-    [['personal_global', ['remember-1']], ['current_project', ['remember-2']]]);
+    [['personal_global', [globalKey]], ['current_project', [factKey]]]);
   assert.equal(captureRouting[0].sourceExcerpt, preference.quote, 'the user\'s words are the global evidence');
   const batches = normalizeTaskCaptures(task, capture, captureRouting);
   const global = batches.find(batch => batch.scope === 'personal_global');
@@ -29,8 +31,8 @@ test('remember routes a global preference and a project fact through the normal 
 
 test('a global preference needs the user\'s words; a project preference stays in the project', () => {
   assert.throws(() => rememberCapture(task, [{ kind: 'preference', text: 'Short answers.' }]), /quote/);
-  const { captureRouting } = rememberCapture(task, [{ kind: 'preference', text: 'Use semicolons in this repo.', scope: 'project' }]);
-  assert.deepEqual(captureRouting, [{ scope: 'current_project', entityKeys: ['remember-1'], relationshipKeys: [] }]);
+  const { capture, captureRouting } = rememberCapture(task, [{ kind: 'preference', text: 'Use semicolons in this repo.', scope: 'project' }]);
+  assert.deepEqual(captureRouting, [{ scope: 'current_project', entityKeys: [capture.entities[0].key], relationshipKeys: [] }]);
   for (const bad of [[], Array(9).fill(fact), [{ kind: 'chat', text: 'nice weather' }], [{ ...fact, text: ' ' }],
     [{ ...preference, aspect: 'mood' }], [{ ...preference, scope: 'team' }]]) {
     assert.throws(() => rememberCapture(task, bad), /remember/);
@@ -40,9 +42,10 @@ test('a global preference needs the user\'s words; a project preference stays in
 test('experiences and remember share one capture and one current-project batch', () => {
   const experience = { task: 'Parse the ledger', searchKeys: ['csv'], solution: 'Split on semicolons.' };
   const { capture, captureRouting } = compactTaskCapture(task, { experiences: [experience], remember: [preference, fact] });
-  assert.deepEqual(capture.entities.map(entity => entity.key), ['experience-1', 'remember-1', 'remember-2']);
+  const [experienceKey, globalKey, factKey] = capture.entities.map(entity => entity.key);
+  assert.match(experienceKey, /^experience-[0-9a-f]{24}$/);
   assert.deepEqual(captureRouting.map(batch => [batch.scope, batch.entityKeys]),
-    [['current_project', ['experience-1', 'remember-2']], ['personal_global', ['remember-1']]]);
+    [['current_project', [experienceKey, factKey]], ['personal_global', [globalKey]]]);
   assert.equal(normalizeTaskCaptures(task, capture, captureRouting).length, 2);
 });
 
@@ -54,4 +57,14 @@ test('a checkpoint takes remember instead of a capture and lists it in the tool 
     remember: [fact] }), /capture_candidates/);
   const tool = GRAPH_TOOL_DEFINITIONS.find(item => item.name === 'checkpoint_task_knowledge');
   assert.deepEqual(tool.inputSchema.properties.remember.items.required, ['kind', 'text']);
+});
+
+test('remembered items are keyed by content, so later tasks never collide with earlier knowledge', () => {
+  const first = rememberCapture(task, [fact]).capture.entities[0].key;
+  const other = rememberCapture({ ...task, token: 'fuli-task-later' },
+    [{ kind: 'project_fact', text: 'Cobalt rollout: region west-7, shard cedar-23.' }]).capture.entities[0].key;
+  const same = rememberCapture({ ...task, token: 'fuli-task-again' }, [fact]).capture.entities[0].key;
+  assert.notEqual(first, other, 'a different fact in a later task gets its own key');
+  assert.equal(first, same, 'remembering the same fact again keeps one item');
+  assert.equal(rememberCapture(task, [fact, fact]).capture.entities.length, 1);
 });
