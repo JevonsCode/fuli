@@ -136,6 +136,10 @@ forks the conversation; Codex records the exchange in it (or uses a new session 
 open in the app). A message that cannot be delivered waits in the recipient's inbox for its
 next task.
 
+Agents can also keep direct and group chats with `agent_chat`. Messages are pushed: an Agent
+that calls `wait` gets new messages at once, and a direct message or an `@` mention wakes an
+Agent that is not waiting. Chats only carry communication; they never change knowledge weights.
+
 Every exchange is kept locally; the console's Roundtable page shows who asked whom, through
 which client, and exactly what was said. Tools and limits: [Agent Roundtable](docs/agent-roundtable.md).
 
@@ -405,18 +409,16 @@ sequenceDiagram
     opt The task creates a decision, contradiction, or stale signal
         A->>F: Record rationale or knowledge feedback
     end
-    A->>F: checkpoint_task_knowledge
-    alt A small durable candidate batch exists
+    opt Something is worth keeping (candidates, a decision, a meaningful work log)
+        A->>F: checkpoint_task_knowledge
         F->>G: capture_candidates
-    else Nothing should be retained
-        F-->>A: retain_nothing
     end
 
     alt Loaded and trusted Claude Code / Codex Stop hook
         L->>F: verify_task_checkpoint
-        F-->>L: Allow stop only after review
-    else Cursor reminder or prompt-fallback agent
-        Note over A,F: Same contract; a bounded reminder is not an unconditional Stop gate
+        F-->>L: Close a routine task as retain_nothing / reported, otherwise remind
+    else Cursor or an Agent without a Stop hook
+        Note over A,F: Same contract. A routine fallback task closes at the next task entry
     end
     A-->>U: Return the result and any Fuli sources actually used
 ```
@@ -517,6 +519,17 @@ Core mechanisms covered by implementation and automated tests include:
 - persistent scoped knowledge reviews with pause/resume watermarks;
 - common-knowledge discovery and preview-token-protected atomic promotion;
 - read-only multi-project MCP, Notion, Feishu/Lark, Dify-compatible RAG Retrieval API, and trusted-code bindings with connected retrieval.
+
+New in 0.20 (public preview `0.20.0-beta`, see the [release notes](docs/releases/0.20.0.md)):
+
+- **Projects and people**: unassigned conversations go to Astro, Jefa triages them, and a topic becomes a project after three conversations. Every project has a brief and every Agent an occupation, which Bole recruits by.
+- **Tasks**: assign without starting (backlog), schedule recurring tasks that pause after repeated failures, and stop, retry, or review any run from the task details. A temporary failure is retried automatically only when no prompt was sent.
+- **Decisions**: an Agent that needs you asks in the conversation first. A request that must wait for you goes to the Decisions page, and your reply reaches the Agent that asked.
+- **Roundtable**: besides asks (`message_agent`), Agents have direct and group chats (`agent_chat`) with push delivery and `wait`; the console shows them live.
+- **Memory between projects**: weighted links (related, frequent, close) say how much one project may draw on another. Weights never grant access.
+- **Lower token cost**: a smaller task entry, shared rules read on demand, long preference lists read in pages, and a Stop hook that closes routine tasks without another model turn.
+- **Console**: six entries (Workbench, Agents, Conversations, Projects, Memory, Settings), a phone layout, and Alt/Option-click explanations for any status or term.
+- **Windows**: an installed build with Update-Fuli, Rollback-Fuli, and Uninstall-Fuli that keeps your data.
 
 The following must not be presented as already proven:
 
