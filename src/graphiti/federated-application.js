@@ -3,6 +3,7 @@ import { createEmployeeService } from '../employees/service.js';
 import { createAgentRoundtable } from '../agent-roundtable/service.js';
 import { createRoundtableStore } from '../agent-roundtable/store.js';
 import { createPeerPort } from '../agent-peer/peer-port.js';
+import { createFuliRoundtableHost } from './roundtable-host.js';
 import { createJudgmentService } from '../judgment/service.js';
 import { JudgmentStore } from '../judgment/store.js';
 import { createJudgmentEngine } from '../judgment/engine.js';
@@ -132,9 +133,9 @@ export function openFederatedGraphApplication({
       openStore: () => new JudgmentStore(join(dirname(runtimeConfigPath), 'judgment.sqlite')) });
     app.taskSchedules = createTaskScheduleService({ app,
       openStore: () => new TaskScheduleStore(join(dirname(runtimeConfigPath), 'task-schedules.sqlite')) });
-    app.peer = createPeerPort({ dataDir: dirname(runtimeConfigPath), provider: app.personal,
-      spaceId: () => app.config.personal.spaceId });
-    app.roundtable = createAgentRoundtable({ app, env,
+    app.roundtableHost = createFuliRoundtableHost(app);
+    app.peer = createPeerPort({ dataDir: dirname(runtimeConfigPath), host: app.roundtableHost });
+    app.roundtable = createAgentRoundtable({ host: app.roundtableHost, peer: app.peer, env,
       openStore: () => createRoundtableStore(join(dirname(runtimeConfigPath), 'agent-roundtable.sqlite')) });
     // Read per call so a saved settings change applies without a restart.
     app.needsPerson = createNeedsPersonNotifier({ fetchImpl, consoleUrl: app.consoleUrl,

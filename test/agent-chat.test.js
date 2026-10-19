@@ -12,6 +12,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { runWithAgentRequestContext, sealedWorkerRequestContext } from '../src/app/agent-request-context.js';
+import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 function fixture(t) {
   const agents = ['alpha', 'beta', 'gamma'].map(agentId => ({ agentId,
@@ -32,7 +33,7 @@ function fixture(t) {
       if (!tasks[token] || client !== 'codex') throw new Error('Unknown task');
       return tasks[token];
     } } };
-  const roundtable = createAgentRoundtable({ app, openStore: () => createRoundtableStore(),
+  const roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore(),
     wake: async () => { wakes++; throw new Error('Chat must never wake'); } });
   app.roundtable = roundtable;
   t.after(() => roundtable.close());
@@ -91,7 +92,7 @@ test('group membership is versioned, only the owner admits members, removal revo
 test('separate clients and a restart share one durable chat with atomic create/send and membership CAS', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'fuli-chat-store-'));
   const { app } = fixture(t);
-  const open = () => createAgentRoundtable({ app, openStore: () => createRoundtableStore(join(directory, 'chat.sqlite')) });
+  const open = () => createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore(join(directory, 'chat.sqlite')) });
   const clients = [open(), open()];
   // Close before removing: Windows cannot delete a SQLite file that is still open.
   t.after(async () => { clients.forEach(client => client.close()); await rm(directory, { recursive: true, force: true }); });
@@ -249,7 +250,7 @@ test('a separate MCP process wait observes a committed message without polling',
   const { app } = fixture(t);
   const directory = await mkdtemp(join(tmpdir(), 'fuli-chat-process-'));
   const path = join(directory, 'chat.sqlite');
-  const roundtable = createAgentRoundtable({ app, openStore: () => createRoundtableStore(path) });
+  const roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore(path) });
   const room = await roundtable.chat({ taskContextToken: 'alpha', sourceApplication: 'codex', action: 'create',
     requestId: 'process-chat', kind: 'direct', members: ['local:beta'] });
   const code = `import {createRoundtableStore} from './src/agent-roundtable/store.js';

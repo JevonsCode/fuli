@@ -8,6 +8,7 @@ import { createPeerRuntime } from '../../src/agent-peer/peer-runtime.js';
 import { canonicalJson, sha256Hex } from '../../src/agent-peer/protocol.js';
 import { createAgentRoundtable } from '../../src/agent-roundtable/service.js';
 import { createRoundtableStore } from '../../src/agent-roundtable/store.js';
+import { createFuliRoundtableHost } from '../../src/graphiti/roundtable-host.js';
 
 // Signs exactly like the FULI Provider does: the private key stays in here.
 export function signingAuthority() {
@@ -61,13 +62,14 @@ export async function device(label, { tamper = null, wake = null } = {}) {
     taskContextRegistry: { context: async token => ({ projectAgentId: actorId(token), personalProjectId: projectId,
       sourceApplication: 'codex', sessionId: `${label}-session` }) },
   };
-  app.peer = createPeerPort({ dataDir, provider: personal, spaceId: () => spaceId, statusPollMs: 50 });
-  app.roundtable = createAgentRoundtable({ app, openStore: () => createRoundtableStore(), clientAvailable: () => true,
+  app.peer = createPeerPort({ dataDir, host: createFuliRoundtableHost(app), statusPollMs: 50 });
+  app.roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore(), clientAvailable: () => true,
     wake: async (input) => { calls.wakes.push(input);
       return wake ? wake(input) : { body: `${label} answers`, sessionId: `${label}-woken` }; } });
   const folder = join(dataDir, 'project-folder');
-  const runtime = createPeerRuntime({ app, port: app.peer, allowLoopback: true, claimWaitMs: 300, interfaces: () => ({}),
-    resolveFolder: (path) => ({ personalProjectId: path === folder ? projectId : null }) });
+  app.projectPathResolver = (path) => path === folder
+    ? { status: 'matched', personalProjectId: projectId } : { status: 'unmatched', personalProjectId: null };
+  const runtime = createPeerRuntime({ host: createFuliRoundtableHost(app), roundtable: app.roundtable, port: app.peer, allowLoopback: true, claimWaitMs: 300, interfaces: () => ({}) });
   return { app, runtime, calls, projectId, folder, close: async () => {
     await runtime.close(); await app.roundtable.close(); app.peer.close(); await rm(dataDir, { recursive: true, force: true });
   } };

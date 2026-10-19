@@ -9,6 +9,7 @@ import { handlePeerApiRequest } from '../src/agent-peer/http.js';
 import { createPeerPort } from '../src/agent-peer/peer-port.js';
 import { createPeerRuntime } from '../src/agent-peer/peer-runtime.js';
 import { runPeerCommand } from '../src/cli/peer-command.js';
+import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 function request({ method = 'GET', path = '/api/peer', remoteAddress = '127.0.0.1', host = '127.0.0.1:4100', body } = {}) {
   const stream = Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))]);
@@ -44,8 +45,8 @@ test('LAN roundtable owner controls answer only on the loopback console', async 
 test('nothing is written or listened on until the owner turns the LAN roundtable on', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'fuli-peer-off-'));
   try {
-    const port = createPeerPort({ dataDir, provider: {}, spaceId: () => 'space' });
-    const runtime = createPeerRuntime({ app: { config: { personal: { spaceId: 'space' } } }, port, interfaces: () => ({}) });
+    const port = createPeerPort({ dataDir, host: createFuliRoundtableHost({ config: { personal: { spaceId: 'space' } }, personal: {} }) });
+    const runtime = createPeerRuntime({ host: createFuliRoundtableHost({ config: { personal: { spaceId: 'space' } } }), port, interfaces: () => ({}) });
     await runtime.resume();
     assert.equal((await runtime.status()).role, null);
     assert.equal(await port.remoteAgents({}), null);

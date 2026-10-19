@@ -29,7 +29,7 @@ export function peerDirectory(dataDir) {
 
 // What Agents on this device use to reach shared project leads on other paired
 // devices. It never pairs, shares or listens: those stay with the local owner.
-export function createPeerPort({ dataDir, provider, spaceId, clock = Date.now, idFactory = randomUUID,
+export function createPeerPort({ dataDir, host, clock = Date.now, idFactory = randomUUID,
   statusPollMs = STATUS_POLL_MS }) {
   const directory = peerDirectory(dataDir);
   let store = null;
@@ -108,9 +108,8 @@ export function createPeerPort({ dataDir, provider, spaceId, clock = Date.now, i
       body, conversation, depth, ...(chatWake ? { chatWake } : {}),
       issuedAt: new Date(now).toISOString(),
       expiresAt: new Date(now + PEER_LIMITS.defaultTtlSeconds * 1000 - PROOF_MARGIN_MS).toISOString() };
-    const issued = await provider.issueRemoteAgentOrigin({ personal_space_id: spaceId(), task_context_token: taskContextToken,
-      source_application: sourceApplication, message_id: messageId, digest: assertionDigest(assertion),
-      target_node: target.node, binding_id: target.bindingId, expires_at: assertion.expiresAt });
+    const issued = await host.issueRemoteOrigin({ taskContextToken, client: sourceApplication, messageId,
+      digest: assertionDigest(assertion), targetNode: target.node, bindingId: target.bindingId, expiresAt: assertion.expiresAt });
     if (issued.agent_id !== from.agentId) throw new PeerError('origin_mismatch', 'The local authority attributed this task to another Agent', 409);
     assertion.origin = issued.proof;
     nodeStore().recordSent({ messageId, targetNode: target.node, bindingId: target.bindingId });
@@ -141,7 +140,7 @@ export function createPeerPort({ dataDir, provider, spaceId, clock = Date.now, i
   }
 
   async function localAuthority() {
-    return authorityFromProvider(await provider.getRemoteOriginAuthority(spaceId()));
+    return authorityFromProvider(await host.remoteOriginAuthority());
   }
 
   function close() {
@@ -151,7 +150,7 @@ export function createPeerPort({ dataDir, provider, spaceId, clock = Date.now, i
     store = null;
   }
 
-  return { ...createPeerChatPort({ connection, post, nodeStore, provider, spaceId, clock }),
+  return { ...createPeerChatPort({ connection, post, nodeStore, host, clock }),
     configured, isRemoteAddress, remoteAgents, resolveRemote, send, status, cancel, waitFor, hasSent, localAuthority,
     nodeStore, directory, idFactory, close };
 }

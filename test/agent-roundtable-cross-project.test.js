@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
 import { createRoundtableStore } from '../src/agent-roundtable/store.js';
+import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 function fixture({ missingLead = false, available = true, sessions = true, memoryResults = 0 } = {}) {
   const agent = id => ({ agentId: id, profile: { name: id, status: 'active',
@@ -32,7 +33,7 @@ function fixture({ missingLead = false, available = true, sessions = true, memor
     } };
   let id = 0;
   const store = createRoundtableStore();
-  const roundtable = createAgentRoundtable({ app, openStore: () => store, idFactory: () => 'cross-' + ++id,
+  const roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => store, idFactory: () => 'cross-' + ++id,
     clientAvailable: () => available, locateCwd: (_, session) => '/work/' + session,
     wake: async input => { wakes.push(input); return { body: 'Bounded target result', sessionId: 'target-session' }; } });
   return { app, contexts, roundtable, store, grants, wakes, observations, hires };

@@ -54,12 +54,13 @@ async function device(label, { tamper = null, wakeAnswer = null } = {}) {
     taskContextRegistry: { context: async () => ({ projectAgentId: leadId, personalProjectId: projectId,
       sourceApplication: 'codex', sessionId: `${label}-session` }) },
   };
-  app.peer = createPeerPort({ dataDir, provider: personal, spaceId: () => spaceId, statusPollMs: 50 });
-  app.roundtable = createAgentRoundtable({ app, openStore: () => createRoundtableStore(), clientAvailable: () => true,
+  app.peer = createPeerPort({ dataDir, host: createFuliRoundtableHost(app), statusPollMs: 50 });
+  app.roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore(), clientAvailable: () => true,
     wake: async (input) => { calls.wakes.push(input); return wakeAnswer ? wakeAnswer(input) : { body: `${label} answers`, sessionId: `${label}-woken` }; } });
   const folder = join(dataDir, 'project-folder');
-  const runtime = createPeerRuntime({ app, port: app.peer, allowLoopback: true, claimWaitMs: 300, interfaces: () => ({}),
-    resolveFolder: (path) => ({ personalProjectId: path === folder ? projectId : null }) });
+  app.projectPathResolver = (path) => path === folder
+    ? { status: 'matched', personalProjectId: projectId } : { status: 'unmatched', personalProjectId: null };
+  const runtime = createPeerRuntime({ host: createFuliRoundtableHost(app), roundtable: app.roundtable, port: app.peer, allowLoopback: true, claimWaitMs: 300, interfaces: () => ({}) });
   return { app, runtime, calls, projectId, folder, close: async () => {
     await runtime.close(); app.roundtable.close(); app.peer.close(); await rm(dataDir, { recursive: true, force: true });
   } };
@@ -115,6 +116,7 @@ test('a sender reconnects to the current coordinator address after re-enable', {
 
 import { runProcess } from '../src/agent-roundtable/wake.js';
 import { setTimeout as delay } from 'node:timers/promises';
+import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 test('withdrawing sharing stops managed execution and reports cancellation', { timeout: 15000 }, async () => {
   const started = Promise.withResolvers();

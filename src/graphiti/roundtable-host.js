@@ -1,0 +1,67 @@
+import { assertRoundtableHost } from '../agent-roundtable/host.js';
+import { loadProjectTeam } from './project-team-view.js';
+import { recordProjectMemoryUsage } from './project-memory-usage.js';
+
+// FULI as the Roundtable host: Agents, projects, task identity and wake
+// authority all come from the Provider of this device's personal space.
+export function createFuliRoundtableHost(app) {
+  const spaceId = () => app.config.personal.spaceId;
+  const projectView = project => ({ projectId: project.project_id ?? project.personal_project_id ?? project.id,
+    name: project.profile?.name ?? project.name ?? null, temporary: project.scope_type === 'temporary',
+    archived: project.profile?.lifecycle === 'archived' });
+  const projects = async () => {
+    const value = await app.personal.listPersonalProjects(spaceId());
+    return Array.isArray(value) ? value : value?.projects ?? [];
+  };
+  return assertRoundtableHost({
+    spaceId,
+    listAgents: () => app.listProjectAgents({ personalSpaceId: spaceId() }),
+    async recentSessions({ agentId, projectId = null, limit = 5 }) {
+      const sessions = await app.personal.recentAgentSessions({ personalSpaceId: spaceId(), agentId,
+        personalProjectId: projectId, limit });
+      return sessions.map(session => ({ client: session.source_application, sessionId: session.session_id,
+        projectId: session.personal_project_id, lastActive: session.last_active }));
+    },
+    taskContext: (token, client) => app.taskContextRegistry.context(token, client),
+    listProjects: async () => (await projects()).map(projectView),
+    getProject: async projectId => projectView(await app.personal.getPersonalProject(spaceId(), projectId)),
+    projectLeadId: async projectId =>
+      (await app.personal.getProjectAgentCoordinationPolicy(spaceId(), projectId)).team_lead_agent_id ?? null,
+    staffProjectLead: ({ projectId, client }) => app.personal.staffDefaultProjectLead({ personal_space_id: spaceId(),
+      personal_project_id: projectId, source_application: client }),
+    async projectTeam(projectId) {
+      const team = await loadProjectTeam(app, spaceId(), projectId);
+      return { lead: team.lead ?? null,
+        people: [team.lead, ...team.members, ...team.collaborators, ...team.peers].filter(Boolean) };
+    },
+    async projectForPath(path) {
+      if (!path || !app.projectPathResolver) return null;
+      const resolved = app.projectPathResolver(path, await projects());
+      return resolved.status === 'matched' ? resolved.personalProjectId : null;
+    },
+    issueDelegation: ({ taskContextToken, client, agentId, targetProjectId = null, targetClient, targetSessionId, lifetimeSeconds }) =>
+      app.personal.issueAgentDelegation({ personal_space_id: spaceId(), task_context_token: taskContextToken,
+        source_application: client, agent_id: agentId,
+        ...(targetProjectId ? { target_personal_project_id: targetProjectId } : {}),
+        target_application: targetClient, target_session_id: targetSessionId, lifetime_seconds: lifetimeSeconds }),
+    issueRemoteDelegation: ({ projectId, agentId, targetClient, targetSessionId, lifetimeSeconds, originNode, originMessageId, originAttemptId }) =>
+      app.personal.issueRemoteAgentDelegation({ personal_space_id: spaceId(), personal_project_id: projectId,
+        agent_id: agentId, target_application: targetClient, target_session_id: targetSessionId,
+        lifetime_seconds: lifetimeSeconds, origin_node: originNode, origin_message_id: originMessageId,
+        origin_attempt_id: originAttemptId }),
+    sealDelegation: ({ token, sessionId }) => app.personal.sealAgentDelegation({ personal_space_id: spaceId(),
+      token, session_id: sessionId }),
+    async verifyDelegation({ token, sessionId }) {
+      const verified = await app.personal.verifyAgentDelegation({ personal_space_id: spaceId(), token, session_id: sessionId });
+      return { redeemed: Boolean(verified?.redeemed), memoryResultCount: verified?.memory_result_count ?? 0 };
+    },
+    revokeDelegation: ({ token }) => app.personal.revokeAgentDelegation({ personal_space_id: spaceId(), token }),
+    issueRemoteOrigin: ({ taskContextToken, client, messageId, digest, targetNode, bindingId, expiresAt, purpose }) =>
+      app.personal.issueRemoteAgentOrigin({ personal_space_id: spaceId(), task_context_token: taskContextToken,
+        source_application: client, message_id: messageId, digest, target_node: targetNode,
+        binding_id: bindingId, expires_at: expiresAt, ...(purpose ? { purpose } : {}) }),
+    remoteOriginAuthority: () => app.personal.getRemoteOriginAuthority(spaceId()),
+    recordMemoryUsage: input => app.personal.recordProjectMemoryUsage
+      ? recordProjectMemoryUsage(app, input) : { recorded: false, reason: 'usage_port_unavailable' }
+  });
+}
