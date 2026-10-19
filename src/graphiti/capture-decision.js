@@ -47,3 +47,16 @@ export function captureDisabled(decision) {
 function denied(reason, layer) {
   return { allowed: false, reason, layer };
 }
+
+// The settings every layer of the decision reads, as one comparable value;
+// null when it cannot be read. Transcript turns written while it changed
+// cannot be attributed to one decision, so they are not imported
+// (conversations/transcript-capture-gap.js). A layer with its own stored
+// state (project modes, session pause) belongs in this value too.
+export function captureSettingsVersion(application) {
+  try {
+    return application.getCapturePolicyVersion() ?? null;
+  } catch {
+    return null;
+  }
+}

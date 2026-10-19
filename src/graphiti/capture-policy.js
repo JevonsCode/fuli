@@ -20,6 +20,8 @@ const DEFAULT_POLICY = Object.freeze({
   updatedAt: null
 });
 
+const ABSENT = 'absent';
+
 export class CapturePolicyConfigurationError extends TypeError {}
 
 export class CapturePolicyStore {
@@ -41,14 +43,10 @@ export class CapturePolicyStore {
   // change; a file that cannot be read or parsed is never served from cache.
   read() {
     if (!this.path) return { ...this.memory };
-    let version;
-    try {
-      const stat = this.statFile(this.path);
-      version = `${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
-    } catch (error) {
+    const version = this.version();
+    if (version === ABSENT) {
       this.parsed = null;
-      if (error?.code === 'ENOENT') return { ...DEFAULT_POLICY };
-      throw new CapturePolicyConfigurationError('Capture policy could not be read');
+      return { ...DEFAULT_POLICY };
     }
     if (this.parsed?.version !== version) {
       this.parsed = null;
@@ -63,6 +61,19 @@ export class CapturePolicyStore {
     }
     const { policy } = this.parsed;
     return { ...policy, disabledSources: [...policy.disabledSources] };
+  }
+
+  // Changes whenever the stored settings may have changed: any write, by any
+  // process or by hand. 'absent' means they were never saved (the defaults).
+  version() {
+    if (!this.path) return `memory:${JSON.stringify(this.memory)}`;
+    try {
+      const stat = this.statFile(this.path);
+      return `${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+    } catch (error) {
+      if (error?.code === 'ENOENT') return ABSENT;
+      throw new CapturePolicyConfigurationError('Capture policy could not be read');
+    }
   }
 
   update(input) {

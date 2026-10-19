@@ -4,6 +4,7 @@ import { lookupTranscriptTask } from './current-task-lookup.js';
 import { appendTranscriptPage } from './transcript-append.js';
 import { recoverFallbackTranscript } from './fallback-transcript-boundary.js';
 import { captureDecision, captureDisabled } from '../graphiti/capture-decision.js';
+import { notRecordedEvent, skipTranscriptWhileOff } from './transcript-capture-gap.js';
 
 const pending = reason => ({ status: 'partial', entryBlocked: true, reason });
 const retryReason = 'Transcript handoff is pending. Retry task entry to continue its saved progress; no new Agent context was supplied';
@@ -13,9 +14,12 @@ export function transcriptCaptureScope(input, sourceApplication) {
   return { sourceApplication, projectPath: input?.cwd ?? null, sessionId: input?.session_id ?? null };
 }
 
-export async function syncConversationTranscript(application, input, sourceApplication, adapter, guard = null) {
+// notRecorded names why the pending interval must be skipped instead of
+// imported (transcript-capture-gap.js); the cursor still advances as usual.
+export async function syncConversationTranscript(application, input, sourceApplication, adapter, guard = null,
+  { notRecorded = null } = {}) {
   const capture = captureDecision(application, transcriptCaptureScope(input, sourceApplication));
-  if (!capture.allowed) return captureDisabled(capture);
+  if (!capture.allowed) return skipTranscriptWhileOff(application, input, sourceApplication, adapter, capture);
   if (!input?.transcript_path) return { status: 'partial', reason: 'Host did not supply a visible transcript' };
   if (guard?.expired) return pending('Transcript guard lifetime expired; this unverified interval was not imported');
   if (guard?.value?.phase === 'scan' && (guard.value.scanPages ?? 0) >= TRANSCRIPT_SCAN_PAGE_LIMIT) {
@@ -92,9 +96,11 @@ export async function syncConversationTranscript(application, input, sourceAppli
       userMessages += batch.userMessages ?? 0; omitted ||= batch.omitted === true;
       // Without a durable guard, an unmatched user record cannot be attributed
       // to the prior owner merely because the file currently ends after it.
-      if (!guard && typeof input.prompt === 'string' && userMessages && !batch.atPromptBoundary) return pending(retryReason);
+      if (!notRecorded && !guard && typeof input.prompt === 'string' && userMessages && !batch.atPromptBoundary) return pending(retryReason);
+      const from = session.cursor ?? 0;
       result = await appendTranscriptPage(application, { ...scope, session_id: input.session_id,
-        task_context_token: task.token, events: batch.events, expected_cursor: session.cursor ?? 0, cursor: batch.cursor });
+        task_context_token: task.token, expected_cursor: from, cursor: batch.cursor,
+        events: !notRecorded ? batch.events : batch.cursor > from ? [notRecordedEvent(from, batch.cursor, notRecorded)] : [] });
       if (result.status === 'saved') committedPages++;
       if (!batch.hasMore && guard?.value?.ambiguousFrom !== undefined && batch.cursor < guard.value.boundary) {
         const boundary = guard.value.boundary;

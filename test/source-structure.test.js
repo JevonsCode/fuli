@@ -60,12 +60,14 @@ const CAPTURE_SETTINGS_ACCESS = /getCapturePolicy|capturePolicyStore|CapturePoli
 const CAPTURE_SETTINGS_CALL_SITES = new Map([
   ['src/agent-tools/graph-handlers.js', ['get_capture_policy: (app) => app.getCapturePolicy(),']],
   ['src/http/graph-api-router.js', ['sendJson(response, 200, app.getCapturePolicy());']],
-  ['src/conversations/capture-window.js', ['getCapturePolicy: application.getCapturePolicy?.bind(application), personal: {']],
+  ['src/conversations/capture-window.js', ['getCapturePolicy: application.getCapturePolicy?.bind(application),',
+    'getCapturePolicyVersion: application.getCapturePolicyVersion?.bind(application), personal: {']],
   ['src/graphiti/federated-application.js', [
     'CapturePolicyStore,', "} from './capture-policy.js';", 'capturePolicyStore,',
     'const policyStore = capturePolicyStore ?? new CapturePolicyStore(', 'capturePolicyStore: policyStore,',
     'capturePolicy: app.getCapturePolicy(), consoleUrl: app.consoleUrl });', 'capturePolicyStore = new CapturePolicyStore(),',
     'this.capturePolicyStore = capturePolicyStore;', 'getCapturePolicy() {', 'return this.capturePolicyStore.read();',
+    'getCapturePolicyVersion() {', 'return this.capturePolicyStore.version();',
     'return this.capturePolicyStore.update(input);', 'capturePolicy: this.getCapturePolicy(),'
   ]]
 ]);

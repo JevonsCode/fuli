@@ -2,7 +2,7 @@
 // recording Provider double. No FULI data directory, live Provider or client is used.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -113,6 +113,14 @@ async function everyWritePath(f) {
   };
 }
 
+async function assertLedgerHoldsNoContent(f) {
+  for (const name of await readdir(join(f.directory, 'transcript-capture'))) {
+    const ledger = JSON.parse(await readFile(join(f.directory, 'transcript-capture', name), 'utf8'));
+    assert.deepEqual(Object.keys(ledger), ['version', 'settings']);
+    assert.equal(JSON.stringify(ledger).includes(PRIVATE), false);
+  }
+}
+
 function assertNothingKept(f, checkpoint) {
   assert.deepEqual(f.writes(), [], 'no Provider write may run while capture is off');
   const stored = f.registry.context(f.task.token, 'codex').checkpoint;
@@ -143,7 +151,9 @@ for (const { name, policy, reason, layer } of [
     assert.equal(entry.systemMessage, `Fuli: ${RECORDING_OFF}`, 'every entry says recording is off');
     assert.deepEqual(await hook(f, 'Stop'), {});
     assert.deepEqual(f.writes(), []);
-    assert.deepEqual(await readdir(f.directory), ['capture-policy.json'], 'no transcript guard is kept either');
+    assert.deepEqual(await readdir(f.directory), ['capture-policy.json', 'transcript-capture'],
+      'no transcript guard is kept; only the content-free settings version this session was handled under');
+    await assertLedgerHoldsNoContent(f);
   });
 }
 
@@ -165,7 +175,8 @@ test('an unreadable capture policy records nothing and still serves reads', asyn
   assert.equal(entry.systemMessage, `Fuli: ${SETTINGS_UNREADABLE}`);
   assert.equal(entry.systemMessage.includes(PRIVATE), false);
   assert.deepEqual(f.writes(), []);
-  assert.deepEqual((await readdir(f.directory)).sort(), ['capture-policy.json']);
+  assert.deepEqual((await readdir(f.directory)).sort(), ['capture-policy.json', 'transcript-capture']);
+  await assertLedgerHoldsNoContent(f);
 
   const search = await callAgentTool(f.app, 'search_knowledge_graph', { personalSpaceId: 'synthetic-space', query: 'synthetic' });
   assert.equal(search.query, 'synthetic', 'reading existing knowledge does not depend on the capture policy');

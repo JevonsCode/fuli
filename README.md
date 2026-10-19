@@ -366,7 +366,8 @@ category is created: transcripts, checkpoints, knowledge and preference candidat
 view records, and feedback or corrections reported through an Agent all stop. If the capture
 settings cannot be read, automatic writes stop the same way (`reason: policy_unavailable`). Edits
 you submit yourself in the FULI console and an explicit `新项目：` request still save, and reading
-existing knowledge keeps working.
+existing knowledge keeps working. Session turns written while automatic recording is off are skipped
+with a content-free marker and are never imported after it comes back on.
 
 Run these local contract tests to check that the README and project-path behavior still match the
 implementation:
