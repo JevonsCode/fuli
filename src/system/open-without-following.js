@@ -8,7 +8,7 @@ import { lstat, open } from 'node:fs/promises';
 // refused too. Junctions report as symbolic links and are refused as well.
 export async function openWithoutFollowing(path, flags = constants.O_RDONLY, mode = undefined,
   { noFollow = constants.O_NOFOLLOW, fs = { open, lstat } } = {}) {
-  if (noFollow !== undefined) return fs.open(path, flags | noFollow, mode);
+  if (noFollow != null) return fs.open(path, flags | noFollow, mode);
   const before = await entry(fs, path, flags);
   const file = await fs.open(path, flags, mode);
   try {
