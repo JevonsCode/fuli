@@ -1,4 +1,5 @@
 import { nativeChoiceInteraction } from '../conversations/human-interaction.js';
+import { nonEmptyText } from '../validation/values.js';
 
 const fields = {
   personalSpaceId: 'personal_space_id', personalProjectId: 'personal_project_id',
@@ -27,6 +28,25 @@ export async function listAgentAttention(application, input) {
 export async function changeAgentAttention(application, operation, input) {
   const record = attentionRecord(await application.personal.changeAgentAttention(operation, attentionInput(input)));
   return { ...attentionInteraction(record), ...record };
+}
+
+// The console sends the chosen option and an optional note; the Provider keeps
+// them as one response text, and the requesting Agent receives both.
+export async function respondToAgentAttention(application, { choice, note, ...input }) {
+  const answer = { choice: nonEmptyText(choice), note: nonEmptyText(note) };
+  if (!answer.choice && !answer.note) throw new TypeError('An attention reply needs a choice or a note');
+  const record = await changeAgentAttention(application, 'respond', { ...input,
+    response: [answer.choice, answer.note].filter(Boolean).join('\n\n') });
+  return { ...record, delivery: await deliverAnswer(application, record, answer) };
+}
+
+// The reply is already recorded; a failed delivery leaves it readable through
+// list_agent_attention and is reported, never hidden.
+async function deliverAnswer(application, record, answer) {
+  const unavailable = { status: 'unavailable', agentId: record.agentId };
+  if (!application.roundtable) return unavailable;
+  try { return await application.roundtable.deliverAttentionReply(record, answer); }
+  catch { return unavailable; }
 }
 
 function attentionInteraction(record) {

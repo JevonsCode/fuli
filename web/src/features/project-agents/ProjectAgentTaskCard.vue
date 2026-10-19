@@ -4,6 +4,7 @@ import { t } from '@/i18n'
 import type { ProjectAgentRecord, ProjectAgentTaskRecord } from '@/types'
 import ProjectAgentTaskDiagnostics from './ProjectAgentTaskDiagnostics.vue'
 import TaskExecutionPlan from './TaskExecutionPlan.vue'
+import TaskRunControls from './TaskRunControls.vue'
 import { parallelPlanHasEvidence, workerEventEvidence } from './task-evidence'
 import {
   actualExecution,
@@ -32,6 +33,7 @@ const props = defineProps<{
 }>()
 
 // The execution plan subscribes to live updates only while the details are open.
+const emit = defineEmits<{ changed: [] }>()
 const expanded = ref(props.linked)
 const execution = computed(() => actualExecution(props.task))
 const workerEvents = computed(() => workerEventEvidence(props.task))
@@ -63,6 +65,7 @@ function toggle(event: Event) {
     <details class="ui-disclosure project-agent-task-details" :open="linked" data-task-details @toggle="toggle">
       <summary>{{ t('projectAgents.taskDetails') }}</summary>
       <TaskExecutionPlan :task="task" :personal-space-id="personalSpaceId" :active="expanded" />
+      <TaskRunControls :task="task" :personal-space-id="personalSpaceId" :active="expanded" @changed="emit('changed')" />
 
       <section v-if="task.executionSummary !== undefined" class="project-agent-execution-summary" :aria-label="t('projectAgents.fields.executionSummary')">
         <div class="project-agent-section-heading">

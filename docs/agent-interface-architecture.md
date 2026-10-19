@@ -43,6 +43,16 @@ cover the whole filtered set. Agents can withdraw obsolete requests with
 `POST /api/agent-attention/respond` workflow records a human reply. A reply closes the
 attention item but does not itself grant permission, accept a task or run a command.
 Agents read resolved replies and continue within the existing authority boundaries.
+
+When the person is in the conversation, an Agent asks there with native choices
+(`human_interaction`); the console's 待决策 page is the person's inbox for when they
+are away. The console sends a reply as a chosen option and an optional note, and the
+Provider stores them as one response. The same reply then goes to the requesting
+Agent's roundtable inbox for that project: an `agent_chat` wait of that Agent in that
+project returns it at once (the console reports "woken" only after the waiting
+session took it); otherwise it appears once as `attention_replies` at the Agent's next
+task entry or in `read_agent_messages`. Requests that ask the person to do something
+by hand (`permission`, `blocked`) offer a "Done" reply, which means the step was done.
 Original context, response, actor and timestamps remain in the private graph.
 
 The console uses one shared attention store and dialog for the sidebar and personnel

@@ -2,14 +2,16 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { getJson, postJson } from '@/api/client'
 import { t } from '@/i18n'
-import type { AttentionReplyDraft } from './attention-replies'
+import type { AttentionAnswer, AttentionDelivery, AttentionReplyDraft } from './attention-replies'
 
 export interface AgentAttention {
   requestId: string; personalSpaceId: string; personalProjectId: string; agentId: string
-  taskId: string | null; kind: string; title: string; detail: string; requestedAction: string
+  taskId: string | null; kind: string; title: string; detail: string; requestedAction: string; options?: string[] | null
   revision: number; status: 'open' | 'resolved' | 'cancelled'; createdAt: string
 }
 interface AttentionList { items: AgentAttention[]; total: number; counts: Record<string, number> }
+/** What became of the last reply sent from this console: shown until the next one or a space change. */
+interface AttentionReplyOutcome extends AttentionDelivery { requestId: string; title: string }
 
 export const useAgentAttention = defineStore('agent-attention', () => {
   const spaceId = ref('')
@@ -29,6 +31,7 @@ export const useAgentAttention = defineStore('agent-attention', () => {
   // Unsent replies live here so leaving the inbox and coming back keeps them.
   const drafts = ref<Record<string, AttentionReplyDraft & { revision: number }>>({})
   const responseErrors = ref<Record<string, string>>({})
+  const lastReply = ref<AttentionReplyOutcome | null>(null)
   const loading = ref(false)
   const error = ref('')
   let version = 0
@@ -117,7 +120,7 @@ export const useAgentAttention = defineStore('agent-attention', () => {
     if (spaceId.value === id) return
     version++; spaceId.value = id; counts.value = {}; items.value = []; total.value = 0
     filteredTotal.value = 0; error.value = ''; open.value = false; loading.value = false
-    agentId.value = ''; drafts.value = {}; responseErrors.value = {}
+    agentId.value = ''; drafts.value = {}; responseErrors.value = {}; lastReply.value = null
     resetPreview()
     if (id) void refresh()
   }
@@ -139,14 +142,15 @@ export const useAgentAttention = defineStore('agent-attention', () => {
     } catch (cause) { if (current === version) error.value = String(cause) }
     finally { if (current === version) loading.value = false }
   }
-  async function respond(item: AgentAttention, response: string) {
+  async function respond(item: AgentAttention, answer: AttentionAnswer) {
     const originalSpace = spaceId.value
     if (!originalSpace || item.personalSpaceId !== originalSpace) throw new Error(t('attention.wrongSpace'))
-    await postJson('/api/agent-attention/respond', {
+    const { delivery } = await postJson<{ delivery: AttentionDelivery }>('/api/agent-attention/respond', {
       personalSpaceId: originalSpace, personalProjectId: item.personalProjectId,
-      requestId: item.requestId, expectedRevision: item.revision, response,
+      requestId: item.requestId, expectedRevision: item.revision, ...answer,
     })
     if (spaceId.value === originalSpace) {
+      lastReply.value = { requestId: item.requestId, title: item.title, ...delivery }
       // The POST has confirmed this reply. A failed refresh must not offer it again.
       items.value = items.value.filter(candidate => candidate.requestId !== item.requestId)
       total.value = Math.max(0, total.value - 1)
@@ -162,7 +166,7 @@ export const useAgentAttention = defineStore('agent-attention', () => {
   }
   return {
     spaceId, counts, total, items, filteredTotal, previewItems, previewTotal, previewSpaceId,
-    previewLoading, previewLoaded, previewError, agentId, open, loading, error, drafts, responseErrors,
+    previewLoading, previewLoaded, previewError, agentId, open, loading, error, drafts, responseErrors, lastReply,
     setSpace, show, refresh, refreshPreview, more, respond,
   }
 })

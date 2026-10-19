@@ -47,6 +47,7 @@ export function createChatStore(db, path = ':memory:') {
       return () => { if (!closed) db.prepare('DELETE FROM agent_chat_waits WHERE id=?').run(id); waits.delete(id); };
     },
     waiting: (scope, address, chatId) => Boolean(db.prepare('SELECT 1 FROM agent_chat_waits WHERE scope=? AND address=? AND chat_id=? AND deadline>? LIMIT 1').get(scope,address,chatId,Date.now())),
+    waitingAnywhere: (scope, address) => Boolean(db.prepare('SELECT 1 FROM agent_chat_waits WHERE scope=? AND address=? AND deadline>? LIMIT 1').get(scope,address,Date.now())),
     readCursor: (id, address) => db.prepare('SELECT seq FROM agent_chat_reads WHERE chat_id=? AND address=?').get(id,address)?.seq ?? 0,
     delivered: (id, address, seq) => Boolean(db.prepare('SELECT 1 FROM agent_chat_delivered WHERE chat_id=? AND address=? AND seq=?').get(id,address,seq)),
     unreadMessages: (id, address, after, limit) => db.prepare(`SELECT m.* FROM agent_chat_messages m

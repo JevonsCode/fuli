@@ -14,7 +14,7 @@ All tools are on the normal `fuli` MCP server.
 | --- | --- |
 | `find_agents` | Active FULI Agents, their clients and recent Claude Code / Codex conversations |
 | `message_agent` | Ask an Agent; returns its answer, or queues the message |
-| `read_agent_messages` | Messages waiting for the current task's Agent |
+| `read_agent_messages` | Messages waiting for the current task's Agent, plus the person's new answers to its attention requests |
 | `reply_agent_message` | Answer one of them |
 | `read_agent_thread` | Every message of one thread |
 

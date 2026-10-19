@@ -96,6 +96,7 @@ export const router = createRouter({
     },
     { path: '/agents/:spaceId/:agentId', name: 'agent-profile', component: () => import('@/pages/AgentProfilePage.vue'), meta: { eyebrow: '', title: 'agentProfiles.profile' } },
     { path: '/project-agents/occupations', name: 'occupations', component: () => import('@/pages/OccupationsPage.vue'), meta: { eyebrow: '', title: 'occupations.title' } },
+    { path: '/project-agents/schedules', name: 'task-schedules', component: () => import('@/pages/TaskSchedulesPage.vue'), meta: { eyebrow: '', title: 'taskSchedules.title' } },
     { path: '/project-agents/manage', name: 'agent-management', component: () => import('@/pages/ProjectAgentsPage.vue'), meta: { eyebrow: '', title: 'shell.sections.orchestrate' } },
     {
       path: '/employees/:templateId',

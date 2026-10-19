@@ -1,0 +1,225 @@
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue'
+import GrowthLoading from '@/components/GrowthLoading.vue'
+import { t } from '@/i18n'
+import type { ProjectAgentTaskRecord } from '@/types'
+import UiButton from '@/ui/UiButton.vue'
+import UiDialog from '@/ui/UiDialog.vue'
+import { formatDate, taskStatusLabel } from './task-labels'
+import {
+  actionFailure, mergeRunPages, readTaskRuns, retryTask, runIsActive, runOutcomeUncertain, stopTaskRun, taskIsRetryable,
+  type ActionFailure, type RetryResponse, type TaskRunRecord, type TaskScope,
+} from './task-runs'
+
+const props = defineProps<{ task: ProjectAgentTaskRecord; personalSpaceId: string; active: boolean }>()
+const emit = defineEmits<{ changed: [] }>()
+
+const scope = computed<TaskScope | null>(() => props.task.personalProjectId
+  ? { personalSpaceId: props.personalSpaceId, personalProjectId: props.task.personalProjectId, taskId: props.task.taskId }
+  : null)
+
+const runs = ref<TaskRunRecord[]>([])
+const nextCursor = ref<string | null>(null)
+const complete = ref(false)
+const loaded = ref(false)
+const loading = ref(false)
+const historyError = ref(false)
+// Each read belongs to one task; a late page for an earlier task is dropped.
+let readGeneration = 0
+
+async function readPage(cursor: string | null) {
+  if (!scope.value) return
+  const generation = cursor ? readGeneration : ++readGeneration
+  loading.value = true
+  historyError.value = false
+  try {
+    const page = await readTaskRuns(scope.value, cursor)
+    if (generation !== readGeneration) return
+    // A response without a run list is a protocol error, not an empty history.
+    if (!Array.isArray(page?.runs)) { historyError.value = true; return }
+    runs.value = cursor ? mergeRunPages(runs.value, page.runs) : page.runs
+    // A repeated or missing cursor would loop; stop and mark the read incomplete.
+    nextCursor.value = page.nextCursor && page.nextCursor !== cursor ? page.nextCursor : null
+    complete.value = page.complete
+    loaded.value = true
+  } catch (error) {
+    if (generation !== readGeneration) return
+    if (actionFailure(error) === 'denied') { runs.value = []; loaded.value = false }
+    historyError.value = true
+  } finally {
+    if (generation === readGeneration) loading.value = false
+  }
+}
+
+const reload = () => readPage(null)
+watch(() => [props.active, props.task.taskId] as const, ([active], previous) => {
+  if (previous && previous[1] !== props.task.taskId) { readGeneration += 1; runs.value = []; loaded.value = false }
+  if (active && !loaded.value && !loading.value) void reload()
+}, { immediate: true })
+
+const activeRuns = computed(() => runs.value.filter(runIsActive))
+const retryable = computed(() => taskIsRetryable(props.task.status) && Boolean(scope.value))
+const uncertain = computed(() => runs.value.some(runOutcomeUncertain))
+
+// Stop: one explicit run per confirmation.
+const stopTarget = ref<TaskRunRecord | null>(null)
+const stopBusy = ref(false)
+const stopError = ref('')
+const notice = ref('')
+async function confirmStop() {
+  if (!scope.value || !stopTarget.value) return
+  stopBusy.value = true
+  stopError.value = ''
+  try {
+    const response = await stopTaskRun(scope.value, stopTarget.value.runId)
+    notice.value = response.status === 'stopping' ? t('taskRuns.stopped') : t('taskRuns.alreadyStopped')
+    stopTarget.value = null
+    await reload()
+  } catch (error) {
+    stopError.value = failureText(actionFailure(error), error)
+  } finally {
+    stopBusy.value = false
+  }
+}
+
+// Retry: the person chooses how the new task starts; nothing is preselected.
+const retryOpen = ref(false)
+const retryStart = ref<'queue' | 'backlog' | ''>('')
+const retryAck = ref(false)
+const retryBusy = ref(false)
+const retryError = ref('')
+const retried = ref<RetryResponse | null>(null)
+const canSubmitRetry = computed(() => Boolean(retryStart.value) && (!uncertain.value || retryAck.value))
+async function openRetry() {
+  retryStart.value = ''
+  retryAck.value = false
+  retryError.value = ''
+  retryOpen.value = true
+  if (!loaded.value) await reload()
+}
+async function confirmRetry() {
+  if (!scope.value || !canSubmitRetry.value) return
+  retryBusy.value = true
+  retryError.value = ''
+  try {
+    retried.value = await retryTask(scope.value, retryStart.value === 'queue')
+    retryOpen.value = false
+    emit('changed')
+  } catch (error) {
+    retryError.value = failureText(actionFailure(error), error)
+  } finally {
+    retryBusy.value = false
+  }
+}
+
+const newTaskHref = computed(() => {
+  const task = retried.value?.task
+  const agentId = retried.value?.assignedAgent?.agentId ?? task?.leadAgentId
+  if (!task || !agentId || !props.task.personalProjectId) return null
+  return `/project-agents/manage?${new URLSearchParams({ agent: agentId, project: props.task.personalProjectId, task: task.taskId })}`
+})
+
+function failureText(kind: ActionFailure, error: unknown) {
+  return kind === 'rejected'
+    ? t('taskRuns.failure.rejected', { message: error instanceof Error ? error.message : '' })
+    : t(`taskRuns.failure.${kind}`)
+}
+function stateLabel(state: string) {
+  const key = `taskRuns.state.${state}`
+  const label = t(key)
+  return label === key ? state : label
+}
+</script>
+
+<template>
+  <section v-if="scope" class="task-run-controls" :aria-label="t('taskRuns.history')">
+    <div class="task-run-actions">
+      <UiButton v-for="run in activeRuns" :key="`stop-${run.runId}`" size="sm" variant="danger" @click="stopTarget = run; stopError = ''">
+        {{ t('taskRuns.stop') }}<span class="task-run-short-id">#{{ run.runId.slice(0, 8) }}</span>
+      </UiButton>
+      <UiButton v-if="retryable" size="sm" @click="openRetry">{{ t('taskRuns.retry') }}</UiButton>
+    </div>
+    <p v-if="notice" role="status" class="task-run-notice">{{ notice }}</p>
+    <p v-if="retried" role="status" class="task-run-notice">
+      {{ t('taskRuns.retried', { status: taskStatusLabel(retried.task.status) }) }}
+      <RouterLink v-if="newTaskHref" :to="newTaskHref">{{ t('taskRuns.viewNew') }}</RouterLink>
+      <code v-else>{{ retried.task.taskId }}</code>
+    </p>
+
+    <div class="project-agent-section-heading">
+      <h5>{{ t('taskRuns.history') }}</h5>
+      <span v-if="loaded">{{ t('taskRuns.loaded', { count: runs.length }) }} · {{ complete ? t('taskRuns.complete') : t('taskRuns.more') }}</span>
+    </div>
+    <GrowthLoading v-if="loading && !runs.length" variant="compact" :label="t('taskRuns.loadingHistory')" />
+    <p v-else-if="historyError && !runs.length" role="alert" class="inline-error">
+      {{ t('taskRuns.historyFailed') }} <UiButton size="sm" variant="ghost" @click="reload">{{ t('taskRuns.retryRead') }}</UiButton>
+    </p>
+    <p v-else-if="loaded && !runs.length" class="project-agent-muted">{{ t('taskRuns.empty') }}</p>
+    <ol v-if="runs.length" class="task-run-list">
+      <li v-for="(run, index) in runs" :key="run.runId" class="task-run-item">
+        <header>
+          <strong>{{ t('taskRuns.attempt', { count: run.attemptNumber ?? index + 1 }) }}</strong>
+          <small>{{ formatDate(run.createdAt) }}</small>
+          <i class="ui-badge" :class="`is-${run.state}`">{{ stateLabel(run.state) }}</i>
+        </header>
+        <dl class="project-agent-execution-summary-meta">
+          <div><dt>{{ t('taskRuns.agent') }}</dt><dd>{{ run.agentId }}</dd></div>
+          <div><dt>{{ t('taskRuns.executor') }}</dt><dd>{{ run.executorId || run.targetApplication || '—' }}</dd></div>
+          <div><dt>{{ t('taskRuns.result') }}</dt><dd>{{ run.executionResult?.status || run.executionStatus }}<template v-if="run.executionResult?.failureClass"> · {{ run.executionResult.failureClass }}</template></dd></div>
+          <div><dt>{{ t('taskRuns.authority') }}</dt><dd>{{ run.executionResult?.processStopped === true ? t('taskRuns.processStopped') : t('taskRuns.processNotReported') }}</dd></div>
+        </dl>
+        <p v-if="run.executionResult?.cleanupErrors?.length" class="inline-error">{{ t('taskRuns.cleanupErrors') }} · {{ run.executionResult.cleanupErrors.join(' · ') }}</p>
+        <details class="project-agent-task-tech">
+          <summary>{{ t('taskRuns.evidence') }}</summary>
+          <small>{{ t('taskRuns.runId') }} · {{ run.runId }}</small>
+          <pre class="task-run-evidence">{{ JSON.stringify(run.executionResult, null, 2) }}</pre>
+        </details>
+      </li>
+    </ol>
+    <p v-if="historyError && runs.length" role="alert" class="inline-error">{{ t('taskRuns.historyFailed') }}</p>
+    <UiButton v-if="nextCursor && !complete" size="sm" variant="ghost" :busy="loading" :busy-label="t('taskRuns.loadingMore')" @click="readPage(nextCursor)">
+      {{ t('taskRuns.loadMore') }}
+    </UiButton>
+
+    <UiDialog :open="Boolean(stopTarget)" :title="t('taskRuns.stopTitle')" size="sm" :busy="stopBusy" :error="stopError" @close="stopTarget = null">
+      <p>{{ task.title }} · {{ stopTarget?.agentId }} · #{{ stopTarget?.runId.slice(0, 8) }}</p>
+      <p>{{ t('taskRuns.stopBody') }}</p>
+      <template #footer>
+        <UiButton :disabled="stopBusy" @click="stopTarget = null">{{ t('common.actions.cancel') }}</UiButton>
+        <UiButton variant="danger" :busy="stopBusy" :busy-label="t('taskRuns.stopping')" @click="confirmStop">{{ t('taskRuns.stopConfirm') }}</UiButton>
+      </template>
+    </UiDialog>
+
+    <UiDialog :open="retryOpen" :title="t('taskRuns.retryTitle')" :busy="retryBusy" :error="retryError" form @close="retryOpen = false" @submit="confirmRetry">
+      <p>{{ t('taskRuns.retryBody') }}</p>
+      <fieldset class="task-run-choices" :disabled="retryBusy">
+        <legend>{{ t('taskRuns.retryChoose') }}</legend>
+        <label><input v-model="retryStart" type="radio" name="retry-start" value="queue" /> {{ t('taskRuns.retryQueue') }}</label>
+        <label><input v-model="retryStart" type="radio" name="retry-start" value="backlog" /> {{ t('taskRuns.retryBacklog') }}</label>
+      </fieldset>
+      <template v-if="uncertain">
+        <p role="note" class="task-run-risk">{{ t('taskRuns.retryRisk') }}</p>
+        <label class="task-run-ack"><input v-model="retryAck" type="checkbox" :disabled="retryBusy" /> {{ t('taskRuns.retryAck') }}</label>
+      </template>
+      <template #footer>
+        <UiButton :disabled="retryBusy" @click="retryOpen = false">{{ t('common.actions.cancel') }}</UiButton>
+        <UiButton type="submit" variant="primary" :disabled="!canSubmitRetry" :busy="retryBusy" :busy-label="t('taskRuns.retrying')">{{ t('taskRuns.retrySubmit') }}</UiButton>
+      </template>
+    </UiDialog>
+  </section>
+</template>
+
+<style scoped>
+.task-run-controls { display: grid; gap: 8px; margin-top: 12px; }
+.task-run-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.task-run-short-id { margin-left: 4px; font-variant-numeric: tabular-nums; opacity: .75; }
+.task-run-notice { margin: 0; font-size: 13px; }
+.task-run-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.task-run-item { padding: 10px 12px; border: 1px solid var(--color-border); border-radius: 10px; }
+.task-run-item header { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.task-run-item header i { margin-left: auto; }
+.task-run-evidence { overflow-x: auto; max-height: 240px; margin: 4px 0 0; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.task-run-choices { display: grid; gap: 6px; margin: 12px 0; padding: 0; border: 0; }
+.task-run-choices label, .task-run-ack { display: flex; gap: 8px; align-items: center; min-height: 32px; }
+.task-run-risk { margin: 8px 0 4px; color: var(--color-warning); }
+</style>

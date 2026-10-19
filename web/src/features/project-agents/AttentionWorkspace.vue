@@ -8,7 +8,7 @@ import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
 import { useAgentRecords } from '@/features/agent-profile/useAgentRecords'
 import AttentionReply from './AttentionReply.vue'
-import type { AttentionReplyDraft } from './attention-replies'
+import type { AttentionAnswer, AttentionReplyDraft } from './attention-replies'
 import { attentionTaskHref, inboxLocation, useAgentAttention, type AgentAttention } from './attention-store'
 
 // The inbox body: request queue on one side, the selected request and reply on the other.
@@ -17,7 +17,8 @@ const attention = useAgentAttention()
 // Names are read only for the Agents with open requests; requests stay usable without them.
 const agentRecords = useAgentRecords(
   computed(() => (attention.open ? attention.spaceId : '')),
-  computed(() => [...attention.items.map(item => item.agentId), ...(attention.agentId ? [attention.agentId] : [])]),
+  computed(() => [...attention.items.map(item => item.agentId), ...(attention.agentId ? [attention.agentId] : []),
+    ...(attention.lastReply ? [attention.lastReply.agentId] : [])]),
 )
 const names = computed<Record<string, string>>(() => Object.fromEntries(
   Object.entries(agentRecords.records.value).map(([id, agent]) => [id, agent.profile.displayName || agent.profile.name]),
@@ -31,6 +32,10 @@ const draft = computed<AttentionReplyDraft>({
   get: () => attention.drafts[selectedId.value] ?? { choice: '', text: '' },
   set: value => { if (selected.value) attention.drafts[selectedId.value] = { ...value, revision: selected.value.revision } },
 })
+// Says only what happened to the reply; it never claims the work itself resumed.
+const replyOutcome = computed(() => attention.lastReply && t(`attention.delivery.${attention.lastReply.status}`, {
+  agent: names.value[attention.lastReply.agentId] || t('attention.agentFallback'), title: attention.lastReply.title,
+}))
 const projectNames = computed(() => new Map(props.projects.map(project => [project.project_id, project.profile.name])))
 const pendingCount = computed(() => attention.agentId ? attention.counts[attention.agentId] ?? attention.filteredTotal : attention.total)
 const requestOptions = computed(() => attention.items.map(item => ({
@@ -59,13 +64,13 @@ watch(() => attention.items, items => {
 watch(() => props.focusRequestId, targetId => {
   if (targetId && attention.items.some(item => item.requestId === targetId)) selectedId.value = targetId
 })
-async function respond(item: AgentAttention, response: string) {
-  if (busy.value || !response.trim() || response.length > 4096) return
+async function respond(item: AgentAttention, answer: AttentionAnswer) {
+  if (busy.value) return
   const space = attention.spaceId
   const currentOperation = ++operation
   busy.value = item.requestId; delete attention.responseErrors[item.requestId]
   try {
-    await attention.respond(item, response)
+    await attention.respond(item, answer)
   } catch (cause) {
     if (currentOperation === operation && space === attention.spaceId) {
       attention.responseErrors[item.requestId] = cause instanceof Error ? cause.message : String(cause)
@@ -77,6 +82,7 @@ async function respond(item: AgentAttention, response: string) {
 
 <template>
   <div class="attention-page-body">
+    <p v-if="attention.lastReply" class="attention-outcome" :class="`is-${attention.lastReply.status}`" role="status">{{ replyOutcome }}</p>
     <div v-if="attention.error" role="alert" class="attention-error"><span>{{ t('attention.loadError') }}</span><UiButton size="sm" :disabled="attention.loading" @click="attention.refresh()">{{ t('attention.refresh') }}</UiButton></div>
     <GrowthLoading v-if="attention.loading && !attention.items.length" variant="page" :label="t('attention.loading')" />
     <div v-else-if="!attention.items.length && !attention.error" class="attention-empty"><span aria-hidden="true">✓</span><p>{{ t('attention.empty') }}</p></div>

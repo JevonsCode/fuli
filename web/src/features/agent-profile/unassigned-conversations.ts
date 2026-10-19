@@ -35,7 +35,10 @@ interface RawConversationRecord {
 
 export interface UnassignedConversationItem {
   conversationId: string
+  // Readable text only; empty when the conversation has none (never its ID).
   openingLine: string
+  // A short, collision-free ID to tell untitled conversations apart.
+  shortId: string
   startedAt: string | null
   triageStatus: UnassignedTriageStatus
   topic: string | null
@@ -58,6 +61,23 @@ function resolveTriageStatus(raw: RawConversationRecord): UnassignedTriageStatus
   return 'pending'
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// The first 8 characters, longer only where two conversations in the list share them.
+export function shortConversationIds(ids: string[]): Map<string, string> {
+  const result = new Map<string, string>()
+  for (const id of ids) {
+    const length = [8, 12].find(size => ids.filter(other => other.slice(0, size) === id.slice(0, size)).length === 1)
+    result.set(id, length ? id.slice(0, length) : id)
+  }
+  return result
+}
+
+function readableLine(value: string | null | undefined, conversationId: string): string {
+  const line = firstLine(value)
+  return line && line !== conversationId && !UUID.test(line) ? line : ''
+}
+
 function firstLine(value: string | null | undefined): string {
   if (!value) return ''
   return value.split(/\r?\n/)[0]?.trim() ?? ''
@@ -74,17 +94,17 @@ export async function readUnassignedConversations(personalSpaceId: string): Prom
       limit: 50,
     })
     const rows = Array.isArray(response?.conversations) ? response.conversations : []
-    return rows
+    const items = rows
       .filter((row) => !isResolvedConversation(row))
       .map((row) => {
         const conversationId = String(row.conversationId ?? row.conversation_id ?? row.id ?? '')
-        const openingLine = firstLine(row.metadata?.openingLine)
-          || firstLine(row.title)
-          || firstLine(row.summary)
-          || conversationId
+        const openingLine = readableLine(row.metadata?.openingLine, conversationId)
+          || readableLine(row.title, conversationId)
+          || readableLine(row.summary, conversationId)
         return {
           conversationId,
           openingLine,
+          shortId: conversationId,
           startedAt: row.startedAt ?? row.last_activity ?? row.updatedAt ?? null,
           triageStatus: resolveTriageStatus(row),
           topic: row.triage?.topic ?? null,
@@ -92,6 +112,8 @@ export async function readUnassignedConversations(personalSpaceId: string): Prom
         }
       })
       .filter((item) => Boolean(item.conversationId))
+    const shortIds = shortConversationIds(items.map(item => item.conversationId))
+    return items.map(item => ({ ...item, shortId: shortIds.get(item.conversationId) ?? item.conversationId }))
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) return []
     throw error

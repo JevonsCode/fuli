@@ -19,7 +19,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   agent('PUT /api/agent-conversations/policy', 'update_agent_conversation_policy'),
   agent('POST /api/agent-attention', 'request_agent_attention'),
   agent('POST /api/agent-attention/cancel', 'cancel_agent_attention'),
-  local('POST /api/agent-attention/respond', 'Only a local person may respond to an Agent request. A response records a decision, but never executes permissions or task acceptance.'),
+  local('POST /api/agent-attention/respond', 'Only a local person may respond to an Agent request. A response records a decision and reaches the requesting Agent\'s inbox, but never executes permissions or task acceptance.'),
   agent('POST /api/system/runtime/leases', 'acquire_runtime_lease'),
   agent('PATCH /api/system/runtime/leases/:leaseId', 'refresh_runtime_lease'),
   agent('DELETE /api/system/runtime/leases/:leaseId', 'release_runtime_lease'),
@@ -107,7 +107,7 @@ export function agentInterfaceCatalog() {
     },
     uiMutationParity,
     readWorkflows: [
-      { domain: 'human-attention', toolNames: ['list_agent_attention', 'request_agent_attention', 'cancel_agent_attention'], guidance: 'Raise a hand only for an explicit human action. Read resolved responses before continuing. Responses do not grant permissions or accept tasks.' },
+      { domain: 'human-attention', toolNames: ['list_agent_attention', 'request_agent_attention', 'cancel_agent_attention'], guidance: 'Ask in the live conversation when the person is present; raise a hand only for an explicit human action while they are away. Answers arrive as attention_replies (task entry, read_agent_messages, agent_chat wait). Responses do not grant permissions or accept tasks.' },
       { domain: 'projects', toolNames: ['list_knowledge_spaces', 'list_personal_projects', 'list_project_releases', 'list_project_relations'] },
       { domain: 'knowledge', toolNames: ['search_knowledge_graph', 'get_knowledge_graph', 'get_user_taste_skill', 'list_preference_conflicts'] },
       { domain: 'people-and-tasks', toolNames: ['get_project_team', 'list_project_agents', 'list_project_agent_assignments', 'list_project_agent_tasks', 'view_project_agent_task', 'view_project_agent_activity', 'list_project_agent_recruitments'] },

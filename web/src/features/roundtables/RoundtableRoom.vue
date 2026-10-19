@@ -2,12 +2,14 @@
 import { computed } from 'vue'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { t } from '@/i18n'
+import UiButton from '@/ui/UiButton.vue'
 import type { RoundtableChatPage } from './roundtable-api'
 import { chatRoomName } from './roundtable-model'
 import RoundtableSeats from './RoundtableSeats.vue'
 
 // One Agent chat room, read-only: who is in it and what they said, in order.
-const props = defineProps<{ room: RoundtableChatPage; time: (value: string) => string }>()
+const props = defineProps<{ room: RoundtableChatPage; time: (value: string) => string; loadingLater?: boolean; laterFailed?: boolean }>()
+const emit = defineEmits<{ later: [] }>()
 const byAddress = computed(() => new Map(props.room.members.map(member => [member.address, member])))
 const seats = computed(() => props.room.members.map(member => ({
   key: member.address,
@@ -23,10 +25,11 @@ const initial = (address: string) => senderName(address).trim().slice(0, 1).toUp
 <template>
   <article class="ui-split-detail" data-testid="roundtable-chat">
     <header class="ui-split-detail-head">
-      <h2>{{ chatRoomName(room) }}</h2>
+      <slot name="back" />
+      <h2 tabindex="-1" data-roundtable-detail-title>{{ chatRoomName(room) }}</h2>
       <p class="ui-list-meta">
         <span>{{ t(`roundtable.chat.kinds.${room.kind}`) }}</span>
-        <span>{{ t('roundtable.messages', { count: room.messages.length }) }}</span>
+        <span>{{ t('roundtable.shownMessages', { count: room.messages.length }) }}</span>
         <span>{{ time(room.createdAt) }}</span>
       </p>
       <RoundtableSeats :seats="seats" />
@@ -45,7 +48,9 @@ const initial = (address: string) => senderName(address).trim().slice(0, 1).toUp
         </li>
       </ol>
       <p v-else class="ui-meta">{{ t('roundtable.chat.empty') }}</p>
-      <p v-if="room.hasMore" class="ui-meta roundtable-chat-more">{{ t('roundtable.chat.more') }}</p>
+      <p v-if="laterFailed" role="alert" class="inline-error roundtable-chat-more">{{ t('roundtable.loadFailed') }}</p>
+      <UiButton v-if="room.hasMore" class="roundtable-chat-more" size="sm" variant="ghost" :busy="loadingLater"
+        :busy-label="t('roundtable.loadingLater')" data-roundtable-later @click="emit('later')">{{ t('roundtable.laterMessages') }}</UiButton>
     </div>
   </article>
 </template>

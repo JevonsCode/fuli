@@ -24,11 +24,15 @@ export interface RoundtableMessage {
   createdAt: string
   from: RoundtablePerson
   to: RoundtablePerson
+  /** Present when a wake left process cleanup unconfirmed; never inferred as clean. */
+  cleanup?: { status: string; code?: string | null } | null
 }
 export interface RoundtableThread { id: string; subject: string; projectId: string | null; createdAt: string; messages: RoundtableMessage[] }
 
-export const listThreads = () => getJson<{ threads: RoundtableThreadSummary[] }>('/api/roundtable/threads')
-export const readThread = (id: string) => getJson<RoundtableThread>(`/api/roundtable/threads/${encodeURIComponent(id)}`)
+/** The latest 50 asks; the server returns no total or cursor for them. */
+export const listThreads = (signal?: AbortSignal) => getJson<{ threads: RoundtableThreadSummary[] }>('/api/roundtable/threads', { signal })
+export const readThread = (id: string, signal?: AbortSignal) =>
+  getJson<RoundtableThread>(`/api/roundtable/threads/${encodeURIComponent(id)}`, { signal })
 
 /** An Agent chat room (agent_chat): 1:1 or a group, read-only for people. */
 export interface RoundtableChatMember { address: string; agentId: string | null; name: string | null; node?: string; joinedSeq: number }
@@ -44,6 +48,30 @@ export interface RoundtableChatRoom {
 export interface RoundtableChatMessage { messageId: string; seq: number; from: string; body: string; createdAt: string }
 export interface RoundtableChatPage extends RoundtableChatRoom { messages: RoundtableChatMessage[]; nextAfter: number; hasMore: boolean }
 
-export const listChats = () => getJson<{ chats: RoundtableChatRoom[]; hasMore: boolean; remoteUnavailable?: string }>('/api/roundtable/chats')
-export const readChat = (id: string, after = 0) =>
-  getJson<RoundtableChatPage>(`/api/roundtable/chats/${encodeURIComponent(id)}?after=${after}&limit=100`)
+export interface RoundtableChatList {
+  chats: RoundtableChatRoom[]
+  hasMore: boolean
+  nextChat?: string | null
+  /** The other computer's rooms page separately, with their own cursor. */
+  remotePage?: { hasMore: boolean; nextChat: string | null }
+  remoteUnavailable?: string
+}
+
+// Without a transport the server merges the first local and remote pages; a
+// later page names its transport so the two cursors never cross.
+export function listChats(options: { transport?: 'local' | 'peer'; afterChat?: string } = {}, signal?: AbortSignal) {
+  const query = new URLSearchParams({ limit: '50' })
+  if (options.transport) query.set('transport', options.transport)
+  if (options.afterChat) query.set('afterChat', options.afterChat)
+  return getJson<RoundtableChatList>(`/api/roundtable/chats?${query}`, { signal })
+}
+/** Messages after a sequence number, in order: later messages, not older ones. */
+export const readChat = (id: string, after = 0, signal?: AbortSignal) =>
+  getJson<RoundtableChatPage>(`/api/roundtable/chats/${encodeURIComponent(id)}?after=${after}&limit=100`, { signal })
+
+/** Appends a later page, keeping each message once and in sequence order. */
+export function appendChatPage(current: RoundtableChatPage, next: RoundtableChatPage): RoundtableChatPage {
+  const byId = new Map(current.messages.map(message => [message.messageId, message]))
+  for (const message of next.messages) byId.set(message.messageId, message)
+  return { ...next, messages: [...byId.values()].sort((a, b) => a.seq - b.seq) }
+}

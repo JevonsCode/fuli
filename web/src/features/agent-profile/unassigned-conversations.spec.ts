@@ -18,6 +18,20 @@ describe('unassigned conversations reader and triage', () => {
     postJson.mockReset()
   })
 
+  it('never shows an ID as the title and tells untitled conversations apart by a short ID', async () => {
+    postJson.mockResolvedValue({ conversations: [
+      { id: '3f1a2b3c-aaaa-4bbb-8ccc-000000000001', title: '3f1a2b3c-aaaa-4bbb-8ccc-000000000001' },
+      { id: '3f1a2b3c-aaaa-4bbb-8ccc-000000000002' },
+      { id: 'b7c8d9e0-1111-4222-8333-444455556666', summary: 'Fix the header padding' },
+    ] })
+    const items = await readUnassignedConversations('space-1')
+    expect(items.map(item => item.openingLine)).toEqual(['', '', 'Fix the header padding'])
+    // The first two share 8 and 12 characters, so they keep their full IDs.
+    expect(items.map(item => item.shortId)).toEqual(['3f1a2b3c-aaaa-4bbb-8ccc-000000000001', '3f1a2b3c-aaaa-4bbb-8ccc-000000000002', 'b7c8d9e0'])
+    expect(items[0].conversationId).toBe('3f1a2b3c-aaaa-4bbb-8ccc-000000000001')
+    expect(panelSource).toMatch(/agentRedesign.unassigned.untitled/)
+  })
+
   it('lists global-scope employee.assistant conversations and extracts opening line and Jefa triage state', async () => {
     postJson.mockResolvedValue({
       conversations: [

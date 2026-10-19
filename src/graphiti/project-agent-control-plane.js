@@ -6,7 +6,7 @@ import { planAgentCollaboration, agentLoan, agentVerification } from './agent-co
 import { queryConversations, resumeConversation, updateConversationPolicy } from './agent-conversations.js';
 import { recordUserTriage } from './conversation-triage.js';
 import { agentProjectResolution } from './agent-knowledge-workflows.js';
-import { listAgentAttention, changeAgentAttention } from './agent-attention.js';
+import { listAgentAttention, changeAgentAttention, respondToAgentAttention } from './agent-attention.js';
 import { loadProjectTeam } from './project-team-view.js';
 import {
   getProjectAgentMemory,
@@ -114,7 +114,7 @@ export class ProjectAgentControlPlaneApplication {
 
   async respondToAgentAttention(input) {
     this.#assertSpace(input.personalSpaceId);
-    return changeAgentAttention(this, 'respond', input);
+    return respondToAgentAttention(this, input);
   }
 
   async getProjectAgentMemory(input) {

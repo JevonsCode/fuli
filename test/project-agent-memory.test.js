@@ -89,7 +89,7 @@ test('hook entry without a turn ID forwards the receiving session with process-o
   const app = entryApplication({ onResolve: input => { resolved = input; } });
   app.roundtable = createAgentRoundtable({ app,
     env: { FULI_ROUNDTABLE_DELEGATION: 'synthetic-invocation-capability-123456' },
-    openStore: () => ({ pendingFor: () => [] }) });
+    openStore: () => ({ pendingFor: () => [], attention: { pending: () => [], markDelivered() {} } }) });
   await taskEntryPreferences(app, { status: 'matched', personalProjectId: 'sample-project' }, {
     projectAgentId: 'engineer', sourceApplication: 'cursor', sessionId: 'receiving-fork',
     agentInvocation: true, agentToolName: 'begin_task_context', taskPrompt: null

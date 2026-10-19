@@ -39,7 +39,7 @@ export const ROUNDTABLE_TOOL_DEFINITIONS = [
   {
     name: 'read_agent_messages',
     title: 'ROUNDTABLE · Read messages for me',
-    description: 'Read messages other Agents sent to the current task\'s Agent that are still waiting for an answer.',
+    description: 'Read messages other Agents sent to the current task\'s Agent that are still waiting for an answer, and the person\'s new answers to its attention requests.',
     inputSchema: objectSchema({ taskContextToken: text(160) }, ['taskContextToken'])
   },
   {

@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createChatStore } from './chat-store.js';
+import { createAttentionInboxStore } from './attention-inbox-store.js';
 
 // Every Agent-to-Agent exchange is kept as a thread of messages so people can
 // see who talked to whom, through which client, and what was said. The file
@@ -42,6 +43,7 @@ export function createRoundtableStore(path = ':memory:') {
   }
   const now = () => new Date().toISOString();
   const chat = createChatStore(database, path);
+  const attention = createAttentionInboxStore(database, chat);
   const transaction = (work) => {
     database.exec('BEGIN IMMEDIATE');
     let result;
@@ -53,6 +55,7 @@ export function createRoundtableStore(path = ':memory:') {
 
   return {
     chat,
+    attention,
     transaction,
     createThread({ id, spaceId, projectId = null, subject }) {
       const at = now();

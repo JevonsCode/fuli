@@ -5,13 +5,14 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
 import { t } from '@/i18n'
 import type { AgentAttention } from './attention-store'
-import { attentionReplies, composeAttentionReply, type AttentionReplyDraft } from './attention-replies'
+import { ATTENTION_REPLY_LIMIT, attentionAnswerLength, attentionReplies, composeAttentionReply, type AttentionAnswer, type AttentionReplyDraft } from './attention-replies'
 const props = defineProps<{ item: AgentAttention; modelValue: AttentionReplyDraft; busy: boolean; refreshing?: boolean; error: string }>()
-const emit = defineEmits<{ 'update:modelValue': [value: AttentionReplyDraft]; submit: [response: string] }>()
+const emit = defineEmits<{ 'update:modelValue': [value: AttentionReplyDraft]; submit: [answer: AttentionAnswer] }>()
 const choices = computed(() => attentionReplies(props.item))
-const response = computed(() => composeAttentionReply(props.modelValue.choice, props.modelValue.text, choices.value))
+const answer = computed(() => composeAttentionReply(props.modelValue.choice, props.modelValue.text, choices.value))
+const tooLong = computed(() => answer.value ? attentionAnswerLength(answer.value) > ATTENTION_REPLY_LIMIT : false)
 function update(patch: Partial<AttentionReplyDraft>) { emit('update:modelValue', { ...props.modelValue, ...patch }) }
-function submit() { if (!props.busy && !props.refreshing && response.value && response.value.length <= 4096) emit('submit', response.value) }
+function submit() { if (!props.busy && !props.refreshing && answer.value && !tooLong.value) emit('submit', answer.value) }
 </script>
 
 <template>
@@ -36,10 +37,10 @@ function submit() { if (!props.busy && !props.refreshing && response.value && re
       <textarea :id="`attention-${item.requestId}`" :value="modelValue.text" rows="3" maxlength="4096" :required="modelValue.choice === 'other'" :disabled="busy || refreshing" :placeholder="t('attention.placeholder')" @input="update({ text: ($event.target as HTMLTextAreaElement).value, choice: modelValue.choice || 'other' })" />
     </div>
     <p v-if="error" role="alert" class="inline-error attention-response-error">{{ error }}</p>
-    <p v-if="response.length > 4096" role="alert" class="inline-error">{{ t('attention.tooLong') }}</p>
+    <p v-if="tooLong" role="alert" class="inline-error">{{ t('attention.tooLong') }}</p>
     <div class="attention-submit">
       <p>{{ t('attention.replyHint') }}</p>
-      <UiButton size="sm" variant="primary" type="submit" :disabled="busy || refreshing || !response || response.length > 4096">
+      <UiButton size="sm" variant="primary" type="submit" :disabled="busy || refreshing || !answer || tooLong">
         <GrowthLoading v-if="busy" variant="inline" :label="t('attention.sending')" />
         <span v-else>{{ t('attention.send') }}</span>
       </UiButton>
