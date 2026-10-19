@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createJudgmentService } from '../src/judgment/service.js';
 import { createJudgmentEngine } from '../src/judgment/engine.js';
+import { completePreferences } from './fixtures/collaboration-preferences.js';
 
 const input = { personalSpaceId: 's', personalProjectId: 'p', requestId: 'accept-once', taskId: 't',
   taskContextToken: 'current-host-token', artifactRevision: 'artifact-a', expectedRevision: 2, sourceApplication: 'codex' };
@@ -10,7 +11,7 @@ function fixture(t, { mode = 'shared', verifier = 'reviewer', artifact = 'artifa
   const app = { config: { personal: { spaceId: 's' } }, listPersonalProjects: async () => [{ project_id: 'p' }],
     taskContextRegistry: { context: async () => ({ personalProjectId: 'p', projectAgentId: lead }) },
     listProjectAgents: async () => [{ agentId: 'employee.tonborg', profile: { status: 'active', allowedClients: ['codex'], capabilities: ['fuli.employee:tonborg'] } }],
-    getCollaborationPreferences: async () => ({ effective_preferences: [] }), inspectProjectAgentMemory: async () => ({}),
+    getCollaborationPreferences: async () => completePreferences(), inspectProjectAgentMemory: async () => ({}),
     viewProjectAgentTask: async () => task,
     agentVerification: async (_operation, request) => { assert.equal(request.personalSpaceId, 's'); return { status: 'passed', artifact_revision: artifact, verified_attempt_id: 'attempt',
       verified_attempt: { attempt_id: 'attempt', artifact_revision: artifact, outcome: 'pass', verifier_id: verifier, run_id: 'actual-run', evidence_refs: ['test-report'] } }; },
