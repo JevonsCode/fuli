@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from fuli_graph.conversation_triage_models import (
-    ConversationTopicFormation, ConversationTopicQuery, ConversationTriageWrite,
+    ConversationTopicDecline, ConversationTopicFormation, ConversationTopicQuery, ConversationTriageWrite,
 )
 from fuli_graph.provider_values import stable_uuid
 from fuli_graph.store_conversation_triage import StoreConversationTriage
@@ -19,6 +19,7 @@ class TriageDriver:
     def __init__(self, conversations):
         self.conversations = conversations
         self.labels = {}
+        self.declines = {}
         self.queries = []
 
     async def execute_query(self, query, **p):
@@ -37,13 +38,20 @@ class TriageDriver:
                        and t['kind'] == 'topic' and not t.get('formed_project_id')]
         if 'RETURN count(t)' in query:
             return [{'count': sum(t['topic_key'] == p['key'] for t in open_labels)}], None, None
+        if 'MERGE (d:FuliConversationTopicDecline' in query:
+            self.declines[(p['space_id'], p['key'])] = p['count']
+            return [], None, None
         if 'collect(t.topic)' in query:
             groups = {}
             for label in open_labels:
-                groups.setdefault(label['topic_key'], []).append(label)
-            rows = sorted(groups.values(), key=lambda g: (
+                if p['key'] is None or label['topic_key'] == p['key']:
+                    groups.setdefault(label['topic_key'], []).append(label)
+            rows = sorted((g for g in groups.values() if len(g) >= p['min_count']), key=lambda g: (
                 -any(t['source'] == 'user' for t in g), -len(g), ''.join(sorted(t['labeled_at'] for t in g))))
-            return [{'topic': g[0]['topic'], 'count': len(g)} for g in rows[:p['limit']]], None, None
+            return [{'topic': g[0]['topic'], 'count': len(g), 'days': len({t['labeled_at'][:10] for t in g}),
+                     'last': max(t['labeled_at'] for t in g),
+                     'declined_count': self.declines.get((p['space_id'], g[0]['topic_key']))}
+                    for g in rows[:p['limit']]], None, None
         if 'SET t.formed_project_id' in query:
             ids = []
             for label in self.labels.values():
@@ -84,7 +92,30 @@ async def test_topic_labels_accumulate_per_normalized_topic():
               for c, t in (('c1', 'Garden Planning'), ('c2', 'garden planning'), ('c3', 'Other'))]
     assert counts == [1, 2, 1]
     topics = await store.query_conversation_topics({}, ConversationTopicQuery(personal_space_id=SPACE))
-    assert topics == {'topics': [{'topic': 'Garden Planning', 'count': 2}, {'topic': 'Other', 'count': 1}]}
+    assert [(t['topic'], t['count'], t['days'], t['declined_count']) for t in topics['topics']] == [
+        ('Garden Planning', 2, 1, None), ('Other', 1, 1, None)]
+
+
+@pytest.mark.asyncio
+async def test_a_topic_reports_its_days_and_the_count_a_person_declined_at():
+    store = TriageStore({f'c{i}': PENDING for i in range(4)})
+    for i in range(3):
+        await store.record_conversation_triage({}, write(f'c{i}'))
+    store.runtime.driver.labels['c0']['labeled_at'] = '2026-10-17T09:00:00+00:00'
+    await store.record_conversation_triage({}, write('c3', topic='Other'))
+    query = ConversationTopicQuery(personal_space_id=SPACE, topic='garden planning', min_count=3)
+    [garden] = (await store.query_conversation_topics({}, query))['topics']
+    assert (garden['topic'], garden['count'], garden['days']) == ('Garden Planning', 3, 2)
+    declined = await store.decline_conversation_topic({}, ConversationTopicDecline(
+        personal_space_id=SPACE, topic='GARDEN planning'))
+    assert declined == {'topic': 'GARDEN planning', 'declined_count': 3}
+    [garden] = (await store.query_conversation_topics({}, query))['topics']
+    assert garden['declined_count'] == 3
+    assert (await store.query_conversation_topics({}, ConversationTopicQuery(
+        personal_space_id=SPACE, topic='Other', min_count=3)))['topics'] == []
+    with pytest.raises(HTTPException) as error:
+        await store.decline_conversation_topic({}, ConversationTopicDecline(personal_space_id=SPACE, topic='Nothing'))
+    assert error.value.status_code == 404
 
 
 @pytest.mark.asyncio

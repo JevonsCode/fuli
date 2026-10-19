@@ -1,0 +1,70 @@
+import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import TopicProposals from './TopicProposals.vue'
+import type { UnassignedConversationItem } from './unassigned-conversations'
+
+const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
+vi.mock('@/api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/client')>()
+  return { ...actual, getJson, postJson }
+})
+
+const item = (conversationId: string, topic: string | null, openingLine: string) => ({
+  conversationId, openingLine, shortId: conversationId, startedAt: null,
+  triageStatus: 'needs_project', topic, suggestedProjectId: null,
+}) as UnassignedConversationItem
+
+const render = () => mount(TopicProposals, {
+  props: { spaceId: 'space-a', items: [item('c1', 'Garden', 'Plan the beds'), item('c2', 'garden', 'Order seeds'),
+    item('c3', 'Taxes', 'File the return')] },
+  global: { stubs: { RouterLink: RouterLinkStub } },
+})
+
+describe('Astro topic proposals', () => {
+  beforeEach(() => {
+    getJson.mockReset()
+    postJson.mockReset()
+    getJson.mockResolvedValue({ proposals: [{ topic: 'Garden', conversations: 3, days: 2 }] })
+  })
+
+  it('asks with the count, the days and what the topic has been about', async () => {
+    const wrapper = render()
+    await flushPromises()
+    expect(getJson).toHaveBeenCalledWith('/api/topic-proposals?personalSpaceId=space-a')
+    const card = wrapper.get('[data-topic-proposal]')
+    expect(card.text()).toContain('Garden')
+    expect(card.text()).toMatch(/3.*2/)
+    expect(card.findAll('.topic-proposal-samples li').map(li => li.text())).toEqual(['Plan the beds', 'Order seeds'])
+  })
+
+  it('forms the project only when the person accepts, then links to its people', async () => {
+    postJson.mockResolvedValue({ personal_project_id: 'garden', topic: 'Garden', lead_agent_id: 'lead',
+      lead_status: 'ready', conversations: 3 })
+    const wrapper = render()
+    await flushPromises()
+    expect(postJson).not.toHaveBeenCalled()
+    await wrapper.get('[data-topic-accept]').trigger('click')
+    await flushPromises()
+    expect(postJson).toHaveBeenCalledWith('/api/topic-proposals/accept', { personalSpaceId: 'space-a', topic: 'Garden' })
+    expect(wrapper.find('[data-topic-proposal]').exists()).toBe(false)
+    expect(wrapper.get('[data-topic-formed]').findComponent(RouterLinkStub).props('to'))
+      .toEqual({ path: '/project-agents', query: { project: 'garden' } })
+    expect(wrapper.emitted('formed')?.[0]?.[0]).toMatchObject({ personal_project_id: 'garden' })
+  })
+
+  it('records not yet and keeps the card when a reply fails', async () => {
+    postJson.mockRejectedValueOnce(new Error('offline'))
+    const wrapper = render()
+    await flushPromises()
+    await wrapper.get('[data-topic-decline]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-topic-proposal]').exists()).toBe(true)
+    expect(wrapper.get('[role="alert"]').text()).toContain('Garden')
+    postJson.mockResolvedValueOnce({ declined_count: 3, ask_again_at: 6 })
+    await wrapper.get('[data-topic-decline]').trigger('click')
+    await flushPromises()
+    expect(postJson).toHaveBeenLastCalledWith('/api/topic-proposals/decline', { personalSpaceId: 'space-a', topic: 'Garden' })
+    expect(wrapper.find('[data-topic-proposal]').exists()).toBe(false)
+    expect(wrapper.find('[data-topic-declined]').exists()).toBe(true)
+  })
+})

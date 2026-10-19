@@ -5,7 +5,7 @@ from .agent_conversation_models import (
     ConversationQuery, ConversationWrite, ConversationResume, ConversationPolicyWrite,
 )
 from .conversation_triage_models import (
-    ConversationTriageWrite, ConversationTopicQuery, ConversationTopicFormation,
+    ConversationTriageWrite, ConversationTopicQuery, ConversationTopicFormation, ConversationTopicDecline,
 )
 
 
@@ -61,6 +61,10 @@ def register_agent_conversation_routes(application, store, Actor):
     @application.post('/v1/conversation-triage/topics')
     async def topics(request: ConversationTopicQuery, actor: Actor):
         return await store.query_conversation_topics(actor, request)
+
+    @application.post('/v1/conversation-triage/decline')
+    async def decline(request: ConversationTopicDecline, actor: Actor):
+        return await store.decline_conversation_topic(actor, request)
 
     @application.post('/v1/conversation-triage/form')
     async def form(request: ConversationTopicFormation, actor: Actor):

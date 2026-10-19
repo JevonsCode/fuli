@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { recordTriage, triageCandidates, validateTriage, TOPIC_FORMATION_THRESHOLD } from '../src/graphiti/conversation-triage.js';
+import { recordTriage, triageCandidates, validateTriage } from '../src/graphiti/conversation-triage.js';
+import { PROPOSAL_MIN_CONVERSATIONS } from '../src/graphiti/topic-proposals.js';
 import { checkpointTaskKnowledge } from '../src/graphiti/agent-knowledge-workflows.js';
 import { GRAPH_TOOL_DEFINITIONS } from '../src/agent-tools/graph-definitions.js';
 
@@ -8,7 +9,7 @@ const unclaimed = { projectAgentId: 'employee.assistant', personalProjectId: nul
 const saved = { conversation_id: 'c-1', status: 'saved' };
 
 // Synthetic Provider boundary with the same create-only and topic rules.
-function application({ projects = [], topicCount = 1, failRecord = false } = {}) {
+function application({ projects = [], topicCount = 1, days = 2, failRecord = false } = {}) {
   const calls = [];
   const registered = new Map(projects.map(project => [project.project_id, project]));
   const app = { config: { personal: { spaceId: 'space' } }, calls,
@@ -23,7 +24,9 @@ function application({ projects = [], topicCount = 1, failRecord = false } = {})
         return { status: 'ready', agent: { agent_id: `lead-${input.personal_project_id}` } }; },
       conversationTriage: async (operation, input) => {
         calls.push([operation, input]);
-        if (operation === 'topics') return { topics: [{ topic: 'Garden Planning', count: 2 }] };
+        if (operation === 'topics') return { topics: input.topic
+          ? [{ topic: input.topic, count: topicCount, days, declined_count: null }]
+          : [{ topic: 'Garden Planning', count: 2, days: 1, declined_count: null }] };
         if (failRecord) throw new Error('Provider offline');
         if (operation === 'record') return { topic_count: topicCount, triage: { kind: input.kind,
           personal_project_id: input.personal_project_id, topic: input.topic, source: 'host' } };
@@ -56,20 +59,22 @@ test('a project label resolves its name before recording, and unknown names stay
   assert.equal(app.calls.length, 1);
 });
 
-test(`a topic reaching ${TOPIC_FORMATION_THRESHOLD} conversations forms a project with a lead`, async () => {
-  const app = application({ topicCount: TOPIC_FORMATION_THRESHOLD });
+test(`a topic reaching ${PROPOSAL_MIN_CONVERSATIONS} conversations over days asks the person and forms nothing`, async () => {
+  const app = application({ topicCount: PROPOSAL_MIN_CONVERSATIONS });
   const result = await recordTriage(app, unclaimed, saved, validateTriage({ kind: 'topic', topic: 'Garden Planning' }));
-  assert.deepEqual(result.formed, { status: 'formed', personal_project_id: 'garden-planning', automatic: true,
-    reason: '话题「Garden Planning」累计 3 个会话，Jefa 自动立项', lead_agent_id: 'lead-garden-planning', conversations: 3 });
-  const create = app.calls.find(([kind]) => kind === 'create')[1];
-  assert.equal(create.createOnly, true);
-  assert.match(create.profile.purpose, /AI 草稿/);
-  assert.deepEqual(app.calls.map(([kind]) => kind), ['record', 'create', 'staff', 'form']);
+  assert.equal(result.formed, undefined);
+  assert.equal(result.proposal.status, 'ask_user');
+  assert.equal(result.proposal.conversations, 3);
+  assert.match(result.proposal.ask_user, /「Garden Planning」已经聊了 3 次、跨 2 天/);
+  assert.match(result.proposal.console_url, /\/employees\/assistant$/);
+  assert.deepEqual(app.calls.map(([kind]) => kind), ['record', 'topics']);
 });
 
 test('a topic below the threshold and a one-off question form nothing', async () => {
-  const app = application({ topicCount: TOPIC_FORMATION_THRESHOLD - 1 });
-  assert.equal((await recordTriage(app, unclaimed, saved, validateTriage({ kind: 'topic', topic: 'x' }))).formed, undefined);
+  const app = application({ topicCount: PROPOSAL_MIN_CONVERSATIONS - 1 });
+  const below = await recordTriage(app, unclaimed, saved, validateTriage({ kind: 'topic', topic: 'x' }));
+  assert.equal(below.formed, undefined);
+  assert.equal(below.proposal, undefined);
   assert.equal((await recordTriage(app, unclaimed, saved, validateTriage({ kind: 'one_off' }))).kind, 'one_off');
   assert.deepEqual(app.calls.map(([kind]) => kind), ['record', 'record']);
 });

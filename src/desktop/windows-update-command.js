@@ -10,6 +10,7 @@ export async function runWindowsUpdateCommand(args = [], dependencies = {}) {
   options.source = dependencies.source ?? resolve(dirname(fileURLToPath(import.meta.url)), '../..');
   const write = dependencies.write ?? writeLine;
   const plan = (dependencies.plan ?? planWindowsUpdate)(options);
+  if (plan.downgrade) write('这是降版替换（--allow-downgrade）：程序换成更低的版本号，数据不变；更新前请先备份数据目录。 / This replaces Fuli with a lower version (--allow-downgrade); data is kept. Back up the data folder first.');
   write(`更新 / Update: ${plan.current.applicationVersion} → ${plan.applicationVersion}\n程序 / Application: ${plan.installRoot}\n保留数据 / Keep data: ${plan.current.dataDir}\n请先退出 Fuli 托盘；服务会自动停止后重启。 / Exit the tray first; services will be stopped and restarted.`);
   if (preview) return { status: 'preview' };
   const confirm = dependencies.confirm ?? (() => confirmInTerminal('更新？ / Update? [y/N] ', { defaultYes: false }));

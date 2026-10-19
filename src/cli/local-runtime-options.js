@@ -7,12 +7,13 @@ const VALUE_OPTIONS = Object.freeze({
 const BOOLEAN_OPTIONS = Object.freeze({
   '--open': 'open',
   '--rebuild': 'rebuild',
-  '--json': 'json'
+  '--json': 'json',
+  '--allow-provider-downgrade': 'allowProviderDowngrade'
 });
 
 const ALLOWED_BY_COMMAND = Object.freeze({
   start: new Set([
-    '--data-dir', '--personal-space', '--port', '--open', '--rebuild', '--lan', '--no-lan'
+    '--data-dir', '--personal-space', '--port', '--open', '--rebuild', '--lan', '--no-lan', '--allow-provider-downgrade'
   ]),
   stop: new Set(['--data-dir']),
   restart: new Set([
@@ -32,7 +33,8 @@ export function parseLocalRuntimeOptions(command, args = []) {
     open: false,
     rebuild: false,
     lan: null,
-    json: false
+    json: false,
+    allowProviderDowngrade: false
   };
   const seen = new Set();
 

@@ -2,6 +2,8 @@ const UI_MUTATION_PARITY = Object.freeze([
   agent('PUT /api/agent-pins', 'pin_agent'),
   agent('POST /api/roundtable/messages/:messageId/cancel', 'cancel_agent_message'),
   agent('POST /api/roundtable/chats', 'agent_chat'),
+  local('POST /api/topic-proposals/accept', 'Giving a recurring topic its own project and staff is a local owner decision; Agents only relay Astro\'s question.'),
+  local('POST /api/topic-proposals/decline', 'Saying not yet to a project suggestion is a local owner decision.'),
   local('POST /api/conversation-triage/record', 'Correcting where an unclaimed conversation belongs is a local owner decision; Agents label through checkpoint_task_knowledge.triage.'),
   local('POST /api/peer/coordinator', 'Opening a LAN listener on this device is a local device decision of its owner.'),
   local('POST /api/peer/invitations', 'Pairing invitations admit another device and are created by the local owner.'),

@@ -27,9 +27,17 @@ class ConversationTriageWrite(StrictModel):
 class ConversationTopicQuery(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     limit: int = Field(default=8, ge=1, le=50)
+    # One topic only, for example the one a conversation was just labelled with.
+    topic: str | None = Field(default=None, min_length=1, max_length=80)
+    min_count: int = Field(default=1, ge=1, le=1000)
 
 
 class ConversationTopicFormation(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     topic: str = Field(min_length=1, max_length=80)
     personal_project_id: str = Field(min_length=1, max_length=128)
+
+
+class ConversationTopicDecline(StrictModel):
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    topic: str = Field(min_length=1, max_length=80)
