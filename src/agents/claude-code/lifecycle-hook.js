@@ -72,7 +72,7 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
       if (PREFERENCE_RESET_EVENTS.includes(event)) return claudeLifecycleOutput(event, input,
         (name, parameters) => (dependencies.callTool ?? callAgentTool)(app, name, parameters, request),
         { delivery: app.preferenceDelivery, currentTask: app.taskContextRegistry?.current?.bind(app.taskContextRegistry) });
-      if (input.transcript_path && captureDecision(app, transcriptCaptureScope(input, 'claude_code')).allowed) {
+      if (input.transcript_path && (await captureDecision(app, transcriptCaptureScope(input, 'claude_code'))).allowed) {
         dependencies.onTranscriptGuard?.();
       }
       return transcriptLifecycle({ application: app, runtimeConfigPath, input, event, sourceApplication: 'claude_code',

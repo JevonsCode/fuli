@@ -158,22 +158,22 @@ test('an unreadable capture policy records nothing and still serves reads', asyn
   assert.ok(Array.isArray(search.facts));
 });
 
-test('a missing policy reader is a decision, never permission to write', () => {
-  assert.deepEqual(captureDecision({}, { sourceApplication: 'codex' }),
+test('a missing policy reader is a decision, never permission to write', async () => {
+  assert.deepEqual(await captureDecision({}, { sourceApplication: 'codex' }),
     { allowed: false, reason: 'policy_unavailable', layer: 'policy' });
   for (const policy of [null, { enabled: 'yes' }, { enabled: true, disabledSources: 'codex' }]) {
-    assert.equal(captureDecision({ getCapturePolicy: () => policy }, {}).reason, 'policy_unavailable');
+    assert.equal((await captureDecision({ getCapturePolicy: () => policy }, {})).reason, 'policy_unavailable');
   }
 });
 
 test('an older adapter that names only its client still gets that client decision', async (t) => {
   const f = await fixture(t, policyFile({ enabled: true, disabledSources: ['codex', 'other'] }));
-  assert.deepEqual(captureDecision(f.app, { sourceApplication: 'codex' }),
+  assert.deepEqual(await captureDecision(f.app, { sourceApplication: 'codex' }),
     { allowed: false, reason: 'client_off', layer: 'client' });
-  assert.deepEqual(captureDecision(f.app, { sourceApplication: 'claude_code' }),
+  assert.deepEqual(await captureDecision(f.app, { sourceApplication: 'claude_code' }),
     { allowed: true, reason: null, layer: null });
   // A write that names no client is an unknown client, as at every other FULI boundary.
-  assert.equal(captureDecision(f.app, {}).reason, 'client_off');
+  assert.equal((await captureDecision(f.app, {})).reason, 'client_off');
 
   assert.equal((await callAgentTool(f.app, 'capture_session_knowledge', knowledgeEpisode('codex'))).reason, 'client_off');
   assert.deepEqual(f.writes(), []);

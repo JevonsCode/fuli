@@ -168,7 +168,8 @@ export async function checkpointTaskKnowledge(application, {
   if (remoteSessionId && task.sessionId !== remoteSessionId) {
     throw validationError('Task checkpoint belongs to another remote session');
   }
-  const captureCheck = captureDecision(application, taskCaptureScope(task));
+  const captureScope = taskCaptureScope(task);
+  const captureCheck = await captureDecision(application, captureScope);
   // experiences and remember are compact forms of one routed capture.
   if (experiences !== null || remember !== null) {
     if (capture || captureRouting !== null) throw validationError('Send experiences or remember, or a capture, not both');
@@ -213,7 +214,7 @@ export async function checkpointTaskKnowledge(application, {
       agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
         agentId: task.projectAgentId ?? null, name: team.name, sourceApplication: task.sourceApplication,
         workStatus: effectiveLog.status, conversationId: conversation?.conversation_id ?? null,
-        persistence: conversation?.status ?? null, collaborators: team.collaborators }),
+        persistence: conversation?.status ?? null, collaborators: team.collaborators, capture: captureCheck }),
       ...(team.ignored.length ? { ignored_collaborators: team.ignored } : {}) };
   };
   if (task.checkpoint?.phase === 'complete') {
@@ -235,10 +236,10 @@ export async function checkpointTaskKnowledge(application, {
   } : null;
   // Local validation has no side effects. Reject correctable input before
   // binding an immutable checkpoint or advancing the Agent's memory revision.
-  if (captureInput) application.validateCaptureSessionKnowledge(captureInput);
+  if (captureInput) await application.validateCaptureSessionKnowledge(captureInput, { captureScope });
   const scopedInputs = scopedCaptures?.map(batch => ({ scope: batch.scope,
     input: taskCaptureInput(application.config.personal.spaceId, task, batch) }));
-  for (const batch of scopedInputs ?? []) application.validateCaptureSessionKnowledge(batch.input);
+  for (const batch of scopedInputs ?? []) await application.validateCaptureSessionKnowledge(batch.input, { captureScope });
   // The Provider owns the full commit model and scope authorization. Validate
   // every scoped batch before claiming the checkpoint or advancing memory.
   if (scopedInputs && captureCheck.allowed) await application.preflightPersonalKnowledgeCaptures(scopedInputs.map(batch => batch.input));
@@ -280,10 +281,10 @@ export async function checkpointTaskKnowledge(application, {
     memoryResult = { status: 'checkpointed', ...agentMemoryRecord(preparedTask.agentMemory) };
   }
   const captureResult = internalActivity ? internalCaptureSkip(internalActivity) : captureInput
-    ? await application.captureSessionKnowledge(captureInput) : null;
+    ? await application.captureSessionKnowledge(captureInput, { captureScope }) : null;
   const captureResults = scopedInputs ? [] : null;
   for (const batch of scopedInputs ?? []) {
-    const result = await application.captureSessionKnowledge(batch.input);
+    const result = await application.captureSessionKnowledge(batch.input, { captureScope });
     captureResults.push(taskCaptureReceipt(batch.scope, batch.input, result));
   }
   const captureStatus = captureResults

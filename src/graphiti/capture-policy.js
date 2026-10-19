@@ -7,6 +7,8 @@ import {
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { DEFAULT_PROJECT_SETTINGS, PROJECT_SETTING_KEYS, storedProjectSettings, updatedProjectSettings,
+  usesProjectModes } from './capture-project-mode.js';
 
 // Capturing a client's sessions is separate from that client using FULI tools:
 // a disabled source still queries existing memory, it just adds nothing new.
@@ -16,8 +18,10 @@ export const CAPTURE_SOURCES = Object.freeze(['codex', 'claude', 'claude_code', 
 const DEFAULT_POLICY = Object.freeze({
   enabled: true,
   disabledSources: [],
+  ...DEFAULT_PROJECT_SETTINGS,
   updatedAt: null
 });
+const SETTING_KEYS = Object.freeze(['enabled', 'disabledSources', ...PROJECT_SETTING_KEYS]);
 
 export class CapturePolicyConfigurationError extends TypeError {}
 
@@ -40,21 +44,34 @@ export class CapturePolicyStore {
     return validateStoredPolicy(parsed);
   }
 
+  // A partial update: settings it does not name keep their current value, so
+  // changing projects never turns recording back on, and the reverse.
   update(input) {
-    if (!input || typeof input.enabled !== 'boolean') {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new TypeError('Capture policy update must be an object');
+    }
+    const unknown = Object.keys(input).filter(key => !SETTING_KEYS.includes(key));
+    if (unknown.length) throw new TypeError(`Capture policy has no setting ${unknown.join(', ')}`);
+    if (SETTING_KEYS.every(key => input[key] === undefined)) {
+      throw new TypeError('Capture policy update must name a setting to change');
+    }
+    if (input.enabled !== undefined && typeof input.enabled !== 'boolean') {
       throw new TypeError('Capture policy enabled must be a boolean');
     }
+    const current = this.read();
+    const now = this.now();
     const next = {
-      enabled: input.enabled,
+      enabled: input.enabled ?? current.enabled,
       disabledSources: input.disabledSources === undefined
-        ? this.read().disabledSources : validSources(input.disabledSources, TypeError),
-      updatedAt: this.now()
+        ? current.disabledSources : validSources(input.disabledSources, TypeError),
+      ...updatedProjectSettings(current, input, now),
+      updatedAt: now
     };
     if (!this.path) {
       this.memory = next;
       return { ...next };
     }
-    writeAtomically(this.path, { version: 1, ...next });
+    writeAtomically(this.path, { version: usesProjectModes(next) ? 2 : 1, ...next });
     return { ...next };
   }
 }
@@ -65,7 +82,7 @@ export function capturePolicyPathForRuntime(runtimeConfigPath) {
 }
 
 function validateStoredPolicy(value) {
-  if (value?.version !== 1 || typeof value.enabled !== 'boolean') {
+  if (![1, 2].includes(value?.version) || typeof value.enabled !== 'boolean') {
     throw new CapturePolicyConfigurationError('Capture policy is invalid');
   }
   if (value.updatedAt !== null && typeof value.updatedAt !== 'string') {
@@ -75,6 +92,7 @@ function validateStoredPolicy(value) {
     enabled: value.enabled,
     // Policies saved before per-client capture capture every client.
     disabledSources: validSources(value.disabledSources ?? [], CapturePolicyConfigurationError),
+    ...storedProjectSettings(value, CapturePolicyConfigurationError),
     updatedAt: value.updatedAt ?? null
   };
 }

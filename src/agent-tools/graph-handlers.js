@@ -2,7 +2,7 @@ import { ApplicationError } from '../app/application-error.js';
 import { assertTestToolsEnabled } from '../app/test-tools.js';
 import { activeTestToolsEnabled } from '../app/agent-request-context.js';
 import { agentInterfaceCatalog } from './interface-catalog.js';
-import { captureDecision, captureDisabled } from '../graphiti/capture-decision.js';
+import { captureDecision, captureDisabled, describeCapture } from '../graphiti/capture-decision.js';
 
 const HANDLERS = Object.freeze({
   get_judgment_policy: (app, input) => app.judgment.policy(input),
@@ -31,7 +31,9 @@ const HANDLERS = Object.freeze({
   cancel_agent_attention: (app, input) => app.cancelAgentAttention(input),
   list_preference_conflicts: (app, input) => app.listPreferenceConflicts(input),
   list_agent_interfaces: () => agentInterfaceCatalog(),
-  get_capture_policy: (app) => app.getCapturePolicy(),
+  get_capture_policy: (app, input) => describeCapture(app, { sourceApplication: input?.sourceApplication,
+    personalProjectId: input?.personalProjectId ?? null, projectPath: input?.projectPath ?? null,
+    sessionId: input?.sessionId ?? null }),
   explain_settings: (app) => settingsGuide(app),
   update_capture_policy: (app, input) => app.updateCapturePolicy(input),
   list_external_knowledge_connectors: (app) => externalKnowledge(app).listConnectorTypes(),
@@ -274,7 +276,7 @@ export function dispatchGraphTool(app, name, input) {
 
 // Agent-initiated project and Agent registration records what a session
 // established, so it follows the same capture decision as every other write.
-function captureGuard(app, scope, operation) {
-  const capture = captureDecision(app, scope);
+async function captureGuard(app, scope, operation) {
+  const capture = await captureDecision(app, scope);
   return capture.allowed ? operation() : { route: 'disabled', ...captureDisabled(capture) };
 }

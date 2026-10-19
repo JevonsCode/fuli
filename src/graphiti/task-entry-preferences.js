@@ -1,4 +1,5 @@
 import { taskAgentReceipt } from '../agents/identity-receipt.js';
+import { captureDecision } from './capture-decision.js';
 import { beginTaskFromPreferences } from './agent-knowledge-workflows.js';
 import { getCollaborationPreferences as getCollaborationPreferencesWorkflow } from './collaboration-preference-workflow.js';
 import { resolveTaskEntryAgent, loadProjectAgentContinuity } from './project-agent-task-entry.js';
@@ -75,6 +76,9 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
   const answered = includeMessages && selection?.agent && projectResolution.personalProjectId && application.roundtable?.attentionReplies
     ? application.roundtable.attentionReplies(selection.agent.agentId, projectResolution.personalProjectId) : [];
   const judgmentContext = includeTeam ? taskJudgmentContext(application, projectResolution.personalProjectId) : null;
+  // The task begins in this project, so its writes get this decision.
+  const capture = await captureDecision(application, { sourceApplication,
+    personalProjectId: projectResolution.personalProjectId ?? null, sessionId: sessionId ?? null });
   // An unclaimed conversation gets names only, so its finishing host can label it.
   const triage = selection?.agent?.agentId === ASSISTANT_AGENT_ID && !projectResolution.personalProjectId
     ? await triageCandidates(application) : null;
@@ -87,7 +91,7 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
     agent_receipt: taskAgentReceipt(application, {
       projectId: projectResolution.personalProjectId, agentId: selection?.agent?.agentId ?? null,
       name: context?.role?.name, sourceApplication,
-      assignmentStatus: selection?.status, assignmentReason: selection?.reason
+      assignmentStatus: selection?.status, assignmentReason: selection?.reason, capture
     }) };
 }
 

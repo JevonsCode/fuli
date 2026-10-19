@@ -11,7 +11,7 @@ import { captureWindow, withCaptureBudget } from './capture-window.js';
 export async function transcriptLifecycle({ application, runtimeConfigPath, input, sourceApplication, event, adapter, run,
   captureTimeoutMs = 750, signal }) {
   const entry = event === 'UserPromptSubmit';
-  const enabled = captureDecision(application, transcriptCaptureScope(input, sourceApplication)).allowed;
+  const enabled = (await captureDecision(application, transcriptCaptureScope(input, sourceApplication))).allowed;
   let started = false, output, context;
   const invoke = async () => {
     started = true;

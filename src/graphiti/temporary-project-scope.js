@@ -4,6 +4,13 @@ export const temporaryProjectScope = Object.freeze({
   type: 'temporary', lifetime: 'task', persisted: true
 });
 
+const TEMPORARY_PROJECT_ID = /^temporary-[0-9a-f]{64}$/;
+
+// A task-scoped project for work outside every registered project.
+export function isTemporaryProjectId(projectId) {
+  return typeof projectId === 'string' && TEMPORARY_PROJECT_ID.test(projectId);
+}
+
 // Explicit coordination owns provisioning. Preference and discovery reads never
 // create projects. Identity contains no filesystem paths, prompts or host IDs.
 export async function resolveCoordinationScope(application, resolution, input, entryTask) {

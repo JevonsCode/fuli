@@ -295,6 +295,15 @@ Code、Codex 和 Cursor 生命周期适配器。已加载、获信任的入口 H
 关闭，写入会返回 `capture_disabled`，不会产生任何类别的条目。记录设置读取失败时同样不写入
 （`reason: policy_unavailable`），查询已有知识不受影响。
 
+记录范围还可以按项目选择。`projectMode` 为 `all`（默认）、`all_except`（配合
+`excludedProjectIds`）或 `selected`（配合 `selectedProjectIds`）；`unregisteredDirectories`
+决定没有登记为 FULI 项目的目录记不记（`selected` 下默认 `skip`，其余默认 `capture`）。目录按
+任务入口相同的规则解析为项目，所以同一仓库的 worktree 就是同一个项目。未开启的项目返回
+`reason: project_off`，未登记目录返回 `project_unregistered`，每轮任务回执末尾都会写明原因，
+例如「此项目未开启记忆」。关闭某个项目不会隐藏或删除它已有的记录，`projectsOffSince` 记下它从何时
+停止记录。Agent 用 `get_capture_policy` 读取（传 `projectPath` 可得知当前项目是否记录），用
+`update_capture_policy` 修改前必须先复述改动并得到用户确认；设置页使用 `PATCH /api/capture-policy`。
+
 本地可先运行下面两个契约测试，验证 README 说明和项目路径解析仍与实现一致：
 
 ```bash

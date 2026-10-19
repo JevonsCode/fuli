@@ -129,7 +129,10 @@ Use `capture_session_knowledge` with a small, coherent batch:
 
 If `capture_session_knowledge`, a checkpoint or automatic project creation returns
 `capture_disabled`, nothing was stored: `reason` is `global_off` or `client_off` when the user
-switched capture off, and `policy_unavailable` when FULI could not read the capture settings.
+switched capture off, `project_off` when the user does not record this project,
+`project_unregistered` when the work is outside every registered project and such work is not
+recorded, and `policy_unavailable` when FULI could not read the capture settings or resolve the
+project. The receipt already says so; copy it unchanged.
 Do not retry, do not create a fallback record elsewhere, and do not describe the skipped batch as
 stored. Existing knowledge may still be queried.
 

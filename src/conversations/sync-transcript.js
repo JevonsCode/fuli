@@ -4,17 +4,35 @@ import { lookupTranscriptTask } from './current-task-lookup.js';
 import { appendTranscriptPage } from './transcript-append.js';
 import { recoverFallbackTranscript } from './fallback-transcript-boundary.js';
 import { captureDecision, captureDisabled } from '../graphiti/capture-decision.js';
+import { captureHookNotice } from '../agents/capture-notice.js';
 
 const pending = reason => ({ status: 'partial', entryBlocked: true, reason });
 const retryReason = 'Transcript handoff is pending. Retry task entry to continue its saved progress; no new Agent context was supplied';
 
 // What a host hook knows about the session whose transcript it would capture.
+// Every host works in some directory: a hook that does not report it cannot
+// show that its session is outside a project FULI must not record.
 export function transcriptCaptureScope(input, sourceApplication) {
-  return { sourceApplication, projectPath: input?.cwd ?? null, sessionId: input?.session_id ?? null };
+  const projectPath = typeof input?.cwd === 'string' && input.cwd.trim() ? input.cwd : null;
+  return { sourceApplication, projectPath, sessionId: input?.session_id ?? null,
+    ...(projectPath ? {} : { projectUnknown: true }) };
+}
+
+// The transcript is saved under the session's current task, which may belong
+// to a project other than the directory: both have to be recorded.
+function taskTranscriptScope(input, sourceApplication, task) {
+  return { ...transcriptCaptureScope(input, sourceApplication), personalProjectId: task.personal_project_id ?? null };
+}
+
+// Nothing of a task that is not recorded is ever imported, so no handoff for
+// it stays pending: a later recorded task starts from its own prompt.
+async function skippedTaskTranscript(decision, guard) {
+  if (guard?.value) await guard.clear();
+  return captureDisabled(decision);
 }
 
 export async function syncConversationTranscript(application, input, sourceApplication, adapter, guard = null) {
-  const capture = captureDecision(application, transcriptCaptureScope(input, sourceApplication));
+  const capture = await captureDecision(application, transcriptCaptureScope(input, sourceApplication));
   if (!capture.allowed) return captureDisabled(capture);
   if (!input?.transcript_path) return { status: 'partial', reason: 'Host did not supply a visible transcript' };
   if (guard?.expired) return pending('Transcript guard lifetime expired; this unverified interval was not imported');
@@ -28,6 +46,8 @@ export async function syncConversationTranscript(application, input, sourceAppli
     const task = lookup.task;
     ownershipKnown = true;
     if (!task?.project_agent_id) return guard?.value ? pending(retryReason) : { status: 'unassigned' };
+    const taskCapture = await captureDecision(application, taskTranscriptScope(input, sourceApplication, task));
+    if (!taskCapture.allowed) return skippedTaskTranscript(taskCapture, guard);
     const scope = { personal_space_id: application.config.personal.spaceId, personal_project_id: task.personal_project_id,
       agent_id: task.project_agent_id, source_application: sourceApplication };
     const policy = await application.personal.conversation('query', { ...scope, mode: 'policy' });
@@ -127,14 +147,10 @@ export async function recordTranscriptTaskEntry(guard, context) {
   await guard.write({ ...guard.value, phase: 'claim', nextOwner: transcriptDigest(token) });
 }
 
-// Capture the user switched off needs no notice each turn. Settings FULI could
-// not read do: the user believes capture is on. The notice names no content.
-const UNREADABLE_CAPTURE_SETTINGS = 'Capture settings could not be read, so nothing from this turn was recorded';
-
 export function withTranscriptNotice(output, sync) {
-  const unreadable = sync?.status === 'capture_disabled' && sync.reason === 'policy_unavailable';
-  if (!unreadable && !sync?.entryBlocked && !sync?.omitted && !['unsaved', 'partial'].includes(sync?.status)) return output;
-  const notice = unreadable ? UNREADABLE_CAPTURE_SETTINGS : sync.reason;
+  const captureNotice = captureHookNotice(sync);
+  if (!captureNotice && !sync?.entryBlocked && !sync?.omitted && !['unsaved', 'partial'].includes(sync?.status)) return output;
+  const notice = captureNotice ?? sync.reason;
   return { ...output, systemMessage: [output.systemMessage, `Fuli: ${notice}.`].filter(Boolean).join('\n') };
 }
 
@@ -143,12 +159,14 @@ export function withTranscriptNotice(output, sync) {
 // unrelated session tail. Native files remain available for explicit recovery.
 export async function claimTranscriptBoundary(application, input, sourceApplication, sync, adapter, guard = null) {
   if (!input.transcript_path) return sync;
-  const capture = captureDecision(application, transcriptCaptureScope(input, sourceApplication));
+  const capture = await captureDecision(application, transcriptCaptureScope(input, sourceApplication));
   if (!capture.allowed) return captureDisabled(capture);
   try {
     const task = await application.personal.currentTaskContext({ personal_space_id: application.config.personal.spaceId,
       session_id: input.session_id, source_application: sourceApplication });
     if (!task?.project_agent_id) return sync;
+    const taskCapture = await captureDecision(application, taskTranscriptScope(input, sourceApplication, task));
+    if (!taskCapture.allowed) return skippedTaskTranscript(taskCapture, guard);
     if (guard?.value && (guard.value.phase !== 'claim' || guard.value.nextOwner !== transcriptDigest(task.token))) return pending('Transcript claim does not match the task entry that created it');
     const scope = { personal_space_id: application.config.personal.spaceId,
       personal_project_id: task.personal_project_id, agent_id: task.project_agent_id,

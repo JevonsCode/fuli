@@ -6,7 +6,7 @@ Use these as sequencing hints only. Always call `list_agent_interfaces` and insp
 | --- | --- | --- | --- |
 | Move an external-knowledge connection between projects | `list_external_knowledge_bindings` | `update_external_knowledge_binding_targets` | `check_external_knowledge_binding`, then `retrieve_external_knowledge_binding` or `sync_external_knowledge_binding` when requested |
 | Create an external-knowledge connection | `list_external_knowledge_connectors`, `discover_external_knowledge_sources` | `create_external_knowledge_binding` | `check_external_knowledge_binding` |
-| Change capture behavior | `get_capture_policy` | `update_capture_policy` | `get_capture_policy` |
+| Change capture behavior (global, client or project mode) | `get_capture_policy` with `projectPath` | restate the change, wait for the user's confirmation, then `update_capture_policy` | `get_capture_policy` |
 | Add or change durable knowledge | the narrowest knowledge search/read tool | the matching knowledge submission or decision tool | read the exact item and confirm scope/version |
 | Manage Project Agents | `list_project_agents`, `list_project_agent_tasks`, assignments or recruitment state | the matching Agent/assignment/task/recruitment tool | re-list the same Agent/task and inspect status/events |
 | Defer or resolve a preference conflict | `list_preference_conflicts` and both exact knowledge items | `defer_preference_conflict` or `resolve_deferred_preference_conflict` | re-read the conflict and affected items; never claim human confirmation |
