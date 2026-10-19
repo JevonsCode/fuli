@@ -15,6 +15,14 @@ test('HTTP error mapping treats application not-found and validation errors as b
   }
 });
 
+test('HTTP error mapping keeps an explicit client status and code of an application error', () => {
+  const conflict = new ApplicationError('task_not_retryable', 'Only a failed task can be retried.', { status: 409 });
+  assert.deepEqual(mapHttpError(conflict),
+    { status: 409, body: { error: 'Only a failed task can be retried.', code: 'task_not_retryable' } });
+  const missing = new ApplicationError('task_run_not_found', 'Task run not found.', { status: 404 });
+  assert.equal(mapHttpError(missing).status, 404);
+});
+
 test('HTTP error mapping treats malformed JSON as a bad request', () => {
   const mapped = mapHttpError(new SyntaxError('Unexpected end of JSON input'));
   assert.deepEqual(mapped, { status: 400, body: { error: 'Malformed JSON' } });

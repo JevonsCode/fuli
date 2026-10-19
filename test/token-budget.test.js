@@ -40,7 +40,10 @@ const BASELINE = Object.freeze({
   // F-P2-05 ⑦: one full-profile tool, control_project_agent_task_run, stops a
   // run, retries a terminal task as new work or replays run history:
   // 171,156 -> 172,214 B (+1,058 B). Chat is unchanged.
-  fullToolSchemaBytes: 172214,
+  // The same tool takes the host task context (token, application, session)
+  // so a grouped team's stop/retry passes the check its submissions pass:
+  // 172,214 -> 172,415 B (+201 B). Chat is unchanged.
+  fullToolSchemaBytes: 172415,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

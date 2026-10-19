@@ -87,6 +87,37 @@ test('consecutive failures open the circuit; a success in between resets it; res
   assert.equal(schedule.enabled, true);
   assert.equal(schedule.pausedReason, null);
   assert.throws(() => f.service.manage({ action: 'pause', personalSpaceId: SPACE, scheduleId: created.id, expectedRevision: 1 }), /changed/);
+  // Failures before the resume no longer count: the next slot creates a task instead of tripping again.
+  f.advance(HOUR);
+  const [afterResume] = await f.service.runDue();
+  assert.equal(afterResume.outcome, 'created');
+  f.statuses.set(afterResume.taskId, 'failed');
+  f.advance(HOUR);
+  assert.equal((await f.service.runDue())[0].outcome, 'created');
+});
+
+test('a schedule store from before the breaker reset column still opens and resumes', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const { TaskScheduleStore } = await import('../src/task-schedules/store.js');
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'fuli-schedules-'));
+  try {
+    const path = join(dir, 'task-schedules.sqlite');
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE task_schedules(id TEXT PRIMARY KEY, space TEXT NOT NULL, project TEXT NOT NULL,
+      revision INTEGER NOT NULL, enabled INTEGER NOT NULL, body TEXT NOT NULL, next_run_at TEXT NOT NULL,
+      paused_reason TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+    old.prepare('INSERT INTO task_schedules VALUES(?,?,?,?,?,?,?,?,?,?)').run('s-1', SPACE, 'project-a', 1, 0,
+      JSON.stringify({ every: { unit: 'hours', count: 1 } }), '2026-10-19T01:00:00.000Z', 'circuit_open', 'x', 'x');
+    old.close();
+    const store = new TaskScheduleStore(path);
+    assert.equal(store.get('s-1').breakerResetAt, null);
+    const resumed = store.update('s-1', 1, { enabled: true, pausedReason: null, breakerResetAt: '2026-10-19T02:00:00.000Z' }, 'y');
+    assert.equal(resumed.breakerResetAt, '2026-10-19T02:00:00.000Z');
+    store.close();
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('a routing failure counts toward the breaker like a failed task', async () => {

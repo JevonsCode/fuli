@@ -111,6 +111,8 @@ test('one host attempt claims once, seals the actual child session and reports i
     assert.equal(activity.source_application, 'claude_code');
     assert.equal(activity.source_session_id, 'parent-native-session');
     assert.equal(activity.token_usage, null);
+    // The Provider uses the run identity to reject a late report from an older run.
+    assert.equal(activity.worker_run_id, result.runId);
     for (const name of ['actual_executor_id', 'actual_model', 'actual_model_provider']) assert.equal(Object.hasOwn(activity, name), false);
   }
 });

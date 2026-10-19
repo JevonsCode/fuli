@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { ApplicationError } from '../app/application-error.js';
 import { positiveInteger, requiredString, uniqueTextArray } from '../validation/values.js';
 import { TaskScheduleStore } from './store.js';
 
@@ -7,8 +8,8 @@ const MINIMUM_INTERVAL_MS = 15 * 60_000;
 const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
 const DEFAULT_FAILURE_THRESHOLD = 3;
 const SCHEDULE_FIELDS = ['title', 'objective', 'workKind', 'requiredCapabilities', 'leadAgentId', 'every', 'startMode', 'failureThreshold'];
-const conflict = () => Object.assign(new Error('This schedule changed. Reload and try again.'), { status: 409, code: 'task_schedule_conflict' });
-const missing = () => Object.assign(new Error('Task schedule not found.'), { status: 404, code: 'task_schedule_not_found' });
+const conflict = () => new ApplicationError('task_schedule_conflict', 'This schedule changed. Reload and try again.', { status: 409 });
+const missing = () => new ApplicationError('task_schedule_not_found', 'Task schedule not found.', { status: 404 });
 
 // Scheduled project Agent tasks with a circuit breaker. Each due slot creates
 // one task through the normal routing path (idempotent per slot). A slot is
@@ -44,9 +45,11 @@ export function createTaskScheduleService({ app, openStore = () => new TaskSched
 
   function setEnabled(input, enabled) {
     const schedule = owned(input);
-    // Resuming closes the breaker and starts from the next interval, never a backlog of missed slots.
+    // Resuming closes the breaker (failures before it no longer count) and starts
+    // from the next interval, never a backlog of missed slots.
     const changes = enabled
-      ? { enabled: true, pausedReason: null, nextRunAt: new Date(now().getTime() + intervalMs(schedule.body.every)).toISOString() }
+      ? { enabled: true, pausedReason: null, breakerResetAt: iso(),
+        nextRunAt: new Date(now().getTime() + intervalMs(schedule.body.every)).toISOString() }
       : { enabled: false, pausedReason: 'paused_by_user' };
     return db().update(schedule.id, input.expectedRevision, changes, iso()) ?? (() => { throw conflict(); })();
   }
@@ -81,7 +84,10 @@ export function createTaskScheduleService({ app, openStore = () => new TaskSched
     const advance = (pausedReason = undefined, enabled = undefined) =>
       db().update(schedule.id, schedule.revision, { nextRunAt, pausedReason, enabled }, iso());
     let failures = 0;
-    for (const run of runs) { if (run.status !== 'failed') break; failures += 1; }
+    for (const run of runs) {
+      if (run.status !== 'failed' || (schedule.breakerResetAt && run.createdAt <= schedule.breakerResetAt)) break;
+      failures += 1;
+    }
     if (failures >= threshold) {
       advance('circuit_open', false);
       return { scheduleId: schedule.id, outcome: 'circuit_open', consecutiveFailures: failures };
