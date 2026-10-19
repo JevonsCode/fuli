@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
 from fuli_graph.collaboration_context import read_collaboration_context
 from fuli_graph.knowledge_audit import record_knowledge_feedback, record_knowledge_usage
@@ -21,6 +22,7 @@ from fuli_graph.knowledge_management import revise_knowledge_item
 from fuli_graph.knowledge_usage_models import KnowledgeUsageCreate
 from fuli_graph.models import KnowledgeRevisionCreate
 from fuli_graph.provider_values import stable_uuid
+from sequential_driver_support import AsyncRows
 
 ACTOR = {'id': 'principal-1'}
 SPACE = 'personal-space'
@@ -206,11 +208,74 @@ async def test_explicit_human_confirmation_lifts_the_block_with_new_evidence_and
     assert await delivered(store) == [OLD_STYLE]
 
 
-async def use(store, task_id, item_id, use_kind):
+@pytest.mark.asyncio
+@pytest.mark.parametrize('item_kind', ['entity', 'relationship'])
+async def test_content_edit_that_raced_a_rejection_cannot_clear_the_block(item_kind):
+    graph = MemoryGraph()
+    graph.add_preference(OLD_STYLE, '写作风格：夸张排比', '写作时多用夸张排比。', item_kind=item_kind)
+    embedder = EmbeddingPause()
+    store = graph.store(embedder)
+    assert await promote(store, OLD_STYLE, item_kind) == 1
+    content = ({'name': '写作风格：排比'} if item_kind == 'entity'
+               else {'fact': '写作时用排比。'})
+    edit = KnowledgeRevisionCreate(personal_space_id=SPACE, item_kind=item_kind,
+                                   action='update', operation_actor='human',
+                                   reason='润色这条风格的措辞。', **content)
+
+    # The edit reads the item, then the user's rejection commits while the
+    # edit waits for its embedding.
+    async def rejection_lands():
+        await reject(store, OLD_STYLE, item_kind)
+    embedder.during = rejection_lands
+    with pytest.raises(HTTPException) as stale:
+        await revise_knowledge_item(store, ACTOR, OLD_STYLE, edit)
+
+    assert stale.value.status_code == 409
+    rejected = graph.items[OLD_STYLE]
+    block = json.loads(rejected['fuli_negative_feedback_block_json'])
+    assert block['reported_by_kind'] == 'user'
+    assert rejected['fuli_confirmation_status'] == 'pending'
+    assert rejected['fuli_negative_evidence_count'] == 1
+    assert graph.revisions == []
+    assert not [a for a in graph.audits.values() if a['action'] == 'human_change']
+    for task_id in ['task-4', 'task-5', 'task-6', 'task-7', 'task-8']:
+        assert (await use(store, task_id, OLD_STYLE, 'applied', item_kind)).promoted_count == 0
+    assert OLD_STYLE not in await delivered(store)
+
+    # Read again and retry: the edit lands on the rejected item and keeps the block.
+    revision = await revise_knowledge_item(store, ACTOR, OLD_STYLE, edit)
+    assert revision.previous['negativeFeedbackBlock'] == block
+    assert revision.current['negativeFeedbackBlock'] == block
+    assert json.loads(graph.items[OLD_STYLE]['fuli_negative_feedback_block_json']) == block
+    assert await promote(store, OLD_STYLE, item_kind) == 0
+    assert OLD_STYLE not in await delivered(store)
+
+
+async def use(store, task_id, item_id, use_kind, item_kind='entity'):
     return await record_knowledge_usage(store, ACTOR, KnowledgeUsageCreate(
         personal_space_id=SPACE, task_id=task_id, session_id=f'session-{task_id}',
         tool_name='record_knowledge_usage',
-        items=[{'item_id': item_id, 'item_kind': 'entity', 'use_kind': use_kind}],
+        items=[{'item_id': item_id, 'item_kind': item_kind, 'use_kind': use_kind}],
+    ))
+
+
+async def promote(store, item_id, item_kind='entity'):
+    """Five material uses across three tasks: the agent confirmation threshold."""
+    promoted = 0
+    for task_id, use_kind in [('task-1', 'applied'), ('task-1', 'cited'), ('task-2', 'applied'),
+                              ('task-2', 'cited'), ('task-3', 'applied')]:
+        promoted += (await use(store, task_id, item_id, use_kind, item_kind)).promoted_count
+    return promoted
+
+
+async def reject(store, item_id, item_kind='entity', task_id='task-correction'):
+    return await record_knowledge_feedback(store, ACTOR, KnowledgeFeedbackCreate(
+        personal_space_id=SPACE, task_id=task_id,
+        items=[{
+            'item_id': item_id, 'item_kind': item_kind, 'feedback_kind': 'rejected',
+            'reason': '用户否定了这条风格。', 'evidence_summary': 'Synthetic fixture.',
+            'reported_by_kind': 'user',
+        }],
     ))
 
 
@@ -237,9 +302,16 @@ class MemoryGraph:
 
     def add_preference(self, item_id, name, summary, *, preference_key=None, scope='global',
                        project_id=None, status='pending', negative_evidence_count=0,
-                       requires_attention=False):
+                       requires_attention=False, item_kind='entity'):
+        # A relationship keeps its rule text as the fact; its name is the relation type.
+        content = (
+            {'kind': 'entity', 'name': name, 'summary': summary}
+            if item_kind == 'entity' else
+            {'kind': 'relationship', 'name': 'PREFERS', 'fact': summary,
+             'source_name': name, 'target_name': 'Writing'}
+        )
         self.items[item_id] = {
-            'uuid': item_id, 'group_id': 'personal-group', 'name': name, 'summary': summary,
+            'uuid': item_id, 'group_id': 'personal-group', **content,
             'created_at': datetime(2026, 10, 1, tzinfo=UTC),
             'fuli_profile_aspect': 'taste', 'fuli_preference_scope': scope,
             'fuli_preference_project_id': project_id,
@@ -273,9 +345,9 @@ class MemoryGraph:
                    if a['action'] == action and a['item_id'] == item_id]
         return audit
 
-    def store(self):
+    def store(self, embedder=None):
         return SimpleNamespace(
-            runtime=SimpleNamespace(driver=self),
+            runtime=SimpleNamespace(driver=self, embedder=embedder or EmbeddingPause()),
             settings=SimpleNamespace(provider_mode='personal', graph_limit=500),
             _group_locks={},
             _require_personal=lambda: None,
@@ -300,19 +372,20 @@ class MemoryGraph:
             known = p['project_id'] in self.projects
             return [{'project': {'project_id': p['project_id']}}] if known else []
         if '[edge:RELATES_TO {group_id: $group_id}]' in query:
-            return []
+            return [_returned(query, self._view(item))
+                    for item in self._preferences(p, 'relationship')]
         if 'MATCH (node:Entity {group_id: $group_id})' in query and 'fuli_profile_aspect' in query:
-            return [_returned(query, self._view(item)) for item in self._preferences(p)]
+            return [_returned(query, self._view(item)) for item in self._preferences(p, 'entity')]
         item = self.items.get(p.get('item_id'))
         if 'AS has_open_conflict' in query or 'AS replaced_by_item_kind' in query:
             return [_returned(query, self._view(item))] if item else []
         if 'item.fuli_replaced_by_item_kind = $replaced_by_item_kind' in query:
-            return self._update_item(item, p)
+            return self._update_item(query, item, p)
         if 'CREATE (revision:FuliKnowledgeRevision' in query:
             self.revisions.append(dict(p))
             return []
         if "action: 'human_change'" in query:
-            return self._human_change(item, p)
+            return self._human_change(query, item, p)
         if "audit.action = 'knowledge_feedback'" in query:
             return self._feedback(query, item, p)
         if 'count(DISTINCT audit.task_id)' in query:
@@ -320,13 +393,14 @@ class MemoryGraph:
         if "audit.action = 'knowledge_used'" in query:
             return self._use(item, p)
         if 'item.fuli_qualified_use_count = $qualified_use_count' in query:
-            return self._usage_scores(item, p)
+            return self._usage_scores(query, item, p)
         raise AssertionError(f'MemoryGraph does not understand this query:\n{query}')
 
-    def _preferences(self, p):
+    def _preferences(self, p, kind):
         return [
             item for item in self.items.values()
-            if item.get('fuli_profile_aspect') and item.get('fuli_invalid_at') is None
+            if item['kind'] == kind
+            and item.get('fuli_profile_aspect') and item.get('fuli_invalid_at') is None
             and item['fuli_confirmation_status'] in {'confirmed', 'agent_confirmed'}
             and (item['fuli_preference_scope'] == 'global'
                  or (item['fuli_preference_scope'] == 'project'
@@ -335,10 +409,18 @@ class MemoryGraph:
 
     def _view(self, item):
         status = item.get('fuli_confirmation_status')
+        content = (
+            {'name': item['name'], 'type': 'Entity', 'title': item['name'],
+             'summary': item['summary'], 'instruction': item['summary']}
+            if item['kind'] == 'entity' else
+            {'type': item['name'], 'fact': item['fact'], 'instruction': item['fact'],
+             'source_id': 'source-entity', 'target_id': 'target-entity',
+             'source_name': item['source_name'], 'target_name': item['target_name']}
+        )
         return {
-            'id': item['uuid'], 'name': item['name'], 'type': 'Entity', 'title': item['name'],
-            'summary': item['summary'], 'instruction': item['summary'], 'key': item['uuid'],
+            'id': item['uuid'], **content, 'key': item['uuid'],
             'evidence_ids': [], 'created_at': item['created_at'],
+            'ai_review_lock_version': item.get('fuli_ai_review_lock_version', 0),
             'invalid_at': item.get('fuli_invalid_at'), 'has_open_conflict': False,
             'classification_state_explicit': item.get('fuli_origin_quadrant') is not None,
             'origin_quadrant': item.get('fuli_origin_quadrant') or 'known_known',
@@ -397,9 +479,10 @@ class MemoryGraph:
             'last_used_at': max((a['created_at'] for a in uses), default=None),
         }
 
-    def _usage_scores(self, item, p):
+    def _usage_scores(self, query, item, p):
         if item is None or item['fuli_usage_generation'] != p['usage_generation']:
             return []
+        _bump(query, item)
         item.update(
             fuli_utility_score=p['utility_score'], fuli_confidence_score=p['confidence_score'],
             fuli_qualified_use_count=p['qualified_use_count'],
@@ -417,6 +500,7 @@ class MemoryGraph:
     def _feedback(self, query, item, p):
         if item is None or item['fuli_usage_generation'] != p['usage_generation']:
             return []
+        _bump(query, item)
         recorded = p['audit_id'] not in self.audits
         if recorded:
             self.audits[p['audit_id']] = {
@@ -444,9 +528,20 @@ class MemoryGraph:
                 )
         return [_returned(query, {**self._view(item), 'recorded': recorded})]
 
-    def _update_item(self, item, p):
+    def _update_item(self, query, item, p):
+        previous_version = item.get('fuli_ai_review_lock_version', 0)
+        _bump(query, item)
+        compare_and_set = (
+            'WITH item WHERE item.fuli_ai_review_lock_version = $expected_lock_version + 1'
+            in ' '.join(query.split())
+        )
+        moved = item['fuli_ai_review_lock_version'] != p.get('expected_lock_version', 0) + 1
+        if compare_and_set and moved:
+            # Production raises here and its transaction rolls the bump back.
+            item['fuli_ai_review_lock_version'] = previous_version
+            return []
         for name in [
-            'name', 'summary', 'origin_quadrant', 'current_quadrant', 'epistemic_status',
+            'name', 'summary', 'fact', 'origin_quadrant', 'current_quadrant', 'epistemic_status',
             'confirmation_status', 'confirmation_basis_json', 'reasoning_summary',
             'profile_aspect', 'preference_scope', 'preference_project_id', 'inheritance_mode',
             'inherited_project_ids', 'utility_score', 'confidence_score', 'qualified_use_count',
@@ -455,11 +550,12 @@ class MemoryGraph:
             'replaced_by_item_id', 'replaced_by_item_kind', 'negative_feedback_block_json',
         ]:
             if name in p:
-                item[f'fuli_{name}' if name not in {'name', 'summary'} else name] = p[name]
+                item[name if name in {'name', 'summary', 'fact'} else f'fuli_{name}'] = p[name]
         item['fuli_invalid_at'] = p['invalid_at']
-        return []
+        return [{'item_id': item['uuid']}]
 
-    def _human_change(self, item, p):
+    def _human_change(self, query, item, p):
+        _bump(query, item)
         version = item.get('fuli_human_change_version', 0) + 1
         item.update(fuli_human_edited=True, fuli_human_change_version=version,
                     fuli_human_change_status='unseen')
@@ -475,21 +571,25 @@ class _MemoryTransaction:
         self.graph = graph
 
     async def run(self, query, **parameters):
-        return _Rows(self.graph._answer(query, parameters))
+        return AsyncRows(self.graph._answer(query, parameters))
 
 
-class _Rows:
-    def __init__(self, rows):
-        self.rows = iter(rows)
+class EmbeddingPause:
+    """No-network embedder; `during` runs while a write awaits its embedding."""
 
-    def __aiter__(self):
-        return self
+    def __init__(self):
+        self.during = None
 
-    async def __anext__(self):
-        try:
-            return next(self.rows)
-        except StopIteration:
-            raise StopAsyncIteration from None
+    async def create_batch(self, values):
+        during, self.during = self.during, None
+        if during:
+            await during()
+        return [[float(len(value))] for value in values]
+
+
+def _bump(query, item):
+    if 'item.fuli_ai_review_lock_version =' in query:
+        item['fuli_ai_review_lock_version'] = item.get('fuli_ai_review_lock_version', 0) + 1
 
 
 def _returned(query, view):

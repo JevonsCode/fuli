@@ -25,6 +25,7 @@ from fuli_graph.project_knowledge import (
     apply_knowledge_project_action,
     preview_knowledge_project_action,
 )
+from sequential_driver_support import SequentialDriver
 
 
 @pytest.mark.asyncio
@@ -50,7 +51,7 @@ async def test_entity_correction_preserves_a_revision_record_before_updating_cur
             'last_used_at': datetime(2026, 7, 28, tzinfo=timezone.utc),
             'usage_generation': 3,
         }],
-        [],
+        [{'item_id': 'written'}],  # the compare-and-set write matched
         [],
     ])
     store = StoreStub(driver)
@@ -86,6 +87,37 @@ async def test_entity_correction_preserves_a_revision_record_before_updating_cur
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('item_kind,content', [
+    ('entity', {'name': 'Corrected name'}),
+    ('relationship', {'fact': 'Corrected fact.'}),
+])
+async def test_revision_from_a_stale_read_is_refused_and_records_nothing(item_kind, content):
+    current = {
+        'name': 'Old name', 'summary': 'Old summary', 'type': 'PREFERS', 'fact': 'Old fact.',
+        'invalid_at': None, 'confirmation_status': 'pending',
+        'ai_review_lock_version': 7,
+    }
+    # The item moved after the read, so the compare-and-set write matches nothing.
+    driver = SequentialDriver([[current], []])
+
+    with pytest.raises(HTTPException) as stale:
+        await revise_knowledge_item(StoreStub(driver), {'id': 'principal-1'}, 'item-1',
+                                    KnowledgeRevisionCreate(
+            personal_space_id='personal-space', item_kind=item_kind, action='update',
+            reason='Correct the wording.', operation_actor='human', **content,
+        ))
+
+    assert stale.value.status_code == 409
+    query, parameters = driver.calls[1]
+    assert parameters['expected_lock_version'] == 7
+    assert (
+        'SET item.fuli_ai_review_lock_version = coalesce(item.fuli_ai_review_lock_version, 0) + 1 '
+        'WITH item WHERE item.fuli_ai_review_lock_version = $expected_lock_version + 1'
+    ) in ' '.join(query.split())
+    assert len(driver.calls) == 2, 'No revision record and no human-change audit.'
+
+
+@pytest.mark.asyncio
 async def test_legacy_item_can_establish_origin_once_but_cannot_rewrite_it_later():
     legacy_driver = SequentialDriver([
         [{
@@ -98,7 +130,7 @@ async def test_legacy_item_can_establish_origin_once_but_cannot_rewrite_it_later
             'confirmation_status': 'pending',
             'usage_generation': 1,
         }],
-        [],
+        [{'item_id': 'written'}],  # the compare-and-set write matched
         [],
     ])
     store = StoreStub(legacy_driver)
@@ -151,7 +183,7 @@ async def test_legacy_item_can_establish_origin_once_but_cannot_rewrite_it_later
 async def test_human_entity_correction_starts_an_unseen_agent_review_marker():
     driver = SequentialDriver([
         [{'name': 'Old name', 'summary': 'Old summary', 'invalid_at': None}],
-        [],
+        [{'item_id': 'written'}],  # the compare-and-set write matched
         [],
         [{'human_change_version': 1}],
     ])
@@ -190,7 +222,7 @@ async def test_single_confirmation_records_server_time_without_changing_content(
             'confirmation_status': 'pending',
             'confirmation_state_explicit': False,
         }],
-        [],
+        [{'item_id': 'written'}],  # the compare-and-set write matched
         [],
     ])
     store = StoreStub(driver)
@@ -275,7 +307,7 @@ async def test_historical_knowledge_can_link_to_a_current_replacement_with_audit
             'summary': 'The reviewed replacement.',
             'invalid_at': None,
         }],
-        [],
+        [{'item_id': 'written'}],  # the compare-and-set write matched
         [],
     ])
     store = StoreStub(driver)
@@ -800,16 +832,6 @@ def test_new_project_relation_points_from_extracted_child_to_original_parent():
     assert _relation_endpoints(
         'hotel-theme', 'activity-fulfillment', existing_request
     ) == ('hotel-theme', 'activity-fulfillment')
-
-
-class SequentialDriver:
-    def __init__(self, responses):
-        self.responses = iter(responses)
-        self.calls = []
-
-    async def execute_query(self, query, **parameters):
-        self.calls.append((query, parameters))
-        return next(self.responses), None, None
 
 
 class EmbedderStub:

@@ -12,6 +12,7 @@ from uuid import uuid4
 import pytest
 from neo4j import AsyncGraphDatabase
 
+from fuli_graph import knowledge_management
 from test_project_agent_memory_neo4j import fixture_settings, provider_client
 
 
@@ -61,10 +62,31 @@ async def seed_preference(settings, space_id, item_id, summary, *, key, status='
         attributes=json.dumps({'preferenceKey': key}), status=status, basis=json.dumps(basis))
 
 
-async def use(client, space_id, task_id, item_id, use_kind='applied'):
+async def seed_relationship(settings, space_id, item_id, fact):
+    basis = {
+        'existence_reason': 'Synthetic fixture preference.',
+        'quadrant_reason': 'Synthetic fixture quadrant.',
+        'proposed_by': {'kind': 'agent', 'label': 'Codex'},
+    }
+    await query(settings, '''
+        MATCH (space:FuliSpace {id: $space})
+        CREATE (source:Entity {uuid: $source, group_id: space.group_id, name: 'Style'})
+        CREATE (target:Entity {uuid: $target, group_id: space.group_id, name: 'Writing'})
+        CREATE (source)-[:RELATES_TO {uuid: $item, group_id: space.group_id, name: 'PREFERS',
+          fact: $fact, created_at: datetime('2026-10-01T00:00:00Z'),
+          fuli_profile_aspect: 'taste', fuli_preference_scope: 'global',
+          fuli_attributes_json: $attributes, fuli_origin_quadrant: 'known_known',
+          fuli_current_quadrant: 'known_known', fuli_epistemic_status: 'observed',
+          fuli_confirmation_status: 'pending', fuli_confirmation_basis_json: $basis,
+          fuli_usage_generation: 1}]->(target)
+        ''', space=space_id, item=item_id, source=str(uuid4()), target=str(uuid4()), fact=fact,
+        attributes=json.dumps({'preferenceKey': item_id}), basis=json.dumps(basis))
+
+
+async def use(client, space_id, task_id, item_id, use_kind='applied', item_kind='entity'):
     response = await client.post('/v1/knowledge/usage', json={
         'personal_space_id': space_id, 'task_id': task_id,
-        'items': [{'item_id': item_id, 'item_kind': 'entity', 'use_kind': use_kind}],
+        'items': [{'item_id': item_id, 'item_kind': item_kind, 'use_kind': use_kind}],
     })
     assert response.status_code == 200, response.text
     return response.json()
@@ -85,9 +107,10 @@ async def graph_suspension(client, space_id, item_id):
     return node['agent_authority_suspension']
 
 
-async def item_state(settings, item_id):
-    [state] = await query(settings, '''
-        MATCH (item:Entity {uuid: $item})
+async def item_state(settings, item_id, item_kind='entity'):
+    match = ('MATCH (item:Entity {uuid: $item})' if item_kind == 'entity'
+             else 'MATCH ()-[item:RELATES_TO {uuid: $item}]->()')
+    [state] = await query(settings, match + '''
         RETURN item.fuli_confirmation_status AS status,
                item.fuli_confirmation_basis_json AS basis,
                item.fuli_qualified_use_count AS uses,
@@ -206,3 +229,67 @@ async def test_neo4j_user_correction_is_not_revived_by_usage_and_lifts_only_on_c
         assert actions.count('knowledge_used') == 8
         assert 'human_change' in actions
         assert old in await delivered(client, space_id, 'novel')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('item_kind', ['entity', 'relationship'])
+async def test_neo4j_edit_that_raced_a_rejection_is_refused_and_cannot_clear_it(
+    item_kind, monkeypatch,
+):
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await personal_space(client)
+        item = f'raced-style-{uuid4()}'
+        if item_kind == 'entity':
+            await seed_preference(settings, space_id, item, 'Use dramatic parallelism.',
+                                  key=item)
+            content = {'name': 'Style, reworded'}
+        else:
+            await seed_relationship(settings, space_id, item, 'Use dramatic parallelism.')
+            content = {'fact': 'Use parallelism, reworded.'}
+        promoted = 0
+        for task_id, use_kind in [('task-1', 'applied'), ('task-1', 'cited'), ('task-2', 'applied'),
+                                  ('task-2', 'cited'), ('task-3', 'applied')]:
+            promoted += (await use(client, space_id, task_id, item, use_kind,
+                                   item_kind))['promoted_count']
+        assert promoted == 1
+        edit = {'personal_space_id': space_id, 'item_kind': item_kind, 'action': 'update',
+                'operation_actor': 'human', 'reason': 'Reword the style.', **content}
+
+        # The user's rejection commits after the edit read the item, while the
+        # edit is still computing its embedding.
+        computed_embedding = knowledge_management._updated_embedding
+
+        async def rejection_lands(*args):
+            rejected = await client.post('/v1/knowledge/feedback', json={
+                'personal_space_id': space_id, 'task_id': 'task-correction',
+                'items': [{
+                    'item_id': item, 'item_kind': item_kind, 'feedback_kind': 'rejected',
+                    'reason': 'The user rejected this style.',
+                    'evidence_summary': 'Synthetic fixture.', 'reported_by_kind': 'user',
+                }],
+            })
+            assert rejected.status_code == 200, rejected.text
+            return await computed_embedding(*args)
+
+        monkeypatch.setattr(knowledge_management, '_updated_embedding', rejection_lands)
+        stale = await client.patch(f'/v1/knowledge/items/{item}', json=edit)
+        monkeypatch.setattr(knowledge_management, '_updated_embedding', computed_embedding)
+
+        assert stale.status_code == 409, stale.text
+        blocked = await item_state(settings, item, item_kind)
+        assert blocked['status'] == 'pending' and blocked['negatives'] == 1
+        block = json.loads(blocked['block'])
+        assert block['reported_by_kind'] == 'user'
+        assert await query(settings, '''
+            MATCH (revision:FuliKnowledgeRevision {item_id: $item}) RETURN revision.id AS id
+            ''', item=item) == []
+        for task_id in ['task-4', 'task-5', 'task-6', 'task-7', 'task-8']:
+            fresh = await use(client, space_id, task_id, item, 'applied', item_kind)
+            assert fresh['promoted_count'] == 0
+        assert item not in await delivered(client, space_id, 'novel')
+
+        retried = await client.patch(f'/v1/knowledge/items/{item}', json=edit)
+        assert retried.status_code == 200, retried.text
+        assert retried.json()['previous']['negativeFeedbackBlock'] == block
+        assert json.loads((await item_state(settings, item, item_kind))['block']) == block
