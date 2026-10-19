@@ -16,6 +16,20 @@ import { isMainModule } from '../../system/main-module.js';
 import { readHookInput } from '../lifecycle-input.js';
 import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 
+// Task entry gets longer: a warm entry already takes 2–4 s on a Mac and a cold
+// first one ran past 5 s, which costs the model two fallback requests. Both
+// stay well inside the host's 30 s hook timeout.
+const ENTRY_TIMEOUT_MS = 15_000;
+const OTHER_TIMEOUT_MS = 5_000;
+
+export function codexHookTimeoutMs(args) {
+  const event = args[args.indexOf('--event') + 1];
+  const limit = event === 'UserPromptSubmit' ? ENTRY_TIMEOUT_MS : OTHER_TIMEOUT_MS;
+  const configured = Number(args[args.indexOf('--timeout-ms') + 1]);
+  return args.includes('--timeout-ms') && Number.isSafeInteger(configured) && configured > 0
+    ? Math.min(configured, limit) : limit;
+}
+
 export async function codexStopLifecycleOutput(input, invoke) {
   const sessionId = input?.session_id;
   if (typeof sessionId !== 'string' || !sessionId.trim() || sessionId.length > 256) {
@@ -109,8 +123,10 @@ async function closeQuietly(resource) {
 }
 
 
-function codexLifecycleUnavailable(event, input) {
-  const warning = 'Fuli context is unavailable. Continue with the user request; saved context and checkpoint were not verified.';
+// The cause says whether the hook ran out of time or failed, so a report can
+// tell a slow first start from a broken install without exposing details.
+function codexLifecycleUnavailable(event, input, cause) {
+  const warning = `Fuli context is unavailable (${cause}). Continue with the user request; saved context and checkpoint were not verified.`;
   const sessionId = input?.session_id;
   if (event !== 'UserPromptSubmit' || typeof sessionId !== 'string' || !sessionId.trim() || sessionId.length > 256) {
     return { systemMessage: warning };
@@ -125,9 +141,7 @@ function codexLifecycleUnavailable(event, input) {
 
 export async function runCodexLifecycleCommand(args, dependencies = {}) {
   const event = args[args.indexOf('--event') + 1];
-  const configured = Number(args[args.indexOf('--timeout-ms') + 1]);
-  const timeoutMs = args.includes('--timeout-ms') && Number.isSafeInteger(configured) && configured > 0
-    ? Math.min(configured, 5000) : 5000;
+  const timeoutMs = codexHookTimeoutMs(args);
   const controller = new AbortController();
   let emitted = false;
   const write = value => {
@@ -137,13 +151,13 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
   };
   let input = null;
   const readInput = dependencies.readInput ?? readHookInput;
-  const unavailable = () => `${JSON.stringify(codexLifecycleUnavailable(event, input))}\n`;
+  const unavailable = cause => `${JSON.stringify(codexLifecycleUnavailable(event, input, cause))}\n`;
   let cleanup = async () => {};
   let deadline;
   const expired = new Promise(resolve => {
     deadline = setTimeout(async () => {
       controller.abort();
-      write(unavailable());
+      write(unavailable(`no answer within ${timeoutMs} ms`));
       // A broken dependency must not hold the host open. Give opened leases
       // and connections a bounded chance to close before the process exits.
       let grace;
@@ -158,7 +172,7 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
       readInput: async () => { input = await readInput(); return input; },
       onCleanup: close => { cleanup = close; } }).then(() => ({ timedOut: false }), () => {
       // Never print prompts, transcripts, paths or credentials.
-      write(unavailable());
+      write(unavailable('the hook failed'));
       return { timedOut: false };
     });
     return await Promise.race([running, expired]);
