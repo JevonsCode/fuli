@@ -23,7 +23,7 @@ function readStoredPalette(): Palette {
 
 function applyToDocument(value: Palette) {
   if (typeof document === 'undefined') return
-  // palettes.css re-points the tokens for this attribute; the default has none.
+  // styles/theme/skins.css re-points the semantic tokens for this attribute; the default has none.
   if (value === DEFAULT_PALETTE) delete document.documentElement.dataset.palette
   else document.documentElement.dataset.palette = value
 }

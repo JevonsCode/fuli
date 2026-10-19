@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 
 import { ApiError } from '@/api/client'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
@@ -64,8 +64,8 @@ async function create() {
       </label>
     </div>
     <template #footer>
-      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</UiButton>
-      <UiButton variant="primary" type="submit" :busy="busy" :busy-label="t('projects.createDialog.creating')">{{ t('projects.createDialog.create') }}</UiButton>
+      <Button variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</Button>
+      <Button type="submit" :loading="busy" :loading-label="t('projects.createDialog.creating')">{{ t('projects.createDialog.create') }}</Button>
     </template>
   </UiDialog>
 </template>

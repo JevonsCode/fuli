@@ -1,5 +1,9 @@
 import { transcriptGuardFailureMessage, withTranscriptGuard } from './transcript-guard.js';
-import { syncConversationTranscript, claimTranscriptBoundary, recordTranscriptTaskEntry, withTranscriptNotice } from './sync-transcript.js';
+import { syncConversationTranscript, claimTranscriptBoundary, recordTranscriptTaskEntry, transcriptCaptureScope,
+  withTranscriptNotice } from './sync-transcript.js';
+import { captureDecision, captureSettingsVersion } from '../graphiti/capture-decision.js';
+import { transcriptCaptureLedger, UNATTRIBUTABLE } from './transcript-capture-gap.js';
+import { captureNotice } from '../graphiti/capture-notice.js';
 import { recoverFailedTranscriptEntry } from './fallback-transcript-boundary.js';
 import { captureWindow, withCaptureBudget } from './capture-window.js';
 
@@ -9,7 +13,23 @@ import { captureWindow, withCaptureBudget } from './capture-window.js';
 export async function transcriptLifecycle({ application, runtimeConfigPath, input, sourceApplication, event, adapter, run,
   captureTimeoutMs = 750, signal }) {
   const entry = event === 'UserPromptSubmit';
-  const enabled = application.getCapturePolicy?.(sourceApplication).enabled;
+  const captureCheck = captureDecision(application, transcriptCaptureScope(input, sourceApplication));
+  const enabled = captureCheck.allowed;
+  // Each entry says when automatic recording is off (rec#11 D-01); Stop stays
+  // quiet. A hook that skipped a stretch because the settings changed says so.
+  const notice = entry ? captureNotice(captureCheck.reason) : null;
+  const withCaptureNotice = (value, skipped) => {
+    const lines = [notice, captureNotice(skipped)].filter(Boolean).map(text => `Fuli: ${text}`);
+    return lines.length ? { ...value, systemMessage: [value.systemMessage, ...lines].filter(Boolean).join('\n') } : value;
+  };
+  // Turns written while the capture settings changed since this session last
+  // synchronized are skipped, not imported (transcript-capture-gap.js).
+  const settings = captureSettingsVersion(application);
+  const ledger = input?.session_id ? transcriptCaptureLedger(runtimeConfigPath, input, sourceApplication) : null;
+  const notRecorded = enabled && (!ledger || await ledger.unattributable(settings)) ? UNATTRIBUTABLE : null;
+  const settle = sync => {
+    if (ledger && (!enabled || ['saved', 'ready'].includes(sync?.status))) ledger.record(settings);
+  };
   let started = false, output, context;
   const invoke = async () => {
     started = true;
@@ -23,7 +43,9 @@ export async function transcriptLifecycle({ application, runtimeConfigPath, inpu
         catch { return { status: 'unsaved', entryBlocked: entry, code: 'transcript_capture_timeout',
           reason: 'Native transcript import was deferred; preferences and current task context are independent' }; }
       };
-      let sync = await capture((app, held) => syncConversationTranscript(app, input, sourceApplication, adapter, held));
+      let sync = await capture((app, held) => syncConversationTranscript(app, input, sourceApplication, adapter, held,
+        { notRecorded }));
+      const skipped = sync.skipped ?? null;
       if (entry && sync.entryBlocked) {
         await invoke();
         // Only a held guard and the fresh entry's exact native ownership can
@@ -51,7 +73,8 @@ export async function transcriptLifecycle({ application, runtimeConfigPath, inpu
           return claimTranscriptBoundary(app, input, sourceApplication, sync, adapter, entryGuard ? held : null);
         });
       }
-      return withTranscriptNotice(output, sync);
+      settle(sync);
+      return withCaptureNotice(withTranscriptNotice(output, sync), skipped);
     });
   } catch (error) {
     // An entry failure is a real entry failure. Never retry it and accidentally

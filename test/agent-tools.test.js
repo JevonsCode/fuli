@@ -509,7 +509,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'taste-skill', 'resolve-preference-conflict',
     'capture', 'workflow-observation', 'decision-trace', 'search', 'connected-search',
-    'knowledge-usage', 'knowledge-feedback',
+    'get-capture-policy', 'knowledge-usage', 'get-capture-policy', 'knowledge-feedback',
     'current-project-search', 'common-candidates', 'personal-global-candidates',
     'preview-personal-global-decision',
     'preview-common-promotion', 'apply-common-promotion',
@@ -542,7 +542,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'start-knowledge-review', 'knowledge-review-candidates',
     'knowledge-review-progress', 'finish-knowledge-review',
     'workflow-candidates', 'workflow-recommendations',
-    'revise-knowledge', 'reassign-knowledge', 'preview-project-action',
+    'get-capture-policy', 'revise-knowledge', 'reassign-knowledge', 'preview-project-action',
     'apply-project-action',
     'publish-project', 'project-releases', 'create-relation', 'relations', 'review-relation',
     'personal-review', 'review-draft',
@@ -585,6 +585,6 @@ test('disabled capture policy also prevents automatic personal-project creation'
   }, 'upsert_personal_project', { personalProjectId: 'new-project' });
 
   assert.equal(result.status, 'capture_disabled');
-  assert.equal(result.capturePolicy.enabled, false);
+  assert.equal(result.reason, 'global_off');
   assert.equal(writes, 0);
 });

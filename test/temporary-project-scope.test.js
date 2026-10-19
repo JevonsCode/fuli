@@ -149,7 +149,7 @@ test('task-only employee captures project candidates without writing long-term A
   const calls = [];
   const application = {
     config: { personal: { spaceId: 'space-a' } },
-    getCapturePolicy: () => ({ enabled: false }),
+    getCapturePolicy: () => ({ enabled: true }),
     validateCaptureSessionKnowledge: value => calls.push(['validate', value]),
     captureSessionKnowledge: async value => { calls.push(['capture', value]); return { status: 'committed' }; },
     taskContextRegistry: {

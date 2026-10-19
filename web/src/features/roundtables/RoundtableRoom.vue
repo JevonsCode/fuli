@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { t } from '@/i18n'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import type { RoundtableChatPage } from './roundtable-api'
 import { chatRoomName } from './roundtable-model'
 import { gapToEnd, scrollToEnd, TAIL_FOLLOW_PX } from './roundtable-scroll'
@@ -112,11 +112,11 @@ onBeforeUnmount(() => document.removeEventListener('scroll', reachedEnd, { captu
       <p v-if="laterFailed" role="alert" class="inline-error roundtable-chat-more">{{ t('roundtable.loadFailed') }}</p>
       <p v-if="laterStuck" role="status" class="ui-meta roundtable-chat-more" data-roundtable-later-stuck>{{ t('roundtable.laterStuck') }}</p>
       <p v-if="newMessages" role="status" class="roundtable-chat-more" data-roundtable-new-messages>{{ t('roundtable.newMessages') }}</p>
-      <UiButton v-if="room.hasMore || newMessages" class="roundtable-chat-more" size="sm" variant="ghost" :busy="loadingLater"
-        :busy-label="t('roundtable.loadingLater')" data-roundtable-later @click="later">
-        {{ newMessages ? t('roundtable.loadNewMessages') : t('roundtable.laterMessages') }}</UiButton>
-      <UiButton v-if="unseen" class="roundtable-chat-jump" size="sm" data-roundtable-jump @click="jumpToUnseen">
-        {{ t('roundtable.jumpToNew', { count: unseen.count }) }}</UiButton>
+      <Button v-if="room.hasMore || newMessages" class="roundtable-chat-more" size="sm" variant="ghost" :loading="loadingLater"
+        :loading-label="t('roundtable.loadingLater')" data-roundtable-later @click="later">
+        {{ newMessages ? t('roundtable.loadNewMessages') : t('roundtable.laterMessages') }}</Button>
+      <Button variant="outline" v-if="unseen" class="roundtable-chat-jump" size="sm" data-roundtable-jump @click="jumpToUnseen">
+        {{ t('roundtable.jumpToNew', { count: unseen.count }) }}</Button>
     </div>
   </article>
 </template>

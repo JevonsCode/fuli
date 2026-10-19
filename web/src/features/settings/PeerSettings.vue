@@ -3,7 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { ApiError, getJson, postJson, putJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
 
@@ -205,9 +205,9 @@ function shareState(projectId: string) {
     <GrowthLoading v-if="loading" variant="compact" :label="t('settings.peer.loading')" />
     <div v-if="error" class="peer-alert" role="alert">
       <span>{{ error }}</span>
-      <UiButton size="sm" data-retry-peer :busy="loading" :busy-label="t('settings.peer.loading')" @click="load">
+      <Button variant="outline" size="sm" data-retry-peer :loading="loading" :loading-label="t('settings.peer.loading')" @click="load">
         {{ t('settings.peer.retry') }}
-      </UiButton>
+      </Button>
     </div>
 
     <template v-if="status && !paired">
@@ -223,10 +223,10 @@ function shareState(projectId: string) {
             <span>{{ t('settings.peer.hostName') }}</span>
             <input v-model="hostName" type="text" maxlength="60" :disabled="Boolean(busy)" />
           </label>
-          <UiButton variant="primary" size="sm" data-host-peer :disabled="!hostAddress"
-            :busy="busy === 'host'" :busy-label="t('settings.peer.hosting')" @click="host">
+          <Button size="sm" data-host-peer :disabled="!hostAddress"
+            :loading="busy === 'host'" :loading-label="t('settings.peer.hosting')" @click="host">
             {{ t('settings.peer.hostAction') }}
-          </UiButton>
+          </Button>
         </div>
       </section>
       <section class="peer-block">
@@ -245,10 +245,10 @@ function shareState(projectId: string) {
           <div><p>{{ t('settings.peer.coordinatorFingerprint') }}</p><code>{{ joiningDevice.shortFingerprint }}</code></div>
           <p>{{ t('settings.peer.compare') }}</p>
         </div>
-        <UiButton variant="primary" size="sm" data-join-peer :disabled="!joinInvitation.trim() || status.remoteRemovalPending"
-          :busy="busy === 'join' || busy === 'preview'" :busy-label="t(joiningDevice ? 'settings.peer.joining' : 'settings.peer.previewing')" @click="join">
+        <Button size="sm" data-join-peer :disabled="!joinInvitation.trim() || status.remoteRemovalPending"
+          :loading="busy === 'join' || busy === 'preview'" :loading-label="t(joiningDevice ? 'settings.peer.joining' : 'settings.peer.previewing')" @click="join">
           {{ t(joiningDevice ? 'settings.peer.joinAction' : 'settings.peer.previewAction') }}
-        </UiButton>
+        </Button>
       </section>
     </template>
 
@@ -265,14 +265,14 @@ function shareState(projectId: string) {
       </dl>
 
       <section v-if="coordinator" class="peer-block">
-        <UiButton size="sm" data-invite-peer :busy="busy === 'invite'" :busy-label="t('settings.peer.inviting')" @click="invite">
+        <Button variant="outline" size="sm" data-invite-peer :loading="busy === 'invite'" :loading-label="t('settings.peer.inviting')" @click="invite">
           {{ t('settings.peer.invite') }}
-        </UiButton>
+        </Button>
         <p>{{ t('settings.peer.inviteHint') }}</p>
         <template v-if="invitation">
           <textarea :value="invitation.invitation" readonly rows="4" spellcheck="false" :aria-label="t('settings.peer.invitation')" />
           <div class="peer-actions">
-            <UiButton size="sm" data-copy-invite @click="copyInvite">{{ t('settings.peer.copyInvite') }}</UiButton>
+            <Button variant="outline" size="sm" data-copy-invite @click="copyInvite">{{ t('settings.peer.copyInvite') }}</Button>
             <p v-if="inviteFeedback" role="status">{{ t(`settings.peer.${inviteFeedback === 'copied' ? 'copied' : 'copyManual'}`) }}</p>
           </div>
         </template>
@@ -308,10 +308,10 @@ function shareState(projectId: string) {
             </label>
           </li>
         </ul>
-        <UiButton v-if="status.shareable.length" variant="primary" size="sm" data-save-shares
-          :busy="busy === 'shares'" :busy-label="t('settings.peer.savingShares')" @click="saveShares">
+        <Button v-if="status.shareable.length" size="sm" data-save-shares
+          :loading="busy === 'shares'" :loading-label="t('settings.peer.savingShares')" @click="saveShares">
           {{ t('settings.peer.saveShares') }}
-        </UiButton>
+        </Button>
       </section>
 
       <section v-if="coordinator && otherDevices.length" class="peer-block">
@@ -322,19 +322,19 @@ function shareState(projectId: string) {
               <strong>{{ device.name }}</strong>
               <small>{{ device.shortFingerprint }} · {{ device.online ? t('settings.peer.online') : t('settings.peer.offline') }}</small>
             </div>
-            <UiButton size="sm" variant="danger" :data-revoke="device.nodeId"
-              :busy="busy === `revoke:${device.nodeId}`" :busy-label="t('settings.peer.revoking')"
+            <Button size="sm" variant="destructive" :data-revoke="device.nodeId"
+              :loading="busy === `revoke:${device.nodeId}`" :loading-label="t('settings.peer.revoking')"
               @click="revoke(device.nodeId)">
               {{ t('settings.peer.revoke') }}
-            </UiButton>
+            </Button>
           </li>
         </ul>
       </section>
 
       <p>{{ t('settings.peer.disableHint') }}</p>
-      <UiButton size="sm" data-disable-peer :busy="busy === 'disable'" :busy-label="t('settings.peer.disabling')" @click="disable">
+      <Button variant="outline" size="sm" data-disable-peer :loading="busy === 'disable'" :loading-label="t('settings.peer.disabling')" @click="disable">
         {{ t('settings.peer.disable') }}
-      </UiButton>
+      </Button>
     </template>
   </UiDisclosure>
 </template>

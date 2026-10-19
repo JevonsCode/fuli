@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-// Colours live in tokens.css (and palettes.css re-points them), so a palette
+// Colours live in the theme token files (styles/theme, styles/tokens.css), so a skin
 // or theme recolours every page. Components and scripts name tokens only.
 const sources = import.meta.glob<string>(['../**/*.vue', '../**/*.ts', '!../**/*.spec.ts'], { query: '?raw', import: 'default', eager: true })
 const COLOUR_LITERAL = /#[0-9a-fA-F]{3,8}\b|\brgba?\(\s*\d|\bhsla?\(\s*\d/g

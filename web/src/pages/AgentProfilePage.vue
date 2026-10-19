@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import ActivityOriginBadge from "@/features/agent-profile/ActivityOriginBadge.vue";
 import { employeeAvatarUrl } from "@/features/employees/avatars";
 import { agentIdentityStyle } from "@/features/agent-profile/agent-identity-color";
@@ -315,9 +315,9 @@ onMounted(() => {
       role="alert"
     >
       <p>{{ error || t("agentProfiles.loadError") }}</p>
-      <UiButton size="sm" variant="ghost" @click="store.state ? load() : store.refresh()">
+      <Button size="sm" variant="ghost" @click="store.state ? load() : store.refresh()">
         {{ t("agentProfiles.retry") }}
-      </UiButton>
+      </Button>
     </div>
     <p v-else-if="!agent" class="ui-card ui-empty agent-profile-empty">
       {{ t("agentProfiles.unavailable") }}
@@ -360,29 +360,29 @@ onMounted(() => {
           </div>
         </div>
         <div class="agent-profile-actions">
-          <RouterLink
-            v-if="workbench"
-            class="quiet-button"
-            :to="`/employees/${encodeURIComponent(workbench.id)}`"
-          >
-            {{ t("agentProfiles.workbench") }}
-          </RouterLink>
-          <UiButton size="sm" variant="ghost"
+          <Button v-if="workbench" as-child variant="outline">
+            <RouterLink
+              :to="`/employees/${encodeURIComponent(workbench.id)}`"
+            >
+              {{ t("agentProfiles.workbench") }}
+            </RouterLink>
+          </Button>
+          <Button size="sm" variant="ghost"
             :aria-expanded="showSettings"
             @click="showSettings = !showSettings"
           >
             {{ t("agentProfiles.settings") }}
-          </UiButton>
-          <RouterLink
-            v-if="!isAr"
-            class="quiet-button"
-            :to="{
-              path: '/employees/bole',
-              query: { q: agentDisplayName(agent) },
-            }"
-          >
-            {{ t("agentProfiles.askHR") }}
-          </RouterLink>
+          </Button>
+          <Button v-if="!isAr" as-child variant="outline">
+            <RouterLink
+              :to="{
+                path: '/employees/bole',
+                query: { q: agentDisplayName(agent) },
+              }"
+            >
+              {{ t("agentProfiles.askHR") }}
+            </RouterLink>
+          </Button>
         </div>
       </header>
 
@@ -780,16 +780,17 @@ onMounted(() => {
           <h2>{{ t("agentProfiles.advanced") }}</h2>
           <p class="agent-muted">{{ t("agentProfiles.locked") }}</p>
           <div class="agent-profile-management-links">
-            <RouterLink
-              class="quiet-button"
-              data-open-management
-              :to="{
-                path: '/project-agents/manage',
-                query: { agent: agent.agentId },
-              }"
-            >
-              {{ t("agentProfiles.openManagement") }}
-            </RouterLink>
+            <Button as-child variant="outline">
+              <RouterLink
+                data-open-management
+                :to="{
+                  path: '/project-agents/manage',
+                  query: { agent: agent.agentId },
+                }"
+              >
+                {{ t("agentProfiles.openManagement") }}
+              </RouterLink>
+            </Button>
           </div>
         </section>
       </section>

@@ -10,7 +10,7 @@ function scenario() {
     personalProjectId: 'synthetic-project', projectAgentId: 'synthetic-worker',
     sourceApplication: 'codex', workLogRequired: true });
   const app = { taskContextRegistry, config: { personal: { spaceId: 'synthetic-space' } },
-    listProjectAgents: async () => [] };
+    getCapturePolicy: () => ({ enabled: true }), listProjectAgents: async () => [] };
   return { app, task,
     input: { taskContextToken: task.token, sourceApplication: 'codex',
       disposition: 'retain_nothing', reason: 'No new confirmed knowledge.' } };

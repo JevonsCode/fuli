@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from .knowledge_audit import record_human_change
 from .knowledge_records import assignment_record
 from .personal_project_access import authorize_personal_project
+from .store_transactions import query_store_transaction
 from .models import (
     ConfirmationBasis,
     KnowledgeAssignmentChange,
@@ -15,6 +16,7 @@ from .models import (
     KnowledgeRevisionRecord,
 )
 from .provider_values import (
+    json_object,
     native_datetime as _native_datetime,
     stable_uuid as _stable_uuid,
 )
@@ -124,14 +126,47 @@ async def revise_knowledge_item(store, actor: dict, item_id: str, request: Knowl
     created_at = datetime.now(timezone.utc)
     next_value = _next_snapshot(previous, request, created_at)
     embedding = await _updated_embedding(store, previous, next_value, request)
-    await _update_item(
-        store, space, item_id, request.item_kind, next_value, embedding
-    )
-
     revision_id = _stable_uuid(
         space['id'], 'knowledge-revision', request.item_kind, item_id,
         created_at.isoformat(), actor['id']
     )
+    # The revision was computed from `current`. If anything wrote the item
+    # since (a rejection, usage, another edit), the write is refused and
+    # nothing below is kept, instead of replaying the stale snapshot over it.
+    async with query_store_transaction(store) as scoped:
+        await _update_item(
+            scoped, space, item_id, request.item_kind, next_value, embedding,
+            expected_lock_version=int(current.get('ai_review_lock_version') or 0),
+        )
+        await _record_revision(
+            scoped, actor, space, item_id, request, revision_id,
+            previous, next_value, created_at,
+        )
+        if request.operation_actor == 'human':
+            await record_human_change(
+                scoped,
+                actor,
+                space,
+                item_id,
+                request.item_kind,
+                reason=request.reason,
+                operation=f'knowledge_{request.action}',
+            )
+    return KnowledgeRevisionRecord(
+        id=revision_id,
+        item_id=item_id,
+        item_kind=request.item_kind,
+        action=request.action,
+        reason=request.reason,
+        previous=previous,
+        current=next_value,
+        created_at=created_at,
+    )
+
+
+async def _record_revision(
+    store, actor, space, item_id, request, revision_id, previous, current, created_at,
+):
     await store.runtime.driver.execute_query(
         '''
         MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
@@ -156,28 +191,8 @@ async def revise_knowledge_item(store, actor: dict, item_id: str, request: Knowl
         action=request.action,
         reason=request.reason,
         previous_json=json.dumps(previous, ensure_ascii=False, sort_keys=True),
-        current_json=json.dumps(next_value, ensure_ascii=False, sort_keys=True),
+        current_json=json.dumps(current, ensure_ascii=False, sort_keys=True),
         created_by=actor['id'],
-        created_at=created_at,
-    )
-    if request.operation_actor == 'human':
-        await record_human_change(
-            store,
-            actor,
-            space,
-            item_id,
-            request.item_kind,
-            reason=request.reason,
-            operation=f'knowledge_{request.action}',
-        )
-    return KnowledgeRevisionRecord(
-        id=revision_id,
-        item_id=item_id,
-        item_kind=request.item_kind,
-        action=request.action,
-        reason=request.reason,
-        previous=previous,
-        current=next_value,
         created_at=created_at,
     )
 
@@ -429,8 +444,12 @@ async def _read_item(store, space: dict, item_id: str, item_kind: str):
                  AS requires_attention,
                item.fuli_last_feedback_kind AS last_feedback_kind,
                item.fuli_last_feedback_at AS last_feedback_at,
+               item.fuli_negative_feedback_block_json
+                 AS negative_feedback_block_json,
                item.fuli_replaced_by_item_id AS replaced_by_item_id,
-               item.fuli_replaced_by_item_kind AS replaced_by_item_kind
+               item.fuli_replaced_by_item_kind AS replaced_by_item_kind,
+               coalesce(item.fuli_ai_review_lock_version, 0)
+                 AS ai_review_lock_version
         '''
     else:
         query = '''
@@ -471,8 +490,12 @@ async def _read_item(store, space: dict, item_id: str, item_kind: str):
                  AS requires_attention,
                item.fuli_last_feedback_kind AS last_feedback_kind,
                item.fuli_last_feedback_at AS last_feedback_at,
+               item.fuli_negative_feedback_block_json
+                 AS negative_feedback_block_json,
                item.fuli_replaced_by_item_id AS replaced_by_item_id,
-               item.fuli_replaced_by_item_kind AS replaced_by_item_kind
+               item.fuli_replaced_by_item_kind AS replaced_by_item_kind,
+               coalesce(item.fuli_ai_review_lock_version, 0)
+                 AS ai_review_lock_version
         '''
     records, _, _ = await store.runtime.driver.execute_query(
         query,
@@ -576,6 +599,9 @@ def _snapshot(value: dict, item_kind: str) -> dict:
         'requiresAttention': value.get('requires_attention') is True,
         'lastFeedbackKind': value.get('last_feedback_kind'),
         'lastFeedbackAt': _iso(value.get('last_feedback_at')),
+        'negativeFeedbackBlock': (
+            json_object(value.get('negative_feedback_block_json')) or None
+        ),
         'replacedByItemId': value.get('replaced_by_item_id'),
         'replacedByItemKind': value.get('replaced_by_item_kind'),
     }
@@ -710,6 +736,10 @@ def _next_snapshot(previous: dict, request: KnowledgeRevisionCreate, changed_at:
         value['invalidAt'] = None
         value['replacedByItemId'] = None
         value['replacedByItemKind'] = None
+    if value.get('confirmationStatus') == 'confirmed':
+        # A person's explicit confirmation is the only thing that lifts a
+        # negative-feedback block; the revision's previous value keeps it.
+        value['negativeFeedbackBlock'] = None
     return value
 
 
@@ -722,13 +752,20 @@ async def _updated_embedding(store, previous: dict, current: dict, request):
     return (await store.runtime.embedder.create_batch([current[key]]))[0]
 
 
-async def _update_item(store, space, item_id, item_kind, value, embedding):
+async def _update_item(
+    store, space, item_id, item_kind, value, embedding, *, expected_lock_version,
+):
+    # Every item writer bumps fuli_ai_review_lock_version. Bumping it first
+    # takes Neo4j's write lock before the read, so the WHERE sees the latest
+    # committed version and only an unchanged item is overwritten. The caller's
+    # transaction rolls the bump back when the version moved.
     invalid_at = _parse_datetime(value.get('invalidAt'))
     if item_kind == 'entity':
         query = '''
         MATCH (item:Entity {uuid: $item_id, group_id: $group_id})
         SET item.fuli_ai_review_lock_version =
               coalesce(item.fuli_ai_review_lock_version, 0) + 1
+        WITH item WHERE item.fuli_ai_review_lock_version = $expected_lock_version + 1
         SET item.name = $name,
             item.summary = $summary,
             item.fuli_invalid_at = $invalid_at,
@@ -753,9 +790,11 @@ async def _update_item(store, space, item_id, item_kind, value, embedding):
             item.fuli_requires_attention = $requires_attention,
             item.fuli_last_feedback_kind = $last_feedback_kind,
             item.fuli_last_feedback_at = $last_feedback_at,
+            item.fuli_negative_feedback_block_json = $negative_feedback_block_json,
             item.fuli_replaced_by_item_id = $replaced_by_item_id,
             item.fuli_replaced_by_item_kind = $replaced_by_item_kind,
             item.name_embedding = coalesce($embedding, item.name_embedding)
+        RETURN item.uuid AS item_id
         '''
         parameters = {'name': value['name'], 'summary': value['summary']}
     else:
@@ -763,6 +802,7 @@ async def _update_item(store, space, item_id, item_kind, value, embedding):
         MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()
         SET item.fuli_ai_review_lock_version =
               coalesce(item.fuli_ai_review_lock_version, 0) + 1
+        WITH item WHERE item.fuli_ai_review_lock_version = $expected_lock_version + 1
         SET item.fact = $fact,
             item.invalid_at = $invalid_at,
             item.fuli_origin_quadrant = $origin_quadrant,
@@ -786,15 +826,18 @@ async def _update_item(store, space, item_id, item_kind, value, embedding):
             item.fuli_requires_attention = $requires_attention,
             item.fuli_last_feedback_kind = $last_feedback_kind,
             item.fuli_last_feedback_at = $last_feedback_at,
+            item.fuli_negative_feedback_block_json = $negative_feedback_block_json,
             item.fuli_replaced_by_item_id = $replaced_by_item_id,
             item.fuli_replaced_by_item_kind = $replaced_by_item_kind,
             item.fact_embedding = coalesce($embedding, item.fact_embedding)
+        RETURN item.uuid AS item_id
         '''
         parameters = {'fact': value['fact']}
-    await store.runtime.driver.execute_query(
+    records, _, _ = await store.runtime.driver.execute_query(
         query,
         item_id=item_id,
         group_id=space['group_id'],
+        expected_lock_version=expected_lock_version,
         invalid_at=invalid_at,
         origin_quadrant=value['originQuadrant'],
         current_quadrant=value['currentQuadrant'],
@@ -826,11 +869,24 @@ async def _update_item(store, space, item_id, item_kind, value, embedding):
         requires_attention=value.get('requiresAttention') is True,
         last_feedback_kind=value.get('lastFeedbackKind'),
         last_feedback_at=_parse_datetime(value.get('lastFeedbackAt')),
+        negative_feedback_block_json=(
+            json.dumps(
+                value['negativeFeedbackBlock'],
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            if value.get('negativeFeedbackBlock') else None
+        ),
         replaced_by_item_id=value.get('replacedByItemId'),
         replaced_by_item_kind=value.get('replacedByItemKind'),
         embedding=embedding,
         **parameters,
     )
+    if not records:
+        raise HTTPException(
+            status_code=409,
+            detail='knowledge changed while it was being revised; read it again',
+        )
 
 
 def _confirmation_basis(value) -> ConfirmationBasis | None:

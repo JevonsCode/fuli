@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { computed, ref, watch } from 'vue'
 import { getJson, patchJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -318,19 +318,19 @@ function stringValue(value: unknown) {
             <div class="sub-team-members">
               <label v-for="agent in groupMemberOptions(group)" :key="agent.agentId"><input v-model="group.memberAgentIds" type="checkbox" :value="agent.agentId" />{{ label(agent) }}</label>
             </div>
-            <UiButton size="sm" variant="ghost" @click="removeSubTeam(group)">{{ t('projectAgents.team.removeSubTeam') }}</UiButton>
+            <Button size="sm" variant="ghost" @click="removeSubTeam(group)">{{ t('projectAgents.team.removeSubTeam') }}</Button>
           </div>
-          <UiButton size="sm" data-sub-team-add @click="addSubTeam">{{ t('projectAgents.team.addSubTeam') }}</UiButton>
+          <Button variant="outline" size="sm" data-sub-team-add @click="addSubTeam">{{ t('projectAgents.team.addSubTeam') }}</Button>
         </fieldset>
-        <UiButton size="sm" variant="primary" :disabled="busy || !teamDirty || !teamLead || !subTeamsValid" @click="saveTeam">{{ t('projectAgents.team.save') }}</UiButton>
+        <Button size="sm" :disabled="busy || !teamDirty || !teamLead || !subTeamsValid" @click="saveTeam">{{ t('projectAgents.team.save') }}</Button>
       </details>
     </div>
     <div class="project-agent-policy-feedback" aria-live="polite">
       <p v-if="loadError || saveError" role="alert">
         {{ loadError || saveError }}
-        <button v-if="loadError" type="button" :disabled="busy" @click="loadPolicy">
+        <Button v-if="loadError" size="sm" variant="ghost" :disabled="busy" @click="loadPolicy">
           {{ t('projectAgents.retry') }}
-        </button>
+        </Button>
       </p>
       <GrowthLoading
         v-else-if="saving"
@@ -441,16 +441,7 @@ function stringValue(value: unknown) {
   line-height: 1.45;
 }
 .project-agent-policy-feedback p[role='alert'] { color: var(--color-danger); }
-.project-agent-policy-feedback button {
-  margin-inline-start: 6px;
-  border: 0;
-  padding: 0;
-  color: var(--color-ink);
-  background: transparent;
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
+.project-agent-policy-feedback [data-slot="button"] { margin-inline-start: 6px; }
 @media (max-width: 760px) {
   .project-agent-policy-options { grid-template-columns: minmax(0, 1fr); }
   .project-agent-policy-options label { padding: 8px 0; }

@@ -1,65 +1,16 @@
-/* Ink & jade: warm paper, deep ink, one brand accent. Every component reads these. */
+/*
+ * FULI product tokens: values only this app's pages use (profile aspects, the
+ * brand mark, the 3D workbench scenes, page layout). The shared theme (base,
+ * semantic, skins and component tokens) lives in styles/theme/.
+ */
 :root {
-  color-scheme: light;
-  --color-bg: #f6f5f1;
-  --color-surface: #fffefb;
-  --color-surface-subtle: #f0eee8;
-  --color-surface-hover: #f3f1ec;
-  --color-sidebar: #f1efe9;
-  --color-ink: #1b1f1d;
-  --color-ink-soft: #3a403c;
-  --color-muted: #66706a;
-  --color-faint: #959c97;
-  --color-border: #e5e2da;
-  --color-border-strong: #d2cec4;
-  --color-control-border: #c9c5ba;
-  --color-accent: #0f6b55;
-  --color-accent-hover: #0b5a47;
-  --color-accent-soft: #e5f0eb;
-  --color-accent-line: #9cc7b6;
-  --color-success: #2f7a52;
-  --color-success-soft: #e8f2ec;
-  --color-warning: #8a5a12;
-  --color-warning-soft: #f8f0e0;
   /* Profile aspects: their own hues, never a status colour (red read as an error). */
   --aspect-taste: #8a4f9e; --aspect-taste-soft: #f3ebf6;
   --aspect-personality: #2f7f9a; --aspect-personality-soft: #e6f2f6;
   --aspect-judgment: #4f5f86; --aspect-judgment-soft: #eceff6;
-  --color-danger: #a8392e;
-  --color-danger-soft: #f8e9e6;
-  --color-on-accent: #ffffff;
-  --color-chart-blue: #2f5f8a;
-  --color-chart-teal: #0f6b55;
-  --color-chart-violet: #6b4f8f;
-  --color-chart-amber: #a8691c;
-  --color-chart-rose: #a3445f;
-  --color-chart-cyan: #23707f;
-  --color-chart-slate: #66706a;
-  --color-overlay: rgb(24 28 26 / 32%);
-  --radius-control: 8px;
-  --radius-card: 12px;
-  --radius-dialog: 16px;
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
-  --control-height: 36px;
-  --control-height-sm: 30px;
-  /* Every shadow is built from one ink so a palette changes it in one place. */
-  --shadow-rgb: 27 31 29;
-  --shadow-xs: 0 1px 2px rgb(var(--shadow-rgb) / 12%);
-  --shadow-sm: 0 1px 3px rgb(var(--shadow-rgb) / 10%);
-  --shadow-md: 0 6px 20px rgb(var(--shadow-rgb) / 7%);
-  --shadow-lg: 0 12px 32px rgb(var(--shadow-rgb) / 9%);
-  --shadow-popover: 0 1px 2px rgb(var(--shadow-rgb) / 6%), 0 12px 32px rgb(var(--shadow-rgb) / 10%);
-  --shadow-dialog: 0 2px 6px rgb(var(--shadow-rgb) / 6%), 0 24px 64px rgb(var(--shadow-rgb) / 16%);
   /* The brand mark's sparkle. */
   --brand-gold: #f4c970;
-  /* 3D workbench scenes (office and galaxy); the palettes may restyle them. */
+  /* 3D workbench scenes (office and galaxy); a skin may restyle them. */
   --scene-sky: #fff6ea; --scene-ground: #d9cdb8; --scene-key: #ffffff;
   --scene-skin: #f3d9c6; --scene-wood: #e7d3b5; --scene-wood-dark: #b9a688; --scene-chair: #8c9599;
   --scene-monitor: #2b3134; --scene-screen: #111416; --scene-screen-off: #3a4145; --scene-eye: #1d2124;
@@ -67,83 +18,17 @@
   --scene-space: #1b2a47; --scene-space-deep: #0b1222; --scene-space-ink: #e9efff; --scene-space-label: rgb(14 22 40 / 70%);
   --scene-ambient: #8fa2c8; --scene-sun: #fff2dc; --scene-rim: #7fb4ff; --scene-orbit: #bfd0ff; --scene-star: #dfe8ff;
   --scene-moon: #9fb4d6; --scene-moon-done: #6f7a86; --scene-glow: #ffffff;
-  /* Agent identity swatches: none is green, amber or red, so identity never reads as a status. */
-  --identity-0: #1f5ea8; --identity-0-soft: #e6eef8;
-  --identity-1: #4a4aad; --identity-1-soft: #ececf8;
-  --identity-2: #7340a3; --identity-2-soft: #f1eaf7;
-  --identity-3: #9c2f73; --identity-3-soft: #f8e8f1;
-  --identity-4: #0b6a82; --identity-4-soft: #e3f2f6;
-  --identity-5: #485870; --identity-5-soft: #eceff3;
-  --identity-6: #6c3a62; --identity-6-soft: #f3eaf1;
-  --identity-7: #2c4672; --identity-7-soft: #e8ecf3;
-  --motion-fast: 140ms;
-  --motion-ease: cubic-bezier(.2, .8, .2, 1);
-  --font-ui: "PingFang SC", "Hiragino Sans GB", -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
-  --text-title: 22px;
-  --text-section: 15px;
-  --text-body: 14px;
-  --text-meta: 12px;
   --page-max: 1680px;
   --measure: 72ch;
   --page-gutter: clamp(20px, 2.4vw, 56px);
   --inspector-width: clamp(320px, 24vw, 460px);
-  /* State is read from colour and motion first, text second. */
-  --status-working: var(--color-accent);
-  --status-waiting: var(--color-warning);
-  --status-idle: var(--color-faint);
-  --status-error: var(--color-danger);
-  --glow-accent: 0 0 0 3px var(--color-accent-soft);
-  --motion-medium: 220ms;
-  --motion-pulse: 2400ms;
-  --motion-blink: 1400ms;
-  --radius-pill: 999px;
-  --z-nav: 20;
-  --z-popover: 40;
-  --z-dialog: 50;
-  --z-glossary: 60;
 }
 
-/* 墨空: the same jade becomes the glow colour so the constellation and status
-   rings light up. Staged rollout: it applies only with data-theme="dark" until
-   every page is rebuilt on these tokens, then it follows the system. */
+/* Reserved dark values (see styles/theme/semantic.css). */
 @media all {
   :root[data-theme="dark"] {
     --aspect-taste: #c79bd6; --aspect-taste-soft: #2c2333;
     --aspect-personality: #7cc3da; --aspect-personality-soft: #1d2c32;
     --aspect-judgment: #a3b2d9; --aspect-judgment-soft: #232836;
-    color-scheme: dark;
-    --color-bg: #0e1210;
-    --color-surface: #151a17;
-    --color-surface-subtle: #1b211e;
-    --color-surface-hover: #202723;
-    --color-sidebar: #111613;
-    --color-ink: #e8ece9;
-    --color-ink-soft: #c8cfca;
-    --color-muted: #93a09a;
-    --color-faint: #66716b;
-    --color-border: #26302b;
-    --color-border-strong: #34403a;
-    --color-control-border: #3a4640;
-    --color-accent: #2fb38f;
-    --color-accent-hover: #3cc79f;
-    --color-accent-soft: #12392f;
-    --color-accent-line: #1f6b55;
-    --color-success: #4cc28a;
-    --color-success-soft: #13301f;
-    --color-warning: #e0a84a;
-    --color-warning-soft: #33270f;
-    --color-danger: #ef7a6c;
-    --color-danger-soft: #3a1915;
-    --color-on-accent: #04110c;
-    --color-overlay: rgb(0 0 0 / 55%);
-    --shadow-rgb: 0 0 0;
-    --shadow-xs: 0 1px 2px rgb(0 0 0 / 40%);
-    --shadow-sm: 0 1px 3px rgb(0 0 0 / 40%);
-    --shadow-md: 0 6px 20px rgb(0 0 0 / 35%);
-    --shadow-lg: 0 12px 32px rgb(0 0 0 / 40%);
-    --shadow-popover: 0 1px 2px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 45%);
-    --shadow-dialog: 0 2px 6px rgb(0 0 0 / 40%), 0 24px 64px rgb(0 0 0 / 55%);
-    --glow-accent: 0 0 14px rgb(47 179 143 / 45%);
   }
 }

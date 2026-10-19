@@ -3,14 +3,19 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import TaskSchedulesPage from './TaskSchedulesPage.vue'
-import { intervalTooShort, scheduleState, type TaskSchedule } from '@/features/task-schedules/task-schedules'
+import { intervalTooShort, scheduleRunLabel, scheduleState, type ScheduleRun, type TaskSchedule } from '@/features/task-schedules/task-schedules'
 import { useConsoleStore } from '@/stores/console'
+
+const run = (overrides: Partial<ScheduleRun> = {}): ScheduleRun => ({
+  slot: '2026-10-19T00:00:00Z', taskId: null, status: 'failed', createdAt: '2026-10-19T00:00:01Z',
+  leaseExpiresAt: '2026-10-19T00:05:01Z', progress: 'rejected', lastError: null, ...overrides,
+})
 
 const schedule = (overrides: Partial<TaskSchedule> = {}): TaskSchedule => ({
   id: 'sched-1', personalSpaceId: 'space-1', personalProjectId: 'project-a', revision: 2, enabled: true,
   body: { title: 'Nightly check', objective: 'Run the checks.', workKind: 'verification', requiredCapabilities: [], leadAgentId: null,
     every: { unit: 'hours', count: 24 }, startMode: 'backlog', failureThreshold: 3 },
-  nextRunAt: '2026-10-20T00:00:00Z', pausedReason: null, recentRuns: [{ slot: '2026-10-19T00:00:00Z', taskId: null, status: 'failed', createdAt: '2026-10-19T00:00:01Z' }],
+  nextRunAt: '2026-10-20T00:00:00Z', pausedReason: null, recentRuns: [run()],
   ...overrides,
 })
 
@@ -60,6 +65,25 @@ describe('task schedules page', () => {
     expect(row.text()).toContain('Alpha')
     expect(row.text()).toContain(Intl.DateTimeFormat().resolvedOptions().timeZone)
     expect(row.text()).toMatch(/提交失败|Submit failed/)
+  })
+
+  it('names a slot without a task by what is happening to it, never as a working task', async () => {
+    const now = Date.parse('2026-10-19T00:02:00Z')
+    const live = '2026-10-19T00:05:01Z', expired = '2026-10-19T00:01:00Z'
+    expect(scheduleRunLabel(run({ status: 'claimed', progress: 'submitting', leaseExpiresAt: live }), now)).toMatch(/正在创建任务|Creating the task/)
+    expect(scheduleRunLabel(run({ status: 'claimed', progress: 'submitting', leaseExpiresAt: expired }), now)).toMatch(/恢复中|Recovering/)
+    expect(scheduleRunLabel(run({ status: 'claimed', progress: 'retrying', leaseExpiresAt: live }), now)).toMatch(/恢复中|Recovering/)
+    expect(scheduleRunLabel(run({ status: 'unresolved', progress: 'unconfirmed' }), now)).toMatch(/结果未知|Result unknown/)
+    expect(scheduleRunLabel(run(), now)).toMatch(/提交失败|Submit failed/)
+    expect(scheduleRunLabel(run({ taskId: 'task-1', status: 'running' }), now)).toMatch(/运行中|Running/)
+    expect(scheduleRunLabel(run({ taskId: 'task-1', status: 'blocked' }), now)).toMatch(/阻塞|Blocked/)
+
+    serve({ '/api/task-schedules?': () => ({ schedules: [schedule({
+      recentRuns: [run({ status: 'unresolved', progress: 'unconfirmed', lastError: 'provider_unavailable' })] })] }) })
+    const wrapper = await mountPage()
+    const recent = wrapper.find('.task-schedule-run')
+    expect(recent.text()).toMatch(/结果未知|Result unknown/)
+    expect(recent.attributes('title')).toBe('provider_unavailable')
   })
 
   it('pauses with the revision it showed and reloads after a conflict instead of overwriting', async () => {

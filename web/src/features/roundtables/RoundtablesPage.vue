@@ -6,7 +6,7 @@ import { ApiError } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiIconButton from '@/ui/UiIconButton.vue'
 import { subscribeChatUpdates } from '@/features/project-agents/task-updates'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
@@ -425,11 +425,11 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
 <template>
   <section class="view roundtable-view">
     <p v-if="accessNotice" role="alert" class="roundtable-notice">
-      {{ t('roundtable.accessLost') }} <UiButton size="sm" variant="ghost" @click="reloadAll">{{ t('roundtable.retry') }}</UiButton>
+      {{ t('roundtable.accessLost') }} <Button size="sm" variant="ghost" @click="reloadAll">{{ t('roundtable.retry') }}</Button>
     </p>
     <p v-if="liveDisconnected" :role="reloadFailed ? 'alert' : 'status'" class="roundtable-notice" data-roundtable-live>
       {{ t('roundtable.liveDisconnected') }}<template v-if="reloadFailed"> {{ t('roundtable.reloadFailed') }}</template>
-      <UiButton size="sm" variant="ghost" :busy="reconnecting" :busy-label="t('roundtable.reloading')" @click="reconnected">{{ t('roundtable.reload') }}</UiButton>
+      <Button size="sm" variant="ghost" :loading="reconnecting" :loading-label="t('roundtable.reloading')" @click="reconnected">{{ t('roundtable.reload') }}</Button>
     </p>
     <GrowthLoading v-if="listLoading && !hasSelection" :label="t('roundtable.loading')" />
     <div v-else-if="empty && !hasSelection" class="roundtable-empty">
@@ -446,11 +446,11 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
         <p v-else-if="empty" class="ui-meta roundtable-remote-note">{{ t('roundtable.empty') }}</p>
         <p v-if="remoteUnavailable" class="ui-meta roundtable-remote-note">{{ t('roundtable.chat.remoteUnavailable') }}</p>
         <p v-if="chatsState === 'failed' && !accessNotice" class="ui-meta roundtable-remote-note" role="status">
-          {{ t('roundtable.chatsFailed') }} <UiButton size="sm" variant="ghost" @click="loadChats()">{{ t('roundtable.retry') }}</UiButton>
+          {{ t('roundtable.chatsFailed') }} <Button size="sm" variant="ghost" @click="loadChats()">{{ t('roundtable.retry') }}</Button>
         </p>
         <p v-else-if="chatsStale" class="ui-meta roundtable-remote-note" role="status" data-roundtable-chats-stale>{{ t('roundtable.chatsStale') }}</p>
         <p v-if="threadsState === 'failed' && !accessNotice" class="roundtable-remote-note" role="alert">
-          {{ t('roundtable.threadsFailed') }} <UiButton size="sm" variant="ghost" @click="loadThreads()">{{ t('roundtable.retry') }}</UiButton>
+          {{ t('roundtable.threadsFailed') }} <Button size="sm" variant="ghost" @click="loadThreads()">{{ t('roundtable.retry') }}</Button>
         </p>
         <p v-else-if="threadsStale" class="ui-meta roundtable-remote-note" role="status">{{ t('roundtable.stale') }}</p>
         <div class="ui-split-items">
@@ -476,17 +476,17 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
           </RouterLink>
         </div>
         <p v-if="localMoreFailed" role="alert" class="roundtable-remote-note">{{ t('roundtable.localMoreFailed') }}</p>
-        <UiButton v-if="hasMoreChats" class="roundtable-more" size="sm" variant="ghost" :busy="loadingMoreChats"
-          :busy-label="t('roundtable.loadingMoreChats')" data-roundtable-more-chats @click="loadMoreChats">{{ t('roundtable.loadMoreChats') }}</UiButton>
+        <Button v-if="hasMoreChats" class="roundtable-more" size="sm" variant="ghost" :loading="loadingMoreChats"
+          :loading-label="t('roundtable.loadingMoreChats')" data-roundtable-more-chats @click="loadMoreChats">{{ t('roundtable.loadMoreChats') }}</Button>
       </nav>
 
       <article v-if="thread" class="ui-split-detail" data-testid="roundtable-timeline">
         <header class="ui-split-detail-head">
           <UiIconButton class="roundtable-back" icon="chevron-left" :label="t('roundtable.back')" data-roundtable-back @click="back" />
           <h2 tabindex="-1" class="roundtable-subject" :class="{ 'is-open': subjectOpen }" data-roundtable-detail-title>{{ thread.subject }}</h2>
-          <button v-if="thread.subject.length > 60" type="button" class="roundtable-subject-toggle" :aria-expanded="subjectOpen" @click="subjectOpen = !subjectOpen">
+          <Button v-if="thread.subject.length > 60" variant="link" size="xs" class="roundtable-subject-toggle" :aria-expanded="subjectOpen" @click="subjectOpen = !subjectOpen">
             {{ subjectOpen ? t('roundtable.subjectLess') : t('roundtable.subjectFull') }}
-          </button>
+          </Button>
           <p class="ui-list-meta">{{ t('roundtable.messages', { count: thread.messages.length }) }} · {{ time(thread.createdAt) }}</p>
           <p v-if="detailStale" class="ui-meta" role="status">{{ t('roundtable.stale') }}</p>
           <details class="roundtable-seats" :open="wide">
@@ -555,7 +555,7 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
         </template>
         <p v-else-if="detailState === 'missing'" role="alert">{{ t('roundtable.detailMissing') }}</p>
         <p v-else-if="detailState === 'failed'" role="alert">
-          {{ t('roundtable.loadFailed') }} <UiButton size="sm" variant="ghost" @click="loadDetail">{{ t('roundtable.retry') }}</UiButton>
+          {{ t('roundtable.loadFailed') }} <Button size="sm" variant="ghost" @click="loadDetail">{{ t('roundtable.retry') }}</Button>
         </p>
       </div>
       <p v-else class="ui-split-placeholder">{{ t('roundtable.select') }}</p>
@@ -578,7 +578,7 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
 .roundtable-cleanup { margin-top: 6px; color: var(--color-warning); font-size: 12px; font-weight: 600; }
 .roundtable-subject { overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .roundtable-subject.is-open { display: block; -webkit-line-clamp: unset; }
-.roundtable-subject-toggle { justify-self: start; padding: 0; border: 0; background: none; color: var(--color-accent); font-size: 12px; cursor: pointer; }
+.roundtable-subject-toggle { justify-self: start; min-height: 0; padding: 0; }
 .roundtable-seats summary, .roundtable-record summary { cursor: pointer; color: var(--color-muted); font-size: 12px; }
 .roundtable-record pre { overflow: auto; max-height: 240px; margin: 4px 0 0; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .roundtable-section h3 { margin: 0 0 12px; color: var(--color-muted); font-size: 13px; font-weight: 600; }

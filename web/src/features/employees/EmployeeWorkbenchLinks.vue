@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
 import { RouterLink } from 'vue-router'
+import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import { employeeTemplates, refreshEmployeeCatalog } from './catalog'
 import { employeeAvatarUrl } from './avatars'
@@ -13,11 +14,12 @@ const employees = computed(() => employeeTemplates.value.filter((entry) => entry
 </script>
 
 <template>
-  <RouterLink v-for="employee in employees" :key="employee.id" class="ui-button employee-workbench-link"
-    :to="`/employees/${encodeURIComponent(employee.id)}`" :title="t('agentProfiles.workbench')">
-    <img v-if="employeeAvatarUrl(employee.id)" :src="employeeAvatarUrl(employee.id)" alt="" aria-hidden="true" />
-    {{ employee.name }} · {{ employee.role }}
-  </RouterLink>
+  <Button v-for="employee in employees" :key="employee.id" as-child variant="outline" class="employee-workbench-link">
+    <RouterLink :to="`/employees/${encodeURIComponent(employee.id)}`" :title="t('agentProfiles.workbench')">
+      <img v-if="employeeAvatarUrl(employee.id)" :src="employeeAvatarUrl(employee.id)" alt="" aria-hidden="true" />
+      {{ employee.name }} · {{ employee.role }}
+    </RouterLink>
+  </Button>
 </template>
 
 <style scoped>

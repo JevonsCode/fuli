@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -538,7 +538,7 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
     <p v-if="loadFailed" class="preference-read-error" role="alert" data-profile-read-error>
       {{ graph ? t('preferences.detail.stale') : t('preferences.detail.loadFailed') }}
       <span v-if="readStatus"> ({{ readStatus }})</span>
-      <UiButton data-profile-reload :disabled="loading" @click="load()">{{ t('preferences.detail.reload') }}</UiButton>
+      <Button variant="outline" data-profile-reload :disabled="loading" @click="load()">{{ t('preferences.detail.reload') }}</Button>
     </p>
     <p v-if="deferTakingLong" role="status">{{ t('preferences.detail.writeLong', { action: t('preferences.profile.workbench.deferring') }) }}</p>
     <p v-if="takingLong" role="status">{{ t('preferences.detail.readLong') }}</p>
@@ -610,8 +610,8 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
               </small>
             </div>
             <div class="preference-conflict-actions">
-              <UiButton size="sm"
-                  :busy="deferringConflictId === conflict.id" :busy-label="t('preferences.profile.workbench.deferring')"
+              <Button variant="outline" size="sm"
+                  :loading="deferringConflictId === conflict.id" :loading-label="t('preferences.profile.workbench.deferring')"
                   :disabled="!snapshotReady || !knownScope(conflict.left) || !knownScope(conflict.right) || Boolean(conflict.aiRecord) || deferringConflictId === conflict.id"
                 @click="deferConflictToAi(conflict)"
               >
@@ -622,10 +622,10 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
                       ? t('preferences.profile.workbench.deferring')
                       : t('preferences.profile.workbench.defer')
                 }}
-              </UiButton>
-              <UiButton size="sm" variant="primary" :disabled="!snapshotReady || !knownScope(conflict.left) || !knownScope(conflict.right)" @click="activeConflict = conflict">
+              </Button>
+              <Button size="sm" :disabled="!snapshotReady || !knownScope(conflict.left) || !knownScope(conflict.right)" @click="activeConflict = conflict">
                 {{ t('preferences.profile.workbench.handleNow') }}
-              </UiButton>
+              </Button>
             </div>
           </footer>
         </article>
@@ -891,11 +891,6 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-}
-
-.preference-conflict-card footer .preference-conflict-actions .secondary-action {
-  color: var(--color-muted);
-  background: var(--color-surface-subtle);
 }
 
 .personal-profile-row.ai-resolved-conflict {

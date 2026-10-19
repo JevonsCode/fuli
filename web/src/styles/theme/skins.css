@@ -1,7 +1,9 @@
 /*
- * Palettes: each one only re-points the tokens in tokens.css, so every page
- * follows without component changes. Light theme only; the dark block keeps
- * its own values. The default (no data-palette) is the original jade.
+ * Skins (data-palette on the root): each one only re-points semantic tokens
+ * from semantic.css, never a base or component token, so every page and every
+ * shadcn-vue component follows without code changes. Light mode only; the
+ * reserved dark block keeps its own values. No data-palette means the default
+ * skin, jade. Offered only in the design lab for now.
  */
 :root {
   /* Swatches for the picker, so it can show a palette before it is applied. */

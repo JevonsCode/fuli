@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
@@ -38,16 +38,16 @@ const visibleFrequentProjects = computed(() =>
         <p v-else class="ui-meta">{{ t('projects.overview.noPurpose') }}</p>
       </div>
       <div class="project-overview-actions">
-        <UiButton size="sm" variant="ghost" v-if="canPublish" @click="$emit('publish')">
+        <Button size="sm" variant="ghost" v-if="canPublish" @click="$emit('publish')">
           {{ t('knowledge.workspace.workspace.view.publishProject') }}
-        </UiButton>
-        <UiButton size="sm" variant="ghost" class="ui-button--icon"
+        </Button>
+        <Button size="icon-sm" variant="ghost"
           :aria-label="t('projects.overview.editProfile')"
           :title="t('projects.overview.editProfile')"
           @click="$emit('edit-profile')"
         >
           <svg class="project-team-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4" /></svg>
-        </UiButton>
+        </Button>
       </div>
     </header>
     <ProjectTeamSummary :space-id="spaceId" :project-id="project.project_id" />

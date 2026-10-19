@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 
 import { postJson, putJson } from '@/api/client'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
@@ -257,8 +257,8 @@ function isValidOccupationEmoji(value: string) {
       </fieldset>
     </div>
     <template #footer>
-      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</UiButton>
-      <UiButton variant="primary" type="submit" :busy="busy" :busy-label="t('projectAgents.dialog.saving')">{{ editing ? t('projectAgents.dialog.saveEdit') : t('projectAgents.dialog.saveCreate') }}</UiButton>
+      <Button variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</Button>
+      <Button type="submit" :loading="busy" :loading-label="t('projectAgents.dialog.saving')">{{ editing ? t('projectAgents.dialog.saveEdit') : t('projectAgents.dialog.saveCreate') }}</Button>
     </template>
   </UiDialog>
 </template>

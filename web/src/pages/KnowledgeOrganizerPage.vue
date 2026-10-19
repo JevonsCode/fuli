@@ -27,7 +27,8 @@ import {
 } from '@/features/knowledge/model'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
-import { UiButton, UiIconButton, UiSegmented, UiStatRow, UiToolbar, type UiStat } from '@/ui'
+import { Button } from '@/components/ui/button'
+import { UiIconButton, UiSegmented, UiStatRow, UiToolbar, type UiStat } from '@/ui'
 import type { KnowledgeGraph, KnowledgeItem } from '@/types'
 
 const store = useConsoleStore()
@@ -286,9 +287,9 @@ function openReplacement(item: KnowledgeItem) {
       <template #end>
         <span class="organizer-result-summary">{{ t('knowledge.workspace.organizer.showing', {
           visible: visibleItems.length, total: activeQuadrantItems.length }) }}</span>
-        <UiButton v-if="confirmationGroups.length" class="batch-confirm-action" size="sm" @click="batchDialogOpen = true">
+        <Button variant="outline" v-if="confirmationGroups.length" class="batch-confirm-action" size="sm" @click="batchDialogOpen = true">
           {{ t('knowledge.workspace.organizer.batchConfirm', { count: confirmationGroups.length }) }}
-        </UiButton>
+        </Button>
         <UiIconButton icon="refresh" size="sm" :label="t('common.actions.refresh')" :disabled="loading || loadingMore" @click="load()" />
       </template>
     </UiToolbar>

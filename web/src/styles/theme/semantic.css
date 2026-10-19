@@ -1,0 +1,101 @@
+/*
+ * Theme layer 2 · Semantic tokens: what a colour means (page, panel, text,
+ * muted text, border, accent, danger, success, focus, status). This file is
+ * the default skin, jade (墨与玉: warm paper, deep ink, one brand accent), in
+ * light mode. skins.css re-points these names per skin; the reserved dark
+ * block below re-points them per mode, so skin and mode stay separate axes.
+ * Component tokens (components.css) and page CSS read only these names.
+ */
+:root {
+  color-scheme: light;
+  --color-bg: #f6f5f1;
+  --color-surface: #fffefb;
+  --color-surface-subtle: #f0eee8;
+  --color-surface-hover: #f3f1ec;
+  --color-sidebar: #f1efe9;
+  --color-ink: #1b1f1d;
+  --color-ink-soft: #3a403c;
+  --color-muted: #66706a;
+  --color-faint: #959c97;
+  --color-border: #e5e2da;
+  --color-border-strong: #d2cec4;
+  --color-control-border: #c9c5ba;
+  --color-accent: #0f6b55;
+  --color-accent-hover: #0b5a47;
+  --color-accent-soft: #e5f0eb;
+  --color-accent-line: #9cc7b6;
+  --color-focus: var(--color-accent);
+  --color-success: #2f7a52;
+  --color-success-soft: #e8f2ec;
+  --color-warning: #8a5a12;
+  --color-warning-soft: #f8f0e0;
+  --color-danger: #a8392e;
+  --color-danger-soft: #f8e9e6;
+  --color-on-accent: #ffffff;
+  --color-chart-blue: #2f5f8a;
+  --color-chart-teal: #0f6b55;
+  --color-chart-violet: #6b4f8f;
+  --color-chart-amber: #a8691c;
+  --color-chart-rose: #a3445f;
+  --color-chart-cyan: #23707f;
+  --color-chart-slate: #66706a;
+  --color-overlay: rgb(24 28 26 / 32%);
+  /* The one ink every shadow in base.css is built from. */
+  --shadow-rgb: 27 31 29;
+  --glow-accent: 0 0 0 3px var(--color-accent-soft);
+  /* State is read from colour and motion first, text second. */
+  --status-working: var(--color-accent);
+  --status-waiting: var(--color-warning);
+  --status-idle: var(--color-faint);
+  --status-error: var(--color-danger);
+  /* Agent identity swatches: none is green, amber or red, so identity never reads as a status. */
+  --identity-0: #1f5ea8; --identity-0-soft: #e6eef8;
+  --identity-1: #4a4aad; --identity-1-soft: #ececf8;
+  --identity-2: #7340a3; --identity-2-soft: #f1eaf7;
+  --identity-3: #9c2f73; --identity-3-soft: #f8e8f1;
+  --identity-4: #0b6a82; --identity-4-soft: #e3f2f6;
+  --identity-5: #485870; --identity-5-soft: #eceff3;
+  --identity-6: #6c3a62; --identity-6-soft: #f3eaf1;
+  --identity-7: #2c4672; --identity-7-soft: #e8ecf3;
+}
+
+/* 墨空: the same jade becomes the glow colour so the constellation and status
+   rings light up. Reserved, not offered: it applies only with
+   data-theme="dark", which nothing sets yet. */
+@media all {
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --color-bg: #0e1210;
+    --color-surface: #151a17;
+    --color-surface-subtle: #1b211e;
+    --color-surface-hover: #202723;
+    --color-sidebar: #111613;
+    --color-ink: #e8ece9;
+    --color-ink-soft: #c8cfca;
+    --color-muted: #93a09a;
+    --color-faint: #66716b;
+    --color-border: #26302b;
+    --color-border-strong: #34403a;
+    --color-control-border: #3a4640;
+    --color-accent: #2fb38f;
+    --color-accent-hover: #3cc79f;
+    --color-accent-soft: #12392f;
+    --color-accent-line: #1f6b55;
+    --color-success: #4cc28a;
+    --color-success-soft: #13301f;
+    --color-warning: #e0a84a;
+    --color-warning-soft: #33270f;
+    --color-danger: #ef7a6c;
+    --color-danger-soft: #3a1915;
+    --color-on-accent: #04110c;
+    --color-overlay: rgb(0 0 0 / 55%);
+    --shadow-rgb: 0 0 0;
+    --shadow-xs: 0 1px 2px rgb(0 0 0 / 40%);
+    --shadow-sm: 0 1px 3px rgb(0 0 0 / 40%);
+    --shadow-md: 0 6px 20px rgb(0 0 0 / 35%);
+    --shadow-lg: 0 12px 32px rgb(0 0 0 / 40%);
+    --shadow-popover: 0 1px 2px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 45%);
+    --shadow-dialog: 0 2px 6px rgb(0 0 0 / 40%), 0 24px 64px rgb(0 0 0 / 55%);
+    --glow-accent: 0 0 14px rgb(47 179 143 / 45%);
+  }
+}

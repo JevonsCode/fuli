@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { ref, watch } from "vue";
 import GrowthLoading from "@/components/GrowthLoading.vue";
 import CreateProjectDialog from "@/features/projects/CreateProjectDialog.vue";
@@ -144,7 +144,7 @@ async function handleProjectCreated(project: PersonalProject) {
       </button>
       <p v-if="loadError" class="ui-meta" role="alert">
         {{ t("agentRedesign.unassigned.loadError") }}
-        <UiButton size="sm" variant="ghost" @click="load">{{ t("agentProfiles.retry") }}</UiButton>
+        <Button size="sm" variant="ghost" @click="load">{{ t("agentProfiles.retry") }}</Button>
       </p>
     </div>
 
@@ -166,9 +166,9 @@ async function handleProjectCreated(project: PersonalProject) {
           <details v-if="!item.openingLine" class="unassigned-conversation-id" data-unassigned-id>
             <summary class="ui-meta">#{{ item.shortId }}</summary>
             <span class="unassigned-conversation-full-id">{{ item.conversationId }}</span>
-            <UiButton size="sm" variant="ghost" data-unassigned-copy @click="copyId(item.conversationId)">
+            <Button size="sm" variant="ghost" data-unassigned-copy @click="copyId(item.conversationId)">
               {{ copied === item.conversationId ? t('agentRedesign.unassigned.copied') : t('agentRedesign.unassigned.copyId') }}
-            </UiButton>
+            </Button>
           </details>
           <span class="ui-badge unassigned-conversation-triage" data-unassigned-triage>
             {{ triageBadgeText(item) }}
@@ -181,27 +181,27 @@ async function handleProjectCreated(project: PersonalProject) {
             :label="t('agentRedesign.unassigned.triaging')"
           />
           <template v-else>
-            <UiButton size="sm" variant="ghost"
+            <Button size="sm" variant="ghost"
              
               data-unassigned-move
               @click="startMove(item)"
             >
               {{ t("agentRedesign.unassigned.moveToProject") }}
-            </UiButton>
-            <UiButton size="sm" variant="ghost"
+            </Button>
+            <Button size="sm" variant="ghost"
              
               data-unassigned-create-project
               @click="creatingForItem = item"
             >
               {{ t("agentRedesign.unassigned.createProject") }}
-            </UiButton>
-            <UiButton size="sm" variant="ghost"
+            </Button>
+            <Button size="sm" variant="ghost"
              
               data-unassigned-one-off
               @click="applyTriage(item.conversationId, 'one_off')"
             >
               {{ t("agentRedesign.unassigned.markOneOff") }}
-            </UiButton>
+            </Button>
           </template>
         </div>
         <div v-if="movingConversationId === item.conversationId" class="unassigned-conversation-picker">
@@ -214,14 +214,14 @@ async function handleProjectCreated(project: PersonalProject) {
               {{ project.profile.name }}
             </option>
           </select>
-          <UiButton size="sm" variant="ghost"
+          <Button size="sm" variant="ghost"
            
             data-unassigned-confirm-move
             :disabled="!targetProjectId"
             @click="applyTriage(item.conversationId, 'project', targetProjectId)"
           >
             {{ t("agentRedesign.unassigned.confirmMove") }}
-          </UiButton>
+          </Button>
         </div>
       </article>
     </div>

@@ -15,7 +15,7 @@ function fixture({ missingLead = false, available = true, sessions = true, memor
     target: { personalProjectId: 'target', projectAgentId: 'target-lead', sourceApplication: 'codex', sessionId: 'target-session' },
     other: { personalProjectId: 'other', projectAgentId: 'target-lead', sourceApplication: 'codex', sessionId: 'other-session' } };
   const grants = [], wakes = [], observations = [], hires = [];
-  const app = { config: { personal: { spaceId: 'space' } }, listProjectAgents: async () => roster,
+  const app = { config: { personal: { spaceId: 'space' } }, getCapturePolicy: () => ({ enabled: true }), listProjectAgents: async () => roster,
     projectPathResolver: path => ({ status: 'matched', personalProjectId: path.split('/').at(-1) }),
     taskContextRegistry: { context: async token => contexts[token] }, personal: {
       getPersonalProject: async (_, id) => ({ project_id: id, profile: { name: id, lifecycle: 'active' } }),

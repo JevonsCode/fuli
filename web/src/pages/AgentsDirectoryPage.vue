@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import BackToTop from "@/components/BackToTop.vue";
@@ -303,21 +303,21 @@ function handleProjectCreated(project: PersonalProject) {
           :label="t('agentRedesign.refreshing')"
         />
         <EmployeeWorkbenchLinks :personal-space-id="space || 'current'" />
-        <UiButton size="sm" variant="primary"
+        <Button size="sm"
           v-if="hireable"
          
           :disabled="!space"
           @click="recruiting = true"
         >
           {{ t("employees.recruit") }}
-        </UiButton>
+        </Button>
       </div>
     </header>
     <p v-if="pinError" class="agent-directory-pin-error" role="alert">
       <span>{{ pinError }}</span>
-      <UiButton size="sm" variant="ghost" @click="agentPins.load({ force: true })">
+      <Button size="sm" variant="ghost" @click="agentPins.load({ force: true })">
         {{ pinRetryLabel }}
-      </UiButton>
+      </Button>
     </p>
     <ProjectAgentFirstTask
       v-if="!busy && !pageError && store.runtimeStatus === 'ready' && !projects.length"
@@ -326,9 +326,9 @@ function handleProjectCreated(project: PersonalProject) {
 
     <p v-if="workError" class="agent-directory-work-error" role="status">
       <span>{{ t("agentRedesign.workStatus.refreshError") }}</span>
-      <UiButton size="sm" variant="ghost" @click="loadWorkSummary">
+      <Button size="sm" variant="ghost" @click="loadWorkSummary">
         {{ t("agentProfiles.retry") }}
-      </UiButton>
+      </Button>
     </p>
 
     <div class="ui-toolbar agents-directory-filters">
@@ -388,9 +388,9 @@ function handleProjectCreated(project: PersonalProject) {
       class="ui-card ui-empty agent-profile-empty"
     >
       <p>{{ (!agents.length && pageError) || t("agentProfiles.loadError") }}</p>
-      <UiButton size="sm" variant="ghost" @click="retryDirectory">
+      <Button size="sm" variant="ghost" @click="retryDirectory">
         {{ t("agentProfiles.retry") }}
-      </UiButton>
+      </Button>
     </div>
     <p v-if="partialRoster" class="agents-directory-partial" role="status">
       {{ t(filtering ? "agentProfiles.partialFilter" : "agentProfiles.partialRoster", { count: agents.length }) }}
@@ -412,9 +412,9 @@ function handleProjectCreated(project: PersonalProject) {
     </p>
     <p v-if="reorderAvailable && !busy" class="agents-directory-reorder" role="status">
       <span>{{ t("agentRedesign.workbench.reorderHint") }}</span>
-      <UiButton size="sm" variant="ghost" data-workbench-reorder @click="stableOrder.apply()">
+      <Button size="sm" variant="ghost" data-workbench-reorder @click="stableOrder.apply()">
         {{ t("agentRedesign.workbench.reorder") }}
-      </UiButton>
+      </Button>
     </p>
     <ul v-if="visible.length && view === 'agents'" class="agents-directory-grid">
       <li v-for="agent in visible" :key="agent.agentId">
@@ -453,13 +453,13 @@ function handleProjectCreated(project: PersonalProject) {
       <GrowthLoading v-if="pageLoading" variant="inline" :label="t('agentProfiles.loadingMore')" />
       <p v-else-if="pageError" class="agents-directory-more-error" role="alert">
         <span>{{ t("agentProfiles.loadMoreError") }} {{ pageError }}</span>
-        <UiButton size="sm" variant="ghost" data-roster-retry @click="loadMore">
+        <Button size="sm" variant="ghost" data-roster-retry @click="loadMore">
           {{ t("agentProfiles.retry") }}
-        </UiButton>
+        </Button>
       </p>
-      <UiButton size="sm" variant="ghost" v-else data-roster-more @click="loadMore">
+      <Button size="sm" variant="ghost" v-else data-roster-more @click="loadMore">
         {{ t("agentProfiles.loadMore") }}
-      </UiButton>
+      </Button>
     </div>
 
     <BackToTop :scroller="scroller" />
@@ -488,9 +488,4 @@ function handleProjectCreated(project: PersonalProject) {
   font-size: 13px;
 }
 
-.agent-directory-pin-error .quiet-button {
-  min-height: var(--control-height-sm);
-  padding: 4px 9px;
-  font-size: 12px;
-}
 </style>

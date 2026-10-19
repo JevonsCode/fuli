@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { TASK_RULES_ON_DEMAND } from '../lifecycle-message.js';
 import { transcriptLifecycle } from '../../conversations/transcript-lifecycle.js';
+import { transcriptCaptureScope } from '../../conversations/sync-transcript.js';
+import { captureDecision } from '../../graphiti/capture-decision.js';
 import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { PREFERENCE_RESET_EVENTS, preferenceHookOutput, preferenceLifecycleOutput } from '../../conversations/preference-lifecycle.js';
 import { normalizeClaudeRecord, verifyClaudeTranscript } from './conversation-transcript.js';
@@ -70,7 +72,9 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
       if (PREFERENCE_RESET_EVENTS.includes(event)) return claudeLifecycleOutput(event, input,
         (name, parameters) => (dependencies.callTool ?? callAgentTool)(app, name, parameters, request),
         { delivery: app.preferenceDelivery, currentTask: app.taskContextRegistry?.current?.bind(app.taskContextRegistry) });
-      if (app.getCapturePolicy?.('claude_code').enabled && input.transcript_path) dependencies.onTranscriptGuard?.();
+      if (input.transcript_path && captureDecision(app, transcriptCaptureScope(input, 'claude_code')).allowed) {
+        dependencies.onTranscriptGuard?.();
+      }
       return transcriptLifecycle({ application: app, runtimeConfigPath, input, event, sourceApplication: 'claude_code',
         captureTimeoutMs: dependencies.captureTimeoutMs, signal: dependencies.signal,
         adapter: { normalize: normalizeClaudeRecord, verify: verifyClaudeTranscript },

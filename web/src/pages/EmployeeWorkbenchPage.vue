@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { computed, reactive, ref, watch } from 'vue'
 import { isEmployeeBoardItem } from '@/features/employees/task-board-model'
 import { useJefaBoardLoad } from '@/features/employees/useJefaBoardLoad'
@@ -340,18 +340,20 @@ async function projectsSaved() {
           <template v-else>{{ template?.name.slice(0, 1) ?? 'A' }}</template>
         </span>
         <h1>{{ template?.name ?? (isJefa ? 'Jefa' : t('employees.workbench')) }} <span>{{ isJefa ? t('employees.read.role') : template?.role }}</span></h1>
-        <button v-if="isJefa && supportsAllProjects" class="employee-share-button" type="button" :aria-label="t('employees.share.title')" :title="t('employees.share.title')" @click="shareOpen = true">
+        <Button v-if="isJefa && supportsAllProjects" variant="ghost" size="icon" class="employee-share-button" :aria-label="t('employees.share.title')" :title="t('employees.share.title')" @click="shareOpen = true">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7m0-7-9 9M10 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M7 16v-3m4 3v-1"/></svg>
-        </button>
+        </Button>
       </div>
       <div class="employee-workbench-actions">
-        <RouterLink v-if="isNativeWorkbench && template?.agentId && personalSpaceId" class="employee-native-link" :to="agentProfilePath(personalSpaceId, template.agentId)" :title="t('agentProfiles.profile')">
-          {{ t('agentProfiles.profile') }}
-        </RouterLink>
-        <button v-if="template && !isNativeWorkbench" class="employee-manage-projects" type="button" :disabled="!personalSpaceId" @click="manageProjectsOpen = true">
+        <Button v-if="isNativeWorkbench && template?.agentId && personalSpaceId" as-child variant="ghost" class="employee-native-link">
+          <RouterLink :to="agentProfilePath(personalSpaceId, template.agentId)" :title="t('agentProfiles.profile')">
+            {{ t('agentProfiles.profile') }}
+          </RouterLink>
+        </Button>
+        <Button v-if="template && !isNativeWorkbench" variant="ghost" class="employee-manage-projects" :disabled="!personalSpaceId" @click="manageProjectsOpen = true">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>
           {{ t('employees.manageProjects') }}
-        </button>
+        </Button>
       </div>
     </header>
     <EmployeeRecruitDialog v-if="!isNativeWorkbench" :open="manageProjectsOpen" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" :template-id="templateId" @close="manageProjectsOpen = false" @recruited="projectsSaved" />
@@ -364,13 +366,13 @@ async function projectsSaved() {
       :has-content="jefaRead.hasContent" :stale="jefaRead.stale" :updated-at="jefaRead.updatedAt" @reload="retry"
     />
     <GrowthLoading v-if="pageLoading && !isJefa" :label="pageLoadingLabel" />
-    <div v-else-if="visibleError" class="employee-workbench-state" role="alert"><p>{{ visibleError }}</p><UiButton size="sm" variant="ghost" @click="retry">{{ t('employees.retry') }}</UiButton></div>
+    <div v-else-if="visibleError" class="employee-workbench-state" role="alert"><p>{{ visibleError }}</p><Button size="sm" variant="ghost" @click="retry">{{ t('employees.retry') }}</Button></div>
     <div v-else-if="!template && !(isJefa && (jefaRead.loading || jefaRead.timedOut || jefaRead.failure))" class="employee-workbench-state"><p>{{ t('employees.unavailable') }}</p><RouterLink to="/project-agents">{{ t('employees.backToAgents') }}</RouterLink></div>
     <BolePeoplePanel v-else-if="isNativePeople" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" />
     <JudgmentWorkbench v-else-if="isNativeJudgment" :personal-space-id="personalSpaceId" />
     <UnassignedConversationsPanel v-else-if="isNativeUnclaimed" class="employee-workbench-unclaimed" :space-id="personalSpaceId" :formal-projects="spaceProjects.filter(isFormalProject)" :existing-project-ids="spaceProjects.map(project => project.project_id)" @project-created="store.rememberPersonalProject" />
     <div v-else-if="isJefa && template && !jefaRead.loading && template.runtimeStatus !== 'ready'" class="employee-workbench-state"><p>{{ t('employees.installRequired') }}</p><small>{{ t('employees.installHelp') }}</small></div>
-    <div v-else-if="!projectId && !(isJefa && (jefaRead.loading || jefaRead.timedOut || jefaRead.failure))" class="employee-workbench-state"><h2>{{ t('employees.emptyWorkbench') }}</h2><p>{{ t('employees.manageHint') }}</p><UiButton size="sm" variant="ghost" @click="manageProjectsOpen = true">{{ t('employees.manageProjects') }}</UiButton></div>
+    <div v-else-if="!projectId && !(isJefa && (jefaRead.loading || jefaRead.timedOut || jefaRead.failure))" class="employee-workbench-state"><h2>{{ t('employees.emptyWorkbench') }}</h2><p>{{ t('employees.manageHint') }}</p><Button size="sm" variant="ghost" @click="manageProjectsOpen = true">{{ t('employees.manageProjects') }}</Button></div>
     <EmployeeTaskBoard
       v-else-if="projectId === ALL_PROJECTS && supportsAllProjects && (!isJefa || jefaRead.hasContent)"
       v-model:visible-project-ids="visibleProjectIds"
@@ -402,19 +404,9 @@ async function projectsSaved() {
 .employee-workbench-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .employee-workbench-mark { display: grid; place-items: center; flex: 0 0 32px; height: 32px; overflow: hidden; border-radius: var(--radius-control); background: var(--color-surface-subtle); color: var(--color-ink); font-size: 17px; font-weight: 650; }
 .employee-workbench-mark img { width: 100%; height: 100%; object-fit: cover; }
-.employee-share-button { display: grid; place-items: center; flex: 0 0 40px; width: 40px; height: 40px; border: 0; border-radius: var(--radius-control); color: var(--color-ink); background: transparent; cursor: pointer; }
-.employee-share-button:hover { background: var(--color-surface-subtle); }
-.employee-share-button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .employee-workbench-toolbar h1 { margin: 0; color: var(--color-ink); font-size: 18px; font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
 .employee-workbench-toolbar h1 span { margin-left: 8px; color: var(--color-muted); font-size: 12px; font-weight: 400; }
 .employee-workbench-actions { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.employee-native-link { display: inline-flex; align-items: center; min-height: 40px; padding: 8px 10px; border-radius: var(--radius-control); color: var(--color-ink); font-size: 13px; text-decoration: none; }
-.employee-native-link:hover { background: var(--color-surface-subtle); }
-.employee-native-link:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
-.employee-manage-projects, .employee-back-to-all { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 8px 10px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--color-ink); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
-.employee-manage-projects:hover:not(:disabled), .employee-back-to-all:hover { background: var(--color-surface-subtle); }
-.employee-manage-projects:disabled { color: var(--color-muted); cursor: default; }
-.employee-manage-projects:focus-visible, .employee-back-to-all:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
 .employee-workbench-frame { flex: 1; width: 100%; height: 100%; min-height: 0; border: 0; }
 .employee-workbench-unclaimed { margin: 16px 24px; }
 @media (max-width: 640px) { .employee-workbench-unclaimed { margin: 12px; } }

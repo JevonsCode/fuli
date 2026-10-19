@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { computed, ref, watch } from 'vue'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -244,10 +244,10 @@ function hasDetails(record: JudgmentDecisionRecord) {
       </div>
       <div class="judgment-workbench-actions">
         <GrowthLoading v-if="reviewing" variant="inline" :label="judgmentText('workbench.reviewing')" />
-        <UiButton size="sm" variant="ghost" :disabled="busy" @click="load">{{ judgmentText('workbench.refresh') }}</UiButton>
-        <button class="ui-button ui-button--primary" type="button" data-action="review" :disabled="busy || !props.personalSpaceId" @click="review">
+        <Button size="sm" variant="ghost" :disabled="busy" @click="load">{{ judgmentText('workbench.refresh') }}</Button>
+        <Button data-action="review" :disabled="busy || !props.personalSpaceId" @click="review">
           {{ judgmentText('workbench.review') }}
-        </button>
+        </Button>
       </div>
     </header>
 
@@ -255,7 +255,7 @@ function hasDetails(record: JudgmentDecisionRecord) {
     <GrowthLoading v-else-if="loading" variant="inline" :label="judgmentText('workbench.loading')" />
     <div v-if="error" class="judgment-workbench-error" role="alert">
       <span>{{ error }}</span>
-      <UiButton size="sm" variant="ghost" :disabled="busy" @click="load">{{ judgmentText('workbench.retry') }}</UiButton>
+      <Button size="sm" variant="ghost" :disabled="busy" @click="load">{{ judgmentText('workbench.retry') }}</Button>
     </div>
     <div v-if="reviewError" class="judgment-workbench-error" role="alert">{{ reviewError }}</div>
 
@@ -315,7 +315,7 @@ function hasDetails(record: JudgmentDecisionRecord) {
             <div class="judgment-feedback-editor-row">
               <label class="visually-hidden" :for="`judgment-feedback-${record.id}`">{{ judgmentText('workbench.feedbackReason') }}</label>
               <textarea :id="`judgment-feedback-${record.id}`" v-model="feedbackReasons[record.id]" data-feedback-reason rows="2" maxlength="1000" :disabled="feedbackSavingId === record.id" @input="markReasonEdited(record.id)" @keydown.enter.exact.prevent="saveReason(record)" />
-              <button class="judgment-save-reason" type="button" data-save-reason :aria-label="judgmentText('workbench.saveReason')" :title="judgmentText('workbench.saveReason')" :disabled="feedbackSavingId === record.id" @click="saveReason(record)"><span aria-hidden="true">✓</span></button>
+              <Button variant="outline" size="icon-sm" class="judgment-save-reason" data-save-reason :aria-label="judgmentText('workbench.saveReason')" :title="judgmentText('workbench.saveReason')" :disabled="feedbackSavingId === record.id" @click="saveReason(record)"><span aria-hidden="true">✓</span></Button>
             </div>
           </details>
           <div class="judgment-feedback-actions">
@@ -375,8 +375,6 @@ function hasDetails(record: JudgmentDecisionRecord) {
 .judgment-feedback-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .judgment-feedback-actions button { min-height: 30px; padding: 5px 8px; border: 1px solid var(--color-border); border-radius: var(--radius-control); color: var(--color-muted); background: transparent; font: inherit; font-size: 11px; cursor: pointer; }
 .judgment-feedback-actions button[aria-pressed=true] { border-color: var(--color-accent); color: var(--color-accent); background: var(--color-accent-soft); }
-.judgment-save-reason { display: grid; width: 30px; height: 30px; flex: 0 0 30px; place-items: center; padding: 0; border: 1px solid var(--color-border); border-radius: var(--radius-control); color: var(--color-muted); background: transparent; cursor: pointer; }
-.judgment-save-reason:disabled { cursor: wait; opacity: .6; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .judgment-workbench-error { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 12px; border-radius: var(--radius-control); color: var(--color-danger); background: var(--color-danger-soft); font-size: 13px; }
 .judgment-workbench-empty { padding: 40px 20px; color: var(--color-muted); text-align: center; }

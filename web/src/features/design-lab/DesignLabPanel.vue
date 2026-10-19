@@ -3,7 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { t } from '@/i18n'
 import { motionPreference, setMotionPreference } from '@/lib/motion-preference'
 import { PALETTES, palettePreference, setPalettePreference } from '@/lib/palette-preference'
-import { UiButton, UiIconButton, UiSegmented, UiToggle } from '@/ui'
+import { Button } from '@/components/ui/button'
+import { UiIconButton, UiSegmented, UiToggle } from '@/ui'
 import { LAB_CHOICES, PAGE_TRANSITIONS, designLab, resetDesignLab, type LabChoice } from './design-lab'
 import { WORKBENCH_VARIANTS } from './workbench-variants'
 import './design-lab.css'
@@ -141,7 +142,7 @@ function reset() {
     </div>
 
     <footer class="design-lab-foot">
-      <UiButton variant="ghost" size="sm" data-design-lab-reset @click="reset">{{ t('designLab.reset') }}</UiButton>
+      <Button variant="ghost" size="sm" data-design-lab-reset @click="reset">{{ t('designLab.reset') }}</Button>
     </footer>
   </section>
 </template>

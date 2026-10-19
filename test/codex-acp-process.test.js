@@ -109,10 +109,11 @@ function reply(id){
   const publish=()=>send({jsonrpc:'2.0',method:'_auth/status_update',params:{authStatus:{
     kind:mode==='worker-host'||mode==='auth-gated-account'?'account':'none',account:{email:secret}}}});
   if(mode.startsWith('auth-gated-')){
-    let published=false;
-    const watcher=fs.watch(require('node:path').dirname(record),()=>{
-      if(!published&&fs.existsSync(record+'.auth')){published=true;watcher.close();publish();}
-    });
+    // Poll rather than watch: a loaded Windows runner can drop or delay
+    // directory watch events.
+    const waiting=setInterval(()=>{
+      if(fs.existsSync(record+'.auth')){clearInterval(waiting);publish();}
+    },20);
   }else publish();
 }
 input.on('close',()=>{if(mode!=='hang')process.exit(0);});
@@ -144,7 +145,9 @@ test('ACP authentication waits for a later trusted account or none notification 
     try {
       assert.equal(handle.authentication, 'unknown');
       const listeners = getEventListeners(handle.signal, 'abort').length;
-      const waiting = handle.waitForAuthentication({ timeoutMs: 3000 });
+      // A starved Windows runner has run this test 60 times slower than usual;
+      // the wait only has to outlast that, not prove a latency.
+      const waiting = handle.waitForAuthentication({ timeoutMs: 15_000 });
       await writeFile(record + '.auth', 'Publish the synthetic notification.');
       assert.equal(await waiting, kind);
       assert.equal(handle.authentication, kind);

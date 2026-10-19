@@ -6,7 +6,7 @@ import { FederatedGraphApplication } from '../src/graphiti/federated-application
 
 test('empty results and same-project traffic do not record memory use', async () => {
   const writes = [];
-  const app = { config: { personal: { spaceId: 'space' } },
+  const app = { config: { personal: { spaceId: 'space' } }, getCapturePolicy: () => ({ enabled: true }),
     taskContextRegistry: { context: async () => ({ personalProjectId: 'source', sourceApplication: 'codex' }) },
     personal: { recordProjectMemoryUsage: async value => writes.push(value) } };
   await recordProjectMemoryUsage(app, { taskContextToken: 'token', targetProjectId: 'source', resultCount: 1 });
@@ -16,7 +16,7 @@ test('empty results and same-project traffic do not record memory use', async ()
 
 test('returned memory records only bounded provenance and the original task token', async () => {
   const writes = [];
-  const app = { config: { personal: { spaceId: 'space' } },
+  const app = { config: { personal: { spaceId: 'space' } }, getCapturePolicy: () => ({ enabled: true }),
     taskContextRegistry: { context: async () => ({ personalProjectId: 'source', sourceApplication: 'codex' }) },
     personal: { recordProjectMemoryUsage: async value => { writes.push(value); return { recorded: true }; } } };
   const result = await recordProjectMemoryUsage(app, { taskContextToken: 'token',
@@ -29,7 +29,7 @@ test('returned memory records only bounded provenance and the original task toke
 });
 
 test('memory usage keeps the source application when reading the actual task context', async () => {
-  const app = { config: { personal: { spaceId: 'space' } },
+  const app = { config: { personal: { spaceId: 'space' } }, getCapturePolicy: () => ({ enabled: true }),
     taskContextRegistry: { context: async (token, source) => {
       assert.equal(source, 'codex');
       return { personalProjectId: 'source', sourceApplication: source };
@@ -41,7 +41,7 @@ test('memory usage keeps the source application when reading the actual task con
 test('one read-only expansion records only returned project hits against its verified current task', async () => {
   const writes = [];
   const task = { token: 'live-task', personalProjectId: 'source', sourceApplication: 'codex' };
-  const app = { config: { personal: { spaceId: 'space' } }, taskContextRegistry: {
+  const app = { config: { personal: { spaceId: 'space' } }, getCapturePolicy: () => ({ enabled: true }), taskContextRegistry: {
     current: async (session, source) => { assert.equal(session, 'native-session'); assert.equal(source, 'codex'); return task; },
     context: async () => task }, personal: { recordProjectMemoryUsage: async value => { writes.push(value); return { recorded: true }; } } };
   const input = { sourceSessionId: 'native-session', sourceApplication: 'codex', personalProjectScope: 'all_local_confirmed',

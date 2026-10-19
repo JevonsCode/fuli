@@ -23,7 +23,13 @@ from .models import (
     KnowledgeHumanChangeSearchRequest,
     KnowledgeHumanChangeSearchResult,
 )
+from .negative_feedback_block import (
+    TRUSTED_FEEDBACK_REPORTERS,
+    agent_authority_suspension,
+    negative_feedback_block_json,
+)
 from .provider_values import json_object, native_datetime, stable_uuid
+from .store_transactions import query_store_transaction
 
 
 AGENT_CONFIRMATION_POLICY_VERSION = 'agent-usage-v1'
@@ -139,11 +145,13 @@ async def record_knowledge_usage(
 
     lock = store._group_locks.setdefault(space['group_id'], asyncio.Lock())
     results = []
-    async with lock:
+    # One transaction keeps each usage event and its scores together, so a
+    # replayed event has nothing left to repair and can change nothing.
+    async with lock, query_store_transaction(store) as scoped:
         for item in request.items:
             results.append(
                 await _record_one_knowledge_use(
-                    store,
+                    scoped,
                     actor,
                     space,
                     request,
@@ -196,9 +204,7 @@ async def _record_one_knowledge_feedback(store, actor, space, request, item):
         )
     generation = int(state.get('usage_generation') or 1)
     previous_status = state.get('confirmation_status') or 'pending'
-    trusted_reporter = item.reported_by_kind in {
-        'user', 'authoritative_source'
-    }
+    trusted_reporter = item.reported_by_kind in TRUSTED_FEEDBACK_REPORTERS
     next_status = (
         'pending'
         if previous_status == 'agent_confirmed' and trusted_reporter
@@ -231,6 +237,15 @@ async def _record_one_knowledge_feedback(store, actor, space, request, item):
         request.task_id,
         item.feedback_kind,
     )
+    # Human-confirmed authority is only flagged. Anything else a trusted
+    # reporter rejects stays out of usage confirmation until a person confirms it.
+    block = negative_feedback_block_json(
+        audit_id=audit_id,
+        feedback_kind=item.feedback_kind,
+        reported_by_kind=item.reported_by_kind,
+        blocked_at=feedback_at,
+        usage_generation=generation,
+    ) if trusted_reporter and previous_status != 'confirmed' else None
     records, _, _ = await store.runtime.driver.execute_query(
         _knowledge_feedback_query(item.item_kind),
         space_id=space['id'],
@@ -252,6 +267,7 @@ async def _record_one_knowledge_feedback(store, actor, space, request, item):
             json.dumps(basis, ensure_ascii=False, sort_keys=True)
             if basis else None
         ),
+        negative_feedback_block_json=block,
         utility_score=utility_score,
         confidence_score=confidence_score,
         created_by=actor['id'],
@@ -327,7 +343,31 @@ async def _record_one_knowledge_use(store, actor, space, request, item):
         created_by=actor['id'],
         used_at=used_at,
     )
-    recorded = bool(records and records[0].get('recorded'))
+    if not records:
+        raise HTTPException(
+            status_code=409,
+            detail='knowledge changed while usage evidence was recorded; retry',
+        )
+    previous_status = state.get('confirmation_status') or 'pending'
+    stored_utility = float(state.get('utility_score') or 0)
+    stored_confidence = float(
+        state['confidence_score']
+        if state.get('confidence_score') is not None else 0.5
+    )
+    if records[0].get('recorded') is not True:
+        # A replayed event is already counted; it neither promotes, demotes
+        # nor rescores, whatever happened to the item since.
+        return KnowledgeUsageItemResult(
+            item_id=item.item_id,
+            item_kind=item.item_kind,
+            recorded=False,
+            confirmation_status=previous_status,
+            utility_score=stored_utility,
+            confidence_score=stored_confidence,
+            qualified_use_count=int(state.get('qualified_use_count') or 0),
+            distinct_task_count=int(state.get('distinct_task_count') or 0),
+            usage_generation=generation,
+        )
 
     aggregates, _, _ = await store.runtime.driver.execute_query(
         '''
@@ -362,7 +402,6 @@ async def _record_one_knowledge_use(store, actor, space, request, item):
         cited_count * USAGE_WEIGHTS['cited'][0]
         + applied_count * USAGE_WEIGHTS['applied'][0],
     )
-    previous_status = state.get('confirmation_status') or 'pending'
     if previous_status == 'confirmed':
         confidence_score = 1.0
     else:
@@ -372,9 +411,16 @@ async def _record_one_knowledge_use(store, actor, space, request, item):
             + cited_count * USAGE_WEIGHTS['cited'][1]
             + applied_count * USAGE_WEIGHTS['applied'][1],
         )
+    suspension = agent_authority_suspension(state)
+    if suspension is not None:
+        # The use is recorded, but ranking stays where the negative feedback
+        # left it instead of being rebuilt from positive uses alone.
+        utility_score = min(utility_score, stored_utility)
+        confidence_score = min(confidence_score, stored_confidence)
     promoted = (
         previous_status == 'pending'
         and not state.get('has_open_conflict')
+        and suspension is None
         and qualified_use_count >= AGENT_CONFIRMATION_MIN_USES
         and distinct_task_count >= AGENT_CONFIRMATION_MIN_TASKS
     )
@@ -411,7 +457,7 @@ async def _record_one_knowledge_use(store, actor, space, request, item):
     return KnowledgeUsageItemResult(
         item_id=item.item_id,
         item_kind=item.item_kind,
-        recorded=recorded,
+        recorded=True,
         promoted=promoted,
         confirmation_status=confirmation_status,
         utility_score=round(utility_score, 4),
@@ -737,6 +783,10 @@ async def _read_usage_state(store, space, item_id, item_kind):
                coalesce(item.fuli_confidence_score, 0.5) AS confidence_score,
                coalesce(item.fuli_negative_evidence_count, 0)
                  AS negative_evidence_count,
+               item.fuli_negative_feedback_block_json
+                 AS negative_feedback_block_json,
+               coalesce(item.fuli_qualified_use_count, 0) AS qualified_use_count,
+               coalesce(item.fuli_distinct_task_count, 0) AS distinct_task_count,
                {
                  "item.fuli_invalid_at"
                  if item_kind == "entity" else "item.invalid_at"
@@ -835,6 +885,10 @@ def _knowledge_feedback_query(item_kind: str) -> str:
                      ELSE 'observed' END,
               item.fuli_negative_evidence_count =
                 coalesce(item.fuli_negative_evidence_count, 0) + 1,
+              item.fuli_negative_feedback_block_json = coalesce(
+                item.fuli_negative_feedback_block_json,
+                $negative_feedback_block_json
+              ),
               item.fuli_requires_attention = true,
               item.fuli_last_feedback_kind = $feedback_kind,
               item.fuli_last_feedback_at = $feedback_at

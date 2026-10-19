@@ -12,7 +12,8 @@ import { useAgentAttention } from '@/features/project-agents/attention-store'
 import { t } from '@/i18n'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { useConsoleStore } from '@/stores/console'
-import { UiButton, UiIconButton } from '@/ui'
+import { Button } from '@/components/ui/button'
+import { UiIconButton } from '@/ui'
 import NavRail from './NavRail.vue'
 import SectionTabs from './SectionTabs.vue'
 import { activeDestination, activeSection, navDestinations } from './nav-destinations'
@@ -68,7 +69,7 @@ watchEffect(() => updateDocumentTitle(route.meta.title))
         <div class="app-actions">
           <template v-if="route.name === 'settings'">
             <GrowthLoading v-if="store.settingsSaving" variant="inline" :label="t(store.settingsSaveState === 'applying' ? 'settings.applying' : 'settings.saving')" />
-            <UiButton variant="primary" :disabled="store.settingsSaving" form="settings-form" type="submit">{{ t(store.settingsSaveState === 'saved' ? 'settings.savedShort' : 'settings.save') }}</UiButton>
+            <Button :disabled="store.settingsSaving" form="settings-form" type="submit">{{ t(store.settingsSaveState === 'saved' ? 'settings.savedShort' : 'settings.save') }}</Button>
           </template>
           <GlossaryToggle />
           <LocaleSwitcher />

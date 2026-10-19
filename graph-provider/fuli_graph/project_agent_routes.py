@@ -52,6 +52,7 @@ from .project_agent_task_models import (
     ProjectAgentRecruitmentPolicyUpdate,
     ProjectAgentRecruitmentRecord,
     ProjectAgentTaskActivityCreate,
+    ProjectAgentTaskLookup,
     ProjectAgentTaskRecord,
     ProjectAgentTaskRouteResult,
     ProjectAgentTaskSubmit,
@@ -283,6 +284,25 @@ def register_project_agent_routes(
             status=status,
             limit=limit,
         )
+
+    @application.get(
+        '/v1/project-agent-task-lookup',
+        response_model=ProjectAgentTaskLookup,
+    )
+    async def find_project_agent_task_by_idempotency_key(
+        actor: Actor,
+        personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
+        personal_project_id: Annotated[str, Query(min_length=1, max_length=128)],
+        idempotency_key: Annotated[str, Query(min_length=8, max_length=256)],
+    ) -> ProjectAgentTaskLookup:
+        # A compact read: the caller only reconciles which task, in which status.
+        task = await store.find_project_agent_task_by_idempotency_key(
+            actor,
+            personal_space_id,
+            personal_project_id,
+            idempotency_key,
+        )
+        return ProjectAgentTaskLookup(task=task.model_copy(update={'events': []}) if task else None)
 
     @application.get(
         '/v1/project-agent-tasks/{task_id}',
