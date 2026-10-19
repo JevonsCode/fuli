@@ -428,7 +428,7 @@ test('ACP timeout and caller cancellation reject pending initialize and stop onl
     let stoppedAt = performance.now();
     // Measure from the adapter's initialize: the job helper's own startup has a
     // separate budget, so a slow helper cannot count against either outcome.
-    const cancelled = recordedMethod(record, 'initialize').then(() => {
+    const cancelled = recordedMethod(record, 'initialize', 120_000).then(() => {
       stoppedAt = performance.now();
       if (cancel) controller.abort(new Error(secret));
     });
