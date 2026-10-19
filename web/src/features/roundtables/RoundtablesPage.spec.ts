@@ -4,7 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const config = vi.hoisted(() => ({ space: null as { id: string } | null }))
 const getJson = vi.fn()
-vi.mock('@/stores/console', () => ({ useConsoleStore: () => ({ activePersonalSpace: config.space }) }))
+vi.mock('@/stores/console', async () => {
+  const { reactive } = await import('vue')
+  const store = reactive({ activePersonalSpace: null as { id: string } | null })
+  return { useConsoleStore: () => { store.activePersonalSpace = config.space; return store } }
+})
 vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(), getJson: (url: string) => getJson(url) }))
 
 import { setLocale } from '@/i18n'
@@ -77,7 +81,7 @@ describe('RoundtablesPage', () => {
     const requests = wrapper.findAll('[data-roundtable-request]')
     expect(requests.map(request => request.text())).toEqual([
       expect.stringContaining('等待 Cora Fenn'),
-      expect.stringContaining('等待 Remote Lead'),
+      expect.stringContaining('已发给 Remote Lead'),
     ])
     expect(requests[0]!.text()).toContain('对方没有可唤醒的客户端会话')
     expect(requests[1]!.text()).toContain('未送达')
@@ -248,5 +252,123 @@ describe('RoundtablesPage on a phone and with paging', () => {
     const wrapper = await mountAt('/roundtables/thread-1')
     expect(wrapper.get('[data-roundtable-cleanup]').text()).toContain('wake_cleanup_incomplete')
     wrapper.unmount()
+  })
+})
+
+describe('RoundtablesPage when access, space or cursors change', () => {
+  const members = [{ address: 'local:lead', agentId: 'lead', name: 'Lead', joinedSeq: 0 }]
+  const room = { chatId: 'room', kind: 'group', title: 'Room', members, transport: 'local', createdAt: '2026-10-10T09:00:00Z', updatedAt: '2026-10-10T09:05:00Z' }
+  const message = (seq: number) => ({ messageId: `m-${seq}`, seq, from: 'local:lead', body: `message ${seq}`, createdAt: room.updatedAt })
+  const sources: EventTarget[] = []
+  class Source extends EventTarget { constructor() { super(); sources.push(this) } close() {} }
+  beforeEach(() => { setLocale('zh-CN', { persist: false }); getJson.mockReset(); sources.length = 0 })
+
+  it('clears everything shown and drops late answers when the space changes', async () => {
+    vi.stubGlobal('EventSource', Source)
+    config.space = { id: 'one' }
+    let releaseOld!: (value: unknown) => void
+    const oldDetail = new Promise(resolve => { releaseOld = resolve })
+    let space = 'one'
+    getJson.mockImplementation(async (url: string) => {
+      if (url === '/api/roundtable/threads') return { threads: space === 'one' ? [thread] : [{ ...thread, id: 'thread-2', subject: '另一个空间' }] }
+      if (url.startsWith('/api/roundtable/chats?')) return { chats: [], hasMore: false }
+      return space === 'one' ? oldDetail : { ...detail, subject: '新空间里的同名对话' }
+    })
+    const wrapper = await mountAt('/roundtables/thread-1')
+    try {
+      const { useConsoleStore } = await import('@/stores/console')
+      space = 'two'
+      ;(useConsoleStore() as unknown as { activePersonalSpace: { id: string } }).activePersonalSpace = { id: 'two' }
+      await flushPromises()
+      releaseOld(detail)
+      await flushPromises()
+      expect(wrapper.findAll('[data-testid="roundtable-thread"]').map(item => item.text())).toEqual([expect.stringContaining('另一个空间')])
+      expect(wrapper.get('[data-roundtable-detail-title]').text()).toBe('新空间里的同名对话')
+    } finally { wrapper.unmount(); config.space = null; vi.unstubAllGlobals() }
+  })
+
+  it('clears lists and detail when access is lost and says so', async () => {
+    const { ApiError } = await import('@/api/client')
+    getJson.mockImplementation(async (url: string) => {
+      if (url === '/api/roundtable/threads') return { threads: [thread] }
+      if (url.startsWith('/api/roundtable/chats?')) return { chats: [room], hasMore: false }
+      throw new ApiError('forbidden', 403)
+    })
+    const wrapper = await mountAt('/roundtables/thread-1')
+    expect(wrapper.text()).toContain('无法再访问这些对话')
+    expect(wrapper.find('[data-testid="roundtable-thread"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="roundtable-chat-room"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows a deep-linked conversation even when both lists are empty', async () => {
+    getJson.mockImplementation(async (url: string) => url === '/api/roundtable/threads' ? { threads: [] }
+      : url.startsWith('/api/roundtable/chats?') ? { chats: [], hasMore: false } : detail)
+    const wrapper = await mountAt('/roundtables/thread-1')
+    expect(wrapper.find('[data-testid="roundtable-timeline"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Agent 在任意已接入的客户端里调用')
+    wrapper.unmount()
+  })
+
+  it('names an unknown status as unknown and keeps the recorded value', async () => {
+    const odd = { ...detail, messages: [{ ...detail.messages[0]!, status: 'mystery', via: null }] }
+    getJson.mockImplementation(async (url: string) => url === '/api/roundtable/threads' ? { threads: [thread] }
+      : url.startsWith('/api/roundtable/chats?') ? { chats: [], hasMore: false } : odd)
+    const wrapper = await mountAt('/roundtables/thread-1')
+    expect(wrapper.text()).toContain('状态未知（记录为 mystery）')
+    wrapper.unmount()
+  })
+
+  it('keeps the local cursor after a failed page and says the page failed', async () => {
+    const urls: string[] = []
+    getJson.mockImplementation(async (url: string) => {
+      urls.push(url)
+      if (url === '/api/roundtable/threads') return { threads: [] }
+      if (url === '/api/roundtable/chats?limit=50') return { chats: [room], hasMore: true, nextChat: 'room' }
+      throw new Error('offline')
+    })
+    const wrapper = await mountAt('/roundtables')
+    await wrapper.get('[data-roundtable-more-chats]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('更多本机会话读取失败')
+    await wrapper.get('[data-roundtable-more-chats]').trigger('click')
+    await flushPromises()
+    expect(urls.filter(url => url.includes('afterChat=room'))).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  it('stops offering later messages when the cursor does not move', async () => {
+    getJson.mockImplementation(async (url: string) => {
+      if (url === '/api/roundtable/threads') return { threads: [] }
+      if (url.startsWith('/api/roundtable/chats?')) return { chats: [room], hasMore: false }
+      return { ...room, hasMore: true, nextAfter: 1, messages: url.includes('after=0') ? [message(1)] : [] }
+    })
+    const wrapper = await mountAt('/roundtables/chat/room')
+    await wrapper.get('[data-roundtable-later]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-roundtable-later-stuck]').exists()).toBe(true)
+    expect(wrapper.find('[data-roundtable-later]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('announces new messages in a room with unread pages instead of reloading it', async () => {
+    vi.stubGlobal('EventSource', Source)
+    config.space = { id: 'space' }
+    const urls: string[] = []
+    getJson.mockImplementation(async (url: string) => {
+      urls.push(url)
+      if (url === '/api/roundtable/threads') return { threads: [] }
+      if (url.startsWith('/api/roundtable/chats?')) return { chats: [room], hasMore: false }
+      return { ...room, hasMore: true, nextAfter: 1, messages: [message(1)] }
+    })
+    const wrapper = await mountAt('/roundtables/chat/room')
+    try {
+      const reads = urls.filter(url => url.startsWith('/api/roundtable/chats/room')).length
+      sources[0]!.dispatchEvent(new MessageEvent('chat', { data: '{"chatId":"room","seq":5}' }))
+      await flushPromises()
+      expect(wrapper.find('[data-roundtable-new-messages]').exists()).toBe(true)
+      expect(urls.filter(url => url.startsWith('/api/roundtable/chats/room'))).toHaveLength(reads)
+      expect(wrapper.findAll('[data-roundtable-chat-message]')).toHaveLength(1)
+    } finally { wrapper.unmount(); config.space = null; vi.unstubAllGlobals() }
   })
 })
