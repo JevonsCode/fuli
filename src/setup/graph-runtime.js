@@ -90,6 +90,7 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
         runtimeSettings,
         memoryProfile: input.memoryProfile,
         personalOnly: input.personalOnly === true,
+        allowProviderDowngrade: input.allowProviderDowngrade === true,
         onProgress: input.onProgress
       })
     : await deps.ensureContainerRuntime({

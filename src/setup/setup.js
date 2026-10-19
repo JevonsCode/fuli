@@ -106,6 +106,7 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
     memoryProfile: options.memoryProfile,
     adaptiveRuntimeSettings: plan.adaptiveRuntimeSettings,
     noStart: options.noStart,
+    allowProviderDowngrade: options.allowProviderDowngrade === true,
     env: dependencies.env ?? process.env,
     onProgress: dependencies.onProgress
   });

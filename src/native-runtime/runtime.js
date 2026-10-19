@@ -422,7 +422,7 @@ async function ensureNativeRuntimeUnlocked(input, dependencies = {}) {
     if (!/^[a-f0-9]{64}$/.test(providerFingerprint)) throw new Error('Native Graph Provider source fingerprint is invalid.');
     const expected = { version: MANIFEST_VERSION, status: 'ready', mode: 'native',
       providerVersion: FULI_VERSION + '+native.' + PROVIDER_RUNTIME_REVISION, providerFingerprint, ...assets };
-    assertProviderUpgrade(saved?.providerVersion, expected.providerVersion);
+    assertProviderUpgrade(saved?.providerVersion, expected.providerVersion, input.allowProviderDowngrade);
     if (Object.entries(expected).every(([key, value]) => saved?.[key] === value)) return saved;
     deps.writeManifest(input.paths.nativeRuntimeManifestPath, expected);
     return expected;
@@ -472,7 +472,7 @@ async function ensureNativeRuntimeUnlocked(input, dependencies = {}) {
   if (saved?.neo4jVersion && saved.neo4jVersion !== NATIVE_NEO4J_VERSION) {
     throw new Error('Native Neo4j version changes require an explicit data migration plan. Refusing implicit upgrade or downgrade.');
   }
-  assertProviderUpgrade(saved?.providerVersion, expected.providerVersion);
+  assertProviderUpgrade(saved?.providerVersion, expected.providerVersion, input.allowProviderDowngrade);
   if (manifestReady(saved, expected, input.paths, deps.pathExists)) return saved;
 
   deps.onProgress(input, `Installing native Neo4j ${NATIVE_NEO4J_VERSION}…`);
@@ -832,13 +832,16 @@ function withoutStarted(entries, started) {
   return Object.fromEntries(Object.entries(entries).filter(([id]) => !Object.hasOwn(started, id)));
 }
 
-function assertProviderUpgrade(installed, requested) {
+// A lower version is refused unless the person asked for it explicitly, for
+// example when moving from a local rc build to a public beta of the same release.
+function assertProviderUpgrade(installed, requested, allowDowngrade = false) {
+  if (allowDowngrade) return;
   let comparison;
   try { comparison = compareSemanticVersions(installed, requested); } catch { return; }
   // SemVer ignores build metadata; Fuli's native revision orders runtime repairs.
   const revision = value => BigInt(/\+native\.(\d+)$/.exec(value)?.[1] ?? '0');
   if (comparison > 0 || (comparison === 0 && revision(installed) > revision(requested))) {
-    throw new Error('A newer native Graph Provider is already installed. Refusing an implicit downgrade; use the matching or newer Fuli package.');
+    throw new Error('A newer native Graph Provider is already installed. Refusing an implicit downgrade; use the matching or newer Fuli package, or back up the data folder and run setup with --allow-provider-downgrade.');
   }
 }
 
