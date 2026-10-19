@@ -425,11 +425,11 @@ test('ACP timeout and caller cancellation reject pending initialize and stop onl
     const { options, record } = await fixture(t, 'hang');
     const controller = new AbortController();
     let stoppedAt = performance.now();
-    // Cancel once the adapter is waiting on initialize, so a slow job-helper
-    // start cannot turn the cancellation into a timeout or leave no record.
-    const cancelled = cancel && recordedMethod(record, 'initialize').then(() => {
+    // Measure from the adapter's initialize: the job helper's own startup has a
+    // separate budget, so a slow helper cannot count against either outcome.
+    const cancelled = recordedMethod(record, 'initialize').then(() => {
       stoppedAt = performance.now();
-      controller.abort(new Error(secret));
+      if (cancel) controller.abort(new Error(secret));
     });
     await assert.rejects(startCodexAcpProcess({ ...options, initializeTimeoutMs: cancel ? 15_000 : 5000,
       signal: controller.signal }), error => {

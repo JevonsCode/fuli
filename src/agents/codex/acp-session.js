@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, join, normalize } from 'node:path';
 import { parse } from 'smol-toml';
 import { methods } from '@agentclientprotocol/sdk';
@@ -169,6 +169,7 @@ function select(options, id) {
   if (typeof option.currentValue !== 'string' || !values.includes(option.currentValue)) throw failure('model_unavailable');
   return { values, current: option.currentValue };
 }
+const canonical = path => realpath(path).catch(() => normalize(path));
 async function requireTrustedCwd(home, cwd) {
   // The official adapter overrides cwd trust internally. Require a pre-existing exact
   // native trust record first; never manufacture trust or inspect authentication files.
@@ -178,7 +179,12 @@ async function requireTrustedCwd(home, cwd) {
     const content = await readFile(path, 'utf8');
     if (Buffer.byteLength(content) > 256 * 1024) throw failure('directory_untrusted');
     const projects = parse(content).projects ?? {};
-    const matches = Object.entries(projects).filter(([path]) => isAbsolute(path) && samePath(path, cwd));
+    // Codex records the path as it was opened; a short (8.3) or differently
+    // cased spelling of the same directory is the same trust record.
+    const target = await canonical(cwd);
+    const entries = await Promise.all(Object.entries(projects).filter(([path]) => isAbsolute(path))
+      .map(async ([path, value]) => [await canonical(path), value]));
+    const matches = entries.filter(([path]) => samePath(path, target));
     if (!matches.length || matches.some(([, value]) => value?.trust_level !== 'trusted')) throw failure('directory_untrusted');
   } catch { throw failure('directory_untrusted'); }
 }
