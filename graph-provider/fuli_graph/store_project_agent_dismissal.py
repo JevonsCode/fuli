@@ -99,9 +99,9 @@ class StoreProjectAgentDismissal:
         records, _, _ = await self.runtime.driver.execute_query(
             _GUARDED_AGENT + '''
             OPTIONAL MATCH (agent)-[:HAS_DISMISSAL]->(existing:FuliProjectAgentDismissal)
-            WITH space, agent, open_task_count, assignments, project_ids, system_role,
+            WITH agent, open_task_count, assignments, project_ids, system_role,
                  leads_project, head(collect(existing)) AS existing
-            WITH space, agent, open_task_count, assignments, project_ids, CASE
+            WITH agent, open_task_count, assignments, project_ids, CASE
                    WHEN existing IS NOT NULL AND existing.reason = $reason THEN 'replayed'
                    WHEN existing IS NOT NULL THEN 'already_dismissed'
                    WHEN system_role THEN 'system_role'
@@ -128,8 +128,9 @@ class StoreProjectAgentDismissal:
                             dismissal.source_application = $source_application,
                             dismissal.source_session_id = $source_session_id,
                             dismissal.dismissed_at = $now
+              // Linked to the identity only: a space edge would wait on the space
+              // lock that concurrent task creation holds.
               MERGE (agent)-[:HAS_DISMISSAL]->(dismissal)
-              MERGE (space)-[:HAS_PROJECT_AGENT_DISMISSAL]->(dismissal)
             )
             WITH agent, outcome, open_task_count
             OPTIONAL MATCH (agent)-[:HAS_DISMISSAL]->(record:FuliProjectAgentDismissal)
@@ -215,7 +216,8 @@ class StoreProjectAgentDismissal:
         records, _, _ = await self.runtime.driver.execute_query(
             '''
             MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})-
-                  [:HAS_PROJECT_AGENT_DISMISSAL]->(dismissal:FuliProjectAgentDismissal)
+                  [:HAS_PROJECT_AGENT_IDENTITY]->(:FuliProjectAgent)-
+                  [:HAS_DISMISSAL]->(dismissal:FuliProjectAgentDismissal)
             WITH dismissal,
                  dismissal.occupation_role IN $occupations AS by_occupation,
                  $personal_project_id IN coalesce(dismissal.project_ids, []) AS by_project
