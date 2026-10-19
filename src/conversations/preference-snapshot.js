@@ -1,4 +1,4 @@
-import { canonicalJson, contentHash } from '../publication/canonical-json.js';
+import { canonicalJson, contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { entryRules } from './entry-rules.js';
 import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 import { preferenceInstructionView } from './preference-view.js';

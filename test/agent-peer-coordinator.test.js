@@ -7,12 +7,12 @@ import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { startCoordinatorServer } from '../src/agent-peer/coordinator-http.js';
-import { createCoordinatorService } from '../src/agent-peer/coordinator-service.js';
-import { createCoordinatorStore } from '../src/agent-peer/coordinator-store.js';
-import { createDeviceCertificate, deviceIdentity } from '../src/agent-peer/device-identity.js';
-import { createPeerClient } from '../src/agent-peer/peer-transport.js';
-import { PEER_LIMITS, validateAssertion } from '../src/agent-peer/protocol.js';
+import { startCoordinatorServer } from '../packages/roundtable/src/peer/coordinator-http.js';
+import { createCoordinatorService } from '../packages/roundtable/src/peer/coordinator-service.js';
+import { createCoordinatorStore } from '../packages/roundtable/src/peer/coordinator-store.js';
+import { createDeviceCertificate, deviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
+import { createPeerClient } from '../packages/roundtable/src/peer/peer-transport.js';
+import { PEER_LIMITS, validateAssertion } from '../packages/roundtable/src/peer/protocol.js';
 
 const TEST_AUTHORITY = { keyId: '0'.repeat(32), publicKey: Buffer.alloc(32).toString('base64url') };
 const identity = async () => deviceIdentity(await createDeviceCertificate());

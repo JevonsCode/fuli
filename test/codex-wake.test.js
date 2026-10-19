@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { codexWake } from '../src/agents/codex/wake.js';
-import { parseFinalAnswer, wakeArguments } from '../src/agent-roundtable/wake.js';
+import { codexWake } from '../packages/roundtable/src/agents/codex/wake.js';
+import { parseFinalAnswer, wakeArguments } from '../packages/roundtable/src/roundtable/wake.js';
 
 test('Codex runs read-only, resuming a session or starting in the project directory', () => {
   assert.deepEqual(wakeArguments('codex', { sessionId: 'cx-session-1' }),

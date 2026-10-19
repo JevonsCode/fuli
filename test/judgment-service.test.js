@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createJudgmentService } from '../src/judgment/service.js';
-import { wakeAdapter } from '../src/agents/wake-registry.js';
+import { judgmentArgs } from '../src/agents/judgment-registry.js';
 
 test('service validates active space, project, real roster, revisions and enums', async t => {
   const app = { config: { personal: { spaceId: 's' } }, listPersonalProjects: async () => [{ project_id: 'p' }],
@@ -16,11 +16,11 @@ test('service validates active space, project, real roster, revisions and enums'
 });
 
 test('judgment clients disable customization and tools, retain no client sessions', () => {
-  const codex = wakeAdapter('codex').judgmentArgs({ cwd: '/test', quality: 'quality' });
+  const codex = judgmentArgs('codex', { cwd: '/test', quality: 'quality' });
   assert.ok(codex.includes('--ignore-user-config'));
   assert.ok(codex.includes('--ephemeral'));
   assert.ok(codex.includes('features.shell_tool=false'));
-  const claude = wakeAdapter('claude_code').judgmentArgs({ quality: 'quality' });
+  const claude = judgmentArgs('claude_code', { quality: 'quality' });
   assert.ok(claude.includes('--safe-mode'));
   assert.equal(claude[claude.indexOf('--tools') + 1], '');
   assert.ok(claude.includes('--strict-mcp-config'));

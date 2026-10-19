@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { canonicalJson } from '../src/agent-peer/protocol.js';
-import { canonicalJson as sharedCanonicalJson } from '../src/publication/canonical-json.js';
+import { canonicalJson } from '../packages/roundtable/src/peer/protocol.js';
+import { canonicalJson as sharedCanonicalJson } from '../packages/roundtable/src/canonical-json.js';
 
 // The peer protocol signs these bytes; this is the encoding peers already exchange.
 function previousPeerCanonicalJson(value) {

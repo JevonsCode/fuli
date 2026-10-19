@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { canonicalJson } from '../publication/canonical-json.js';
+import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
 import {
   ProposalStatus,
   WorkspaceRole,

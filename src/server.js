@@ -3,7 +3,7 @@ import { createServer as createHttpServer } from 'node:http';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createPeerRuntime } from './agent-peer/peer-runtime.js';
+import { createPeerRuntime } from '../packages/roundtable/src/peer/peer-runtime.js';
 import { handleApiRequest } from './http/api-router.js';
 import { mapHttpError } from './http/error-mapping.js';
 import { localServerAuthority, rejectRequestOutsidePolicy } from './http/request-policy.js';

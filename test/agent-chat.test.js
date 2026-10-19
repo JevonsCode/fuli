@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
-import { createRoundtableStore } from '../src/agent-roundtable/store.js';
+import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
+import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
@@ -253,8 +253,8 @@ test('a separate MCP process wait observes a committed message without polling',
   const roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore(path) });
   const room = await roundtable.chat({ taskContextToken: 'alpha', sourceApplication: 'codex', action: 'create',
     requestId: 'process-chat', kind: 'direct', members: ['local:beta'] });
-  const code = `import {createRoundtableStore} from './src/agent-roundtable/store.js';
-    import {createChatService} from './src/agent-roundtable/chat-service.js';
+  const code = `import {createRoundtableStore} from './packages/roundtable/src/roundtable/store.js';
+    import {createChatService} from './packages/roundtable/src/roundtable/chat-service.js';
     const store=createRoundtableStore(process.argv[1]);
     const chat=createChatService({store:store.chat,transaction:store.transaction,scope:'space',transport:'local'});
     const pending=chat({address:'local:beta'},{action:'wait',chatId:process.argv[2],timeoutSeconds:3});
@@ -293,7 +293,7 @@ test('tool cancellation uses the host request signal and leaves messages unread'
 });
 
 test('abort while authorization is pending never advances the durable read cursor', async t => {
-  const { createChatService } = await import('../src/agent-roundtable/chat-service.js');
+  const { createChatService } = await import('../packages/roundtable/src/roundtable/chat-service.js');
   const store = createRoundtableStore(); t.after(()=>store.close());
   const directory = async()=>['alpha','beta'].map(agentId=>({address:`local:${agentId}`,agentId,name:agentId}));
   const chat = createChatService({store:store.chat,transaction:store.transaction,scope:'space',transport:'local',directory});

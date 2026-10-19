@@ -1,8 +1,8 @@
 import { dirname, join } from 'node:path';
 import { createEmployeeService } from '../employees/service.js';
-import { createAgentRoundtable } from '../agent-roundtable/service.js';
-import { createRoundtableStore } from '../agent-roundtable/store.js';
-import { createPeerPort } from '../agent-peer/peer-port.js';
+import { createAgentRoundtable } from '../../packages/roundtable/src/roundtable/service.js';
+import { createRoundtableStore } from '../../packages/roundtable/src/roundtable/store.js';
+import { createPeerPort } from '../../packages/roundtable/src/peer/peer-port.js';
 import { createFuliRoundtableHost } from './roundtable-host.js';
 import { createJudgmentService } from '../judgment/service.js';
 import { JudgmentStore } from '../judgment/store.js';

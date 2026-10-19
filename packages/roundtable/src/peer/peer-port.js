@@ -9,7 +9,7 @@ import { assertionDigest, authorityFromProvider } from './origin-proof.js';
 import { createPeerClient } from './peer-transport.js';
 import { PEER_LIMITS, PEER_PROTOCOL, PeerError, peerCleanup, TERMINAL_STATUSES } from './protocol.js';
 import { createPeerChatPort } from './chat-port.js';
-import { matchesAgentDiscovery } from '../agent-roundtable/discovery.js';
+import { matchesAgentDiscovery } from '../roundtable/discovery.js';
 
 const ADDRESS = /^peer:([0-9a-f]{16}):([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/;
 const STATUS_POLL_MS = 2_000;

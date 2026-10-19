@@ -5,7 +5,7 @@ import { resolveTaskEntryAgent, loadProjectAgentContinuity } from './project-age
 import { applyAgentAssignment } from './task-agent-assignment.js';
 import { triageCandidates } from './conversation-triage.js';
 import { ASSISTANT_AGENT_ID } from './task-entry-project-scope.js';
-import { ATTENTION_REPLIES_GUIDANCE } from '../agent-roundtable/attention-inbox.js';
+import { ATTENTION_REPLIES_GUIDANCE } from '../../packages/roundtable/src/roundtable/attention-inbox.js';
 
 export function finishTaskEntryPreferences(application, preferences, input) {
   if (!input.agentInvocation || input.agentToolName !== 'get_collaboration_preferences') return preferences;

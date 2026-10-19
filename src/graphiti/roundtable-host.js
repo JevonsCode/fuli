@@ -1,6 +1,7 @@
-import { assertRoundtableHost } from '../agent-roundtable/host.js';
+import { assertRoundtableHost } from '../../packages/roundtable/src/host.js';
 import { loadProjectTeam } from './project-team-view.js';
 import { recordProjectMemoryUsage } from './project-memory-usage.js';
+import { activeAgentRequestSignal, activeSealedWorkerRequest } from '../app/agent-request-context.js';
 
 // FULI as the Roundtable host: Agents, projects, task identity and wake
 // authority all come from the Provider of this device's personal space.
@@ -61,6 +62,8 @@ export function createFuliRoundtableHost(app) {
         source_application: client, message_id: messageId, digest, target_node: targetNode,
         binding_id: bindingId, expires_at: expiresAt, ...(purpose ? { purpose } : {}) }),
     remoteOriginAuthority: () => app.personal.getRemoteOriginAuthority(spaceId()),
+    requestSignal: activeAgentRequestSignal,
+    inRestrictedWorker: activeSealedWorkerRequest,
     recordMemoryUsage: input => app.personal.recordProjectMemoryUsage
       ? recordProjectMemoryUsage(app, input) : { recorded: false, reason: 'usage_port_unavailable' }
   });

@@ -1,7 +1,6 @@
 import { createChatWake } from './chat-wake.js';
-import { PeerError } from '../agent-peer/protocol.js';
+import { PeerError } from '../peer/protocol.js';
 import { createChatService } from './chat-service.js';
-import { activeAgentRequestSignal, activeSealedWorkerRequest } from '../app/agent-request-context.js';
 
 // The current task supplies the sender. Neither MCP nor HTTP accepts a from ID.
 export function createAgentChat({ host, peer = null, store, agents, idFactory, messageAgent, canWake, waitUntilIdle, attentionInbox }) {
@@ -29,7 +28,7 @@ export function createAgentChat({ host, peer = null, store, agents, idFactory, m
       return () => { stopLocal(); stopPeer?.(); };
     },
     async chat(input, options = {}) {
-      options = { ...options, signal: options.signal ?? activeAgentRequestSignal() };
+      options = { ...options, signal: options.signal ?? host.requestSignal?.() };
       options.signal?.throwIfAborted();
       const { taskContextToken, sourceApplication = 'other' } = input;
       const transport = input.transport;
@@ -41,7 +40,7 @@ export function createAgentChat({ host, peer = null, store, agents, idFactory, m
       if (!task?.projectAgentId || !task.personalProjectId || task.completed || task.checkpoint?.phase === 'complete') {
         throw new PeerError('chat_task_required', 'Chat requires an active current Agent project task', 409);
       }
-      if (activeSealedWorkerRequest() || task.agentMemoryScope === 'task_only' || task.turnId?.startsWith('worker-run:')) {
+      if (host.inRestrictedWorker?.() || task.agentMemoryScope === 'task_only' || task.turnId?.startsWith('worker-run:')) {
         throw new PeerError('chat_task_restricted', 'A restricted worker cannot open other Agent communications', 403);
       }
       const currentAgents = await agents();

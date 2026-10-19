@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { sign } from 'node:crypto';
-import { canonicalJson } from '../src/agent-peer/protocol.js';
+import { canonicalJson } from '../packages/roundtable/src/peer/protocol.js';
 import { device, pair } from './fixtures/peer-devices.js';
 
 test('paired devices discover an explicitly shared member and exchange a group over real mTLS without waking anything', { timeout: 20_000 }, async () => {

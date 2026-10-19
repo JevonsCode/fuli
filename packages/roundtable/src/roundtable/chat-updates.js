@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PeerError } from '../agent-peer/protocol.js';
+import { PeerError } from '../peer/protocol.js';
 import { waitForChatChange } from './chat-wait.js';
 
 const input = z.object({ after: z.number().int().nonnegative().default(0),

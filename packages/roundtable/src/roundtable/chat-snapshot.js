@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { canonicalJson } from '../publication/canonical-json.js';
-import { PeerError } from '../agent-peer/protocol.js';
+import { canonicalJson } from '../canonical-json.js';
+import { PeerError } from '../peer/protocol.js';
 
 const SNAPSHOT_BYTES = 12_000;
 const CHAT_SNAPSHOT_MESSAGE_CHARS = 2_000;

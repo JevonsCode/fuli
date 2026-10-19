@@ -1,4 +1,4 @@
-import { ApplicationError } from '../app/application-error.js';
+import { ApplicationError, isControlledError } from '../app/application-error.js';
 import { BLOCKED_PREFERENCE_LABEL, blockedPreferenceDelivery, completeBlockedPreferenceDelivery,
   preferenceDeliveryReason, stablePreferencePrefix, TASK_PREFERENCE_RESULT_LIMIT_BYTES } from './preference-delivery.js';
 
@@ -135,7 +135,7 @@ export function hookAdditionalContextToolResult(
 }
 
 export function errorToolResult(error) {
-  const controlled = error instanceof ApplicationError;
+  const controlled = isControlledError(error);
   const code = controlled ? error.code : 'internal_error';
   const message = controlled
     ? applicationErrorMessage(error)

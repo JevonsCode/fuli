@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
-import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
-import { createRoundtableStore } from '../src/agent-roundtable/store.js';
-import { wakeAgent } from '../src/agent-roundtable/wake.js';
+import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
+import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
+import { wakeAgent } from '../packages/roundtable/src/roundtable/wake.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 const UNCONFIRMED = { status: 'unconfirmed', code: 'cleanup_timeout' };

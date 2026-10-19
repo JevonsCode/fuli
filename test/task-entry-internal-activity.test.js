@@ -3,8 +3,8 @@ import test from 'node:test';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
-import { createRoundtableStore } from '../src/agent-roundtable/store.js';
+import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
+import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 

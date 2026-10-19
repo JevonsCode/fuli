@@ -3,8 +3,8 @@ import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
-import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
-import { createRoundtableStore } from '../src/agent-roundtable/store.js';
+import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
+import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
 import {
   activeSealedWorkerRequest, runWithAgentRequestContext, sealedWorkerRequestContext
 } from '../src/app/agent-request-context.js';

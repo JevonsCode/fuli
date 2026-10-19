@@ -1,5 +1,5 @@
 import { readJson, sendJson } from '../http/response.js';
-import { PeerError } from './protocol.js';
+import { PeerError } from '../../packages/roundtable/src/peer/protocol.js';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 

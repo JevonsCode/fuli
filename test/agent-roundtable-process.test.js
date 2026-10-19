@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { runProcess } from '../src/agent-roundtable/wake.js';
+import { runProcess } from '../packages/roundtable/src/roundtable/wake.js';
 
 async function waitFor(read) {
   const deadline = Date.now() + 5_000;

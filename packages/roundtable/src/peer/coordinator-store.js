@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { createChatStore } from '../agent-roundtable/chat-store.js';
+import { createChatStore } from '../roundtable/chat-store.js';
 
 // Paired devices, one-use invitations and the cross-device message queue.
 // Status changes are also appended to events, so history survives updates.

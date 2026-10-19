@@ -1,4 +1,4 @@
-import { ApplicationError } from '../app/application-error.js';
+import { RoundtableError } from '../errors.js';
 
 export function projectAddress(to) {
   return typeof to === 'string' && to.startsWith('project:') ? to.slice(8) : null;
@@ -6,16 +6,16 @@ export function projectAddress(to) {
 
 export async function resolveProjectLead(host, projectId, { source = null, recruit = false } = {}) {
   if (!projectId || projectId.length > 128 || projectId.trim() !== projectId) {
-    throw new ApplicationError('validation', 'Use an exact project:<projectId> address');
+    throw new RoundtableError('validation', 'Use an exact project:<projectId> address');
   }
   const project = await host.getProject(projectId);
   if (project.temporary || project.archived) {
-    throw new ApplicationError('validation', 'Roundtable targets must be active formal projects');
+    throw new RoundtableError('validation', 'Roundtable targets must be active formal projects');
   }
   if (recruit) {
-    if (!source?.agent || !source.projectId) throw new ApplicationError('validation', 'An active project lead task is required');
+    if (!source?.agent || !source.projectId) throw new RoundtableError('validation', 'An active project lead task is required');
     if (source.agent.agentId !== await host.projectLeadId(source.projectId)) {
-      throw new ApplicationError('validation', 'Cross-project requests go through the source lead');
+      throw new RoundtableError('validation', 'Cross-project requests go through the source lead');
     }
   }
   let leadId = await host.projectLeadId(projectId);

@@ -6,8 +6,8 @@ import { Readable } from 'node:stream';
 import test from 'node:test';
 
 import { handlePeerApiRequest } from '../src/agent-peer/http.js';
-import { createPeerPort } from '../src/agent-peer/peer-port.js';
-import { createPeerRuntime } from '../src/agent-peer/peer-runtime.js';
+import { createPeerPort } from '../packages/roundtable/src/peer/peer-port.js';
+import { createPeerRuntime } from '../packages/roundtable/src/peer/peer-runtime.js';
 import { runPeerCommand } from '../src/cli/peer-command.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 

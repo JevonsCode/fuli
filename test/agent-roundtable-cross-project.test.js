@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
-import { createRoundtableStore } from '../src/agent-roundtable/store.js';
+import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
+import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 function fixture({ missingLead = false, available = true, sessions = true, memoryResults = 0 } = {}) {

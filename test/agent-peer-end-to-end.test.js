@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { sign } from 'node:crypto';
-import { canonicalJson } from '../src/agent-peer/protocol.js';
+import { canonicalJson } from '../packages/roundtable/src/peer/protocol.js';
 import { device, pair, remoteAddress, signingAuthority } from './fixtures/peer-devices.js';
 test('a project lead asks the shared lead on another paired device over TLS', { timeout: 20_000 }, async () => {
   const [alpha, beta] = await Promise.all([device('alpha'), device('beta')]);

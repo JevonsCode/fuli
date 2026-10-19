@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 
-import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
-import { createRoundtableStore } from '../src/agent-roundtable/store.js';
-import { parseFinalAnswer, sessionWorkingDirectory, wakeArguments, wakeAgent } from '../src/agent-roundtable/wake.js';
+import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
+import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
+import { parseFinalAnswer, sessionWorkingDirectory, wakeArguments, wakeAgent } from '../packages/roundtable/src/roundtable/wake.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 const agent = (agentId, name, allowedClients = ['claude_code', 'codex']) => ({ agentId,

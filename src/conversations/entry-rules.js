@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
-import { contentHash } from '../publication/canonical-json.js';
+import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { STOP_HOOK_CHECKPOINT_GUIDANCE, taskKnowledgeGuidance } from '../graphiti/agent-knowledge-workflows.js';
 import { GENERIC_SCOPE_GUIDANCE, STATIC_APPLICATION_GUIDANCE } from '../graphiti/collaboration-preference-workflow.js';
 import { CONVERSATION_GUIDANCE } from '../graphiti/agent-conversations.js';

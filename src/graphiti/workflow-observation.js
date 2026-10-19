@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { canonicalJson } from '../publication/canonical-json.js';
+import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
 
 const FORBIDDEN_AGENT_FIELDS = [
   'sessionId',

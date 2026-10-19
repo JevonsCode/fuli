@@ -2,7 +2,7 @@ import { constants } from 'node:fs';
 import { chmod, lstat, mkdir } from 'node:fs/promises';
 import { openWithoutFollowing } from '../system/open-without-following.js';
 import { join } from 'node:path';
-import { contentHash } from '../publication/canonical-json.js';
+import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { writeJsonFileAtomic } from '../storage/json-file.js';
 import { acquireTranscriptGuardLock } from './transcript-guard-lock.js';
 import { readPreferenceEvidence, preferenceFrameHash } from './preference-evidence.js';

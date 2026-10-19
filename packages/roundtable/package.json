@@ -1,0 +1,25 @@
+{
+  "name": "fuli-roundtable",
+  "version": "0.1.0-beta.0",
+  "description": "Agents in Claude Code and Codex, on one computer or paired computers, find each other, ask, chat and wake one another.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JevonsCode/fuli.git",
+    "directory": "packages/roundtable"
+  },
+  "engines": {
+    "node": ">=24.12"
+  },
+  "exports": {
+    "./*": "./src/*"
+  },
+  "files": [
+    "src/"
+  ],
+  "dependencies": {
+    "@peculiar/x509": "2.1.0",
+    "zod": "^4.4.3"
+  }
+}
