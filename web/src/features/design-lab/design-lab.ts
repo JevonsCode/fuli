@@ -11,7 +11,7 @@ export const PAGE_TRANSITIONS = ['none', 'fade', 'rise'] as const
 export type PageTransition = (typeof PAGE_TRANSITIONS)[number]
 // A/B choices, each a design question from the UX review (see Notion).
 // No theme choice: dark mode is not being built yet; its tokens stay reserved
-// under data-theme="dark" in tokens.css.
+// under data-theme="dark" in styles/theme/semantic.css.
 export const LAB_CHOICES = {
   cards: ['outline', 'shadow', 'flat'],
   density: ['compact', 'standard', 'roomy'],

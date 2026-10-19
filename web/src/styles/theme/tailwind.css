@@ -1,0 +1,87 @@
+/*
+ * The theme entry: Tailwind CSS v4 wiring, FULI's Tailwind preset and the
+ * token layers, imported once and first by main.ts.
+ *
+ *   base.css        base tokens (font, type, spacing, radius, shadow, motion)
+ *   semantic.css    semantic tokens for the default skin, plus reserved dark
+ *   skins.css       other skins: re-point semantic tokens only
+ *   components.css  shadcn-vue component tokens, mapped from semantic tokens
+ *   elements.css    element defaults, in the base layer
+ *
+ * Cascade: theme < base < components < utilities < unlayered page CSS. Page
+ * CSS stays unlayered while pages migrate, so its local adjustments keep
+ * winning over utilities exactly as they won over the old shared classes.
+ * Tailwind's preflight is not imported: FULI keeps its own element defaults.
+ */
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+/* Utilities are generated only from design-system sources. Page code still
+   uses words such as "hidden", "grid" or "container" as its own class names;
+   scanning it would turn those into utilities. Add a page here when it is
+   rebuilt on utilities. */
+@source "../../components/ui";
+@source "../../ui/UiIconButton.vue";
+
+@import "./base.css";
+@import "./semantic.css";
+@import "./skins.css";
+@import "./components.css";
+@import "./elements.css" layer(base);
+
+/* Only FULI scales exist as utilities: no raw colour palette, no rem-based
+   type or radius scale (the root font size is 14px, so rem values drift). */
+@theme {
+  --color-*: initial;
+  --text-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+}
+
+@theme inline reference {
+  --font-sans: var(--font-ui);
+  --spacing: var(--space-1);
+  --text-xs: var(--text-meta);
+  --text-xs--line-height: 1.5;
+  --text-sm: var(--text-control);
+  --text-sm--line-height: 1.4;
+  --text-base: var(--text-body);
+  --text-base--line-height: 1.55;
+  --text-lg: var(--text-section);
+  --text-lg--line-height: 1.4;
+  --text-xl: var(--text-title);
+  --text-xl--line-height: 1.25;
+  --radius-sm: calc(var(--radius-control) - 4px);
+  --radius-md: var(--radius-control);
+  --radius-lg: var(--radius-card);
+  --radius-xl: var(--radius-dialog);
+  --default-transition-duration: var(--motion-fast);
+  --default-transition-timing-function: var(--motion-ease);
+
+  /* Utility colours are the component tokens (bg-primary, text-muted-foreground …). */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-foreground-soft: var(--foreground-soft);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}

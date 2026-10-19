@@ -1,16 +1,9 @@
 /* Application shell and feature layouts. Shared controls live in primitives.css. */
 :root { font-family: var(--font-ui); color: var(--color-ink); background: var(--color-bg); font-synthesis: none; font-size: 14px; line-height: 1.55; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
-* { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body, #app { height: 100%; }
 html, body { overflow: hidden; }
 body { margin: 0; min-width: 320px; }
-button { cursor: pointer; }
-h1, h2, h3, p { margin: 0; }
-h1 { font-size: var(--text-title); font-weight: 650; line-height: 1.25; letter-spacing: -.02em; }
-h2 { font-size: 17px; font-weight: 620; line-height: 1.35; letter-spacing: -.01em; }
-h3 { font-size: var(--text-section); font-weight: 600; line-height: 1.4; }
-a { color: var(--color-accent); }
 .nav-icon { width: 18px; height: 18px; display: inline-block; background: currentColor; -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
 .nav-icon-personal-project { --icon: url('./assets/icons/personal-project.svg'); }
 .nav-icon-public-project { --icon: url('./assets/icons/public-project.svg'); }

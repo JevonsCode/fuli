@@ -1,6 +1,6 @@
 /**
- * Agent identity swatches live in tokens.css as --identity-0 … --identity-7
- * (and their -soft tints), so a palette can retune them in one place.
+ * Agent identity swatches are semantic tokens (styles/theme/semantic.css), --identity-0 … --identity-7
+ * and their -soft tints, so a skin can retune them in one place.
  */
 export const AGENT_IDENTITY_COUNT = 8;
 
