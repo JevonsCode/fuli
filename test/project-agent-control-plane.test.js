@@ -113,7 +113,7 @@ test('control-plane provider client uses durable task and activity routes', asyn
     status: 'completed',
     limit: 25
   });
-  await client.deleteProjectAgent('space-1', 'agent-1', 'retired');
+  await client.archiveTestProjectAgent('space-1', 'agent-1', 'archived test role');
   await client.cleanupProjectAgentTestRoles('space-1', 'e2e-1');
   await client.recordProjectAgentTaskActivity({
     task_id: 'task-1',

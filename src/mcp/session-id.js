@@ -28,6 +28,7 @@ const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   'get_project_agent_memory',
   'export_project_agent_memory',
   'checkpoint_project_agent_memory',
+  'dismiss_project_agent',
   'record_project_agent_task_activity',
   'preflight_executor',
   'report_executor_health',

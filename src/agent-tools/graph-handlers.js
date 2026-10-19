@@ -130,7 +130,9 @@ const HANDLERS = Object.freeze({
   ),
   list_project_agents: (app, input) => app.listCurrentProjectAgents(input),
   get_project_agent: (app, input) => app.getProjectAgent(input),
-  delete_project_agent: (app, input) => app.deleteProjectAgent(input),
+  dismiss_project_agent: (app, input) => app.dismissProjectAgent(input),
+  list_agent_dismissal_lessons: (app, input) => app.listAgentDismissalLessons(input),
+  get_agent_handoff: (app, input) => app.getAgentHandoff(input),
   cleanup_test_project_agents: (app, input) => {
     assertTestToolsEnabled({ FULI_ENABLE_TEST_TOOLS: activeTestToolsEnabled() ? '1' : '0' });
     return app.cleanupProjectAgentTestRoles(input);

@@ -75,6 +75,10 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   // result fails instead of returning a partial Markdown file.
   export_project_agent_memory: 512 * 1024,
   checkpoint_project_agent_memory: 64 * 1024,
+  dismiss_project_agent: 8 * 1024,
+  list_agent_dismissal_lessons: 32 * 1024,
+  // A stored handoff is the 512 KiB document plus its identity fields.
+  get_agent_handoff: 600 * 1024,
   coordinate_project_agent_task: 256 * 1024,
   acquire_runtime_lease: 4 * 1024,
   refresh_runtime_lease: 4 * 1024,
@@ -96,7 +100,7 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
 const NATIVE_CHOICE_TOOLS = new Set(['checkpoint_task_knowledge', 'review_with_tonborg',
   'list_judgments', 'request_agent_attention', 'list_agent_attention']);
 // A truncated result would be a misleading partial file, so these fail instead.
-const COMPLETE_RESULT_TOOLS = new Set(['export_project_agent_memory']);
+const COMPLETE_RESULT_TOOLS = new Set(['export_project_agent_memory', 'get_agent_handoff']);
 const NATIVE_CONTEXT = Symbol('fuli.nativeMcpRequestContext');
 
 export function createMcpServer(

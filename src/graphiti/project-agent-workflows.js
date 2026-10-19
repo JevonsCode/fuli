@@ -1,4 +1,6 @@
+import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { loadProjectAgentContinuity } from './project-agent-task-entry.js';
+import { dismissalLessonHint } from './project-agent-dismissal.js';
 import { requireGroupedAgentTaskContext } from './project-team-hierarchy.js';
 import { resolveCoordinationScope, scopedTaskIdempotencyKey } from './temporary-project-scope.js';
 import { enrichProjectAgentTaskActivity } from '../agents/token-usage-resolver.js';
@@ -36,6 +38,10 @@ import {
 } from './project-agent-mapping.js';
 
 export async function upsertProjectAgent(application, input) {
+  if (input.profile?.status === 'archived') {
+    throw new ApplicationError(ApplicationErrorCode.VALIDATION,
+      'An Agent leaves only through dismiss_project_agent with the user\'s reason; an upsert cannot archive it.');
+  }
   const value = await application.personal.upsertProjectAgent({
     personal_space_id: input.personalSpaceId,
     personal_project_id: input.personalProjectId ?? null,
@@ -117,8 +123,8 @@ export async function updateProjectAgentOccupation(application, input) {
   ));
 }
 
-export async function deleteProjectAgent(application, input) {
-  return projectAgentRecord(await application.personal.deleteProjectAgent(
+export async function archiveTestProjectAgent(application, input) {
+  return projectAgentRecord(await application.personal.archiveTestProjectAgent(
     input.personalSpaceId,
     input.agentId,
     input.reason
@@ -276,6 +282,11 @@ export async function coordinateProjectAgentTask(
       personalProjectId: projectId, taskId: route.task.taskId, agentId: route.task.leadAgentId
     }, input.sourceApplication);
   }
+  // A recruitment waiting for a decision learns only that earlier lessons exist.
+  const recruitmentLessons = route.task.status === 'awaiting_recruitment'
+    ? await dismissalLessonHint(application, { personalProjectId: projectId,
+      occupations: [route.recruitment, ...route.recruitments].map(item => item?.occupation?.role) })
+    : null;
   // The current conversation owner stays accountable even when the routed
   // execution lead differs. Requests with an entry context retain that parent.
   const boundTask = adoptedTask ?? (entryTask
@@ -299,6 +310,7 @@ export async function coordinateProjectAgentTask(
     ...(route.task.status === 'awaiting_recruitment' ? {
       required_action: 'Review the returned recruitment proposal and use decide_project_agent_recruitment with its current revision before starting a worker.'
     } : {}),
+    ...(recruitmentLessons ? { dismissal_lessons: recruitmentLessons } : {}),
     route,
     ...(boundTask ? { task_context: {
       task_context_token: boundTask.token,
@@ -657,6 +669,7 @@ export async function getProjectAgentContext(
     recent_tasks: continuity.recent_tasks,
     continuity_status: continuity.status,
     unavailable_components: continuity.unavailable_components,
+    ...(continuity.dismissal_lessons ? { dismissal_lessons: continuity.dismissal_lessons } : {}),
     scope_policy: {
       includes_personal_global_preferences: true,
       includes_project_preferences_and_shared_knowledge: true,

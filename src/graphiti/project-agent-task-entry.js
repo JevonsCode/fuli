@@ -5,6 +5,7 @@ import { planTaskKnowledgeRecall } from './task-knowledge-recall.js';
 import { loadProjectTeamContext } from './project-agent-team-context.js';
 import { isPeerRoleAgent } from './project-team-view.js';
 import { resolveTaskAgentMention } from './project-agent-mention.js';
+import { dismissalLessonHint } from './project-agent-dismissal.js';
 
 const ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
 
@@ -136,7 +137,11 @@ export async function loadProjectAgentContinuity(application, {
       }))) : Promise.resolve([])]
     ] : [])
   ];
-  const results = await Promise.allSettled(requests.map(([, promise]) => promise));
+  // Optional: a missing hint never degrades the restored context.
+  const [results, lessonHint] = await Promise.all([
+    Promise.allSettled(requests.map(([, promise]) => promise)),
+    dismissalLessonHint(application, { personalProjectId: projectId, occupations: [agent.occupation?.role] })
+  ]);
   const data = {};
   const unavailable = [];
   results.forEach((result, index) => {
@@ -181,6 +186,7 @@ export async function loadProjectAgentContinuity(application, {
       entities: scopedItems(result.entities, agent.agentId)
     })),
     unavailable_components: unavailable,
+    ...(lessonHint ? { dismissal_lessons: lessonHint } : {}),
     ...(directorySnapshot ? { directorySnapshot } : {}),
     guidance: PROJECT_AGENT_CONTINUITY_GUIDANCE
   };

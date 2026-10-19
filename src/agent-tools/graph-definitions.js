@@ -29,6 +29,7 @@ import {
   routingRuleScope
 } from './project-agent-definitions.js';
 import { PROJECT_AGENT_MEMORY_DEFINITIONS, workingMemorySchema } from './project-agent-memory-definitions.js';
+import { AGENT_DISMISSAL_DEFINITIONS } from './agent-dismissal-definitions.js';
 import { EMPLOYEE_TOOL_DEFINITIONS } from './employee-definitions.js';
 import { JUDGMENT_TOOL_DEFINITIONS } from './judgment-definitions.js';
 import { TASK_SCHEDULE_DEFINITIONS } from './task-schedule-definitions.js';
@@ -715,16 +716,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   ...PROJECT_AGENT_MEMORY_DEFINITIONS,
   ...AGENT_CONVERSATION_DEFINITIONS,
   ...AGENT_COLLABORATION_DEFINITIONS,
-  {
-    name: 'delete_project_agent',
-    title: 'WRITE · Archive one Agent identity',
-    description: 'Archive one space-level Agent identity through the Provider after an explicit reason. Active assignments end, but task history, recruitment records, and routing audit remain preserved; the system coordinator cannot be archived.',
-    inputSchema: objectSchema({
-      personalSpaceId: id,
-      agentId: id,
-      reason: shortText
-    }, ['personalSpaceId', 'agentId', 'reason'])
-  },
+  ...AGENT_DISMISSAL_DEFINITIONS,
   {
     name: 'cleanup_test_project_agents',
     title: 'WRITE · Archive test Agent roles',
