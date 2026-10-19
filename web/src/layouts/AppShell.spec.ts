@@ -71,6 +71,11 @@ describe('AppShell', () => {
     expect(wrapper.find('[data-design-lab-open]').exists()).toBe(false)
     wrapper.unmount()
   })
+  it('keeps the floating design lab off conversation pages so it never covers a message', async () => {
+    const { wrapper } = await setup('/roundtables/chat/room-1')
+    expect(wrapper.find('[data-design-lab-open]').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('marks the active destination and shows only the sections current capabilities allow', async () => {
     const { wrapper } = await setup('/preferences/writing')
     expect(wrapper.get('[data-destination="memory"]').attributes('aria-current')).toBe('page')

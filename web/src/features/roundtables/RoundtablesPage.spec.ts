@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const config = vi.hoisted(() => ({ space: null as { id: string } | null }))
 const getJson = vi.fn()
 vi.mock('@/stores/console', () => ({ useConsoleStore: () => ({ activePersonalSpace: config.space }) }))
-vi.mock('@/api/client', () => ({ getJson: (url: string) => getJson(url) }))
+vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(), getJson: (url: string) => getJson(url) }))
 
 import { setLocale } from '@/i18n'
 import RoundtablesPage from './RoundtablesPage.vue'
@@ -100,7 +100,7 @@ describe('RoundtablesPage', () => {
     const room = { chatId: 'room-1', kind: 'group', title: null, members, transport: 'local', createdAt: '2026-10-10T09:00:00Z', updatedAt: '2026-10-10T09:05:00Z' }
     getJson.mockImplementation(async (url: string) => {
       if (url === '/api/roundtable/threads') return { threads: [thread] }
-      if (url === '/api/roundtable/chats') return { chats: [room], hasMore: false }
+      if (url.startsWith('/api/roundtable/chats?')) return { chats: [room], hasMore: false }
       if (url.startsWith('/api/roundtable/chats/room-1')) return { ...room, hasMore: false, nextAfter: 2, messages: [
         { messageId: 'c-1', seq: 1, from: 'local:lead-1', body: '部署窗口定在今晚', createdAt: '2026-10-10T09:01:00Z' },
         { messageId: 'c-2', seq: 2, from: 'local:ops-1', body: '收到，我来值守', createdAt: '2026-10-10T09:02:00Z' },
@@ -126,7 +126,7 @@ describe('RoundtablesPage', () => {
   it('still shows asks when the server has no chat rooms', async () => {
     getJson.mockImplementation(async (url: string) => {
       if (url === '/api/roundtable/threads') return { threads: [thread] }
-      if (url === '/api/roundtable/chats') throw new Error('404')
+      if (url.startsWith('/api/roundtable/chats?')) throw new Error('404')
       return detail
     })
     const wrapper = await mountAt('/roundtables')
@@ -136,7 +136,7 @@ describe('RoundtablesPage', () => {
   })
 
   it('explains that Agents start conversations themselves when there are none', async () => {
-    getJson.mockResolvedValue({ threads: [] })
+    getJson.mockImplementation(async (url: string) => url.startsWith('/api/roundtable/chats?') ? { chats: [], hasMore: false } : { threads: [] })
     const wrapper = await mountAt('/roundtables')
     expect(wrapper.text()).toContain('还没有 Agent 之间的对话')
     expect(wrapper.text()).toContain('message_agent')
@@ -157,9 +157,9 @@ it('keeps a newer SSE chat refresh after an older initial response completes', a
   const members = [{ address: 'local:lead', agentId: 'lead', name: 'Lead', joinedSeq: 0 }]
   const room = { chatId: 'room', kind: 'group', title: 'Room', members, transport: 'local', createdAt: '2026-10-10T09:00:00Z', updatedAt: '2026-10-10T09:05:00Z' }
   getJson.mockImplementation(async (url: string) => {
-    if (url === '/api/roundtable/chats') return ++lists === 1 ? initial : { chats: [room] }
+    if (url.startsWith('/api/roundtable/chats?')) return ++lists === 1 ? initial : { chats: [room] }
     if (url.startsWith('/api/roundtable/chats/room')) return { ...room, hasMore: false, nextAfter: ++reads,
-      messages: [{ messageId: `m-${reads}`, seq: reads, from: 'local:lead', body: reads === 1 ? 'old snapshot' : 'latest snapshot', createdAt: room.updatedAt }] }
+      messages: [{ messageId: `m-${reads}`, seq: reads, from: 'local:lead', body: reads === 1 ? 'first message' : 'latest message', createdAt: room.updatedAt }] }
     return { threads: [] }
   })
   const wrapper = await mountAt('/roundtables/chat/room')
@@ -168,7 +168,85 @@ it('keeps a newer SSE chat refresh after an older initial response completes', a
     await flushPromises()
     resolveInitial({ chats: [room] })
     await flushPromises()
-    expect(wrapper.text()).toContain('latest snapshot')
-    expect(wrapper.text()).not.toContain('old snapshot')
+    expect(wrapper.findAll('[data-roundtable-chat-message]').map(item => item.text())).toEqual([
+      expect.stringContaining('first message'), expect.stringContaining('latest message'),
+    ])
   } finally { wrapper.unmount(); config.space = null; vi.unstubAllGlobals() }
+})
+
+describe('RoundtablesPage on a phone and with paging', () => {
+  beforeEach(() => { setLocale('zh-CN', { persist: false }); getJson.mockReset() })
+
+  it('keeps asks visible when chat rooms fail, and labels them as the latest 50', async () => {
+    getJson.mockImplementation(async (url: string) => {
+      if (url === '/api/roundtable/threads') return { threads: [thread] }
+      throw new Error('chats down')
+    })
+    const wrapper = await mountAt('/roundtables')
+    expect(wrapper.findAll('[data-testid="roundtable-thread"]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('最近 50 条')
+    expect(wrapper.text()).toContain('群聊暂不可用')
+    expect(wrapper.text()).not.toContain('还没有 Agent 之间的对话')
+    wrapper.unmount()
+  })
+
+  it('pages local chat rooms with their own cursor and appends later messages in order', async () => {
+    const members = [{ address: 'local:lead', agentId: 'lead', name: 'Lead', joinedSeq: 0 }]
+    const roomA = { chatId: 'a', kind: 'group', title: 'A', members, transport: 'local', createdAt: '2026-10-10T09:00:00Z', updatedAt: '2026-10-10T09:05:00Z' }
+    const roomB = { ...roomA, chatId: 'b', title: 'B' }
+    const message = (seq: number) => ({ messageId: `m-${seq}`, seq, from: 'local:lead', body: `message ${seq}`, createdAt: roomA.updatedAt })
+    const urls: string[] = []
+    getJson.mockImplementation(async (url: string) => {
+      urls.push(url)
+      if (url === '/api/roundtable/threads') return { threads: [] }
+      if (url === '/api/roundtable/chats?limit=50') return { chats: [roomA], hasMore: true, nextChat: 'a' }
+      if (url.startsWith('/api/roundtable/chats?')) return { chats: [roomB], hasMore: false, nextChat: null }
+      if (url.includes('after=0')) return { ...roomA, hasMore: true, nextAfter: 1, messages: [message(1)] }
+      return { ...roomA, hasMore: false, nextAfter: 2, messages: [message(1), message(2)] }
+    })
+    const wrapper = await mountAt('/roundtables/chat/a')
+    await wrapper.get('[data-roundtable-more-chats]').trigger('click')
+    await flushPromises()
+    expect(urls).toContain('/api/roundtable/chats?limit=50&transport=local&afterChat=a')
+    expect(wrapper.findAll('[data-testid="roundtable-chat-room"]').map(item => item.text())).toEqual([expect.stringContaining('A'), expect.stringContaining('B')])
+    expect(wrapper.find('[data-roundtable-more-chats]').exists()).toBe(false)
+    await wrapper.get('[data-roundtable-later]').trigger('click')
+    await flushPromises()
+    expect(urls.at(-1)).toContain('after=1')
+    expect(wrapper.findAll('[data-roundtable-chat-message]').map(item => item.text())).toEqual([
+      expect.stringContaining('message 1'), expect.stringContaining('message 2'),
+    ])
+    expect(wrapper.find('[data-roundtable-later]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('goes back to the list from a deep link without leaving the page, and says when a detail is missing', async () => {
+    const { ApiError } = await import('@/api/client')
+    getJson.mockImplementation(async (url: string) => {
+      if (url === '/api/roundtable/threads') return { threads: [thread] }
+      if (url.startsWith('/api/roundtable/chats?')) return { chats: [], hasMore: false }
+      throw new ApiError('missing', 404)
+    })
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/roundtables/chat/:chatId', component: RoundtablesPage },
+      { path: '/roundtables/:threadId?', component: RoundtablesPage },
+    ] })
+    await router.push('/roundtables/gone')
+    const wrapper = mount(RoundtablesPage, { global: { plugins: [router] }, attachTo: document.body })
+    await flushPromises()
+    expect(wrapper.text()).toContain('对话不存在或当前不可访问')
+    await wrapper.get('[data-roundtable-back]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/roundtables')
+    wrapper.unmount()
+  })
+
+  it('shows an unconfirmed cleanup after a wake instead of assuming it was clean', async () => {
+    const withCleanup = { ...detail, messages: [{ ...detail.messages[0]!, status: 'unknown', cleanup: { status: 'unconfirmed', code: 'wake_cleanup_incomplete' } }] }
+    getJson.mockImplementation(async (url: string) => url === '/api/roundtable/threads' ? { threads: [thread] }
+      : url.startsWith('/api/roundtable/chats?') ? { chats: [], hasMore: false } : withCleanup)
+    const wrapper = await mountAt('/roundtables/thread-1')
+    expect(wrapper.get('[data-roundtable-cleanup]').text()).toContain('wake_cleanup_incomplete')
+    wrapper.unmount()
+  })
 })
