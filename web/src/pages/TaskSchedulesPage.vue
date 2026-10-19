@@ -4,10 +4,10 @@ import { useRouter } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import TextField from '@/components/TextField.vue'
 import { ApiError, getJson } from '@/api/client'
-import { formatDate, taskStatusLabel } from '@/features/project-agents/task-labels'
+import { formatDate } from '@/features/project-agents/task-labels'
 import { normalizeTask } from '@/features/project-agents/task-evidence'
 import {
-  createSchedule, intervalMs, intervalTooShort, listSchedules, scheduleRuns, scheduleState, setScheduleEnabled, updateSchedule,
+  createSchedule, intervalMs, intervalTooShort, listSchedules, scheduleRunLabel, scheduleRuns, scheduleState, setScheduleEnabled, updateSchedule,
   type ScheduleRun, type ScheduleUnit, type StartMode, type TaskSchedule,
 } from '@/features/task-schedules/task-schedules'
 import { t } from '@/i18n'
@@ -271,8 +271,8 @@ async function toggleRuns(schedule: TaskSchedule) {
           <p class="task-schedule-runs">
             <span>{{ t('taskSchedules.recent') }} ·</span>
             <template v-if="schedule.recentRuns?.length">
-              <span v-for="run in schedule.recentRuns" :key="run.slot" class="task-schedule-run">
-                {{ formatDate(run.slot) }} · {{ run.taskId ? taskStatusLabel(run.status as never) : t('taskSchedules.submitFailed') }}
+              <span v-for="run in schedule.recentRuns" :key="run.slot" class="task-schedule-run" :title="run.lastError ?? undefined">
+                {{ formatDate(run.slot) }} · {{ scheduleRunLabel(run) }}
               </span>
             </template>
             <span v-else>{{ t('taskSchedules.noRuns') }}</span>
@@ -298,7 +298,7 @@ async function toggleRuns(schedule: TaskSchedule) {
             <ol class="task-schedule-run-list">
               <li v-for="run in scheduleRunList" :key="run.slot">
                 <span>{{ formatDate(run.slot) }}</span>
-                <span>{{ run.taskId ? taskStatusLabel(run.status as never) : t('taskSchedules.submitFailed') }}</span>
+                <span :title="run.lastError ?? undefined">{{ scheduleRunLabel(run) }}</span>
                 <UiButton v-if="run.taskId" variant="ghost" size="sm" :busy="openingTask === run.taskId" :busy-label="t('taskSchedules.openingTask')"
                   :aria-label="t('taskSchedules.openTaskLabel', { id: run.taskId })" data-schedule-open-task @click="openTask(schedule, run.taskId)">
                   {{ t('taskSchedules.openTask') }} <code>{{ run.taskId.slice(0, 8) }}</code>

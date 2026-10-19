@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ApplicationError } from '../app/application-error.js';
 import { positiveInteger, requiredString, uniqueTextArray } from '../validation/values.js';
+import { createScheduleDispatch } from './dispatch.js';
 import { TaskScheduleStore } from './store.js';
 
 const UNIT_MS = Object.freeze({ minutes: 60_000, hours: 3_600_000, days: 86_400_000 });
@@ -15,11 +16,13 @@ const missing = () => new ApplicationError('task_schedule_not_found', 'Task sche
 // one task through the normal routing path (idempotent per slot). A slot is
 // skipped while the previous scheduled task is still open, and the schedule
 // pauses itself after failureThreshold consecutive failed tasks; resuming is a
-// deliberate act that also resets the breaker.
+// deliberate act that also resets the breaker. Claims a crash left behind are
+// reconciled (dispatch.js) before any new slot is claimed.
 export function createTaskScheduleService({ app, openStore = () => new TaskScheduleStore(), now = () => new Date() }) {
   let store = null;
   const db = () => (store ??= openStore());
   const iso = () => now().toISOString();
+  const dispatch = createScheduleDispatch({ app, db, now });
   const owned = (input) => {
     const schedule = db().get(requiredString(input.scheduleId, 'scheduleId', 128));
     if (!schedule || schedule.personalSpaceId !== app.config.personal.spaceId) throw missing();
@@ -69,7 +72,7 @@ export function createTaskScheduleService({ app, openStore = () => new TaskSched
         const task = await app.viewProjectAgentTask({ personalSpaceId: schedule.personalSpaceId,
           personalProjectId: schedule.personalProjectId, taskId: run.taskId, includeEvents: false });
         if (task?.status && task.status !== run.status) {
-          db().finishRun(schedule.id, run.slot, run.taskId, task.status);
+          db().updateRun(schedule.id, run.slot, { status: task.status }, iso());
           run.status = task.status;
         }
       } catch { /* An unreadable task keeps its last known status; the breaker never guesses a failure. */ }
@@ -92,37 +95,27 @@ export function createTaskScheduleService({ app, openStore = () => new TaskSched
       advance('circuit_open', false);
       return { scheduleId: schedule.id, outcome: 'circuit_open', consecutiveFailures: failures };
     }
+    const slot = schedule.nextRunAt;
+    // A process that died before moving past its slot left that slot claimed.
+    if (runs.some(run => run.slot === slot)) {
+      advance();
+      return { scheduleId: schedule.id, outcome: 'already_run', slot };
+    }
+    if (runs.some(run => run.status === 'unresolved')) {
+      advance();
+      return { scheduleId: schedule.id, outcome: 'skipped_previous_unresolved' };
+    }
     if (runs.some(run => run.status === 'claimed' || (run.taskId && !TERMINAL.has(run.status)))) {
       advance();
       return { scheduleId: schedule.id, outcome: 'skipped_previous_open' };
     }
-    const slot = schedule.nextRunAt;
-    if (!db().claimRun(schedule.id, slot, iso())) {
-      advance();
-      return { scheduleId: schedule.id, outcome: 'already_run', slot };
-    }
-    try {
-      const route = await app.submitProjectAgentTask({ personalSpaceId: schedule.personalSpaceId,
-        personalProjectId: schedule.personalProjectId, idempotencyKey: `schedule:${schedule.id}:${slot}`,
-        title: schedule.body.title, objective: schedule.body.objective, workKind: schedule.body.workKind,
-        requiredCapabilities: schedule.body.requiredCapabilities,
-        ...(schedule.body.leadAgentId ? { leadAgentId: schedule.body.leadAgentId } : {}),
-        start: schedule.body.startMode === 'queue', duration: 'one_off',
-        routingReason: `Scheduled task "${schedule.body.title}" for ${slot}.` });
-      const task = route?.task ?? route;
-      db().finishRun(schedule.id, slot, task?.taskId ?? null, task?.status ?? 'failed');
-      advance();
-      return { scheduleId: schedule.id, outcome: 'created', slot, taskId: task?.taskId ?? null, status: task?.status ?? null };
-    } catch (error) {
-      // The routing failure itself counts toward the breaker like a failed task.
-      db().finishRun(schedule.id, slot, null, 'failed');
-      advance();
-      return { scheduleId: schedule.id, outcome: 'failed', slot, error: error?.code ?? 'task_schedule_submit_failed' };
-    }
+    const sent = await dispatch.claimAndSubmit(schedule, slot);
+    advance();
+    return { scheduleId: schedule.id, slot, ...(sent ?? { outcome: 'already_run' }) };
   }
 
   async function runDue() {
-    const results = [];
+    const results = await dispatch.recoverAbandoned();
     for (const schedule of db().due(iso())) results.push(await runSchedule(schedule));
     return results;
   }

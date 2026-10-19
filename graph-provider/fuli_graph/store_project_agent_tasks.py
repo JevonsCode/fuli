@@ -58,10 +58,8 @@ class StoreProjectAgentTasks(
             space,
             request.personal_project_id,
         )
-        task_id = stable_uuid(
-            self.settings.provider_id,
+        task_id = self._submitted_task_id(
             request.personal_space_id,
-            'project-agent-task',
             request.idempotency_key,
         )
         existing = await self._find_task_row(request.personal_space_id, task_id)
@@ -494,6 +492,50 @@ class StoreProjectAgentTasks(
         *,
         personal_project_id: str | None = None,
     ) -> ProjectAgentTaskRecord:
+        task = await self._read_authorized_task(
+            actor,
+            personal_space_id,
+            task_id,
+            personal_project_id,
+        )
+        if task is None:
+            raise HTTPException(status_code=404, detail='project Agent task not found')
+        return task
+
+    async def find_project_agent_task_by_idempotency_key(
+        self,
+        actor: dict,
+        personal_space_id: str,
+        personal_project_id: str,
+        idempotency_key: str,
+    ) -> ProjectAgentTaskRecord | None:
+        """The task a submit with this key created; None is evidence it created none.
+
+        A client whose submit answer was lost reads this before deciding to
+        submit again, so the same key never becomes a second task.
+        """
+        return await self._read_authorized_task(
+            actor,
+            personal_space_id,
+            self._submitted_task_id(personal_space_id, idempotency_key),
+            personal_project_id,
+        )
+
+    def _submitted_task_id(self, personal_space_id, idempotency_key):
+        return stable_uuid(
+            self.settings.provider_id,
+            personal_space_id,
+            'project-agent-task',
+            idempotency_key,
+        )
+
+    async def _read_authorized_task(
+        self,
+        actor,
+        personal_space_id,
+        task_id,
+        personal_project_id,
+    ):
         self._require_personal()
         space = await self.authorize(actor, personal_space_id, 'reader')
         if personal_project_id:
@@ -509,14 +551,13 @@ class StoreProjectAgentTasks(
             personal_project_id,
         )
         if not row:
-            raise HTTPException(status_code=404, detail='project Agent task not found')
-        task = dict(row['task'])
+            return None
         if not personal_project_id:
             await authorize_personal_project(
                 self,
                 actor,
                 space,
-                task['personal_project_id'],
+                dict(row['task'])['personal_project_id'],
             )
         return self._task_from_row(row)
 

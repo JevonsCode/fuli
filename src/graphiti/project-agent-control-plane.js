@@ -27,6 +27,7 @@ import {
   deleteProjectAgent as deleteProjectAgentWorkflow,
   updateProjectAgentOccupation as updateProjectAgentOccupationWorkflow,
   endProjectAgentAssignment as endProjectAgentAssignmentWorkflow,
+  findProjectAgentTaskByIdempotencyKey as findProjectAgentTaskByIdempotencyKeyWorkflow,
   getExecutor as getExecutorWorkflow,
   getExecutorRoutingRule as getExecutorRoutingRuleWorkflow,
   getProjectAgent as getProjectAgentWorkflow,
@@ -239,6 +240,11 @@ export class ProjectAgentControlPlaneApplication {
   async viewProjectAgentTask(input) {
     this.#assertSpace(input.personalSpaceId);
     return viewProjectAgentTaskWorkflow(this, input);
+  }
+
+  async findProjectAgentTaskByIdempotencyKey(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return findProjectAgentTaskByIdempotencyKeyWorkflow(this, input);
   }
 
   async listProjectAgentTaskRuns(input) {
