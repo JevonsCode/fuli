@@ -13,9 +13,12 @@ test('local runtime options leave persisted port and LAN defaults unresolved', (
     open: true,
     rebuild: false,
     lan: null,
-    json: false
+    json: false,
+    allowProviderDowngrade: false
   });
   assert.throws(() => parseLocalRuntimeOptions('stop', ['--open']), /Unknown stop option/);
+  assert.equal(parseLocalRuntimeOptions('start', ['--allow-provider-downgrade']).allowProviderDowngrade, true);
+  assert.throws(() => parseLocalRuntimeOptions('stop', ['--allow-provider-downgrade']), /Unknown stop option/);
   assert.equal(parseLocalRuntimeOptions('start', ['--lan']).lan, true);
   assert.equal(parseLocalRuntimeOptions('restart', ['--lan']).lan, true);
   assert.equal(parseLocalRuntimeOptions('restart', ['--no-lan']).lan, false);

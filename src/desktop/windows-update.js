@@ -29,15 +29,20 @@ export function readCurrentWindowsInstallation({ installRoot, env = process.env,
   return { installRoot, current, record, recordPath, shortcuts };
 }
 
-export function planWindowsUpdate({ source, installRoot, env = process.env, readShortcut = readWindowsShortcut } = {}) {
+export function planWindowsUpdate({ source, installRoot, env = process.env, readShortcut = readWindowsShortcut, allowDowngrade = false } = {}) {
   if (!source || !isAbsolute(source)) throw new Error('Absolute source, installation and current-user LOCALAPPDATA paths are required.');
   source = canonicalWindowsInstallPath(source);
   const installed = readCurrentWindowsInstallation({ installRoot, env, readShortcut, outside: [source] });
   const inventory = trayInventory(source);
   const applicationVersion = JSON.parse(readFileSync(join(source, 'package.json'))).version;
-  if (compareSemanticVersions(applicationVersion, installed.current.applicationVersion) <= 0) throw new Error('The update package must be newer than the installed version.');
+  const comparison = compareSemanticVersions(applicationVersion, installed.current.applicationVersion);
+  // A lower version needs the explicit switch; the same version is never an update.
+  if (comparison === 0 || (comparison < 0 && !allowDowngrade)) {
+    throw new Error(comparison === 0 ? 'This version is already installed.'
+      : 'The update package must be newer than the installed version. To replace it with a lower version on purpose (for example a local rc build with a public beta), back up the data folder and run Update-Fuli with --allow-downgrade.');
+  }
   snapshotWindowsUpdateRuntime(installed.current, source);
-  return { source, ...installed, inventorySha256: inventory.inventorySha256, applicationVersion };
+  return { source, ...installed, inventorySha256: inventory.inventorySha256, applicationVersion, downgrade: comparison < 0 };
 }
 
 export async function updateWindowsInstallation(options, {

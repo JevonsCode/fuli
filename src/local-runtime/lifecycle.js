@@ -40,6 +40,7 @@ export async function startLocalRuntime(input, dependencies = {}) {
     personalOnly: !managesDevelopmentWorkspace,
     buildProviders,
     noStart: false,
+    allowProviderDowngrade: input.allowProviderDowngrade === true,
     env: input.env,
     onProgress: input.onProgress
   });

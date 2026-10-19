@@ -68,6 +68,8 @@ async function switchInstallation(plan, staged, packageRoot, runCli, lock, write
   };
   const { current } = plan;
   const args = command => [command, '--data-dir', current.dataDir];
+  // A confirmed downgrade lets the new version replace the recorded Provider.
+  const startArgs = () => plan.downgrade ? [...args('start'), '--allow-provider-downgrade'] : args('start');
   let switched = false, started = false;
   const replaced = [];
   try {
@@ -82,7 +84,7 @@ async function switchInstallation(plan, staged, packageRoot, runCli, lock, write
     });
     started = true;
     write('Starting Fuli ' + plan.applicationVersion + '...');
-    await requireInstalledCli(runCli, packageRoot, args('start'), 'Fuli ' + plan.applicationVersion + ' did not start.');
+    await requireInstalledCli(runCli, packageRoot, startArgs(), 'Fuli ' + plan.applicationVersion + ' did not start.');
     await requireInstalledCli(runCli, packageRoot, args('status'), 'Fuli ' + plan.applicationVersion + ' did not report a running state.');
   } catch (error) {
     lock.assertHeld(); // A lost owner must not interfere with another updater.
@@ -112,7 +114,8 @@ async function switchInstallation(plan, staged, packageRoot, runCli, lock, write
   write('Reconnecting already connected Agent clients...');
   let clients = 'not_reconnected';
   try {
-    const result = await runCli(packageRoot, ['setup', '--yes', '--connected-only', '--data-dir', current.dataDir]);
+    const result = await runCli(packageRoot, ['setup', '--yes', '--connected-only', '--data-dir', current.dataDir,
+      ...(plan.downgrade ? ['--allow-provider-downgrade'] : [])]);
     if (result.code === 0) clients = 'reconnected';
   } catch { /* Report integration refresh separately from the final runtime check. */ }
   await requireInstalledCli(runCli, packageRoot, args('status'), 'Fuli ' + plan.applicationVersion + ' is installed, but its runtime needs attention after client reconnection. Reopen Fuli to inspect its status.');

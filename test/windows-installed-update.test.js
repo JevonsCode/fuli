@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { installedWindowsFixture as fixture } from './fixtures/windows-installation.js';
-import { readWindowsInstallation } from '../src/desktop/windows-installation-context.js';
+import { installationSha256, readWindowsInstallation } from '../src/desktop/windows-installation-context.js';
 import { planWindowsUpdate, updateWindowsInstallation } from '../src/desktop/windows-update.js';
 
 test('update preview is read-only; successful switch preserves data and keeps the previous version', async t => {
@@ -155,4 +155,40 @@ test('foreign runtime metadata prevents rollback and remains untouched', async t
   assert.equal(oldStarts, 0);
   assert.equal(readFileSync(manifestPath, 'utf8'), '{"foreign":true}');
   assert.equal(JSON.parse(readFileSync(join(f.current.installRoot, 'installation.json'))).applicationVersion, '0.12.5');
+});
+
+// A candidate with another version number, re-signed into its inventory.
+function candidateVersion(f, version) {
+  writeFileSync(join(f.source, 'package.json'), JSON.stringify({ name: 'fuli-context', version }));
+  const inventory = JSON.parse(readFileSync(join(f.source, 'tray-files.sha256.json')));
+  for (const entry of inventory) entry[1] = installationSha256(readFileSync(join(f.source, entry[0])));
+  writeFileSync(join(f.source, 'tray-files.sha256.json'), JSON.stringify(inventory));
+}
+
+test('a lower version needs the explicit downgrade switch; the same version is never an update', async t => {
+  const f = fixture(t);
+  candidateVersion(f, '0.12.4-beta.1');
+  assert.throws(() => planWindowsUpdate({ ...f.options, readShortcut: f.deps.readShortcut }), /--allow-downgrade/);
+  const plan = planWindowsUpdate({ ...f.options, allowDowngrade: true, readShortcut: f.deps.readShortcut });
+  assert.equal(plan.downgrade, true);
+  candidateVersion(f, '0.12.4');
+  assert.throws(() => planWindowsUpdate({ ...f.options, allowDowngrade: true, readShortcut: f.deps.readShortcut }), /already installed/);
+});
+
+test('a confirmed downgrade lets the new version replace the recorded Provider when it starts and reconnects', async t => {
+  const f = fixture(t);
+  candidateVersion(f, '0.12.4-beta.1');
+  const next = await updateWindowsInstallation({ ...f.options, allowDowngrade: true }, f.deps);
+  assert.equal(readWindowsInstallation(next.packageRoot).applicationVersion, '0.12.4-beta.1');
+  const start = f.calls.find(call => call.args[0] === 'start' && call.root === next.packageRoot);
+  const setup = f.calls.find(call => call.args[0] === 'setup');
+  assert.ok(start.args.includes('--allow-provider-downgrade'));
+  assert.ok(setup.args.includes('--allow-provider-downgrade'));
+  assert.equal(readFileSync(join(f.current.dataDir, 'sentinel'), 'utf8'), 'existing user data');
+});
+
+test('an ordinary upgrade never passes the downgrade switch', async t => {
+  const f = fixture(t);
+  await updateWindowsInstallation(f.options, f.deps);
+  assert.ok(f.calls.every(call => !call.args.includes('--allow-provider-downgrade')));
 });
