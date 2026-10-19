@@ -132,3 +132,22 @@ async def test_first_sealed_worker_admission_keeps_an_explicit_checkpoint():
             own = await client.post(path + '/contexts', json=session, headers=headers)
             assert own.status_code == 200, own.text
             assert own.json()['task_context']['routine_auto_close_eligible'] is False
+
+
+@pytest.mark.asyncio
+async def test_stop_check_marks_only_an_unclaimed_routine_fallback_closable():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        context = await context_fixture(client, work_log_required=True, entry_via='tool')
+        query = {'personal_space_id': context['personal_space_id'], 'session_id': context['session_id'],
+            'source_application': context['source_application']}
+        check = await client.get('/v1/task-context-sessions/checkpoint', params=query)
+        assert check.status_code == 200, check.text
+        assert check.json()['decision'] == 'block'
+        assert check.json()['routine_auto_close_eligible'] is True
+        claim = checkpoint(context, agent_memory=memory_input(),
+            work_log={'status': 'incomplete', 'summary': 'Synthetic implementation still needs acceptance.'})
+        assert (await client.put(f'/v1/task-contexts/{context["token"]}/checkpoint', json=claim)).status_code == 200
+        claimed = await client.get('/v1/task-context-sessions/checkpoint', params=query)
+        assert claimed.json()['decision'] == 'block'
+        assert claimed.json()['routine_auto_close_eligible'] is False
