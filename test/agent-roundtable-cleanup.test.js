@@ -8,6 +8,7 @@ import test from 'node:test';
 import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
 import { createRoundtableStore } from '../src/agent-roundtable/store.js';
 import { wakeAgent } from '../src/agent-roundtable/wake.js';
+import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 const UNCONFIRMED = { status: 'unconfirmed', code: 'cleanup_timeout' };
 
@@ -37,7 +38,7 @@ function fixture({ run }) {
     }
   };
   let id = 0;
-  const roundtable = createAgentRoundtable({ app, openStore: () => store, idFactory: () => `id-${++id}`,
+  const roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => store, idFactory: () => `id-${++id}`,
     locateCwd: (client, sessionId) => `/work/${client}/${sessionId}`, clientAvailable: () => true,
     wake: (input) => {
       woken.push(input);
@@ -171,7 +172,7 @@ test('cancel, the held Agent replying, and a restart never lift the hold', async
   await roundtable.cancelMessage({ taskContextToken: 'reviewer-token', sourceApplication: 'claude_code',
     messageId: first.messageId }).catch(() => {});
   assert.equal((await ask('After cancels')).reason, 'cleanup_unconfirmed');
-  const restarted = createAgentRoundtable({ app: { config: { personal: { spaceId: 'space' } } }, openStore: () => store });
+  const restarted = createAgentRoundtable({ host: createFuliRoundtableHost({ config: { personal: { spaceId: 'space' } } }), openStore: () => store });
   assert.deepEqual(Object.keys(restarted).filter((name) => releaseLike.test(name)), []);
   assert.equal(store.unconfirmedCleanupFor('space', 'reviewer-1').length, 1, 'a new instance releases nothing');
   assert.equal(woken.length, 1);

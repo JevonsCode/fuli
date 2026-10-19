@@ -8,6 +8,7 @@ import test from 'node:test';
 import { cleanupReleaseProof, createAgentRoundtable } from '../src/agent-roundtable/service.js';
 import { createRoundtableStore } from '../src/agent-roundtable/store.js';
 import { readWindowsBootAnchor } from '../src/native-runtime/windows-processes.js';
+import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 const UNCONFIRMED = { status: 'unconfirmed', code: 'cleanup_timeout' };
 const EVIDENCE = { version: 1, machineHash: 'm'.repeat(64), anchor: { pid: 1736, image: 'wininit.exe', critical: true } };
@@ -31,7 +32,7 @@ function coordinator(store, { wake, bootEvidence } = {}) {
       revokeAgentDelegation: async () => {}
     }
   };
-  const roundtable = createAgentRoundtable({ app, openStore: () => store, idFactory: () => `${prefix}-${++id}`,
+  const roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => store, idFactory: () => `${prefix}-${++id}`,
     clientAvailable: () => true, locateCwd: () => '/work', ...(bootEvidence ? { bootEvidence } : {}),
     wake: async (input) => { woken.push(input); return wake(woken.length, input); } });
   const ask = (body, to = 'reviewer-1') => roundtable.messageAgent({ taskContextToken: 'token', sourceApplication: 'claude_code',

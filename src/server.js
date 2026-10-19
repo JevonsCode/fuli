@@ -170,7 +170,7 @@ export async function createServer(options = {}) {
       ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
     // Resumes only what the owner already turned on; console LAN access never enables it.
     if (application.peer && options.peer !== false) {
-      peer = createPeerRuntime({ app: application, port: application.peer,
+      peer = createPeerRuntime({ host: application.roundtableHost, roundtable: application.roundtable, port: application.peer,
         onError: (error) => console.error(`LAN roundtable: ${error.code ?? error.message}`) });
       peer.resume().catch((error) => console.error(`LAN roundtable could not resume: ${error.code ?? error.message}`));
     }

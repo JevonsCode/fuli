@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createServer } from '../src/server.js';
 import { GraphitiProviderClient } from '../src/graphiti/provider-client.js';
+import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 test('task notifications stream across the local API without exposing the provider token or polling', async (t) => {
   let upstream;
@@ -77,7 +78,7 @@ test('the existing SSE carries chat metadata from the roundtable without message
       controller.enqueue(new TextEncoder().encode('event: ready\ndata: {}\n\n'));
       signal.addEventListener('abort', () => controller.close(), { once: true });
     } })) };
-  app.roundtable = createAgentRoundtable({ app, openStore: () => createRoundtableStore() });
+  app.roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore() });
   const server = await createServer({ port: 0, app });
   const abort = new AbortController();
   t.after(async () => { abort.abort(); await server.close(); app.roundtable.close(); });

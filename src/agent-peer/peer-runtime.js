@@ -1,8 +1,6 @@
 import { networkInterfaces } from 'node:os';
 import { join as joinPath } from 'node:path';
 
-import { resolvePersonalProjectPath } from '../graphiti/project-path-context.js';
-import { loadProjectTeam } from '../graphiti/project-team-view.js';
 import { startCoordinatorServer } from './coordinator-http.js';
 import { cleanName, createCoordinatorService } from './coordinator-service.js';
 import { createCoordinatorStore } from './coordinator-store.js';
@@ -13,12 +11,12 @@ import { createPeerRunner } from './runner.js';
 
 const PUBLISH_MS = 60_000;
 const WAKE_CLIENTS = new Set(['codex', 'claude_code']);
-const teamPeople = team => team ? [team.lead, ...team.members, ...team.collaborators, ...team.peers].filter(Boolean) : [];
+const teamPeople = team => team?.people ?? [];
 
 // The local owner's LAN roundtable controls, run only by the console process.
 // Nothing here starts unless the owner turned it on; console LAN access does not.
-export function createPeerRuntime({ app, port, interfaces = networkInterfaces, allowLoopback = false,
-  claimWaitMs, resolveFolder = resolvePersonalProjectPath, onError = () => {} }) {
+export function createPeerRuntime({ host, roundtable, port, interfaces = networkInterfaces, allowLoopback = false,
+  claimWaitMs, onError = () => {} }) {
   const store = () => port.nodeStore();
   let coordinator = null;
   let runner = null;
@@ -27,7 +25,7 @@ export function createPeerRuntime({ app, port, interfaces = networkInterfaces, a
   let leaveRetry = null;
   let leaveWork = null;
   let leaveAbort = null;
-  const spaceId = () => app.config.personal.spaceId;
+  const spaceId = () => host.spaceId();
 
   function localAddresses() {
     return Object.values(interfaces()).flat().filter((entry) => entry && !entry.internal
@@ -42,7 +40,7 @@ export function createPeerRuntime({ app, port, interfaces = networkInterfaces, a
     if (store().setting('membership')) await startRunner();
   }
 
-  async function startCoordinator({ host, port: listenPort, name }) {
+  async function startCoordinator({ host: address, port: listenPort, name }) {
     const identity = await loadDeviceIdentity(port.directory);
     const authority = await port.localAuthority();
     const coordinatorStore = createCoordinatorStore(joinPath(port.directory, 'coordinator.sqlite'));
@@ -50,14 +48,14 @@ export function createPeerRuntime({ app, port, interfaces = networkInterfaces, a
     const service = createCoordinatorService({ store: coordinatorStore, identity, authority, name,
       onTrustChange: () => server?.refreshTrust() });
     try {
-      server = await startCoordinatorServer({ service, identity, host, port: listenPort, claimWaitMs });
+      server = await startCoordinatorServer({ service, identity, host: address, port: listenPort, claimWaitMs });
     } catch (error) {
       coordinatorStore.close();
-      throw new PeerError('listen_failed', `Could not listen on ${host}:${listenPort}: ${error.code ?? error.message}`, 409);
+      throw new PeerError('listen_failed', `Could not listen on ${address}:${listenPort}: ${error.code ?? error.message}`, 409);
     }
-    coordinator = { service, server, store: coordinatorStore, host, name };
-    const url = coordinatorUrl(host, server.address.port);
-    store().setSetting('coordinator', { host, port: server.address.port, name });
+    coordinator = { service, server, store: coordinatorStore, host: address, name };
+    const url = coordinatorUrl(address, server.address.port);
+    store().setSetting('coordinator', { host: address, port: server.address.port, name });
     store().setSetting('membership', { role: 'coordinator', coordinator: { url, certPem: identity.certPem,
       fingerprint: identity.fingerprint, name } });
     store().forgetAuthority(identity.fingerprint);
@@ -69,7 +67,7 @@ export function createPeerRuntime({ app, port, interfaces = networkInterfaces, a
     const membership = store().setting('membership');
     const identity = await loadDeviceIdentity(port.directory);
     runnerClient = createPeerClient({ identity, coordinator: membership.coordinator });
-    runner = createPeerRunner({ store: store(), client: runnerClient, roundtable: app.roundtable, provider: app.personal,
+    runner = createPeerRunner({ store: store(), client: runnerClient, roundtable, host,
       nodeId: identity.fingerprint, spaceId, onError });
     runner.start().catch(onError);
     await publish().catch(onError);
@@ -98,11 +96,10 @@ export function createPeerRuntime({ app, port, interfaces = networkInterfaces, a
   // Each share names the lead it was made for; after a handoff the old share
   // is withheld until the owner shares the project's new lead.
   async function shareStates() {
-    const projects = await app.personal.listPersonalProjects(spaceId()).catch(() => []);
-    const names = new Map((Array.isArray(projects) ? projects : projects?.projects ?? [])
-      .map((project) => [project.project_id ?? project.personal_project_id ?? project.id, project.profile?.name ?? project.name]));
+    const projects = await host.listProjects().catch(() => []);
+    const names = new Map(projects.map((project) => [project.projectId, project.name]));
     return Promise.all(store().shares().filter((share) => share.spaceId === spaceId()).map(async (share) => {
-      const team = await loadProjectTeam(app, share.spaceId, share.projectId).catch(() => null);
+      const team = await host.projectTeam(share.projectId).catch(() => null);
       const person = share.communicationOnly ? teamPeople(team).find(a => a.agentId === share.agentId) : team?.lead;
       const current = person?.agentId === share.agentId;
       return { ...share, projectName: names.get(share.projectId) ?? share.projectId, lead: person ?? null,
@@ -112,7 +109,7 @@ export function createPeerRuntime({ app, port, interfaces = networkInterfaces, a
 
   async function publish() {
     if (!runnerClient) return;
-    const profiles = await app.listProjectAgents({ personalSpaceId: spaceId() });
+    const profiles = await host.listAgents();
     const agents = (await shareStates()).filter((share) => share.state === 'shared').map((share) => ({
       bindingId: share.bindingId, agentId: share.agentId, name: share.lead.name, employeeNumber: share.lead.employeeNumber,
       responsibility: share.lead.responsibility, projectName: share.projectName, projectId: share.projectId,
@@ -125,16 +122,14 @@ export function createPeerRuntime({ app, port, interfaces = networkInterfaces, a
 
   // Projects the owner may share: each with its current lead and the clients that lead may use.
   async function shareable() {
-    const projects = await app.personal.listPersonalProjects(spaceId()).catch(() => []);
-    const list = (Array.isArray(projects) ? projects : projects?.projects ?? [])
-      .filter((project) => project.scope_type !== 'temporary').slice(0, 50);
-    const agents = await app.listProjectAgents({ personalSpaceId: spaceId() }).catch(() => []);
+    const list = (await host.listProjects().catch(() => [])).filter((project) => !project.temporary).slice(0, 50);
+    const agents = await host.listAgents().catch(() => []);
     return Promise.all(list.map(async (project) => {
-      const projectId = project.project_id ?? project.personal_project_id ?? project.id;
-      const team = await loadProjectTeam(app, spaceId(), projectId).catch(() => null);
+      const projectId = project.projectId;
+      const team = await host.projectTeam(projectId).catch(() => null);
       const allowed = (agents.find((agent) => agent.agentId === team?.lead?.agentId)?.profile.allowedClients ?? [])
         .filter((client) => WAKE_CLIENTS.has(client));
-      return { projectId, projectName: project.profile?.name ?? project.name ?? projectId,
+      return { projectId, projectName: project.name ?? projectId,
         lead: team?.lead ? { agentId: team.lead.agentId, name: team.lead.name } : null, clients: allowed,
         communicationAgents: teamPeople(team).map(person => ({ agentId: person.agentId, name: person.name,
           occupation: agents.find(a => a.agentId === person.agentId)?.occupation?.role ?? null })) };
@@ -165,14 +160,14 @@ export function createPeerRuntime({ app, port, interfaces = networkInterfaces, a
     };
   }
 
-  async function enableCoordinator({ host, port: listenPort = 0, name }) {
+  async function enableCoordinator({ host: address, port: listenPort = 0, name }) {
     if (store().setting('membership')) throw new PeerError('already_paired', 'Turn the LAN roundtable off before changing its role', 409);
     const allowed = localAddresses();
-    if (!(allowed.includes(host) || (allowLoopback && host === '127.0.0.1'))) {
+    if (!(allowed.includes(address) || (allowLoopback && address === '127.0.0.1'))) {
       throw new PeerError('invalid_address', 'Choose one of this computer\'s network addresses', 422);
     }
     if (!Number.isSafeInteger(listenPort) || listenPort < 0 || listenPort > 65535) throw new PeerError('invalid_address', 'Invalid port', 422);
-    await startCoordinator({ host, port: listenPort, name: cleanName(name) || 'FULI coordinator' });
+    await startCoordinator({ host: address, port: listenPort, name: cleanName(name) || 'FULI coordinator' });
     await startRunner();
     return status();
   }
@@ -210,14 +205,12 @@ export function createPeerRuntime({ app, port, interfaces = networkInterfaces, a
   // optionally, its folder; each share is bound to that project's current lead.
   async function setShares({ shares: wanted }) {
     if (!Array.isArray(wanted) || wanted.length > 50) throw new PeerError('invalid_shares', 'Choose up to 50 projects', 422);
-    const projects = await app.personal.listPersonalProjects(spaceId());
-    const known = Array.isArray(projects) ? projects : projects?.projects ?? [];
-    const agents = await app.listProjectAgents({ personalSpaceId: spaceId() });
+    const agents = await host.listAgents();
     const shares = [];
     for (const entry of wanted) {
       const projectId = entry?.projectId;
       if (typeof projectId !== 'string' || !projectId) throw new PeerError('invalid_shares', 'A shared Agent needs a project', 422);
-      const team = await loadProjectTeam(app, spaceId(), projectId);
+      const team = await host.projectTeam(projectId);
       const communicationOnly = entry.communicationOnly === true;
       const target = communicationOnly ? teamPeople(team).find(a => a.agentId === entry.agentId) : team.lead;
       if (!target) throw new PeerError('lead_unavailable', 'A share needs an active assigned Agent; execution requires the project lead', 409);
@@ -231,7 +224,7 @@ export function createPeerRuntime({ app, port, interfaces = networkInterfaces, a
       if (communicationOnly && entry.workingDirectory) throw new PeerError('invalid_shares', 'Communication-only shares have no working directory', 422);
       shares.push({ spaceId: spaceId(), projectId, agentId: target.agentId, clients,
         ...(communicationOnly ? { communicationOnly: true } : {}),
-        workingDirectory: entry.workingDirectory ? confirmedFolder(entry.workingDirectory, projectId, known) : null });
+        workingDirectory: entry.workingDirectory ? await confirmedFolder(entry.workingDirectory, projectId) : null });
     }
     store().replaceShares(shares, port.idFactory);
     await runner?.reconcileShares();
@@ -239,12 +232,12 @@ export function createPeerRuntime({ app, port, interfaces = networkInterfaces, a
     return status();
   }
 
-  // A folder is accepted only when FULI's own project resolution maps it to this project.
-  function confirmedFolder(folder, projectId, projects) {
+  // A folder is accepted only when the host's own project resolution maps it to this project.
+  async function confirmedFolder(folder, projectId) {
     let resolved;
-    try { resolved = resolveFolder(folder, projects); }
+    try { resolved = await host.projectForPath(folder); }
     catch { throw new PeerError('invalid_folder', 'Choose an existing folder of this project', 422); }
-    if (resolved.personalProjectId !== projectId) {
+    if (resolved !== projectId) {
       throw new PeerError('invalid_folder', 'That folder does not belong to this project', 422);
     }
     return folder;

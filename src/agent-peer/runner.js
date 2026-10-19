@@ -10,7 +10,7 @@ const STARTED_STATES = new Set(['starting', 'running', 'finished']);
 // Receives asks for this device's shared project leads. Every claim is written
 // down before it is accepted, nothing runs before the coordinator confirmed the
 // acceptance, and an attempt that may have run is never reported as not started.
-export function createPeerRunner({ store, client, roundtable, provider, nodeId, spaceId,
+export function createPeerRunner({ store, client, roundtable, host, nodeId, spaceId,
   clock = Date.now, retryMs = RETRY_MS, renewMs = PEER_LIMITS.renewSeconds * 1000, onError = () => {} }) {
   const stopping = new AbortController();
   const running = new Map();
@@ -188,12 +188,10 @@ export function createPeerRunner({ store, client, roundtable, provider, nodeId, 
             const current = await client.post('/peer/1/renew', { messageId, attemptId, state: 'starting' }, { signal: controller.signal });
             if (current.cancel) throw new PeerError('cancelled', 'Chat membership or sharing was revoked', 499);
           }
-          return provider.issueRemoteAgentDelegation({
-          personal_space_id: share.spaceId, personal_project_id: share.projectId, agent_id: share.agentId,
-          target_application: delivery.client,
-          target_session_id: delivery.client === 'codex' ? delivery.sessionId : null,
-          lifetime_seconds: Math.max(30, Math.min(900, Math.round(lifetime))),
-          origin_node: claim.sender.nodeId, origin_message_id: messageId, origin_attempt_id: attemptId }); } });
+          return host.issueRemoteDelegation({ projectId: share.projectId, agentId: share.agentId,
+          targetClient: delivery.client, targetSessionId: delivery.client === 'codex' ? delivery.sessionId : null,
+          lifetimeSeconds: Math.max(30, Math.min(900, Math.round(lifetime))),
+          originNode: claim.sender.nodeId, originMessageId: messageId, originAttemptId: attemptId }); } });
       if (controller.signal.aborted) throw new PeerError('cancelled', 'The delivery was stopped', 499);
       return { outcome: 'answered', reply: answer.body, via: answer.via, verified: true };
     } catch (error) {

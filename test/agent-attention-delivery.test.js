@@ -6,6 +6,7 @@ import { createRoundtableStore } from '../src/agent-roundtable/store.js';
 import { parseChatResult } from '../src/agent-roundtable/chat-contract.js';
 import { respondToAgentAttention } from '../src/graphiti/agent-attention.js';
 import { taskEntryPreferences } from '../src/graphiti/task-entry-preferences.js';
+import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 // Synthetic space: Milo asked the person in project "garden"; Nova is a peer.
 function fixture(t, { roundtable: withRoundtable = true } = {}) {
@@ -29,7 +30,7 @@ function fixture(t, { roundtable: withRoundtable = true } = {}) {
           created_at: '2026-10-19T00:00:00Z', updated_at: '2026-10-19T00:05:00Z' };
       } } };
   if (withRoundtable) {
-    app.roundtable = createAgentRoundtable({ app, openStore: () => createRoundtableStore(),
+    app.roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore(),
       wake: async () => { throw new Error('Delivering a reply must never start a session'); } });
     t.after(() => app.roundtable.close());
   }
@@ -129,7 +130,7 @@ test('the console wakes a wait in a separate MCP process through the shared roun
   const directory = await mkdtemp(join(tmpdir(), 'fuli-attention-process-'));
   const path = join(directory, 'agent-roundtable.sqlite');
   const { app, chat } = fixture(t, { roundtable: false });
-  app.roundtable = createAgentRoundtable({ app, openStore: () => createRoundtableStore(path) });
+  app.roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore(path) });
   const { chatId } = await chat('milo', 'create', { requestId: 'room', kind: 'direct', members: ['local:nova'] });
   const code = `import {createRoundtableStore} from './src/agent-roundtable/store.js';
     import {createChatService} from './src/agent-roundtable/chat-service.js';

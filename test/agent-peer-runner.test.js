@@ -7,6 +7,7 @@ import { createNodeStore } from '../src/agent-peer/node-store.js';
 import { assertionDigest } from '../src/agent-peer/origin-proof.js';
 import { canonicalJson, sha256Hex } from '../src/agent-peer/protocol.js';
 import { createPeerRunner } from '../src/agent-peer/runner.js';
+import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 const TARGET = 'b'.repeat(64);
 
@@ -60,7 +61,7 @@ async function fixture({ accept = async () => ({ cancel: false }), renew = async
   } };
   const runner = createPeerRunner({ store, client, nodeId: TARGET, spaceId: () => 'local-space',
     renewMs: 20,
-    provider: { issueRemoteAgentDelegation: async (input) => { calls.push({ grant: input }); return { token: 'fixture-grant' }; } },
+    host: createFuliRoundtableHost({ config: { personal: { spaceId: 'local-space' } }, personal: { issueRemoteAgentDelegation: async (input) => { calls.push({ grant: input }); return { token: 'fixture-grant' }; } } }),
     roundtable: { answerRemote: async (input) => {
       calls.push({ answerRemote: true, aborted: input.signal.aborted });
       await input.issueGrant({ client: 'codex', sessionId: null }, 300);

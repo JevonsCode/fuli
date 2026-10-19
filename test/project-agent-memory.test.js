@@ -6,6 +6,7 @@ import { checkpointTaskKnowledge } from '../src/graphiti/agent-knowledge-workflo
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { taskEntryPreferences } from '../src/graphiti/task-entry-preferences.js';
 import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
+import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 // Synthetic data and an HTTP boundary double; real Neo4j coverage is separate.
 const CONFIG = {
@@ -87,7 +88,7 @@ test('task entry automatically restores exactly one durable role and its context
 test('hook entry without a turn ID forwards the receiving session with process-only delegation proof', async () => {
   let resolved;
   const app = entryApplication({ onResolve: input => { resolved = input; } });
-  app.roundtable = createAgentRoundtable({ app,
+  app.roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer,
     env: { FULI_ROUNDTABLE_DELEGATION: 'synthetic-invocation-capability-123456' },
     openStore: () => ({ pendingFor: () => [], attention: { pending: () => [], markDelivered() {} } }) });
   await taskEntryPreferences(app, { status: 'matched', personalProjectId: 'sample-project' }, {

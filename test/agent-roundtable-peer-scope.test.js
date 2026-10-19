@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
 import { createRoundtableStore } from '../src/agent-roundtable/store.js';
+import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 function fixture() {
   const store = createRoundtableStore();
@@ -15,7 +16,7 @@ function fixture() {
     personal: { recentAgentSessions: async () => [], verifyAgentDelegation: async () => ({ redeemed: true }), revokeAgentDelegation: async () => {} },
     peer: { hasSent: () => true, status: async () => { peerCalls.push('status'); return { status: 'queued' }; }, cancel: async () => { peerCalls.push('cancel'); return { status: 'cancelled' }; } },
   };
-  const service = createAgentRoundtable({ app, openStore: () => store, clientAvailable: () => true,
+  const service = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => store, clientAvailable: () => true,
     wake: async input => { woken.push(input); return { body: 'Synthetic reply', sessionId: 'fixture-session' }; } });
   function ask({ node = 'a', body = 'Allowed remote question', threadId = 'collision-thread', messageId = 'collision-ask' } = {}) {
     return service.answerRemote({
@@ -84,7 +85,7 @@ test('a remote attempt uses its one grant and reports why that delivery failed',
     listProjectAgents: async () => [{ agentId: 'shared-lead', profile: { name: 'Shared lead', status: 'active', allowedClients: ['codex', 'claude_code'] } }],
     personal: { recentAgentSessions: async () => [], verifyAgentDelegation: async () => ({ redeemed: false }), revokeAgentDelegation: async () => {} },
   };
-  const service = createAgentRoundtable({ app, openStore: () => store, clientAvailable: () => true,
+  const service = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => store, clientAvailable: () => true,
     wake: async () => ({ body: 'Synthetic reply', sessionId: 'fixture-session' }) });
   try {
     await assert.rejects(service.answerRemote({

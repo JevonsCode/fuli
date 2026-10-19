@@ -5,12 +5,13 @@ import test from 'node:test';
 import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
 import { createRoundtableStore } from '../src/agent-roundtable/store.js';
 import { parseFinalAnswer, sessionWorkingDirectory, wakeArguments, wakeAgent } from '../src/agent-roundtable/wake.js';
+import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 const agent = (agentId, name, allowedClients = ['claude_code', 'codex']) => ({ agentId,
   employeeNumber: agentId === 'lead-1' ? '000001' : '000002',
   profile: { name, displayName: name, status: 'active', responsibility: `${name} 的职责`, capabilities: [], allowedClients } });
 
-function fixture({ wake, sessions = {}, redeemed = true, env = {}, openStore = () => createRoundtableStore(), idFactory = null } = {}) {
+function fixture({ wake, sessions = {}, redeemed = true, env = {}, openStore = () => createRoundtableStore(), idFactory = null, peer = undefined } = {}) {
   const agents = [agent('lead-1', 'Milo Reed'), agent('reviewer-1', 'Nova Lane', ['codex'])];
   const tasks = {
     'token-milo': { token: 'token-milo', projectAgentId: 'lead-1', personalProjectId: 'app', sessionId: 'cc-1', sourceApplication: 'claude_code' },
@@ -34,7 +35,8 @@ function fixture({ wake, sessions = {}, redeemed = true, env = {}, openStore = (
     }
   };
   let id = 0;
-  const roundtable = createAgentRoundtable({ app, env, openStore, idFactory: idFactory ?? (() => `id-${++id}`),
+  if (peer) app.peer = peer;
+  const roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, env, openStore, idFactory: idFactory ?? (() => `id-${++id}`),
     locateCwd: (client, sessionId) => `/work/${client}/${sessionId}`, clientAvailable: () => true,
     wake: async (input) => { woken.push(input); return wake ? wake(input) : { body: 'Nova 的回答', sessionId: 'fork-1' }; } });
   return { app, roundtable, woken, grants, revoked, verified };
@@ -398,10 +400,10 @@ test('escaped control characters fit the unread snapshot budget without poisonin
 });
 
 test('a definite remote queue rejection releases the source execution claim', async t => {
-  const store=createRoundtableStore();const {app,roundtable}=fixture({openStore:()=>store});t.after(()=>roundtable.close());
-  const to='peer:0123456789abcdef:binding';
-  app.peer={isRemoteAddress:value=>value.startsWith('peer:'),resolveRemote:async()=>({address:to,agentId:'remote-lead',name:'lead',deviceName:'other'}),
+  const store=createRoundtableStore();const to='peer:0123456789abcdef:binding';
+  const peer={isRemoteAddress:value=>value.startsWith('peer:'),resolveRemote:async()=>({address:to,agentId:'remote-lead',name:'lead',deviceName:'other'}),
     send:async()=>{throw Object.assign(new Error('queue full'),{status:429,code:'queue_full'});}};
+  const {roundtable}=fixture({openStore:()=>store,peer});t.after(()=>roundtable.close());
   await assert.rejects(roundtable.messageAgent({taskContextToken:'token-milo',sourceApplication:'claude_code',to,body:'snapshot',chatWake:{}}),/queue full/);
   assert.deepEqual(store.executionState('space',to),{busy:false,held:false});
 });

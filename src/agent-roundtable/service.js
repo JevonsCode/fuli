@@ -7,6 +7,7 @@ import { ATTENTION_REPLIES_GUIDANCE, createAttentionInbox } from './attention-in
 import { agentDiscoveryProfile, matchesAgentDiscovery } from './discovery.js';
 
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
+import { assertRoundtableHost } from './host.js';
 import { WAKE_CLIENTS, resolveClientCommand, sessionWorkingDirectory, wakeAgent } from './wake.js';
 
 const CLIENT_LABELS = { claude_code: 'Claude Code', codex: 'Codex', cursor: 'Cursor', claude: 'Claude', other: 'Agent' };
@@ -17,12 +18,13 @@ const REMOTE_FINAL = new Set(['answered', 'failed', 'cancelled', 'expired', 'unk
 
 // Agents talk to each other directly: an ask wakes the recipient in its own
 // client and returns its answer, or waits in its inbox for its next task.
-export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFactory = randomUUID,
+export function createAgentRoundtable({ host, peer = null, openStore, wake = wakeAgent, idFactory = randomUUID,
   env = process.env, locateCwd = sessionWorkingDirectory, clientAvailable = (client) => Boolean(resolveClientCommand(client)),
   // Boot-anchor evidence recorded with a cleanup hold. Production records none
   // (null) until a separately verified proof exists; release stays disabled.
   bootEvidence = async () => null }) {
-  const spaceId = () => app.config.personal.spaceId;
+  assertRoundtableHost(host);
+  const spaceId = () => host.spaceId();
   // Opened on first use: most MCP processes never touch the roundtable.
   let opened = null;
   const refreshes = new Map();
@@ -31,13 +33,13 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
 
   async function sender({ taskContextToken, sourceApplication }) {
     if (!taskContextToken) return { agent: null, client: sourceApplication ?? 'other', session: null, projectId: null };
-    const task = await app.taskContextRegistry.context(taskContextToken, sourceApplication);
+    const task = await host.taskContext(taskContextToken, sourceApplication);
     return { agent: task.projectAgentId ? await agentById(task.projectAgentId) : null,
       client: task.sourceApplication ?? sourceApplication, session: task.sessionId, projectId: task.personalProjectId };
   }
 
   async function agents() {
-    return (await app.listProjectAgents({ personalSpaceId: spaceId() }))
+    return (await host.listAgents())
       .filter((agent) => agent.profile.status === 'active');
   }
   async function agentById(agentId) {
@@ -75,15 +77,13 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
   }
 
   async function conversations(agent, projectId) {
-    const sessions = await app.personal.recentAgentSessions({ personalSpaceId: spaceId(), agentId: agent.agentId,
-      personalProjectId: projectId ?? null, limit: 5 }).catch(() => []);
-    return sessions.filter((session) => WAKE_CLIENTS.includes(session.source_application))
-      .map((session) => ({ client: session.source_application, sessionId: session.session_id,
-        projectId: session.personal_project_id, lastActive: session.last_active }));
+    const sessions = await host.recentSessions({ agentId: agent.agentId, projectId: projectId ?? null, limit: 5 })
+      .catch(() => []);
+    return sessions.filter((session) => WAKE_CLIENTS.includes(session.client));
   }
 
   async function findAgents({ query = null, personalProjectId = null, occupation = null, capability = null, projectId = null } = {}) {
-    const project = personalProjectId ? await resolveProjectLead(app, personalProjectId) : null;
+    const project = personalProjectId ? await resolveProjectLead(host, personalProjectId) : null;
     const needle = query?.trim().toLowerCase();
     const matches = (project ? (project.agent ? [project.agent] : []) : await agents()).filter((agent) => matchesAgentDiscovery(agentDiscoveryProfile(agent), { occupation, capability, projectId }) && (!needle || [agent.agentId,
       agent.employeeNumber ? `FLA ${agent.employeeNumber}` : null, agent.profile.displayName,
@@ -95,7 +95,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
       clients: (agent.profile.allowedClients ?? []).filter((client) => WAKE_CLIENTS.includes(client)),
       recentConversations: await conversations(agent, personalProjectId)
     })));
-    const remote = app.peer ? await app.peer.remoteAgents({ query: needle, occupation, capability, projectId }).catch(() => null) : null;
+    const remote = peer ? await peer.remoteAgents({ query: needle, occupation, capability, projectId }).catch(() => null) : null;
     return { agents: local,
       ...(project ? { project: { projectId: personalProjectId, address: `project:${personalProjectId}`, reason: project.reason } } : {}),
       ...(remote ? { remoteAgents: remote.agents, ...(remote.unavailable ? { remoteUnavailable: remote.unavailable } : {}) } : {}),
@@ -160,13 +160,11 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
         grant = await issueGrant(delivery, timeoutMs / 1000);
         answer = await wake({ client: delivery.client, sessionId: delivery.sessionId, cwd: delivery.cwd,
           timeoutMs, prompt, delegationToken: grant.token, peerDepth, signal, onSpawn,
-          onSession: session => app.personal.sealAgentDelegation({ personal_space_id: spaceId(),
-            token: grant.token, session_id: session }) });
-        const verified = answer.sessionId && await app.personal.verifyAgentDelegation({
-          personal_space_id: spaceId(), token: grant.token, session_id: answer.sessionId });
+          onSession: session => host.sealDelegation({ token: grant.token, sessionId: session }) });
+        const verified = answer.sessionId && await host.verifyDelegation({ token: grant.token, sessionId: answer.sessionId });
         if (!verified?.redeemed) throw Object.assign(new Error('The receiving session did not restore the Agent'),
           { code: 'delegation_not_redeemed' });
-        store.recordMemoryResult(ask.id, verified.memory_result_count ?? 0);
+        store.recordMemoryResult(ask.id, verified.memoryResultCount ?? 0);
       } catch (error) {
         failure = error.code ?? 'wake_failed';
         // A process that may still be running must not get a sibling on another channel.
@@ -187,8 +185,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
       } finally {
         // Even failed or timed-out attempts lose their authority. Expiry remains
         // the fail-closed backstop if the Provider is temporarily unreachable.
-        if (grant?.token) await app.personal.revokeAgentDelegation({
-          personal_space_id: spaceId(), token: grant.token }).catch(() => {});
+        if (grant?.token) await host.revokeDelegation({ token: grant.token }).catch(() => {});
       }
       return { answer, delivery, via: `${delivery.client}:${delivery.sessionId ? 'resume' : 'new'}` };
     }
@@ -204,8 +201,8 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
 
   async function messageAgent({ taskContextToken = null, sourceApplication, to, body, threadId = null,
     conversation = 'auto', wait = true, timeoutSeconds = 300, projectPath = null, roundtableProjectId = null, signal, chatWakeChatId = null, chatWake = null } = {}) {
-    if (roundtableProjectId && app.peer?.isRemoteAddress(to)) throw validation('This scoped consultation cannot leave its project');
-    if (app.peer?.isRemoteAddress(to)) {
+    if (roundtableProjectId && peer?.isRemoteAddress(to)) throw validation('This scoped consultation cannot leave its project');
+    if (peer?.isRemoteAddress(to)) {
       return messageRemote({ taskContextToken, sourceApplication, to, body, threadId, conversation, wait, timeoutSeconds, chatWake, signal });
     }
     const from = await sender({ taskContextToken, sourceApplication });
@@ -213,7 +210,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     if (roundtableProjectId && (from.projectId !== roundtableProjectId || (projectId && projectId !== roundtableProjectId))) {
       throw validation('This scoped consultation cannot leave its project');
     }
-    const resolved = projectId ? await resolveProjectLead(app, projectId, { source: from, recruit: true }) : null;
+    const resolved = projectId ? await resolveProjectLead(host, projectId, { source: from, recruit: true }) : null;
     if (resolved && !resolved.agent) return { status: 'queued', reason: resolved.reason, targetProjectId: projectId };
     const target = resolved?.agent ?? await recipient(to);
     const targetProjectId = projectId ?? agentProjectOutsideSender(target, from) ?? from.projectId;
@@ -233,7 +230,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     if (!claim.claimed) return queued(thread, ask, target, claim.reason);
     let attempts;
     try { attempts = await deliveryTargets(target, conversation, targetProjectId, crossProject ? null : projectPath,
-      crossProject ? { strictCwd: true, freshCwd: await verifiedProjectFolder(app, targetProjectId, projectPath) } : {}); }
+      crossProject ? { strictCwd: true, freshCwd: await verifiedProjectFolder(host, targetProjectId, projectPath) } : {}); }
     catch (error) { finishWake(ask); throw error; }
     if (!attempts.length) { finishWake(ask); return queued(thread, ask, target,
       crossProject && WAKE_CLIENTS.some(client => target.profile.allowedClients.includes(client) && clientAvailable(client))
@@ -243,19 +240,17 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     const timeoutMs = Math.min(Math.max(timeoutSeconds, 30), 900) * 1000;
     try {
       const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, signal,
-        issueGrant: (delivery, lifetime) => app.personal.issueAgentDelegation({ personal_space_id: spaceId(),
-          task_context_token: taskContextToken, source_application: from.client, agent_id: target.agentId,
-          ...(crossProject ? { target_personal_project_id: targetProjectId } : {}),
-          target_application: delivery.client,
+        issueGrant: (delivery, lifetime) => host.issueDelegation({ taskContextToken, client: from.client,
+          agentId: target.agentId, ...(crossProject ? { targetProjectId } : {}), targetClient: delivery.client,
           // Claude resumes into a fork with a new ID. Only Codex resumes in place.
-          target_session_id: delivery.client === 'codex' ? delivery.sessionId : null,
-          lifetime_seconds: lifetime }) });
+          targetSessionId: delivery.client === 'codex' ? delivery.sessionId : null,
+          lifetimeSeconds: lifetime }) });
       finishWake(ask);
       store.updateMessage(ask.id, { status: 'answered', via });
       const reply = store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent',
         inReplyTo: ask.id, via, from: { agentId: target.agentId, name: label(target), client: delivery.client,
           session: answer.sessionId }, to: { agentId: from.agent?.agentId, name: ask.from_name, client: from.client, session: from.session } });
-      const observation = await observeReturnedMemory(app, store, { ask, reply, from, taskContextToken });
+      const observation = await observeReturnedMemory(host, store, { ask, reply, from, taskContextToken });
       return { status: 'answered', threadId: thread.id, messageId: ask.id, recipient: { agentId: target.agentId, name: label(target) },
         ...(observation ? { memoryObservation: observation } : {}),
         via, reply: reply.body };
@@ -283,7 +278,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     if (!['auto', 'new'].includes(conversation ?? 'auto')) throw validation('Remote Agents accept conversation "auto" or "new"');
     const from = await sender({ taskContextToken, sourceApplication });
     if (!from.agent || !from.projectId) throw validation('A remote message must come from an active project task of a FULI Agent; pass taskContextToken');
-    const target = await app.peer.resolveRemote(to);
+    const target = await peer.resolveRemote(to);
     const { thread } = openThread(threadId, from.projectId, body);
     if (thread.project_id !== from.projectId) throw validation('This thread belongs to another project');
     const ask = store.appendMessage(thread.id, { id: idFactory(), kind: 'ask', body, status: 'sent', via: 'peer',
@@ -298,7 +293,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     }
     let state;
     try {
-      state = await app.peer.send({ messageId: ask.id, threadId: thread.id, target, body,
+      state = await peer.send({ messageId: ask.id, threadId: thread.id, target, body,
         ...(chatWake ? { chatWake } : {}), conversation: conversation ?? 'auto', depth: peerDepth(env) + 1, taskContextToken, sourceApplication: from.client,
         from: { agentId: from.agent.agentId, name: label(from.agent), client: from.client } });
     } catch (error) {
@@ -307,7 +302,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
       if (chatWake && error.status >= 400 && error.status < 500 && error.code !== 'aborted') store.finishExecution(ask.id);
       throw error;
     }
-    if (wait) state = await app.peer.waitFor(ask.id, Math.min(Math.max(timeoutSeconds, 30), 900) * 1000, { signal });
+    if (wait) state = await peer.waitFor(ask.id, Math.min(Math.max(timeoutSeconds, 30), 900) * 1000, { signal });
     return remoteView(applyRemote(ask.id, state));
   }
 
@@ -402,16 +397,16 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     if (![ask.from_agent, ask.to_agent].includes(me.agent.agentId)) throw validation('No such message for this Agent');
     const result = await statusOf(ask);
     const reply = store.messages(ask.thread_id).find(message => message.in_reply_to === ask.id);
-    const observation = await observeReturnedMemory(app, store, { ask: store.getMessage(ask.id), reply, from: me, taskContextToken });
+    const observation = await observeReturnedMemory(host, store, { ask: store.getMessage(ask.id), reply, from: me, taskContextToken });
     return { ...result, ...(observation ? { memoryObservation: observation } : {}) };
   }
 
   async function statusOf(ask) {
-    if (REMOTE_PENDING.has(ask.status) && app.peer?.hasSent(ask.id)) {
-      const state = await app.peer.status(ask.id).catch(() => null);
+    if (REMOTE_PENDING.has(ask.status) && peer?.hasSent(ask.id)) {
+      const state = await peer.status(ask.id).catch(() => null);
       return remoteView(applyRemote(ask.id, state) ?? ask);
     }
-    if (ask.via === 'peer' || app.peer?.hasSent(ask.id)) return remoteView(ask);
+    if (ask.via === 'peer' || peer?.hasSent(ask.id)) return remoteView(ask);
     const reply = store.messages(ask.thread_id).find((message) => message.in_reply_to === ask.id);
     return { status: ask.status, threadId: ask.thread_id, messageId: ask.id,
       recipient: { agentId: ask.to_agent, name: ask.to_name }, ...(reply ? { reply: reply.body, via: reply.via } : {}),
@@ -438,9 +433,9 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
   }
 
   async function cancelAsk(ask) {
-    if (app.peer?.hasSent(ask.id)) {
+    if (peer?.hasSent(ask.id)) {
       if (!REMOTE_PENDING.has(ask.status)) return remoteView(ask);
-      return remoteView(applyRemote(ask.id, await app.peer.cancel(ask.id)));
+      return remoteView(applyRemote(ask.id, await peer.cancel(ask.id)));
     }
     if (ask.status === 'queued') store.updateMessage(ask.id, { status: 'cancelled', error: 'cancelled' });
     else if (ask.status === 'delivering') throw validation('This message is being answered in another process; it ends at its timeout');
@@ -471,8 +466,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     if (!ask || ask.kind !== 'ask' || !me.agent || ask.to_agent !== me.agent.agentId
         || messageProject(ask) !== me.projectId) throw validation('No such message for this Agent');
     if (ask.target_project_id && ask.target_project_id !== store.getThread(ask.thread_id)?.project_id) {
-      const policy = await app.personal.getProjectAgentCoordinationPolicy(spaceId(), ask.target_project_id);
-      if (policy.team_lead_agent_id !== me.agent.agentId) throw validation('The target project lead changed');
+      if (await host.projectLeadId(ask.target_project_id) !== me.agent.agentId) throw validation('The target project lead changed');
     }
     if (ask.status === 'answered') throw validation('This message was already answered');
     if (ask.from_agent?.startsWith('peer:')) throw validation('A remote device message is answered by its delivery, not from the inbox');
@@ -484,12 +478,12 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
   }
 
   function refreshRemote({ threadId = null } = {}) {
-    if (!app.peer) return Promise.resolve();
+    if (!peer) return Promise.resolve();
     const key = threadId ?? 'directory';
     if (refreshes.has(key)) return refreshes.get(key);
     const records = threadId ? [store.getThread(threadId)] : store.listThreads(spaceId(), { limit: 200 });
     const pending = records.filter((record) => record?.space_id === spaceId()).flatMap((record) => store.messages(record.id))
-      .filter((message) => message.kind === 'ask' && REMOTE_PENDING.has(message.status) && app.peer.hasSent(message.id));
+      .filter((message) => message.kind === 'ask' && REMOTE_PENDING.has(message.status) && peer.hasSent(message.id));
     const start = pending.length && !threadId ? refreshOffset % pending.length : 0;
     const batch = [...pending.slice(start), ...pending.slice(0, start)].slice(0, 20);
     if (!threadId) refreshOffset += batch.length;
@@ -498,7 +492,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
     const work = Promise.all(Array.from({ length: Math.min(4, batch.length) }, async () => {
       while (batch.length && !signal.aborted) {
         const message = batch.shift();
-        try { applyRemote(message.id, await app.peer.status(message.id, { signal, timeoutMs: 2_000 })); }
+        try { applyRemote(message.id, await peer.status(message.id, { signal, timeoutMs: 2_000 })); }
         catch { /* Keep the last known result when the other computer is unavailable. */ }
       }
     })).finally(() => refreshes.delete(key));
@@ -547,7 +541,7 @@ export function createAgentRoundtable({ app, openStore, wake = wakeAgent, idFact
 
   const messageProject = message => message.target_project_id ?? store.getThread(message.thread_id)?.project_id ?? null;
   const attentionInbox = createAttentionInbox({ store, spaceId });
-  const chat = createAgentChat({ app, store, agents, idFactory, messageAgent, attentionInbox,
+  const chat = createAgentChat({ host, peer, store, agents, idFactory, messageAgent, attentionInbox,
     waitUntilIdle: async (agentId, signal) => {
       const state = await waitForChatChange(() => store.executionState(spaceId(), agentId),
         { store: store.chat, signal, ready: state => state.held || !state.busy });

@@ -10,6 +10,7 @@ import {
 } from '../src/app/agent-request-context.js';
 import { checkpointTaskKnowledge } from '../src/graphiti/agent-knowledge-workflows.js';
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
+import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 // Synthetic boundaries only: no live Provider, graph, project, knowledge or model CLI.
 // Scope: only a Provider-admitted sealed worker call skips capture. Roundtable
@@ -55,7 +56,7 @@ function fixture({ env = null, crashOnComplete = false } = {}) {
     personal: { conversation: async (_action, input) => { calls.conversations.push(input);
       return { status: 'saved', conversation_id: 'synthetic-conversation' }; } }
   };
-  if (env) app.roundtable = createAgentRoundtable({ app, env, openStore: () => createRoundtableStore() });
+  if (env) app.roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, env, openStore: () => createRoundtableStore() });
   return { app, calls, close: () => app.roundtable?.close() };
 }
 

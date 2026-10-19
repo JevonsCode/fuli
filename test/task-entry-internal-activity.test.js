@@ -6,6 +6,7 @@ import path from 'node:path';
 import { createAgentRoundtable } from '../src/agent-roundtable/service.js';
 import { createRoundtableStore } from '../src/agent-roundtable/store.js';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
+import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 // Synthetic Provider boundary only: no live graph, project, knowledge or model CLI.
 const GRANT = 'synthetic-roundtable-grant-0123456789abcdef';
@@ -22,7 +23,7 @@ function fixture({ resolution = { status: 'unmatched', personalProjectId: null }
   }, workspaces: [] }, { projectPathResolver: () => resolution,
     fetchImpl: async () => { throw new Error('Unexpected Provider request'); } });
   // The same composition openFederatedGraphApplication uses: the entry process env.
-  app.roundtable = createAgentRoundtable({ app, env, openStore: () => createRoundtableStore() });
+  app.roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, env, openStore: () => createRoundtableStore() });
   app.taskContextRegistry = { current: async () => current,
     begin: async input => ({ ...input, token: 'fuli-task-synthetic-fallback' }) };
   app.upsertPersonalProject = async input => {
