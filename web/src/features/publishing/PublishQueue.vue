@@ -3,7 +3,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { getJson, postJson } from '@/api/client'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiSelect from '@/ui/UiSelect.vue'
 import { formatTime } from '@/features/knowledge/model'
 import { t } from '@/i18n'
@@ -349,7 +349,7 @@ onBeforeUnmount(() => {
         <GrowthLoading v-if="personalLoading" variant="compact" :label="t('pages.review.loadingPersonal')" />
         <div v-if="personalError" class="ui-list-row publish-queue-error" role="alert">
           <span class="ui-list-main">{{ personalError }}</span>
-          <UiButton size="sm" :disabled="personalLoading" @click="loadPersonal()">{{ t('common.actions.retry') }}</UiButton>
+          <Button variant="outline" size="sm" :disabled="personalLoading" @click="loadPersonal()">{{ t('common.actions.retry') }}</Button>
         </div>
         <article v-for="draft in personalDrafts" :key="draft.id" class="ui-list-row review-item">
           <div class="ui-list-main">
@@ -363,9 +363,9 @@ onBeforeUnmount(() => {
           </div>
           <div class="ui-list-actions">
             <GrowthLoading v-if="personalDecisionBusy.has(draft.id)" variant="inline" :label="t('pages.review.savingDecision')" />
-            <UiButton size="sm" variant="ghost" :disabled="personalLoading || personalError !== '' || personalDecisionBusy.has(draft.id)" data-decision="ignore" @click="decidePersonal(draft, 'ignore')">{{ t('pages.review.ignore') }}</UiButton>
-            <UiButton size="sm" :disabled="personalLoading || personalError !== '' || personalDecisionBusy.has(draft.id)" data-decision="keep_personal" @click="decidePersonal(draft, 'keep_personal')">{{ t('pages.review.keepPersonal') }}</UiButton>
-            <UiButton v-if="store.state?.capabilities?.submitKnowledge" size="sm" variant="primary" :disabled="personalLoading || personalError !== '' || personalDecisionBusy.has(draft.id)" data-decision="submit_public" @click="decidePersonal(draft, 'submit_public')">{{ t('pages.review.submitPublic') }}</UiButton>
+            <Button size="sm" variant="ghost" :disabled="personalLoading || personalError !== '' || personalDecisionBusy.has(draft.id)" data-decision="ignore" @click="decidePersonal(draft, 'ignore')">{{ t('pages.review.ignore') }}</Button>
+            <Button variant="outline" size="sm" :disabled="personalLoading || personalError !== '' || personalDecisionBusy.has(draft.id)" data-decision="keep_personal" @click="decidePersonal(draft, 'keep_personal')">{{ t('pages.review.keepPersonal') }}</Button>
+            <Button v-if="store.state?.capabilities?.submitKnowledge" size="sm" :disabled="personalLoading || personalError !== '' || personalDecisionBusy.has(draft.id)" data-decision="submit_public" @click="decidePersonal(draft, 'submit_public')">{{ t('pages.review.submitPublic') }}</Button>
           </div>
         </article>
       </div>
@@ -381,7 +381,7 @@ onBeforeUnmount(() => {
         <GrowthLoading v-if="sharedLoading" variant="compact" :label="t('pages.review.loadingPublic')" />
         <div v-if="sharedError" class="ui-list-row publish-queue-error" role="alert">
           <span class="ui-list-main">{{ sharedError }}</span>
-          <UiButton size="sm" :disabled="sharedLoading" @click="loadShared()">{{ t('common.actions.retry') }}</UiButton>
+          <Button variant="outline" size="sm" :disabled="sharedLoading" @click="loadShared()">{{ t('common.actions.retry') }}</Button>
         </div>
         <article v-for="proposal in proposals" :key="proposal.id" class="ui-list-row review-item">
           <div class="ui-list-main">
@@ -391,8 +391,8 @@ onBeforeUnmount(() => {
           </div>
           <div class="ui-list-actions">
             <GrowthLoading v-if="sharedDecisionBusy.has(sharedBusyKey(reviewProjectId, proposal.id))" variant="inline" :label="t('pages.review.savingDecision')" />
-            <UiButton size="sm" variant="ghost" :disabled="sharedLoading || sharedError !== '' || sharedDecisionBusy.has(sharedBusyKey(reviewProjectId, proposal.id))" data-decision="reject" @click="decideShared(proposal, 'reject')">{{ t('pages.review.reject') }}</UiButton>
-            <UiButton size="sm" variant="primary" :disabled="sharedLoading || sharedError !== '' || sharedDecisionBusy.has(sharedBusyKey(reviewProjectId, proposal.id))" data-decision="approve" @click="decideShared(proposal, 'approve')">{{ t('pages.review.approve') }}</UiButton>
+            <Button size="sm" variant="ghost" :disabled="sharedLoading || sharedError !== '' || sharedDecisionBusy.has(sharedBusyKey(reviewProjectId, proposal.id))" data-decision="reject" @click="decideShared(proposal, 'reject')">{{ t('pages.review.reject') }}</Button>
+            <Button size="sm" :disabled="sharedLoading || sharedError !== '' || sharedDecisionBusy.has(sharedBusyKey(reviewProjectId, proposal.id))" data-decision="approve" @click="decideShared(proposal, 'approve')">{{ t('pages.review.approve') }}</Button>
           </div>
         </article>
       </div>

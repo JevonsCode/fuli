@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { employeeAvatarUrl } from '@/features/employees/avatars'
 import { t } from '@/i18n'
-import { UiButton } from '@/ui'
+import { Button } from '@/components/ui/button'
 import { agentIdentityStyle } from './agent-identity-color'
 import { agentPinsText, useAgentPinsState } from './agent-pins'
 import { agentDisplayName, agentProfilePath } from './profile-model'
@@ -44,7 +44,7 @@ function retry() {
   </ul>
   <div v-else-if="spaceId && expanded && error" class="pinned-rail-error" role="alert">
     <span>{{ error }}</span>
-    <UiButton variant="ghost" size="sm" @click="retry">{{ agentPinsText('retry', 'Retry') }}</UiButton>
+    <Button variant="ghost" size="sm" @click="retry">{{ agentPinsText('retry', 'Retry') }}</Button>
   </div>
 </template>
 

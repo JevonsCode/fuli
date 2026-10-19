@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
+import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import { UiAvatar, UiChip, UiIcon } from '@/ui'
 import type { WorkbenchBoard } from './workbench-board'
@@ -40,11 +41,13 @@ const focusAgent = computed(() => {
               · {{ board.since(focus.kind === 'question' ? focus.attention.createdAt : focus.task.updatedAt) }}
             </span>
           </div>
-          <RouterLink class="ui-button ui-button--primary focus-action" data-focus-action
-            :to="focus.kind === 'question' ? board.questionHref(focus.attention) : board.taskHref(focus.task)">
-            {{ focus.kind === 'question' ? t('workbench.focus.answer') : t('workbench.focus.open') }}
-            <UiIcon name="chevron-right" :size="16" />
-          </RouterLink>
+          <Button as-child class="focus-action">
+            <RouterLink data-focus-action
+              :to="focus.kind === 'question' ? board.questionHref(focus.attention) : board.taskHref(focus.task)">
+              {{ focus.kind === 'question' ? t('workbench.focus.answer') : t('workbench.focus.open') }}
+              <UiIcon name="chevron-right" :size="16" />
+            </RouterLink>
+          </Button>
         </div>
       </template>
       <div v-else class="focus-calm">

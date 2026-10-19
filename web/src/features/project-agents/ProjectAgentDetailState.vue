@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { t } from '@/i18n'
 
@@ -24,9 +24,9 @@ defineEmits<{ retry: [] }>()
   </div>
   <div v-else-if="status === 'error'" class="project-agent-source-state is-error" role="alert">
     <span>{{ error || t('projectAgents.detail.sectionUnavailable') }}</span>
-    <UiButton size="sm" variant="ghost" @click="$emit('retry')">
+    <Button size="sm" variant="ghost" @click="$emit('retry')">
       {{ t('projectAgents.retry') }}
-    </UiButton>
+    </Button>
   </div>
   <slot v-else />
 </template>

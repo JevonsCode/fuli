@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import ProjectScopePicker from './ProjectScopePicker.vue'
 
@@ -317,7 +318,7 @@ onBeforeUnmount(() => {
         <h2 id="employee-all-projects-title">{{ t('employees.allProjects.title') }}</h2>
       </div>
       <div class="employee-all-projects-controls">
-        <button v-if="canMoveTasks" class="employee-board-create" type="button" @click="emit('create-task')">+ {{ t('employees.task.create') }}</button>
+        <Button v-if="canMoveTasks" class="employee-board-create" @click="emit('create-task')">+ {{ t('employees.task.create') }}</Button>
         <ProjectScopePicker
           class="employee-all-projects-filter"
           :model-value="visibleProjectIds"
@@ -341,7 +342,7 @@ onBeforeUnmount(() => {
     <div v-if="filterStorageUnavailable" class="employee-all-projects-notice" role="status">{{ t('employees.scope.storageUnavailable') }}</div>
     <div v-if="failedProjects" class="employee-all-projects-notice" role="status">
       <span>{{ t('employees.allProjects.partial', { loaded: boards.length, total: visibleProjectIds.length, failed: failedProjects }) }}</span>
-      <button type="button" @click="emit('retry')">{{ t('employees.retry') }}</button>
+      <Button size="sm" variant="ghost" @click="emit('retry')">{{ t('employees.retry') }}</Button>
     </div>
     <div v-if="truncatedProjects" class="employee-all-projects-notice" role="status">
       {{ t('employees.allProjects.truncated', { count: truncatedProjects }) }}
@@ -351,7 +352,7 @@ onBeforeUnmount(() => {
     <div v-if="!hasVisibleProjects" class="employee-all-projects-empty">
       <h3>{{ t('employees.allProjects.noProjectsVisible') }}</h3>
       <p>{{ t('employees.allProjects.noProjectsVisibleHint') }}</p>
-      <button type="button" @click="showAllProjects">{{ t('employees.allProjects.showAllProjects') }}</button>
+      <Button @click="showAllProjects">{{ t('employees.allProjects.showAllProjects') }}</Button>
     </div>
     <div v-else-if="!hasItems" class="employee-all-projects-empty">
       <h3>{{ t(incomplete || truncatedProjects ? 'employees.read.incomplete' : 'employees.allProjects.empty') }}</h3>
@@ -451,8 +452,6 @@ onBeforeUnmount(() => {
 .employee-all-projects-search input { width: 100%; min-height: 40px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-ink); font: inherit; font-size: 14px; padding: 8px 11px; }
 .employee-all-projects-search input:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .employee-all-projects-notice { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; min-height: 38px; padding: 8px 12px; border-radius: 10px; background: var(--color-warning-soft); color: var(--color-warning); font-size: 13px; }
-.employee-all-projects-notice button { border: 0; background: transparent; color: inherit; font: inherit; font-weight: 650; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
-.employee-all-projects-notice button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .employee-all-projects-notice.is-error { background: var(--color-danger-soft); color: var(--color-danger); }
 .employee-all-projects-board-shell { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 8px; }
 .employee-all-projects-board { display: grid; flex: 1; grid-template-columns: repeat(5, minmax(230px, 1fr)); gap: 12px; min-height: 0; overflow-x: auto; padding: 2px 2px 4px; }
@@ -468,8 +467,6 @@ onBeforeUnmount(() => {
 .employee-all-projects-task-open:focus-visible, .employee-all-projects-drag-handle:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .employee-all-projects-task-open:disabled { cursor: wait; }
 .employee-all-projects-task-open:disabled:not(.is-saving *) { cursor: default; }
-.employee-board-create { border: 0; border-radius: var(--radius-control); min-height: 40px; padding: 8px 14px; background: var(--color-ink); color: var(--color-surface); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
-.employee-board-create:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .employee-all-projects-drag-handle { position: absolute; top: 7px; right: 7px; display: grid; width: 28px; height: 28px; place-items: center; padding: 0; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--color-muted); cursor: grab; touch-action: none; }
 .employee-all-projects-drag-handle:hover:not(:disabled) { background: var(--color-surface-subtle); color: var(--color-ink); }
 .employee-all-projects-drag-handle:active { cursor: grabbing; }
@@ -494,9 +491,7 @@ onBeforeUnmount(() => {
 .employee-all-projects-empty { display: grid; flex: 1; place-content: center; justify-items: center; padding: 30px; text-align: center; }
 .employee-all-projects-empty h3 { margin: 0 0 8px; font-size: 18px; font-weight: 600; }
 .employee-all-projects-empty p { max-width: 46ch; margin: 0; color: var(--color-muted); font-size: 13px; line-height: 1.6; }
-.employee-all-projects-empty button { min-height: 40px; margin-top: 16px; padding: 8px 12px; border: 0; border-radius: var(--radius-control); background: var(--color-ink); color: var(--color-surface); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
-.employee-all-projects-empty button:hover { background: var(--color-ink); }
-.employee-all-projects-empty button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+.employee-all-projects-empty [data-slot="button"] { margin-top: 16px; }
 @media (max-width: 760px) {
   .employee-all-projects { padding: 10px 16px 18px; }
   .employee-all-projects-header { align-items: stretch; flex-direction: column; gap: 10px; }

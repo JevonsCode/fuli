@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { RouterLink } from 'vue-router'
 import { t, currentLocale } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
@@ -26,8 +26,8 @@ defineEmits<{ reload: [] }>()
     <p v-if="loading && longWait" class="jefa-read-long" role="status">{{ t('employees.read.long') }}</p>
     <p v-if="stale">{{ t('employees.read.readOnly') }} <span v-if="updatedAt">{{ t('employees.read.lastRead', { time: formatDateTime(updatedAt, currentLocale(), { dateStyle: 'medium', timeStyle: 'short' }, { missing: '—' }) }) }}</span></p>
     <div v-if="!loading" class="jefa-read-actions">
-      <UiButton variant="primary" @click="$emit('reload')">{{ t('employees.read.reload') }}</UiButton>
-      <RouterLink to="/project-agents" class="ui-button">{{ t('employees.backToAgents') }}</RouterLink>
+      <Button @click="$emit('reload')">{{ t('employees.read.reload') }}</Button>
+      <Button as-child variant="outline"><RouterLink to="/project-agents">{{ t('employees.backToAgents') }}</RouterLink></Button>
       <span v-if="hasContent">{{ t('employees.read.reloadHint') }}</span>
     </div>
     <details v-if="!loading && failures.length" class="jefa-read-details">
@@ -44,7 +44,7 @@ defineEmits<{ reload: [] }>()
 .jefa-read-status h2 { color: var(--color-ink); font-size: 20px; line-height: 1.4; margin-bottom: 8px; }
 .jefa-read-error { display: grid; gap: 4px; }
 .jefa-read-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-.jefa-read-actions .ui-button { min-height: 44px; text-decoration: none; }
+.jefa-read-actions [data-slot="button"] { min-height: 44px; }
 .jefa-read-details summary { cursor: pointer; color: var(--color-ink); padding-block: 6px; }
 .jefa-read-details summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
 .jefa-read-details p { margin-top: 8px; }

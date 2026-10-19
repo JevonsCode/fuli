@@ -570,7 +570,7 @@ describe('ProjectAgentsPage', () => {
       if (url.includes('/executor-routing-rules?')) return Promise.resolve({ rules: [] })
       return Promise.resolve({ learning_evidence: {} })
     })
-    await wrapper.get('.project-agent-detail-actions .ui-button--ghost').trigger('click')
+    await wrapper.get('.project-agent-detail-actions [data-variant="ghost"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.get('.project-agent-task-card').text()).toContain('openai')
@@ -768,7 +768,7 @@ describe('ProjectAgentsPage', () => {
       if (url.includes('/api/project-agent-routing-learning?')) return Promise.resolve([])
       return Promise.resolve([])
     })
-    await wrapper.get('.project-agent-detail-actions .ui-button--ghost').trigger('click')
+    await wrapper.get('.project-agent-detail-actions [data-variant="ghost"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('.project-agent-execution-summary').exists()).toBe(false)
   })
@@ -964,7 +964,7 @@ describe('ProjectAgentsPage', () => {
     const { wrapper } = mountPage()
     await flushPromises()
     expect(wrapper.get('.project-agent-detail').text()).toContain('测试角色')
-    await wrapper.get('.project-agent-detail-actions .ui-button--ghost').trigger('click')
+    await wrapper.get('.project-agent-detail-actions [data-variant="ghost"]').trigger('click')
     await flushPromises()
 
     const detail = wrapper.get('.project-agent-detail').text()
@@ -996,12 +996,12 @@ describe('ProjectAgentsPage', () => {
     postJson.mockResolvedValue({})
     const { wrapper } = mountPage()
     await flushPromises()
-    await wrapper.get('.project-agent-detail-actions .ui-button--ghost').trigger('click')
+    await wrapper.get('.project-agent-detail-actions [data-variant="ghost"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.find('.project-agent-policy-control').exists()).toBe(false)
     expect(patchJson).not.toHaveBeenCalledWith('/api/project-agent-recruitment-policy', expect.anything())
-    await wrapper.get('.project-agent-recruitment-card .ui-button--ghost').trigger('click')
+    await wrapper.get('.project-agent-recruitment-card [data-variant="ghost"]').trigger('click')
     await flushPromises()
     expect(postJson).toHaveBeenCalledWith('/api/project-agent-recruitments/decision', expect.objectContaining({
       recruitmentId: 'recruitment-pending', expectedRevision: 2, decision: 'approve',
@@ -1035,7 +1035,7 @@ describe('ProjectAgentsPage', () => {
     postJson.mockResolvedValue({})
     const { wrapper } = mountPage()
     await flushPromises()
-    await wrapper.get('.project-agent-detail-actions .ui-button--ghost').trigger('click')
+    await wrapper.get('.project-agent-detail-actions [data-variant="ghost"]').trigger('click')
     await flushPromises()
 
     const learning = wrapper.get('.project-agent-learning-card')

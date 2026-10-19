@@ -5,7 +5,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { deleteJson, getJson, postJson } from '@/api/client'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { currentLocale, t } from '@/i18n'
@@ -317,14 +317,14 @@ function formatDate(value?: string) {
         <div class="project-card-heading">
           <div><h4>{{ project.name }}</h4></div>
           <div class="project-card-heading-actions">
-            <button
+            <Button
               v-if="project.can_manage && supportsGraphitiProjectOperations(project.providerUrl)"
-              class="management-action"
-              type="button"
+              variant="outline"
+              class="project-manage-action"
               @click="openProjectDeletion(project)"
             >
               {{ t('pages.publicProjects.manage') }}
-            </button>
+            </Button>
             <div class="completion-badge">
               <strong>{{ project.profile?.assessment?.score ?? '—' }}</strong>
               <span>{{ project.profile?.assessment ? t('pages.publicProjects.coverage') : t('pages.publicProjects.noSummary') }}</span>
@@ -348,10 +348,10 @@ function formatDate(value?: string) {
           </span>
         </div>
         <footer class="project-card-footer">
-          <UiButton size="sm" @click="toggleSubscription(project)">
+          <Button variant="outline" size="sm" @click="toggleSubscription(project)">
             {{ subscribedKeys.has(projectKey(project)) ? t('pages.publicProjects.unsubscribe') : t('pages.publicProjects.subscribe') }}
-          </UiButton>
-          <UiButton size="sm" variant="primary" @click="openDetails(project)">{{ t('common.actions.viewDetails') }}</UiButton>
+          </Button>
+          <Button size="sm" @click="openDetails(project)">{{ t('common.actions.viewDetails') }}</Button>
         </footer>
       </article>
       <div v-if="!projects.length" class="empty-state project-empty">{{ t('pages.publicProjects.noProjects') }}</div>
@@ -360,9 +360,9 @@ function formatDate(value?: string) {
     <section class="project-section">
       <div class="section-toolbar compact-toolbar relation-section-toolbar">
         <div><h3>{{ t('pages.publicProjects.relationsTitle') }}</h3></div>
-        <UiButton size="sm" variant="primary" :disabled="!relationProjects.length" @click="relationOpen = !relationOpen">
+        <Button size="sm" :disabled="!relationProjects.length" @click="relationOpen = !relationOpen">
           {{ t('pages.publicProjects.addRelation') }}
-        </UiButton>
+        </Button>
       </div>
       <p v-if="maintainable.length && !relationProjects.length" class="muted">
         {{ t('pages.publicProjects.providerOperationsUnavailable') }}
@@ -408,7 +408,7 @@ function formatDate(value?: string) {
           </p>
           <p v-else>{{ t('pages.publicProjects.relationBoundary') }}</p>
         </div>
-        <UiButton size="sm" variant="primary" type="submit">{{ t('pages.publicProjects.addRelation') }}</UiButton>
+        <Button size="sm" type="submit">{{ t('pages.publicProjects.addRelation') }}</Button>
       </form>
     </section>
 
@@ -444,7 +444,7 @@ function formatDate(value?: string) {
       <p v-else class="ui-muted">{{ t('pages.publicProjects.providerOperationsUnavailableTitle') }}</p>
       <template #footer>
         <span class="public-project-dialog-note">{{ t('pages.publicProjects.contentManagementSeparated') }}</span>
-        <UiButton variant="primary" @click="openGraph(selectedProject)">{{ t('pages.publicProjects.viewGraph') }}</UiButton>
+        <Button @click="openGraph(selectedProject)">{{ t('pages.publicProjects.viewGraph') }}</Button>
       </template>
     </UiDialog>
 
@@ -456,7 +456,7 @@ function formatDate(value?: string) {
       </label>
       <template #footer>
         <span class="public-project-dialog-note">{{ t('pages.publicProjects.deleteWarning') }}</span>
-        <UiButton variant="danger" :disabled="!deletionMatches" :busy="deletionBusy" :busy-label="t('pages.publicProjects.deleting')" @click="deleteProject">{{ t('pages.publicProjects.deletePermanently') }}</UiButton>
+        <Button variant="destructive" :disabled="!deletionMatches" :loading="deletionBusy" :loading-label="t('pages.publicProjects.deleting')" @click="deleteProject">{{ t('pages.publicProjects.deletePermanently') }}</Button>
       </template>
     </UiDialog>
   </section>

@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 
 import { putJson } from '@/api/client'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
@@ -175,8 +175,8 @@ async function save() {
       </template>
     </div>
     <template #footer>
-      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</UiButton>
-      <UiButton variant="primary" type="submit" :busy="busy" :busy-label="savingLabel">{{ t('projectAgents.routing.editor.save') }}</UiButton>
+      <Button variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</Button>
+      <Button type="submit" :loading="busy" :loading-label="savingLabel">{{ t('projectAgents.routing.editor.save') }}</Button>
     </template>
   </UiDialog>
 </template>

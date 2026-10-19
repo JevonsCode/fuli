@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { ref, watch } from 'vue'
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -68,7 +68,7 @@ function status(value: string) {
     <UiSelect v-model="projectId" field :label="t('projectAgents.conversations.scope')" :options="[{ value: '', label: t('projectAgents.conversations.global') }, ...projects.map(project => ({ value: project.id, label: project.name }))]" />
     <GrowthLoading v-if="loading" variant="compact" :label="t('projectAgents.workHistory.loading')" />
     <div v-else-if="error" role="alert">
-      <p>{{ error }}</p><UiButton size="sm" variant="ghost" @click="load">{{ t('projectAgents.retry') }}</UiButton>
+      <p>{{ error }}</p><Button size="sm" variant="ghost" @click="load">{{ t('projectAgents.retry') }}</Button>
     </div>
     <ol v-else-if="records.length">
       <li v-for="record in records" :key="record.taskContextToken">

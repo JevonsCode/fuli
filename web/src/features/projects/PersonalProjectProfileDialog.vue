@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 
 import { putJson } from '@/api/client'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
@@ -226,7 +226,7 @@ async function save() {
           <h3>{{ t('projects.profileDialog.sources') }}</h3>
           <p class="ui-meta">{{ t('projects.profileDialog.sourcesCopy') }}</p>
         </div>
-        <UiButton size="sm" @click="addSource">{{ t('projects.profileDialog.addSource') }}</UiButton>
+        <Button variant="outline" size="sm" @click="addSource">{{ t('projects.profileDialog.addSource') }}</Button>
       </div>
       <div v-if="sources.length" class="project-source-list">
         <article v-for="(source, index) in sources" :key="source.key" class="project-source-row">
@@ -241,7 +241,7 @@ async function save() {
             <textarea v-model="source.summary" maxlength="4096" rows="2" />
           </label>
           <UiSelect v-model="source.sensitivity" field :label="t('projects.profileDialog.sensitivity')" :options="sensitivityOptions" />
-          <UiButton class="project-source-remove" size="sm" variant="danger" @click="removeSource(index)">{{ t('common.actions.remove') }}</UiButton>
+          <Button class="project-source-remove" size="sm" variant="destructive" @click="removeSource(index)">{{ t('common.actions.remove') }}</Button>
         </article>
       </div>
       <p v-else class="ui-meta">{{ t('projects.profileDialog.noSources') }}</p>
@@ -249,8 +249,8 @@ async function save() {
 
     <p class="ui-meta">{{ t('projects.profileDialog.stateBoundary') }}</p>
     <template #footer>
-      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</UiButton>
-      <UiButton variant="primary" type="submit" :busy="busy" :busy-label="t('projects.profileDialog.saving')">{{ t('projects.profileDialog.save') }}</UiButton>
+      <Button variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</Button>
+      <Button type="submit" :loading="busy" :loading-label="t('projects.profileDialog.saving')">{{ t('projects.profileDialog.save') }}</Button>
     </template>
   </UiDialog>
 </template>

@@ -47,7 +47,10 @@ Each row is the single home for that behavior; reuse it or extend it.
 | CLI line output and terminal confirmation | `src/cli/terminal-io.js` | |
 | Web date and time display | `web/src/lib/date-time.ts` (`formatDateTime`), `web/src/lib/relative-time.ts` | Pass `currentLocale()`; never a hard-coded or browser-default locale. |
 | Web identity, debounce | `web/src/lib/identity.ts`, `web/src/lib/debounce.ts` | |
-| Web loading feedback | `web/src/components/GrowthLoading.vue` | See `AGENTS.md`. |
+| Web loading feedback | `web/src/components/GrowthLoading.vue` | See `AGENTS.md`. A pending button uses `Button`'s `loading`. |
+| Web buttons | `web/src/components/ui/button` (shadcn-vue `Button`) | Variants `default` (primary), `outline`, `ghost`, `destructive`, `link`; `as-child` for links. Icon-only actions use `UiIconButton`. |
+| Web theme tokens and Tailwind preset | `web/src/styles/theme/` | Base → semantic → component tokens; a skin re-points semantic tokens only. |
+| Web class merging (`cn`) | `web/src/lib/class-names.ts` | |
 | Web modal behavior | `web/src/composables/useModalDialog.ts` | |
 | Roundtable (agent-to-agent asks, chat, wake, LAN peers) | `packages/roundtable/` (`fuli-roundtable`) | Reaches its host only through `src/host.js`; FULI's host is `src/graphiti/roundtable-host.js`. Agent-specific wake adapters live in `packages/roundtable/src/agents/<agent>/`. |
 | Python shared values | `provider_values.py` (`json_object`, `sha256_text`), `model_validation.py` (`unique_text_list`), `models.py` (`stored_confirmation_basis`), `auth.py` (`token_hash`) | Do not redefine a private `_helper` that one of these already provides. |

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { computed, ref, watch } from "vue";
 import { getJson, putJson } from "@/api/client";
 import GrowthLoading from "@/components/GrowthLoading.vue";
@@ -192,12 +192,8 @@ async function save() {
     </details>
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-if="saved" role="status">{{ t("agentProfiles.saved") }}</p>
-    <UiButton size="sm" variant="primary" :disabled="saving || loading" type="submit">
-      <GrowthLoading
-        v-if="saving"
-        variant="inline"
-        :label="t('agentProfiles.saving')"
-      /><template v-else>{{ t("agentProfiles.save") }}</template>
-    </UiButton>
+    <Button size="sm" :disabled="loading" :loading="saving" :loading-label="t('agentProfiles.saving')" type="submit">
+      {{ t("agentProfiles.save") }}
+    </Button>
   </form>
 </template>

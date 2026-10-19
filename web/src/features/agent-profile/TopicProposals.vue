@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import { ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -88,7 +88,7 @@ const busy = (proposal: TopicProposal, action: 'accept' | 'decline') =>
     <GrowthLoading v-if="loading && !proposals.length" variant="inline" :label="t('agentRedesign.topicProposal.loading')" />
     <p v-if="loadError" class="ui-meta" role="alert">
       {{ t('agentRedesign.topicProposal.loadError') }}
-      <UiButton size="sm" variant="ghost" @click="load">{{ t('agentProfiles.retry') }}</UiButton>
+      <Button size="sm" variant="ghost" @click="load">{{ t('agentProfiles.retry') }}</Button>
     </p>
     <article v-for="proposal in proposals" :key="proposal.topic" class="ui-card topic-proposal" data-topic-proposal>
       <p class="ui-meta topic-proposal-eyebrow">{{ t('agentRedesign.topicProposal.eyebrow') }}</p>
@@ -101,20 +101,20 @@ const busy = (proposal: TopicProposal, action: 'accept' | 'decline') =>
       </ul>
       <p class="ui-meta">{{ t('agentRedesign.topicProposal.hint') }}</p>
       <div class="topic-proposal-actions">
-        <UiButton
-          size="sm" variant="primary" data-topic-accept
-          :busy="busy(proposal, 'accept')"
-          :busy-label="t('agentRedesign.topicProposal.accepting', { topic: proposal.topic })"
+        <Button
+          size="sm" data-topic-accept
+          :loading="busy(proposal, 'accept')"
+          :loading-label="t('agentRedesign.topicProposal.accepting', { topic: proposal.topic })"
           :disabled="Boolean(pending)"
           @click="answer(proposal, 'accept')"
-        >{{ t('agentRedesign.topicProposal.accept') }}</UiButton>
-        <UiButton
+        >{{ t('agentRedesign.topicProposal.accept') }}</Button>
+        <Button
           size="sm" variant="ghost" data-topic-decline
-          :busy="busy(proposal, 'decline')"
-          :busy-label="t('agentRedesign.topicProposal.declining', { topic: proposal.topic })"
+          :loading="busy(proposal, 'decline')"
+          :loading-label="t('agentRedesign.topicProposal.declining', { topic: proposal.topic })"
           :disabled="Boolean(pending)"
           @click="answer(proposal, 'decline')"
-        >{{ t('agentRedesign.topicProposal.decline') }}</UiButton>
+        >{{ t('agentRedesign.topicProposal.decline') }}</Button>
       </div>
     </article>
     <p v-if="actionError" class="ui-meta" role="alert">{{ actionError }}</p>

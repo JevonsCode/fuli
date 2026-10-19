@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import EmployeeTaskBoard, { type EmployeeProjectBoard } from '@/features/employees/EmployeeTaskBoard.vue'
 import { publicProjectReport, reportProjects } from '@/features/employees/shared-report'
@@ -37,10 +38,10 @@ async function load() {
   <main class="shared-jefa-report">
     <header><strong>Jefa</strong><h1>{{ t('employees.share.title') }}</h1><span>{{ t('employees.share.readOnly') }}</span></header>
     <GrowthLoading v-if="loading" :label="t('employees.loadingReport')" />
-    <div v-else-if="error" class="report-state" role="alert"><p>{{ error }}</p><button type="button" @click="load">{{ t('employees.retry') }}</button></div>
+    <div v-else-if="error" class="report-state" role="alert"><p>{{ error }}</p><Button variant="outline" @click="load">{{ t('employees.retry') }}</Button></div>
     <template v-else>
       <p v-if="failed" class="report-warning">{{ t('employees.share.unavailableCount', { count: failed }) }}</p>
-      <div v-if="!publicTaskCount" class="report-state" role="status"><h2>{{ t('employees.shareContent.emptyTitle') }}</h2><p>{{ t('employees.shareContent.emptyReport', { count: boards.length }) }}</p><button type="button" @click="load">{{ t('common.actions.refresh') }}</button></div>
+      <div v-if="!publicTaskCount" class="report-state" role="status"><h2>{{ t('employees.shareContent.emptyTitle') }}</h2><p>{{ t('employees.shareContent.emptyReport', { count: boards.length }) }}</p><Button variant="outline" @click="load">{{ t('common.actions.refresh') }}</Button></div>
       <EmployeeTaskBoard v-else v-model:visible-project-ids="visible" :boards="boards.filter(board => visible.includes(board.project.id))" :projects="boards.map(board => board.project)" :failed-projects="0" :can-move-tasks="false" read-only @retry="load" />
     </template>
   </main>
@@ -55,6 +56,6 @@ header span { margin-left: auto; font-size: 12px; color: var(--color-muted); }
 .report-state { margin: auto; padding: 24px; text-align: center; }
 .report-state h2 { font-size: 18px; }
 .report-state p { max-width: 44ch; color: var(--color-muted); line-height: 1.7; }
-.report-state button { min-height: 44px; padding: 8px 16px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-ink); }
+.report-state [data-slot="button"] { min-height: 44px; }
 .report-warning { margin: 12px 24px 0; font-size: 13px; color: var(--color-warning); }
 </style>

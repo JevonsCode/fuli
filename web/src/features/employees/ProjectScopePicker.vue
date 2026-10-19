@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
+import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 
 const props = defineProps<{
@@ -103,8 +104,8 @@ function toggleProject(id: string) {
           <input type="checkbox" :checked="allSelected" :indeterminate="count > 0 && !allSelected" :disabled="disabled || !projects.length" @change="selectAll">
           <span>{{ allLabel ?? t('employees.scope.all') }} <small>{{ projects.length }}</small></span>
         </label>
-        <button type="button" :disabled="disabled || !projects.length" @click="invert">{{ t('employees.scope.invert') }}</button>
-        <button v-if="resettable" class="project-scope-reset" type="button" :disabled="disabled" @click="emit('reset')">{{ t('employees.scope.reset') }}</button>
+        <Button variant="ghost" :disabled="disabled || !projects.length" @click="invert">{{ t('employees.scope.invert') }}</Button>
+        <Button v-if="resettable" variant="ghost" class="project-scope-reset" :disabled="disabled" @click="emit('reset')">{{ t('employees.scope.reset') }}</Button>
       </div>
       <div class="project-scope-list">
         <label v-for="project in filtered" :key="project.id" class="project-scope-option" :class="{ 'is-selected': selectedIds.has(project.id) }">
@@ -115,7 +116,7 @@ function toggleProject(id: string) {
       </div>
       <div v-if="!inline" class="project-scope-footer">
         <span role="status">{{ t('employees.scope.count', { selected: count, total: projects.length }) }}</span>
-        <button type="button" @click="close(true)">{{ t('employees.scope.done') }}</button>
+        <Button variant="ghost" @click="close(true)">{{ t('employees.scope.done') }}</Button>
       </div>
       <p v-if="compact && hint" class="project-scope-hint">{{ hint }}</p>
     </div>
@@ -141,9 +142,6 @@ function toggleProject(id: string) {
 .project-scope-search::placeholder { color: var(--color-muted); }
 .project-scope-bulk, .project-scope-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .project-scope-bulk { margin-top: 4px; }
-.project-scope-bulk button, .project-scope-footer button { min-height: 40px; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--color-ink); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
-.project-scope-bulk button:hover:not(:disabled), .project-scope-footer button:hover { background: var(--color-surface-subtle); }
-.project-scope-bulk button:disabled { color: var(--color-muted); cursor: default; }
 .project-scope-list { max-height: min(240px, 32dvh); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .project-scope-option { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 8px 10px; border-radius: 6px; color: var(--color-ink); cursor: pointer; box-sizing: border-box; }
 .project-scope-option:hover { background: var(--color-surface-subtle); }

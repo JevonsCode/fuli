@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
 
+import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 
 const props = withDefaults(defineProps<{
@@ -31,9 +32,10 @@ function backToTop() {
 
 <template>
   <!-- Icon only: a circle with an up chevron needs no words; the label stays for assistive tech. -->
-  <button
+  <Button
     v-if="visible"
-    type="button"
+    variant="outline"
+    size="icon"
     class="back-to-top"
     data-back-to-top
     :aria-label="t('ui.backToTop')"
@@ -41,28 +43,19 @@ function backToTop() {
     @click="backToTop"
   >
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-  </button>
+  </Button>
 </template>
 
 <style scoped>
+/* A floating circle; the look comes from Button (outline, icon size). */
 .back-to-top {
   position: sticky;
   bottom: 16px;
   z-index: 2;
-  display: grid;
-  width: 40px;
-  height: 40px;
   margin: 16px 0 0 auto;
-  padding: 0;
-  place-items: center;
-  border: 1px solid var(--color-border);
   border-radius: 50%;
-  color: var(--color-ink);
-  background: var(--color-surface);
   box-shadow: var(--shadow-md);
-  cursor: pointer;
   transition: transform var(--motion-fast) var(--motion-ease), color var(--motion-fast);
 }
 .back-to-top:hover { color: var(--color-accent); transform: translateY(-2px); }
-.back-to-top:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 </style>

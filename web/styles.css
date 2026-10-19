@@ -60,12 +60,9 @@ body { margin: 0; min-width: 320px; }
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
   margin-top: 15px; padding-top: 13px; border-top: 1px solid var(--color-border);
 }
-.project-card-footer > .secondary-action, .project-card-footer > .primary-action { min-width: 92px; }
 .subscription-action { min-height: 30px; padding: 5px 10px; margin-left: 4px; font-size: 12px; }
 .project-relations { display: grid; gap: 6px; margin-top: 11px; }
 .relation-section-toolbar { align-items: center; }
-.relation-section-toolbar .primary-action { flex: 0 0 auto; padding: 8px 12px; font-size: 12px; }
-.relation-section-toolbar .primary-action:disabled { cursor: not-allowed; }
 .relation-composer {
   margin-top: 16px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface);
   box-shadow: var(--shadow-md);
@@ -150,7 +147,6 @@ body { margin: 0; min-width: 320px; }
 }
 .external-binding-row small { color: var(--color-danger); }
 .external-binding-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-.quiet-button.danger { color: var(--color-danger); }
 .compact-empty { padding: 18px 0; color: var(--color-muted); font-size: 12px; }
 .external-binding-form {
   display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); align-items: end;

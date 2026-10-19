@@ -12,7 +12,8 @@ import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
 import { formatTime, personalProfileItems } from '@/features/knowledge/model'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
-import { UiButton, UiChip, UiEmpty, UiIconButton, UiStatRow, UiToolbar, type UiStat } from '@/ui'
+import { Button } from '@/components/ui/button'
+import { UiChip, UiEmpty, UiIconButton, UiStatRow, UiToolbar, type UiStat } from '@/ui'
 import type {
   KnowledgeGraph,
   KnowledgeItem,
@@ -199,7 +200,7 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
     <div v-else-if="initialLoading" class="view-loading" aria-busy="true" />
     <div v-else-if="!profile" class="writing-taste-unavailable" :role="loadFailed ? 'alert' : undefined">
       <UiEmpty :text="t(loadFailed ? 'common.errors.loadFailed' : 'writingTaste.page.profileUnavailable')">
-        <UiButton v-if="store.activePersonalSpace" size="sm" data-retry @click="load()">{{ t('common.actions.retry') }}</UiButton>
+        <Button variant="outline" v-if="store.activePersonalSpace" size="sm" data-retry @click="load()">{{ t('common.actions.retry') }}</Button>
       </UiEmpty>
     </div>
 
@@ -210,9 +211,9 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
       <UiToolbar>
         <h2 class="list-title">{{ t('writingTaste.page.rulesTitle') }}<span>{{ profile.rules.length }}</span></h2>
         <template #end>
-          <UiButton v-if="profile.ready && profile.agent_markdown" variant="ghost" size="sm" data-agent-preview-toggle @click="showAgentPreview = !showAgentPreview">
+          <Button v-if="profile.ready && profile.agent_markdown" variant="ghost" size="sm" data-agent-preview-toggle @click="showAgentPreview = !showAgentPreview">
             {{ showAgentPreview ? t('writingTaste.page.hideAgentPreview') : t('writingTaste.page.showAgentPreview') }}
-          </UiButton>
+          </Button>
           <UiIconButton icon="refresh" size="sm" :label="t('common.actions.refresh')" :disabled="loading" @click="load()" />
         </template>
       </UiToolbar>
@@ -238,8 +239,8 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
             </div>
           </div>
           <div v-if="itemForRule(rule)" class="ui-list-actions">
-            <UiButton variant="ghost" size="sm" data-rule-edit @click="editRule(rule)">{{ t('writingTaste.page.edit') }}</UiButton>
-            <UiButton v-if="rule.evidence_status !== 'Confirmed'" size="sm" data-rule-confirm @click="confirmRule(rule)">{{ t('writingTaste.page.confirm') }}</UiButton>
+            <Button variant="ghost" size="sm" data-rule-edit @click="editRule(rule)">{{ t('writingTaste.page.edit') }}</Button>
+            <Button variant="outline" v-if="rule.evidence_status !== 'Confirmed'" size="sm" data-rule-confirm @click="confirmRule(rule)">{{ t('writingTaste.page.confirm') }}</Button>
           </div>
         </article>
       </div>

@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 
 import { patchJson } from '@/api/client'
-import UiButton from '@/ui/UiButton.vue'
+import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
@@ -145,7 +145,7 @@ function fail(message: string) {
     :title="t('knowledge.dialogs.confirm.title', { subject: subjectLabel })"
     :description="t('knowledge.dialogs.confirm.intro')"
     :busy="busy" :error="localError || requestError" @close="emit('close')" @submit="confirmKnowledge">
-    <UiButton v-if="locked && !busy" data-knowledge-reload @click="emit('reload')">{{ t('preferences.detail.reload') }}</UiButton>
+    <Button variant="outline" v-if="locked && !busy" data-knowledge-reload @click="emit('reload')">{{ t('preferences.detail.reload') }}</Button>
     <p v-if="takingLong" role="status">{{ t('preferences.detail.writeLong', { action: t('knowledge.dialogs.confirm.confirming', { subject: subjectLabel }) }) }}</p>
     <section class="knowledge-confirm-summary">
       <span class="ui-meta">{{ item.profileAspect ? t('knowledge.dialogs.confirm.preference') : t('knowledge.dialogs.confirm.knowledge') }}</span>
@@ -167,10 +167,10 @@ function fail(message: string) {
       <span>{{ t('knowledge.dialogs.confirm.acknowledgment') }}</span>
     </label>
     <template #footer>
-      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</UiButton>
-      <UiButton variant="primary" type="submit" :disabled="!acknowledged || locked" :busy="busy" :busy-label="t('knowledge.dialogs.confirm.confirming', { subject: subjectLabel })">
+      <Button variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</Button>
+      <Button type="submit" :disabled="!acknowledged || locked" :loading="busy" :loading-label="t('knowledge.dialogs.confirm.confirming', { subject: subjectLabel })">
         {{ t('knowledge.dialogs.confirm.confirmSubject', { subject: subjectLabel }) }}
-      </UiButton>
+      </Button>
     </template>
   </UiDialog>
 </template>
