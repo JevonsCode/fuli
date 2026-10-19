@@ -31,9 +31,8 @@ export const router = createRouter({
       name: 'personal-profile',
       component: () => import('@/pages/PersonalProfilePage.vue'),
       meta: {
-        eyebrow: 'PERSONAL LENS',
+        eyebrow: '',
         title: 'routes.preferences.title',
-        description: 'routes.preferences.description',
       },
     },
     {

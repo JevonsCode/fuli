@@ -4,6 +4,13 @@ vi.mock('./client', () => ({ getJson }))
 import { readPersonalProfileGraph } from './personal-profile-graph'
 
 describe('complete profile history', () => {
+  it('rejects a backwards cursor and never accepts the partial history after it', async () => {
+    getJson.mockReset().mockResolvedValueOnce({ nodes: [], edges: [], truncated: true, next_offset: 500 })
+      .mockResolvedValueOnce({ nodes: [], edges: [], truncated: true, next_offset: 250 })
+      .mockResolvedValueOnce({ nodes: [{ id: 'partial' }], edges: [], truncated: false })
+    await expect(readPersonalProfileGraph('space-a')).rejects.toThrow('incomplete')
+    expect(getJson).toHaveBeenCalledTimes(2)
+  })
   it('loads older taste and personality and deduplicates endpoints across pages', async () => {
     getJson.mockReset().mockResolvedValueOnce({ nodes: [{ id: 'judgment' }], edges: [], truncated: true, next_offset: 500 })
       .mockResolvedValueOnce({ nodes: [{ id: 'judgment' }, { id: 'taste' }, { id: 'personality' }], edges: [], truncated: false })

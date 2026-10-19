@@ -70,6 +70,25 @@ const graph = {
 }
 
 describe('KnowledgeWorkspace', () => {
+  it('clears private graph content on a shared-dialog denial and ignores an already pending graph response', async () => {
+    const pinia = createPinia(); setActivePinia(pinia)
+    useConsoleStore().state = { mode: 'personal_only', activePersonalSpaceId: 'space-1', personalSpaces: [{ id: 'space-1', name: 'Synthetic' }], personalProjects: [], projects: [], subscriptions: [] }
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/knowledge/:scope/:spaceId/:mode', component: { template: '<div />' } }] })
+    await router.push('/knowledge/personal/space-1/directory'); await router.isReady()
+    const wrapper = mount(KnowledgeWorkspace, { global: { plugins: [pinia, router] } })
+    await finishInitialLoading()
+    expect(wrapper.text()).toContain('知识一')
+    let resolve!: (value: unknown) => void
+    getJson.mockReturnValue(new Promise(r => { resolve = r }))
+    wrapper.getComponent({ name: 'KnowledgeWorkspaceDialogs' }).vm.$emit('refresh')
+    await flushPromises()
+    wrapper.getComponent({ name: 'KnowledgeWorkspaceDialogs' }).vm.$emit('access-denied')
+    resolve(graph)
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('知识一')
+    expect(wrapper.find('.knowledge-confirm-dialog').exists()).toBe(false)
+    wrapper.unmount()
+  })
   beforeEach(() => {
     vi.useFakeTimers()
     vi.setSystemTime(0)

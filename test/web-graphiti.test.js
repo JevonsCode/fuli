@@ -27,10 +27,9 @@ const graphCanvas = readFileSync(
   'web/src/features/knowledge/GraphCanvas.vue',
   'utf8'
 );
-const inspector = readFileSync(
-  'web/src/features/knowledge/KnowledgeInspector.vue',
-  'utf8'
-);
+// The inspector renders evidence, revisions and audit through KnowledgeRecords.
+const inspector = ['KnowledgeInspector.vue', 'KnowledgeRecords.vue']
+  .map(file => readFileSync(`web/src/features/knowledge/${file}`, 'utf8')).join('\n');
 const profile = readFileSync('web/src/pages/PersonalProfilePage.vue', 'utf8');
 const writingTaste = readFileSync('web/src/pages/WritingTastePage.vue', 'utf8');
 const publicProjects = readFileSync('web/src/pages/PublicProjectsPage.vue', 'utf8');

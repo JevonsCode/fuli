@@ -49,6 +49,12 @@ function inspect(node: KnowledgeNode) {
 }
 
 describe('agent confirmation progress in the candidate inspector', () => {
+  it('keeps missing thresholds and blocking reasons unknown without crashing or inventing zero', () => {
+    const view = inspect(synthetic({ agent_confirmation_progress: progress({ required_qualified_uses: undefined as never, required_distinct_tasks: undefined as never, blocking_reasons: undefined as never }) }))
+    expect(view.progress).toContain('有效使用 3 / 未知')
+    expect(view.reason).toContain('未知')
+    expect(view.reason).not.toContain('条件已满足')
+  })
   afterEach(() => setLocale('zh-CN', { persist: false }))
 
   it('shows the counts and thresholds the Provider returned, without percentages', () => {

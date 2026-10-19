@@ -9,6 +9,7 @@ import {
   useMinimumLoadingDisplay,
 } from '@/composables/useMinimumLoadingDisplay'
 import KnowledgeBatchConfirmDialog from '@/features/knowledge/KnowledgeBatchConfirmDialog.vue'
+import { reconcileKnowledgeWrites } from '@/features/knowledge/knowledge-write-lifecycle'
 import KnowledgeConfirmDialog from '@/features/knowledge/KnowledgeConfirmDialog.vue'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
 import KnowledgeInspector from '@/features/knowledge/KnowledgeInspector.vue'
@@ -178,10 +179,24 @@ onBeforeUnmount(() => {
   loadVersion += 1
 })
 
+function revokeKnowledgeAccess() {
+  ++loadVersion
+  graph.value = null
+  selectedItem.value = null
+  confirmingItem.value = null
+  editingItem.value = null
+  batchDialogOpen.value = false
+  loading.value = false
+  loadingMore.value = false
+  store.reportError(new Error(t('preferences.detail.accessDenied')))
+}
+
 async function load(spaceId = store.activePersonalSpace?.id) {
   if (!spaceId) return
   const version = ++loadVersion
   loading.value = true
+  confirmingItem.value = null
+  editingItem.value = null
   loadingMore.value = false
   let receivedPage = false
   try {
@@ -195,6 +210,7 @@ async function load(spaceId = store.activePersonalSpace?.id) {
       const page = await getJson<KnowledgeGraph>(`/api/graph?${params}`)
       if (version !== loadVersion) return
       graph.value = receivedPage ? appendKnowledgeGraphPage(graph.value, page) : page
+      reconcileKnowledgeWrites(spaceId, knowledgeItems(page))
       receivedPage = true
       if (selectedItem.value) {
         selectedItem.value = items.value.find(({ id, itemKind }) =>
@@ -211,6 +227,7 @@ async function load(spaceId = store.activePersonalSpace?.id) {
       await nextTick()
     }
   } catch (error) {
+    if (version !== loadVersion) return
     if (!receivedPage) graph.value = null
     store.reportError(error)
   } finally {
@@ -361,6 +378,8 @@ function openReplacement(item: KnowledgeItem) {
       :replacement-items="items"
       @close="editingItem = null"
       @saved="load()"
+      @reload="load()"
+      @access-denied="revokeKnowledgeAccess"
     />
     <KnowledgeConfirmDialog
       :item="confirmingItem"
@@ -368,6 +387,8 @@ function openReplacement(item: KnowledgeItem) {
       :personal-project-id="null"
       @close="confirmingItem = null"
       @saved="load()"
+      @reload="load()"
+      @access-denied="revokeKnowledgeAccess"
     />
     <KnowledgeBatchConfirmDialog
       v-if="batchDialogOpen"

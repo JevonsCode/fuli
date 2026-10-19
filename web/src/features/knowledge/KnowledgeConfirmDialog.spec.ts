@@ -10,6 +10,53 @@ import KnowledgeConfirmDialog from './KnowledgeConfirmDialog.vue'
 import { knowledgeItemFromNode } from './model'
 
 describe('KnowledgeConfirmDialog', () => {
+  it('keeps an unconfirmed result visible across remounts and requests a read before allowing another submission', async () => {
+    const { reconcileKnowledgeWrites } = await import('./knowledge-write-lifecycle')
+    patchJson.mockRejectedValueOnce({ status: 409 })
+    const props = { item: knowledgeItemFromNode({ id: 'recovery-item', name: 'Synthetic', type: 'Fact', epistemic_state_explicit: true }), personalSpaceId: 'recovery-space', personalProjectId: null }
+    let wrapper = mount(KnowledgeConfirmDialog, { props, global: { plugins: [createPinia()] } })
+    await wrapper.get('[name="confirmation-acknowledged"]').setValue(true)
+    await wrapper.get('form').trigger('submit'); await flushPromises(); wrapper.unmount()
+    wrapper = mount(KnowledgeConfirmDialog, { props: { ...props, item: { ...props.item } }, global: { plugins: [createPinia()] } })
+    expect(wrapper.get('[role="alert"]').text()).toContain('保存结果未确认')
+    await wrapper.get('[data-knowledge-reload]').trigger('click')
+    expect(wrapper.emitted('reload')).toHaveLength(1)
+    // The parent supplies reconciliation only after its actual request succeeds.
+    reconcileKnowledgeWrites('recovery-space', [props.item])
+    await wrapper.get('[name="confirmation-acknowledged"]').setValue(true)
+    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('invalidates a same-ID operation when only the mutation project changes', async () => {
+    let resolve!: (value: unknown) => void
+    patchJson.mockReturnValue(new Promise(r => { resolve = r }))
+    const item = knowledgeItemFromNode({ id: 'same-project-context', name: 'Synthetic', type: 'Fact', epistemic_state_explicit: true })
+    const wrapper = mount(KnowledgeConfirmDialog, { props: { item, personalSpaceId: 'project-context-space', personalProjectId: 'a' }, global: { plugins: [createPinia()] } })
+    await wrapper.get('[name="confirmation-acknowledged"]').setValue(true)
+    await wrapper.get('form').trigger('submit')
+    await wrapper.setProps({ personalProjectId: 'b' })
+    resolve({}); await flushPromises()
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect(wrapper.emitted('saved')).toBeUndefined()
+    wrapper.unmount()
+  })
+  it('never lets a late save close or notify a new space with the same item ID', async () => {
+    let resolve!: (value: unknown) => void
+    patchJson.mockReturnValue(new Promise(r => { resolve = r }))
+    const pinia = createPinia()
+    const item = knowledgeItemFromNode({ id: 'race-same', name: 'Synthetic A', type: 'Preference', epistemic_state_explicit: true })
+    const wrapper = mount(KnowledgeConfirmDialog, { props: { item, personalSpaceId: 'race-a', personalProjectId: null }, global: { plugins: [pinia] } })
+    await wrapper.get('[name="confirmation-acknowledged"]').setValue(true)
+    await wrapper.get('form').trigger('submit')
+    await wrapper.setProps({ personalSpaceId: 'race-b', item: { ...item, title: 'Synthetic B' } })
+    expect((wrapper.get('[name="confirmation-acknowledged"]').element as HTMLInputElement).checked).toBe(false)
+    resolve({}); await flushPromises()
+    expect(wrapper.emitted('saved')).toBeUndefined()
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect(wrapper.get('dialog').text()).toContain('Synthetic B')
+    wrapper.unmount()
+  })
   beforeEach(() => {
     patchJson.mockReset()
     patchJson.mockResolvedValue({})
