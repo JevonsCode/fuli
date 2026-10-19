@@ -1,5 +1,5 @@
 import { constants } from 'node:fs';
-import { open } from 'node:fs/promises';
+import { openWithoutFollowing } from '../system/open-without-following.js';
 import { canonicalJson, contentHash } from '../publication/canonical-json.js';
 import { preferenceAuthorityView } from '../mcp/preference-delivery.js';
 
@@ -12,7 +12,7 @@ const CODE_MODE = new Set(['functions.exec', 'functions.wait']);
 export async function readPreferenceEvidence(path, sessionId, adapter) {
   let file;
   try {
-    file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    file = await openWithoutFollowing(path, constants.O_RDONLY);
     const stat = await file.stat();
     if (!stat.isFile() || !stat.size || stat.size > MAX_BYTES) return { known: false };
     const bytes = Buffer.alloc(stat.size);

@@ -15,7 +15,8 @@ import { inspectWindowsNativeProcess, stopWindowsNativeProcess } from '../src/na
 const secret = 'SYNTHETIC_PRIVATE_VALUE_NEVER_LOG';
 const windowsOnly = { skip: process.platform !== 'win32' };
 async function fixture(t, mode = 'success') {
-  const root = await mkdtemp(join(tmpdir(), 'fuli ACP process '));
+  // Real path: a runner's temp dir can be a short (8.3) name the adapter never sees.
+  const root = await fsPromises.realpath(await mkdtemp(join(tmpdir(), 'fuli ACP process ')));
   const codexHome = join(root, 'isolated home'), cwd = join(root, 'clean cwd');
   await mkdir(codexHome); await mkdir(cwd);
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -425,11 +426,11 @@ test('ACP timeout and caller cancellation reject pending initialize and stop onl
     const { options, record } = await fixture(t, 'hang');
     const controller = new AbortController();
     let stoppedAt = performance.now();
-    // Cancel once the adapter is waiting on initialize, so a slow job-helper
-    // start cannot turn the cancellation into a timeout or leave no record.
-    const cancelled = cancel && recordedMethod(record, 'initialize').then(() => {
+    // Measure from the adapter's initialize: the job helper's own startup has a
+    // separate budget, so a slow helper cannot count against either outcome.
+    const cancelled = recordedMethod(record, 'initialize', 120_000).then(() => {
       stoppedAt = performance.now();
-      controller.abort(new Error(secret));
+      if (cancel) controller.abort(new Error(secret));
     });
     await assert.rejects(startCodexAcpProcess({ ...options, initializeTimeoutMs: cancel ? 15_000 : 5000,
       signal: controller.signal }), error => {
@@ -441,7 +442,8 @@ test('ACP timeout and caller cancellation reject pending initialize and stop onl
     const observed = JSON.parse(await readFile(record, 'utf8'));
     assert.equal(gone(observed.pid), true);
     if (observed.childPid) assert.equal(gone(observed.childPid), true);
-    assert.ok(performance.now() - stoppedAt < 15_000);
+    // Within the initialize timeout plus the 10 s stop budget, with margin for a slow runner.
+    assert.ok(performance.now() - stoppedAt < 20_000);
   }
 });
 

@@ -55,8 +55,10 @@ async def test_builtin_occupation_backfill_preserves_human_role_and_assistant_is
         assert assistant.json()['assignments'] == []
         assert assistant.json()['memory_scope'] == 'task_only'
         assert assistant.json()['occupation']['role'] == 'assistant'
+        # The four built-in roles keep their occupation; a person cannot reassign it.
         changed = await client.put('/v1/project-agents/employee.bole/occupation', json={**params, 'role': 'research'})
-        assert changed.status_code == 200, changed.text
+        assert changed.status_code == 409, changed.text
+        assert changed.json()['detail']['code'] == 'occupation_locked'
         await client.post('/v1/project-agents/system-hr', params=params)
         bole = await client.get('/v1/project-agents/employee.bole', params=params)
-        assert bole.json()['occupation']['role'] == 'research'
+        assert bole.json()['occupation']['role'] == 'management'

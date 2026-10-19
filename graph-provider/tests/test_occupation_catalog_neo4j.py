@@ -168,7 +168,7 @@ async def test_deletion_retains_occupations_referenced_by_archived_agents():
             'personal_space_id': space, 'role': key})
         assert assigned.status_code == 200, assigned.text
         # Simulate only this newly created fixture's historical archived identity.
-        async with AsyncGraphDatabase.driver(settings.neo4j_uri, auth=None) as driver:
+        async with AsyncGraphDatabase.driver(settings.neo4j_uri, auth=(settings.neo4j_user, settings.neo4j_password)) as driver:
             await driver.execute_query('''MATCH (:FuliSpace {id: $space})-[:HAS_PROJECT_AGENT_IDENTITY]->
                 (agent:FuliProjectAgent {agent_id: 'engineer'}) SET agent.status = 'archived' ''', space=space)
         entries = (await client.get('/v1/occupations', params={'personal_space_id': space})).json()
@@ -186,7 +186,7 @@ async def test_catalog_does_not_backfill_an_old_agent_and_new_default_lead_is_ex
     async with provider_client(settings, raise_app_exceptions=False) as (client, _):
         space = await create_space(client)
         await seed_agent(client, space)
-        async with AsyncGraphDatabase.driver(settings.neo4j_uri, auth=None) as driver:
+        async with AsyncGraphDatabase.driver(settings.neo4j_uri, auth=(settings.neo4j_user, settings.neo4j_password)) as driver:
             await driver.execute_query('''MATCH (:FuliSpace {id: $space})-[:HAS_PROJECT_AGENT_IDENTITY]->
                 (agent:FuliProjectAgent {agent_id: 'engineer'})
                 REMOVE agent.occupation_role, agent.occupation_tags, agent.occupation_updated_at''', space=space)
