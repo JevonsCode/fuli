@@ -3,7 +3,7 @@
 // the user's repositories and a recording double stands in for the Provider. No FULI
 // data directory, live Provider, port-2727 service or client configuration is used.
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -55,6 +55,7 @@ async function fixture(t, { registered = REGISTERED } = {}) {
   const projects = new Set(registered);
   const writes = [];
   const knowledge = [];
+  const cursors = new Map();
   const app = new FederatedGraphApplication(CONFIG, { capturePolicyStore: store,
     taskContextRegistry: new TaskContextRegistry(),
     fetchImpl: async url => { throw new Error(`Unexpected Provider request ${new URL(url).pathname}`); } });
@@ -79,9 +80,15 @@ async function fixture(t, { registered = REGISTERED } = {}) {
     listProjectAgents: async () => [],
     listProjectAgentTasks: async () => [],
     recordAgentViews: async () => ({ status: 'recorded' }),
+    // Each conversation keeps the transcript cursor its last write moved to.
     conversation: async (operation, input) => {
-      if (operation === 'query') return input.mode === 'policy' ? { enabled: true } : { cursor: 0, initialized: true };
-      writes.push({ kind: 'conversation', operation, project: input.personal_project_id ?? null });
+      const key = [input.personal_project_id, input.agent_id, input.session_id].join(':');
+      if (operation === 'query') {
+        return input.mode === 'policy' ? { enabled: true } : { cursor: cursors.get(key) ?? 0, initialized: true };
+      }
+      writes.push({ kind: 'conversation', operation, project: input.personal_project_id ?? null,
+        content: (input.events ?? []).map(event => event.content).join(' | ') });
+      if (Number.isSafeInteger(input.cursor)) cursors.set(key, input.cursor);
       return { status: 'saved', conversation_id: `conversation-${writes.length}` };
     },
     preflightCommits: async commits => ({ status: 'validated', count: commits.length }),
@@ -326,10 +333,13 @@ test('a transcript is not imported into a switched-off project from an unregiste
   assert.deepEqual(captureShape(await syncConversationTranscript(f.app, input, 'codex', CODEX_TRANSCRIPT, guard)),
     { status: 'capture_disabled', reason: 'project_off', layer: 'project' });
   assert.equal(guard.value, null);
-  assert.deepEqual(f.captureWrites(), []);
+  // Only a content-free marker moves that conversation past what was not recorded (rec#11).
+  assert.deepEqual(f.captureWrites().map(write => [write.project, write.content.includes(PRIVATE),
+    write.content.startsWith('[Not recorded: automatic recording was off (project_off)')]), [['job-hunt', false, true]]);
   taskProject = 'novel';
   await syncConversationTranscript(f.app, input, 'codex', CODEX_TRANSCRIPT);
-  assert.deepEqual(f.captureWrites().map(write => [write.kind, write.project]), [['conversation', 'novel']]);
+  assert.deepEqual(f.captureWrites().slice(1).map(write => [write.kind, write.project, write.content.includes(PRIVATE)]),
+    [['conversation', 'novel', true]]);
 });
 
 test('a project deleted while listed has no effect, and registering it again restores its setting', async (t) => {
@@ -465,4 +475,44 @@ test('under a project mode one hook run or tool request looks its directory up o
   await callAgentTool(f.app, 'get_collaboration_preferences', { projectPath: f.dirs.novel, taskPrompt: 'Plan.',
     sessionId: 'synthetic-cursor-session', sourceApplication: 'cursor', sourceSessionId: 'synthetic-cursor-session' });
   assert.ok(lookups.length <= 1, `one request, ${lookups.length} lookups`);
+});
+
+const transcriptRow = text => `${JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'assistant',
+  content: [{ type: 'output_text', text }] } })}
+`;
+
+// A Codex Stop hook through its real lifecycle: the transcript sync and the
+// per-session record of the settings it last ran under.
+function codexStop(f, input) {
+  return runCodexLifecycleHook(['--event', 'Stop'], { readInput: async () => input, write: () => {},
+    resolveRuntimeOptions: () => ({ runtimeConfigPath: f.runtimeConfigPath }), openApplication: () => f.app,
+    createLeases: leases });
+}
+
+test('turns written while a project was off are never imported after it is switched back on', async (t) => {
+  const f = await fixture(t);
+  f.store.update({ projectMode: 'all_except', excludedProjectIds: [] });
+  const transcript = join(f.root, 'session.jsonl');
+  await writeFile(transcript, `${JSON.stringify({ type: 'session_meta', payload: { id: 'synthetic-session' } })}
+`);
+  f.app.personal.currentTaskContext = async () => ({ token: 'fuli-task-synthetic', project_agent_id: 'lead-novel',
+    personal_project_id: 'novel' });
+  const input = { session_id: 'synthetic-session', cwd: f.dirs.novel, transcript_path: transcript };
+  const imported = () => f.captureWrites().filter(write => write.kind === 'conversation').map(write => write.content).join(' | ');
+  await codexStop(f, input);
+  await appendFile(transcript, transcriptRow('turn-before'));
+  await codexStop(f, input);
+  assert.match(imported(), /turn-before/, 'the session is recorded while the project is on');
+
+  // The project goes off; the host writes turns, but no hook gets to mark them.
+  f.store.update({ excludedProjectIds: ['novel'] });
+  await appendFile(transcript, transcriptRow(`turn-while-off ${PRIVATE}`));
+  f.store.update({ excludedProjectIds: [] });
+  await codexStop(f, input);
+  await appendFile(transcript, transcriptRow('turn-after'));
+  await codexStop(f, input);
+
+  assert.equal(imported().includes(PRIVATE), false, 'nothing from the off period is imported');
+  assert.ok(imported().includes('[Not recorded: automatic recording was off (capture_changed)'), imported());
+  assert.match(imported(), /turn-after/, 'recording resumes for new turns');
 });

@@ -1027,6 +1027,11 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return this.capturePolicyStore.read();
   }
 
+  // Which stored settings a decision was made under; see captureSettingsVersion().
+  getCapturePolicyVersion() {
+    return this.capturePolicyStore.version();
+  }
+
   updateCapturePolicy(input) {
     return this.capturePolicyStore.update(input);
   }

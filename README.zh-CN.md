@@ -295,7 +295,8 @@ Code、Codex 和 Cursor 生命周期适配器。已加载、获信任的入口 H
 关闭，自动写入会返回 `capture_disabled`，不会产生任何类别的条目：会话原文、checkpoint、知识和
 偏好候选、知识使用记录、查看记录，以及经由 Agent 上报的反馈或纠正都会停止。记录设置读取失败时
 自动写入同样停止（`reason: policy_unavailable`）。你在 FULI 控制台里明确提交的修改和显式的
-`新项目：` 仍会保存，查询已有知识不受影响。
+`新项目：` 仍会保存，查询已有知识不受影响。关闭期间写下的会话轮次只留一条不含内容的跳过标记，重新打开后
+也不会补记。
 
 记录范围还可以按项目选择。`projectMode` 为 `all`（默认）、`all_except`（配合
 `excludedProjectIds`）或 `selected`（配合 `selectedProjectIds`）；`unregisteredDirectories`

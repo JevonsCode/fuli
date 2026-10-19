@@ -181,3 +181,27 @@ test('a stored project setting FULI cannot read records nothing', async (t) => {
   assert.deepEqual(store.update({ enabled: false }), { enabled: false, disabledSources: [], ...ALL_PROJECTS,
     updatedAt: store.read().updatedAt });
 });
+
+test('the policy file is parsed again only when it changes, and a corrupt file is never served from cache', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-capture-cache-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const path = join(directory, 'capture-policy.json');
+  let parses = 0;
+  const store = new CapturePolicyStore(path, { readText: file => { parses += 1; return readFileSync(file, 'utf8'); } });
+  const writer = new CapturePolicyStore(path);
+  writer.update({ enabled: true, disabledSources: [] });
+  assert.equal(store.read().enabled, true);
+  assert.equal(store.read().enabled, true);
+  assert.equal(parses, 1, 'an unchanged file is not parsed again');
+  writer.update({ enabled: false, disabledSources: ['codex'] });
+  assert.deepEqual([store.read().enabled, store.read().disabledSources], [false, ['codex']]);
+  assert.equal(parses, 2, 'another process changing the file is seen at once');
+  writeFileSync(path, '{ not json');
+  assert.throws(() => store.read(), /could not be read/);
+  assert.throws(() => store.read(), /could not be read/, 'a corrupt file stays unavailable');
+  assert.equal((await captureDecision({ getCapturePolicy: () => store.read() })).reason, 'policy_unavailable');
+  writer.update({ enabled: true, disabledSources: [] });
+  assert.equal(store.read().enabled, true);
+  rmSync(path);
+  assert.deepEqual(store.read(), { enabled: true, disabledSources: [], ...ALL_PROJECTS, updatedAt: null });
+});
