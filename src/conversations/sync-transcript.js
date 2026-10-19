@@ -25,7 +25,7 @@ export async function syncConversationTranscript(application, input, sourceAppli
   if (guard?.value?.phase === 'scan' && (guard.value.scanPages ?? 0) >= TRANSCRIPT_SCAN_PAGE_LIMIT) {
     return pending('Transcript scan budget limit reached; this unverified interval was not imported');
   }
-  let committedPages = 0, ownershipKnown = false;
+  let committedPages = 0, ownershipKnown = false, skipped = false;
   try {
     const lookup = await lookupTranscriptTask(application, input, sourceApplication);
     if (lookup.failure) return lookup.failure;
@@ -102,6 +102,7 @@ export async function syncConversationTranscript(application, input, sourceAppli
         task_context_token: task.token, expected_cursor: from, cursor: batch.cursor,
         events: !notRecorded ? batch.events : batch.cursor > from ? [notRecordedEvent(from, batch.cursor, notRecorded)] : [] });
       if (result.status === 'saved') committedPages++;
+      if (result.status === 'saved' && notRecorded && batch.cursor > from) skipped = true;
       if (!batch.hasMore && guard?.value?.ambiguousFrom !== undefined && batch.cursor < guard.value.boundary) {
         const boundary = guard.value.boundary;
         result = await appendTranscriptPage(application, { ...scope, session_id: input.session_id,
@@ -110,7 +111,7 @@ export async function syncConversationTranscript(application, input, sourceAppli
             content: '[Visible transcript content omitted: ambiguous task ownership; original remains in native history.]' }] });
         batch.cursor = boundary;
       }
-      if (!batch.hasMore) return { ...result, cursor: batch.cursor,
+      if (!batch.hasMore) return { ...result, cursor: batch.cursor, ...(skipped ? { skipped: notRecorded } : {}),
         atPromptBoundary: Boolean(guard?.value || batch.atPromptBoundary || (typeof input.prompt === 'string' && !userMessages && !omitted && batch.completeRecord)),
         entryBlocked: Boolean(guard?.value && typeof input.prompt !== 'string'),
         coverage: 'supported_visible_events', parser: 'jsonl-v1', ...(guard?.value && typeof input.prompt !== 'string' ? { reason: retryReason } : {}) };

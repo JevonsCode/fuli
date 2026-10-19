@@ -109,3 +109,25 @@ test('the policy file is parsed again only when it changes, and a corrupt file i
   rmSync(path);
   assert.deepEqual(store.read(), { enabled: true, disabledSources: [], updatedAt: null });
 });
+
+test('the settings generation moves on every change and never returns to "never saved"', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-capture-generation-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const path = join(directory, 'capture-policy.json');
+  const store = new CapturePolicyStore(path);
+  const seen = [store.version()];
+  assert.equal(seen[0], 'absent', 'no settings were ever saved');
+  assert.equal(store.version(), seen[0], 'nothing changed');
+  store.update({ enabled: false, disabledSources: [] });
+  seen.push(store.version());
+  const bytes = readFileSync(path);
+  rmSync(path);
+  seen.push(store.version());
+  writeFileSync(path, bytes);
+  seen.push(store.version());
+  assert.equal(store.version(), seen.at(-1), 'an unchanged file keeps its generation');
+  writeFileSync(join(directory, 'capture-settings-generation.json'), '{ not json');
+  seen.push(store.version());
+  assert.equal(new Set(seen).size, seen.length, `every change is a new generation: ${seen.join(', ')}`);
+  assert.equal(seen.slice(1).includes('absent'), false, 'a removed file is not "never saved"');
+});

@@ -21,6 +21,7 @@ const DEFAULT_POLICY = Object.freeze({
 });
 
 const ABSENT = 'absent';
+const UNREADABLE = Object.freeze({ generation: 0 });
 
 export class CapturePolicyConfigurationError extends TypeError {}
 
@@ -36,6 +37,7 @@ export class CapturePolicyStore {
     this.statFile = statFile;
     this.memory = { ...DEFAULT_POLICY };
     this.parsed = null;
+    this.generationPath = this.path ? join(dirname(this.path), 'capture-settings-generation.json') : null;
   }
 
   // Every write asks for a decision, so one hook reads the settings several
@@ -43,7 +45,7 @@ export class CapturePolicyStore {
   // change; a file that cannot be read or parsed is never served from cache.
   read() {
     if (!this.path) return { ...this.memory };
-    const version = this.version();
+    const version = this.#fileKey();
     if (version === ABSENT) {
       this.parsed = null;
       return { ...DEFAULT_POLICY };
@@ -63,10 +65,24 @@ export class CapturePolicyStore {
     return { ...policy, disabledSources: [...policy.disabledSources] };
   }
 
-  // Changes whenever the stored settings may have changed: any write, by any
-  // process or by hand. 'absent' means they were never saved (the defaults).
+  // The settings generation: persistent and monotonic, kept beside (not in)
+  // capture-policy.json. Every update() moves it, and so does any change seen
+  // in the file (a hand edit, a restore, a removed file), so settings that
+  // once existed never look "never saved" ('absent'). Comparing only the
+  // current file would miss an off-to-on cycle no hook observed. This is one
+  // global generation: any change moves it for every client. A later step
+  // scopes generations per global, client, project and session layer, each
+  // persistent and monotonic, not a fingerprint of the final switch.
   version() {
     if (!this.path) return `memory:${JSON.stringify(this.memory)}`;
+    const observed = this.#fileKey();
+    const stored = this.#readGeneration();
+    if (stored === null && observed === ABSENT) return ABSENT;
+    const current = stored?.observed === observed ? stored : this.#nextGeneration(stored, observed);
+    return `${current.generation}:${current.nonce}`;
+  }
+
+  #fileKey() {
     try {
       const stat = this.statFile(this.path);
       return `${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
@@ -74,6 +90,30 @@ export class CapturePolicyStore {
       if (error?.code === 'ENOENT') return ABSENT;
       throw new CapturePolicyConfigurationError('Capture policy could not be read');
     }
+  }
+
+  // A missing generation is null; an unreadable one is replaced by a newer one.
+  #readGeneration() {
+    let value;
+    try {
+      value = JSON.parse(readFileSync(this.generationPath, 'utf8'));
+    } catch (error) {
+      return error?.code === 'ENOENT' ? null : UNREADABLE;
+    }
+    return value?.version === 1 && Number.isSafeInteger(value.generation) && value.generation > 0
+      && typeof value.nonce === 'string' && typeof value.observed === 'string' ? value : UNREADABLE;
+  }
+
+  // The nonce keeps two processes that move the same generation at once from
+  // producing a value an earlier session already recorded.
+  #nextGeneration(stored, observed) {
+    const next = { version: 1, generation: (stored?.generation ?? 0) + 1, nonce: randomUUID(), observed };
+    try {
+      writeAtomically(this.generationPath, next);
+    } catch {
+      throw new CapturePolicyConfigurationError('Capture settings generation could not be saved');
+    }
+    return next;
   }
 
   update(input) {
@@ -91,6 +131,7 @@ export class CapturePolicyStore {
       return { ...next };
     }
     writeAtomically(this.path, { version: 1, ...next });
+    this.#nextGeneration(this.#readGeneration(), this.#fileKey());
     return { ...next };
   }
 }

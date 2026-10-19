@@ -15,10 +15,13 @@ export async function transcriptLifecycle({ application, runtimeConfigPath, inpu
   const entry = event === 'UserPromptSubmit';
   const captureCheck = captureDecision(application, transcriptCaptureScope(input, sourceApplication));
   const enabled = captureCheck.allowed;
-  // Each entry says when automatic recording is off (rec#11 D-01); Stop stays quiet.
+  // Each entry says when automatic recording is off (rec#11 D-01); Stop stays
+  // quiet. A hook that skipped a stretch because the settings changed says so.
   const notice = entry ? captureNotice(captureCheck.reason) : null;
-  const withCaptureNotice = value => notice
-    ? { ...value, systemMessage: [value.systemMessage, `Fuli: ${notice}`].filter(Boolean).join('\n') } : value;
+  const withCaptureNotice = (value, skipped) => {
+    const lines = [notice, captureNotice(skipped)].filter(Boolean).map(text => `Fuli: ${text}`);
+    return lines.length ? { ...value, systemMessage: [value.systemMessage, ...lines].filter(Boolean).join('\n') } : value;
+  };
   // Turns written while the capture settings changed since this session last
   // synchronized are skipped, not imported (transcript-capture-gap.js).
   const settings = captureSettingsVersion(application);
@@ -42,6 +45,7 @@ export async function transcriptLifecycle({ application, runtimeConfigPath, inpu
       };
       let sync = await capture((app, held) => syncConversationTranscript(app, input, sourceApplication, adapter, held,
         { notRecorded }));
+      const skipped = sync.skipped ?? null;
       if (entry && sync.entryBlocked) {
         await invoke();
         // Only a held guard and the fresh entry's exact native ownership can
@@ -70,7 +74,7 @@ export async function transcriptLifecycle({ application, runtimeConfigPath, inpu
         });
       }
       settle(sync);
-      return withCaptureNotice(withTranscriptNotice(output, sync));
+      return withCaptureNotice(withTranscriptNotice(output, sync), skipped);
     });
   } catch (error) {
     // An entry failure is a real entry failure. Never retry it and accidentally
