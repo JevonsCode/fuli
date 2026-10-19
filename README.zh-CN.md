@@ -14,7 +14,17 @@
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="许可证" /></a>
 </p>
 
-**换 AI 工具，不用换搭档。**
+**换 AI 工具，留住你自己。**
+
+复利（Fuli）就是 **compound interest**：收益再生收益。
+
+复利的初衷，是在你和 AI 一起工作时，留住你自己的品味、个性和判断。我们相信，人不必再事事亲力亲为。
+你可以腾出手来做决定、想点子，也可以歇一歇。
+
+复利支持 Codex、Claude Code，以及其他支持 MCP 和 Skills 的 Agent 客户端。让这些客户端接入同一份 Fuli 数据，
+就能继续和同一位 Agent 合作，延续它记录下的工作和相关上下文。
+
+AI 能接手的工作越来越多。复利帮你完成这段过渡，同时让你自己的判断始终居中。
 
 复利是跨兼容 MCP 客户端的长期 Agent 协作层。让 AI 工具接入同一份可访问的 Fuli 数据，
 选中同一位 Agent，就能延续它的身份、项目职责和相关工作脉络。运行 `fuli connect` 获取标准
@@ -498,6 +508,7 @@ CLI 的帮助、交互提示、状态和错误信息固定使用英文，不跟�
 | `fuli open [--data-dir DIR]` | 在默认浏览器中打开当前管理界面 |
 | `fuli graph export --output DIR [--mode container\|native]` | 把当前图数据导出为可校验、可复制的离线备份包 |
 | `fuli graph import --input DIR [--target-mode container\|native] [--yes]` | 校验备份并替换目标图数据；导入前自动保留回滚包 |
+| `fuli graph migrate --to native [--yes]` | 把容器图谱迁移到原生模式；节点和关系数量完全一致才算成功 |
 | `fuli update [setup 选项]` | 更新 npm 包并刷新本机接入 |
 | `fuli uninstall [--yes] [--data-dir DIR]` | 清理 Agent 接入和服务，保留知识数据和 Neo4j 数据卷 |
 
@@ -605,6 +616,16 @@ fuli graph export --mode container --output "$HOME/Backups/fuli-container"
 fuli setup --yes --runtime-mode native --memory-profile low --adaptive-memory
 fuli graph import --target-mode native --input "$HOME/Backups/fuli-container" --yes
 ```
+
+也可以用一条命令完成同样的步骤（需要带原生运行时的安装包；Windows 上是已安装的 Fuli 桌面版）：
+
+```bash
+fuli graph migrate --to native
+```
+
+它会停止正在运行的控制台，统计并导出容器图谱，切到原生模式后导入；只有每种标签和关系类型的数量都一致，
+才接受迁移结果。任何一步失败都会切回容器模式。容器卷只会被读取，之后保持停止，不会被删除；
+客户端接入不受影响。
 
 反向迁移只需交换 `container` 和 `native`。导出会短暂停止来源数据库，完成后只恢复导出前
 确实在运行的服务；导入会先校验清单和每个 dump 的 SHA-256，再停止目标数据库。替换前的
