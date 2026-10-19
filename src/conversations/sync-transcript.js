@@ -3,18 +3,29 @@ import { transcriptDigest, TRANSCRIPT_SCAN_PAGE_LIMIT } from './transcript-guard
 import { lookupTranscriptTask } from './current-task-lookup.js';
 import { appendTranscriptPage } from './transcript-append.js';
 import { recoverFallbackTranscript } from './fallback-transcript-boundary.js';
+import { captureDecision, captureDisabled } from '../graphiti/capture-decision.js';
+import { notRecordedEvent, skipTranscriptWhileOff } from './transcript-capture-gap.js';
 
 const pending = reason => ({ status: 'partial', entryBlocked: true, reason });
 const retryReason = 'Transcript handoff is pending. Retry task entry to continue its saved progress; no new Agent context was supplied';
 
-export async function syncConversationTranscript(application, input, sourceApplication, adapter, guard = null) {
-  if (!application.getCapturePolicy?.(sourceApplication).enabled) return { status: 'capture_disabled' };
+// What a host hook knows about the session whose transcript it would capture.
+export function transcriptCaptureScope(input, sourceApplication) {
+  return { sourceApplication, projectPath: input?.cwd ?? null, sessionId: input?.session_id ?? null };
+}
+
+// notRecorded names why the pending interval must be skipped instead of
+// imported (transcript-capture-gap.js); the cursor still advances as usual.
+export async function syncConversationTranscript(application, input, sourceApplication, adapter, guard = null,
+  { notRecorded = null } = {}) {
+  const capture = captureDecision(application, transcriptCaptureScope(input, sourceApplication));
+  if (!capture.allowed) return skipTranscriptWhileOff(application, input, sourceApplication, adapter, capture);
   if (!input?.transcript_path) return { status: 'partial', reason: 'Host did not supply a visible transcript' };
   if (guard?.expired) return pending('Transcript guard lifetime expired; this unverified interval was not imported');
   if (guard?.value?.phase === 'scan' && (guard.value.scanPages ?? 0) >= TRANSCRIPT_SCAN_PAGE_LIMIT) {
     return pending('Transcript scan budget limit reached; this unverified interval was not imported');
   }
-  let committedPages = 0, ownershipKnown = false;
+  let committedPages = 0, ownershipKnown = false, skipped = false;
   try {
     const lookup = await lookupTranscriptTask(application, input, sourceApplication);
     if (lookup.failure) return lookup.failure;
@@ -85,10 +96,13 @@ export async function syncConversationTranscript(application, input, sourceAppli
       userMessages += batch.userMessages ?? 0; omitted ||= batch.omitted === true;
       // Without a durable guard, an unmatched user record cannot be attributed
       // to the prior owner merely because the file currently ends after it.
-      if (!guard && typeof input.prompt === 'string' && userMessages && !batch.atPromptBoundary) return pending(retryReason);
+      if (!notRecorded && !guard && typeof input.prompt === 'string' && userMessages && !batch.atPromptBoundary) return pending(retryReason);
+      const from = session.cursor ?? 0;
       result = await appendTranscriptPage(application, { ...scope, session_id: input.session_id,
-        task_context_token: task.token, events: batch.events, expected_cursor: session.cursor ?? 0, cursor: batch.cursor });
+        task_context_token: task.token, expected_cursor: from, cursor: batch.cursor,
+        events: !notRecorded ? batch.events : batch.cursor > from ? [notRecordedEvent(from, batch.cursor, notRecorded)] : [] });
       if (result.status === 'saved') committedPages++;
+      if (result.status === 'saved' && notRecorded && batch.cursor > from) skipped = true;
       if (!batch.hasMore && guard?.value?.ambiguousFrom !== undefined && batch.cursor < guard.value.boundary) {
         const boundary = guard.value.boundary;
         result = await appendTranscriptPage(application, { ...scope, session_id: input.session_id,
@@ -97,7 +111,7 @@ export async function syncConversationTranscript(application, input, sourceAppli
             content: '[Visible transcript content omitted: ambiguous task ownership; original remains in native history.]' }] });
         batch.cursor = boundary;
       }
-      if (!batch.hasMore) return { ...result, cursor: batch.cursor,
+      if (!batch.hasMore) return { ...result, cursor: batch.cursor, ...(skipped ? { skipped: notRecorded } : {}),
         atPromptBoundary: Boolean(guard?.value || batch.atPromptBoundary || (typeof input.prompt === 'string' && !userMessages && !omitted && batch.completeRecord)),
         entryBlocked: Boolean(guard?.value && typeof input.prompt !== 'string'),
         coverage: 'supported_visible_events', parser: 'jsonl-v1', ...(guard?.value && typeof input.prompt !== 'string' ? { reason: retryReason } : {}) };
@@ -129,7 +143,9 @@ export function withTranscriptNotice(output, sync) {
 // prompt. Failed flushes keep the old owner, so new Agents cannot inherit an
 // unrelated session tail. Native files remain available for explicit recovery.
 export async function claimTranscriptBoundary(application, input, sourceApplication, sync, adapter, guard = null) {
-  if (!application.getCapturePolicy?.(sourceApplication).enabled || !input.transcript_path) return sync;
+  if (!input.transcript_path) return sync;
+  const capture = captureDecision(application, transcriptCaptureScope(input, sourceApplication));
+  if (!capture.allowed) return captureDisabled(capture);
   try {
     const task = await application.personal.currentTaskContext({ personal_space_id: application.config.personal.spaceId,
       session_id: input.session_id, source_application: sourceApplication });

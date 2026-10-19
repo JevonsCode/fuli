@@ -361,8 +361,13 @@ At task end, hook mode calls `checkpoint_task_knowledge`: use `capture_candidate
 durable, evidence-backed batch; otherwise use `retain_nothing`. A prompt-fallback Agent applies the
 same rule and writes through `capture_session_knowledge`. Personal preferences set the correct
 `profileAspect` and stable `attributes.preferenceKey`; project facts omit `profileAspect`. If
-automatic capture is disabled under Settings, writes return `capture_disabled` and no category is
-created.
+automatic capture is disabled under Settings, automatic writes return `capture_disabled` and no
+category is created: transcripts, checkpoints, knowledge and preference candidates, knowledge usage,
+view records, and feedback or corrections reported through an Agent all stop. If the capture
+settings cannot be read, automatic writes stop the same way (`reason: policy_unavailable`). Edits
+you submit yourself in the FULI console and an explicit `新项目：` request still save, and reading
+existing knowledge keeps working. Session turns written while automatic recording is off are skipped
+with a content-free marker and are never imported after it comes back on.
 
 Run these local contract tests to check that the README and project-path behavior still match the
 implementation:

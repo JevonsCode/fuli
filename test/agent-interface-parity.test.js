@@ -58,7 +58,7 @@ test('knowledge mutations accept complete UI payloads and retain Agent attributi
     action: 'link_replacement', reason: 'Superseded', replacementItemId: 'new', replacementItemKind: 'entity',
   };
   const app = {
-    getAgentAccessPolicy: () => ({ enabled: true }),
+    getAgentAccessPolicy: () => ({ enabled: true }), getCapturePolicy: () => ({ enabled: true }),
     deferPreferenceConflict: (input) => input,
     reviseKnowledgeItem: (input) => input,
   };

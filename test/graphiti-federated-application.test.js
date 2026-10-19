@@ -59,7 +59,7 @@ test('disabled capture policy skips every Provider write without rejecting the A
 
   assert.equal(result.route, 'disabled');
   assert.equal(result.status, 'capture_disabled');
-  assert.equal(result.capturePolicy.enabled, false);
+  assert.equal(result.reason, 'global_off');
   assert.deepEqual(calls, []);
 });
 

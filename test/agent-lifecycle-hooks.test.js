@@ -126,6 +126,7 @@ test('Codex lifecycle cleanup failures cannot corrupt output or skip application
     write: (value) => writes.push(value),
     resolveRuntimeOptions: () => ({ runtimeConfigPath: '/synthetic/runtime.json' }),
     openApplication: () => ({
+      getCapturePolicy: () => ({ enabled: false }),
       async close() {
         closed += 1;
         throw new Error('/private/application/path');

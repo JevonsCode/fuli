@@ -31,15 +31,15 @@ export const RECEIPT_GUIDANCE = 'MUST end every final user-visible reply with ag
 
 export function taskAgentReceipt(application, { projectId, agentId, name = null,
   sourceApplication = null, workStatus = null, conversationId = null, persistence = null,
-  collaborators = [], assignmentStatus = null, assignmentReason = null }) {
+  collaborators = [], assignmentStatus = null, assignmentReason = null, notices = [] }) {
   const owner = agentId ? { agent_id: agentId, name,
     profile_url: agentProfileUrl(application, agentId), source_application: sourceApplication } : null;
   const helpers = owner ? [...new Map(collaborators.filter(item => item.agentId !== agentId)
     .map(item => [item.agentId, item])).values()].map(receiptCollaborator) : [];
-  const build = () => ({ required: true, markdown: owner
+  const build = () => ({ required: true, markdown: [owner
     ? `FULI Agent：负责人 ${agentLink(application, agentId, name)}`
       + (helpers.length ? ` · 协作 ${helpers.map(item => collaboratorLink(application, item)).join('、')}` : '')
-    : unassignedReceipt(assignmentStatus, assignmentReason), owner,
+    : unassignedReceipt(assignmentStatus, assignmentReason), ...notices].join(' · '), owner,
     collaborators: helpers.map(item => ({ agent_id: item.agentId, name: item.name,
       profile_url: agentProfileUrl(application, item.agentId),
       ...(item.responsibility ? { responsibility: item.responsibility } : {}),

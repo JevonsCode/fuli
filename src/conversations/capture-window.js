@@ -18,7 +18,8 @@ export async function captureWindow(application, guard, operation, {
   const options = current => ({ ...current, signal: controller.signal,
     timeoutMs: Math.min(current?.timeoutMs ?? timeoutMs, timeoutMs) });
   const port = { config: application.config,
-    getCapturePolicy: application.getCapturePolicy?.bind(application), personal: {
+    getCapturePolicy: application.getCapturePolicy?.bind(application),
+    getCapturePolicyVersion: application.getCapturePolicyVersion?.bind(application), personal: {
       currentTaskContext: (query, current) => { check(); return application.personal.currentTaskContext(query, options(current)); },
       conversation: (action, query, current) => { check(); return application.personal.conversation(action, query, options(current)); }
     } };

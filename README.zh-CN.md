@@ -292,7 +292,11 @@ Code、Codex 和 Cursor 生命周期适配器。已加载、获信任的入口 H
 `capture_candidates`；否则使用 `retain_nothing`。Prompt fallback Agent 遵守相同判断标准，并
 通过 `capture_session_knowledge` 写入。写个人偏好时设置正确的 `profileAspect` 和稳定的
 `attributes.preferenceKey`；写项目事实时不设置 `profileAspect`。如果“设置”中的自动沉淀已
-关闭，写入会返回 `capture_disabled`，不会产生任何类别的条目。
+关闭，自动写入会返回 `capture_disabled`，不会产生任何类别的条目：会话原文、checkpoint、知识和
+偏好候选、知识使用记录、查看记录，以及经由 Agent 上报的反馈或纠正都会停止。记录设置读取失败时
+自动写入同样停止（`reason: policy_unavailable`）。你在 FULI 控制台里明确提交的修改和显式的
+`新项目：` 仍会保存，查询已有知识不受影响。关闭期间写下的会话轮次只留一条不含内容的跳过标记，重新打开后
+也不会补记。
 
 本地可先运行下面两个契约测试，验证 README 说明和项目路径解析仍与实现一致：
 

@@ -25,7 +25,8 @@ export async function getCollaborationPreferences(
     workflow = null,
     limit = 100,
     agentInvocation = false,
-    agentToolName = 'get_collaboration_preferences'
+    agentToolName = 'get_collaboration_preferences',
+    sourceApplication = null
   },
   recordAgentViews
 ) {
@@ -48,7 +49,7 @@ export async function getCollaborationPreferences(
   const effectivePreferences = (result.effective_preferences ?? []).filter(item => preferenceAppliesToTask(item, taskScope));
   const taskKnowledgeRecall = taskPrompt === null
     ? null
-    : await recallTaskKnowledge(application, projectResolution, taskPrompt);
+    : await recallTaskKnowledge(application, projectResolution, taskPrompt, { sourceApplication, sessionId });
   if (agentInvocation) {
     const items = [
       ...(result.global_preferences ?? []),
