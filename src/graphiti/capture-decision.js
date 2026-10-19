@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { projectCaptureReason, projectOffSince, storedProjectSettings, usesProjectModes } from './capture-project-mode.js';
 import { isTemporaryProjectId } from './temporary-project-scope.js';
 import { captureNotice } from './capture-notice.js';
@@ -21,6 +22,15 @@ import { captureNotice } from './capture-notice.js';
 
 const ALLOWED = Object.freeze({ allowed: true, reason: null, layer: null });
 const OUTSIDE_PROJECTS = Object.freeze({ personalProjectId: null });
+
+// Directory lookups shared by the decisions of one hook run or tool request:
+// however many writes a turn asks about, its directory is resolved once. A
+// later request looks again, so a project registered in between counts.
+const requestLookups = new AsyncLocalStorage();
+
+export function withCaptureLookups(operation) {
+  return requestLookups.getStore() ? operation() : requestLookups.run(new Map(), operation);
+}
 
 export async function captureDecision(application, scope = {}) {
   return (await decide(application, scope)).decision;
@@ -100,11 +110,23 @@ async function writeProjects(application, { personalProjectId = null, projectPat
 }
 
 async function directoryProject(application, projectPath) {
-  const resolution = await application.resolveProjectPath(projectPath);
+  const resolution = await sharedLookup(application, projectPath);
   if (resolution.status === 'matched') return registeredProject(resolution.personalProjectId);
   if (resolution.status === 'unmatched') return OUTSIDE_PROJECTS;
   // An ambiguous workspace may be any of several projects.
   return null;
+}
+
+// Settings in the default mode never get here, so they never look a directory up.
+// Lookups are kept per configuration, which an application shares with the
+// capture window's port for it.
+function sharedLookup(application, projectPath) {
+  const lookups = requestLookups.getStore();
+  if (!lookups || !application.config) return application.resolveProjectPath(projectPath);
+  if (!lookups.has(application.config)) lookups.set(application.config, new Map());
+  const resolved = lookups.get(application.config);
+  if (!resolved.has(projectPath)) resolved.set(projectPath, application.resolveProjectPath(projectPath));
+  return resolved.get(projectPath);
 }
 
 // A temporary task project isolates work done outside every registered project.

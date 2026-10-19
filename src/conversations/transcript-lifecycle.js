@@ -1,7 +1,7 @@
 import { transcriptGuardFailureMessage, withTranscriptGuard } from './transcript-guard.js';
 import { syncConversationTranscript, claimTranscriptBoundary, recordTranscriptTaskEntry, transcriptCaptureScope,
   withTranscriptNotice } from './sync-transcript.js';
-import { captureDecision } from '../graphiti/capture-decision.js';
+import { captureDecision, withCaptureLookups } from '../graphiti/capture-decision.js';
 import { captureNotice } from '../graphiti/capture-notice.js';
 import { recoverFailedTranscriptEntry } from './fallback-transcript-boundary.js';
 import { captureWindow, withCaptureBudget } from './capture-window.js';
@@ -9,7 +9,13 @@ import { captureWindow, withCaptureBudget } from './capture-window.js';
 // Transcript ownership is fail-closed; preference/task entry is independent.
 // Both native adapters use this port so a capture failure cannot suppress a
 // successful entry or cause a second begin after a partial runtime failure.
-export async function transcriptLifecycle({ application, runtimeConfigPath, input, sourceApplication, event, adapter, run,
+// Every capture decision of one hook run, including its task entry, shares
+// one lookup of the session's directory.
+export function transcriptLifecycle(options) {
+  return withCaptureLookups(() => hookTranscriptLifecycle(options));
+}
+
+async function hookTranscriptLifecycle({ application, runtimeConfigPath, input, sourceApplication, event, adapter, run,
   captureTimeoutMs = 750, signal }) {
   const entry = event === 'UserPromptSubmit';
   const capture = await captureDecision(application, transcriptCaptureScope(input, sourceApplication));

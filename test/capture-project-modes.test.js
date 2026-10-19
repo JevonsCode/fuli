@@ -111,10 +111,12 @@ function lead(project) {
 const leases = () => ({ withGraphLease: async (_owner, operation) => operation(), close: async () => {} });
 
 // A Codex prompt through its real lifecycle hook and the real begin_task_context tool.
-async function codexEntry(f, cwd, { session = 'synthetic-codex-session', prompt = `Plan ${PRIVATE}.` } = {}) {
+async function codexEntry(f, cwd, { session = 'synthetic-codex-session', prompt = `Plan ${PRIVATE}.`,
+  transcriptPath = undefined } = {}) {
   let context;
   const output = await runCodexLifecycleHook(['--event', 'UserPromptSubmit'], {
-    readInput: async () => ({ session_id: session, cwd, prompt }), write: () => {},
+    readInput: async () => ({ session_id: session, cwd, prompt, ...(transcriptPath ? { transcript_path: transcriptPath } : {}) }),
+    write: () => {},
     resolveRuntimeOptions: () => ({ runtimeConfigPath: f.runtimeConfigPath }), openApplication: () => f.app,
     createLeases: leases,
     callTool: async (app, name, input, request) => {
@@ -421,4 +423,46 @@ test('the settings page API reads and changes project modes', async (t) => {
   assert.deepEqual([patched.body.projectMode, patched.body.excludedProjectIds], ['all_except', ['job-hunt']]);
   const read = await call('GET');
   assert.deepEqual(read.body.projectsOffSince, { 'job-hunt': '2026-10-20T08:00:00.000Z' });
+});
+
+// Counts how often capture decisions look a directory up.
+function countLookups(f) {
+  const lookups = [];
+  const resolve = f.app.resolveProjectPath.bind(f.app);
+  f.app.resolveProjectPath = projectPath => { lookups.push(projectPath); return resolve(projectPath); };
+  return lookups;
+}
+
+test('the default mode decides without looking up any project', async (t) => {
+  const f = await fixture(t);
+  const lookups = countLookups(f);
+  const transcript = join(f.root, 'session.jsonl');
+  await writeFile(transcript, '');
+  f.app.personal.currentTaskContext = async () => null;
+  const entry = await codexEntry(f, f.dirs['side-repo'], { transcriptPath: transcript });
+  await finishTask(f, entry.context);
+  await callAgentTool(f.app, 'get_capture_policy', { projectPath: f.dirs.thesis, sourceApplication: 'codex' });
+  await syncConversationTranscript(f.app, { session_id: 'synthetic-session', cwd: f.dirs.downloads,
+    transcript_path: transcript }, 'codex', CODEX_TRANSCRIPT);
+  assert.deepEqual(lookups, [], 'all projects and all folders are recorded, so no decision needs the project');
+});
+
+test('under a project mode one hook run or tool request looks its directory up once', async (t) => {
+  const f = await fixture(t);
+  f.store.update({ projectMode: 'all_except', excludedProjectIds: ['job-hunt'] });
+  const lookups = countLookups(f);
+  const transcript = join(f.root, 'session.jsonl');
+  await writeFile(transcript, '');
+  let taskLookups = 0;
+  f.app.personal.currentTaskContext = async () => { taskLookups += 1; return null; };
+  // An unregistered repository: the entry, its transcript sync and claim, the
+  // registration check and the view records all ask about the same directory.
+  await codexEntry(f, f.dirs['side-repo'], { transcriptPath: transcript });
+  assert.deepEqual(lookups, [f.dirs['side-repo']]);
+  assert.ok(taskLookups > 0, 'decisions inside the capture window resolve the directory as well');
+
+  lookups.length = 0;
+  await callAgentTool(f.app, 'get_collaboration_preferences', { projectPath: f.dirs.novel, taskPrompt: 'Plan.',
+    sessionId: 'synthetic-cursor-session', sourceApplication: 'cursor', sourceSessionId: 'synthetic-cursor-session' });
+  assert.ok(lookups.length <= 1, `one request, ${lookups.length} lookups`);
 });
