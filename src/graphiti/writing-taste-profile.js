@@ -186,6 +186,10 @@ export function isWritingTasteItem(value) {
 
 function normalizeRule(value, itemKind, names) {
   if (!isWritingTasteItem(value) || value.invalid_at) return null;
+  // The Provider names negative feedback that withholds usage-derived
+  // authority (never set on human-confirmed rules). Such a rule is not the
+  // user's taste, for review or for Agents, until a person confirms it.
+  if (value.agent_authority_suspension) return null;
   const attributes = objectValue(value.attributes);
   const basis = objectValue(value.confirmation_basis);
   const evidence = Array.isArray(value.evidence)

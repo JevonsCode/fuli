@@ -225,6 +225,8 @@ export const knowledgeWorkspaceMessages = {
         reasons: {
           not_pending: '存储状态不是待确认，不参与自动确认',
           open_conflict: '有未解决的冲突，解决前不会自动确认',
+          negative_feedback_block: '你或权威来源否定过这条，使用次数不会让它自动恢复；只有你明确确认才能恢复',
+          negative_evidence: '有未处理的负反馈，不会自动确认',
           usage_unknown: '使用记录未知，无法判断是否达到阈值',
           qualified_uses_below_threshold: '有效使用次数未达阈值',
           distinct_tasks_below_threshold: '不同任务数未达阈值',
@@ -504,6 +506,8 @@ export const knowledgeWorkspaceMessages = {
         reasons: {
           not_pending: 'Stored status is not pending, so automatic confirmation does not apply',
           open_conflict: 'An unresolved conflict blocks automatic confirmation',
+          negative_feedback_block: 'You or an authoritative source rejected it; usage cannot restore it, only your explicit confirmation can',
+          negative_evidence: 'Unresolved negative feedback blocks automatic confirmation',
           usage_unknown: 'Usage counts are unknown, so the threshold cannot be checked',
           qualified_uses_below_threshold: 'Material uses are below the threshold',
           distinct_tasks_below_threshold: 'Distinct tasks are below the threshold',

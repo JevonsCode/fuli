@@ -1,9 +1,18 @@
 import { t } from '@/i18n'
-import type { KnowledgeItem } from '@/types'
+import type { AgentConfirmationBlockingReason, KnowledgeItem } from '@/types'
 
 import { knowledgeReviewState } from './model'
 
 const PREFIX = 'knowledge.workspace.inspector.autoConfirmation'
+const KNOWN_REASONS: readonly AgentConfirmationBlockingReason[] = [
+  'not_pending',
+  'open_conflict',
+  'negative_feedback_block',
+  'negative_evidence',
+  'usage_unknown',
+  'qualified_uses_below_threshold',
+  'distinct_tasks_below_threshold',
+]
 
 export function showsAgentConfirmationProgress(item: KnowledgeItem) {
   const state = knowledgeReviewState(item)
@@ -27,7 +36,7 @@ export function agentConfirmationBlockingText(item: KnowledgeItem) {
   if (!Array.isArray(progress.blocking_reasons)) return t(`${PREFIX}.unknownReason`)
   if (!progress.blocking_reasons.length) return t(`${PREFIX}.ready`)
   return progress.blocking_reasons
-    .map((reason) => ['not_pending', 'open_conflict', 'usage_unknown', 'qualified_uses_below_threshold', 'distinct_tasks_below_threshold'].includes(reason) ? t(`${PREFIX}.reasons.${reason}`) : t(`${PREFIX}.unknownReason`))
+    .map((reason) => KNOWN_REASONS.includes(reason) ? t(`${PREFIX}.reasons.${reason}`) : t(`${PREFIX}.unknownReason`))
     .join(t(`${PREFIX}.separator`))
 }
 

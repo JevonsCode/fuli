@@ -18,7 +18,7 @@ const CONFIG = {
 test('older open conflicts block writing readiness even after the first conflict page', async () => {
   const offsets = [];
   const app = {
-    getKnowledgeGraph: async () => ({ nodes: ['a', 'b', 'c'].map(id => confirmedWritingPreference(id, `Writing rule ${id}`)), edges: [] }),
+    getKnowledgeGraph: async () => ({ nodes: ['a', 'b', 'c'].map(id => writingPreference(id, `Writing rule ${id}`)), edges: [] }),
     personal: { listPreferenceConflicts: async (_space, status, limit, offset) => {
       assert.equal(status, 'ai_pending'); assert.equal(limit, 500); offsets.push(offset);
       return offset === 0 ? Array.from({ length: 500 }, (_, i) => ({ id: `irrelevant-${i}`, left_item_id: 'other', right_item_id: 'outside' }))
@@ -38,9 +38,9 @@ test('writing taste profile derives readiness from the private personal graph', 
       '/v1/spaces/personal-space/graph': {
         space_id: 'personal-space',
         nodes: [
-          confirmedWritingPreference('writing-direct', 'Prefer direct writing.'),
-          confirmedWritingPreference('writing-headings', 'Prefer descriptive headings.'),
-          confirmedWritingPreference('writing-examples', 'Prefer one concrete example.')
+          writingPreference('writing-direct', 'Prefer direct writing.'),
+          writingPreference('writing-headings', 'Prefer descriptive headings.'),
+          writingPreference('writing-examples', 'Prefer one concrete example.')
         ],
         edges: []
       },
@@ -62,12 +62,53 @@ test('writing taste profile derives readiness from the private personal graph', 
   );
 });
 
+test('a rule the user rejected, or an observed rule with counter-evidence, is not writing taste', async () => {
+  const calls = [];
+  const app = new FederatedGraphApplication(CONFIG, {
+    fetchImpl: providerFetch(calls, {
+      '/v1/spaces/personal-space/graph': {
+        space_id: 'personal-space',
+        nodes: [
+          writingPreference('writing-direct', 'Prefer direct writing.'),
+          writingPreference('writing-headings', 'Prefer descriptive headings.'),
+          writingPreference('writing-examples', 'Prefer one concrete example.'),
+          writingPreference('writing-short', 'Keep paragraphs short.', 'agent_confirmed'),
+          // The Provider names why usage-derived authority is withheld.
+          {
+            ...writingPreference('writing-parallelism', 'Use dramatic parallelism.', 'pending'),
+            agent_authority_suspension: 'negative_feedback_block'
+          },
+          {
+            ...writingPreference('writing-exclaim', 'End headlines with exclamation marks.',
+              'agent_confirmed'),
+            agent_authority_suspension: 'negative_evidence'
+          }
+        ],
+        edges: []
+      },
+      '/v1/preference-conflicts': []
+    })
+  });
+
+  const result = await app.getWritingTasteProfile({ personalSpaceId: 'personal-space' });
+
+  assert.deepEqual(result.rules.map(({ item_id: id }) => id).sort(),
+    ['writing-direct', 'writing-examples', 'writing-headings', 'writing-short']);
+  assert.equal(result.readiness.rule_count, 4);
+  assert.equal(result.readiness.observed_rule_count, 1);
+  assert.equal(result.readiness.working_hypothesis_count, 0);
+  for (const markdown of [result.profile_markdown, result.agent_markdown]) {
+    assert.match(markdown, /Keep paragraphs short/);
+    assert.doesNotMatch(markdown, /parallelism|exclamation/);
+  }
+});
+
 test('writing taste profile follows every graph page before deriving readiness', async () => {
   const calls = [];
   const rules = [
-    confirmedWritingPreference('writing-direct', 'Prefer direct writing.'),
-    confirmedWritingPreference('writing-headings', 'Prefer descriptive headings.'),
-    confirmedWritingPreference('writing-examples', 'Prefer one concrete example.')
+    writingPreference('writing-direct', 'Prefer direct writing.'),
+    writingPreference('writing-headings', 'Prefer descriptive headings.'),
+    writingPreference('writing-examples', 'Prefer one concrete example.')
   ];
   const app = new FederatedGraphApplication(CONFIG, {
     fetchImpl: async (rawUrl, options = {}) => {
@@ -100,7 +141,12 @@ test('writing taste profile follows every graph page before deriving readiness',
   );
 });
 
-function confirmedWritingPreference(id, summary) {
+function writingPreference(id, summary, status = 'confirmed') {
+  const confirmer = {
+    confirmed: { kind: 'user', label: 'Test user' },
+    agent_confirmed: { kind: 'agent', label: 'Fuli usage evidence policy' },
+    pending: null
+  }[status];
   return {
     id,
     name: id,
@@ -111,14 +157,14 @@ function confirmedWritingPreference(id, summary) {
     preference_scope: 'global',
     epistemic_state_explicit: true,
     confirmation_state_explicit: true,
-    confirmation_status: 'confirmed',
+    confirmation_status: status,
     confirmation_basis: {
       existence_reason: 'The user directly selected this writing preference.',
       quadrant_reason: 'The preference was explicitly stated.',
       proposed_by: { kind: 'user', label: 'Test user' },
-      confirmed_by: { kind: 'user', label: 'Test user' },
-      confirmed_at: '2026-08-05T00:00:00.000Z',
-      agent_policy_version: null
+      confirmed_by: confirmer,
+      confirmed_at: confirmer ? '2026-08-05T00:00:00.000Z' : null,
+      agent_policy_version: status === 'agent_confirmed' ? 'agent-usage-v1' : null
     },
     attributes: { tasteDomain: 'writing' },
     evidence: []

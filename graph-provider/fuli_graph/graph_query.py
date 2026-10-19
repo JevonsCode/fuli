@@ -28,6 +28,7 @@ from .project_knowledge import (
     read_project_references,
 )
 from .knowledge_weight import effective_confirmation_status, knowledge_weight
+from .negative_feedback_block import agent_authority_suspension
 
 
 async def read_graph(
@@ -269,6 +270,8 @@ def _node_query(project_scoped: bool, paginated: bool = False) -> str:
                  AS requires_attention,
                node.fuli_last_feedback_kind AS last_feedback_kind,
                node.fuli_last_feedback_at AS last_feedback_at,
+               node.fuli_negative_feedback_block_json
+                 AS negative_feedback_block_json,
                coalesce(node.fuli_usage_generation, 1) AS usage_generation,
                coalesce(node.fuli_attributes_json, '{}') AS attributes_json,
                coalesce(node.fuli_key, node.uuid) AS key,
@@ -394,6 +397,8 @@ def _edge_query(project_scoped: bool, paginated: bool = False) -> str:
                  AS requires_attention,
                edge.fuli_last_feedback_kind AS last_feedback_kind,
                edge.fuli_last_feedback_at AS last_feedback_at,
+               edge.fuli_negative_feedback_block_json
+                 AS negative_feedback_block_json,
                coalesce(edge.fuli_usage_generation, 1) AS usage_generation,
                edge.valid_at AS valid_at, edge.invalid_at AS invalid_at,
                edge.fuli_replaced_by_item_id AS replaced_by_item_id,
@@ -631,6 +636,10 @@ def _graph_node(
                 record['id'], []
             ),
         ),
+        # Judged on the displayed status: an unaudited 'confirmed' reads pending.
+        agent_authority_suspension=agent_authority_suspension(
+            {**record, 'confirmation_status': status}
+        ),
         audit_events=(audits or {}).get(record['id'], []),
     )
 
@@ -746,6 +755,10 @@ def _graph_edge(
             preference_conflicts=(preference_conflicts or {}).get(
                 record['id'], []
             ),
+        ),
+        # Judged on the displayed status: an unaudited 'confirmed' reads pending.
+        agent_authority_suspension=agent_authority_suspension(
+            {**record, 'confirmation_status': status}
         ),
         audit_events=(audits or {}).get(record['id'], []),
     )

@@ -298,6 +298,48 @@ def test_graph_record_projection_preserves_explicit_epistemic_state():
     assert node.confirmation_basis.confirmed_by.kind == 'user'
 
 
+AGENT_BASIS = (
+    '{"existence_reason":"Observed in tasks","quadrant_reason":"Observed",'
+    '"proposed_by":{"kind":"agent"},"confirmed_by":{"kind":"agent"},'
+    '"confirmed_at":"2026-10-01T00:00:00Z","agent_policy_version":"agent-usage-v1"}'
+)
+USER_BASIS = (
+    '{"existence_reason":"Stated by the user","quadrant_reason":"Explicit",'
+    '"proposed_by":{"kind":"agent"},"confirmed_by":{"kind":"user"},'
+    '"confirmed_at":"2026-10-01T00:00:00Z"}'
+)
+
+
+@pytest.mark.parametrize('stored,expected', [
+    ({'confirmation_status': 'pending', 'negative_evidence_count': 1,
+      'negative_feedback_block_json': '{"audit_id":"feedback-1"}'}, 'negative_feedback_block'),
+    ({'confirmation_status': 'agent_confirmed', 'confirmation_basis_json': AGENT_BASIS,
+      'confirmation_state_explicit': True, 'negative_evidence_count': 1}, 'negative_evidence'),
+    ({'confirmation_status': 'agent_confirmed', 'confirmation_basis_json': AGENT_BASIS,
+      'confirmation_state_explicit': True}, None),
+    # A person's confirmation keeps its authority; the evidence is only flagged.
+    ({'confirmation_status': 'confirmed', 'confirmation_basis_json': USER_BASIS,
+      'confirmation_state_explicit': True, 'negative_evidence_count': 2}, None),
+    # A legacy 'confirmed' flag without an audited basis reads as pending.
+    ({'confirmation_status': 'confirmed', 'negative_evidence_count': 1}, 'negative_evidence'),
+])
+def test_graph_projection_names_negative_feedback_that_withholds_agent_authority(
+    stored, expected,
+):
+    node = _graph_node({
+        'id': 'entity-1', 'name': 'Style', 'type': 'Preference', 'group_id': 'personal-group',
+        'summary': 'Use dramatic parallelism.', 'attributes_json': '{}', 'episodes': [],
+        **stored,
+    }, {}, {}, {}, {}, {})
+    edge = _graph_edge({
+        'id': 'relationship-1', 'source': 'a', 'target': 'b', 'type': 'PREFERS',
+        'fact': 'Use dramatic parallelism.', **stored,
+    }, {}, {}, {}, {}, {})
+
+    assert node.agent_authority_suspension == expected
+    assert edge.agent_authority_suspension == expected
+
+
 def test_graph_projection_downgrades_legacy_confirmation_without_audit_basis():
     node = _graph_node(
         {
