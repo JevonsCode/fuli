@@ -1,8 +1,8 @@
 // What the project layer of the capture settings means (rec#5 C2): which
 // registered projects are recorded, what happens to work outside every
 // registered project, and since when a project has not been recorded. Pure
-// rules over the stored settings: capture-policy.js stores them and
-// capture-decision.js applies them to each write.
+// rules over the stored settings: the settings store keeps them and the
+// capture port applies them to each write.
 
 import { deepFreeze, uniqueTextArray } from '../validation/values.js';
 

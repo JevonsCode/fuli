@@ -361,9 +361,12 @@ At task end, hook mode calls `checkpoint_task_knowledge`: use `capture_candidate
 durable, evidence-backed batch; otherwise use `retain_nothing`. A prompt-fallback Agent applies the
 same rule and writes through `capture_session_knowledge`. Personal preferences set the correct
 `profileAspect` and stable `attributes.preferenceKey`; project facts omit `profileAspect`. If
-automatic capture is disabled under Settings, writes return `capture_disabled` and no category is
-created. If the capture settings cannot be read, nothing is written either
-(`reason: policy_unavailable`); reading existing knowledge keeps working.
+automatic capture is disabled under Settings, automatic writes return `capture_disabled` and no
+category is created: transcripts, checkpoints, knowledge and preference candidates, knowledge usage,
+view records, and feedback or corrections reported through an Agent all stop. If the capture
+settings cannot be read, automatic writes stop the same way (`reason: policy_unavailable`). Edits
+you submit yourself in the FULI console and an explicit `新项目：` request still save, and reading
+existing knowledge keeps working.
 
 Capture can also be limited to projects. `projectMode` is `all` (the default), `all_except` with
 `excludedProjectIds`, or `selected` with `selectedProjectIds`; `unregisteredDirectories`
@@ -371,7 +374,8 @@ Capture can also be limited to projects. `projectMode` is `all` (the default), `
 project. A directory resolves to its project the same way task entry does, so a worktree of a
 repository is that repository's project. A project that is not recorded returns
 `reason: project_off`, an unregistered directory `project_unregistered`, and every task receipt
-ends with the reason, for example `此项目未开启记忆`. Switching a project off never hides or
+ends with the reason and that explicit edits still save, for example
+`此项目未开启记忆；你明确提交的修改仍会保存`. Switching a project off never hides or
 deletes what it already recorded; `projectsOffSince` keeps when it stopped. Agents read the
 settings with `get_capture_policy` (pass `projectPath` to learn about the current project) and
 change them with `update_capture_policy` only after restating the change and getting the user's

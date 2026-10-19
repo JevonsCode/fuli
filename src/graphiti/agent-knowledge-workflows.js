@@ -10,9 +10,10 @@ import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { agentMemoryRecord, prepareProjectAgentMemory } from './project-agent-memory.js';
-import { internalCaptureSkip, normalizeTaskCaptures, taskCaptureInput, taskCaptureReceipt, taskCaptureReviewPaths, taskCaptureStatus,
-  uncapturedCheckpoint } from './task-knowledge-routing.js';
-import { captureDecision, captureDisabled, taskCaptureScope } from './capture-decision.js';
+import { internalCaptureSkip, normalizeTaskCaptures, taskCaptureInput, taskCaptureReceipt, taskCaptureReviewPaths, taskCaptureStatus } from './task-knowledge-routing.js';
+import { captureDisabled, taskCaptureScope } from './capture-decision.js';
+import { checkpointCaptureDecision, storedCheckpoint } from './checkpoint-capture.js';
+import { receiptNotices } from './capture-notice.js';
 import { activeSealedWorkerRequest } from '../app/agent-request-context.js';
 import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
 import { checkpointHumanInteraction } from './checkpoint-human-interaction.js';
@@ -168,8 +169,13 @@ export async function checkpointTaskKnowledge(application, {
   if (remoteSessionId && task.sessionId !== remoteSessionId) {
     throw validationError('Task checkpoint belongs to another remote session');
   }
+  // One decision for every write of this checkpoint, kept across its retries.
+  // Its writes are decided by the task's project, including a global
+  // preference learned there.
   const captureScope = taskCaptureScope(task);
-  const captureCheck = await captureDecision(application, captureScope);
+  const captureCheck = await checkpointCaptureDecision(application, task);
+  const captureKnowledge = async input => captureCheck.allowed ? application.captureSessionKnowledge(input, { captureScope })
+    : { route: 'disabled', ...captureDisabled(captureCheck) };
   // experiences and remember are compact forms of one routed capture.
   if (experiences !== null || remember !== null) {
     if (capture || captureRouting !== null) throw validationError('Send experiences or remember, or a capture, not both');
@@ -207,14 +213,16 @@ export async function checkpointTaskKnowledge(application, {
   const finish = async (result, checkpointTask = task) => {
     const team = await taskTeam(application, checkpointTask, collaborators);
     const effectiveLog = workLog ?? { status: 'reported', summary: reason };
-    const conversation = await checkpointConversation(application, task, effectiveLog, team);
+    const conversation = captureCheck.allowed ? await checkpointConversation(application, task, effectiveLog, team)
+      : captureDisabled(captureCheck);
     const triaged = await recordTriage(application, task, conversation, triageLabel);
     const interaction = activeSealedWorkerRequest() ? {} : await checkpointHumanInteraction(application, task);
     return { ...interaction, ...result, conversation, ...(triaged ? { triage: triaged } : {}),
       agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
         agentId: task.projectAgentId ?? null, name: team.name, sourceApplication: task.sourceApplication,
         workStatus: effectiveLog.status, conversationId: conversation?.conversation_id ?? null,
-        persistence: conversation?.status ?? null, collaborators: team.collaborators, capture: captureCheck }),
+        persistence: conversation?.status ?? null, collaborators: team.collaborators,
+        notices: receiptNotices(captureCheck) }),
       ...(team.ignored.length ? { ignored_collaborators: team.ignored } : {}) };
   };
   if (task.checkpoint?.phase === 'complete') {
@@ -262,6 +270,7 @@ export async function checkpointTaskKnowledge(application, {
       sourceSessionId: task.sessionId
     });
     if (prepared.status === 'capture_disabled') memoryResult = prepared;
+    else if (!captureCheck.allowed) memoryResult = captureDisabled(captureCheck);
     else memoryRequest = { expected_revision: prepared.request.expected_revision,
       memory: prepared.request.memory };
   }
@@ -270,7 +279,7 @@ export async function checkpointTaskKnowledge(application, {
     ...(task.projectAgentId ? { workLog: workLog ?? {
       status: agentMemory ? 'reported' : 'unreported', summary: reason
     } } : {}) };
-  const checkpoint = captureCheck.allowed ? recorded : uncapturedCheckpoint(recorded);
+  const checkpoint = storedCheckpoint(task, recorded, captureCheck);
   const preparedTask = await application.taskContextRegistry.prepare(
     taskContextToken, checkpoint, sourceApplication, memoryRequest
   );
@@ -281,15 +290,15 @@ export async function checkpointTaskKnowledge(application, {
     memoryResult = { status: 'checkpointed', ...agentMemoryRecord(preparedTask.agentMemory) };
   }
   const captureResult = internalActivity ? internalCaptureSkip(internalActivity) : captureInput
-    ? await application.captureSessionKnowledge(captureInput, { captureScope }) : null;
+    ? await captureKnowledge(captureInput) : null;
   const captureResults = scopedInputs ? [] : null;
   for (const batch of scopedInputs ?? []) {
-    const result = await application.captureSessionKnowledge(batch.input, { captureScope });
+    const result = await captureKnowledge(batch.input);
     captureResults.push(taskCaptureReceipt(batch.scope, batch.input, result));
   }
   const captureStatus = captureResults
     ? taskCaptureStatus(captureResults)
-    : captureResult?.status ?? null;
+    : captureResult?.status ?? checkpoint.captureStatus;
   const completedTask = await application.taskContextRegistry.checkpoint(taskContextToken, {
     ...checkpoint, captureStatus, ...(captureResults ? { captureResults } : {})
   }, sourceApplication);
@@ -353,7 +362,7 @@ export async function searchCurrentProjectKnowledge(
     limitPerQuery = 12,
     includeHistorical = false,
     includePending = false,
-    cursor = null
+    cursor = null, sourceApplication = null
   }
 ) {
   const projectResolution = agentProjectResolution(resolution);
@@ -378,7 +387,7 @@ export async function searchCurrentProjectKnowledge(
         query,
         limit: limitPerQuery,
         includeHistorical,
-        includePending,
+        includePending, sourceApplication,
         agentInvocation: true,
         agentToolName: 'search_current_project_knowledge'
       })

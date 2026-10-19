@@ -1,6 +1,6 @@
 import { projectCaptureReason, projectOffSince, storedProjectSettings, usesProjectModes } from './capture-project-mode.js';
 import { isTemporaryProjectId } from './temporary-project-scope.js';
-import { captureNotice } from '../agents/capture-notice.js';
+import { captureNotice } from './capture-notice.js';
 
 // The one place that decides whether a write may capture (rec#5 C1). Every
 // write path asks here: raw transcript, Agent conversation, task checkpoint,
@@ -34,7 +34,7 @@ export async function describeCapture(application, scope = {}) {
     personalProjectId: project?.personalProjectId ?? null, captured: decision.allowed,
     reason: decision.reason, layer: decision.layer,
     ...(decision.reason === 'project_off' ? { offSince: projectOffSince(settings, project.personalProjectId) } : {}),
-    notice: captureNotice(decision) } };
+    notice: captureNotice(decision.reason) } };
 }
 
 // The scope of a write made for a FULI task context. Task entry already

@@ -1,5 +1,4 @@
 import { sourceConsoleUrl } from '../graphiti/source-marker.js';
-import { captureNotice } from './capture-notice.js';
 
 export function agentProfileUrl(application, agentId) {
   return `${application.consoleUrl ?? sourceConsoleUrl(null)}/agents/${encodeURIComponent(application.config.personal.spaceId)}/${encodeURIComponent(agentId)}`;
@@ -30,27 +29,23 @@ function receiptText(value) {
 // The reply's attribution line: who led the task and who actually helped.
 export const RECEIPT_GUIDANCE = 'MUST end every final user-visible reply with agent_receipt.markdown unchanged, exactly once: greetings, status, errors, even with capture disabled or nothing retained. checkpoint_task_knowledge receipt overrides entry and names actual collaborators. Never invent owners or collaborators.';
 
-// capture: this turn's capture decision. A turn that is not recorded says so
-// at the end of the receipt (rec#5 C5); a recorded turn adds nothing.
 export function taskAgentReceipt(application, { projectId, agentId, name = null,
   sourceApplication = null, workStatus = null, conversationId = null, persistence = null,
-  collaborators = [], assignmentStatus = null, assignmentReason = null, capture = null }) {
+  collaborators = [], assignmentStatus = null, assignmentReason = null, notices = [] }) {
   const owner = agentId ? { agent_id: agentId, name,
     profile_url: agentProfileUrl(application, agentId), source_application: sourceApplication } : null;
   const helpers = owner ? [...new Map(collaborators.filter(item => item.agentId !== agentId)
     .map(item => [item.agentId, item])).values()].map(receiptCollaborator) : [];
-  const notice = captureNotice(capture);
-  const build = () => ({ required: true, markdown: (owner
+  const build = () => ({ required: true, markdown: [owner
     ? `FULI Agent：负责人 ${agentLink(application, agentId, name)}`
       + (helpers.length ? ` · 协作 ${helpers.map(item => collaboratorLink(application, item)).join('、')}` : '')
-    : unassignedReceipt(assignmentStatus, assignmentReason)) + (notice ? ` · ${notice}` : ''), owner,
+    : unassignedReceipt(assignmentStatus, assignmentReason), ...notices].join(' · '), owner,
     collaborators: helpers.map(item => ({ agent_id: item.agentId, name: item.name,
       profile_url: agentProfileUrl(application, item.agentId),
       ...(item.responsibility ? { responsibility: item.responsibility } : {}),
       ...(item.runCount ? { runs: item.runs, run_count: item.runCount,
         omitted_run_count: item.runCount - item.runs.length } : {}) })),
     personal_project_id: projectId, work_status: workStatus, persistence,
-    ...(notice ? { capture: { recorded: false, reason: capture.reason, notice } } : {}),
     continuation: owner ? agentContinuation(projectId, agentId, conversationId) : null,
     guidance: RECEIPT_GUIDANCE });
   let receipt = build();

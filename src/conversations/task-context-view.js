@@ -84,7 +84,6 @@ export function compactTaskContext(value) {
 function receiptView(receipt) {
   return withoutDefaults({ required: receipt.required, markdown: receipt.markdown,
     collaborators: receipt.collaborators, work_status: receipt.work_status, persistence: receipt.persistence,
-    capture: receipt.capture,
     guidance: ruleTextView(receipt.guidance, 'receipt_guidance') }, { flags: true });
 }
 

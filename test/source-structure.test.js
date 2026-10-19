@@ -49,35 +49,46 @@ test('the Vue browser entry remains an orchestration layer', () => {
   );
 });
 
-// rec#5 C1: one capture port decides every write. Settings surfaces may hand the
-// stored capture settings on whole (HTTP, MCP, console state) or forward the
-// reader (capture window); a call that names a client, inspects the result,
-// falls back to a default or keeps it for later decides a write outside the port.
-const CAPTURE_PORT = join('src', 'graphiti', 'capture-decision.js');
-const CAPTURE_SETTINGS_HANDOFF = /^getCapturePolicy(?:\(\)\s*(?=[,)}]|$)|\??\.bind\(|\s*:)/;
+// rec#5 C1-3: one capture port decides every write. Only the port and the store
+// itself may read the stored capture settings; the call sites listed here only
+// hand them on unchanged (settings display, MCP, console state, the capture
+// window forwarding the reader) or wire the store. Any other line that touches
+// the settings or their store, in any file, fails until it asks the port.
+const CAPTURE_PORT = 'src/graphiti/capture-decision.js';
+const CAPTURE_SETTINGS_OWNERS = new Set([CAPTURE_PORT, 'src/graphiti/capture-policy.js']);
+const CAPTURE_SETTINGS_ACCESS = /getCapturePolicy|capturePolicyStore|CapturePolicyStore|\bpolicyStore\b|capture-policy\.js/;
+const CAPTURE_SETTINGS_CALL_SITES = new Map([
+  ['src/http/graph-api-router.js', ['sendJson(response, 200, app.getCapturePolicy());']],
+  ['src/conversations/capture-window.js', ['getCapturePolicy: application.getCapturePolicy?.bind(application), personal: {']],
+  ['src/graphiti/federated-application.js', [
+    'CapturePolicyStore,', "} from './capture-policy.js';", 'capturePolicyStore,',
+    'const policyStore = capturePolicyStore ?? new CapturePolicyStore(', 'capturePolicyStore: policyStore,',
+    'capturePolicy: app.getCapturePolicy(), consoleUrl: app.consoleUrl });', 'capturePolicyStore = new CapturePolicyStore(),',
+    'this.capturePolicyStore = capturePolicyStore;', 'getCapturePolicy() {', 'return this.capturePolicyStore.read();',
+    'return this.capturePolicyStore.update(input);', 'capturePolicy: this.getCapturePolicy(),'
+  ]]
+]);
 
 function captureDecisionsOutsidePort(path, source) {
-  if (path === CAPTURE_PORT) return [];
-  return source.split(/\r?\n/).flatMap((line, index) => {
-    const offending = [...line.matchAll(/getCapturePolicy/g)].some(({ index: at }) => {
-      if (/^\s*getCapturePolicy\(\)\s*\{\s*$/.test(line)) return false;
-      if (/(?:const|let|var)\s+[\w$]+\s*=\s*[\w$.?]*$/.test(line.slice(0, at))) return true;
-      return !CAPTURE_SETTINGS_HANDOFF.test(line.slice(at));
-    }) || (line.includes('capturePolicyStore.read(') && line.trim() !== 'return this.capturePolicyStore.read();');
-    return offending ? [`- ${path}:${index + 1}: ${line.trim()}`] : [];
-  });
+  if (CAPTURE_SETTINGS_OWNERS.has(path)) return [];
+  const allowed = CAPTURE_SETTINGS_CALL_SITES.get(path) ?? [];
+  return source.split(/\r?\n/).flatMap((line, index) =>
+    CAPTURE_SETTINGS_ACCESS.test(line) && !allowed.includes(line.trim()) ? [`- ${path}:${index + 1}: ${line.trim()}`] : []);
 }
 
 test('capture writes are decided only by the capture port', () => {
   const offenders = sourceFiles('src').filter(path => extname(path) === '.js')
-    .flatMap(path => captureDecisionsOutsidePort(path, readFileSync(path, 'utf8')));
-  assert.deepEqual(offenders, [], `Ask captureDecision() from ${CAPTURE_PORT} instead:\n${offenders.join('\n')}`);
-  // The check must keep recognising the bypasses it exists for.
-  for (const bypass of [
-    "if (!app.getCapturePolicy?.('codex').enabled) return;",
-    'const policy = this.getCapturePolicy(sourceApplication);',
-    'const policy = app.getCapturePolicy();',
-    'const policy = app.getCapturePolicy?.() ?? { enabled: true };',
-    'if (this.capturePolicyStore.read().enabled) write();'
-  ]) assert.equal(captureDecisionsOutsidePort('src/example.js', bypass).length, 1, bypass);
+    .flatMap(path => captureDecisionsOutsidePort(path.split('\\').join('/'), readFileSync(path, 'utf8')));
+  assert.deepEqual(offenders, [], `Ask captureDecision() from ${CAPTURE_PORT}, or list a settings display call site:\n${offenders.join('\n')}`);
+  // The check must keep recognising the bypasses it exists for, including a
+  // helper that decides from the settings and a reader in a file not listed.
+  for (const [path, bypass] of [
+    ['src/example.js', "if (!app.getCapturePolicy?.('codex').enabled) return;"],
+    ['src/example.js', 'if (allowsCapture(app.getCapturePolicy())) write();'],
+    ['src/example.js', 'sendJson(response, 200, app.getCapturePolicy());'],
+    ['src/example.js', 'return this.capturePolicyStore.read();'],
+    ['src/example.js', "import { CapturePolicyStore } from './capture-policy.js';"],
+    ['src/graphiti/federated-application.js', 'if (allowsCapture(this.getCapturePolicy())) write();'],
+    ['src/graphiti/federated-application.js', 'const settings = policyStore.read();']
+  ]) assert.equal(captureDecisionsOutsidePort(path, bypass).length, 1, `${path}: ${bypass}`);
 });

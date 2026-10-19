@@ -4,7 +4,6 @@ import { lookupTranscriptTask } from './current-task-lookup.js';
 import { appendTranscriptPage } from './transcript-append.js';
 import { recoverFallbackTranscript } from './fallback-transcript-boundary.js';
 import { captureDecision, captureDisabled } from '../graphiti/capture-decision.js';
-import { captureHookNotice } from '../agents/capture-notice.js';
 
 const pending = reason => ({ status: 'partial', entryBlocked: true, reason });
 const retryReason = 'Transcript handoff is pending. Retry task entry to continue its saved progress; no new Agent context was supplied';
@@ -148,10 +147,8 @@ export async function recordTranscriptTaskEntry(guard, context) {
 }
 
 export function withTranscriptNotice(output, sync) {
-  const captureNotice = captureHookNotice(sync);
-  if (!captureNotice && !sync?.entryBlocked && !sync?.omitted && !['unsaved', 'partial'].includes(sync?.status)) return output;
-  const notice = captureNotice ?? sync.reason;
-  return { ...output, systemMessage: [output.systemMessage, `Fuli: ${notice}.`].filter(Boolean).join('\n') };
+  if (!sync?.entryBlocked && !sync?.omitted && !['unsaved', 'partial'].includes(sync?.status)) return output;
+  return { ...output, systemMessage: [output.systemMessage, `Fuli: ${sync.reason}.`].filter(Boolean).join('\n') };
 }
 
 // A scope switch is safe only after the old scope was flushed up to the current

@@ -25,8 +25,9 @@ const CONFIG = { version: 1, workspaces: [], personal: { providerUrl: 'http://12
 const CODEX_TRANSCRIPT = { normalize: normalizeCodexRecord, verify: verifyCodexTranscript };
 // Words from a turn the user chose not to record. No receipt, store or message may keep them.
 const PRIVATE = 'synthetic-private-words';
-const PROJECT_OFF = '此项目未开启记忆';
-const UNREGISTERED = '当前目录不是 FULI 项目，未记录';
+// Every notice also says that what the person submits explicitly still saves (rec#11 D-01).
+const PROJECT_OFF = '此项目未开启记忆；你明确提交的修改仍会保存';
+const UNREGISTERED = '当前目录不是 FULI 项目，未自动记录；你明确提交的修改仍会保存';
 const REGISTERED = ['thesis', 'family-ledger', 'job-hunt', 'novel'];
 
 async function fixture(t, { registered = REGISTERED } = {}) {
@@ -172,8 +173,7 @@ test('C2-1 selected mode records only the chosen project and tells the other one
 
   const thesis = await codexEntry(f, f.dirs.thesis);
   assert.equal(thesis.context.context.personal_project_id, 'thesis');
-  assert.doesNotMatch(receiptOf(thesis.context), /未开启记忆|未记录|记录已关闭/);
-  assert.equal(thesis.context.agent_receipt.capture, undefined, 'a recorded turn adds nothing to the receipt');
+  assert.doesNotMatch(receiptOf(thesis.context), /未开启记忆|未自动记录|自动记录已关闭/, 'a recorded turn adds nothing');
   const thesisCheckpoint = await finishTask(f, thesis.context);
   assert.deepEqual(thesisCheckpoint.capture_results.map(result => [result.scope, result.status]),
     [['current_project', 'committed'], ['personal_global', 'committed']],
@@ -184,7 +184,6 @@ test('C2-1 selected mode records only the chosen project and tells the other one
   const ledger = await codexEntry(f, f.dirs['family-ledger']);
   assert.equal(ledger.context.context.personal_project_id, 'family-ledger');
   assert.ok(receiptOf(ledger.context).endsWith(` · ${PROJECT_OFF}`), receiptOf(ledger.context));
-  assert.deepEqual(ledger.context.agent_receipt.capture, { recorded: false, reason: 'project_off', notice: PROJECT_OFF });
   assert.ok(ledger.output.hookSpecificOutput.additionalContext.includes(PROJECT_OFF), 'the hook delivers the notice');
   const ledgerCheckpoint = await finishTask(f, ledger.context);
   assert.equal(ledgerCheckpoint.status, 'checkpointed');
@@ -271,7 +270,7 @@ test('C2-5 a worktree of a project is that project, wherever it lives', async (t
   f.store.update({ projectMode: 'selected', selectedProjectIds: ['thesis'] });
   const recorded = await codexEntry(f, f.dirs.thesisWorktree);
   assert.equal(recorded.context.context.personal_project_id, 'thesis');
-  assert.doesNotMatch(receiptOf(recorded.context), /未开启记忆|未记录/);
+  assert.doesNotMatch(receiptOf(recorded.context), /未开启记忆|未自动记录/);
   const before = f.captureWrites().length;
   await finishTask(f, recorded.context);
   assert.ok(f.captureWrites().length > before);
@@ -342,7 +341,7 @@ test('a project deleted while listed has no effect, and registering it again res
   f.projects.add('thesis');
   const restored = await codexEntry(f, f.dirs.thesis, { session: 'synthetic-codex-session-2' });
   assert.equal(restored.context.context.personal_project_id, 'thesis');
-  assert.doesNotMatch(receiptOf(restored.context), /未开启记忆|未记录/);
+  assert.doesNotMatch(receiptOf(restored.context), /未开启记忆|未自动记录/);
 });
 
 test('C5-1 C5-2 the notice is on every turn and carries none of the turn', async (t) => {
@@ -365,26 +364,27 @@ test('C4-5 Claude Code, Codex and Cursor say the same thing and record nothing',
   f.store.update({ projectMode: 'all_except', excludedProjectIds: ['job-hunt'] });
   const entries = { claude_code: await claudeEntry(f, f.dirs['job-hunt']), codex: await codexEntry(f, f.dirs['job-hunt']),
     cursor: await cursorEntry(f, f.dirs['job-hunt']) };
-  const notices = Object.entries(entries).map(([client, entry]) => [client, receiptOf(entry.context).split(' · ').at(-1),
-    entry.context.agent_receipt.capture]);
-  assert.deepEqual(notices, ['claude_code', 'codex', 'cursor'].map(client => [client, PROJECT_OFF,
-    { recorded: false, reason: 'project_off', notice: PROJECT_OFF }]));
+  const notices = Object.entries(entries).map(([client, entry]) => [client, receiptOf(entry.context).split(' · ').at(-1)]);
+  assert.deepEqual(notices, ['claude_code', 'codex', 'cursor'].map(client => [client, PROJECT_OFF]));
+  // The two hooks that can show a message say it at entry too.
+  for (const client of ['claude_code', 'codex']) {
+    assert.ok(entries[client].output.systemMessage.includes(PROJECT_OFF), client);
+  }
   for (const [client, entry] of Object.entries(entries)) await finishTask(f, entry.context, client);
   assert.deepEqual(f.captureWrites(), []);
 });
 
 test('every reason that stops a turn has its one notice', async (t) => {
   for (const [name, setUp, notice] of [
-    ['global_off', f => f.store.update({ enabled: false }), '记录已关闭'],
-    ['client_off', f => f.store.update({ disabledSources: ['codex'] }), '记录已关闭'],
+    ['global_off', f => f.store.update({ enabled: false }), '自动记录已关闭；你明确提交的修改仍会保存'],
+    ['client_off', f => f.store.update({ disabledSources: ['codex'] }), '自动记录已关闭；你明确提交的修改仍会保存'],
     ['policy_unavailable', f => writeFile(capturePolicyPathForRuntime(f.runtimeConfigPath), '{ not json'),
-      '记录设置读取失败，本次未记录']
+      '记录设置读取失败，本次未自动记录；你明确提交的修改仍会保存']
   ]) {
     const f = await fixture(t);
     await setUp(f);
     const entry = await codexEntry(f, f.dirs.novel);
     assert.ok(receiptOf(entry.context).endsWith(` · ${notice}`), `${name}: ${receiptOf(entry.context)}`);
-    assert.equal(entry.context.agent_receipt.capture.reason, name);
   }
 });
 
@@ -403,7 +403,8 @@ test('the Agent can read and change project modes, and is told to confirm first'
   const changed = await callAgentTool(f.app, 'update_capture_policy', { projectMode: 'selected', selectedProjectIds: ['thesis'] });
   assert.equal(changed.enabled, false, 'changing projects never turns recording back on');
   const policy = await callAgentTool(f.app, 'get_capture_policy', { projectPath: f.dirs.thesis, sourceApplication: 'codex' });
-  assert.deepEqual([policy.current.captured, policy.current.reason, policy.current.notice], [false, 'global_off', '记录已关闭']);
+  assert.deepEqual([policy.current.captured, policy.current.reason, policy.current.notice],
+    [false, 'global_off', '自动记录已关闭；你明确提交的修改仍会保存']);
 });
 
 test('the settings page API reads and changes project modes', async (t) => {

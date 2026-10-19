@@ -85,9 +85,13 @@ export async function queryConversations(application, input) {
 }
 export async function resumeConversation(application, input) {
   const task = await application.taskContextRegistry.context(input.taskContextToken, input.sourceApplication);
-  const result = await application.personal.conversation('resume', {
+  // Binding this session to the resumed conversation only routes its later
+  // appends there. With automatic recording off there are none, so only the
+  // read runs and no binding is written (rec#11 D-01).
+  const capture = await captureDecision(application, taskCaptureScope(task));
+  const result = capture.allowed ? await application.personal.conversation('resume', {
     ...conversationTask(application, task), conversation_id: input.conversationId
-  });
+  }) : { status: 'resumed', conversation_id: input.conversationId, capture: captureDisabled(capture) };
   const context = await application.personal.conversation('query', {
     ...conversationScope(application, task), mode: 'context', conversation_id: input.conversationId
   });

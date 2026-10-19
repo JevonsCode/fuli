@@ -58,7 +58,7 @@ export class CapturePolicyStore {
     if (input.enabled !== undefined && typeof input.enabled !== 'boolean') {
       throw new TypeError('Capture policy enabled must be a boolean');
     }
-    const current = this.read();
+    const current = this.#currentForUpdate(input);
     const now = this.now();
     const next = {
       enabled: input.enabled ?? current.enabled,
@@ -73,6 +73,18 @@ export class CapturePolicyStore {
     }
     writeAtomically(this.path, { version: usesProjectModes(next) ? 2 : 1, ...next });
     return { ...next };
+  }
+
+  // Settings FULI cannot read record nothing until the person sets the global
+  // switch again; that repair starts from the defaults for every setting it
+  // does not name. A partial change without it cannot apply to unknown settings.
+  #currentForUpdate(input) {
+    try {
+      return this.read();
+    } catch (error) {
+      if (!(error instanceof CapturePolicyConfigurationError) || input.enabled === undefined) throw error;
+      return { ...DEFAULT_POLICY };
+    }
   }
 }
 

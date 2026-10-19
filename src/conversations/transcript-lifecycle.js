@@ -2,6 +2,7 @@ import { transcriptGuardFailureMessage, withTranscriptGuard } from './transcript
 import { syncConversationTranscript, claimTranscriptBoundary, recordTranscriptTaskEntry, transcriptCaptureScope,
   withTranscriptNotice } from './sync-transcript.js';
 import { captureDecision } from '../graphiti/capture-decision.js';
+import { captureNotice } from '../graphiti/capture-notice.js';
 import { recoverFailedTranscriptEntry } from './fallback-transcript-boundary.js';
 import { captureWindow, withCaptureBudget } from './capture-window.js';
 
@@ -11,7 +12,12 @@ import { captureWindow, withCaptureBudget } from './capture-window.js';
 export async function transcriptLifecycle({ application, runtimeConfigPath, input, sourceApplication, event, adapter, run,
   captureTimeoutMs = 750, signal }) {
   const entry = event === 'UserPromptSubmit';
-  const enabled = (await captureDecision(application, transcriptCaptureScope(input, sourceApplication))).allowed;
+  const capture = await captureDecision(application, transcriptCaptureScope(input, sourceApplication));
+  const enabled = capture.allowed;
+  // Each entry says when automatic recording is off (rec#11 D-01); Stop stays quiet.
+  const notice = entry ? captureNotice(capture.reason) : null;
+  const withCaptureNotice = value => notice
+    ? { ...value, systemMessage: [value.systemMessage, `Fuli: ${notice}`].filter(Boolean).join('\n') } : value;
   let started = false, output, context;
   const invoke = async () => {
     started = true;
@@ -53,7 +59,7 @@ export async function transcriptLifecycle({ application, runtimeConfigPath, inpu
           return claimTranscriptBoundary(app, input, sourceApplication, sync, adapter, entryGuard ? held : null);
         });
       }
-      return withTranscriptNotice(output, sync);
+      return withCaptureNotice(withTranscriptNotice(output, sync));
     });
   } catch (error) {
     // An entry failure is a real entry failure. Never retry it and accidentally

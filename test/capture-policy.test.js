@@ -175,4 +175,9 @@ test('a stored project setting FULI cannot read records nothing', async (t) => {
     assert.throws(() => store.read(), /Capture policy/, JSON.stringify(broken));
     assert.equal((await captureDecision(app, { sourceApplication: 'codex' })).reason, 'policy_unavailable');
   }
+  // A partial change cannot apply to settings nobody can read; setting the
+  // global switch again repairs them from the defaults.
+  assert.throws(() => store.update({ projectMode: 'selected' }), /Capture policy/);
+  assert.deepEqual(store.update({ enabled: false }), { enabled: false, disabledSources: [], ...ALL_PROJECTS,
+    updatedAt: store.read().updatedAt });
 });

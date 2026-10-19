@@ -3,6 +3,7 @@ import { assertTestToolsEnabled } from '../app/test-tools.js';
 import { activeTestToolsEnabled } from '../app/agent-request-context.js';
 import { agentInterfaceCatalog } from './interface-catalog.js';
 import { captureDecision, captureDisabled, describeCapture } from '../graphiti/capture-decision.js';
+import { captureNotice } from '../graphiti/capture-notice.js';
 
 const HANDLERS = Object.freeze({
   get_judgment_policy: (app, input) => app.judgment.policy(input),
@@ -93,8 +94,12 @@ const HANDLERS = Object.freeze({
     }
     return app.connectedKnowledge.query(input);
   },
-  record_knowledge_usage: (app, input) => app.recordKnowledgeUsage(input),
-  record_knowledge_feedback: (app, input) => app.recordKnowledgeFeedback(input),
+  // Usage feeds preference promotion and Agent-reported feedback is not the
+  // user's own edit, so both are automatic recording (rec#11 D-01).
+  record_knowledge_usage: (app, input) => captureGuard(app, sessionCaptureScope(input),
+    () => app.recordKnowledgeUsage(input)),
+  record_knowledge_feedback: (app, input) => captureGuard(app, sessionCaptureScope(input),
+    () => app.recordKnowledgeFeedback(input)),
   search_current_project_knowledge: (app, input) =>
     app.searchCurrentProjectKnowledge(input),
   discover_common_knowledge_candidates: (app, input) =>
@@ -207,10 +212,10 @@ const HANDLERS = Object.freeze({
   list_workflow_candidates: (app, input) => app.listWorkflowCandidates(input),
   recommend_next_workflow_steps: (app, input) =>
     app.recommendNextWorkflowSteps(input),
-  revise_personal_knowledge: (app, input) => app.reviseKnowledgeItem({
-    ...input,
-    operationActor: 'agent'
-  }),
+  // The console's own edits reach reviseKnowledgeItem as the person; this Agent
+  // path is not verifiably the person, so it stops with automatic recording.
+  revise_personal_knowledge: (app, input) => captureGuard(app, sessionCaptureScope(input),
+    () => app.reviseKnowledgeItem({ ...input, operationActor: 'agent' })),
   reassign_personal_knowledge: (app, input) => app.reassignKnowledgeItem({
     ...input,
     operationActor: 'agent'
@@ -274,9 +279,17 @@ export function dispatchGraphTool(app, name, input) {
   return handler(app, input);
 }
 
-// Agent-initiated project and Agent registration records what a session
-// established, so it follows the same capture decision as every other write.
+// Agent-initiated registration, usage, feedback and corrections record what a
+// session established, so they follow the same decision as every other write.
 async function captureGuard(app, scope, operation) {
   const capture = await captureDecision(app, scope);
-  return capture.allowed ? operation() : { route: 'disabled', ...captureDisabled(capture) };
+  return capture.allowed ? operation() : { route: 'disabled', ...captureDisabled(capture),
+    notice: captureNotice(capture.reason), guidance: CAPTURE_OFF_GUIDANCE };
+}
+
+const CAPTURE_OFF_GUIDANCE = 'Automatic recording is off, so nothing from this call was saved. Do not retry or describe it as saved; the user can still make explicit changes in the FULI console.';
+
+function sessionCaptureScope(input) {
+  return { sourceApplication: input?.sourceApplication, personalProjectId: input?.personalProjectId ?? null,
+    sessionId: input?.sessionId ?? null };
 }
