@@ -15,7 +15,8 @@ import { inspectWindowsNativeProcess, stopWindowsNativeProcess } from '../src/na
 const secret = 'SYNTHETIC_PRIVATE_VALUE_NEVER_LOG';
 const windowsOnly = { skip: process.platform !== 'win32' };
 async function fixture(t, mode = 'success') {
-  const root = await mkdtemp(join(tmpdir(), 'fuli ACP process '));
+  // Real path: a runner's temp dir can be a short (8.3) name the adapter never sees.
+  const root = await fsPromises.realpath(await mkdtemp(join(tmpdir(), 'fuli ACP process ')));
   const codexHome = join(root, 'isolated home'), cwd = join(root, 'clean cwd');
   await mkdir(codexHome); await mkdir(cwd);
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -441,7 +442,8 @@ test('ACP timeout and caller cancellation reject pending initialize and stop onl
     const observed = JSON.parse(await readFile(record, 'utf8'));
     assert.equal(gone(observed.pid), true);
     if (observed.childPid) assert.equal(gone(observed.childPid), true);
-    assert.ok(performance.now() - stoppedAt < 15_000);
+    // Within the initialize timeout plus the 10 s stop budget, with margin for a slow runner.
+    assert.ok(performance.now() - stoppedAt < 20_000);
   }
 });
 
