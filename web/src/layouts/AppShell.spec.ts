@@ -93,13 +93,13 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
-  it('names the destination, not the active tab, on a section page and keeps detail titles', async () => {
+  it('names the destination, not the active tab, and keeps the 对话 heading on a selected conversation', async () => {
     const { wrapper, router } = await setup('/roundtables')
     expect(wrapper.get('.app-title').text()).toBe('对话')
     expect(wrapper.findAll('[data-section]').map(tab => tab.text())).toEqual(['圆桌', '待决策'])
     await router.push('/roundtables/thread-1')
     await flushPromises()
-    expect(wrapper.get('.app-title').text()).toBe('页面')
+    expect(wrapper.get('.app-title').text()).toBe('对话')
     wrapper.unmount()
   })
 
