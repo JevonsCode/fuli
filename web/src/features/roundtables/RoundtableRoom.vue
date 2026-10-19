@@ -43,11 +43,16 @@ function show(id: string) {
   target?.scrollIntoView?.({ block: 'start' })
   target?.focus({ preventScroll: true })
 }
+// A reader who has selected text in the room is reading, not following.
+function selecting() {
+  const selection = window.getSelection?.()
+  return Boolean(selection && !selection.isCollapsed && selection.anchorNode && body.value?.contains(selection.anchorNode))
+}
 // Measured before the new messages render: was the reader at the end?
 watch(() => props.room.messages.length, async (length, previous) => {
   const first = props.room.messages[previous]
   if (!previous || length <= previous || !first) return
-  const following = gapToEnd(body.value) <= TAIL_FOLLOW_PX
+  const following = gapToEnd(body.value) <= TAIL_FOLLOW_PX && !selecting()
   const jump = jumpAfterLoad
   jumpAfterLoad = false
   await nextTick()

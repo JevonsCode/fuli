@@ -188,4 +188,47 @@ describe('RoundtablesPage live updates', () => {
     expect(wrapper.find('[data-roundtable-jump]').exists()).toBe(false)
     wrapper.unmount()
   })
+
+  it('does not follow new messages while the reader has text selected in the room', async () => {
+    let tail = false
+    getJson.mockImplementation(async (url: string) => {
+      if (url === '/api/roundtable/threads') return { threads: [] }
+      if (url.startsWith('/api/roundtable/chats?')) return { chats: [room], hasMore: false }
+      return tail ? page([4]) : page([1, 2, 3])
+    })
+    const { wrapper } = await mountAt('/roundtables/chat/room')
+    const body = wrapper.findAll('.roundtable-chat-body')[2]!.element
+    window.getSelection()!.selectAllChildren(body)
+    tail = true
+    send('chat', '{"chatId":"room","seq":4}')
+    await flushPromises()
+    expect(scrolledToEnd).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-roundtable-jump]').exists()).toBe(true)
+    window.getSelection()!.removeAllRanges()
+    wrapper.unmount()
+  })
+
+  it('never lets a read queued for one room run in the room opened after it', async () => {
+    const urls: string[] = []
+    const late = deferred<unknown>()
+    getJson.mockImplementation(async (url: string) => {
+      urls.push(url)
+      if (url === '/api/roundtable/threads') return { threads: [] }
+      if (url.startsWith('/api/roundtable/chats?')) return { chats: [room, { ...room, chatId: 'other' }], hasMore: false }
+      if (url.startsWith('/api/roundtable/chats/room') && url.includes('after=1')) return late.promise
+      return { ...page([1]), chatId: url.includes('/other') ? 'other' : 'room' }
+    })
+    const { wrapper, router } = await mountAt('/roundtables/chat/room')
+    send('chat', '{"chatId":"room","seq":2}')
+    send('chat-ready')
+    await flushPromises()
+    await router.push('/roundtables/chat/other')
+    await flushPromises()
+    late.resolve(page([1, 2]))
+    await flushPromises()
+    expect(urls.filter(url => url.startsWith('/api/roundtable/chats/other')).map(url => url.match(/after=\d+/)?.[0])).toEqual(['after=0'])
+    expect(shown(wrapper)).toEqual(['CHAT-1'])
+    wrapper.unmount()
+  })
 })
+

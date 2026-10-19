@@ -206,8 +206,10 @@ const refreshThreadDetail = singleFlight(async () => {
 })
 // Reads the open room from the end of what is shown. "check" only confirms
 // access and notices new messages when unread pages are still between.
-async function readRoomTail(mode: 'append' | 'check'): Promise<boolean> {
-  const scope = detail
+// The scope is the one the read was asked for: a read queued before the person
+// opened another conversation does nothing in the new one.
+async function readRoomTail(mode: 'append' | 'check', scope: ReadScope): Promise<boolean> {
+  if (scope !== detail) return false
   const current = room.value
   if (!current) return true
   loadingLater.value = true
@@ -239,8 +241,12 @@ async function readRoomTail(mode: 'append' | 'check'): Promise<boolean> {
 // while one read waits its turn share that read.
 function loadLater() {
   if (tailQueued) return Promise.resolve(true)
+  const scope = detail
   tailQueued = true
-  return inRoomOrder(() => { tailQueued = false; return readRoomTail('append') })
+  return inRoomOrder(() => {
+    if (scope === detail) tailQueued = false
+    return readRoomTail('append', scope)
+  })
 }
 // A change signal checks the open room; a room with more pages to read is only
 // marked, so loaded pages are never replaced.
@@ -260,7 +266,8 @@ async function reconnected() {
   reconnecting.value = true
   try {
     await loadChats()
-    const roomOk = room.value ? await inRoomOrder(() => readRoomTail('check')) : true
+    const opened = detail
+    const roomOk = room.value ? await inRoomOrder(() => readRoomTail('check', opened)) : true
     if (scope !== lists) return
     const ok = chatsOk && roomOk
     reloadFailed.value = !ok
