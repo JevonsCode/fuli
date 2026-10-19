@@ -246,6 +246,23 @@ test(`native setup refuses to overwrite newer Provider ${providerVersion} before
 });
 }
 
+test('native setup accepts a lower Provider only when the downgrade is explicit', async () => {
+  const paths = resolveSetupPaths({ dataDir: '/synthetic', packageRoot: '/package' });
+  const mutations = [];
+  const deps = {
+    platform: 'darwin', resolveJavaHome: async () => '/jdk-21', resolveUvCommand: async () => 'uv',
+    providerSourceFingerprint: async () => 'a'.repeat(64), pathExists: () => true,
+    readManifest: () => ({ status: 'ready', providerVersion: '99.0.0-rc.4+native.2' }),
+    installProvider: async () => mutations.push('install'), installNeo4j: async () => mutations.push('database'),
+    writeManifest: () => mutations.push('manifest')
+  };
+  await assert.rejects(ensureNativeRuntime({ paths, env: {}, runtimeSettings: DEFAULT_RUNTIME_SETTINGS }, deps), /--allow-provider-downgrade/);
+  assert.deepEqual(mutations, []);
+  await ensureNativeRuntime({ paths, env: {}, runtimeSettings: DEFAULT_RUNTIME_SETTINGS, allowProviderDowngrade: true }, deps);
+  assert.ok(mutations.includes('install'), 'the packaged Provider is installed over the higher-versioned one');
+  assert.ok(mutations.includes('manifest'));
+});
+
 for (const neo4jVersion of ['5.26.0', '2026.09.0']) {
   test(`native setup refuses Neo4j ${neo4jVersion} data reuse before mutation`, async () => {
     const paths = resolveSetupPaths({ dataDir: '/synthetic', packageRoot: '/package' });

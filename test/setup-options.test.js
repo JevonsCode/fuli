@@ -19,7 +19,8 @@ test('setup options have simple defaults', () => {
     codexOnly: false,
     skipAgents: false,
     personalOnly: true,
-    noStart: false
+    noStart: false,
+    allowProviderDowngrade: false
   });
 });
 
@@ -55,7 +56,8 @@ test('setup options parse explicit automation values', () => {
     codexOnly: true,
     skipAgents: true,
     personalOnly: true,
-    noStart: true
+    noStart: true,
+    allowProviderDowngrade: false
   });
 });
 
@@ -95,10 +97,17 @@ test('update accepts setup options and reports update-specific option errors', (
       codexOnly: false,
       skipAgents: false,
       personalOnly: true,
-      noStart: true
+      noStart: true,
+      allowProviderDowngrade: false
     }
   );
   assert.throws(() => parseUpdateOptions(['--wat']), /Unknown update option: --wat/);
+});
+
+test('setup accepts an explicit Provider downgrade only as a named flag', () => {
+  assert.equal(parseSetupOptions(['--allow-provider-downgrade']).allowProviderDowngrade, true);
+  assert.equal(parseSetupOptions([]).allowProviderDowngrade, false);
+  assert.throws(() => parseSetupOptions(['--allow-provider-downgrade', '--allow-provider-downgrade']), /Duplicate/);
 });
 
 test('uninstall options are intentionally limited to confirmation and data location', () => {

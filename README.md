@@ -667,6 +667,7 @@ and tells you to run `fuli setup`; it never applies setup changes implicitly.
 | `--skip-agents` | Do not change agent configuration or Skills |
 | `--connected-only` | Refresh only clients that already have a Fuli MCP entry; used automatically by update |
 | `--no-start` | Initialize the Provider without starting the UI |
+| `--allow-provider-downgrade` | Accept a lower native Provider version, for example moving from a local `rc` build to a public `beta`; back up the data folder first |
 | `--personal-only` | Use only the personal Provider; this is the default |
 | `--with-dev-public` | Start a development shared Provider for local integration work only |
 

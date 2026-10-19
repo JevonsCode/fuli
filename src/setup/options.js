@@ -13,7 +13,8 @@ const BOOLEAN_OPTIONS = Object.freeze({
   '--codex-only': 'codexOnly',
   '--skip-agents': 'skipAgents',
   '--connected-only': 'connectedOnly',
-  '--no-start': 'noStart'
+  '--no-start': 'noStart',
+  '--allow-provider-downgrade': 'allowProviderDowngrade'
 });
 
 const ADAPTIVE_MEMORY_OPTIONS = Object.freeze({
@@ -43,7 +44,8 @@ function parseSetupLikeOptions(args, command) {
     codexOnly: false,
     skipAgents: false,
     personalOnly: true,
-    noStart: false
+    noStart: false,
+    allowProviderDowngrade: false
   };
   const seen = new Set();
 

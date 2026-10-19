@@ -51,7 +51,7 @@ export function activeDestination(destinations: readonly NavDestination[], path:
   return destinations.find(destination => owns(destination.owns, path, destination.exact))
 }
 
-// The longest owning prefix wins, so /preferences/writing selects 写作品味, not 偏好.
+// The longest owning prefix wins, so /preferences/writing selects 品味, not 偏好.
 export function activeSection(destination: NavDestination | undefined, path: string): NavSection | undefined {
   return destination?.sections
     .filter(section => owns(section.owns, path))

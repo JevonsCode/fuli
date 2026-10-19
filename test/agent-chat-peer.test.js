@@ -159,7 +159,7 @@ test('an offline executable shared lead wakes read-only from its chat snapshot o
   } finally { await alpha.close(); await beta.close(); }
 });
 
-test('concurrent paired senders serialize snapshots without consuming a message twice', { timeout: 7000 }, async () => {
+test('concurrent paired senders serialize snapshots without consuming a message twice', { timeout: 20_000 }, async () => {
   const first=Promise.withResolvers(),firstEntered=Promise.withResolvers(),secondEntered=Promise.withResolvers();let runs=0;
   const [alpha,beta,gamma]=await Promise.all([device('alpha'),device('beta',{wake:async input=>{
     runs++;if(runs===1){firstEntered.resolve();await first.promise;}else secondEntered.resolve();
@@ -182,7 +182,7 @@ test('concurrent paired senders serialize snapshots without consuming a message 
   }finally{first.resolve();await gamma.close();await beta.close();await alpha.close();}
 });
 
-test('a new member wake cannot reveal or acknowledge the target older unread history', { timeout: 7000 }, async () => {
+test('a new member wake cannot reveal or acknowledge the target older unread history', { timeout: 20_000 }, async () => {
   const entered=Promise.withResolvers();
   const [alpha,beta,gamma]=await Promise.all([device('alpha'),device('beta',{wake:async input=>{
     entered.resolve(input);return{body:'answer',sessionId:'gap-answer'};

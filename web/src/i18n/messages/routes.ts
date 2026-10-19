@@ -8,7 +8,7 @@ export const routeMessages = {
       description: '全局与项目级的品味、个性和判断偏好。',
     },
     writingTaste: {
-      title: '写作品味',
+      title: '品味',
     },
     personalProjects: {
       title: '项目',
@@ -60,7 +60,7 @@ export const routeMessages = {
       description: 'Global and project taste, personality, and judgment preferences.',
     },
     writingTaste: {
-      title: 'Writing taste',
+      title: 'Taste',
     },
     personalProjects: {
       title: 'Projects',

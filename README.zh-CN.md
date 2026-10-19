@@ -576,6 +576,7 @@ HTTPS 公网部署。
 | `--skip-agents` | 不修改 Agent 配置或 Skills |
 | `--connected-only` | 仅刷新已有 Fuli MCP 配置的客户端；update 自动使用此选项 |
 | `--no-start` | 初始化 Provider，但不启动管理界面 |
+| `--allow-provider-downgrade` | 接受更低版本的原生 Provider，例如从本机 `rc` 版换到公开的 `beta` 版；先备份数据目录 |
 | `--personal-only` | 只使用个人 Provider；默认模式 |
 | `--with-dev-public` | 同时启动开发用公共 Provider，仅用于开发或联调 |
 
