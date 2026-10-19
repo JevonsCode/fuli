@@ -1,6 +1,7 @@
 // Synthetic fixtures only: temporary policy files, an in-memory task registry and a
 // recording Provider double. No FULI data directory, live Provider or client is used.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -304,3 +305,19 @@ for (const { name, policy, reason, notice } of [
     assert.ok(entry.agent_receipt.markdown.endsWith(` · ${notice} · 已创建项目，会话未记录`), entry.agent_receipt.markdown);
   });
 }
+
+test('one entry hook parses the capture policy file at most once', async (t) => {
+  const f = await fixture(t, policyFile({ enabled: true }));
+  let parses = 0;
+  const app = new FederatedGraphApplication(CONFIG, { taskContextRegistry: f.registry, fetchImpl: async () => Response.json([]),
+    capturePolicyStore: new CapturePolicyStore(capturePolicyPathForRuntime(f.runtimeConfigPath),
+      { readText: file => { parses += 1; return readFileSync(file, 'utf8'); } }) });
+  await runCodexLifecycleHook(['--event', 'UserPromptSubmit'], { write: () => {},
+    readInput: async () => ({ ...f.hookInput, session_id: 'synthetic-hook-session' }),
+    resolveRuntimeOptions: () => ({ runtimeConfigPath: f.runtimeConfigPath }), openApplication: () => app,
+    createLeases: () => ({ withGraphLease: async (_owner, operation) => operation(), close: async () => {} }) });
+  assert.equal(parses, 1);
+  await callAgentTool(app, 'checkpoint_task_knowledge', { taskContextToken: f.task.token, sourceApplication: 'codex',
+    disposition: 'retain_nothing', reason: 'Nothing new.', workLog: { status: 'completed', summary: 'Done.' } });
+  assert.equal(parses, 1, 'later decisions in the same process reuse the unchanged file');
+});

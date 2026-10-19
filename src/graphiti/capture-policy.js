@@ -3,6 +3,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -22,22 +23,46 @@ const DEFAULT_POLICY = Object.freeze({
 export class CapturePolicyConfigurationError extends TypeError {}
 
 export class CapturePolicyStore {
-  constructor(path = null, { now = () => new Date().toISOString() } = {}) {
+  constructor(path = null, {
+    now = () => new Date().toISOString(),
+    readText = file => readFileSync(file, 'utf8'),
+    statFile = file => statSync(file, { bigint: true })
+  } = {}) {
     this.path = path ? resolve(path) : null;
     this.now = now;
+    this.readText = readText;
+    this.statFile = statFile;
     this.memory = { ...DEFAULT_POLICY };
+    this.parsed = null;
   }
 
+  // Every write asks for a decision, so one hook reads the settings several
+  // times. The file is parsed again only when its identity, size or times
+  // change; a file that cannot be read or parsed is never served from cache.
   read() {
     if (!this.path) return { ...this.memory };
-    let parsed;
+    let version;
     try {
-      parsed = JSON.parse(readFileSync(this.path, 'utf8'));
+      const stat = this.statFile(this.path);
+      version = `${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
     } catch (error) {
+      this.parsed = null;
       if (error?.code === 'ENOENT') return { ...DEFAULT_POLICY };
       throw new CapturePolicyConfigurationError('Capture policy could not be read');
     }
-    return validateStoredPolicy(parsed);
+    if (this.parsed?.version !== version) {
+      this.parsed = null;
+      let value;
+      try {
+        value = JSON.parse(this.readText(this.path));
+      } catch (error) {
+        if (error?.code === 'ENOENT') return { ...DEFAULT_POLICY };
+        throw new CapturePolicyConfigurationError('Capture policy could not be read');
+      }
+      this.parsed = { version, policy: validateStoredPolicy(value) };
+    }
+    const { policy } = this.parsed;
+    return { ...policy, disabledSources: [...policy.disabledSources] };
   }
 
   update(input) {
