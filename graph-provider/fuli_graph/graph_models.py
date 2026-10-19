@@ -27,11 +27,11 @@ from .project_action_models import (
 )
 
 
+AgentAuthoritySuspension = Literal['negative_feedback_block', 'negative_evidence']
 AgentConfirmationBlockingReason = Literal[
     'not_pending',
     'open_conflict',
-    'negative_feedback_block',
-    'negative_evidence',
+    AgentAuthoritySuspension,
     'usage_unknown',
     'qualified_uses_below_threshold',
     'distinct_tasks_below_threshold',
@@ -96,6 +96,7 @@ class GraphNode(KnowledgeWeightView):
     last_feedback_at: datetime | None = None
     usage_generation: int = Field(default=1, ge=1)
     agent_confirmation_progress: AgentConfirmationProgress | None = None
+    agent_authority_suspension: AgentAuthoritySuspension | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
     evidence: list[GraphEvidence] = Field(default_factory=list)
     created_at: datetime | None = None
@@ -158,6 +159,7 @@ class GraphEdge(KnowledgeWeightView):
     last_feedback_at: datetime | None = None
     usage_generation: int = Field(default=1, ge=1)
     agent_confirmation_progress: AgentConfirmationProgress | None = None
+    agent_authority_suspension: AgentAuthoritySuspension | None = None
     valid_at: datetime | None
     invalid_at: datetime | None
     replaced_by_item_id: str | None = None

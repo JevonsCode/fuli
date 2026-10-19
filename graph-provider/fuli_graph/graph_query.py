@@ -28,6 +28,7 @@ from .project_knowledge import (
     read_project_references,
 )
 from .knowledge_weight import effective_confirmation_status, knowledge_weight
+from .negative_feedback_block import agent_authority_suspension
 
 
 async def read_graph(
@@ -635,6 +636,10 @@ def _graph_node(
                 record['id'], []
             ),
         ),
+        # Judged on the displayed status: an unaudited 'confirmed' reads pending.
+        agent_authority_suspension=agent_authority_suspension(
+            {**record, 'confirmation_status': status}
+        ),
         audit_events=(audits or {}).get(record['id'], []),
     )
 
@@ -750,6 +755,10 @@ def _graph_edge(
             preference_conflicts=(preference_conflicts or {}).get(
                 record['id'], []
             ),
+        ),
+        # Judged on the displayed status: an unaudited 'confirmed' reads pending.
+        agent_authority_suspension=agent_authority_suspension(
+            {**record, 'confirmation_status': status}
         ),
         audit_events=(audits or {}).get(record['id'], []),
     )

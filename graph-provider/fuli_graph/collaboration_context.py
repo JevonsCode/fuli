@@ -454,10 +454,7 @@ def _preference_item(
         return None
     # The same rule that stops usage promotion withdraws usage-derived
     # authority once negative feedback exists; a person's confirmation stays.
-    if (
-        confirmation_status == 'agent_confirmed'
-        and agent_authority_suspension(record) is not None
-    ):
+    if agent_authority_suspension(record) is not None:
         return None
     attributes = json_object(record.get('attributes_json'))
     key = str(record.get('key') or record.get('id'))

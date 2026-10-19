@@ -78,6 +78,13 @@ async def delivered(client, space_id, project_id):
     return sorted(item['id'] for item in response.json()['effective_preferences'])
 
 
+async def graph_suspension(client, space_id, item_id):
+    response = await client.get(f'/v1/spaces/{space_id}/graph', params={'limit': 500})
+    assert response.status_code == 200, response.text
+    [node] = [node for node in response.json()['nodes'] if node['id'] == item_id]
+    return node['agent_authority_suspension']
+
+
 async def item_state(settings, item_id):
     [state] = await query(settings, '''
         MATCH (item:Entity {uuid: $item})
@@ -156,7 +163,12 @@ async def test_neo4j_user_correction_is_not_revived_by_usage_and_lifts_only_on_c
         for task_id in ['task-4', 'task-5', 'task-6']:
             fresh = await use(client, space_id, task_id, old)
             assert (fresh['recorded_count'], fresh['promoted_count']) == (1, 0)
-        assert (await item_state(settings, old))['status'] == 'pending'
+        after_uses = await item_state(settings, old)
+        assert after_uses['status'] == 'pending'
+        assert after_uses['uses'] == 8
+        assert after_uses['utility'] <= blocked['utility']
+        assert after_uses['confidence'] <= blocked['confidence']
+        assert await graph_suspension(client, space_id, old) == 'negative_feedback_block'
 
         novel = await delivered(client, space_id, 'novel')
         assert old not in novel and restrained in novel
@@ -180,6 +192,7 @@ async def test_neo4j_user_correction_is_not_revived_by_usage_and_lifts_only_on_c
         assert confirmed.json()['current']['negativeFeedbackBlock'] is None
         restored = await item_state(settings, old)
         assert restored['status'] == 'confirmed' and restored['block'] is None
+        assert await graph_suspension(client, space_id, old) is None
         [revision] = await query(settings, '''
             MATCH (:FuliSpace {id: $space})-[:HAS_KNOWLEDGE_REVISION]->
                   (revision:FuliKnowledgeRevision)

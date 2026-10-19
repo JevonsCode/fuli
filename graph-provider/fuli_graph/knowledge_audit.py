@@ -349,6 +349,11 @@ async def _record_one_knowledge_use(store, actor, space, request, item):
             detail='knowledge changed while usage evidence was recorded; retry',
         )
     previous_status = state.get('confirmation_status') or 'pending'
+    stored_utility = float(state.get('utility_score') or 0)
+    stored_confidence = float(
+        state['confidence_score']
+        if state.get('confidence_score') is not None else 0.5
+    )
     if records[0].get('recorded') is not True:
         # A replayed event is already counted; it neither promotes, demotes
         # nor rescores, whatever happened to the item since.
@@ -357,11 +362,8 @@ async def _record_one_knowledge_use(store, actor, space, request, item):
             item_kind=item.item_kind,
             recorded=False,
             confirmation_status=previous_status,
-            utility_score=float(state.get('utility_score') or 0),
-            confidence_score=float(
-                state['confidence_score']
-                if state.get('confidence_score') is not None else 0.5
-            ),
+            utility_score=stored_utility,
+            confidence_score=stored_confidence,
             qualified_use_count=int(state.get('qualified_use_count') or 0),
             distinct_task_count=int(state.get('distinct_task_count') or 0),
             usage_generation=generation,
@@ -409,10 +411,16 @@ async def _record_one_knowledge_use(store, actor, space, request, item):
             + cited_count * USAGE_WEIGHTS['cited'][1]
             + applied_count * USAGE_WEIGHTS['applied'][1],
         )
+    suspension = agent_authority_suspension(state)
+    if suspension is not None:
+        # The use is recorded, but ranking stays where the negative feedback
+        # left it instead of being rebuilt from positive uses alone.
+        utility_score = min(utility_score, stored_utility)
+        confidence_score = min(confidence_score, stored_confidence)
     promoted = (
         previous_status == 'pending'
         and not state.get('has_open_conflict')
-        and agent_authority_suspension(state) is None
+        and suspension is None
         and qualified_use_count >= AGENT_CONFIRMATION_MIN_USES
         and distinct_task_count >= AGENT_CONFIRMATION_MIN_TASKS
     )

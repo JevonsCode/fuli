@@ -39,9 +39,13 @@ def negative_feedback_block_json(
 def agent_authority_suspension(record) -> str | None:
     """Why usage cannot confirm, or keep confirmed, this item; None when it can.
 
-    The record carries the stored block JSON and negative evidence count under
-    `negative_feedback_block_json` and `negative_evidence_count`.
+    The record carries `confirmation_status`, the stored block JSON as
+    `negative_feedback_block_json` and `negative_evidence_count`. Promotion,
+    effective-preference delivery, the graph view and usage ranking all read
+    this one answer; human-confirmed knowledge is never suspended.
     """
+    if record.get('confirmation_status') == 'confirmed':
+        return None
     if record.get('negative_feedback_block_json'):
         return 'negative_feedback_block'
     if int(record.get('negative_evidence_count') or 0) > 0:

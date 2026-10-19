@@ -289,6 +289,47 @@ async def test_open_conflict_blocks_agent_promotion_even_after_the_usage_thresho
 
 
 @pytest.mark.asyncio
+async def test_new_use_of_rejected_knowledge_is_recorded_without_raising_its_ranking():
+    driver = SequentialDriver([
+        [{
+            'confirmation_status': 'pending',
+            'confirmation_basis_json': None,
+            'usage_generation': 1,
+            'invalid_at': None,
+            'has_open_conflict': False,
+            'utility_score': 0.2,
+            'confidence_score': 0.35,
+            'negative_evidence_count': 1,
+            'negative_feedback_block_json': '{"audit_id": "feedback-1"}',
+        }],
+        [{'recorded': True}],
+        [{
+            'qualified_use_count': 9,
+            'distinct_task_count': 6,
+            'applied_count': 5,
+            'cited_count': 4,
+            'last_used_at': datetime(2026, 10, 20, tzinfo=timezone.utc),
+        }],
+        [{'confirmation_status': 'pending'}],
+    ])
+
+    result = await record_knowledge_usage(
+        StoreStub(driver),
+        {'id': 'principal-1'},
+        KnowledgeUsageCreate(
+            personal_space_id='personal-space',
+            task_id='task-9',
+            items=[{'item_id': 'entity-1', 'item_kind': 'entity', 'use_kind': 'applied'}],
+        ),
+    )
+
+    _, update = driver.calls[3]
+    assert (result.recorded_count, result.promoted_count) == (1, 0)
+    assert update['qualified_use_count'] == 9
+    assert (update['utility_score'], update['confidence_score']) == (0.2, 0.35)
+
+
+@pytest.mark.asyncio
 async def test_negative_evidence_flags_human_confirmed_knowledge_without_overriding_authority():
     driver = SequentialDriver([
         [{

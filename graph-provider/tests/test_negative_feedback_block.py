@@ -79,6 +79,8 @@ async def test_novelist_correction_survives_duplicate_and_new_use_and_keeps_clie
     }
     graph.add_preference(RESTRAINED_STYLE, '我自己的小说：保持克制', '我自己的小说不用夸张排比，保持克制。',
                          preference_key='novel-restraint', status='confirmed')
+    ranking_at_block = {key: graph.items[OLD_STYLE][key]
+                        for key in ['fuli_utility_score', 'fuli_confidence_score']}
 
     # And: the same usage event is replayed.
     before_duplicate = graph.state(OLD_STYLE)
@@ -95,6 +97,9 @@ async def test_novelist_correction_survives_duplicate_and_new_use_and_keeps_clie
         assert (result.recorded_count, result.promoted_count) == (1, 0)
     assert graph.items[OLD_STYLE]['fuli_confirmation_status'] == 'pending'
     assert graph.items[OLD_STYLE]['fuli_qualified_use_count'] == 10
+    # Later use still counts for history, but cannot lift ranking past the rejection.
+    for key, value in ranking_at_block.items():
+        assert graph.items[OLD_STYLE][key] <= value, key
     assert json.loads(graph.items[OLD_STYLE]['fuli_negative_feedback_block_json']) == block
 
     # Then: another client writing the next chapter gets the correction, not the old rule.
