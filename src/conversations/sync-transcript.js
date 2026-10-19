@@ -127,15 +127,9 @@ export async function recordTranscriptTaskEntry(guard, context) {
   await guard.write({ ...guard.value, phase: 'claim', nextOwner: transcriptDigest(token) });
 }
 
-// Capture the user switched off needs no notice each turn. Settings FULI could
-// not read do: the user believes capture is on. The notice names no content.
-const UNREADABLE_CAPTURE_SETTINGS = 'Capture settings could not be read, so nothing from this turn was recorded';
-
 export function withTranscriptNotice(output, sync) {
-  const unreadable = sync?.status === 'capture_disabled' && sync.reason === 'policy_unavailable';
-  if (!unreadable && !sync?.entryBlocked && !sync?.omitted && !['unsaved', 'partial'].includes(sync?.status)) return output;
-  const notice = unreadable ? UNREADABLE_CAPTURE_SETTINGS : sync.reason;
-  return { ...output, systemMessage: [output.systemMessage, `Fuli: ${notice}.`].filter(Boolean).join('\n') };
+  if (!sync?.entryBlocked && !sync?.omitted && !['unsaved', 'partial'].includes(sync?.status)) return output;
+  return { ...output, systemMessage: [output.systemMessage, `Fuli: ${sync.reason}.`].filter(Boolean).join('\n') };
 }
 
 // A scope switch is safe only after the old scope was flushed up to the current

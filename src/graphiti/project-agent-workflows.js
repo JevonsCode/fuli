@@ -624,6 +624,7 @@ export async function getProjectAgentContext(
       query,
       limit: limitPerQuery,
       includePending,
+      sourceApplication,
       agentInvocation: true,
       agentToolName: 'get_project_agent_context'
     }))),

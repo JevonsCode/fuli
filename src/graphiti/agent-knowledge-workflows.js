@@ -13,6 +13,7 @@ import { agentMemoryRecord, prepareProjectAgentMemory } from './project-agent-me
 import { internalCaptureSkip, normalizeTaskCaptures, taskCaptureInput, taskCaptureReceipt, taskCaptureReviewPaths, taskCaptureStatus } from './task-knowledge-routing.js';
 import { captureDisabled } from './capture-decision.js';
 import { checkpointCaptureDecision, storedCheckpoint } from './checkpoint-capture.js';
+import { receiptNotices } from './capture-notice.js';
 import { activeSealedWorkerRequest } from '../app/agent-request-context.js';
 import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
 import { checkpointHumanInteraction } from './checkpoint-human-interaction.js';
@@ -217,7 +218,8 @@ export async function checkpointTaskKnowledge(application, {
       agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
         agentId: task.projectAgentId ?? null, name: team.name, sourceApplication: task.sourceApplication,
         workStatus: effectiveLog.status, conversationId: conversation?.conversation_id ?? null,
-        persistence: conversation?.status ?? null, collaborators: team.collaborators }),
+        persistence: conversation?.status ?? null, collaborators: team.collaborators,
+        notices: receiptNotices(captureCheck) }),
       ...(team.ignored.length ? { ignored_collaborators: team.ignored } : {}) };
   };
   if (task.checkpoint?.phase === 'complete') {
@@ -357,7 +359,7 @@ export async function searchCurrentProjectKnowledge(
     limitPerQuery = 12,
     includeHistorical = false,
     includePending = false,
-    cursor = null
+    cursor = null, sourceApplication = null
   }
 ) {
   const projectResolution = agentProjectResolution(resolution);
@@ -382,7 +384,7 @@ export async function searchCurrentProjectKnowledge(
         query,
         limit: limitPerQuery,
         includeHistorical,
-        includePending,
+        includePending, sourceApplication,
         agentInvocation: true,
         agentToolName: 'search_current_project_knowledge'
       })

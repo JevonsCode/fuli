@@ -19,6 +19,8 @@ export function checkpointCaptureDecision(application, task) {
 export function storedCheckpoint(task, recorded, decision) {
   if (task.checkpoint ? !UNCAPTURED.test(task.checkpoint.reason ?? '') : decision.allowed) return recorded;
   const summary = `Capture was off for this task (${decision.layer}: ${decision.reason}); FULI kept no summary.`;
-  return { ...recorded, reason: summary, captureStatus: 'capture_disabled',
+  // Knowledge usage feeds preference promotion, so it stops too (rec#11 D-01).
+  const { knowledgeUsage: _notRecorded, ...kept } = recorded;
+  return { ...kept, reason: summary, captureStatus: 'capture_disabled',
     ...(recorded.workLog ? { workLog: { status: recorded.workLog.status, summary } } : {}) };
 }

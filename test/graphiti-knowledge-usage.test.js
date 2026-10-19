@@ -71,7 +71,8 @@ test('checkpoint sends explicit usage in both atomic requests and replays the Pr
   const app = new FederatedGraphApplication({ version: 1, personal: {
     providerUrl: 'http://127.0.0.1:8787', accessToken: 'personal-token',
     principalId: 'person-local', spaceId: 'personal-space'
-  }, workspaces: [] }, { capturePolicyStore: { read: () => ({ enabled: false }) }, fetchImpl: async (url, options) => {
+  }, workspaces: [] }, { capturePolicyStore: { read: () => ({ enabled: true }) }, fetchImpl: async (url, options) => {
+    if (new URL(url).pathname === '/v1/agent-conversations/append') return Response.json({ status: 'saved', conversation_id: 'c' });
     assert.equal(new URL(url).pathname, `/v1/task-contexts/${context.token}`
       + (options?.method === 'PUT' ? '/checkpoint' : ''));
     if (options?.method === 'PUT') {
@@ -91,9 +92,7 @@ test('checkpoint sends explicit usage in both atomic requests and replays the Pr
   for (const body of writes) {
     assert.equal(body.personal_space_id, 'personal-space');
     assert.equal(body.source_application, 'codex');
-    // Capture is off here, so the stored work log keeps its status but not the Agent's words.
-    assert.equal(body.work_log.status, input.workLog.status);
-    assert.equal(JSON.stringify(body).includes(input.workLog.summary), false);
+    assert.deepEqual(body.work_log, input.workLog);
     assert.deepEqual(body.knowledge_usage, [{ item_id: 'entity-1', item_kind: 'entity', use_kind: 'applied' }]);
     assert.equal(Object.hasOwn(body, 'task_id'), false, 'The Provider derives the stable task identity.');
   }

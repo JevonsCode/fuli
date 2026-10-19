@@ -274,3 +274,13 @@ test('host-bound normalization strips camelCase and snake_case trust aliases', (
     hostObservedAt: '2026-08-17T00:00:00.000Z'
   });
 });
+
+test('capture-gated tools carry the MCP client, so a client switched off cannot be forged around', () => {
+  for (const name of ['record_knowledge_usage', 'record_knowledge_feedback', 'revise_personal_knowledge',
+    'upsert_personal_project', 'get_knowledge_graph', 'search_current_project_knowledge']) {
+    for (const forged of [{}, { sourceApplication: 'other' }]) {
+      assert.equal(normalizeAgentSessionInput(name, { personalSpaceId: 'synthetic-space', ...forged },
+        null, 'claude-host', undefined, 'claude_code').sourceApplication, 'claude_code', name);
+    }
+  }
+});

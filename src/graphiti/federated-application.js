@@ -289,7 +289,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       personalProjectId, projectAgentId, projectPath, taskPrompt, sourceApplication,
       sourceSessionId, sessionId, turnId, workKind, workflow, requiredCapabilities,
       limit, agentInvocation, agentToolName
-    }, (items, toolName) => this.#recordAgentViews(items, toolName));
+    }, (items, toolName) => this.#recordAgentViews(items, toolName, { sourceApplication, projectPath,
+      personalProjectId: projectResolution.personalProjectId, sessionId: sessionId ?? sourceSessionId }));
     return finishTaskEntryPreferences(this, preferences, { agentInvocation, agentToolName,
       sessionId, sourceApplication, sourceSessionId, taskPrompt, workKind, workflow });
   }
@@ -300,13 +301,15 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     personalProjectId = null,
     projectPath = null,
     taskPrompt = null,
-    limit = 100
+    limit = 100,
+    sourceApplication = 'other'
   } = {}) {
     const context = await this.getCollaborationPreferences({
       personalProjectId,
       projectPath,
       taskPrompt,
       limit,
+      sourceApplication,
       agentInvocation: true,
       agentToolName: 'get_user_taste_skill'
     });
@@ -375,7 +378,9 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   searchKnowledge(input) {
     return searchFederatedKnowledge(this, input, {
       workspaceFor: providerUrl => this.#workspace(providerUrl),
-      recordAgentViews: (items, toolName) => this.#recordAgentViews(items, toolName)
+      recordAgentViews: (items, toolName) => this.#recordAgentViews(items, toolName, {
+        sourceApplication: input.sourceApplication, personalProjectId: input.personalProjectId ?? null,
+        sessionId: input.sourceSessionId ?? null })
     });
   }
 
@@ -433,7 +438,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     limit = 500,
     offset = null,
     agentInvocation = false,
-    agentToolName = 'get_knowledge_graph'
+    agentToolName = 'get_knowledge_graph',
+    sourceApplication = null
   }) {
     if (!providerUrl) {
       if (spaceId !== this.config.personal.spaceId) {
@@ -449,7 +455,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
         await this.#recordAgentViews([
           ...result.nodes.map(({ id }) => ({ item_id: id, item_kind: 'entity' })),
           ...result.edges.map(({ id }) => ({ item_id: id, item_kind: 'relationship' }))
-        ], agentToolName);
+        ], agentToolName, { sourceApplication, personalProjectId });
       }
       return mergeExternalKnowledgeProjection(
         this.externalKnowledge, result, spaceId, personalProjectId
@@ -716,7 +722,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     status = 'all',
     limit = 50,
     agentInvocation = false,
-    agentToolName = 'search_human_knowledge_changes'
+    agentToolName = 'search_human_knowledge_changes',
+    sourceApplication = null
   }) {
     this.#assertActivePersonalSpace(personalSpaceId);
     const result = await this.personal.searchHumanChanges({
@@ -731,7 +738,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
           item_id: itemId,
           item_kind: itemKind
         })),
-        agentToolName
+        agentToolName,
+        { sourceApplication }
       );
     }
     return result;
@@ -1052,7 +1060,10 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   close() { this.judgment?.close(); this.taskSchedules?.close(); this.roundtable?.close(); this.peer?.close(); return this.employees?.close(); }
 
-  async #recordAgentViews(items, toolName) {
+  // View records rank knowledge by what a session looked at: a behavior trace
+  // that stops with automatic recording. Reading itself needs none (rec#11 D-01).
+  async #recordAgentViews(items, toolName, scope) {
+    if (!items.length || !captureDecision(this, scope).allowed) return;
     const unique = new Map(items.map((item) => [
       `${item.item_kind}:${item.item_id}`,
       item
