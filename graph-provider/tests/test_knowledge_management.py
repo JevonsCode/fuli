@@ -358,6 +358,8 @@ async def test_batch_confirmation_updates_one_source_group_with_individual_revis
             'confirmation_status': 'pending',
             'confirmation_state_explicit': False,
         }],
+        UNCHANGED_SINCE_READ['entity-1'],
+        UNCHANGED_SINCE_READ['relationship-1'],
         [{'confirmed_count': 2}],
     ])
     store = StoreStub(driver)
@@ -437,6 +439,8 @@ async def test_batch_confirmation_lifts_a_negative_feedback_block_and_keeps_it_i
             'confirmation_status': 'pending',
             'confirmation_state_explicit': False,
         }],
+        UNCHANGED_SINCE_READ['entity-1'],
+        UNCHANGED_SINCE_READ['relationship-1'],
         [{'confirmed_count': 2}],
     ])
 
@@ -470,6 +474,53 @@ async def test_batch_confirmation_lifts_a_negative_feedback_block_and_keeps_it_i
     assert json.loads(unrelated['previous_json'])['negativeFeedbackBlock'] is None
 
 
+# Version each item reports once the batch locks it, when nothing wrote it
+# after its read (read rows without a version read as version 0).
+UNCHANGED_SINCE_READ = {
+    item_id: [{'item_id': item_id, 'lock_version': 1}]
+    for item_id in ['entity-1', 'relationship-1']
+}
+
+
+@pytest.mark.asyncio
+async def test_batch_confirmation_refuses_every_item_when_one_moved_after_its_read():
+    read = {
+        'name': 'Decision', 'summary': 'Keep it.', 'type': 'SUPPORTS', 'fact': 'Keep it.',
+        'invalid_at': None, 'origin_quadrant': 'known_known', 'current_quadrant': 'known_known',
+        'epistemic_status': 'observed', 'confirmation_status': 'pending',
+        'confirmation_state_explicit': False, 'ai_review_lock_version': 4,
+    }
+    driver = SequentialDriver([
+        [read],
+        [read],
+        [{'item_id': 'entity-1', 'lock_version': 5}],
+        # A rejection wrote the relationship after it was read.
+        [{'item_id': 'relationship-1', 'lock_version': 6}],
+    ])
+
+    with pytest.raises(HTTPException) as stale:
+        await confirm_knowledge_batch(StoreStub(driver), {'id': 'principal-1'},
+                                      KnowledgeBatchConfirmationCreate(
+            personal_space_id='personal-space', group_kind='source', group_value='episode-1',
+            reason='Reviewed every item from this source.', confirmer={'kind': 'user'},
+            items=[{
+                'item_id': item_id, 'item_kind': item_kind,
+                'existence_reason': 'Captured.', 'quadrant_reason': 'Stated.',
+                'proposed_by': {'kind': 'agent'},
+            } for item_kind, item_id in [('entity', 'entity-1'),
+                                         ('relationship', 'relationship-1')]],
+        ))
+
+    assert stale.value.status_code == 409
+    assert stale.value.detail.endswith('read these items again before confirming: '
+                                       'relationship:relationship-1')
+    entity_lock, relationship_lock = driver.calls[2], driver.calls[3]
+    assert 'MATCH (item:Entity {uuid: item_id' in entity_lock[0]
+    assert 'MATCH ()-[item:RELATES_TO {uuid: item_id' in relationship_lock[0]
+    assert relationship_lock[1]['item_ids'] == ['relationship-1']
+    assert len(driver.calls) == 4, 'The confirmation query never ran.'
+
+
 @pytest.mark.asyncio
 async def test_batch_confirmation_saves_nothing_when_the_source_group_changed():
     driver = SequentialDriver([
@@ -493,6 +544,7 @@ async def test_batch_confirmation_saves_nothing_when_the_source_group_changed():
             'confirmation_status': 'pending',
             'confirmation_state_explicit': False,
         }],
+        [{'item_id': 'entity-1', 'lock_version': 1}, {'item_id': 'entity-2', 'lock_version': 1}],
         [],
     ])
     store = StoreStub(driver)

@@ -12,7 +12,7 @@ from uuid import uuid4
 import pytest
 from neo4j import AsyncGraphDatabase
 
-from fuli_graph import knowledge_management
+from fuli_graph import knowledge_batch_confirmation, knowledge_management
 from test_project_agent_memory_neo4j import fixture_settings, provider_client
 
 
@@ -293,3 +293,80 @@ async def test_neo4j_edit_that_raced_a_rejection_is_refused_and_cannot_clear_it(
         assert retried.status_code == 200, retried.text
         assert retried.json()['previous']['negativeFeedbackBlock'] == block
         assert json.loads((await item_state(settings, item, item_kind))['block']) == block
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('rejected_kind', ['entity', 'relationship'])
+async def test_neo4j_batch_confirmation_read_before_a_rejection_is_refused_whole(
+    rejected_kind, monkeypatch,
+):
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await personal_space(client)
+        episode = str(uuid4())
+        entity, relationship = f'batch-entity-{uuid4()}', f'batch-relationship-{uuid4()}'
+        await seed_preference(settings, space_id, entity, 'Use dramatic parallelism.', key=entity)
+        await seed_relationship(settings, space_id, relationship, 'Use dramatic parallelism.')
+        await query(settings, '''
+            MATCH (space:FuliSpace {id: $space})
+            MATCH (entity:Entity {uuid: $entity})
+            MATCH ()-[relationship:RELATES_TO {uuid: $relationship}]->()
+            CREATE (episode:Episodic {uuid: $episode, group_id: space.group_id})
+            CREATE (episode)-[:MENTIONS]->(entity)
+            SET relationship.episodes = [$episode]
+            ''', space=space_id, entity=entity, relationship=relationship, episode=episode)
+        kinds = {entity: 'entity', relationship: 'relationship'}
+        rejected = entity if rejected_kind == 'entity' else relationship
+        read = knowledge_batch_confirmation._read_item
+
+        # The user's rejection commits right after the confirmer read that item.
+        async def rejection_lands(store, space, item_id, item_kind):
+            current = await read(store, space, item_id, item_kind)
+            if item_id == rejected:
+                response = await client.post('/v1/knowledge/feedback', json={
+                    'personal_space_id': space_id, 'task_id': 'task-correction',
+                    'items': [{
+                        'item_id': item_id, 'item_kind': item_kind, 'feedback_kind': 'rejected',
+                        'reason': 'The user rejected this style.',
+                        'evidence_summary': 'Synthetic fixture.', 'reported_by_kind': 'user',
+                    }],
+                })
+                assert response.status_code == 200, response.text
+            return current
+
+        payload = {
+            'personal_space_id': space_id, 'group_kind': 'source', 'group_value': episode,
+            'reason': 'The user reviewed every item from this source.',
+            'operation_actor': 'human',
+            'confirmer': {'kind': 'user', 'label': 'Synthetic user'},
+            'items': [{
+                'item_id': item_id, 'item_kind': item_kind,
+                'existence_reason': 'Captured from the source.', 'quadrant_reason': 'Stated.',
+                'proposed_by': {'kind': 'agent', 'label': 'Codex'},
+            } for item_id, item_kind in kinds.items()],
+        }
+        monkeypatch.setattr(knowledge_batch_confirmation, '_read_item', rejection_lands)
+        stale = await client.post('/v1/knowledge/batch-confirmations', json=payload)
+        monkeypatch.setattr(knowledge_batch_confirmation, '_read_item', read)
+
+        assert stale.status_code == 409, stale.text
+        assert f'{rejected_kind}:{rejected}' in stale.json()['detail']
+        block = json.loads((await item_state(settings, rejected, rejected_kind))['block'])
+        for item_id, item_kind in kinds.items():
+            assert (await item_state(settings, item_id, item_kind))['status'] == 'pending'
+        assert await query(settings, '''
+            MATCH (revision:FuliKnowledgeRevision) WHERE revision.item_id IN $items
+            RETURN revision.id AS id
+            ''', items=list(kinds)) == []
+
+        retried = await client.post('/v1/knowledge/batch-confirmations', json=payload)
+        assert retried.status_code == 200, retried.text
+        assert retried.json()['confirmed_count'] == 2
+        [revision] = await query(settings, '''
+            MATCH (revision:FuliKnowledgeRevision {item_id: $item})
+            RETURN revision.previous_json AS previous, revision.current_json AS current
+            ''', item=rejected)
+        assert json.loads(revision['previous'])['negativeFeedbackBlock'] == block
+        assert json.loads(revision['current'])['negativeFeedbackBlock'] is None
+        restored = await item_state(settings, rejected, rejected_kind)
+        assert restored['status'] == 'confirmed' and restored['block'] is None

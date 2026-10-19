@@ -17,10 +17,11 @@ from fastapi import HTTPException
 
 from fuli_graph.collaboration_context import read_collaboration_context
 from fuli_graph.knowledge_audit import record_knowledge_feedback, record_knowledge_usage
+from fuli_graph.knowledge_batch_confirmation import confirm_knowledge_batch
 from fuli_graph.knowledge_feedback_models import KnowledgeFeedbackCreate
 from fuli_graph.knowledge_management import revise_knowledge_item
 from fuli_graph.knowledge_usage_models import KnowledgeUsageCreate
-from fuli_graph.models import KnowledgeRevisionCreate
+from fuli_graph.models import KnowledgeBatchConfirmationCreate, KnowledgeRevisionCreate
 from fuli_graph.provider_values import stable_uuid
 from sequential_driver_support import AsyncRows
 
@@ -251,6 +252,83 @@ async def test_content_edit_that_raced_a_rejection_cannot_clear_the_block(item_k
     assert OLD_STYLE not in await delivered(store)
 
 
+CONFIRMATION_BASIS = {
+    'existence_reason': '用户明确确认了这条风格。',
+    'quadrant_reason': '用户直接表达。',
+    'proposed_by': {'kind': 'agent', 'label': 'Codex'},
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('item_kind', ['entity', 'relationship'])
+async def test_single_confirmation_read_before_a_rejection_is_refused(item_kind):
+    graph = MemoryGraph()
+    graph.add_preference(OLD_STYLE, '写作风格：夸张排比', '写作时多用夸张排比。', item_kind=item_kind)
+    store = graph.store()
+    graph.after_read = (OLD_STYLE, lambda: reject(store, OLD_STYLE, item_kind))
+    confirm = KnowledgeRevisionCreate(
+        personal_space_id=SPACE, item_kind=item_kind, action='confirm',
+        operation_actor='human', reason='用户确认这条风格。', confirmation_status='confirmed',
+        confirmation_basis={**CONFIRMATION_BASIS, 'confirmed_by': {'kind': 'user'},
+                            'confirmed_at': datetime(2026, 10, 20, tzinfo=UTC)},
+    )
+
+    with pytest.raises(HTTPException) as stale:
+        await revise_knowledge_item(store, ACTOR, OLD_STYLE, confirm)
+
+    assert stale.value.status_code == 409
+    block = json.loads(graph.items[OLD_STYLE]['fuli_negative_feedback_block_json'])
+    assert graph.items[OLD_STYLE]['fuli_confirmation_status'] == 'pending'
+    assert graph.revisions == []
+
+    # Confirming again after reading the rejection lifts it, and history keeps it.
+    revision = await revise_knowledge_item(store, ACTOR, OLD_STYLE, confirm)
+    assert revision.previous['negativeFeedbackBlock'] == block
+    assert json.loads(graph.revisions[0]['previous_json'])['negativeFeedbackBlock'] == block
+    assert graph.items[OLD_STYLE]['fuli_negative_feedback_block_json'] is None
+    assert graph.items[OLD_STYLE]['fuli_confirmation_status'] == 'confirmed'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('rejected_kind', ['entity', 'relationship'])
+async def test_batch_confirmation_read_before_a_rejection_is_refused_whole(rejected_kind):
+    graph = MemoryGraph()
+    items = {'entity': 'style-entity', 'relationship': 'style-relationship'}
+    for kind, item_id in items.items():
+        graph.add_preference(item_id, '写作风格：夸张排比', '写作时多用夸张排比。', item_kind=kind)
+    store = graph.store()
+    rejected = items[rejected_kind]
+    graph.after_read = (rejected, lambda: reject(store, rejected, rejected_kind))
+    request = KnowledgeBatchConfirmationCreate(
+        personal_space_id=SPACE, group_kind='source', group_value='episode-1',
+        reason='用户逐条确认了这次会话的风格。', operation_actor='human',
+        confirmer={'kind': 'user', 'label': '当前用户'},
+        items=[{'item_id': item_id, 'item_kind': kind, **CONFIRMATION_BASIS}
+               for kind, item_id in items.items()],
+    )
+
+    with pytest.raises(HTTPException) as stale:
+        await confirm_knowledge_batch(store, ACTOR, request)
+
+    assert stale.value.status_code == 409
+    assert f'{rejected_kind}:{rejected}' in stale.value.detail
+    block = json.loads(graph.items[rejected]['fuli_negative_feedback_block_json'])
+    # Nothing in the batch was confirmed and nothing was recorded.
+    assert {graph.items[item_id]['fuli_confirmation_status'] for item_id in items.values()} == {
+        'pending'}
+    assert graph.revisions == []
+    assert not [a for a in graph.audits.values() if a['action'] == 'human_change']
+
+    # The retry reads the rejection; the explicit confirmation lifts it and keeps it.
+    result = await confirm_knowledge_batch(store, ACTOR, request)
+    assert result.confirmed_count == 2
+    [revision] = [r for r in graph.revisions if r['item_id'] == rejected]
+    assert json.loads(revision['previous_json'])['negativeFeedbackBlock'] == block
+    assert json.loads(revision['current_json'])['negativeFeedbackBlock'] is None
+    assert graph.items[rejected]['fuli_negative_feedback_block_json'] is None
+    assert graph.items[rejected]['fuli_confirmation_status'] == 'confirmed'
+
+
 async def use(store, task_id, item_id, use_kind, item_kind='entity'):
     return await record_knowledge_usage(store, ACTOR, KnowledgeUsageCreate(
         personal_space_id=SPACE, task_id=task_id, session_id=f'session-{task_id}',
@@ -296,6 +374,9 @@ class MemoryGraph:
         self.audits = {}
         self.revisions = []
         self.projects = set()
+        # (item_id, coroutine function): runs once, right after that item's
+        # snapshot is read for a revision or confirmation.
+        self.after_read = None
 
     def add_project(self, project_id):
         self.projects.add(project_id)
@@ -363,7 +444,13 @@ class MemoryGraph:
         yield _MemoryTransaction(self)
 
     async def execute_query(self, query, **parameters):
-        return self._answer(query, parameters), None, None
+        rows = self._answer(query, parameters)
+        if (self.after_read and 'AS replaced_by_item_kind' in query
+                and parameters.get('item_id') == self.after_read[0]):
+            _, during = self.after_read
+            self.after_read = None
+            await during()
+        return rows, None, None
 
     def _answer(self, query, p):
         if 'active_groups' in p or 'PERSONAL_PROJECT_RELATION*1..2' in query:
@@ -376,6 +463,10 @@ class MemoryGraph:
                     for item in self._preferences(p, 'relationship')]
         if 'MATCH (node:Entity {group_id: $group_id})' in query and 'fuli_profile_aspect' in query:
             return [_returned(query, self._view(item)) for item in self._preferences(p, 'entity')]
+        if 'UNWIND $item_ids AS item_id' in query and 'AS lock_version' in query:
+            return self._lock_versions(query, p)
+        if "action: 'batch_confirm'" in query:
+            return self._batch_confirm(query, p)
         item = self.items.get(p.get('item_id'))
         if 'AS has_open_conflict' in query or 'AS replaced_by_item_kind' in query:
             return [_returned(query, self._view(item))] if item else []
@@ -553,6 +644,46 @@ class MemoryGraph:
                 item[name if name in {'name', 'summary', 'fact'} else f'fuli_{name}'] = p[name]
         item['fuli_invalid_at'] = p['invalid_at']
         return [{'item_id': item['uuid']}]
+
+    def _lock_versions(self, query, p):
+        kind = 'relationship' if 'RELATES_TO' in query else 'entity'
+        rows = []
+        for item_id in p['item_ids']:
+            item = self.items.get(item_id)
+            if item is None or item['kind'] != kind:
+                continue
+            _bump(query, item)
+            rows.append({'item_id': item_id,
+                         'lock_version': item['fuli_ai_review_lock_version']})
+        return rows
+
+    def _batch_confirm(self, query, p):
+        def valid(row):
+            item = self.items.get(row['item_id'])
+            content = (
+                item['name'] == row['expected_name']
+                and item['summary'] == row['expected_summary']
+                if row['item_kind'] == 'entity' else item['fact'] == row['expected_fact']
+            ) if item else False
+            return (content and item.get('fuli_invalid_at') is None
+                    and item['fuli_confirmation_status'] == 'pending'
+                    and item['fuli_origin_quadrant'] == row['expected_origin_quadrant'])
+        if not all(valid(row) for row in p['items']):
+            return []
+        clears_block = 'item.fuli_negative_feedback_block_json = NULL' in query
+        for row in p['items']:
+            item = self.items[row['item_id']]
+            _bump(query, item)
+            item.update(fuli_epistemic_status='confirmed', fuli_confirmation_status='confirmed',
+                        fuli_confirmation_basis_json=row['confirmation_basis_json'])
+            if clears_block:
+                item['fuli_negative_feedback_block_json'] = None
+            self.revisions.append({
+                'action': 'batch_confirm', 'item_id': row['item_id'],
+                'previous_json': row['previous_json'], 'current_json': row['current_json'],
+            })
+        count = len(p['items'])
+        return [{'valid_count': count, 'confirmed_count': count}]
 
     def _human_change(self, query, item, p):
         _bump(query, item)

@@ -11,6 +11,7 @@ from .models import (
     KnowledgeBatchConfirmationResult,
 )
 from .provider_values import stable_uuid as _stable_uuid
+from .store_transactions import query_store_transaction
 
 
 async def confirm_knowledge_batch(
@@ -75,6 +76,7 @@ async def confirm_knowledge_batch(
         rows.append({
             'item_id': item.item_id,
             'item_kind': item.item_kind,
+            'expected_lock_version': int(current.get('ai_review_lock_version') or 0),
             'expected_name': previous.get('name'),
             'expected_summary': previous.get('summary') or '',
             'expected_fact': previous.get('fact'),
@@ -97,42 +99,45 @@ async def confirm_knowledge_batch(
             ),
         })
 
-    records, _, _ = await store.runtime.driver.execute_query(
-        _BATCH_CONFIRM_QUERY,
-        space_id=space['id'],
-        group_id=space['group_id'],
-        group_kind=request.group_kind,
-        group_value=request.group_value,
-        items=rows,
-        reason=request.reason,
-        created_by=actor['id'],
-        confirmed_at=confirmed_at,
-    )
-    if not records:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                'batch confirmation changed before it could be saved; '
-                'refresh and review the group again'
-            ),
+    # The whole batch commits or none of it does.
+    async with query_store_transaction(store) as scoped:
+        await _refuse_items_changed_since_read(scoped, space, rows)
+        records, _, _ = await scoped.runtime.driver.execute_query(
+            _BATCH_CONFIRM_QUERY,
+            space_id=space['id'],
+            group_id=space['group_id'],
+            group_kind=request.group_kind,
+            group_value=request.group_value,
+            items=rows,
+            reason=request.reason,
+            created_by=actor['id'],
+            confirmed_at=confirmed_at,
         )
-    confirmed_count = int(records[0]['confirmed_count'])
-    if confirmed_count != len(rows):
-        raise HTTPException(
-            status_code=409,
-            detail='batch confirmation did not update every selected item',
-        )
-    if request.operation_actor == 'human':
-        for item in request.items:
-            await record_human_change(
-                store,
-                actor,
-                space,
-                item.item_id,
-                item.item_kind,
-                reason=request.reason,
-                operation='batch_confirmation',
+        if not records:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    'batch confirmation changed before it could be saved; '
+                    'refresh and review the group again'
+                ),
             )
+        confirmed_count = int(records[0]['confirmed_count'])
+        if confirmed_count != len(rows):
+            raise HTTPException(
+                status_code=409,
+                detail='batch confirmation did not update every selected item',
+            )
+        if request.operation_actor == 'human':
+            for item in request.items:
+                await record_human_change(
+                    scoped,
+                    actor,
+                    space,
+                    item.item_id,
+                    item.item_kind,
+                    reason=request.reason,
+                    operation='batch_confirmation',
+                )
     return KnowledgeBatchConfirmationResult(
         group_kind=request.group_kind,
         group_value=request.group_value,
@@ -145,6 +150,66 @@ async def confirm_knowledge_batch(
     )
 
 
+async def _refuse_items_changed_since_read(store, space, rows):
+    """Lock every selected item, then refuse the batch if any moved since its read.
+
+    Each item writer bumps fuli_ai_review_lock_version. Bumping it here takes
+    Neo4j's write lock before the version is read, so a rejection committed after
+    the confirmer read an item is seen, and the batch confirms nothing.
+    """
+    stale = []
+    for item_kind, query in (
+        ('entity', _LOCK_ENTITY_VERSIONS),
+        ('relationship', _LOCK_RELATIONSHIP_VERSIONS),
+    ):
+        expected = {
+            row['item_id']: row['expected_lock_version']
+            for row in rows if row['item_kind'] == item_kind
+        }
+        if not expected:
+            continue
+        records, _, _ = await store.runtime.driver.execute_query(
+            query,
+            group_id=space['group_id'],
+            item_ids=sorted(expected),
+        )
+        locked = {record['item_id']: int(record['lock_version']) for record in records}
+        stale.extend(
+            f'{item_kind}:{item_id}'
+            for item_id, version in sorted(expected.items())
+            if locked.get(item_id) != version + 1
+        )
+    if stale:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                'knowledge changed after it was read; read these items again '
+                'before confirming: ' + ', '.join(stale)
+            ),
+        )
+
+
+# Sorted ids keep the lock order deterministic across concurrent writers.
+_LOCK_ENTITY_VERSIONS = '''
+UNWIND $item_ids AS item_id
+MATCH (item:Entity {uuid: item_id, group_id: $group_id})
+SET item.fuli_ai_review_lock_version =
+      coalesce(item.fuli_ai_review_lock_version, 0) + 1
+RETURN item_id, item.fuli_ai_review_lock_version AS lock_version
+'''
+
+
+_LOCK_RELATIONSHIP_VERSIONS = '''
+UNWIND $item_ids AS item_id
+MATCH ()-[item:RELATES_TO {uuid: item_id, group_id: $group_id}]->()
+SET item.fuli_ai_review_lock_version =
+      coalesce(item.fuli_ai_review_lock_version, 0) + 1
+RETURN item_id, item.fuli_ai_review_lock_version AS lock_version
+'''
+
+
+# Runs after _refuse_items_changed_since_read in the same transaction, which
+# already locked every item and bumped its version.
 _BATCH_CONFIRM_QUERY = '''
 MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
 WITH space, $items AS items
@@ -204,8 +269,6 @@ CALL {
   UNWIND valid_entities AS valid
   WITH space, valid.item AS item, valid.row AS row
   ORDER BY 'entity:' + row.item_id
-  SET item.fuli_ai_review_lock_version =
-        coalesce(item.fuli_ai_review_lock_version, 0) + 1
   SET item.fuli_epistemic_status = 'confirmed',
       item.fuli_confirmation_status = 'confirmed',
       item.fuli_confirmation_basis_json = row.confirmation_basis_json,
@@ -230,8 +293,6 @@ CALL {
   UNWIND valid_relationships AS valid
   WITH space, valid.item AS item, valid.row AS row
   ORDER BY 'relationship:' + row.item_id
-  SET item.fuli_ai_review_lock_version =
-        coalesce(item.fuli_ai_review_lock_version, 0) + 1
   SET item.fuli_epistemic_status = 'confirmed',
       item.fuli_confirmation_status = 'confirmed',
       item.fuli_confirmation_basis_json = row.confirmation_basis_json,
