@@ -14,7 +14,7 @@ export async function readPersonalProfileGraph(spaceId: string, signal?: AbortSi
     graph = appendKnowledgeGraphPage(graph, result)
     if (!result.truncated) return graph
     const offset = result.next_offset
-    if (!Number.isInteger(offset) || offset == null || offset < 0 || visited.has(offset)) break
+    if (!Number.isInteger(offset) || offset == null || offset <= Number(query.get('offset')) || visited.has(offset)) break
     visited.add(offset)
     query.set('offset', String(offset))
   }

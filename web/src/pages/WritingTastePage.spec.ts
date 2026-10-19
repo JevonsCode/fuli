@@ -27,6 +27,20 @@ const EditDialogStub = defineComponent({
 })
 
 describe('WritingTastePage', () => {
+  it('clears the writing profile, preview and open forms when a shared dialog reports revoked access', async () => {
+    const profile = writingTasteProfile('active')
+    profile.rules = [writingRule('hypothesis', 'Working hypothesis')]
+    mockProfileRequests(profile)
+    const wrapper = mountPage()
+    await finishLoading()
+    await wrapper.get('[data-rule-confirm]').trigger('click')
+    wrapper.findComponent(ConfirmDialogStub).vm.$emit('accessDenied')
+    await flushPromises()
+    expect(wrapper.find('[data-writing-rule]').exists()).toBe(false)
+    expect(wrapper.find('[data-agent-preview]').exists()).toBe(false)
+    expect(wrapper.find('.confirm-dialog-stub').exists()).toBe(false)
+    wrapper.unmount()
+  })
   beforeEach(() => {
     vi.useFakeTimers()
     getJson.mockReset()

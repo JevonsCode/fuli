@@ -15,6 +15,23 @@ import KnowledgeEditDialog from './KnowledgeEditDialog.vue'
 import { knowledgeItemFromNode } from './model'
 
 describe('KnowledgeEditDialog', () => {
+  it('isolates a late scope write from a new record and preserves exact POST semantics', async () => {
+    let resolve!: (value: unknown) => void
+    postJson.mockReturnValue(new Promise(r => { resolve = r }))
+    const item = knowledgeItemFromNode({ id: 'scope-race', name: 'Synthetic scope', type: 'Preference', profile_aspect: 'taste', preference_scope: 'global' })
+    const wrapper = mount(KnowledgeEditDialog, { props: { item, personalSpaceId: 'scope-a', personalProjectId: null, projects: [] }, global: { plugins: [createPinia()] } })
+    const reason = wrapper.findAll('label').find(label => label.text().includes('调整原因'))
+      ?? wrapper.findAll('label').at(-1)
+    await reason!.get('textarea').setValue('Synthetic scope reason')
+    await wrapper.findAll('form')[1]!.trigger('submit')
+    expect(postJson).toHaveBeenCalledWith('/api/knowledge/entity/scope-race/preference-scope', { personalSpaceId: 'scope-a', scope: 'global', projectId: null, reason: 'Synthetic scope reason' })
+    await wrapper.setProps({ item: { ...item, id: 'other-record' }, personalSpaceId: 'scope-b' })
+    resolve({}); await flushPromises()
+    expect(wrapper.emitted('saved')).toBeUndefined()
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect(wrapper.get('dialog').attributes('aria-busy')).toBeUndefined()
+    wrapper.unmount()
+  })
   beforeEach(() => {
     patchJson.mockReset()
     patchJson.mockResolvedValue({})

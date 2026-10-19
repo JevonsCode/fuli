@@ -6,6 +6,7 @@ import { readPersonalProfileGraph } from '@/api/personal-profile-graph'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
 import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay'
+import { reconcileKnowledgeWrites } from '@/features/knowledge/knowledge-write-lifecycle'
 import KnowledgeConfirmDialog from '@/features/knowledge/KnowledgeConfirmDialog.vue'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
 import { formatTime, personalProfileItems } from '@/features/knowledge/model'
@@ -70,6 +71,18 @@ watch(
   { immediate: true, flush: 'sync' },
 )
 
+function revokeKnowledgeAccess() {
+  ++loadVersion
+  loadController?.abort()
+  profile.value = null
+  graph.value = null
+  confirmingItem.value = null
+  editingItem.value = null
+  showAgentPreview.value = false
+  loading.value = false
+  loadFailed.value = true
+}
+
 async function load(spaceId = store.activePersonalSpace?.id) {
   const version = ++loadVersion
   loadController?.abort()
@@ -82,6 +95,8 @@ async function load(spaceId = store.activePersonalSpace?.id) {
   const controller = new AbortController()
   loadController = controller
   loading.value = true
+  confirmingItem.value = null
+  editingItem.value = null
   try {
     const tasteQuery = new URLSearchParams({
       personalSpaceId: spaceId,
@@ -94,6 +109,7 @@ async function load(spaceId = store.activePersonalSpace?.id) {
     if (version !== loadVersion) return
     profile.value = isWritingTasteProfile(nextProfile) ? nextProfile : null
     graph.value = isKnowledgeGraph(nextGraph) ? nextGraph : null
+    if (graph.value) reconcileKnowledgeWrites(spaceId, personalProfileItems(graph.value))
     refreshDialogItems()
   } catch (error) {
     if (version !== loadVersion) return
@@ -238,6 +254,8 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
       :replacement-items="profileItems"
       @close="editingItem = null"
       @saved="load()"
+      @reload="load()"
+      @access-denied="revokeKnowledgeAccess"
     />
     <KnowledgeConfirmDialog
       :item="confirmingItem"
@@ -245,6 +263,8 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
       :personal-project-id="null"
       @close="confirmingItem = null"
       @saved="load()"
+      @reload="load()"
+      @access-denied="revokeKnowledgeAccess"
     />
   </section>
 </template>

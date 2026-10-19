@@ -7,6 +7,7 @@ import UiDialog from '@/ui/UiDialog.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import { quadrantLabel } from './model'
+import { useKnowledgeWriteLifecycle } from './knowledge-write-lifecycle'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
 import type { KnowledgeEdge, KnowledgeItem, KnowledgeNode, PersonalProject } from '@/types'
@@ -32,11 +33,16 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   close: []
   saved: []
+  accessDenied: []
+  reload: []
 }>()
 
 const store = useConsoleStore()
-const busy = ref(false)
+const accessRevoked = ref(false)
+const { busy, takingLong, locked, error: requestError, run } = useKnowledgeWriteLifecycle(() => props.item ? `${props.personalSpaceId}:${props.item.itemKind}:${props.item.id}` : '', () => { accessRevoked.value = true; emit('accessDenied'); emit('close') }, () => [props.personalProjectId, props.item])
 const pendingAction = ref<PendingAction | null>(null)
+const pendingLabel = computed(() => t(({ correction: 'preferences.detail.savingCorrection', invalidate: 'knowledge.dialogs.edit.invalidating', restore: 'knowledge.dialogs.edit.restoring', replacement: 'knowledge.dialogs.edit.savingReplacement', ownership: 'knowledge.dialogs.edit.changingOwnership', scope: 'knowledge.dialogs.edit.savingScope' } as const)[pendingAction.value ?? 'correction']))
+let actionVersion = 0
 const localError = ref('')
 const assignmentReason = ref('')
 const targetProjectId = ref('')
@@ -168,9 +174,12 @@ const currentProjectId = computed(() => {
 })
 
 watch(
-  () => props.item,
-  (item) => {
-    if (!item) return
+  () => [props.item, props.personalSpaceId, props.personalProjectId] as const,
+  ([item]) => {
+    accessRevoked.value = false;
+    ++actionVersion
+    pendingAction.value = null
+    if (!item) { for (const key of Object.keys(form) as Array<keyof typeof form>) form[key] = ''; preferenceReason.value = ''; assignmentReason.value = ''; localError.value = ''; pendingAction.value = null; return }
     const raw = item.raw
     form.name = item.itemKind === 'entity' ? (raw as KnowledgeNode).name : ''
     form.summary = item.itemKind === 'entity' ? ((raw as KnowledgeNode).summary ?? '') : ''
@@ -200,7 +209,7 @@ watch(
     form.reason = ''
     assignmentReason.value = ''
     targetProjectId.value = currentProjectId.value ?? props.projects[0]?.project_id ?? ''
-    preferenceScope.value = raw.preference_scope ?? 'global'
+    preferenceScope.value = raw.preference_scope === 'global' || raw.preference_scope === 'project' ? raw.preference_scope : ''
     preferenceProjectId.value = raw.preference_project_id ?? props.projects[0]?.project_id ?? ''
     preferenceReason.value = ''
     replacementItemKey.value = item.replacedByItemId && item.replacedByItemKind
@@ -281,7 +290,7 @@ async function saveCorrection() {
   }
   await execute('correction', async () => {
     await patchJson(`/api/knowledge/${item.itemKind}/${encodeURIComponent(item.id)}`, body)
-    store.notify(t('knowledge.dialogs.edit.notices.corrected'))
+    return (t('knowledge.dialogs.edit.notices.corrected'))
   })
 }
 
@@ -305,12 +314,12 @@ async function changeStatus(action: 'invalidate' | 'restore') {
       `/api/knowledge/${item.itemKind}/${encodeURIComponent(item.id)}`,
       body,
     )
-    store.notify(
+    return (
       action === 'invalidate'
         ? selectedReplacement.value
           ? t('knowledge.dialogs.edit.notices.invalidatedWithReplacement')
           : t('knowledge.dialogs.edit.notices.invalidated')
-        : t('knowledge.dialogs.edit.notices.restored'),
+        : t('knowledge.dialogs.edit.notices.restored')
     )
   })
 }
@@ -332,7 +341,7 @@ async function saveReplacement() {
         replacementItemKind: replacement.itemKind,
       },
     )
-    store.notify(t('knowledge.dialogs.edit.notices.replacementSaved'))
+    return (t('knowledge.dialogs.edit.notices.replacementSaved'))
   })
 }
 
@@ -355,13 +364,14 @@ async function saveAssignment() {
         reason: assignmentReason.value.trim(),
       },
     )
-    store.notify(t('knowledge.dialogs.edit.notices.assignmentChanged'))
+    return (t('knowledge.dialogs.edit.notices.assignmentChanged'))
   })
 }
 
 async function savePreferenceScope() {
   const item = props.item
   if (!item) return
+  if (!['global', 'project'].includes(preferenceScope.value)) return fail(t('preferences.detail.scopeUnknown'))
   const projectId = preferenceScope.value === 'project' ? preferenceProjectId.value : null
   if (preferenceScope.value === 'project' && !projectId) {
     return fail(t('knowledge.dialogs.edit.errors.preferenceProjectRequired'))
@@ -379,10 +389,10 @@ async function savePreferenceScope() {
         reason: preferenceReason.value.trim(),
       },
     )
-    store.notify(
+    return (
       preferenceScope.value === 'global'
         ? t('knowledge.dialogs.edit.notices.preferenceGlobal')
-        : t('knowledge.dialogs.edit.notices.preferenceProject'),
+        : t('knowledge.dialogs.edit.notices.preferenceProject')
     )
   })
 }
@@ -400,40 +410,38 @@ function replacementKey(itemKind: KnowledgeItem['itemKind'], itemId: string) {
   return JSON.stringify([itemKind, itemId])
 }
 
-async function execute(action: PendingAction, operation: () => Promise<void>) {
-  if (busy.value) return
-  busy.value = true
+async function execute(action: PendingAction, operation: () => Promise<string>) {
+  if (busy.value || locked.value) return
+  const version = ++actionVersion
   pendingAction.value = action
   localError.value = ''
-  try {
-    await operation()
+  let notice = ''
+  await run(async () => { notice = await operation() }, () => {
+    store.notify(notice)
     emit('close')
     emit('saved')
-  } catch (error) {
-    localError.value = error instanceof Error
-      ? error.message
-      : t('knowledge.dialogs.edit.errors.saveFailed')
-    store.reportError(error)
-  } finally {
-    busy.value = false
-    pendingAction.value = null
-  }
+  })
+  if (version === actionVersion) pendingAction.value = null
 }
 
 function fail(message: string) {
   localError.value = message
+  document.querySelector<HTMLElement>('.knowledge-edit-dialog textarea:invalid, .knowledge-edit-dialog input:invalid, .knowledge-edit-dialog textarea')?.focus()
 }
 </script>
 
 <template>
-  <UiDialog v-if="item" open class="knowledge-edit-dialog" size="xl" :busy="busy" :error="localError"
+  <p v-if="accessRevoked" role="alert">{{ t('preferences.detail.accessDenied') }}</p>
+  <UiDialog v-if="item && !accessRevoked" open class="knowledge-edit-dialog" size="xl" :busy="busy" :error="localError || requestError"
     :title="invalid ? t('knowledge.dialogs.edit.titleRestore') : t('knowledge.dialogs.edit.titleCorrect')"
     :description="t('knowledge.dialogs.edit.intro')" @close="emit('close')">
+    <UiButton v-if="locked && !busy" data-knowledge-reload @click="emit('reload')">{{ t('preferences.detail.reload') }}</UiButton>
+    <p v-if="takingLong" role="status">{{ t('preferences.detail.writeLong', { action: pendingLabel }) }}</p>
     <div class="knowledge-edit-columns">
       <section>
         <h3>{{ t('knowledge.dialogs.edit.currentContent') }}</h3>
         <form class="knowledge-editor-form" @submit.prevent="saveCorrection">
-          <fieldset class="knowledge-editor-group" :disabled="busy">
+          <fieldset class="knowledge-editor-group" :disabled="busy || locked">
             <label v-if="!relationship" class="ui-field">{{ t('knowledge.dialogs.edit.name') }}<input v-model="form.name" maxlength="512" /></label>
             <label v-if="!relationship" class="ui-field">{{ t('knowledge.dialogs.edit.description') }}<textarea v-model="form.summary" maxlength="4096" rows="5" /></label>
             <label v-else class="ui-field">{{ t('knowledge.dialogs.edit.fact') }}<textarea v-model="form.fact" maxlength="8192" rows="5" /></label>
@@ -478,7 +486,7 @@ function fail(message: string) {
                 <UiButton :busy="pendingAction === 'replacement'" :busy-label="t('knowledge.dialogs.edit.savingReplacement')" @click="saveReplacement">{{ t('knowledge.dialogs.edit.saveReplacement') }}</UiButton>
               </template>
               <UiButton variant="primary" type="submit" :busy="pendingAction === 'correction'"
-                :busy-label="t(form.confirmationStatus === 'confirmed' ? 'knowledge.dialogs.edit.savingConfirmed' : 'knowledge.dialogs.edit.savingPending')">
+                :busy-label="pendingLabel">
                 {{ form.confirmationStatus === 'confirmed' ? t('knowledge.dialogs.edit.saveConfirmed') : t('knowledge.dialogs.edit.savePending') }}
               </UiButton>
             </div>
@@ -490,7 +498,7 @@ function fail(message: string) {
         <h3>{{ t('knowledge.dialogs.edit.projectOwnership') }}</h3>
         <p class="ui-meta">{{ t('knowledge.dialogs.edit.ownershipCopy') }}</p>
         <form class="knowledge-editor-form" @submit.prevent="saveAssignment">
-          <fieldset class="knowledge-editor-group" :disabled="busy">
+          <fieldset class="knowledge-editor-group" :disabled="busy || locked">
             <UiSelect v-model="targetProjectId" field :options="projectOptions" :label="t('knowledge.dialogs.edit.targetProject')" searchable required />
             <label class="ui-field">{{ t('knowledge.dialogs.edit.assignmentReason') }}<textarea v-model="assignmentReason" maxlength="2000" rows="3" required /></label>
             <div class="knowledge-editor-actions">
@@ -504,7 +512,7 @@ function fail(message: string) {
         <h3>{{ t('knowledge.dialogs.edit.preferenceScope') }}</h3>
         <p class="ui-meta">{{ t('knowledge.dialogs.edit.preferenceScopeCopy') }}</p>
         <form class="knowledge-editor-form" @submit.prevent="savePreferenceScope">
-          <fieldset class="knowledge-editor-group" :disabled="busy">
+          <fieldset class="knowledge-editor-group" :disabled="busy || locked">
             <UiSelect v-model="preferenceScope" field :options="preferenceScopeOptions" :label="t('knowledge.dialogs.edit.effectiveScope')" />
             <UiSelect v-if="preferenceScope === 'project'" v-model="preferenceProjectId" field :options="projectOptions" :label="t('knowledge.dialogs.edit.personalProject')" searchable />
             <label class="ui-field">{{ t('knowledge.dialogs.edit.assignmentReason') }}<textarea v-model="preferenceReason" maxlength="2000" rows="3" required /></label>

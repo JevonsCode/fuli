@@ -25,6 +25,135 @@ const RouterLinkStub = defineComponent({
 })
 
 describe('PersonalProfilePage', () => {
+  async function fixture() {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.state = { mode: 'personal_only', activePersonalSpaceId: 'personal-space', personalSpaces: [{ id: 'personal-space', name: 'Synthetic' }], personalProjects: [], projects: [], subscriptions: [] }
+    const wrapper = mount(PersonalProfilePage, { global: { plugins: [pinia] } })
+    await finishProfileLoading()
+    return { wrapper, store }
+  }
+
+  it('keeps failed refresh evidence read-only and closes an already open form', async () => {
+    getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? profileGraph() : []))
+    const { wrapper } = await fixture()
+    await wrapper.get('.personal-profile-open').trigger('click')
+    await wrapper.get('.inspector-edit-action').trigger('click')
+    getJson.mockRejectedValue(Object.assign(new Error('synthetic secret response'), { status: 503 }))
+    await wrapper.get('button[aria-label="刷新"]').trigger('click')
+    await finishProfileLoading()
+    expect(wrapper.text()).toContain('更新失败，显示上次结果')
+    expect(wrapper.text()).toContain('全局品味')
+    expect(wrapper.find('.knowledge-edit-dialog').exists()).toBe(false)
+    expect(wrapper.find('.inspector-edit-action').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('synthetic secret response')
+    wrapper.unmount()
+  })
+
+  it('uses one 8s/30s read budget, rejects late success, and never reports failure as empty', async () => {
+    let resolveGraph!: (value: unknown) => void
+    getJson.mockImplementation((url: string) => url.startsWith('/api/graph') ? new Promise(resolve => { resolveGraph = resolve }) : Promise.resolve([]))
+    const { wrapper } = await fixture()
+    await vi.advanceTimersByTimeAsync(8000)
+    expect(wrapper.text()).toContain('读取时间较长')
+    await vi.advanceTimersByTimeAsync(22000)
+    expect(wrapper.text()).toContain('偏好读取失败')
+    expect(wrapper.find('.ui-empty').exists()).toBe(false)
+    resolveGraph(profileGraph())
+    await finishProfileLoading()
+    expect(wrapper.find('.personal-profile-row').exists()).toBe(false)
+    expect(wrapper.text()).toContain('重新读取')
+    wrapper.unmount()
+  })
+
+  it.each([401, 403])('clears summaries, evidence, forms and counts on %s, without revival after 503', async status => {
+    getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? profileGraph() : []))
+    const { wrapper } = await fixture()
+    await wrapper.get('.personal-profile-open').trigger('click')
+    await wrapper.get('.inspector-edit-action').trigger('click')
+    getJson.mockRejectedValue(Object.assign(new Error('private error'), { status }))
+    await wrapper.get('button[aria-label="刷新"]').trigger('click')
+    await finishProfileLoading()
+    expect(wrapper.text()).not.toContain('全局品味')
+    expect(wrapper.find('.knowledge-edit-dialog').exists()).toBe(false)
+    expect(wrapper.find('[data-profile-count]').exists()).toBe(false)
+    getJson.mockRejectedValue(Object.assign(new Error('private error'), { status: 503 }))
+    await wrapper.get('[data-profile-reload]').trigger('click')
+    await finishProfileLoading()
+    expect(wrapper.text()).not.toContain('全局品味')
+    wrapper.unmount()
+  })
+
+  it('requires both graph pages and conflicts, invalidates late authorization, and permits only complete retries', async () => {
+    let rejectConflict!: (error: unknown) => void
+    getJson.mockImplementation((url: string) => url.startsWith('/api/graph') ? Promise.resolve(profileGraph()) : new Promise((_, reject) => { rejectConflict = reject }))
+    const { wrapper } = await fixture()
+    expect(wrapper.find('.personal-profile-row').exists()).toBe(false)
+    rejectConflict({ status: 503 })
+    await finishProfileLoading()
+    expect(wrapper.text()).toContain('偏好读取失败')
+    getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? profileGraph() : []))
+    await wrapper.get('[data-profile-reload]').trigger('click')
+    await finishProfileLoading()
+    await wrapper.get('.personal-profile-open').trigger('click')
+    expect(wrapper.find('.inspector-edit-action').exists()).toBe(true)
+    let deny!: (error: unknown) => void
+    getJson.mockImplementation((url: string) => url.startsWith('/api/graph') ? Promise.reject({ status: 503 }) : new Promise((_, reject) => { deny = reject }))
+    await wrapper.get('button[aria-label="刷新"]').trigger('click')
+    await finishProfileLoading()
+    expect(wrapper.text()).toContain('全局品味')
+    deny({ status: 403 })
+    await finishProfileLoading()
+    expect(wrapper.text()).not.toContain('全局品味')
+    wrapper.unmount()
+  })
+
+  it('never turns unknown or incomplete project scope into a global write opportunity', async () => {
+    const graph = profileGraph()
+    graph.nodes[0].preference_scope = 'agent'
+    graph.nodes[1].preference_project_id = null
+    getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? graph : []))
+    const { wrapper } = await fixture()
+    await wrapper.get('.personal-profile-open').trigger('click')
+    expect(wrapper.get('.preference-summary').text()).toContain('范围待核实')
+    expect(wrapper.find('.inspector-edit-action').exists()).toBe(false)
+    expect(wrapper.find('.inspector-confirm-action').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('reconciles selection by kind and ID on refresh and removes hidden dialogs on filtering', async () => {
+    const graph = profileGraph()
+    graph.nodes = [graph.nodes[0]!]
+    const edge = { id: 'global', source: 'x', target: 'y', type: 'PREFERS', fact: 'RELATIONSHIP-SENTINEL', profile_aspect: 'personality', preference_scope: 'global' }
+    const nextGraph = { ...graph, edges: [edge] }
+    getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? nextGraph : []))
+    const { wrapper } = await fixture()
+    await wrapper.findAll('.personal-profile-open')[1]!.trigger('click')
+    expect(wrapper.get('.preference-body').text()).toContain('RELATIONSHIP-SENTINEL')
+    await wrapper.get('button[aria-label="刷新"]').trigger('click')
+    await finishProfileLoading()
+    expect(wrapper.get('.preference-body').text()).toContain('RELATIONSHIP-SENTINEL')
+    await wrapper.get('.inspector-edit-action').trigger('click')
+    await wrapper.get('[data-profile-aspects] button:nth-child(2)').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.knowledge-edit-dialog').exists()).toBe(false)
+    expect(wrapper.find('.preference-detail').exists()).toBe(false)
+    wrapper.unmount()
+  })
+  it('opens a visible replacement beyond the first 100 rows after changing filters', async () => {
+    const graph = profileGraph()
+    graph.nodes = Array.from({ length: 101 }, (_, index) => preferenceNode(`replacement-${index}`, `Synthetic replacement ${index}`, 'taste'))
+    Object.assign(graph.nodes[0]!, { invalid_at: '2026-10-18T10:00:00Z', replaced_by_item_kind: 'entity', replaced_by_item_id: 'replacement-100' })
+    getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? graph : []))
+    const { wrapper } = await fixture()
+    await wrapper.get('.personal-profile-open').trigger('click')
+    await wrapper.get('.preference-risk button').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.personal-profile-row.selected').text()).toContain('Synthetic replacement 100')
+    expect(wrapper.findAll('.personal-profile-row')).toHaveLength(101)
+    wrapper.unmount()
+  })
   beforeEach(() => {
     vi.useFakeTimers()
     config.global.stubs = {
@@ -32,7 +161,7 @@ describe('PersonalProfilePage', () => {
       RouterLink: RouterLinkStub,
     }
     getJson.mockReset()
-    getJson.mockResolvedValue(profileGraph())
+    getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? profileGraph() : []))
     postJson.mockReset()
     postJson.mockResolvedValue({})
     patchJson.mockReset()
@@ -314,7 +443,7 @@ describe('PersonalProfilePage', () => {
     const graph = profileGraph()
     graph.nodes[0].attributes = { preferenceKey: 'layout.density' }
     graph.nodes[1].attributes = { preferenceKey: 'layout.density' }
-    getJson.mockResolvedValue(graph)
+    getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? graph : []))
 
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -343,7 +472,7 @@ describe('PersonalProfilePage', () => {
 
     const conflictAction = wrapper
       .findAll('[data-stat]')
-      .find((button) => button.attributes('aria-label') === '当前没有疑似冲突')
+      .find((button) => button.attributes('aria-label') === '已读取记录中没有疑似冲突')
     expect(conflictAction?.text()).toContain('0')
   })
 
@@ -488,7 +617,7 @@ describe('PersonalProfilePage', () => {
     newer.summary = '卡片、宽度、水印、类型高度、全文提示、筛选排序、不透明确认区'
     newer.attributes = { preferenceKey: 'dashboard.layout' }
     graph.nodes.push(older, newer)
-    getJson.mockResolvedValue(graph)
+    getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? graph : []))
 
     const pinia = createPinia()
     setActivePinia(pinia)

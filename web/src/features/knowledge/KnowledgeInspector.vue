@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import UiButton from '@/ui/UiButton.vue'
-import { computed, ref } from 'vue'
+import KnowledgeRecords from './KnowledgeRecords.vue'
+import PreferenceDetail from './PreferenceDetail.vue'
+import { computed } from 'vue'
 
 import UiDisclosure from '@/components/UiDisclosure.vue'
 import { t } from '@/i18n'
@@ -18,26 +20,17 @@ import {
   humanChangeStatusLabel,
   isManagementKnowledgeItem,
   knowledgeItems,
-  knowledgeAuditActionLabel,
   knowledgeReviewState,
   personalProjectIdForItem,
   profileAspectLabel,
   projectMaterialTypeLabel,
   quadrantDescription,
   quadrantLabel,
-  revisionActionLabel,
   reviewStateLabel,
 } from './model'
-import {
-  copySourceSession,
-  sourceApplicationLabel,
-  sourceLinkForEvidence,
-  sourceLauncherAppName,
-} from './source-adapters'
 import { useConversationLauncherConfiguration } from './conversation-launcher-settings'
 import type {
   ConversationLauncherConfiguration,
-  EvidenceRecord,
   KnowledgeEdge,
   KnowledgeGraph,
   KnowledgeItem,
@@ -51,7 +44,9 @@ const props = defineProps<{
   currentProjectId?: string | null
   canPublishProject?: boolean
   canManageProject?: boolean
-  mode?: 'directory' | 'graph'
+  mode?: 'directory' | 'graph' | 'preference'
+  preferenceScopeLabel?: string
+  preferenceStatusLabel?: string
   conversationLaunchers?: ConversationLauncherConfiguration
 }>()
 
@@ -136,7 +131,6 @@ const classificationCopy = computed(() =>
   props.item ? classificationExplanation(props.item) : '',
 )
 const confirmationBasis = computed(() => props.item?.confirmationBasis ?? null)
-const copiedEvidenceKey = ref('')
 const storedConversationLaunchers = useConversationLauncherConfiguration()
 const conversationLaunchers = computed(
   () => props.conversationLaunchers ?? storedConversationLaunchers.value,
@@ -196,27 +190,12 @@ function preferenceScopeLabel(item: KnowledgeItem) {
   return t('knowledge.workspace.inspector.selectedProject', { project })
 }
 
-function conversationLink(evidence: EvidenceRecord) {
-  return sourceLinkForEvidence(evidence, conversationLaunchers.value)
-}
-
-function conversationAppName(evidence: EvidenceRecord) {
-  return sourceLauncherAppName(evidence, conversationLaunchers.value)
-}
-
-function evidenceKey(evidence: EvidenceRecord, index: number) {
-  return String(evidence.id ?? evidence.session_id ?? index)
-}
-
-async function copyEvidenceSession(evidence: EvidenceRecord, index: number) {
-  if (!await copySourceSession(evidence)) return
-  copiedEvidenceKey.value = evidenceKey(evidence, index)
-}
 </script>
 
 <template>
   <aside class="graph-inspector">
-    <template v-if="item">
+    <PreferenceDetail v-if="item && mode === 'preference'" :item="item" :graph="graph" :editable="editable" :scope-label="props.preferenceScopeLabel" :status-label="preferenceStatusLabel" :conversation-launchers="conversationLaunchers" @confirm="emit('confirm', $event)" @edit="emit('edit', $event)" @open-replacement="emit('openReplacement', $event)" />
+    <template v-else-if="item">
       <h3>{{ item.itemKind === 'entity' ? item.title : rawEdge?.type }}</h3>
       <p class="muted">{{ item.body }}</p>
 
@@ -428,87 +407,7 @@ async function copyEvidenceSession(evidence: EvidenceRecord, index: number) {
         </div>
       </template>
 
-      <template v-if="item.evidence.length">
-        <h4 class="inspector-subtitle">{{ t('knowledge.workspace.inspector.evidence') }}</h4>
-        <div class="inspector-evidence">
-          <article
-            v-for="(evidence, index) in item.evidence"
-            :key="evidenceKey(evidence, index)"
-            class="evidence-card"
-          >
-            <strong>{{ evidence.name || evidence.source_description || t('knowledge.workspace.inspector.sourceRecord') }}</strong>
-            <p>{{ evidence.summary || evidence.source_description }}</p>
-            <span>
-              {{ sourceApplicationLabel(evidence) }}
-              · {{ evidence.source_kind || t('knowledge.workspace.inspector.source') }}
-              · {{ formatTime(evidence.reference_time || evidence.created_at) }}
-            </span>
-            <p v-if="evidence.source_excerpt" class="evidence-excerpt">{{ evidence.source_excerpt }}</p>
-            <div v-if="evidence.session_id" class="evidence-source-actions">
-              <button
-                class="evidence-source-action"
-                type="button"
-                @click="copyEvidenceSession(evidence, index)"
-              >
-                {{
-                  copiedEvidenceKey === evidenceKey(evidence, index)
-                    ? t('knowledge.workspace.inspector.copiedSessionId')
-                    : t('knowledge.workspace.inspector.copySessionId')
-                }}
-              </button>
-              <a
-                v-if="conversationLink(evidence)"
-                class="evidence-source-action"
-                :href="conversationLink(evidence) ?? undefined"
-                :title="t('knowledge.workspace.inspector.openConversationWith', {
-                  app: conversationAppName(evidence) ?? sourceApplicationLabel(evidence),
-                })"
-              >
-                {{ t('knowledge.workspace.inspector.openConversation') }}
-              </a>
-            </div>
-          </article>
-        </div>
-      </template>
-
-      <template v-if="item.revisions.length">
-        <h4 class="inspector-subtitle">{{ t('knowledge.workspace.inspector.revisions') }}</h4>
-        <div class="inspector-history">
-          <article v-for="(revision, index) in item.revisions" :key="String(revision.id ?? index)" class="history-row">
-            <strong>{{ revisionActionLabel(revision.action as string | undefined) }}</strong>
-            <p>{{ revision.reason ?? revision.summary ?? t('knowledge.workspace.inspector.noRevisionCopy') }}</p>
-            <span>{{ formatTime(revision.created_at as string | undefined) }}</span>
-          </article>
-        </div>
-      </template>
-
-      <template v-if="item.auditEvents.length">
-        <h4 class="inspector-subtitle">{{ t('knowledge.workspace.inspector.audit') }}</h4>
-        <div class="inspector-history inspector-audit-history">
-          <article
-            v-for="event in item.auditEvents"
-            :key="event.id"
-            class="history-row"
-          >
-            <strong>{{ knowledgeAuditActionLabel(event.action) }}</strong>
-            <p>{{ event.reason }}</p>
-            <span>
-              {{ t('knowledge.workspace.inspector.version', { version: event.human_change_version }) }}
-              · {{ formatTime(event.created_at) }}
-            </span>
-            <small v-if="event.action === 'agent_review'">
-              {{ t('knowledge.workspace.inspector.conflictClassification', {
-                conflict: event.conflict_check === 'no_conflict'
-                  ? t('knowledge.workspace.inspector.conflictNone')
-                  : t('knowledge.workspace.inspector.conflictFound'),
-                classification: event.classification_check === 'reasonable'
-                  ? t('knowledge.workspace.inspector.classificationReasonable')
-                  : t('knowledge.workspace.inspector.classificationAdjust'),
-              }) }}
-            </small>
-          </article>
-        </div>
-      </template>
+      <KnowledgeRecords :item="item" :conversation-launchers="conversationLaunchers" />
     </template>
     <template v-else>
       <h3>{{ t('knowledge.workspace.inspector.placeholderTitle') }}</h3>

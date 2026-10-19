@@ -28,6 +28,7 @@ const emit = defineEmits<{
   'close-publish': []
   'close-profile': []
   'refresh': []
+  'access-denied': []
   'project-saved': [result: { status: string }, targetName: string]
   'profile-saved': [project: PersonalProject]
 }>()
@@ -50,6 +51,8 @@ function profileSaved(project: PersonalProject) {
     :replacement-items="replacementItems"
     @close="emit('close-edit')"
     @saved="emit('refresh')"
+    @reload="emit('refresh')"
+    @access-denied="emit('access-denied')"
   />
   <KnowledgeConfirmDialog
     :item="confirmingItem"
@@ -57,6 +60,8 @@ function profileSaved(project: PersonalProject) {
     :personal-project-id="confirmingProjectId"
     @close="emit('close-confirm')"
     @saved="emit('refresh')"
+    @reload="emit('refresh')"
+    @access-denied="emit('access-denied')"
   />
   <KnowledgeProjectDialog
     :item="projectActionItem"

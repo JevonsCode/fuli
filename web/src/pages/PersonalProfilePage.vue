@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import UiButton from '@/ui/UiButton.vue'
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { getJson, postJson } from '@/api/client'
@@ -9,14 +9,14 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { UiEmpty, UiIconButton, UiSegmented, UiStatRow, UiToolbar, type UiStat } from '@/ui'
 import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay'
+import { reconcileKnowledgeWrites } from '@/features/knowledge/knowledge-write-lifecycle'
 import KnowledgeConfirmDialog from '@/features/knowledge/KnowledgeConfirmDialog.vue'
 import KnowledgeInspector from '@/features/knowledge/KnowledgeInspector.vue'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
 import PreferenceConflictDialog from '@/features/preferences/PreferenceConflictDialog.vue'
 import {
   detectPreferenceConflicts,
-  preferenceConflictRecordItemIds,
-  preferenceValue,
+    preferenceValue,
   type PreferenceConflict,
   type PreferenceConflictRecord,
 } from '@/features/preferences/preference-conflicts'
@@ -36,6 +36,13 @@ import type { KnowledgeGraph, KnowledgeItem } from '@/types'
 const store = useConsoleStore()
 const graph = ref<KnowledgeGraph | null>(null)
 const loading = ref(false)
+const snapshotReady = ref(false)
+const loadFailed = ref(false)
+const takingLong = ref(false)
+const readStatus = ref<number | null>(null)
+const pageElement = ref<HTMLElement | null>(null)
+let slowTimer: ReturnType<typeof setTimeout> | undefined
+let deadlineTimer: ReturnType<typeof setTimeout> | undefined
 const initialLoading = computed(() => loading.value && !graph.value)
 const showInitialLoading = useMinimumLoadingDisplay(initialLoading)
 const activeAspect = ref('all')
@@ -66,6 +73,7 @@ const editingItem = ref<KnowledgeItem | null>(null)
 const activeConflict = ref<PreferenceConflict | null>(null)
 const conflictRecords = ref<PreferenceConflictRecord[]>([])
 const deferringConflictId = ref('')
+const deferTakingLong = ref(false)
 let loadVersion = 0
 let loadController: AbortController | null = null
 
@@ -74,7 +82,7 @@ const conflicts = computed(() =>
   detectPreferenceConflicts(items.value, conflictRecords.value),
 )
 const conflictingIds = computed(
-  () => new Set(conflicts.value.flatMap(({ left, right }) => [left.id, right.id])),
+  () => new Set(conflicts.value.flatMap(({ left, right }) => [itemKey(left), itemKey(right)])),
 )
 const aiResolvedIds = computed(
   () => new Set(
@@ -83,7 +91,7 @@ const aiResolvedIds = computed(
         ({ status, resolved_by: resolvedBy }) =>
           status === 'resolved' && resolvedBy === 'agent',
       )
-      .flatMap(preferenceConflictRecordItemIds),
+      .flatMap(record => [`${record.left_item_kind}:${record.left_item_id}`, `${record.right_item_kind}:${record.right_item_id}`]),
   ),
 )
 const visibleItems = computed(() =>
@@ -144,7 +152,7 @@ const scopeOptions = computed(() => {
       label: t('preferences.profile.scopes.global'),
       meta: t('common.counts.items', {
         count: items.value.filter(
-          ({ preferenceScope }) => preferenceScope !== 'project',
+          (item) => knownScope(item) && item.preferenceScope === 'global',
         ).length,
       }),
     },
@@ -205,20 +213,52 @@ function selectStat(key: string) {
 }
 const isSelected = (item: KnowledgeItem) => selectedItem.value?.id === item.id && selectedItem.value?.itemKind === item.itemKind
 // Details open inline under their row; a second click closes them.
-function toggleItem(item: KnowledgeItem) {
+async function toggleItem(item: KnowledgeItem) {
   selectedItem.value = isSelected(item) ? null : item
+  closeForms()
+  if (selectedItem.value) {
+    await nextTick()
+    const row = pageElement.value?.querySelector('.personal-profile-row.selected')
+    const bounds = row?.querySelector('.personal-profile-open')?.getBoundingClientRect()
+    if (bounds && (bounds.top < 72 || bounds.bottom > window.innerHeight - 80)) row?.scrollIntoView?.({ block: 'start', behavior: 'instant' })
+  }
+}
+
+function closeForms() {
+  confirmingItem.value = null
+  editingItem.value = null
+  activeConflict.value = null
+}
+function clearPrivateContent() {
+  graph.value = null
+  conflictRecords.value = []
+  selectedItem.value = null
+  snapshotReady.value = false
+  deferringConflictId.value = ''
+  closeForms()
+}
+function clearReadTimers() { clearTimeout(slowTimer); clearTimeout(deadlineTimer) }
+function safeFocus() { void nextTick(() => pageElement.value?.querySelector<HTMLElement>('[data-profile-reload], .personal-profile-open, [role="combobox"]')?.focus()) }
+function revokeAccess() {
+  ++loadVersion
+  loadController?.abort()
+  clearReadTimers()
+  loading.value = false
+  clearPrivateContent()
+  loadFailed.value = true
+  safeFocus()
 }
 
 watch(
   () => store.activePersonalSpace?.id,
   (spaceId, previousSpaceId) => {
     if (spaceId !== previousSpaceId) {
-      graph.value = null
-      conflictRecords.value = []
-      selectedItem.value = null
-      confirmingItem.value = null
-      editingItem.value = null
-      activeConflict.value = null
+      ++loadVersion
+      loadController?.abort()
+      loading.value = false
+      clearPrivateContent()
+      clearReadTimers()
+      loadFailed.value = false
       activeScope.value = 'all'
     }
     if (spaceId) void load(spaceId)
@@ -232,6 +272,7 @@ watch(
   { immediate: true },
 )
 onBeforeUnmount(() => {
+  clearReadTimers()
   loadVersion += 1
   loadController?.abort()
   loadController = null
@@ -241,9 +282,11 @@ watch(
   () => {
     if (
       selectedItem.value
-      && !visibleItems.value.some(({ id }) => id === selectedItem.value?.id)
+      && (!visibleItems.value.some(item => itemKey(item) === itemKey(selectedItem.value!)) || conflictsOnly.value)
     ) {
       selectedItem.value = null
+      closeForms()
+      safeFocus()
     }
   },
 )
@@ -252,39 +295,66 @@ watch(scopeOptions, (options) => {
 })
 
 async function load(spaceId = store.activePersonalSpace?.id) {
-  if (!spaceId) return
+  if (!spaceId || loading.value) return
   loadController?.abort()
+  clearReadTimers()
   const requestVersion = ++loadVersion
   const controller = new AbortController()
   loadController = controller
   loading.value = true
+  snapshotReady.value = false
+  loadFailed.value = false
+  readStatus.value = null
+  takingLong.value = false
+  closeForms()
+  slowTimer = setTimeout(() => { if (requestVersion === loadVersion) takingLong.value = true }, 8000)
+  deadlineTimer = setTimeout(() => {
+    if (requestVersion !== loadVersion) return
+    ++loadVersion
+    controller.abort()
+    loading.value = false
+    takingLong.value = false
+    loadFailed.value = true
+    loadController = null
+    safeFocus()
+  }, 30000)
   try {
     const conflictQuery = new URLSearchParams({
       personalSpaceId: spaceId,
       limit: '500',
     })
+    const guardAccess = <T,>(request: Promise<T>) => request.catch(error => {
+      if (requestVersion === loadVersion && [401, 403].includes(Number(error?.status))) revokeAccess()
+      throw error
+    })
     const [nextGraph, nextConflictRecords] = await Promise.all([
-      readPersonalProfileGraph(spaceId, controller.signal),
-      getJson<PreferenceConflictRecord[]>(
+      guardAccess(readPersonalProfileGraph(spaceId, controller.signal)),
+      guardAccess(getJson<PreferenceConflictRecord[]>(
         `/api/preference-conflicts?${conflictQuery}`,
         { signal: controller.signal },
-      ),
+      )),
     ])
     if (requestVersion !== loadVersion || controller.signal.aborted) return
+    if (!Array.isArray(nextConflictRecords)) throw new Error('Invalid conflict snapshot')
     graph.value = nextGraph
-    conflictRecords.value = Array.isArray(nextConflictRecords)
-      ? nextConflictRecords
-      : []
+    conflictRecords.value = Array.isArray(nextConflictRecords) ? nextConflictRecords : []
+    reconcileKnowledgeWrites(spaceId, personalProfileItems(nextGraph))
+    snapshotReady.value = true
     if (selectedItem.value) {
-      selectedItem.value = items.value.find(({ id }) => id === selectedItem.value?.id) ?? null
+      selectedItem.value = items.value.find(item => itemKey(item) === itemKey(selectedItem.value!)) ?? null
+      if (!selectedItem.value) safeFocus()
     }
   } catch (error) {
     if (requestVersion !== loadVersion || controller.signal.aborted) return
-    graph.value = null
-    store.reportError(error)
+    const status = Number((error as { status?: number })?.status) || null
+    readStatus.value = status
+    if (status === 401 || status === 403) { revokeAccess(); return }
+    loadFailed.value = true
   } finally {
     if (requestVersion !== loadVersion || controller.signal.aborted) return
     loading.value = false
+    takingLong.value = false
+    clearReadTimers()
     if (loadController === controller) loadController = null
   }
 }
@@ -292,7 +362,7 @@ async function load(spaceId = store.activePersonalSpace?.id) {
 function statusLabel(item: KnowledgeItem) {
   const label = reviewStateLabel(item)
   const conflict = conflicts.value.find(
-    ({ left, right }) => left.id === item.id || right.id === item.id,
+    ({ left, right }) => itemKey(left) === itemKey(item) || itemKey(right) === itemKey(item),
   )
   if (conflict?.aiRecord) {
     return `${label} · ${t('preferences.profile.statusSuffix.aiPending')}`
@@ -300,7 +370,7 @@ function statusLabel(item: KnowledgeItem) {
   if (conflict) {
     return `${label} · ${t('preferences.profile.statusSuffix.conflict')}`
   }
-  if (aiResolvedIds.value.has(item.id)) {
+  if (aiResolvedIds.value.has(itemKey(item))) {
     return `${label} · ${t('preferences.profile.statusSuffix.aiResolved')}`
   }
   return label
@@ -311,20 +381,25 @@ function itemKey(item: Pick<KnowledgeItem, 'itemKind' | 'id'>) {
 }
 
 function scopeLabel(item: KnowledgeItem) {
-  if (item.preferenceScope !== 'project' || !item.preferenceProjectId) {
+  if (!knownScope(item)) return t('preferences.detail.scopeUnknown')
+  if (item.preferenceScope === 'global') {
     return t('preferences.shared.personalGlobal')
   }
   const project = store.state?.personalProjects?.find(
     ({ project_id }) => project_id === item.preferenceProjectId,
   )
   return t('preferences.shared.projectOnly', {
-    project: project?.profile.name ?? item.preferenceProjectId,
+    project: project?.profile.name ?? item.preferenceProjectId ?? '',
   })
+}
+function knownScope(item: KnowledgeItem) {
+  // Inspect the returned source, not the model's legacy global fallback.
+  return item.raw.preference_scope === 'global' || (item.raw.preference_scope === 'project' && Boolean(item.preferenceProjectId))
 }
 
 function matchesActiveFilters(item: KnowledgeItem) {
   if (activeAspect.value !== 'all' && item.profileAspect !== activeAspect.value) return false
-  if (activeScope.value === 'global' && item.preferenceScope === 'project') return false
+  if (activeScope.value === 'global' && (!knownScope(item) || item.preferenceScope !== 'global')) return false
   if (activeScope.value.startsWith('project:')) {
     const projectId = activeScope.value.slice('project:'.length)
     return item.preferenceScope === 'project' && item.preferenceProjectId === projectId
@@ -333,6 +408,7 @@ function matchesActiveFilters(item: KnowledgeItem) {
 }
 
 function conflictScopeLabel(conflict: PreferenceConflict) {
+  if (!knownScope(conflict.left) || !knownScope(conflict.right)) return t('preferences.detail.scopeUnknown')
   if (conflict.scopeKey === 'global') return t('preferences.shared.personalGlobal')
   const projectId = conflict.scopeKey.slice('project:'.length)
   const project = store.state?.personalProjects?.find(
@@ -343,14 +419,30 @@ function conflictScopeLabel(conflict: PreferenceConflict) {
   })
 }
 
-function openReplacement(item: KnowledgeItem) {
+async function openReplacement(item: KnowledgeItem) {
+  const spaceId = store.activePersonalSpace?.id
+  const version = loadVersion
   activeAspect.value = item.profileAspect ?? 'all'
   activeScope.value = item.preferenceScope === 'project' && item.preferenceProjectId
     ? `project:${item.preferenceProjectId}`
     : 'global'
   conflictsOnly.value = false
+  activeReviewState.value = 'all'
+  // The filter watcher resets pagination. Complete that update before locating
+  // the target; otherwise a replacement after row 100 vanishes on the next tick.
+  await nextTick()
+  if (spaceId !== store.activePersonalSpace?.id || version !== loadVersion) return
+  const index = visibleItems.value.findIndex(candidate => itemKey(candidate) === itemKey(item))
+  if (index < 0) return
+  shownLimit.value = Math.max(PAGE, index + 1)
   selectedItem.value = item
+  await nextTick()
+  if (spaceId !== store.activePersonalSpace?.id || version !== loadVersion) return
+  const trigger = pageElement.value?.querySelector<HTMLElement>('.personal-profile-row.selected .personal-profile-open')
+  trigger?.focus({ preventScroll: true })
+  trigger?.scrollIntoView?.({ block: 'nearest', behavior: 'instant' })
 }
+
 
 function editConflictItem(item: KnowledgeItem) {
   activeConflict.value = null
@@ -378,11 +470,18 @@ function toggleConflictWorkbench(forceOpen = false) {
 }
 
 async function deferConflictToAi(conflict: PreferenceConflict) {
+  if (!snapshotReady.value || deferringConflictId.value || !knownScope(conflict.left) || !knownScope(conflict.right)) return
+  const version = loadVersion
   const personalSpaceId = store.activePersonalSpace?.id
   if (!personalSpaceId || conflict.aiRecord) return
   deferringConflictId.value = conflict.id
+  snapshotReady.value = false
+  deferTakingLong.value = false
+  const slow = setTimeout(() => { if (version === loadVersion) deferTakingLong.value = true }, 8000)
+  let deadline: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => { deadline = setTimeout(() => reject(new Error('unconfirmed')), 30000) })
   try {
-    const record = await postJson<PreferenceConflictRecord>(
+    const record = await Promise.race([postJson<PreferenceConflictRecord>(
       '/api/preference-conflicts/defer',
       {
         personalSpaceId,
@@ -396,23 +495,30 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
         rightItemKind: conflict.right.itemKind,
         reason: t('preferences.profile.deferReason'),
       },
-    )
+    ), timeout])
+    if (version !== loadVersion || personalSpaceId !== store.activePersonalSpace?.id) return
+    snapshotReady.value = true
     conflictRecords.value = [
       record,
       ...conflictRecords.value.filter(({ id }) => id !== record.id),
     ]
     store.notify(t('preferences.profile.deferNotice'))
   } catch (error) {
-    store.reportError(error)
+    if (version !== loadVersion || personalSpaceId !== store.activePersonalSpace?.id) return
+    if ([401,403].includes(Number((error as { status?: number })?.status))) revokeAccess()
+    else store.reportError(new Error(t('preferences.detail.unconfirmed')))
   } finally {
-    deferringConflictId.value = ''
+    clearTimeout(slow)
+    clearTimeout(deadline)
+    if (version === loadVersion) deferTakingLong.value = false
+    if (version === loadVersion) deferringConflictId.value = ''
   }
 }
 </script>
 
 <template>
-  <section class="view page-stack vue-personal-profile">
-    <UiStatRow :items="stats" :label="t('preferences.profile.summaryAria')" @select="selectStat" />
+  <section ref="pageElement" class="view page-stack vue-personal-profile">
+    <UiStatRow v-if="graph" :items="stats" :label="t('preferences.profile.summaryAria')" @select="selectStat" />
 
     <UiToolbar>
       <UiSegmented v-model="activeAspect" data-profile-aspects :options="aspectSegments" :label="t('preferences.profile.filters.aspectAria')" />
@@ -424,19 +530,26 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
         :options="scopeOptions"
       />
       <template #end>
-        <span data-profile-count>{{ countText }}</span>
+        <span v-if="graph" data-profile-count>{{ countText }}</span>
         <UiIconButton icon="refresh" size="sm" :label="t('common.actions.refresh')" :disabled="loading" @click="load()" />
       </template>
     </UiToolbar>
 
-    <GrowthLoading v-if="loading && graph && !showInitialLoading && !conflictsOnly" variant="inline" :label="t('preferences.profile.directory.loading')" />
+    <p v-if="loadFailed" class="preference-read-error" role="alert" data-profile-read-error>
+      {{ graph ? t('preferences.detail.stale') : t('preferences.detail.loadFailed') }}
+      <span v-if="readStatus"> ({{ readStatus }})</span>
+      <UiButton data-profile-reload :disabled="loading" @click="load()">{{ t('preferences.detail.reload') }}</UiButton>
+    </p>
+    <p v-if="deferTakingLong" role="status">{{ t('preferences.detail.writeLong', { action: t('preferences.profile.workbench.deferring') }) }}</p>
+    <p v-if="takingLong" role="status">{{ t('preferences.detail.readLong') }}</p>
+    <GrowthLoading v-if="loading && graph && !showInitialLoading" variant="inline" :label="t('preferences.profile.directory.loading')" />
     <GrowthLoading
       v-if="showInitialLoading"
       :label="t('preferences.profile.directory.loading')"
     />
     <div v-else-if="initialLoading" class="view-loading" aria-busy="true" />
     <section
-      v-else-if="conflictsOnly"
+      v-else-if="graph && conflictsOnly"
       class="preference-conflict-workbench"
       :aria-label="t('preferences.profile.workbench.aria')"
     >
@@ -498,7 +611,8 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
             </div>
             <div class="preference-conflict-actions">
               <UiButton size="sm"
-                :disabled="Boolean(conflict.aiRecord) || deferringConflictId === conflict.id"
+                  :busy="deferringConflictId === conflict.id" :busy-label="t('preferences.profile.workbench.deferring')"
+                  :disabled="!snapshotReady || !knownScope(conflict.left) || !knownScope(conflict.right) || Boolean(conflict.aiRecord) || deferringConflictId === conflict.id"
                 @click="deferConflictToAi(conflict)"
               >
                 {{
@@ -509,15 +623,14 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
                       : t('preferences.profile.workbench.defer')
                 }}
               </UiButton>
-              <UiButton size="sm" variant="primary" @click="activeConflict = conflict">
+              <UiButton size="sm" variant="primary" :disabled="!snapshotReady || !knownScope(conflict.left) || !knownScope(conflict.right)" @click="activeConflict = conflict">
                 {{ t('preferences.profile.workbench.handleNow') }}
               </UiButton>
             </div>
           </footer>
         </article>
       </div>
-      <GrowthLoading v-if="loading" variant="compact" :label="t('preferences.profile.workbench.loading')" />
-      <div v-else-if="!visibleConflicts.length" class="empty-state">
+      <div v-if="!visibleConflicts.length" class="empty-state">
         {{ conflicts.length
               ? t('preferences.profile.workbench.noFiltered')
               : t('preferences.profile.workbench.empty')
@@ -525,9 +638,9 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
       </div>
     </section>
 
-    <UiEmpty v-else-if="!visibleItems.length" class="ui-list"
+    <UiEmpty v-else-if="graph && !visibleItems.length" class="ui-list"
       :text="items.length ? t('preferences.profile.directory.noFiltered') : t('preferences.profile.directory.empty')" />
-    <div v-else class="ui-list personal-profile-list" :aria-label="t('preferences.profile.directory.aria')">
+    <div v-else-if="graph" class="ui-list personal-profile-list" :aria-label="t('preferences.profile.directory.aria')">
       <article
         v-for="item in shownItems"
         :key="itemKey(item)"
@@ -535,27 +648,33 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
         :class="{
           selected: isSelected(item),
           'pending-review': knowledgeReviewState(item) === 'pending',
-          'ai-resolved-conflict': aiResolvedIds.has(item.id),
+          'ai-resolved-conflict': aiResolvedIds.has(itemKey(item)),
         }"
       >
-        <button class="personal-profile-open" type="button" :aria-expanded="isSelected(item)" @click="toggleItem(item)">
+        <button :id="`preference-heading-${encodeURIComponent(itemKey(item))}`" class="personal-profile-open" type="button" :aria-label="t('preferences.detail.toggle', { title: item.title })" :aria-expanded="isSelected(item)" :aria-controls="`preference-detail-${encodeURIComponent(itemKey(item))}`" @click="toggleItem(item)">
           <span class="profile-aspect-mark" :class="item.profileAspect">{{ profileAspectLabel(item.profileAspect) }}</span>
-          <span class="personal-profile-copy"><strong>{{ item.title }}</strong><small>{{ item.body }}</small></span>
-          <span class="personal-profile-origin">
-            <strong :class="{ 'has-conflict': conflictingIds.has(item.id) }">{{ statusLabel(item) }}</strong>
+          <span class="personal-profile-copy"><strong role="heading" aria-level="2">{{ item.title }}</strong><small v-if="!isSelected(item)">{{ item.body }}</small></span>
+          <span v-if="!isSelected(item)" class="personal-profile-origin">
+            <strong :class="{ 'has-conflict': conflictingIds.has(itemKey(item)) }">{{ statusLabel(item) }}</strong>
             <small>
               {{ scopeLabel(item) }} ·
               {{ t('preferences.profile.directory.sourceCount', { count: item.evidence.length }) }}
             </small>
           </span>
-          <time>{{ formatTime(latestItemValue(item)) }}</time>
+          <time v-if="!isSelected(item)">{{ formatTime(latestItemValue(item)) }}</time>
+          <span v-else aria-hidden="true">⌃</span>
         </button>
         <KnowledgeInspector
           v-if="isSelected(item)"
           class="personal-profile-detail"
+          :id="`preference-detail-${encodeURIComponent(itemKey(item))}`"
+          :key="`${store.activePersonalSpace?.id}:${itemKey(item)}`"
+          mode="preference"
           :item="item"
           :graph="graph"
-          editable
+          :editable="snapshotReady && knownScope(item)"
+          :preference-scope-label="scopeLabel(item)"
+          :preference-status-label="statusLabel(item)"
           @confirm="confirmingItem = $event"
           @edit="editingItem = $event"
           @open-replacement="openReplacement"
@@ -572,6 +691,8 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
       :personal-project-id="null"
       :projects="store.state?.personalProjects ?? []"
       :replacement-items="items"
+      @access-denied="revokeAccess"
+      @reload="load()"
       @close="editingItem = null"
       @saved="load()"
     />
@@ -579,6 +700,8 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
       :item="confirmingItem"
       :personal-space-id="store.activePersonalSpace?.id ?? ''"
       :personal-project-id="null"
+      @access-denied="revokeAccess"
+      @reload="load()"
       @close="confirmingItem = null"
       @saved="load()"
     />
@@ -841,4 +964,17 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
   .personal-profile-open { grid-template-columns: auto minmax(0, 1fr); }
   .personal-profile-origin, .personal-profile-open time { grid-column: 2; }
 }
+</style>
+
+<style scoped>
+.vue-personal-profile { padding-bottom: calc(80px + env(safe-area-inset-bottom) + 16px); min-width: 0; }
+.personal-profile-list { overflow: visible; }
+.personal-profile-row { min-width: 0; scroll-margin-top: 80px; }
+.personal-profile-row.selected { border: 1px solid var(--color-border-strong); border-radius: var(--radius-card, 12px); background: var(--color-surface); box-shadow: var(--shadow-md); }
+.personal-profile-row.selected .personal-profile-open { grid-template-columns: auto minmax(0, 1fr) auto; background: transparent; }
+.personal-profile-copy strong, .personal-profile-origin { overflow-wrap: anywhere; white-space: normal; }
+.personal-profile-detail { margin: 0; padding: 0 16px 16px; border: 0; background: transparent; }
+.personal-profile-open { min-height: 44px; }
+.preference-read-error { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: var(--color-ink); }
+@media (max-width: 720px) { .personal-profile-scope-filter { width: 100%; } }
 </style>

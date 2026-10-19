@@ -30,6 +30,7 @@ import GraphCanvas from './GraphCanvas.vue'
 import GraphRelationLegend from './GraphRelationLegend.vue'
 import KnowledgeDirectoryPanel from './KnowledgeDirectoryPanel.vue'
 import KnowledgeInspector from './KnowledgeInspector.vue'
+import { reconcileKnowledgeWrites } from './knowledge-write-lifecycle'
 import KnowledgeWorkspaceDialogs from './KnowledgeWorkspaceDialogs.vue'
 import ProjectHierarchyAside from './ProjectHierarchyAside.vue'
 import ProjectOverview from '@/features/projects/ProjectOverview.vue'
@@ -460,12 +461,30 @@ async function openProjectOverview(nextProjectId: string, replace: boolean) {
   await router[replace ? 'replace' : 'push'](personalProjectsPath(spaceId.value, 'overview', nextProjectId))
 }
 
+function revokeKnowledgeAccess() {
+  ++loadSequence
+  cancelGraphSearch()
+  graph.value = null
+  loadedGraphContextKey = null
+  selectedItem.value = null
+  editingItem.value = null
+  confirmingItem.value = null
+  projectActionItem.value = null
+  publishingProject.value = null
+  managingProject.value = null
+  loading.value = false
+  resetGraphSearchState()
+  store.reportError(new Error(t('preferences.detail.accessDenied')))
+}
+
 async function loadGraph() {
   if (!spaceId.value || spaceId.value === 'current') return
   const contextKey = graphContextKey.value
   const sequence = ++loadSequence
   cancelGraphSearch()
   loading.value = true
+  editingItem.value = null
+  confirmingItem.value = null
   selectedItem.value = null
   resetGraphSearchState()
   try {
@@ -473,6 +492,7 @@ async function loadGraph() {
       ? await loadPersonalProjectContext()
       : await readGraph(projectId.value)
     if (sequence !== loadSequence) return
+    reconcileKnowledgeWrites(store.activePersonalSpace?.id ?? spaceId.value, knowledgeItems(value))
     graph.value = value
     loadedGraphContextKey = contextKey
     selectDeepLinkedItem()
@@ -1254,6 +1274,7 @@ function queryValues(value: unknown) {
       @close-publish="publishingProject = null"
       @close-profile="managingProject = null"
       @refresh="loadGraph"
+      @access-denied="revokeKnowledgeAccess"
       @project-saved="completeProjectAction"
       @profile-saved="completeProjectProfileUpdate"
     />

@@ -8,6 +8,7 @@ import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { ConfirmationActor, EvidenceRecord, KnowledgeItem } from '@/types'
 import { quadrantDescription, quadrantLabel } from './model'
+import { useKnowledgeWriteLifecycle } from './knowledge-write-lifecycle'
 
 const props = defineProps<{
   item: KnowledgeItem | null
@@ -18,6 +19,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   saved: []
+  accessDenied: []
+  reload: []
 }>()
 
 const store = useConsoleStore()
@@ -25,7 +28,8 @@ const existenceReason = ref('')
 const quadrantReason = ref('')
 const confirmationReason = ref('')
 const acknowledged = ref(false)
-const busy = ref(false)
+const accessRevoked = ref(false)
+const { busy, takingLong, locked, error: requestError, run } = useKnowledgeWriteLifecycle(() => props.item ? `${props.personalSpaceId}:${props.item.itemKind}:${props.item.id}` : '', () => { accessRevoked.value = true; emit('accessDenied'); emit('close') }, () => [props.personalProjectId, props.item])
 const localError = ref('')
 const proposedBy = ref<ConfirmationActor>({
   kind: 'import',
@@ -39,9 +43,10 @@ const subjectLabel = computed(() =>
 )
 
 watch(
-  () => props.item,
-  (item) => {
-    if (!item) return
+  () => [props.item, props.personalSpaceId, props.personalProjectId] as const,
+  ([item]) => {
+    accessRevoked.value = false;
+    if (!item) { existenceReason.value = ''; quadrantReason.value = ''; confirmationReason.value = ''; acknowledged.value = false; localError.value = ''; return }
     const evidence = item.evidence.at(0)
     const basis = item.confirmationBasis
     existenceReason.value = basis?.existence_reason
@@ -81,14 +86,15 @@ async function confirmKnowledge() {
     return fail(t('knowledge.dialogs.confirm.errors.acknowledgmentRequired'))
   }
 
-  busy.value = true
   localError.value = ''
-  try {
+  const personalSpaceId = props.personalSpaceId
+  const personalProjectId = props.personalProjectId
+  await run(async () => {
     await patchJson(
       `/api/knowledge/${item.itemKind}/${encodeURIComponent(item.id)}`,
       {
-        personalSpaceId: props.personalSpaceId,
-        personalProjectId: props.personalProjectId,
+        personalSpaceId,
+        personalProjectId,
         action: 'confirm',
         reason: confirmationReason.value.trim(),
         confirmationStatus: 'confirmed',
@@ -104,19 +110,13 @@ async function confirmKnowledge() {
         },
       },
     )
+  }, () => {
     store.notify(t('knowledge.dialogs.confirm.confirmed', {
       subject: subjectLabel.value,
     }))
     emit('saved')
     emit('close')
-  } catch (error) {
-    localError.value = error instanceof Error
-      ? error.message
-      : t('knowledge.dialogs.confirm.errors.failed')
-    store.reportError(error)
-  } finally {
-    busy.value = false
-  }
+  })
 }
 
 function proposedByFromEvidence(evidence?: EvidenceRecord): ConfirmationActor {
@@ -135,14 +135,18 @@ function proposedByFromEvidence(evidence?: EvidenceRecord): ConfirmationActor {
 
 function fail(message: string) {
   localError.value = message
+  document.querySelector<HTMLElement>('.knowledge-confirm-dialog textarea:invalid, .knowledge-confirm-dialog input:invalid, .knowledge-confirm-dialog textarea')?.focus()
 }
 </script>
 
 <template>
-  <UiDialog v-if="item" open class="knowledge-confirm-dialog" size="lg" form
+  <p v-if="accessRevoked" role="alert">{{ t('preferences.detail.accessDenied') }}</p>
+  <UiDialog v-if="item && !accessRevoked" open class="knowledge-confirm-dialog" size="lg" form
     :title="t('knowledge.dialogs.confirm.title', { subject: subjectLabel })"
     :description="t('knowledge.dialogs.confirm.intro')"
-    :busy="busy" :error="localError" @close="emit('close')" @submit="confirmKnowledge">
+    :busy="busy" :error="localError || requestError" @close="emit('close')" @submit="confirmKnowledge">
+    <UiButton v-if="locked && !busy" data-knowledge-reload @click="emit('reload')">{{ t('preferences.detail.reload') }}</UiButton>
+    <p v-if="takingLong" role="status">{{ t('preferences.detail.writeLong', { action: t('knowledge.dialogs.confirm.confirming', { subject: subjectLabel }) }) }}</p>
     <section class="knowledge-confirm-summary">
       <span class="ui-meta">{{ item.profileAspect ? t('knowledge.dialogs.confirm.preference') : t('knowledge.dialogs.confirm.knowledge') }}</span>
       <strong>{{ item.title }}</strong>
@@ -164,7 +168,7 @@ function fail(message: string) {
     </label>
     <template #footer>
       <UiButton variant="ghost" :disabled="busy" @click="emit('close')">{{ t('common.actions.cancel') }}</UiButton>
-      <UiButton variant="primary" type="submit" :disabled="!acknowledged" :busy="busy" :busy-label="t('knowledge.dialogs.confirm.confirming', { subject: subjectLabel })">
+      <UiButton variant="primary" type="submit" :disabled="!acknowledged || locked" :busy="busy" :busy-label="t('knowledge.dialogs.confirm.confirming', { subject: subjectLabel })">
         {{ t('knowledge.dialogs.confirm.confirmSubject', { subject: subjectLabel }) }}
       </UiButton>
     </template>

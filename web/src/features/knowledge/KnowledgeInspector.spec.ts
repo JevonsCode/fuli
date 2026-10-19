@@ -6,6 +6,50 @@ import { knowledgeItemFromNode } from './model'
 import { DEFAULT_CONVERSATION_LAUNCHERS } from './source-adapters'
 
 describe('KnowledgeInspector', () => {
+  it('preserves relationship evidence, revision, audit and unknown source keys without unsafe links', async () => {
+    const raw = { id: 'same', source: 'a', target: 'b', type: 'PREFERS', fact: 'FACT-SENTINEL', profile_aspect: 'taste', preference_scope: 'global', source_extra: 'UNKNOWN-RAW', evidence: [{ id: 'E-ID', name: 'E-NAME', summary: 'E-SUMMARY', source_description: 'E-DESCRIPTION', source_excerpt: 'E-LONG'.repeat(2000), source_uri: 'javascript:alert(1)', session_id: 'not a legal session!', source_turn_id: 'TURN', personal_project_id: 'P-PROJECT', unknown: 'E-UNKNOWN' }], revisions: [{ id: 'R', reason: 'REV', extra: 'REV-UNKNOWN' }], audit_events: [{ id: 'A', reason: 'AUDIT', extra: 'AUDIT-UNKNOWN' }], assignments: [{ extra: 'ASSIGNMENT' }], project_references: [{ extra: 'PROJECT-REF' }], conflicts: [{ extra: 'CONFLICT' }] }
+    const { knowledgeItemFromEdge } = await import('./model')
+    const wrapper = mount(KnowledgeInspector, { props: { mode: 'preference', item: knowledgeItemFromEdge(raw as never, new Map()), graph: { nodes: [], edges: [raw as never] }, editable: true } })
+    await wrapper.get('[data-evidence-jump]').trigger('click')
+    expect(wrapper.get('[data-raw-record]').text()).toBe(JSON.stringify(raw, null, 2))
+    expect(wrapper.findAll('a').some(a => a.attributes('href')?.startsWith('javascript:'))).toBe(false)
+    expect(wrapper.find('a.evidence-source-action').exists()).toBe(false)
+    expect(wrapper.get('[data-preference-records]').text()).toContain('E-DESCRIPTION')
+    expect(wrapper.get('.evidence-excerpt').text()).toHaveLength(12000)
+    wrapper.unmount()
+  })
+
+  it.each([
+    { epistemic_state_explicit: false },
+    { invalid_at: '2026-10-18' },
+    { type: 'ProjectPurpose' },
+  ])('does not expand confirmation eligibility for legacy, history or projection input %j', overrides => {
+    const raw = { id: 'synthetic', name: 'Synthetic', type: 'Preference', profile_aspect: 'taste', epistemic_state_explicit: true, ...overrides }
+    const wrapper = mount(KnowledgeInspector, { props: { mode: 'preference', item: knowledgeItemFromNode(raw), graph: { nodes: [raw], edges: [] }, editable: true } })
+    expect(wrapper.find('.inspector-confirm-action').exists()).toBe(false)
+    wrapper.unmount()
+  })
+  it('offers the explicit preference summary before independently collapsed basis and complete records', async () => {
+    const node = { id: 'synthetic', name: 'Synthetic title sentinel', type: 'Preference', summary: 'Body sentinel', profile_aspect: 'taste', preference_scope: 'global', epistemic_state_explicit: true, confirmation_status: 'pending', evidence: [{ name: 'E-name', summary: 'E-summary', source_description: 'E-description', source_excerpt: 'E-excerpt', custom: 'E-unknown' }], revisions: [{ reason: 'R-reason', unknown: 'R-unknown' }], attributes: { secret: 'A-sentinel' } }
+    const wrapper = mount(KnowledgeInspector, { props: { item: knowledgeItemFromNode(node), graph: { nodes: [node], edges: [] }, editable: true, mode: 'preference', preferenceScopeLabel: '个人全局' } })
+    expect(wrapper.findAll('.preference-detail .ui-disclosure')).toHaveLength(2)
+    expect(wrapper.findAll('.preference-detail .ui-disclosure[open]')).toHaveLength(0)
+    expect(wrapper.find('.inspector-classification').exists()).toBe(false)
+    expect(wrapper.find('h3').exists()).toBe(false)
+    expect(wrapper.get('.preference-summary').text()).toContain('Body sentinel')
+    expect(wrapper.find('.inspector-confirm-action').exists()).toBe(true)
+    await wrapper.get('[data-evidence-jump]').trigger('click')
+    expect(wrapper.get('[data-preference-records]').attributes('open')).toBeDefined()
+    for (const sentinel of ['E-name', 'E-summary', 'E-description', 'E-excerpt', 'E-unknown', 'R-reason', 'R-unknown', 'A-sentinel']) expect(wrapper.get('[data-preference-records]').text()).toContain(sentinel)
+    expect(wrapper.get('[data-preference-records] pre[data-raw-record]').text()).toBe(JSON.stringify(node, null, 2))
+    expect(wrapper.emitted('confirm')).toBeUndefined()
+  })
+
+  it.each(['pending', 'confirmed', 'agent_confirmed', 'ai_reviewed'])('preserves %s confirmation eligibility in preference mode', state => {
+    const node = { id: 'synthetic', name: 'Synthetic', type: 'Preference', profile_aspect: 'taste', epistemic_state_explicit: true, confirmation_state_explicit: true, confirmation_status: state, ai_assessment: state === 'ai_reviewed' ? { outcome: 'approve' as const, summary: 'Synthetic AI review', evidence: [], confidence: 0.8 } : null, ai_review_evidence_token: state === 'ai_reviewed' ? 'synthetic-token' : null, confirmation_basis: { existence_reason: 'basis', quadrant_reason: 'quadrant', proposed_by: { kind: 'user', label: 'Synthetic' }, confirmed_by: { kind: state === 'agent_confirmed' ? 'agent' : 'user' }, confirmed_at: '2026-10-18T10:00:00Z', agent_policy_version: 'v1' } }
+    const wrapper = mount(KnowledgeInspector, { props: { item: knowledgeItemFromNode(node), graph: { nodes: [node], edges: [] }, editable: true, mode: 'preference' } })
+    expect(wrapper.find('.inspector-confirm-action').exists()).toBe(state === 'pending')
+  })
   it('exposes confirmation as the primary action for pending knowledge', async () => {
     const node = {
       id: 'preference-1',
