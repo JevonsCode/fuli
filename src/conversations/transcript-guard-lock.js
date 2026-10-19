@@ -1,5 +1,6 @@
 import { constants } from 'node:fs';
-import { lstat, mkdir, open } from 'node:fs/promises';
+import { lstat, mkdir } from 'node:fs/promises';
+import { openWithoutFollowing } from '../system/open-without-following.js';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 
@@ -49,8 +50,8 @@ async function lockExclusiveFile(directory, lockKey) {
   if (!(await lstat(directory)).isDirectory()) throw new Error('Transcript guard lock directory is unavailable');
   let handle;
   try {
-    handle = await open(join(directory, `${lockKey}.lock`),
-      constants.O_RDWR | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK | O_EXLOCK, 0o600);
+    handle = await openWithoutFollowing(join(directory, `${lockKey}.lock`),
+      constants.O_RDWR | constants.O_CREAT | constants.O_NONBLOCK | O_EXLOCK, 0o600);
   } catch (error) {
     throw ['EAGAIN', 'EWOULDBLOCK'].includes(error.code) ? busy(error) : error;
   }

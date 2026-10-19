@@ -2,6 +2,7 @@ import {
   closeSync,
   constants as fsConstants,
   fstatSync,
+  lstatSync,
   openSync,
   readFileSync
 } from 'node:fs';
@@ -212,6 +213,9 @@ export function readBearerToken(path, fileSystem = {}) {
   const close = fileSystem.closeSync ?? closeSync;
   const constants = fileSystem.constants ?? fsConstants;
   const absolute = resolve(path);
+  // Windows has no O_NOFOLLOW: refuse a link up front and check the opened file is that entry.
+  const entry = constants.O_NOFOLLOW === undefined ? (fileSystem.lstatSync ?? lstatSync)(absolute) : null;
+  if (entry?.isSymbolicLink()) throw new TypeError('Remote MCP bearer token path must not be a symbolic link');
   let descriptor;
   try {
     descriptor = open(
@@ -228,6 +232,9 @@ export function readBearerToken(path, fileSystem = {}) {
   }
   try {
     const metadata = fstat(descriptor);
+    if (entry && (entry.ino !== metadata.ino || entry.dev !== metadata.dev)) {
+      throw new TypeError('Remote MCP bearer token path must not be a symbolic link');
+    }
     if (!metadata.isFile()) throw new TypeError('Remote MCP bearer token path must be a regular file');
     if (metadata.size > 4096) {
       throw new TypeError('Remote MCP bearer token file must not exceed 4096 bytes');

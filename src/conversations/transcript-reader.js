@@ -1,4 +1,5 @@
-import { open, constants } from 'node:fs/promises';
+import { constants } from 'node:fs/promises';
+import { openWithoutFollowing } from '../system/open-without-following.js';
 import { transcriptDigest } from './transcript-guard.js';
 import { safeConversationContent } from '../graphiti/agent-conversations.js';
 
@@ -7,7 +8,7 @@ const WINDOW = 512 * 1024;
 // Recovery skips an uncertain interval, so it needs only a verified native
 // identity and a complete current EOF. Never parse/import the skipped payload.
 export async function verifiedTranscriptEnd(path, sessionId, adapter) {
-  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const file = await openWithoutFollowing(path, constants.O_RDONLY);
   try {
     const stat = await file.stat();
     if (!stat.isFile() || !stat.size) throw new Error('Native transcript is unavailable');
@@ -27,7 +28,7 @@ export async function verifiedTranscriptEnd(path, sessionId, adapter) {
 // Read only a bounded tail; a prompt not yet written by the host starts at EOF.
 export async function initialTranscriptBoundary(path, sessionId, prompt, adapter) {
   let file;
-  try { file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW); }
+  try { file = await openWithoutFollowing(path, constants.O_RDONLY); }
   catch (error) {
     // The first prompt hook can precede file creation. There is no old history
     // to exclude; the reader still verifies the session before importing bytes.
@@ -63,7 +64,7 @@ export async function initialTranscriptBoundary(path, sessionId, prompt, adapter
 // The hook supplies the exact current transcript. No directory scanning, native
 // transcript writes, or path/session metadata is persisted in conversation events.
 export async function readTranscriptBatch(path, sessionId, cursor, adapter, { stopBeforePrompt = null, stopBeforeDigest = null, stopAtCursor = null } = {}) {
-  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const file = await openWithoutFollowing(path, constants.O_RDONLY);
   try {
     const stat = await file.stat();
     if (!stat.isFile() || cursor > stat.size) throw new Error('Transcript changed or is unavailable');

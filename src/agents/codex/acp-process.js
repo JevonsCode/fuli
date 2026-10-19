@@ -11,6 +11,10 @@ const AUTH = '_auth/status_update';
 const AUTH_KINDS = new Set(['none', 'account', 'api_key', 'gateway', 'external']);
 const OS_ENV = new Set(['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'SYSTEMDRIVE', 'TEMP', 'TMP']);
 const MAX_BYTES = 64 * 1024;
+// Starting the owned job helper (PowerShell plus its compiled helper) can take
+// tens of seconds on a cold or slow machine. It has its own budget, so the
+// caller's initialize timeout measures only the adapter's handshake.
+const HELPER_START_TIMEOUT_MS = 120_000;
 const samePath = (a, b) => normalize(a).toLowerCase() === normalize(b).toLowerCase();
 const failure = code => new ApplicationError(`acp_${code}`, `Codex ACP ${code.replaceAll('_', ' ')}.`);
 
@@ -30,7 +34,7 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
   if (signal?.aborted) throw failure('cancelled');
   const nodePath = await realpath(process.execPath);
   if (signal?.aborted) throw failure('cancelled');
-  const initializeDeadline = Date.now() + initializeTimeoutMs;
+  let initializeDeadline = Date.now() + HELPER_START_TIMEOUT_MS;
   const initializeRemaining = () => {
     const value = initializeDeadline - Date.now();
     if (value <= 0) throw failure('timeout');
@@ -134,6 +138,9 @@ export async function startCodexAcpProcess({ adapterPath, codexPath, codexHome, 
     if (closing) throw terminalError;
     timer = setTimeout(() => { terminalError ??= failure('timeout'); void close(terminalError).catch(() => {}); }, initializeRemaining());
     await Promise.race([child.ready, closed.then(() => { throw terminalError ?? failure('closed'); })]);
+    clearTimeout(timer);
+    initializeDeadline = Date.now() + initializeTimeoutMs;
+    timer = setTimeout(() => { terminalError ??= failure('timeout'); void close(terminalError).catch(() => {}); }, initializeRemaining());
     if (!await capture()) throw failure('closed');
     if (closing) throw terminalError ?? failure('closed');
     const output = Writable.toWeb(child.stdin), writer = output.getWriter();

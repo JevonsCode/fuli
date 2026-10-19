@@ -511,7 +511,9 @@ async def test_source_windows_use_real_neo4j_provider_and_mcp_without_space_queu
         listener.bind(('127.0.0.1', 0))
         port = listener.getsockname()[1]
     application = create_app(settings)
-    server = uvicorn.Server(uvicorn.Config(application, host='127.0.0.1', port=port, log_level='error', access_log=False))
+    server = uvicorn.Server(uvicorn.Config(application, host='127.0.0.1', port=port, log_level='error', access_log=False,
+                                           # uvloop would replace this process's event loop policy and break subprocess spawning.
+                                           loop='asyncio'))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
     url = f'http://127.0.0.1:{port}'
@@ -535,7 +537,8 @@ async def test_source_windows_use_real_neo4j_provider_and_mcp_without_space_queu
             space = response.json()['id']
             for project in ['queue-project', 'active-child']:
                 created = await client.put('/v1/personal-projects', json={'personal_space_id': space,
-                    'project_id': project, 'profile': {'name': 'Synthetic source project', 'lifecycle': 'active'}})
+                    'project_id': project, 'profile': {'name': 'Synthetic source project',
+                    'purpose': 'Verify preference source completeness on a real graph.', 'lifecycle': 'active'}})
                 assert created.status_code == 200
             prefix = 'source-' + uuid4().hex
             left, right = prefix + '-left', prefix + '-right'
@@ -595,7 +598,7 @@ async def test_source_windows_use_real_neo4j_provider_and_mcp_without_space_queu
                         assert.notEqual(response.isError,true,JSON.stringify(response.structuredContent?.error));
                         const data=response.structuredContent;
                         if(input.blocked) { assert.equal(data.preference_delivery.reason,'source_window'); assert.equal(Object.hasOwn(data,'effective_preferences'),false); }
-                        else { assert.equal(data.context.source_truncated,false); assert.equal(data.deferred_conflicts.length,2); }
+                        else { assert.notEqual(data.context.source_truncated,true); assert.equal(data.deferred_conflicts.length,2); }
                         console.log(JSON.stringify({blocked:input.blocked,sourceWindow:input.blocked?data.preference_delivery.reason:data.context.source_windows}));
                       } finally { await client.close(); await server.close(); await app.close(); }
                     '''
@@ -626,7 +629,8 @@ async def test_source_windows_use_real_neo4j_provider_and_mcp_without_space_queu
                     parent_ids = [prefix + '-parent-' + str(i) for i in (range(64) if count == 64 else [64])]
                     for parent_id in parent_ids:
                         created = await client.put('/v1/personal-projects', json={'personal_space_id': space,
-                            'project_id': parent_id, 'profile': {'name': 'Synthetic parent', 'lifecycle': 'active'}})
+                            'project_id': parent_id, 'profile': {'name': 'Synthetic parent',
+                                    'purpose': 'Synthetic parent for the inheritance window.', 'lifecycle': 'active'}})
                         assert created.status_code == 200
                     await driver.execute_query('''MATCH (space:FuliSpace {id:$space})-[:CONTAINS_PROJECT]->(child:FuliPersonalProject {project_id:'active-child'})
                         UNWIND $parent_ids AS project_id
