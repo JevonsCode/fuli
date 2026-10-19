@@ -49,6 +49,7 @@ async function fixture(t, writePolicy) {
   const hookInput = { session_id: 'synthetic-session', cwd: directory, prompt: `Remember ${PRIVATE}.`,
     transcript_path: join(directory, 'session.jsonl') };
   return { directory, runtimeConfigPath, app, registry, task, calls, hookInput,
+    setPolicy: value => new CapturePolicyStore(policyPath).update(value),
     writes: () => calls.filter(call => call.method !== 'GET') };
 }
 
@@ -179,4 +180,55 @@ test('an older adapter that names only its client still gets that client decisio
   assert.deepEqual(f.writes(), []);
   assert.equal((await callAgentTool(f.app, 'capture_session_knowledge', knowledgeEpisode('claude_code'))).route, 'personal');
   assert.deepEqual(f.writes().map(call => call.path), ['/v1/knowledge/commits']);
+});
+
+// A retry resends the same input; a fixed capture keeps its fingerprint stable.
+const privateCheckpoint = f => ({ taskContextToken: f.task.token, sourceApplication: 'codex',
+  disposition: 'capture_candidates', reason: `Finished ${PRIVATE}.`,
+  workLog: { status: 'completed', summary: `Did ${PRIVATE}.` },
+  capture: { ...knowledgeEpisode('codex'), name: PRIVATE } });
+
+// dot review of #226 (P1): a retry must keep the first attempt's decision, so
+// turning capture back on never records what the off period did not.
+for (const { name, off, reason } of [
+  { name: 'capture is turned back on', off: policyFile({ enabled: false }), reason: 'global_off' },
+  { name: 'the capture settings are repaired', off: path => writeFile(path, '{ not json'), reason: 'policy_unavailable' }
+]) {
+  test(`a completed checkpoint retried after ${name} keeps its first no-capture decision`, async (t) => {
+    const f = await fixture(t, off);
+    const first = await callAgentTool(f.app, 'checkpoint_task_knowledge', privateCheckpoint(f));
+    assert.equal(first.conversation.reason, reason);
+    f.setPolicy({ enabled: true, disabledSources: [] });
+    const replay = await callAgentTool(f.app, 'checkpoint_task_knowledge', privateCheckpoint(f));
+    assert.equal(replay.replayed, true);
+    assert.deepEqual(disabledShape(replay.conversation), disabledShape(first.conversation));
+    assertNothingKept(f, replay);
+  });
+
+  test(`a checkpoint interrupted after preparing and retried after ${name} captures nothing`, async (t) => {
+    const f = await fixture(t, off);
+    const complete = f.registry.checkpoint.bind(f.registry);
+    f.registry.checkpoint = () => { f.registry.checkpoint = complete; throw new Error('Synthetic crash after prepare'); };
+    await assert.rejects(callAgentTool(f.app, 'checkpoint_task_knowledge', privateCheckpoint(f)), /Synthetic crash/);
+    f.setPolicy({ enabled: true, disabledSources: [] });
+    const retry = await callAgentTool(f.app, 'checkpoint_task_knowledge', privateCheckpoint(f));
+    assert.equal(retry.status, 'checkpointed');
+    assert.deepEqual(disabledShape(retry.capture), { status: 'capture_disabled', reason, layer: retry.capture.layer });
+    assert.equal(retry.conversation.reason, reason);
+    assertNothingKept(f, retry);
+  });
+}
+
+test('a checkpoint prepared while capturing and retried after capture is turned off writes nothing new', async (t) => {
+  const f = await fixture(t, policyFile({ enabled: true }));
+  const complete = f.registry.checkpoint.bind(f.registry);
+  f.registry.checkpoint = () => { f.registry.checkpoint = complete; throw new Error('Synthetic crash after prepare'); };
+  await assert.rejects(callAgentTool(f.app, 'checkpoint_task_knowledge', privateCheckpoint(f)), /Synthetic crash/);
+  f.setPolicy({ enabled: false });
+  const before = f.writes().length;
+  const retry = await callAgentTool(f.app, 'checkpoint_task_knowledge', privateCheckpoint(f));
+  assert.equal(retry.status, 'checkpointed', 'the stored claim is resent exactly, so the retry is not a conflict');
+  assert.equal(retry.capture.reason, 'global_off');
+  assert.equal(retry.conversation.reason, 'global_off');
+  assert.deepEqual(f.writes().slice(before), []);
 });
