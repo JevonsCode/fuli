@@ -8,6 +8,7 @@ import test from 'node:test';
 import { createModelBackendPort } from '../src/model-backends/port.js';
 import { readModelBackendConfig } from '../src/model-backends/config.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
+import { openAiStream, sse } from './fixtures/model-transport.js';
 
 // rec#8 C1-C14 for the shared port. Every model call goes to an injected fake
 // transport; nothing here reaches a real or paid model.
@@ -52,23 +53,6 @@ function request(overrides = {}) {
 
 const answer = (overrides = {}) => JSON.stringify({ decision: 'propose', payload: { choice: 'ada' },
   reason: 'Ada has recent review evidence.', evidenceIds: ['e1'], uncertainty: null, ...overrides });
-
-function sse(events) {
-  const body = events.map(({ event, data }) =>
-    `${event ? `event: ${event}\n` : ''}data: ${typeof data === 'string' ? data : JSON.stringify(data)}\n\n`).join('');
-  return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
-}
-
-function openAiStream(content, { usage = { prompt_tokens: 50, completion_tokens: 10, total_tokens: 60 },
-  model = 'qwen-test-actual', finish = 'stop' } = {}) {
-  return sse([
-    { data: { model, choices: [{ index: 0, delta: { role: 'assistant', content: content.slice(0, 5) } }] } },
-    { data: { model, choices: [{ index: 0, delta: { content: content.slice(5) } }] } },
-    { data: { model, choices: [{ index: 0, delta: {}, finish_reason: finish }] } },
-    ...(usage ? [{ data: { model, choices: [], usage } }] : []),
-    { data: '[DONE]' }
-  ]);
-}
 
 function anthropicStream(content, { start = { input_tokens: 100, output_tokens: 1 }, deltas = [{ output_tokens: 12 }],
   stopReason = 'end_turn', model = 'claude-test-actual' } = {}) {

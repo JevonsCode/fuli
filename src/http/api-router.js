@@ -21,7 +21,7 @@ export async function handleApiRequest({
   const url = new URL(request.url, 'http://127.0.0.1');
   if (await handlePeerApiRequest({ request, response, url, peer })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
-  if (await handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends })) return true;
+  if (await handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork })) return true;
 
   if (url.pathname === '/api/health' && request.method === 'GET') {
     sendJson(response, 200, {

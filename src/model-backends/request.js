@@ -46,8 +46,24 @@ const usageQuerySchema = z.object({
   to: isoTime.nullable().default(null)
 }).strict().refine(query => !query.from || !query.to || query.from <= query.to, 'from must not be after to');
 
+// role_work tool input. sourceApplication and sourceSessionId are set by the
+// MCP process for its own client, never taken from the payload.
+const sessionInput = { taskContextToken: id, sourceApplication: id.default('other'), sourceSessionId: id.optional() };
+const tokens = z.number().int().min(0).max(100_000_000);
+const claimSchema = z.object({ ...sessionInput, packageId: id.optional() }).strict();
+const submitSchema = z.object({ ...sessionInput, packageId: id, leaseToken: id, answer: z.looseObject({}),
+  usage: z.object({ inputTokens: tokens, outputTokens: tokens }).partial().strict().optional() }).strict();
+
 export function parseDecisionRequest(input) {
   return parse(requestSchema, input, 'model decision request');
+}
+
+export function parseRoleWorkClaim(input) {
+  return parse(claimSchema, input, 'role work claim');
+}
+
+export function parseRoleWorkSubmission(input) {
+  return parse(submitSchema, input, 'role work submission');
 }
 
 export function parseUsageQuery(input = {}) {

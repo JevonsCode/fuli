@@ -8,7 +8,9 @@ import { createJudgmentService } from '../judgment/service.js';
 import { JudgmentStore } from '../judgment/store.js';
 import { createJudgmentEngine } from '../judgment/engine.js';
 import { createTaskScheduleService } from '../task-schedules/service.js';
-import { openModelBackendRuntime } from '../model-backends/runtime.js';
+import { openModelBackendRuntime, openRoleWorkRuntime } from '../model-backends/runtime.js';
+import { createJudgmentBackend } from '../judgment/backend.js';
+import { roleWorkSessions } from './role-work-sessions.js';
 import { TaskScheduleStore } from '../task-schedules/store.js';
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 import { withTaskMemorySnapshot } from './project-agent-memory.js';
@@ -133,9 +135,12 @@ export function openFederatedGraphApplication({
     app.agentSnapshots = createAgentDirectorySnapshots({ root: paths.agentDirectoryRoot,
       providerIdentity: resolved.personal.providerUrl });
     app.employees = createEmployeeService({ app, runtimeConfigPath });
-    app.judgment = createJudgmentService({ app, engine: createJudgmentEngine({ app }),
-      openStore: () => new JudgmentStore(join(dirname(runtimeConfigPath), 'judgment.sqlite')) });
     app.modelBackends = openModelBackendRuntime(paths);
+    app.roleWork = openRoleWorkRuntime(paths, { port: app.modelBackends, verifySession: roleWorkSessions(app),
+      resumers: { tonborg: work => app.judgment.resumeWork(work) } });
+    app.judgment = createJudgmentService({ app,
+      engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge: app.roleWork }) }),
+      openStore: () => new JudgmentStore(join(dirname(runtimeConfigPath), 'judgment.sqlite')) });
     app.taskSchedules = createTaskScheduleService({ app,
       openStore: () => new TaskScheduleStore(join(dirname(runtimeConfigPath), 'task-schedules.sqlite')) });
     app.roundtableHost = createFuliRoundtableHost(app);
@@ -1081,7 +1086,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
-  close() { this.judgment?.close(); this.taskSchedules?.close(); this.modelBackends?.close(); this.roundtable?.close(); this.peer?.close(); return this.employees?.close(); }
+  close() { this.judgment?.close(); this.taskSchedules?.close(); this.roleWork?.close(); this.modelBackends?.close(); this.roundtable?.close(); this.peer?.close(); return this.employees?.close(); }
 
   // View records rank knowledge by what a session looked at: a behavior trace
   // that stops with automatic recording. Reading itself needs none (rec#11 D-01).
