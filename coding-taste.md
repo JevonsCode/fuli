@@ -53,7 +53,7 @@ Each row is the single home for that behavior; reuse it or extend it.
 | Web theme tokens and Tailwind preset | `web/src/styles/theme/` | Base → semantic → component tokens; a skin re-points semantic tokens only. |
 | Web class merging (`cn`) | `web/src/lib/class-names.ts` | |
 | Web modal behavior | `web/src/composables/useModalDialog.ts` | |
-| Web shadcn-vue components | `web/src/components/ui/*` (Button, Dialog, Tabs, Card, Accordion, Table, DropdownMenu, Badge) | Source copies; each `index.ts` records the upstream commit and every local change. Copy only the parts a page uses. |
+| Web shadcn-vue components | `web/src/components/ui/*` (Button, Dialog, Tabs, Card, Accordion, Table, DropdownMenu, Badge; form controls Input, Textarea, Select, Switch, Checkbox, RadioGroup, Label, Field) | Source copies; each `index.ts` records the upstream commit and every local change. Copy only the parts a page uses. Forms compose Field + Label + a control; there is no form framework (no vee-validate). |
 | Web page title (the one H1) | `web/src/layouts/page-title.ts` (`usePageTitle`) and route `meta.title` | The shell renders the H1; a page about one record names itself. Pages never render their own `h1`. |
 | Web page canvas | route `meta.layout` (`canvas` / `form`), `--canvas-max` / `--form-max` in `web/src/styles/tokens.css` | Collections use 1/2/3/4 columns by canvas width (container queries). |
 | Web quick look (Peek) | `web/src/composables/useRoutePeek.ts` with the shadcn-vue `Dialog` | `?item=<space>/<id>`; opening adds history, closing goes Back. |
