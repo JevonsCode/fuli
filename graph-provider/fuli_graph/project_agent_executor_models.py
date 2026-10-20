@@ -80,6 +80,9 @@ ProjectAgentExecutorTerminalOutcome = Literal[
     'failed',
     'cancelled',
 ]
+# Fewer outcome samples than this stay neutral: routing learning does not
+# prefer on them and the score card draws no conclusion from them.
+MINIMUM_EVIDENCE_SAMPLES = 3
 
 _CAPABILITY_ALIASES = {
     'code': 'coding',

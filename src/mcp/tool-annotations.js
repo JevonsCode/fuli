@@ -43,6 +43,7 @@ const READ_TOOLS = new Set([
   'list_executor_routing_rules',
   'get_executor_routing_rule',
   'list_project_agent_routing_learning',
+  'get_agent_score_card',
   'list_knowledge_review_candidates',
   'list_workflow_candidates',
   'recommend_next_workflow_steps',

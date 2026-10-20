@@ -29,6 +29,8 @@ def test_super_collaboration_http_contract_exposes_all_control_plane_layers():
         '/v1/executor-routing-rules': {'get', 'put'},
         '/v1/executor-routing-rules/{rule_id}': {'get', 'patch', 'delete'},
         '/v1/project-agent-routing-learning': {'get'},
+        '/v1/project-agent-score-card/query': {'post'},
+        '/v1/project-agent-score-card/evidence': {'post'},
     }
 
     for path, methods in expected.items():
