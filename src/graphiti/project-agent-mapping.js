@@ -131,6 +131,9 @@ export function projectAgentRecord(value) {
     Object.hasOwn(value, 'recruitment_reason'));
   copyOptional(result, 'recruitmentSourceApplication', value.recruitment_source_application,
     Object.hasOwn(value, 'recruitment_source_application'));
+  // Only an archived Agent carries why and when it left.
+  copyOptional(result, 'archivedAt', value.archived_at, value.archived_at != null);
+  copyOptional(result, 'archiveReason', value.archive_reason, value.archive_reason != null);
   copyOptional(
     result,
     'executionSummary',

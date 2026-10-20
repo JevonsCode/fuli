@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from test_project_agent_memory_neo4j import fixture_settings, provider_client
+from test_project_agent_memory_neo4j import dismiss_agent, fixture_settings, provider_client
 from test_system_hr_identity_neo4j import _create_space, _query
 
 
@@ -97,9 +97,7 @@ async def test_number_survives_project_move_archive_and_six_digit_rollover():
             assert response.status_code == 200, response.text
             updated = await put_agent(client, space_id, 'last-six', personal_project_id=project)
             assert updated['employee_number'] == '999999'
-        archived = await client.delete('/v1/project-agents/last-six', params={
-            'personal_space_id': space_id, 'reason': 'Synthetic archive',
-        })
+        archived = await dismiss_agent(client, space_id, 'last-six')
         assert archived.status_code == 200, archived.text
         assert archived.json()['employee_number'] == '999999'
         second = await put_agent(client, space_id, 'first-seven')

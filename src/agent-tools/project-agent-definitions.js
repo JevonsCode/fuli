@@ -36,7 +36,8 @@ export const projectAgentWorkerRuntime = objectSchema({
   sessionUrl: { ...nullableStringSchema(), maxLength: 2048 }
 }, ['application']);
 
-const projectAgentStatus = enumSchema(['active', 'inactive', 'archived']);
+// An Agent is archived only by dismiss_project_agent, which requires a reason.
+const projectAgentStatus = enumSchema(['active', 'inactive']);
 export const nullableProjectAgentStatus = {
   type: ['string', 'null'],
   enum: ['active', 'inactive', 'archived', null]
