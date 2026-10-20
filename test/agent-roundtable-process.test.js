@@ -44,7 +44,8 @@ for (const [mode, code] of [['cancel', 'cancelled'], ['timeout', 'wake_timeout']
     try {
       pids = await waitFor(async () => {
         try { return JSON.parse(await readFile(pidFile, 'utf8')); }
-        catch (error) { if (error.code !== 'ENOENT') throw error; }
+        // An empty or partial file (writeFileSync truncates first) is "not yet".
+        catch (error) { if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error; }
       });
       if (mode === 'cancel') controller.abort('share_withdrawn');
       const error = await result;
@@ -92,7 +93,9 @@ test('confirmed cleanup waits for a slow-exiting descendant, not only the leader
   try {
     pids = await waitFor(async () => {
       try { return JSON.parse(await readFile(pidFile, 'utf8')); }
-      catch (error) { if (error.code !== 'ENOENT') throw error; }
+      // writeFileSync truncates before writing, so a poll can catch an empty or
+      // partial file: that is "not written yet", like a missing one.
+      catch (error) { if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error; }
     });
     // Like the timeout path, kill a tree that has gone idle; an immediate kill
     // can let the descendant finish exiting first by accident.
