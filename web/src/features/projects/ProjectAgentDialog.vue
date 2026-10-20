@@ -51,8 +51,11 @@ const projectOptions = computed(() => props.projects.map((project) => ({
   label: project.profile.name,
   meta: project.project_id,
 })))
-const statusOptions = computed(() => (['active', 'inactive', 'archived'] as const)
-  .map((value) => ({ value, label: t(`projectAgents.status.${value}`) })))
+// Only Bole's dismissal, with a reason, archives an Agent; an archived one is shown, not offered.
+const statusOptions = computed(() => [
+  ...(['active', 'inactive'] as const).map((value) => ({ value, label: t(`projectAgents.status.${value}`) })),
+  ...(status.value === 'archived' ? [{ value: 'archived', label: t('projectAgents.status.archived'), disabled: true }] : []),
+])
 // Temporary and coordinator identities cannot be created here; they only show when editing one.
 const agentTypeOptions = computed(() => [
   ...(['durable', 'hr'] as const).map((value) => ({ value, label: t(`projectAgents.agentType.${value}`) })),

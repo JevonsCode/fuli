@@ -329,15 +329,25 @@ export class GraphitiProviderClient {
       ? this.#request(`${path}?${new URLSearchParams(body)}`)
       : this.#request(path, { method: methods[operation], body });
   }
-  deleteProjectAgent(personalSpaceId, agentId, reason = 'archived by user') {
-    const query = new URLSearchParams({
-      personal_space_id: personalSpaceId,
-      reason
-    });
-    return this.#request(
-      `/v1/project-agents/${encodeURIComponent(agentId)}?${query}`,
-      { method: 'DELETE' }
-    );
+  // Only test-marked roles; every other Agent leaves through dismissProjectAgent.
+  archiveTestProjectAgent(personalSpaceId, agentId, reason) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId, reason });
+    return this.#request(`/v1/project-agents/${encodeURIComponent(agentId)}?${query}`, { method: 'DELETE' });
+  }
+  dismissProjectAgent(agentId, input) {
+    return this.#request(`/v1/project-agents/${encodeURIComponent(agentId)}/dismissal`, { method: 'POST', body: input });
+  }
+  getProjectAgentDismissal(personalSpaceId, agentId) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    return this.#request(`/v1/project-agents/${encodeURIComponent(agentId)}/dismissal?${query}`);
+  }
+  listProjectAgentDismissalLessons({ personalSpaceId, occupations = [], personalProjectId = null, query = null, limit = null }) {
+    const search = new URLSearchParams({ personal_space_id: personalSpaceId });
+    for (const occupation of occupations) search.append('occupation', occupation);
+    for (const [key, value] of [['personal_project_id', personalProjectId], ['query', query], ['limit', limit]]) {
+      if (value !== null && value !== undefined) search.set(key, String(value));
+    }
+    return this.#request(`/v1/project-agent-dismissal-lessons?${search}`);
   }
   cleanupProjectAgentTestRoles(personalSpaceId, testSource) {
     const query = new URLSearchParams({

@@ -14,6 +14,7 @@ from .store_project_agent_memory import StoreProjectAgentMemory
 from .store_project_agent_context import StoreProjectAgentContext
 from .default_project_lead import StoreDefaultProjectLead
 from .store_project_agents import StoreProjectAgents
+from .store_project_agent_dismissal import StoreProjectAgentDismissal
 from .store_project_agent_occupation import StoreProjectAgentOccupation
 from .store_occupation_catalog import StoreOccupationCatalog
 from .store_project_agent_pages import StoreProjectAgentPages
@@ -34,6 +35,7 @@ class GraphStore(
     StoreAgentVerification,
     StoreProjects,
     StoreProjectAgents,
+    StoreProjectAgentDismissal,
     StoreProjectAgentOccupation,
     StoreOccupationCatalog,
     StoreProjectAgentPages,

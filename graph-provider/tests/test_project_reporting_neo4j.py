@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from test_project_agent_memory_neo4j import fixture_settings, provider_client, seed_agent
+from test_project_agent_memory_neo4j import dismiss_agent, fixture_settings, provider_client, seed_agent
 from test_system_hr_identity_neo4j import _create_space
 
 
@@ -39,18 +39,14 @@ async def test_project_lead_must_handoff_before_leaving():
             'responsibility': 'Synthetic work',
         })
         assert replacement.status_code == 409, replacement.text
-        archived = await client.delete('/v1/project-agents/lead', params={
-            'personal_space_id': space_id, 'reason': 'Synthetic departure',
-        })
+        archived = await dismiss_agent(client, space_id, 'lead', 'Synthetic departure')
         assert archived.status_code == 409, archived.text
         handed_off = await client.put('/v1/project-agent-coordination-policy', json={
             **scope, 'team_lead_agent_id': 'successor', 'team_member_agent_ids': [],
             'expected_updated_at': policy.json()['updated_at'],
         })
         assert handed_off.status_code == 200, handed_off.text
-        archived = await client.delete('/v1/project-agents/lead', params={
-            'personal_space_id': space_id, 'reason': 'Synthetic completed handoff',
-        })
+        archived = await dismiss_agent(client, space_id, 'lead', 'Synthetic completed handoff')
         assert archived.status_code == 200, archived.text
 
 
@@ -107,9 +103,8 @@ async def test_concurrent_archive_cannot_install_an_unavailable_project_lead(mon
             }))
             try:
                 await asyncio.wait_for(reached.wait(), timeout=5)
-                archived = await client.delete('/v1/project-agents/successor', params={
-                    'personal_space_id': space_id, 'reason': 'Synthetic concurrent departure',
-                })
+                archived = await dismiss_agent(
+                    client, space_id, 'successor', 'Synthetic concurrent departure')
                 assert archived.status_code == 200, archived.text
             finally:
                 proceed.set()

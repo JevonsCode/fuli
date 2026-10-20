@@ -100,6 +100,12 @@ The reserved identity is `employee.<template-id>`, recognized by the generic `fu
 
 `employee.bole` is additionally reserved as the only system AR identity. Its Provider type is `hr`; other identities cannot claim that type. Recruitment history records the coordinating and AR Agent IDs, time, reason, proposed identity and final recruited identity, which powers Bole's people panel without inventing activity.
 
+### Dismissal
+
+Bole also handles an Agent leaving ("dismissal"). The user starts it or approves it; Bole never picks whom to dismiss. In a client session, ask Bole to dismiss an Agent and it first asks why: `dismiss_project_agent` refuses a missing or placeholder reason. Project leads (hand off first), Agents with open tasks and the fixed roles are refused as before. A dismissal archives the identity, ends its assignments and stores, in the same write, the reason, up to three short lessons and a Markdown handoff of the Agent's working memory. Tasks, recruitment and routing history stay readable, the employee number stays with the archived identity and is never reused, and the profile shows why the Agent left.
+
+Lessons are not loaded into anyone's context. Task entry and a pending recruitment only report how many lessons exist for the same occupation or project and the `list_agent_dismissal_lessons` query to read them; `get_agent_handoff` returns the stored handoff. Setting `archived` through a profile update is rejected; only test-marked roles can still be archived directly, for test cleanup. A dismissal button for Bole's own model on the management page is not available yet.
+
 ## HTTP and MCP
 
 The host serves `/api/employee-templates`, recruitment/workspace/tool endpoints below it, and `/employee-workspaces/<template-id>/<project-id>/…`. Existing Host/Origin, JSON-body and LAN authorization checks apply. All workbench requests require an active matching identity and authorized responsibility policy, including assets and Agent discovery. Selected mode additionally requires an active assignment; all mode includes future active projects but enforces explicit exclusions and ended assignments before reaching the runtime.

@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 import pytest
 
-from test_project_agent_memory_neo4j import fixture_settings, provider_client, seed_agent
+from test_project_agent_memory_neo4j import dismiss_agent, fixture_settings, provider_client, seed_agent
 from test_project_agent_activity_atomicity_neo4j import seed_executor
 
 
@@ -69,13 +69,8 @@ async def test_archive_winning_before_participant_link_rolls_back_task(
                 client.post('/v1/project-agent-tasks', json=payload)
             )
             await asyncio.wait_for(participant_link_reached.wait(), timeout=10)
-            archived = await client.delete(
-                '/v1/project-agents/engineer',
-                params={
-                    'personal_space_id': space_id,
-                    'reason': 'Synthetic archive won the lifecycle race.',
-                },
-            )
+            archived = await dismiss_agent(
+                client, space_id, 'engineer', 'Synthetic archive won the lifecycle race.')
             assert archived.status_code == 200, archived.text
             continue_participant_link.set()
             task = await asyncio.wait_for(task_request, timeout=10)
@@ -177,13 +172,8 @@ async def test_participant_link_winning_blocks_concurrent_archive(monkeypatch):
                 client.post('/v1/project-agent-tasks', json=payload)
             )
             await asyncio.wait_for(participant_link_written.wait(), timeout=10)
-            archive_request = asyncio.create_task(client.delete(
-                '/v1/project-agents/engineer',
-                params={
-                    'personal_space_id': space_id,
-                    'reason': 'Synthetic archive must lose this race.',
-                },
-            ))
+            archive_request = asyncio.create_task(dismiss_agent(
+                client, space_id, 'engineer', 'Synthetic archive must lose this race.'))
             await asyncio.wait_for(archive_query_started.wait(), timeout=10)
             await asyncio.sleep(0.1)
             assert not archive_request.done()
@@ -193,7 +183,7 @@ async def test_participant_link_winning_blocks_concurrent_archive(monkeypatch):
 
         assert task.status_code == 200, task.text
         assert archived.status_code == 409, archived.text
-        assert 'non-terminal task work' in archived.text
+        assert 'open task' in archived.text
         agent = await client.get('/v1/project-agents/engineer', params={
             'personal_space_id': space_id,
             'personal_project_id': 'sample-project',

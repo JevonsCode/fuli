@@ -288,10 +288,11 @@ export async function handleGraphApiRequest({
     return true;
   }
   if (projectAgentPath && request.method === 'DELETE') {
-    sendJson(response, 200, await app.deleteProjectAgent({
+    // Retires a test role only; other Agents leave through Bole's dismissal.
+    sendJson(response, 200, await app.archiveTestProjectAgent({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
       agentId: decodeURIComponent(projectAgentPath[1]),
-      reason: url.searchParams.get('reason') ?? 'archived by user'
+      reason: url.searchParams.get('reason') ?? 'archived test role'
     }));
     return true;
   }
