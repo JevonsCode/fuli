@@ -56,7 +56,6 @@ async function setup(path: string, capabilities: Record<string, boolean> = {}, e
     routes: [
       ...extraRoutes,
       { path: '/', component: page, meta: { title: '星图' } },
-      { path: '/settings', name: 'settings', component: { template: '<form id="settings-form"></form>' }, meta: { title: '设置' } },
       { path: '/:pathMatch(.*)*', component: page, meta: { title: '页面' } },
     ],
   })
@@ -145,15 +144,6 @@ describe('AppShell', () => {
     const quiet = await setup('/')
     expect(quiet.wrapper.find('[data-attention-badge]').exists()).toBe(false)
     quiet.wrapper.unmount()
-  })
-
-  it('shows the settings save button only on the settings page, bound to its form', async () => {
-    const { wrapper, router } = await setup('/')
-    expect(wrapper.find('button[form="settings-form"]').exists()).toBe(false)
-    await router.push('/settings')
-    await flushPromises()
-    expect(wrapper.get('button[form="settings-form"]').attributes('type')).toBe('submit')
-    wrapper.unmount()
   })
 
   it('renders one H1: a record page names itself, the route title is only the fallback', async () => {

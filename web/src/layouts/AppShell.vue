@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, provide, watch, watchEffect } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
-import GrowthLoading from '@/components/GrowthLoading.vue'
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
@@ -12,7 +11,6 @@ import { useAgentAttention } from '@/features/project-agents/attention-store'
 import { t } from '@/i18n'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { useConsoleStore } from '@/stores/console'
-import { Button } from '@/components/ui/button'
 import { UiIconButton } from '@/ui'
 import NavRail from './NavRail.vue'
 import SectionTabs from './SectionTabs.vue'
@@ -75,10 +73,6 @@ watchEffect(() => updateDocumentTitle(recordTitle.value || route.meta.title))
           <h1 class="app-title">{{ title }}</h1>
           <SectionTabs :sections="destination?.sections ?? []" :active-key="section?.key" />
           <div class="app-actions">
-            <template v-if="route.name === 'settings'">
-              <GrowthLoading v-if="store.settingsSaving" variant="inline" :label="t(store.settingsSaveState === 'applying' ? 'settings.applying' : 'settings.saving')" />
-              <Button :disabled="store.settingsSaving" form="settings-form" type="submit">{{ t(store.settingsSaveState === 'saved' ? 'settings.savedShort' : 'settings.save') }}</Button>
-            </template>
             <GlossaryToggle />
             <LocaleSwitcher />
             <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="store.runtimeStatus === 'loading'" @click="store.refresh" />

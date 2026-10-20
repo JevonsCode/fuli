@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { useConsoleStore } from '@/stores/console'
 import { DEFAULT_CONVERSATION_LAUNCHERS } from '@/features/knowledge/source-adapters'
@@ -23,6 +24,9 @@ const configured = {
   conversationLaunchers: structuredClone(DEFAULT_CONVERSATION_LAUNCHERS),
 }
 
+// The open tab lives in the URL, so the page needs a router.
+const settingsRouter = () => createRouter({ history: createMemoryHistory(), routes: [{ path: '/:any(.*)*', component: { template: '<div />' } }] })
+
 describe('SettingsPage', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -38,7 +42,7 @@ describe('SettingsPage', () => {
       if (String(input) === '/api/system/settings') return Response.json({ configured: legacy, active: configured, restartRequired: false })
       return Response.json({}, { status: 503 })
     }))
-    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
     await flushPromises()
     expect(wrapper.findAll('.conversation-launcher-row')).toHaveLength(7)
     const codex = wrapper.findAll('.conversation-launcher-row').find((row) => row.text().includes('Codex'))!
@@ -55,14 +59,16 @@ describe('SettingsPage', () => {
       if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
       return Response.json({}, { status: 503 })
     }))
-    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] }, attachTo: document.body })
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] }, attachTo: document.body })
     await flushPromises()
     const search = wrapper.get('.settings-search input')
     await search.setValue('Neo4j Bolt')
     await flushPromises()
-    const ports = wrapper.get<HTMLDetailsElement>('.ports-card')
+    const ports = wrapper.get('.ports-card')
     expect(ports.attributes('data-search-hidden')).toBeUndefined()
-    expect(ports.element.open).toBe(true)
+    expect(ports.attributes('data-state')).toBe('open')
+    // A search looks through every tab, not only the open one.
+    expect(wrapper.get('[data-settings-tab="network"]').attributes('hidden')).toBeUndefined()
     expect(wrapper.get('.behavior-card').attributes('data-search-hidden')).toBe('')
     await search.setValue('zzz-no-such-setting')
     await flushPromises()
@@ -70,7 +76,8 @@ describe('SettingsPage', () => {
     await search.setValue('')
     await flushPromises()
     expect(wrapper.findAll('[data-search-hidden]')).toHaveLength(0)
-    expect(ports.element.open).toBe(false)
+    expect(ports.attributes('data-state')).toBe('closed')
+    expect(wrapper.get('[data-settings-tab="network"]').attributes('hidden')).toBeDefined()
     wrapper.unmount()
   })
 
@@ -89,7 +96,7 @@ describe('SettingsPage', () => {
       if (String(input) === '/api/system/settings') return Response.json({ configured: withNotifications, active: withNotifications, restartRequired: false })
       return Response.json({}, { status: 503 })
     }))
-    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
     await flushPromises()
     await wrapper.get('[data-needs-person-url]').setValue('http://127.0.0.1:9123/fuli')
     await wrapper.get('form').trigger('submit')
@@ -107,7 +114,7 @@ describe('SettingsPage', () => {
     vi.stubGlobal('fetch', vi.fn(async (input) => String(input) === '/api/system/settings'
       ? Response.json({ configured: native, active: native, restartRequired: false })
       : Response.json({}, { status: 503 })))
-    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
     await flushPromises()
     expect(wrapper.find('[data-select-id="settings-runtime-mode"]').exists()).toBe(false)
     wrapper.unmount()
@@ -122,7 +129,7 @@ describe('SettingsPage', () => {
       return Response.json({}, { status: 503 })
     })
     vi.stubGlobal('fetch', fetch)
-    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
     await flushPromises()
     const requests = fetch.mock.calls.length
     const toggle = wrapper.get('[data-reduce-motion]')
@@ -149,31 +156,43 @@ describe('SettingsPage', () => {
       if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured })
       return Response.json({}, { status: 503 })
     }))
-    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
     await flushPromises()
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(store.feedback?.tone).toBe('error')
     expect(store.feedback?.message).toContain('Port unavailable')
-    expect(store.settingsSaving).toBe(false)
+    expect(wrapper.get('[data-settings-save]').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('.settings-fields').attributes('disabled')).toBeUndefined()
     wrapper.unmount()
   })
 
-  it('reveals an invalid field inside a collapsed settings section', async () => {
+  it('opens the tab and section of an invalid field on save, focuses it and sends nothing', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     useConsoleStore().runtimeStatus = 'ready'
-    vi.stubGlobal('fetch', vi.fn(async (input) => {
-      if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured })
+    const fetch = vi.fn(async (input: unknown, init?: RequestInit) => {
+      if (String(input) === '/api/system/settings' && !init?.method) return Response.json({ configured, active: configured })
       return Response.json({}, { status: 503 })
-    }))
-    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    })
+    vi.stubGlobal('fetch', fetch)
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] }, attachTo: document.body })
     await flushPromises()
     const ports = wrapper.get('.ports-card')
-    expect((ports.element as HTMLDetailsElement).open).toBe(false)
-    await ports.get('input').trigger('invalid')
-    expect((ports.element as HTMLDetailsElement).open).toBe(true)
+    expect(ports.attributes('data-state')).toBe('closed')
+    expect(wrapper.get('[data-settings-tab="network"]').attributes('hidden')).toBeDefined()
+    const port = ports.get<HTMLInputElement>('input')
+    await port.setValue('')
+    await wrapper.get('#settings-form').trigger('submit')
+    await flushPromises()
+    expect(fetch.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
+    expect(wrapper.get('[data-settings-tab-trigger="network"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('[data-settings-tab="network"]').attributes('hidden')).toBeUndefined()
+    expect(ports.attributes('data-state')).toBe('open')
+    // Focus waits for the opened section to show (a few frames at most).
+    await vi.waitFor(() => expect(document.activeElement).toBe(port.element))
+    expect(port.attributes('aria-invalid')).toBe('true')
+    expect(wrapper.get('[data-settings-savebar]').text()).toContain('请先修正「管理界面」再保存')
     wrapper.unmount()
   })
 
@@ -192,17 +211,17 @@ describe('SettingsPage', () => {
       if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured })
       return Response.json({}, { status: 503 })
     }))
-    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
     await flushPromises()
     await wrapper.get('#settings-form').trigger('submit')
     await wrapper.get('#settings-form').trigger('submit')
     expect(saves).toBe(1)
-    expect(store.settingsSaving).toBe(true)
+    expect(wrapper.get('[data-settings-save]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('.settings-fields').attributes('disabled')).toBeDefined()
-    expect(store.settingsSaveState).toBe('saving')
+    expect(wrapper.get('[data-settings-savebar] .growth-loading').attributes('aria-label')).toContain('正在保存运行设置')
     finish(Response.json({ configured, active: configured }))
     await flushPromises()
-    expect(store.settingsSaving).toBe(false)
+    expect(wrapper.get('[data-settings-save]').attributes('disabled')).toBeUndefined()
     expect(store.feedback).toEqual({ tone: 'success', message: '设置已保存并生效' })
     expect(wrapper.get('.settings-fields').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('.growth-loading--inline').exists()).toBe(false)
@@ -266,7 +285,7 @@ describe('SettingsPage', () => {
       throw new Error(`Unexpected request: ${url}`)
     }))
 
-    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
     await flushPromises()
 
     expect(wrapper.text()).toContain('资源占用')
@@ -278,7 +297,9 @@ describe('SettingsPage', () => {
     expect(wrapper.findAll('.port-grid input')).toHaveLength(4)
     expect(wrapper.get('.development-section').text()).toContain('开发中')
     expect(wrapper.get('.development-section').text()).toContain('fuli-server')
-    expect(wrapper.find('.save-bar').exists()).toBe(false)
+    // One save area, at the end of the form, submitting it.
+    expect(wrapper.findAll('[data-settings-save]')).toHaveLength(1)
+    expect(wrapper.get('[data-settings-savebar] [data-settings-save]').attributes('type')).toBe('submit')
     expect(wrapper.findAll('.select-row > select')).toHaveLength(0)
     expect(wrapper.findAll('.settings-select [role="combobox"]')).toHaveLength(3)
     expect(wrapper.findAll('.conversation-launcher-row')).toHaveLength(7)
@@ -334,6 +355,35 @@ describe('SettingsPage', () => {
     expect(wrapper.text()).not.toContain('需要重启')
     wrapper.unmount()
   })
+  it('says when a change still needs saving, and keeps unsaved edits when switching tabs', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().runtimeStatus = 'ready'
+    vi.stubGlobal('fetch', vi.fn(async (input, init?: RequestInit) => {
+      if (String(input) === '/api/system/settings' && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body))
+        return Response.json({ configured: body, active: body, restartRequired: false })
+      }
+      if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
+      return Response.json({}, { status: 503 })
+    }))
+    const router = settingsRouter()
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+    const status = () => wrapper.get('[data-settings-savebar] [role="status"]').text()
+    expect(status()).toBe('')
+    await wrapper.get('[data-settings-tab="network"] [role="switch"]').trigger('click')
+    expect(status()).toBe('有未保存的更改')
+    await wrapper.get('[data-settings-tab-trigger="system"]').trigger('mousedown')
+    await flushPromises()
+    expect(router.currentRoute.value.query.tab).toBe('system')
+    expect(status()).toBe('有未保存的更改')
+    await wrapper.get('#settings-form').trigger('submit')
+    await flushPromises()
+    expect(status()).toBe('已保存')
+    wrapper.unmount()
+  })
+
   it('switches capture per client while the clients keep reading memory', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -348,7 +398,7 @@ describe('SettingsPage', () => {
       if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
       return Response.json({}, { status: 503 })
     }))
-    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
     await flushPromises()
     const codex = wrapper.get('[data-capture-source="codex"] [role="switch"]')
     const claude = wrapper.get('[data-capture-source="claude_code"] [role="switch"]')
@@ -375,7 +425,7 @@ describe('SettingsPage', () => {
       if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
       return Response.json({}, { status: 503 })
     }))
-    const wrapper = mount(SettingsPage, { global: { plugins: [pinia] } })
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
     await flushPromises()
     const toggle = wrapper.get('[data-recall-answer-from-confirmed] [role="switch"]')
     expect(toggle.attributes('aria-checked')).toBe('true')
