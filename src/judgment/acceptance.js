@@ -49,8 +49,9 @@ export async function assessAcceptance({ app, judge, context, service, input: ra
       outcome: 'escalate', summary: 'This artifact needs a passed verification from another Agent before automatic acceptance.',
       evidence: [gate.status], confidence: 0 };
     const evaluationId = randomUUID();
+    // agentId names whose work was assessed, so Bole's score card can count it.
     record = store.record(space, { personalProjectId: project, kind: 'acceptance', target: input.taskId, evaluationId,
-      title: task.title, ...decision, outcome: decision.confidence >= 0.85 ? decision.outcome : 'escalate',
+      agentId: task.leadAgentId, title: task.title, ...decision, outcome: decision.confidence >= 0.85 ? decision.outcome : 'escalate',
       artifactRevision: input.artifactRevision, taskRevision: input.expectedRevision, verification: attempt ?? null,
       requestFingerprint, policy, client: response?.client ?? null, model: response?.model ?? null,
       sessionId: response?.sessionId ?? null, memoryRevision: evidenceContext.memoryRevision }, key);

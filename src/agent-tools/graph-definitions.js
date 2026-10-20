@@ -37,6 +37,7 @@ import { TASK_RUN_DEFINITIONS } from './task-run-definitions.js';
 import { TASK_PREFERENCE_DEFINITIONS } from './task-preference-definitions.js';
 import { AGENT_INTERFACE_DEFINITIONS } from './interface-definitions.js';
 import { AGENT_ATTENTION_DEFINITIONS } from './agent-attention-definitions.js';
+import { AGENT_SCORE_CARD_DEFINITIONS } from './agent-score-card-definitions.js';
 import { KNOWLEDGE_USAGE_DEFINITION, knowledgeUsageItems } from './knowledge-usage-definitions.js';
 
 const id = boundedString(256);
@@ -289,6 +290,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   ...EMPLOYEE_TOOL_DEFINITIONS,
   ...JUDGMENT_TOOL_DEFINITIONS,
   ...MODEL_USAGE_DEFINITIONS,
+  ...AGENT_SCORE_CARD_DEFINITIONS,
   ...TASK_SCHEDULE_DEFINITIONS, ...TASK_RUN_DEFINITIONS,
   ...TASK_PREFERENCE_DEFINITIONS,
   {

@@ -9,6 +9,7 @@ from .project_agent_memory_routes import register_project_agent_memory_routes
 from .project_agent_occupation_models import ProjectAgentOccupationUpdate
 from .occupation_routes import register_occupation_routes
 from .store_project_agent_pages import ProjectAgentPage
+from .project_agent_score_card_routes import register_project_agent_score_card_routes
 from .project_agent_worker_routes import register_project_agent_worker_routes
 from .task_notifications import register_task_notification_routes
 
@@ -71,6 +72,7 @@ def register_project_agent_routes(
     notify_task_change = register_task_notification_routes(application, store, Actor)
     from .project_agent_attention_routes import register_project_agent_attention_routes
     register_project_agent_attention_routes(application, store, Actor)
+    register_project_agent_score_card_routes(application, store, Actor)
 
     @application.put('/v1/project-agents', response_model=ProjectAgentRecord)
     async def upsert_project_agent(

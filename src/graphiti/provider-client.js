@@ -596,6 +596,13 @@ export class GraphitiProviderClient {
       method: 'POST', body: input
     });
   }
+  // Reads sent as POST: the host supplies the review verdicts it keeps locally.
+  getProjectAgentScoreCard(query) {
+    return this.#request('/v1/project-agent-score-card/query', { method: 'POST', body: query });
+  }
+  listProjectAgentScoreEvidence(query) {
+    return this.#request('/v1/project-agent-score-card/evidence', { method: 'POST', body: query });
+  }
   createPublicationDraft(input) {
     return this.#request('/v1/publication-drafts', { method: 'POST', body: input });
   }
