@@ -40,7 +40,7 @@ export async function assessAcceptance({ app, decide, context, service, input: r
   // The lead's durable task context is the authority for its session and preference dimensions.
   const taskScope = { sessionId: host.sessionId, sourceSessionId: host.sourceSessionId ?? null,
     workKind: host.preferenceScope?.work_kind ?? null, workflow: host.preferenceScope?.workflow ?? null };
-  const token = store.claim(space, project);
+  const token = store.claim(space, project), lease = { project, token };
   let record;
   try {
     const policy = store.policy(space, project), evidenceContext = await context(service, input, policy, taskScope);
@@ -78,7 +78,7 @@ export async function assessAcceptance({ app, decide, context, service, input: r
       memoryRevision: evidenceContext.memoryRevision,
       preferenceDelivery: preferenceDeliveryRecord(evidenceContext.preferences) }, key);
     if (record.evaluationId !== evaluationId) {
-      record = store.execute(space, record.id, 'stale', { reason: 'An interrupted judgment already owns this request. Use a new requestId to reassess current evidence.' });
+      record = store.execute(space, record.id, 'stale', { reason: 'An interrupted judgment already owns this request. Use a new requestId to reassess current evidence.' }, lease);
       store.writeSetting(space, key, record.id, 0);
       return record;
     }
@@ -91,9 +91,9 @@ export async function assessAcceptance({ app, decide, context, service, input: r
         throw new EmployeeError('Task lead authority changed before acceptance', 403, 'judgment_lead_required');
       }
       if (fingerprint(store.policy(space, project)) !== fingerprint(policy)) {
-        record = store.execute(space, record.id, 'stale', { reason: 'Autonomy policy changed' });
+        record = store.execute(space, record.id, 'stale', { reason: 'Autonomy policy changed' }, lease);
       } else if (fingerprint(current.preferences) !== fingerprint(evidenceContext.preferences)) {
-        record = store.execute(space, record.id, 'stale', { reason: 'Scoped preferences changed. Assess again.' });
+        record = store.execute(space, record.id, 'stale', { reason: 'Scoped preferences changed. Assess again.' }, lease);
       } else {
         const receipt = await app.recordProjectAgentTaskActivity({ personalSpaceId: space, personalProjectId: project,
           taskId: input.taskId, expectedRevision: input.expectedRevision, artifactRevision: input.artifactRevision,
@@ -101,13 +101,15 @@ export async function assessAcceptance({ app, decide, context, service, input: r
           judgmentTaskContextToken: input.taskContextToken,
           status: 'completed', actorKind: 'agent', agentId: task.leadAgentId, sourceApplication: input.sourceApplication,
           summary: `Tonborg acceptance ${record.id}: ${decision.summary}` });
-        record = store.execute(space, record.id, 'applied', { taskId: receipt.taskId, revision: receipt.revision, status: receipt.status });
+        record = store.execute(space, record.id, 'applied', { taskId: receipt.taskId, revision: receipt.revision, status: receipt.status }, lease);
       }
     }
     store.writeSetting(space, key, record.id, 0);
     return record;
   } catch (error) {
-    if (record) record = store.execute(space, record.id, error.status === 409 ? 'stale' : 'failed', { reason: error.code ?? 'acceptance_failed' });
+    // A run that lost its scope to a newer one records nothing; the owner's result stands.
+    if (!store.owns(space, project, token)) throw error;
+    if (record) record = store.execute(space, record.id, error.status === 409 ? 'stale' : 'failed', { reason: error.code ?? 'acceptance_failed' }, lease);
     else record = store.record(space, { personalProjectId: project, kind: 'acceptance', target: input.taskId,
       outcome: 'failed', summary: 'Tonborg could not complete this task assessment.', evidence: [],
       error: error.code ?? 'acceptance_failed', requestFingerprint, policy: store.policy(space, project), ...failureProvenance(error) }, `${key}:failure`);

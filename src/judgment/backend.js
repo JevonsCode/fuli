@@ -18,7 +18,8 @@ export function createJudgmentBackend({ bridge = null, legacy = runJudgment } = 
         status: 'answered', mode: 'legacy_cli', independent: true };
     }
     if (!bridge) throw Object.assign(new Error('No judgment backend is available'), { code: 'judgment_backend_unavailable' });
-    const outcome = await bridge.decide(judgmentRequest(call), { resume: call.resume });
+    // execution: set on a rerun that applies a session answer (role_work).
+    const outcome = await bridge.decide(judgmentRequest(call), { resume: call.resume, execution: call.execution ?? null });
     if (outcome.status !== 'answered') return outcome;
     const { envelope, modelReceipt } = outcome;
     return outcome.mode === 'model_api'

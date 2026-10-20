@@ -701,6 +701,11 @@ export class GraphitiProviderClient {
       method: 'POST', body: input
     });
   }
+  readKnowledgeReviewDecision(input) {
+    return this.#request('/v1/knowledge/reviews/decision', {
+      method: 'POST', body: input
+    });
+  }
   finishKnowledgeReview(input) {
     return this.#request('/v1/knowledge/reviews/finish', {
       method: 'POST', body: input

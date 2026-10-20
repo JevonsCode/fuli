@@ -21,6 +21,8 @@ from .knowledge_review_models import (
     KnowledgeReviewCandidatePage,
     KnowledgeReviewCandidateRequest,
     KnowledgeReviewDecision,
+    KnowledgeReviewDecisionLookup,
+    KnowledgeReviewDecisionLookupResult,
     KnowledgeReviewFinish,
     KnowledgeReviewProgress,
     KnowledgeReviewRun,
@@ -119,6 +121,7 @@ from .knowledge_batch_confirmation import confirm_knowledge_batch
 from .knowledge_review import (
     finish_knowledge_review,
     list_knowledge_review_candidates,
+    read_knowledge_review_decision,
     record_knowledge_review_progress,
     start_knowledge_review,
 )
@@ -601,6 +604,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         actor: Actor,
     ) -> KnowledgeReviewDecision:
         return await record_knowledge_review_progress(store, actor, request)
+
+    @application.post(
+        '/v1/knowledge/reviews/decision',
+        response_model=KnowledgeReviewDecisionLookupResult,
+    )
+    async def review_decision(
+        request: KnowledgeReviewDecisionLookup,
+        actor: Actor,
+    ) -> KnowledgeReviewDecisionLookupResult:
+        return await read_knowledge_review_decision(store, actor, request)
 
     @application.post(
         '/v1/knowledge/reviews/finish',

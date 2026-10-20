@@ -109,11 +109,24 @@ export class JudgmentStore {
       return this.get(space, id);
     });
   }
-  execute(space, id, status, receipt) {
-    this.get(space, id);
-    this.db.prepare('INSERT INTO judgment_execution(decision,status,receipt,created_at) VALUES(?,?,?,?)')
-      .run(id, status, JSON.stringify(receipt), new Date().toISOString());
-    return this.get(space, id);
+  // lease: { project, token } of the run that writes the receipt. A run
+  // whose scope lease was taken over (it was slow, not dead) writes nothing,
+  // so it cannot contradict the receipt of the run that owns the scope now.
+  execute(space, id, status, receipt, lease = null) {
+    return this.transaction(() => {
+      this.get(space, id);
+      if (lease && !this.owns(space, lease.project, lease.token)) {
+        throw new EmployeeError('This Tonborg run no longer holds its scope; its result was not recorded.', 409, 'judgment_lease_lost');
+      }
+      this.db.prepare('INSERT INTO judgment_execution(decision,status,receipt,created_at) VALUES(?,?,?,?)')
+        .run(id, status, JSON.stringify(receipt), new Date().toISOString());
+      return this.get(space, id);
+    });
+  }
+  // The records one request created, as request key prefix (its own items).
+  requestRecords(space, requestKey) {
+    return this.db.prepare(`SELECT id FROM judgment_records WHERE space=? AND substr(request_key, 1, length(?2) + 1) = ?2 || ':'
+      ORDER BY rowid`).all(space, requestKey).map(({ id }) => this.get(space, id));
   }
   claim(space, project) {
     return this.transaction(() => {
@@ -125,6 +138,10 @@ export class JudgmentStore {
         .run(space, project, token, Date.now() + 600_000);
       return token;
     });
+  }
+  // Whether this run still holds the scope lease (time alone does not end it).
+  owns(space, project, token) {
+    return this.db.prepare('SELECT token FROM judgment_leases WHERE space=? AND project=?').get(space, project)?.token === token;
   }
   release(space, project, token) { this.db.prepare('DELETE FROM judgment_leases WHERE space=? AND project=? AND token=?').run(space, project, token); }
   close() { if (!this.closed) { this.closed = true; this.db.close(); } }

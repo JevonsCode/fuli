@@ -82,6 +82,7 @@ import {
 import {
   finishKnowledgeReview as finishKnowledgeReviewWorkflow,
   listKnowledgeReviewCandidates as listKnowledgeReviewCandidatesWorkflow,
+  readKnowledgeReviewDecision as readKnowledgeReviewDecisionWorkflow,
   recordKnowledgeReviewProgress as recordKnowledgeReviewProgressWorkflow,
   startKnowledgeReview as startKnowledgeReviewWorkflow
 } from './knowledge-review.js';
@@ -500,6 +501,10 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   async recordKnowledgeReviewProgress(input) {
     return recordKnowledgeReviewProgressWorkflow(this, input);
+  }
+
+  async readKnowledgeReviewDecision(input) {
+    return readKnowledgeReviewDecisionWorkflow(this, input);
   }
 
   async finishKnowledgeReview(input) {

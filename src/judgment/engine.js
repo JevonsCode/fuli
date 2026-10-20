@@ -5,6 +5,7 @@ import { createJudgmentBackend, failureProvenance, judgmentAnswer, judgmentProve
   TONBORG_OPERATIONS } from './backend.js';
 import { assessRouting } from './routing.js';
 import { assessAcceptance } from './acceptance.js';
+import { recoverInterruptedWrites } from './review-recovery.js';
 import { EmployeeError } from '../employees/manifest.js';
 import { judgmentHumanInteraction } from './conversation.js';
 import { arraySchema, enumSchema, objectSchema } from '../agent-tools/schema.js';
@@ -20,6 +21,8 @@ const reviewSchema = candidates => objectSchema({ decisions: arraySchema(objectS
   target: enumSchema(candidates.map(candidate => candidate.candidate_key)), ...verdictProperties },
 ['target', ...VERDICT_FIELDS]), { minItems: candidates.length, maxItems: candidates.length }) }, ['decisions']);
 export const fingerprint = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+// A record of this request whose execution is final is never applied again.
+const SETTLED = Object.freeze(['applied', 'stale', 'failed']);
 const policyVersion = p => `${PREFERENCE_RECEIPT_VERSION}:${p.revision}:${p.globalRevision}:${p.mode}:${p.quality}:${p.client}`;
 
 export function createJudgmentEngine({ app, judge = createJudgmentBackend() } = {}) {
@@ -59,7 +62,8 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend() } = 
           target: r.target, workKind: r.workKind, objective: r.objective, selection: r.selection,
           disposition: r.disposition, summary: r.summary, feedback: r.feedback })) };
   }
-  async function review(service, raw, { localOnly = false } = {}) {
+  // execution: the role_work execution applying a session answer, if any.
+  async function review(service, raw, { localOnly = false, execution = null } = {}) {
     const input = parse(reviewInput, raw); await service.scope(input);
     if (!input.personalProjectId && !localOnly) return reviewAcrossScopes(service, input);
     const space = input.personalSpaceId, project = input.personalProjectId ?? '';
@@ -69,7 +73,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend() } = 
       const records = saved.recordIds.map(id => store.get(space, id));
       return { ...judgmentHumanInteraction(records, space), ...saved, records };
     }
-    const token = store.claim(space, project);
+    const token = store.claim(space, project), lease = { project, token };
     const records = [];
     let run, cursor, page, offset, candidates = [], visited, evidenceContext, hold, handedOff = false;
     const cursorKey = `review-offset:${project}`, visitedKey = `review-visited:${project}`;
@@ -87,14 +91,17 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend() } = 
       // A previous human-needed decision remains in its queue; do not repeatedly
       // spend a model call reviewing unchanged evidence. A new version is eligible.
       // This request's own records do not count: a rerun after an interrupted
-      // run (rec#8 C11) finishes them, and store.record returns the same record.
+      // run (rec#8 C11) settles them first and finishes the rest, and
+      // store.record returns the same record.
+      const recovered = await recoverInterruptedWrites({ app, store, space, requestKey: cacheKey, lease });
       candidates = structuredClone((page.candidates ?? []).filter(candidate => !(visited.value ?? []).includes(fingerprint(candidate))
         && !store.reviewed(space, project, candidate.candidate_key, fingerprint(candidate), policyVersion(policy), { exceptRequest: cacheKey })).slice(0, input.limit));
+      records.push(...recovered.filter(record => !candidates.some(candidate => candidate.candidate_key === record.target)));
       if (candidates.length) {
         const schema = reviewSchema(candidates);
         const answer = await decide({ policy, operation: TONBORG_OPERATIONS.review, requestId: cacheKey, resume: input,
           scope: { personalSpaceId: space, personalProjectId: project || null }, instructions: reviewInstructions(policy),
-          example: REVIEW_EXAMPLE, schema, data: { policy, ...evidenceContext, candidates } });
+          example: REVIEW_EXAMPLE, schema, data: { policy, ...evidenceContext, candidates }, execution });
         // A handed-off review leaves its candidates unvisited for the session's answer.
         if (answer.pending) {
           handedOff = true;
@@ -112,25 +119,31 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend() } = 
             memoryRevision: evidenceContext.memoryRevision, preferenceDelivery: preferenceDeliveryRecord(evidenceContext.preferences),
             ...judgmentProvenance(answer) }, `${cacheKey}:${decision.target}`);
           // Already settled by an interrupted run of this request: never apply twice.
-          if (record.executionHistory.length) { records.push(record); continue; }
+          if (SETTLED.includes(record.execution.status)) { records.push(record); continue; }
           if (outcome === 'approve' && policy.mode !== 'manual') {
             const current = await app.listKnowledgeReviewCandidates({ personalSpaceId: space, reviewId: run.review_id, limit: 50, offset: Math.max(0, offset - records.filter(r => r.execution.status === 'applied').length) });
             const fresh = current.candidates.find(c => c.candidate_key === decision.target);
             if (!fresh || fingerprint(fresh) !== fingerprint(candidate) || policyVersion(store.policy(space, project)) !== policyVersion(policy)) {
-              record = store.execute(space, record.id, 'stale', { reason: 'Evidence or policy changed. Review again.' });
+              record = store.execute(space, record.id, 'stale', { reason: 'Evidence or policy changed. Review again.' }, lease);
             } else if (fingerprint(await readPreferences(project || null)) !== fingerprint(evidenceContext.preferences)) {
               // The approval was judged against the receipt it saw; a changed or unreadable receipt defers the write.
-              record = store.execute(space, record.id, 'stale', { reason: 'Scoped preferences changed. Review again.' });
+              record = store.execute(space, record.id, 'stale', { reason: 'Scoped preferences changed. Review again.' }, lease);
             } else {
               try {
                 await authorize(input, policy);
+                // The intent is stored before the Provider write, so a restart settles it (rec#8 C11).
+                record = store.execute(space, record.id, 'applying', { reviewId: run.review_id, candidateKey: decision.target,
+                  aiReviewEvidenceToken: candidate.ai_review_evidence_token }, lease);
                 const receipt = await app.recordKnowledgeReviewProgress({ personalSpaceId: space, reviewId: run.review_id,
                   candidateKey: decision.target, outcome: 'ai_reviewed', aiReviewEvidenceToken: candidate.ai_review_evidence_token,
                   aiAssessment: { outcome: 'approve', summary: decision.summary, evidence: decision.evidence, confidence: decision.confidence,
                     client: answer.client, model: answer.model ?? null, session_id: answer.sessionId ?? null },
                   note: `Tonborg ${record.id}: ${decision.summary}`.slice(0, 2000) });
-                record = store.execute(space, record.id, 'applied', { reviewId: run.review_id, outcome: receipt.outcome });
-              } catch (error) { record = store.execute(space, record.id, error.status === 409 ? 'stale' : 'failed', { reason: error.code ?? 'review_write_failed' }); }
+                record = store.execute(space, record.id, 'applied', { reviewId: run.review_id, outcome: receipt.outcome }, lease);
+              } catch (error) {
+                if (!store.owns(space, project, token)) throw error;
+                record = store.execute(space, record.id, error.status === 409 ? 'stale' : 'failed', { reason: error.code ?? 'review_write_failed' }, lease);
+              }
             }
           }
           records.push(record);
@@ -141,14 +154,19 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend() } = 
       if (!handedOff) store.writeSetting(space, cacheKey, result, 0);
       return { ...judgmentHumanInteraction(records, space), records, remaining };
     } catch (error) {
+      // A run that lost its scope to a newer one records nothing, so the
+      // owner's result stands; an unconfirmed interrupted write waits for a retry.
+      if (error.retryable || !store.owns(space, project, token)) throw error;
       const record = store.record(space, { personalProjectId: project || null, kind: 'review', target: 'review', outcome: 'failed',
         summary: hold?.summary ?? 'Tonborg could not complete this review.', evidence: [], error: error.code ?? 'judgment_failed',
         ...(evidenceContext ? { preferenceDelivery: preferenceDeliveryRecord(evidenceContext.preferences) } : {}),
         ...failureProvenance(error), policy: store.policy(space, project) }, `${cacheKey}:failure`);
       return { ...judgmentHumanInteraction(records, space), records: [...records, record], remaining: null };
     } finally {
+      // Only the run that still holds the scope moves the queue and closes the Provider run.
+      const owner = store.owns(space, project, token);
       try {
-        if (page) {
+        if (page && owner) {
           // Failed items stay retryable, but only once per pagination cycle.
           // They must not starve later pages of unrelated work.
           const attempted = new Set([...(visited.value ?? []), ...(handedOff ? [] : candidates.map(fingerprint))]);
@@ -158,7 +176,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend() } = 
           store.writeSetting(space, visitedKey, moreOnPage ? [...attempted] : [], visited.revision);
           store.writeSetting(space, cursorKey, moreOnPage ? offset : offset + 50 < page.total_candidate_count ? offset + 50 : 0, cursor.revision);
         }
-        if (run) await app.finishKnowledgeReview({ personalSpaceId: space, reviewId: run.review_id, disposition: 'completed' });
+        if (run && owner) await app.finishKnowledgeReview({ personalSpaceId: space, reviewId: run.review_id, disposition: 'completed' });
       }
       finally { store.release(space, project, token); }
     }
@@ -196,11 +214,13 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend() } = 
   accept: (service, input) => assessAcceptance({ app, decide, context, service, input }),
   // A session answered a handed-off judgment: rerun the same operation, which
   // uses that answer only while its evidence and policy are unchanged.
-  resume(service, { operation, input, session }) {
-    if (operation === TONBORG_OPERATIONS.review) return review(service, input, { localOnly: true });
-    if (operation === TONBORG_OPERATIONS.routing) return assessRouting({ app, decide, context, service, input });
+  // execution names the role_work execution that may use the answer.
+  resume(service, { operation, input, session, execution }) {
+    const executing = call => decide({ ...call, execution });
+    if (operation === TONBORG_OPERATIONS.review) return review(service, input, { localOnly: true, execution });
+    if (operation === TONBORG_OPERATIONS.routing) return assessRouting({ app, decide: executing, context, service, input });
     if (operation === TONBORG_OPERATIONS.acceptance) {
-      return assessAcceptance({ app, decide, context, service, input: { ...input, taskContextToken: session.taskContextToken } });
+      return assessAcceptance({ app, decide: executing, context, service, input: { ...input, taskContextToken: session.taskContextToken } });
     }
     throw new TypeError(`Unknown Tonborg operation: ${operation}`);
   } };

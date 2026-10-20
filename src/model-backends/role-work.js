@@ -29,18 +29,24 @@ const GUIDANCE = 'Not run yet. The current session may complete it with role_wor
 const APPLYING_GUIDANCE = 'The answer was accepted and is being applied once. Submit again later for the result.';
 
 export function createRoleWorkBridge({ port, store, verifySession, resumers, now = () => new Date() }) {
-  async function decide(input, { resume = null } = {}) {
+  // execution: the token the bridge handed the role's resumer. Only the
+  // execution holding a package may use its answer; an execution that lost
+  // it (it was slow and another took over) stops here instead of asking
+  // anew, and a call outside any execution never takes an applying answer.
+  async function decide(input, { resume = null, execution = null } = {}) {
     const request = parseDecisionRequest(input);
     const at = now();
-    // The role's rerun during an execution uses the answer only for the same
-    // scope, evidence and policy. Using it is recorded; completion waits for
-    // the role's result. An answer already used is never declared stale.
     const applying = store.applying(request.role, request.requestId);
-    if (applying && sameWork(applying, request)) {
-      const used = store.transition(applying.packageId, ['applying'], applying.consumedAt ? {} : { consumedAt: at }, { name: 'consumed' }, at);
-      if (used) return sessionAnswer(used);
-    } else if (applying && !applying.consumedAt) {
-      store.transition(applying.packageId, ['applying'], { status: 'stale' }, { name: 'stale', detail: { reason: 'evidence_or_policy_changed' } }, at);
+    if ((applying || execution) && applying?.execution !== execution) throw executionLost(request);
+    // The rerun uses the answer only for the same scope, evidence and policy.
+    // Using it is recorded; completion waits for the role's result. An answer
+    // already used is never declared stale.
+    if (applying) {
+      const use = sameWork(applying, request) ? [applying.consumedAt ? {} : { consumedAt: at }, { name: 'consumed' }]
+        : !applying.consumedAt ? [{ status: 'stale' }, { name: 'stale', detail: { reason: 'evidence_or_policy_changed' } }] : null;
+      const changed = use && store.transitionExecution(applying.packageId, execution, ...use, at);
+      if (use && !changed) throw executionLost(request);
+      if (changed?.status === 'applying') return sessionAnswer(changed);
     }
     const open = store.open(request, at);
     if (open) return pending(open, null);
@@ -101,8 +107,7 @@ export function createRoleWorkBridge({ port, store, verifySession, resumers, now
     }
     const submission = { envelope: decisionEnvelope(work.request, verdict.value), submittedAt: at.toISOString(),
       session: { sessionRef: session.sessionRef, sourceApplication: session.sourceApplication } };
-    const accepted = store.transition(work.packageId, ['claimed'], { status: 'applying', submission, applyingUntil: applyingUntil(at) },
-      { name: 'submitted' }, at);
+    const accepted = store.startExecution(work.packageId, { submission, at, until: applyingUntil(at) });
     return accepted ? resumeRole(accepted, session) : stale(work, 'lease_mismatch', at);
   }
 
@@ -110,33 +115,43 @@ export function createRoleWorkBridge({ port, store, verifySession, resumers, now
   // for a retry, or its earlier execution window passed after a restart),
   // otherwise report where it stands. completed always carries the result.
   function retry(work, session, at) {
-    const started = store.reapply(work.packageId, { at, until: applyingUntil(at) });
-    if (started) return resumeRole(started, session);
-    const current = store.get(work.packageId);
+    const started = store.startExecution(work.packageId, { at, until: applyingUntil(at) });
+    return started ? resumeRole(started, session) : standing(work.packageId, at);
+  }
+
+  function standing(packageId, at) {
+    const current = store.get(packageId);
     if (current.status === 'completed') return { status: 'completed', replayed: true, result: current.result };
-    if (current.status === 'applying') return { status: 'applying', workPackage: summary(current), guidance: APPLYING_GUIDANCE };
+    // Released for a retry counts as in progress too: the answer is kept.
+    if (['applying', 'submitted'].includes(current.status)) return { status: 'applying', workPackage: summary(current), guidance: APPLYING_GUIDANCE };
     return stale(current, `package_${current.status}`, at);
   }
 
-  // The role reruns its operation with fresh evidence; its decide() call
-  // uses the submitted answer only while the evidence and policy versions
-  // still match. The operation is idempotent per requestId, so a rerun after
-  // an interrupted execution resolves from what the role already stored.
+  // The role reruns its operation with fresh evidence under this execution's
+  // token; its decide() call uses the submitted answer only while the
+  // evidence and policy versions still match. The operation is idempotent per
+  // requestId, so a rerun after an interrupted execution resolves from what
+  // the role already stored. An execution that lost the package (it was slow
+  // and another took over) changes nothing here; only a late event remains.
   async function resumeRole(work, session) {
     const resume = resumers[work.role];
+    const { execution } = work;
     let result;
     try {
       if (!resume || !work.resume) throw new ApplicationError('role_work_unresumable', `No ${work.role} operation can use this answer.`, { status: 503 });
-      result = await resume({ operation: work.operation, input: work.resume, session });
+      result = await resume({ operation: work.operation, input: work.resume, session, execution });
     } catch (error) {
       // Refused before the answer was used (its task or evidence moved on):
       // stale. Busy, or failed in any other way: the answer waits for a retry.
       const refused = error.status === 409 && !error.retryable && !store.get(work.packageId).consumedAt;
-      store.transition(work.packageId, ['applying'], { status: refused ? 'stale' : 'submitted' },
+      const released = store.transitionExecution(work.packageId, execution, { status: refused ? 'stale' : 'submitted' },
         { name: refused ? 'stale' : 'released', detail: { reason: error.code ?? 'error' } }, now());
+      // A late execution's failure is not the package's: report where it stands.
+      if (!released) return standing(work.packageId, now());
       throw error;
     }
-    const finished = store.finish(work.packageId, result, now());
+    const finished = store.finish(work.packageId, execution, result, now());
+    if (finished.execution !== execution) return standing(work.packageId, now());
     if (finished.status === 'completed') return { status: 'completed', result: finished.result };
     return { status: 'stale', reason: 'evidence_or_policy_changed', result };
   }
@@ -172,6 +187,10 @@ function sameWork(work, request) {
   return work.operation === request.operation && scope.personalSpaceId === request.scope.personalSpaceId
     && scope.personalProjectId === request.scope.personalProjectId && scope.sessionRef === request.scope.sessionRef
     && work.versions.evidence === request.versions.evidence && work.versions.policy === request.versions.policy;
+}
+
+function executionLost(request) {
+  return new ApplicationError('role_work_execution_lost', `This execution no longer holds the work for ${request.requestId}.`, { status: 409 });
 }
 
 function applyingUntil(at) {

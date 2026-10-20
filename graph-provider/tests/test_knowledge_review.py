@@ -13,12 +13,14 @@ from fuli_graph.knowledge_review import (
     REPEATED_SESSION_COUNT,
     build_review_candidates,
     finish_knowledge_review,
+    read_knowledge_review_decision,
     record_knowledge_review_progress,
     start_knowledge_review,
 )
 from fuli_graph.knowledge_review_models import (
     KnowledgeReviewAIAssessment,
     KnowledgeReviewCandidate,
+    KnowledgeReviewDecisionLookup,
     KnowledgeReviewFinish,
     KnowledgeReviewProgress,
     KnowledgeReviewStart,
@@ -408,6 +410,38 @@ async def test_ai_review_progress_rejects_a_candidate_that_left_the_project_scop
             ),
         )
     assert outside.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_decision_lookup_returns_the_run_decision_for_one_candidate_or_none():
+    """A writer whose reply was lost settles it against the run's own decision."""
+
+    recorded_at = datetime(2026, 8, 1, 8, 0, tzinfo=timezone.utc)
+    driver = SequentialDriver([
+        [{'decision': {
+            'id': 'decision-1', 'review_id': 'review-1', 'candidate_key': 'entity:one',
+            'outcome': 'ai_reviewed', 'created_at': recorded_at, 'updated_at': recorded_at,
+            'ai_review_evidence_token': 'a' * 64,
+        }}],
+        [],
+    ])
+    request = KnowledgeReviewDecisionLookup(
+        personal_space_id='personal-space', review_id='review-1', candidate_key='entity:one'
+    )
+
+    found = await read_knowledge_review_decision(StoreStub(driver), {'id': 'principal-1'}, request)
+    missing = await read_knowledge_review_decision(StoreStub(driver), {'id': 'principal-1'}, request)
+
+    assert found.decision.decision_id == 'decision-1'
+    assert found.decision.outcome == 'ai_reviewed'
+    assert found.decision.ai_review_evidence_token == 'a' * 64
+    assert missing.decision is None
+    query, parameters = driver.calls[0]
+    assert '[:HAS_REVIEW_DECISION]->(decision:FuliKnowledgeReviewDecision' in query
+    assert parameters == {
+        'space_id': 'personal-space', 'review_id': 'review-1',
+        'candidate_key': 'entity:one', 'routing_': 'r',
+    }
 
 
 @pytest.mark.asyncio

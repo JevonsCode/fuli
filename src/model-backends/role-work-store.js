@@ -14,9 +14,10 @@ import { DatabaseSync } from 'node:sqlite';
 // package of the same evidence superseded it). applying -> submitted when
 // the execution stopped without a result (the operation was busy or failed):
 // the answer waits for the next submit, which reruns the operation. An
-// applying package whose execution window passed (its process died) is taken
-// over the same way. pending/claimed -> expired; claimed -> failed after too
-// many invalid answers.
+// applying package whose execution window passed is taken over the same
+// way under a new execution token; only the execution holding the current
+// token may use the answer, release it or finish it. pending/claimed ->
+// expired; claimed -> failed after too many invalid answers.
 //
 // The same work is one role, operation, space and project with the same
 // evidence and policy versions. Of the same work at most one package can
@@ -46,7 +47,7 @@ export class RoleWorkStore {
         reason TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, invalid_submissions INTEGER NOT NULL DEFAULT 0,
         lease_token TEXT, lease_session TEXT, lease_source TEXT, lease_claimed_at TEXT, lease_expires_at TEXT,
         request TEXT NOT NULL, resume TEXT, fallback_receipt TEXT, submission TEXT, result TEXT,
-        applying_until TEXT, consumed_at TEXT);
+        applying_until TEXT, execution_token TEXT, consumed_at TEXT);
       CREATE INDEX IF NOT EXISTS role_work_request ON role_work(role, request_id);
       CREATE INDEX IF NOT EXISTS role_work_open ON role_work(space, status, created_at);
       CREATE TABLE IF NOT EXISTS role_work_events(id INTEGER PRIMARY KEY, package_id TEXT NOT NULL, event TEXT NOT NULL,
@@ -135,43 +136,56 @@ export class RoleWorkStore {
 
   // Moves a package on only from one of the expected statuses; null when it
   // was no longer in one of them.
-  transition(packageId, from, { status, invalidSubmissions, submission, result, applyingUntil, consumedAt }, event, at) {
+  transition(packageId, from, { status, invalidSubmissions, submission, result, consumedAt }, event, at) {
     return this.#transaction(() => {
       const current = this.get(packageId);
       if (!current || !from.includes(current.status)) return null;
-      this.db.prepare(`UPDATE role_work SET status = ?, invalid_submissions = ?, submission = ?, result = ?,
-        applying_until = ?, consumed_at = ? WHERE package_id = ?`)
+      this.db.prepare(`UPDATE role_work SET status = ?, invalid_submissions = ?, submission = ?, result = ?, consumed_at = ?
+        WHERE package_id = ?`)
         .run(status ?? current.status, invalidSubmissions ?? current.invalidSubmissions,
           JSON.stringify(submission ?? current.submission), JSON.stringify(result ?? current.result),
-          applyingUntil?.toISOString() ?? current.applyingUntil, consumedAt?.toISOString() ?? current.consumedAt, packageId);
+          consumedAt?.toISOString() ?? current.consumedAt, packageId);
       this.#event(packageId, event.name, event.detail ?? {}, at);
       return this.get(packageId);
     });
   }
 
-  // Starts one execution of a waiting answer: one released for a retry, or
-  // one whose earlier execution window passed without a result. Null when
-  // another execution holds it or it is settled.
-  reapply(packageId, { at, until }) {
+  // Starts one execution of an answer under a new execution token: a fresh
+  // answer (claimed, with its submission), one released for a retry
+  // (submitted), or one whose execution window passed without a result. That
+  // earlier execution may be slow rather than dead: it keeps running but no
+  // longer owns the package. Null when none of these applies.
+  startExecution(packageId, { submission = null, at, until }) {
     return this.#transaction(() => {
       const current = this.get(packageId);
       const abandoned = current.status === 'applying' && Date.parse(current.applyingUntil) <= at.getTime();
-      if (current.status !== 'submitted' && !abandoned) return null;
-      return this.transition(packageId, [current.status], { status: 'applying', applyingUntil: until },
-        { name: abandoned ? 'applying_taken_over' : 'applying' }, at);
+      if (submission ? current.status !== 'claimed' : current.status !== 'submitted' && !abandoned) return null;
+      this.db.prepare(`UPDATE role_work SET status = 'applying', submission = ?, applying_until = ?, execution_token = ?
+        WHERE package_id = ?`).run(JSON.stringify(submission ?? current.submission), until.toISOString(), randomUUID(), packageId);
+      this.#event(packageId, submission ? 'submitted' : abandoned ? 'applying_taken_over' : 'applying', {}, at);
+      return this.get(packageId);
+    });
+  }
+
+  // Changes an applying package only for the execution that holds it. An
+  // execution that lost it changes nothing; its attempt stays as a late event.
+  transitionExecution(packageId, execution, changes, event, at) {
+    return this.#transaction(() => {
+      const current = this.get(packageId);
+      if (current.status === 'applying' && current.execution === execution) return this.transition(packageId, ['applying'], changes, event, at);
+      this.#event(packageId, `late_${event.name}`, { ...event.detail, execution }, at);
+      return null;
     });
   }
 
   // The execution ended with the role's result: completed, with that result
   // in the same write, only when the role used the answer; otherwise stale.
-  // A package no longer applying is returned as it is.
-  finish(packageId, result, at) {
+  // For an execution that lost the package, the package as it is.
+  finish(packageId, execution, result, at) {
     return this.#transaction(() => {
-      const current = this.get(packageId);
-      if (current.status !== 'applying') return current;
-      return current.consumedAt
-        ? this.transition(packageId, ['applying'], { status: 'completed', result }, { name: 'completed' }, at)
-        : this.transition(packageId, ['applying'], { status: 'stale' }, { name: 'stale', detail: { reason: 'not_used' } }, at);
+      const used = Boolean(this.get(packageId).consumedAt);
+      return this.transitionExecution(packageId, execution, used ? { status: 'completed', result } : { status: 'stale' },
+        used ? { name: 'completed' } : { name: 'stale', detail: { reason: 'not_used' } }, at) ?? this.get(packageId);
     });
   }
 
@@ -233,7 +247,7 @@ function workPackage(row) {
       claimedAt: row.lease_claimed_at, expiresAt: row.lease_expires_at } : null,
     request: json(row.request), resume: json(row.resume), fallbackReceipt: json(row.fallback_receipt),
     submission: json(row.submission), result: json(row.result),
-    applyingUntil: row.applying_until, consumedAt: row.consumed_at
+    applyingUntil: row.applying_until, execution: row.execution_token, consumedAt: row.consumed_at
   };
 }
 

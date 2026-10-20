@@ -63,6 +63,12 @@ function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()]
     finishKnowledgeReview: async () => ({}),
     listKnowledgeReviewCandidates: async () => ({ candidates, total_candidate_count: candidates.length }),
     recordKnowledgeReviewProgress: async input => { writes.push(input); candidates.shift(); return { outcome: input.outcome }; },
+    // The Provider keys a review decision by run and candidate.
+    readKnowledgeReviewDecision: async ({ reviewId, candidateKey }) => {
+      const write = writes.findLast(item => item.reviewId === reviewId && item.candidateKey === candidateKey);
+      return { decision: write ? { decision_id: `decision:${candidateKey}`, review_id: reviewId, candidate_key: candidateKey,
+        outcome: write.outcome, ai_review_evidence_token: write.aiReviewEvidenceToken } : null };
+    },
     listExecutors: async () => [],
     // The fake MCP session: a task-context token names one durable session.
     taskContextRegistry: { context: async token => {
@@ -331,6 +337,75 @@ test('C9 and C11: completed only arrives with the stored result; a restart mid-e
   assert.equal(done.result.records[0].execution.status, 'applied');
   assert.equal(runs.count, 1);
   assert.equal(h.writes.length, 1);
+  assert.deepEqual(await submitAgain(h, 'token-a', workPackage), { status: 'completed', replayed: true, result: done.result });
+});
+
+test('C11: a restart after the Provider write but before its receipt settles the write from the Provider, never as completed-empty', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T12:00:00.000Z') });
+  const h = harness(t);
+  await h.app.judgment.review(reviewInput);
+  const { workPackage } = await h.work('claim', { taskContextToken: 'token-a' });
+  // The Provider records the decision; the process dies before the reply.
+  const write = h.app.recordKnowledgeReviewProgress;
+  let landed;
+  const written = new Promise(resolve => { landed = resolve; });
+  h.app.recordKnowledgeReviewProgress = async input => { await write(input); landed(); return new Promise(() => {}); };
+  void submitAgain(h, 'token-a', workPackage);
+  await written;
+  h.app.recordKnowledgeReviewProgress = write;
+  h.restart();
+  h.clock.at += 11 * 60_000;
+  t.mock.timers.tick(11 * 60_000);
+  // The Provider no longer offers the recorded item. While it cannot say what
+  // it holds, the result is unknown: the answer is kept, nothing is completed.
+  const lookup = h.app.readKnowledgeReviewDecision;
+  h.app.readKnowledgeReviewDecision = async () => { throw Object.assign(new Error('Provider unavailable'), { status: 503 }); };
+  await assert.rejects(submitAgain(h, 'token-a', workPackage), { code: 'judgment_result_unknown' });
+  assert.deepEqual(h.app.roleWork.summary().packages, [{ role: 'tonborg', status: 'submitted', count: 1 }]);
+  h.app.readKnowledgeReviewDecision = lookup;
+  const done = await submitAgain(h, 'token-a', workPackage);
+  assert.equal(done.status, 'completed');
+  const [record] = done.result.records;
+  assert.equal(record.target, 'entity:one');
+  assert.equal(record.execution.status, 'applied');
+  assert.equal(record.execution.receipt.recovered, true);
+  assert.equal(h.app.judgment.store().get('s', record.id).execution.status, 'applied');
+  assert.equal(h.writes.length, 1);
+  assert.deepEqual(await submitAgain(h, 'token-a', workPackage), { status: 'completed', replayed: true, result: done.result });
+});
+
+test('C11: a slow execution that lost the package to a takeover cannot contradict the applied result', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T12:00:00.000Z') });
+  const h = harness(t);
+  await h.app.judgment.review(reviewInput);
+  const { workPackage } = await h.work('claim', { taskContextToken: 'token-a' });
+  // As the real Provider does, a write to a completed review run is not found.
+  const finish = h.app.finishKnowledgeReview, write = h.app.recordKnowledgeReviewProgress;
+  let completedRun = false;
+  h.app.finishKnowledgeReview = async input => { completedRun = true; return finish(input); };
+  h.app.recordKnowledgeReviewProgress = async input => {
+    if (completedRun) throw Object.assign(new Error('active knowledge review not found'), { status: 404 });
+    return write(input);
+  };
+  // The first execution passes every pre-write check, then stalls before the write.
+  const hold = holdCall(h.app, 'recordKnowledgeReviewProgress');
+  const slow = submitAgain(h, 'token-a', workPackage);
+  await hold.arrived;
+  // Both leases pass while it is slow, not dead: a retry takes over and completes.
+  h.clock.at += 11 * 60_000;
+  t.mock.timers.tick(11 * 60_000);
+  const done = await submitAgain(h, 'token-a', workPackage);
+  assert.equal(done.status, 'completed');
+  const [record] = done.result.records;
+  assert.equal(record.execution.status, 'applied');
+  assert.equal(h.writes.length, 1);
+  // The slow execution resumes and fails at the Provider; it records nothing.
+  hold.release();
+  assert.deepEqual(await slow, { status: 'completed', replayed: true, result: done.result });
+  const stored = h.app.judgment.store().get('s', record.id);
+  assert.equal(stored.execution.status, 'applied');
+  assert.deepEqual(stored.executionHistory.map(entry => entry.status), ['applying', 'not_applied', 'applying', 'applied']);
+  assert.equal(h.app.judgment.store().records('s', { personalProjectId: 'p' }).filter(item => item.outcome === 'failed').length, 0);
   assert.deepEqual(await submitAgain(h, 'token-a', workPackage), { status: 'completed', replayed: true, result: done.result });
 });
 

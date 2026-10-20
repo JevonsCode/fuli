@@ -27,19 +27,22 @@ const answer = { decision: 'propose', payload: { choice: 'ada' }, reason: 'Recen
 function harness(config = null) {
   const clock = { at: Date.parse('2026-10-20T12:00:00.000Z') };
   const now = () => new Date(clock.at);
+  // beforeDecide: a test may pause the role's operation before it asks.
+  const hooks = { beforeDecide: null };
   const port = createModelBackendPort({ readConfig: () => config ? readModelBackendConfig('x', { read: () => config }) : { state: 'absent' },
     secrets: { read: async () => null }, ledger: new ModelUsageLedger(), now,
     fetchImpl: async () => { throw new Error('no model call'); } });
   const bridge = createRoleWorkBridge({ port, store: new RoleWorkStore(), now,
     verifySession: async ({ taskContextToken }) => SESSIONS[taskContextToken],
     // The role's own operation: it asks again and uses the answer it gets.
-    resumers: { bole: async ({ input }) => {
-      const outcome = await bridge.decide({ ...request(input.sessionRef), requestId: input.requestId ?? 'bole-1' });
+    resumers: { bole: async ({ input, execution }) => {
+      await hooks.beforeDecide?.();
+      const outcome = await bridge.decide({ ...request(input.sessionRef), requestId: input.requestId ?? 'bole-1' }, { execution });
       return { choice: outcome.envelope?.payload.choice ?? null };
     } } });
   const work = (action, token, extra = {}) => bridge[action]({ taskContextToken: token, ...extra });
   const submit = (token, claimed) => work('submit', token, { packageId: claimed.packageId, leaseToken: claimed.lease.token, answer });
-  return { bridge, port, clock, work, submit };
+  return { bridge, port, clock, hooks, work, submit };
 }
 
 test('a lease expires: the late answer is stale, another session takes over, the old lease stays stale', async () => {
@@ -85,6 +88,26 @@ test('C16: a session binding is part of the same work; a package for the same ev
   assert.equal(workPackage.packageId, bound.workPackage.packageId);
   assert.deepEqual(await submit('a', workPackage), { status: 'completed', result: { choice: 'ada' } });
   assert.deepEqual(bridge.summary().packages, [{ role: 'bole', status: 'completed', count: 1 }, { role: 'bole', status: 'stale', count: 1 }]);
+});
+
+test('C11: an execution that lost its package to a takeover can no longer use the answer or settle it', async () => {
+  const { bridge, clock, hooks, work, submit } = harness();
+  await bridge.decide(request(), { resume: { sessionRef: null } });
+  const { workPackage } = await work('claim', 'a');
+  let release, reached;
+  const arrived = new Promise(resolve => { reached = resolve; });
+  hooks.beforeDecide = () => { hooks.beforeDecide = null; reached(); return new Promise(resolve => { release = resolve; }); };
+  const slow = submit('a', workPackage);
+  await arrived;
+  // Its execution window passes while it is slow, not dead: a retry takes over.
+  clock.at += 11 * 60_000;
+  assert.deepEqual(await submit('a', workPackage), { status: 'completed', result: { choice: 'ada' } });
+  release();
+  // The slow execution's decide refuses it; it reports the owner's result.
+  assert.deepEqual(await slow, { status: 'completed', replayed: true, result: { choice: 'ada' } });
+  assert.deepEqual(bridge.summary().packages, [{ role: 'bole', status: 'completed', count: 1 }]);
+  // A call outside the execution never takes the answer either.
+  await assert.rejects(bridge.decide(request(), { execution: 'invented' }), { code: 'role_work_execution_lost' });
 });
 
 test('Settings reads each role\'s backend and the open work packages over the local HTTP API', async () => {
