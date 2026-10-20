@@ -1,19 +1,10 @@
 import { createHash, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { openFormattedDatabase, sqliteFormat } from '../storage/sqlite-format.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
-
-// What a standalone install knows about its people: the Agents a person
-// registered (one per folder), the tasks of client sessions using them, wake
-// authority handed to woken sessions, and this home's own identity keys.
-export function createStandaloneStore(path = ':memory:', { now = () => new Date() } = {}) {
-  if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
-  const database = new DatabaseSync(path);
-  database.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA busy_timeout = 5000;
+const STANDALONE_FORMAT = sqliteFormat({
+  store: 'standalone',
+  schema: `
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS agents (
       agent_id TEXT PRIMARY KEY, name TEXT NOT NULL, folder TEXT NOT NULL UNIQUE, clients TEXT NOT NULL,
@@ -29,8 +20,15 @@ export function createStandaloneStore(path = ':memory:', { now = () => new Date(
     );
     CREATE TABLE IF NOT EXISTS origins (
       message_id TEXT PRIMARY KEY, digest TEXT NOT NULL, agent_id TEXT NOT NULL, purpose TEXT NOT NULL
-    );
-  `);
+    );`,
+  pragmas: 'PRAGMA journal_mode = WAL;'
+});
+
+// What a standalone install knows about its people: the Agents a person
+// registered (one per folder), the tasks of client sessions using them, wake
+// authority handed to woken sessions, and this home's own identity keys.
+export function createStandaloneStore(path = ':memory:', { now = () => new Date() } = {}) {
+  const database = openFormattedDatabase(path, STANDALONE_FORMAT);
   const iso = () => now().toISOString();
   const meta = key => database.prepare('SELECT value FROM meta WHERE key = ?').get(key)?.value ?? null;
   const setMeta = (key, value) => database.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING').run(key, value);

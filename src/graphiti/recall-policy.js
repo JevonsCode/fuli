@@ -1,5 +1,6 @@
 import { dirname, join, resolve } from 'node:path';
-import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { readJsonFile } from '../storage/json-file.js';
+import { writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 
 // How hosts use automatic recall. With answerFromConfirmed on, items a person
 // confirmed are answered from directly instead of being re-checked in files;
@@ -36,7 +37,7 @@ export class RecallPolicyStore {
       throw new TypeError('Recall policy answerFromConfirmed must be a boolean');
     }
     const next = { answerFromConfirmed: input.answerFromConfirmed, updatedAt: this.now() };
-    if (this.path) writeJsonFileAtomic(this.path, { version: 1, ...next });
+    if (this.path) writeVersionedJsonFileAtomic(this.path, { version: 1, ...next }, { store: 'recall-policy' });
     else this.memory = next;
     return { ...next };
   }

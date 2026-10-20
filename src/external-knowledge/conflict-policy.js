@@ -1,4 +1,5 @@
-import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { readJsonFile } from '../storage/json-file.js';
+import { writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { requiredString } from '../validation/values.js';
 
 const MODES = new Set(['ask_human', 'agent_decide']);
@@ -35,7 +36,7 @@ export class KnowledgeConflictPolicyStore {
       updatedAt: this.now().toISOString()
     };
     document.projects[policyKey(id)] = policy;
-    writeJsonFileAtomic(this.filePath, document);
+    writeVersionedJsonFileAtomic(this.filePath, document, { store: 'external-knowledge-conflicts' });
     return structuredClone(policy);
   }
 

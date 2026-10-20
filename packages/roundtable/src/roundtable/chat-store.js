@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { createChatNotifications } from './chat-notifications.js';
-// Shares the existing local/coordinator SQLite connection and transaction owner.
-export function createChatStore(db, path = ':memory:') {
-  db.exec(`
+// The chat tables, part of each store file that hosts chats (the roundtable
+// and peer-coordinator formats), so they change only with those formats.
+export const CHAT_SCHEMA = `
     CREATE TABLE IF NOT EXISTS agent_chats (
       id TEXT PRIMARY KEY, scope TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL,
       owner TEXT NOT NULL, revision INTEGER NOT NULL, direct_key TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
@@ -25,7 +25,10 @@ export function createChatStore(db, path = ':memory:') {
     CREATE TABLE IF NOT EXISTS agent_chat_requests (
       scope TEXT NOT NULL, sender TEXT NOT NULL, request_id TEXT NOT NULL, payload TEXT NOT NULL, chat_id TEXT NOT NULL,
       PRIMARY KEY(scope,sender,request_id));
-  `);
+`;
+
+// Shares the existing local/coordinator SQLite connection and transaction owner.
+export function createChatStore(db, path = ':memory:') {
   const notifications = createChatNotifications(path);
   let dirty = false;
   const waits = new Set();

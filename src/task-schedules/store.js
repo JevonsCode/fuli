@@ -1,6 +1,4 @@
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/sqlite-format.js';
 
 // Run columns added after the first release, when a claim became recoverable.
 const RUN_RECOVERY_COLUMNS = Object.freeze({ dispatch_key: 'TEXT', claimed_by: 'TEXT', lease_expires_at: 'TEXT',
@@ -12,40 +10,40 @@ const OPEN_CLAIM = "task_id IS NULL AND status IN ('claimed','unresolved')";
 // Checked in the same statement that claims or retries, so a pause saved by any
 // process meanwhile wins over a scan or a lookup that started before it.
 const SCHEDULE_ENABLED = 'EXISTS (SELECT 1 FROM task_schedules WHERE id = task_schedule_runs.schedule AND enabled = 1)';
+const TASK_SCHEDULE_FORMAT = sqliteFormat({
+  store: 'task-schedules',
+  schema: `
+    CREATE TABLE IF NOT EXISTS task_schedules(id TEXT PRIMARY KEY, space TEXT NOT NULL, project TEXT NOT NULL,
+      revision INTEGER NOT NULL, enabled INTEGER NOT NULL, body TEXT NOT NULL, next_run_at TEXT NOT NULL,
+      paused_reason TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS task_schedule_runs(schedule TEXT NOT NULL, slot TEXT NOT NULL, task_id TEXT,
+      status TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(schedule, slot));`,
+  migrations: [{
+    id: 'task-schedules/2-breaker-reset', to: 2, kind: 'add-columns', table: 'task_schedules',
+    summary: 'when a person last resumed the schedule', columns: { breaker_reset_at: 'TEXT' }
+  }, {
+    // Rows from before recovery read as rows written now: the key the slot was
+    // always submitted with, and an expired lease, so an old open claim is reconciled.
+    id: 'task-schedules/3-run-recovery', to: 3, kind: 'backfill', table: 'task_schedule_runs',
+    summary: 'recoverable claims: a dispatch key and an expired lease on every earlier run',
+    columns: RUN_RECOVERY_COLUMNS,
+    rowsToBackfill: (db) => db.prepare('SELECT count(*) AS rows FROM task_schedule_runs').get().rows,
+    backfill(db) {
+      const backfill = db.prepare(`UPDATE task_schedule_runs SET dispatch_key=?, lease_expires_at=created_at,
+        updated_at=created_at WHERE schedule=? AND slot=?`);
+      for (const row of db.prepare('SELECT schedule, slot FROM task_schedule_runs').all()) {
+        backfill.run(dispatchKey(row.schedule, row.slot), row.schedule, row.slot);
+      }
+    }
+  }]
+});
 
 // Local schedules that create project Agent tasks. Each slot creates at most
 // one task: the run row and its dispatch key are the dedupe key, and the
 // Provider derives the task from that key; the task itself lives in the Provider.
 export class TaskScheduleStore {
   constructor(path = ':memory:') {
-    if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
-    this.db = new DatabaseSync(path);
-    this.db.exec(`PRAGMA busy_timeout = 5000;
-      CREATE TABLE IF NOT EXISTS task_schedules(id TEXT PRIMARY KEY, space TEXT NOT NULL, project TEXT NOT NULL,
-        revision INTEGER NOT NULL, enabled INTEGER NOT NULL, body TEXT NOT NULL, next_run_at TEXT NOT NULL,
-        paused_reason TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS task_schedule_runs(schedule TEXT NOT NULL, slot TEXT NOT NULL, task_id TEXT,
-        status TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(schedule, slot));`);
-    this.transaction(() => {
-      // Added after the first release: when a person last resumed the schedule.
-      this.#addColumns('task_schedules', { breaker_reset_at: 'TEXT' });
-      // Rows from before recovery read as rows written now: the key the slot was
-      // always submitted with, and an expired lease, so an old open claim is reconciled.
-      if (this.#addColumns('task_schedule_runs', RUN_RECOVERY_COLUMNS)) {
-        const backfill = this.db.prepare(`UPDATE task_schedule_runs SET dispatch_key=?, lease_expires_at=created_at,
-          updated_at=created_at WHERE schedule=? AND slot=?`);
-        for (const row of this.db.prepare('SELECT schedule, slot FROM task_schedule_runs').all()) {
-          backfill.run(dispatchKey(row.schedule, row.slot), row.schedule, row.slot);
-        }
-      }
-    });
-  }
-
-  #addColumns(table, columns) {
-    const existing = new Set(this.db.prepare(`PRAGMA table_info(${table})`).all().map(column => column.name));
-    const missing = Object.entries(columns).filter(([name]) => !existing.has(name));
-    for (const [name, type] of missing) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
-    return missing.length > 0;
+    this.db = openFormattedDatabase(path, TASK_SCHEDULE_FORMAT);
   }
 
   transaction(fn) {

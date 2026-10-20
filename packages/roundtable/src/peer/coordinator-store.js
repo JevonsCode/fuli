@@ -1,16 +1,9 @@
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
-import { createChatStore } from '../roundtable/chat-store.js';
+import { CHAT_SCHEMA, createChatStore } from '../roundtable/chat-store.js';
+import { openFormattedDatabase, sqliteFormat } from '../storage/sqlite-format.js';
 
-// Paired devices, one-use invitations and the cross-device message queue.
-// Status changes are also appended to events, so history survives updates.
-export function createCoordinatorStore(path = ':memory:') {
-  if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const database = new DatabaseSync(path);
-  database.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA busy_timeout = 5000;
+const COORDINATOR_FORMAT = sqliteFormat({
+  store: 'peer-coordinator',
+  schema: `
     CREATE TABLE IF NOT EXISTS nodes (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, cert_pem TEXT NOT NULL, status TEXT NOT NULL,
       paired_at TEXT NOT NULL, revoked_at TEXT, last_seen_at TEXT, directory_json TEXT NOT NULL DEFAULT '[]',
@@ -32,14 +25,20 @@ export function createCoordinatorStore(path = ':memory:') {
       seq INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT, node_id TEXT, kind TEXT NOT NULL,
       detail TEXT, at TEXT NOT NULL
     );
-  `);
-  // A receiving device may report that its woken process could still be running.
-  const columns = new Set(database.prepare('PRAGMA table_info(messages)').all().map((column) => column.name));
-  for (const column of ['cleanup_status', 'cleanup_code']) {
-    if (columns.has(column)) continue;
-    try { database.exec(`ALTER TABLE messages ADD COLUMN ${column} TEXT`); }
-    catch (error) { if (!/duplicate column/i.test(error.message)) throw error; }
-  }
+    ${CHAT_SCHEMA}`,
+  migrations: [{
+    // A receiving device may report that its woken process could still be running.
+    id: 'peer-coordinator/2-message-cleanup', to: 2, kind: 'add-columns', table: 'messages',
+    summary: 'cleanup status reported by the receiving device',
+    columns: { cleanup_status: 'TEXT', cleanup_code: 'TEXT' }
+  }],
+  pragmas: 'PRAGMA journal_mode = WAL;'
+});
+
+// Paired devices, one-use invitations and the cross-device message queue.
+// Status changes are also appended to events, so history survives updates.
+export function createCoordinatorStore(path = ':memory:') {
+  const database = openFormattedDatabase(path, COORDINATOR_FORMAT);
   const chat = createChatStore(database, path);
   const transaction = (work) => {
     database.exec('BEGIN IMMEDIATE');

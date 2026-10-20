@@ -8,6 +8,8 @@ import {
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+
+import { assertJsonFormatWritable } from '../storage/json-format.js';
 import { DEFAULT_PROJECT_SETTINGS, PROJECT_SETTING_KEYS, storedProjectSettings, updatedProjectSettings,
   usesProjectModes } from './capture-project-mode.js';
 
@@ -160,6 +162,8 @@ export class CapturePolicyStore {
       this.memory = next;
       return { ...next };
     }
+    // A repair from defaults must not replace settings a newer FULI saved (rec#17).
+    assertJsonFormatWritable(this.path, { store: 'capture-policy', supportedVersion: 2 });
     writeAtomically(this.path, { version: usesProjectModes(next) ? 2 : 1, ...next });
     this.#nextGeneration(this.#readGeneration(), this.#fileKey());
     return { ...next };

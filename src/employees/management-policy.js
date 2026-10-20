@@ -1,6 +1,4 @@
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/sqlite-format.js';
 import { z } from 'zod';
 import { EmployeeError, FIXED_EMPLOYEE_AGENT_TYPES } from './manifest.js';
 
@@ -27,16 +25,25 @@ export function parseEmployeeManagement(value) {
 
 // Employee policy is local host configuration, not a public project fact or a
 // Provider model/executor policy. SQLite CAS also protects independent MCP hosts.
+const EMPLOYEE_MANAGEMENT_FORMAT = sqliteFormat({
+  store: 'employee-management',
+  schema: `CREATE TABLE IF NOT EXISTS employee_management (
+    space_id TEXT NOT NULL, template_id TEXT NOT NULL,
+    revision INTEGER NOT NULL, policy TEXT NOT NULL,
+    PRIMARY KEY (space_id, template_id)
+  )`
+});
+
 export class EmployeeManagementStore {
+  #database = null;
   constructor(path = ':memory:') {
-    if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
-    this.database = new DatabaseSync(path);
-    this.database.exec(`PRAGMA busy_timeout = 5000;
-      CREATE TABLE IF NOT EXISTS employee_management (
-        space_id TEXT NOT NULL, template_id TEXT NOT NULL,
-        revision INTEGER NOT NULL, policy TEXT NOT NULL,
-        PRIMARY KEY (space_id, template_id)
-      )`);
+    this.path = path;
+  }
+  // Opened on first use: a store this version cannot use (rec#17) fails the
+  // employee calls that need it, not the console that hosts them.
+  get database() {
+    this.#database ??= openFormattedDatabase(this.path, EMPLOYEE_MANAGEMENT_FORMAT);
+    return this.#database;
   }
   read(spaceId, templateId) {
     const row = this.database.prepare('SELECT revision, policy FROM employee_management WHERE space_id = ? AND template_id = ?').get(spaceId, templateId);
@@ -58,7 +65,7 @@ export class EmployeeManagementStore {
       return { ...parsed, revision };
     } catch (error) { this.database.exec('ROLLBACK'); throw error; }
   }
-  close() { if (!this.closed) { this.closed = true; this.database.close(); } }
+  close() { if (!this.closed) { this.closed = true; this.#database?.close(); } }
 }
 
 export function managementFor(manifest, agent, stored) {

@@ -10,7 +10,8 @@ import {
   GraphRuntimeConfigurationError
 } from '../graphiti/runtime-config.js';
 import { resolveSetupPaths } from '../setup/paths.js';
-import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { readJsonFile } from '../storage/json-file.js';
+import { writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { writeLine } from './terminal-io.js';
 
 const HELP_FLAGS = new Set(['--help', '-h']);
@@ -320,11 +321,11 @@ function sameProvider(left, right) {
 }
 
 function writeSecureJson(path, value) {
-  writeJsonFileAtomic(path, value, {
+  writeVersionedJsonFileAtomic(path, value, { store: 'graph-runtime-config', io: {
     writeFileSync: (temporaryPath, payload, options) => writeFileSync(
       temporaryPath,
       payload,
       { ...options, mode: 0o600 }
     )
-  });
+  } });
 }

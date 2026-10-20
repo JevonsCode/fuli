@@ -1,7 +1,8 @@
 import { chmodSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { readJsonFile } from '../storage/json-file.js';
+import { writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import {
   managedProviderUrls,
   readRuntimeSettings
@@ -28,7 +29,7 @@ export async function reconcileImportedGraphIdentity({
   fetchImpl = globalThis.fetch,
   wait = delay,
   readConfig = (path) => readJsonFile(path, null),
-  writeConfig = writeJsonFileAtomic,
+  writeConfig = (path, value) => writeVersionedJsonFileAtomic(path, value, { store: 'graph-runtime-config' }),
   secureConfig = (path) => chmodSync(path, 0o600),
   readSettings = readRuntimeSettings,
   readEnvironment = readEnvironmentFile

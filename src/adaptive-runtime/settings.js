@@ -1,6 +1,7 @@
 import { chmodSync } from 'node:fs';
 
-import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { readJsonFile } from '../storage/json-file.js';
+import { writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { deepFreeze } from '../validation/values.js';
 
 export const ADAPTIVE_RUNTIME_SETTINGS_VERSION = 1;
@@ -25,7 +26,7 @@ export function readAdaptiveRuntimeSettings(path, {
 }
 
 export function writeAdaptiveRuntimeSettings(path, input, {
-  write = writeJsonFileAtomic,
+  write = (filePath, value) => writeVersionedJsonFileAtomic(filePath, value, { store: 'adaptive-runtime-settings' }),
   secure = (filePath) => chmodSync(filePath, 0o600)
 } = {}) {
   if (!path) throw new TypeError('Adaptive runtime settings path is required');

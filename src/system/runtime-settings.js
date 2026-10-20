@@ -1,7 +1,8 @@
 import { chmodSync } from 'node:fs';
 
 import { isFetchBlockedPort } from '../server/blocked-ports.js';
-import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { readJsonFile } from '../storage/json-file.js';
+import { writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { deepFreeze } from '../validation/values.js';
 import { normalizeNeedsPersonUrl } from '../notifications/needs-person.js';
 
@@ -100,7 +101,7 @@ export function readRuntimeSettings(path, {
 }
 
 export function writeRuntimeSettings(path, input, {
-  write = writeJsonFileAtomic,
+  write = (filePath, value) => writeVersionedJsonFileAtomic(filePath, value, { store: 'runtime-settings' }),
   secure = (filePath) => chmodSync(filePath, 0o600)
 } = {}) {
   const settings = normalizeRuntimeSettings(input, { strict: true });

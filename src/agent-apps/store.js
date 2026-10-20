@@ -1,6 +1,4 @@
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/sqlite-format.js';
 
 import { DECISION_ENTRYPOINTS, PRESENCE_LEVELS } from './decision-source.js';
 import { appNotFound } from './errors.js';
@@ -160,10 +158,9 @@ export class AgentAppStore {
 
 const sqlList = (values) => values.map((value) => `'${value}'`).join(', ');
 
-function openRegistry(path) {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const database = new DatabaseSync(path);
-  database.exec(`PRAGMA busy_timeout = 5000;
+const AGENT_APP_FORMAT = sqliteFormat({
+  store: 'agent-apps',
+  schema: `
     CREATE TABLE IF NOT EXISTS agent_apps (
       app_id TEXT PRIMARY KEY, provider TEXT NOT NULL, personal_space_id TEXT NOT NULL,
       agent_id TEXT NOT NULL, name TEXT NOT NULL, status TEXT NOT NULL,
@@ -189,8 +186,11 @@ function openRegistry(path) {
     CREATE TABLE IF NOT EXISTS agent_app_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT, app_id TEXT NOT NULL, at TEXT NOT NULL,
       action TEXT NOT NULL, version TEXT, actor TEXT, detail TEXT
-    )`);
-  return database;
+    )`
+});
+
+function openRegistry(path) {
+  return openFormattedDatabase(path, AGENT_APP_FORMAT);
 }
 
 function appRecord(row) {

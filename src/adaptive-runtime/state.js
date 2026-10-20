@@ -1,4 +1,5 @@
-import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { readJsonFile } from '../storage/json-file.js';
+import { writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 
 export const ADAPTIVE_RUNTIME_STATE_VERSION = 1;
 export const ADAPTIVE_RUNTIME_STAGES = Object.freeze([
@@ -22,7 +23,7 @@ export function readAdaptiveRuntimeState(path, {
 }
 
 export function writeAdaptiveRuntimeState(path, state, {
-  write = writeJsonFileAtomic
+  write = (filePath, value) => writeVersionedJsonFileAtomic(filePath, value, { store: 'adaptive-runtime-state' })
 } = {}) {
   if (!path) return null;
   const normalized = normalizeAdaptiveRuntimeState(state, { required: true });

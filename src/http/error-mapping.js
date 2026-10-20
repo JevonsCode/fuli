@@ -6,6 +6,7 @@ import {
 import { JsonBodyTooLargeError } from './response.js';
 import { ProviderRequestError } from '../graphiti/provider-client.js';
 import { EmployeeError } from '../employees/manifest.js';
+import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
 
 const BAD_REQUEST_CODES = new Set([
   ApplicationErrorCode.NOT_FOUND,
@@ -17,6 +18,11 @@ export function mapHttpError(error) {
     return { status: 409, body: { error: error.message, code: error.code } };
   }
   if (error instanceof EmployeeError) {
+    return { status: error.status, body: { error: error.message, code: error.code } };
+  }
+  // A local store whose data format this version cannot use (rec#17): the
+  // message says whether to upgrade, restore a backup or confirm a migration.
+  if (error instanceof DataFormatError) {
     return { status: error.status, body: { error: error.message, code: error.code } };
   }
   if (error instanceof JsonBodyTooLargeError) {

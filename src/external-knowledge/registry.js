@@ -1,4 +1,6 @@
-import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { readJsonFile } from '../storage/json-file.js';
+import { refusePendingJsonMigration, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
+import { newerFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
 import { chmodSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -6,6 +8,11 @@ import { ApplicationError } from '../app/application-error.js';
 
 const CURRENT_VERSION = 2;
 const EMPTY_REGISTRY = Object.freeze({ version: CURRENT_VERSION, bindings: [] });
+const STORE = 'external-knowledge';
+// A version 1 registry still reads, converted in memory; writing it would
+// restructure every binding, which waits for a person (rec#17 D-09).
+const BINDING_TARGETS = Object.freeze({ id: 'external-knowledge/2-binding-targets', from: 1, to: 2,
+  summary: 'each binding’s single project target becomes a list of targets' });
 
 export class ExternalKnowledgeRegistry {
   constructor(filePath) {
@@ -45,30 +52,45 @@ export class ExternalKnowledgeRegistry {
   }
 
   put(binding) {
-    const document = this.#read();
+    const document = this.#writable();
     const index = document.bindings.findIndex((item) => item.id === binding.id);
     if (index === -1) document.bindings.push(clone(binding));
     else document.bindings[index] = clone(binding);
-    writeJsonFileAtomic(this.filePath, document);
+    writeVersionedJsonFileAtomic(this.filePath, document, { store: STORE });
     return clone(binding);
   }
 
   delete(id) {
-    const document = this.#read();
+    const document = this.#writable();
     const next = document.bindings.filter((item) => item.id !== id);
     if (next.length === document.bindings.length) return false;
-    writeJsonFileAtomic(this.filePath, { ...document, bindings: next });
+    writeVersionedJsonFileAtomic(this.filePath, { ...document, bindings: next }, { store: STORE });
     return true;
   }
 
   #read() {
+    const document = this.#stored();
+    return document.version === 1 ? migrateVersionOne(document) : clone(document);
+  }
+
+  #writable() {
+    const document = this.#stored();
+    if (document.version === 1) {
+      refusePendingJsonMigration(this.filePath, { store: STORE, migration: BINDING_TARGETS,
+        detail: `${document.bindings.length} bindings were written by an earlier FULI` });
+    }
+    return clone(document);
+  }
+
+  #stored() {
     const document = readJsonFile(this.filePath, EMPTY_REGISTRY);
-    if (!Array.isArray(document?.bindings)) {
+    if (Number.isInteger(document?.version) && document.version > CURRENT_VERSION) {
+      throw newerFormatError(STORE, document.version, CURRENT_VERSION);
+    }
+    if (!Array.isArray(document?.bindings) || ![1, CURRENT_VERSION].includes(document.version)) {
       throw new TypeError('Unsupported external knowledge registry format');
     }
-    if (document.version === CURRENT_VERSION) return clone(document);
-    if (document.version === 1) return migrateVersionOne(document);
-    throw new TypeError('Unsupported external knowledge registry format');
+    return document;
   }
 }
 
