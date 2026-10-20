@@ -94,6 +94,34 @@ function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()]
     restart() { close(); open(); } };
 }
 
+// Pauses the nth next call of one app method until released, so a test can
+// interleave a second request at an exact point of the first.
+function holdCall(app, name, nth = 1) {
+  const original = app[name];
+  let calls = 0, release, reached;
+  const gate = new Promise(resolve => { release = resolve; });
+  const arrived = new Promise(resolve => { reached = resolve; });
+  app[name] = async (...args) => {
+    if (++calls < nth) return original(...args);
+    app[name] = original;
+    reached();
+    await gate;
+    return original(...args);
+  };
+  return { arrived, release };
+}
+
+// Counts the reruns of Tonborg's operation with a session answer.
+function countResumes(app) {
+  const resume = app.judgment.resumeWork;
+  const runs = { count: 0 };
+  app.judgment.resumeWork = work => { runs.count += 1; return resume(work); };
+  return runs;
+}
+
+const submitAgain = (h, token, workPackage) => h.work('submit', { taskContextToken: token, packageId: workPackage.packageId,
+  leaseToken: workPackage.lease.token, answer: answer({ decisions: [verdict()] }) });
+
 const claimAndSubmit = async (h, token, payload, evidenceIds) => {
   const { workPackage } = await h.work('claim', { taskContextToken: token, sourceApplication: 'codex' });
   return { workPackage, result: await h.work('submit', { taskContextToken: token, sourceApplication: 'codex', packageId: workPackage.packageId,
@@ -252,6 +280,81 @@ test('C9: a retried submission after a lost reply returns the recorded result wi
   assert.equal(retry.replayed, true);
   assert.deepEqual(retry.result, result.result);
   assert.equal(h.writes.length, 1);
+});
+
+test('C9: a same-lease retry while the answer is applied waits for that one execution and is never stale', async t => {
+  const h = harness(t);
+  await h.app.judgment.review(reviewInput);
+  const { workPackage } = await h.work('claim', { taskContextToken: 'token-a' });
+  const runs = countResumes(h.app);
+  // The first submit holds the project judgment lease while authorizing.
+  const hold = holdCall(h.app, 'listProjectAgents');
+  const first = submitAgain(h, 'token-a', workPackage);
+  await hold.arrived;
+  const retry = await submitAgain(h, 'token-a', workPackage);
+  assert.equal(retry.status, 'applying');
+  assert.equal(retry.workPackage.packageId, workPackage.packageId);
+  hold.release();
+  const done = await first;
+  assert.equal(done.status, 'completed');
+  assert.equal(done.result.records[0].execution.status, 'applied');
+  assert.equal(runs.count, 1);
+  assert.equal(h.writes.length, 1);
+  assert.deepEqual(await submitAgain(h, 'token-a', workPackage), { status: 'completed', replayed: true, result: done.result });
+  assert.deepEqual(h.app.roleWork.summary().packages, [{ role: 'tonborg', status: 'completed', count: 1 }]);
+});
+
+test('C9 and C11: completed only arrives with the stored result; a restart mid-execution resumes the kept answer', async t => {
+  // The judgment lease of the interrupted execution lapses by wall-clock time.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T12:00:00.000Z') });
+  const h = harness(t);
+  await h.app.judgment.review(reviewInput);
+  const { workPackage } = await h.work('claim', { taskContextToken: 'token-a' });
+  // Pause at the pre-write recheck: the answer is used, nothing is written yet.
+  const hold = holdCall(h.app, 'listKnowledgeReviewCandidates', 2);
+  void submitAgain(h, 'token-a', workPackage);
+  await hold.arrived;
+  const during = await submitAgain(h, 'token-a', workPackage);
+  assert.equal(during.status, 'applying');
+  assert.equal(h.writes.length, 0);
+  // The process dies here: the paused execution never finishes.
+  h.restart();
+  assert.equal((await submitAgain(h, 'token-a', workPackage)).status, 'applying');
+  h.clock.at += 11 * 60_000;
+  // The window passed, but the dead execution still holds the judgment lease:
+  // busy is transient, so the answer is kept, not made stale.
+  await assert.rejects(submitAgain(h, 'token-a', workPackage), { code: 'judgment_busy' });
+  t.mock.timers.tick(11 * 60_000);
+  const runs = countResumes(h.app);
+  const done = await submitAgain(h, 'token-a', workPackage);
+  assert.equal(done.status, 'completed');
+  assert.equal(done.result.records[0].execution.status, 'applied');
+  assert.equal(runs.count, 1);
+  assert.equal(h.writes.length, 1);
+  assert.deepEqual(await submitAgain(h, 'token-a', workPackage), { status: 'completed', replayed: true, result: done.result });
+});
+
+test('C16: a successor session gets its own package for the same evidence; the earlier one is superseded', async t => {
+  const h = harness(t, { roles: { tonborg: tonborg() }, replies: () => new Response('{"error":{"message":"busy"}}', { status: 503 }) });
+  const input = { personalSpaceId: 's', personalProjectId: 'p', requestId: 'accept-a', taskId: 't', taskContextToken: 'token-a',
+    artifactRevision: 'artifact-a', expectedRevision: 2, sourceApplication: 'claude_code' };
+  const first = await h.app.judgment.accept(input);
+  assert.equal(first.workPackage.sessionRef, 'session-a');
+  // Session A goes away; session B, the same lead, asks again on the same evidence.
+  const second = await h.app.judgment.accept({ ...input, requestId: 'accept-b', taskContextToken: 'token-b', sourceApplication: 'codex' });
+  assert.equal(second.outcome, 'pending');
+  assert.equal(second.workPackage.sessionRef, 'session-b');
+  assert.notEqual(second.workPackage.packageId, first.workPackage.packageId);
+  // Only one answer to this evidence can be used: A's package is closed.
+  await assert.rejects(h.work('claim', { taskContextToken: 'token-a', packageId: first.workPackage.packageId }), { code: 'role_work_closed' });
+  assert.deepEqual(await h.work('claim', { taskContextToken: 'token-a' }), { workPackage: null });
+  const { workPackage, result } = await claimAndSubmit(h, 'token-b', { outcome: 'approve', summary: 'Verified', evidence: ['report'], confidence: 0.97 }, ['gate']);
+  assert.equal(workPackage.packageId, second.workPackage.packageId);
+  assert.equal(result.status, 'completed');
+  assert.equal(result.result.outcome, 'escalate');
+  assert.equal(result.result.sessionId, 'session-b');
+  assert.equal(h.completions.length, 0);
+  assert.deepEqual(h.app.roleWork.summary().packages, [{ role: 'tonborg', status: 'completed', count: 1 }, { role: 'tonborg', status: 'stale', count: 1 }]);
 });
 
 test('T5: evidence that changes before the session answers makes the answer stale; history stays', async t => {

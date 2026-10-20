@@ -86,8 +86,10 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend() } = 
       page = await app.listKnowledgeReviewCandidates({ personalSpaceId: space, reviewId: run.review_id, limit: 50, offset });
       // A previous human-needed decision remains in its queue; do not repeatedly
       // spend a model call reviewing unchanged evidence. A new version is eligible.
+      // This request's own records do not count: a rerun after an interrupted
+      // run (rec#8 C11) finishes them, and store.record returns the same record.
       candidates = structuredClone((page.candidates ?? []).filter(candidate => !(visited.value ?? []).includes(fingerprint(candidate))
-        && !store.reviewed(space, project, candidate.candidate_key, fingerprint(candidate), policyVersion(policy))).slice(0, input.limit));
+        && !store.reviewed(space, project, candidate.candidate_key, fingerprint(candidate), policyVersion(policy), { exceptRequest: cacheKey })).slice(0, input.limit));
       if (candidates.length) {
         const schema = reviewSchema(candidates);
         const answer = await decide({ policy, operation: TONBORG_OPERATIONS.review, requestId: cacheKey, resume: input,
@@ -109,6 +111,8 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend() } = 
             outcome, policy, policyVersion: policyVersion(policy), evidenceFingerprint: fingerprint(candidate),
             memoryRevision: evidenceContext.memoryRevision, preferenceDelivery: preferenceDeliveryRecord(evidenceContext.preferences),
             ...judgmentProvenance(answer) }, `${cacheKey}:${decision.target}`);
+          // Already settled by an interrupted run of this request: never apply twice.
+          if (record.executionHistory.length) { records.push(record); continue; }
           if (outcome === 'approve' && policy.mode !== 'manual') {
             const current = await app.listKnowledgeReviewCandidates({ personalSpaceId: space, reviewId: run.review_id, limit: 50, offset: Math.max(0, offset - records.filter(r => r.execution.status === 'applied').length) });
             const fresh = current.candidates.find(c => c.candidate_key === decision.target);

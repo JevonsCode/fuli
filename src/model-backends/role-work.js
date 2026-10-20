@@ -20,24 +20,34 @@ const LEASE_MS = 10 * 60_000;
 const PACKAGE_TTL_MS = 72 * 60 * 60_000;
 // One repair, like a model answer that failed validation once.
 const MAX_INVALID_SUBMISSIONS = 2;
+// One execution holds an answer this long; past it, a retry takes over (the
+// process applying it is presumed gone).
+const APPLY_MS = 10 * 60_000;
+const ANSWERED = Object.freeze(['submitted', 'applying', 'completed']);
 const GUIDANCE = 'Not run yet. The current session may complete it with role_work claim, then submit. '
   + 'A session answer is its own assessment, never an independent verification.';
+const APPLYING_GUIDANCE = 'The answer was accepted and is being applied once. Submit again later for the result.';
 
 export function createRoleWorkBridge({ port, store, verifySession, resumers, now = () => new Date() }) {
   async function decide(input, { resume = null } = {}) {
     const request = parseDecisionRequest(input);
     const at = now();
-    const submitted = store.submitted(request.role, request.requestId);
-    if (submitted) {
-      if (sameWork(submitted, request)) {
-        const used = store.transition(submitted.packageId, ['submitted'], { status: 'completed' }, { name: 'completed' }, at);
-        if (used) return sessionAnswer(used);
-      } else {
-        store.transition(submitted.packageId, ['submitted'], { status: 'stale' }, { name: 'stale', detail: { reason: 'evidence_or_policy_changed' } }, at);
-      }
+    // The role's rerun during an execution uses the answer only for the same
+    // scope, evidence and policy. Using it is recorded; completion waits for
+    // the role's result. An answer already used is never declared stale.
+    const applying = store.applying(request.role, request.requestId);
+    if (applying && sameWork(applying, request)) {
+      const used = store.transition(applying.packageId, ['applying'], applying.consumedAt ? {} : { consumedAt: at }, { name: 'consumed' }, at);
+      if (used) return sessionAnswer(used);
+    } else if (applying && !applying.consumedAt) {
+      store.transition(applying.packageId, ['applying'], { status: 'stale' }, { name: 'stale', detail: { reason: 'evidence_or_policy_changed' } }, at);
     }
     const open = store.open(request, at);
     if (open) return pending(open, null);
+    if (store.applyingWork(request, at)) {
+      throw Object.assign(new ApplicationError('role_work_busy', 'A session answer to this work is being applied. Try again shortly.', { status: 409 }),
+        { retryable: true });
+    }
     const { envelope, modelReceipt } = await port.decide(request);
     if (modelReceipt.status === 'completed') return { status: 'answered', mode: 'model_api', independent: true, envelope, modelReceipt };
     if (modelReceipt.status === 'not_configured' || modelReceipt.fallbackEligible) {
@@ -71,9 +81,9 @@ export function createRoleWorkBridge({ port, store, verifySession, resumers, now
     assertHolder(work, session);
     if (work.lease?.token !== input.leaseToken || work.lease.sessionRef !== session.sessionRef) return stale(work, 'lease_mismatch', at);
     // C9: the lease token is the submission's idempotency key. A retry after
-    // a lost reply returns the recorded result and changes nothing.
-    if (work.status === 'completed') return { status: 'completed', replayed: true, result: work.result };
-    if (work.status === 'submitted') return resumeRole(work, session, at);
+    // a lost reply returns the recorded result and changes nothing; a retry
+    // while the answer is being applied waits for that one execution.
+    if (ANSWERED.includes(work.status)) return retry(work, session, at);
     if (work.status !== 'claimed') return stale(work, `package_${work.status}`, at);
     if (Date.parse(work.expiresAt) <= at.getTime()) return stale(work, 'package_expired', at);
     if (Date.parse(work.lease.expiresAt) <= at.getTime()) return stale(work, 'lease_expired', at);
@@ -91,29 +101,43 @@ export function createRoleWorkBridge({ port, store, verifySession, resumers, now
     }
     const submission = { envelope: decisionEnvelope(work.request, verdict.value), submittedAt: at.toISOString(),
       session: { sessionRef: session.sessionRef, sourceApplication: session.sourceApplication } };
-    const accepted = store.transition(work.packageId, ['claimed'], { status: 'submitted', submission }, { name: 'submitted' }, at);
-    return accepted ? resumeRole(accepted, session, at) : stale(work, 'lease_mismatch', at);
+    const accepted = store.transition(work.packageId, ['claimed'], { status: 'applying', submission, applyingUntil: applyingUntil(at) },
+      { name: 'submitted' }, at);
+    return accepted ? resumeRole(accepted, session) : stale(work, 'lease_mismatch', at);
+  }
+
+  // An answered package: start the one execution if none holds it (released
+  // for a retry, or its earlier execution window passed after a restart),
+  // otherwise report where it stands. completed always carries the result.
+  function retry(work, session, at) {
+    const started = store.reapply(work.packageId, { at, until: applyingUntil(at) });
+    if (started) return resumeRole(started, session);
+    const current = store.get(work.packageId);
+    if (current.status === 'completed') return { status: 'completed', replayed: true, result: current.result };
+    if (current.status === 'applying') return { status: 'applying', workPackage: summary(current), guidance: APPLYING_GUIDANCE };
+    return stale(current, `package_${current.status}`, at);
   }
 
   // The role reruns its operation with fresh evidence; its decide() call
   // uses the submitted answer only while the evidence and policy versions
-  // still match.
-  async function resumeRole(work, session, at) {
+  // still match. The operation is idempotent per requestId, so a rerun after
+  // an interrupted execution resolves from what the role already stored.
+  async function resumeRole(work, session) {
     const resume = resumers[work.role];
-    if (!resume || !work.resume) throw new ApplicationError('role_work_unresumable', `No ${work.role} operation can use this answer.`, { status: 409 });
     let result;
     try {
+      if (!resume || !work.resume) throw new ApplicationError('role_work_unresumable', `No ${work.role} operation can use this answer.`, { status: 503 });
       result = await resume({ operation: work.operation, input: work.resume, session });
     } catch (error) {
-      if (error.status === 409) store.transition(work.packageId, ['submitted'], { status: 'stale' }, { name: 'stale', detail: { reason: error.code ?? 'conflict' } }, at);
+      // Refused before the answer was used (its task or evidence moved on):
+      // stale. Busy, or failed in any other way: the answer waits for a retry.
+      const refused = error.status === 409 && !error.retryable && !store.get(work.packageId).consumedAt;
+      store.transition(work.packageId, ['applying'], { status: refused ? 'stale' : 'submitted' },
+        { name: refused ? 'stale' : 'released', detail: { reason: error.code ?? 'error' } }, now());
       throw error;
     }
-    const after = store.get(work.packageId);
-    if (after.status === 'completed') {
-      store.transition(work.packageId, ['completed'], { result }, { name: 'result_recorded' }, at);
-      return { status: 'completed', result };
-    }
-    store.transition(work.packageId, ['submitted'], { status: 'stale' }, { name: 'stale', detail: { reason: 'not_used' } }, at);
+    const finished = store.finish(work.packageId, result, now());
+    if (finished.status === 'completed') return { status: 'completed', result: finished.result };
     return { status: 'stale', reason: 'evidence_or_policy_changed', result };
   }
 
@@ -141,9 +165,17 @@ function assertHolder(work, session) {
   if (!allowed) throw new ApplicationError('role_work_scope_mismatch', 'This work package belongs to another session or project.', { status: 403 });
 }
 
+// The same rule as the store's open-package match: one operation, the full
+// space/project/session scope and the same evidence and policy versions.
 function sameWork(work, request) {
-  return work.operation === request.operation && work.scope.personalProjectId === request.scope.personalProjectId
+  const { scope } = work;
+  return work.operation === request.operation && scope.personalSpaceId === request.scope.personalSpaceId
+    && scope.personalProjectId === request.scope.personalProjectId && scope.sessionRef === request.scope.sessionRef
     && work.versions.evidence === request.versions.evidence && work.versions.policy === request.versions.policy;
+}
+
+function applyingUntil(at) {
+  return new Date(at.getTime() + APPLY_MS);
 }
 
 function sessionAnswer(work) {

@@ -86,11 +86,13 @@ export class JudgmentStore {
       AND json_extract(body,'$.agentId')=? AND (? IS NULL OR project=?) ORDER BY rowid`)
       .all(space, agentId, personalProjectId, personalProjectId).map(({ id }) => this.get(space, id));
   }
-  reviewed(space, project, target, evidenceFingerprint, policyVersion) {
+  // exceptRequest: records of that request key prefix do not count.
+  reviewed(space, project, target, evidenceFingerprint, policyVersion, { exceptRequest = null } = {}) {
     const row = this.db.prepare(`SELECT id FROM judgment_records WHERE space=? AND project=?
       AND json_extract(body,'$.target')=? AND json_extract(body,'$.evidenceFingerprint')=?
-      AND json_extract(body,'$.policyVersion')=? ORDER BY rowid DESC LIMIT 1`)
-      .get(space, project, target, evidenceFingerprint, policyVersion);
+      AND json_extract(body,'$.policyVersion')=? AND (?6 IS NULL OR substr(request_key, 1, length(?6) + 1) != ?6 || ':')
+      ORDER BY rowid DESC LIMIT 1`)
+      .get(space, project, target, evidenceFingerprint, policyVersion, exceptRequest);
     if (!row) return false;
     const record = this.get(space, row.id);
     return record.outcome !== 'failed' && !['failed', 'stale'].includes(record.execution.status);
@@ -116,7 +118,8 @@ export class JudgmentStore {
   claim(space, project) {
     return this.transaction(() => {
       const current = this.db.prepare('SELECT expires FROM judgment_leases WHERE space=? AND project=?').get(space, project);
-      if (current?.expires > Date.now()) throw new EmployeeError('Tonborg is already reviewing this scope.', 409, 'judgment_busy');
+      // Transient: the scope frees when the running judgment ends, so callers may retry.
+      if (current?.expires > Date.now()) throw Object.assign(new EmployeeError('Tonborg is already reviewing this scope.', 409, 'judgment_busy'), { retryable: true });
       const token = randomUUID();
       this.db.prepare('INSERT INTO judgment_leases VALUES(?,?,?,?) ON CONFLICT(space,project) DO UPDATE SET token=excluded.token,expires=excluded.expires')
         .run(space, project, token, Date.now() + 600_000);

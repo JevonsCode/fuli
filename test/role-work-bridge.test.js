@@ -34,7 +34,7 @@ function harness(config = null) {
     verifySession: async ({ taskContextToken }) => SESSIONS[taskContextToken],
     // The role's own operation: it asks again and uses the answer it gets.
     resumers: { bole: async ({ input }) => {
-      const outcome = await bridge.decide(request(input.sessionRef));
+      const outcome = await bridge.decide({ ...request(input.sessionRef), requestId: input.requestId ?? 'bole-1' });
       return { choice: outcome.envelope?.payload.choice ?? null };
     } } });
   const work = (action, token, extra = {}) => bridge[action]({ taskContextToken: token, ...extra });
@@ -67,6 +67,24 @@ test('a package bound to a session is that session\'s only, and an unanswered pa
   clock.at += 73 * 60 * 60_000;
   assert.deepEqual(await work('claim', 'a'), { workPackage: null });
   assert.deepEqual(bridge.summary().packages, [{ role: 'bole', status: 'expired', count: 1 }]);
+});
+
+test('C16: a session binding is part of the same work; a package for the same evidence supersedes the other binding', async () => {
+  const { bridge, work, submit } = harness();
+  const unbound = await bridge.decide(request(), { resume: { sessionRef: null } });
+  const bound = await bridge.decide({ ...request('session-a'), requestId: 'bole-2' }, { resume: { sessionRef: 'session-a', requestId: 'bole-2' } });
+  assert.notEqual(bound.workPackage.packageId, unbound.workPackage.packageId);
+  assert.equal(bound.workPackage.sessionRef, 'session-a');
+  // Never two packages that could both be answered for one evidence.
+  assert.deepEqual(await work('claim', 'b'), { workPackage: null });
+  await assert.rejects(work('claim', 'a', { packageId: unbound.workPackage.packageId }), { code: 'role_work_closed' });
+  // The same binding again reuses its open package under another requestId.
+  const again = await bridge.decide({ ...request('session-a'), requestId: 'bole-3' });
+  assert.equal(again.workPackage.packageId, bound.workPackage.packageId);
+  const { workPackage } = await work('claim', 'a');
+  assert.equal(workPackage.packageId, bound.workPackage.packageId);
+  assert.deepEqual(await submit('a', workPackage), { status: 'completed', result: { choice: 'ada' } });
+  assert.deepEqual(bridge.summary().packages, [{ role: 'bole', status: 'completed', count: 1 }, { role: 'bole', status: 'stale', count: 1 }]);
 });
 
 test('Settings reads each role\'s backend and the open work packages over the local HTTP API', async () => {
