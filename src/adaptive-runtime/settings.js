@@ -1,10 +1,12 @@
 import { chmodSync } from 'node:fs';
 
 import { readJsonFile } from '../storage/json-file.js';
-import { writeVersionedJsonFileAtomic } from '../storage/json-format.js';
+import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { deepFreeze } from '../validation/values.js';
 
 export const ADAPTIVE_RUNTIME_SETTINGS_VERSION = 1;
+export const ADAPTIVE_RUNTIME_SETTINGS_FORMAT = jsonFormat({ store: 'adaptive-runtime-settings',
+  versions: [ADAPTIVE_RUNTIME_SETTINGS_VERSION] });
 
 // These are product defaults, not measured hardware limits. They favor low idle
 // memory while leaving enough time for short bursts of related Agent requests.
@@ -26,7 +28,7 @@ export function readAdaptiveRuntimeSettings(path, {
 }
 
 export function writeAdaptiveRuntimeSettings(path, input, {
-  write = (filePath, value) => writeVersionedJsonFileAtomic(filePath, value, { store: 'adaptive-runtime-settings' }),
+  write = (filePath, value) => writeVersionedJsonFileAtomic(filePath, value, ADAPTIVE_RUNTIME_SETTINGS_FORMAT),
   secure = (filePath) => chmodSync(filePath, 0o600)
 } = {}) {
   if (!path) throw new TypeError('Adaptive runtime settings path is required');

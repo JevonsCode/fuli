@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import { transcriptDigest } from '../conversations/transcript-guard.js';
-import { writeVersionedJsonFileAtomic } from '../storage/json-format.js';
+import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 
 // The session layer of the capture settings (rec#5 C3, "这次别记"): which
 // host sessions are paused, kept in the local runtime directory and never in
@@ -22,6 +22,7 @@ import { writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 // write after it (conversations/capture-window.js).
 
 const RECORD_VERSION = 1;
+export const CAPTURE_SESSION_PAUSE_FORMAT = jsonFormat({ store: 'capture-session-pause', versions: [RECORD_VERSION] });
 const RECORD_FILE = /^[0-9a-f]{64}\.json$/;
 // Worker links nest a few levels at most; a longer or cyclic chain cannot be
 // trusted to say whether a parent paused.
@@ -100,7 +101,7 @@ export class SessionCapturePauseStore {
   #write(sessionId, current, fields) {
     const next = { version: RECORD_VERSION, generation: (current?.generation ?? 0) + 1, nonce: randomUUID(),
       parentSessionId: current?.parentSessionId ?? null, ...fields };
-    if (this.directory) writeVersionedJsonFileAtomic(this.#path(sessionId), next, { store: 'capture-session-pause' });
+    if (this.directory) writeVersionedJsonFileAtomic(this.#path(sessionId), next, CAPTURE_SESSION_PAUSE_FORMAT);
     else this.memory.set(sessionId, next);
     return { paused: next.paused, since: next.since, by: next.by };
   }

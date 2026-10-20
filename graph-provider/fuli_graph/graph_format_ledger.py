@@ -75,14 +75,60 @@ class LedgerStep:
     kind: str
 
 
-async def record_graph_event(
-    driver, step: LedgerStep, status: str, *, now, detail: str, backup_ref: str | None = None
-) -> None:
-    if status not in STATUSES:
-        raise ValueError(f'unknown ledger status {status}')
+class GraphFormatLockLost(RuntimeError):
+    """This start no longer holds the graph's migration lock."""
+
+
+# The ledger's own identity: exactly one FuliDataFormat node per store, so two
+# starts can never keep two versions. Part of the ledger contract every format
+# version shares, which is why it is created before the format is known.
+IDENTITY_CONSTRAINT = (
+    'CREATE CONSTRAINT fuli_data_format_store IF NOT EXISTS '
+    'FOR (n:FuliDataFormat) REQUIRE n.store IS UNIQUE'
+)
+
+
+async def ensure_graph_ledger_identity(driver) -> None:
+    await driver.execute_query(IDENTITY_CONSTRAINT)
+    await driver.execute_query('MERGE (:FuliDataFormat {store: $store})', store=GRAPH_STORE)
+
+
+async def acquire_graph_migration_lock(driver, owner: str, *, until) -> bool:
+    """Take the lease when it is free, expired or already ours. One query on
+    the identity node, whose write lock makes the check and the take atomic."""
+    records, _, _ = await driver.execute_query(
+        '''
+        MATCH (format:FuliDataFormat {store: $store})
+        WHERE format.lock_owner IS NULL OR format.lock_owner = $owner
+           OR format.lock_until < datetime()
+        SET format.lock_owner = $owner, format.lock_until = $until
+        RETURN count(format) AS acquired
+        ''',
+        store=GRAPH_STORE, owner=owner, until=until,
+    )
+    return bool(records and records[0]['acquired'])
+
+
+async def release_graph_migration_lock(driver, owner: str) -> None:
     await driver.execute_query(
         '''
-        MERGE (format:FuliDataFormat {store: $store})
+        MATCH (format:FuliDataFormat {store: $store, lock_owner: $owner})
+        REMOVE format.lock_owner, format.lock_until
+        ''',
+        store=GRAPH_STORE, owner=owner,
+    )
+
+
+async def record_graph_event(
+    driver, step: LedgerStep, status: str, *, owner: str, now, detail: str,
+    backup_ref: str | None = None,
+) -> None:
+    """Append an event; only the holder of the migration lock may."""
+    if status not in STATUSES:
+        raise ValueError(f'unknown ledger status {status}')
+    records, _, _ = await driver.execute_query(
+        '''
+        MATCH (format:FuliDataFormat {store: $store, lock_owner: $owner})
         SET format.event_count = coalesce(format.event_count, 0) + 1
         CREATE (format)-[:HAS_FORMAT_EVENT]->(:FuliDataFormatEvent {
           store: $store,
@@ -96,8 +142,10 @@ async def record_graph_event(
           detail: $detail,
           recorded_at: $recorded_at
         })
+        RETURN count(format) AS recorded
         ''',
         store=GRAPH_STORE,
+        owner=owner,
         migration_id=step.migration_id,
         from_version=step.from_version,
         to_version=step.to_version,
@@ -107,15 +155,27 @@ async def record_graph_event(
         detail=detail,
         recorded_at=now(),
     )
+    if not records or not records[0]['recorded']:
+        raise GraphFormatLockLost(f'lost the graph migration lock before recording {step.migration_id}')
 
 
-async def stamp_graph_version(driver, version: int, *, now) -> None:
-    await driver.execute_query(
+async def stamp_graph_version(driver, version: int, *, owner: str, now, until) -> None:
+    """Move the version forward, never back, and only while holding the lock;
+    each stamp renews the lease."""
+    records, _, _ = await driver.execute_query(
         '''
-        MERGE (format:FuliDataFormat {store: $store})
-        SET format.version = $version, format.updated_at = $updated_at
+        MATCH (format:FuliDataFormat {store: $store, lock_owner: $owner})
+        WHERE coalesce(format.version, 0) <= $version
+        SET format.version = $version, format.updated_at = $updated_at, format.lock_until = $until
+        RETURN count(format) AS stamped
         ''',
         store=GRAPH_STORE,
+        owner=owner,
         version=version,
         updated_at=now(),
+        until=until,
     )
+    if not records or not records[0]['stamped']:
+        raise GraphFormatLockLost(
+            f'refused to stamp graph version {version}: the lock was lost or the version is higher'
+        )

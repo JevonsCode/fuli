@@ -22,7 +22,7 @@ export function newerFormatError(store, version, supported) {
 
 export function pendingMigrationError(store, migration, detail) {
   return new DataFormatError(store, 'data_format_pending',
-    `FULI store "${store}" needs migration ${migration.id} (${migration.summary}): ${detail}. It changes existing `
-    + 'records, so FULI does not run it automatically; the store stays unavailable until a person confirms it.',
+    `FULI store "${store}" needs migration ${migration.id} (${migration.summary}): ${detail}. FULI does not run it `
+    + 'automatically; the store stays unavailable until a person confirms it.',
     [migration.id]);
 }

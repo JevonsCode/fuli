@@ -18,20 +18,28 @@ Neo4j has no in-process backup, which is why only declared indexes and
 constraints ever run here; every ledger event says so.
 """
 
+import asyncio
 from dataclasses import dataclass, field
+from datetime import timedelta
 import logging
+from uuid import uuid4
 
 from neo4j.exceptions import ClientError
 
 from .graph_format_ledger import (
+    GraphFormatLockLost,
     LedgerStep,
+    acquire_graph_migration_lock,
+    ensure_graph_ledger_identity,
     read_graph_ledger,
     read_graph_ledger_events,
     record_graph_event,
+    release_graph_migration_lock,
     stamp_graph_version,
 )
 from .graph_format_migrations import GRAPH_FORMAT_VERSION, GRAPH_MIGRATIONS, GraphMigration
 from .graph_format_schema import schema_fingerprint
+from .graph_schema_state import compare_rules, existing_rules
 from .provider_values import now_utc
 
 logger = logging.getLogger(__name__)
@@ -44,6 +52,11 @@ NO_BACKUP_NOTE = (
     'constraints run automatically'
 )
 _MIGRATIONS = {migration.id: migration for migration in GRAPH_MIGRATIONS}
+# One start at a time migrates the graph. A crashed start's lease expires, and
+# every stamp renews it; another start waits a little longer than one lease.
+LOCK_LEASE = timedelta(seconds=120)
+LOCK_WAIT_SECONDS = 150
+LOCK_POLL_SECONDS = 1
 
 
 class GraphFormatUnavailable(Exception):
@@ -63,7 +76,8 @@ class GraphFormatUnavailable(Exception):
 @dataclass(frozen=True)
 class GraphFormatState:
     access: str  # 'write', 'read' or 'none'
-    state: str  # 'current', 'pending_confirmation', 'interrupted', 'newer' or 'unchecked'
+    # 'current', 'pending_confirmation', 'interrupted', 'newer', 'blocked', 'locked' or 'unchecked'
+    state: str
     version: int | None
     message: str | None = None
     pending: tuple[str, ...] = field(default_factory=tuple)
@@ -95,39 +109,98 @@ def _step(migration: GraphMigration) -> LedgerStep:
     return LedgerStep(migration.id, migration.from_version, migration.to_version, migration.kind)
 
 
-async def prepare_graph_format(driver, settings, *, now=now_utc) -> GraphFormatState:
-    """driver is the unguarded maintenance handle; nothing else runs meanwhile."""
+@dataclass(frozen=True)
+class _Run:
+    """One start's hold on the graph: the lock owner and its clock."""
+    driver: object
+    settings: object
+    owner: str
+    now: object
+
+    def until(self):
+        return self.now() + LOCK_LEASE
+
+    async def record(self, step, status, *, detail):
+        await record_graph_event(self.driver, step, status, owner=self.owner, now=self.now, detail=detail)
+
+    async def stamp(self, version):
+        await stamp_graph_version(self.driver, version, owner=self.owner, now=self.now, until=self.until())
+
+
+async def prepare_graph_format(
+    driver, settings, *, now=now_utc, lock_wait_seconds=LOCK_WAIT_SECONDS, sleep=asyncio.sleep,
+) -> GraphFormatState:
+    """driver is the unguarded maintenance handle. A newer graph is refused
+    before any DDL; otherwise this start takes the graph's migration lock,
+    reads the ledger again under it, and only moves the version forward."""
     ledger = await read_graph_ledger(driver)
     if ledger.version is not None and ledger.version > GRAPH_FORMAT_VERSION:
-        state = _newer(ledger.version)
-        logger.warning('graph format: store graph is at version %s: %s', ledger.version, state.message)
-        return state
+        return _log(_newer(ledger.version))
+    try:
+        await ensure_graph_ledger_identity(driver)
+    except ClientError:
+        return _log(GraphFormatState(
+            'none', 'blocked', ledger.version,
+            'The graph has more than one data format ledger. FULI does not use it until the '
+            'duplicate ledger is resolved or the graph is restored from a backup.',
+        ))
+    run = _Run(driver, settings, f'{settings.provider_id}:{uuid4()}', now)
+    deadline = asyncio.get_running_loop().time() + lock_wait_seconds
+    while not await acquire_graph_migration_lock(driver, run.owner, until=run.until()):
+        if asyncio.get_running_loop().time() >= deadline:
+            return _log(GraphFormatState(
+                'none', 'locked', ledger.version,
+                'Another FULI provider start is migrating this graph. Restart this provider '
+                'once it has finished.',
+            ))
+        await sleep(LOCK_POLL_SECONDS)
+    try:
+        return await _prepare_locked(run)
+    except GraphFormatLockLost as error:
+        return _log(GraphFormatState('none', 'locked', None, f'{error}. Restart this provider.'))
+    finally:
+        await release_graph_migration_lock(driver, run.owner)
+
+
+def _log(state: GraphFormatState) -> GraphFormatState:
+    logger.warning(
+        'graph format: store graph is %s (version %s, steps %s): %s',
+        state.state, state.version, ', '.join(state.pending) or '-', state.message,
+    )
+    return state
+
+
+async def _prepare_locked(run: _Run) -> GraphFormatState:
+    driver = run.driver
+    # Another start may have moved the graph while this one waited.
+    ledger = await read_graph_ledger(driver)
+    if ledger.version is not None and ledger.version > GRAPH_FORMAT_VERSION:
+        return _log(_newer(ledger.version))
     unfinished = [
         migration_id for migration_id, status in ledger.latest.items()
         if status == 'started'
         and not (migration_id in _MIGRATIONS and _MIGRATIONS[migration_id].automatic)
     ]
     if unfinished:
-        logger.warning('graph format: store graph has steps %s half applied', ', '.join(unfinished))
-        return GraphFormatState(
+        return _log(GraphFormatState(
             'read', 'interrupted', ledger.version,
             f'A graph migration ({", ".join(unfinished)}) started and did not finish. FULI '
             'keeps the graph read-only until it is completed or the graph is restored '
             'from a backup.',
             tuple(unfinished),
-        )
+        ))
     if ledger.version is None and await _empty(driver):
-        await _create(driver, now)
+        await _create(run)
         return _current()
     version = ledger.version or 0
     for migration in GRAPH_MIGRATIONS:
         if migration.to_version <= version:
             continue
-        refusal = await _advance(driver, settings, migration, ledger, now)
+        refusal = await _advance(run, migration, ledger)
         if refusal:
             return refusal
         version = migration.to_version
-        await stamp_graph_version(driver, version, now=now)
+        await run.stamp(version)
     return _current()
 
 
@@ -147,7 +220,10 @@ async def _decide(driver, settings, migration) -> _Decision:
         return _Decision(
             'pending_confirmation', f'{count} records need this step; it changes existing records'
         )
-    missing = tuple(await _missing_rules(driver, migration.rules))
+    missing, mismatched = compare_rules(migration.rules, await existing_rules(driver))
+    if mismatched:
+        return _Decision('pending_confirmation', 'schema mismatch: ' + '; '.join(mismatched))
+    missing = tuple(missing)
     if not missing:
         return _Decision('detected', 'all declared rules already exist')
     conflicts = await _unique_conflicts(driver, missing)
@@ -158,49 +234,45 @@ async def _decide(driver, settings, migration) -> _Decision:
     return _Decision('automatic', f'creates {", ".join(rule.name for rule in missing)}', missing)
 
 
-async def _advance(driver, settings, migration, ledger, now) -> GraphFormatState | None:
-    decision = await _decide(driver, settings, migration)
+async def _advance(run: _Run, migration, ledger) -> GraphFormatState | None:
+    driver = run.driver
+    decision = await _decide(driver, run.settings, migration)
     if decision.state == 'pending_confirmation':
-        return await _pending(driver, migration, ledger, now, decision.detail)
+        return await _pending(run, migration, ledger, decision.detail)
     if decision.state == 'detected':
         if not migration.automatic:
-            await record_graph_event(
-                driver, _step(migration), 'baseline_detected', now=now, detail=decision.detail
-            )
+            await run.record(_step(migration), 'baseline_detected', detail=decision.detail)
             return None
-        await record_graph_event(
-            driver, _step(migration), 'baseline_detected' if ledger.version is None else 'applied',
-            now=now, detail=_schema_detail(migration, decision.detail),
+        await run.record(
+            _step(migration), 'baseline_detected' if ledger.version is None else 'applied',
+            detail=_schema_detail(migration, decision.detail),
         )
         return None
     missing = decision.missing
-    await record_graph_event(
-        driver, _step(migration), 'started', now=now, detail=NO_BACKUP_NOTE
-    )
+    await run.record(_step(migration), 'started', detail=NO_BACKUP_NOTE)
     for rule in missing:
         await _run_rule(driver, rule)
-    still_missing = await _missing_rules(driver, migration.rules)
-    if still_missing:
+    still_missing, mismatched = compare_rules(migration.rules, await existing_rules(driver))
+    if still_missing or mismatched:
         raise RuntimeError(
             f'{migration.id} did not create {", ".join(rule.name for rule in still_missing)}'
+            f'{"; " + "; ".join(mismatched) if mismatched else ""}'
         )
-    await record_graph_event(
-        driver, _step(migration), 'applied', now=now,
+    await run.record(
+        _step(migration), 'applied',
         detail=_schema_detail(migration, f'created {len(missing)} rules; {NO_BACKUP_NOTE}'),
     )
     logger.info('graph format %s applied: %s', migration.id, NO_BACKUP_NOTE)
     return None
 
 
-async def _pending(driver, migration, ledger, now, detail) -> GraphFormatState:
+async def _pending(run: _Run, migration, ledger, detail) -> GraphFormatState:
     already = (
         ledger.latest.get(migration.id) == 'pending_confirmation'
         and ledger.details.get(migration.id) == detail
     )
     if not already:
-        await record_graph_event(
-            driver, _step(migration), 'pending_confirmation', now=now, detail=detail
-        )
+        await run.record(_step(migration), 'pending_confirmation', detail=detail)
     logger.warning(
         'graph format: store graph step %s needs confirmation: %s', migration.id, detail
     )
@@ -238,37 +310,32 @@ def _schema_detail(migration: GraphMigration, note: str) -> str:
 
 
 async def _empty(driver) -> bool:
+    """No node but the ledger's own; stops at the first one found."""
     records, _, _ = await driver.execute_query(
-        'MATCH (n) RETURN count(n) > 0 AS used LIMIT 1', routing_='r'
+        '''
+        CALL {
+          MATCH (n) WHERE NOT n:FuliDataFormat AND NOT n:FuliDataFormatEvent
+          RETURN n LIMIT 1
+        }
+        RETURN count(n) AS used
+        ''',
+        routing_='r',
     )
     return not records or not records[0]['used']
 
 
-async def _create(driver, now) -> None:
+async def _create(run: _Run) -> None:
     rules = [rule for migration in GRAPH_MIGRATIONS for rule in migration.rules]
-    for rule in rules:
-        await _run_rule(driver, rule)
-    await record_graph_event(
-        driver,
-        LedgerStep('graph/created', 0, GRAPH_FORMAT_VERSION, 'schema'),
-        'created',
-        now=now,
+    missing, mismatched = compare_rules(rules, await existing_rules(run.driver))
+    if mismatched:
+        raise RuntimeError('a fresh graph already has rules that differ: ' + '; '.join(mismatched))
+    for rule in missing:
+        await _run_rule(run.driver, rule)
+    await run.record(
+        LedgerStep('graph/created', 0, GRAPH_FORMAT_VERSION, 'schema'), 'created',
         detail=f'a fresh graph built at version {GRAPH_FORMAT_VERSION} with {len(rules)} rules',
     )
-    await stamp_graph_version(driver, GRAPH_FORMAT_VERSION, now=now)
-
-
-async def _existing_rule_names(driver) -> set[str]:
-    names = set()
-    for query in ('SHOW CONSTRAINTS YIELD name', 'SHOW INDEXES YIELD name'):
-        records, _, _ = await driver.execute_query(query, routing_='r')
-        names.update(record['name'] for record in records)
-    return names
-
-
-async def _missing_rules(driver, rules):
-    existing = await _existing_rule_names(driver)
-    return [rule for rule in rules if rule.name not in existing]
+    await run.stamp(GRAPH_FORMAT_VERSION)
 
 
 async def _unique_conflicts(driver, rules) -> list[tuple[str, int]]:

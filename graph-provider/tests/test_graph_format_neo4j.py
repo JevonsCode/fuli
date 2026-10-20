@@ -7,6 +7,7 @@ on top of the disposable-graph flags; every graph here is synthetic.
 """
 
 import os
+from datetime import timedelta
 
 import httpx
 import pytest
@@ -386,3 +387,98 @@ async def test_a_refused_write_names_the_store_and_steps(graph):
     assert health['store'] == 'graph' and health['pending'] == ['graph/9-group-id-separators']
     assert write.json()['detail']['store'] == 'graph'
     assert write.json()['detail']['steps'] == ['graph/9-group-id-separators']
+
+
+@pytest.mark.asyncio
+async def test_a_same_named_plain_index_never_passes_for_a_uniqueness_constraint(graph):
+    settings, driver = graph
+    await _seed_legacy_principal(driver)
+    await _create_rules(driver, {'graph/1-baseline-schema'})
+    await driver.execute_query(
+        'CREATE INDEX fuli_project_agent_task_id IF NOT EXISTS FOR (n:FuliProjectAgentTask) ON (n.id)'
+    )
+    await driver.execute_query(
+        "CREATE (:FuliProjectAgentTask {id: 'same'}), (:FuliProjectAgentTask {id: 'same'})"
+    )
+
+    report = await _report(settings)
+    async with provider_client(settings, ACCESS_TOKEN) as (client, _):
+        health = (await client.get('/health')).json()['data_format']
+
+    step = next(s for s in report['steps'] if s['id'] == 'graph/3-control-plane-schema')
+    assert step['state'] == 'pending_confirmation'
+    assert 'schema mismatch: fuli_project_agent_task_id is a index RANGE' in step['detail']
+    assert health['state'] == 'pending_confirmation'
+    assert health['pending'] == ['graph/3-control-plane-schema']
+    assert await _version(driver) == 2
+    rows = await _rows(driver, "SHOW CONSTRAINTS YIELD name WHERE name = 'fuli_project_agent_task_id'")
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_the_graph_version_only_moves_forward_and_only_under_the_lock(graph):
+    from fuli_graph.graph_format_ledger import (
+        GraphFormatLockLost,
+        acquire_graph_migration_lock,
+        ensure_graph_ledger_identity,
+        stamp_graph_version,
+    )
+    from fuli_graph.provider_values import now_utc
+
+    settings, driver = graph
+    await ensure_graph_ledger_identity(driver)
+    until = now_utc() + timedelta(seconds=60)
+    assert await acquire_graph_migration_lock(driver, 'newer-start', until=until)
+    assert not await acquire_graph_migration_lock(driver, 'older-start', until=until)
+    await stamp_graph_version(driver, 99, owner='newer-start', now=now_utc, until=until)
+    # An older start that read "unversioned" before cannot stamp at all
+    # without the lock, nor lower the version while holding it.
+    with pytest.raises(GraphFormatLockLost):
+        await stamp_graph_version(driver, 1, owner='older-start', now=now_utc, until=until)
+    with pytest.raises(GraphFormatLockLost):
+        await stamp_graph_version(driver, 1, owner='newer-start', now=now_utc, until=until)
+    assert await _version(driver) == 99
+    rows = await _rows(driver, "MATCH (f:FuliDataFormat) RETURN count(f) AS n")
+    assert rows == [{'n': 1}]
+
+
+@pytest.mark.asyncio
+async def test_a_start_waits_for_the_lock_and_reads_the_ledger_again_under_it(graph):
+    import asyncio
+
+    from fuli_graph.graph_format import prepare_graph_format
+    from fuli_graph.graph_format_ledger import ensure_graph_ledger_identity
+    from fuli_graph.runtime import GraphitiRuntime
+
+    settings, driver = graph
+    await _seed_legacy_principal(driver)
+    await ensure_graph_ledger_identity(driver)
+    # Another start holds the lock; this start reads "unversioned" first.
+    await driver.execute_query(
+        "MATCH (f:FuliDataFormat {store: 'graph'}) "
+        "SET f.lock_owner = 'other-start', f.lock_until = datetime() + duration('PT60S')"
+    )
+    runtime = GraphitiRuntime(settings)
+    try:
+        waiting = asyncio.create_task(prepare_graph_format(
+            runtime.driver.maintenance(), settings, lock_wait_seconds=20,
+            sleep=lambda _: asyncio.sleep(0.2),
+        ))
+        await asyncio.sleep(1)
+        assert not waiting.done()
+        # The other start moves the graph to a newer format and lets go.
+        await driver.execute_query(
+            "MATCH (f:FuliDataFormat {store: 'graph'}) "
+            "SET f.version = $version REMOVE f.lock_owner, f.lock_until",
+            version=GRAPH_FORMAT_VERSION + 1,
+        )
+        state = await waiting
+    finally:
+        await runtime.close()
+
+    assert state.state == 'newer' and state.access == 'none'
+    assert await _version(driver) == GRAPH_FORMAT_VERSION + 1
+    assert await _schema_names(driver) == set()
+    assert await _events(driver) == []
+    rows = await _rows(driver, "MATCH (f:FuliDataFormat) RETURN f.lock_owner AS owner")
+    assert rows == [{'owner': None}]

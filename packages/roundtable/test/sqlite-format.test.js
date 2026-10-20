@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
-import { openFormattedDatabase, sqliteFormat } from '../src/storage/sqlite-format.js';
+import { inspectSqliteStore, openFormattedDatabase, sqliteFormat } from '../src/storage/sqlite-format.js';
 
 // Synthetic stores only: a version 1 table, an automatic column (v2) and a
 // backfill of earlier rows (v3), the shapes FULI's stores declare.
@@ -180,7 +180,8 @@ test('a migration whose ledger says it never finished blocks the store', (t) => 
 test('a baseline unique index that earlier rows violate waits for a person', (t) => {
   const { path } = fixture(t);
   oldStore(path, "CREATE TABLE notes(id TEXT, body TEXT NOT NULL); INSERT INTO notes VALUES('n1','a'),('n1','b')");
-  const unique = sqliteFormat({ store: 'notes', schema: `${NOTES_V1}; CREATE UNIQUE INDEX IF NOT EXISTS notes_id ON notes(id)` });
+  const unique = sqliteFormat({ store: 'notes', schema: `CREATE TABLE IF NOT EXISTS notes(id TEXT, body TEXT NOT NULL);
+    CREATE UNIQUE INDEX IF NOT EXISTS notes_id ON notes(id)` });
 
   assert.throws(() => openFormattedDatabase(path, unique), { code: 'data_format_pending',
     message: /notes\/1-baseline .*UNIQUE constraint failed/ });
@@ -217,4 +218,29 @@ test('two processes opening one old store migrate it once', async (t) => {
   assert.equal(state.version, 2);
   assert.deepEqual(state.ledger.map((row) => row.migration_id), ['notes/1-baseline', 'notes/2-tags']);
   assert.equal(backups(directory).length, 1);
+});
+
+test('a same-named table that means something else is a mismatch, never current', (t) => {
+  const { directory, path } = fixture(t);
+  // No primary key and a nullable body: duplicate IDs survive in this table.
+  oldStore(path, "CREATE TABLE notes(id TEXT, body TEXT); INSERT INTO notes VALUES('n1','a'),('n1',NULL)");
+  const before = readFileSync(path);
+
+  const report = inspectSqliteStore(path, notesFormat());
+  assert.equal(report.state, 'pending_confirmation');
+  assert.match(report.steps[0].detail, /schema mismatch: notes.id is TEXT, declared TEXT PK1; notes.body is TEXT, declared TEXT NOT NULL/);
+  assert.deepEqual(readFileSync(path), before);
+
+  assert.throws(() => openFormattedDatabase(path, notesFormat()), { code: 'data_format_pending',
+    steps: ['notes/1-baseline'], message: /schema mismatch: .*notes has keys none, declared pk unique \(id\)/ });
+  assert.equal(inspect(path).version, 0);
+  assert.equal(backups(directory).length, 1);
+});
+
+test('a same-named index over other columns is a mismatch', (t) => {
+  const { path } = fixture(t);
+  const indexed = sqliteFormat({ store: 'notes', schema: `${NOTES_V1}; CREATE INDEX IF NOT EXISTS notes_body ON notes(body)` });
+  oldStore(path, `${NOTES_V1}; CREATE INDEX notes_body ON notes(id)`);
+
+  assert.match(inspectSqliteStore(path, indexed).steps[0].detail, /index notes_body is \(id\), declared \(body\)/);
 });

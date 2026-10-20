@@ -26,6 +26,9 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: npm ci
+      # rec#17 D-11: fails until data format migration part 2 opens the gate.
+      - name: Release gate
+        run: node scripts/release-gate.js
       - run: npx --yes npm@11.13.0 audit --audit-level=low
       - run: npm test
       - run: npm run test:package

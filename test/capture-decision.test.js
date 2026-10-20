@@ -153,7 +153,7 @@ for (const { name, policy, reason, layer } of [
     assert.equal(entry.systemMessage, `Fuli: ${RECORDING_OFF}`, 'every entry says recording is off');
     assert.deepEqual(await hook(f, 'Stop'), {});
     assert.deepEqual(f.writes(), []);
-    assert.deepEqual((await readdir(f.directory)).sort(), ['capture-policy.json', 'capture-settings-generation.json', 'transcript-capture'],
+    assert.deepEqual((await readdir(f.directory)).filter((name) => name !== '.fuli-format.lock').sort(), ['capture-policy.json', 'capture-settings-generation.json', 'transcript-capture'],
       'no transcript guard is kept; only the content-free settings generation this session was handled under');
     await assertLedgerHoldsNoContent(f);
   });
@@ -177,7 +177,7 @@ test('an unreadable capture policy records nothing and still serves reads', asyn
   assert.equal(entry.systemMessage, `Fuli: ${SETTINGS_UNREADABLE}`);
   assert.equal(entry.systemMessage.includes(PRIVATE), false);
   assert.deepEqual(f.writes(), []);
-  assert.deepEqual((await readdir(f.directory)).sort(), ['capture-policy.json', 'capture-settings-generation.json', 'transcript-capture']);
+  assert.deepEqual((await readdir(f.directory)).filter((name) => name !== '.fuli-format.lock').sort(), ['capture-policy.json', 'capture-settings-generation.json', 'transcript-capture']);
   await assertLedgerHoldsNoContent(f);
 
   const search = await callAgentTool(f.app, 'search_knowledge_graph', { personalSpaceId: 'synthetic-space', query: 'synthetic' });

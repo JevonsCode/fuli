@@ -158,7 +158,8 @@ test('C3-4 a session closed while paused leaves the next session recording witho
 
 async function pauseRecord(f) {
   const directory = sessionCapturePausePathForRuntime(f.runtimeConfigPath);
-  const files = await readdir(directory);
+  // The versioned-write lock beside the records holds no data (rec#17).
+  const files = (await readdir(directory)).filter((name) => name !== '.fuli-format.lock');
   assert.equal(files.length, 1);
   return join(directory, files[0]);
 }

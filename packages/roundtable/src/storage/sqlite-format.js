@@ -156,6 +156,10 @@ function planSteps(database, format, version) {
       const baseline = { migration: { id: `${format.store}/1-baseline`, summary: 'the baseline tables and indexes' },
         migration_id: `${format.store}/1-baseline`, from_version: 0, to_version: 1, kind: 'schema',
         run: () => database.exec(format.schema) };
+      const mismatches = schemaMismatches(database, format);
+      if (mismatches.length) {
+        return [{ ...baseline, status: 'pending_confirmation', detail: `schema mismatch: ${mismatches.join('; ')}` }];
+      }
       const before = new Set(schemaNames(database));
       try {
         database.exec(format.schema);
@@ -268,6 +272,11 @@ function inspectOpenStore(database, format) {
   }
   const steps = [];
   if (version === 0) {
+    const mismatches = schemaMismatches(database, format);
+    if (mismatches.length) {
+      return { version, ledger, state: 'pending_confirmation', steps: [{ id: `${format.store}/1-baseline`,
+        state: 'pending_confirmation', detail: `schema mismatch: ${mismatches.join('; ')}` }] };
+    }
     const declared = new DatabaseSync(':memory:');
     let missing;
     try {
@@ -284,6 +293,83 @@ function inspectOpenStore(database, format) {
   }
   return { version, ledger, steps,
     state: steps.some((step) => step.state === 'pending_confirmation') ? 'pending_confirmation' : 'upgrade_on_open' };
+}
+
+// Where an unversioned store's tables mean something other than declared:
+// columns, types, NOT NULL, defaults, primary keys, unique constraints and
+// named indexes. A column a later step adds may be missing and a declared
+// index may not exist yet; any other difference is a mismatch, never
+// "already in effect".
+function schemaMismatches(database, format) {
+  const declared = new DatabaseSync(':memory:');
+  try {
+    declared.exec(format.schema);
+    for (const migration of format.migrations) {
+      for (const [name, type] of Object.entries(migration.columns)) {
+        declared.exec(`ALTER TABLE ${migration.table} ADD COLUMN ${name} ${type}`);
+      }
+    }
+    const later = new Set(format.migrations.flatMap(({ table, columns }) =>
+      Object.keys(columns).map((name) => `${table}.${name}`)));
+    const existing = new Set(userTables(database));
+    return userTables(declared).filter((table) => existing.has(table)).flatMap((table) => [
+      ...columnMismatches(table, columnShapes(declared, table), columnShapes(database, table), later),
+      ...indexMismatches(table, indexShapes(declared, table), indexShapes(database, table))
+    ]);
+  } finally {
+    declared.close();
+  }
+}
+
+function columnShapes(database, table) {
+  return new Map(database.prepare(`PRAGMA table_info(${table})`).all().map((column) => [column.name,
+    `${String(column.type).toUpperCase()}${column.notnull ? ' NOT NULL' : ''}`
+    + `${column.dflt_value === null ? '' : ` DEFAULT ${column.dflt_value}`}${column.pk ? ` PK${column.pk}` : ''}`]));
+}
+
+function columnMismatches(table, declared, existing, later) {
+  const mismatches = [];
+  for (const [name, shape] of existing) {
+    if (!declared.has(name)) mismatches.push(`${table}.${name} is not declared`);
+    else if (declared.get(name) !== shape) mismatches.push(`${table}.${name} is ${shape}, declared ${declared.get(name)}`);
+  }
+  for (const name of declared.keys()) {
+    if (!existing.has(name) && !later.has(`${table}.${name}`)) mismatches.push(`${table}.${name} is missing`);
+  }
+  return mismatches;
+}
+
+// Constraint indexes (UNIQUE, PRIMARY KEY) by meaning, since SQLite names them
+// itself; created indexes by name, with their columns, uniqueness and WHERE.
+function indexShapes(database, table) {
+  const constraints = [];
+  const named = new Map();
+  for (const index of database.prepare(`PRAGMA index_list(${table})`).all()) {
+    const columns = database.prepare(`PRAGMA index_info("${index.name}")`).all().map((column) => column.name).join(',');
+    const shape = `${index.unique ? 'unique ' : ''}(${columns})`;
+    if (index.origin === 'c') {
+      const sql = database.prepare('SELECT sql FROM sqlite_master WHERE name = ?').get(index.name)?.sql ?? '';
+      const where = /\bWHERE\b(.*)$/is.exec(sql)?.[1].replace(/\s+/g, ' ').trim() ?? '';
+      named.set(index.name, `${shape}${where ? ` WHERE ${where}` : ''}`);
+    } else {
+      constraints.push(`${index.origin} ${shape}`);
+    }
+  }
+  return { constraints: constraints.sort(), named };
+}
+
+function indexMismatches(table, declared, existing) {
+  const mismatches = [];
+  if (declared.constraints.join(';') !== existing.constraints.join(';')) {
+    mismatches.push(`${table} has keys ${existing.constraints.join(', ') || 'none'}, declared `
+      + `${declared.constraints.join(', ') || 'none'}`);
+  }
+  for (const [name, shape] of declared.named) {
+    if (existing.named.has(name) && existing.named.get(name) !== shape) {
+      mismatches.push(`index ${name} is ${existing.named.get(name)}, declared ${shape}`);
+    }
+  }
+  return mismatches;
 }
 
 function newerAccess(format, version) {

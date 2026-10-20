@@ -11,6 +11,7 @@ import {
 } from '../graphiti/runtime-config.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { readJsonFile } from '../storage/json-file.js';
+import { GRAPH_RUNTIME_CONFIG_FORMAT } from '../graphiti/runtime-config.js';
 import { writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { writeLine } from './terminal-io.js';
 
@@ -321,7 +322,7 @@ function sameProvider(left, right) {
 }
 
 function writeSecureJson(path, value) {
-  writeVersionedJsonFileAtomic(path, value, { store: 'graph-runtime-config', io: {
+  writeVersionedJsonFileAtomic(path, value, GRAPH_RUNTIME_CONFIG_FORMAT, { io: {
     writeFileSync: (temporaryPath, payload, options) => writeFileSync(
       temporaryPath,
       payload,

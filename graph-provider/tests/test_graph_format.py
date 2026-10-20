@@ -34,7 +34,9 @@ from fuli_graph.store_project_agent_executor_learning import (
 
 PACKAGE = Path(__file__).resolve().parents[1] / 'fuli_graph'
 FINGERPRINTS = Path(__file__).with_name('graph_format_fingerprints.json')
-SCHEMA_OWNER = 'graph_format_schema.py'
+# The declared schema, the ledger's own identity constraint, and the parser
+# that reads declared statements back.
+SCHEMA_OWNERS = {'graph_format_schema.py', 'graph_format_ledger.py', 'graph_schema_state.py'}
 DDL = re.compile(r'\b(?:CREATE|DROP)\s+(?:FULLTEXT\s+|RANGE\s+|VECTOR\s+)?(?:CONSTRAINT|INDEX)\b')
 LABEL = re.compile(r':(Fuli[A-Za-z]+)\b')
 
@@ -67,7 +69,7 @@ def test_learning_ids_are_unique_only_after_legacy_duplicates_are_collapsed():
 def test_no_schema_statement_lives_outside_the_registry():
     offenders = [
         f'{path.name}: {match.group(0)}'
-        for path in provider_sources() if path.name != SCHEMA_OWNER
+        for path in provider_sources() if path.name not in SCHEMA_OWNERS
         for match in DDL.finditer(path.read_text(encoding='utf-8'))
     ]
     assert offenders == [], 'Declare constraints and indexes in graph_format_schema.py'
