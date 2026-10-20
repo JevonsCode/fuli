@@ -1,1106 +1,358 @@
 <script setup lang="ts">
-import { Button } from '@/components/ui/button'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
-import AgentHand from '@/features/project-agents/AgentHand.vue'
-import { deleteJson, getJson, patchJson, postJson } from '@/api/client'
+import { useRoute, useRouter } from 'vue-router'
+import BackToTop from '@/components/BackToTop.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import { activityRange, normalizeActivity } from '@/features/project-agents/activity-evidence'
-import ProjectScopePicker from '@/features/employees/ProjectScopePicker.vue'
-import AgentAssignmentDialog from '@/features/project-agents/AgentAssignmentDialog.vue'
-import ExecutorRoutingDialog from '@/features/project-agents/ExecutorRoutingDialog.vue'
-import ProjectAgentAutomationPolicyPanel from '@/features/project-agents/ProjectAgentAutomationPolicyPanel.vue'
-import ProjectAgentDetailState from '@/features/project-agents/ProjectAgentDetailState.vue'
-import ProjectAgentFirstTask from '@/features/project-agents/ProjectAgentFirstTask.vue'
-import ProjectAgentTaskCard from '@/features/project-agents/ProjectAgentTaskCard.vue'
-import { formatDate, policyLabel, sourceLabel, strategyLabel, taskStatusLabel } from '@/features/project-agents/task-labels'
-import EmployeeWorkHistory from '@/features/project-agents/EmployeeWorkHistory.vue'
-import AgentConversations from '@/features/project-agents/AgentConversations.vue'
-import { isAgentTaskDataComplete, taskHasAgent } from '@/features/agent-profile/agent-work-summary'
-import {
-  agentValues,
-  arrayOf,
-  normalizeAssignment,
-  normalizePolicy,
-  normalizeStrategy,
-  normalizeTask,
-  stringOf,
-  unknownRecord,
-  valueOf,
-} from '@/features/project-agents/task-evidence'
-import ProjectAgentDialog from '@/features/projects/ProjectAgentDialog.vue'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { focusReturnTarget, useFocusReturn } from '@/composables/useFocusReturn'
+import { useRoutePeek } from '@/composables/useRoutePeek'
+import { useScrollRestoration } from '@/composables/useScrollRestoration'
+import AgentPeek from '@/features/agent-profile/AgentPeek.vue'
+import { employeeTemplateIdForAgent, employeeTemplates, type EmployeeRecruitmentResult } from '@/features/employees/catalog'
 import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
-import { employeeTemplates, employeeTemplateIdForAgent, refreshEmployeeCatalog, type EmployeeRecruitmentResult } from '@/features/employees/catalog'
+import ProjectScopePicker from '@/features/employees/ProjectScopePicker.vue'
+import { currentAssignmentsFor, currentWorkEntry } from '@/features/project-agents/agent-roster-records'
+import {
+  agentManagementPath,
+  agentSearchText,
+  compareOrchestrationAgents,
+  orchestrationFilterQuery,
+  readOrchestrationFilters,
+  type OrchestrationFilters,
+  type OrchestrationStatus,
+} from '@/features/project-agents/orchestration-filters'
+import ProjectAgentAutomationPolicyPanel from '@/features/project-agents/ProjectAgentAutomationPolicyPanel.vue'
+import ProjectAgentCard from '@/features/project-agents/ProjectAgentCard.vue'
+import ProjectAgentFirstTask from '@/features/project-agents/ProjectAgentFirstTask.vue'
+import { useProjectAgentRoster } from '@/features/project-agents/useProjectAgentRoster'
+import ProjectAgentDialog from '@/features/projects/ProjectAgentDialog.vue'
 import { currentLocale, t } from '@/i18n'
-import { formatDateTime } from '@/lib/date-time'
 import { useConsoleStore } from '@/stores/console'
-import type {
-  ConversationSourceApplication,
-  ProjectAgentActivityDay,
-  ProjectAgentActivityResult,
-  ProjectAgentAssignmentRecord,
-  ProjectAgentClientEvidence,
-  ProjectAgentExecutorRef,
-  ProjectAgentExecutorPolicy,
-  ProjectAgentLearningEvidence,
-  ProjectAgentRecruitmentRecord,
-  ProjectAgentRecord,
-  ProjectAgentRoutingRule,
-  ProjectAgentStatus,
-  ProjectAgentTaskRecord,
-  ProjectAgentTaskStatus,
-  ProjectAgentType,
-  ProjectAgentWorkStatus,
-} from '@/types'
-type StatusFilter = ProjectAgentStatus | 'all'
-type UnknownRecord = Record<string, unknown>
-const detailSources = [
-  'assignments', 'tasks', 'activity', 'recruitments',
-  'executors', 'routingRules', 'learning',
-] as const
-type DetailSource = typeof detailSources[number]
-type DetailSourceStatus = 'idle' | 'loading' | 'ready' | 'error'
-interface DetailSourceState { status: DetailSourceStatus; error: string }
+import type { ProjectAgentRecord } from '@/types'
+import UiSegmented from '@/ui/UiSegmented.vue'
+
+// 编排: every Agent of the space on one canvas. A name opens that Agent's
+// management page; a quick look (Peek) answers a quick question in place.
 const store = useConsoleStore()
 const route = useRoute()
-const agents = ref<ProjectAgentRecord[]>([])
-const loading = ref(false)
-const error = ref('')
-// null is the unrestricted view, including employees not assigned to a project yet.
-const projectFilter = ref<string[] | null>(null)
-const projectFilterOverridden = ref(false)
-const statusFilter = ref<StatusFilter>('all')
-const search = ref('')
-const selectedAgentKey = ref('')
-watch(() => route.query.agent, id => { if (typeof id === 'string') selectedAgentKey.value = id }, { immediate: true })
-const dialogOpen = ref(false)
-const recruitDialogOpen = ref(false)
-const recruitTemplateId = ref('')
-const editingAgent = ref<ProjectAgentRecord | null>(null)
-const assignmentDialogOpen = ref(false)
-const assignmentAction = ref<'assign' | 'end' | 'replace'>('assign')
-const assignmentTarget = ref<ProjectAgentAssignmentRecord | null>(null)
-const detailLoading = ref(false)
-const detailStates = ref<Record<string, Record<DetailSource, DetailSourceState>>>({})
-const taskListPartial = ref<Record<string, boolean>>({})
-const detailNotice = ref('')
-const activityDay = ref('')
-const cleanupBusy = ref(false)
-const learningBusy = ref('')
-const learningBusyAction = ref<'ignore' | 'reset' | ''>('')
-const recruitmentBusy = ref('')
-const recruitmentBusyAction = ref<'approve' | 'cancel' | 'disable' | ''>('')
-const executorBusy = ref('')
-const executorBusyAction = ref<'authorize' | 'revoke' | ''>('')
-const executorDialogOpen = ref(false)
-const executorDialogMode = ref<'executor' | 'rule'>('executor')
-const editingExecutor = ref<ProjectAgentExecutorRef | null>(null)
-const editingRule = ref<ProjectAgentRoutingRule | null>(null)
-let loadVersion = 0
-let detailLoadVersion = 0
-const nonTerminalTaskStatuses = new Set<ProjectAgentTaskStatus>([
-  'awaiting_recruitment', 'backlog', 'queued', 'running', 'paused', 'awaiting_review', 'blocked',
-])
-function actionIdempotencyKey(prefix: string) {
-  const suffix = typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`
-  return `${prefix}:${suffix}`
-}
+const router = useRouter()
+const spaceId = computed(() => store.activePersonalSpace?.id ?? '')
+const roster = useProjectAgentRoster(spaceId)
+const agents = roster.agents
 const projects = computed(() => store.state?.personalProjects ?? [])
-async function employeeRecruited(result: EmployeeRecruitmentResult) {
-  await loadAgents()
-  if (!filteredAgents.value.some((agent) => agent.agentId === result.agent.agentId)) {
-    projectFilter.value = null
-    statusFilter.value = 'all'
-    search.value = ''
-  }
-  const wasSelected = selectedAgentKey.value === result.agent.agentId
-  selectedAgentKey.value = result.agent.agentId
-  if (wasSelected) void refreshDetails()
-}
-const activeSpaceId = computed(() => store.activePersonalSpace?.id ?? '')
-const pageLoading = computed(() => loading.value || (!store.state
+const projectById = computed(() => new Map(projects.value.map((project) => [project.project_id, project])))
+const projectOptions = computed(() => projects.value.map((project) => ({ id: project.project_id, name: project.profile.name })))
+const projectName = (projectId: string) => projectById.value.get(projectId)?.profile.name ?? projectId
+
+const pageLoading = computed(() => roster.loading.value || (!store.state
   && (store.runtimeStatus === 'idle' || store.runtimeStatus === 'loading')))
-const pageError = computed(() => error.value || (!store.state && store.runtimeStatus === 'error'
+const pageError = computed(() => roster.error.value || (!store.state && store.runtimeStatus === 'error'
   ? store.feedback?.message || t('projectAgents.loadError') : ''))
 function retryPage() {
   if (!store.state) void store.refresh()
-  else void loadAgents()
+  else void roster.load()
 }
-const projectById = computed(() => new Map(
-  projects.value.map((project) => [project.project_id, project]),
-))
-const projectOptions = computed(() => projects.value.map((project) => ({ id: project.project_id, name: project.profile.name })))
-const deepLinkAgent = computed(() => {
-  const requestedAgentId = typeof route.query.agent === 'string' ? route.query.agent : ''
-  if (!requestedAgentId) return null
-  return agents.value.find((agent) => agent.personalSpaceId === activeSpaceId.value
-    && (agent.agentId === requestedAgentId || agent.legacyAgentIds?.includes(requestedAgentId))) ?? null
-})
-const deepLinkIsActive = computed(() => Boolean(
-  deepLinkAgent.value
-    && typeof route.query.project === 'string'
-    && typeof route.query.task === 'string'
-    && !projectFilterOverridden.value,
-))
-const filterProjectIds = computed({
-  get: () => projectFilter.value ?? projectOptions.value.map((project) => project.id),
-  set: (ids: string[]) => {
-    projectFilterOverridden.value = true
-    const selected = projectOptions.value.filter((project) => ids.includes(project.id)).map((project) => project.id)
-    projectFilter.value = selected.length === projectOptions.value.length ? null : selected
-  },
-})
-const singleFilterProjectId = computed(() => projectFilter.value?.length === 1 ? projectFilter.value[0]! : '')
-watch([() => route.query.project, projectOptions], ([project, options], previous) => {
-  const projectChanged = !previous || project !== previous[0]
-  if (typeof project === 'string' && options.some(option => option.id === project)
-    && (projectChanged || !projectFilterOverridden.value)) {
-    projectFilter.value = [project]
-    if (projectChanged) projectFilterOverridden.value = false
-  }
-}, { immediate: true })
-const statusOptions = computed<Array<{ value: StatusFilter; label: string }>>(() => [
-  { value: 'all', label: t('projectAgents.status.all') },
-  { value: 'active', label: t('projectAgents.status.active') },
-  { value: 'inactive', label: t('projectAgents.status.inactive') },
-  { value: 'archived', label: t('projectAgents.status.archived') },
-])
-const filteredAgents = computed(() => {
-  const needle = search.value.trim().toLocaleLowerCase(currentLocale())
-  return agents.value
-    .filter((agent) => projectFilter.value === null
-      || responsibleProjectsFor(agent).some(({ id }) => projectFilter.value!.includes(id))
-      || (deepLinkIsActive.value && agent.agentId === deepLinkAgent.value?.agentId))
-    .filter((agent) => statusFilter.value === 'all' || agent.profile.status === statusFilter.value)
-    .filter((agent) => !needle || searchText(agent).toLocaleLowerCase(currentLocale()).includes(needle))
-    .sort(compareAgents)
-})
-const selectedAgent = computed(() => filteredAgents.value.find(
-  (agent) => agent.agentId === selectedAgentKey.value,
-) ?? null)
-const selectedEmployeeId = computed(() => selectedAgent.value ? employeeTemplateIdForAgent(selectedAgent.value) : null)
-const selectedEmployee = computed(() => employeeTemplates.value.find(entry => entry.id === selectedEmployeeId.value))
-const employeeProjects = computed(() => selectedAgent.value ? responsibleProjectsFor(selectedAgent.value)
-  .filter((project) => projectById.value.get(project.id)?.profile.lifecycle !== 'archived') : [])
-const conversationProjects = computed(() => selectedAgent.value ? currentAssignmentsFor(selectedAgent.value)
-  .map(assignment => ({ id: assignment.personalProjectId, name: projectName(assignment.personalProjectId) })) : [])
-const activeCount = computed(() => agents.value.filter(({ profile }) => profile.status === 'active').length)
-const assignmentCount = computed(() => agents.value.reduce(
-  (count, agent) => count + currentAssignmentsFor(agent).length,
-  0,
-))
-const representedProjectCount = computed(() => new Set(
-  agents.value.flatMap((agent) => currentAssignmentsFor(agent).map(({ personalProjectId }) => personalProjectId)),
-).size)
-const dialogDefaultProjectId = computed(() => {
-  if (singleFilterProjectId.value) return singleFilterProjectId.value
-  return selectedAgent.value?.assignments?.find(({ status }) => status === 'active')?.personalProjectId
-    ?? selectedAgent.value?.personalProjectId
-    ?? projects.value[0]?.project_id
-    ?? null
-})
-const selectedActivity = computed(() => selectedAgent.value?.activity ?? null)
-const selectedActivityDay = computed(() => selectedActivity.value?.days.find(
-  ({ date }) => date === activityDay.value,
-) ?? null)
-const selectedLearning = computed(() => Object.entries(selectedAgent.value?.learningEvidence ?? {}))
-const selectedRecruitments = computed(() => selectedAgent.value?.recruitments ?? [])
 onMounted(() => {
   if (store.runtimeStatus === 'idle') void store.refresh()
 })
-watch(activeSpaceId, (spaceId) => {
-  ++loadVersion
-  ++detailLoadVersion
-  detailStates.value = {}
-  taskListPartial.value = {}
-  selectedAgentKey.value = ''
-  agents.value = []
-  projectFilterOverridden.value = false
-  projectFilter.value = typeof route.query.project === 'string' && projectOptions.value.some(option => option.id === route.query.project) ? [route.query.project] : null
-  error.value = ''
-  if (spaceId) void loadAgents(spaceId)
-  else loading.value = false
+
+// An older link names one Agent (?agent=, often with ?task=): it opens that
+// Agent's own page, keeping the task scope and its #task- anchor. A task link
+// without an Agent opens the page of the Agent doing it, once that is known.
+const linkedAgent = computed(() => typeof route.query.agent === 'string' ? route.query.agent : '')
+const linkedTask = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
+watch([spaceId, linkedAgent, linkedTask, agents], ([space, agentId, taskId]) => {
+  if (!space) return
+  const owner = agentId || (taskId && agents.value.find((agent) => agent.tasks?.some((task) => task.taskId === taskId))?.agentId)
+  if (!owner) return
+  const { agent: _linked, ...query } = route.query
+  void router.replace({ path: agentManagementPath(space, owner), query, hash: route.hash })
 }, { immediate: true })
-watch(filteredAgents, (items) => {
-  if (!items.some((agent) => agent.agentId === selectedAgentKey.value)) {
-    const linkedAgent = items.find((agent) => agent.agentId === route.query.agent
-      || (typeof route.query.agent === 'string' && agent.legacyAgentIds?.includes(route.query.agent)))
-    selectedAgentKey.value = linkedAgent?.agentId
-      ?? (deepLinkIsActive.value ? deepLinkAgent.value?.agentId : undefined)
-      ?? items[0]?.agentId
-      ?? ''
-  }
-  if (!items.some((agent) => agent.activity?.days.some(({ date }) => date === activityDay.value))) {
-    activityDay.value = ''
-  }
-}, { immediate: true })
-watch([selectedAgentKey, activeSpaceId], ([agentId, spaceId]) => {
-  activityDay.value = ''
-  if (agentId && spaceId) void refreshDetails(agentId, spaceId)
-}, { immediate: true })
-async function loadAgents(spaceId = activeSpaceId.value) {
-  if (!spaceId) return
-  const version = ++loadVersion
-  loading.value = true
-  error.value = ''
-  try {
-    const query = new URLSearchParams({ personalSpaceId: spaceId })
-    const [agentsResult, tasksResult] = await Promise.allSettled([
-      getJson<unknown>(`/api/project-agents?${query}`),
-      // The list endpoint is intentionally space-wide: a task can have more
-      // than one participant, so filtering only by the selected Agent would
-      // hide collaboration from the directory row.
-      getJson<unknown>(`/api/project-agent-tasks?${query}`),
-    ])
-    if (version !== loadVersion) return
-    void refreshEmployeeCatalog(spaceId)
-    if (agentsResult.status === 'rejected') throw agentsResult.reason
-    if (version === loadVersion) {
-      const listed = mergeAgents(agentValues(agentsResult.value))
-      const tasks = tasksResult.status === 'fulfilled'
-        ? taskValues(tasksResult.value).filter((task) => nonTerminalTaskStatuses.has(task.status))
-        : []
-      agents.value = attachTasks(listed, tasks)
-    }
-  } catch (cause) {
-    if (version === loadVersion) error.value = cause instanceof Error ? cause.message : t('projectAgents.loadError')
-  } finally {
-    if (version === loadVersion) loading.value = false
-  }
+
+// Filters are the URL (?project=, ?status=, ?q=); see orchestration-filters.
+const filters = computed(() => readOrchestrationFilters(route.query))
+// Changes made before the URL catches up build on each other, not on the URL.
+let pendingFilters: OrchestrationFilters | null = null
+watch(() => route.query, () => { pendingFilters = null })
+function setFilters(change: Partial<OrchestrationFilters>) {
+  pendingFilters = { ...(pendingFilters ?? filters.value), ...change }
+  void router.replace({ query: orchestrationFilterQuery(route.query, pendingFilters) })
 }
-async function refreshDetails(agentId = selectedAgentKey.value, spaceId = activeSpaceId.value) {
-  const agent = agents.value.find((item) => item.agentId === agentId)
-  if (!agent || !spaceId) return
-  const version = ++detailLoadVersion
-  detailLoading.value = true
-  detailNotice.value = ''
-  setAllDetailStates(agentId, 'loading')
-  const query = new URLSearchParams({ personalSpaceId: spaceId, agentId })
-  const range = activityRange()
-  const activityQuery = new URLSearchParams({
-    personalSpaceId: spaceId,
-    agentId,
-    fromDate: range.fromDate,
-    toDate: range.toDate,
-  })
-  const requests: Record<DetailSource, Promise<unknown>> = {
-    assignments: getJson<unknown>(`/api/project-agent-assignments?${query}`),
-    tasks: loadScopedTasks(query),
-    activity: getJson<unknown>(`/api/project-agent-activity?${activityQuery}`),
-    recruitments: getJson<unknown>(`/api/project-agent-recruitments?personalSpaceId=${encodeURIComponent(spaceId)}`),
-    executors: getJson<unknown>(`/api/executors?personalSpaceId=${encodeURIComponent(spaceId)}`),
-    routingRules: getJson<unknown>(`/api/executor-routing-rules?personalSpaceId=${encodeURIComponent(spaceId)}`),
-    learning: getJson<unknown>(`/api/project-agent-routing-learning?${query}`),
-  }
-  await Promise.all(detailSources.map(async (source) => {
-    try {
-      const value = await requests[source]
-      if (!detailRequestIsCurrent(version, agentId, spaceId)) return
-      applyDetailResult(agent, source, value)
-      setDetailState(agentId, source, { status: 'ready', error: '' })
-    } catch (cause) {
-      if (!detailRequestIsCurrent(version, agentId, spaceId)) return
-      setDetailState(agentId, source, {
-        status: 'error',
-        error: cause instanceof Error ? cause.message : t('projectAgents.detail.sectionUnavailable'),
-      })
-    }
-  }))
-  if (detailRequestIsCurrent(version, agentId, spaceId)) detailLoading.value = false
-}
-async function loadScopedTasks(query: URLSearchParams) {
-  const agentId = query.get('agentId') ?? ''
-  const spaceId = query.get('personalSpaceId') ?? ''
-  const project = typeof route.query.project === 'string' ? route.query.project : ''
-  const taskId = typeof route.query.task === 'string' ? route.query.task : ''
-  // The provider's Agent filter only matches participants. Read the authorized
-  // space and apply the shared ownership rules so owner-only tasks remain visible.
-  query = new URLSearchParams({ personalSpaceId: spaceId, limit: '200' })
-  if (project) query.set('personalProjectId', project)
-  const value = await getJson<unknown>(`/api/project-agent-tasks?${query}`)
-  assertReportedCollection(value, ['tasks', 'items'])
-  const belongs = (task: ProjectAgentTaskRecord) =>
-    (!task.personalSpaceId || task.personalSpaceId === spaceId)
-    && (!project || task.personalProjectId === project)
-    && taskHasAgent(task, agentId)
-  const tasks = taskValues(value).filter(belongs)
-  if (taskId && !tasks.some(task => task.taskId === taskId)) {
-    const task = normalizeTask(await getJson<unknown>(`/api/project-agent-tasks/${encodeURIComponent(taskId)}?${query}`))
-    if (task && belongs(task)) tasks.unshift(task)
-  }
-  return { tasks, partial: !isAgentTaskDataComplete(value) }
-}
-watch([() => route.query.task, detailLoading], async ([task, busy]) => {
-  if (busy || typeof task !== 'string') return
-  await nextTick()
-  document.getElementById(`task-${task}`)?.scrollIntoView?.({ block: 'nearest' })
+// Unknown project ids (a stale link) do not hide every Agent.
+const projectFilter = computed(() => {
+  const chosen = filters.value.projects
+  if (!chosen) return null
+  const known = chosen.filter((id) => projectById.value.has(id))
+  return chosen.length && !known.length ? null : known
 })
-function emptyDetailStates(status: DetailSourceStatus = 'idle'): Record<DetailSource, DetailSourceState> {
-  return Object.fromEntries(detailSources.map((source) => [source, { status, error: '' }])) as Record<DetailSource, DetailSourceState>
-}
-function setAllDetailStates(agentId: string, status: DetailSourceStatus) {
-  detailStates.value = { ...detailStates.value, [agentId]: emptyDetailStates(status) }
-}
-function setDetailState(agentId: string, source: DetailSource, state: DetailSourceState) {
-  detailStates.value = {
-    ...detailStates.value,
-    [agentId]: { ...(detailStates.value[agentId] ?? emptyDetailStates()), [source]: state },
-  }
-}
-function detailState(source: DetailSource | DetailSource[]): DetailSourceState {
-  const sources = Array.isArray(source) ? source : [source]
-  const states = sources.map((item) => detailStates.value[selectedAgentKey.value]?.[item] ?? { status: 'idle' as const, error: '' })
-  return states.find(({ status }) => status === 'error')
-    ?? states.find(({ status }) => status === 'loading')
-    ?? states.find(({ status }) => status === 'idle')
-    ?? { status: 'ready', error: '' }
-}
-function detailLoadingLabel(source: DetailSource) {
-  return t('projectAgents.detail.loading.' + source)
-}
-function detailRequestIsCurrent(version: number, agentId: string, spaceId: string) {
-  return version === detailLoadVersion
-    && agentId === selectedAgentKey.value
-    && spaceId === activeSpaceId.value
-}
-function applyDetailResult(agent: ProjectAgentRecord, source: DetailSource, value: unknown) {
-  let patch: Partial<ProjectAgentRecord>
-  switch (source) {
-    case 'assignments':
-      assertReportedCollection(value, ['assignments', 'items'])
-      patch = { assignments: assignmentValues(value, agent) }
-      break
-    case 'tasks':
-      assertReportedCollection(value, ['tasks', 'items'])
-      taskListPartial.value = { ...taskListPartial.value, [agent.agentId]: unknownRecord(value).partial === true }
-      patch = { tasks: taskValues(value) }
-      break
-    case 'activity': {
-      const activity = normalizeActivity(value, {
-        agentId: selectedAgentKey.value, personalSpaceId: activeSpaceId.value,
-      })
-      if (!activity) throw new Error(t('projectAgents.detail.sectionUnavailable'))
-      patch = { activity }
-      break
-    }
-    case 'recruitments':
-      assertReportedCollection(value, ['recruitments', 'items'])
-      patch = { recruitments: recruitmentValues(value).filter((item) => recruitmentBelongsTo(item, agent)) }
-      break
-    case 'executors':
-      assertReportedCollection(value, ['executors', 'items'])
-      patch = { executorDirectory: executorValues(value), clientEvidence: clientValues(value) }
-      break
-    case 'routingRules':
-      assertReportedCollection(value, ['rules', 'items'])
-      patch = { routingRules: routingValues(value) }
-      break
-    case 'learning':
-      assertReportedCollection(value, ['learningEvidence', 'learning_evidence', 'items'], true)
-      patch = { learningEvidence: learningValues(value) }
-      break
-  }
-  agents.value = agents.value.map((item) => item.agentId === agent.agentId ? { ...item, ...patch } : item)
-}
-
-function assertReportedCollection(value: unknown, keys: string[], allowRecord = false) {
-  if (Array.isArray(value)) return
-  const record = unknownRecord(value)
-  const reported = keys.some((key) => Array.isArray(record[key]) || (allowRecord && isPlainRecord(record[key])))
-  if (!reported) throw new Error(t('projectAgents.detail.sectionUnavailable'))
-}
-
-function isPlainRecord(value: unknown): value is UnknownRecord {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-async function updateLearning(
-  evidence: ProjectAgentLearningEvidence,
-  action: 'ignore' | 'reset',
-  contributionEvidenceId?: string,
-) {
-  const evidenceId = action === 'ignore'
-    ? contributionEvidenceId
-    : evidence.learningKey ?? evidence.modelStrategyKey
-  const agent = selectedAgent.value
-  if (!evidenceId || !agent || !activeSpaceId.value || learningBusy.value) return
-  if (action === 'reset' && (!evidence.personalProjectId || !evidence.workKind || !evidence.executor)) {
-    detailNotice.value = t('projectAgents.learning.resetUnavailable')
-    return
-  }
-  learningBusy.value = evidenceId
-  learningBusyAction.value = action
-  try {
-    await patchJson(`/api/project-agent-learning/${encodeURIComponent(evidenceId)}`, {
-      action,
-      personalSpaceId: activeSpaceId.value,
-      personalProjectId: evidence.personalProjectId,
-      agentId: agent.agentId,
-      workKind: evidence.workKind,
-      executorId: evidence.executor,
-      modelStrategy: evidence.modelStrategy,
-      modelStrategyKey: evidence.modelStrategyKey,
-      resetAt: action === 'reset' ? new Date().toISOString() : undefined,
-      idempotencyKey: action === 'ignore'
-        ? `console-learning:${evidenceId}:ignore`
-        : actionIdempotencyKey(`console-learning:${evidenceId}:reset`),
-      reason: `Console requested ${action} for explicit evidence`,
-    })
-    await refreshDetails()
-  } catch (cause) {
-    detailNotice.value = cause instanceof Error ? cause.message : t('projectAgents.learning.updateFailed')
-  } finally {
-    learningBusy.value = ''
-    learningBusyAction.value = ''
-  }
-}
-
-async function decideRecruitment(recruitment: ProjectAgentRecruitmentRecord, decision: 'approve' | 'cancel') {
-  if (!activeSpaceId.value || recruitmentBusy.value) return
-  recruitmentBusy.value = recruitment.recruitmentId
-  recruitmentBusyAction.value = decision
-  try {
-    await postJson('/api/project-agent-recruitments/decision', {
-      personalSpaceId: activeSpaceId.value,
-      personalProjectId: recruitment.personalProjectId,
-      recruitmentId: recruitment.recruitmentId,
-      expectedRevision: recruitment.revision ?? 0,
-      decision,
-      reason: t(`projectAgents.recruitment.${decision}Reason`),
-    })
-    await refreshDetails()
-  } catch (cause) {
-    detailNotice.value = cause instanceof Error ? cause.message : t('projectAgents.recruitment.decisionFailed')
-  } finally {
-    recruitmentBusy.value = ''
-    recruitmentBusyAction.value = ''
-  }
-}
-
-async function authorizeExecutor(executor: ProjectAgentExecutorRef, status: 'authorized' | 'revoked') {
-  if (!activeSpaceId.value || executorBusy.value) return
-  executorBusy.value = executor.executorId
-  executorBusyAction.value = status === 'authorized' ? 'authorize' : 'revoke'
-  try {
-    await postJson('/api/executors/authorization', {
-      personalSpaceId: activeSpaceId.value,
-      executorId: executor.executorId,
-      status,
-      expectedRevision: executor.permissionRevision ?? 0,
-      idempotencyKey: actionIdempotencyKey(`console-executor:${executor.executorId}:${status}`),
-      reason: t(`projectAgents.routing.${status === 'authorized' ? 'authorizeReason' : 'revokeReason'}`),
-    })
-    await refreshDetails()
-  } catch (cause) {
-    detailNotice.value = cause instanceof Error ? cause.message : t('projectAgents.routing.authorizationFailed')
-  } finally {
-    executorBusy.value = ''
-    executorBusyAction.value = ''
-  }
-}
-
-function openExecutorDialog(executor: ProjectAgentExecutorRef | null = null) {
-  executorDialogMode.value = 'executor'
-  editingExecutor.value = executor
-  editingRule.value = null
-  executorDialogOpen.value = true
-}
-function openRuleDialog(rule: ProjectAgentRoutingRule | null = null) {
-  executorDialogMode.value = 'rule'
-  editingRule.value = rule
-  editingExecutor.value = null
-  executorDialogOpen.value = true
-}
-function closeExecutorDialog() {
-  executorDialogOpen.value = false
-  editingExecutor.value = null
-  editingRule.value = null
-}
-function executorSaved(executor: ProjectAgentExecutorRef) {
-  if (!selectedAgent.value) return
-  agents.value = agents.value.map((item) => item.agentId === selectedAgent.value?.agentId
-    ? { ...item, executorDirectory: dedupeById([...(item.executorDirectory ?? []), executor], ({ executorId }) => executorId) }
-    : item)
-  closeExecutorDialog()
-}
-function ruleSaved(rule: ProjectAgentRoutingRule) {
-  if (!selectedAgent.value) return
-  agents.value = agents.value.map((item) => item.agentId === selectedAgent.value?.agentId
-    ? { ...item, routingRules: dedupeById([...(item.routingRules ?? []), rule], ({ ruleId }) => ruleId) }
-    : item)
-  closeExecutorDialog()
-}
-function executorDialogSaved(value: ProjectAgentExecutorRef | ProjectAgentRoutingRule) {
-  if (executorDialogMode.value === 'executor') executorSaved(value as ProjectAgentExecutorRef)
-  else ruleSaved(value as ProjectAgentRoutingRule)
-}
-async function disableRule(rule: ProjectAgentRoutingRule) {
-  if (!activeSpaceId.value || !rule.ruleId || recruitmentBusy.value) return
-  recruitmentBusy.value = `rule:${rule.ruleId}`
-  recruitmentBusyAction.value = 'disable'
-  try {
-    await patchJson(`/api/executor-routing-rules/${encodeURIComponent(rule.ruleId)}`, {
-      personalSpaceId: activeSpaceId.value,
-      ruleId: rule.ruleId,
-      expectedRevision: rule.revision ?? 0,
-      status: 'disabled',
-      idempotencyKey: `console-rule:${rule.ruleId}:disable`,
-      reason: 'Console disabled explicit routing rule',
-    })
-    await refreshDetails()
-  } catch (cause) {
-    detailNotice.value = cause instanceof Error ? cause.message : t('projectAgents.routing.updateFailed')
-  } finally {
-    recruitmentBusy.value = ''
-    recruitmentBusyAction.value = ''
-  }
-}
-
-async function cleanupTestAgent(agent: ProjectAgentRecord) {
-  if (!agent.profile.cleanupEligible) return
-  cleanupBusy.value = true
-  detailLoading.value = true
-  try {
-    await deleteJson(`/api/project-agents/${encodeURIComponent(agent.agentId)}?personalSpaceId=${encodeURIComponent(agent.personalSpaceId)}&reason=${encodeURIComponent('archived test role')}`)
-    await loadAgents()
-  } catch (cause) {
-    detailNotice.value = cause instanceof Error ? cause.message : t('projectAgents.source.cleanupFailed')
-  } finally {
-    cleanupBusy.value = false
-    detailLoading.value = false
-  }
-}
-
-function compareAgents(left: ProjectAgentRecord, right: ProjectAgentRecord) {
-  const statusOrder: Record<ProjectAgentStatus, number> = { active: 0, inactive: 1, archived: 2 }
-  return statusOrder[left.profile.status] - statusOrder[right.profile.status]
-    || left.profile.name.localeCompare(right.profile.name, currentLocale())
-    || left.agentId.localeCompare(right.agentId, currentLocale())
-}
-
-function projectName(projectId: string | null | undefined) {
-  if (!projectId) return t('projectAgents.notReported')
-  return projectById.value.get(projectId)?.profile.name ?? projectId
-}
-
-function assignmentsFor(agent: ProjectAgentRecord) {
-  return agent.assignments ?? (agent.personalProjectId ? [legacyAssignment(agent)] : [])
-}
-
-function currentAssignmentsFor(agent: ProjectAgentRecord) {
-  return [...new Map(assignmentsFor(agent).filter((assignment) => assignment.status === 'active')
-    .map((assignment) => [assignment.personalProjectId, assignment])).values()]
-}
+const filterProjectIds = computed({
+  get: () => projectFilter.value ?? projectOptions.value.map((project) => project.id),
+  set: (ids: string[]) => {
+    const selected = projectOptions.value.filter((project) => ids.includes(project.id)).map((project) => project.id)
+    setFilters({ projects: selected.length === projectOptions.value.length ? null : selected })
+  },
+})
+const singleFilterProjectId = computed(() => projectFilter.value?.length === 1 ? projectFilter.value[0]! : '')
+const statusFilter = computed<OrchestrationStatus>({
+  get: () => filters.value.status,
+  set: (status) => setFilters({ status }),
+})
+const search = computed({
+  get: () => filters.value.search,
+  set: (value: string) => setFilters({ search: value }),
+})
+const statusOptions = computed(() => (['all', 'active', 'inactive', 'archived'] as const)
+  .map((value) => ({ value, label: t(`projectAgents.status.${value}`) })))
 
 function responsibleProjectsFor(agent: ProjectAgentRecord) {
   const templateId = employeeTemplateIdForAgent(agent)
-  const employee = templateId ? employeeTemplates.value.find(entry => entry.id === templateId) : undefined
+  const employee = templateId ? employeeTemplates.value.find((entry) => entry.id === templateId) : undefined
   // Effective policy membership is not a fabricated Provider assignment or history row.
-  return employee?.managedProjects ?? currentAssignmentsFor(agent).map(assignment => ({
+  return employee?.managedProjects ?? currentAssignmentsFor(agent).map((assignment) => ({
     id: assignment.personalProjectId, name: projectName(assignment.personalProjectId),
   }))
 }
+const filteredAgents = computed(() => {
+  const locale = currentLocale()
+  const needle = search.value.trim().toLocaleLowerCase(locale)
+  return agents.value
+    .filter((agent) => projectFilter.value === null
+      || responsibleProjectsFor(agent).some(({ id }) => projectFilter.value!.includes(id)))
+    .filter((agent) => statusFilter.value === 'all' || agent.profile.status === statusFilter.value)
+    .filter((agent) => !needle || agentSearchText(agent).toLocaleLowerCase(locale).includes(needle))
+    .sort((left, right) => compareOrchestrationAgents(left, right, locale))
+})
+const activeCount = computed(() => agents.value.filter(({ profile }) => profile.status === 'active').length)
+const assignmentCount = computed(() => agents.value.reduce((count, agent) => count + currentAssignmentsFor(agent).length, 0))
+const representedProjectCount = computed(() => new Set(
+  agents.value.flatMap((agent) => currentAssignmentsFor(agent).map(({ personalProjectId }) => personalProjectId)),
+).size)
 
-// Several fallback conversation projects share one display name; repeating it adds noise without information.
-function projectChipGroups(agent: ProjectAgentRecord) {
-  const groups = new Map<string, number>()
-  for (const project of responsibleProjectsFor(agent)) groups.set(project.name, (groups.get(project.name) ?? 0) + 1)
-  return [...groups].map(([name, count]) => ({ name, count }))
+const scroller = ref<HTMLElement | null>(null)
+const listed = computed(() => filteredAgents.value.length > 0)
+useScrollRestoration(scroller, 'orchestration', listed)
+const focusReturn = useFocusReturn(scroller, 'orchestration', listed)
+
+// Quick look: ?item=<space>/<agent>. A direct link opens it once the roster
+// has been read; another space's Agent is never shown here.
+const peek = useRoutePeek()
+const peekId = computed(() => (peek.item.value?.spaceId === spaceId.value ? peek.item.value.id : ''))
+const peekAgent = computed(() => (peekId.value ? roster.find(peekId.value) : null) ?? undefined)
+const peekState = computed(() => {
+  const item = peek.item.value
+  if (!item || !spaceId.value) return pageError.value ? 'error' : 'loading'
+  if (item.spaceId !== spaceId.value) return 'unavailable'
+  if (peekAgent.value) return 'ready'
+  if (pageLoading.value) return 'loading'
+  return pageError.value ? 'error' : 'unavailable'
+})
+let peekOpener: HTMLElement | null = null
+let lastPeekId = ''
+let editAfterPeek: ProjectAgentRecord | null = null
+watch(peekId, (id) => { if (id) lastPeekId = id }, { immediate: true })
+function openPeek(agentId: string) {
+  const active = document.activeElement
+  peekOpener = active instanceof HTMLElement && active !== document.body ? active : null
+  peek.open({ spaceId: spaceId.value, id: agentId })
 }
-
-function legacyAssignment(agent: ProjectAgentRecord): ProjectAgentAssignmentRecord {
-  return {
-    assignmentId: `legacy:${agent.agentId}:${agent.personalProjectId}`,
-    personalSpaceId: agent.personalSpaceId,
-    personalProjectId: agent.personalProjectId ?? '',
-    agentId: agent.agentId,
-    responsibility: agent.profile.responsibility,
-    capabilities: agent.profile.capabilities,
-    status: agent.profile.status === 'active' ? 'active' : 'ended',
-    assignedAt: agent.createdAt,
-    updatedAt: agent.updatedAt,
-    reason: null,
+// Opening lands on the main action (open the full page). A shared link opens
+// the Peek while the roster is still being read: focus moves there once the
+// Agent is shown.
+let focusWhenReady = false
+function focusPeekAction(event: Event) {
+  const action = (event.target as HTMLElement | null)?.querySelector<HTMLElement>('[data-peek-open-full]')
+  focusWhenReady = !action
+  if (!action) return
+  event.preventDefault()
+  action.focus()
+}
+watch(() => peekState.value === 'ready', async (ready) => {
+  if (!ready || !focusWhenReady) return
+  focusWhenReady = false
+  await nextTick()
+  document.querySelector<HTMLElement>('[data-agent-peek-dialog] [data-peek-open-full]')?.focus()
+})
+function peekOpenChange(open: boolean) {
+  if (!open) peek.close()
+}
+function peekClosed(event: Event) {
+  event.preventDefault()
+  const opener = peekOpener
+  peekOpener = null
+  // Editing from the quick look opens the edit dialog only once the Peek is
+  // gone, so one dialog is open at a time.
+  if (editAfterPeek) {
+    openEdit(editAfterPeek)
+    editAfterPeek = null
+    return
   }
+  if (opener?.isConnected) opener.focus({ preventScroll: true })
+  else focusReturnTarget(scroller.value, lastPeekId)
+}
+function editFromPeek() {
+  if (!peekAgent.value) return
+  editAfterPeek = peekAgent.value
+  peek.close()
+}
+// The full page replaces the Peek in history, so Back returns to the
+// collection (filters, scroll and focus on this card), not to the Peek.
+function openFullPage() {
+  const agent = peekAgent.value
+  if (!agent) return
+  focusReturn.remember(agent.agentId)
+  void router.replace(agentManagementPath(spaceId.value, agent.agentId))
 }
 
-function searchText(agent: ProjectAgentRecord) {
-  return [
-    agent.agentId, agent.profile.name, agent.profile.displayName ?? '', agent.profile.occupationEmoji ?? '', agent.profile.responsibility,
-    ...(agent.profile.capabilities ?? []), ...(agent.profile.workKinds ?? []),
-    ...assignmentsFor(agent).flatMap((item) => [item.personalProjectId, item.responsibility, item.scope ?? '', ...(item.workKinds ?? [])]),
-    ...(agent.tasks ?? []).flatMap((task) => [task.taskId, task.title, task.workKind ?? '']),
-  ].join(' ')
-}
-
+const dialogOpen = ref(false)
+const editingAgent = ref<ProjectAgentRecord | null>(null)
+const recruitDialogOpen = ref(false)
+const dialogDefaultProjectId = computed(() => singleFilterProjectId.value
+  || editingAgent.value?.assignments?.find(({ status }) => status === 'active')?.personalProjectId
+  || editingAgent.value?.personalProjectId
+  || projects.value[0]?.project_id
+  || null)
 function openCreate() { editingAgent.value = null; dialogOpen.value = true }
-function openRecruit(templateId = '') { recruitTemplateId.value = templateId; recruitDialogOpen.value = true }
 function openEdit(agent: ProjectAgentRecord) { editingAgent.value = agent; dialogOpen.value = true }
 function closeDialog() { dialogOpen.value = false; editingAgent.value = null }
-
-function openAssignment(agent: ProjectAgentRecord, assignment: ProjectAgentAssignmentRecord | null = null, action: 'assign' | 'end' | 'replace' = 'assign') {
-  const templateId = employeeTemplateIdForAgent(agent)
-  if (action === 'assign' && templateId) { openRecruit(templateId); return }
-  editingAgent.value = agent
-  assignmentTarget.value = assignment
-  assignmentAction.value = action
-  assignmentDialogOpen.value = true
-}
-function closeAssignment() { assignmentDialogOpen.value = false; assignmentTarget.value = null; assignmentAction.value = 'assign' }
-function assignmentSaved(assignment: ProjectAgentAssignmentRecord) {
-  if (!editingAgent.value) return
-  agents.value = agents.value.map((agent) => agent.agentId !== editingAgent.value?.agentId ? agent : {
-    ...agent,
-    assignments: dedupeById([...(agent.assignments ?? []), assignment], ({ assignmentId }) => assignmentId),
-  })
-  selectedAgentKey.value = editingAgent.value.agentId
-  closeAssignment()
-}
-function assignmentChanged() { closeAssignment(); void refreshDetails() }
-
-function recordSaved(agent: ProjectAgentRecord) {
-  const saved = normalizeAgent(agent)
-  const next = agents.value.filter((item) => !(item.agentId === saved.agentId
-    && saved.personalProjectId && item.personalProjectId === saved.personalProjectId))
-  agents.value = mergeAgents([...next, saved])
-  if (saved.personalProjectId) projectFilter.value = [saved.personalProjectId]
-  statusFilter.value = 'all'; search.value = ''; selectedAgentKey.value = saved.agentId
+function recordSaved(record: ProjectAgentRecord) {
+  const created = !editingAgent.value
+  const saved = roster.put(record)
   store.notify(t('projectAgents.saved'))
+  if (created) void router.push(agentManagementPath(spaceId.value, saved.agentId))
 }
-
-
-function formatDateOnly(value: string | null | undefined) {
-  return formatDateTime(value && `${value}T00:00:00Z`, currentLocale(), { month: 'short', day: 'numeric' }, {
-    missing: t('projectAgents.notReported'),
-    invalid: value ?? undefined,
-  })
+async function employeeRecruited(result: EmployeeRecruitmentResult) {
+  recruitDialogOpen.value = false
+  await router.push(agentManagementPath(spaceId.value, result.agent.agentId))
 }
-
-function policyIsLocked(policy: ProjectAgentExecutorPolicy | null | undefined) {
-  return policy?.mode === 'locked'
-}
-function policyAllowList(policy: ProjectAgentExecutorPolicy | null | undefined): ProjectAgentExecutorRef[] {
-  if (!policy) return [] as ProjectAgentExecutorRef[]
-  if (policy.allowList?.length) return policy.allowList
-  const ids = policy.mode === 'locked' ? policy.lockedExecutorIds : policy.preferredExecutorIds
-  return (ids ?? []).map((executorId) => ({ executorId }) satisfies ProjectAgentExecutorRef)
-}
-
-function currentWork(agent: ProjectAgentRecord) {
-  return (agent.tasks ?? []).find((task) => nonTerminalTaskStatuses.has(task.status)) ?? null
-}
-function agentTypeLabel(type: ProjectAgentType | undefined) { return t(`projectAgents.agentType.${type ?? 'durable'}`) }
-function clientNames(agent: ProjectAgentRecord) {
-  return unique([
-    ...(agent.profile.allowedClients ?? []),
-    ...(agent.observedClients ?? []),
-    ...(agent.clientEvidence ?? []).map(({ client }) => client),
-  ]) as ConversationSourceApplication[]
-}
-function clientEvidenceFor(agent: ProjectAgentRecord, client: ConversationSourceApplication) {
-  return agent.clientEvidence?.find((item) => item.client === client)
-}
-function clientUseCount(agent: ProjectAgentRecord, client: ConversationSourceApplication) {
-  return clientEvidenceFor(agent, client)?.actualUse?.count ?? 0
-}
-function learningIsNeutral(evidence: ProjectAgentLearningEvidence) { return evidence.neutral !== false || evidence.sampleCount <= 0 }
-function learningLabel(evidence: ProjectAgentLearningEvidence) { return learningIsNeutral(evidence) ? t('projectAgents.learning.neutral') : t('projectAgents.learning.recorded') }
-function learningRecent(evidence: ProjectAgentLearningEvidence) { return evidence.recentWeightedSamples ?? t('projectAgents.notReported') }
-function scoreValue(evidence: ProjectAgentLearningEvidence) { return evidence.score ?? '' }
-function activityIntensity(day: ProjectAgentActivityDay, activity: ProjectAgentActivityResult) {
-  const maximum = Math.max(...activity.days.map(({ total }) => total), 0)
-  return !maximum || !day.total ? 0 : Math.min(4, Math.ceil((day.total / maximum) * 4))
-}
-function chooseActivityDay(day: ProjectAgentActivityDay) { activityDay.value = day.date }
-function taskBelongsTo(agent: ProjectAgentRecord, task: ProjectAgentTaskRecord) {
-  return taskHasAgent(task, agent.agentId)
-}
-function attachTasks(items: ProjectAgentRecord[], tasks: ProjectAgentTaskRecord[]) {
-  return items.map((agent) => {
-    const matching = tasks.filter((task) => taskBelongsTo(agent, task))
-    return matching.length ? { ...agent, tasks: dedupeById([...(agent.tasks ?? []), ...matching], ({ taskId }) => taskId) } : agent
-  })
-}
-
-function normalizeAgent(value: unknown): ProjectAgentRecord {
-  const record = unknownRecord(value); const rawProfile = unknownRecord(record.profile); const agentId = stringOf(record, 'agentId', 'agent_id') ?? ''
-  const createdAt = stringOf(record, 'createdAt', 'created_at') ?? ''; const updatedAt = stringOf(record, 'updatedAt', 'updated_at') ?? createdAt
-  const profile = {
-    name: stringOf(rawProfile, 'name', 'name') ?? agentId, displayName: stringOf(rawProfile, 'displayName', 'display_name'), responsibility: stringOf(rawProfile, 'responsibility', 'responsibility') ?? '',
-    capabilities: arrayOf(rawProfile.capabilities).filter((item): item is string => typeof item === 'string'), initialPreferences: arrayOf(valueOf(rawProfile, 'initialPreferences', 'initial_preferences')).filter((item): item is string => typeof item === 'string'),
-    status: (stringOf(rawProfile, 'status', 'status') ?? 'active') as ProjectAgentStatus, occupationEmoji: stringOf(rawProfile, 'occupationEmoji', 'occupation_emoji'), agentType: stringOf(rawProfile, 'agentType', 'agent_type') as ProjectAgentType | undefined,
-    workKinds: arrayOf(valueOf(rawProfile, 'workKinds', 'work_kinds')).filter((item): item is string => typeof item === 'string'), defaultModelStrategy: normalizeStrategy(valueOf(rawProfile, 'defaultModelStrategy', 'default_model_strategy')), executorPolicy: normalizePolicy(valueOf(rawProfile, 'executorPolicy', 'executor_policy')),
-    allowedClients: arrayOf(valueOf(rawProfile, 'allowedClients', 'allowed_clients')).filter((item): item is ConversationSourceApplication => typeof item === 'string'),
-    character: { judgment: String(unknownRecord(rawProfile.character).judgment ?? ''), taste: String(unknownRecord(rawProfile.character).taste ?? ''), personality: String(unknownRecord(rawProfile.character).personality ?? '') }, expectations: stringOf(rawProfile, 'expectations', 'expectations') ?? '',
-    testSource: stringOf(rawProfile, 'testSource', 'test_source'), cleanupEligible: valueOf(rawProfile, 'cleanupEligible', 'cleanup_eligible') === true,
-  }
-  const fallback: ProjectAgentRecord = { agentId, personalSpaceId: stringOf(record, 'personalSpaceId', 'personal_space_id') ?? activeSpaceId.value, personalProjectId: stringOf(record, 'personalProjectId', 'personal_project_id'), profile, createdAt, updatedAt }
-  return {
-    ...fallback, memoryScope: stringOf(record, 'memoryScope', 'memory_scope') ?? undefined,
-    assignments: Array.isArray(record.assignments)
-      ? record.assignments.map((item) => normalizeAssignment(item, fallback)).filter(Boolean) as ProjectAgentAssignmentRecord[] : undefined,
-    legacyAgentIds: arrayOf(record.legacyAgentIds ?? record.legacy_agent_ids).filter((item): item is string => typeof item === 'string'),
-    recruitments: recruitmentValues(record.recruitments ?? record.recruitmentHistory).filter((item) => recruitmentBelongsTo(item, fallback)),
-    recruitmentId: stringOf(record, 'recruitmentId', 'recruitment_id'), temporaryTaskId: stringOf(record, 'temporaryTaskId', 'temporary_task_id'), workStatus: stringOf(record, 'workStatus', 'work_status') as ProjectAgentWorkStatus | undefined,
-    openTaskCount: typeof record.openTaskCount === 'number' ? record.openTaskCount : typeof record.open_task_count === 'number' ? record.open_task_count : undefined, currentTaskId: stringOf(record, 'currentTaskId', 'current_task_id'),
-    observedClients: arrayOf(record.observedClients ?? record.observed_clients).filter((item): item is ConversationSourceApplication => typeof item === 'string'), recruitedAt: stringOf(record, 'recruitedAt', 'recruited_at'),
-    recruitmentReason: stringOf(record, 'recruitmentReason', 'recruitment_reason'), recruitmentSourceApplication: stringOf(record, 'recruitmentSourceApplication', 'recruitment_source_application') as ConversationSourceApplication | null,
-    isTestRole: Boolean(profile.testSource) || profile.cleanupEligible || record.isTestRole === true || record.is_test_role === true,
-    tasks: arrayOf(record.tasks ?? record.taskHistory).map(normalizeTask).filter(Boolean) as ProjectAgentTaskRecord[],
-    activity: normalizeActivity(record.activity, { agentId: selectedAgentKey.value, personalSpaceId: activeSpaceId.value }),
-    clientEvidence: clientValues(record.clientEvidence ?? record.client_evidence), routingRules: routingValues(record.routingRules ?? record.routing_rules), learningEvidence: normalizeLearningMap(record.learningEvidence ?? record.learning_evidence),
-  }
-}
-
-function normalizeClient(value: unknown): ProjectAgentClientEvidence | null {
-  const record = unknownRecord(value); const client = stringOf(record, 'client', 'client'); if (!client) return null; const actual = unknownRecord(valueOf(record, 'actualUse', 'actual_use'))
-  return { client: client as ConversationSourceApplication, allowed: record.allowed === true, integrationStatus: stringOf(record, 'integrationStatus', 'integration_status') ?? undefined, actualUse: Object.keys(actual).length ? { count: typeof actual.count === 'number' ? actual.count : 0, lastUsedAt: stringOf(actual, 'lastUsedAt', 'last_used_at') } : null }
-}
-function assignmentValues(value: unknown, fallback: ProjectAgentRecord) {
-  const record = unknownRecord(value)
-  return arrayOf(Array.isArray(value) ? value : record.assignments ?? record.items)
-    .map((item) => normalizeAssignment(item, fallback))
-    .filter((item): item is ProjectAgentAssignmentRecord => Boolean(item))
-}
-function normalizeExecutorModel(value: unknown) {
-  const record = unknownRecord(value)
-  const provider = stringOf(record, 'provider', 'provider')
-  const model = stringOf(record, 'model', 'model')
-  if (!provider || !model) return null
-  return {
-    provider,
-    model,
-    capabilities: arrayOf(record.capabilities).filter((item): item is string => typeof item === 'string'),
-    available: typeof record.available === 'boolean' ? record.available : undefined,
-    strategyModes: arrayOf(valueOf(record, 'strategyModes', 'strategy_modes')).filter((item): item is string => typeof item === 'string'),
-    reasoningEfforts: arrayOf(valueOf(record, 'reasoningEfforts', 'reasoning_efforts')).filter((item): item is string => typeof item === 'string'),
-    observedAt: stringOf(record, 'observedAt', 'observed_at'),
-    unavailableReason: stringOf(record, 'unavailableReason', 'unavailable_reason'),
-  }
-}
-function executorValues(value: unknown): ProjectAgentExecutorRef[] {
-  const record = unknownRecord(value)
-  const values: Array<ProjectAgentExecutorRef | null> = arrayOf(Array.isArray(value) ? value : record.executors ?? record.items).map((item) => {
-    const executor = unknownRecord(item)
-    const executorId = stringOf(executor, 'executorId', 'executor_id')
-    if (!executorId) return null
-    const actual = unknownRecord(valueOf(executor, 'actualUse', 'actual_use'))
-    return {
-      executorId,
-      label: stringOf(executor, 'label', 'label'),
-      provider: stringOf(executor, 'provider', 'provider'),
-      model: stringOf(executor, 'model', 'model'),
-      client: stringOf(executor, 'client', 'client') as ConversationSourceApplication | null,
-      availabilityStatus: stringOf(executor, 'availabilityStatus', 'availability_status'),
-      personalSpaceId: stringOf(executor, 'personalSpaceId', 'personal_space_id'),
-      displayName: stringOf(executor, 'displayName', 'display_name'),
-      executorKind: stringOf(executor, 'executorKind', 'executor_kind'),
-      capabilities: arrayOf(valueOf(executor, 'capabilities', 'capabilities')).filter((item): item is string => typeof item === 'string'),
-      globalPriority: typeof valueOf(executor, 'globalPriority', 'global_priority') === 'number' ? valueOf(executor, 'globalPriority', 'global_priority') as number : null,
-      healthRequired: valueOf(executor, 'healthRequired', 'health_required') === true,
-      registrationStatus: stringOf(executor, 'registrationStatus', 'registration_status'),
-      permissionStatus: stringOf(executor, 'permissionStatus', 'permission_status'),
-      preflightStatus: stringOf(executor, 'preflightStatus', 'preflight_status'),
-      healthStatus: stringOf(executor, 'healthStatus', 'health_status'),
-      workspacePermission: typeof valueOf(executor, 'workspacePermission', 'workspace_permission') === 'boolean' ? valueOf(executor, 'workspacePermission', 'workspace_permission') as boolean : null,
-      revision: typeof executor.revision === 'number' ? executor.revision : undefined,
-      permissionRevision: typeof valueOf(executor, 'permissionRevision', 'permission_revision') === 'number' ? valueOf(executor, 'permissionRevision', 'permission_revision') as number : undefined,
-      registeredAt: stringOf(executor, 'registeredAt', 'registered_at'),
-      updatedAt: stringOf(executor, 'updatedAt', 'updated_at'),
-      testSource: stringOf(executor, 'testSource', 'test_source'),
-      cleanupEligible: valueOf(executor, 'cleanupEligible', 'cleanup_eligible') === true,
-      advertisedModels: arrayOf(valueOf(executor, 'advertisedModels', 'advertised_models')).map(normalizeExecutorModel).filter((item): item is NonNullable<ReturnType<typeof normalizeExecutorModel>> => item !== null),
-      availableModels: arrayOf(valueOf(executor, 'availableModels', 'available_models')).map(normalizeExecutorModel).filter((item): item is NonNullable<ReturnType<typeof normalizeExecutorModel>> => item !== null),
-      actualUse: Object.keys(actual).length
-        ? { count: typeof actual.count === 'number' ? actual.count : 0, lastUsedAt: stringOf(actual, 'lastUsedAt', 'last_used_at') }
-        : null,
-    } satisfies ProjectAgentExecutorRef
-  })
-  return values.filter((item): item is ProjectAgentExecutorRef => item !== null)
-}
-function normalizeRule(value: unknown): ProjectAgentRoutingRule | null {
-  const record = unknownRecord(value); const ruleId = stringOf(record, 'ruleId', 'rule_id'); if (!ruleId) return null
-  const status = stringOf(record, 'status', 'status')
-  return { ruleId, scope: (stringOf(record, 'scope', 'scope') ?? 'global') as ProjectAgentRoutingRule['scope'], priority: typeof record.priority === 'number' ? record.priority : 0, personalProjectId: stringOf(record, 'personalProjectId', 'personal_project_id'), taskId: stringOf(record, 'taskId', 'task_id'), workKind: stringOf(record, 'workKind', 'work_kind'), agentId: stringOf(record, 'agentId', 'agent_id'), enabled: record.enabled !== false && (!status || status === 'active'), executorIds: arrayOf(valueOf(record, 'executorIds', 'executor_ids')).filter((item): item is string => typeof item === 'string'), requiredCapabilities: arrayOf(valueOf(record, 'requiredCapabilities', 'required_capabilities')).filter((item): item is string => typeof item === 'string'), modelStrategy: normalizeStrategy(valueOf(record, 'modelStrategy', 'model_strategy')), reason: stringOf(record, 'reason', 'reason'), revision: typeof record.revision === 'number' ? record.revision : undefined, status: status ?? undefined, createdAt: stringOf(record, 'createdAt', 'created_at'), updatedAt: stringOf(record, 'updatedAt', 'updated_at') }
-}
-function normalizeLearningMap(value: unknown): Record<string, ProjectAgentLearningEvidence> {
-  const container = unknownRecord(value)
-  const rawRows = Array.isArray(value)
-    ? value
-    : container.learningEvidence ?? container.learning_evidence ?? container.items
-  const rows = Array.isArray(rawRows)
-    ? rawRows
-    : Object.values(unknownRecord(rawRows))
-  const entries = rows.map((raw, index) => {
-    const record = unknownRecord(raw)
-    const personalProjectId = stringOf(record, 'personalProjectId', 'personal_project_id')
-    const workKind = stringOf(record, 'workKind', 'work_kind')
-    const executor = stringOf(record, 'executorId', 'executor_id') ?? stringOf(record, 'executor', 'executor')
-    const modelStrategy = normalizeStrategy(valueOf(record, 'modelStrategy', 'model_strategy'))
-    const modelStrategyKey = stringOf(record, 'modelStrategyKey', 'model_strategy_key')
-    const learningKey = modelStrategyKey
-      ?? [personalProjectId, workKind, executor, String(index)].filter(Boolean).join(':')
-    const contributions = arrayOf(valueOf(record, 'evidenceContributions', 'evidence_contributions'))
-    const evidence = contributions.map((item) => {
-      const row = unknownRecord(item)
-      const signal = stringOf(row, 'signal', 'signal')
-      const kind = stringOf(row, 'evidenceKind', 'evidence_kind') ?? 'evidence'
-      const weight = typeof valueOf(row, 'decayWeight', 'decay_weight') === 'number'
-        ? valueOf(row, 'decayWeight', 'decay_weight') as number
-        : null
-      return {
-        evidenceId: stringOf(row, 'evidenceId', 'evidence_id') ?? undefined,
-        kind,
-        count: typeof row.value === 'number' ? row.value : undefined,
-        summary: signal ? `${signal}${weight === null ? '' : ` · ${weight.toFixed(3)}`}` : null,
-        occurredAt: stringOf(row, 'occurredAt', 'occurred_at'),
-      }
-    })
-    const weightedSuccess = typeof valueOf(record, 'weightedSuccess', 'weighted_success') === 'number'
-      ? valueOf(record, 'weightedSuccess', 'weighted_success') as number : 0
-    const weightedFailure = typeof valueOf(record, 'weightedFailure', 'weighted_failure') === 'number'
-      ? valueOf(record, 'weightedFailure', 'weighted_failure') as number : 0
-    const halfLife = valueOf(record, 'halfLife', 'decay_half_life_days')
-    const result: ProjectAgentLearningEvidence = {
-      learningKey,
-      personalProjectId,
-      workKind,
-      executor,
-      modelStrategy,
-      modelStrategyKey,
-      sampleCount: typeof valueOf(record, 'sampleCount', 'sample_count') === 'number' ? valueOf(record, 'sampleCount', 'sample_count') as number : 0,
-      recentWeightedSamples: typeof valueOf(record, 'recentCount', 'recent_count') === 'number' ? valueOf(record, 'recentCount', 'recent_count') as number : null,
-      decayBasis: typeof halfLife === 'number' ? `half-life ${halfLife}d` : null,
-      updatedAt: stringOf(record, 'asOf', 'as_of') ?? stringOf(record, 'updatedAt', 'updated_at'),
-      outcomes: {
-        success: typeof valueOf(record, 'successCount', 'success_count') === 'number' ? valueOf(record, 'successCount', 'success_count') as number : undefined,
-        rework: typeof valueOf(record, 'reworkCount', 'rework_count') === 'number' ? valueOf(record, 'reworkCount', 'rework_count') as number : undefined,
-        failure: typeof valueOf(record, 'failureCount', 'failure_count') === 'number' ? valueOf(record, 'failureCount', 'failure_count') as number : undefined,
-        scoreCount: typeof valueOf(record, 'ratingCount', 'rating_count') === 'number' ? valueOf(record, 'ratingCount', 'rating_count') as number : undefined,
-      },
-      evidence,
-      score: weightedSuccess - weightedFailure,
-      neutral: valueOf(record, 'neutralDueToInsufficientEvidence', 'neutral_due_to_insufficient_evidence') === true,
-    }
-    return [learningKey, result] as const
-  })
-  return Object.fromEntries(entries)
-}
-function taskValues(value: unknown) { const record = unknownRecord(value); return arrayOf(Array.isArray(value) ? value : record.tasks ?? record.items).map(normalizeTask).filter(Boolean) as ProjectAgentTaskRecord[] }
-function normalizeRecruitment(value: unknown): ProjectAgentRecruitmentRecord | null {
-  const record = unknownRecord(value)
-  const recruitmentId = stringOf(record, 'recruitmentId', 'recruitment_id')
-  if (!recruitmentId) return null
-  return {
-    recruitmentId,
-    personalSpaceId: stringOf(record, 'personalSpaceId', 'personal_space_id') ?? activeSpaceId.value,
-    personalProjectId: stringOf(record, 'personalProjectId', 'personal_project_id') ?? '',
-    taskId: stringOf(record, 'taskId', 'task_id') ?? '',
-    coordinatorAgentId: stringOf(record, 'coordinatorAgentId', 'coordinator_agent_id') ?? '',
-    hrAgentId: stringOf(record, 'hrAgentId', 'hr_agent_id'),
-    positionKind: stringOf(record, 'positionKind', 'position_kind') ?? 'durable',
-    workKind: stringOf(record, 'workKind', 'work_kind') ?? '',
-    requiredCapabilities: arrayOf(valueOf(record, 'requiredCapabilities', 'required_capabilities')).filter((item): item is string => typeof item === 'string'),
-    reasonCode: stringOf(record, 'reasonCode', 'reason_code') ?? '',
-    reason: stringOf(record, 'reason', 'reason') ?? '',
-    status: stringOf(record, 'status', 'status') ?? 'unknown',
-    confirmationMode: stringOf(record, 'confirmationMode', 'confirmation_mode'),
-    proposedAgentId: stringOf(record, 'proposedAgentId', 'proposed_agent_id') ?? '',
-    revision: typeof record.revision === 'number' ? record.revision : undefined,
-    recruitedAgentId: stringOf(record, 'recruitedAgentId', 'recruited_agent_id'),
-    triggerSourceApplication: stringOf(record, 'triggerSourceApplication', 'trigger_source_application') as ConversationSourceApplication | null,
-    triggerSourceSessionId: stringOf(record, 'triggerSourceSessionId', 'trigger_source_session_id'),
-    testSource: stringOf(record, 'testSource', 'test_source'),
-    cleanupEligible: valueOf(record, 'cleanupEligible', 'cleanup_eligible') === true,
-    createdAt: stringOf(record, 'createdAt', 'created_at') ?? '',
-    updatedAt: stringOf(record, 'updatedAt', 'updated_at') ?? '',
-    fulfilledAt: stringOf(record, 'fulfilledAt', 'fulfilled_at'),
-  }
-}
-function recruitmentValues(value: unknown) {
-  const record = unknownRecord(value)
-  return arrayOf(Array.isArray(value) ? value : record.recruitments ?? record.items)
-    .map(normalizeRecruitment)
-    .filter((item): item is ProjectAgentRecruitmentRecord => Boolean(item))
-}
-function recruitmentBelongsTo(recruitment: ProjectAgentRecruitmentRecord, agent: ProjectAgentRecord) {
-  return recruitment.recruitedAgentId === agent.agentId
-    || recruitment.proposedAgentId === agent.agentId
-    || recruitment.recruitmentId === agent.recruitmentId
-}
-function clientValues(value: unknown) { const record = unknownRecord(value); return arrayOf(Array.isArray(value) ? value : record.clients ?? record.executors ?? record.items).map(normalizeClient).filter(Boolean) as ProjectAgentClientEvidence[] }
-function routingValues(value: unknown) { const record = unknownRecord(value); return arrayOf(Array.isArray(value) ? value : record.rules ?? record.items).map(normalizeRule).filter(Boolean) as ProjectAgentRoutingRule[] }
-function learningValues(value: unknown) { const record = unknownRecord(value); return normalizeLearningMap(record.learningEvidence ?? record.learning_evidence ?? value) }
-
-function mergeAgents(values: unknown[]) {
-  const merged = new Map<string, ProjectAgentRecord>()
-  values.map(normalizeAgent).forEach((agent) => {
-    const current = merged.get(agent.agentId)
-    if (!current) { merged.set(agent.agentId, agent); return }
-    const assignments = [...assignmentsFor(current), ...assignmentsFor(agent)]
-    const tasks = [...(current.tasks ?? []), ...(agent.tasks ?? [])]
-    merged.set(agent.agentId, {
-      ...current, personalProjectId: current.personalProjectId ?? agent.personalProjectId,
-      profile: { ...current.profile, occupationEmoji: current.profile.occupationEmoji ?? agent.profile.occupationEmoji, capabilities: unique([...current.profile.capabilities, ...agent.profile.capabilities]), workKinds: unique([...(current.profile.workKinds ?? []), ...(agent.profile.workKinds ?? [])]), defaultModelStrategy: current.profile.defaultModelStrategy ?? agent.profile.defaultModelStrategy, executorPolicy: current.profile.executorPolicy ?? agent.profile.executorPolicy, allowedClients: unique([...(current.profile.allowedClients ?? []), ...(agent.profile.allowedClients ?? [])]) as ConversationSourceApplication[] },
-      assignments: dedupeById(assignments, ({ assignmentId }) => assignmentId), recruitments: dedupeById([...(current.recruitments ?? []), ...(agent.recruitments ?? [])], ({ recruitmentId }) => recruitmentId), tasks: dedupeById(tasks, ({ taskId }) => taskId), activity: current.activity ?? agent.activity,
-      clientEvidence: current.clientEvidence?.length ? current.clientEvidence : agent.clientEvidence, routingRules: current.routingRules?.length ? current.routingRules : agent.routingRules,
-      learningEvidence: { ...(agent.learningEvidence ?? {}), ...(current.learningEvidence ?? {}) }, observedClients: unique([...(current.observedClients ?? []), ...(agent.observedClients ?? [])]) as ConversationSourceApplication[], openTaskCount: Math.max(current.openTaskCount ?? 0, agent.openTaskCount ?? 0) || undefined, currentTaskId: current.currentTaskId ?? agent.currentTaskId, workStatus: current.workStatus ?? agent.workStatus,
-    })
-  })
-  return [...merged.values()]
-}
-function dedupeById<T>(values: T[], key: (value: T) => string) { return [...new Map(values.map((value) => [key(value), value])).values()] }
-function unique<T>(values: T[]) { return [...new Set(values)] }
 </script>
 
 <template>
-  <section class="view project-agents-view" :aria-label="t('projectAgents.aria')">
-    <header class="project-agents-header">
-      <div>
-        <p v-if="!pageLoading && !pageError" class="project-agents-header-meta" aria-live="polite"><strong>{{ t('projectAgents.stats.active', { count: activeCount }) }}</strong> · {{ t('projectAgents.stats.total', { count: agents.length }) }} · {{ t('projectAgents.stats.assignments', { count: assignmentCount }) }} · {{ t('projectAgents.stats.projects', { count: representedProjectCount }) }}<span class="project-agents-header-note">{{ t('projectAgents.stats.noOnlineClaim') }}</span></p>
+  <section ref="scroller" class="view project-agents-view" :aria-label="t('projectAgents.aria')">
+    <GrowthLoading v-if="linkedAgent" :label="t('projectAgents.opening')" />
+    <div v-else class="@container mx-auto grid w-full max-w-(--canvas-max) gap-4">
+      <!-- One toolbar: filters first, then the count and the actions. It stays
+           in reach on tall screens and scrolls away on short ones. -->
+      <div class="project-agents-toolbar">
+        <div class="project-agents-filters">
+          <ProjectScopePicker v-model="filterProjectIds" class="project-agents-project-filter" compact :projects="projectOptions" :label="t('employees.filterLabel')" :hint="t('employees.filterHint')" :empty-label="t('employees.filterEmpty')" />
+          <label class="project-agents-search">
+            <span class="ui-sr-only">{{ t('projectAgents.searchLabel') }}</span>
+            <input v-model="search" type="search" maxlength="160" :placeholder="t('projectAgents.searchPlaceholder')" />
+          </label>
+          <UiSegmented v-model="statusFilter" class="project-agents-status-filter" :options="statusOptions" :label="t('projectAgents.fields.status')" />
+        </div>
+        <div class="project-agents-summary">
+          <GrowthLoading v-if="roster.loading.value && agents.length" variant="inline" :label="t('projectAgents.loading')" />
+          <p v-if="!pageLoading && !pageError" class="project-agents-header-meta" aria-live="polite">
+            <strong>{{ t('projectAgents.stats.active', { count: activeCount }) }}</strong> · {{ t('projectAgents.stats.total', { count: agents.length }) }} · {{ t('projectAgents.stats.assignments', { count: assignmentCount }) }} · {{ t('projectAgents.stats.projects', { count: representedProjectCount }) }}<span class="project-agents-header-note">{{ t('projectAgents.stats.noOnlineClaim') }}</span>
+          </p>
+          <Button size="sm" variant="ghost" :disabled="!spaceId" @click="openCreate">{{ t('projectAgents.add') }}</Button>
+          <Button size="sm" :disabled="!spaceId" @click="recruitDialogOpen = true">{{ t('employees.recruit') }}</Button>
+        </div>
       </div>
-      <div class="project-agent-header-actions">
-        <Button size="sm" variant="ghost" :disabled="!activeSpaceId" @click="openCreate">{{ t('projectAgents.add') }}</Button>
-        <Button size="sm" :disabled="!activeSpaceId" @click="openRecruit()">{{ t('employees.recruit') }}</Button>
-      </div>
-    </header>
-    <EmployeeRecruitDialog :open="recruitDialogOpen" :personal-space-id="activeSpaceId" :projects="projects" :template-id="recruitTemplateId" :default-project-ids="projectFilter ?? []" @close="recruitDialogOpen = false" @recruited="employeeRecruited" />
-    <ProjectAgentFirstTask v-if="!pageLoading && !pageError && !projects.length" :personal-space-id="activeSpaceId" />
 
-    <div class="project-agents-toolbar">
-      <ProjectScopePicker v-model="filterProjectIds" class="project-agents-project-filter" compact :projects="projectOptions" :label="t('employees.filterLabel')" :hint="t('employees.filterHint')" :empty-label="t('employees.filterEmpty')" />
-      <label class="project-agents-search"><span class="ui-sr-only">{{ t('projectAgents.searchLabel') }}</span><input v-model="search" type="search" :placeholder="t('projectAgents.searchPlaceholder')" /></label>
-      <div class="project-agents-status-filter" :aria-label="t('projectAgents.fields.status')">
-        <button v-for="option in statusOptions" :key="option.value" type="button" :aria-pressed="statusFilter === option.value" @click="statusFilter = option.value">{{ option.label }}</button>
+      <ProjectAgentFirstTask v-if="!pageLoading && !pageError && !projects.length" :personal-space-id="spaceId" />
+
+      <ProjectAgentAutomationPolicyPanel
+        v-if="singleFilterProjectId"
+        :key="singleFilterProjectId"
+        :personal-space-id="spaceId"
+        :personal-project-id="singleFilterProjectId"
+        :project-name="projectName(singleFilterProjectId)"
+        :agents="agents"
+        @select="openPeek"
+      />
+
+      <GrowthLoading v-if="pageLoading && !agents.length" :label="!store.state ? t('common.status.loadingConsole') : t('projectAgents.loading')" />
+      <div v-else-if="pageError" class="ui-card project-agents-state is-error" role="alert">
+        <p>{{ pageError }}</p>
+        <Button size="sm" variant="outline" @click="retryPage">{{ t('projectAgents.retry') }}</Button>
       </div>
+      <div v-else-if="!agents.length" class="ui-card project-agents-state">
+        <strong>{{ t('projectAgents.emptyTitle') }}</strong>
+        <p>{{ t('projectAgents.emptyCopy') }}</p>
+        <Button size="sm" :disabled="!spaceId" @click="openCreate">{{ t('projectAgents.add') }}</Button>
+      </div>
+      <div v-else-if="!filteredAgents.length" class="ui-card project-agents-state">
+        <strong>{{ t('projectAgents.noMatchTitle') }}</strong>
+        <p>{{ t('projectAgents.noMatchCopy') }}</p>
+      </div>
+      <!-- 1/2/3/4 columns by the canvas width: a wide screen adds columns
+           instead of stretching a card. -->
+      <ul v-else class="project-agent-grid grid grid-cols-1 gap-3 @min-[620px]:grid-cols-2 @min-[960px]:grid-cols-3 @min-[1400px]:grid-cols-4" :aria-label="t('projectAgents.listLabel')">
+        <li v-for="agent in filteredAgents" :key="agent.agentId" class="min-w-0">
+          <ProjectAgentCard
+            :agent="agent"
+            :space-id="spaceId"
+            :projects="responsibleProjectsFor(agent)"
+            :selected="peekId === agent.agentId"
+            @peek="openPeek(agent.agentId)"
+          />
+        </li>
+      </ul>
     </div>
 
-    <ProjectAgentAutomationPolicyPanel
-      v-if="singleFilterProjectId"
-      :key="singleFilterProjectId"
-      :personal-space-id="activeSpaceId"
-      :personal-project-id="singleFilterProjectId"
-      :project-name="projectName(singleFilterProjectId)"
-      :agents="agents"
-      @select="selectedAgentKey = $event"
-    />
+    <BackToTop :scroller="scroller" />
 
-    <GrowthLoading v-if="pageLoading" :label="!store.state ? t('common.status.loadingConsole') : t('projectAgents.loading')" />
-    <div v-else-if="pageError" class="ui-card project-agents-state is-error" role="alert"><p>{{ pageError }}</p><Button size="sm" variant="ghost" @click="retryPage">{{ t('projectAgents.retry') }}</Button></div>
-    <div v-else-if="!agents.length" class="ui-card project-agents-state"><strong>{{ t('projectAgents.emptyTitle') }}</strong><p>{{ t('projectAgents.emptyCopy') }}</p><Button size="sm" :disabled="!activeSpaceId" @click="openCreate">{{ t('projectAgents.add') }}</Button></div>
-    <div v-else-if="!filteredAgents.length" class="ui-card project-agents-state"><strong>{{ t('projectAgents.noMatchTitle') }}</strong><p>{{ t('projectAgents.noMatchCopy') }}</p></div>
-    <div v-else class="ui-card project-agents-directory">
-      <div class="project-agent-list" role="list" :aria-label="t('projectAgents.listLabel')">
-        <div v-for="agent in filteredAgents" :key="agent.agentId" class="project-agent-row-shell">
-        <button type="button" class="project-agent-row" :class="{ selected: selectedAgentKey === agent.agentId }" :aria-current="selectedAgentKey === agent.agentId ? 'true' : undefined" @click="selectedAgentKey = agent.agentId">
-          <span class="project-agent-row-heading"><span v-if="agent.profile.occupationEmoji" class="project-agent-occupation-emoji" role="img" :aria-label="`${t('projectAgents.fields.occupationEmoji')}: ${agent.profile.occupationEmoji}`">{{ agent.profile.occupationEmoji }}</span><strong>{{ agent.profile.displayName || agent.profile.name }}</strong><i class="ui-badge project-agent-kind">{{ agentTypeLabel(agent.profile.agentType) }}</i><i class="ui-badge" :class="`is-${agent.profile.status}`">{{ t(`projectAgents.status.${agent.profile.status}`) }}</i></span>
-          <span class="project-agent-row-projects"><b v-for="group in projectChipGroups(agent).slice(0, 3)" :key="group.name">{{ group.name }}<template v-if="group.count > 1"> ×{{ group.count }}</template></b><b v-if="projectChipGroups(agent).length > 3">+{{ projectChipGroups(agent).length - 3 }}</b><em v-if="!projectChipGroups(agent).length">{{ t('employees.noAssignedProjects') }}</em></span>
-          <span class="project-agent-row-responsibility">{{ agent.profile.responsibility || t('projectAgents.notReported') }}</span>
-          <span class="project-agent-row-work"><template v-if="currentWork(agent)"><i :class="['project-agent-work-dot', { 'is-live': currentWork(agent)!.status === 'running' }]" aria-hidden="true" />{{ taskStatusLabel(currentWork(agent)!.status) }} · {{ currentWork(agent)!.title }}</template><template v-else-if="agent.workStatus === 'blocked' || agent.workStatus === 'queued'">{{ taskStatusLabel(agent.workStatus) }} · {{ t('projectAgents.detail.stateReported') }}</template><template v-else>{{ t('projectAgents.detail.noRun') }}</template></span>
-        </button>
-        <AgentHand :agent-id="agent.agentId" />
-        </div>
-      </div>
+    <Dialog :open="Boolean(peek.item.value)" @update:open="peekOpenChange">
+      <DialogContent class="agent-peek" data-agent-peek-dialog @open-auto-focus="focusPeekAction" @close-auto-focus="peekClosed">
+        <AgentPeek
+          :state="peekState"
+          :error="pageError"
+          :agent="peekAgent"
+          :entry="peekAgent ? currentWorkEntry(peekAgent) : undefined"
+          :project-names="{}"
+          :project-labels="peekAgent ? responsibleProjectsFor(peekAgent).map((project) => project.name) : []"
+          @open-full="openFullPage"
+          @retry="retryPage"
+        >
+          <template #actions>
+            <Button variant="outline" data-peek-edit @click="editFromPeek">{{ t('projectAgents.edit') }}</Button>
+          </template>
+        </AgentPeek>
+      </DialogContent>
+    </Dialog>
 
-      <aside v-if="selectedAgent" class="project-agent-detail" :aria-label="selectedAgent.profile.displayName || selectedAgent.profile.name">
-        <header><div class="project-agent-detail-heading"><h3><span v-if="selectedAgent.profile.occupationEmoji" class="project-agent-occupation-emoji" role="img" :aria-label="`${t('projectAgents.fields.occupationEmoji')}: ${selectedAgent.profile.occupationEmoji}`">{{ selectedAgent.profile.occupationEmoji }}</span>{{ selectedAgent.profile.displayName || selectedAgent.profile.name }} <AgentHand :agent-id="selectedAgent.agentId" /></h3><p>{{ agentTypeLabel(selectedAgent.profile.agentType) }}<span v-if="selectedAgent.isTestRole"> · {{ t('projectAgents.source.testRole') }}<span v-if="selectedAgent.profile.testSource"> · {{ selectedAgent.profile.testSource }}</span></span></p></div><div class="project-agent-detail-actions"><Button size="sm" variant="ghost" :disabled="detailLoading" @click="refreshDetails()">{{ t('projectAgents.detail.refresh') }}</Button><Button size="sm" variant="ghost" @click="openEdit(selectedAgent)">{{ t('projectAgents.edit') }}</Button><Button size="sm" variant="ghost" v-if="selectedAgent.profile.cleanupEligible" :disabled="detailLoading" @click="cleanupTestAgent(selectedAgent)"><GrowthLoading v-if="cleanupBusy" variant="inline" :label="t('projectAgents.source.cleanupLoading')" /><span v-else>{{ t('projectAgents.source.cleanup') }}</span></Button></div></header>
-        <p v-if="detailNotice" class="project-agent-detail-notice" role="status">{{ detailNotice }}</p>
-        <section v-if="selectedEmployeeId" class="employee-project-overview" aria-labelledby="employee-project-overview-title">
-          <div class="employee-project-overview-heading">
-            <div><h4 id="employee-project-overview-title">{{ selectedEmployee?.management?.mode === 'all' ? t('employees.scope.continuousAll') : t('employees.scope.label') }}</h4><p>{{ t('employees.assignedCount', { count: employeeProjects.length }) }}</p></div>
-            <Button size="sm" @click="openRecruit(selectedEmployeeId)">{{ t('employees.manageProjects') }}</Button>
-          </div>
-          <div v-if="employeeProjects.length" class="employee-assigned-projects">
-            <RouterLink v-for="project in employeeProjects" :key="project.id" :to="`/employees/${encodeURIComponent(selectedEmployeeId)}?project=${encodeURIComponent(project.id)}`">
-              <span>{{ project.name }}</span>
-              <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
-            </RouterLink>
-          </div>
-          <p v-else class="employee-project-overview-hint">{{ t('employees.manageHint') }}</p>
-        </section>
-
-
-
-
-        <section class="ui-card project-agent-detail-section is-responsibility"><h4>{{ t('projectAgents.fields.responsibility') }}</h4><p>{{ selectedAgent.profile.responsibility || t('projectAgents.notReported') }}</p><div v-if="selectedAgent.profile.capabilities.length" class="project-agent-tags"><span v-for="capability in selectedAgent.profile.capabilities" :key="capability">{{ capability }}</span></div></section>
-
-        <div class="project-agent-detail-source" data-detail-section="tasks">
-          <ProjectAgentDetailState v-bind="detailState('tasks')" :label="detailLoadingLabel('tasks')" @retry="refreshDetails">
-            <p v-if="taskListPartial[selectedAgent.agentId]" class="project-agent-muted" data-task-partial>{{ t('agentProfiles.partial') }}</p>
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.tasks') }}</h4><span>{{ selectedAgent.tasks?.length ?? 0 }}</span></div><div v-if="selectedAgent.tasks?.length" class="project-agent-task-list"><ProjectAgentTaskCard v-for="task in selectedAgent.tasks" :key="task.taskId" :task="task" :project-name="projectName(task.personalProjectId)" :agents="agents" :personal-space-id="activeSpaceId" :linked="task.taskId === route.query.task" @changed="refreshDetails()" /></div><p v-else-if="!taskListPartial[selectedAgent.agentId]" class="project-agent-muted">{{ t('projectAgents.detail.noTasks') }}</p></section>
-          </ProjectAgentDetailState>
-        </div>
-
-        <details class="ui-disclosure project-agent-disclosure"><summary>{{ t('projectAgents.sections.assignments') }}</summary>
-        <div class="project-agent-detail-source" data-detail-section="assignments">
-          <ProjectAgentDetailState v-bind="detailState('assignments')" :label="detailLoadingLabel('assignments')" @retry="refreshDetails">
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.assignments') }}</h4><div class="project-agent-section-tools"><span>{{ assignmentsFor(selectedAgent).length }}</span><Button size="sm" variant="ghost" @click="openAssignment(selectedAgent)">{{ t('projectAgents.assignmentDialog.assign') }}</Button></div></div><div v-if="assignmentsFor(selectedAgent).length" class="project-agent-assignment-list"><article v-for="assignment in assignmentsFor(selectedAgent)" :key="assignment.assignmentId" class="ui-card project-agent-assignment-card"><header><strong>{{ projectName(assignment.personalProjectId) }}</strong><div class="project-agent-card-actions"><i class="ui-badge" :class="`is-${assignment.status}`">{{ t(`projectAgents.assignmentStatus.${assignment.status}`) }}</i><Button size="sm" variant="ghost" v-if="assignment.status === 'active'" @click="openAssignment(selectedAgent, assignment, 'end')">{{ t('projectAgents.assignmentDialog.end') }}</Button><Button size="sm" variant="ghost" v-if="assignment.status === 'active'" @click="openAssignment(selectedAgent, assignment, 'replace')">{{ t('projectAgents.assignmentDialog.replace') }}</Button></div></header><p>{{ assignment.responsibility || t('projectAgents.notReported') }}</p><small v-if="assignment.scope">{{ t('projectAgents.fields.scope') }} · {{ assignment.scope }}</small><small>{{ formatDate(assignment.assignedAt) }} → {{ assignment.endedAt ? formatDate(assignment.endedAt) : t(`projectAgents.assignmentStatus.${assignment.status}`) }}</small><div v-if="assignment.workKinds?.length" class="project-agent-inline-list"><span v-for="workKind in assignment.workKinds" :key="workKind">{{ workKind }}</span></div><div class="project-agent-strategy-note"><span>{{ t('projectAgents.fields.assignmentModel') }}</span><strong>{{ strategyLabel(assignment.modelStrategyOverride) }} · {{ policyLabel(assignment.executorPolicyOverride) }}</strong><small v-if="policyIsLocked(assignment.executorPolicyOverride) && !policyAllowList(assignment.executorPolicyOverride).length">{{ t('projectAgents.strategy.lockedUnavailable') }}</small></div><div v-if="policyAllowList(assignment.executorPolicyOverride).length" class="project-agent-tags"><span v-for="executor in policyAllowList(assignment.executorPolicyOverride)" :key="executor.executorId">{{ executor.label || executor.executorId }}</span></div><small v-if="assignment.reason">{{ t('projectAgents.fields.reason') }} · {{ assignment.reason }}</small></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.detail.noAssignments') }}</p></section>
-          </ProjectAgentDetailState>
-        </div>
-        </details>
-
-
-
-
-
-        <details class="ui-disclosure project-agent-disclosure"><summary>{{ t('projectAgents.sections.activity') }}</summary>
-        <div class="project-agent-detail-source" data-detail-section="activity">
-          <ProjectAgentDetailState v-bind="detailState('activity')" :label="detailLoadingLabel('activity')" @retry="refreshDetails">
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.activity') }}</h4><span v-if="selectedActivity">{{ selectedActivity.days.length }}</span></div><div v-if="selectedActivity?.days.length" class="project-agent-heatmap-wrap project-agent-heatmap-viewport"><div class="project-agent-heatmap" role="list" :aria-label="t('projectAgents.activity.aria')"><button v-for="day in selectedActivity.days" :key="day.date" type="button" role="listitem" :class="['project-agent-heat-cell', `intensity-${activityIntensity(day, selectedActivity)}`, { selected: activityDay === day.date }]" :aria-label="`${formatDateOnly(day.date)} · ${day.total}`" :aria-pressed="activityDay === day.date" @click="chooseActivityDay(day)"><span class="ui-sr-only">{{ formatDateOnly(day.date) }} · {{ day.total }}</span></button></div><article v-if="selectedActivityDay" class="project-agent-day-detail"><header><strong>{{ formatDateOnly(selectedActivityDay.date) }}</strong><span>{{ selectedActivityDay.total }}</span></header><p v-if="!selectedActivityDay.tasks?.length" class="project-agent-muted">{{ t('projectAgents.activity.noTasks') }}</p><ul v-else><li v-for="task in selectedActivityDay.tasks" :key="task.taskId"><strong>{{ task.title }}</strong><span>{{ taskStatusLabel(task.status) }} · {{ projectName(task.personalProjectId) }}</span><small>{{ task.summary || t('projectAgents.notReported') }}</small></li></ul></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.activity.empty') }}</p></section>
-          </ProjectAgentDetailState>
-        </div>
-        </details>
-
-
-
-
-
-
-
-        <AgentConversations v-if="selectedAgent.memoryScope === 'reviewed_agent'" :key="selectedAgent.agentId" :personal-space-id="activeSpaceId" :agent-id="selectedAgent.agentId" :projects="conversationProjects" />
-        <EmployeeWorkHistory v-if="selectedAgent.memoryScope === 'reviewed_agent'" :personal-space-id="activeSpaceId" :agent-id="selectedAgent.agentId" :projects="conversationProjects" />
-        <details class="ui-disclosure project-agent-disclosure"><summary>{{ t('projectAgents.profileDetails') }}</summary>
-        <dl class="project-agent-detail-meta"><div><dt>{{ t('projectAgents.fields.assignments') }}</dt><dd>{{ currentAssignmentsFor(selectedAgent).length }}</dd></div><div><dt>{{ t('projectAgents.fields.memoryScope') }}</dt><dd>{{ selectedAgent.memoryScope ?? t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.fields.status') }}</dt><dd>{{ t(`projectAgents.status.${selectedAgent.profile.status}`) }}</dd></div><div><dt>{{ t('projectAgents.fields.recruitment') }}</dt><dd>{{ sourceLabel(selectedAgent.recruitmentSourceApplication) }}<small v-if="selectedAgent.recruitmentReason">{{ selectedAgent.recruitmentReason }}</small></dd></div><div><dt>{{ t('projectAgents.fields.updatedAt') }}</dt><dd>{{ formatDate(selectedAgent.updatedAt) }}</dd></div></dl>
-        </details>
-        <details class="ui-disclosure project-agent-disclosure" :open="selectedRecruitments.some(item => item.status === 'awaiting_confirmation')"><summary>{{ t('projectAgents.sections.recruitment') }}</summary>
-        <div class="project-agent-detail-source" data-detail-section="recruitment">
-          <ProjectAgentDetailState v-bind="detailState('recruitments')" :label="detailLoadingLabel('recruitments')" @retry="refreshDetails">
-            <section class="project-agent-detail-section" aria-labelledby="project-agent-recruitment-heading"><div class="project-agent-section-heading"><h4 id="project-agent-recruitment-heading">{{ t('projectAgents.sections.recruitment') }}</h4><span>{{ selectedRecruitments.length }}</span></div><div v-if="selectedRecruitments.length" class="project-agent-recruitment-list"><article v-for="recruitment in selectedRecruitments" :key="recruitment.recruitmentId" class="ui-card project-agent-recruitment-card"><header><strong>{{ recruitment.positionKind }} · {{ recruitment.workKind || t('projectAgents.notReported') }}</strong><div class="project-agent-card-actions"><i class="ui-badge">{{ recruitment.status }}</i><Button size="sm" variant="ghost" v-if="recruitment.status === 'awaiting_confirmation'" :disabled="Boolean(recruitmentBusy)" @click="decideRecruitment(recruitment, 'approve')"><GrowthLoading v-if="recruitmentBusy === recruitment.recruitmentId && recruitmentBusyAction === 'approve'" variant="inline" :label="t('projectAgents.recruitment.approving')" /><span v-else>{{ t('projectAgents.recruitment.approve') }}</span></Button><Button size="sm" variant="ghost" v-if="recruitment.status === 'awaiting_confirmation'" :disabled="Boolean(recruitmentBusy)" @click="decideRecruitment(recruitment, 'cancel')"><GrowthLoading v-if="recruitmentBusy === recruitment.recruitmentId && recruitmentBusyAction === 'cancel'" variant="inline" :label="t('projectAgents.recruitment.cancelling')" /><span v-else>{{ t('projectAgents.recruitment.cancel') }}</span></Button></div></header><dl class="project-agent-compact-meta"><div><dt>{{ t('projectAgents.recruitment.hr') }}</dt><dd>{{ recruitment.hrAgentId || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.recruitment.trigger') }}</dt><dd>{{ sourceLabel(recruitment.triggerSourceApplication) }}</dd></div><div><dt>{{ t('projectAgents.recruitment.reason') }}</dt><dd>{{ recruitment.reason || recruitment.reasonCode || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.recruitment.time') }}</dt><dd>{{ formatDate(recruitment.fulfilledAt || recruitment.createdAt) }}</dd></div></dl><small>{{ t('projectAgents.recruitment.testSource') }} · {{ recruitment.testSource || t('projectAgents.notReported') }}</small></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.recruitment.empty') }}</p></section>
-          </ProjectAgentDetailState>
-        </div>
-        </details>
-        <details :key="`advanced:${selectedAgent.agentId}`" class="ui-disclosure project-agent-disclosure" data-agent-advanced>
-          <summary>{{ t('projectAgents.advanced') }}</summary>
-        <div class="project-agent-detail-source" data-detail-section="executors">
-          <ProjectAgentDetailState v-bind="detailState('executors')" :label="detailLoadingLabel('executors')" @retry="refreshDetails">
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.strategy') }}</h4><span>{{ strategyLabel(selectedAgent.profile.defaultModelStrategy) }} · {{ policyLabel(selectedAgent.profile.executorPolicy) }}</span></div><p class="project-agent-muted">{{ t('projectAgents.strategy.providerNeutral') }}</p><div v-if="policyAllowList(selectedAgent.profile.executorPolicy).length" class="project-agent-tags"><span v-for="executor in policyAllowList(selectedAgent.profile.executorPolicy)" :key="executor.executorId">{{ executor.label || executor.executorId }}</span></div><p v-else-if="policyIsLocked(selectedAgent.profile.executorPolicy)" class="project-agent-blocked">{{ t('projectAgents.strategy.lockedUnavailable') }}</p><p v-else class="project-agent-muted">{{ t('projectAgents.strategy.noAllowList') }}</p><div class="project-agent-section-tools"><Button size="sm" variant="ghost" @click="openExecutorDialog()">{{ t('projectAgents.routing.addExecutor') }}</Button></div><div v-if="selectedAgent.executorDirectory?.length" class="project-agent-executor-list"><div v-for="executor in selectedAgent.executorDirectory" :key="executor.executorId" class="project-agent-executor-row"><strong>{{ executor.displayName || executor.label || executor.executorId }}</strong><span>{{ executor.provider || t('projectAgents.notReported') }} / {{ executor.model || t('projectAgents.notReported') }}</span><span>{{ executor.globalPriority ?? t('projectAgents.notReported') }}</span><small>{{ executor.registrationStatus || t('projectAgents.notReported') }} · {{ executor.permissionStatus || t('projectAgents.notReported') }} · {{ executor.preflightStatus || t('projectAgents.strategy.availabilityUnreported') }} · {{ executor.healthStatus || t('projectAgents.notReported') }}</small><Button size="sm" variant="ghost" @click="openExecutorDialog(executor)">{{ t('projectAgents.routing.editExecutor') }}</Button><Button size="sm" variant="ghost" v-if="executor.permissionStatus !== 'authorized'" :disabled="Boolean(executorBusy)" @click="authorizeExecutor(executor, 'authorized')"><GrowthLoading v-if="executorBusy === executor.executorId && executorBusyAction === 'authorize'" variant="inline" :label="t('projectAgents.routing.authorizing')" /><span v-else>{{ t('projectAgents.routing.authorize') }}</span></Button><Button size="sm" variant="ghost" v-else :disabled="Boolean(executorBusy)" @click="authorizeExecutor(executor, 'revoked')"><GrowthLoading v-if="executorBusy === executor.executorId && executorBusyAction === 'revoke'" variant="inline" :label="t('projectAgents.routing.revoking')" /><span v-else>{{ t('projectAgents.routing.revoke') }}</span></Button></div></div></section>
-          </ProjectAgentDetailState>
-        </div>
-        <div class="project-agent-detail-source" data-detail-section="clients">
-          <ProjectAgentDetailState v-bind="detailState('executors')" :label="detailLoadingLabel('executors')" @retry="refreshDetails">
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.clients') }}</h4><span>{{ clientNames(selectedAgent).length }}</span></div><div v-if="clientNames(selectedAgent).length" class="project-agent-client-list"><div v-for="clientName in clientNames(selectedAgent)" :key="clientName" class="project-agent-client-row"><strong>{{ sourceLabel(clientName) }}</strong><span>{{ clientEvidenceFor(selectedAgent, clientName)?.allowed || selectedAgent.profile.allowedClients?.includes(clientName) ? t('projectAgents.clients.allowed') : t('projectAgents.clients.notAllowed') }}</span><span v-if="clientUseCount(selectedAgent, clientName)">{{ t('projectAgents.clients.observed', { count: clientUseCount(selectedAgent, clientName) }) }}</span><span v-else-if="selectedAgent.observedClients?.includes(clientName)">{{ t('projectAgents.clients.observedAny') }}</span><span v-else>{{ t('projectAgents.clients.unreported') }}</span><small>{{ clientEvidenceFor(selectedAgent, clientName)?.integrationStatus || t('projectAgents.clients.integrationUnreported') }}</small></div></div><p v-else class="project-agent-muted">{{ t('projectAgents.clients.empty') }}</p></section>
-          </ProjectAgentDetailState>
-        </div>
-        <div class="project-agent-detail-source" data-detail-section="routing">
-          <ProjectAgentDetailState v-bind="detailState('routingRules')" :label="detailLoadingLabel('routingRules')" @retry="refreshDetails">
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.routing') }}</h4><div class="project-agent-section-tools"><span>{{ selectedAgent.routingRules?.length ?? 0 }}</span><Button size="sm" variant="ghost" @click="openRuleDialog()">{{ t('projectAgents.routing.addRule') }}</Button></div></div><div v-if="selectedAgent.routingRules?.length" class="project-agent-rule-list"><div v-for="rule in selectedAgent.routingRules" :key="rule.ruleId" class="project-agent-rule-row"><strong>{{ rule.scope }} · {{ rule.priority }}</strong><span>{{ rule.workKind || rule.reason || t('projectAgents.notReported') }} · {{ rule.executorIds?.join(', ') || t('projectAgents.notReported') }}</span><Button size="sm" variant="ghost" v-if="rule.enabled" :disabled="Boolean(recruitmentBusy)" @click="disableRule(rule)"><GrowthLoading v-if="recruitmentBusy === `rule:${rule.ruleId}` && recruitmentBusyAction === 'disable'" variant="inline" :label="t('projectAgents.routing.disabling')" /><span v-else>{{ t('projectAgents.routing.disable') }}</span></Button></div></div><p v-else class="project-agent-muted">{{ t('projectAgents.routing.empty') }}</p><small class="project-agent-note">{{ t('projectAgents.routing.priorityNote') }}</small></section>
-          </ProjectAgentDetailState>
-        </div>
-        <div class="project-agent-detail-source" data-detail-section="learning">
-          <ProjectAgentDetailState v-bind="detailState('learning')" :label="detailLoadingLabel('learning')" @retry="refreshDetails">
-            <section class="project-agent-detail-section"><div class="project-agent-section-heading"><h4>{{ t('projectAgents.sections.learning') }}</h4><span>{{ selectedLearning.length }}</span></div><div v-if="selectedLearning.length" class="project-agent-learning-list"><article v-for="[key, evidence] in selectedLearning" :key="key" class="ui-card project-agent-learning-card"><header><strong>{{ key }}</strong><i class="ui-badge">{{ learningLabel(evidence) }}</i></header><small v-if="evidence.personalProjectId || evidence.workKind || evidence.executor || evidence.modelStrategy">{{ projectName(evidence.personalProjectId) }} · {{ evidence.workKind || t('projectAgents.notReported') }} · {{ evidence.executor || t('projectAgents.notReported') }} / {{ evidence.modelStrategy ? strategyLabel(evidence.modelStrategy) : t('projectAgents.notReported') }}</small><p>{{ t('projectAgents.learning.samples', { count: evidence.sampleCount }) }} · {{ t('projectAgents.learning.recent', { count: learningRecent(evidence) }) }}</p><small>{{ evidence.decayBasis || t('projectAgents.learning.decayUnreported') }} · {{ formatDate(evidence.updatedAt) }}</small><div v-if="evidence.outcomes" class="project-agent-inline-list"><span v-for="(count, outcome) in evidence.outcomes" :key="outcome" v-show="count !== undefined">{{ outcome }} · {{ count ?? t('projectAgents.notReported') }}</span><span v-if="evidence.score !== null && evidence.score !== undefined">{{ t('projectAgents.learning.score', { score: scoreValue(evidence) }) }}</span></div><ul v-if="evidence.evidence?.length" class="project-agent-evidence-list"><li v-for="item in evidence.evidence" :key="`${item.evidenceId}:${item.kind}:${item.occurredAt}`"><span>{{ item.kind }} · {{ item.count ?? 0 }} · {{ item.summary || t('projectAgents.notReported') }}</span><Button size="sm" variant="ghost" v-if="item.evidenceId" :disabled="Boolean(learningBusy)" @click="updateLearning(evidence, 'ignore', item.evidenceId)"><GrowthLoading v-if="learningBusy === item.evidenceId && learningBusyAction === 'ignore'" variant="inline" :label="t('projectAgents.learning.ignoring')" /><span v-else>{{ t('projectAgents.learning.ignore') }}</span></Button></li></ul><div v-if="evidence.learningKey" class="project-agent-learning-actions"><Button size="sm" variant="ghost" :disabled="Boolean(learningBusy) || !evidence.personalProjectId || !evidence.workKind || !evidence.executor" @click="updateLearning(evidence, 'reset')"><GrowthLoading v-if="learningBusy === evidence.learningKey && learningBusyAction === 'reset'" variant="inline" :label="t('projectAgents.learning.resetting')" /><span v-else>{{ t('projectAgents.learning.reset') }}</span></Button></div></article></div><p v-else class="project-agent-muted">{{ t('projectAgents.learning.empty') }}</p><small class="project-agent-note">{{ t('projectAgents.learning.note') }}</small></section>
-          </ProjectAgentDetailState>
-        </div>
-        </details>
-      </aside>
-      <div v-else class="project-agent-detail-placeholder">{{ t('projectAgents.detail.choose') }}</div>
-    </div>
-
-    <ProjectAgentDialog :open="dialogOpen" :agent="editingAgent" :projects="projects" :default-project-id="dialogDefaultProjectId" :personal-space-id="activeSpaceId" @close="closeDialog" @saved="recordSaved" />
-    <AgentAssignmentDialog :open="assignmentDialogOpen" :agent="editingAgent" :assignment="assignmentTarget" :action="assignmentAction" :projects="projects" :available-agents="agents" :default-project-id="dialogDefaultProjectId" @close="closeAssignment" @saved="assignmentSaved" @changed="assignmentChanged" />
-    <ExecutorRoutingDialog :open="executorDialogOpen" :mode="executorDialogMode" :personal-space-id="activeSpaceId" :executor="editingExecutor" :rule="editingRule" :projects="projects" :available-executors="selectedAgent?.executorDirectory ?? []" @close="closeExecutorDialog" @saved="executorDialogSaved" />
+    <EmployeeRecruitDialog :open="recruitDialogOpen" :personal-space-id="spaceId" :projects="projects" template-id="" :default-project-ids="projectFilter ?? []" @close="recruitDialogOpen = false" @recruited="employeeRecruited" />
+    <ProjectAgentDialog :open="dialogOpen" :agent="editingAgent" :projects="projects" :default-project-id="dialogDefaultProjectId" :personal-space-id="spaceId" @close="closeDialog" @saved="recordSaved" />
   </section>
 </template>
 
-<style scoped src="@/features/project-agents/ProjectAgentsPage.css"></style>
+<style src="@/features/agent-profile/agent-profile.css" />
+
+<style scoped>
+.project-agents-view { scrollbar-gutter: stable; }
+.project-agents-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px;
+  padding-block: 4px 0; background: var(--color-bg);
+}
+/* Tall screens keep the filters in reach while reading a long roster; short
+   ones give that height back to the cards. */
+@media (min-height: 820px) {
+  .project-agents-toolbar { position: sticky; top: -12px; z-index: 2; padding-block: 16px 12px; margin-block: -12px -12px; }
+}
+.project-agents-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; flex: 1 1 560px; }
+.project-agents-project-filter { flex: 0 1 280px; min-width: 220px; }
+/* One control height across the toolbar. */
+.project-agents-project-filter :deep(.project-scope-trigger) { min-height: var(--control-height); padding-block: 0; }
+.project-agents-search { flex: 1 1 200px; min-width: 180px; max-width: 360px; }
+.project-agents-search input {
+  width: 100%; min-height: var(--control-height); border: 1px solid var(--color-border-strong); border-radius: var(--radius-control);
+  background: var(--color-surface); color: var(--color-ink); padding: 0 12px; font-size: 13px;
+}
+.project-agents-search input:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+.project-agents-status-filter { flex: 0 0 auto; }
+.project-agents-summary { margin-inline-start: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; min-width: 0; }
+.project-agents-header-meta { margin: 0; color: var(--color-muted); font-size: 12px; }
+.project-agents-header-meta strong { color: var(--color-ink); font-weight: 700; }
+.project-agents-header-note { margin-inline-start: 12px; }
+.project-agents-state {
+  min-height: 200px; display: grid; place-content: center; justify-items: center; gap: 8px;
+  color: var(--color-muted); font-size: 14px; text-align: center;
+}
+.project-agents-state strong { color: var(--color-ink); font-size: 14px; }
+.project-agents-state p { max-width: 52ch; margin: 0; line-height: 1.6; }
+.project-agents-state.is-error { color: var(--color-danger); }
+.project-agent-grid { margin: 0; padding: 0; list-style: none; }
+</style>
