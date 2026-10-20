@@ -33,7 +33,7 @@ export async function taskEntryPreferences(application, projectResolution, input
 
 // Selection/admission belongs to the caller; preference and continuity projection is shared.
 export async function selectedTaskEntryPreferences(application, projectResolution, {
-  projectAgentId, taskPrompt, sourceApplication, sourceSessionId, sessionId, projectPath = null,
+  projectAgentId, taskPrompt, sourceApplication, sourceSessionId, sessionId,
   workKind, workflow, limit, agentInvocation, agentToolName
 }, selection, recordAgentViews, { includeManagement = true, includeMessages = true } = {}) {
   // A rejected explicit role must not leak its private preferences via fallback.
@@ -82,9 +82,10 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
   const triage = selection?.agent?.agentId === ASSISTANT_AGENT_ID && !projectResolution.personalProjectId
     ? await triageCandidates(application) : null;
   // The entry receipt says when automatic recording is off, and that a project
-  // the person asked for was still created (rec#11 D-01).
-  const capture = captureDecision(application, { sourceApplication, projectPath,
-    personalProjectId: projectResolution.personalProjectId, sessionId: sessionId ?? sourceSessionId });
+  // the person asked for was still created (rec#11 D-01). The task begins in
+  // this project, so the receipt gives the decision its writes will get.
+  const capture = await captureDecision(application, { sourceApplication,
+    personalProjectId: projectResolution.personalProjectId ?? null, sessionId: sessionId ?? sourceSessionId });
   const notices = receiptNotices(capture, projectResolution.basis === 'created_from_prompt' ? ['project_created'] : []);
   return { ...managedPreferences, ...(context ? { project_agent_context: context } : {}),
     ...(triage ? { triage_candidates: triage } : {}),

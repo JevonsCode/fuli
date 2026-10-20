@@ -10,15 +10,33 @@ const pending = reason => ({ status: 'partial', entryBlocked: true, reason });
 const retryReason = 'Transcript handoff is pending. Retry task entry to continue its saved progress; no new Agent context was supplied';
 
 // What a host hook knows about the session whose transcript it would capture.
+// Every host works in some directory: a hook that does not report it cannot
+// show that its session is outside a project FULI must not record.
 export function transcriptCaptureScope(input, sourceApplication) {
-  return { sourceApplication, projectPath: input?.cwd ?? null, sessionId: input?.session_id ?? null };
+  const projectPath = typeof input?.cwd === 'string' && input.cwd.trim() ? input.cwd : null;
+  return { sourceApplication, projectPath, sessionId: input?.session_id ?? null,
+    ...(projectPath ? {} : { projectUnknown: true }) };
+}
+
+// The transcript is saved under the session's current task, which may belong
+// to a project other than the directory: both have to be recorded.
+function taskTranscriptScope(input, sourceApplication, task) {
+  return { ...transcriptCaptureScope(input, sourceApplication), personalProjectId: task.personal_project_id ?? null };
+}
+
+// Nothing of a task that is not recorded is ever imported, so no handoff for
+// it stays pending: a later recorded task starts from its own prompt. Its
+// turns are skipped like any other off period (transcript-capture-gap.js).
+async function skippedTaskTranscript(application, input, sourceApplication, adapter, decision, guard) {
+  if (guard?.value) await guard.clear();
+  return skipTranscriptWhileOff(application, input, sourceApplication, adapter, decision);
 }
 
 // notRecorded names why the pending interval must be skipped instead of
 // imported (transcript-capture-gap.js); the cursor still advances as usual.
 export async function syncConversationTranscript(application, input, sourceApplication, adapter, guard = null,
   { notRecorded = null } = {}) {
-  const capture = captureDecision(application, transcriptCaptureScope(input, sourceApplication));
+  const capture = await captureDecision(application, transcriptCaptureScope(input, sourceApplication));
   if (!capture.allowed) return skipTranscriptWhileOff(application, input, sourceApplication, adapter, capture);
   if (!input?.transcript_path) return { status: 'partial', reason: 'Host did not supply a visible transcript' };
   if (guard?.expired) return pending('Transcript guard lifetime expired; this unverified interval was not imported');
@@ -32,6 +50,8 @@ export async function syncConversationTranscript(application, input, sourceAppli
     const task = lookup.task;
     ownershipKnown = true;
     if (!task?.project_agent_id) return guard?.value ? pending(retryReason) : { status: 'unassigned' };
+    const taskCapture = await captureDecision(application, taskTranscriptScope(input, sourceApplication, task));
+    if (!taskCapture.allowed) return skippedTaskTranscript(application, input, sourceApplication, adapter, taskCapture, guard);
     const scope = { personal_space_id: application.config.personal.spaceId, personal_project_id: task.personal_project_id,
       agent_id: task.project_agent_id, source_application: sourceApplication };
     const policy = await application.personal.conversation('query', { ...scope, mode: 'policy' });
@@ -144,12 +164,14 @@ export function withTranscriptNotice(output, sync) {
 // unrelated session tail. Native files remain available for explicit recovery.
 export async function claimTranscriptBoundary(application, input, sourceApplication, sync, adapter, guard = null) {
   if (!input.transcript_path) return sync;
-  const capture = captureDecision(application, transcriptCaptureScope(input, sourceApplication));
+  const capture = await captureDecision(application, transcriptCaptureScope(input, sourceApplication));
   if (!capture.allowed) return captureDisabled(capture);
   try {
     const task = await application.personal.currentTaskContext({ personal_space_id: application.config.personal.spaceId,
       session_id: input.session_id, source_application: sourceApplication });
     if (!task?.project_agent_id) return sync;
+    const taskCapture = await captureDecision(application, taskTranscriptScope(input, sourceApplication, task));
+    if (!taskCapture.allowed) return skippedTaskTranscript(application, input, sourceApplication, adapter, taskCapture, guard);
     if (guard?.value && (guard.value.phase !== 'claim' || guard.value.nextOwner !== transcriptDigest(task.token))) return pending('Transcript claim does not match the task entry that created it');
     const scope = { personal_space_id: application.config.personal.spaceId,
       personal_project_id: task.personal_project_id, agent_id: task.project_agent_id,

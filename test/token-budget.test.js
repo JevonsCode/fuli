@@ -46,11 +46,10 @@ const BASELINE = Object.freeze({
   // Attention replies: request_agent_attention says to ask in the live
   // conversation first (the console is the away inbox) and read_agent_messages
   // names the answers it now returns: 172,415 -> 172,573 B (+158 B). Chat is unchanged.
-  // Bole dismissal (rec#8): delete_project_agent becomes dismiss_project_agent,
-  // which must tell the Agent to ask the user why first, plus the two on-demand
-  // reads that keep lessons out of task entry (list_agent_dismissal_lessons,
-  // get_agent_handoff): 172,573 -> 174,313 B (+1,740 B). Chat is unchanged.
-  fullToolSchemaBytes: 174313,
+  // Bole dismissal (rec#8): dismiss_project_agent asks why first, plus list_agent_dismissal_lessons and get_agent_handoff (+1,740 B).
+  // rec#5 C2: get_capture_policy reports recording; update_capture_policy restates long-term changes and waits (+1,215 B).
+  // Together: 172,573 -> 175,528 B (+2,955 B). Chat is unchanged.
+  fullToolSchemaBytes: 175528,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

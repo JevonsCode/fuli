@@ -8,6 +8,8 @@ import {
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { DEFAULT_PROJECT_SETTINGS, PROJECT_SETTING_KEYS, storedProjectSettings, updatedProjectSettings,
+  usesProjectModes } from './capture-project-mode.js';
 
 // Capturing a client's sessions is separate from that client using FULI tools:
 // a disabled source still queries existing memory, it just adds nothing new.
@@ -17,8 +19,10 @@ export const CAPTURE_SOURCES = Object.freeze(['codex', 'claude', 'claude_code', 
 const DEFAULT_POLICY = Object.freeze({
   enabled: true,
   disabledSources: [],
+  ...DEFAULT_PROJECT_SETTINGS,
   updatedAt: null
 });
+const SETTING_KEYS = Object.freeze(['enabled', 'disabledSources', ...PROJECT_SETTING_KEYS]);
 
 const ABSENT = 'absent';
 const UNREADABLE = Object.freeze({ generation: 0 });
@@ -37,6 +41,7 @@ export class CapturePolicyStore {
     this.statFile = statFile;
     this.memory = { ...DEFAULT_POLICY };
     this.parsed = null;
+    this.memoryGeneration = 0;
     this.generationPath = this.path ? join(dirname(this.path), 'capture-settings-generation.json') : null;
   }
 
@@ -62,7 +67,8 @@ export class CapturePolicyStore {
       this.parsed = { version, policy: validateStoredPolicy(value) };
     }
     const { policy } = this.parsed;
-    return { ...policy, disabledSources: [...policy.disabledSources] };
+    return { ...policy, disabledSources: [...policy.disabledSources], excludedProjectIds: [...policy.excludedProjectIds],
+      selectedProjectIds: [...policy.selectedProjectIds], projectsOffSince: { ...policy.projectsOffSince } };
   }
 
   // The settings generation: persistent and monotonic, kept beside (not in)
@@ -74,7 +80,7 @@ export class CapturePolicyStore {
   // scopes generations per global, client, project and session layer, each
   // persistent and monotonic, not a fingerprint of the final switch.
   version() {
-    if (!this.path) return `memory:${JSON.stringify(this.memory)}`;
+    if (!this.path) return `memory:${this.memoryGeneration}:${JSON.stringify(this.memory)}`;
     const observed = this.#fileKey();
     const stored = this.#readGeneration();
     if (stored === null && observed === ABSENT) return ABSENT;
@@ -90,6 +96,17 @@ export class CapturePolicyStore {
       if (error?.code === 'ENOENT') return ABSENT;
       throw new CapturePolicyConfigurationError('Capture policy could not be read');
     }
+  }
+
+  // A newer generation without a settings change, so every process treats
+  // what it last recorded under the current one as stale. Throws when it
+  // cannot be saved.
+  advanceVersion() {
+    if (!this.path) {
+      this.memoryGeneration += 1;
+      return;
+    }
+    this.#nextGeneration(this.#readGeneration(), this.#fileKey());
   }
 
   // A missing generation is null; an unreadable one is replaced by a newer one.
@@ -116,23 +133,48 @@ export class CapturePolicyStore {
     return next;
   }
 
+  // A partial update: settings it does not name keep their current value, so
+  // changing projects never turns recording back on, and the reverse.
   update(input) {
-    if (!input || typeof input.enabled !== 'boolean') {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new TypeError('Capture policy update must be an object');
+    }
+    const unknown = Object.keys(input).filter(key => !SETTING_KEYS.includes(key));
+    if (unknown.length) throw new TypeError(`Capture policy has no setting ${unknown.join(', ')}`);
+    if (SETTING_KEYS.every(key => input[key] === undefined)) {
+      throw new TypeError('Capture policy update must name a setting to change');
+    }
+    if (input.enabled !== undefined && typeof input.enabled !== 'boolean') {
       throw new TypeError('Capture policy enabled must be a boolean');
     }
+    const current = this.#currentForUpdate(input);
+    const now = this.now();
     const next = {
-      enabled: input.enabled,
+      enabled: input.enabled ?? current.enabled,
       disabledSources: input.disabledSources === undefined
-        ? this.read().disabledSources : validSources(input.disabledSources, TypeError),
-      updatedAt: this.now()
+        ? current.disabledSources : validSources(input.disabledSources, TypeError),
+      ...updatedProjectSettings(current, input, now),
+      updatedAt: now
     };
     if (!this.path) {
       this.memory = next;
       return { ...next };
     }
-    writeAtomically(this.path, { version: 1, ...next });
+    writeAtomically(this.path, { version: usesProjectModes(next) ? 2 : 1, ...next });
     this.#nextGeneration(this.#readGeneration(), this.#fileKey());
     return { ...next };
+  }
+
+  // Settings FULI cannot read record nothing until the person sets the global
+  // switch again; that repair starts from the defaults for every setting it
+  // does not name. A partial change without it cannot apply to unknown settings.
+  #currentForUpdate(input) {
+    try {
+      return this.read();
+    } catch (error) {
+      if (!(error instanceof CapturePolicyConfigurationError) || input.enabled === undefined) throw error;
+      return { ...DEFAULT_POLICY };
+    }
   }
 }
 
@@ -142,7 +184,7 @@ export function capturePolicyPathForRuntime(runtimeConfigPath) {
 }
 
 function validateStoredPolicy(value) {
-  if (value?.version !== 1 || typeof value.enabled !== 'boolean') {
+  if (![1, 2].includes(value?.version) || typeof value.enabled !== 'boolean') {
     throw new CapturePolicyConfigurationError('Capture policy is invalid');
   }
   if (value.updatedAt !== null && typeof value.updatedAt !== 'string') {
@@ -152,6 +194,7 @@ function validateStoredPolicy(value) {
     enabled: value.enabled,
     // Policies saved before per-client capture capture every client.
     disabledSources: validSources(value.disabledSources ?? [], CapturePolicyConfigurationError),
+    ...storedProjectSettings(value, CapturePolicyConfigurationError),
     updatedAt: value.updatedAt ?? null
   };
 }
