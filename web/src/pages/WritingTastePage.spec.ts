@@ -86,6 +86,10 @@ describe('WritingTastePage', () => {
 
     expect(wrapper.findAll('[data-writing-rule]')).toHaveLength(3)
     expect(wrapper.text()).toContain('可以尝试大胆隐喻')
+    // Rules are a card collection on the canvas, each one titled once.
+    expect(wrapper.findAll('li > [data-writing-rule][data-slot="card"]')).toHaveLength(3)
+    expect(wrapper.findAll('[data-writing-rule] h3')).toHaveLength(3)
+    expect(wrapper.findAll('[data-writing-rule] [data-variant="warning"]').map(badge => badge.text())).toHaveLength(1)
 
     await wrapper.get('[data-agent-preview-toggle]').trigger('click')
     const preview = wrapper.get('[data-agent-preview]').text()

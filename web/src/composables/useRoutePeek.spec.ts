@@ -49,4 +49,14 @@ describe('useRoutePeek', () => {
       expect(peek().item.value).toBeNull()
     }
   })
+
+  it('keeps the quick look as local state where no router is installed (previews, tests)', async () => {
+    let peek!: ReturnType<typeof useRoutePeek>
+    mount(defineComponent({ setup() { peek = useRoutePeek(); return () => h('div') } }))
+    expect(peek.item.value).toBeNull()
+    await peek.open({ spaceId: 'space-a', id: 'entity:1' })
+    expect(peek.item.value).toEqual({ spaceId: 'space-a', id: 'entity:1' })
+    await peek.close()
+    expect(peek.item.value).toBeNull()
+  })
 })

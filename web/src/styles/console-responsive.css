@@ -6,14 +6,6 @@
 }
 
 @media (max-width: 920px) {
-  .knowledge-layout:not(.has-selection) { grid-template-rows: minmax(0, 1fr); }
-  .knowledge-layout:not(.has-selection) .graph-inspector { display: none; }
-  .knowledge-layout {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(160px, 1fr) minmax(160px, .8fr);
-  }
-  .graph-inspector { min-width: 0; min-height: 0; border-left: 0; border-top: 1px solid var(--color-border); }
-
   body { min-width: 0; }
 
   .view { padding: 16px 20px 24px; }

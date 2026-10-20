@@ -162,6 +162,7 @@ export const knowledgeWorkspaceMessages = {
       batchConfirm: '批量确认 · {count} 组',
       loadingMore: '正在载入更多知识…',
       paginationError: '知识分页未返回有效的下一页位置。',
+      linkedItemIncomplete: '链接里的条目可能在没读完的后续页面里：读取中断了，还不能确定它是否存在。',
       directoryAria: '知识整理目录',
       confirmationBasis: '确认依据',
       updated: '更新时间',
@@ -276,8 +277,6 @@ export const knowledgeWorkspaceMessages = {
       classificationReasonable: '合理',
       classificationAdjust: '需调整',
       conflictClassification: '冲突：{conflict} · 分类：{classification}',
-      placeholderTitle: '选择一个节点或关系',
-      placeholderCopy: '点击后查看完整说明、来源证据和关联关系。',
     },
   },
   'en-US': {
@@ -443,6 +442,7 @@ export const knowledgeWorkspaceMessages = {
       batchConfirm: 'Batch confirm · {count} group | Batch confirm · {count} groups',
       loadingMore: 'Loading more knowledge…',
       paginationError: 'Knowledge pagination did not return a valid next offset.',
+      linkedItemIncomplete: 'The linked item may be on a page that was not read: reading stopped, so it is not yet known whether the item exists.',
       directoryAria: 'Knowledge organizer directory',
       confirmationBasis: 'Confirmation basis',
       updated: 'Updated',
@@ -557,8 +557,6 @@ export const knowledgeWorkspaceMessages = {
       classificationReasonable: 'Reasonable',
       classificationAdjust: 'Needs adjustment',
       conflictClassification: 'Conflict: {conflict} · classification: {classification}',
-      placeholderTitle: 'Select a node or relationship',
-      placeholderCopy: 'Select an item to view its full description, source evidence, and relationships.',
     },
   },
 } as const
