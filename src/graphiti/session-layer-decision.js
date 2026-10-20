@@ -1,5 +1,6 @@
 import { debuglog } from 'node:util';
 import { activeAgentHostSession } from '../app/agent-request-context.js';
+import { isFuliProcessSession } from '../mcp/session-id.js';
 
 // The session layer of what FULI does for a caller (rec#5 C3 and C3b): whether
 // the sessions a call speaks for may be recorded (a pause or a stop says no)
@@ -76,20 +77,26 @@ function decideSessions(application, { boundSessionId = null, sessionId = null, 
     debug('session decision on a port without a session layer; no session is paused or stopped there');
     return ALLOWED;
   }
+  // An identity FULI gave a process is no session that started under the
+  // default for new sessions, so only a pause or stop said for it counts.
+  const stateOf = id => {
+    const state = application.getSessionCapturePause(id);
+    return isFuliProcessSession(id) && state.fuli.basis === 'default' ? { ...state, stopped: false } : state;
+  };
   try {
     // The call's own sessions: its task's, any it names and, without a task,
     // the host session of the call. With a task, the host session is checked
     // below even when the MCP layer filled it in as the named session.
     const own = boundSessionId ? [boundSessionId, sessionId === host ? null : sessionId] : [sessionId, host];
     for (const id of new Set(own.filter(Boolean))) {
-      const refusal = policy.refusal(application.getSessionCapturePause(id));
+      const refusal = policy.refusal(stateOf(id));
       if (refusal) return refusal;
     }
     // A task of another session than the call's host: the client started a new
     // session inside the MCP process (Claude Code /clear) and that process is
     // still bound to the old one. The old one's state still applies, but it is
     // not this session's (rec#5 C3, limited support).
-    if (boundSessionId && host && host !== boundSessionId && policy.refusal(application.getSessionCapturePause(host))) {
+    if (boundSessionId && host && host !== boundSessionId && policy.refusal(stateOf(host))) {
       return denied('session_binding_stale');
     }
     if (!agentCall) return ALLOWED;

@@ -176,10 +176,12 @@ test('C3b-3 after stop the host session blocks new injection, automatic writes a
 
   // The task token from before the stop records nothing and starts no collaboration.
   const checkpoint = await finishTask(f, { taskContextToken: token, context: before.context.context });
-  assert.equal(checkpoint.capture_status, 'capture_disabled');
+  assert.deepEqual([checkpoint.status, checkpoint.reason], ['fuli_off', 'session_stopped']);
   const usage = await mcpCall(f, host(SESSION_A), 'record_knowledge_usage', { personalSpaceId: 'synthetic-space',
     taskId: 'synthetic-task', items: [{ itemId: 'synthetic-item', itemKind: 'entity', useKind: 'applied' }] });
-  assert.deepEqual([usage.route, usage.reason], ['disabled', 'session_stopped']);
+  assert.deepEqual([usage.status, usage.reason], ['fuli_off', 'session_stopped']);
+  // Recording refuses on its own too, whatever path a write takes.
+  assert.equal((await captureDecision(f.app, { sourceApplication: 'codex', boundSessionId: SESSION_A })).reason, 'session_stopped');
   for (const [name, input] of [['message_agent', { taskContextToken: token, sourceApplication: 'codex', to: 'project:novel', body: 'Help.' }],
     ['role_work', { action: 'claim', taskContextToken: token, sourceApplication: 'codex' }],
     ['coordinate_project_agent_task', { taskContextToken: token, sourceApplication: 'codex' }],
@@ -198,6 +200,38 @@ test('C3b-3 after stop the host session blocks new injection, automatic writes a
   const workerStart = await codexEntry(f, f.dirs.novel, { session: 'synthetic-worker', prompt: 'fuli start' });
   assert.match(workerStart.output.reason, /由已停用 FULI 的会话发起.*状态未改变/);
   assert.equal(record(f)('synthetic-worker').stopped, true);
+});
+
+// Fable review of #251: a read the model starts is injection too, so every tool that returns
+// stored memory or preferences is refused for a stopped session, while another session and the
+// person's own reads outside the session keep working.
+const MEMORY_READS = [['search_knowledge_graph', { query: 'chapter' }], ['search_current_project_knowledge', { queries: ['chapter'] }],
+  ['search_connected_knowledge', { query: 'chapter' }], ['get_knowledge_graph', {}], ['search_human_knowledge_changes', {}],
+  ['get_project_agent_context', {}], ['get_project_agent_memory', {}], ['export_project_agent_memory', {}],
+  ['read_agent_conversation', {}], ['list_agent_conversations', {}], ['list_preference_conflicts', {}],
+  ['discover_personal_global_preference_candidates', {}], ['list_knowledge_review_candidates', {}],
+  ['recommend_next_workflow_steps', {}], ['get_agent_handoff', {}], ['read_agent_messages', {}], ['list_personal_projects', {}]];
+
+test('C3b-3 every memory read a model starts is refused for a stopped session, and only for it', async (t) => {
+  const f = await fixture(t);
+  await codexEntry(f, f.dirs.novel, { session: SESSION_A });
+  await codexEntry(f, f.dirs.novel, { session: SESSION_B });
+  await codexLine(f, SESSION_A, 'fuli stop');
+  for (const [name, input] of MEMORY_READS) {
+    for (const context of [agentHostRequestContext(null, SESSION_A), null]) {
+      const refused = await callAgentTool(f.app, name, { ...input, sourceApplication: 'codex', ...(context ? {} : { sessionId: SESSION_A }) },
+        context);
+      assert.deepEqual([refused?.status, refused?.reason], ['fuli_off', 'session_stopped'], `${name} ${context ? 'host' : 'named'}`);
+    }
+  }
+  // Settings and the session's own lifecycle stay open, so the Agent can say why.
+  const policy = await callAgentTool(f.app, 'get_capture_policy', { sourceApplication: 'codex' }, agentHostRequestContext(null, SESSION_A));
+  assert.equal(policy.current.reason, 'session_stopped');
+  // Another window, and the person's own read from the console or a terminal, still search.
+  const read = { query: 'chapter', sourceApplication: 'codex' };
+  for (const context of [agentHostRequestContext(null, SESSION_B), agentHostRequestContext(null, 'fuli-host-synthetic-terminal'), null]) {
+    assert.ok(Array.isArray((await callAgentTool(f.app, 'search_knowledge_graph', read, context)).facts));
+  }
 });
 
 // A Codex session whose native transcript the Stop hook imports, as the real hook does.
@@ -248,12 +282,17 @@ test('C3b-4 restart imports nothing from the stopped stretch, and a capture in f
   assert.equal(imported(f).includes(PRIVATE), false, 'the late write was refused');
 });
 
-test('C3b-4 the stop answer says what it cannot undo', async (t) => {
+test('C3b-4 the switch answers say what a stop cannot undo and who else can turn it', async (t) => {
   const f = await fixture(t);
   const answer = await codexLine(f, SESSION_A, 'fuli stop');
-  assert.match(answer, /已发给模型的上下文无法撤回，需要完全隔离请新开会话/);
   assert.match(answer, /已在运行的动作不会被撤回，它之后的结果不再自动记录或触发协作/);
   assert.match(answer, /其他会话、全局服务和已有记忆不受影响/);
+  for (const line of ['fuli stop', 'fuli status', 'fuli start', 'fuli start', 'fuli restart', 'fuli status']) {
+    const reply = await codexLine(f, SESSION_A, line);
+    assert.match(reply, /停用不会撤回已发给模型的上下文，需要完全隔离请新开会话/, line);
+    assert.match(reply, /能运行 shell 的 Agent 也能执行 `fuli session …` 改变这个开关，与它能读写本地文件属同等信任/, line);
+  }
+  assert.match(answer, /能运行 shell 的 Agent 也能执行/);
 });
 
 test('C3b-5 one session stopping leaves another alone, a new session neither inherits nor loses state', async (t) => {
@@ -275,7 +314,7 @@ test('C3b-5 one session stopping leaves another alone, a new session neither inh
   const usage = await mcpCall(f, host(SESSION_A), 'record_knowledge_usage', { personalSpaceId: 'synthetic-space',
     taskId: 'synthetic-task', items: [{ itemId: 'synthetic-item', itemKind: 'entity', useKind: 'applied' }],
     taskContextToken: cleared.context.taskContextToken });
-  assert.deepEqual([usage.route, usage.reason], ['disabled', 'session_binding_stale']);
+  assert.deepEqual([usage.status, usage.reason], ['fuli_off', 'session_binding_stale']);
 });
 
 test('C3b-5 a switch state that cannot be read records nothing and serves nothing', async (t) => {

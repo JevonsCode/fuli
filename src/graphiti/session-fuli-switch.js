@@ -96,7 +96,8 @@ async function recording(application, scope) {
 
 function answer(status, action, fuli, recordingNow = null) {
   return { status, action, fuli, ...(recordingNow ? { recording: recordingNow } : {}),
-    message: [MESSAGES[status](fuli), recordingLine(fuli, recordingNow)].filter(Boolean).join(' ') };
+    message: [MESSAGES[status](fuli), recordingLine(fuli, recordingNow), NOTED.has(status) ? SWITCH_NOTE : null]
+      .filter(Boolean).join(' ') };
 }
 
 function recordingLine(fuli, recordingNow) {
@@ -104,8 +105,13 @@ function recordingLine(fuli, recordingNow) {
 }
 
 const STOP_EFFECT = '之后不再注入记忆、不再自动记录、不再由本会话自动发起协作；其他会话、全局服务和已有记忆不受影响。'
-  + '已发给模型的上下文无法撤回，需要完全隔离请新开会话；已在运行的动作不会被撤回，它之后的结果不再自动记录或触发协作。'
+  + '已在运行的动作不会被撤回，它之后的结果不再自动记录或触发协作。'
   + '输入 /fuli start 可重新启用。';
+// Said with every answer about the switch (Fable review of #251): what a stop
+// cannot do, and who else can turn it.
+const SWITCH_NOTE = '须知：停用不会撤回已发给模型的上下文，需要完全隔离请新开会话；'
+  + '能运行 shell 的 Agent 也能执行 `fuli session …` 改变这个开关，与它能读写本地文件属同等信任。';
+const NOTED = new Set(['stopped', 'already_stopped', 'started', 'already_started', 'restarted', 'status']);
 const MESSAGES = Object.freeze({
   stopped: fuli => `${sinceNotice('FULI 已在本会话停用', fuli.since)}：${STOP_EFFECT}`,
   already_stopped: fuli => fuli.basis === 'default'

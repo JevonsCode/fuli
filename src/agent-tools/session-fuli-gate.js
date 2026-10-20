@@ -1,32 +1,35 @@
 import { sessionsMayBeOff, sessionUseDecision } from '../graphiti/session-layer-decision.js';
 import { captureNotice } from '../graphiti/capture-notice.js';
 
-// Tools FULI does not serve to a session it is off for (rec#5 C3b): task entry
-// and preference recovery, which inject memory, and the tools that start
-// collaboration (workers, loans, assignments, runs, schedules, role work,
-// Tonborg, employees and other Agents). Reads the person asks for and writes,
-// which the capture decision already refuses, are not listed. The session is
-// the one the call's task token was bound to, the host session of the call or
-// a session it names (session-layer-decision.js), never one a model can
-// choose to allow it.
-const SERVED_TOOLS = new Set([
-  'begin_task_context', 'get_collaboration_preferences', 'read_task_preferences', 'get_user_taste_skill',
-  'plan_agent_collaboration', 'request_agent_loan', 'coordinate_project_agent_task', 'submit_project_agent_task',
-  'create_project_agent_assignment', 'replace_project_agent_assignment', 'control_project_agent_task_run',
-  'manage_project_agent_schedule', 'resume_agent_conversation', 'review_with_tonborg', 'assess_agent_action',
-  'assess_task_completion', 'role_work', 'call_employee_tool', 'recruit_employee', 'request_agent_attention',
-  'message_agent', 'agent_chat', 'reply_agent_message'
+// What an Agent may still call for a session FULI is off for (rec#5 C3b).
+// Every other tool returns stored memory or preferences to the model (entry,
+// recall, searches, Agent memory, conversations, knowledge, reviews, team and
+// task history), starts or answers collaboration, or writes, so it is refused:
+// the server instructions tell the model to call some of them every turn, and
+// a read the model starts is injection all the same. A new tool is refused
+// until it is listed here. The person's own reads stay available outside the
+// session: the console and `fuli mcp --call` name no stopped session.
+// These only report settings or the session's own task lifecycle, cancel
+// something already sent, or hold the local runtime.
+const OPEN_TOOLS = new Set([
+  'get_capture_policy', 'explain_settings', 'list_agent_interfaces', 'get_graphiti_status',
+  'update_capture_policy', 'verify_task_checkpoint',
+  'cancel_agent_message', 'cancel_agent_attention',
+  'acquire_runtime_lease', 'refresh_runtime_lease', 'release_runtime_lease'
 ]);
 export const SESSION_FULI_OFF = 'fuli_off';
 const GUIDANCE = 'FULI is off for this session, so nothing was read, injected, recorded or started. Do not call FULI tools for this session or add an agent_receipt; only the person can turn it on (/fuli start).';
 
-// Whether a call must first ask which sessions it speaks for: a served tool
-// while FULI may be off for some session. Otherwise it runs as before.
+// Whether a call must first ask which sessions it speaks for: a tool that is
+// not open while FULI may be off for some session. Otherwise it runs as before.
 export function needsSessionFuliCheck(app, name) {
-  return SERVED_TOOLS.has(name) && sessionsMayBeOff(app);
+  return !OPEN_TOOLS.has(name) && sessionsMayBeOff(app);
 }
 
-// The refusal a served tool returns instead of running, or null.
+// The refusal a tool returns instead of running, or null. The session is the
+// one the call's task token was bound to, the host session of the call or a
+// session it names (session-layer-decision.js), never one a model can choose
+// to allow it.
 export async function sessionFuliRefusal(app, input = {}) {
   const decision = sessionUseDecision(app, { sourceApplication: input?.sourceApplication ?? 'other',
     sessionId: input?.sessionId ?? input?.sourceSessionId ?? null, boundSessionId: await boundSession(app, input) });
