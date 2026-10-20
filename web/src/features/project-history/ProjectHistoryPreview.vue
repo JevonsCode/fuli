@@ -177,7 +177,8 @@ function mergeLabel(item: ProjectPreview) {
 /* A slim bar under the projects, on the page gutter; the preview itself is a dialog. */
 .project-history {
   display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 16px;
-  margin: 0 var(--page-gutter) 12px; padding: 10px 16px; border: 1px solid var(--color-border);
+  /* The right padding keeps the button clear of the floating design-lab launcher in the bottom-right corner. */
+  margin: 0 var(--page-gutter) 12px; padding: 10px 72px 10px 16px; border: 1px solid var(--color-border);
   border-radius: var(--radius-card); background: var(--color-surface);
 }
 .project-history-hint, .project-history-summary { margin: 2px 0 0; color: var(--color-muted); font-size: 13px; line-height: 1.6; }

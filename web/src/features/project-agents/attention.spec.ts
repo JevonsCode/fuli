@@ -2,7 +2,7 @@ import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
-vi.mock('@/api/client', () => ({ getJson, postJson }))
+vi.mock('@/api/client', async importOriginal => ({ ...await importOriginal<typeof import('@/api/client')>(), getJson, postJson }))
 import { attentionTaskHref, useAgentAttention } from './attention-store'
 import AgentHand from './AgentHand.vue'
 import AttentionWorkspace from './AttentionWorkspace.vue'
@@ -112,6 +112,15 @@ describe('Agent attention', () => {
     await flushPromises()
     expect(document.body.textContent).toContain('Conflict')
     expect(document.querySelector('textarea')!.value).toBe('方案 A')
+    wrapper.unmount()
+  })
+  it('names the Agent task in the quick look header, beside the Agent and project', async () => {
+    getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents/') ? [] : { items: [{ ...item, taskId: 'task-a' }], total: 1, counts: {} })
+    const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [], openRequestId: 'request-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises(); useAgentAttention().show(); await flushPromises()
+    const link = document.querySelector<HTMLAnchorElement>('[role=dialog] [data-slot=dialog-description] .attention-task-link')
+    expect(link?.getAttribute('href')).toBe('/project-agents?agent=agent-a&project=project-a&task=task-a#task-task-a')
+    expect(document.querySelectorAll('[role=dialog] .attention-task-link')).toHaveLength(1)
     wrapper.unmount()
   })
   it('requires an explicit selection and sends the selected reply with its optional note', async () => {

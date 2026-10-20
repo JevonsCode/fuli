@@ -10,6 +10,7 @@
 .attention-request-title:hover:not(:disabled) { color: var(--color-accent); }
 .attention-request-title:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; border-radius: 4px; }
 .attention-request-title:disabled { cursor: default; }
+.attention-handled { margin: 0; padding: 12px 16px; border-radius: var(--radius-control); background: var(--color-surface-subtle); color: var(--color-ink-soft); font-size: 14px; }
 .attention-task-link { justify-self: start; color: var(--color-accent); font-size: 13px; text-underline-offset: 4px; }
 .attention-error { flex: 0 0 auto; border-radius: var(--radius-control); display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; color: var(--color-danger); background: var(--color-danger-soft); font-size: 13px; }
 .attention-empty { flex: 1; align-content: center; display: grid; justify-items: center; gap: 16px; padding: 72px 24px; text-align: center; color: var(--color-muted); }

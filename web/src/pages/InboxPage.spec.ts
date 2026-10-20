@@ -4,10 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { useConsoleStore } from '@/stores/console'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
+import { ApiError } from '@/api/client'
 import InboxPage from './InboxPage.vue'
 
 const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
-vi.mock('@/api/client', () => ({ getJson, postJson, putJson: vi.fn(), patchJson: vi.fn() }))
+vi.mock('@/api/client', async importOriginal => ({ ...await importOriginal<typeof import('@/api/client')>(), getJson, postJson, putJson: vi.fn(), patchJson: vi.fn() }))
 
 const request = (id: string, agentId = 'agent-a') => ({
   requestId: id, personalSpaceId: 'space-a', personalProjectId: 'project-a', agentId, taskId: null,
@@ -85,6 +86,8 @@ describe('Inbox page', () => {
   it('opens a request from its card and closes back to the queue', async () => {
     const { router, wrapper } = await setup('/inbox')
     expect(document.querySelector('[role=dialog]')).toBeNull()
+    // The shell's top-bar refresh reads the queue again; the page has no second one.
+    expect(wrapper.get('.attention-toolbar').findAll('button').map(button => button.text())).not.toContain('刷新')
     await wrapper.findAll('.attention-request-title')[1]!.trigger('click'); await flushPromises()
     expect(router.currentRoute.value.query).toEqual({ item: 'space-a/request-b' })
     expect(dialogTitle()).toBe('Synthetic request-b')
@@ -105,5 +108,84 @@ describe('Inbox page', () => {
     expect(wrapper.findAll('.attention-request').map(item => item.text())).toEqual([expect.stringContaining('Synthetic request-b')])
     expect(wrapper.get('.attention-page-count').text()).toContain('1')
     expect(router.currentRoute.value.query).toEqual({})
+  })
+
+  describe('a linked request beyond the first page', () => {
+    let exact: (requestId: string) => unknown
+    beforeEach(() => {
+      // 101 open requests; the list API honours limit and offset like the real one.
+      open = Array.from({ length: 101 }, (_, index) => request(`request-${index + 1}`))
+      exact = requestId => {
+        const found = open.find(item => item.requestId === requestId)
+        if (!found) throw new ApiError('attention request not found', 404)
+        return found
+      }
+      getJson.mockImplementation(async (url: string) => {
+        const query = new URL(url, 'http://fixture').searchParams
+        if (url.startsWith('/api/project-agents?')) return [{ agentId: 'agent-a', profile: { name: 'Synthetic Agent', displayName: 'Milo' } }]
+        if (url.startsWith('/api/agent-attention/request?')) return exact(query.get('requestId')!)
+        if (url.startsWith('/api/agent-attention?')) {
+          const offset = Number(query.get('offset') ?? 0)
+          return { items: open.slice(offset, offset + Number(query.get('limit'))), total: open.length, counts: { 'agent-a': open.length } }
+        }
+        throw new Error(`Unexpected request: ${url}`)
+      })
+    })
+    const exactReads = () => getJson.mock.calls.map(([url]) => String(url)).filter(url => url.startsWith('/api/agent-attention/request?'))
+    const peekText = () => document.querySelector('[role=dialog]')?.textContent ?? ''
+
+    it('opens the real request with its reply form, read by identity in the active space', async () => {
+      const { wrapper } = await setup('/inbox?request=request-101')
+      expect(wrapper.findAll('.attention-request')).toHaveLength(100)
+      expect(dialogTitle()).toBe('Synthetic request-101')
+      expect(peekText()).toContain('Answer the synthetic question.')
+      expect(textarea()).not.toBeNull()
+      expect(exactReads()).toEqual(['/api/agent-attention/request?personalSpaceId=space-a&requestId=request-101'])
+
+      await type('Synthetic reply beyond the page')
+      document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flushPromises()
+      expect(postJson).toHaveBeenCalledWith('/api/agent-attention/respond', expect.objectContaining({ personalSpaceId: 'space-a', requestId: 'request-101', expectedRevision: 1 }))
+    })
+
+    it('does not read again a request already on the loaded page', async () => {
+      await setup('/inbox?request=request-100')
+      expect(dialogTitle()).toBe('Synthetic request-100')
+      expect(exactReads()).toEqual([])
+    })
+
+    it('says a handled request needs no reply, and offers no form', async () => {
+      exact = requestId => ({ ...request(requestId), status: 'resolved', revision: 2 })
+      await setup('/inbox?request=request-handled')
+      expect(dialogTitle()).toBe('Synthetic request-handled')
+      expect(peekText()).toContain('这个请求已经处理，不需要再回复。')
+      expect(document.querySelector('textarea')).toBeNull()
+    })
+
+    it('says a request that does not exist is not found', async () => {
+      await setup('/inbox?request=request-unknown')
+      expect(peekText()).toContain('当前空间里找不到这个请求')
+      expect(peekText()).not.toContain('读取失败')
+      expect(document.querySelector('textarea')).toBeNull()
+    })
+
+    it('tells a failed read apart from a missing request, and retries it', async () => {
+      let fail = true
+      exact = requestId => { if (fail) throw new ApiError('Synthetic outage', 503); return request(requestId) }
+      await setup('/inbox?request=request-later')
+      expect(peekText()).toContain('这条请求读取失败，请重试。')
+      expect(peekText()).not.toContain('找不到')
+      fail = false
+      const retry = [...document.querySelectorAll<HTMLButtonElement>('[role=dialog] button')].find(button => button.textContent?.trim() === '重试')!
+      retry.click(); await flushPromises()
+      expect(dialogTitle()).toBe('Synthetic request-later')
+      expect(textarea()).not.toBeNull()
+    })
+
+    it('treats a request from another space as not found', async () => {
+      exact = requestId => ({ ...request(requestId), personalSpaceId: 'space-b' })
+      await setup('/inbox?request=request-foreign')
+      expect(peekText()).toContain('当前空间里找不到这个请求')
+      expect(document.querySelector('textarea')).toBeNull()
+    })
   })
 })

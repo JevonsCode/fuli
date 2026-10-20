@@ -8,7 +8,7 @@ import { queryConversations, resumeConversation, updateConversationPolicy } from
 import { recordUserTriage } from './conversation-triage.js';
 import { acceptTopicProposal, declineTopicProposal, listTopicProposals } from './topic-proposals.js';
 import { agentProjectResolution } from './agent-knowledge-workflows.js';
-import { listAgentAttention, changeAgentAttention, respondToAgentAttention } from './agent-attention.js';
+import { listAgentAttention, getAgentAttention, changeAgentAttention, respondToAgentAttention } from './agent-attention.js';
 import { loadProjectTeam } from './project-team-view.js';
 import { dismissProjectAgent, getAgentHandoff, listAgentDismissalLessons } from './project-agent-dismissal.js';
 import {
@@ -107,6 +107,11 @@ export class ProjectAgentControlPlaneApplication {
   async listAgentAttention(input) {
     this.#assertSpace(input.personalSpaceId);
     return listAgentAttention(this, input);
+  }
+
+  async getAgentAttention(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return getAgentAttention(this, input);
   }
 
   async requestAgentAttention(input) {

@@ -11,7 +11,7 @@ import type { PersonalProject } from '@/types'
 import { useAgentRecords } from '@/features/agent-profile/useAgentRecords'
 import AttentionPeek from './AttentionPeek.vue'
 import type { AttentionAnswer, AttentionReplyDraft } from './attention-replies'
-import { inboxLocation, useAgentAttention, type AgentAttention } from './attention-store'
+import { inboxLocation, useAgentAttention, type AgentAttention, type AttentionPeekState } from './attention-store'
 
 // The inbox body: the queue as cards on one canvas; a request opens in a
 // centred quick look (Peek) with its reply. The page keeps which request is
@@ -32,7 +32,19 @@ const selectedId = computed(() => props.openRequestId ?? '')
 const busy = ref('')
 let operation = 0
 const responseError = computed(() => attention.responseErrors[selectedId.value] ?? '')
-const selected = computed(() => attention.items.find(item => item.requestId === selectedId.value))
+// A request on the loaded page comes from the queue; any other is read by its identity,
+// so a link to a request beyond the first page still opens it.
+const linked = computed(() => attention.linked?.requestId === selectedId.value ? attention.linked : null)
+const selected = computed(() => attention.items.find(item => item.requestId === selectedId.value) ?? linked.value?.item)
+const peekState = computed<AttentionPeekState>(() => {
+  if (selected.value) return selected.value.status === 'open' ? 'open' : 'handled'
+  return linked.value?.state === 'missing' || linked.value?.state === 'failed' ? linked.value.state : 'loading'
+})
+watch([selectedId, () => attention.open && !attention.loading], ([id, queueRead]) => {
+  if (id && queueRead && !attention.items.some(item => item.requestId === id) && attention.linked?.requestId !== id) {
+    void attention.loadRequest(id)
+  }
+}, { immediate: true })
 const draft = computed<AttentionReplyDraft>({
   get: () => attention.drafts[selectedId.value] ?? { choice: '', text: '' },
   set: value => { if (selected.value) attention.drafts[selectedId.value] = { ...value, revision: selected.value.revision } },
@@ -49,7 +61,7 @@ watch(() => props.personalSpaceId, id => {
   operation++; busy.value = ''
   attention.setSpace(id === 'current' ? '' : id)
 }, { immediate: true })
-watch(() => attention.items, items => {
+watch(() => linked.value?.item ? [...attention.items, linked.value.item] : attention.items, items => {
   for (const item of items) {
     const saved = attention.drafts[item.requestId]
     if (saved && saved.revision !== item.revision) {
@@ -111,7 +123,6 @@ async function respond(item: AgentAttention, answer: AttentionAnswer) {
       <div class="ml-auto flex items-center gap-2">
         <GrowthLoading v-if="attention.loading && attention.items.length" variant="inline" :label="t('attention.loading')" />
         <Button v-if="attention.agentId" as-child variant="outline" size="sm"><RouterLink :to="inboxLocation()">{{ t('attention.all') }}</RouterLink></Button>
-        <Button variant="outline" size="sm" :disabled="attention.loading || Boolean(busy)" @click="attention.refresh()">{{ t('attention.refresh') }}</Button>
       </div>
     </div>
     <p v-if="attention.lastReply" class="attention-outcome" :class="`is-${attention.lastReply.status}`" role="status">{{ replyOutcome }}</p>
@@ -140,7 +151,7 @@ async function respond(item: AgentAttention, answer: AttentionAnswer) {
       <DialogContent size="lg" data-attention-peek-dialog @open-auto-focus="focusReply" @close-auto-focus="returnFocus">
         <AttentionPeek
           :item="selected"
-          :loading="attention.loading || !attention.open"
+          :state="peekState"
           :agent-name="selected ? agentName(selected) : ''"
           :project-name="selected ? projectName(selected) : ''"
           :draft="draft"
@@ -149,6 +160,7 @@ async function respond(item: AgentAttention, answer: AttentionAnswer) {
           :error="responseError"
           @update:draft="draft = $event"
           @submit="selected && respond(selected, $event)"
+          @retry="attention.loadRequest(selectedId)"
         />
       </DialogContent>
     </Dialog>
