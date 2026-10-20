@@ -28,6 +28,8 @@ Install and Agent connection:
   employee install BUILT_PACKAGE_DIRECTORY [--replace] [--runtime-config FILE]
   app list [--agent AGENT_ID] | show APP_ID | approve APP_ID VERSION | disable APP_ID | rollback APP_ID VERSION  (Agent apps; approve and rollback ask in this terminal)
   app delete APP_ID [--data [--output DIR]] | export APP_ID --output DIR  (delete code first, data second) [--runtime-config FILE]
+  models set-key SECRET_REF [--data-dir DIR]  (built-in Agent model API key; hidden entry or stdin, never echoed)
+  models check assistant|bole|jefa|tonborg [--data-dir DIR]  (synthetic connection check of one role's model backend)
   worker dispatch --bindings FILE [--runtime-config FILE]  (trusted local host; pipe {plan, idempotencyKey} on stdin)
   update [setup options]  (already latest: no restart; otherwise refresh existing connections only)
   setup --connected-only [setup options]  (repair existing connections without adding clients)

@@ -7,6 +7,7 @@ import { handleAgentAppApiRequest } from './agent-app-api-router.js';
 import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
 import { handlePeerApiRequest } from '../agent-peer/http.js';
 import { handleJudgmentApiRequest } from '../judgment/http.js';
+import { handleModelBackendApiRequest } from '../model-backends/http.js';
 import { FULI_VERSION } from '../package-metadata.js';
 
 export async function handleApiRequest({
@@ -22,6 +23,7 @@ export async function handleApiRequest({
   if (await handlePeerApiRequest({ request, response, url, peer })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
+  if (await handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends })) return true;
 
   if (url.pathname === '/api/health' && request.method === 'GET') {
     sendJson(response, 200, {

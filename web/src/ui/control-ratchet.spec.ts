@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 // Pages compose the design system instead of hand-building controls. These
 // counts may only go down: lower them in the same change that rebuilds a page
-// on Button / UiIconButton / UiToggle. 2026-10-20 baseline: 43 / 3, after every
-// action button moved to the shared shadcn-vue Button; the rest are tabs,
-// toggles, list rows, cards and pickers waiting for their own components.
-const BASELINE = { button: 43, switch: 3 }
+// on Button / UiIconButton / UiToggle or a shadcn-vue component. 2026-10-20:
+// 43 / 3 after action buttons moved to the shared Button; 42 / 3 after the
+// Agent profile tabs moved to shadcn-vue Tabs. The rest are controls
+// deliberately deferred to their own components (tabs, toggle groups, list
+// rows, cards, pickers), and a few are still actions waiting to move, such as
+// the preferences page's "show more".
+const BASELINE = { button: 42, switch: 3 }
 const templates = import.meta.glob<string>('../**/*.vue', { query: '?raw', import: 'default', eager: true })
 const outsideDesignSystem = Object.entries(templates).filter(([file]) => !file.startsWith('./')).map(([, source]) => source)
 // The classes the shared Button replaced. A template is where a class gets

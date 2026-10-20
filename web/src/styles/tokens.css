@@ -19,6 +19,10 @@
   --scene-ambient: #8fa2c8; --scene-sun: #fff2dc; --scene-rim: #7fb4ff; --scene-orbit: #bfd0ff; --scene-star: #dfe8ff;
   --scene-moon: #9fb4d6; --scene-moon-done: #6f7a86; --scene-glow: #ffffff;
   --page-max: 1680px;
+  /* Rebuilt pages (D-03): one centred work canvas; wider screens add
+     collection columns instead of stretching a card. Forms stay one column. */
+  --canvas-max: 1840px;
+  --form-max: 896px;
   --measure: 72ch;
   --page-gutter: clamp(20px, 2.4vw, 56px);
   --inspector-width: clamp(320px, 24vw, 460px);

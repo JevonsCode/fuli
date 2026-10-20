@@ -6,7 +6,9 @@ const returnPosition = { spaceId: '', expanded: false, scrollTop: 0 }
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import UiSelect from '@/ui/UiSelect.vue'
 import { agentDisplayName } from '@/features/agent-profile/profile-model'
 import { currentWork, overviewTaskTitle, overviewOwnerId, overviewOpenRequest, overviewAttentionTaskHref, overviewTaskHref, recentProjects } from '@/features/overview/overview-data'
@@ -14,6 +16,7 @@ import { useOverviewData } from '@/features/overview/useOverviewData'
 import OverviewReadStatus from '@/features/overview/OverviewReadStatus.vue'
 import OverviewExcerpt from '@/features/overview/OverviewExcerpt.vue'
 import { inboxLocation, useAgentAttention } from '@/features/project-agents/attention-store'
+import { taskStatusTone } from '@/features/project-agents/task-labels'
 import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import { personalProjectsPath } from '@/router/paths'
@@ -124,154 +127,157 @@ const publicServiceStatus = computed(() => store.publicRuntimeStatus)
 
 <template>
   <section ref="page" class="view overview-view">
-    <template v-if="bootstrapLoading">
-      <GrowthLoading :label="t('overview.read.scope')" />
-      <p v-if="scopeSlow" role="status">{{ t('overview.read.slow') }}</p>
-    </template>
-    <div v-else-if="scopeTimedOut || !state || data.denied.value" class="overview-scope-error" role="alert">
-      <p>{{ t(data.denied.value ? 'overview.read.denied' : scopeTimedOut || store.refreshError === 'timeout' ? 'overview.read.timeout' : 'overview.read.scopeFailed') }}</p>
-      <GrowthLoading v-if="scopeRetrying" variant="inline" :label="t('overview.read.scope')" />
-      <Button variant="outline" :disabled="scopeRetrying" @click="retryScope">{{ t('overview.read.reload') }}</Button>
-    </div>
-    <div v-else class="overview-content-grid">
-      <section class="overview-section overview-attention-section" aria-labelledby="overview-attention-heading">
-        <header class="overview-section-header">
-          <h2 id="overview-attention-heading">{{ t('overview.sections.attention') }}</h2>
-          <div class="overview-request-actions">
-          <Button variant="ghost" :disabled="requests.loading" data-testid="overview-attention-retry" @click="data.loadRequests">{{ t('overview.attention.refresh') }}</Button>
-          <Button as-child variant="ghost"><RouterLink data-testid="overview-attention-all" :to="inboxLocation()">{{ requests.data && !requests.data.partial ? t('overview.attention.all', { count: requests.data.total }) : t('overview.attention.open') }}</RouterLink></Button>
-          </div>
-        </header>
-        <OverviewReadStatus :state="requests" :label="t('overview.attention.loading')" :failed="t('overview.attention.loadFailed')" @retry="data.loadRequests" />
-        <ul v-if="attentionItem" class="overview-attention-list">
-          <li :key="`${activeSpaceId}:${attentionItem.requestId}`" class="overview-attention-item" data-testid="overview-attention-item">
-            <div class="overview-request-copy">
-              <h3>{{ attentionItem.title?.trim() || t('overview.missing.requestTitle') }}</h3>
+    <div class="@container mx-auto w-full max-w-(--canvas-max)">
+      <template v-if="bootstrapLoading">
+        <GrowthLoading :label="t('overview.read.scope')" />
+        <p v-if="scopeSlow" role="status">{{ t('overview.read.slow') }}</p>
+      </template>
+      <Card v-else-if="scopeTimedOut || !state || data.denied.value" class="overview-scope-error flex-row flex-wrap items-center gap-3 px-5" role="alert">
+        <p class="m-0 min-w-0 flex-1">{{ t(data.denied.value ? 'overview.read.denied' : scopeTimedOut || store.refreshError === 'timeout' ? 'overview.read.timeout' : 'overview.read.scopeFailed') }}</p>
+        <GrowthLoading v-if="scopeRetrying" variant="inline" :label="t('overview.read.scope')" />
+        <Button variant="outline" :disabled="scopeRetrying" @click="retryScope">{{ t('overview.read.reload') }}</Button>
+      </Card>
+      <div v-else class="overview-content-grid grid items-start gap-6">
+        <Card as="section" class="overview-attention-section col-span-full gap-3" aria-labelledby="overview-attention-heading">
+          <header class="flex flex-wrap items-center justify-between gap-2 px-5">
+            <h2 id="overview-attention-heading" class="text-lg font-semibold">{{ t('overview.sections.attention') }}</h2>
+            <div class="flex flex-wrap items-center gap-1">
+              <Button variant="ghost" size="sm" :disabled="requests.loading" data-testid="overview-attention-retry" @click="data.loadRequests">{{ t('overview.attention.refresh') }}</Button>
+              <Button as-child variant="ghost" size="sm"><RouterLink data-testid="overview-attention-all" :to="inboxLocation()">{{ requests.data && !requests.data.partial ? t('overview.attention.all', { count: requests.data.total }) : t('overview.attention.open') }}</RouterLink></Button>
+            </div>
+          </header>
+          <OverviewReadStatus class="px-5" :state="requests" :label="t('overview.attention.loading')" :failed="t('overview.attention.loadFailed')" @retry="data.loadRequests" />
+          <div v-if="attentionItem" :key="`${activeSpaceId}:${attentionItem.requestId}`" class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-5" data-testid="overview-attention-item">
+            <div class="min-w-0 flex-[1_1_420px]">
+              <h3 class="text-base font-semibold">{{ attentionItem.title?.trim() || t('overview.missing.requestTitle') }}</h3>
               <p class="overview-meta">{{ t('overview.attention.agent', { id: agentName(attentionItem.agentId) }) }} · {{ projectName(attentionItem.personalProjectId) }}</p>
               <OverviewExcerpt :text="attentionItem.requestedAction?.trim() || t('overview.attention.viewContent')" />
               <details v-if="attentionItem.detail" class="overview-request-detail"><summary>{{ t('overview.attention.detail') }}</summary><p>{{ attentionItem.detail }}</p></details>
             </div>
-            <div class="overview-request-actions">
+            <div class="flex flex-wrap items-center gap-2">
               <Button as-child><RouterLink data-testid="overview-attention-open" :to="inboxLocation(attentionItem.agentId, attentionItem.requestId)">{{ t(requests.error ? 'overview.attention.recheck' : 'overview.attention.respond') }}</RouterLink></Button>
-              <Button v-if="attentionItem.taskId" as-child variant="ghost"><RouterLink data-testid="overview-attention-task" :to="overviewAttentionTaskHref({ ...attentionItem, taskId: attentionItem.taskId })">{{ t('overview.attention.openTask') }}</RouterLink></Button>
+              <Button v-if="attentionItem.taskId" as-child variant="outline"><RouterLink data-testid="overview-attention-task" :to="overviewAttentionTaskHref({ ...attentionItem, taskId: attentionItem.taskId })">{{ t('overview.attention.openTask') }}</RouterLink></Button>
             </div>
-          </li>
-        </ul>
-        <p v-else-if="requests.data && !requests.error && !requests.loading" class="overview-empty">{{ t(requests.data.partial ? 'overview.read.partial' : 'overview.attention.empty') }}</p>
-      </section>
-
-      <section class="overview-section overview-work-section" aria-labelledby="overview-work-heading">
-        <header class="overview-section-header overview-work-header">
-          <div><h2 id="overview-work-heading">{{ t('overview.sections.currentWork') }}</h2><span v-if="tasks.data?.partial" class="ui-badge">{{ t('overview.read.partial') }}</span></div>
-          <div class="overview-work-controls">
-            <UiSelect :model-value="view" :options="viewOptions" :label="t('overview.views.label')" @update:model-value="chooseView" />
-            <Button v-if="!tasks.error" :disabled="tasks.loading" variant="ghost" data-testid="overview-work-retry" @click="data.loadTasks">{{ t('overview.work.refresh') }}</Button>
           </div>
-        </header>
-        <OverviewReadStatus :state="tasks" :label="t('overview.work.loading')" :failed="t('overview.work.loadFailed')" test-id="overview-work-retry" @retry="data.loadTasks" />
-        <OverviewReadStatus :state="names" :label="t('overview.missing.nameLoading')" :failed="t('overview.missing.nameUnavailable')" @retry="data.loadNames" />
-        <p v-if="names.data?.partial" class="overview-notice">{{ t('overview.missing.nameUnavailable') }} <Button variant="ghost" :disabled="names.loading" @click="data.loadNames">{{ t('overview.read.reload') }}</Button></p>
-        <p v-if="sceneFailed" class="overview-notice" role="status">{{ t('overview.views.fallback') }}</p>
-        <ConstellationBoard v-if="view === 'constellation' && (currentTasks.length || data.requestItems.value.length)" :board="board" />
-        <Workbench3D v-if="view === 'office' && (currentTasks.length || data.requestItems.value.length)" :key="activeSpaceId" :board="board" scene="office" @fallback="sceneFallback" @pick="pick" />
-        <div v-if="selectedTask && view !== 'list'" class="overview-selected" role="status">
-          <strong>{{ owner(selectedTask) }}</strong><p>{{ taskTitle(selectedTask) }} · {{ statusLabel(selectedTask.status) }}</p>
-          <Button as-child variant="ghost"><RouterLink :to="nextHref(selectedTask)">{{ nextLabel(selectedTask) }}</RouterLink></Button>
-        </div>
-        <div v-else-if="selectedRequest && view !== 'list'" class="overview-selected" role="status">
-          <strong>{{ agentName(selectedRequest.agentId) }}</strong><p>{{ selectedRequest.title?.trim() || t('overview.missing.requestTitle') }} · {{ t('workbench.projection.waiting') }}</p>
-          <Button as-child variant="ghost"><RouterLink :to="inboxLocation(selectedRequest.agentId, selectedRequest.requestId)">{{ t('overview.actions.request') }}</RouterLink></Button>
-        </div>
-        <p v-if="view !== 'list' && currentTasks.length" class="overview-meta">{{ t('overview.views.equivalent') }}</p>
-        <div v-if="currentTasks.length || (view !== 'list' && data.requestItems.value.length)">
-          <component :is="view === 'list' ? 'div' : 'details'" v-for="group in taskGroups" :key="group.id" :open="view === 'list' ? undefined : true" class="overview-task-group">
-            <summary v-if="view !== 'list'">{{ projectName(group.id) }}</summary>
-            <ul v-if="view !== 'list' && group.requests.length" class="overview-request-members">
-              <li v-for="request in group.requests" :key="request.requestId">
-                <p><strong>{{ agentName(request.agentId) }}</strong> · {{ request.title?.trim() || t('overview.missing.requestTitle') }} · {{ t('workbench.projection.waiting') }}</p>
-                <Button as-child variant="ghost"><RouterLink :to="inboxLocation(request.agentId, request.requestId)">{{ t('overview.actions.request') }}</RouterLink></Button>
+          <p v-else-if="requests.data && !requests.error && !requests.loading" class="overview-empty px-5">{{ t(requests.data.partial ? 'overview.read.partial' : 'overview.attention.empty') }}</p>
+        </Card>
+
+        <section class="overview-work-section @container min-w-0" aria-labelledby="overview-work-heading">
+          <header class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <h2 id="overview-work-heading" class="text-lg font-semibold">{{ t('overview.sections.currentWork') }}</h2>
+              <Badge v-if="tasks.data?.partial" variant="secondary">{{ t('overview.read.partial') }}</Badge>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <UiSelect class="overview-view-select" :model-value="view" :options="viewOptions" :label="t('overview.views.label')" @update:model-value="chooseView" />
+              <Button v-if="!tasks.error" :disabled="tasks.loading" variant="ghost" size="sm" data-testid="overview-work-retry" @click="data.loadTasks">{{ t('overview.work.refresh') }}</Button>
+            </div>
+          </header>
+          <OverviewReadStatus :state="tasks" :label="t('overview.work.loading')" :failed="t('overview.work.loadFailed')" test-id="overview-work-retry" @retry="data.loadTasks" />
+          <OverviewReadStatus :state="names" :label="t('overview.missing.nameLoading')" :failed="t('overview.missing.nameUnavailable')" @retry="data.loadNames" />
+          <p v-if="names.data?.partial" class="overview-notice">{{ t('overview.missing.nameUnavailable') }} <Button variant="ghost" size="sm" :disabled="names.loading" @click="data.loadNames">{{ t('overview.read.reload') }}</Button></p>
+          <p v-if="sceneFailed" class="overview-notice" role="status">{{ t('overview.views.fallback') }}</p>
+          <ConstellationBoard v-if="view === 'constellation' && (currentTasks.length || data.requestItems.value.length)" :board="board" />
+          <Workbench3D v-if="view === 'office' && (currentTasks.length || data.requestItems.value.length)" :key="activeSpaceId" :board="board" scene="office" @fallback="sceneFallback" @pick="pick" />
+          <Card v-if="selectedTask && view !== 'list'" class="overview-selected my-3 gap-1 px-4 py-3 shadow-md" role="status">
+            <strong>{{ owner(selectedTask) }}</strong><p>{{ taskTitle(selectedTask) }} · {{ statusLabel(selectedTask.status) }}</p>
+            <Button as-child variant="ghost" size="sm" class="self-start"><RouterLink :to="nextHref(selectedTask)">{{ nextLabel(selectedTask) }}</RouterLink></Button>
+          </Card>
+          <Card v-else-if="selectedRequest && view !== 'list'" class="overview-selected my-3 gap-1 px-4 py-3 shadow-md" role="status">
+            <strong>{{ agentName(selectedRequest.agentId) }}</strong><p>{{ selectedRequest.title?.trim() || t('overview.missing.requestTitle') }} · {{ t('workbench.projection.waiting') }}</p>
+            <Button as-child variant="ghost" size="sm" class="self-start"><RouterLink :to="inboxLocation(selectedRequest.agentId, selectedRequest.requestId)">{{ t('overview.actions.request') }}</RouterLink></Button>
+          </Card>
+          <p v-if="view !== 'list' && currentTasks.length" class="overview-meta">{{ t('overview.views.equivalent') }}</p>
+          <div v-if="currentTasks.length || (view !== 'list' && data.requestItems.value.length)" class="grid gap-4">
+            <component :is="view === 'list' ? 'div' : 'details'" v-for="group in taskGroups" :key="group.id" :open="view === 'list' ? undefined : true" class="overview-task-group">
+              <summary v-if="view !== 'list'">{{ projectName(group.id) }}</summary>
+              <ul v-if="view !== 'list' && group.requests.length" class="overview-request-members">
+                <li v-for="request in group.requests" :key="request.requestId">
+                  <p><strong>{{ agentName(request.agentId) }}</strong> · {{ request.title?.trim() || t('overview.missing.requestTitle') }} · {{ t('workbench.projection.waiting') }}</p>
+                  <Button as-child variant="ghost" size="sm"><RouterLink :to="inboxLocation(request.agentId, request.requestId)">{{ t('overview.actions.request') }}</RouterLink></Button>
+                </li>
+              </ul>
+              <!-- Wider canvases add columns instead of stretching a card. -->
+              <ul class="overview-work-list grid grid-cols-1 gap-3 @min-[640px]:grid-cols-2 @min-[1080px]:grid-cols-3 @min-[1440px]:grid-cols-4">
+                <li v-for="task in group.items" :key="`${activeSpaceId}:${task.personalProjectId}:${task.taskId}`"
+                  class="overview-current-work-item flex min-w-0 flex-col gap-1.5 rounded-lg border bg-card px-4 pt-3.5 pb-2.5 transition-[border-color,box-shadow]"
+                  :class="{ 'is-selected border-border-strong shadow-md': selected === `${task.personalProjectId}:${task.taskId}` }" data-testid="overview-current-work-item">
+                  <div class="flex items-start justify-between gap-3">
+                    <h3 class="overview-task-title min-w-0 flex-1 text-base font-semibold" :title="taskTitle(task)">{{ taskTitle(task) }}</h3>
+                    <Badge :variant="taskStatusTone(task.status)" :title="statusLabel(task.status)">{{ statusLabel(task.status) }}</Badge>
+                  </div>
+                  <p class="overview-meta">{{ t('overview.work.owner', { name: owner(task) }) }} · {{ projectName(task.personalProjectId) }}</p>
+                  <OverviewExcerpt v-if="task.status === 'blocked' || task.status === 'failed'" class="overview-reason" :text="task.failureReason?.trim() || t('overview.missing.reason')" />
+                  <div class="mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pt-1">
+                    <time class="overview-meta" :datetime="task.updatedAt || task.createdAt || undefined">{{ formatDate(task.updatedAt || task.createdAt) }}</time>
+                    <div class="ml-auto flex min-w-0 max-w-full flex-wrap gap-1">
+                      <Button v-if="view !== 'list'" variant="ghost" size="sm" :aria-label="t('overview.views.select', { name: owner(task) })" :aria-expanded="selected === `${task.personalProjectId}:${task.taskId}`" @click="selected = selected === `${task.personalProjectId}:${task.taskId}` ? '' : `${task.personalProjectId}:${task.taskId}`">{{ t('overview.views.inspect') }}</Button>
+                      <Button as-child variant="ghost" size="sm"><RouterLink :to="nextHref(task)">{{ nextLabel(task) }}</RouterLink></Button>
+                    </div>
+                  </div>
+                </li>
+              </ul>
+            </component>
+          </div>
+          <p v-else-if="tasks.data && !tasks.error && !tasks.loading" class="overview-empty">{{ t(tasks.data.partial ? 'overview.read.partial' : 'overview.work.empty') }}</p>
+          <Button v-if="allTaskCount > 6 && view === 'list'" variant="ghost" class="mt-2" :aria-expanded="expanded" @click="expanded = !expanded">{{ t(expanded ? 'overview.work.collapse' : 'overview.work.expand', { count: allTaskCount }) }}</Button>
+          <p v-if="tasks.data?.partial" class="overview-meta">{{ t('overview.work.loaded', { count: data.taskItems.value.length }) }}</p>
+        </section>
+
+        <aside class="overview-column grid min-w-0 gap-6">
+          <Card as="section" class="gap-1 pb-2" aria-labelledby="overview-projects-heading">
+            <h2 id="overview-projects-heading" class="px-5 text-lg font-semibold">{{ t('overview.sections.recentProjects') }}</h2>
+            <ul class="overview-project-list">
+              <li v-for="project in recentProjectItems" :key="project.id" data-testid="overview-recent-project">
+                <RouterLink :to="personalProjectsPath(activeSpaceId, 'overview', project.id)"><strong>{{ project.name }}</strong><span>{{ project.updatedAt ? formatDate(project.updatedAt) : t('overview.projects.noActivity') }}</span></RouterLink>
               </li>
             </ul>
-            <ul class="overview-work-list">
-          <li v-for="task in group.items" :key="`${activeSpaceId}:${task.personalProjectId}:${task.taskId}`" class="overview-current-work-item" :class="{ 'is-selected': selected === `${task.personalProjectId}:${task.taskId}` }" data-testid="overview-current-work-item">
-            <div class="overview-task-heading"><h3>{{ taskTitle(task) }}</h3><span class="ui-badge" :class="`overview-status-${task.status}`">{{ statusLabel(task.status) }}</span></div>
-            <p class="overview-meta">{{ t('overview.work.owner', { name: owner(task) }) }} · {{ projectName(task.personalProjectId) }}</p>
-            <OverviewExcerpt v-if="task.status === 'blocked' || task.status === 'failed'" class="overview-reason" :text="task.failureReason?.trim() || t('overview.missing.reason')" />
-            <div class="overview-task-footer">
-              <time :datetime="task.updatedAt || task.createdAt || undefined">{{ formatDate(task.updatedAt || task.createdAt) }}</time>
-              <div>
-                <Button v-if="view !== 'list'" variant="ghost" :aria-label="t('overview.views.select', { name: owner(task) })" :aria-expanded="selected === `${task.personalProjectId}:${task.taskId}`" @click="selected = selected === `${task.personalProjectId}:${task.taskId}` ? '' : `${task.personalProjectId}:${task.taskId}`">{{ t('overview.views.inspect') }}</Button>
-                <Button as-child variant="ghost"><RouterLink :to="nextHref(task)">{{ nextLabel(task) }}</RouterLink></Button>
-              </div>
-            </div>
-          </li>
+            <p v-if="!recentProjectItems.length" class="overview-empty px-5">{{ t('overview.projects.empty') }}</p>
+          </Card>
+          <Card as="section" class="gap-1 pb-2" aria-labelledby="overview-services-heading">
+            <h2 id="overview-services-heading" class="px-5 text-lg font-semibold">{{ t('overview.sections.services') }}</h2>
+            <ul class="overview-service-list">
+              <li><strong>{{ t('overview.services.local') }}</strong><Badge :variant="localServiceStatus === 'ready' ? 'success' : localServiceStatus === 'error' ? 'destructive' : 'secondary'">{{ t(`overview.services.${localServiceStatus}`) }}</Badge></li>
+              <li><strong>{{ t('overview.services.public') }}</strong><Badge :variant="publicServiceStatus === 'ready' ? 'success' : publicServiceStatus === 'error' ? 'destructive' : 'secondary'">{{ t(`overview.services.${publicServiceStatus}`) }}</Badge></li>
             </ul>
-          </component>
-        </div>
-        <p v-else-if="tasks.data && !tasks.error && !tasks.loading" class="overview-empty">{{ t(tasks.data.partial ? 'overview.read.partial' : 'overview.work.empty') }}</p>
-        <Button v-if="allTaskCount > 6 && view === 'list'" variant="ghost" :aria-expanded="expanded" @click="expanded = !expanded">{{ t(expanded ? 'overview.work.collapse' : 'overview.work.expand', { count: allTaskCount }) }}</Button>
-        <p v-if="tasks.data?.partial" class="overview-meta">{{ t('overview.work.loaded', { count: data.taskItems.value.length }) }}</p>
-      </section>
-
-      <aside class="overview-column">
-        <section class="overview-section" aria-labelledby="overview-projects-heading">
-          <header class="overview-section-header"><h2 id="overview-projects-heading">{{ t('overview.sections.recentProjects') }}</h2></header>
-          <ul class="overview-project-list"><li v-for="project in recentProjectItems" :key="project.id" data-testid="overview-recent-project"><RouterLink :to="personalProjectsPath(activeSpaceId, 'overview', project.id)"><strong>{{ project.name }}</strong><span>{{ project.updatedAt ? formatDate(project.updatedAt) : t('overview.projects.noActivity') }}</span></RouterLink></li></ul>
-          <p v-if="!recentProjectItems.length" class="overview-empty">{{ t('overview.projects.empty') }}</p>
-        </section>
-        <section class="overview-section" aria-labelledby="overview-services-heading">
-          <header class="overview-section-header"><h2 id="overview-services-heading">{{ t('overview.sections.services') }}</h2></header>
-          <ul class="overview-service-list"><li><strong>{{ t('overview.services.local') }}</strong><span>{{ t(`overview.services.${localServiceStatus}`) }}</span></li><li><strong>{{ t('overview.services.public') }}</strong><span>{{ t(`overview.services.${publicServiceStatus}`) }}</span></li></ul>
-        </section>
-      </aside>
+          </Card>
+        </aside>
+      </div>
     </div>
   </section>
 </template>
 
 <style scoped>
-.overview-view { overflow-wrap: anywhere; padding-bottom: 24px; }
-.overview-content-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 24px 32px; align-items: start; max-width: var(--page-max); }
-.overview-attention-section { grid-column: 1 / -1; }
-.overview-column { display: grid; gap: 28px; min-width: 0; }
-.overview-section { min-width: 0; }
-.overview-section-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding-bottom: 8px; border-bottom: 1px solid var(--color-border); }
-.overview-section-header > div:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--color-ink); }
-h3 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
-.overview-work-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.overview-work-controls :deep(.ui-select) { min-width: 120px; max-width: 100%; }
-.overview-view :deep([data-slot="button"]) { white-space: normal; max-width: 100%; overflow-wrap: anywhere; }
-.overview-view :deep([data-slot="button"]), .overview-work-controls :deep(.ui-select__trigger) { min-height: 44px; }
-.overview-meta, time { margin: 4px 0; color: var(--color-muted); font-size: 12px; line-height: 1.6; }
-.overview-empty, .overview-notice { margin: 14px 0; font-size: 14px; color: var(--color-ink-soft); }
-.overview-attention-list, .overview-work-list, .overview-project-list, .overview-service-list { list-style: none; margin: 0; padding: 0; }
-.overview-attention-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 16px 0; }
-.overview-request-copy { min-width: 0; flex: 1 1 420px; }
-.overview-request-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.overview-view { overflow-wrap: anywhere; scrollbar-gutter: stable; }
+/* Work canvas: main column plus a fixed side column once there is room. */
+.overview-content-grid { grid-template-columns: minmax(0, 1fr); }
+@container (min-width: 960px) {
+  .overview-content-grid { grid-template-columns: minmax(0, 1fr) 320px; }
+}
+.overview-meta { margin: 0; color: var(--color-muted); font-size: 12px; line-height: 1.6; }
+.overview-empty, .overview-notice { margin: 12px 0; font-size: 14px; color: var(--color-ink-soft); }
+.overview-view ul { list-style: none; margin: 0; padding: 0; }
+.overview-task-title { display: -webkit-box; overflow: hidden; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.overview-current-work-item:hover { border-color: var(--color-border-strong); }
+.overview-reason { color: var(--color-ink-soft); font-size: 13px; }
 .overview-request-detail { margin-top: 4px; font-size: 14px; }
-.overview-request-detail summary { display: flex; align-items: center; min-height: 44px; width: fit-content; color: var(--color-accent); cursor: pointer; }
+.overview-request-detail summary { display: flex; align-items: center; min-height: 32px; width: fit-content; color: var(--color-accent); cursor: pointer; }
 .overview-request-detail p { white-space: pre-wrap; line-height: 1.6; margin: 0; }
-.overview-current-work-item { padding: 14px 0 10px; border-bottom: 1px solid var(--color-border); }
-.overview-task-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; }
-.overview-task-heading h3 { flex: 1 1 210px; }
-.overview-task-heading .ui-badge { flex: 0 1 auto; white-space: normal; color: var(--color-ink-soft); }
-.overview-task-heading .overview-status-blocked, .overview-task-heading .overview-status-failed { color: var(--color-danger); background: var(--color-danger-soft); }
-.overview-reason { margin: 8px 0; color: var(--color-ink-soft); font-size: 14px; }
-.overview-task-footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 12px; }
-.overview-task-footer > div { min-width: 0; max-width: 100%; display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
-.overview-request-members { list-style: none; margin: 0; padding: 0; }
 .overview-request-members li { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 8px 0; }
 .overview-request-members p { flex: 1 1 180px; margin: 0; font-size: 14px; }
-.overview-task-group > summary { min-height: 44px; padding-block: 8px; font-weight: 600; cursor: pointer; color: var(--color-ink); }
-.overview-selected, .is-selected { padding: 12px; border-radius: var(--radius-card); background: var(--color-surface); box-shadow: var(--shadow-md); }
-.overview-selected { margin-block: 12px; }
-.overview-selected p { margin: 4px 0; }
-.overview-project-list li, .overview-service-list li { border-bottom: 1px solid var(--color-border); }
-.overview-project-list a { display: grid; gap: 4px; padding: 14px 0; color: inherit; text-decoration: none; min-height: 44px; }
-.overview-project-list strong, .overview-service-list strong { font-size: 14px; font-weight: 550; }
-.overview-project-list span, .overview-service-list span { color: var(--color-muted); font-size: 12px; }
-.overview-service-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 0; }
-.overview-view a:focus-visible, .overview-view summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; border-radius: 4px; }
-@media (max-width: 980px) { .overview-content-grid { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 720px) { .overview-view { padding-bottom: calc(16px + env(safe-area-inset-bottom)); } .overview-attention-item { align-items: start; } .overview-request-copy { flex-basis: 100%; } .overview-section-header { align-items: start; } }
+.overview-task-group > summary { min-height: 40px; padding-block: 8px; font-weight: 600; cursor: pointer; color: var(--color-ink); }
+.overview-view :deep(.overview-view-select) { min-width: 132px; max-width: 100%; }
+.overview-project-list li, .overview-service-list li { border-top: 1px solid var(--color-border); }
+.overview-project-list li:first-child, .overview-service-list li:first-child { border-top: 0; }
+.overview-project-list a { display: grid; gap: 2px; padding: 12px 20px; color: inherit; text-decoration: none; }
+.overview-project-list a:hover strong { color: var(--color-accent); }
+.overview-project-list strong, .overview-service-list strong { min-width: 0; font-size: 14px; font-weight: 550; }
+.overview-project-list span { color: var(--color-muted); font-size: 12px; }
+.overview-service-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 20px; }
+.overview-view a:focus-visible, .overview-view summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 4px; }
+/* Touch screens keep 44px targets; a mouse gets the compact controls. */
+@media (pointer: coarse) {
+  .overview-view :deep([data-slot="button"]), .overview-view :deep(.ui-select__trigger) { min-height: 44px; }
+}
+@media (max-width: 720px) { .overview-view { padding-bottom: calc(16px + env(safe-area-inset-bottom)); } }
 </style>

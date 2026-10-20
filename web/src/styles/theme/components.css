@@ -32,4 +32,10 @@
   --destructive-soft: var(--color-danger-soft);
   --border-strong: var(--color-border-strong);
   --foreground-soft: var(--color-ink-soft);
+  /* Reported states and the modal scrim, for badges and dialogs. */
+  --success: var(--color-success);
+  --success-soft: var(--color-success-soft);
+  --warning: var(--color-warning);
+  --warning-soft: var(--color-warning-soft);
+  --overlay: var(--color-overlay);
 }

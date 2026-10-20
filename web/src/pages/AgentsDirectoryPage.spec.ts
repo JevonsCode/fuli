@@ -6,6 +6,7 @@ import { nextTick } from 'vue'
 import { useConsoleStore } from '@/stores/console'
 import { t } from '@/i18n'
 import { forgetLoadedRosters } from '@/features/agent-profile/useAgentRosterPages'
+import { agentPinsMessages } from '@/i18n/messages/agent-pins'
 import AgentsDirectoryPage from './AgentsDirectoryPage.vue'
 
 const { getJson, putJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), putJson: vi.fn(), postJson: vi.fn() }))
@@ -637,3 +638,49 @@ describe('Agent directory integration', () => {
   })
 })
 
+
+describe('Agent quick look (Peek)', () => {
+  const dialog = () => document.querySelector('[data-agent-peek-dialog]') as HTMLElement | null
+
+  it('opens from a card, keeps the Agent in the URL, lifts that card and closes back to the same filters', async () => {
+    const { router, wrapper } = await setup('/project-agents?q=b')
+    expect(wrapper.findAll('.agent-card')).toHaveLength(1)
+    await wrapper.get('[data-agent-peek]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ q: 'b', item: 'space-a/agent-1' })
+    expect(dialog()?.textContent).toContain('Birch')
+    expect(dialog()?.querySelector('[data-peek-open-full]')?.textContent).toContain(t('agentProfiles.openFullPage'))
+    // The quick change is named in words, not the bare English "pin".
+    expect(dialog()?.querySelector('[data-peek-pin]')?.textContent?.trim()).toBe('置顶')
+    expect(wrapper.get('.agent-card').attributes('data-selected')).toBe('true')
+    dialog()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/project-agents?q=b')
+    expect(dialog()).toBeNull()
+    expect(wrapper.get('.agent-card').attributes('data-selected')).toBeUndefined()
+  })
+
+  it('opens a shared link for an Agent the roster has not read, and its full page replaces the quick look', async () => {
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation(async (url: string) => url === '/api/project-agents/agent-9?personalSpaceId=space-a'
+      ? { agentId: 'agent-9', personalSpaceId: 'space-a', profile: { name: 'Cypress', responsibility: 'Synthetic late role', capabilities: [], initialPreferences: [], status: 'active' } }
+      : normal(url))
+    const { router } = await setup('/project-agents?item=space-a%2Fagent-9')
+    expect(dialog()?.textContent).toContain('Cypress')
+    ;(dialog()!.querySelector('[data-peek-open-full]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/agents/space-a/agent-9')
+  })
+
+  it('names the pin action 置顶 / 取消置顶 and Pin / Unpin', async () => {
+    await setup('/project-agents?item=space-a%2Fagent-0')
+    expect(dialog()?.querySelector('[data-peek-pin]')?.textContent?.trim()).toBe('取消置顶')
+    expect([agentPinsMessages['en-US'].pin, agentPinsMessages['en-US'].unpin]).toEqual(['Pin', 'Unpin'])
+  })
+
+  it('never shows an Agent from another space and does not read it', async () => {
+    await setup('/project-agents?item=space-b%2Fagent-0')
+    expect(dialog()?.textContent).toContain(t('agentProfiles.unavailable'))
+    expect(getJson.mock.calls.some(([url]) => String(url).startsWith('/api/project-agents/'))).toBe(false)
+  })
+})

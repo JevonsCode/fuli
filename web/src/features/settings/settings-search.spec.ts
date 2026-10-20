@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { setLocale, t } from '@/i18n'
-import { filterSettings, settingSearchTerm } from './settings-search'
+import { filterSettings, matchingSections, settingSearchTerm } from './settings-search'
 
 function page() {
   const root = document.createElement('div')
@@ -68,5 +68,17 @@ describe('settingSearchTerm', () => {
     expect(settingSearchTerm('ports', t)).toBe('服务端口')
     expect(settingSearchTerm('unknown', t)).toBe('')
     expect(settingSearchTerm(['ports'], t)).toBe('')
+  })
+})
+
+describe('matchingSections', () => {
+  it('names the collapsed sections whose text holds the query, so the page can open them', () => {
+    const root = document.createElement('div')
+    root.innerHTML = `
+      <div data-settings-section="ports"><h3>Ports</h3><label>Personal Neo4j Bolt</label></div>
+      <div data-settings-section="notifications"><h3>Notifications</h3></div>`
+    expect(matchingSections(root, 'neo4j bolt')).toEqual(['ports'])
+    expect(matchingSections(root, 'NOTIFICATIONS')).toEqual(['notifications'])
+    expect(matchingSections(root, '  ')).toEqual([])
   })
 })
