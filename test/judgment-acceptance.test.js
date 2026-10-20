@@ -60,7 +60,8 @@ test('an acceptance names the assessed lead and becomes a score-card review fact
   const { service } = fixture(t);
   const record = await service.accept(input);
   assert.equal(record.agentId, 'lead');
-  const fact = { task_id: 't', personal_project_id: 'p', result: 'passed', occurred_at: record.createdAt };
+  const fact = { task_id: 't', personal_project_id: 'p', result: 'passed', artifact_revision: 'artifact-a',
+    verification_attempt_id: 'attempt', occurred_at: record.createdAt };
   assert.deepEqual(service.reviewVerdicts({ personalSpaceId: 's', agentId: 'lead' }), [fact]);
   assert.deepEqual(service.reviewVerdicts({ personalSpaceId: 's', agentId: 'lead', personalProjectId: 'other' }), []);
   assert.deepEqual(service.reviewVerdicts({ personalSpaceId: 's', agentId: 'reviewer' }), []);

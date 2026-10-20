@@ -20,12 +20,15 @@ class ProjectAgentReviewVerdict(StrictModel):
     """A review verdict the host recorded about one task (Tonborg acceptance).
 
     ``disputed`` is a verdict the user has thumbed down: it is counted as a
-    correction and never as a pass or a failure.
+    correction and never as a pass or a failure. The artifact revision and
+    verification attempt it judged decide whether it is still current.
     """
 
     task_id: str = Field(min_length=1, max_length=128)
     personal_project_id: str = Field(min_length=1, max_length=128)
     result: ReviewVerdictResult
+    artifact_revision: str = Field(min_length=1, max_length=160)
+    verification_attempt_id: str = Field(min_length=1, max_length=128)
     occurred_at: AwareDatetime | None = None
 
 
@@ -100,6 +103,8 @@ class ProjectAgentScoreCard(StrictModel):
     executors: list[ProjectAgentScoreExecutor]
     tool_flags: list[ProjectAgentToolFlag]
     disputed_review_count: int = Field(ge=0)
+    # Verdicts on an artifact or verification that has since been superseded.
+    stale_review_count: int = Field(ge=0)
     as_of: datetime
 
 

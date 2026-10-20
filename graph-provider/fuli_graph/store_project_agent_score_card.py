@@ -6,10 +6,10 @@ from fastapi import HTTPException
 
 from .personal_project_access import authorize_personal_project
 from .project_agent_score_card import (
-    outcome_score_facts,
     review_verdict_facts,
     score_card_sections,
     score_evidence_sections,
+    score_facts,
 )
 from .project_agent_score_card_models import (
     ProjectAgentScoreCard,
@@ -27,11 +27,12 @@ class StoreProjectAgentScoreCard:
     async def project_agent_score_card(
         self, actor: dict, query: ProjectAgentScoreCardQuery,
     ) -> ProjectAgentScoreCard:
-        agent_id, facts, disputed = await self._project_agent_score_facts(actor, query)
+        agent_id, facts, review = await self._project_agent_score_facts(actor, query)
         return ProjectAgentScoreCard(
             personal_space_id=query.personal_space_id, agent_id=agent_id,
             personal_project_ids=query.personal_project_ids,
-            disputed_review_count=disputed, as_of=now_utc(), **score_card_sections(facts))
+            disputed_review_count=review.disputed, stale_review_count=review.stale,
+            as_of=now_utc(), **score_card_sections(facts))
 
     async def project_agent_score_evidence(
         self, actor: dict, query: ProjectAgentScoreEvidenceQuery,
@@ -64,12 +65,13 @@ class StoreProjectAgentScoreCard:
                     raise
         verdicts = [verdict for verdict in query.review_verdicts
                     if scope is None or verdict.personal_project_id in scope]
-        participant_projects = await self._agent_participant_projects(
+        current_tasks = await self._agent_task_evidence_versions(
             query.personal_space_id, agent_id, sorted({verdict.task_id for verdict in verdicts}))
-        review_facts, disputed = review_verdict_facts(verdicts, participant_projects)
-        return agent_id, outcome_score_facts(aggregates, evidence) + review_facts, disputed
+        review = review_verdict_facts(verdicts, current_tasks)
+        return agent_id, score_facts(aggregates, evidence, review), review
 
-    async def _agent_participant_projects(self, space_id, agent_id, task_ids) -> dict[str, str]:
+    async def _agent_task_evidence_versions(self, space_id, agent_id, task_ids) -> dict[str, dict]:
+        """The Agent's tasks with their current verification and newest observed artifact."""
         if not task_ids:
             return {}
         records, _, _ = await self.runtime.driver.execute_query(
@@ -79,8 +81,17 @@ class StoreProjectAgentScoreCard:
             MATCH (task:FuliProjectAgentTask {personal_space_id: $personal_space_id})
                   -[:HAS_PARTICIPANT]->(agent)
             WHERE task.task_id IN $task_ids
-            RETURN task.task_id AS task_id, task.personal_project_id AS personal_project_id
+            OPTIONAL MATCH (task)-[:HAS_EXECUTOR_OBSERVATION]->(observation:FuliProjectAgentExecutorObservation)
+            WHERE observation.artifact_revision IS NOT NULL
+            WITH task, observation ORDER BY observation.occurred_at DESC
+            WITH task, collect(observation.artifact_revision) AS observed_artifacts
+            RETURN task.task_id AS task_id, task.personal_project_id AS personal_project_id,
+                   task.verified_artifact_revision AS verified_artifact_revision,
+                   task.verified_attempt_id AS verified_attempt_id,
+                   observed_artifacts[0] AS current_artifact_revision
             ''',
             personal_space_id=space_id, agent_id=agent_id, task_ids=task_ids, routing_='r',
         )
-        return {row['task_id']: row['personal_project_id'] for row in records}
+        return {row['task_id']: {key: row[key] for key in (
+            'personal_project_id', 'verified_artifact_revision', 'verified_attempt_id',
+            'current_artifact_revision')} for row in records}

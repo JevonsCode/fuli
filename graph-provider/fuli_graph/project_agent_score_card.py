@@ -8,6 +8,8 @@ is never a basis for an automatic action.
 
 The executor-learning buckets decide which outcome evidence currently counts
 (after the user's ignores and resets); their evidence records supply the task.
+The Agent's dimensions count each task once across every executor; the
+per-executor view is a separate diagnosis that only raises tool flags.
 """
 
 from collections import Counter, defaultdict
@@ -52,17 +54,39 @@ class ScoreFact:
     occurred_at: datetime | None
 
 
-def outcome_score_facts(aggregates, evidence_records) -> list[ScoreFact]:
-    """Classify the evidence the learning buckets count, per executor and task.
+@dataclass(frozen=True)
+class ReviewVerdictFacts:
+    facts: list[ScoreFact]
+    disputed: int
+    stale: int
+
+
+@dataclass(frozen=True)
+class ScoreFacts:
+    """The Agent-level facts and, kept apart, the per-executor diagnosis.
+
+    ``agent`` holds one completion and first-pass fact per task across every
+    executor, plus each recorded feedback or review act once. ``by_executor``
+    holds each executor's own run history for tool flags; it never feeds the
+    Agent's dimensions.
+    """
+
+    agent: list[ScoreFact]
+    by_executor: list[ScoreFact]
+
+
+def score_facts(aggregates, evidence_records, review: ReviewVerdictFacts) -> ScoreFacts:
+    """Classify the evidence the learning buckets count, per task and per executor.
 
     Completion is the latest completed/failed run of a task; a cancelled run is
     neutral. First pass is a completed task with no rework request and no
-    earlier failed run. A bucket with validation warnings is neutral as a whole.
+    earlier failed run. For the Agent both look at the task on every executor.
+    A bucket with validation warnings is neutral as a whole.
     """
     records = {record.evidence_id: record for record in evidence_records}
     runs = defaultdict(list)
     reworked = set()
-    facts = []
+    acts = []
     for aggregate in aggregates:
         if aggregate.validation_warnings:
             continue
@@ -70,65 +94,93 @@ def outcome_score_facts(aggregates, evidence_records) -> list[ScoreFact]:
             record = records.get(contribution.evidence_id)
             if record is None:
                 continue
-            key = (record.personal_project_id, record.executor_id, record.task_id)
+            project, executor_id, task_id = record.personal_project_id, record.executor_id, record.task_id
+            # Executor None keys the task across executors; an executor keys its own view.
+            task_keys = ((project, None, task_id), (project, executor_id, task_id))
             kind = record.evidence_kind
             if kind == 'terminal_outcome':
                 if record.terminal_outcome in _COUNTED_TERMINAL_OUTCOMES:
-                    runs[key].append((record.occurred_at, record.terminal_outcome))
+                    for key in task_keys:
+                        runs[key].append((record.occurred_at, record.terminal_outcome))
             elif kind == 'rework_requested':
-                reworked.add(key)
+                reworked.update(task_keys)
             elif kind in _FEEDBACK_KINDS:
                 positive = _feedback_polarity(record)
                 if positive is not None:
-                    facts.append(ScoreFact('user_feedback', *key, positive, record.occurred_at))
+                    acts.append(ScoreFact('user_feedback', project, executor_id, task_id,
+                                          positive, record.occurred_at))
             elif kind in _REVIEW_OUTCOMES:
-                facts.append(ScoreFact('review', *key, _REVIEW_OUTCOMES[kind], record.occurred_at))
+                acts.append(ScoreFact('review', project, executor_id, task_id,
+                                      _REVIEW_OUTCOMES[kind], record.occurred_at))
+    task_facts = []
     for key, outcomes in runs.items():
         occurred_at, latest = max(outcomes)
-        facts.append(ScoreFact('completion', *key, latest == 'completed', occurred_at))
+        task_facts.append(ScoreFact('completion', *key, latest == 'completed', occurred_at))
         if latest == 'completed':
             first_pass = key not in reworked and all(outcome == 'completed' for _, outcome in outcomes)
-            facts.append(ScoreFact('first_pass', *key, first_pass, occurred_at))
-    return facts
+            task_facts.append(ScoreFact('first_pass', *key, first_pass, occurred_at))
+    return ScoreFacts(
+        agent=acts + review.facts + [fact for fact in task_facts if fact.executor_id is None],
+        by_executor=acts + [fact for fact in task_facts if fact.executor_id is not None],
+    )
 
 
-def review_verdict_facts(verdicts, participant_projects) -> tuple[list[ScoreFact], int]:
-    """Host review verdicts count only for a task this Agent worked in that project."""
-    facts, disputed = [], 0
+def review_verdict_facts(verdicts, current_tasks) -> ReviewVerdictFacts:
+    """Host review verdicts count only on current evidence of a task this Agent worked.
+
+    ``current_tasks`` maps each such task to its project, verified artifact and
+    attempt, and newest observed artifact. A verdict whose artifact or
+    verification was superseded is stale and counts neither way; so does a
+    verdict the user disputed.
+    """
+    facts, disputed, stale = [], 0, 0
     for verdict in verdicts:
-        if participant_projects.get(verdict.task_id) != verdict.personal_project_id:
+        task = current_tasks.get(verdict.task_id)
+        if task is None or task['personal_project_id'] != verdict.personal_project_id:
             continue
-        if verdict.result == 'disputed':
+        if not _verdict_is_current(verdict, task):
+            stale += 1
+        elif verdict.result == 'disputed':
             disputed += 1
-            continue
-        facts.append(ScoreFact('review', verdict.personal_project_id, None, verdict.task_id,
-                               verdict.result == 'passed', verdict.occurred_at))
-    return facts, disputed
+        else:
+            facts.append(ScoreFact('review', verdict.personal_project_id, None, verdict.task_id,
+                                   verdict.result == 'passed', verdict.occurred_at))
+    return ReviewVerdictFacts(facts, disputed, stale)
 
 
-def score_card_sections(facts) -> dict:
+def score_card_sections(facts: ScoreFacts) -> dict:
     """Dimensions, the executors behind them and tool flags; never a total."""
-    by_dimension = _group(facts, lambda fact: fact.dimension)
-    executors = Counter(fact.executor_id for fact in facts if fact.executor_id)
+    agent_dimensions = _group(facts.agent, lambda fact: fact.dimension)
+    executor_dimensions = _group(facts.by_executor, lambda fact: fact.dimension)
+    executors = Counter(fact.executor_id for fact in facts.by_executor)
     return {
         'minimum_sample': MINIMUM_EVIDENCE_SAMPLES,
         'dimensions': ProjectAgentScoreDimensions(**{
-            name: _dimension(by_dimension.get(name, [])) for name in DIMENSIONS}),
+            name: _dimension(agent_dimensions.get(name, [])) for name in DIMENSIONS}),
         'executors': [ProjectAgentScoreExecutor(executor_id=executor_id, evidence_count=count)
                       for executor_id, count in sorted(executors.items())],
-        'tool_flags': [flag for name in DIMENSIONS for flag in _tool_flags(name, by_dimension.get(name, []))],
+        'tool_flags': [flag for name in DIMENSIONS
+                       for flag in _tool_flags(name, executor_dimensions.get(name, []))],
     }
 
 
-def score_evidence_sections(facts, *, dimension, executor_id, limit) -> dict:
-    """The tasks behind one dimension (optionally one executor), newest first."""
-    selected = [fact for fact in facts if fact.dimension == dimension
+def score_evidence_sections(facts: ScoreFacts, *, dimension, executor_id, limit) -> dict:
+    """The tasks behind one dimension, newest first; one executor's own view when named."""
+    source = facts.agent if executor_id is None else facts.by_executor
+    selected = [fact for fact in source if fact.dimension == dimension
                 and (executor_id is None or fact.executor_id == executor_id)]
     selected.sort(key=lambda fact: fact.task_id)
     selected.sort(key=lambda fact: fact.occurred_at or _UNDATED, reverse=True)
     passed = _task_list([fact for fact in selected if fact.passed], limit)
     not_passed = _task_list([fact for fact in selected if not fact.passed], limit)
     return {'passed': passed[0], 'not_passed': not_passed[0], 'truncated': passed[1] or not_passed[1]}
+
+
+def _verdict_is_current(verdict, task) -> bool:
+    """The judged artifact is still the verified one and nothing newer was produced."""
+    return (task['verified_artifact_revision'] == verdict.artifact_revision
+            and task['verified_attempt_id'] == verdict.verification_attempt_id
+            and task['current_artifact_revision'] in {None, verdict.artifact_revision})
 
 
 def _feedback_polarity(record) -> bool | None:
@@ -160,9 +212,8 @@ def _tier(rate: float) -> str:
 
 
 def _tool_flags(dimension, facts) -> list[ProjectAgentToolFlag]:
-    scored = {executor_id: value for executor_id, group in _group(
-        [fact for fact in facts if fact.executor_id], lambda fact: fact.executor_id).items()
-        if (value := _dimension(group)).status == 'scored'}
+    scored = {executor_id: value for executor_id, group in _group(facts, lambda fact: fact.executor_id).items()
+              if (value := _dimension(group)).status == 'scored'}
     strong = sorted((executor_id for executor_id, value in scored.items() if value.tier.label in _STRONG_TIERS),
                     key=lambda executor_id: (-scored[executor_id].rate, -scored[executor_id].sample, executor_id))
     if not strong:

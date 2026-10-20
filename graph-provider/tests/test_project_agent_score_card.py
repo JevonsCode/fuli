@@ -119,9 +119,21 @@ class ScoreCardDriver:
                     and item['agent_id'] == parameters['agent_id']], None, None
         if 'HAS_PARTICIPANT' in query:
             tasks = self.participants.get(parameters['agent_id'], {})
-            return [{'task_id': task_id, 'personal_project_id': project}
-                    for task_id, project in tasks.items() if task_id in parameters['task_ids']], None, None
+            return [{'task_id': task_id, **state}
+                    for task_id, state in tasks.items() if task_id in parameters['task_ids']], None, None
         raise AssertionError(f'unexpected score card query: {query}')
+
+
+def task_state(project='project-1', *, verified='artifact-1', attempt='attempt-1', observed='artifact-1'):
+    """A task the Agent worked on, with its current verification and newest observed artifact."""
+    return {'personal_project_id': project, 'verified_artifact_revision': verified,
+            'verified_attempt_id': attempt, 'current_artifact_revision': observed}
+
+
+def verdict(task_id, result, *, project='project-1', artifact='artifact-1', attempt='attempt-1'):
+    """A Tonborg verdict with the artifact and verification attempt it judged."""
+    return {'task_id': task_id, 'personal_project_id': project, 'result': result,
+            'artifact_revision': artifact, 'verification_attempt_id': attempt}
 
 
 class ScoreCardStore(StoreProjectAgentScoreCard, StoreProjectAgentExecutorLearning):
@@ -243,6 +255,58 @@ async def test_weakness_on_only_one_executor_is_flagged_as_a_tool_problem():
 
 
 @pytest.mark.asyncio
+async def test_a_task_retried_on_another_executor_is_one_task_and_never_a_first_pass():
+    """Review of #232: three tasks that failed on A and then completed on B."""
+    items = []
+    for index in range(3):
+        items += [failed(f'task-{index}', executor='executor-a', days_ago=3),
+                  completed(f'task-{index}', executor='executor-b', days_ago=1)]
+    driver = ScoreCardDriver(items)
+    result = await card(driver)
+
+    completion, first_pass = result['dimensions']['completion'], result['dimensions']['first_pass']
+    assert (completion['passed'], completion['sample'], completion['rate']) == (3, 3, 1.0)
+    assert (first_pass['passed'], first_pass['sample'], first_pass['rate']) == (0, 3, 0.0)
+    tasks = ['task-0', 'task-1', 'task-2']
+    by_task = await drill(driver, 'completion')
+    assert (sorted(by_task['passed']['task_ids']), by_task['not_passed']) == (tasks, {'count': 0, 'task_ids': []})
+    assert sorted((await drill(driver, 'first_pass'))['not_passed']['task_ids']) == tasks
+
+    # The executor view is a separate diagnosis: A failed every run, B finished
+    # every task it took over. It never feeds the task-level dimensions.
+    assert result['tool_flags'] == [{
+        'dimension': 'completion', 'executor_id': 'executor-a', 'rate': 0.0, 'sample': 3,
+        'compared_executor_id': 'executor-b', 'compared_rate': 1.0, 'compared_sample': 3,
+        'suggestion': 'change_executor_or_model',
+    }]
+    on_a = await drill(driver, 'completion', executor_id='executor-a')
+    assert (on_a['passed']['count'], sorted(on_a['not_passed']['task_ids'])) == (0, tasks)
+
+
+@pytest.mark.asyncio
+async def test_a_tonborg_verdict_counts_only_while_its_artifact_and_verification_are_current():
+    items = [completed(f'task-{index}') for index in range(5)]
+    participants = {'agent-1': {
+        'task-0': task_state(),
+        'task-1': task_state(verified='artifact-2', attempt=None, observed='artifact-2'),  # new artifact failed verification
+        'task-2': task_state(attempt='attempt-2'),  # re-verified by another attempt
+        'task-3': task_state(observed='artifact-3'),  # a newer artifact is not verified yet
+        'task-4': task_state(verified=None, attempt=None, observed=None),  # no verification recorded
+    }}
+    verdicts = [verdict(f'task-{index}', 'passed') for index in range(5)] + [verdict('task-1', 'disputed')]
+    driver = ScoreCardDriver(items, participants=participants)
+    result = await card(driver, review_verdicts=verdicts)
+
+    assert result['dimensions']['review']['sample'] == 1
+    assert (result['stale_review_count'], result['disputed_review_count']) == (5, 0)
+    review = await drill(driver, 'review', review_verdicts=verdicts)
+    assert review['passed']['task_ids'] == ['task-0']
+    missing_version = await post(driver, '/v1/project-agent-score-card/query', review_verdicts=[
+        {'task_id': 'task-0', 'personal_project_id': 'project-1', 'result': 'passed'}])
+    assert missing_version.status_code == 422, 'a verdict without its evidence version cannot be checked'
+
+
+@pytest.mark.asyncio
 async def test_a_tier_is_only_a_label_and_always_carries_its_evidence_count():
     driver = ScoreCardDriver(worked_example(), warnings_for={'executor-z'})
     dimensions = (await card(driver))['dimensions']
@@ -276,22 +340,22 @@ async def test_evidence_drill_down_returns_the_task_ids_behind_one_dimension():
 @pytest.mark.asyncio
 async def test_host_review_verdicts_count_only_for_tasks_the_agent_worked_and_disputes_never_count():
     items = [completed('task-1'), completed('task-2'), completed('task-3')]
-    participants = {'agent-1': {'task-1': 'project-1', 'task-2': 'project-1', 'task-3': 'project-1'},
-                    'agent-2': {'task-9': 'project-1'}}
+    participants = {'agent-1': {'task-1': task_state(), 'task-2': task_state(), 'task-3': task_state()},
+                    'agent-2': {'task-9': task_state()}}
     verdicts = [
-        {'task_id': 'task-1', 'personal_project_id': 'project-1', 'result': 'passed'},
-        {'task_id': 'task-2', 'personal_project_id': 'project-1', 'result': 'not_passed'},
-        {'task_id': 'task-3', 'personal_project_id': 'project-1', 'result': 'passed'},
-        {'task_id': 'task-3', 'personal_project_id': 'project-1', 'result': 'disputed'},
-        {'task_id': 'task-9', 'personal_project_id': 'project-1', 'result': 'passed'},  # someone else's task
-        {'task_id': 'task-1', 'personal_project_id': 'project-2', 'result': 'passed'},  # wrong project
+        verdict('task-1', 'passed'),
+        verdict('task-2', 'not_passed'),
+        verdict('task-3', 'passed'),
+        verdict('task-3', 'disputed'),
+        verdict('task-9', 'passed'),  # someone else's task
+        verdict('task-1', 'passed', project='project-2'),  # wrong project
     ]
     driver = ScoreCardDriver(items, participants=participants)
     result = await card(driver, review_verdicts=verdicts)
 
     assert result['dimensions']['review'] | {'tier': None} == {
         'status': 'scored', 'sample': 3, 'passed': 2, 'rate': 0.667, 'tier': None, 'label': None}
-    assert result['disputed_review_count'] == 1
+    assert (result['disputed_review_count'], result['stale_review_count']) == (1, 0)
     review = await drill(driver, 'review', review_verdicts=verdicts)
     assert sorted(review['passed']['task_ids']) == ['task-1', 'task-3']
     assert review['not_passed']['task_ids'] == ['task-2']
@@ -301,12 +365,12 @@ async def test_host_review_verdicts_count_only_for_tasks_the_agent_worked_and_di
 async def test_score_card_and_drill_down_stay_inside_authorized_projects():
     items = [completed(f'one-{index}') for index in range(3)] + \
         [failed(f'two-{index}', project='project-2') for index in range(3)]
-    participants = {'agent-1': {'two-0': 'project-2'}}
+    participants = {'agent-1': {'two-0': task_state('project-2')}}
     driver = ScoreCardDriver(items, participants=participants)
 
     assert (await card(driver))['dimensions']['completion']['sample'] == 6
     scoped = await card(driver, personal_project_ids=['project-1'],
-                        review_verdicts=[{'task_id': 'two-0', 'personal_project_id': 'project-2', 'result': 'passed'}])
+                        review_verdicts=[verdict('two-0', 'passed', project='project-2')])
     assert scoped['personal_project_ids'] == ['project-1']
     assert scoped['dimensions']['completion']['passed'] == 3
     assert scoped['dimensions']['review']['sample'] == 0

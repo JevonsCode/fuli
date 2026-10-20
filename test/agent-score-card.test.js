@@ -29,7 +29,7 @@ function providerCard(query) {
     executors: [{ executor_id: 'executor-a', evidence_count: 8 }, { executor_id: 'executor-b', evidence_count: 4 }],
     tool_flags: [{ dimension: 'completion', executor_id: 'executor-b', rate: 0, sample: 4,
       compared_executor_id: 'executor-a', compared_rate: 1, compared_sample: 4, suggestion: 'change_executor_or_model' }],
-    disputed_review_count: 1, as_of: '2026-10-20T08:00:00Z'
+    disputed_review_count: 1, stale_review_count: 2, as_of: '2026-10-20T08:00:00Z'
   };
 }
 
@@ -62,11 +62,14 @@ function application(t) {
   return { app, double, modelCalls, store: app.judgment.store() };
 }
 
+// The artifact and verification attempt a verdict judged; the Provider checks they are current.
+const judged = key => ({ artifact_revision: `artifact-${key}`, verification_attempt_id: `attempt-${key}` });
+
 // Records shaped as Tonborg's acceptance writes them (see judgment-acceptance tests).
 function seedTonborg(store) {
   const verdict = (key, values) => store.record(SPACE, { personalProjectId: 'project-a', kind: 'acceptance',
     target: 'task-1', agentId: AGENT, outcome: 'approve', summary: 'Verified.', evidence: ['test-report'],
-    verification: { attempt_id: `attempt-${key}` }, client: 'codex', ...values }, key);
+    artifactRevision: `artifact-${key}`, verification: { attempt_id: `attempt-${key}` }, client: 'codex', ...values }, key);
   const confirmed = verdict('accept-1', {});
   store.feedback(SPACE, confirmed.id, 'up', '', 0);
   store.feedback(SPACE, verdict('accept-2', { target: 'task-2', outcome: 'escalate' }).id, 'down', 'Too strict', 0);
@@ -76,6 +79,7 @@ function seedTonborg(store) {
   verdict('accept-6', { target: 'task-6', outcome: 'failed', client: null });
   verdict('accept-7', { target: 'task-7', outcome: 'escalate' });
   verdict('accept-8', { target: 'task-8', personalProjectId: 'project-b' });
+  verdict('accept-9', { target: 'task-9', artifactRevision: undefined });
   store.record(SPACE, { personalProjectId: 'project-a', kind: 'routing', target: 'subagent', agentId: AGENT,
     outcome: 'recommend', client: 'codex' }, 'routing-1');
   return store.records(SPACE, { limit: 100 }).length;
@@ -92,10 +96,10 @@ test('Bole reads a zero-token score card: recorded outcomes plus Tonborg verdict
   assert.deepEqual({ ...body, review_verdicts: body.review_verdicts.map(({ occurred_at, ...verdict }) => verdict) }, {
     personal_space_id: SPACE, agent_id: AGENT, personal_project_ids: null,
     review_verdicts: [
-      { task_id: 'task-1', personal_project_id: 'project-a', result: 'passed' },
-      { task_id: 'task-2', personal_project_id: 'project-a', result: 'disputed' },
-      { task_id: 'task-7', personal_project_id: 'project-a', result: 'not_passed' },
-      { task_id: 'task-8', personal_project_id: 'project-b', result: 'passed' }
+      { task_id: 'task-1', personal_project_id: 'project-a', result: 'passed', ...judged('accept-1') },
+      { task_id: 'task-2', personal_project_id: 'project-a', result: 'disputed', ...judged('accept-2') },
+      { task_id: 'task-7', personal_project_id: 'project-a', result: 'not_passed', ...judged('accept-7') },
+      { task_id: 'task-8', personal_project_id: 'project-b', result: 'passed', ...judged('accept-8') }
     ]
   });
   assert.ok(body.review_verdicts.every(({ occurred_at }) => !Number.isNaN(Date.parse(occurred_at))));
@@ -108,7 +112,7 @@ test('Bole reads a zero-token score card: recorded outcomes plus Tonborg verdict
   assert.deepEqual(card.toolFlags, [{ dimension: 'completion', executorId: 'executor-b', rate: 0, sample: 4,
     comparedExecutorId: 'executor-a', comparedRate: 1, comparedSample: 4, suggestion: 'change_executor_or_model' }]);
   assert.deepEqual(card.executors, [{ executorId: 'executor-a', evidenceCount: 8 }, { executorId: 'executor-b', evidenceCount: 4 }]);
-  assert.equal(card.disputedReviewCount, 1);
+  assert.deepEqual([card.disputedReviewCount, card.staleReviewCount], [1, 2]);
   assert.equal(card.minimumSample, 3);
   assert.deepEqual(card.evidence, { tool: 'get_agent_score_card', addArgument: 'dimension', arguments: { personalSpaceId: SPACE, agentId: AGENT } });
   assert.equal(['total', 'overall', 'score'].some(key => key in card), false);

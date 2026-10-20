@@ -27,6 +27,7 @@ export async function getAgentScoreCard(application, input) {
       comparedSample: flag.compared_sample, suggestion: flag.suggestion
     })),
     disputedReviewCount: value.disputed_review_count,
+    staleReviewCount: value.stale_review_count,
     asOf: value.as_of,
     evidence: { tool: EVIDENCE_TOOL, addArgument: 'dimension', arguments: { personalSpaceId: value.personal_space_id,
       agentId: value.agent_id, ...(input.personalProjectId ? { personalProjectId: input.personalProjectId } : {}) } }
