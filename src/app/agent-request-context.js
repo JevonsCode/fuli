@@ -24,8 +24,9 @@ export function sealedWorkerRequestContext(value) {
 }
 
 // An Agent's own call through FULI's MCP server or CLI: the host session its
-// client process runs in, from host provenance only (the client's environment
-// or its per-request native context), or null when the client names none.
+// client process runs in, from host provenance only: the client's native
+// session (its environment or per-request native context), else the session
+// FULI's composition gave that process. Never a tool argument.
 // Every capture decision of the call also applies to that session (rec#5 C3).
 export function agentHostRequestContext(value, hostSessionId) {
   return { ...(value ?? {}), [HOST_SESSION]: hostSessionId ?? null };

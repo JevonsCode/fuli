@@ -158,8 +158,7 @@ test('C3-4 a session closed while paused leaves the next session recording witho
 
 async function pauseRecord(f) {
   const directory = sessionCapturePausePathForRuntime(f.runtimeConfigPath);
-  // The client's latest session sits in clients/; pause records are files of their own.
-  const files = (await readdir(directory)).filter(name => name.endsWith('.json'));
+  const files = await readdir(directory);
   assert.equal(files.length, 1);
   return join(directory, files[0]);
 }
@@ -317,7 +316,8 @@ test('a pause whose ledger entry cannot be kept does not pause and does not say 
   assert.deepEqual([result.status, result.paused], ['unsaved', false]);
   assert.doesNotMatch(receiptOf(result), /暂停/);
   assert.match(result.guidance, /did not change/);
-  const written = (await readdir(sessionCapturePausePathForRuntime(f.runtimeConfigPath))).filter(name => name.endsWith('.json'));
+  const written = await readdir(sessionCapturePausePathForRuntime(f.runtimeConfigPath))
+    .catch(error => error.code === 'ENOENT' ? [] : Promise.reject(error));
   assert.deepEqual(written, [], 'the pause record was never written');
   assert.equal((await captureDecision(f.app, { sourceApplication: 'codex', sessionId: SESSION })).allowed, true);
 });
@@ -386,13 +386,13 @@ async function mcpCall(f, { env = {}, sourceApplication }, name, args) {
 }
 
 const NATIVE = '0b4a0b9e-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
-const usage = sessionId => ({ personalSpaceId: 'synthetic-space', taskId: 'synthetic-task',
+const usage = (sessionId, taskContextToken) => ({ personalSpaceId: 'synthetic-space', taskId: 'synthetic-task',
   items: [{ itemId: 'synthetic-item', itemKind: 'entity', useKind: 'applied' }],
-  ...(sessionId === undefined ? {} : { sessionId }) });
-const feedback = sessionId => ({ personalSpaceId: 'synthetic-space', taskId: 'synthetic-task',
+  ...(sessionId === undefined ? {} : { sessionId }), ...(taskContextToken ? { taskContextToken } : {}) });
+const feedback = (sessionId, taskContextToken) => ({ personalSpaceId: 'synthetic-space', taskId: 'synthetic-task',
   items: [{ itemId: 'synthetic-item', itemKind: 'entity', feedbackKind: 'outdated', reason: `Stale ${PRIVATE}.`,
     evidenceSummary: `The ${PRIVATE} note changed.`, reportedByKind: 'agent' }],
-  ...(sessionId === undefined ? {} : { sessionId }) });
+  ...(sessionId === undefined ? {} : { sessionId }), ...(taskContextToken ? { taskContextToken } : {}) });
 
 test('automatic evidence from a paused host session is refused whatever sessionId the model sends', async (t) => {
   const f = await fixture(t);
@@ -419,23 +419,6 @@ test('automatic evidence from a paused host session is refused whatever sessionI
   assert.equal((await mcpCall(f, host, 'record_knowledge_usage', usage())).status, 'recorded');
 });
 
-test('a client that names no host session records no automatic evidence while one of its sessions is paused', async (t) => {
-  const f = await fixture(t);
-  const recorded = [];
-  f.app.recordKnowledgeUsage = async input => { recorded.push(input); return { status: 'recorded' }; };
-  const entry = await cursorEntry(f, f.dirs.novel);
-  const cursor = { sourceApplication: 'cursor' };
-  assert.equal((await mcpCall(f, cursor, 'record_knowledge_usage', usage())).status, 'recorded', 'nothing paused yet');
-  await setPaused(f, entry.context, true, 'cursor');
-  assert.deepEqual(captureShape(await mcpCall(f, cursor, 'record_knowledge_usage', usage())),
-    ['disabled', 'policy_unavailable', 'session'], 'its session cannot be shown not to be the paused one');
-  assert.deepEqual(captureShape(await mcpCall(f, cursor, 'record_knowledge_usage', usage('synthetic-cursor-session'))),
-    ['disabled', 'session_paused', 'session']);
-  assert.equal((await mcpCall(f, { sourceApplication: 'claude_code' }, 'record_knowledge_usage', usage())).status,
-    'recorded', 'another client is not affected');
-  assert.equal(recorded.length, 2);
-});
-
 test('get_capture_policy in a paused session says so without the model passing a session', async (t) => {
   const f = await fixture(t);
   const entry = await codexEntry(f, f.dirs.novel, { session: NATIVE });
@@ -448,25 +431,85 @@ test('get_capture_policy in a paused session says so without the model passing a
   assert.ok(policy.current.notice.startsWith(PAUSED));
 });
 
-test('an MCP process started for an earlier session checks the session its client hooks run in now', async (t) => {
+// rec#5 C3 review: only the session bound to a task token and the MCP host session can
+// allow a write; a session the model names can only refuse one.
+const SESSION_A = '1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f';
+const SESSION_B = '2d3e4f5a-6b7c-4d8e-9f0a-1b2c3d4e5f6a';
+const SESSION_C = '3e4f5a6b-7c8d-4e9f-8a1b-2c3d4e5f6a7b';
+
+// Window 1 started its MCP process in session A, then /clear moved it to B; window 2
+// runs session C. After B pauses, hooks run again in the given order.
+async function clearedWindow(t, hookOrder) {
   const f = await fixture(t);
   const recorded = [];
   f.app.recordKnowledgeUsage = async input => { recorded.push(input); return { status: 'recorded' }; };
   f.app.recordKnowledgeFeedback = async input => { recorded.push(input); return { status: 'recorded' }; };
-  const earlier = '1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f';
-  // The client's MCP process still names session A; after /clear its hooks run in B.
-  const host = { env: { CODEX_THREAD_ID: earlier }, sourceApplication: 'codex' };
-  const current = await codexEntry(f, f.dirs.novel, { session: NATIVE });
-  assert.equal((await mcpCall(f, host, 'record_knowledge_usage', usage())).status, 'recorded', 'B is not paused yet');
-  f.clock.now = PAUSED_AT;
-  await setPaused(f, current.context, true);
-  for (const sessionId of [undefined, null, earlier]) {
-    for (const [name, args] of [['record_knowledge_usage', usage(sessionId)], ['record_knowledge_feedback', feedback(sessionId)]]) {
-      assert.deepEqual(captureShape(await mcpCall(f, host, name, args)), ['disabled', 'session_paused', 'session'],
-        `${name} with sessionId ${String(sessionId)}`);
-    }
+  const tokens = {};
+  for (const session of [SESSION_A, SESSION_B, SESSION_C]) {
+    tokens[session] = (await codexEntry(f, f.dirs.novel, { session })).context.taskContextToken;
   }
-  const policy = await mcpCall(f, host, 'get_capture_policy', { projectPath: f.dirs.novel });
-  assert.deepEqual([policy.current.captured, policy.current.reason, policy.current.pausedSince], [false, 'session_paused', PAUSED_AT]);
-  assert.equal(recorded.length, 1);
+  f.clock.now = PAUSED_AT;
+  await setPaused(f, { taskContextToken: tokens[SESSION_B] }, true);
+  for (const session of hookOrder) {
+    tokens[session] = (await codexEntry(f, f.dirs.novel, { session, prompt: 'Another turn.' })).context.taskContextToken;
+  }
+  return { f, recorded, tokens, oldProcess: { env: { CODEX_THREAD_ID: SESSION_A }, sourceApplication: 'codex' } };
+}
+
+for (const [label, hookOrder] of [['window C last', [SESSION_C]], ['B then C', [SESSION_B, SESSION_C]],
+  ['C then A', [SESSION_C, SESSION_A]]]) {
+  test(`after /clear the old MCP process records no evidence without a token (${label})`, async (t) => {
+    const { f, recorded, oldProcess } = await clearedWindow(t, hookOrder);
+    for (const sessionId of [undefined, null, SESSION_A, SESSION_C, 'synthetic-random-session']) {
+      for (const [name, args] of [['record_knowledge_usage', usage(sessionId)], ['record_knowledge_feedback', feedback(sessionId)]]) {
+        const result = await mcpCall(f, oldProcess, name, args);
+        assert.equal(result.route, 'disabled', `${name} with sessionId ${String(sessionId)}`);
+      }
+    }
+    assert.deepEqual(recorded, []);
+  });
+}
+
+test('after /clear the paused session token is refused in the old MCP process', async (t) => {
+  const { f, recorded, tokens, oldProcess } = await clearedWindow(t, [SESSION_C]);
+  for (const [name, args] of [['record_knowledge_usage', usage(null, tokens[SESSION_B])],
+    ['record_knowledge_feedback', feedback(SESSION_A, tokens[SESSION_B])]]) {
+    assert.deepEqual(captureShape(await mcpCall(f, oldProcess, name, args)), ['disabled', 'session_paused', 'session'], name);
+  }
+  const policy = await mcpCall(f, oldProcess, 'get_capture_policy', { projectPath: f.dirs.novel, taskContextToken: tokens[SESSION_B] });
+  assert.deepEqual([policy.current.reason, policy.current.pausedSince], ['session_paused', PAUSED_AT]);
+  assert.deepEqual(recorded, []);
+});
+
+test('C3-3 an unpaused session token records while another session is paused, and says it is not paused', async (t) => {
+  const { f, recorded, tokens, oldProcess } = await clearedWindow(t, [SESSION_C]);
+  assert.equal((await mcpCall(f, oldProcess, 'record_knowledge_usage', usage(undefined, tokens[SESSION_A]))).status, 'recorded');
+  const policy = await mcpCall(f, oldProcess, 'get_capture_policy', { projectPath: f.dirs.novel, taskContextToken: tokens[SESSION_A] });
+  assert.deepEqual([policy.current.captured, policy.current.reason, policy.current.pausedSince], [true, null, undefined]);
+  const windowC = { env: { CODEX_THREAD_ID: SESSION_C }, sourceApplication: 'codex' };
+  assert.equal((await mcpCall(f, windowC, 'record_knowledge_feedback', feedback(undefined, tokens[SESSION_C]))).status, 'recorded');
+  assert.equal(recorded.length, 2);
+});
+
+test('a client without a native session: while one of its sessions is paused only a task token records, and a named session never allows', async (t) => {
+  const f = await fixture(t);
+  const recorded = [];
+  f.app.recordKnowledgeUsage = async input => { recorded.push(input); return { status: 'recorded' }; };
+  const cursor = { sourceApplication: 'cursor' };
+  const mine = await cursorEntry(f, f.dirs.novel, { session: 'synthetic-cursor-mine' });
+  const paused = await cursorEntry(f, f.dirs.novel, { session: 'synthetic-cursor-paused' });
+  assert.equal((await mcpCall(f, cursor, 'record_knowledge_usage', usage())).status, 'recorded', 'nothing is paused yet');
+  await setPaused(f, paused.context, true, 'cursor');
+  for (const sessionId of [undefined, null, 'synthetic-random-session']) {
+    assert.deepEqual(captureShape(await mcpCall(f, cursor, 'record_knowledge_usage', usage(sessionId))),
+      ['disabled', 'policy_unavailable', 'session'], String(sessionId));
+  }
+  assert.deepEqual(captureShape(await mcpCall(f, cursor, 'record_knowledge_usage',
+    usage('synthetic-cursor-paused', mine.context.taskContextToken))), ['disabled', 'session_paused', 'session'],
+  'a named paused session still refuses');
+  assert.deepEqual(captureShape(await mcpCall(f, cursor, 'record_knowledge_usage', usage(undefined, paused.context.taskContextToken))),
+    ['disabled', 'session_paused', 'session']);
+  assert.equal((await mcpCall(f, cursor, 'record_knowledge_usage', usage(undefined, mine.context.taskContextToken))).status,
+    'recorded', 'its own token keeps another session recording (C3-3)');
+  assert.equal(recorded.length, 2);
 });

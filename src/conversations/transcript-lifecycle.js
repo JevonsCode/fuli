@@ -16,18 +16,9 @@ export function transcriptLifecycle(options) {
   return withCaptureLookups(() => hookTranscriptLifecycle(options));
 }
 
-// The client's MCP process may still name an earlier session; its capture
-// decisions check the one its hooks run in now (capture-decision.js). Kept
-// best effort: hooks never fail on it.
-function observeHostSession(application, sourceApplication, sessionId) {
-  if (typeof sessionId !== 'string' || !application.observeCaptureHostSession) return;
-  try { application.observeCaptureHostSession(sourceApplication, sessionId); } catch { /* see above */ }
-}
-
 async function hookTranscriptLifecycle({ application, runtimeConfigPath, input, sourceApplication, event, adapter, run,
   captureTimeoutMs = 750, signal }) {
   const entry = event === 'UserPromptSubmit';
-  observeHostSession(application, sourceApplication, input?.session_id);
   // The version is read before the decision: a change in between then either
   // denies here or stops every write of this run (capture-window.js).
   const settings = captureSettingsVersion(application, input?.session_id ?? null);

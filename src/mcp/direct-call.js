@@ -25,7 +25,7 @@ export async function prepareDirectAgentToolCall({
   const authoritativeHostSessionId = hostSessionId ?? nativeThreadId ?? mcpHostSessionId({});
   return {
     definition,
-    requestContext: agentHostRequestContext(null, nativeThreadId),
+    requestContext: agentHostRequestContext(null, authoritativeHostSessionId),
     input: normalizeAgentSessionInput(
       toolName,
       parsed.data,

@@ -55,7 +55,9 @@ const BASELINE = Object.freeze({
   // Merged: 172,573 -> 181,138 B (+8,565 B), measured. Chat is unchanged.
   // rec#5 C3: update_capture_policy takes sessionPaused and the task token, so "这次别记" pauses
   // one session without a new tool: 181,138 -> 181,457 B (+319 B). Chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 181457,
+  // rec#5 C3 review: usage, feedback and get_capture_policy take the task token, the only
+  // identity besides the host session that can allow a write: 181,457 -> 181,737 B (+280 B), measured.
+  fullToolSchemaBytes: 181737,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

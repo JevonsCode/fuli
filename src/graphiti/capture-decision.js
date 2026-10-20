@@ -20,8 +20,10 @@ import { captureNotice } from './capture-notice.js';
 // A write that names neither a project nor a directory belongs to no registered
 // project, like work in an unregistered folder. When it names both, both must
 // allow it.
-// - sessionId: the host session the write comes from. A paused session, or one
-//   started by a paused session, records nothing from the pause on (rec#5 C3).
+// - boundSessionId: the session the write's task was bound to by its hook.
+// - sessionId: a session the write names (a hook's own, or one a model sent).
+//   A paused session, or one started by a paused session, records nothing from
+//   the pause on (rec#5 C3); see sessionDecision() for which sessions authorize.
 
 const ALLOWED = Object.freeze({ allowed: true, reason: null, layer: null });
 // NODE_DEBUG=fuli-capture shows decisions made without a session layer.
@@ -57,7 +59,7 @@ export async function describeCapture(application, scope = {}) {
 // resolved its project, so a task without one is outside every project.
 export function taskCaptureScope(task) {
   return { sourceApplication: task.sourceApplication, personalProjectId: task.personalProjectId ?? null,
-    sessionId: task.sessionId ?? null };
+    boundSessionId: task.sessionId ?? null };
 }
 
 // The result a skipped write returns. It names the decision only, never the
@@ -100,34 +102,37 @@ async function decide(application, scope) {
   return { policy, settings, project, decision: sessionDecision(application, scope) };
 }
 
-// The session layer. A write is checked against the session its scope names
-// (a hook's, a task's) and, for an Agent's own MCP or CLI call, against the
-// host session its client runs in, which no model argument can replace. That
-// process may have been started for an earlier session of its client (Claude
-// Code keeps it across /clear), so the session the client's hooks last ran in
-// is checked too whenever it is another one. An
-// Agent call whose client names no host session and whose scope names none
-// cannot be shown to come from an unpaused session while any session of that
-// client is paused, so it records nothing then. A pause that cannot be read is
-// never taken for "not paused" (C3-5). Every FULI application and the capture
-// window's port carry the session layer; a port composed without one (a test
-// double) has no paused sessions.
-function sessionDecision(application, { sessionId = null, sourceApplication = 'other' }) {
+// The session layer (rec#5 C3). Only two identities can authorize a write:
+// the session bound to the write's task (taskCaptureScope(): the hook issued
+// its token for the session it ran in) and, for an Agent's own MCP or CLI
+// call, the host session its client process runs in (agentHostRequestContext()).
+// A session the write merely names can only refuse it, never allow it. An
+// Agent call is recorded only when it has an authorizing identity, none of
+// its identities is paused and, without a task, no session of its client is
+// paused at all: its process may have been started for an earlier session of
+// the client (Claude Code keeps it across /clear), so its host session cannot
+// be shown to be the current one. Writes outside an Agent call (hooks, the
+// console) are decided by the sessions their scope names. A pause that cannot
+// be read is never taken for "not paused" (C3-5). Every FULI application and
+// the capture window's port carry the session layer; a port composed without
+// one (a test double) has no paused sessions.
+function sessionDecision(application, { boundSessionId = null, sessionId = null, sourceApplication = 'other' }) {
   const host = activeAgentHostSession();
-  if (!sessionId && !host && host !== null) return ALLOWED;
+  const agentCall = host !== undefined;
+  if (!agentCall && !boundSessionId && !sessionId) return ALLOWED;
   if (!application.getSessionCapturePause) {
     debug('capture decision on a port without a session layer; no session is paused there');
     return ALLOWED;
   }
   try {
-    const latest = host ? application.latestCaptureHostSession(sourceApplication) : null;
-    const sessions = [...new Set([sessionId, host, latest].filter(Boolean))];
-    if (!sessions.length) {
-      return application.hasPausedCaptureSession(sourceApplication) ? denied('policy_unavailable', 'session') : ALLOWED;
-    }
-    for (const id of sessions) {
+    for (const id of new Set([boundSessionId, host, sessionId].filter(Boolean))) {
       const session = application.getSessionCapturePause(id);
       if (session.paused) return { ...denied('session_paused', 'session'), since: session.since };
+    }
+    if (!agentCall) return ALLOWED;
+    if (!boundSessionId && !host) return denied('policy_unavailable', 'session');
+    if (!boundSessionId && application.hasPausedCaptureSession(sourceApplication)) {
+      return denied('policy_unavailable', 'session');
     }
     return ALLOWED;
   } catch {
