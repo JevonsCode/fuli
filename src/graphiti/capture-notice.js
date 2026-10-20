@@ -13,12 +13,20 @@ const REASON_NOTICES = Object.freeze({
 const RECORDING_OFF = '自动记录已关闭';
 const EXPLICIT_OPERATION_RESULTS = Object.freeze({ project_created: '已创建项目，会话未记录' });
 
-// reason is a capture decision's denial, or capture_changed when a transcript
-// stretch was skipped because the settings changed while it was written.
+// What a hook says about the transcript itself (transcript-capture-gap.js): a
+// stretch skipped because the settings changed while it was written, or a
+// denial that could not be kept safely, in a new settings generation
+// (unsaved) or nowhere local at all (unwritable).
+const TRANSCRIPT_NOTICES = Object.freeze({
+  capture_changed: '记录设置有变动，无法确认这段是否允许记录，已跳过',
+  capture_state_unsaved: '记录状态未能安全保存，本会话后续内容暂不导入',
+  capture_state_unwritable: '记录状态无法写入本地，本会话后续内容暂不导入；修复本地写入前，新的进程可能无法识别这段未记录的内容，请手动检查'
+});
+
+// reason is a capture decision's denial or one of the transcript states above.
 export function captureNotice(reason) {
   if (!reason) return null;
-  if (reason === 'capture_changed') return '记录设置有变动，无法确认这段是否允许记录，已跳过';
-  return `${REASON_NOTICES[reason] ?? RECORDING_OFF}；${EXPLICIT_EDITS_SAVED}`;
+  return TRANSCRIPT_NOTICES[reason] ?? `${REASON_NOTICES[reason] ?? RECORDING_OFF}；${EXPLICIT_EDITS_SAVED}`;
 }
 
 // A receipt's notices for one turn: the decision, then each explicit operation

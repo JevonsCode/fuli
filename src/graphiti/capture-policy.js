@@ -41,6 +41,7 @@ export class CapturePolicyStore {
     this.statFile = statFile;
     this.memory = { ...DEFAULT_POLICY };
     this.parsed = null;
+    this.memoryGeneration = 0;
     this.generationPath = this.path ? join(dirname(this.path), 'capture-settings-generation.json') : null;
   }
 
@@ -79,7 +80,7 @@ export class CapturePolicyStore {
   // scopes generations per global, client, project and session layer, each
   // persistent and monotonic, not a fingerprint of the final switch.
   version() {
-    if (!this.path) return `memory:${JSON.stringify(this.memory)}`;
+    if (!this.path) return `memory:${this.memoryGeneration}:${JSON.stringify(this.memory)}`;
     const observed = this.#fileKey();
     const stored = this.#readGeneration();
     if (stored === null && observed === ABSENT) return ABSENT;
@@ -95,6 +96,17 @@ export class CapturePolicyStore {
       if (error?.code === 'ENOENT') return ABSENT;
       throw new CapturePolicyConfigurationError('Capture policy could not be read');
     }
+  }
+
+  // A newer generation without a settings change, so every process treats
+  // what it last recorded under the current one as stale. Throws when it
+  // cannot be saved.
+  advanceVersion() {
+    if (!this.path) {
+      this.memoryGeneration += 1;
+      return;
+    }
+    this.#nextGeneration(this.#readGeneration(), this.#fileKey());
   }
 
   // A missing generation is null; an unreadable one is replaced by a newer one.

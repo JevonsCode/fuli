@@ -2,7 +2,7 @@ import { transcriptGuardFailureMessage, withTranscriptGuard } from './transcript
 import { syncConversationTranscript, claimTranscriptBoundary, recordTranscriptTaskEntry, transcriptCaptureScope,
   withTranscriptNotice } from './sync-transcript.js';
 import { captureDecision, captureSettingsVersion, withCaptureLookups } from '../graphiti/capture-decision.js';
-import { transcriptCaptureLedger, UNATTRIBUTABLE } from './transcript-capture-gap.js';
+import { keepDenial, transcriptCaptureLedger, UNATTRIBUTABLE } from './transcript-capture-gap.js';
 import { captureNotice } from '../graphiti/capture-notice.js';
 import { recoverFailedTranscriptEntry } from './fallback-transcript-boundary.js';
 import { captureWindow, withCaptureBudget } from './capture-window.js';
@@ -22,10 +22,13 @@ async function hookTranscriptLifecycle({ application, runtimeConfigPath, input, 
   const captureCheck = await captureDecision(application, transcriptCaptureScope(input, sourceApplication));
   const enabled = captureCheck.allowed;
   // Each entry says when automatic recording is off (rec#11 D-01); Stop stays
-  // quiet. A hook that skipped a stretch because the settings changed says so.
+  // quiet. A hook that skipped a stretch because the settings changed, or that
+  // could not keep a denial safely, says so.
   const notice = entry ? captureNotice(captureCheck.reason) : null;
+  let captureState = null;
   const withCaptureNotice = (value, skipped) => {
-    const lines = [notice, captureNotice(skipped)].filter(Boolean).map(text => `Fuli: ${text}`);
+    const lines = [...new Set([notice, captureNotice(skipped), captureNotice(captureState)].filter(Boolean))]
+      .map(text => `Fuli: ${text}`);
     return lines.length ? { ...value, systemMessage: [value.systemMessage, ...lines].filter(Boolean).join('\n') } : value;
   };
   // Turns written while the capture settings changed since this session last
@@ -34,13 +37,13 @@ async function hookTranscriptLifecycle({ application, runtimeConfigPath, input, 
   // that cannot take its marker now cannot make the stretch importable later.
   const settings = captureSettingsVersion(application);
   const ledger = input?.session_id ? transcriptCaptureLedger(runtimeConfigPath, input, sourceApplication) : null;
-  if (!enabled) await ledger?.deny(settings, captureCheck.reason);
+  if (!enabled) captureState = await keepDenial(application, ledger, settings, captureCheck.reason);
   const notRecorded = enabled ? (ledger ? await ledger.skipReason(settings) : UNATTRIBUTABLE) : null;
   const settle = async sync => {
     if (!ledger || !enabled) return;
     // A denial found inside the sync (the session's task is in a project that
     // is not recorded) is kept the same way.
-    if (sync?.status === 'capture_disabled') await ledger.deny(settings, sync.reason);
+    if (sync?.status === 'capture_disabled') captureState ??= await keepDenial(application, ledger, settings, sync.reason);
     else if (['saved', 'ready'].includes(sync?.status)) ledger.record(settings);
   };
   let started = false, output, context;

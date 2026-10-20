@@ -150,3 +150,15 @@ export function captureSettingsVersion(application) {
     return null;
   }
 }
+
+// Moves the settings version without a settings change, so every process
+// treats what it last recorded as stale: the fallback when a session's own
+// record of a denial cannot be kept. False when that cannot be saved either.
+export function advanceCaptureSettingsVersion(application) {
+  try {
+    application.advanceCapturePolicyVersion();
+    return true;
+  } catch {
+    return false;
+  }
+}
