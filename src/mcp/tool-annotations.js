@@ -17,6 +17,7 @@ const READ_TOOLS = new Set([
   'get_external_knowledge_conflict_policy',
   'list_employee_templates',
   'list_employee_tools',
+  'list_agent_apps',
   'verify_task_checkpoint',
   'read_task_preferences',
   'search_current_project_knowledge',
@@ -75,6 +76,7 @@ const WRITE_TOOLS = new Set([
   'delete_public_project',
   'recruit_employee',
   'call_employee_tool',
+  'submit_agent_app_version',
   'begin_task_context',
   'checkpoint_task_knowledge',
   'checkpoint_project_agent_memory',
@@ -156,7 +158,7 @@ export function annotationsFor(name) {
   return {
     readOnlyHint: readOnly,
     destructiveHint: DESTRUCTIVE_TOOLS.has(name),
-    idempotentHint: readOnly || name === 'review_with_tonborg' || name === 'assess_agent_action' || name === 'assess_task_completion' || name === 'recruit_employee' || name === 'upsert_personal_project' ||
+    idempotentHint: readOnly || name === 'review_with_tonborg' || name === 'assess_agent_action' || name === 'assess_task_completion' || name === 'recruit_employee' || name === 'submit_agent_app_version' || name === 'upsert_personal_project' ||
       name === 'upsert_project_agent' ||
       name === 'delete_project_agent' ||
       name === 'cleanup_test_project_agents' ||

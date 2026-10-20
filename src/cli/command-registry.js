@@ -26,6 +26,8 @@ Install and Agent connection:
   peer status|host|invite|join|share|revoke|off [--data-dir DIR]  (LAN roundtable Beta: pair devices and share project leads)
   remote-mcp --personal-project-id ID --bearer-token-file FILE [--port PORT] [--data-dir DIR] [--source-application claude|cursor|other] [--allowed-origin HTTPS_ORIGIN] [--allowed-host HOST] [--max-sessions N] [--session-idle-ttl-seconds N]
   employee install BUILT_PACKAGE_DIRECTORY [--replace] [--runtime-config FILE]
+  app list [--agent AGENT_ID] | show APP_ID | approve APP_ID VERSION | disable APP_ID | rollback APP_ID VERSION  (Agent apps; approve and rollback ask in this terminal)
+  app delete APP_ID [--data [--output DIR]] | export APP_ID --output DIR  (delete code first, data second) [--runtime-config FILE]
   worker dispatch --bindings FILE [--runtime-config FILE]  (trusted local host; pipe {plan, idempotencyKey} on stdin)
   update [setup options]  (already latest: no restart; otherwise refresh existing connections only)
   setup --connected-only [setup options]  (repair existing connections without adding clients)
