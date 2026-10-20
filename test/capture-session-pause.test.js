@@ -439,7 +439,7 @@ const SESSION_C = '3e4f5a6b-7c8d-4e9f-8a1b-2c3d4e5f6a7b';
 
 // Window 1 started its MCP process in session A, then /clear moved it to B; window 2
 // runs session C. After B pauses, hooks run again in the given order.
-async function clearedWindow(t, hookOrder) {
+async function clearedWindow(t, hookOrder, pausedSession = SESSION_B) {
   const f = await fixture(t);
   const recorded = [];
   f.app.recordKnowledgeUsage = async input => { recorded.push(input); return { status: 'recorded' }; };
@@ -449,7 +449,7 @@ async function clearedWindow(t, hookOrder) {
     tokens[session] = (await codexEntry(f, f.dirs.novel, { session })).context.taskContextToken;
   }
   f.clock.now = PAUSED_AT;
-  await setPaused(f, { taskContextToken: tokens[SESSION_B] }, true);
+  if (pausedSession) await setPaused(f, { taskContextToken: tokens[pausedSession] }, true);
   for (const session of hookOrder) {
     tokens[session] = (await codexEntry(f, f.dirs.novel, { session, prompt: 'Another turn.' })).context.taskContextToken;
   }
@@ -512,4 +512,33 @@ test('a client without a native session: while one of its sessions is paused onl
   assert.equal((await mcpCall(f, cursor, 'record_knowledge_usage', usage(undefined, mine.context.taskContextToken))).status,
     'recorded', 'its own token keeps another session recording (C3-3)');
   assert.equal(recorded.length, 2);
+});
+
+const STALE = 'FULI 绑定的是 /clear 之前的会话，本会话的自动记录暂不可用；重启客户端或新开会话即可恢复';
+
+test('a /clear session in an MCP process still bound to the paused earlier session is refused as a stale binding', async (t) => {
+  const { f, recorded, tokens, oldProcess } = await clearedWindow(t, [SESSION_C], SESSION_A);
+  for (const [name, args] of [['record_knowledge_usage', usage(undefined, tokens[SESSION_B])],
+    ['record_knowledge_feedback', feedback(SESSION_B, tokens[SESSION_B])]]) {
+    const result = await mcpCall(f, oldProcess, name, args);
+    assert.deepEqual(captureShape(result), ['disabled', 'session_binding_stale', 'session'], name);
+    assert.ok(result.notice.startsWith(STALE), result.notice);
+  }
+  const policy = await mcpCall(f, oldProcess, 'get_capture_policy', { projectPath: f.dirs.novel, taskContextToken: tokens[SESSION_B] });
+  assert.deepEqual([policy.current.captured, policy.current.reason, policy.current.sessionPaused, policy.current.binding,
+    policy.current.pausedSince], [false, 'session_binding_stale', false, 'stale', undefined]);
+  assert.match(policy.current.recovery, /Restart the client .* or start a new session/);
+  assert.doesNotMatch(policy.current.notice, /暂停记录/, 'B is not said to be paused');
+  // In its own window the same session records with its token.
+  const windowB = { env: { CODEX_THREAD_ID: SESSION_B }, sourceApplication: 'codex' };
+  assert.equal((await mcpCall(f, windowB, 'record_knowledge_usage', usage(undefined, tokens[SESSION_B]))).status, 'recorded');
+  assert.equal(recorded.length, 1);
+});
+
+test('a /clear session in an MCP process bound to an unpaused earlier session records with its token', async (t) => {
+  const { f, recorded, tokens, oldProcess } = await clearedWindow(t, [SESSION_C], null);
+  assert.equal((await mcpCall(f, oldProcess, 'record_knowledge_usage', usage(undefined, tokens[SESSION_B]))).status, 'recorded');
+  const policy = await mcpCall(f, oldProcess, 'get_capture_policy', { projectPath: f.dirs.novel, taskContextToken: tokens[SESSION_B] });
+  assert.deepEqual([policy.current.captured, policy.current.reason, policy.current.binding], [true, null, undefined]);
+  assert.equal(recorded.length, 1);
 });

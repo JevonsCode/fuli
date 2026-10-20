@@ -7,7 +7,10 @@ const EXPLICIT_EDITS_SAVED = '你明确提交的修改仍会保存';
 const REASON_NOTICES = Object.freeze({
   policy_unavailable: '记录设置读取失败，本次未自动记录',
   project_off: '此项目未开启记忆',
-  project_unregistered: '当前目录不是 FULI 项目，未自动记录'
+  project_unregistered: '当前目录不是 FULI 项目，未自动记录',
+  // Not this session's pause: the client's FULI connection still names the
+  // session before /clear (capture-decision.js).
+  session_binding_stale: 'FULI 绑定的是 /clear 之前的会话，本会话的自动记录暂不可用；重启客户端或新开会话即可恢复'
 });
 // The global and client switches, and any reason without wording of its own.
 const RECORDING_OFF = '自动记录已关闭';

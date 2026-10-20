@@ -26,6 +26,7 @@ import { captureNotice } from './capture-notice.js';
 //   the pause on (rec#5 C3); see sessionDecision() for which sessions authorize.
 
 const ALLOWED = Object.freeze({ allowed: true, reason: null, layer: null });
+const STALE_BINDING_RECOVERY = 'This client\'s FULI connection is still bound to the session before /clear, which is paused; this session is not paused. Restart the client (or its MCP connection) or start a new session so FULI binds to the current session.';
 // NODE_DEBUG=fuli-capture shows decisions made without a session layer.
 const debug = debuglog('fuli-capture');
 const OUTSIDE_PROJECTS = Object.freeze({ personalProjectId: null });
@@ -52,6 +53,8 @@ export async function describeCapture(application, scope = {}) {
     reason: decision.reason, layer: decision.layer,
     ...(decision.reason === 'project_off' ? { offSince: projectOffSince(settings, project.personalProjectId) } : {}),
     ...(decision.since ? { pausedSince: decision.since } : {}),
+    ...(decision.reason === 'session_binding_stale' ? { sessionPaused: false, binding: 'stale',
+      recovery: STALE_BINDING_RECOVERY } : {}),
     notice: captureNotice(decision.reason, decision.since) } };
 }
 
@@ -125,9 +128,20 @@ function sessionDecision(application, { boundSessionId = null, sessionId = null,
     return ALLOWED;
   }
   try {
-    for (const id of new Set([boundSessionId, host, sessionId].filter(Boolean))) {
+    // The write's own sessions: its task's, any it names and, without a task,
+    // the host session of the call. With a task, the host session is checked
+    // below even when the MCP layer filled it in as the named session.
+    const own = boundSessionId ? [boundSessionId, sessionId === host ? null : sessionId] : [sessionId, host];
+    for (const id of new Set(own.filter(Boolean))) {
       const session = application.getSessionCapturePause(id);
       if (session.paused) return { ...denied('session_paused', 'session'), since: session.since };
+    }
+    // A task of another session than the call's host: the client started a new
+    // session inside the MCP process (Claude Code /clear) and that process is
+    // still bound to the old one. A pause of the old one still applies, but it
+    // is not this session's pause (rec#5 C3, limited support).
+    if (boundSessionId && host && host !== boundSessionId && application.getSessionCapturePause(host).paused) {
+      return denied('session_binding_stale', 'session');
     }
     if (!agentCall) return ALLOWED;
     if (!boundSessionId && !host) return denied('policy_unavailable', 'session');
