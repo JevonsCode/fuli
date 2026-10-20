@@ -522,11 +522,12 @@ export const GRAPH_TOOL_DEFINITIONS = [
   {
     name: 'record_knowledge_feedback',
     title: 'WRITE · Record negative knowledge evidence',
-    description: 'Record bounded negative evidence for rejected, validation-failed, contradicted, or outdated retained knowledge. Require reason and evidence summary; idempotent per task, item, feedback kind, content generation. Lowers ranking signals and marks requires_attention. Never deletes evidence or silently overrides human-confirmed authority; trusted human/source contradiction may return agent-confirmed knowledge to pending.',
+    description: 'Record bounded negative evidence for rejected, validation-failed, contradicted, or outdated retained knowledge. Require reason and evidence summary; idempotent per task, item, feedback kind, content generation. Lowers ranking signals and marks requires_attention. Never deletes evidence or silently overrides human-confirmed authority; trusted human/source contradiction may return agent-confirmed knowledge to pending. Pass the current taskContextToken.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       taskId: id,
       sessionId: nullableStringSchema(),
+      taskContextToken: id,
       toolName: nullableStringSchema(),
       items: arraySchema(objectSchema({
         itemId: id,

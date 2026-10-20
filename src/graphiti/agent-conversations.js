@@ -58,13 +58,7 @@ export async function checkpointConversation(application, task, workLog, team = 
       events: [{ event_id: `${task.token}:summary`, role: 'summary', kind: 'checkpoint', content: safeConversationContent(workLog.summary) }]
     });
     if (result.status !== 'saved') return result;
-    let name = team?.name ?? null;
-    if (!team) {
-      try {
-        const agent = await application.personal.getProjectAgent(application.config.personal.spaceId, task.personalProjectId, task.projectAgentId);
-        name = agent?.profile?.display_name || agent?.profile?.name || null;
-      } catch { /* Metadata availability does not undo a successful save. */ }
-    }
+    const name = team ? team.name ?? null : await taskAgentName(application, task);
     return { ...result, agent_id: task.projectAgentId, work_status: workLog.status,
       receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
         agentId: task.projectAgentId, name, sourceApplication: task.sourceApplication,
@@ -73,6 +67,16 @@ export async function checkpointConversation(application, task, workLog, team = 
       coverage: 'task_summary; visible transcript capture is confirmed separately by the host hook',
       guidance: 'Final receipt must include Agent name, truthful work status, and conversation ID. In another client, select this Agent; call resume_agent_conversation with its current taskContextToken and this conversation ID.' };
   } catch { return unavailable(); }
+}
+
+// The task Agent's display name for a receipt; null when it cannot be read,
+// since metadata availability never undoes what the call already did.
+export async function taskAgentName(application, task) {
+  if (!task.projectAgentId) return null;
+  try {
+    const agent = await application.personal.getProjectAgent(application.config.personal.spaceId, task.personalProjectId, task.projectAgentId);
+    return agent?.profile?.display_name || agent?.profile?.name || null;
+  } catch { return null; }
 }
 
 export async function queryConversations(application, input) {

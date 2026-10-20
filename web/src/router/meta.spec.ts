@@ -45,7 +45,14 @@ describe('localized route metadata', () => {
     expect(router.resolve('/project-agents').meta.detail).toBeUndefined()
     expect(router.resolve('/settings').meta.saveBar).toBe(true)
     // Pages not rebuilt yet keep their own layout.
-    expect(router.resolve('/inbox').meta.layout).toBeUndefined()
+    expect(router.resolve('/project-agents/occupations').meta.layout).toBeUndefined()
+  })
+
+  it('puts the inbox, connections, projects, about and not-found pages on the D-03 layouts', () => {
+    expect(['/inbox', '/public-projects'].map(path => router.resolve(path).meta.layout)).toEqual(['canvas', 'canvas'])
+    expect(['/connections', '/about', '/no-such-page'].map(path => router.resolve(path).meta.layout)).toEqual(['form', 'form', 'form'])
+    // The shared report opens outside the shell; it keeps its own header.
+    expect(router.resolve('/reports/jefa').meta.layout).toBeUndefined()
   })
 
   it('titles the taste page the same as its section tab', () => {

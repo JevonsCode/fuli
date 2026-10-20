@@ -54,7 +54,11 @@ const BASELINE = Object.freeze({
   // rec#8 part 2 (D-04 §2): full-profile role_work lets the current session answer a built-in Agent's handed-off work package instead of FULI starting a CLI; review_with_tonborg names that path (+1,009 B).
   // rec#5 section 3 tags: resolve_knowledge_tags and one change_knowledge_tags for create/alias/attach/detach, full profile only, chat reaches them via fuli_call (+1,945 B; D-07 review wording +128 B).
   // Merged: 172,573 -> 182,147 B (+9,574 B), measured. Chat is unchanged.
-  fullToolSchemaBytes: 182147,
+  // rec#5 C3: update_capture_policy takes sessionPaused and the task token, so "这次别记" pauses
+  // one session without a new tool (+319 B). Chat, instructions and entry are unchanged.
+  // rec#5 C3 review: usage, feedback and get_capture_policy take the task token, the only
+  // identity besides the host session that can allow a write (+280 B): 182,147 -> 182,746 B, measured.
+  fullToolSchemaBytes: 182746,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

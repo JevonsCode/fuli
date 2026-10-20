@@ -99,6 +99,21 @@ class StoreProjectAgentAttention:
             total=row['total'], counts=counts,
         )
 
+    async def get_agent_attention(self, actor, personal_space_id, request_id):
+        """One request by its exact identity, open or already handled, apart from any list page."""
+        self._require_personal()
+        await self.authorize(actor, personal_space_id, 'reader')
+        rows, _, _ = await self.runtime.driver.execute_query(
+            '''
+            MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
+                  [:HAS_AGENT_ATTENTION]->(request:FuliAgentAttention {request_id: $request_id})
+            RETURN request LIMIT 1
+            ''', space_id=personal_space_id, request_id=request_id, routing_='r',
+        )
+        if not rows:
+            raise HTTPException(status_code=404, detail='attention request not found')
+        return attention_record(dict(rows[0]['request']))
+
     async def decide_agent_attention(
         self, actor, request: AgentAttentionDecision, *, human: bool,
     ):

@@ -6,6 +6,7 @@ import { readGraphRuntimeConfig } from '../graphiti/runtime-config.js';
 import { createRuntimeLeaseClient } from '../adaptive-runtime/lease-client.js';
 import { createWorkerPlanHost, workerRuntimeBindingKey } from '../graphiti/worker-plan-host.js';
 import { createCodexAcpWorkerAdapter } from '../agents/codex/acp-worker.js';
+import { SessionCapturePauseStore, sessionCapturePausePathForRuntime } from '../graphiti/capture-session-pause.js';
 
 const fields = new Set(['personalSpaceId', 'personalProjectId', 'executorId', 'application',
   'projectPath', 'adapterPath', 'codexPath', 'codexHome', 'leaseExecutor']);
@@ -42,8 +43,11 @@ export async function createWorkerPlanRuntime({ runtimeConfigPath, workerRuntime
   }
   const config = provider ? null : readGraphRuntimeConfig(runtimeConfigPath);
   const localLeases = leases ?? createRuntimeLeaseClient({ runtimeConfigPath });
+  // Workers record nothing while the session that started them is paused.
+  const sessionPauses = new SessionCapturePauseStore(sessionCapturePausePathForRuntime(runtimeConfigPath));
   const host = createWorkerPlanHost({ provider: provider ?? new GraphitiProviderClient({
     baseUrl: config.personal.providerUrl, accessToken: config.personal.accessToken }),
-  leases: localLeases, workerRuntimeBindings: bindings, attemptOptions });
+  leases: localLeases, workerRuntimeBindings: bindings, attemptOptions: { ...attemptOptions,
+    linkCaptureSession: (child, parent) => sessionPauses.link(child, parent) } });
   return { host, async close() { await host.close(); if (!leases) await localLeases.close(); } };
 }

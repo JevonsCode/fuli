@@ -380,7 +380,12 @@ ends with the reason and that explicit edits still save, for example
 deletes what it already recorded; `projectsOffSince` keeps when it stopped. Agents read the
 settings with `get_capture_policy` (pass `projectPath` to learn about the current project) and
 change them with `update_capture_policy` only after restating the change and getting the user's
-confirmation; the settings page uses `PATCH /api/capture-policy`.
+confirmation; the settings page uses `PATCH /api/capture-policy`. Saying "这次别记" in a session pauses
+only that session at once, without a confirmation: the Agent calls `update_capture_policy` with just
+`sessionPaused: true` and its `taskContextToken`, and every later receipt in the session says
+`本会话已暂停记录（自 HH:mm 起）` (`reason: session_paused`). Earlier records stay, workers the session
+starts are paused with it, "继续记" (`sessionPaused: false`) resumes from then on, and nothing written
+while paused is recorded later. The pause lives in the local runtime directory and ends with the session.
 
 Run these local contract tests to check that the README and project-path behavior still match the
 implementation:

@@ -1,4 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { debuglog } from 'node:util';
+import { activeAgentHostSession } from '../app/agent-request-context.js';
 import { projectCaptureReason, projectOffSince, storedProjectSettings, usesProjectModes } from './capture-project-mode.js';
 import { isTemporaryProjectId } from './temporary-project-scope.js';
 import { captureNotice } from './capture-notice.js';
@@ -17,10 +19,16 @@ import { captureNotice } from './capture-notice.js';
 //   directory, so FULI cannot show it is outside every project (C1-4).
 // A write that names neither a project nor a directory belongs to no registered
 // project, like work in an unregistered folder. When it names both, both must
-// allow it. The session layer (rec#5 C3) will read sessionId; callers already
-// pass it.
+// allow it.
+// - boundSessionId: the session the write's task was bound to by its hook.
+// - sessionId: a session the write names (a hook's own, or one a model sent).
+//   A paused session, or one started by a paused session, records nothing from
+//   the pause on (rec#5 C3); see sessionDecision() for which sessions authorize.
 
 const ALLOWED = Object.freeze({ allowed: true, reason: null, layer: null });
+const STALE_BINDING_RECOVERY = 'This client\'s FULI connection is still bound to the session before /clear, which is paused; this session is not paused. Restart the client (or its MCP connection) or start a new session so FULI binds to the current session.';
+// NODE_DEBUG=fuli-capture shows decisions made without a session layer.
+const debug = debuglog('fuli-capture');
 const OUTSIDE_PROJECTS = Object.freeze({ personalProjectId: null });
 
 // Directory lookups shared by the decisions of one hook run or tool request:
@@ -44,14 +52,17 @@ export async function describeCapture(application, scope = {}) {
     personalProjectId: project?.personalProjectId ?? null, captured: decision.allowed,
     reason: decision.reason, layer: decision.layer,
     ...(decision.reason === 'project_off' ? { offSince: projectOffSince(settings, project.personalProjectId) } : {}),
-    notice: captureNotice(decision.reason) } };
+    ...(decision.since ? { pausedSince: decision.since } : {}),
+    ...(decision.reason === 'session_binding_stale' ? { sessionPaused: false, binding: 'stale',
+      recovery: STALE_BINDING_RECOVERY } : {}),
+    notice: captureNotice(decision.reason, decision.since) } };
 }
 
 // The scope of a write made for a FULI task context. Task entry already
 // resolved its project, so a task without one is outside every project.
 export function taskCaptureScope(task) {
   return { sourceApplication: task.sourceApplication, personalProjectId: task.personalProjectId ?? null,
-    sessionId: task.sessionId ?? null };
+    boundSessionId: task.sessionId ?? null };
 }
 
 // The result a skipped write returns. It names the decision only, never the
@@ -76,19 +87,71 @@ async function decide(application, scope) {
   if ((policy.disabledSources ?? []).includes(scope.sourceApplication ?? 'other')) {
     return { policy, decision: denied('client_off', 'client') };
   }
-  if (!usesProjectModes(settings)) return { policy, settings, decision: ALLOWED };
-  let projects;
+  let project = null;
+  if (usesProjectModes(settings)) {
+    let projects;
+    try {
+      projects = await writeProjects(application, scope);
+    } catch {
+      // The project could not be resolved, so the settings cannot be applied.
+      return { policy, settings, decision: denied('policy_unavailable', 'project') };
+    }
+    for (const candidate of projects) {
+      const reason = projectCaptureReason(settings, candidate);
+      if (reason) return { policy, settings, project: candidate, decision: denied(reason, 'project') };
+    }
+    project = projects[0];
+  }
+  return { policy, settings, project, decision: sessionDecision(application, scope) };
+}
+
+// The session layer (rec#5 C3). Only two identities can authorize a write:
+// the session bound to the write's task (taskCaptureScope(): the hook issued
+// its token for the session it ran in) and, for an Agent's own MCP or CLI
+// call, the host session its client process runs in (agentHostRequestContext()).
+// A session the write merely names can only refuse it, never allow it. An
+// Agent call is recorded only when it has an authorizing identity, none of
+// its identities is paused and, without a task, no session of its client is
+// paused at all: its process may have been started for an earlier session of
+// the client (Claude Code keeps it across /clear), so its host session cannot
+// be shown to be the current one. Writes outside an Agent call (hooks, the
+// console) are decided by the sessions their scope names. A pause that cannot
+// be read is never taken for "not paused" (C3-5). Every FULI application and
+// the capture window's port carry the session layer; a port composed without
+// one (a test double) has no paused sessions.
+function sessionDecision(application, { boundSessionId = null, sessionId = null, sourceApplication = 'other' }) {
+  const host = activeAgentHostSession();
+  const agentCall = host !== undefined;
+  if (!agentCall && !boundSessionId && !sessionId) return ALLOWED;
+  if (!application.getSessionCapturePause) {
+    debug('capture decision on a port without a session layer; no session is paused there');
+    return ALLOWED;
+  }
   try {
-    projects = await writeProjects(application, scope);
+    // The write's own sessions: its task's, any it names and, without a task,
+    // the host session of the call. With a task, the host session is checked
+    // below even when the MCP layer filled it in as the named session.
+    const own = boundSessionId ? [boundSessionId, sessionId === host ? null : sessionId] : [sessionId, host];
+    for (const id of new Set(own.filter(Boolean))) {
+      const session = application.getSessionCapturePause(id);
+      if (session.paused) return { ...denied('session_paused', 'session'), since: session.since };
+    }
+    // A task of another session than the call's host: the client started a new
+    // session inside the MCP process (Claude Code /clear) and that process is
+    // still bound to the old one. A pause of the old one still applies, but it
+    // is not this session's pause (rec#5 C3, limited support).
+    if (boundSessionId && host && host !== boundSessionId && application.getSessionCapturePause(host).paused) {
+      return denied('session_binding_stale', 'session');
+    }
+    if (!agentCall) return ALLOWED;
+    if (!boundSessionId && !host) return denied('policy_unavailable', 'session');
+    if (!boundSessionId && application.hasPausedCaptureSession(sourceApplication)) {
+      return denied('policy_unavailable', 'session');
+    }
+    return ALLOWED;
   } catch {
-    // The project could not be resolved, so the settings cannot be applied.
-    return { policy, settings, decision: denied('policy_unavailable', 'project') };
+    return denied('policy_unavailable', 'session');
   }
-  for (const project of projects) {
-    const reason = projectCaptureReason(settings, project);
-    if (reason) return { policy, settings, project, decision: denied(reason, 'project') };
-  }
-  return { policy, settings, project: projects[0], decision: ALLOWED };
 }
 
 function understoodSettings(policy) {
@@ -138,14 +201,18 @@ function denied(reason, layer) {
   return { allowed: false, reason, layer };
 }
 
-// The settings every layer of the decision reads, as one comparable value;
-// null when it cannot be read. Transcript turns written while it changed
-// cannot be attributed to one decision, so they are not imported
-// (conversations/transcript-capture-gap.js). A layer with its own stored
-// state (project modes, session pause) belongs in this value too.
-export function captureSettingsVersion(application) {
+// The settings every layer of the decision reads for one host session, as one
+// comparable value; null when it cannot be read. Transcript turns written
+// while it changed cannot be attributed to one decision, so they are not
+// imported (conversations/transcript-capture-gap.js). The session layer adds
+// its own generation only when the session has a pause record, so a pause or
+// resume in one session never moves the value of another (C3-3).
+export function captureSettingsVersion(application, sessionId = null) {
   try {
-    return application.getCapturePolicyVersion() ?? null;
+    const settings = application.getCapturePolicyVersion() ?? null;
+    const session = sessionId && application.getSessionCapturePause
+      ? application.getSessionCapturePause(sessionId).version : null;
+    return settings === null || !session ? settings : `${settings}|session:${session}`;
   } catch {
     return null;
   }

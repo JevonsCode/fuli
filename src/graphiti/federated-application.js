@@ -35,6 +35,8 @@ import {
   capturePolicyPathForRuntime
 } from './capture-policy.js';
 import { captureDecision, captureDisabled } from './capture-decision.js';
+import { SessionCapturePauseStore, sessionCapturePausePathForRuntime } from './capture-session-pause.js';
+import { setSessionCapturePause } from './session-capture-pause-request.js';
 import {
   AgentAccessPolicyStore,
   agentAccessPolicyPathForRuntime
@@ -98,6 +100,7 @@ import { taskEntryPreferences, finishTaskEntryPreferences } from './task-entry-p
 import { TASK_ENTRY_TOOLS, registerRepositoryProject } from './repository-project-registration.js';
 import { resolveTaskEntryProject } from './task-entry-project-scope.js';
 import { createSessionPreferenceDelivery } from '../conversations/preference-session.js';
+import { transcriptCaptureLedger } from '../conversations/transcript-capture-gap.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
 import { knowledgeTags } from './knowledge-tags.js';
 
@@ -118,12 +121,14 @@ export function openFederatedGraphApplication({
   const app = new FederatedGraphApplication(resolved, {
     fetchImpl,
     capturePolicyStore: policyStore,
+    sessionCapturePauseStore: new SessionCapturePauseStore(sessionCapturePausePathForRuntime(runtimeConfigPath)),
     agentAccessPolicyStore: agentAccessPolicyStore ?? new AgentAccessPolicyStore(
       agentAccessPolicyPathForRuntime(runtimeConfigPath)
     ),
     recallPolicyStore: recallPolicyStore ?? new RecallPolicyStore(recallPolicyPathForRuntime(runtimeConfigPath)),
     tokenUsageResolver,
     consoleUrl: sourceConsoleUrl(runtimeConfigPath),
+    runtimeConfigPath,
     providerRequestTimeoutMs: providerRequestTimeoutFromEnv(env),
     refreshPersonalToken: personalTokenRefresher(runtimeConfigPath, resolved.personal)
   });
@@ -179,18 +184,24 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   constructor(config, {
     fetchImpl = globalThis.fetch,
     capturePolicyStore = new CapturePolicyStore(),
+    sessionCapturePauseStore = new SessionCapturePauseStore(),
     agentAccessPolicyStore = new AgentAccessPolicyStore(),
     recallPolicyStore = new RecallPolicyStore(),
     consoleUrl = sourceConsoleUrl(null),
     projectPathResolver = resolvePersonalProjectPath,
     taskContextRegistry = null,
     providerRequestTimeoutMs = undefined,
-    tokenUsageResolver = undefined, refreshPersonalToken = null
+    tokenUsageResolver = undefined, refreshPersonalToken = null,
+    // The runtime directory whose transcript ledgers this application's hooks
+    // keep; none for an application that only lives in memory.
+    runtimeConfigPath = null
   } = {}) {
     super();
     this.graphiti = true;
     this.config = config;
     this.capturePolicyStore = capturePolicyStore;
+    this.sessionCapturePauseStore = sessionCapturePauseStore;
+    this.runtimeConfigPath = runtimeConfigPath;
     this.agentAccessPolicyStore = agentAccessPolicyStore;
     this.recallPolicyStore = recallPolicyStore;
     this.consoleUrl = consoleUrl;
@@ -1062,6 +1073,31 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   updateCapturePolicy(input) {
     return this.capturePolicyStore.update(input);
+  }
+
+  // The session layer the capture decision reads (rec#5 C3); see captureDecision().
+  getSessionCapturePause(sessionId) {
+    return this.sessionCapturePauseStore.state(sessionId);
+  }
+
+  hasPausedCaptureSession(sourceApplication) {
+    return this.sessionCapturePauseStore.anyPaused(sourceApplication);
+  }
+
+  setSessionCapturePause(sessionId, change) {
+    return this.sessionCapturePauseStore.set(sessionId, change);
+  }
+
+  // The local record of how this session's native transcript was last
+  // handled, which a pause writes to first (session-capture-pause-request.js).
+  sessionTranscriptLedger(sourceApplication, sessionId) {
+    return this.runtimeConfigPath
+      ? transcriptCaptureLedger(this.runtimeConfigPath, { session_id: sessionId }, sourceApplication) : null;
+  }
+
+  // An Agent's "这次别记" / "继续记" for the session of its current task.
+  pauseSessionCapture(input) {
+    return setSessionCapturePause(this, input);
   }
 
   getRecallPolicy() {

@@ -10,11 +10,12 @@ export const knowledgeUsageItems = arraySchema(objectSchema({
 
 export const KNOWLEDGE_USAGE_DEFINITION = {
   name: 'record_knowledge_usage',
-  description: 'Record personal knowledge that materially affected the Agent final answer or completed action, only after use: cited means explicit answer reliance; applied means changed implementation/decision. Retrieval, inspection, automatic preference injection, or context presence do not qualify. taskId must be caller-stable for this user task and reused on retries; never generate fresh IDs to recount it. Events are idempotent per item, task, use kind, content generation. Repeated qualified use may promote pending knowledge to agent_confirmed, never human-confirmed or public-eligible.',
+  description: 'Record personal knowledge that materially affected the Agent final answer or completed action, only after use: cited means explicit answer reliance; applied means changed implementation/decision. Retrieval, inspection, automatic preference injection, or context presence do not qualify. taskId must be caller-stable for this user task and reused on retries; never generate fresh IDs to recount it. Events are idempotent per item, task, use kind, content generation. Repeated qualified use may promote pending knowledge to agent_confirmed, never human-confirmed or public-eligible. Pass the current taskContextToken.',
   inputSchema: objectSchema({
     personalSpaceId: id,
     taskId: id,
     sessionId: nullableStringSchema(),
+    taskContextToken: id,
     toolName: nullableStringSchema(),
     items: knowledgeUsageItems
   }, ['personalSpaceId', 'taskId', 'items'])

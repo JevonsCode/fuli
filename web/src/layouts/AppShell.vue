@@ -57,6 +57,12 @@ const attention = useAgentAttention()
 watch(activeSpaceId, id => attention.setSpace(id), { immediate: true })
 let attentionTimer: ReturnType<typeof setInterval> | undefined
 function refreshAttention() { if (document.visibilityState === 'visible' && !attention.loading && !attention.open) void attention.refresh() }
+// The top bar's one refresh reads the console again and the waiting requests with it:
+// the whole queue while the inbox is open, so that page needs no refresh of its own.
+function refreshConsole() {
+  void store.refresh()
+  if (!attention.loading) void attention.refresh()
+}
 onMounted(() => {
   if (store.runtimeStatus === 'idle') void store.refresh()
   attentionTimer = setInterval(refreshAttention, 30000)
@@ -87,7 +93,7 @@ watchEffect(() => {
           <div class="app-actions">
             <GlossaryToggle />
             <LocaleSwitcher />
-            <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="store.runtimeStatus === 'loading'" @click="store.refresh" />
+            <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="store.runtimeStatus === 'loading'" data-shell-refresh @click="refreshConsole" />
           </div>
         </div>
       </header>

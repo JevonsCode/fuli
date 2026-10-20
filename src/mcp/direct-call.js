@@ -6,6 +6,7 @@ import {
 } from './session-id.js';
 import { jsonSchemaToZod } from './tool-schema.js';
 import { nativeSessionFromEnv } from '../agents/native-session-env.js';
+import { agentHostRequestContext } from '../app/agent-request-context.js';
 
 export async function prepareDirectAgentToolCall({
   toolName,
@@ -24,6 +25,7 @@ export async function prepareDirectAgentToolCall({
   const authoritativeHostSessionId = hostSessionId ?? nativeThreadId ?? mcpHostSessionId({});
   return {
     definition,
+    requestContext: agentHostRequestContext(null, authoritativeHostSessionId),
     input: normalizeAgentSessionInput(
       toolName,
       parsed.data,
