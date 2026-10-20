@@ -162,7 +162,7 @@ watch(peekKey, async (key) => {
       <div ref="grid">
         <GrowthLoading v-if="catalog.loading.value && !entries.length" variant="compact" :label="t('occupations.loading')" />
         <div v-else-if="firstReadFailed" class="ui-empty rounded-lg border bg-card text-destructive" role="alert" data-occupations-load-error>
-          <p class="m-0 [overflow-wrap:anywhere]">{{ catalog.error.value }}</p>
+          <p class="m-0 text-destructive [overflow-wrap:anywhere]">{{ catalog.error.value }}</p>
           <Button class="mt-3" size="sm" variant="outline" @click="retryRead">{{ t('occupations.retry') }}</Button>
         </div>
         <p v-else-if="!visible.length" class="ui-empty m-0 rounded-lg border border-dashed bg-card" data-occupations-empty>{{ t('occupations.empty') }}</p>

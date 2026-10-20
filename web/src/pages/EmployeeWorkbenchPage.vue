@@ -443,6 +443,7 @@ async function projectsSaved() {
 .employee-workbench-actions { display: flex; align-items: center; gap: 8px; min-width: 0; margin-left: auto; }
 /* On the canvas the board needs no frame of its own. */
 .employee-workbench-view :deep(.employee-all-projects) { padding: 0; background: transparent; }
+.employee-workbench-view :deep(.judgment-workbench) { padding-inline: 0; }
 .employee-workbench-frame { flex: 1; width: 100%; min-height: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
 .employee-workbench-state { display: grid; flex: 1; gap: 14px; place-content: center; justify-items: center; padding: 30px; color: var(--color-muted); font-size: 14px; text-align: center; }
 .employee-workbench-state h2 { font-size: 20px; font-weight: 600; color: var(--color-ink); }
