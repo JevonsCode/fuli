@@ -38,7 +38,7 @@ import type {
 } from '@/types'
 
 const props = defineProps<{
-  item: KnowledgeItem | null
+  item: KnowledgeItem
   graph: KnowledgeGraph | null
   editable?: boolean
   currentProjectId?: string | null
@@ -193,12 +193,9 @@ function preferenceScopeLabel(item: KnowledgeItem) {
 </script>
 
 <template>
-  <aside class="graph-inspector">
-    <PreferenceDetail v-if="item && mode === 'preference'" :item="item" :graph="graph" :editable="editable" :scope-label="props.preferenceScopeLabel" :status-label="preferenceStatusLabel" :conversation-launchers="conversationLaunchers" @confirm="emit('confirm', $event)" @edit="emit('edit', $event)" @open-replacement="emit('openReplacement', $event)" />
-    <template v-else-if="item">
-      <h3>{{ item.itemKind === 'entity' ? item.title : rawEdge?.type }}</h3>
-      <p class="muted">{{ item.body }}</p>
-
+  <div class="knowledge-inspector">
+    <PreferenceDetail v-if="mode === 'preference'" :item="item" :graph="graph" :editable="editable" :scope-label="props.preferenceScopeLabel" :status-label="preferenceStatusLabel" :conversation-launchers="conversationLaunchers" @confirm="emit('confirm', $event)" @edit="emit('edit', $event)" @open-replacement="emit('openReplacement', $event)" />
+    <template v-else>
       <section v-if="managementItem" class="inspector-project-material">
         <div>
           <span>{{ t('knowledge.workspace.inspector.ownership') }}</span>
@@ -342,6 +339,20 @@ function preferenceScopeLabel(item: KnowledgeItem) {
         <p class="inspector-reasoning">{{ item.reasoningSummary }}</p>
       </template>
 
+      <template v-if="related.length">
+        <h4 class="inspector-subtitle">{{ t('knowledge.workspace.inspector.relations') }}</h4>
+        <div class="inspector-relations">
+          <div v-for="edge in related" :key="edge.id" class="inspector-relation">
+            <strong class="relation-type">{{ edge.type }}</strong>
+            <p class="relation-target">{{ edge.fact || t('knowledge.workspace.inspector.relationshipFallback') }}</p>
+          </div>
+        </div>
+      </template>
+
+      <KnowledgeRecords :item="item" :conversation-launchers="conversationLaunchers" />
+
+      <!-- The quick look's footer: last in the body and sticky, so the actions
+           stay in reach however long the record is. -->
       <div v-if="hasActions" class="inspector-actions">
         <Button size="sm" class="inspector-confirm-action"
           v-if="canConfirm"
@@ -396,22 +407,6 @@ function preferenceScopeLabel(item: KnowledgeItem) {
             : t('knowledge.workspace.inspector.correctOrAssign') }}
         </Button>
       </div>
-
-      <template v-if="related.length">
-        <h4 class="inspector-subtitle">{{ t('knowledge.workspace.inspector.relations') }}</h4>
-        <div class="inspector-relations">
-          <div v-for="edge in related" :key="edge.id" class="inspector-relation">
-            <strong class="relation-type">{{ edge.type }}</strong>
-            <p class="relation-target">{{ edge.fact || t('knowledge.workspace.inspector.relationshipFallback') }}</p>
-          </div>
-        </div>
-      </template>
-
-      <KnowledgeRecords :item="item" :conversation-launchers="conversationLaunchers" />
     </template>
-    <template v-else>
-      <h3>{{ t('knowledge.workspace.inspector.placeholderTitle') }}</h3>
-      <p class="inspector-placeholder">{{ t('knowledge.workspace.inspector.placeholderCopy') }}</p>
-    </template>
-  </aside>
+  </div>
 </template>

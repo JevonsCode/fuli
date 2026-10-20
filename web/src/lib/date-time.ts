@@ -8,6 +8,22 @@ export const DATE_TIME_FULL: Intl.DateTimeFormatOptions = {
   second: "numeric",
 };
 
+/** The same to the minute: list columns, where seconds only add width. */
+export const DATE_TIME_MINUTE: Intl.DateTimeFormatOptions = {
+  year: "numeric",
+  month: "numeric",
+  day: "numeric",
+  hour: "numeric",
+  minute: "numeric",
+};
+
+/** The date alone: the narrowest list columns. */
+export const DATE_ONLY: Intl.DateTimeFormatOptions = {
+  year: "numeric",
+  month: "numeric",
+  day: "numeric",
+};
+
 export interface DateTimeLabels {
   /** Shown when no value was recorded. */
   missing: string;

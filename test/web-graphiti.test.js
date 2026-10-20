@@ -110,7 +110,7 @@ test('knowledge directory, graph, filters, context, and exact item links share o
   assert.match(workspace, /contextPersonalProjectId/);
   assert.doesNotMatch(workspace, /personalProfileGraph|readGraph\(null\)/);
   assert.match(workspace, /currentKnowledgeGraph/);
-  assert.match(workspace, /itemKind: item\.itemKind/);
+  assert.match(workspace, /itemKind: item\??\.itemKind/);
   assert.match(workspace, /providerUrl/);
   assert.match(graphCanvas, /renderKnowledgeGraph/);
   assert.match(inspector, /knowledge\.workspace\.inspector\.evidence/);

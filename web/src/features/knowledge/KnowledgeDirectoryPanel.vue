@@ -14,6 +14,7 @@ import {
   projectMaterialTypeLabel,
   quadrantLabel,
   reviewStateLabel,
+  knowledgeItemKey,
 } from './model'
 
 type DirectorySection = 'knowledge' | 'materials'
@@ -49,17 +50,14 @@ const emit = defineEmits<{
   'select-item': [item: KnowledgeItem]
 }>()
 
-function itemKey(item: Pick<KnowledgeItem, 'itemKind' | 'id'>) {
-  return `${item.itemKind}:${item.id}`
-}
 
 const selectedKnowledgeIndex = computed(() => props.selectedItem
-  ? props.visibleItems.findIndex((item) => itemKey(item) === itemKey(props.selectedItem!))
+  ? props.visibleItems.findIndex((item) => knowledgeItemKey(item) === knowledgeItemKey(props.selectedItem!))
   : -1,
 )
 const selectedMaterialIndex = computed(() => props.selectedItem
   ? props.visibleProjectMaterialItems.findIndex(
-      (item) => itemKey(item) === itemKey(props.selectedItem!),
+      (item) => knowledgeItemKey(item) === knowledgeItemKey(props.selectedItem!),
     )
   : -1,
 )
@@ -129,7 +127,7 @@ const selectedMaterialIndex = computed(() => props.selectedItem
         :row-height="68"
         :active-index="selectedKnowledgeIndex"
         :reset-key="listResetKey"
-        :item-key="itemKey"
+        :item-key="knowledgeItemKey"
         :label="t('knowledge.workspace.workspace.view.knowledgeDirectory')"
       >
         <template #header>
@@ -152,7 +150,7 @@ const selectedMaterialIndex = computed(() => props.selectedItem
                 && selectedItem?.id === item.id,
             }"
             type="button"
-            :data-item-key="itemKey(item)"
+            :data-item-key="knowledgeItemKey(item)"
             @click="emit('select-item', item)"
           >
             <span class="knowledge-row-content">
@@ -183,7 +181,11 @@ const selectedMaterialIndex = computed(() => props.selectedItem
             </span>
             <span class="knowledge-row-type">{{ item.type }}</span>
             <span class="knowledge-row-source">{{ sourceLabel(item) }}</span>
-            <span class="knowledge-row-time">{{ formatTime(latestItemValue(item)) }}</span>
+            <!-- Minutes in a roomy table, the date alone in a narrow one; the full time on hover. -->
+            <span class="knowledge-row-time" :title="formatTime(latestItemValue(item))">
+              <span class="knowledge-time-minute">{{ formatTime(latestItemValue(item), 'minute') }}</span>
+              <span class="knowledge-time-day">{{ formatTime(latestItemValue(item), 'day') }}</span>
+            </span>
             <span class="knowledge-status" :class="item.invalidAt ? 'historical' : 'current'">
               {{ item.invalidAt
                 ? t('common.status.invalid')
@@ -226,7 +228,7 @@ const selectedMaterialIndex = computed(() => props.selectedItem
         :row-height="61"
         :active-index="selectedMaterialIndex"
         :reset-key="listResetKey"
-        :item-key="itemKey"
+        :item-key="knowledgeItemKey"
         :label="t('knowledge.workspace.workspace.view.materialDirectory')"
       >
         <template #default="{ item }">
@@ -237,7 +239,7 @@ const selectedMaterialIndex = computed(() => props.selectedItem
                 && selectedItem?.id === item.id,
             }"
             type="button"
-            :data-item-key="itemKey(item)"
+            :data-item-key="knowledgeItemKey(item)"
             @click="emit('select-item', item)"
           >
             <span class="project-material-copy">

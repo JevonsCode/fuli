@@ -68,10 +68,16 @@ async function setup(path: string, capabilities: Record<string, boolean> = {}, e
 }
 
 describe('AppShell', () => {
-  it('keeps the preferences page title short and specific', async () => {
-    const { wrapper } = await setup('/preferences')
-    expect(wrapper.get('h1').text()).toBe('偏好')
+  it('names the memory destination once while the active tab names the page', async () => {
+    const { wrapper, router } = await setup('/preferences')
+    expect(wrapper.get('h1').text()).toBe('记忆')
+    expect(wrapper.get('[data-section="preferences"]').attributes('aria-current')).toBe('page')
     expect(wrapper.find('[data-design-lab-open]').exists()).toBe(false)
+    // An opened knowledge item is still inside 知识: the H1 does not repeat the tab.
+    await router.push('/knowledge/personal/space-1/directory/entity/item-1')
+    await flushPromises()
+    expect(wrapper.get('h1').text()).toBe('记忆')
+    expect(wrapper.get('[data-section="knowledge"]').attributes('aria-current')).toBe('page')
     wrapper.unmount()
   })
   it('keeps the floating design lab off conversation pages so it never covers a message', async () => {
