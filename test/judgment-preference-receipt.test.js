@@ -69,10 +69,17 @@ test('the judge sees conflicting rules that are not effective, not an empty rule
   assert.doesNotMatch(JSON.stringify(preferences), /Full body/);
 });
 
-test('truncated preferences hold every approval even when a delivered rule is a hard constraint (G2-4)', async t => {
-  const gate = rule('confirm-completion', 'Ask me before marking any release task complete');
-  const { service, prompts, writes } = fixture(t, completePreferences({ effective: [gate], truncated: true,
-    source_windows: { candidates_truncated: true, project_ancestors_truncated: false, queued_conflicts_truncated: false } }));
+test('a large space past the candidate window holds every approval, even with a prohibition delivered (G2-4)', async t => {
+  // 150 applicable rules at the shared limit of 100: the Provider delivers the
+  // first 100 and flags the candidate window. A decision rule may be in the rest.
+  const rules = [rule('aa-confirm-completion', 'Ask me before marking any release task complete', { profile_aspect: 'judgment_preference' }),
+    ...Array.from({ length: 149 }, (_, i) => rule(`rule-${String(i).padStart(3, '0')}`, `Synthetic rule ${i}`, { profile_aspect: 'taste' }))];
+  const delivered = rules.slice(0, 100);
+  const application = { config: { personal: { spaceId: 's' } }, personal: { collaborationPreferences: async () => completePreferences({
+    effective: delivered, task_scope_filtered: true, truncated: true,
+    source_windows: { candidates_truncated: true, project_ancestors_truncated: false, queued_conflicts_truncated: false } }) } };
+  const { service, prompts, writes } = fixture(t, request =>
+    getCollaborationPreferences(application, { personalProjectId: request.personalProjectId }, request, async () => {}));
   const accepted = await service.accept(acceptance);
   assert.equal(accepted.outcome, 'escalate');
   assert.equal(accepted.execution.status, 'not_applied');
@@ -86,8 +93,30 @@ test('truncated preferences hold every approval even when a delivered rule is a 
   assert.equal(reviewed.records.length, 1);
   assert.equal(reviewed.records[0].error, 'preferences_incomplete');
   assert.equal(reviewed.records[0].preferenceDelivery.status, 'partial');
+  assert.match(reviewed.records[0].summary, /candidates truncated/);
   assert.equal(prompts.length, 0);
   assert.equal(writes.length, 0);
+});
+
+test('a conflict queue past its window is reported to the judge, not held, when every rule arrived', async t => {
+  // The queue only annotates conflicts that are already delivered with both sides.
+  const left = rule('left', 'Write release notes in English', { preference_key: 'notes-language' });
+  const right = rule('right', 'Write release notes in Chinese', { preference_key: 'notes-language' });
+  const tone = rule('tone', 'Keep release notes short');
+  const { service, judged, writes } = fixture(t, completePreferences({ effective: [tone], global_preferences: [left, right, tone],
+    conflicts: [{ preference_key: 'notes-language', preference_scope: 'global', item_ids: ['left', 'right'] }],
+    queued_conflicts: [], truncated: true,
+    source_windows: { candidates_truncated: false, project_ancestors_truncated: false, queued_conflicts_truncated: true } }));
+  const accepted = await service.accept(acceptance);
+  const preferences = judged();
+  assert.equal(preferences.status, 'partial');
+  assert.deepEqual(preferences.omitted.truncated, ['queued_conflicts']);
+  assert.deepEqual(preferences.selected.map(item => item.key), ['tone']);
+  assert.deepEqual(preferences.conflicts.map(item => [item.key, item.alternatives.length]), [['notes-language', 2]]);
+  assert.equal(accepted.preferenceDelivery.status, 'partial');
+  assert.deepEqual(accepted.preferenceDelivery.truncated, ['queued_conflicts']);
+  assert.equal(accepted.execution.status, 'applied');
+  assert.equal(writes.length, 1);
 });
 
 test('unreadable preferences are recorded as unavailable and never approve (G7-1)', async t => {

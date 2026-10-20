@@ -5,9 +5,16 @@ import { preferenceTaskSession, preferenceUnknownTaskDimensions } from '../graph
 // compact. Change this version whenever its shape changes, so a judgment made
 // with an older context is never reused as if it were equivalent.
 export const PREFERENCE_RECEIPT_VERSION = 'preference-receipt-1';
-export const PREFERENCE_RECEIPT_RULES = 'Preferences: apply only preferences.selected. A scope_unknown rule is limited to a task dimension this request does not state: do not apply it, do not treat it as absent, and escalate if it could change this decision; it may replace a broader rule with the same key. Apply no side of a conflict; escalate if a conflict is relevant. A rule that is not listed is not permission.';
+export const PREFERENCE_RECEIPT_RULES = 'Preferences: apply only preferences.selected. A scope_unknown rule is limited to a task dimension this request does not state: do not apply it, do not treat it as absent, and escalate if it could change this decision; it may replace a broader rule with the same key. Apply no side of a conflict; escalate if a conflict is relevant. omitted.truncated names source windows that were not read in full; escalate if what they omit could change this decision. A rule that is not listed is not permission.';
 const SOURCE_WINDOWS = { candidates_truncated: 'candidates', project_ancestors_truncated: 'project_ancestors',
   queued_conflicts_truncated: 'queued_conflicts' };
+// Windows whose overflow can drop a rule. The Provider has no separately
+// delivered class of hard constraints: prohibitions and decision rules share
+// the candidate window (newest 3x limit per query, then the first `limit`
+// applicable, global before project and Agent) and the ancestor window (64
+// projects). The conflict queue only annotates conflicts that are already
+// delivered with every alternative, so its overflow is reported, not held.
+const RULE_WINDOWS = new Set(['candidates', 'project_ancestors', 'source']);
 
 export async function readJudgmentPreferences(app, { personalProjectId, projectAgentId = null, taskScope = {} }) {
   const scope = { work_kind: taskScope.workKind ?? 'unknown', workflow: taskScope.workflow ?? 'unknown',
@@ -40,15 +47,14 @@ export async function readJudgmentPreferences(app, { personalProjectId, projectA
     omitted: { out_of_task_scope: receipt.context.task_scope_excluded_count, truncated } };
 }
 
-// Like a blocked task entry, an incomplete receipt pauses the decision: a
-// relevant rule may be missing, so Tonborg neither approves nor recommends.
+// Like a blocked task entry, a receipt that may be missing a rule pauses the
+// decision, so Tonborg neither approves nor recommends. Other gaps go to the judge.
 export function preferenceHold(receipt) {
-  if (receipt.status === 'complete') return null;
-  return receipt.status === 'unavailable'
-    ? { error: 'preferences_unavailable', evidence: ['preference_delivery:unavailable'],
-      summary: 'Tonborg could not read the scoped preferences, so it did not approve. Ask again once preferences can be read.' }
-    : { error: 'preferences_incomplete', evidence: ['preference_delivery:partial'],
-      summary: `Only part of the scoped preferences was delivered (${receipt.omitted.truncated.join(', ')} truncated). Tonborg does not approve while a relevant rule may be missing.` };
+  if (receipt.status === 'unavailable') return { error: 'preferences_unavailable', evidence: ['preference_delivery:unavailable'],
+    summary: 'Tonborg could not read the scoped preferences, so it did not approve. Ask again once preferences can be read.' };
+  const missing = receipt.omitted.truncated.filter(window => RULE_WINDOWS.has(window));
+  return missing.length ? { error: 'preferences_incomplete', evidence: ['preference_delivery:partial'],
+    summary: `Only part of the scoped preferences was delivered (${missing.join(', ')} truncated). Tonborg does not approve while a relevant rule may be missing.` } : null;
 }
 
 // What a judgment record keeps about its preference context: state, not rule text.
