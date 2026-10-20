@@ -92,6 +92,15 @@
   .agent-portrait.agent-card-identity.is-working::after { animation: none; opacity: 0.5; transform: none; }
 }
 :root[data-motion="reduced"] .agent-portrait.agent-card-identity.is-working::after { animation: none; opacity: 0.5; transform: none; }
+.agent-card:has(:focus-visible) { border-color: var(--color-border-strong); }
+/* A collection card's name (directory and 编排): two lines at most, the full name in its title. */
+.agent-card-name {
+  display: -webkit-box; min-width: 0; overflow: hidden; color: var(--color-ink); font-size: 16px; font-weight: 650; line-height: 1.35;
+  text-decoration: none; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.agent-card-name:hover { color: var(--color-accent); }
+/* The whole name line is the visible target, so its focus ring hugs the text. */
+.agent-card-name:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; border-radius: 4px; }
 .agent-card-current {
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; margin: 0; font-size: 13px; line-height: 1.5;
 }

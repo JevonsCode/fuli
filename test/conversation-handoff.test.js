@@ -284,8 +284,9 @@ test('an unrelated listener on the former hashed loopback port does not block th
   const blocker = createServer();
   t.after(() => new Promise(resolve => blocker.close(() => resolve())));
   try { await listen(blocker, formerGuardPort(f.runtime, f.input.session_id)); } catch (error) {
-    // Something else already owns the port, which is the same foreign-holder case.
-    if (error.code !== 'EADDRINUSE') throw error;
+    // Something else already owns the port, or Windows reserves it (an excluded
+    // range answers EACCES): either way it is the same foreign-holder case.
+    if (error.code !== 'EADDRINUSE' && error.code !== 'EACCES') throw error;
   }
   for (let attempt = 0; attempt < 3; attempt++) {
     const result = await f.hook();

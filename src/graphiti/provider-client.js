@@ -5,6 +5,7 @@ import { preferenceTaskSession } from './preference-task-scope.js';
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
 const MAX_PROVIDER_VALIDATION_ERRORS = 5;
+const KNOWLEDGE_TAG_ROUTES = new Set(['resolve', 'create', 'aliases', 'attach', 'detach', 'metrics']);
 
 export class ProviderRequestError extends ApplicationError {
   constructor(message, {
@@ -609,6 +610,11 @@ export class GraphitiProviderClient {
     return this.#request('/v1/project-agent-routing-learning/reset', {
       method: 'POST', body: input
     });
+  }
+  // The open tag vocabulary; reads are POST queries like the other Provider queries.
+  knowledgeTags(route, input) {
+    if (!KNOWLEDGE_TAG_ROUTES.has(route)) throw new TypeError('Unknown knowledge tag route');
+    return this.#request(`/v1/knowledge-tags/${route}`, { method: 'POST', body: input });
   }
   // Reads sent as POST: the host supplies the review verdicts it keeps locally.
   getProjectAgentScoreCard(query) {

@@ -33,6 +33,10 @@
 @source "../../pages/SettingsPage.vue";
 @source "../../pages/TaskSchedulesPage.vue";
 @source "../../features/task-schedules/SchedulePeek.vue";
+/* 编排 on the same canvas: the collection, its cards and each Agent's page. */
+@source "../../pages/ProjectAgentsPage.vue";
+@source "../../features/project-agents/ProjectAgentCard.vue";
+@source "../../pages/ProjectAgentDetailPage.vue";
 /* Inbox, connections, projects, the shared report and not-found on the D-03 canvas. */
 @source "../../pages/InboxPage.vue";
 @source "../../features/project-agents/AttentionWorkspace.vue";
