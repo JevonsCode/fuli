@@ -5,7 +5,7 @@ import { isLoopbackAddress } from './request-policy.js';
 import { readJson, sendJson } from './response.js';
 
 const ROUTE = /^\/api\/agent-apps(?:\/([^/]+)(?:\/(approve|disable|rollback|delete-code|data-deletion|delete-data))?)?$/;
-const LOCAL_CONSOLE = Object.freeze({ channel: 'http', user: 'local-console' });
+const LOCAL_CONSOLE = Object.freeze({ entrypoint: 'http', user: 'local-console' });
 const version = z.string().min(1).max(32);
 const text = z.string().max(128);
 const BODIES = Object.freeze({
@@ -18,8 +18,12 @@ const BODIES = Object.freeze({
   'delete-data': z.object({ ticket: text.optional(), confirm: text.optional() }).strict()
 });
 
-// Reads are open to the console. Every write lets Agent-written code run or
-// removes it, so it is accepted only from a person at this computer.
+// Reads are open to the console. Writes approve, activate or remove Agent-written
+// code. Normal Agent tools (MCP and fuli_call) have no route to them, and they
+// are accepted only on loopback. Loopback and the repeated digest do not show that
+// a person decided: any process of this OS account can call them, and the console
+// request policy only stops cross-site web forgery. FULI records the decision as
+// entrypoint http with presence unverified.
 export async function handleAgentAppApiRequest({ request, response, url, app }) {
   const route = url.pathname.match(ROUTE);
   if (!route) return false;

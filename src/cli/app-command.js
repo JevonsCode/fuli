@@ -9,11 +9,14 @@ import { confirmInTerminal, writeLine } from './terminal-io.js';
 
 const USAGE = 'Usage: fl app list [--agent AGENT_ID] | show APP_ID | approve APP_ID VERSION | disable APP_ID | '
   + 'rollback APP_ID VERSION | delete APP_ID [--data [--output DIR]] | export APP_ID --output DIR  [--runtime-config FILE]';
-// Decisions that let Agent-written code run or remove it need a person at a terminal.
+// Decisions that activate or remove Agent-written code ask at an interactive
+// terminal. That keeps piped callers from answering for the user, but a process
+// of this OS account can open a terminal too, so it does not show a person
+// decided: FULI records entrypoint cli with presence unverified.
 const INTERACTIVE_ACTIONS = new Set(['approve', 'rollback', 'delete']);
 
-// Local user management of Agent apps. Agents only submit and read through
-// their FULI tools; this command is how the person approves and removes apps.
+// Local user management of Agent apps. Normal Agent tools only submit and read;
+// approval, rollback and removal come through this command or the local console.
 export async function runAppCommand(args, {
   env = process.env, interactive = process.stdin.isTTY === true, confirm = confirmInTerminal, print = writeLine
 } = {}) {
@@ -121,7 +124,8 @@ function approvalPreview(detail, version) {
     `  data         ${data}`,
     `  resident     ${version.resident ? 'yes, keeps running in the background' : 'no'}`,
     `  files        ${version.files} (${version.bytes} bytes)`,
-    'Only this exact package will run. Approve it? [y/N] '
+    'The approval covers only this exact package. FULI has no app runner yet, so no app code runs now.',
+    'Recorded as entrypoint cli, presence unverified. Approve it? [y/N] '
   ].join('\n');
 }
 
@@ -133,9 +137,9 @@ function requiredVersion(detail, version) {
 
 function localUser() {
   try {
-    return { channel: 'cli', user: userInfo().username };
+    return { entrypoint: 'cli', user: userInfo().username };
   } catch {
-    return { channel: 'cli', user: 'local-user' };
+    return { entrypoint: 'cli', user: 'local-user' };
   }
 }
 

@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { dataUsage, exportData as copyData, removeDataDirectory } from './data-directory.js';
+import { decisionSource } from './decision-source.js';
 import { appConflict } from './errors.js';
 import { removePackages } from './package-files.js';
 
@@ -16,6 +17,7 @@ export function createAppRemoval(context) {
   const { store, now } = context;
 
   function deleteCode({ appId, actor }) {
+    const source = decisionSource(actor);
     return store.transaction(() => {
       const app = store.existingApp(appId);
       if (app.status === 'deleted') throw appConflict('app_deleted', 'This app and its data were deleted');
@@ -24,7 +26,7 @@ export function createAppRemoval(context) {
         store.revokeTokens(appId, 'code_deleted', at);
         const versions = store.markCodeDeleted(appId);
         store.saveApp({ ...app, status: 'code_deleted', activeVersion: null, updatedAt: at });
-        store.recordEvent({ appId, at, action: 'code_deleted', actor: actor.user, detail: { versions } });
+        store.recordEvent({ appId, at, action: 'code_deleted', actor: actor.user, detail: { versions, ...source } });
       }
       removePackages(context.packagesOf(appId));
       return {
@@ -54,6 +56,7 @@ export function createAppRemoval(context) {
   }
 
   function deleteData({ appId, ticket, confirm, actor }) {
+    const source = decisionSource(actor);
     return store.transaction(() => {
       const app = codeDeletedApp(appId);
       if (confirm !== appId) {
@@ -72,7 +75,7 @@ export function createAppRemoval(context) {
       store.saveApp({ ...app, status: 'deleted', activeVersion: null, dataFormat: null,
         deletionTicket: null, deletionExpiresAt: null, lastUsedAt: null, updatedAt: at });
       store.recordEvent({ appId, at, action: 'data_deleted', actor: actor.user,
-        detail: { versions, dataBytes: usage.bytes, dataFiles: usage.files } });
+        detail: { versions, dataBytes: usage.bytes, dataFiles: usage.files, ...source } });
       removeDataDirectory(context.dataOf(appId));
       return { appId, status: 'deleted', deletedAt: at };
     });

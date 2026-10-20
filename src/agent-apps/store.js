@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+import { DECISION_ENTRYPOINTS, PRESENCE_LEVELS } from './decision-source.js';
 import { appNotFound } from './errors.js';
 
 const APP_ID = /^app-[0-9a-f]{32}$/;
@@ -100,16 +101,16 @@ export class AgentAppStore {
     return row ? {
       appId: row.app_id, version: row.version, digest: row.digest, permissions: JSON.parse(row.permissions),
       data: JSON.parse(row.data), resident: row.resident === 1, approvedBy: row.approved_by,
-      channel: row.channel, approvedAt: row.approved_at
+      entrypoint: row.entrypoint, presence: row.presence, approvedAt: row.approved_at
     } : null;
   }
 
-  insertApproval({ appId, version, digest, permissions, data, resident, approvedBy, channel, approvedAt }) {
+  insertApproval({ appId, version, digest, permissions, data, resident, approvedBy, entrypoint, presence, approvedAt }) {
     this.database.prepare(`INSERT INTO agent_app_approvals
-      (app_id, version, digest, permissions, data, resident, approved_by, channel, approved_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      (app_id, version, digest, permissions, data, resident, approved_by, entrypoint, presence, approved_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(appId, version, digest, JSON.stringify(permissions), JSON.stringify(data), resident ? 1 : 0,
-        approvedBy, channel, approvedAt);
+        approvedBy, entrypoint, presence, approvedAt);
   }
 
   token(tokenHash) {
@@ -157,6 +158,8 @@ export class AgentAppStore {
   }
 }
 
+const sqlList = (values) => values.map((value) => `'${value}'`).join(', ');
+
 function openRegistry(path) {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const database = new DatabaseSync(path);
@@ -174,7 +177,9 @@ function openRegistry(path) {
     );
     CREATE TABLE IF NOT EXISTS agent_app_approvals (
       app_id TEXT NOT NULL, version TEXT NOT NULL, digest TEXT NOT NULL, permissions TEXT NOT NULL,
-      data TEXT NOT NULL, resident INTEGER NOT NULL, approved_by TEXT NOT NULL, channel TEXT NOT NULL,
+      data TEXT NOT NULL, resident INTEGER NOT NULL, approved_by TEXT NOT NULL,
+      entrypoint TEXT NOT NULL CHECK (entrypoint IN (${sqlList(DECISION_ENTRYPOINTS)})),
+      presence TEXT NOT NULL CHECK (presence IN (${sqlList(PRESENCE_LEVELS)})),
       approved_at TEXT NOT NULL, PRIMARY KEY (app_id, version)
     );
     CREATE TABLE IF NOT EXISTS agent_app_tokens (

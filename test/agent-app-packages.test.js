@@ -7,7 +7,7 @@ import { join, relative } from 'node:path';
 import { agentAppRoot, createAgentAppService } from '../src/agent-apps/service.js';
 import { resolveSetupPaths } from '../src/setup/paths.js';
 
-const LOCAL_USER = Object.freeze({ channel: 'cli', user: 'fixture-user' });
+const LOCAL_USER = Object.freeze({ entrypoint: 'cli', user: 'fixture-user' });
 const OWNERS = new Set(['space-a/agent-jvs', 'space-a/agent-dot']);
 const MANIFEST = Object.freeze({
   schemaVersion: 1, name: 'dispatch-log', version: '1.0.0', title: 'Dispatch log',
@@ -103,7 +103,7 @@ test('approval binds the submitted digest and refuses a package changed before o
   const recorded = service.read({ appId: second.appId }).versions.find(({ version }) => version === '1.0.1');
   assert.equal(recorded.state, 'approved');
   assert.deepEqual(recorded.approval, {
-    digest: second.digest, approvedBy: 'fixture-user', channel: 'cli', approvedAt: '2026-10-20T08:00:00.000Z',
+    digest: second.digest, approvedBy: 'fixture-user', entrypoint: 'cli', presence: 'unverified', approvedAt: '2026-10-20T08:00:00.000Z',
     permissions: ['fuli.search_knowledge_graph'], data: { scope: 'app', format: 1, accepts: [1], migration: 'none' },
     resident: false
   });
@@ -116,6 +116,38 @@ test('approval binds the submitted digest and refuses a package changed before o
   assert.throws(() => service.issueToken({ appId: second.appId }), { code: 'package_tampered' });
   writeFileSync(entry, FILES[1].content);
   assert.throws(() => service.verifyToken({ token }), { code: 'app_token_invalid' });
+});
+
+test('an approved version records an unverified presence and still has no way to run', async (t) => {
+  const { service } = fixture(t);
+  const submitted = await service.submit(submission());
+  assert.throws(() => service.approve(approval(submitted, { approver: { channel: 'cli', user: 'fixture-user' } })),
+    TypeError);
+
+  const approved = service.approve(approval(submitted));
+
+  assert.equal(approved.status, 'active');
+  assert.deepEqual(approved.approval, { entrypoint: 'cli', presence: 'unverified' });
+  assert.deepEqual(service.list({}).apps[0].approval, {
+    approvedBy: 'fixture-user', entrypoint: 'cli', presence: 'unverified', approvedAt: '2026-10-20T08:00:00.000Z'
+  });
+  const detail = service.read({ appId: submitted.appId });
+  assert.equal(detail.versions[0].approval.presence, 'unverified');
+  assert.deepEqual(detail.history.find(({ action }) => action === 'approved').detail,
+    { digest: submitted.digest, entrypoint: 'cli', presence: 'unverified' });
+  // Part 1 has no runner: the service offers no way to start an approved app.
+  assert.deepEqual(Object.keys(service).sort(), ['approve', 'close', 'deleteCode', 'deleteData', 'disable',
+    'exportData', 'issueToken', 'list', 'prepareDataDeletion', 'read', 'rollback', 'submit', 'verifyToken']);
+
+  service.disable({ appId: submitted.appId, actor: { entrypoint: 'http', user: 'local-console' } });
+  service.rollback({ appId: submitted.appId, version: '1.0.0', actor: LOCAL_USER });
+  service.deleteCode({ appId: submitted.appId, actor: LOCAL_USER });
+  assert.deepEqual(service.read({ appId: submitted.appId }).history.slice(-3).map(({ action, detail: { entrypoint, presence } }) =>
+    ({ action, entrypoint, presence })), [
+    { action: 'disabled', entrypoint: 'http', presence: 'unverified' },
+    { action: 'enabled', entrypoint: 'cli', presence: 'unverified' },
+    { action: 'code_deleted', entrypoint: 'cli', presence: 'unverified' }
+  ]);
 });
 
 test('a resident service needs its own confirmation on top of the package approval', async (t) => {

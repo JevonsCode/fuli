@@ -4,12 +4,14 @@ import {
   approvalBinds, approvalTerms, dataTransition, tamperedPackage, unavailablePermissions
 } from './authorization.js';
 import { ensureDataDirectory } from './data-directory.js';
+import { decisionSource } from './decision-source.js';
 import { appConflict } from './errors.js';
 import { parseAgentAppManifest } from './manifest.js';
 import { commitPackage, discardPackage, parsePackageFiles, stagePackage, storedPackageMatches } from './package-files.js';
 
 // Submitting, approving and activating app versions. A version is immutable once
-// stored, and only an explicit local approval of its exact digest lets it run.
+// stored, and only an approval of its exact digest, given through the CLI or the
+// local console, makes it active. Part 1 has no runner: an active version runs no code.
 export function createAppVersions(context) {
   const { store, now } = context;
 
@@ -50,6 +52,7 @@ export function createAppVersions(context) {
   }
 
   function approve({ appId, version, digest, approver, confirmResident = false, confirmIrreversibleMigration = false }) {
+    const source = decisionSource(approver);
     return store.transaction(() => {
       const app = store.existingApp(appId);
       if (app.status === 'deleted') throw appConflict('app_deleted', 'This app and its data were deleted');
@@ -66,17 +69,16 @@ export function createAppVersions(context) {
       }
       const transition = activation(app, candidate, { confirmIrreversibleMigration });
       const at = now();
-      store.insertApproval({ appId, version, ...approvalTerms(candidate),
-        approvedBy: approver.user, channel: approver.channel, approvedAt: at });
+      store.insertApproval({ appId, version, ...approvalTerms(candidate), approvedBy: approver.user, ...source, approvedAt: at });
       store.setVersionState(appId, version, 'approved');
-      store.recordEvent({ appId, at, action: 'approved', version, actor: approver.user,
-        detail: { digest, channel: approver.channel } });
-      return activate(app, candidate, transition, { at, actor: approver.user, reason: 'superseded' });
+      store.recordEvent({ appId, at, action: 'approved', version, actor: approver.user, detail: { digest, ...source } });
+      return { ...activate(app, candidate, transition, { at, actor: approver.user, reason: 'superseded' }), approval: source };
     });
   }
 
   // Rollback and re-enabling both activate a version that was approved before.
   function rollback({ appId, version, actor, confirmIrreversibleMigration = false }) {
+    const source = decisionSource(actor);
     return store.transaction(() => {
       const app = store.existingApp(appId);
       if (!['active', 'disabled'].includes(app.status)) {
@@ -92,12 +94,13 @@ export function createAppVersions(context) {
       const transition = activation(app, target, { confirmIrreversibleMigration });
       const at = now();
       store.recordEvent({ appId, at, action: app.activeVersion === version ? 'enabled' : 'rolled_back', version,
-        actor: actor.user, detail: { from: app.activeVersion } });
+        actor: actor.user, detail: { from: app.activeVersion, ...source } });
       return activate(app, target, transition, { at, actor: actor.user, reason: 'rollback' });
     });
   }
 
   function disable({ appId, actor }) {
+    const source = decisionSource(actor);
     return store.transaction(() => {
       const app = store.existingApp(appId);
       if (!['active', 'disabled'].includes(app.status)) {
@@ -107,7 +110,8 @@ export function createAppVersions(context) {
         const at = now();
         store.revokeTokens(appId, 'disabled', at);
         store.saveApp({ ...app, status: 'disabled', updatedAt: at });
-        store.recordEvent({ appId, at, action: 'disabled', version: app.activeVersion, actor: actor.user });
+        store.recordEvent({ appId, at, action: 'disabled', version: app.activeVersion, actor: actor.user,
+          detail: source });
       }
       return { appId, status: 'disabled', version: app.activeVersion };
     });
@@ -166,6 +170,6 @@ function submitted(appId, version) {
   return {
     appId, version: version.version, status: version.state, digest: version.digest,
     ...(version.state === 'pending'
-      ? { approval: `Runs only after the local user approves it: fuli app approve ${appId} ${version.version}` } : {})
+      ? { approval: `Agent tools cannot approve it; approval comes through the CLI or local console: fuli app approve ${appId} ${version.version}` } : {})
   };
 }

@@ -137,7 +137,10 @@ test('the local HTTP API lists apps and accepts management writes only from this
   assert.equal(approved.status, 200);
   assert.equal(approved.body.status, 'active');
   const detail = await requestJson(`${url}/api/agent-apps/${submitted.appId}`);
-  assert.equal(detail.body.versions[0].approval.channel, 'http');
+  assert.equal(detail.body.versions[0].approval.entrypoint, 'http');
+  assert.equal(detail.body.versions[0].approval.presence, 'unverified');
+  const overview = await requestJson(`${url}/api/agent-apps`);
+  assert.deepEqual([overview.body.apps[0].approval.entrypoint, overview.body.apps[0].approval.presence], ['http', 'unverified']);
 
   const disabled = await requestJson(`${url}/api/agent-apps/${submitted.appId}/disable`, { method: 'POST', body: {} });
   assert.equal(disabled.body.status, 'disabled');
@@ -153,7 +156,7 @@ test('the local HTTP API lists apps and accepts management writes only from this
   assert.equal(deleted.body.status, 'deleted');
 });
 
-test('fuli app approve needs the local user at an interactive terminal', async (t) => {
+test('fuli app approve refuses non-interactive callers and records a CLI approval with unverified presence', async (t) => {
   const { runtimeConfigPath, service } = fixture(t);
   const submitted = await service.submit({
     ...submission({ resident: true, runtime: { apiVersion: 1, entry: 'service/main.js', webRoot: 'web' } }),
@@ -181,7 +184,8 @@ test('fuli app approve needs the local user at an interactive terminal', async (
   await runAppCommand(args, { interactive: true, print, confirm: async () => true });
   const approved = service.read({ appId: submitted.appId });
   assert.equal(approved.status, 'active');
-  assert.equal(approved.versions[0].approval.channel, 'cli');
+  assert.equal(approved.versions[0].approval.entrypoint, 'cli');
+  assert.equal(approved.versions[0].approval.presence, 'unverified');
 
   await runAppCommand(['disable', submitted.appId, '--runtime-config', runtimeConfigPath], { interactive: false, print });
   assert.equal(service.read({ appId: submitted.appId }).status, 'disabled');
