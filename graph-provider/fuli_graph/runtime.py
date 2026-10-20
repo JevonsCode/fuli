@@ -344,6 +344,15 @@ class GraphitiRuntime:
             'CREATE CONSTRAINT fuli_remote_delegation_attempt IF NOT EXISTS '
             'FOR (n:FuliRemoteDelegationAttempt) '
             'REQUIRE (n.space_id, n.origin_node, n.origin_message_id, n.origin_attempt_id) IS UNIQUE',
+            # One identity per namespace and normalized name (G4-4).
+            'CREATE CONSTRAINT fuli_knowledge_tag_id IF NOT EXISTS '
+            'FOR (n:FuliKnowledgeTag) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_knowledge_tag_identity IF NOT EXISTS '
+            'FOR (n:FuliKnowledgeTag) REQUIRE (n.space_id, n.namespace_key, n.name_key) IS UNIQUE',
+            'CREATE CONSTRAINT fuli_knowledge_tag_revision_id IF NOT EXISTS '
+            'FOR (n:FuliKnowledgeTagRevision) REQUIRE n.id IS UNIQUE',
+            'CREATE CONSTRAINT fuli_knowledge_tag_link_id IF NOT EXISTS '
+            'FOR (n:FuliKnowledgeTagLink) REQUIRE n.id IS UNIQUE',
         ):
             await self.driver.execute_query(query)
         for query in (
@@ -359,6 +368,8 @@ class GraphitiRuntime:
             'CREATE INDEX fuli_knowledge_assignment_lookup IF NOT EXISTS '
             'FOR (n:FuliKnowledgeAssignment) '
             'ON (n.space_id, n.item_kind, n.item_id)',
+            'CREATE INDEX fuli_knowledge_tag_link_item IF NOT EXISTS '
+            'FOR (n:FuliKnowledgeTagLink) ON (n.space_id, n.item_kind, n.item_id)',
             'CREATE INDEX fuli_knowledge_reference_lookup IF NOT EXISTS '
             'FOR (n:FuliKnowledgeProjectReference) '
             'ON (n.space_id, n.item_kind, n.item_id)',
