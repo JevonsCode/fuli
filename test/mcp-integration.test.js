@@ -270,7 +270,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   'get_agent_conversation_policy', 'update_agent_conversation_policy',
   'get_agent_quality_gate', 'record_agent_verification', 'plan_agent_collaboration',
   'request_agent_loan', 'decide_agent_loan', 'list_agent_loans',
-    'delete_project_agent',
+    'dismiss_project_agent', 'list_agent_dismissal_lessons', 'get_agent_handoff',
     'create_project_agent_assignment', 'list_project_agent_assignments',
     'end_project_agent_assignment', 'replace_project_agent_assignment',
     'coordinate_project_agent_task',

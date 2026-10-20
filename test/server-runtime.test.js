@@ -133,7 +133,7 @@ test('Web server exposes the Graphiti facade and graph console', async () => {
       { method: 'DELETE' }
     );
     assert.equal(agentArchive.status, 200);
-    assert.deepEqual(calls.find(([name]) => name === 'project-agent-delete')[1], {
+    assert.deepEqual(calls.find(([name]) => name === 'project-agent-test-archive')[1], {
       personalSpaceId: 'personal-1',
       agentId: 'activity-agent',
       reason: 'retired'
@@ -384,8 +384,8 @@ function graphApp(calls) {
       calls.push(['project-agent-context', input]);
       return { status: 'ready' };
     },
-    deleteProjectAgent: async (input) => {
-      calls.push(['project-agent-delete', input]);
+    archiveTestProjectAgent: async (input) => {
+      calls.push(['project-agent-test-archive', input]);
       return input;
     },
     cleanupProjectAgentTestRoles: async (input) => {
