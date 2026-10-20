@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { SessionCapturePauseStore } from '../src/graphiti/capture-session-pause.js';
 import { writeVersionedJsonFileAtomic } from '../src/storage/json-format.js';
 import { DEFAULT_RUNTIME_SETTINGS, writeRuntimeSettings } from '../src/system/runtime-settings.js';
 
@@ -45,4 +46,17 @@ test('runtime settings are not replaced over a newer FULI\'s settings', (t) => {
   assert.throws(() => writeRuntimeSettings(file, DEFAULT_RUNTIME_SETTINGS, { secure: () => {} }),
     { code: 'data_format_blocked', store: 'runtime-settings' });
   assert.equal(readFileSync(file, 'utf8'), newer);
+});
+
+test('a session pause record a newer FULI wrote is never replaced', (t) => {
+  const root = directory(t);
+  const store = new SessionCapturePauseStore(root);
+  store.set('synthetic-session', { paused: true, sourceApplication: 'codex' });
+  const [file] = readdirSync(root);
+  const newer = JSON.stringify({ version: 2, generation: 1, nonce: 'synthetic', paused: true });
+  writeFileSync(join(root, file), newer);
+
+  assert.throws(() => store.set('synthetic-session', { paused: false, sourceApplication: 'codex' }), /pause is invalid/);
+  assert.throws(() => store.link('synthetic-session', 'synthetic-parent'), /pause is invalid/);
+  assert.equal(readFileSync(join(root, file), 'utf8'), newer);
 });
