@@ -102,7 +102,10 @@ async function decide(application, scope) {
 
 // The session layer. A write is checked against the session its scope names
 // (a hook's, a task's) and, for an Agent's own MCP or CLI call, against the
-// host session its client runs in, which no model argument can replace. An
+// host session its client runs in, which no model argument can replace. That
+// process may have been started for an earlier session of its client (Claude
+// Code keeps it across /clear), so the session the client's hooks last ran in
+// is checked too whenever it is another one. An
 // Agent call whose client names no host session and whose scope names none
 // cannot be shown to come from an unpaused session while any session of that
 // client is paused, so it records nothing then. A pause that cannot be read is
@@ -111,13 +114,14 @@ async function decide(application, scope) {
 // double) has no paused sessions.
 function sessionDecision(application, { sessionId = null, sourceApplication = 'other' }) {
   const host = activeAgentHostSession();
-  const sessions = [...new Set([sessionId, host].filter(Boolean))];
-  if (!sessions.length && host !== null) return ALLOWED;
+  if (!sessionId && !host && host !== null) return ALLOWED;
   if (!application.getSessionCapturePause) {
     debug('capture decision on a port without a session layer; no session is paused there');
     return ALLOWED;
   }
   try {
+    const latest = host ? application.latestCaptureHostSession(sourceApplication) : null;
+    const sessions = [...new Set([sessionId, host, latest].filter(Boolean))];
     if (!sessions.length) {
       return application.hasPausedCaptureSession(sourceApplication) ? denied('policy_unavailable', 'session') : ALLOWED;
     }

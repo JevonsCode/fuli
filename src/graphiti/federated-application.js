@@ -1068,6 +1068,15 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return this.sessionCapturePauseStore.anyPaused(sourceApplication);
   }
 
+  latestCaptureHostSession(sourceApplication) {
+    return this.sessionCapturePauseStore.latest(sourceApplication);
+  }
+
+  // A hook ran in this host session of its client (see the capture decision).
+  observeCaptureHostSession(sourceApplication, sessionId) {
+    this.sessionCapturePauseStore.observe(sourceApplication, sessionId);
+  }
+
   setSessionCapturePause(sessionId, change) {
     return this.sessionCapturePauseStore.set(sessionId, change);
   }

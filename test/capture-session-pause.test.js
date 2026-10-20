@@ -158,7 +158,8 @@ test('C3-4 a session closed while paused leaves the next session recording witho
 
 async function pauseRecord(f) {
   const directory = sessionCapturePausePathForRuntime(f.runtimeConfigPath);
-  const files = await readdir(directory);
+  // The client's latest session sits in clients/; pause records are files of their own.
+  const files = (await readdir(directory)).filter(name => name.endsWith('.json'));
   assert.equal(files.length, 1);
   return join(directory, files[0]);
 }
@@ -316,8 +317,8 @@ test('a pause whose ledger entry cannot be kept does not pause and does not say 
   assert.deepEqual([result.status, result.paused], ['unsaved', false]);
   assert.doesNotMatch(receiptOf(result), /暂停/);
   assert.match(result.guidance, /did not change/);
-  await assert.rejects(readdir(sessionCapturePausePathForRuntime(f.runtimeConfigPath)), { code: 'ENOENT' },
-    'the pause record was never written');
+  const written = (await readdir(sessionCapturePausePathForRuntime(f.runtimeConfigPath))).filter(name => name.endsWith('.json'));
+  assert.deepEqual(written, [], 'the pause record was never written');
   assert.equal((await captureDecision(f.app, { sourceApplication: 'codex', sessionId: SESSION })).allowed, true);
 });
 
@@ -445,4 +446,27 @@ test('get_capture_policy in a paused session says so without the model passing a
   assert.deepEqual([policy.current.captured, policy.current.reason, policy.current.layer, policy.current.pausedSince],
     [false, 'session_paused', 'session', PAUSED_AT]);
   assert.ok(policy.current.notice.startsWith(PAUSED));
+});
+
+test('an MCP process started for an earlier session checks the session its client hooks run in now', async (t) => {
+  const f = await fixture(t);
+  const recorded = [];
+  f.app.recordKnowledgeUsage = async input => { recorded.push(input); return { status: 'recorded' }; };
+  f.app.recordKnowledgeFeedback = async input => { recorded.push(input); return { status: 'recorded' }; };
+  const earlier = '1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f';
+  // The client's MCP process still names session A; after /clear its hooks run in B.
+  const host = { env: { CODEX_THREAD_ID: earlier }, sourceApplication: 'codex' };
+  const current = await codexEntry(f, f.dirs.novel, { session: NATIVE });
+  assert.equal((await mcpCall(f, host, 'record_knowledge_usage', usage())).status, 'recorded', 'B is not paused yet');
+  f.clock.now = PAUSED_AT;
+  await setPaused(f, current.context, true);
+  for (const sessionId of [undefined, null, earlier]) {
+    for (const [name, args] of [['record_knowledge_usage', usage(sessionId)], ['record_knowledge_feedback', feedback(sessionId)]]) {
+      assert.deepEqual(captureShape(await mcpCall(f, host, name, args)), ['disabled', 'session_paused', 'session'],
+        `${name} with sessionId ${String(sessionId)}`);
+    }
+  }
+  const policy = await mcpCall(f, host, 'get_capture_policy', { projectPath: f.dirs.novel });
+  assert.deepEqual([policy.current.captured, policy.current.reason, policy.current.pausedSince], [false, 'session_paused', PAUSED_AT]);
+  assert.equal(recorded.length, 1);
 });

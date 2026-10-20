@@ -37,6 +37,7 @@ export class SessionCapturePauseStore {
     this.now = now;
     this.readText = readText;
     this.memory = new Map();
+    this.clients = new Map();
   }
 
   // How a session is captured now: paused when it or a session that started it
@@ -72,7 +73,8 @@ export class SessionCapturePauseStore {
   // Whether any session of this client is paused now. An Agent call whose
   // client names no host session cannot be shown to come from another one.
   anyPaused(sourceApplication) {
-    const records = this.directory ? this.#allRecords() : [...this.memory.values()];
+    const records = this.directory ? this.#allRecords()
+      : [...this.memory.values()];
     return records.some(record => record.paused && record.sourceApplication === sourceApplication);
   }
 
@@ -85,6 +87,45 @@ export class SessionCapturePauseStore {
       throw new Error('Session capture pauses could not be listed');
     }
     return names.filter(name => RECORD_FILE.test(name)).map(name => this.#readFile(join(this.directory, name)));
+  }
+
+  // The session a client's hooks last ran in. A client may start a new
+  // session inside an MCP process that still names the old one (Claude Code
+  // after /clear), so that process cannot show its own session is current;
+  // the capture decision checks this one too.
+  observe(sourceApplication, sessionId) {
+    const value = { version: RECORD_VERSION, sourceApplication: requiredClient(sourceApplication),
+      sessionId: validSessionId(sessionId) };
+    if (!this.directory) {
+      this.clients.set(sourceApplication, value);
+      return;
+    }
+    const path = this.#clientPath(sourceApplication);
+    if (this.#readClient(path)?.sessionId !== sessionId) writeJsonFileAtomic(path, value);
+  }
+
+  // The session a client's hooks last ran in, or null before any did.
+  latest(sourceApplication) {
+    if (!this.directory) return this.clients.get(sourceApplication)?.sessionId ?? null;
+    return this.#readClient(this.#clientPath(sourceApplication))?.sessionId ?? null;
+  }
+
+  #readClient(path) {
+    let value;
+    try {
+      value = JSON.parse(this.readText(path));
+    } catch (error) {
+      if (error?.code === 'ENOENT') return null;
+      throw new Error('Latest client session could not be read');
+    }
+    if (value?.version !== RECORD_VERSION || typeof value.sessionId !== 'string' || !value.sessionId) {
+      throw new Error('Latest client session is invalid');
+    }
+    return value;
+  }
+
+  #clientPath(sourceApplication) {
+    return join(this.directory, 'clients', `${transcriptDigest(requiredClient(sourceApplication))}.json`);
   }
 
   // Records that childSessionId was started by parentSessionId.
