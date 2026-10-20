@@ -56,9 +56,9 @@ class Probe { static void Main(string[] args) {
           assert.match(result.reply.error, /timed out/);
           assert.match(result.reply.error, /may still be running/);
           assert.ok(result.elapsedMs < 4000, 'Deadline covers output EOF as well as process exit');
-          for (const name of ['controller', 'cli']) assert.equal(alive(Number(await readFile(join(root, name + '.pid'), 'utf8'))), false, name + ' reclaimed');
+          for (const name of ['controller', 'cli']) assert.equal(await ours(Number(await readFile(join(root, name + '.pid'), 'utf8'))), null, name + ' reclaimed');
           const service = Number(await readFile(join(root, 'service.pid'), 'utf8'));
-          assert.equal(alive(service), true, 'A service descendant must survive controller/CLI cleanup');
+          assert.ok(await ours(service), 'A service descendant must survive controller/CLI cleanup');
           if (scenario === 'hang') assert.equal(result.recovery.ok, true, 'Runner is usable after timeout');
         }
         t.diagnostic(JSON.stringify({ scenario, elapsedMs: result.elapsedMs, bounded: true,
@@ -72,17 +72,23 @@ class Probe { static void Main(string[] args) {
       const path = join(root, name + '.pid');
       if (!existsSync(path)) continue;
       const pid = Number(await readFile(path, 'utf8'));
-      const observed = await inspectWindowsNativeProcess(pid);
+      const observed = await ours(pid);
       if (!observed) continue;
-      assert.equal(observed.executable.toLowerCase(), node.toLowerCase());
-      assert.ok(observed.commandLine.includes(root));
       await stopWindowsNativeProcess(pid, { pid, command: observed.executable, ownership: observed });
-      assert.equal(alive(pid), false, name + ' fixture cleanup confirmed');
+      assert.equal(await ours(pid), null, name + ' fixture cleanup confirmed');
     }
+  }
+
+  // Windows reuses PIDs quickly (a fresh conhost.exe can take an exited
+  // fixture's PID), so "our fixture is still running" means this executable
+  // with this root on its command line, not just a live PID.
+  async function ours(pid) {
+    const observed = await inspectWindowsNativeProcess(pid);
+    if (!observed || observed.executable.toLowerCase() !== node.toLowerCase()) return null;
+    return observed.commandLine.includes(root) ? observed : null;
   }
 });
 
-function alive(pid) { try { process.kill(pid, 0); return true; } catch { return false; } }
 // Compiling the probe can take longer than a run on a busy CI machine; the
 // runs themselves keep the short bound the test is about.
 function run(command, args, timeout = 10000) {
