@@ -2,10 +2,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
-import { nextTick } from 'vue'
 import { useConsoleStore } from '@/stores/console'
 import { employeeTemplates } from '@/features/employees/catalog'
 import type { ProjectAgentRecord } from '@/types'
+import { pageTitle } from '@/layouts/page-title'
 import AgentProfilePage from './AgentProfilePage.vue'
 
 const { getJson, postJson, putJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn(), putJson: vi.fn() }))
@@ -69,6 +69,11 @@ async function setup(path = '/agents/space-a/alpha') {
   const wrapper = mount(RouterView, { attachTo: document.body, global: { plugins: [router] } })
   mounted.push(wrapper); await flushPromises()
   return { router, wrapper }
+}
+// Tabs (shadcn-vue Tabs on reka-ui) select on mouse down; the open tab is kept in the URL.
+async function openTab(wrapper: Awaited<ReturnType<typeof setup>>['wrapper'], tab: string) {
+  await wrapper.get(`[data-profile-tab="${tab}"]`).trigger('mousedown')
+  await flushPromises()
 }
 describe('Agent profile integration', () => {
   it('shows an unset occupation and saves an explicit role with tags apart from the profile', async () => {
@@ -141,10 +146,12 @@ describe('Agent profile integration', () => {
       return normal(url)
     })
     const { wrapper } = await setup()
-    const tab = wrapper.get('[role="tab"][aria-controls="agent-panel-conversations"]')
+    const tab = wrapper.get('[data-profile-tab="conversations"]')
+    expect(tab.attributes('role')).toBe('tab')
     expect(tab.attributes('aria-selected')).toBe('false')
-    await tab.trigger('click')
-    expect(wrapper.get('[role="tabpanel"][id="agent-panel-conversations"]').attributes('aria-hidden')).toBe('false')
+    await openTab(wrapper, 'conversations')
+    expect(tab.attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('[data-profile-panel="conversations"]').attributes('hidden')).toBeUndefined()
     expect(wrapper.find('.agent-conversations').exists()).toBe(true)
     const details = wrapper.get('.agent-conversations')
     ;(details.element as HTMLDetailsElement).open = true
@@ -168,7 +175,7 @@ describe('Agent profile integration', () => {
         : { conversations: [] }
     })
     const { wrapper } = await setup()
-    await wrapper.get('#agent-tab-conversations').trigger('click')
+    await openTab(wrapper, 'conversations')
     const details = wrapper.get('.agent-conversations')
     ;(details.element as HTMLDetailsElement).open = true
     await details.trigger('toggle')
@@ -196,7 +203,7 @@ describe('Agent profile integration', () => {
       return normal(url)
     })
     const { wrapper } = await setup()
-    await wrapper.get('#agent-tab-conversations').trigger('click')
+    await openTab(wrapper, 'conversations')
     const details = wrapper.get('.agent-conversations')
     ;(details.element as HTMLDetailsElement).open = true
     await details.trigger('toggle')
@@ -217,29 +224,32 @@ describe('Agent profile integration', () => {
       }
       return normal(url)
     })
-    const { wrapper } = await setup()
+    const { router, wrapper } = await setup()
     const tabs = () => wrapper.findAll('[role="tab"]')
-    expect(tabs().map((tab) => tab.attributes('tabindex'))).toEqual(['0', '-1', '-1', '-1', '-1', '-1',])
+    // One tab stop: Tab reaches the list, which hands focus to the open tab; arrows move between tabs.
+    expect(wrapper.get('[role="tablist"]').attributes('tabindex')).toBe('0')
+    expect(tabs().map((tab) => tab.attributes('tabindex'))).toEqual(['-1', '-1', '-1', '-1', '-1', '-1'])
+    const selected = () => wrapper.get('[role="tab"][aria-selected="true"]').attributes('data-profile-tab')
 
     const first = tabs()[0]!
     ;(first.element as HTMLButtonElement).focus()
     await first.trigger('keydown', { key: 'ArrowRight' })
-    await nextTick()
-    expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('id')).toBe('agent-tab-history')
-    expect(document.activeElement).toBe(wrapper.get('#agent-tab-history').element)
+    await flushPromises()
+    expect(selected()).toBe('history')
+    expect(document.activeElement).toBe(wrapper.get('[data-profile-tab="history"]').element)
+    // The open tab is part of the URL, so a refresh or a shared link lands on it.
+    expect(router.currentRoute.value.query.tab).toBe('history')
 
-    const scrollIntoView = vi.fn()
-    Object.defineProperty(wrapper.get('#agent-tab-management').element, 'scrollIntoView', { configurable: true, value: scrollIntoView })
-    await wrapper.get('#agent-tab-history').trigger('keydown', { key: 'End' })
-    await nextTick()
-    expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('id')).toBe('agent-tab-management')
-    expect(document.activeElement).toBe(wrapper.get('#agent-tab-management').element)
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' })
+    await wrapper.get('[data-profile-tab="history"]').trigger('keydown', { key: 'End' })
+    await flushPromises()
+    expect(selected()).toBe('management')
+    expect(document.activeElement).toBe(wrapper.get('[data-profile-tab="management"]').element)
 
-    await wrapper.get('#agent-tab-management').trigger('keydown', { key: 'Home' })
-    await nextTick()
-    expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('id')).toBe('agent-tab-overview')
-    expect(document.activeElement).toBe(wrapper.get('#agent-tab-overview').element)
+    await wrapper.get('[data-profile-tab="management"]').trigger('keydown', { key: 'Home' })
+    await flushPromises()
+    expect(selected()).toBe('overview')
+    expect(document.activeElement).toBe(wrapper.get('[data-profile-tab="overview"]').element)
+    expect(router.currentRoute.value.query.tab).toBeUndefined()
   })
 
   it('puts current work first and keeps a long project list compact', async () => {
@@ -265,7 +275,7 @@ describe('Agent profile integration', () => {
     })
 
     const { wrapper } = await setup()
-    const overview = wrapper.get('#agent-panel-overview')
+    const overview = wrapper.get('[data-profile-panel="overview"]')
     expect(overview.findAll('.agent-resume-section').map((section) => section.classes())).toEqual([
       expect.arrayContaining(['agent-current-work-section']),
       expect.arrayContaining(['agent-projects-section']),
@@ -279,7 +289,9 @@ describe('Agent profile integration', () => {
 
   it('uses recorded assignments, team policy and actual shared work for its resume', async () => {
     const { wrapper } = await setup()
-    expect(wrapper.get('h1').text()).toBe('Aster')
+    // The shell renders the page's one H1 from this title: the Agent's real name.
+    expect(pageTitle.value.text).toBe('Aster')
+    expect(wrapper.find('h1').exists()).toBe(false)
     expect(wrapper.get('.agent-portrait').attributes('style')).toMatch(/--agent-identity: var\(--identity-[0-7]\)/)
     expect(wrapper.text()).toContain('Synthetic active project')
     expect(wrapper.text()).toContain('Synthetic previous project')
@@ -343,7 +355,7 @@ describe('Agent profile integration', () => {
     ['/agents/space-b/alpha', []],
   ])('does not show a profile for %s', async (path, reads) => {
     const { wrapper } = await setup(path)
-    expect(wrapper.find('h1').exists()).toBe(false)
+    expect(pageTitle.value.text).toBe('')
     expect(wrapper.find('.agent-resume-header').exists()).toBe(false)
     // Only the named Agent is read, and a foreign space is not read at all.
     expect(getJson.mock.calls).toEqual(reads)
@@ -363,9 +375,9 @@ describe('Agent profile integration', () => {
     getJson.mockImplementation((url: string) => url.startsWith('/api/project-agent-tasks?') && taskCalls++ === 0 ? late.promise : normal(url))
     const { router, wrapper } = await setup()
     await router.push('/agents/space-a/beta'); await flushPromises()
-    expect(wrapper.get('h1').text()).toBe('Birch')
+    expect(pageTitle.value.text).toBe('Birch')
     late.resolve([task('late', 'alpha', 'Stale Aster result')]); await flushPromises()
-    expect(wrapper.get('h1').text()).toBe('Birch')
+    expect(pageTitle.value.text).toBe('Birch')
     expect(wrapper.text()).not.toContain('Stale Aster result')
     expect(wrapper.get('.agent-work-timeline').text()).toContain('Completed evidence')
   })
@@ -394,7 +406,7 @@ describe('Agent profile integration', () => {
     const { router, wrapper } = await setup()
     await router.push('/agents/space-a/beta'); await flushPromises()
     late.resolve(teamView('stale-team-lead', 'stale-team-lead', [])); await flushPromises()
-    expect(wrapper.get('h1').text()).toBe('Birch')
+    expect(pageTitle.value.text).toBe('Birch')
     expect(wrapper.get('.agent-org-lead a').text()).toBe('Birch')
     expect(wrapper.text()).not.toContain('stale-team-lead')
   })

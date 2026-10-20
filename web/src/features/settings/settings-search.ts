@@ -37,6 +37,20 @@ export function filterSettings(root: HTMLElement, query: string): number {
   return matches
 }
 
+/**
+ * The collapsed sections (marked data-settings-section) whose text holds the
+ * query, so the page can open them while the search lasts. Closed sections
+ * stay in the DOM, so their text is searchable.
+ */
+export function matchingSections(root: HTMLElement, query: string): string[] {
+  const needle = normalize(query)
+  if (!needle) return []
+  return [...root.querySelectorAll<HTMLElement>('[data-settings-section]')]
+    .filter(section => normalize(section.textContent).includes(needle))
+    .map(section => section.dataset.settingsSection ?? '')
+    .filter(Boolean)
+}
+
 /** Keep the filter applied while the query changes and cards load their content. */
 export function useSettingsSearch(root: Ref<HTMLElement | null>, query: Ref<string>, onCount: (count: number) => void) {
   const apply = () => { if (root.value) onCount(filterSettings(root.value, query.value)) }

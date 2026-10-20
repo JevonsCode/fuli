@@ -37,6 +37,19 @@ export function taskStatusLabel(status: ProjectAgentTaskStatus | ProjectAgentWor
   return translated === key ? status : translated
 }
 
+/**
+ * How a task status reads at a glance, as a Badge variant: trouble is danger,
+ * waiting on a person or a breaker is warning, live work is primary, done is
+ * success, anything else stays neutral.
+ */
+export function taskStatusTone(status: ProjectAgentTaskStatus | ProjectAgentWorkStatus | string) {
+  if (status === 'blocked' || status === 'failed') return 'destructive' as const
+  if (['awaiting_review', 'waiting_for_human', 'paused', 'awaiting_recruitment'].includes(status)) return 'warning' as const
+  if (status === 'running') return 'default' as const
+  if (status === 'completed') return 'success' as const
+  return 'secondary' as const
+}
+
 export function sourceLabel(source: ConversationSourceApplication | null | undefined) {
   return source ? t(`projectAgents.clients.${source}`) : t('projectAgents.notReported')
 }
