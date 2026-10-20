@@ -28,21 +28,28 @@ describe('localized route metadata', () => {
     expect(router.resolve('/organize').meta.description).toBeUndefined()
   })
 
-  it('keeps the overview header concise', () => {
-    expect(router.resolve('/').meta.eyebrow).toBe('')
+  it('gives no route an eyebrow: the shell H1 is the only page title', () => {
+    expect(router.getRoutes().filter(route => 'eyebrow' in route.meta).map(route => route.path)).toEqual([])
+  })
+
+  it('puts the rebuilt pages on the shared work canvas and settings in the form column', () => {
+    expect(['/', '/project-agents', '/agents/space/agent', '/project-agents/schedules'].map(path => router.resolve(path).meta.layout))
+      .toEqual(['canvas', 'canvas', 'canvas', 'canvas'])
+    expect(router.resolve('/settings').meta.layout).toBe('form')
+    // Pages not rebuilt yet keep their own layout.
+    expect(router.resolve('/project-agents/manage').meta.layout).toBeUndefined()
+    expect(router.resolve('/inbox').meta.layout).toBeUndefined()
   })
 
   it('titles the taste page the same as its section tab', () => {
     const route = router.resolve('/preferences/writing')
     expect(route.name).toBe('writing-taste')
-    expect(route.meta.eyebrow).toBe('')
     expect(routeMetaText(route.meta.title)).toBe('品味')
   })
 
   it('registers the concise project Agent directory', () => {
     const route = router.resolve('/project-agents')
     expect(route.name).toBe('project-agents')
-    expect(route.meta.eyebrow).toBe('')
     expect(routeMetaText(route.meta.title)).toBe('Agents')
   })
 
