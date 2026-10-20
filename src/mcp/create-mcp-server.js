@@ -12,7 +12,7 @@ import {
 
 import { callAgentTool, listAgentTools } from '../agent-tools.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
-import { runWithAgentRequestContext, sealedWorkerRequestContext } from '../app/agent-request-context.js';
+import { agentHostRequestContext, runWithAgentRequestContext, sealedWorkerRequestContext } from '../app/agent-request-context.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { MCP_CHAT_INSTRUCTIONS, MCP_INSTRUCTIONS } from './instructions.js';
 import { createProjectActionPreviewTokens } from './project-action-preview-tokens.js';
@@ -265,7 +265,7 @@ function createToolMap(
           ),
           projectActionPreviews,
           commonKnowledgePreviews,
-          { ...requestContext, testToolsEnabled: includeTestTools }
+          agentHostRequestContext({ ...requestContext, testToolsEnabled: includeTestTools }, requestHost)
         ),
         requestContext
       );

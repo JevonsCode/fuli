@@ -35,11 +35,14 @@ const HANDLERS = Object.freeze({
   cancel_agent_attention: (app, input) => app.cancelAgentAttention(input),
   list_preference_conflicts: (app, input) => app.listPreferenceConflicts(input),
   list_agent_interfaces: () => agentInterfaceCatalog(),
-  get_capture_policy: (app, input) => describeCapture(app, { sourceApplication: input?.sourceApplication,
-    personalProjectId: input?.personalProjectId ?? null, projectPath: input?.projectPath ?? null,
-    sessionId: input?.sessionId ?? null }),
+  get_capture_policy: async (app, input) => describeCapture(app, await taskBoundScope(app, input, {
+    sourceApplication: input?.sourceApplication, personalProjectId: input?.personalProjectId ?? null,
+    projectPath: input?.projectPath ?? null, sessionId: input?.sessionId ?? null })),
   explain_settings: (app) => settingsGuide(app),
-  update_capture_policy: (app, input) => app.updateCapturePolicy(input),
+  // sessionPaused pauses or resumes only the caller's session; every other
+  // field is a long-term setting. The client is this MCP process's.
+  update_capture_policy: (app, { sourceApplication, ...input } = {}) => input.sessionPaused === undefined
+    ? app.updateCapturePolicy(input) : app.pauseSessionCapture({ ...input, sourceApplication }),
   list_external_knowledge_connectors: (app) => externalKnowledge(app).listConnectorTypes(),
   discover_external_knowledge_sources: (app, input) => externalKnowledge(app).discover(input),
   list_external_knowledge_bindings: (app) => externalKnowledge(app).listBindings(),
@@ -101,10 +104,10 @@ const HANDLERS = Object.freeze({
   },
   // Usage feeds preference promotion and Agent-reported feedback is not the
   // user's own edit, so both are automatic recording (rec#11 D-01).
-  record_knowledge_usage: (app, input) => captureGuard(app, sessionCaptureScope(input),
-    () => app.recordKnowledgeUsage(input)),
-  record_knowledge_feedback: (app, input) => captureGuard(app, sessionCaptureScope(input),
-    () => app.recordKnowledgeFeedback(input)),
+  record_knowledge_usage: async (app, { taskContextToken, ...input }) => captureGuard(app,
+    await taskBoundScope(app, { ...input, taskContextToken }, sessionCaptureScope(input)), () => app.recordKnowledgeUsage(input)),
+  record_knowledge_feedback: async (app, { taskContextToken, ...input }) => captureGuard(app,
+    await taskBoundScope(app, { ...input, taskContextToken }, sessionCaptureScope(input)), () => app.recordKnowledgeFeedback(input)),
   resolve_knowledge_tags: (app, input) => app.knowledgeTags('resolve', input),
   // A tag an Agent creates, aliases or attaches is recorded vocabulary, so it
   // follows the capture decision and always stays Agent-attributed.
@@ -313,10 +316,18 @@ export function dispatchGraphTool(app, name, input) {
 async function captureGuard(app, scope, operation) {
   const capture = await captureDecision(app, scope);
   return capture.allowed ? operation() : { route: 'disabled', ...captureDisabled(capture),
-    notice: captureNotice(capture.reason), guidance: CAPTURE_OFF_GUIDANCE };
+    notice: captureNotice(capture.reason, capture.since), guidance: CAPTURE_OFF_GUIDANCE };
 }
 
 const CAPTURE_OFF_GUIDANCE = 'Automatic recording is off, so nothing from this call was saved. Do not retry or describe it as saved; the user can still make explicit changes in the FULI console.';
+
+// With the current taskContextToken a call is decided by the session its hook
+// bound to the task (capture-decision.js); a sessionId argument only narrows.
+async function taskBoundScope(app, input, scope) {
+  if (!input?.taskContextToken) return scope;
+  const task = await app.taskContextRegistry.context(input.taskContextToken, input.sourceApplication ?? 'other');
+  return { ...scope, boundSessionId: task.sessionId ?? null };
+}
 
 function sessionCaptureScope(input) {
   return { sourceApplication: input?.sourceApplication, personalProjectId: input?.personalProjectId ?? null,

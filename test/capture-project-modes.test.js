@@ -3,177 +3,24 @@
 // the user's repositories and a recording double stands in for the Provider. No FULI
 // data directory, live Provider, port-2727 service or client configuration is used.
 import assert from 'node:assert/strict';
-import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { appendFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 
 import { callAgentTool, listAgentTools } from '../src/agent-tools.js';
-import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
-import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
-import { runCursorLifecycleHook } from '../src/agents/cursor/lifecycle-hook.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from '../src/agents/codex/conversation-transcript.js';
 import { syncConversationTranscript } from '../src/conversations/sync-transcript.js';
 import { captureDecision } from '../src/graphiti/capture-decision.js';
-import { CapturePolicyStore, capturePolicyPathForRuntime } from '../src/graphiti/capture-policy.js';
-import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
+import { capturePolicyPathForRuntime } from '../src/graphiti/capture-policy.js';
 import { handleGraphApiRequest } from '../src/http/graph-api-router.js';
-import { TaskContextRegistry } from './fixtures/in-memory-task-context-registry.js';
+import { codexEntry, claudeEntry, codexStop, cursorEntry, finishTask, fixture, PRIVATE, receiptOf,
+  transcriptRow } from './fixtures/capture-project-fixture.js';
 
-const CONFIG = { version: 1, workspaces: [], personal: { providerUrl: 'http://127.0.0.1:8787',
-  accessToken: 'synthetic-token', principalId: 'synthetic-person', spaceId: 'synthetic-space' } };
 const CODEX_TRANSCRIPT = { normalize: normalizeCodexRecord, verify: verifyCodexTranscript };
-// Words from a turn the user chose not to record. No receipt, store or message may keep them.
-const PRIVATE = 'synthetic-private-words';
 // Every notice also says that what the person submits explicitly still saves (rec#11 D-01).
 const PROJECT_OFF = '此项目未开启记忆；你明确提交的修改仍会保存';
 const UNREGISTERED = '当前目录不是 FULI 项目，未自动记录；你明确提交的修改仍会保存';
-const REGISTERED = ['thesis', 'family-ledger', 'job-hunt', 'novel'];
 
-async function fixture(t, { registered = REGISTERED } = {}) {
-  const root = await mkdtemp(join(tmpdir(), 'fuli-capture-projects-'));
-  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5 }));
-  const dirs = {};
-  // side-repo is a repository the user never registered.
-  for (const id of [...REGISTERED, 'side-repo']) {
-    dirs[id] = join(root, 'repos', id);
-    await mkdir(join(dirs[id], '.git'), { recursive: true });
-  }
-  // A second working tree of thesis in an unrelated folder, as `git worktree add` makes it.
-  const worktreeGit = join(dirs.thesis, '.git', 'worktrees', 'chapter-3');
-  dirs.thesisWorktree = join(root, 'elsewhere', 'chapter-3');
-  await mkdir(worktreeGit, { recursive: true });
-  await mkdir(dirs.thesisWorktree, { recursive: true });
-  await writeFile(join(dirs.thesisWorktree, '.git'), `gitdir: ${worktreeGit}\n`);
-  dirs.downloads = join(root, 'Downloads');
-  await mkdir(dirs.downloads);
-
-  const runtimeConfigPath = join(root, 'runtime', 'graph-runtime.json');
-  await mkdir(join(root, 'runtime'));
-  const clock = { now: '2026-10-20T08:00:00.000Z' };
-  const store = new CapturePolicyStore(capturePolicyPathForRuntime(runtimeConfigPath), { now: () => clock.now });
-  const projects = new Set(registered);
-  const writes = [];
-  const knowledge = [];
-  const cursors = new Map();
-  const app = new FederatedGraphApplication(CONFIG, { capturePolicyStore: store,
-    taskContextRegistry: new TaskContextRegistry(),
-    fetchImpl: async url => { throw new Error(`Unexpected Provider request ${new URL(url).pathname}`); } });
-  app.upsertPersonalProject = async input => {
-    writes.push({ kind: 'project', project: input.projectId });
-    projects.add(input.projectId);
-    return projectRecord(input.projectId);
-  };
-  Object.assign(app.personal, {
-    listPersonalProjects: async () => [...projects].map(projectRecord),
-    getPersonalProject: async (_space, id) => {
-      if (!projects.has(id)) throw Object.assign(new Error('Not found'), { status: 404 });
-      return projectRecord(id);
-    },
-    listProjectAgentAssignments: async () => [],
-    resolveProjectAgentContext: async input => ({ status: 'ready', agent: lead(input.personal_project_id) }),
-    getProjectAgent: async (_space, project) => lead(project),
-    collaborationPreferences: async (space, project, _limit, agent) => ({ personal_space_id: space,
-      personal_project_id: project, project_agent_id: agent, effective_preferences: [], global_preferences: [], conflicts: [] }),
-    listPreferenceConflicts: async () => [],
-    getProjectAgentCoordinationPolicy: async () => ({}),
-    listProjectAgents: async () => [],
-    listProjectAgentTasks: async () => [],
-    recordAgentViews: async () => ({ status: 'recorded' }),
-    // Each conversation keeps the transcript cursor its last write moved to.
-    conversation: async (operation, input) => {
-      const key = [input.personal_project_id, input.agent_id, input.session_id].join(':');
-      if (operation === 'query') {
-        return input.mode === 'policy' ? { enabled: true } : { cursor: cursors.get(key) ?? 0, initialized: true };
-      }
-      writes.push({ kind: 'conversation', operation, project: input.personal_project_id ?? null,
-        content: (input.events ?? []).map(event => event.content).join(' | ') });
-      if (Number.isSafeInteger(input.cursor)) cursors.set(key, input.cursor);
-      return { status: 'saved', conversation_id: `conversation-${writes.length}` };
-    },
-    preflightCommits: async commits => ({ status: 'validated', count: commits.length }),
-    commit: async commit => {
-      writes.push({ kind: 'knowledge', project: commit.personal_project_id });
-      knowledge.push(commit);
-      return { status: 'committed', episode_id: `episode-${knowledge.length}`,
-        entity_ids: commit.episode.entities.map(entity => `entity-${knowledge.length}-${entity.key}`), relationship_ids: [] };
-    }
-  });
-  app.searchKnowledge = async () => ({ facts: knowledge.map(commit => ({ episode: commit.episode.name,
-    personal_project_id: commit.personal_project_id })), entities: [] });
-  return { root, dirs, app, store, clock, projects, writes, knowledge, runtimeConfigPath,
-    captureWrites: () => writes.filter(write => write.kind !== 'project') };
-}
-
-function projectRecord(id) {
-  return { project_id: id, scope_type: 'registered', profile: { name: id } };
-}
-
-function lead(project) {
-  return { agent_id: `lead-${project ?? 'global'}`, personal_space_id: 'synthetic-space', personal_project_id: project,
-    memory_scope: 'reviewed_agent', profile: { name: `Lead ${project ?? 'global'}`, status: 'active',
-      allowed_clients: ['codex', 'claude_code', 'cursor'], work_kinds: ['project_context'], capabilities: [] } };
-}
-
-const leases = () => ({ withGraphLease: async (_owner, operation) => operation(), close: async () => {} });
-
-// A Codex prompt through its real lifecycle hook and the real begin_task_context tool.
-async function codexEntry(f, cwd, { session = 'synthetic-codex-session', prompt = `Plan ${PRIVATE}.`,
-  transcriptPath = undefined } = {}) {
-  let context;
-  const output = await runCodexLifecycleHook(['--event', 'UserPromptSubmit'], {
-    readInput: async () => ({ session_id: session, cwd, prompt, ...(transcriptPath ? { transcript_path: transcriptPath } : {}) }),
-    write: () => {},
-    resolveRuntimeOptions: () => ({ runtimeConfigPath: f.runtimeConfigPath }), openApplication: () => f.app,
-    createLeases: leases,
-    callTool: async (app, name, input, request) => {
-      const result = await callAgentTool(app, name, input, request);
-      if (name === 'begin_task_context') context = result;
-      return result;
-    }
-  });
-  return { output, context };
-}
-
-async function claudeEntry(f, cwd, { session = 'synthetic-claude-session', prompt = `Plan ${PRIVATE}.` } = {}) {
-  let context;
-  const output = await runClaudeLifecycleHook(['--event', 'UserPromptSubmit'], {
-    readInput: async () => ({ session_id: session, cwd, prompt }),
-    resolveRuntimeOptions: () => ({ runtimeConfigPath: f.runtimeConfigPath }), openApplication: () => f.app,
-    createLeases: leases,
-    callTool: async (app, name, input, request) => {
-      const result = await callAgentTool(app, name, input, request);
-      if (name === 'begin_task_context') context = result;
-      return result;
-    }
-  });
-  return { output, context };
-}
-
-// Cursor's hook starts the task; its Agent then reads the receipt from
-// get_collaboration_preferences, as the sessionStart guidance tells it to.
-async function cursorEntry(f, cwd, { session = 'synthetic-cursor-session', prompt = `Plan ${PRIVATE}.` } = {}) {
-  const output = await runCursorLifecycleHook(['--event', 'beforeSubmitPrompt'], {
-    readInput: async () => ({ conversation_id: session, workspace_roots: [cwd], prompt }), write: () => {},
-    resolveRuntimeOptions: () => ({ runtimeConfigPath: f.runtimeConfigPath }), openApplication: () => f.app,
-    createLeases: leases
-  });
-  const context = await callAgentTool(f.app, 'get_collaboration_preferences', { projectPath: cwd, taskPrompt: prompt,
-    sessionId: session, sourceApplication: 'cursor', sourceSessionId: session });
-  return { output, context };
-}
-
-// The finishing checkpoint of a task: a global preference, and a project fact
-// when the task has a project.
-function finishTask(f, context, sourceApplication = 'codex') {
-  return callAgentTool(f.app, 'checkpoint_task_knowledge', { taskContextToken: context.taskContextToken,
-    sourceApplication, disposition: 'capture_candidates', reason: `Finished ${PRIVATE}.`,
-    workLog: { status: 'completed', summary: `Did ${PRIVATE}.` },
-    remember: [{ kind: 'preference', text: `Prefers ${PRIVATE}.`, quote: `I prefer ${PRIVATE}.` },
-      ...(context.context.personal_project_id ? [{ kind: 'project_fact', text: `The ${PRIVATE} draft is due Friday.` }] : [])] });
-}
-
-const receiptOf = context => context.agent_receipt.markdown;
 const captureShape = value => ({ status: value?.status, reason: value?.reason, layer: value?.layer });
 
 test('C2-1 selected mode records only the chosen project and tells the other one why', async (t) => {
@@ -406,7 +253,7 @@ test('the Agent can read and change project modes, and is told to confirm first'
   assert.match(update.description, /restate/i);
   assert.match(update.description, /confirm/i);
   assert.deepEqual(Object.keys(update.inputSchema.properties).sort(), ['disabledSources', 'enabled',
-    'excludedProjectIds', 'projectMode', 'selectedProjectIds', 'unregisteredDirectories']);
+    'excludedProjectIds', 'projectMode', 'selectedProjectIds', 'sessionPaused', 'taskContextToken', 'unregisteredDirectories']);
   assert.equal(update.inputSchema.required, undefined, 'a project change does not resend the global switch');
   const read = listAgentTools().find(tool => tool.name === 'get_capture_policy');
   assert.ok(read.inputSchema.properties.projectPath);
@@ -477,17 +324,6 @@ test('under a project mode one hook run or tool request looks its directory up o
   assert.ok(lookups.length <= 1, `one request, ${lookups.length} lookups`);
 });
 
-const transcriptRow = text => `${JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'assistant',
-  content: [{ type: 'output_text', text }] } })}
-`;
-
-// A Codex Stop hook through its real lifecycle: the transcript sync and the
-// per-session record of the settings it last ran under.
-function codexStop(f, input) {
-  return runCodexLifecycleHook(['--event', 'Stop'], { readInput: async () => input, write: () => {},
-    resolveRuntimeOptions: () => ({ runtimeConfigPath: f.runtimeConfigPath }), openApplication: () => f.app,
-    createLeases: leases });
-}
 
 test('turns written while a project was off are never imported after it is switched back on', async (t) => {
   const f = await fixture(t);

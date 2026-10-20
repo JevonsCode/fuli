@@ -306,6 +306,10 @@ Code、Codex 和 Cursor 生命周期适配器。已加载、获信任的入口 H
 明确提交的修改仍会保存，例如「此项目未开启记忆；你明确提交的修改仍会保存」。关闭某个项目不会隐藏或删除它已有的记录，`projectsOffSince` 记下它从何时
 停止记录。Agent 用 `get_capture_policy` 读取（传 `projectPath` 可得知当前项目是否记录），用
 `update_capture_policy` 修改前必须先复述改动并得到用户确认；设置页使用 `PATCH /api/capture-policy`。
+在会话里说「这次别记」只暂停这一个会话、立即生效、无需确认：Agent 只带 `sessionPaused: true` 和当前
+`taskContextToken` 调用 `update_capture_policy`，此后本会话每轮回执都写「本会话已暂停记录（自 HH:mm 起）」
+（`reason: session_paused`）。之前的记录保留，该会话派出的 worker 一并暂停；说「继续记」（`sessionPaused: false`）
+从此恢复，暂停期间的内容不会补记。暂停状态存在本地运行目录，会话结束即失效。
 
 本地可先运行下面两个契约测试，验证 README 说明和项目路径解析仍与实现一致：
 

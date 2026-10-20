@@ -90,7 +90,7 @@ async function runCall({ args, runtimeConfigPath, sourceApplication }) {
   try {
     const result = await leaseClient.withGraphLease(
       `cli-call:${toolName}`,
-      () => callAgentTool(app, toolName, prepared.input)
+      () => callAgentTool(app, toolName, prepared.input, prepared.requestContext)
     );
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } finally {

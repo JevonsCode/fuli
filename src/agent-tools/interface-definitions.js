@@ -49,8 +49,9 @@ export const AGENT_INTERFACE_DEFINITIONS = [
   {
     name: 'get_capture_policy',
     title: 'READ · Get automatic capture policy',
-    description: 'Read what FULI records: global switch, disabledSources, projectMode (all/all_except/selected) with its lists, unregisteredDirectories and projectsOffSince (since when each project is not recorded). With projectPath=cwd, current says whether this client and project are recorded now and why not. Existing knowledge stays readable. Does not change Agent access.',
-    inputSchema: objectSchema({ projectPath: { ...stringSchema(), minLength: 1, maxLength: 4096 }, personalProjectId: id }),
+    description: 'Read what FULI records: global switch, disabledSources, projectMode (all/all_except/selected) with its lists, unregisteredDirectories and projectsOffSince (since when each project is not recorded). With projectPath=cwd and taskContextToken, current says whether this session is recorded now and why not. Existing knowledge stays readable. Does not change Agent access.',
+    inputSchema: objectSchema({ projectPath: { ...stringSchema(), minLength: 1, maxLength: 4096 }, personalProjectId: id,
+      taskContextToken: id }),
   },
   {
     name: 'explain_settings',
@@ -60,9 +61,9 @@ export const AGENT_INTERFACE_DEFINITIONS = [
   },
   {
     name: 'update_capture_policy',
-    title: 'WRITE · Update automatic capture policy',
-    description: 'Only on an explicit user request. These are long-term settings: first restate the change and its effect, e.g. "将把『求职准备』加入不记录列表，之后在这个项目里的会话都不会被记录，已有记录保留。确认吗？", and call only after the user confirms; if they decline, change nothing. Send only settings to change; a list replaces the whole list. Never deletes existing knowledge, changes Agent access or bypasses project scope.',
-    inputSchema: objectSchema({ enabled: { type: 'boolean' },
+    title: 'WRITE · Update capture policy or pause this session',
+    description: 'Only on an explicit user request. These are long-term settings: first restate the change and its effect, e.g. "将把『求职准备』加入不记录列表，之后在这个项目里的会话都不会被记录，已有记录保留。确认吗？", and call only after the user confirms; if they decline, change nothing. Send only settings to change; a list replaces the whole list. Never deletes existing knowledge, changes Agent access or bypasses project scope. Exception: "这次别记"/"继续记" → call at once, unconfirmed, with only sessionPaused true/false and taskContextToken; it pauses or resumes this session from now and returns the receipt to use.',
+    inputSchema: objectSchema({ enabled: { type: 'boolean' }, sessionPaused: { type: 'boolean' }, taskContextToken: id,
       disabledSources: { type: 'array', uniqueItems: true, maxItems: 6,
         items: { enum: ['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other'] },
         description: 'Clients whose sessions are not captured; they still use FULI tools.' },

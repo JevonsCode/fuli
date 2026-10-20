@@ -9,13 +9,16 @@ const taskToken = value => typeof value === 'string' && /^fuli-task-[a-zA-Z0-9-]
 const knownFailures = new Set(['worker_authentication_required', 'worker_authentication_unknown', 'worker_workspace_untrusted', 'worker_model_unavailable',
   'worker_model_mismatch', 'worker_cancelled', 'worker_timeout', 'worker_connection_closed', 'worker_cleanup_incomplete',
   'worker_identity_mismatch', 'worker_model_strategy_unmapped', 'worker_result_mismatch', 'worker_authority_unavailable',
-  'worker_runtime_offline', 'worker_runtime_recovery']);
+  'worker_runtime_offline', 'worker_runtime_recovery', 'worker_capture_link_failed']);
 
 // A trusted host creates one attempt, never a model-facing tool or a scheduler.
 // Retain the same capability and idempotency key when recovering a lost prepare;
 // a false/uncertain start claim never authorizes another process.
+// linkCaptureSession(child, parent) records that the worker session was started
+// by the coordinator's session, so pausing that session pauses the worker's
+// recording too (rec#5 C3-6). A worker whose link cannot be kept never starts work.
 export function createWorkerRunAttempt({ provider, leases, adapter, request, projectPath, taskPrompt, toolNames,
-  leaseExecutor = false, capability = randomBytes(32).toString('hex'),
+  leaseExecutor = false, linkCaptureSession = null, capability = randomBytes(32).toString('hex'),
   pollIntervalMs = 1000, pollTimeoutMs = 5000, maxDurationMs = 30 * 60_000 }) {
   for (const value of [pollIntervalMs, pollTimeoutMs, maxDurationMs]) {
     if (!Number.isSafeInteger(value) || value < 1 || value > 60 * 60_000) throw failure('invalid_attempt');
@@ -130,6 +133,9 @@ export function createWorkerRunAttempt({ provider, leases, adapter, request, pro
         const session = await child.newSession();
         if (!bounded(session?.sessionId, 128) || session.sessionId === parent.session_id) throw failure('identity_mismatch');
         sessionId = session.sessionId;
+        if (linkCaptureSession) {
+          try { linkCaptureSession(sessionId, parent.session_id); } catch { throw failure('capture_link_failed'); }
+        }
         stage = 'seal';
         checkCancelled();
         checkRun(await provider.sealProjectAgentWorkerSession(runId,
