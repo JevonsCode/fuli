@@ -196,6 +196,68 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
+  it('shows an invalid field that the search had hidden: the filter clears, then the field gets focus', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().runtimeStatus = 'ready'
+    const fetch = vi.fn(async (input: unknown, init?: RequestInit) => {
+      if (String(input) === '/api/system/settings' && !init?.method) return Response.json({ configured, active: configured })
+      return Response.json({}, { status: 503 })
+    })
+    vi.stubGlobal('fetch', fetch)
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] }, attachTo: document.body })
+    await flushPromises()
+    const port = wrapper.get('.ports-card').get<HTMLInputElement>('input')
+    await port.setValue('')
+    const search = wrapper.get<HTMLInputElement>('.settings-search input')
+    await search.setValue('Codex')
+    await flushPromises()
+    expect(port.element.closest('[data-search-hidden]')).not.toBeNull()
+    await wrapper.get('#settings-form').trigger('submit')
+    await flushPromises()
+    expect(fetch.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
+    // No ancestor keeps the field out of sight, and the search says it was cleared.
+    expect(port.element.closest('[data-search-hidden]')).toBeNull()
+    expect(search.element.value).toBe('')
+    expect(wrapper.get('[data-settings-tab-trigger="network"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('.ports-card').attributes('data-state')).toBe('open')
+    await vi.waitFor(() => expect(document.activeElement).toBe(port.element))
+    wrapper.unmount()
+  })
+
+  it('says what is wrong under the invalid field itself, not in a browser bubble', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().runtimeStatus = 'ready'
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown, init?: RequestInit) => {
+      if (String(input) === '/api/system/settings' && !init?.method) return Response.json({ configured, active: configured })
+      return Response.json({}, { status: 503 })
+    }))
+    const bubble = vi.spyOn(HTMLInputElement.prototype, 'reportValidity')
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] }, attachTo: document.body })
+    await flushPromises()
+    const port = wrapper.get('.ports-card').get<HTMLInputElement>('input')
+    await port.setValue('')
+    await wrapper.get('#settings-form').trigger('submit')
+    await flushPromises()
+    await vi.waitFor(() => expect(document.activeElement).toBe(port.element))
+    expect(bubble).not.toHaveBeenCalled()
+    const message = wrapper.get('[data-settings-field-error]')
+    expect(message.text()).toBe('请填写这一项')
+    expect(port.attributes('aria-describedby')).toBe(message.attributes('id'))
+    expect(port.attributes('aria-invalid')).toBe('true')
+    // The bottom note stays as well.
+    expect(wrapper.get('[data-settings-savebar]').text()).toContain('请先修正「管理界面」再保存')
+    // A port out of range names the range.
+    await port.setValue('70000')
+    expect(wrapper.find('[data-settings-field-error]').exists()).toBe(false)
+    expect(port.attributes('aria-invalid')).toBeUndefined()
+    await wrapper.get('#settings-form').trigger('submit')
+    await flushPromises()
+    await vi.waitFor(() => expect(wrapper.get('[data-settings-field-error]').text()).toBe('请填写 1 到 65535 之间的数字'))
+    wrapper.unmount()
+  })
+
   it('locks settings and the shared save state until a pending save finishes, rejecting repeat submits', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

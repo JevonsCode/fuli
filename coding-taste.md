@@ -47,6 +47,7 @@ Each row is the single home for that behavior; reuse it or extend it.
 | CLI line output and terminal confirmation | `src/cli/terminal-io.js` | |
 | Web date and time display | `web/src/lib/date-time.ts` (`formatDateTime`), `web/src/lib/relative-time.ts` | Pass `currentLocale()`; never a hard-coded or browser-default locale. |
 | Web identity, debounce | `web/src/lib/identity.ts`, `web/src/lib/debounce.ts` | |
+| Web short display ids (unique prefix of a list) | `web/src/lib/short-ids.ts` (`shortUniqueIds`) | Mark a cut with … and keep the full id in a title or copy control. |
 | Web loading feedback | `web/src/components/GrowthLoading.vue` | See `AGENTS.md`. A pending button uses `Button`'s `loading`. |
 | Web buttons | `web/src/components/ui/button` (shadcn-vue `Button`) | Variants `default` (primary), `outline`, `ghost`, `destructive`, `link`; `as-child` for links. Icon-only actions use `UiIconButton`. |
 | Web theme tokens and Tailwind preset | `web/src/styles/theme/` | Base → semantic → component tokens; a skin re-points semantic tokens only. |

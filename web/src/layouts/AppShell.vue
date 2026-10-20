@@ -41,6 +41,13 @@ const dedicatedWorkspace = computed(() => route.meta.dedicatedWorkspace === true
 // Rebuilt pages share one centred work canvas (or the narrower form column);
 // the top bar lines its title up with that column.
 const layout = computed(() => route.meta.layout)
+// A detail page names its record alone; the destination's tabs would read as
+// tabs of that record. The rail still marks where it belongs.
+const sectionTabs = computed(() => route.meta.detail ? [] : destination.value?.sections ?? [])
+// Temporary: the design lab goes away once a design is chosen. It stays off
+// pages where it would cover something fixed: a sticky save bar, a conversation.
+const showsDesignLab = computed(() => route.name !== 'overview' && route.path !== '/preferences'
+  && !route.path.startsWith('/roundtables') && route.meta.saveBar !== true)
 
 // Pins are shared by the rail, Agent cards and profiles.
 provide(AGENT_PINS_KEY, useAgentPins(activeSpaceId))
@@ -71,7 +78,7 @@ watchEffect(() => updateDocumentTitle(recordTitle.value || route.meta.title))
       <header v-if="!dedicatedWorkspace" class="app-topbar">
         <div class="app-topbar-inner">
           <h1 class="app-title">{{ title }}</h1>
-          <SectionTabs :sections="destination?.sections ?? []" :active-key="section?.key" />
+          <SectionTabs :sections="sectionTabs" :active-key="section?.key" />
           <div class="app-actions">
             <GlossaryToggle />
             <LocaleSwitcher />
@@ -90,8 +97,7 @@ watchEffect(() => updateDocumentTitle(recordTitle.value || route.meta.title))
       <RouterView v-slot="{ Component }"><component :is="Component" /></RouterView>
       <GlossaryLayer />
     </main>
-    <!-- Temporary: the design lab goes away once a design is chosen. -->
-    <DesignLabPanel v-if="route.name !== 'overview' && route.path !== '/preferences' && !route.path.startsWith('/roundtables')" />
+    <DesignLabPanel v-if="showsDesignLab" />
   </div>
 </template>
 

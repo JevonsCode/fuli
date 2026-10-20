@@ -15,6 +15,7 @@ import JudgmentPolicySettings from '@/features/judgment/JudgmentPolicySettings.v
 import ClientConnectionSettings from '@/features/settings/ClientConnectionSettings.vue'
 import PeerSettings from '@/features/settings/PeerSettings.vue'
 import { waitForSettingsApply } from '@/features/settings/settings-apply'
+import { fieldErrorMessage } from '@/features/settings/settings-field-error'
 import { matchingSections, settingSearchTerm, useSettingsSearch } from '@/features/settings/settings-search'
 import {
   CONVERSATION_SOURCE_APPLICATIONS,
@@ -340,41 +341,54 @@ function formatTime(value: string | undefined) {
   return formatDateTime(value, locale.value, { hour: '2-digit', minute: '2-digit', second: '2-digit' }, { missing: '—' })
 }
 // Checked here rather than by the browser, which cannot focus a field in a
-// hidden tab or a closed section: the first invalid field's tab and section
-// open, then it gets focus and its message.
-let invalidField: HTMLElement | null = null
+// hidden tab, a closed section or a card the search filtered out: the first
+// invalid field's tab and section open (a search hiding it is cleared), then
+// it gets focus and says what is wrong right under it.
+type ValidatedField = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+let invalidField: ValidatedField | null = null
 // The name of the field that stopped the save, shown beside the save button.
 const invalidLabel = ref('')
+// The field that stopped the save (its data-settings-field key) and what is wrong with it.
+const FIELD_ERROR_ID = 'settings-field-error'
+const fieldError = ref<{ key: string; message: string } | null>(null)
+const errorFor = (key: string) => fieldError.value?.key === key ? fieldError.value.message : ''
 function revealInvalidField(event: Event) {
-  const field = event.target as HTMLElement
+  const field = event.target as ValidatedField
   if (invalidField) return
   invalidField = field
   const tab = field.closest<HTMLElement>('[data-settings-tab]')?.dataset.settingsTab
   if (tab) activeTab.value = tabFrom(tab)
+  // Opened as the person's own choice, so it stays open once a search clears.
   const section = field.closest<HTMLElement>('[data-settings-section]')?.dataset.settingsSection
-  if (section && !openSections.value.includes(section)) openedSections.value = [...openedSections.value, section]
+  if (section && !openedSections.value.includes(section)) openedSections.value = [...openedSections.value, section]
   let details = field.closest('details')
   while (details) { details.open = true; details = details.parentElement?.closest('details') ?? null }
 }
 async function submitSettings(event: Event) {
   const element = event.currentTarget as HTMLFormElement
   invalidField = null
+  fieldError.value = null
   if (!element.checkValidity()) {
-    const field = invalidField as HTMLElement | null
+    const field = invalidField as ValidatedField | null
+    invalidField = null
+    if (!field) return
+    if (field.closest('[data-search-hidden]')) searchQuery.value = ''
     await nextTick()
     // An opening section shows its content a frame later; focus once it is visible.
-    for (let frame = 0; field && frame < 4 && !field.getClientRects().length; frame += 1) {
+    for (let frame = 0; frame < 4 && !field.getClientRects().length; frame += 1) {
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     }
-    invalidLabel.value = field?.closest('label')?.querySelector('span')?.textContent?.trim() ?? ''
-    field?.setAttribute('aria-invalid', 'true')
-    field?.addEventListener('input', () => { field.removeAttribute('aria-invalid'); invalidLabel.value = '' }, { once: true })
-    field?.focus()
-    if (field && "reportValidity" in field) (field as HTMLInputElement).reportValidity()
-    invalidField = null
+    invalidLabel.value = field.closest('label')?.querySelector('span')?.textContent?.trim() ?? ''
+    fieldError.value = { key: field.dataset.settingsField ?? '', message: fieldErrorMessage(field) }
+    field.setAttribute('aria-invalid', 'true')
+    field.addEventListener('input', () => {
+      field.removeAttribute('aria-invalid')
+      invalidLabel.value = ''
+      fieldError.value = null
+    }, { once: true })
+    field.focus()
     return
   }
-  invalidField = null
   await saveSettings()
 }
 </script>
@@ -473,14 +487,20 @@ async function submitSettings(event: Event) {
                             </label>
                             <label>
                               <span>{{ t('settings.conversationLaunchers.appName') }}</span>
-                              <input v-model.trim="form.conversationLaunchers[application].appName" type="text" maxlength="64" required />
+                              <input v-model.trim="form.conversationLaunchers[application].appName" type="text" maxlength="64" required
+                                :data-settings-field="`launchers.${application}.appName`"
+                                :aria-describedby="errorFor(`launchers.${application}.appName`) ? FIELD_ERROR_ID : undefined" />
+                              <small v-if="errorFor(`launchers.${application}.appName`)" :id="FIELD_ERROR_ID" class="settings-field-error" data-settings-field-error>{{ errorFor(`launchers.${application}.appName`) }}</small>
                             </label>
                             <label class="conversation-launcher-template">
                               <span>
                                 {{ t('settings.conversationLaunchers.urlTemplate') }}
                                 <small><code>{id}</code></small>
                               </span>
-                              <input v-model.trim="form.conversationLaunchers[application].urlTemplate" type="text" maxlength="1024" spellcheck="false" required />
+                              <input v-model.trim="form.conversationLaunchers[application].urlTemplate" type="text" maxlength="1024" spellcheck="false" required
+                                :data-settings-field="`launchers.${application}.urlTemplate`"
+                                :aria-describedby="errorFor(`launchers.${application}.urlTemplate`) ? FIELD_ERROR_ID : undefined" />
+                              <small v-if="errorFor(`launchers.${application}.urlTemplate`)" :id="FIELD_ERROR_ID" class="settings-field-error" data-settings-field-error>{{ errorFor(`launchers.${application}.urlTemplate`) }}</small>
                             </label>
                           </div>
                         </article>
@@ -493,7 +513,9 @@ async function submitSettings(event: Event) {
                       <label class="notification-url">
                         <span><strong>{{ t('settings.notifications.needsPersonUrl') }}</strong><small>{{ t('settings.notifications.needsPersonUrlMeta') }}</small></span>
                         <input v-model.trim="form.notifications.needsPersonUrl" type="url" maxlength="2048" spellcheck="false"
-                          placeholder="http://127.0.0.1:9123/fuli" data-needs-person-url />
+                          placeholder="http://127.0.0.1:9123/fuli" data-needs-person-url data-settings-field="notifications.needsPersonUrl"
+                          :aria-describedby="errorFor('notifications.needsPersonUrl') ? FIELD_ERROR_ID : undefined" />
+                        <small v-if="errorFor('notifications.needsPersonUrl')" :id="FIELD_ERROR_ID" class="settings-field-error" data-settings-field-error>{{ errorFor('notifications.needsPersonUrl') }}</small>
                       </label>
                     </AccordionContent>
                   </AccordionItem>
@@ -524,7 +546,10 @@ async function submitSettings(event: Event) {
                         <div class="port-grid">
                           <label v-for="key in personalPortKeys" :key="key">
                             <span>{{ t(`settings.ports.${key}`) }}</span>
-                            <input v-model.number="form.ports[key]" type="number" min="1" max="65535" required />
+                            <input v-model.number="form.ports[key]" type="number" min="1" max="65535" required
+                              :data-settings-field="`ports.${key}`"
+                              :aria-describedby="errorFor(`ports.${key}`) ? FIELD_ERROR_ID : undefined" />
+                            <small v-if="errorFor(`ports.${key}`)" :id="FIELD_ERROR_ID" class="settings-field-error" data-settings-field-error>{{ errorFor(`ports.${key}`) }}</small>
                             <small>{{ t('settings.ports.active', { port: activePort(key) }) }}</small>
                           </label>
                         </div>
@@ -781,6 +806,7 @@ async function submitSettings(event: Event) {
   border-top: 1px solid var(--color-border); background: var(--color-bg);
 }
 .settings-save-invalid { color: var(--color-danger); }
+.settings-form .settings-field-error { color: var(--color-danger); font-size: 12px; line-height: 1.4; }
 .settings-form :is(input, textarea)[aria-invalid="true"] { border-color: var(--color-danger); box-shadow: 0 0 0 3px var(--color-danger-soft); }
 .settings-save-status { display: flex; align-items: center; min-height: 20px; margin: 0 auto 0 0; color: var(--color-muted); font-size: 13px; }
 

@@ -5,16 +5,20 @@ import { Button } from '@/components/ui/button'
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { formatDate } from '@/features/project-agents/task-labels'
 import { t } from '@/i18n'
+import { shortUniqueIds } from '@/lib/short-ids'
+import { computed } from 'vue'
 import { scheduleRunLabel, scheduleState, type ScheduleRun, type TaskSchedule } from './task-schedules'
 
 // One schedule's details in the quick look: what it creates, when, how, and
 // the latest 50 tasks it created (read when the quick look opens). A schedule
 // has no larger page, so everything about it is here; pause, resume and edit
 // are its quick changes.
-defineProps<{
+const props = defineProps<{
   schedule?: TaskSchedule
   /** The list was read and has no such schedule (or it belongs to another space). */
   missing: boolean
+  /** Reading the list failed before this schedule could be found. */
+  loadError: string
   projectName: string
   timeZone: string
   pausing: boolean
@@ -22,7 +26,14 @@ defineProps<{
   openingTask: string
   openTaskError: string
 }>()
-const emit = defineEmits<{ edit: []; pause: []; resume: []; 'open-task': [taskId: string] }>()
+const emit = defineEmits<{ edit: []; pause: []; resume: []; 'open-task': [taskId: string]; retry: []; close: [] }>()
+
+// Task ids are shown by their shortest unique prefix in this list; the full id is on hover.
+const shortTaskIds = computed(() => shortUniqueIds(props.runs.items.flatMap(run => run.taskId ? [run.taskId] : [])))
+const shortTaskId = (id: string) => {
+  const short = shortTaskIds.value.get(id) ?? id
+  return short === id ? id : `${short}…`
+}
 
 const stateTone = (schedule: TaskSchedule) =>
   ({ enabled: 'success', paused: 'secondary', circuit_open: 'warning', unknown: 'secondary' } as const)[scheduleState(schedule)]
@@ -32,9 +43,17 @@ const stateTone = (schedule: TaskSchedule) =>
   <template v-if="!schedule">
     <DialogHeader>
       <DialogTitle>{{ t('taskSchedules.details') }}</DialogTitle>
-      <DialogDescription>{{ t(missing ? 'taskSchedules.notFound' : 'taskSchedules.loading') }}</DialogDescription>
+      <DialogDescription :class="{ 'sr-only': loadError }">{{ t(missing ? 'taskSchedules.notFound' : loadError ? 'taskSchedules.loadFailed' : 'taskSchedules.loading') }}</DialogDescription>
     </DialogHeader>
-    <GrowthLoading v-if="!missing" variant="compact" :label="t('taskSchedules.loading')" />
+    <!-- A failed read is said as such, with a way to read again or leave; never an endless loading state. -->
+    <template v-if="loadError">
+      <p class="m-0 text-sm text-destructive" role="alert" data-peek-load-error>{{ loadError }}</p>
+      <DialogFooter class="border-t pt-4">
+        <Button variant="outline" data-peek-close @click="emit('close')">{{ t('common.actions.close') }}</Button>
+        <Button data-peek-retry @click="emit('retry')">{{ t('taskSchedules.retryRead') }}</Button>
+      </DialogFooter>
+    </template>
+    <GrowthLoading v-else-if="!missing" variant="compact" :label="t('taskSchedules.loading')" />
   </template>
   <template v-else>
     <DialogHeader>
@@ -80,7 +99,7 @@ const stateTone = (schedule: TaskSchedule) =>
           <span class="text-muted-foreground" :title="run.lastError ?? undefined">{{ scheduleRunLabel(run) }}</span>
           <Button v-if="run.taskId" variant="ghost" size="sm" class="ml-auto" :loading="openingTask === run.taskId" :loading-label="t('taskSchedules.openingTask')"
             :aria-label="t('taskSchedules.openTaskLabel', { id: run.taskId })" data-schedule-open-task @click="emit('open-task', run.taskId)">
-            {{ t('taskSchedules.openTask') }} <code>{{ run.taskId.slice(0, 8) }}</code>
+            {{ t('taskSchedules.openTask') }} <code :title="run.taskId">{{ shortTaskId(run.taskId) }}</code>
           </Button>
         </li>
       </ol>

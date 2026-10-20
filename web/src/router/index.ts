@@ -88,7 +88,7 @@ export const router = createRouter({
       component: () => import('@/pages/AgentsDirectoryPage.vue'),
       meta: { title: 'routes.projectAgents.title', layout: 'canvas' },
     },
-    { path: '/agents/:spaceId/:agentId', name: 'agent-profile', component: () => import('@/pages/AgentProfilePage.vue'), meta: { title: 'agentProfiles.profile', layout: 'canvas' } },
+    { path: '/agents/:spaceId/:agentId', name: 'agent-profile', component: () => import('@/pages/AgentProfilePage.vue'), meta: { title: 'agentProfiles.profile', layout: 'canvas', detail: true } },
     { path: '/project-agents/occupations', name: 'occupations', component: () => import('@/pages/OccupationsPage.vue'), meta: { title: 'occupations.title' } },
     { path: '/project-agents/schedules', name: 'task-schedules', component: () => import('@/pages/TaskSchedulesPage.vue'), meta: { title: 'taskSchedules.title', layout: 'canvas' } },
     { path: '/project-agents/manage', name: 'agent-management', component: () => import('@/pages/ProjectAgentsPage.vue'), meta: { title: 'shell.sections.orchestrate' } },
@@ -162,6 +162,7 @@ export const router = createRouter({
       meta: {
         title: 'routes.settings.title',
         layout: 'form',
+        saveBar: true,
       },
     },
     {

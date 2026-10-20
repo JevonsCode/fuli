@@ -1,4 +1,5 @@
 import { ApiError, postJson } from '@/api/client'
+import { shortUniqueIds } from '@/lib/short-ids'
 
 export const ASSISTANT_AGENT_ID = 'employee.assistant'
 
@@ -63,16 +64,6 @@ function resolveTriageStatus(raw: RawConversationRecord): UnassignedTriageStatus
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-// The first 8 characters, longer only where two conversations in the list share them.
-export function shortConversationIds(ids: string[]): Map<string, string> {
-  const result = new Map<string, string>()
-  for (const id of ids) {
-    const length = [8, 12].find(size => ids.filter(other => other.slice(0, size) === id.slice(0, size)).length === 1)
-    result.set(id, length ? id.slice(0, length) : id)
-  }
-  return result
-}
-
 function readableLine(value: string | null | undefined, conversationId: string): string {
   const line = firstLine(value)
   return line && line !== conversationId && !UUID.test(line) ? line : ''
@@ -112,7 +103,7 @@ export async function readUnassignedConversations(personalSpaceId: string): Prom
         }
       })
       .filter((item) => Boolean(item.conversationId))
-    const shortIds = shortConversationIds(items.map(item => item.conversationId))
+    const shortIds = shortUniqueIds(items.map(item => item.conversationId))
     return items.map(item => ({ ...item, shortId: shortIds.get(item.conversationId) ?? item.conversationId }))
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) return []

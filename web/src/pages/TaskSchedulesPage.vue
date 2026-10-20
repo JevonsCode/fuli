@@ -273,6 +273,8 @@ const peekSchedule = computed(() => peek.item.value && peek.item.value.spaceId =
   ? schedules.value.find(item => item.id === peek.item.value?.id) : undefined)
 const peekMissing = computed(() => Boolean(peek.item.value) && !peekSchedule.value
   && (peek.item.value?.spaceId !== spaceId.value || (loaded.value && !loading.value)))
+// A shared link whose list could not be read says so in the quick look too.
+const peekLoadError = computed(() => !peekSchedule.value && !peekMissing.value && !loading.value ? loadError.value : '')
 const focusReturn = useFocusReturn(tableArea, 'task-schedules', computed(() => rows.value.length > 0))
 let peekOpener: HTMLElement | null = null
 let lastPeekId = ''
@@ -466,6 +468,7 @@ watch(peekSchedule, async (schedule) => {
         <SchedulePeek
           :schedule="peekSchedule"
           :missing="peekMissing"
+          :load-error="peekLoadError"
           :project-name="peekSchedule ? projectName(peekSchedule.personalProjectId) : ''"
           :time-zone="timeZone"
           :pausing="busyId === peekSchedule?.id"
@@ -476,6 +479,8 @@ watch(peekSchedule, async (schedule) => {
           @pause="peekSchedule && toggle(peekSchedule, false)"
           @resume="peekSchedule && handOver(() => { resumeTarget = peekSchedule! })"
           @open-task="peekSchedule && openTask(peekSchedule, $event)"
+          @retry="load"
+          @close="peek.close()"
         />
       </DialogContent>
     </Dialog>

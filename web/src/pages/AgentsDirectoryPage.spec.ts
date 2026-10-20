@@ -6,6 +6,7 @@ import { nextTick } from 'vue'
 import { useConsoleStore } from '@/stores/console'
 import { t } from '@/i18n'
 import { forgetLoadedRosters } from '@/features/agent-profile/useAgentRosterPages'
+import { agentPinsMessages } from '@/i18n/messages/agent-pins'
 import AgentsDirectoryPage from './AgentsDirectoryPage.vue'
 
 const { getJson, putJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), putJson: vi.fn(), postJson: vi.fn() }))
@@ -649,6 +650,8 @@ describe('Agent quick look (Peek)', () => {
     expect(router.currentRoute.value.query).toEqual({ q: 'b', item: 'space-a/agent-1' })
     expect(dialog()?.textContent).toContain('Birch')
     expect(dialog()?.querySelector('[data-peek-open-full]')?.textContent).toContain(t('agentProfiles.openFullPage'))
+    // The quick change is named in words, not the bare English "pin".
+    expect(dialog()?.querySelector('[data-peek-pin]')?.textContent?.trim()).toBe('置顶')
     expect(wrapper.get('.agent-card').attributes('data-selected')).toBe('true')
     dialog()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await flushPromises()
@@ -667,6 +670,12 @@ describe('Agent quick look (Peek)', () => {
     ;(dialog()!.querySelector('[data-peek-open-full]') as HTMLButtonElement).click()
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/agents/space-a/agent-9')
+  })
+
+  it('names the pin action 置顶 / 取消置顶 and Pin / Unpin', async () => {
+    await setup('/project-agents?item=space-a%2Fagent-0')
+    expect(dialog()?.querySelector('[data-peek-pin]')?.textContent?.trim()).toBe('取消置顶')
+    expect([agentPinsMessages['en-US'].pin, agentPinsMessages['en-US'].unpin]).toEqual(['Pin', 'Unpin'])
   })
 
   it('never shows an Agent from another space and does not read it', async () => {

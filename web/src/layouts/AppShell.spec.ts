@@ -159,6 +159,32 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
+  it('gives a detail page its own name alone: no section tabs beside it', async () => {
+    const profile = defineComponent({ setup() { usePageTitle('Ada Lovelace'); return () => h('div', { class: 'routed-page' }) } })
+    const { wrapper, router } = await setup('/agents/personal-1/agent-a', {}, [
+      { path: '/agents/:spaceId/:agentId', component: profile, meta: { title: 'agentProfiles.profile', layout: 'canvas', detail: true } },
+    ])
+    expect(wrapper.get('h1').text()).toBe('Ada Lovelace')
+    expect(wrapper.find('.section-tabs').exists()).toBe(false)
+    // The rail still says where the page belongs.
+    expect(wrapper.get('[data-destination="agents"]').classes()).toContain('is-active')
+    await router.push('/project-agents')
+    await flushPromises()
+    expect(wrapper.findAll('[data-section]').length).toBeGreaterThan(1)
+    wrapper.unmount()
+  })
+
+  it('keeps the floating design lab off pages with a sticky save bar', async () => {
+    const { wrapper, router } = await setup('/settings', {}, [
+      { path: '/settings', component: { template: '<div />' }, meta: { title: '设置', layout: 'form', saveBar: true } },
+    ])
+    expect(wrapper.find('[data-design-lab-open]').exists()).toBe(false)
+    await router.push('/project-agents')
+    await flushPromises()
+    expect(wrapper.find('[data-design-lab-open]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('names section tabs by state words, never repeating the page title', async () => {
     const { wrapper } = await setup('/project-agents')
     expect(wrapper.get('h1').text()).toBe('Agents')

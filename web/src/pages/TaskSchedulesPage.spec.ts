@@ -32,13 +32,13 @@ function serve(routes: Record<string, (body?: Record<string, unknown>) => Respon
   }))
 }
 
-async function mountPage() {
+async function mountPage(path = '/task-schedules') {
   const store = useConsoleStore()
   // The page reads the active space and the project list from the console store.
   Object.assign(store, { state: { personalProjects: [{ project_id: 'project-a', profile: { name: 'Alpha' } }] } })
   vi.spyOn(store, 'activePersonalSpace', 'get').mockReturnValue({ id: 'space-1' } as never)
   router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:any(.*)*', component: { template: '<div />' } }] })
-  await router.push('/task-schedules')
+  await router.push(path)
   const wrapper = mount(TaskSchedulesPage, { attachTo: document.body, global: { plugins: [router] } })
   await flushPromises()
   return wrapper
@@ -210,6 +210,48 @@ describe('task schedules page after acceptance review', () => {
     await flushPromises()
     const update = calls.find(call => call.url.endsWith('/update'))!
     expect(update.body).toMatchObject({ personalSpaceId: 'space-1', expectedRevision: 2, title: 'Nightly check', startMode: 'backlog' })
+  })
+
+  it('says in the quick look when a shared link cannot read the list, and offers retry and close', async () => {
+    let listFails = true
+    serve({
+      '/api/task-schedules/sched-1/runs': () => ({ runs: [] }),
+      '/api/task-schedules?': () => listFails ? new Response('down', { status: 503 }) : { schedules: [schedule()] },
+    })
+    await mountPage('/task-schedules?item=space-1/sched-1')
+    const peek = inBody('[data-schedule-peek]')
+    expect(peek.textContent).toContain('定时任务读取失败')
+    expect(peek.textContent).not.toContain('正在读取定时任务')
+    expect(peek.querySelector('[role="alert"]')).not.toBeNull()
+    listFails = false
+    ;(peek.querySelector('[data-peek-retry]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(inBody('[data-schedule-peek]').textContent).toContain('Nightly check')
+  })
+
+  it('closes a quick look whose list could not be read', async () => {
+    serve({ '/api/task-schedules?': () => new Response('down', { status: 503 }) })
+    await mountPage('/task-schedules?item=space-1/sched-1')
+    ;(inBody('[data-schedule-peek]').querySelector('[data-peek-close]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(router.currentRoute.value.query.item).toBeUndefined()
+  })
+
+  it('names a created task by a short id that is still unique, with the full id on hover', async () => {
+    const long = '3f1a2b3c-aaaa-4bbb-8ccc-000000000001'
+    serve({
+      '/api/task-schedules/sched-1/runs': () => ({ runs: [
+        run({ slot: '2026-10-19T00:00:00Z', taskId: 't-bench-1', status: 'completed' }),
+        run({ slot: '2026-10-18T00:00:00Z', taskId: 't-bench-2', status: 'completed' }),
+        run({ slot: '2026-10-17T00:00:00Z', taskId: long, status: 'completed' }),
+      ] }),
+      '/api/task-schedules?': () => ({ schedules: [schedule()] }),
+    })
+    await mountPage('/task-schedules?item=space-1/sched-1')
+    await flushPromises()
+    const ids = [...document.querySelectorAll('[data-schedule-open-task] code')]
+    expect(ids.map(code => code.textContent)).toEqual(['t-bench-1', 't-bench-2', '3f1a2b3c…'])
+    expect(ids.map(code => code.getAttribute('title'))).toEqual(['t-bench-1', 't-bench-2', long])
   })
 
   const submit = async () => {

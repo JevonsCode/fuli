@@ -36,6 +36,10 @@ describe('localized route metadata', () => {
     expect(['/', '/project-agents', '/agents/space/agent', '/project-agents/schedules'].map(path => router.resolve(path).meta.layout))
       .toEqual(['canvas', 'canvas', 'canvas', 'canvas'])
     expect(router.resolve('/settings').meta.layout).toBe('form')
+    // The Agent profile is a detail page; settings keeps a sticky save bar.
+    expect(router.resolve('/agents/space/agent').meta.detail).toBe(true)
+    expect(router.resolve('/project-agents').meta.detail).toBeUndefined()
+    expect(router.resolve('/settings').meta.saveBar).toBe(true)
     // Pages not rebuilt yet keep their own layout.
     expect(router.resolve('/project-agents/manage').meta.layout).toBeUndefined()
     expect(router.resolve('/inbox').meta.layout).toBeUndefined()
