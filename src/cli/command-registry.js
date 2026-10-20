@@ -26,6 +26,8 @@ Install and Agent connection:
   peer status|host|invite|join|share|revoke|off [--data-dir DIR]  (LAN roundtable Beta: pair devices and share project leads)
   remote-mcp --personal-project-id ID --bearer-token-file FILE [--port PORT] [--data-dir DIR] [--source-application claude|cursor|other] [--allowed-origin HTTPS_ORIGIN] [--allowed-host HOST] [--max-sessions N] [--session-idle-ttl-seconds N]
   employee install BUILT_PACKAGE_DIRECTORY [--replace] [--runtime-config FILE]
+  models set-key SECRET_REF [--data-dir DIR]  (built-in Agent model API key; hidden entry or stdin, never echoed)
+  models check assistant|bole|jefa|tonborg [--data-dir DIR]  (synthetic connection check of one role's model backend)
   worker dispatch --bindings FILE [--runtime-config FILE]  (trusted local host; pipe {plan, idempotencyKey} on stdin)
   update [setup options]  (already latest: no restart; otherwise refresh existing connections only)
   setup --connected-only [setup options]  (repair existing connections without adding clients)

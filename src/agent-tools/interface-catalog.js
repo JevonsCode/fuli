@@ -121,6 +121,7 @@ export function agentInterfaceCatalog() {
       { domain: 'executors', toolNames: ['list_executors', 'get_executor', 'list_executor_routing_rules', 'list_project_agent_routing_learning'] },
       { domain: 'agent-score-card', toolNames: ['get_agent_score_card'], readRoutes: ['GET /api/project-agents/:agentId/score-card', 'GET /api/project-agents/:agentId/score-card/evidence'], guidance: 'Bole\'s zero-token score card from recorded outcomes and Tonborg verdicts: separate dimensions with their samples, no total. 数据不足 is no conclusion. Tiers and tool flags are for people to read; they never trigger an action. Task IDs come only with dimension.' },
       { domain: 'review', toolNames: ['list_personal_review_queue', 'list_project_review_queue', 'list_knowledge_review_candidates'] },
+      { domain: 'model-backends', toolNames: ['get_model_usage'], readRoutes: ['GET /api/model-backends/usage'], guidance: 'Read-only. Configuration and keys are local user operations: model-backends.json and fuli models set-key.' },
       { domain: 'policy-and-health', toolNames: ['get_capture_policy', 'explain_settings', 'get_project_agent_coordination_policy', 'get_project_agent_recruitment_policy', 'get_graphiti_status'] },
     ],
   };

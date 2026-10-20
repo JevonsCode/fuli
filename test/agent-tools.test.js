@@ -32,6 +32,7 @@ const NAMES = [
   'list_employee_tools',
   'call_employee_tool',
   'get_judgment_policy', 'list_judgments', 'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'get_agent_pins', 'pin_agent',
+  'get_model_usage',
   'get_agent_score_card',
   'manage_project_agent_schedule', 'control_project_agent_task_run',
   'read_task_preferences',
@@ -320,6 +321,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
   const calls = [];
   const app = {
     judgment: Object.fromEntries(['policy', 'records', 'review', 'assess', 'accept', 'pins', 'pin'].map(name => [name, async input => calls.push([`judgment-${name}`, input])])),
+    modelBackends: { usage: input => calls.push(['model-usage', input]) },
     taskSchedules: { manage: async input => calls.push(['task-schedules', input]) },
     controlProjectAgentTaskRun: async input => calls.push(['task-run-control', input]),
     queryAgentConversations: async input => calls.push(['conversations-' + input.mode, input]),
@@ -502,7 +504,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'external-targets', 'external-delete', 'external-conflict-policy',
     'external-update-policy', 'defer-preference-conflict', 'delete-public-project',
     'employee-list', 'employee-recruit', 'employee-tools', 'employee-call',
-    'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin', 'agent-score-card', 'task-schedules', 'task-run-control',
+    'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin', 'model-usage', 'agent-score-card', 'task-schedules', 'task-run-control',
     'read-task-preferences',
     'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'taste-skill', 'resolve-preference-conflict',

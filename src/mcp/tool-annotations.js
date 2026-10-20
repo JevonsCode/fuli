@@ -1,5 +1,6 @@
 const READ_TOOLS = new Set([
   'get_judgment_policy', 'list_judgments', 'get_agent_pins',
+  'get_model_usage',
   'find_agents', 'read_agent_messages', 'read_agent_thread', 'get_agent_message_status',
   'get_agent_quality_gate',
   'plan_agent_collaboration', 'list_agent_loans',
