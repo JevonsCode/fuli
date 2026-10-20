@@ -90,8 +90,13 @@ describe('RoundtablesPage live updates', () => {
     await wrapper.get('[data-roundtable-live] button').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-roundtable-live]').text()).toContain('重新读取失败')
-    expect(wrapper.find('[data-roundtable-chats-stale]').exists()).toBe(true)
     expect(shown(wrapper)).toHaveLength(4)
+    // The list says its rooms may be stale once the reader goes back to it.
+    await wrapper.vm.$router.push('/roundtables')
+    await flushPromises()
+    expect(wrapper.find('[data-roundtable-chats-stale]').exists()).toBe(true)
+    await wrapper.vm.$router.push('/roundtables/chat/room')
+    await flushPromises()
     down = false
     await wrapper.get('[data-roundtable-live] button').trigger('click')
     await flushPromises()

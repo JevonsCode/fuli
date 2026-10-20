@@ -55,9 +55,10 @@ describe('localized route metadata', () => {
     expect(workbench.meta.detail).toBe(true)
   })
 
-  it('leaves only the shared report and the conversations without a D-03 layout', () => {
-    expect(router.getRoutes().filter(route => !route.redirect && !route.meta.layout).map(route => route.path).sort())
-      .toEqual(['/reports/jefa', '/roundtables/:threadId?', '/roundtables/chat/:chatId'])
+  it('puts the conversations on the work canvas, leaving only the shared report outside the D-03 layouts', () => {
+    expect(['/roundtables', '/roundtables/thread-1', '/roundtables/chat/room-1'].map(path => router.resolve(path).meta.layout))
+      .toEqual(['canvas', 'canvas', 'canvas'])
+    expect(router.getRoutes().filter(route => !route.redirect && !route.meta.layout).map(route => route.path)).toEqual(['/reports/jefa'])
   })
 
   it('puts the inbox, connections, projects, about and not-found pages on the D-03 layouts', () => {

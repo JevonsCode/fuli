@@ -53,8 +53,13 @@ describe('RoundtablesPage', () => {
 
   it('shows who talked to whom, through which client, and what was said', async () => {
     getJson.mockImplementation(async (url: string) => url === '/api/roundtable/threads' ? { threads: [thread] } : detail)
-    const wrapper = await mountAt('/roundtables/thread-1')
+    const wrapper = await mountAt('/roundtables')
     expect(wrapper.get('[data-testid="roundtable-thread"]').text()).toContain('Milo Reed · Nova Lane')
+    await wrapper.vm.$router.push('/roundtables/thread-1')
+    await flushPromises()
+    // One canvas: the open conversation replaces the list, with a way back to it.
+    expect(wrapper.find('[data-testid="roundtable-thread"]').exists()).toBe(false)
+    expect(wrapper.get('[data-roundtable-back]').attributes('href')).toBe('/roundtables')
     const timeline = wrapper.get('[data-testid="roundtable-timeline"]')
     expect(timeline.text()).toContain('Claude Code')
     expect(timeline.text()).toContain('发给 Nova Lane')
@@ -73,8 +78,10 @@ describe('RoundtablesPage', () => {
         from: { agentId: 'lead-1', name: 'Milo Reed', client: 'claude_code' }, to: { agentId: 'peer:remote', name: 'Remote Lead', client: null } },
     ] }
     getJson.mockImplementation(async (url: string) => url === '/api/roundtable/threads' ? { threads: [waiting] } : pendingDetail)
-    const wrapper = await mountAt('/roundtables/thread-1')
+    const wrapper = await mountAt('/roundtables')
     expect(wrapper.get('[data-roundtable-waiting]').text()).toBe('等待 Cora Fenn')
+    await wrapper.vm.$router.push('/roundtables/thread-1')
+    await flushPromises()
     const exchanges = wrapper.get('[data-roundtable-exchanges]')
     expect(exchanges.text()).toContain('评审过了')
     expect(exchanges.text()).not.toContain('能看一下部署吗？')
@@ -111,12 +118,14 @@ describe('RoundtablesPage', () => {
       ] }
       return detail
     })
-    const wrapper = await mountAt('/roundtables/chat/room-1')
+    const wrapper = await mountAt('/roundtables')
     const rooms = wrapper.findAll('[data-testid="roundtable-chat-room"]')
     expect(rooms).toHaveLength(1)
     expect(rooms[0]!.text()).toContain('群聊 · 2')
     expect(rooms[0]!.text()).toContain('Milo Reed · Cora Fenn')
     expect(wrapper.findAll('[data-testid="roundtable-thread"]')).toHaveLength(1)
+    await wrapper.vm.$router.push('/roundtables/chat/room-1')
+    await flushPromises()
     const open = wrapper.get('[data-testid="roundtable-chat"]')
     expect(open.findAll('[data-roundtable-chat-message]').map(item => item.text())).toEqual([
       expect.stringContaining('部署窗口定在今晚'), expect.stringContaining('收到，我来值守'),
@@ -208,12 +217,14 @@ describe('RoundtablesPage on a phone and with paging', () => {
       if (url.includes('after=0')) return { ...roomA, hasMore: true, nextAfter: 1, messages: [message(1)] }
       return { ...roomA, hasMore: false, nextAfter: 2, messages: [message(1), message(2)] }
     })
-    const wrapper = await mountAt('/roundtables/chat/a')
+    const wrapper = await mountAt('/roundtables')
     await wrapper.get('[data-roundtable-more-chats]').trigger('click')
     await flushPromises()
     expect(urls).toContain('/api/roundtable/chats?limit=50&transport=local&afterChat=a')
     expect(wrapper.findAll('[data-testid="roundtable-chat-room"]').map(item => item.text())).toEqual([expect.stringContaining('A'), expect.stringContaining('B')])
     expect(wrapper.find('[data-roundtable-more-chats]').exists()).toBe(false)
+    await wrapper.vm.$router.push('/roundtables/chat/a')
+    await flushPromises()
     await wrapper.get('[data-roundtable-later]').trigger('click')
     await flushPromises()
     expect(urls.at(-1)).toContain('after=1')
@@ -282,8 +293,10 @@ describe('RoundtablesPage when access, space or cursors change', () => {
       await flushPromises()
       releaseOld(detail)
       await flushPromises()
-      expect(wrapper.findAll('[data-testid="roundtable-thread"]').map(item => item.text())).toEqual([expect.stringContaining('另一个空间')])
       expect(wrapper.get('[data-roundtable-detail-title]').text()).toBe('新空间里的同名对话')
+      await wrapper.vm.$router.push('/roundtables')
+      await flushPromises()
+      expect(wrapper.findAll('[data-testid="roundtable-thread"]').map(item => item.text())).toEqual([expect.stringContaining('另一个空间')])
     } finally { wrapper.unmount(); config.space = null; vi.unstubAllGlobals() }
   })
 
