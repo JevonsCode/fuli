@@ -2,6 +2,7 @@
 import { employeeAvatarUrl } from "@/features/employees/avatars";
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import PinIcon from "@/components/PinIcon.vue";
 import AgentHand from "@/features/project-agents/AgentHand.vue";
@@ -24,6 +25,9 @@ import type { ProjectAgentRecord } from "@/types";
 
 const WORKING_RING_MS = 2400;
 
+// One Agent in a collection. The name opens its profile; "quick look" (or a
+// click on the card's empty surface) asks the collection for a Peek. The
+// card lifts while its Peek is open, so the reader keeps their place.
 const props = defineProps<{
   agent: ProjectAgentRecord;
   spaceId: string;
@@ -32,10 +36,12 @@ const props = defineProps<{
   entry?: AgentWorkbenchEntry;
   pinned?: boolean;
   pinPending?: boolean;
+  selected?: boolean;
 }>();
 
 const emit = defineEmits<{
   "toggle-pin": [pinned: boolean];
+  peek: [];
 }>();
 
 const name = computed(() => agentDisplayName(props.agent));
@@ -108,6 +114,8 @@ const workStatusLabel = computed(() => {
     fallback ?? "Work status unavailable",
   );
 });
+const showsWorkStatus = computed(() =>
+  workStatus.value !== "ended" && (props.agent.profile.status === "active" || !["none", "loading"].includes(workStatus.value)));
 const pinLabel = computed(() =>
   props.pinPending
     ? agentPinsText("saving", "Saving Agent pin…")
@@ -118,11 +126,24 @@ const pinLabel = computed(() =>
 function togglePin() {
   emit("toggle-pin", !props.pinned);
 }
+// The card's empty surface is a large mouse target for the quick look; links
+// and buttons inside keep their own action, and selecting text does nothing.
+function surfaceClick(event: MouseEvent) {
+  if ((event.target as Element).closest("a, button, input, summary")) return;
+  if (window.getSelection()?.toString()) return;
+  emit("peek");
+}
 </script>
 
 <template>
-  <article class="ui-card agent-card">
-    <div class="agent-card-topline">
+  <article
+    class="agent-card group/card flex h-full min-w-0 cursor-pointer flex-col gap-2 rounded-lg border bg-card px-4 pt-3.5 pb-3 transition-[border-color,box-shadow] hover:border-border-strong"
+    :class="{ 'is-selected border-border-strong shadow-md': selected }"
+    :data-return-focus="agent.agentId"
+    :data-selected="selected || undefined"
+    @click="surfaceClick"
+  >
+    <div class="agent-card-topline flex items-start gap-3">
       <span
         class="agent-portrait small agent-card-identity"
         :class="{ 'is-working': workStatus === 'running' }"
@@ -133,40 +154,46 @@ function togglePin() {
         <img v-if="employeeAvatarUrl(agent.agentId)" :src="employeeAvatarUrl(agent.agentId)" alt="" />
         <template v-else>{{ agent.profile.occupationEmoji || name.slice(0, 1) }}</template>
       </span>
-      <div class="agent-directory-name">
-        <RouterLink
-          :to="agentProfilePath(spaceId, agent.agentId)"
-          :aria-label="`${name} · ${t('agentProfiles.profile')}`"
-        >
-          {{ name }}
-        </RouterLink>
-        <span v-if="agent.employeeNumber" class="ui-badge fla-employee-number">FLA {{ agent.employeeNumber }}</span>
-        <span v-if="fixedRole" class="ui-badge ui-badge--accent agent-card-role">{{ fixedRole }}</span>
-        <span
-          v-if="occupation.length"
-          class="agent-card-occupation"
-          data-occupation
-          :title="t('agentRedesign.occupation.title')"
-        >{{ occupation.join(" · ") }}</span>
-        <AgentHand :agent-id="agent.agentId" />
+      <div class="min-w-0 flex-1">
+        <div class="agent-directory-name flex min-w-0 items-start gap-1.5">
+          <RouterLink
+            class="agent-card-name"
+            :to="agentProfilePath(spaceId, agent.agentId)"
+            :title="name"
+            :aria-label="`${name} · ${t('agentProfiles.profile')}`"
+          >
+            {{ name }}
+          </RouterLink>
+          <AgentHand :agent-id="agent.agentId" />
+        </div>
+        <p class="agent-card-tags mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <span v-if="agent.employeeNumber" class="fla-employee-number whitespace-nowrap">FLA {{ agent.employeeNumber }}</span>
+          <Badge v-if="fixedRole" class="agent-card-role">{{ fixedRole }}</Badge>
+          <span
+            v-if="occupation.length"
+            class="agent-card-occupation min-w-0 truncate"
+            data-occupation
+            :title="t('agentRedesign.occupation.title')"
+          >{{ occupation.join(" · ") }}</span>
+          <span
+            v-if="showsWorkStatus"
+            class="agent-card-work-status"
+            :class="workStatusClass"
+            :data-work-status="workStatus"
+            :aria-label="`${t('agentRedesign.workStatus.label')} · ${workStatusLabel}`"
+          >
+            <span class="agent-card-work-status-text">{{ workStatusLabel }}</span>
+          </span>
+          <span
+            v-if="agent.profile.status !== 'active'"
+            class="ui-badge agent-card-status agent-card-membership-status"
+            :class="statusClass"
+            :data-membership-status="agent.profile.status"
+          >
+            {{ membershipStatusLabel }}
+          </span>
+        </p>
       </div>
-      <span
-        v-if="agent.profile.status !== 'active'"
-        class="ui-badge agent-card-status agent-card-membership-status"
-        :class="statusClass"
-        :data-membership-status="agent.profile.status"
-      >
-        {{ membershipStatusLabel }}
-      </span>
-      <span
-        v-if="workStatus !== 'ended' && (agent.profile.status === 'active' || !['none', 'loading'].includes(workStatus))"
-        class="agent-card-work-status"
-        :class="workStatusClass"
-        :data-work-status="workStatus"
-        :aria-label="`${t('agentRedesign.workStatus.label')} · ${workStatusLabel}`"
-      >
-        <span class="agent-card-work-status-text">{{ workStatusLabel }}</span>
-      </span>
       <Button
         variant="outline"
         size="icon-sm"
@@ -184,7 +211,7 @@ function togglePin() {
     </div>
     <p v-if="entry?.taskId" class="agent-card-current" data-current-task>
       <span class="agent-card-current-label">{{ t("agentRedesign.workbench.current") }}</span>
-      <RouterLink class="agent-card-current-task" :to="taskLink" :class="{ 'is-unloaded': !entry.title }">
+      <RouterLink class="agent-card-current-task" :to="taskLink" :class="{ 'is-unloaded': !entry.title }" :title="currentTaskTitle">
         {{ currentTaskTitle }}
       </RouterLink>
       <span
@@ -200,12 +227,12 @@ function togglePin() {
       </span>
     </p>
     <p v-if="statusDetail" class="agent-card-status-detail" :class="workStatusClass" :title="statusDetail" data-status-detail>{{ statusDetail }}</p>
-    <p class="agent-card-responsibility" data-agent-summary :title="t('agentRedesign.workbench.responsibility')">{{ agent.profile.responsibility }}</p>
+    <p class="agent-card-responsibility" data-agent-summary :title="agent.profile.responsibility">{{ agent.profile.responsibility }}</p>
     <div v-if="capabilities.length" class="agent-inline-skills">
       <span v-for="skill in capabilities" :key="skill">{{ skill }}</span>
     </div>
-    <div class="agent-card-meta">
-      <div class="agent-card-projects">
+    <div class="agent-card-meta mt-auto flex items-center justify-between gap-3 border-t pt-2.5">
+      <div class="agent-card-projects min-w-0 flex-1">
         <div v-if="projectLabels.length" class="agent-card-project-list">
           <span v-for="project in projectLabels" :key="project" class="ui-badge agent-card-project-badge" :title="project">
             {{ project }}
@@ -217,18 +244,31 @@ function togglePin() {
         <span v-else-if="managesAllProjects" class="ui-badge">{{ t("agentProfiles.allProjects") }}</span>
         <span v-else class="agent-card-no-project">{{ t("agentProfiles.noProject") }}</span>
       </div>
-      <RouterLink
-        class="agent-directory-open"
-        :to="agentProfilePath(spaceId, agent.agentId)"
-        :aria-label="`${name} · ${t('agentProfiles.profile')}`"
+      <Button
+        variant="ghost"
+        size="sm"
+        class="agent-card-peek shrink-0"
+        data-agent-peek
+        :aria-label="t('agentProfiles.quickLookAgent', { name })"
+        :aria-haspopup="'dialog'"
+        @click.stop="emit('peek')"
       >
-        {{ t("agentProfiles.profile") }} →
-      </RouterLink>
+        {{ t("agentProfiles.quickLook") }}
+      </Button>
     </div>
   </article>
 </template>
 
 <style scoped>
+.agent-card:has(:focus-visible) { border-color: var(--color-border-strong); }
+.agent-card-name {
+  display: -webkit-box; min-width: 0; overflow: hidden; color: var(--color-ink); font-size: 16px; font-weight: 650; line-height: 1.35;
+  text-decoration: none; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.agent-card-name:hover { color: var(--color-accent); }
+/* The whole name line is the visible target, so its focus ring hugs the text. */
+.agent-card-name:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; border-radius: 4px; }
+
 .agent-card-pin {
   color: var(--color-muted);
 }
@@ -246,10 +286,6 @@ function togglePin() {
 .agent-card-pin svg {
   width: 18px;
   height: 18px;
-}
-
-.agent-card-projects {
-  flex: 1;
 }
 
 .agent-card-project-list .agent-card-project-badge {

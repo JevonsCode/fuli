@@ -77,7 +77,7 @@ describe('AgentCard projects', () => {
 
     expect(toggle.attributes('aria-pressed')).toBe('true')
     expect(toggle.attributes('disabled')).toBeDefined()
-    expect(wrapper.get('.growth-loading').attributes('aria-label')).toMatch(/Saving pin|正在保存 pin/)
+    expect(wrapper.get('.growth-loading').attributes('aria-label')).toMatch(/Saving pin|正在保存置顶/)
   })
 
   it('renders name, occupation (including lead/assistant), summary and current task on the card', () => {

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createJudgmentService } from '../src/judgment/service.js';
 import { createJudgmentEngine } from '../src/judgment/engine.js';
+import { completePreferences } from './fixtures/collaboration-preferences.js';
 
 test('routing respects locked executor, available models and scoped feedback; never claims dispatch', async t => {
   let prompt;
@@ -10,7 +11,7 @@ test('routing respects locked executor, available models and scoped feedback; ne
     availableModels: [{ model: 'fixture-model', available: true, sourceApplication: 'codex' }] });
   const app = { config: { personal: { spaceId: 's' } }, listPersonalProjects: async () => [{ project_id: 'p' }],
     listProjectAgents: async () => [{ agentId: 'employee.tonborg', profile: { status: 'active', allowedClients: ['codex'], capabilities: ['fuli.employee:tonborg'] } }],
-    getCollaborationPreferences: async () => ({ effective_preferences: [{ instruction: 'Prefer reliable completion' }] }),
+    getCollaborationPreferences: async () => completePreferences({ effective: [{ id: 'reliable', preference_key: 'reliable', preference_scope: 'global', confirmation_status: 'confirmed', instruction: 'Prefer reliable completion' }] }),
     inspectProjectAgentMemory: async () => ({ revision: 2, current: { memory: { summary: 'Use relevant verification' } } }),
     getProjectAgent: async () => ({ profile: { allowedClients: ['codex'], executorPolicy: { mode: 'locked', lockedExecutorIds: ['allowed'] } } }),
     listExecutors: async () => [executor('allowed'), executor('forbidden')], listExecutorRoutingRules: async () => [] };
@@ -29,7 +30,7 @@ function routingFixture(t, { rules = [], executors, allowedClients = ['codex'], 
   let prompt;
   const app = { config: { personal: { spaceId: 's' } }, listPersonalProjects: async () => [{ project_id: 'p' }],
     listProjectAgents: async () => [{ agentId: 'employee.tonborg', profile: { status: 'active', allowedClients: ['codex'], capabilities: ['fuli.employee:tonborg'] } }],
-    getCollaborationPreferences: async () => ({ effective_preferences: [] }),
+    getCollaborationPreferences: async () => completePreferences(),
     inspectProjectAgentMemory: async () => ({ revision: 0 }),
     getProjectAgent: async () => ({ profile: { allowedClients, executorPolicy: { mode: 'flexible' }, defaultModelStrategy: strategy } }),
     listExecutors: async () => executors, listExecutorRoutingRules: async () => rules };

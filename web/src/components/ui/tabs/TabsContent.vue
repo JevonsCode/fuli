@@ -1,0 +1,22 @@
+<script setup lang="ts">
+// shadcn-vue TabsContent (new-york-v4, unovue/shadcn-vue@0bfec13); local changes in index.ts.
+import type { TabsContentProps } from "reka-ui"
+import type { HTMLAttributes } from "vue"
+import { reactiveOmit } from "@vueuse/core"
+import { TabsContent } from "reka-ui"
+import { cn } from "@/lib/class-names"
+
+const props = defineProps<TabsContentProps & { class?: HTMLAttributes["class"] }>()
+
+const delegatedProps = reactiveOmit(props, "class")
+</script>
+
+<template>
+  <TabsContent
+    data-slot="tabs-content"
+    :class="cn('min-w-0 flex-1 outline-none', props.class)"
+    v-bind="delegatedProps"
+  >
+    <slot />
+  </TabsContent>
+</template>

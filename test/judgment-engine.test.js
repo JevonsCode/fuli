@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createJudgmentService } from '../src/judgment/service.js';
 import { createJudgmentEngine } from '../src/judgment/engine.js';
+import { completePreferences } from './fixtures/collaboration-preferences.js';
 
 function fixture(t, { mode = 'shared', mutate, answer } = {}) {
   const candidates = [{ candidate_key: 'entity:one', title: 'Build command', content: 'npm test', confirmation_status: 'confirmed', changed_at: '2026-01-01', reasons: [], project_ids: ['p'] }];
@@ -9,7 +10,7 @@ function fixture(t, { mode = 'shared', mutate, answer } = {}) {
   const app = { config: { personal: { spaceId: 's' } },
     listPersonalProjects: async () => [{ project_id: 'p' }],
     listProjectAgents: async () => [{ agentId: 'employee.tonborg', profile: { status: 'active', allowedClients: ['codex'], capabilities: ['fuli.employee:tonborg'] } }],
-    getCollaborationPreferences: async () => ({ effective_preferences: [] }),
+    getCollaborationPreferences: async () => completePreferences(),
     inspectProjectAgentMemory: async () => ({ current: null, revision: 0 }),
     employees: { authorize: async () => ({}) },
     personal: {},
@@ -35,7 +36,7 @@ test('judgment initializes its authorized project scope but omits Agent scope fo
       assert.equal(assigned, true);
       assert.equal(request.projectAgentId, 'employee.tonborg');
     } else assert.equal(request.projectAgentId, undefined);
-    return { effective_preferences: [] };
+    return completePreferences();
   };
   assert.notEqual((await service.review(input)).records[0].outcome, 'failed');
   assert.notEqual((await service.review({ ...input, personalProjectId: null, requestId: 'global-scope' })).records[0].outcome, 'failed');

@@ -24,6 +24,15 @@
    rebuilt on utilities. */
 @source "../../components/ui";
 @source "../../ui/UiIconButton.vue";
+/* The representative pages rebuilt on the D-03 canvas (rec#11). */
+@source "../../pages/OverviewPage.vue";
+@source "../../pages/AgentsDirectoryPage.vue";
+@source "../../features/agent-profile/AgentCard.vue";
+@source "../../features/agent-profile/AgentPeek.vue";
+@source "../../pages/AgentProfilePage.vue";
+@source "../../pages/SettingsPage.vue";
+@source "../../pages/TaskSchedulesPage.vue";
+@source "../../features/task-schedules/SchedulePeek.vue";
 
 @import "./base.css";
 @import "./semantic.css";
@@ -38,6 +47,13 @@
   --text-*: initial;
   --radius-*: initial;
   --shadow-*: initial;
+
+  /* FULI motion for overlays (no tw-animate-css); reduced motion zeroes it. */
+  --animate-overlay-in: fade-in var(--motion-medium) var(--motion-ease);
+  --animate-dialog-in: dialog-in var(--motion-medium) var(--motion-ease);
+  --animate-popover-in: fade-in var(--motion-fast) var(--motion-ease);
+  @keyframes fade-in { from { opacity: 0; } }
+  @keyframes dialog-in { from { opacity: 0; scale: .98; } }
 }
 
 @theme inline reference {
@@ -57,6 +73,11 @@
   --radius-md: var(--radius-control);
   --radius-lg: var(--radius-card);
   --radius-xl: var(--radius-dialog);
+  /* Shadow utilities are FULI's shadow scale (one ink, re-tinted per skin). */
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
   --default-transition-duration: var(--motion-fast);
   --default-transition-timing-function: var(--motion-ease);
 
@@ -84,4 +105,9 @@
   --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-overlay: var(--overlay);
 }

@@ -78,6 +78,12 @@ export const agentProfileMessages = {
     detailLoading: "正在读取工作经历和组织关系",
     settingsLoading: "正在读取可用平台",
     hrSearchHint: "支持姓名片段、职责、技能、项目和近似拼写。",
+    quickLook: "快速查看",
+    quickLookAgent: "快速查看 {name}",
+    openFullPage: "打开完整页面",
+    peekLoading: "正在读取这个 Agent 的档案",
+    overviewTab: "概览",
+    workedWith: "一起做过任务的伙伴",
   },
   "en-US": {
     title: "Agents",
@@ -161,5 +167,11 @@ export const agentProfileMessages = {
     settingsLoading: "Loading available platforms",
     hrSearchHint:
       "Search partial names, responsibilities, skills, projects or approximate spellings.",
+    quickLook: "Quick look",
+    quickLookAgent: "Quick look at {name}",
+    openFullPage: "Open full page",
+    peekLoading: "Loading this Agent's profile",
+    overviewTab: "Overview",
+    workedWith: "Worked with",
   },
 };
