@@ -6,6 +6,8 @@ import assert from 'node:assert/strict';
 import { appendFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 import { callAgentTool } from '../src/agent-tools.js';
 import { captureDecision } from '../src/graphiti/capture-decision.js';
@@ -13,6 +15,8 @@ import { captureWindow } from '../src/conversations/capture-window.js';
 import { sessionCapturePausePathForRuntime } from '../src/graphiti/capture-session-pause.js';
 import { openFederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { normalizeAgentSessionInput } from '../src/mcp/session-id.js';
+import { createMcpServer } from '../src/mcp/create-mcp-server.js';
+import { prepareDirectAgentToolCall } from '../src/mcp/direct-call.js';
 import { claudeEntry, codexEntry, codexStop, cursorEntry, finishTask, fixture, PRIVATE, receiptOf,
   transcriptRow } from './fixtures/capture-project-fixture.js';
 
@@ -30,6 +34,7 @@ function setPaused(f, context, sessionPaused, sourceApplication = 'codex') {
     sourceApplication });
 }
 
+const captureShape = value => [value.route, value.reason, value.layer];
 const lastNotice = receipt => receipt.split(' · ').at(-1);
 
 // A Codex session whose native transcript the Stop hook imports, as the real hook does.
@@ -360,4 +365,84 @@ test('C3-2 the resuming turn keeps its checkpoint, skips its own transcript and 
   assert.match(imported(f), /turn-after/);
   // The checkpoint's own work log is recorded; nothing from the paused transcript is.
   assert.doesNotMatch(imported(f), /turn-while-paused/);
+});
+
+// The MCP server an Agent's client starts, with the host session its environment names.
+async function mcpCall(f, { env = {}, sourceApplication }, name, args) {
+  const server = createMcpServer(f.app, { env, sourceApplication, registerResources: false });
+  const client = new Client({ name: 'synthetic-session-pause', version: '1' });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  try {
+    await server.connect(b);
+    await client.connect(a);
+    const result = await client.callTool({ name, arguments: args });
+    assert.equal(result.isError, undefined, JSON.stringify(result.content));
+    return result.structuredContent;
+  } finally {
+    await client.close();
+    await server.close();
+  }
+}
+
+const NATIVE = '0b4a0b9e-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
+const usage = sessionId => ({ personalSpaceId: 'synthetic-space', taskId: 'synthetic-task',
+  items: [{ itemId: 'synthetic-item', itemKind: 'entity', useKind: 'applied' }],
+  ...(sessionId === undefined ? {} : { sessionId }) });
+const feedback = sessionId => ({ personalSpaceId: 'synthetic-space', taskId: 'synthetic-task',
+  items: [{ itemId: 'synthetic-item', itemKind: 'entity', feedbackKind: 'outdated', reason: `Stale ${PRIVATE}.`,
+    evidenceSummary: `The ${PRIVATE} note changed.`, reportedByKind: 'agent' }],
+  ...(sessionId === undefined ? {} : { sessionId }) });
+
+test('automatic evidence from a paused host session is refused whatever sessionId the model sends', async (t) => {
+  const f = await fixture(t);
+  const recorded = [];
+  f.app.recordKnowledgeUsage = async input => { recorded.push(input); return { status: 'recorded' }; };
+  f.app.recordKnowledgeFeedback = async input => { recorded.push(input); return { status: 'recorded' }; };
+  const entry = await codexEntry(f, f.dirs.novel, { session: NATIVE });
+  await setPaused(f, entry.context, true);
+  const host = { env: { CODEX_THREAD_ID: NATIVE }, sourceApplication: 'codex' };
+  for (const sessionId of [undefined, null, 'synthetic-other-session']) {
+    for (const [name, args] of [['record_knowledge_usage', usage(sessionId)], ['record_knowledge_feedback', feedback(sessionId)]]) {
+      const result = await mcpCall(f, host, name, args);
+      assert.deepEqual([result.route, result.reason, result.layer], ['disabled', 'session_paused', 'session'],
+        `${name} with sessionId ${String(sessionId)}`);
+    }
+  }
+  // The CLI path an Agent's shell uses binds the same host session.
+  const direct = await prepareDirectAgentToolCall({ toolName: 'record_knowledge_usage', input: usage(),
+    sourceApplication: 'codex', env: { CODEX_THREAD_ID: NATIVE } });
+  assert.equal((await callAgentTool(f.app, 'record_knowledge_usage', direct.input, direct.requestContext)).reason,
+    'session_paused');
+  assert.deepEqual(recorded, []);
+  await setPaused(f, entry.context, false);
+  assert.equal((await mcpCall(f, host, 'record_knowledge_usage', usage())).status, 'recorded');
+});
+
+test('a client that names no host session records no automatic evidence while one of its sessions is paused', async (t) => {
+  const f = await fixture(t);
+  const recorded = [];
+  f.app.recordKnowledgeUsage = async input => { recorded.push(input); return { status: 'recorded' }; };
+  const entry = await cursorEntry(f, f.dirs.novel);
+  const cursor = { sourceApplication: 'cursor' };
+  assert.equal((await mcpCall(f, cursor, 'record_knowledge_usage', usage())).status, 'recorded', 'nothing paused yet');
+  await setPaused(f, entry.context, true, 'cursor');
+  assert.deepEqual(captureShape(await mcpCall(f, cursor, 'record_knowledge_usage', usage())),
+    ['disabled', 'policy_unavailable', 'session'], 'its session cannot be shown not to be the paused one');
+  assert.deepEqual(captureShape(await mcpCall(f, cursor, 'record_knowledge_usage', usage('synthetic-cursor-session'))),
+    ['disabled', 'session_paused', 'session']);
+  assert.equal((await mcpCall(f, { sourceApplication: 'claude_code' }, 'record_knowledge_usage', usage())).status,
+    'recorded', 'another client is not affected');
+  assert.equal(recorded.length, 2);
+});
+
+test('get_capture_policy in a paused session says so without the model passing a session', async (t) => {
+  const f = await fixture(t);
+  const entry = await codexEntry(f, f.dirs.novel, { session: NATIVE });
+  f.clock.now = PAUSED_AT;
+  await setPaused(f, entry.context, true);
+  const policy = await mcpCall(f, { env: { CODEX_THREAD_ID: NATIVE }, sourceApplication: 'codex' }, 'get_capture_policy',
+    { projectPath: f.dirs.novel });
+  assert.deepEqual([policy.current.captured, policy.current.reason, policy.current.layer, policy.current.pausedSince],
+    [false, 'session_paused', 'session', PAUSED_AT]);
+  assert.ok(policy.current.notice.startsWith(PAUSED));
 });

@@ -32,7 +32,8 @@ export async function captureWindow(application, guard, operation, {
     resolveProjectPath: projectPath => { check(); return application.resolveProjectPath(projectPath); },
     getCapturePolicy: application.getCapturePolicy?.bind(application),
     getCapturePolicyVersion: application.getCapturePolicyVersion?.bind(application),
-    getSessionCapturePause: application.getSessionCapturePause?.bind(application), personal: {
+    getSessionCapturePause: application.getSessionCapturePause?.bind(application),
+    hasPausedCaptureSession: application.hasPausedCaptureSession?.bind(application), personal: {
       currentTaskContext: (query, current) => { check(); return application.personal.currentTaskContext(query, options(current)); },
       conversation: (action, query, current) => {
         check();

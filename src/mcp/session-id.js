@@ -142,10 +142,8 @@ export function normalizeAgentSessionInput(
   }
   if (!nativeThreadId || !SESSION_ID_TOOLS.has(name)) return input;
   if (!input || typeof input !== 'object' || Array.isArray(input)) return input;
-  if (typeof input.sessionId !== 'string' || input.sessionId === nativeThreadId) {
-    return input;
-  }
-  return { ...input, sessionId: nativeThreadId };
+  // The host's session, whether the model sent another, null or none.
+  return input.sessionId === nativeThreadId ? input : { ...input, sessionId: nativeThreadId };
 }
 
 export function normalizeMcpSourceApplication(value) {

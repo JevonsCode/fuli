@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { debuglog } from 'node:util';
+import { activeAgentHostSession } from '../app/agent-request-context.js';
 import { projectCaptureReason, projectOffSince, storedProjectSettings, usesProjectModes } from './capture-project-mode.js';
 import { isTemporaryProjectId } from './temporary-project-scope.js';
 import { captureNotice } from './capture-notice.js';
@@ -96,26 +97,38 @@ async function decide(application, scope) {
     }
     project = projects[0];
   }
-  return { policy, settings, project, decision: sessionDecision(application, scope.sessionId) };
+  return { policy, settings, project, decision: sessionDecision(application, scope) };
 }
 
-// A write that names no host session has no session to pause. A pause that
-// cannot be read is never taken for "not paused" (C3-5). Every FULI
-// application and the capture window's port carry the session layer; a port
-// composed without one (a test double) has no paused sessions.
-function sessionDecision(application, sessionId) {
-  if (!sessionId) return ALLOWED;
+// The session layer. A write is checked against the session its scope names
+// (a hook's, a task's) and, for an Agent's own MCP or CLI call, against the
+// host session its client runs in, which no model argument can replace. An
+// Agent call whose client names no host session and whose scope names none
+// cannot be shown to come from an unpaused session while any session of that
+// client is paused, so it records nothing then. A pause that cannot be read is
+// never taken for "not paused" (C3-5). Every FULI application and the capture
+// window's port carry the session layer; a port composed without one (a test
+// double) has no paused sessions.
+function sessionDecision(application, { sessionId = null, sourceApplication = 'other' }) {
+  const host = activeAgentHostSession();
+  const sessions = [...new Set([sessionId, host].filter(Boolean))];
+  if (!sessions.length && host !== null) return ALLOWED;
   if (!application.getSessionCapturePause) {
-    debug('capture decision for a session on a port without a session layer; no session is paused there');
+    debug('capture decision on a port without a session layer; no session is paused there');
     return ALLOWED;
   }
-  let session;
   try {
-    session = application.getSessionCapturePause(sessionId);
+    if (!sessions.length) {
+      return application.hasPausedCaptureSession(sourceApplication) ? denied('policy_unavailable', 'session') : ALLOWED;
+    }
+    for (const id of sessions) {
+      const session = application.getSessionCapturePause(id);
+      if (session.paused) return { ...denied('session_paused', 'session'), since: session.since };
+    }
+    return ALLOWED;
   } catch {
     return denied('policy_unavailable', 'session');
   }
-  return session.paused ? { ...denied('session_paused', 'session'), since: session.since } : ALLOWED;
 }
 
 function understoodSettings(policy) {

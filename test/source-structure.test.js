@@ -58,12 +58,13 @@ const CAPTURE_PORT = 'src/graphiti/capture-decision.js';
 // The session layer (rec#5 C3) is part of the settings: its pause records are
 // read only by the port too.
 const CAPTURE_SETTINGS_OWNERS = new Set([CAPTURE_PORT, 'src/graphiti/capture-policy.js', 'src/graphiti/capture-session-pause.js']);
-const CAPTURE_SETTINGS_ACCESS = /getCapturePolicy|capturePolicyStore|CapturePolicyStore|\bpolicyStore\b|capture-policy\.js|getSessionCapturePause|SessionCapturePauseStore|sessionCapturePauseStore|capture-session-pause\.js/;
+const CAPTURE_SETTINGS_ACCESS = /getCapturePolicy|capturePolicyStore|CapturePolicyStore|\bpolicyStore\b|capture-policy\.js|getSessionCapturePause|hasPausedCaptureSession|SessionCapturePauseStore|sessionCapturePauseStore|capture-session-pause\.js/;
 const CAPTURE_SETTINGS_CALL_SITES = new Map([
   ['src/http/graph-api-router.js', ['sendJson(response, 200, app.getCapturePolicy());']],
   ['src/conversations/capture-window.js', ['getCapturePolicy: application.getCapturePolicy?.bind(application),',
     'getCapturePolicyVersion: application.getCapturePolicyVersion?.bind(application),',
-    'getSessionCapturePause: application.getSessionCapturePause?.bind(application), personal: {']],
+    'getSessionCapturePause: application.getSessionCapturePause?.bind(application),',
+    'hasPausedCaptureSession: application.hasPausedCaptureSession?.bind(application), personal: {']],
   // The worker host only links a worker's session to the session that started it.
   ['src/server/worker-plan-runtime.js', [
     "import { SessionCapturePauseStore, sessionCapturePausePathForRuntime } from '../graphiti/capture-session-pause.js';",
@@ -80,6 +81,7 @@ const CAPTURE_SETTINGS_CALL_SITES = new Map([
     'sessionCapturePauseStore: new SessionCapturePauseStore(sessionCapturePausePathForRuntime(runtimeConfigPath)),',
     'sessionCapturePauseStore = new SessionCapturePauseStore(),', 'this.sessionCapturePauseStore = sessionCapturePauseStore;',
     'getSessionCapturePause(sessionId) {', 'return this.sessionCapturePauseStore.state(sessionId);',
+    'hasPausedCaptureSession(sourceApplication) {', 'return this.sessionCapturePauseStore.anyPaused(sourceApplication);',
     'return this.sessionCapturePauseStore.set(sessionId, change);'
   ]]
 ]);

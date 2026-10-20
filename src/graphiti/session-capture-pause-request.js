@@ -24,7 +24,7 @@ export async function setSessionCapturePause(application, { taskContextToken, se
     sourceApplication);
   const sessionId = requiredString(task.sessionId, 'Task host session');
   const state = await keptInTranscriptLedger(application, task, sessionId)
-    ? savedPause(application, sessionId, sessionPaused) : null;
+    ? savedPause(application, sessionId, { paused: sessionPaused, sourceApplication: task.sourceApplication }) : null;
   // A resumed session may still be off by another layer; the receipt says so.
   const decision = await captureDecision(application, taskCaptureScope(task));
   return { status: !state ? 'unsaved' : sessionPaused ? 'session_paused' : 'session_resumed',
@@ -48,9 +48,9 @@ async function keptInTranscriptLedger(application, task, sessionId) {
   return await ledger.deny(captureSettingsVersion(application, sessionId), 'session_paused') === 'kept';
 }
 
-function savedPause(application, sessionId, paused) {
+function savedPause(application, sessionId, change) {
   try {
-    return application.setSessionCapturePause(sessionId, { paused });
+    return application.setSessionCapturePause(sessionId, change);
   } catch {
     return null;
   }

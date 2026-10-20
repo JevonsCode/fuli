@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import { transcriptDigest } from '../conversations/transcript-guard.js';
@@ -22,6 +22,7 @@ import { writeJsonFileAtomic } from '../storage/json-file.js';
 // write after it (conversations/capture-window.js).
 
 const RECORD_VERSION = 1;
+const RECORD_FILE = /^[0-9a-f]{64}\.json$/;
 // Worker links nest a few levels at most; a longer or cyclic chain cannot be
 // trusted to say whether a parent paused.
 const MAX_SESSION_CHAIN = 8;
@@ -59,13 +60,31 @@ export class SessionCapturePauseStore {
 
   // Pauses or resumes one session from now on. Earlier records stay; turns
   // written while paused are never imported after a resume.
-  set(sessionId, { paused, by = 'agent' }) {
+  set(sessionId, { paused, by = 'agent', sourceApplication }) {
     if (typeof paused !== 'boolean') throw new TypeError('sessionPaused must be a boolean');
     if (!PAUSED_BY.includes(by)) throw new TypeError('Session pause must name who paused it');
     const current = this.#read(validSessionId(sessionId));
     const keepSince = paused && current?.paused;
     return this.#write(sessionId, current, { paused, since: keepSince ? current.since : paused ? this.now() : null,
-      by: paused ? (keepSince ? current.by : by) : null });
+      by: paused ? (keepSince ? current.by : by) : null, sourceApplication: requiredClient(sourceApplication) });
+  }
+
+  // Whether any session of this client is paused now. An Agent call whose
+  // client names no host session cannot be shown to come from another one.
+  anyPaused(sourceApplication) {
+    const records = this.directory ? this.#allRecords() : [...this.memory.values()];
+    return records.some(record => record.paused && record.sourceApplication === sourceApplication);
+  }
+
+  #allRecords() {
+    let names;
+    try {
+      names = readdirSync(this.directory);
+    } catch (error) {
+      if (error?.code === 'ENOENT') return [];
+      throw new Error('Session capture pauses could not be listed');
+    }
+    return names.filter(name => RECORD_FILE.test(name)).map(name => this.#readFile(join(this.directory, name)));
   }
 
   // Records that childSessionId was started by parentSessionId.
@@ -74,7 +93,7 @@ export class SessionCapturePauseStore {
     if (childSessionId === parentSessionId) throw new TypeError('A session cannot start itself');
     const current = this.#read(validSessionId(childSessionId));
     this.#write(childSessionId, current, { paused: current?.paused ?? false, since: current?.since ?? null,
-      by: current?.by ?? null, parentSessionId });
+      by: current?.by ?? null, sourceApplication: current?.sourceApplication ?? null, parentSessionId });
   }
 
   #write(sessionId, current, fields) {
@@ -89,9 +108,13 @@ export class SessionCapturePauseStore {
   // record was removed, which moves the version like any other change.
   #read(sessionId) {
     if (!this.directory) return this.memory.get(sessionId) ?? null;
+    return this.#readFile(this.#path(sessionId));
+  }
+
+  #readFile(path) {
     let value;
     try {
-      value = JSON.parse(this.readText(this.#path(sessionId)));
+      value = JSON.parse(this.readText(path));
     } catch (error) {
       if (error?.code === 'ENOENT') return null;
       throw new Error('Session capture pause could not be read');
@@ -117,10 +140,16 @@ function validSessionId(value) {
   return value;
 }
 
+function requiredClient(value) {
+  if (typeof value !== 'string' || !value) throw new TypeError('Session capture pause must name its client');
+  return value;
+}
+
 function validRecord(value) {
   return value?.version === RECORD_VERSION && Number.isSafeInteger(value.generation) && value.generation > 0
     && typeof value.nonce === 'string' && typeof value.paused === 'boolean'
     && (value.paused ? typeof value.since === 'string' && PAUSED_BY.includes(value.by)
       : value.since === null && value.by === null)
+    && (value.sourceApplication === null || typeof value.sourceApplication === 'string')
     && (value.parentSessionId === null || (typeof value.parentSessionId === 'string' && value.parentSessionId.length > 0));
 }
