@@ -34,6 +34,7 @@ const NAMES = [
   'submit_agent_app_version',
   'list_agent_apps',
   'get_judgment_policy', 'list_judgments', 'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'get_agent_pins', 'pin_agent',
+  'get_agent_score_card',
   'manage_project_agent_schedule', 'control_project_agent_task_run',
   'read_task_preferences',
   'begin_task_context',
@@ -463,6 +464,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       calls.push(['record-project-agent-task-outcome', input]),
     listProjectAgentRoutingLearning: async (input) =>
       calls.push(['list-project-agent-routing-learning', input]),
+    getAgentScoreCard: async (input) => calls.push(['agent-score-card', input]),
     ignoreProjectAgentRoutingLearning: async (input) =>
       calls.push(['ignore-project-agent-routing-learning', input]),
     resetProjectAgentRoutingLearning: async (input) =>
@@ -507,7 +509,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'external-targets', 'external-delete', 'external-conflict-policy',
     'external-update-policy', 'defer-preference-conflict', 'delete-public-project',
     'employee-list', 'employee-recruit', 'employee-tools', 'employee-call', 'app-submit', 'app-list',
-    'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin', 'task-schedules', 'task-run-control',
+    'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin', 'agent-score-card', 'task-schedules', 'task-run-control',
     'read-task-preferences',
     'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'taste-skill', 'resolve-preference-conflict',

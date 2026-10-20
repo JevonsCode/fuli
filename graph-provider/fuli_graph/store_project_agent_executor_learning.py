@@ -11,6 +11,7 @@ from fastapi import HTTPException
 
 from .personal_project_access import authorize_personal_project
 from .project_agent_executor_models import (
+    MINIMUM_EVIDENCE_SAMPLES,
     ProjectAgentExecutorEvidenceContribution,
     ProjectAgentExecutorEvidenceIgnore,
     ProjectAgentExecutorOutcomeAggregate,
@@ -28,7 +29,6 @@ from .system_hr_identity import resolve_hr_alias
 _TERMINAL_NEUTRAL = {'cancelled'}
 _DEFAULT_HALF_LIFE_DAYS = 30.0
 _DEFAULT_RECENT_DAYS = 7
-_MINIMUM_EVIDENCE_SAMPLES = 3
 
 
 def project_agent_executor_outcome_bucket_id(
@@ -787,7 +787,7 @@ class StoreProjectAgentExecutorLearning:
             failure_count=failure_count,
             rating_count=len(rating_values),
             average_rating=(sum(rating_values) / len(rating_values)) if rating_values else None,
-            neutral_due_to_insufficient_evidence=bool(validation_warnings) or sample_count < _MINIMUM_EVIDENCE_SAMPLES,
+            neutral_due_to_insufficient_evidence=bool(validation_warnings) or sample_count < MINIMUM_EVIDENCE_SAMPLES,
             ignored=bool(validation_warnings),
             reset_at=reset_at,
             as_of=current,

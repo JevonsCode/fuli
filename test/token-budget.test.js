@@ -46,10 +46,11 @@ const BASELINE = Object.freeze({
   // Attention replies: request_agent_attention says to ask in the live
   // conversation first (the console is the away inbox) and read_agent_messages
   // names the answers it now returns: 172,415 -> 172,573 B (+158 B). Chat is unchanged.
-  // Agent apps (rec#7 part 1): submit_agent_app_version and list_agent_apps, full profile only, chat reaches them via fuli_call: +1,847 B.
-  // rec#5 C2: get_capture_policy takes the caller directory; update_capture_policy asks to restate and confirm long-term changes: +1,215 B.
-  // Merged: 172,573 -> 175,635 B (+3,062 B). The chat profile is unchanged.
-  fullToolSchemaBytes: 175635,
+  // Agent apps (rec#7 part 1): submit_agent_app_version and list_agent_apps, full profile only, chat reaches them via fuli_call (+1,847 B).
+  // Bole score card: get_agent_score_card serves the card and its task IDs in one tool (+1,065 B).
+  // rec#5 C2: capture-policy tools take the caller's directory and the project mode (+1,215 B).
+  // Merged: 172,573 -> 176,700 B (+4,127 B). Chat is unchanged.
+  fullToolSchemaBytes: 176700,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
