@@ -39,11 +39,20 @@ async function mountPage() {
   vi.spyOn(store, 'activePersonalSpace', 'get').mockReturnValue({ id: 'space-1' } as never)
   router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:any(.*)*', component: { template: '<div />' } }] })
   await router.push('/task-schedules')
-  const wrapper = mount(TaskSchedulesPage, { attachTo: document.body, global: { plugins: [router], stubs: { teleport: true } } })
+  const wrapper = mount(TaskSchedulesPage, { attachTo: document.body, global: { plugins: [router] } })
   await flushPromises()
   return wrapper
 }
 let router: ReturnType<typeof createRouter>
+// Row actions live in each row's DropdownMenu: open it from the keyboard, then choose.
+async function rowAction(wrapper: Awaited<ReturnType<typeof mountPage>>, item: string) {
+  await wrapper.get('[data-schedule-actions]').trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  ;(document.querySelector(item) as HTMLElement).click()
+  await flushPromises()
+}
+// The menu and the quick look render in a portal on the body.
+const inBody = (selector: string) => document.querySelector(selector) as HTMLElement
 
 beforeEach(() => setActivePinia(createPinia()))
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); document.body.innerHTML = '' })
@@ -93,8 +102,7 @@ describe('task schedules page', () => {
       '/api/task-schedules?': () => { listed += 1; return { schedules: [schedule({ revision: listed + 1 })] } },
     })
     const wrapper = await mountPage()
-    await wrapper.find('[data-schedule-pause]').trigger('click')
-    await flushPromises()
+    await rowAction(wrapper, '[data-schedule-pause]')
     expect(calls.find(call => call.url.endsWith('/pause'))!.body).toEqual({ personalSpaceId: 'space-1', expectedRevision: 2 })
     expect(listed).toBe(2)
     expect(wrapper.text()).toMatch(/已重新读取|was reloaded/)
@@ -106,8 +114,7 @@ describe('task schedules page', () => {
       '/api/task-schedules?': () => ({ schedules: [schedule({ enabled: false, pausedReason: 'circuit_open', revision: 3 })] }),
     })
     const wrapper = await mountPage()
-    await wrapper.find('[data-schedule-resume]').trigger('click')
-    await flushPromises()
+    await rowAction(wrapper, '[data-schedule-resume]')
     expect(document.body.textContent).toMatch(/不补跑|not replayed/)
     ;(document.querySelector('[data-schedule-resume-confirm]') as HTMLButtonElement).click()
     await flushPromises()
@@ -183,19 +190,22 @@ describe('task schedules page after acceptance review', () => {
     expect(planned).toContain(sent)
   })
 
-  it('edits with the shown revision and lists the latest 50 task records on request', async () => {
+  it('opens details from the name, lists the latest 50 task records there, and edits with the shown revision', async () => {
     serve({
       '/api/task-schedules/sched-1/update': body => ({ ...schedule(), revision: 3, body: { ...schedule().body, title: String(body?.title) } }),
       '/api/task-schedules/sched-1/runs': () => ({ runs: [{ slot: '2026-10-19T00:00:00Z', taskId: 'task-9', status: 'completed', createdAt: '2026-10-19T00:00:01Z' }] }),
       '/api/task-schedules?': () => ({ schedules: [schedule()] }),
     })
     const wrapper = await mountPage()
-    await wrapper.find('[data-schedule-runs]').trigger('click')
+    await wrapper.get('[data-schedule-open]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-schedule-run-panel]').text()).toContain('task-9')
-    expect(wrapper.get('[data-schedule-run-panel]').text()).toMatch(/最近 50 条|Latest 50/)
-    await wrapper.find('[data-schedule-edit]').trigger('click')
+    // The quick look is in the URL, so a refresh or a shared link reopens it.
+    expect(router.currentRoute.value.query.item).toBe('space-1/sched-1')
+    expect(inBody('[data-schedule-run-panel]').textContent).toContain('task-9')
+    expect(inBody('[data-schedule-run-panel]').textContent).toMatch(/最近 50 条|Latest 50/)
+    inBody('[data-peek-edit]').click()
     await flushPromises()
+    expect(inBody('[data-schedule-run-panel]')).toBeNull()
     ;(document.querySelector('dialog form') as HTMLFormElement).dispatchEvent(new Event('submit'))
     await flushPromises()
     const update = calls.find(call => call.url.endsWith('/update'))!
@@ -271,9 +281,8 @@ describe('task schedules page after acceptance review', () => {
       '/api/project-agent-tasks/task-9?': () => ({ taskId: 'task-9', status: 'completed', leadAgentId: 'lead-1', personalProjectId: 'project-a' }),
     })
     const wrapper = await mountPage()
-    await wrapper.find('[data-schedule-runs]').trigger('click')
-    await flushPromises()
-    await wrapper.get('[data-schedule-open-task]').trigger('click')
+    await rowAction(wrapper, '[data-schedule-runs]')
+    inBody('[data-schedule-open-task]').click()
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/project-agents/manage')
     expect(router.currentRoute.value.query).toEqual({ agent: 'lead-1', project: 'project-a', task: 'task-9' })
@@ -290,8 +299,7 @@ describe('task schedules page after acceptance review', () => {
       },
     })
     const wrapper = await mountPage()
-    await wrapper.find('[data-schedule-edit]').trigger('click')
-    await flushPromises()
+    await rowAction(wrapper, '[data-schedule-edit]')
     await submit()
     expect(document.body.textContent).toContain('修订 3')
     expect(document.body.textContent).toContain('标题')
@@ -327,3 +335,35 @@ describe('task schedules page after acceptance review', () => {
   })
 })
 
+
+describe('task schedules table', () => {
+  it('filters by state from the URL, keeps the filter there, and says when no row matches', async () => {
+    serve({ '/api/task-schedules?': () => ({ schedules: [
+      schedule(),
+      schedule({ id: 'sched-2', enabled: false, pausedReason: 'circuit_open', body: { ...schedule().body, title: 'Bench' } }),
+    ] }) })
+    const wrapper = await mountPage()
+    expect(wrapper.findAll('[data-schedule-row]')).toHaveLength(2)
+    await router.replace({ query: { state: 'circuit_open' } })
+    await flushPromises()
+    expect(wrapper.findAll('[data-schedule-row]').map(row => row.attributes('data-schedule-row'))).toEqual(['sched-2'])
+    await wrapper.get('[data-schedule-search]').setValue('nightly')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ state: 'circuit_open', q: 'nightly' })
+    expect(wrapper.text()).toMatch(/没有符合筛选的定时任务|No schedules match/)
+  })
+
+  it('shows a low-priority column when the person chooses it and remembers that choice here only', async () => {
+    serve({ '/api/task-schedules?': () => ({ schedules: [schedule()] }) })
+    const wrapper = await mountPage()
+    const headings = () => wrapper.findAll('th').map(cell => cell.text())
+    expect(headings()).not.toContain('开工方式')
+    await wrapper.get('[data-schedule-columns]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    ;(document.querySelector('[data-schedule-column-toggle="startMode"]') as HTMLElement).click()
+    await flushPromises()
+    expect(headings()).toContain('开工方式')
+    expect(wrapper.get('[data-schedule-row="sched-1"]').text()).toContain('仅加入待办')
+    expect(JSON.parse(localStorage.getItem('fuli.schedules.columns')!)).toEqual({ startMode: true })
+  })
+})

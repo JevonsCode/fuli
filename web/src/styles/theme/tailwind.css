@@ -31,6 +31,8 @@
 @source "../../features/agent-profile/AgentPeek.vue";
 @source "../../pages/AgentProfilePage.vue";
 @source "../../pages/SettingsPage.vue";
+@source "../../pages/TaskSchedulesPage.vue";
+@source "../../features/task-schedules/SchedulePeek.vue";
 
 @import "./base.css";
 @import "./semantic.css";
