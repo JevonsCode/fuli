@@ -520,6 +520,12 @@ async def _item_belongs_to_project(
 
 
 async def _implicit_project_id(store, space: dict, item_id: str, item_kind: str):
+    project_ids = await _source_project_ids(store, space, item_id, item_kind)
+    return project_ids[0] if len(project_ids) == 1 else None
+
+
+async def _source_project_ids(store, space: dict, item_id: str, item_kind: str) -> list[str]:
+    """Every project whose episodes mention the item; empty when no source is known."""
     if item_kind == 'entity':
         query = '''
         MATCH (episode:Episodic {group_id: $group_id})-[:MENTIONS]->
@@ -541,8 +547,7 @@ async def _implicit_project_id(store, space: dict, item_id: str, item_kind: str)
         group_id=space['group_id'],
         routing_='r',
     )
-    project_ids = records[0]['project_ids'] if records else []
-    return project_ids[0] if len(project_ids) == 1 else None
+    return sorted(records[0]['project_ids']) if records else []
 
 
 async def _read_assignment(store, space_id: str, item_id: str, item_kind: str):

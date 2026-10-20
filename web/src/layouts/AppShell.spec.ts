@@ -8,6 +8,7 @@ import { getJson } from '@/api/client'
 import { useConsoleStore } from '@/stores/console'
 import AppShell from './AppShell.vue'
 import { usePageTitle } from './page-title'
+import { updateDocumentTitle } from '@/router/meta'
 
 vi.mock('@/api/client', () => ({
   getJson: vi.fn(),
@@ -158,6 +159,12 @@ describe('AppShell', () => {
       { path: '/agents/:spaceId/:agentId', component: profile, meta: { title: 'agentProfiles.profile', layout: 'canvas' } },
     ])
     expect(wrapper.findAll('h1').map(heading => heading.text())).toEqual(['Ada Lovelace'])
+    expect(document.title).toBe('Ada Lovelace · 复利')
+    // The app's router writes the route title after every navigation; a
+    // query change (an in-page tab) must not leave the tab named after it.
+    router.afterEach(to => updateDocumentTitle(to.meta.title))
+    await router.replace({ query: { tab: 'history' } })
+    await flushPromises()
     expect(document.title).toBe('Ada Lovelace · 复利')
     await router.push('/')
     await flushPromises()

@@ -33,15 +33,18 @@ describe('localized route metadata', () => {
   })
 
   it('puts the rebuilt pages on the shared work canvas and settings in the form column', () => {
-    expect(['/', '/project-agents', '/agents/space/agent', '/project-agents/schedules'].map(path => router.resolve(path).meta.layout))
-      .toEqual(['canvas', 'canvas', 'canvas', 'canvas'])
+    expect(['/', '/project-agents', '/agents/space/agent', '/project-agents/schedules', '/project-agents/manage', '/project-agents/manage/space/agent']
+      .map(path => router.resolve(path).meta.layout))
+      .toEqual(['canvas', 'canvas', 'canvas', 'canvas', 'canvas', 'canvas'])
     expect(router.resolve('/settings').meta.layout).toBe('form')
-    // The Agent profile is a detail page; settings keeps a sticky save bar.
+    // An Agent's profile and its 编排 page are detail pages; settings keeps a sticky save bar.
     expect(router.resolve('/agents/space/agent').meta.detail).toBe(true)
+    expect(router.resolve('/project-agents/manage/space/agent').name).toBe('agent-management-detail')
+    expect(router.resolve('/project-agents/manage/space/agent').meta.detail).toBe(true)
+    expect(router.resolve('/project-agents/manage').meta.detail).toBeUndefined()
     expect(router.resolve('/project-agents').meta.detail).toBeUndefined()
     expect(router.resolve('/settings').meta.saveBar).toBe(true)
     // Pages not rebuilt yet keep their own layout.
-    expect(router.resolve('/project-agents/manage').meta.layout).toBeUndefined()
     expect(router.resolve('/inbox').meta.layout).toBeUndefined()
   })
 
@@ -74,6 +77,8 @@ describe('localized route metadata', () => {
   it('localizes Agent profile and management routes', () => {
     expect(routeMetaText(router.resolve('/agents/space/agent').meta.title)).toBe('主页')
     expect(routeMetaText(router.resolve('/project-agents/manage').meta.title)).toBe('编排')
+    // An Agent's 编排 page falls back to a name of its own, never the 「← 编排」 beside it.
+    expect(routeMetaText(router.resolve('/project-agents/manage/space/agent').meta.title)).toBe('Agent')
     setLocale('en-US', { persist: false })
     expect(routeMetaText(router.resolve('/agents/space/agent').meta.title)).toBe('Profile')
   })
