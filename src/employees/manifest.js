@@ -1,19 +1,21 @@
 import { z } from 'zod';
 import { ApplicationError } from '../app/application-error.js';
 
-const identifier = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
-const toolIdentifier = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/);
-const relativeFile = z.string().min(1).max(160).refine(
+// Package contract pieces shared by employee packages and Agent apps.
+export const packageIdentifier = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
+export const packageVersion = z.string().regex(/^\d+\.\d+\.\d+$/);
+export const packageFile = z.string().min(1).max(160).refine(
   (value) => !value.startsWith('/') && !value.includes('\\') &&
     !value.split('/').some((part) => !part || part === '.' || part === '..') &&
     !value.includes(':'),
-  'Employee package paths must stay inside the package'
+  'Package paths must stay inside the package'
 );
+const toolIdentifier = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/);
 
 export const employeeManifestSchema = z.object({
   schemaVersion: z.literal(1),
-  id: identifier,
-  version: z.string().regex(/^\d+\.\d+\.\d+$/),
+  id: packageIdentifier,
+  version: packageVersion,
   name: z.string().trim().min(1).max(100),
   role: z.string().trim().min(1).max(100),
   description: z.string().trim().min(1).max(1000),
@@ -33,8 +35,8 @@ export const employeeManifestSchema = z.object({
   }).strict().optional(),
   runtime: z.object({
     apiVersion: z.literal(1),
-    entry: relativeFile,
-    webRoot: relativeFile
+    entry: packageFile,
+    webRoot: packageFile
   }).strict().nullable()
 }).strict();
 
@@ -47,8 +49,8 @@ export function parseEmployeeManifest(value) {
 // Built-in roles every personal space has; the Provider provisions their identities.
 export const FIXED_EMPLOYEE_AGENT_TYPES = Object.freeze({ jefa: 'coordinator', bole: 'hr', tonborg: 'durable', assistant: 'durable' });
 
-export const employeeAgentId = (id) => `employee.${identifier.parse(id)}`;
-export const employeeCapability = (id) => `fuli.employee:${identifier.parse(id)}`;
+export const employeeAgentId = (id) => `employee.${packageIdentifier.parse(id)}`;
+export const employeeCapability = (id) => `fuli.employee:${packageIdentifier.parse(id)}`;
 
 export class EmployeeError extends ApplicationError {
   constructor(message, status = 400, code = 'employee_error') {

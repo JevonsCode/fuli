@@ -31,6 +31,8 @@ const NAMES = [
   'recruit_employee',
   'list_employee_tools',
   'call_employee_tool',
+  'submit_agent_app_version',
+  'list_agent_apps',
   'get_judgment_policy', 'list_judgments', 'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'get_agent_pins', 'pin_agent',
   'get_model_usage',
   'get_agent_score_card',
@@ -367,6 +369,11 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       describeTools: async (input) => calls.push(['employee-tools', input]),
       callTool: async (input) => calls.push(['employee-call', input])
     },
+    agentApps: {
+      submit: async (input) => calls.push(['app-submit', input]),
+      list: (input) => calls.push(['app-list', input]),
+      read: (input) => calls.push(['app-read', input])
+    },
     beginTaskContext: async (input) => calls.push(['begin-task', input]),
     readTaskPreferences: async (input) => calls.push(['read-task-preferences', input]),
     checkpointTaskKnowledge: async (input) => calls.push(['checkpoint-task', input]),
@@ -507,7 +514,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'external-create', 'external-check', 'external-sync', 'external-retrieve',
     'external-targets', 'external-delete', 'external-conflict-policy',
     'external-update-policy', 'defer-preference-conflict', 'delete-public-project',
-    'employee-list', 'employee-recruit', 'employee-tools', 'employee-call',
+    'employee-list', 'employee-recruit', 'employee-tools', 'employee-call', 'app-submit', 'app-list',
     'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin', 'model-usage', 'agent-score-card', 'task-schedules', 'task-run-control',
     'read-task-preferences',
     'begin-task', 'checkpoint-task', 'verify-task',
