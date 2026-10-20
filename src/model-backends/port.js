@@ -3,11 +3,13 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { MODEL_ADAPTERS } from './adapters/registry.js';
 import { budgetBlock, callLimits, ceilingCost, estimateCost, estimateTokens, roundCost, windowStart } from './budget.js';
-import { decisionContract } from './decision-contract.js';
+import { MODEL_BACKEND_ROLES } from './config.js';
+import { decisionContract, decisionEnvelope } from './decision-contract.js';
 import { egressAllowed } from './egress.js';
 import { FAILURE_STATUS, isFallbackEligible, modelFailure } from './failures.js';
 import { decisionPrompt, promptForMode, repairTurns } from './prompt.js';
 import { CONNECTION_CHECK, connectionCheckRequest, parseDecisionRequest, parseUsageQuery } from './request.js';
+import { reportedUsage } from './usage.js';
 
 // The shared model port of the four built-in Agents (rec#8, D-04). It owns
 // configuration, egress, budget, bounded retry and repair, strict output
@@ -138,7 +140,7 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
 
       if (verdict.ok) {
         reportedConfidence = result.reportedConfidence ?? null;
-        return { envelope: envelope(request, verdict.value), modelReceipt: receipt('completed') };
+        return { envelope: decisionEnvelope(request, verdict.value), modelReceipt: receipt('completed') };
       }
       if (verdict.issues) {
         if (!adapter.repairable || repairs >= REPAIR_LIMIT) return stop('configuration', 'invalid_output');
@@ -178,6 +180,35 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
       return { range: { from: query.from, to: query.to }, groups: ledger.usage(query),
         budgets: loaded.state === 'ok' ? roleBudgets(loaded.config, query.role) : [], notes: USAGE_NOTES };
     },
+    // What Settings shows per role: which backend answers, never a key. The
+    // current session answers a role without a model; an invalid file is a
+    // repairable error that answers nothing, never the same as no file (C3).
+    roles() {
+      const loaded = readConfig();
+      const roles = loaded.state === 'ok' ? loaded.config.roles : {};
+      return { state: loaded.state, error: loaded.error ?? null, roles: MODEL_BACKEND_ROLES.map(role => {
+        const settings = roles[role];
+        if (loaded.state === 'invalid') return { role, state: 'invalid_config', answeredBy: null };
+        if (!settings) return { role, state: 'not_configured', answeredBy: 'current_session' };
+        const connection = loaded.config.connections[settings.connection];
+        return { role, state: settings.enabled ? 'enabled' : 'disabled', answeredBy: settings.enabled ? 'model_api' : 'current_session',
+          connection: { id: settings.connection, protocol: connection.protocol, endpointHost: new URL(connection.endpoint).host,
+            model: connection.model, secretRef: connection.secretRef, pricing: connection.pricing ? 'configured' : 'unknown' },
+          allowedOperations: settings.allowedOperations, budget: settings.budget, fallbackToSession: settings.fallbackToSession,
+          egress: { approvedProjects: settings.egress.approvedProjects.length, allowUnassigned: settings.egress.allowUnassigned } };
+      }) };
+    },
+    // A current-session answer to a work package is an attempt too, kept on
+    // its own channel. Its usage is what the session reported, else unknown.
+    recordSessionAttempt({ request, attemptId, attemptNumber, startedAt, durationMs, outcome, usage = null }) {
+      return ledger.record({ requestId: request.requestId, attemptId, attemptNumber, purpose: attemptNumber > 1 ? 'repair' : 'initial',
+        channel: 'session', role: request.role, operation: request.operation, personalSpaceId: request.scope.personalSpaceId,
+        personalProjectId: request.scope.personalProjectId, connectionId: null, protocol: null, endpointHost: null,
+        requestedModel: null, actualModel: null, outputMode: null, startedAt, durationMs, outcome,
+        failureClass: outcome === 'succeeded' ? null : 'configuration', failureReason: outcome === 'succeeded' ? null : 'invalid_output',
+        usage: reportedUsage({ ...usage, definition: usage ? 'session_reported' : null }),
+        budgetCeilingTokens: 0, estimatedCost: null, costCurrency: null });
+    },
     close() {
       ledger.close();
     }
@@ -193,16 +224,6 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
           estimatedCost: pricing ? roundCost(window.estimatedCost) : null, cost: pricing ? 'estimate' : 'unknown' };
       });
   }
-}
-
-function envelope(request, value) {
-  return {
-    role: request.role, operation: request.operation, requestId: request.requestId, sourceEventId: request.sourceEventId,
-    scope: request.scope,
-    evidence: { refs: value.evidenceIds, evidenceVersion: request.versions.evidence, policyVersion: request.versions.policy },
-    decision: value.decision, payload: value.payload, reason: value.reason, uncertainty: value.uncertainty,
-    execution: { status: 'pending' }
-  };
 }
 
 function receiptUsage(attempts) {

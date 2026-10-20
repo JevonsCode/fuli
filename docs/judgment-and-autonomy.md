@@ -10,7 +10,13 @@ Settings offers three choices, saved immediately with Undo:
 - **Shared decisions**: Tonborg applies routine knowledge reviews backed by existing confirmation and accepts verified FULI tasks.
 - **Autonomous**: Tonborg may also review ordinary pending knowledge. Conflicts, sensitive preferences, uncertain evidence, and actions outside existing authority remain for the user.
 
-Projects inherit the global policy unless the user sets an exception. Updating FULI does not silently expand existing authority. The selected local client runs the judgment, and quality preference controls its reasoning effort. Logs show the actual model only when the client reports it.
+Projects inherit the global policy unless the user sets an exception. Updating FULI does not silently expand existing authority.
+
+## Who answers a judgment
+
+When Tonborg has its own model in `model-backends.json` (rec#8), that model answers through FULI's model port, within its budget and data-sharing approval. Otherwise, or when that model fails in a way its settings allow to fall back, Tonborg records a **pending** work package and the current active session answers it with `role_work`; the host checks that answer exactly like a model answer, and the judgment then runs its usual gates. A package is not an answer: nothing is judged or executed until a session submits, a late or mismatched answer is stale, and without an active session the package waits, also across restarts. One answer is applied once: a repeated submit meanwhile reports `applying`, `completed` arrives only with the stored result, and an answer interrupted by a restart is applied by a submit after its 10-minute execution window. A review stores its write intent before it writes to the Provider; after an interruption the next run settles that intent against the decision the Provider holds (applied, not applied, or stale) and stays unfinished while the Provider cannot answer. A slow run whose window was taken over records nothing, so the result of the run that took over stands. A package belongs to its session binding; when another session asks about the same evidence it gets its own package and the older one is closed, so only one answer can be used. FULI does not start a CLI, a new session or another model for it. A refusal, a permission or privacy stop, or an exhausted budget stops the judgment instead.
+
+A session that answers its own task's acceptance is not an independent verification: Tonborg records its verdict and leaves the decision to a person. The earlier CLI client runs only when the policy explicitly sets `backend: "legacy_cli"`; policies saved before this change keep their records readable but never start a CLI. Logs show the actual model only when the backend reports it. Settings reads each role's backend and open work packages at `GET /api/model-backends/roles`.
 
 ## What a decision does
 

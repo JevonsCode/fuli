@@ -5,8 +5,12 @@ import { judgmentHumanInteraction } from './conversation.js';
 import { acceptanceReviewVerdicts } from './review-verdicts.js';
 
 const id = z.string().trim().min(1).max(256);
+// client: the client Tonborg is enabled for and the CLI an opted-in legacy
+// backend runs. Without backend legacy_cli, Tonborg's model or the current
+// session answers (D-04 §6); policies saved before this field never run a CLI.
 export const policySchema = z.object({ mode: z.enum(['manual', 'shared', 'autonomous']),
-  quality: z.enum(['quality', 'balanced', 'economy']), client: z.enum(['codex', 'claude_code']) }).strict();
+  quality: z.enum(['quality', 'balanced', 'economy']), client: z.enum(['codex', 'claude_code']),
+  backend: z.enum(['model_or_session', 'legacy_cli']).optional() }).strict();
 const scopeSchema = z.object({ personalSpaceId: id, personalProjectId: id.nullable().optional() });
 const revision = z.number().int().min(0);
 const pinSchema = z.object({ personalSpaceId: id, agentId: id, pinned: z.boolean(), expectedRevision: revision }).strict();
@@ -71,6 +75,8 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
     async reviewAutomatic(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.reviewAutomatic(service, input); },
     async assess(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.assess(service, input); },
     async accept(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.accept(service, input); },
+    // A session answered a work package Tonborg handed off.
+    async resumeWork(work) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.resume(service, work); },
     close() { database?.close(); }
   };
   return service;
