@@ -31,6 +31,7 @@ import {
 import { PROJECT_AGENT_MEMORY_DEFINITIONS, workingMemorySchema } from './project-agent-memory-definitions.js';
 import { AGENT_DISMISSAL_DEFINITIONS } from './agent-dismissal-definitions.js';
 import { EMPLOYEE_TOOL_DEFINITIONS } from './employee-definitions.js';
+import { AGENT_APP_TOOL_DEFINITIONS } from './agent-app-definitions.js';
 import { JUDGMENT_TOOL_DEFINITIONS } from './judgment-definitions.js';
 import { MODEL_USAGE_DEFINITIONS } from './model-usage-definitions.js';
 import { TASK_SCHEDULE_DEFINITIONS } from './task-schedule-definitions.js';
@@ -290,6 +291,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   ...AGENT_ATTENTION_DEFINITIONS,
   ...AGENT_INTERFACE_DEFINITIONS,
   ...EMPLOYEE_TOOL_DEFINITIONS,
+  ...AGENT_APP_TOOL_DEFINITIONS,
   ...JUDGMENT_TOOL_DEFINITIONS,
   ...MODEL_USAGE_DEFINITIONS,
   ...AGENT_SCORE_CARD_DEFINITIONS,
