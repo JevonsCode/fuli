@@ -52,26 +52,29 @@ export function installEmployeePackage({ sourceDirectory, runtimeConfigPath, rep
   return { id: manifest.id, version: manifest.version, idempotent: false, backupCreated: Boolean(backup) };
 }
 
-function packageDigest(root) {
+// Digest of every file under a package root; links, environments and repositories
+// are refused. `receipt` names a root file that is installation metadata, not
+// content; a package without a receipt passes null so every file counts.
+export function packageDigest(root, { receipt = '.installation.json' } = {}) {
   let bytes = 0;
   let files = 0;
   const hash = createHash('sha256');
   function walk(directory, prefix = '') {
-    if (lstatSync(directory).isSymbolicLink()) throw new TypeError('Employee packages may not contain symlinks');
+    if (lstatSync(directory).isSymbolicLink()) throw new TypeError('Packages may not contain symlinks');
     for (const name of readdirSync(directory).sort()) {
       if (name === '.env' || name.startsWith('.env.') || ['.git', 'node_modules'].includes(name)) {
-        throw new TypeError('Employee packages must contain only built artifacts, not environments or repositories');
+        throw new TypeError('Packages must contain only built artifacts, not environments or repositories');
       }
       const file = join(directory, name);
       const stat = lstatSync(file);
-      if (stat.isSymbolicLink()) throw new TypeError('Employee packages may not contain symlinks');
+      if (stat.isSymbolicLink()) throw new TypeError('Packages may not contain symlinks');
       // Only the generated root receipt is metadata; nested names are package content.
-      if (name === '.installation.json' && prefix === '' && stat.isFile()) continue;
+      if (name === receipt && prefix === '' && stat.isFile()) continue;
       if (stat.isDirectory()) { walk(file, `${prefix}${name}/`); continue; }
-      if (!stat.isFile()) throw new TypeError('Unsupported employee package entry');
+      if (!stat.isFile()) throw new TypeError('Unsupported package entry');
       bytes += stat.size;
       files += 1;
-      if (bytes > 64 * 1024 * 1024 || files > 4096) throw new TypeError('Employee package exceeds the installation budget');
+      if (bytes > 64 * 1024 * 1024 || files > 4096) throw new TypeError('Package exceeds the installation budget');
       hash.update(`${prefix}${name}\0`).update(readFileSync(file)).update('\0');
     }
   }
