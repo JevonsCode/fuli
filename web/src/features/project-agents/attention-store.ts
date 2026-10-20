@@ -73,6 +73,7 @@ export const useAgentAttention = defineStore('agent-attention', () => {
   async function refresh() {
     const current = ++version
     if (!spaceId.value) return
+    const linkedBefore = linkedVersion
     loading.value = true
     const currentPreview = ++previewVersion
     previewSpaceId.value = spaceId.value
@@ -92,10 +93,10 @@ export const useAgentAttention = defineStore('agent-attention', () => {
         const result = await getJson<AttentionList>(`/api/agent-attention?${scope}&limit=100`)
         if (current !== version) return
         items.value = result.items.filter(item => item.personalSpaceId === spaceId.value && (!agentId.value || item.agentId === agentId.value)); filteredTotal.value = result.total
-        // A request opened by its link and not on this page is read again by itself;
-        // a handled one is final and stays as read.
+        // A request opened by its link and not on this page is read again by itself, unless
+        // it was already read while this queue was loading; a handled one is final.
         const link = linked.value
-        if (link && link.item?.status !== 'resolved' && link.item?.status !== 'cancelled'
+        if (link && linkedVersion === linkedBefore && link.item?.status !== 'resolved' && link.item?.status !== 'cancelled'
           && !items.value.some(item => item.requestId === link.requestId)) void loadRequest(link.requestId)
       }
       error.value = ''

@@ -32,16 +32,17 @@ const selectedId = computed(() => props.openRequestId ?? '')
 const busy = ref('')
 let operation = 0
 const responseError = computed(() => attention.responseErrors[selectedId.value] ?? '')
-// A request on the loaded page comes from the queue; any other is read by its identity,
-// so a link to a request beyond the first page still opens it.
+// A request on the loaded page comes from the queue; any other is read by its identity
+// at once, without waiting for the queue, so a link opens even beyond the first page.
+// When the queue arrives with it, the queue's copy takes over without another read.
 const linked = computed(() => attention.linked?.requestId === selectedId.value ? attention.linked : null)
 const selected = computed(() => attention.items.find(item => item.requestId === selectedId.value) ?? linked.value?.item)
 const peekState = computed<AttentionPeekState>(() => {
   if (selected.value) return selected.value.status === 'open' ? 'open' : 'handled'
   return linked.value?.state === 'missing' || linked.value?.state === 'failed' ? linked.value.state : 'loading'
 })
-watch([selectedId, () => attention.open && !attention.loading], ([id, queueRead]) => {
-  if (id && queueRead && !attention.items.some(item => item.requestId === id) && attention.linked?.requestId !== id) {
+watch([selectedId, () => attention.spaceId], ([id, space]) => {
+  if (id && space && !attention.items.some(item => item.requestId === id) && attention.linked?.requestId !== id) {
     void attention.loadRequest(id)
   }
 }, { immediate: true })

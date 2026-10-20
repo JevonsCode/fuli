@@ -147,8 +147,39 @@ describe('Inbox page', () => {
       expect(postJson).toHaveBeenCalledWith('/api/agent-attention/respond', expect.objectContaining({ personalSpaceId: 'space-a', requestId: 'request-101', expectedRevision: 1 }))
     })
 
-    it('does not read again a request already on the loaded page', async () => {
-      await setup('/inbox?request=request-100')
+    it('opens a linked request while the queue is still pending, then lets the queue take over without a second read', async () => {
+      // The queue (summary and full list) stays pending until released; the exact read answers at once.
+      const pending: Array<() => void> = []
+      const answer = getJson.getMockImplementation()!
+      getJson.mockImplementation((url: string) => url.startsWith('/api/agent-attention?')
+        ? new Promise(resolve => { pending.push(() => resolve(answer(url))) })
+        : answer(url))
+      const { wrapper } = await setup('/inbox?request=request-100')
+      expect(wrapper.findAll('.attention-request')).toHaveLength(0)
+      expect(dialogTitle()).toBe('Synthetic request-100')
+      expect(textarea()).not.toBeNull()
+      expect(exactReads()).toHaveLength(1)
+
+      await type('Synthetic draft while the queue loads')
+      while (pending.length) { pending.shift()!(); await flushPromises() }
+      expect(wrapper.findAll('.attention-request')).toHaveLength(100)
+      expect(dialogTitle()).toBe('Synthetic request-100')
+      expect(textarea().value).toBe('Synthetic draft while the queue loads')
+      expect(exactReads()).toHaveLength(1)
+    })
+
+    it('opens a request beyond the first page while the queue never answers', async () => {
+      const answer = getJson.getMockImplementation()!
+      getJson.mockImplementation((url: string) => url.startsWith('/api/agent-attention?') ? new Promise(() => {}) : answer(url))
+      await setup('/inbox?request=request-101')
+      expect(dialogTitle()).toBe('Synthetic request-101')
+      expect(peekText()).toContain('Answer the synthetic question.')
+      expect(textarea()).not.toBeNull()
+    })
+
+    it('reads nothing more when a request is opened from its card', async () => {
+      const { wrapper } = await setup('/inbox')
+      await wrapper.findAll('.attention-request-title')[99]!.trigger('click'); await flushPromises()
       expect(dialogTitle()).toBe('Synthetic request-100')
       expect(exactReads()).toEqual([])
     })
