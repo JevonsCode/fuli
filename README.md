@@ -395,7 +395,9 @@ are refused, it records nothing and starts no collaboration (workers, loans, oth
 `fuli start` turns it back on within the existing settings (a pause or a stricter global, client or project
 setting still applies), `fuli restart` also gives the next turn the full context again, and `fuli status`
 shows the session and the default; nothing said while FULI was off is recorded later. Context already sent
-to the model cannot be taken back, so isolation needs a new session. The same switch runs from a shell the
+to the model cannot be taken back, so isolation needs a new session. Where a client's tool connection
+cannot name its session (Codex and Cursor), FULI refuses that client's tool calls without a task token while any
+of its sessions is off, rather than serve memory to a session that may be the stopped one. The same switch runs from a shell the
 client started (`!fuli session stop`), so an Agent with shell access can run it too (the same trust as
 access to your files); the console and `fuli mcp --call` still read for you, and `fuli session default off` makes new sessions start with FULI
 off until started; sessions already open keep theirs.

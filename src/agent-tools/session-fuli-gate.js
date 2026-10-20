@@ -19,6 +19,7 @@ const OPEN_TOOLS = new Set([
 ]);
 export const SESSION_FULI_OFF = 'fuli_off';
 const GUIDANCE = 'FULI is off for this session, so nothing was read, injected, recorded or started. Do not call FULI tools for this session or add an agent_receipt; only the person can turn it on (/fuli start).';
+const UNATTRIBUTED_GUIDANCE = 'FULI could not tell which session this call comes from while a session of this client has FULI off, so nothing was read or started. Calls that carry the current taskContextToken of this session are served; do not describe this as the person stopping FULI here.';
 
 // Whether a call must first ask which sessions it speaks for: a tool that is
 // not open while FULI may be off for some session. Otherwise it runs as before.
@@ -34,7 +35,8 @@ export async function sessionFuliRefusal(app, input = {}) {
   const decision = sessionUseDecision(app, { sourceApplication: input?.sourceApplication ?? 'other',
     sessionId: input?.sessionId ?? input?.sourceSessionId ?? null, boundSessionId: await boundSession(app, input) });
   return decision.allowed ? null : { status: SESSION_FULI_OFF, reason: decision.reason,
-    notice: captureNotice(decision.reason, decision.since), guidance: GUIDANCE };
+    notice: captureNotice(decision.reason, decision.since),
+    guidance: decision.reason === 'session_unattributed' ? UNATTRIBUTED_GUIDANCE : GUIDANCE };
 }
 
 // A token that does not resolve leaves the decision to the other identities;

@@ -31,16 +31,24 @@ const debug = debuglog('fuli-capture');
 // across /clear), so its host session cannot be shown to be the current one.
 export function sessionCaptureDecision(application, scope) {
   return decideSessions(application, scope, { refusal: state => offRefusal(state) ?? pausedRefusal(state),
-    anyRefused: sourceApplication => application.hasSessionWithoutCapture(sourceApplication) });
+    unattributed: sourceApplication => application.hasSessionWithoutCapture(sourceApplication)
+      ? denied('policy_unavailable') : null });
 }
 
-// Serving: memory injected at task entry, preferences restored after a
-// compaction and collaboration started from the session. Decided by the call's
-// own identities only, so a stop in one window never changes another (C3b-5);
-// see the /clear limit in sessionCaptureDecision().
+// Serving: memory injected at task entry or read by the Agent, preferences
+// restored after a compaction and collaboration started from the session.
+// Decided by the call's own identities, so a stop in one window never changes
+// another (C3b-5), except where they cannot show where a call comes from: a
+// call without a task token whose host is an identity FULI gave the process
+// (Codex, whose MCP processes get no session from Codex, Cursor and remote
+// clients) is refused while any session of its client is off, rather than
+// served to a session that may be the stopped one. See the /clear limit in
+// sessionCaptureDecision().
 export function sessionUseDecision(application, scope) {
   if (!sessionsMayBeOff(application)) return ALLOWED;
-  return decideSessions(application, scope, { refusal: offRefusal, anyRefused: null });
+  return decideSessions(application, scope, { refusal: offRefusal,
+    unattributed: (sourceApplication, host) => isFuliProcessSession(host)
+      && application.hasStoppedSession(sourceApplication) ? denied('session_unattributed') : null });
 }
 
 // False when FULI is on for every session, the usual case, so a caller can
@@ -101,8 +109,7 @@ function decideSessions(application, { boundSessionId = null, sessionId = null, 
     }
     if (!agentCall) return ALLOWED;
     if (!boundSessionId && !host) return denied('policy_unavailable');
-    if (!boundSessionId && policy.anyRefused?.(sourceApplication)) return denied('policy_unavailable');
-    return ALLOWED;
+    return (!boundSessionId && policy.unattributed(sourceApplication, host)) || ALLOWED;
   } catch {
     return denied('policy_unavailable');
   }

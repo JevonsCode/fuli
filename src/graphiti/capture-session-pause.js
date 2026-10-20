@@ -136,11 +136,12 @@ export class SessionCapturePauseStore {
       || this.#startedOff().some(pin => pin.sourceApplication === sourceApplication);
   }
 
-  // Whether FULI may be off for any session at all. When not, no call needs a
-  // closer look at its sessions.
-  anyStopped() {
-    return !this.defaultSetting().enabled || this.#records().some(record => record.enabled === false)
-      || this.#startedOff().length > 0;
+  // Whether FULI may be off for any session at all, or of one client. When
+  // not, no call needs a closer look at its sessions.
+  anyStopped(sourceApplication = null) {
+    const ofClient = item => sourceApplication === null || item.sourceApplication === sourceApplication;
+    return !this.defaultSetting().enabled || this.#records().some(record => record.enabled === false && ofClient(record))
+      || this.#startedOff().some(ofClient);
   }
 
   // Sessions that started under a default of off and were not started since.

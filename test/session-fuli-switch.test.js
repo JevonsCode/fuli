@@ -10,6 +10,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 import { callAgentTool } from '../src/agent-tools.js';
+import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
 import { runCursorLifecycleHook } from '../src/agents/cursor/lifecycle-hook.js';
 import { agentHostRequestContext } from '../src/app/agent-request-context.js';
 import { parseSessionArguments, runSessionCommand } from '../src/cli/session-command.js';
@@ -229,8 +230,9 @@ test('C3b-3 every memory read a model starts is refused for a stopped session, a
   assert.equal(policy.current.reason, 'session_stopped');
   // Another window, and the person's own read from the console or a terminal, still search.
   const read = { query: 'chapter', sourceApplication: 'codex' };
-  for (const context of [agentHostRequestContext(null, SESSION_B), agentHostRequestContext(null, 'fuli-host-synthetic-terminal'), null]) {
-    assert.ok(Array.isArray((await callAgentTool(f.app, 'search_knowledge_graph', read, context)).facts));
+  for (const [context, input] of [[agentHostRequestContext(null, SESSION_B), read],
+    [agentHostRequestContext(null, 'fuli-host-synthetic-terminal'), { ...read, sourceApplication: 'other' }], [null, read]]) {
+    assert.ok(Array.isArray((await callAgentTool(f.app, 'search_knowledge_graph', input, context)).facts));
   }
 });
 
@@ -380,9 +382,16 @@ test('fuli session acts only for the client session it runs in', async (t) => {
   assert.equal((await captureDecision(f.app, { sourceApplication: 'claude_code', sessionId: SESSION_A })).reason, 'session_stopped');
   assert.deepEqual(await run(['status', '--json'], { CLAUDE_CODE_SESSION_ID: SESSION_A }), { exitCode: 0 });
   assert.deepEqual(JSON.parse(lines.at(-1)).fuli.enabled, false);
-  assert.deepEqual(await run(['start', '--client', 'codex'], { CLAUDE_CODE_SESSION_ID: SESSION_A, CODEX_THREAD_ID: SESSION_B }),
-    { exitCode: 0 });
-  assert.match(lines.at(-1), /已是启用状态/, 'the named client\'s own session');
+  // Codex names the conversation (CODEX_SESSION_ID, its hooks' session_id) and the shell's thread.
+  assert.deepEqual(await run(['stop', '--client', 'codex'], { CLAUDE_CODE_SESSION_ID: SESSION_A, CODEX_SESSION_ID: SESSION_B,
+    CODEX_THREAD_ID: SESSION_B }), { exitCode: 0 });
+  assert.equal((await captureDecision(f.app, { sourceApplication: 'codex', sessionId: SESSION_B })).reason, 'session_stopped',
+    'the named client\'s own session');
+  assert.deepEqual(await run(['start'], { CODEX_SESSION_ID: SESSION_B, CODEX_THREAD_ID: SESSION_C }), { exitCode: 1 });
+  assert.match(lines.at(-1), /sub-Agent thread.*nothing changed/);
+  assert.deepEqual(await run(['start'], { CODEX_THREAD_ID: SESSION_B }), { exitCode: 1 });
+  assert.match(lines.at(-1), /cannot show which conversation it is; nothing changed/);
+  assert.equal((await captureDecision(f.app, { sourceApplication: 'codex', sessionId: SESSION_B })).reason, 'session_stopped');
   assert.deepEqual(await run(['stop'], {}), { exitCode: 1 });
   assert.match(lines.at(-1), /No client session here/);
   assert.deepEqual(await run(['default', 'off'], {}), { exitCode: 0 });
@@ -394,4 +403,79 @@ test('fuli session acts only for the client session it runs in', async (t) => {
     ['stop', '--client', 'cursor'], ['default', 'on', '--client', 'codex']]) {
     assert.throws(() => parseSessionArguments(args), /Usage: fuli session/, args.join(' '));
   }
+});
+
+// Fable review of #251: Codex gives its MCP processes no session (openai/codex 87f3c3284e16:
+// codex-rs/rmcp-client/src/utils.rs 16-58 builds their environment from an allowlist), so their
+// calls carry an identity FULI gave the process, like Cursor's. Without a task token such a call
+// cannot be shown not to come from a stopped session, so it is refused while any session of the
+// client is off, instead of a stop that says stopped while the session still gets memory. The
+// hook payload is the UserPromptSubmit shape of codex-rs/hooks/src/schema.rs 568-584.
+const codexPrompt = (session, cwd, prompt) => ({ session_id: session, turn_id: 'synthetic-turn', transcript_path: null,
+  cwd, hook_event_name: 'UserPromptSubmit', model: 'synthetic-model', permission_mode: 'default', prompt });
+const codexProcess = { env: {}, sourceApplication: 'codex' };
+
+test('Codex: a stop through the real hook payload is not undone by MCP calls Codex cannot attribute', async (t) => {
+  const f = await fixture(t);
+  const hook = async (session, prompt) => {
+    let context;
+    const output = await runCodexLifecycleHook(['--event', 'UserPromptSubmit'], {
+      readInput: async () => codexPrompt(session, f.dirs.novel, prompt), write: () => {},
+      resolveRuntimeOptions: () => ({ runtimeConfigPath: f.runtimeConfigPath }), openApplication: () => f.app,
+      createLeases: leases, captureTimeoutMs: 30_000,
+      callTool: async (app, name, input, request) => {
+        const result = await callAgentTool(app, name, input, request);
+        if (name === 'begin_task_context') context = result;
+        return result;
+      } });
+    return { output, context };
+  };
+  await hook(SESSION_A, 'Plan.');
+  const other = await hook(SESSION_B, 'Plan.');
+  assert.match((await hook(SESSION_A, 'fuli stop')).output.reason, /FULI 已在本会话停用/);
+  const search = { personalSpaceId: 'synthetic-space', query: 'chapter' };
+  for (const [name, args] of [['search_knowledge_graph', search],
+    ['get_collaboration_preferences', { projectPath: f.dirs.novel, taskPrompt: 'Next.' }],
+    ['record_knowledge_usage', { personalSpaceId: 'synthetic-space', taskId: 'synthetic-task',
+      items: [{ itemId: 'synthetic-item', itemKind: 'entity', useKind: 'applied' }] }]]) {
+    const refused = await mcpCall(f, codexProcess, name, args);
+    assert.deepEqual([refused.status, refused.reason], ['fuli_off', 'session_unattributed'], name);
+    assert.match(refused.guidance, /could not tell which session/);
+  }
+  // Another Codex thread keeps what its hook token carries.
+  const kept = await callAgentTool(f.app, 'checkpoint_task_knowledge', { taskContextToken: other.context.taskContextToken,
+    sourceApplication: 'codex', disposition: 'retain_nothing', reason: 'Nothing to keep.',
+    workLog: { status: 'completed', summary: 'Planned.' } }, agentHostRequestContext(null, 'fuli-host-synthetic-codex-thread-b'));
+  assert.notEqual(kept.status, 'fuli_off');
+  assert.equal(kept.checkpoint_required ?? false, false);
+  await hook(SESSION_A, 'fuli start');
+  assert.ok(Array.isArray((await mcpCall(f, codexProcess, 'search_knowledge_graph', search)).facts),
+    'served again once no session is off');
+});
+
+test('with the default off, a client without a native session is served only with a task token', async (t) => {
+  const f = await fixture(t);
+  requestSessionFuliDefault(f.app, { newSessions: 'off' });
+  const cursorLine = prompt => runCursorLifecycleHook(['--event', 'beforeSubmitPrompt'], {
+    readInput: async () => ({ conversation_id: 'synthetic-cursor-started', workspace_roots: [f.dirs.novel], prompt }),
+    write: () => {}, resolveRuntimeOptions: () => ({ runtimeConfigPath: f.runtimeConfigPath }), openApplication: () => f.app,
+    createLeases: leases, callTool: async (app, name, input, request) => {
+      const result = await callAgentTool(app, name, input, request);
+      if (name === 'begin_task_context') task = result;
+      return result;
+    } });
+  let task;
+  assert.deepEqual(await cursorLine('Plan.'), { continue: true });
+  const process = agentHostRequestContext(null, 'fuli-host-synthetic-cursor-process');
+  const entry = sessionId => callAgentTool(f.app, 'get_collaboration_preferences', { projectPath: f.dirs.novel,
+    taskPrompt: 'Plan.', sessionId, sourceSessionId: sessionId, sourceApplication: 'cursor' }, process);
+  assert.equal((await entry('synthetic-cursor-started')).reason, 'session_not_started');
+  assert.equal((await cursorLine('/fuli start')).continue, false);
+  assert.deepEqual(await cursorLine('Plan.'), { continue: true });
+  // The conversation is on, but a call without a token could come from one that is not.
+  assert.equal((await entry('synthetic-cursor-started')).reason, 'session_unattributed');
+  const served = await callAgentTool(f.app, 'checkpoint_task_knowledge', { taskContextToken: task.taskContextToken,
+    sourceApplication: 'cursor', disposition: 'retain_nothing', reason: 'Nothing to keep.',
+    workLog: { status: 'completed', summary: 'Planned.' } }, process);
+  assert.notEqual(served.status, 'fuli_off', 'its hook task token is served');
 });

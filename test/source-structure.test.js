@@ -83,7 +83,7 @@ const CAPTURE_SETTINGS_CALL_SITES = new Map([
     'sessionCapturePauseStore = new SessionCapturePauseStore(),', 'this.sessionCapturePauseStore = sessionCapturePauseStore;',
     'getSessionCapturePause(sessionId) {', 'return this.sessionCapturePauseStore.state(sessionId);',
     'hasSessionWithoutCapture(sourceApplication) {', 'return this.sessionCapturePauseStore.anyWithoutCapture(sourceApplication);',
-    'hasStoppedSession() {', 'return this.sessionCapturePauseStore.anyStopped();',
+    'hasStoppedSession(sourceApplication = null) {', 'return this.sessionCapturePauseStore.anyStopped(sourceApplication);',
     'return this.sessionCapturePauseStore.set(sessionId, change);',
     'return this.sessionCapturePauseStore.setEnabled(sessionId, change);', 'sessionFuliDefault() {',
     'return this.sessionCapturePauseStore.defaultSetting();', 'return this.sessionCapturePauseStore.setDefault(enabled);',

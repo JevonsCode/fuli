@@ -1084,8 +1084,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return this.sessionCapturePauseStore.anyWithoutCapture(sourceApplication);
   }
 
-  hasStoppedSession() {
-    return this.sessionCapturePauseStore.anyStopped();
+  hasStoppedSession(sourceApplication = null) {
+    return this.sessionCapturePauseStore.anyStopped(sourceApplication);
   }
 
   setSessionCapturePause(sessionId, change) {

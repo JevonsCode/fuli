@@ -1,5 +1,5 @@
 import { createRuntimeLeaseClient } from '../adaptive-runtime/lease-client.js';
-import { nativeSessionFromEnv } from '../agents/native-session-env.js';
+import { shellSessionFromEnv } from '../agents/native-session-env.js';
 import { openFederatedGraphApplication } from '../graphiti/federated-application.js';
 import { resolveGraphRuntimeOptions } from '../graphiti/runtime-config.js';
 import { requestSessionFuliDefault, SESSION_FULI_ACTIONS, switchSessionFuli } from '../graphiti/session-fuli-switch.js';
@@ -17,6 +17,11 @@ const USAGE = 'Usage: fuli session start|stop|restart|status [--client claude_co
   + ' | fuli session default on|off|status [--json] [--runtime-config FILE]';
 // Clients that tell the processes they start which session they run in.
 const ENV_CLIENTS = Object.freeze(['claude_code', 'codex']);
+// A shell whose session cannot be shown to be the one the client's hooks name changes nothing.
+const REFUSED = Object.freeze({
+  codex_sub_agent_thread: 'This shell runs in a Codex sub-Agent thread, not in the conversation the person types in, so nothing changed. Type `fuli stop` (or start, restart, status) in the conversation itself.',
+  codex_session_unproven: 'Codex named only one of the session and thread of this shell, so FULI cannot show which conversation it is; nothing changed. Type `fuli stop` (or start, restart, status) in the conversation itself.'
+});
 const NO_SESSION = 'No client session here: run this from inside Claude Code or Codex (for example `!fuli session stop`), or type `fuli stop` in the client itself (`/fuli stop` where FULI installed the command).';
 
 export async function runSessionCommand(args, {
@@ -25,8 +30,8 @@ export async function runSessionCommand(args, {
 } = {}) {
   const { action, value, client, json, runtimeArgs } = parseSessionArguments(args);
   const target = action === 'default' ? null : hostSession(client, env);
-  if (action !== 'default' && !target) {
-    write(NO_SESSION);
+  if (action !== 'default' && !target?.sessionId) {
+    write(REFUSED[target?.refused] ?? NO_SESSION);
     return { exitCode: 1 };
   }
   const { runtimeConfigPath } = resolveGraphRuntimeOptions(runtimeArgs, env);
@@ -35,7 +40,8 @@ export async function runSessionCommand(args, {
   try {
     const result = await leases.withGraphLease('cli-session', () => action === 'default'
       ? requestSessionFuliDefault(app, { newSessions: value })
-      : switchSessionFuli(app, { ...target, action, projectPath: cwd }));
+      : switchSessionFuli(app, { sessionId: target.sessionId, sourceApplication: target.sourceApplication, action,
+        projectPath: cwd }));
     write(json ? JSON.stringify(result, null, 2) : result.message);
     return { exitCode: ['unsaved', 'unavailable', 'parent_stopped'].includes(result.status) ? 1 : 0 };
   } finally {
@@ -43,10 +49,11 @@ export async function runSessionCommand(args, {
   }
 }
 
+// The first client that names a session here; a refusal counts as naming one.
 function hostSession(client, env) {
   for (const sourceApplication of client ? [client] : ENV_CLIENTS) {
-    const sessionId = nativeSessionFromEnv(sourceApplication, env);
-    if (sessionId) return { sessionId, sourceApplication };
+    const session = shellSessionFromEnv(sourceApplication, env);
+    if (session) return { ...session, sourceApplication };
   }
   return null;
 }
